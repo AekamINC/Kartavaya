@@ -72,12 +72,13 @@
 <div class="top">
   <div>
     <h1>What is actually left</h1>
-    <p class="lede">Everything in one place: the twenty-three commits that landed today, the
-      data that was deleted, the five proposals written this afternoon, and the
-      seventeen-item inbox. Every count was measured read-only against the live database —
-      and where I have <em>not</em> measured something, it says so rather than guessing.</p>
-    <p class="meta">Proposal 82 &middot; 2026-08-22 &middot; 3 orgs, 35 users, 736 tasks
-      &middot; migrations 191, 192, 193 applied &middot; 12,665 backend tests green</p>
+    <p class="lede">The whole picture: three days and 116 commits of work, all four surfaces
+      measured today, the seventeen-item inbox, and the structural backlog nobody has been
+      counting. Every number here was measured &mdash; against the live database, the live
+      catalogue, or a suite that was actually run. Where I have not measured something, it
+      says so.</p>
+    <p class="meta">Proposal 82 &middot; rewritten 2026-08-22 &middot; 3 orgs, 35 users,
+      473 tasks &middot; staging is 1,517 commits ahead of main</p>
   </div>
   <div class="ctl">
     <button id="bl" class="on" onclick="T('light')">Light</button>
@@ -85,140 +86,179 @@
   </div>
 </div>
 
-<div class="card hot">
-  <h3>The finding that reframes the inbox</h3>
-  <p><strong>Nearly half the task table was written by test accounts.</strong> 351 of 736
-  tasks were created by a Playwright or QA login. Two of those logins hold real
-  <span class="mono">user_roles</span> in <strong>Unicode Group</strong>, a live
-  organisation, and five hold active memberships in its projects. One is an <em>admin</em>
-  of &ldquo;Keval To Do&rdquo; and authored 13 of its 39 tasks.</p>
-  <p>This is why the email you received looked like a leak and was not one: the test
-  account was a genuine member, so every fan-out correctly included it. The bug was that
-  the fan-out went to <em>everyone</em>; the test accounts merely made it visible.</p>
-  <p><strong>Consequence for this scope:</strong> several inbox items describe symptoms of
-  polluted data rather than broken code. Cleaning first retires some of the list without a
-  line being written, and stops me diagnosing ghosts through six other workstreams.</p>
-</div>
+<h2>1 &middot; Where the four surfaces stand</h2>
 
-<h2>1 &middot; What shipped today</h2>
-
-<p>Twenty-three commits, plus three migrations and one set of deletions. Grouped by what
-they were for, not by the order they landed.</p>
-
-<h3>Before the inbox arrived</h3>
 <div class="scroll">
 <table>
-  <tr><th>Commit</th><th>What it did</th><th>Why it mattered</th></tr>
-  <tr><td class="mono">4d338aa7<br><span class="quiet">08:51</span></td>
-      <td><strong>Commission: the product stops choosing a firm&rsquo;s commercial terms.</strong>
-          Migration 191 dropped the NOT NULL and the defaults on
-          <span class="mono">basis</span> and <span class="mono">period</span>, with a CHECK
-          that only an <em>eligible</em> scheme must state them.</td>
-      <td>A test caught the first draft: an ineligible scheme has no basis and no period, so
-          keeping NOT NULL would have forced a lie into every row.</td></tr>
-  <tr><td class="mono">60ee6577<br><span class="quiet">11:16</span></td>
-      <td><strong>Every dropdown showed no value</strong> — Priority, Status, Category,
-          Assignees all blank in the task drawer. A chevron was eating the label.</td>
-      <td>Your screenshot. It affected every select in the product, not just the drawer.</td></tr>
-  <tr><td class="mono">42d3e08e<br>b7e843b3<br>31491721<br><span class="quiet">11:24&ndash;12:57</span></td>
-      <td><strong>The audit columns.</strong> A Created column written once
-          (<span class="mono">CreatedColumn.jsx</span>), then eight more tables, then
-          created/updated with both date and person.</td>
-      <td>You widened this twice: first to every module, then to created-by and
-          modified-by as well. <strong>41 tables still remain</strong> — see workstream E.</td></tr>
-  <tr><td class="mono">d405c606<br>671a6222</td>
-      <td>Tests: the Created column really sorts; a browser test for the blank-dropdown
-          regression.</td>
-      <td>Both written to fail against the tree before their fix.</td></tr>
-  <tr class="hot"><td class="mono">f7bb594e<br><span class="quiet">13:06</span></td>
-      <td><strong>A tab open across a deploy heals itself instead of white-screening.</strong>
-          <span class="mono">lazyPage()</span> now wraps all 56 routes and reloads once on a
-          stale-chunk import failure.</td>
-      <td>This was the outage — every page failing for you and every member with access. It
-          was never a broken build: it was old tabs asking for chunks that no longer existed.</td></tr>
-  <tr><td class="mono">35778f6d<br>bce4d381<br><span class="quiet">15:46&ndash;16:08</span></td>
-      <td><strong>Per-org document prefixes, the customer&rsquo;s own reference field, and
-          the credit note brought out of hiding.</strong> Migration 192 added
-          <span class="mono">ganit_invoices.customer_ref</span> with a CHECK refusing blanks.</td>
-      <td>The prefix sanitises to letters and <em>falls back rather than blocking</em> —
-          the same rule as GSTIN and PAN.</td></tr>
+  <tr><th>Surface</th><th>Measured today</th><th>State</th></tr>
+  <tr class="ok"><td><strong>Backend</strong></td>
+      <td class="num">12,665 pass<br>0 fail</td>
+      <td>Green. 253 skipped, 4 xfailed.</td></tr>
+  <tr><td><strong>Frontend</strong></td>
+      <td class="num">2,581 pass<br>12 fail</td>
+      <td>All 12 held at baseline, no new failures. <span class="mono">npm run build</span>
+          succeeds. <span class="mono">npm run check</span> exits 0 &mdash; but it exits 0 on
+          unparseable CSS too, which is why the build is the gate that counts.</td></tr>
+  <tr class="ok"><td><strong>Mobile</strong></td>
+      <td class="num">827 pass<br>0 fail</td>
+      <td>Green.</td></tr>
+  <tr class="hot"><td><strong>Migrations</strong></td>
+      <td class="num">160&ndash;193 applied<br><strong>29 never applied</strong></td>
+      <td>Every numbered migration through 193 is live, verified against the catalogue rather
+          than the ledger. But <strong>29 <span class="mono">PROPOSED_*</span> files</strong>
+          have never run, and they are not drafts &mdash; several are finished work waiting on
+          a decision. See section 4.</td></tr>
 </table>
 </div>
 
-<h3>Data removed at your instruction</h3>
 <div class="card warn">
+  <h4>Two corrections to my own audit, both found by re-checking</h4>
+  <p><strong>Migration 187 is applied.</strong> My first probe reported it missing because it
+  searched the <span class="mono">staging</span> schema;
+  <span class="mono">invites.employee_id</span> lives in <span class="mono">public</span>.
+  Nothing is wrong with 187.</p>
+  <p><strong>Inbox 10 was wrong as I recorded it.</strong>
+  <span class="mono">Sites.jsx</span> exists and works &mdash; name, lat/long, radius,
+  use-my-location, validation, listing. Altitude was the only gap, and migration 193 closed
+  it in the schema today.</p>
+</div>
+
+<h2>2 &middot; The finding that reframes the inbox</h2>
+
+<div class="card hot">
+  <p><strong>Nearly half the task table had been written by test accounts.</strong> 351 of
+  736 tasks were created by a Playwright or QA login, and two of those logins held real
+  <span class="mono">user_roles</span> in <strong>Unicode Group</strong>, a live
+  organisation. One was an <em>admin</em> of &ldquo;Keval To Do&rdquo; and authored 13 of its
+  39 tasks.</p>
+  <p>That is why the task email you received looked like a leak and was not one: the test
+  account was a genuine member, so every fan-out correctly included it. The bug was that the
+  fan-out went to <em>everyone</em>; the test accounts merely made it visible.</p>
+  <p><strong>Both are now fixed</strong> &mdash; the routing in code, the pollution in data.
+  See sections 3 and 7.</p>
+</div>
+
+<h2>3 &middot; Three days of work</h2>
+
+<p>116 commits. Grouped by what they were for.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Theme</th><th>What landed</th></tr>
+  <tr><td><strong>Skills</strong><br><span class="quiet">20 Aug &middot; ~19 commits</span></td>
+      <td>Fifteen first-tier handlers, the skill taxonomy corrected (migration 166), a
+          scheduler, per-skill brand instructions, contact details on 22 skills through one
+          choke point. Migrations 166&ndash;181.</td></tr>
+  <tr><td><strong>Custody &amp; statute</strong></td>
+      <td>DSC register, UDIN window, notices, lifecycle, offboarding. Dated law with a
+          mandatory <span class="mono">as_of</span>. Migrations 160&ndash;164, 170, 172.</td></tr>
+  <tr><td><strong>Commission</strong><br><span class="quiet">21&ndash;22 Aug</span></td>
+      <td>The product stops choosing a firm&rsquo;s commercial terms. Migration 191 dropped
+          NOT NULL and the defaults on <span class="mono">basis</span> and
+          <span class="mono">period</span>, with a CHECK that only an <em>eligible</em> scheme
+          must state them &mdash; a test caught the first draft, which would have forced a lie
+          into every ineligible row.</td></tr>
+  <tr class="hot"><td><strong>The outage</strong><br><span class="quiet">22 Aug 13:06</span></td>
+      <td><span class="mono">lazyPage()</span> now wraps all 56 routes and reloads once on a
+          stale-chunk import failure. It was never a broken build &mdash; it was old tabs
+          asking for chunks that no longer existed after a deploy.</td></tr>
+  <tr><td><strong>Audit columns</strong></td>
+      <td>A Created column written once, then eight more tables, then created/updated with
+          both date and person. <strong>41 tables still remain.</strong></td></tr>
+  <tr><td><strong>Invoicing</strong></td>
+      <td>Per-org document prefixes, the customer&rsquo;s own reference field (migration 192),
+          the credit note brought out of hiding. The prefix sanitises and
+          <em>falls back rather than blocking</em> &mdash; same rule as GSTIN and PAN.</td></tr>
+  <tr><td><strong>Research</strong></td>
+      <td>Proposals 77&ndash;81: purchase orders, competitive research, an architecture review
+          across invoice/PO/payroll/HR, compliance-as-a-setting with the Pahchan market work,
+          and the legal documents.</td></tr>
+  <tr class="ok"><td><strong>Task email routing</strong><br><span class="quiet">22 Aug</span></td>
+      <td>Done now reaches the project&rsquo;s admins plus the task&rsquo;s assignees, resolved
+          from <span class="mono">project_assignments</span> &mdash; the table the approval gate
+          already used. The duplicate status-changed mail on the same click is suppressed.
+          Seven emails on your task became three.</td></tr>
+  <tr class="ok"><td><strong>Storage &amp; Pahchan</strong></td>
+      <td>Migration 193 &mdash; altitude on a site and its punches, applied and verified.
+          Proposal 83 &mdash; the R2 architecture, two bugs, one key grammar.</td></tr>
+</table>
+</div>
+
+<h2>4 &middot; The structural backlog nobody is counting</h2>
+
+<p>Twenty-nine <span class="mono">PROPOSED_*</span> migrations have never run. Most are not
+drafts. Three groups matter, and the first one answers an inbox item.</p>
+
+<div class="card hot">
+  <h3>PROPOSED_073 already diagnoses inbox item 1 &mdash; and it was written before today</h3>
+  <p>Its own opening line: <em>&ldquo;An organisation cannot bring in a new person. At
+  all.&rdquo;</em> Three causes, named in the file:</p>
+  <ul>
+    <li>The only invite endpoint is <span class="mono">POST /api/admin/invites</span>, behind
+      <span class="mono">_require_admin</span> &mdash; <strong>Aekam&rsquo;s platform
+      console</strong>. That is exactly your &ldquo;the email has to already exist in Aekam
+      Inc&rdquo;.</li>
+    <li><span class="mono">org_members.add_member</span> refuses anyone without an existing
+      account, with a 404. That is the dead Add button.</li>
+    <li>There is no public registration. That is invite &rarr; register &rarr; &ldquo;not part
+      of any team&rdquo;.</li>
+  </ul>
+  <p><strong>So inbox 1 moves from unverified to diagnosed with a fix already drafted.</strong>
+  It is the highest-value item in this document, because it is the only one that stops a firm
+  from signing up, and most of the thinking is already done.</p>
+</div>
+
+<div class="card warn">
+  <h3>The tenancy cutover is a six-phase programme stalled at phase one</h3>
+  <p><span class="mono">PROPOSED_076</span>&ndash;<span class="mono">081</span> are one
+  sequence: add <span class="mono">org_id</span> nullable, backfill, verify, constrain, retire
+  <span class="mono">team_members</span>, enable RLS. <strong>None have run.</strong></p>
+  <p><span class="mono">PROPOSED_080</span> carries its own warning in a box:
+  <em>&ldquo;Steps 1-3 of the retirement sequence are NOT DONE. Running this file today
+  breaks authorization across 17 backend modules and one live view.&rdquo;</em> It was written
+  to record the sequence, not to be run.</p>
+  <div class="scroll">
   <table>
-    <tr><th>What</th><th>Rows</th><th>How</th></tr>
-    <tr><td>Seeded deals, Aekam Inc</td><td class="num">514</td>
-        <td rowspan="3">Each exported to JSON first, deleted in one transaction, then three
-          checks: children before parents, count matched, and every other org unchanged.</td></tr>
-    <tr><td>Invoices and their payments</td><td class="num">6 + 2</td></tr>
-    <tr><td>HR, payroll and attendance rows</td><td class="num">18</td></tr>
+    <tr><th>Measured today</th><th class="num">&nbsp;</th></tr>
+    <tr><td>Tables carrying <span class="mono">org_id</span></td><td class="num">239</td></tr>
+    <tr><td><span class="mono">public</span> tables with no <span class="mono">org_id</span></td><td class="num">38</td></tr>
+    <tr><td>Tables with RLS enabled</td><td class="num">98</td></tr>
+    <tr><td>Tables with RLS <strong>disabled</strong></td><td class="num">203</td></tr>
   </table>
+  </div>
+  <p class="quiet">RLS being off is not itself a breach &mdash; the app connects as a service
+  role and enforces tenancy in SQL. It matters because it is the last line of defence, and
+  because realtime publication with RLS off has bitten this product before.</p>
+  <p><strong>This is also where the two-membership-tables problem belongs.</strong> I found
+  today that <span class="mono">project_assignments</span> answers &ldquo;who runs this
+  project&rdquo; for 52 of 52 projects while <span class="mono">team_members</span> answers for
+  44, and that they disagree on both membership and role. That is not a new bug &mdash; it is
+  phase 5 of this cutover, already written down and waiting on phases 1&ndash;3.</p>
 </div>
 
-<h3>The research, and what it committed us to</h3>
-<div class="scroll">
-<table>
-  <tr><th>Proposal</th><th>What it establishes</th></tr>
-  <tr><td><strong>77</strong> Purchase orders</td>
-      <td>A PO module inside Finance, scoped against what the database already has. The
-          approval matrix is an <em>ordered list</em>, not a graph — because a person can
-          read an ordered list aloud — and it is optional, switched on in module settings.</td></tr>
-  <tr><td><strong>78</strong> Competitive research</td>
-      <td>What Zoho, TallyPrime, greytHR and the rest actually ship, and the four gaps where
-          we are behind.</td></tr>
-  <tr><td><strong>79</strong> Architecture review</td>
-      <td>Invoice, procurement, payroll and HR audited column by column against Indian law as
-          of 2026. Carries two corrections: <span class="mono">manav_departments</span> is a
-          real table with 30 rows and a head — 85 of 98 employees already match one — and the
-          Labour Codes have been <strong>in force since 21 November 2025</strong>, not
-          forthcoming.</td></tr>
-  <tr><td><strong>80</strong> Compliance is a setting</td>
-      <td>Your rule, written down: no government requirement is ever mandatory by default;
-          each becomes a tick in that module&rsquo;s settings. Plus the Pahchan market
-          research, and custom attendance policies scoped org &rarr; site &rarr; category
-          &rarr; employee — with the half nobody else does, <em>showing the employee the rule
-          they are judged by</em>.</td></tr>
-  <tr><td><strong>81</strong> Compliance documents</td>
-      <td>Privacy policy, sub-processors, security page and DPA. Discloses AWS SES, scopes the
-          provider certifications honestly, and evidences the MFA gap rather than papering
-          over it.</td></tr>
-</table>
+<div class="card blue">
+  <h4>The rest</h4>
+  <p><span class="mono">063_employee_pii</span>, <span class="mono">064_pahchan</span>,
+  <span class="mono">065</span>&ndash;<span class="mono">067</span> role levels and account
+  self-service, <span class="mono">068</span>&ndash;<span class="mono">069</span> org profile
+  and org security, <span class="mono">072</span> client-visible task comments,
+  <span class="mono">074</span>&ndash;<span class="mono">075</span> module approvers,
+  <span class="mono">082</span> shift and overtime,
+  <span class="mono">084</span>&ndash;<span class="mono">089</span> skills and briefs.</p>
+  <p><strong>One thing to fix regardless:</strong> there are <em>two</em> files numbered 080
+  &mdash; <span class="mono">080_statutory_document_identifiers</span> and
+  <span class="mono">080_team_members_retire</span>. A number collision in a directory whose
+  whole purpose is ordering.</p>
 </div>
 
-<h3>After the inbox arrived</h3>
-<div class="scroll">
-<table>
-  <tr class="ok"><td class="mono">066bd70d<br>654b7a2b</td>
-      <td><strong>Task-done routing.</strong> Was every active project member; now the
-          project&rsquo;s admins plus the task&rsquo;s assignees, resolved from
-          <span class="mono">project_assignments</span> — the table the approval gate already
-          uses. The duplicate status-changed mail on the same click is suppressed. On your
-          task, seven emails become three.</td>
-      <td>6 tests, 3 of which fail against the prior tree.</td></tr>
-  <tr class="ok"><td class="mono">7c35efdb</td>
-      <td><strong>Migration 193 — altitude</strong> on a Pahchan site and its punches.
-          Applied and verified: 4 nullable columns, 9 sites and 1,659 punches unchanged,
-          0 rows carrying altitude, so no punch changed verdict.</td>
-      <td>See workstream I for the accuracy caveat that governs how you set it.</td></tr>
-</table>
-</div>
-
-<h2>2 &middot; The inbox</h2>
+<h2>5 &middot; The inbox</h2>
 
 <div class="card">
-  <p><strong>Correction on priority.</strong> I transcribed some items as
-  <span class="mono">!</span> and left two unmarked. You have told me every one of the
-  seventeen carries <span class="mono">!!</span>. So there is no priority ordering inside
-  this list — the sequencing below is mine, argued from dependency and risk, and you should
-  overrule it wherever your commercial reality differs.</p>
+  <p><strong>Every item carries <span class="mono">!!</span>.</strong> I had transcribed some
+  as <span class="mono">!</span> and left two unmarked; you corrected that. So the list has no
+  internal priority &mdash; the sequencing in section 8 is mine, argued from dependency and
+  risk, and you should overrule it wherever your commercial reality differs.</p>
 </div>
-
-<p>I have <strong>verified seven</strong> against the code or the database. The other ten
-are recorded as you reported them and marked unverified — that distinction earns its keep
-here, because two of the seven I checked turned out to be different from how I had written
-them down.</p>
 
 <div class="scroll">
 <table>
@@ -226,476 +266,323 @@ them down.</p>
 
   <tr class="ok"><td class="num">11</td><td><strong>Task email routing</strong></td>
       <td><span class="tag ok">SHIPPED</span></td>
-      <td>Done &rarr; project admins + assignees. The remaining half — personal &rarr; owner
-          only — is now a small follow-on, since &ldquo;personal&rdquo; is confirmed to mean
-          <span class="mono">team_id IS NULL</span>.</td></tr>
+      <td>Done &rarr; project admins + assignees. The remaining half &mdash; personal &rarr;
+          owner only &mdash; is a small follow-on now that &ldquo;personal&rdquo; is confirmed
+          to mean <span class="mono">team_id IS NULL</span>, which the New Task dropdown
+          offers explicitly.</td></tr>
+
+  <tr class="hot"><td class="num">1</td><td><strong>Org creation / invite / team add</strong></td>
+      <td><span class="tag part">DIAGNOSED</span></td>
+      <td><strong>PROPOSED_073 names all three causes</strong> &mdash; see section 4. The
+          highest-severity item on the list, and now the best understood.</td></tr>
 
   <tr class="hot"><td class="num">8</td><td><strong>Templates leaking</strong></td>
       <td><span class="tag no">VERIFIED</span></td>
       <td><span class="mono">project_templates</span> has <strong>no org_id column at
           all</strong>. Platform staff get <span class="mono">SELECT *</span> unfiltered;
-          everyone else sees only rows they authored. So it leaks upward to god mode
-          <em>and</em> hides templates from colleagues in the same firm. That second half is
-          also your &ldquo;needs more templates&rdquo;: the entire database holds
-          <strong>1 project template and 4 task templates</strong>.</td></tr>
+          everyone else sees only rows they authored. It leaks upward to god mode <em>and</em>
+          hides templates from colleagues. That second half is also your &ldquo;needs more
+          templates&rdquo;: the whole database holds <strong>1 project template and 4 task
+          templates</strong>.</td></tr>
 
-  <tr class="hot"><td class="num">14</td><td><strong>Products duplicated across modules</strong></td>
+  <tr class="hot"><td class="num">14</td><td><strong>Products duplicated</strong></td>
       <td><span class="tag no">VERIFIED</span></td>
-      <td>Two tables. <span class="mono">crm_products</span> holds <strong>zero rows</strong>;
-          <span class="mono">ganit_products</span> holds 106 across 3 orgs. <em>The
-          duplication is real in schema and not yet in data</em> — so unifying is nearly free
-          today and becomes expensive the moment anyone uses the CRM one.</td></tr>
+      <td><span class="mono">crm_products</span> holds <strong>zero rows</strong>;
+          <span class="mono">ganit_products</span> holds 106 across 3 orgs. Real in schema and
+          not yet in data &mdash; so unifying is nearly free today and gets expensive the
+          moment anyone uses the CRM one.</td></tr>
 
-  <tr><td class="num">10</td><td><strong>Pahchan geofence setup</strong></td>
-      <td><span class="tag part">CORRECTED</span></td>
-      <td><strong>The UI is not missing.</strong> <span class="mono">Sites.jsx</span> exists
-          and works — name, lat/long, radius, a &ldquo;use my location&rdquo; button,
-          coordinate validation, listing. <strong>Altitude was the only gap</strong>, and
-          migration 193 has now added it end to end in the schema. What remains is the form
-          field, the flag, and the mobile capture.</td></tr>
+  <tr><td class="num">10</td><td><strong>Pahchan geofence</strong></td>
+      <td><span class="tag part">HALF DONE</span></td>
+      <td>The UI was never missing. Altitude was the gap; migration 193 applied today. What
+          remains is the form field, the flag, and the mobile capture &mdash; and
+          <span class="mono">ClockScreen</span> reads lat/lng/accuracy and stops, though
+          <span class="mono">altitude</span> is right there.</td></tr>
 
-  <tr><td class="num">3</td><td><strong>User-arrangeable table columns</strong></td>
+  <tr><td class="num">3</td><td><strong>Arrangeable table columns</strong></td>
       <td><span class="tag no">NOT BUILT</span></td>
-      <td>Verified by absence: no column-order, visibility or width persistence exists
-          anywhere in the frontend except one Kanban file. A build, not a fix — and it lands
-          across four different table systems.</td></tr>
+      <td>Verified by absence: no column order, visibility or width persistence anywhere in
+          the frontend except one Kanban file. Lands across four table systems.</td></tr>
 
-  <tr><td class="num">4</td><td><strong>Task timer, all orgs + Time Report</strong></td>
+  <tr><td class="num">4</td><td><strong>Timer, all orgs + Time Report</strong></td>
       <td><span class="tag part">PARTLY KNOWN</span></td>
-      <td><span class="mono">time_entries</span> holds <strong>292 rows across 11 users and
-          235 tasks</strong>, so the timer works and has real data to report on. I have not
-          verified why it only appears for Aekam.</td></tr>
+      <td><span class="mono">time_entries</span> holds <strong>108 rows</strong> after the
+          cleanup (292 before), so the timer works and has data. Why it only appears for Aekam
+          is still unverified.</td></tr>
 
-  <tr class="hot"><td class="num">1</td><td><strong>Org creation / invite / team add</strong></td>
-      <td><span class="tag q">UNVERIFIED</span></td>
-      <td>Invite &rarr; register &rarr; still &ldquo;not part of any team&rdquo;, and a dead
-          Add button. <strong>The highest-severity item on the list</strong> — the only one
-          that stops a new paying firm from onboarding at all. Everything else degrades a
-          product that works.</td></tr>
-
-  <tr><td class="num">2</td><td>created_by / modified_by / dates on every table</td>
+  <tr><td class="num">2</td><td>created_by / modified_by everywhere</td>
       <td><span class="tag part">IN PROGRESS</span></td>
-      <td>Ganit and nine other tables done today. <strong>41 remain.</strong> Whether
-          <span class="mono">updated_by</span> justifies a ~90-table migration is still yours
-          to decide.</td></tr>
+      <td>Ten tables done. <strong>41 remain.</strong> Of 301 base tables, 109 carry
+          <span class="mono">updated_at</span>, 81 a <span class="mono">created_by</span>, and
+          <strong>2</strong> an <span class="mono">updated_by</span>.</td></tr>
 
-  <tr><td class="num">5</td><td>Onboarding missing on invite and new employee</td><td><span class="tag q">UNVERIFIED</span></td><td>Pairs with item 1 — same journey, same workstream.</td></tr>
-  <tr><td class="num">6</td><td>@mention only works in Sanvaad</td><td><span class="tag q">UNVERIFIED</span></td>
-      <td>Mention code appears in both TaskDrawer and Sanvaad, so the gap may be narrower than it looks.</td></tr>
+  <tr><td class="num">17</td><td>Department / employee performance reports</td>
+      <td><span class="tag part">GROUNDWORK EXISTS</span></td>
+      <td><span class="mono">manav_departments</span> is real &mdash; 30 rows with a head
+          &mdash; and 85 of 98 employees already match one by name.</td></tr>
+
+  <tr><td class="num">5</td><td>Onboarding missing on invite and new employee</td><td><span class="tag q">UNVERIFIED</span></td><td>Pairs with item 1 &mdash; same journey, same workstream.</td></tr>
+  <tr><td class="num">6</td><td>@mention only in Sanvaad</td><td><span class="tag q">UNVERIFIED</span></td><td>Mention code appears in TaskDrawer <em>and</em> Sanvaad, so the gap may be narrower than it looks.</td></tr>
   <tr><td class="num">7</td><td>Follow-up notifications missing</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
-  <tr><td class="num">9</td><td><strong>Mobile attendance stuck at &ldquo;waiting for send&rdquo;</strong></td><td><span class="tag q">UNVERIFIED</span></td>
-      <td>Your flow: clock-in? &rarr; photo &rarr; clocked in; then clock-out?. Must be probed on a cold restart — hot reload lies on this app.</td></tr>
-  <tr><td class="num">12</td><td>Sanvaad notification sound, toast, mobile sound</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
+  <tr><td class="num">9</td><td><strong>Mobile attendance stuck at &ldquo;waiting for send&rdquo;</strong></td><td><span class="tag q">UNVERIFIED</span></td><td>Needs a cold restart to probe &mdash; hot reload lies on this app. The one item that genuinely needs a new APK.</td></tr>
+  <tr><td class="num">12</td><td>Sanvaad sound, toast, mobile sound</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
   <tr><td class="num">13</td><td>Contact source dropdown, dependent field, regex</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
-  <tr><td class="num">15</td><td>Marketing unusable — templates cannot become campaigns</td><td><span class="tag q">UNVERIFIED</span></td>
-      <td>Standing constraint: ICAI bars emailing <em>prospects</em>, which is why Prachar cannot be sold as a paid module.</td></tr>
+  <tr><td class="num">15</td><td>Marketing templates cannot become campaigns</td><td><span class="tag q">UNVERIFIED</span></td><td>Standing constraint: ICAI bars emailing <em>prospects</em>, which is why Prachar cannot be a paid module.</td></tr>
   <tr><td class="num">16</td><td>Reports page still old</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
-  <tr><td class="num">17</td><td>Department / employee performance reports</td><td><span class="tag part">GROUNDWORK EXISTS</span></td>
-      <td>Proposal 79 established <span class="mono">manav_departments</span> is real, and 85 of 98 employees already match one by name. Buildable.</td></tr>
 </table>
 </div>
 
-<h2>3 &middot; Still open from before the inbox</h2>
-
-<div class="scroll">
-<table>
-  <tr><th>Item</th><th>State</th></tr>
-  <tr class="hot"><td><strong>skill_ack built but never wired</strong></td>
-      <td>All 61 skills repeat for ever. The largest single gap in the skills module, and it
-          predates the inbox. Wire it <em>one skill per commit</em>, never in bulk.</td></tr>
-  <tr><td><strong>cron-publish needs arming</strong></td>
-      <td>Safe to arm, queue empty. Needs a startCommand and
-          <span class="mono">*/15 * * * *</span> pasted into the Railway dashboard by hand —
-          I cannot do it from here. Create the service <em>before</em> removing publish from
-          cron-daily.</td></tr>
-  <tr><td>Commission on the frontend</td>
-      <td>Migration 191 landed this morning; you asked where it surfaces in the UI and that
-          thread was overtaken by the outage.</td></tr>
-  <tr><td>Sales customers: derived <span class="mono">created_at</span></td>
-      <td>A decision, not a task. Sales customers are derived from
-          <span class="mono">graha_clients</span> + <span class="mono">vikray_orders</span>,
-          so there is no row to carry a creation date. Which date should the column show?</td></tr>
-  <tr><td>Housekeeping</td>
-      <td>A dead <span class="mono">.ch</span> block in sanvaad.css; a stray
-          <span class="mono">$c</span> file at the repo root; 17 untracked screenshots.</td></tr>
-</table>
-</div>
+<h2>6 &middot; Storage</h2>
 
 <div class="card hot">
-  <h3>Storage — two bugs found after this scope was first written</h3>
-  <p><strong>Test connection fails on credentials that work.</strong>
-  <span class="mono">verify_r2_credentials</span> tests by calling
-  <span class="mono">list_buckets</span>, which is an <em>account-level</em> permission. An R2
-  API token scoped to a single bucket — the least-privilege setup Cloudflare recommends
-  — cannot list buckets and is rejected, though it can read and write that bucket
-  perfectly. It also never tests the bucket at all:
-  <span class="mono">R2Credentials</span> carries
-  <span class="mono">bucket_name</span> and the verifier is called with three of its four
-  fields. <strong>This is what blocked the new org.</strong></p>
-  <p><strong>The org id is written twice.</strong>
-  <span class="mono">pahchan.py:467</span> builds
-  <span class="mono">pahchan/{org_id}/punch</span>, and on the platform bucket the resolver
-  prepends <span class="mono">org/{org_id}/</span> as well. Harmless to reads, but no other
-  caller does it.</p>
-  <p>Beyond the bugs, the keys have four different grammars, no date partition, no entity id
-  on any eSign file, and discard the original filename — so a bucket cannot answer
-  &ldquo;show me the files for this agreement&rdquo; without the database.
-  <strong>Proposal 83</strong> has the full flow, the proposed single grammar, and a sketch
-  of the Storage tab.</p>
+  <p><strong>Test connection fails on credentials that work</strong> &mdash; the bug that
+  blocked your new org. <span class="mono">verify_r2_credentials</span> tests by calling
+  <span class="mono">list_buckets</span>, an <em>account-level</em> permission. A token scoped
+  to one bucket &mdash; the least-privilege setup Cloudflare recommends &mdash; cannot list
+  buckets, though it can read and write that bucket perfectly. It also never tests the bucket:
+  <span class="mono">R2Credentials</span> carries <span class="mono">bucket_name</span> and the
+  verifier is called with three of its four fields.</p>
+  <p><strong>Sahayak images hide the user entirely.</strong> Both call sites pass
+  <span class="mono">folder="srijan/images"</span> and a hardcoded
+  <span class="mono">user_id="system"</span>, under a random filename. Every image any person
+  generates lands in one flat folder and the person who asked for it is never recorded on the
+  file at all.</p>
+  <p>Full flow, both bugs, the one key grammar and a sketch of the Storage tab:
+  <strong>proposal 83</strong>.</p>
 </div>
 
-<h2>4 &middot; The scope</h2>
-
-<p>Thirteen workstreams, ordered by what unblocks or protects the most — not by size, and not
-by inbox order, since every inbox item carries equal priority.</p>
-
-<div class="scroll">
-<table>
-  <tr><th>#</th><th>Workstream</th><th>Contains</th><th>Size</th></tr>
-
-  <tr class="hot"><td class="num">A</td><td><strong>Onboarding a new firm</strong></td>
-      <td>Inbox 1 and 5. Org creation without a pre-existing Aekam email; invite &rarr;
-          register &rarr; membership actually landing; the Add-member button; onboarding mail
-          on both invite and new employee.</td>
-      <td><span class="tag no">first</span></td></tr>
-
-  <tr class="hot"><td class="num">B</td><td><strong>Tenancy and test-data eviction</strong></td>
-      <td>QA accounts out of Unicode Group; the fate of 351 seeded tasks; adopt the 10 orphan
-          projects into orgs; one membership rule audited everywhere; templates scoped to org
-          (inbox 8).</td>
-      <td><span class="tag no">first</span></td></tr>
-
-  <tr><td class="num">C</td><td>Products, unified</td>
-      <td>Inbox 14. Point CRM, Sales and the new PO module at
-          <span class="mono">ganit_products</span>; retire the empty table.</td>
-      <td><span class="tag ok">cheap now</span></td></tr>
-
-  <tr><td class="num">D</td><td>Notifications, finished</td>
-      <td>Personal &rarr; owner only (rest of 11); @mention everywhere (6); follow-ups (7);
-          Sanvaad sound and toast (12); <strong>skill_ack wired</strong>.</td>
-      <td><span class="tag part">medium</span></td></tr>
-
-  <tr><td class="num">E</td><td>Tables: audit trail and control</td>
-      <td>41 tables still need created/modified by+date (2); user-arrangeable columns across
-          four table systems (3).</td>
-      <td><span class="tag no">large</span></td></tr>
-
-  <tr><td class="num">F</td><td>Reports</td>
-      <td>Reports page rebuild (16); department and employee performance across task, visit,
-          follow-up and finance (17); Time Report fed by the timer (4).</td>
-      <td><span class="tag no">large</span></td></tr>
-
-  <tr><td class="num">G</td><td>Procurement</td>
-      <td>Proposal 77 in full: PO module inside Finance, optional approval matrix, three-way
-          match.</td>
-      <td><span class="tag no">large</span></td></tr>
-
-  <tr><td class="num">H</td><td>Compliance as a setting</td>
-      <td>Proposals 79 and 80. Every statutory field becomes a tick in module settings — GST,
-          HSN, labour codes, prefixes — mandatory nowhere by default.</td>
-      <td><span class="tag part">medium</span></td></tr>
-
-  <tr><td class="num">I</td><td>Pahchan</td>
-      <td>Altitude: form field, flag, mobile capture (schema done, 193 applied). Custom
-          policies scoped org &rarr; site &rarr; category &rarr; employee. Showing the
-          employee the rule they are judged by. Flag-or-block on spoofed location.</td>
-      <td><span class="tag part">medium</span></td></tr>
-
-  <tr><td class="num">J</td><td>Marketing</td>
-      <td>Inbox 15. Templates usable as campaigns; whether social moves in.</td>
-      <td><span class="tag q">scope first</span></td></tr>
-
-  <tr class="hot"><td class="num">K</td><td><strong>R2 storage</strong></td>
-      <td>Fix the test-connection check that blocks org creation; one key grammar; the
-          Storage tab that shows a file&rsquo;s path. <strong>Proposal 83.</strong></td>
-      <td><span class="tag part">step 1 is small</span></td></tr>
-
-  <tr class="hot"><td class="num">L</td><td><strong>Two-factor authentication</strong></td>
-      <td>Build it. Optional per org, never mandatory — see below.</td>
-      <td><span class="tag no">large</span></td></tr>
-
-  <tr><td class="num">M</td><td>Mobile</td><td>See below.</td><td><span class="tag part">medium</span></td></tr>
-</table>
-</div>
-
-<h2>5 &middot; Two-factor authentication</h2>
-
-<div class="card hot">
-  <h3>It is not built, and the settings screen already admits it</h3>
-  <p>Verified from four directions today:</p>
-  <ul>
-    <li><span class="mono">TabSecurity.jsx</span> renders both toggles as
-      <span class="mono">&lt;Toggle checked={false} disabled /&gt;</span>, and its own copy
-      says the product has no two-factor flow to enforce.</li>
-    <li><span class="mono">auth_router.py</span> — <strong>zero</strong> matches for TOTP,
-      MFA, two-factor or authenticator.</li>
-    <li>Neither <span class="mono">staging.user_totp</span> nor
-      <span class="mono">staging.user_mfa_factors</span> exists.</li>
-    <li>Migration 081 records it in as many words: <em>MFA not shipped</em>.</li>
-  </ul>
-  <p><span class="mono">auth.mfa_factors</span> does exist in the database, but Supabase
-  creates that table in every project whether or not it is used. It is not evidence of a
-  feature.</p>
-</div>
-
-<div class="card warn">
-  <h4>The fact that sets the size: this authentication is ours, not Supabase&rsquo;s</h4>
-  <p><span class="mono">auth_router.py:1092</span> verifies a password against our own
-  <span class="mono">password_hash</span> and <span class="mono">salt</span> and issues our
-  own JWT. Login does <em>not</em> pass through Supabase Auth.</p>
-  <p>So this cannot be enabled — <strong>every part of it has to be built</strong>:
-  enrolment, secret storage, the challenge step in login, recovery codes, and the reset path
-  for someone who loses their phone. That is why it is sized large rather than medium.</p>
-</div>
-
-<h3>Your rule, applied: optional for the org, but available</h3>
-<div class="card">
-  <p>Same shape as every compliance setting in proposal 80 — nothing is mandatory unless a
-  firm ticks the box. Two org-level settings, both off by default, and the second only
-  reachable once the first is on:</p>
-  <div class="scroll">
-  <table>
-    <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td><strong>Allow two-factor authentication</strong></td><td><span class="tag q">off</span></td>
-        <td>Members may add an authenticator app to their own account. Opt-in, per person —
-            which is exactly what the disabled toggle already promises today.</td></tr>
-    <tr><td><strong>Require two-factor authentication</strong></td><td><span class="tag q">off</span></td>
-        <td>Every member must enrol. Only settable while &ldquo;allow&rdquo; is on, and it
-            needs a grace period — switching it on must not lock out the firm&rsquo;s whole
-            staff at nine on a Monday.</td></tr>
-  </table>
-  </div>
-</div>
-
-<h4>What the build contains</h4>
-<div class="scroll">
-<table>
-  <tr><th>Piece</th><th>Note</th></tr>
-  <tr><td>Enrolment table — secret, <span class="mono">confirmed_at</span>,
-          <span class="mono">last_used_at</span></td>
-      <td>The secret is a credential: encrypted at rest, and never returned by any endpoint
-          after enrolment.</td></tr>
-  <tr><td>Enrol flow — QR plus a typed fallback</td>
-      <td>A first correct code must be verified <em>before</em> the factor activates, or a
-          mistyped secret locks the person out immediately.</td></tr>
-  <tr><td>The challenge step in login</td>
-      <td>The one genuinely delicate change: password success must yield a short-lived
-          partial token that can do nothing except answer the challenge.</td></tr>
-  <tr><td>Recovery codes</td>
-      <td>Hashed, single-use, shown once. Without these, a lost phone is a support ticket
-          that only god mode can close.</td></tr>
-  <tr><td>Admin reset</td>
-      <td>An org admin clears a member&rsquo;s factor — and that action must be written to
-          the audit trail, because it is a way to take over an account.</td></tr>
-  <tr><td>Rate limiting</td>
-      <td>Login is 5/min today. The verify step needs its own limit, keyed on the last
-          <span class="mono">X-Forwarded-For</span> entry — the proxy-counting bug is
-          already recorded.</td></tr>
-  <tr><td>Enable the two toggles</td>
-      <td><span class="mono">TabSecurity.jsx</span> is already written and waiting; today it
-          only lacks something true to switch.</td></tr>
-  <tr class="note"><td colspan="2">Mobile needs a build for this too — the login screen has
-      to handle a challenge step it has never seen.</td></tr>
-</table>
-</div>
-
-<h2>6 &middot; Mobile</h2>
-
-<div class="card blue">
-  <p><strong>Do you need a new build?</strong> For two things only. Everything else in this
-  scope is server-side or web, and the app picks server changes up without a release.</p>
-  <ul>
-    <li><strong>Attendance flow (inbox 9)</strong> — the item that genuinely requires a new
-      APK. Probe on a cold restart; hot reload has lied about this app before.</li>
-    <li><strong>Altitude capture</strong> — <span class="mono">ClockScreen</span> reads
-      latitude, longitude and accuracy and stops, though
-      <span class="mono">pos.coords.altitude</span> is right there. Note it needs
-      <span class="mono">Accuracy.High</span>: the current
-      <span class="mono">Balanced</span> setting often returns a null altitude, and High
-      costs battery.</li>
-    <li><strong>The two-factor challenge</strong> — if MFA ships, the login screen must
-      handle a step it has never seen.</li>
-    <li><strong>Notification sound (12)</strong> — a build only if it touches the native
-      channel, not if it is payload-only.</li>
-    <li><strong>Pahchan policy sentences</strong> — three existing screens, same build.</li>
-    <li><strong>Settled, not in scope:</strong> eSign is web-only; mobile invoices stay
-      read-only. <strong>iOS remains blocked</strong> on an Apple Developer account — the
-      config and iPadOS code are done.</li>
-  </ul>
-  <p class="quiet">So: one build carrying attendance, altitude and whatever else is ready
-  when it goes. Not a release per item.</p>
-</div>
-
-<h2>7 &middot; The four decisions — answered and acted on</h2>
+<h2>7 &middot; Done today, at your instruction</h2>
 
 <div class="card ok">
-  <h3>1 &amp; 2 &middot; QA eviction and the 25% — DONE</h3>
-  <p>Backed up in full to the schema <span class="mono">qa_cleanup_20260822</span> first —
-  every table restorable, and the delete set frozen into
-  <span class="mono">deleted_task_ids</span> so no later statement could drift. Children were
-  deleted before parents, which matters here because <strong>only
-  <span class="mono">task_reminders</span> declares a foreign key to
-  <span class="mono">tasks</span></strong>: nothing else would have raised, it would just
-  have orphaned silently.</p>
   <div class="scroll">
   <table>
     <tr><th>&nbsp;</th><th class="num">before</th><th class="num">after</th><th>check</th></tr>
     <tr><td>Tasks</td><td class="num">736</td><td class="num">473</td><td>263 deleted</td></tr>
-    <tr><td>&nbsp;&nbsp;of them QA-created</td><td class="num">351</td><td class="num">88</td><td><strong>25.1% kept</strong></td></tr>
-    <tr><td>&nbsp;&nbsp;NOT QA-created</td><td class="num">385</td><td class="num">385</td><td><span class="tag ok">untouched</span></td></tr>
+    <tr><td>&nbsp;&nbsp;QA-created</td><td class="num">351</td><td class="num">88</td><td><strong>25.1% kept</strong></td></tr>
+    <tr><td>&nbsp;&nbsp;not QA-created</td><td class="num">385</td><td class="num">385</td><td><span class="tag ok">untouched</span></td></tr>
     <tr><td>Time entries</td><td class="num">292</td><td class="num">108</td><td>184</td></tr>
-    <tr><td>Notifications</td><td class="num">5,399</td><td class="num">2,587</td><td>2,812 — the fan-out bug&rsquo;s legacy</td></tr>
-    <tr><td>Activity events</td><td class="num">1,312</td><td class="num">952</td><td>360</td></tr>
+    <tr><td>Notifications</td><td class="num">5,399</td><td class="num">2,587</td><td>2,812 &mdash; the fan-out bug&rsquo;s legacy</td></tr>
     <tr><td>QA memberships in live orgs</td><td class="num">5</td><td class="num">0</td><td><span class="tag ok">evicted</span></td></tr>
     <tr><td>QA roles in live orgs</td><td class="num">2</td><td class="num">0</td><td><span class="tag ok">evicted</span></td></tr>
-    <tr><td>QA access to the TEST ORG</td><td class="num">5</td><td class="num">5</td><td><span class="tag ok">intact — e2e still runs</span></td></tr>
+    <tr><td>QA access to the TEST ORG</td><td class="num">5</td><td class="num">5</td><td><span class="tag ok">intact &mdash; e2e still runs</span></td></tr>
+    <tr><td>Niyam rules armed</td><td class="num">2</td><td class="num">8</td><td>all of them</td></tr>
   </table>
   </div>
-  <p><strong>The 88 kept are not a random quarter.</strong> Five are protected because a real
-  person touched them — logged time, left a comment, was assigned, or completed them — and
-  the other 83 are simply the most recent, so no project empties out. The user rows
-  themselves were <em>not</em> deleted: the logins survive, they have just left the live orgs.</p>
-  <p class="quiet">Orphan check: <strong>zero</strong> orphans created by this delete. Two
-  time entries and 47 notifications do point at tasks that no longer exist, but all of them
-  pre-date today — a separate integrity issue, now logged.</p>
-</div>
-
-<div class="card blue">
-  <h3>3 &middot; Does <span class="mono">updated_by</span> justify ~90 tables? My answer: no</h3>
-  <p>Measured: of <strong>301 base tables</strong>, 109 carry
-  <span class="mono">updated_at</span>, 81 carry a <span class="mono">created_by</span>, and
-  exactly <strong>2</strong> carry <span class="mono">updated_by</span>.</p>
-  <p>The reason not to sweep is not cost, it is <em>truth</em>. A column arrives in one
-  migration; the write paths that populate it land one module at a time. In between you have
-  a column that is NULL on almost every row — and a blank <span class="mono">updated_by</span>
-  reads as &ldquo;nobody has edited this&rdquo;, which is a claim, not an absence. That is
-  worse than not having the column, because someone will eventually settle an argument with
-  it. The 81 tables that already carry <span class="mono">created_by</span> and never render
-  it are the same lesson, already paid for once.</p>
-  <p><strong>So: add <span class="mono">updated_by</span> where an edit is actually
-  disputed</strong> — invoices, tasks, clients and companies, employees, payroll, purchase
-  orders, quotes, orders. Roughly 12–18 tables, each in the same commit as the write path
-  that fills it and the column that shows it. Not one migration; one per module, as that
-  module is touched.</p>
-</div>
-
-<div class="card ok">
-  <h3>4 &middot; The derived Sales customer — the question dissolves</h3>
-  <p>I framed this as a choice between three dates. Checking the schema, there is no choice
-  to make: <strong>a Sales customer <em>is</em> a <span class="mono">graha_clients</span>
-  row</strong>, and that row already carries <span class="mono">created_at</span>,
-  <span class="mono">created_by</span> and <span class="mono">updated_at</span>. Nothing is
-  derived about its provenance — only its <em>customer-ness</em> is derived, from whether
-  an order points at it.</p>
-  <p>So, per your instruction — customer, client and company show <strong>created by</strong>
-  and <strong>modified by</strong>, with the date carried for the log even though it is not
-  the point:</p>
-  <ul>
-    <li><span class="mono">created_by</span> already exists on
-      <span class="mono">graha_clients</span>, <span class="mono">crm_contacts</span> and
-      <span class="mono">vikray_orders</span>. It only needs rendering.</li>
-    <li><span class="mono">updated_by</span> exists on none of them and must be added —
-      three or four tables, which is exactly the targeted approach argued above rather than
-      the 90-table sweep.</li>
-    <li><span class="mono">ganit_vendors</span> is the outlier: it has
-      <span class="mono">created_at</span> and nothing else.</li>
-  </ul>
-</div>
-
-<h2>8 &middot; Crons — armed, and the two that are still not</h2>
-
-<div class="card ok">
-  <h4>Niyam rules: all eight now live</h4>
-  <p>Six of eight rules were unarmed. <span class="mono">enabled</span> and
-  <span class="mono">is_armed</span> are separate gates and a rule needs both, so four of
-  them would have done nothing even if only &ldquo;armed&rdquo;. All eight now carry both,
-  with the prior state saved to
-  <span class="mono">qa_cleanup_20260822.niyam_rules_before_arming</span>.</p>
-  <p>Blast radius measured before arming, not after: <strong>0</strong> overdue Aekam
-  invoices, <strong>9</strong> tasks overdue by three days or more, <strong>0</strong> stale
-  contacts, and <span class="mono">task.status_changed</span> is forward-only.</p>
-  <p class="quiet">One to watch: <em>&ldquo;Email the customer a weekly payment
-  reminder&rdquo;</em> is the only rule that mails <strong>external customers</strong>. It
-  sends nothing today, but the moment a real invoice goes overdue it emails that customer
-  directly with no further gate.</p>
+  <p>Backed up in full to <span class="mono">qa_cleanup_20260822</span> first, delete set
+  frozen so it could not drift, children before parents &mdash; which mattered because
+  <strong>only <span class="mono">task_reminders</span> declares a foreign key to
+  tasks</strong>, so nothing else would have raised, it would just have orphaned silently.
+  <strong>Zero orphans created.</strong> The 2 time entries and 47 notifications now pointing
+  at missing tasks all pre-date today.</p>
+  <p>The 88 kept are not a random quarter: five are protected because a real person logged
+  time, commented, was assigned or completed them; the other 83 are the most recent, so no
+  project empties out. The user rows were not deleted &mdash; the logins survive, they have
+  just left the live orgs.</p>
 </div>
 
 <div class="card warn">
-  <h4>Two finished jobs that nothing schedules</h4>
-  <p>Both need pasting into the Railway dashboard — the Railway MCP reads config but
-  returns <span class="mono">Unauthorized</span> on writes. Exact values are in
+  <h4>Two crons still unarmed, and they need your hands</h4>
+  <p>The Railway MCP reads config but returns <span class="mono">Unauthorized</span> on
+  writes, so these must be pasted into the dashboard. Exact values are in
   <span class="mono">TASKS.md</span>.</p>
-  <div class="scroll">
-  <table>
-    <tr><th>Job</th><th>State</th><th>Schedule</th></tr>
-    <tr><td><span class="mono">cron-publish</span></td>
-        <td>The service <strong>exists</strong> (<span class="mono">d7f9b207</span>) with
-            <span class="mono">CRON_SECRET</span> set, and has no start command, so it does
-            nothing. <span class="mono">publish</span> runs once daily inside
-            <span class="mono">cron-daily</span> meanwhile.</td>
-        <td class="mono">*/15 * * * *</td></tr>
-    <tr class="hot"><td><span class="mono">POST /api/reports/dispatch</span></td>
-        <td><strong>The report cron, and nothing calls it.</strong>
-            <span class="mono">reports.py:480</span> reads due schedules, renders PDF and
-            Excel, mails every recipient in an <span class="mono">org_scope</span> and
-            advances <span class="mono">next_run_at</span>. Its own docstring says
-            &ldquo;called hourly by Railway cron&rdquo;. Uses
-            <span class="mono">REPORT_DISPATCH_SECRET</span> as
-            <span class="mono">X-Dispatch-Secret</span> — a different secret and header
-            from every other cron.</td>
-        <td class="mono">0 * * * *</td></tr>
-  </table>
-  </div>
-  <p><strong>Caveat on the report cron, worth fixing first if report mail should be
-  billable:</strong> it sends with <span class="mono">org_id = NULL</span> on the outbound
-  record, because there is no request underneath it for
-  <span class="mono">outbound.begin()</span> to read an org from. Every report it mails is
-  invisible to the org-scoped reads in <span class="mono">billing.py</span>. One join fixes
-  it — <span class="mono">dispatch_reports</span> already holds the schedule&rsquo;s
-  <span class="mono">team_id</span>.</p>
+  <ul>
+    <li><span class="mono">cron-publish</span> &mdash; the service <strong>exists</strong> with
+      <span class="mono">CRON_SECRET</span> set and simply has no start command.
+      <span class="mono">*/15 * * * *</span>.</li>
+    <li><span class="mono">POST /api/reports/dispatch</span> &mdash; <strong>the report cron,
+      and nothing calls it.</strong> Finished code, its own docstring says &ldquo;called hourly
+      by Railway cron&rdquo;. Uses <span class="mono">REPORT_DISPATCH_SECRET</span> as
+      <span class="mono">X-Dispatch-Secret</span>. <em>Fix its
+      <span class="mono">org_id = NULL</span> outbound bug first if report mail should be
+      billable.</em></li>
+  </ul>
+  <p><span class="mono">/cron/reports</span> and <span class="mono">/cron/esign</span> stay
+  unarmed: they are 501 stubs, and arming one buys an hourly red light, not a feature.</p>
+  <p><strong>Correction to the urgency I gave these.</strong> Measured just now, both
+  queues are <em>empty</em>: <span class="mono">report_schedules</span> holds
+  <strong>0</strong> rows and <span class="mono">hub_publish_queue</span> holds
+  <strong>0</strong>. So arming either cron today sends nothing. They are still worth
+  arming — a job that only starts working when somebody creates the first schedule is
+  a trap — but this is housekeeping, not an outage, and it should not displace anything
+  in the scope below.</p>
+</div>
+
+<h2>8 &middot; Every proposal from 55 to 83</h2>
+
+<p>Twenty-nine proposals, written 16&ndash;22 August. What became real, and what is still
+paper.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Proposal</th><th>State</th></tr>
+
+  <tr class="ok"><td class="num">55<br>56<br>57</td>
+      <td><strong>Niyam</strong> &middot; Niyam, Running &middot; Starter Rules</td>
+      <td><span class="tag ok">BUILT &amp; NOW ARMED</span> The engine is live &mdash;
+          <strong>258 events</strong> logged, 9 runs, 8 rules. All 8 were armed today; six had
+          never been.</td></tr>
+  <tr><td class="num">58<br>59</td><td>The Same Five Minutes, Twice &middot; Building a Rule</td>
+      <td><span class="tag q">demos</span> Walkthrough and authoring-UI demos for 55&ndash;57,
+          not separate builds.</td></tr>
+
+  <tr class="ok"><td class="num">60<br>61<br>62</td>
+      <td><strong>An Analytics Spine</strong> &middot; The Spine, Running &middot; Analytics In
+          Every Module</td>
+      <td><span class="tag ok">BUILT</span> Complete through S6. S7 (mobile) deferred.</td></tr>
+  <tr><td class="num">63</td><td>The Dashboard The Client Builds</td>
+      <td><span class="tag q">demo</span> Proposal 62, made pressable.</td></tr>
+
+  <tr><td class="num">64</td><td>React Aria for Kartavya</td>
+      <td><span class="tag no">REJECTED</span> Keyboard accessibility was fixed by hand
+          instead.</td></tr>
+
+  <tr class="ok"><td class="num">65<br>66</td><td>Analytics Without Dristi &middot; The Niyam
+      Catalogue</td><td><span class="tag ok">BUILT</span></td></tr>
+  <tr class="ok"><td class="num">67<br>68</td><td>The Board You Arrange &middot; The Pulse of
+      Kartavaya</td>
+      <td><span class="tag ok">DEPLOYED</span> Board, tabs and Pulse, e2e-verified.</td></tr>
+
+  <tr class="hot"><td class="num">69</td><td><strong>An Assistant That Compounds</strong></td>
+      <td><span class="tag part">1 OF 78</span> <strong>Correcting my own note:</strong>
+          <span class="mono">skill_ack</span> IS wired &mdash;
+          <span class="mono">skill_dispatcher.py</span> imports
+          <span class="mono">apply_wiring</span>. But <span class="mono">ACK_WIRING</span>
+          holds exactly <strong>one</strong> skill
+          (<span class="mono">propose_payment_run</span>) against <strong>78 templates</strong>
+          and 234 enabled instances. The machinery works; 77 skills still repeat for ever. One
+          per commit, as designed &mdash; one done.</td></tr>
+
+  <tr><td class="num">70</td><td>The Night Ledger</td>
+      <td><span class="tag part">grounding</span> The four numbers that settled a
+          disagreement between two agents; feeds the skills catalogue.</td></tr>
+
+  <tr class="ok"><td class="num">71</td><td><strong>The Skill That Finds You</strong></td>
+      <td><span class="tag ok">BUILT</span> 22 skills return an email, phone or link through
+          one choke point, with the id only ever inside the href.</td></tr>
+
+  <tr><td class="num">72</td><td>The Corner &mdash; Interactive</td>
+      <td><span class="tag no">NOT BUILT</span> Designed and demoed 20 Aug.
+          <strong>Five owner questions still open.</strong></td></tr>
+
+  <tr><td class="num">73<br>75</td><td>Reports by Person and by Client &middot; Every Report
+      Kartavaya Could Have</td>
+      <td><span class="tag no">NOT BUILT</span> The employee report is buildable &mdash; 100%
+          coverage in both real orgs. Client profitability is 0% and cannot be. Feeds
+          workstream F.</td></tr>
+
+  <tr><td class="num">74</td><td>What Prachar Is For</td>
+      <td><span class="tag part">RESEARCH</span> Settled that ICAI bars emailing
+          <em>prospects</em>, so Prachar cannot be sold as a paid module. A cross-tenant write
+          in <span class="mono">pause_sequence</span> came out of it.</td></tr>
+
+  <tr class="ok"><td class="num">76</td><td><strong>Commission and consultant P&amp;L</strong></td>
+      <td><span class="tag ok">BUILT</span> Migrations 189&ndash;191. The product no longer
+          chooses a firm&rsquo;s commercial terms.</td></tr>
+
+  <tr><td class="num">77</td><td><strong>Purchase orders &mdash; the complete module</strong></td>
+      <td><span class="tag no">NOT BUILT</span> Workstream G, the largest single build
+          here.</td></tr>
+  <tr><td class="num">78<br>79</td><td>Competitive research &middot; Architecture review</td>
+      <td><span class="tag part">RESEARCH</span> Feed G and H. 79 corrected two of my own
+          earlier claims.</td></tr>
+  <tr><td class="num">80</td><td>Compliance is a setting</td>
+      <td><span class="tag no">NOT BUILT</span> Your rule, written down. Workstream H.</td></tr>
+
+  <tr class="ok"><td class="num">81</td><td><strong>The paperwork that unblocks the sale</strong></td>
+      <td><span class="tag ok">SHIPPED</span> Privacy policy, sub-processors, security page,
+          DPA. Evidences the MFA gap rather than papering over it &mdash; which is where
+          workstream L came from.</td></tr>
+
+  <tr><td class="num">82</td><td>What is actually left</td>
+      <td><span class="tag q">this document</span></td></tr>
+  <tr><td class="num">83</td><td><strong>Where the files live</strong></td>
+      <td><span class="tag no">NOT BUILT</span> Workstream K. Step one &mdash; the
+          test-connection fix &mdash; is small and unblocks org creation.</td></tr>
+</table>
 </div>
 
 <div class="card blue">
-  <h4>And two that must stay unarmed</h4>
-  <p><span class="mono">/cron/reports</span> and <span class="mono">/cron/esign</span> are
-  <strong>501 stubs</strong> — endpoints that exist only to say the feature does not.
-  501 is &ldquo;Not Implemented&rdquo;: the request was fine, the server is what is missing.
-  Arming either buys an hourly red light, not a feature.</p>
-  <p>They were left in place rather than deleted so the next reader does not conclude the URL
-  was never planned and build a second one. For esign, note the trap:
-  <span class="mono">document_expiry.process_expiry</span> is real and unscheduled, but does
-  a <em>different</em> job — contracts expiring within seven days — so wiring it to
-  the esign URL would mislabel it.</p>
+  <h4>The pattern in that table</h4>
+  <p>Everything from <strong>55 to 71 is built</strong>. Everything from <strong>72 onward is
+  paper</strong>, with one exception (76, commission) and one shipped document set (81). The
+  turn came on 20 August, when the work shifted from building to researching &mdash; and the
+  inbox landed on top of that.</p>
+  <p>That is not a criticism of the research: 79 and 80 changed what we would otherwise have
+  built. But it means <strong>the backlog in front of you is now mostly designed and
+  unbuilt</strong> &mdash; which is the comfortable half of the problem to have, and the easy
+  half to keep deferring.</p>
 </div>
 
-<h2>9 &middot; Still open</h2>
+<h2>9 &middot; The scope</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Workstream</th><th>Contains</th><th>Size</th></tr>
+  <tr class="hot"><td class="num">A</td><td><strong>Onboarding a new firm</strong></td>
+      <td>Inbox 1 and 5, with <span class="mono">PROPOSED_073</span> as the starting point.
+          The only item that stops a sale.</td><td><span class="tag no">first</span></td></tr>
+  <tr class="hot"><td class="num">B</td><td><strong>Tenancy</strong></td>
+      <td>Templates scoped to org (8); the 10 orphan projects; and a decision on whether to
+          start the six-phase <span class="mono">076&ndash;081</span> cutover, which is what
+          the two-membership-tables split really is.</td><td><span class="tag no">first</span></td></tr>
+  <tr><td class="num">C</td><td>Products, unified</td><td>Inbox 14, while
+      <span class="mono">crm_products</span> is still empty.</td><td><span class="tag ok">cheap now</span></td></tr>
+  <tr><td class="num">D</td><td>Notifications, finished</td>
+      <td>Personal &rarr; owner only; @mention everywhere (6); follow-ups (7); Sanvaad sound
+          (12); <strong>skill_ack wired</strong> &mdash; without it all 61 skills repeat for
+          ever.</td><td><span class="tag part">medium</span></td></tr>
+  <tr><td class="num">E</td><td>Tables: audit trail and control</td>
+      <td>41 tables (2); arrangeable columns across four systems (3).</td><td><span class="tag no">large</span></td></tr>
+  <tr><td class="num">F</td><td>Reports</td>
+      <td>Page rebuild (16); department and employee performance (17); Time Report fed by the
+          timer (4); and arming the dispatch cron.</td><td><span class="tag no">large</span></td></tr>
+  <tr><td class="num">G</td><td>Procurement</td><td>Proposal 77 in full.</td><td><span class="tag no">large</span></td></tr>
+  <tr><td class="num">H</td><td>Compliance as a setting</td><td>Proposals 79 and 80.</td><td><span class="tag part">medium</span></td></tr>
+  <tr><td class="num">I</td><td>Pahchan</td>
+      <td>Altitude end to end (schema done); custom policies scoped org &rarr; site &rarr;
+          category &rarr; employee; showing the employee the rule they are judged by.</td>
+      <td><span class="tag part">medium</span></td></tr>
+  <tr><td class="num">J</td><td>Marketing</td><td>Inbox 15.</td><td><span class="tag q">scope first</span></td></tr>
+  <tr class="hot"><td class="num">K</td><td><strong>R2 storage</strong></td>
+      <td>Fix the test-connection check that blocks org creation; one key grammar; the Storage
+          tab. <strong>Proposal 83.</strong></td><td><span class="tag part">step 1 is small</span></td></tr>
+  <tr class="hot"><td class="num">L</td><td><strong>Two-factor authentication</strong></td>
+      <td>Not built. Auth is ours, not Supabase&rsquo;s, so nothing can be enabled and
+          everything must be built. Optional per org, never mandatory.</td>
+      <td><span class="tag no">large</span></td></tr>
+  <tr><td class="num">M</td><td>Mobile</td>
+      <td>Attendance (9) and altitude capture in one APK. Not eSign, not editable invoices;
+          iOS still blocked on an Apple Developer account.</td><td><span class="tag part">medium</span></td></tr>
+</table>
+</div>
+
+<h2>10 &middot; What I need from you</h2>
 
 <div class="card">
+  <div class="scroll">
   <table>
-    <tr><th>Decision</th><th>Why it blocks me</th></tr>
-    <tr><td><strong>Evict the QA accounts?</strong></td>
-        <td>5 memberships + 2 org roles deleted from the shared production database. One is
-            an admin on your own list. I would export first and delete in one transaction —
-            but it is destructive and it is your data.</td></tr>
-    <tr><td><strong>And the 351 seeded tasks?</strong></td>
-        <td>A separate call from the accounts. They are 48% of the table and they distort
-            every count and report in workstream F.</td></tr>
-    <tr><td><strong>Does <span class="mono">updated_by</span> justify ~90 tables?</strong></td>
-        <td>Decides whether workstream E is medium or very large.</td></tr>
-    <tr><td><strong>Which date for derived Sales customers?</strong></td>
-        <td>There is no customer row to carry one.</td></tr>
+    <tr><th>Decision</th><th>Why it matters</th></tr>
+    <tr><td><strong>Start the tenancy cutover?</strong></td>
+        <td>The biggest structural question here. Six phases, currently at zero, and it is the
+            root of the membership split, the 38 tables with no
+            <span class="mono">org_id</span>, and the RLS gap.</td></tr>
     <tr><td><strong>Order: A and B first, or start G?</strong></td>
-        <td>My recommendation is A and B before anything else. A is the only item that stops
-            a sale; B stops me chasing symptoms of data pollution through six other
-            workstreams. Procurement is the largest build here and it will still be the
-            largest build next week.</td></tr>
+        <td>My recommendation is unchanged: A, because it is the only item that stops a sale,
+            then B. Procurement is the largest build here and will still be the largest build
+            next week.</td></tr>
+    <tr><td><strong>Paste the two cron configs?</strong></td>
+        <td>Both are finished jobs doing nothing. I cannot write Railway config from here.</td></tr>
+    <tr><td><strong>Drop <span class="mono">qa_cleanup_20260822</span>?</strong></td>
+        <td>The restore point for today&rsquo;s deletion. It stays until you say you are
+            satisfied nothing is missing.</td></tr>
   </table>
+  </div>
 </div>
 
 <div class="foot">
-  Proposal 82 &middot; every count measured read-only against the live database on
-  2026-08-22 &middot; seven inbox items verified, ten recorded as reported and marked
-  unverified &middot; migration 193 applied and verified &middot; 263 seeded tasks and 3,448 child rows deleted after a full in-database backup &middot; thirteen workstreams.
+  Proposal 82, rewritten 2026-08-22 &middot; four suites run today, not remembered &middot;
+  migrations verified against the live catalogue rather than the ledger &middot; nine inbox
+  items now verified or diagnosed, eight recorded as reported and marked unverified.
 </div>
 
 </div>
