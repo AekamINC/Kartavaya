@@ -1005,27 +1005,51 @@ async def process_payroll(
         present_days = (att["present"] + att["half_day"] * 0.5) if has_attendance else working_days
         ot_hours = float(att["ot"]) if att else 0
 
-        paid_leaves = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.manav_leave_requests "
-            "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
-            "AND status='approved' "
-            "AND start_date <= $4 AND end_date >= $3 "
-            "AND leave_type_id IN ("
-            "  SELECT id FROM staging.manav_leave_types WHERE org_id=$1::uuid AND is_paid=TRUE"
-            ")",
-            org_id, emp_id, month_start, month_end,
-        ) or 0
+        # DAYS, not requests — and only the days that fall inside THIS month.
+        #
+        # Both of these were `SELECT COUNT(*)`, which counted leave REQUESTS. One
+        # approved five-day leave counted as 1, and `payable_days` below is
+        # `present_days + paid_leaves`, so the error landed straight on pay.
+        # Measured on the live database: 151 approved requests against 292 actual
+        # days, so leave was understated by roughly half.
+        #
+        # `days` is the authority rather than the calendar span, because it is
+        # what the approver agreed and it carries half-days (it is numeric, and
+        # differs from the span on 7 of 151 rows). But `days` is the total for the
+        # WHOLE request, and the predicate below matches any leave OVERLAPPING the
+        # month — 6 of 151 approved requests cross a month boundary — so charging
+        # the full `days` to both months would double-count them.
+        #
+        # So: pro-rate `days` by the share of the request's span that lies inside
+        # the month. Exact whenever `days` equals the span, and proportional when
+        # it does not, which is the only defensible split without a per-day table.
+        # NULLIF guards a zero span defensively; end_date >= start_date should
+        # make it impossible, and a division-by-zero here would take payroll down.
+        leave_days_sql = (
+            "SELECT COALESCE(SUM("
+            "  lr.days * ("
+            "    ((LEAST(lr.end_date, $4::date) - GREATEST(lr.start_date, $3::date)) + 1)::numeric"
+            "    / NULLIF((lr.end_date - lr.start_date) + 1, 0)"
+            "  )"
+            "), 0) FROM staging.manav_leave_requests lr "
+            "WHERE lr.org_id=$1::uuid AND lr.employee_id=$2::uuid "
+            "AND lr.status='approved' "
+            "AND lr.start_date <= $4 AND lr.end_date >= $3 "
+            "AND lr.leave_type_id IN ("
+            "  SELECT id FROM staging.manav_leave_types "
+            "  WHERE org_id=$1::uuid AND is_paid={is_paid}"
+            ")"
+        )
 
-        unpaid_leaves = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.manav_leave_requests "
-            "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
-            "AND status='approved' "
-            "AND start_date <= $4 AND end_date >= $3 "
-            "AND leave_type_id IN ("
-            "  SELECT id FROM staging.manav_leave_types WHERE org_id=$1::uuid AND is_paid=FALSE"
-            ")",
+        paid_leaves = float(await pool.fetchval(
+            leave_days_sql.format(is_paid="TRUE"),
             org_id, emp_id, month_start, month_end,
-        ) or 0
+        ) or 0)
+
+        unpaid_leaves = float(await pool.fetchval(
+            leave_days_sql.format(is_paid="FALSE"),
+            org_id, emp_id, month_start, month_end,
+        ) or 0)
 
         payable_days = present_days + paid_leaves
         if payable_days > working_days:
