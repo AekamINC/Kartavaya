@@ -108,6 +108,30 @@ const EMPTY_R2 = { account_id: '', access_key_id: '', secret_access_key: '', buc
    value and "not yet agreed" is not. */
 const numOrNull = v => (v === '' || v === null || v === undefined ? null : Number(v));
 
+/* What "verified" actually proved. A bucket-scoped token — Cloudflare's own
+   least-privilege recommendation — cannot enumerate buckets, so counting them
+   described the token rather than the storage. Report the bucket instead, and
+   say plainly when it does not exist yet: that is a normal new-org state, not
+   a bad credential.
+
+   The server now also WRITES a nine-byte probe object, reads it back and
+   deletes it, so "verified" means the upload path works rather than that a
+   permission was granted. `d.error` carries the sentence for every state that
+   is valid-but-degraded — a token that cannot write, or writes and cannot read
+   back — and those are the ones worth saying out loud. */
+function r2VerifyMessage(d) {
+  const where = d.scope === 'bucket' ? 'bucket-scoped token' : 'account-scoped token';
+  if (d.error) return `${where} — ${d.error}`;
+  if (d.bucket && d.bucket_exists === false) {
+    return `${where} — bucket "${d.bucket}" does not exist yet and will be created.`;
+  }
+  if (d.bucket && d.probe_round_trip) {
+    return `${where} — a test file was written to "${d.bucket}", read back and removed.`;
+  }
+  if (d.bucket && d.bucket_exists) return `${where} — bucket "${d.bucket}" is reachable.`;
+  return `${where} — ${d.buckets?.length ?? 0} bucket(s) reachable.`;
+}
+
 /* ── Create ────────────────────────────────────────────────────────────────── */
 
 function CreateOrgPanel({ open, onClose, onCreated }) {
@@ -135,10 +159,11 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
     setBusy('verify');
     try {
       const res = await api.post('/v1/admin/orgs/r2/verify', r2);
-      setVerified(Boolean(res.data?.valid));
-      pushToast(res.data?.valid
-        ? { type: 'success', title: 'R2 credentials verified', message: `${res.data.buckets?.length ?? 0} bucket(s) reachable` }
-        : { type: 'error', title: 'R2 credentials rejected', message: res.data?.error });
+      const d = res.data || {};
+      setVerified(Boolean(d.valid));
+      pushToast(d.valid
+        ? { type: 'success', title: 'R2 credentials verified', message: r2VerifyMessage(d) }
+        : { type: 'error', title: 'R2 credentials rejected', message: d.error });
     } catch (e) {
       setVerified(false);
       pushToast({ type: 'error', title: e?.response?.data?.detail || 'Verification failed' });
@@ -162,7 +187,13 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
       };
       if (withR2) payload.r2 = r2;
       const res = await api.post('/v1/admin/orgs', payload);
-      pushToast({ type: 'success', title: `${res.data?.name || form.name} created`, message: `Plan: ${res.data?.plan}` });
+      /* The org is created either way — the server does not refuse one over a
+         storage credential — so a failed verify is reported here rather than
+         hidden behind a plain success. */
+      pushToast(res.data?.r2_verified === false
+        ? { type: 'error', title: `${res.data?.name || form.name} created — but its R2 credentials did not verify`,
+            message: 'Storage will refuse uploads. Re-enter the credentials on the org.' }
+        : { type: 'success', title: `${res.data?.name || form.name} created`, message: `Plan: ${res.data?.plan}` });
       onCreated();
       onClose();
     } catch (e) {

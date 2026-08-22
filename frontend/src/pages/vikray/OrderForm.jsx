@@ -8,7 +8,7 @@ import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import LineItemEditor from '../../components/LineItemEditor';
 import { inr } from '../../lib/inr';
-import { emptyLine, previewTotals, probeGanit } from './_shared';
+import { emptyLine, previewTotals, loadProducts } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
@@ -54,11 +54,15 @@ export default function OrderForm({ onCreated, onCancel }) {
     api.get('/v1/graha/contacts')
       .then(r => { if (!dead) setContacts(rows(r)); })
       .catch(() => { missing.push('the contact list (CRM)'); })
-      .then(() => probeGanit())
+      .then(() => loadProducts())
       .then(r => {
         if (dead) return;
         setProducts(r.products);
-        if (!r.ok) missing.push('the product catalogue (Finance)');
+        // The catalogue is no longer Finance's to withhold — `/v1/products` is
+        // gated on Ganit OR Vikray, so a sales-only firm gets its own products.
+        // An empty list here means an empty catalogue or a failed read, not a
+        // missing module, so the sentence no longer names one.
+        if (!r.products.length) missing.push('the product catalogue');
         if (missing.length) setOptsErr(missing.join(' and '));
       });
     return () => { dead = true; };

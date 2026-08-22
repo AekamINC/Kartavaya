@@ -276,11 +276,34 @@ async def add_member(
         # same email, same module grants — and says so in the reply, because
         # "added" and "invited" are different things and the screen should not
         # claim the first when it did the second.
-        from routers.org_invites import issue_invite, _caller_org_role
-        caller_role = await _caller_org_role(pool, user["user_id"], org_id)
+        #
+        # ── THE GRANTS USED TO BE DROPPED HERE ───────────────────────────────
+        #
+        # This passed a literal `[]` where the grants go, so the sentence above
+        # was true of everything except the one thing an admin had just chosen.
+        # Modules picked in the Add member form applied when the person already
+        # had an account and vanished when they did not — and the invited branch
+        # is precisely the case where they matter most, because a colleague who
+        # accepts with no grants lands on a nav rail with every module hidden and
+        # somebody has to go back and fix it afterwards.
+        #
+        # `preflight_org_invite`, not a bare pass-through: it is the same
+        # validation `POST /v1/org/invites` runs — every code must name a module
+        # the org actually has, at a level that module allows, and an org_admin
+        # may not mint an approver on a separated-duty module. Reaching
+        # `issue_invite` with unvalidated grants would make this door the weak
+        # one, which is the whole reason the refusals were extracted into a
+        # preflight in the first place.
+        from routers.org_invites import issue_invite, preflight_org_invite
+
+        pre = await preflight_org_invite(
+            pool, user, org_id,
+            email=body.email.lower(), org_role=body.role,
+            module_grants=body.module_grants,
+        )
         invite = await issue_invite(
             pool, user, org_id, body.email.lower(), body.role,
-            getattr(body, "full_name", None), [], caller_role,
+            getattr(body, "full_name", None), pre.grants, pre.caller_role,
         )
         return {
             "status": "invited",
@@ -289,6 +312,7 @@ async def add_member(
             "invite_id": invite.invite_id,
             "invite_link": invite.invite_link,
             "expires_at": invite.expires_at,
+            "module_grants": pre.grants,
             "message": f"{body.email} has no account yet, so an invitation was sent. "
                        "They join this organisation when they accept it.",
         }

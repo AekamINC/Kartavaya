@@ -779,10 +779,46 @@ def test_the_ownerless_state_cannot_be_manufactured_to_reach_the_fallback():
         "the role UPDATE is no longer scoped away from the owner row"
 
 
-def test_no_endpoint_writes_an_org_owner_row():
-    """Why the fallback exists rather than an actionable 403 naming the missing
-    owner: there is no endpoint to act on. If one is ever added, this fails and
-    the fallback can be reconsidered — do not simply delete the assertion.
+#: The files allowed to write an `org_owner` row, and the reason each may.
+#:
+#: This assertion used to be "NOBODY writes one", and it was the argument for
+#: `role_tiers.refuse_grant`'s no-owner fallback: a refusal whose remedy does
+#: not exist is an outage, not a guard. Two remedies now exist, and the
+#: tripwire's own instruction was not to delete it but to reconsider the
+#: fallback when one appeared. Reconsidered below.
+#:
+#:   routers/admin_orgs.py   TWO writers, both examined:
+#:
+#:     · `create_org` seats the FOUNDER as org_owner. It used to hardcode
+#:       'org_admin', which is why no organisation could ever have an owner and
+#:       why `PATCH /v1/org/modules` was unreachable for every customer. It
+#:       writes into an org being created in the same transaction, so it can
+#:       never appoint an owner over an existing one.
+#:     · `nominate_org_owner` is the bootstrap for orgs that already exist. God
+#:       mode only; 409s when the org already has an owner; refuses anybody who
+#:       is not already an org_admin OF THAT ORG; inserts and never updates.
+#:
+#:   auth_router.py          `accept_invite` writes whatever role the INVITE
+#:                           carries, and `org_invites._assert_may_grant_role`
+#:                           is what decided that an owner could mint it. The
+#:                           authority was checked when the invite was created.
+_ORG_OWNER_WRITERS = {"routers/admin_orgs.py", "auth_router.py"}
+
+
+def test_only_the_examined_endpoints_write_an_org_owner_row():
+    """The fallback's justification, restated now that a remedy exists.
+
+    `refuse_grant`'s no-owner fallback stays, and the reason has narrowed rather
+    than disappeared. Every organisation created from today has an owner, so the
+    fallback is dead code for new orgs. It is NOT dead for the ones that already
+    exist — measured live on 2026-08-22, Unicode Group holds five org_admins and
+    zero owners — and `nominate_org_owner` is an Aekam action, not something an
+    org can do for itself. Until an operator has run it for every ownerless org,
+    refusing a payroll approver in one of them would still be an outage.
+
+    What this test now guards is the SET of writers. A new file appearing here
+    means somebody has found a third way to create the authority that appoints
+    payroll approvers, and that is worth reading before it ships.
     """
     import re
 
@@ -793,11 +829,33 @@ def test_no_endpoint_writes_an_org_owner_row():
         for stmt in re.findall(r"insert into staging\.user_roles.{0,400}", blob):
             if "'org_owner'" in stmt:
                 offenders.append(path.relative_to(BACKEND).as_posix())
-    assert not offenders, (
-        "an org_owner row can now be created by "
-        f"{sorted(set(offenders))} — the no-owner fallback in "
-        "role_tiers.refuse_grant may no longer be necessary"
+
+    unexpected = sorted(set(offenders) - _ORG_OWNER_WRITERS)
+    assert not unexpected, (
+        f"a new endpoint writes an org_owner row: {unexpected}. That is the "
+        "authority which appoints payroll approvers — read it, then add it to "
+        "_ORG_OWNER_WRITERS with the reason it may."
     )
+
+
+def test_the_bootstrap_cannot_replace_an_owner_that_exists():
+    """`nominate_org_owner` is a bootstrap, and the difference is the 409.
+
+    An endpoint that could appoint an owner over an existing one would let Aekam
+    change who runs a customer's organisation. Pinned on the source because the
+    guard is a refusal, and this file drives no database.
+    """
+    import inspect
+
+    from routers.admin_orgs import nominate_org_owner
+
+    src = inspect.getsource(nominate_org_owner)
+    assert "SUPERUSER_ONLY_ROLES" in src, "the bootstrap is not god-mode only"
+    assert "already has an owner" in src, "the 409 on an existing owner is gone"
+    assert "role_code='org_admin'" in src, \
+        "the nominee is no longer required to be an administrator of this org"
+    # Inserts, never updates: an existing grant is not rewritten to achieve this.
+    assert "UPDATE staging.user_roles" not in src
 
 
 @pytest.mark.parametrize("module", sorted(SEPARATED_DUTY_MODULES))

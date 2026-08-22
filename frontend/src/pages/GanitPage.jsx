@@ -37,7 +37,7 @@ import ClientsTab from './graha/ClientsTab';
 import ContactsTab from './graha/ContactsTab';
 
 import InvoicesTab from './ganit/InvoicesTab';
-import ProductsTab from './ganit/ProductsTab';
+import ProductsTab from './catalogue/ProductsTab';
 import ExpensesTab from './ganit/ExpensesTab';
 import PayablesTab from './ganit/PayablesTab';
 import ContractsTab from './ganit/ContractsTab';

@@ -1,4 +1,18 @@
-// Ganit · products & services — the catalogue invoice lines are filled from.
+// The product catalogue — ONE catalogue, mounted in two modules.
+//
+// It used to live in `pages/ganit/` and read `/v1/ganit/products`, and that was
+// the whole of inbox 14. A product is billed by Ganit, sold by Vikray and
+// counted by the stock ledger — three modules over one object — so a firm that
+// bought Sales and not Finance could place orders against products it was not
+// allowed to list, and could not create a single one. There was also a second
+// product table, `staging.crm_products`, with zero rows and zero readers;
+// migration 194 dropped it.
+//
+// This component is now mounted by BOTH `GanitPage` and `VikrayPage` and reads
+// `/api/v1/products`, whose gate is `require_any_module("ganit", "vikray")`.
+// The write check is `useModuleWrite`, which reads the module from the page's
+// `ModuleAccess` context — so the same screen correctly asks about Finance
+// under Ganit and about Sales under Vikray, without either page knowing.
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
@@ -6,7 +20,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import { Badge } from './_shared';
+import { Badge } from '../ganit/_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
@@ -119,7 +133,7 @@ export default function ProductsTab() {
     setErr(null);
     setLoading(true);
     try {
-      const r = await api.get('/v1/ganit/products');
+      const r = await api.get('/v1/products');
       setProducts(rows(r));
     } catch (e) {
       // Not an empty catalogue. "No products yet — add your products" on a
@@ -135,7 +149,7 @@ export default function ProductsTab() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/v1/ganit/products', {
+      await api.post('/v1/products', {
         ...form, price: parseFloat(form.price) || 0, cost_price: costOrNull(form.cost_price),
       });
       pushToast({ title: 'Product created', type: 'success' });
@@ -161,7 +175,7 @@ export default function ProductsTab() {
     e.preventDefault();
     setEditSaving(true);
     try {
-      await api.patch(`/v1/ganit/products/${editId}`, {
+      await api.patch(`/v1/products/${editId}`, {
         ...editForm, price: parseFloat(editForm.price) || 0,
         cost_price: costOrNull(editForm.cost_price),
       });
@@ -175,7 +189,7 @@ export default function ProductsTab() {
 
   async function remove(p) {
     try {
-      await api.delete(`/v1/ganit/products/${p.id}`);
+      await api.delete(`/v1/products/${p.id}`);
       setProducts(prev => prev.filter(x => x.id !== p.id));
       pushToast({ title: 'Product deleted', type: 'success' });
     } catch {

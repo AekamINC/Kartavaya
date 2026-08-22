@@ -278,6 +278,18 @@ async def create_org_bucket(org_id: str) -> str | None:
         return None
 
     loop = asyncio.get_running_loop()
+
+    # Ask before creating. `create_bucket` is an ACCOUNT-level operation, so a
+    # bucket-scoped token — the least-privilege setup Cloudflare recommends, and
+    # the one `verify_r2_credentials` now accepts — is refused here even though
+    # the bucket it points at already exists and works. Heading it first turns
+    # that from a logged error into the no-op it actually is.
+    try:
+        await loop.run_in_executor(None, lambda: client.head_bucket(Bucket=bucket))
+        return bucket
+    except Exception:
+        pass
+
     try:
         await loop.run_in_executor(
             None,
@@ -288,21 +300,256 @@ async def create_org_bucket(org_id: str) -> str | None:
         if "BucketAlreadyOwnedByYou" in str(exc) or "BucketAlreadyExists" in str(exc):
             pass
         else:
+            # Not fatal: a bucket-scoped token cannot create, and does not need
+            # to — the operator creates the bucket in the Cloudflare dashboard.
+            # The org is still configured; uploads will resolve once it exists.
             log.error("Failed to create R2 bucket %s for org %s: %s", bucket, org_id, exc)
+            return None
 
     return bucket
 
 
-async def verify_r2_credentials(account_id: str, access_key: str, secret_key: str) -> dict:
-    """Test R2 credentials by listing buckets. Returns {valid, buckets, error}."""
+# ── Verifying a credential without demanding an account-level permission ─────
+#
+# This check used to call `list_buckets` and nothing else, and `list_buckets` is
+# an ACCOUNT-level operation. A Cloudflare API token scoped to a single bucket —
+# the least-privilege setup Cloudflare's own docs recommend — cannot list
+# buckets, though it can read and write that bucket perfectly. So the correct
+# credential was rejected, and because `CreateOrgPanel` blocks the Create button
+# until verification passes, a correctly-scoped token stopped an org being
+# created at all.
+#
+# The second half of the same bug: the verifier never tested the BUCKET. The
+# caller passes an `R2Credentials` that carries `bucket_name`, and only three of
+# its four fields were forwarded — so "verified" never meant "the bucket these
+# files are going to is reachable", which is the only thing the operator wanted
+# to know.
+#
+# So the bucket is now the primary probe and the account listing is a bonus:
+# a token that can reach its bucket verifies, whether or not it may enumerate.
+_CREDENTIAL_FAULTS = {
+    "InvalidAccessKeyId", "SignatureDoesNotMatch", "InvalidArgument",
+    "AuthorizationHeaderMalformed", "TokenRefreshRequired", "ExpiredToken",
+    "InvalidSecurity", "Unauthorized",
+}
+
+
+def _error_code(exc) -> str:
+    """The S3 error code inside a botocore ClientError, or '' for anything else."""
+    resp = getattr(exc, "response", None)
+    if isinstance(resp, dict):
+        return str(resp.get("Error", {}).get("Code") or "")
+    return ""
+
+
+def _http_status(exc) -> int:
+    resp = getattr(exc, "response", None)
+    if isinstance(resp, dict):
+        try:
+            return int(resp.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+async def verify_r2_credentials(
+    account_id: str,
+    access_key: str,
+    secret_key: str,
+    bucket_name: Optional[str] = None,
+) -> dict:
+    """Test R2 credentials against the bucket they are for.
+
+    Returns::
+
+        {valid, buckets, error, scope, bucket, bucket_exists, can_list_buckets, checks}
+
+    `scope` is "account" when the token may enumerate buckets and "bucket" when
+    it is scoped to one — both are valid; the field exists so the operator can
+    see which kind of token they pasted rather than guessing from an error.
+
+    `bucket_exists` is False with `valid` True for a real, well-scoped token
+    whose bucket has not been created yet: that is the normal state on a new
+    org, and `create_org_bucket` is what fixes it. A missing bucket is not a
+    bad credential and must not be reported as one.
+    """
+    checks: list[dict] = []
     try:
         client = _build_client(account_id, access_key, secret_key)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, client.list_buckets)
-        bucket_names = [b["Name"] for b in result.get("Buckets", [])]
-        return {"valid": True, "buckets": bucket_names, "error": None}
     except Exception as exc:
-        return {"valid": False, "buckets": [], "error": str(exc)}
+        return {
+            "valid": False, "buckets": [], "error": f"Could not build a client: {exc}",
+            "scope": None, "bucket": bucket_name, "bucket_exists": None,
+            "bucket_writable": False, "probe_round_trip": False,
+            "can_list_buckets": False, "checks": checks,
+        }
+
+    loop = asyncio.get_running_loop()
+
+    # 1. Account-level listing. Its FAILURE proves nothing — a bucket-scoped
+    #    token is supposed to fail here — so nothing below branches on it
+    #    except to record the scope and fill `buckets` when it does work.
+    bucket_names: list[str] = []
+    can_list = False
+    list_error = None
+    try:
+        result = await loop.run_in_executor(None, client.list_buckets)
+        bucket_names = [b["Name"] for b in (result or {}).get("Buckets", [])]
+        can_list = True
+        checks.append({"check": "list_buckets", "ok": True, "detail": f"{len(bucket_names)} bucket(s)"})
+    except Exception as exc:
+        list_error = exc
+        checks.append({"check": "list_buckets", "ok": False, "detail": _error_code(exc) or str(exc)})
+
+    # 2. The bucket itself — the probe that actually answers the question.
+    bucket = bucket_name or None
+    bucket_exists = None
+    bucket_readable = False
+    bucket_writable = False
+    probe_round_trip = False
+    probe_error = None
+    bucket_error = None
+    if bucket:
+        try:
+            await loop.run_in_executor(None, lambda: client.head_bucket(Bucket=bucket))
+            bucket_exists = True
+            checks.append({"check": "head_bucket", "ok": True, "detail": bucket})
+        except Exception as exc:
+            code, status = _error_code(exc), _http_status(exc)
+            if code in ("404", "NoSuchBucket", "NotFound") or status == 404:
+                # Authenticated fine; the bucket is simply not there yet.
+                bucket_exists = False
+                checks.append({"check": "head_bucket", "ok": True,
+                               "detail": f"{bucket} does not exist yet"})
+            else:
+                bucket_error = exc
+                checks.append({"check": "head_bucket", "ok": False,
+                               "detail": code or str(exc)})
+
+        if bucket_exists:
+            try:
+                await loop.run_in_executor(
+                    None, lambda: client.list_objects_v2(Bucket=bucket, MaxKeys=1),
+                )
+                bucket_readable = True
+                checks.append({"check": "list_objects", "ok": True, "detail": bucket})
+            except Exception as exc:
+                bucket_error = bucket_error or exc
+                checks.append({"check": "list_objects", "ok": False,
+                               "detail": _error_code(exc) or str(exc)})
+
+            # -- The probe: do the thing, do not merely ask about it ---------
+            #
+            # Everything above is a permission question. This is the capability
+            # the operator is actually buying - a file goes in, comes back
+            # identical, and can be removed again - and it is the only step that
+            # would catch a bucket that exists, lists, and rejects every PUT.
+            # Under `_probe/`, a uuid name, 9 bytes, deleted immediately; the
+            # delete runs in a `finally` so a failed read-back still cleans up
+            # after itself rather than leaving litter in a paying customer's
+            # bucket.
+            probe_key = f"_probe/{uuid.uuid4().hex}.txt"
+            probe_body = b"kartavya\n"
+            wrote = False
+            try:
+                await loop.run_in_executor(None, lambda: client.put_object(
+                    Bucket=bucket, Key=probe_key, Body=probe_body,
+                    ContentType="text/plain",
+                ))
+                wrote = True
+                bucket_writable = True
+                checks.append({"check": "put_object", "ok": True, "detail": probe_key})
+                try:
+                    got = await loop.run_in_executor(None, lambda: client.get_object(
+                        Bucket=bucket, Key=probe_key,
+                    ))
+                    body = got["Body"].read()
+                    if body == probe_body:
+                        probe_round_trip = True
+                        checks.append({"check": "get_object", "ok": True,
+                                       "detail": f"{len(body)} bytes, identical"})
+                    else:
+                        checks.append({"check": "get_object", "ok": False,
+                                       "detail": "read back different bytes"})
+                except Exception as exc:
+                    checks.append({"check": "get_object", "ok": False,
+                                   "detail": _error_code(exc) or str(exc)})
+            except Exception as exc:
+                probe_error = exc
+                checks.append({"check": "put_object", "ok": False,
+                               "detail": _error_code(exc) or str(exc)})
+            finally:
+                if wrote:
+                    try:
+                        await loop.run_in_executor(None, lambda: client.delete_object(
+                            Bucket=bucket, Key=probe_key,
+                        ))
+                        checks.append({"check": "delete_object", "ok": True,
+                                       "detail": probe_key})
+                    except Exception as exc:
+                        # Left behind: 9 bytes under `_probe/`. Worth saying,
+                        # never worth failing a verification over.
+                        checks.append({"check": "delete_object", "ok": False,
+                                       "detail": _error_code(exc) or str(exc)})
+
+    # 3. The verdict.
+    #    Valid when EITHER the account listing worked (an account-scoped token)
+    #    OR the bucket answered (a bucket-scoped one, including the not-yet-
+    #    created case, where the 404 is itself proof the signature was accepted).
+    valid = can_list or bucket_exists is True or bucket_exists is False
+    if valid:
+        scope = "account" if can_list else "bucket"
+        error = None
+        if bucket and bucket_exists and not bucket_writable:
+            # The bucket is there and this token cannot put an object in it.
+            # Still `valid` - the credential authenticated, and an operator who
+            # is about to widen the token scope should see the credential
+            # accepted and the reason named, not a flat rejection that says
+            # neither. But it is the sentence that matters most on this screen,
+            # because a read-only token means every upload this org makes fails.
+            error = (
+                f"Credentials are valid, but writing to {bucket} was refused "
+                f"({_error_code(probe_error) or probe_error or 'no write permission'}). "
+                "Uploads will fail until this token can write to the bucket."
+            )
+        elif bucket and bucket_exists and not probe_round_trip:
+            error = (
+                f"Credentials are valid and can write to {bucket}, but the test "
+                "object did not read back. Uploads will work; signed download "
+                "links may not."
+            )
+        elif bucket and bucket_exists and not bucket_readable:
+            error = (
+                f"Credentials are valid and can write to {bucket}, but listing it "
+                f"was refused ({_error_code(bucket_error) or bucket_error}). "
+                "Uploads and downloads work; storage usage cannot be measured."
+            )
+    else:
+        scope = None
+        primary = bucket_error or list_error
+        code = _error_code(primary)
+        if code in _CREDENTIAL_FAULTS:
+            error = f"R2 rejected these credentials ({code})."
+        elif code == "AccessDenied" and bucket:
+            error = (
+                f"The credentials authenticated, but this token has no access to "
+                f"bucket '{bucket}'. Check the token's bucket scope."
+            )
+        else:
+            error = str(primary) if primary is not None else "R2 did not respond."
+
+    return {
+        "valid": valid,
+        "buckets": bucket_names,
+        "error": error,
+        "scope": scope,
+        "bucket": bucket,
+        "bucket_exists": bucket_exists,
+        "bucket_writable": bucket_writable,
+        "probe_round_trip": probe_round_trip,
+        "can_list_buckets": can_list,
+        "checks": checks,
+    }
 
 
 async def upload_file(

@@ -323,7 +323,7 @@ async def count_seats(pool, org_id: str, *, exclude_email: Optional[str] = None)
     # bare comparison against a missing address would exclude EVERY pending
     # invite and quietly return the count this whole helper exists to correct.
     pending = await pool.fetchval(
-        "SELECT COUNT(*) FROM invites "
+        "SELECT COUNT(*) FROM public.invites "
         "WHERE org_id=$1::uuid AND accepted_at IS NULL AND expires_at > NOW() "
         "AND ($2::text IS NULL OR LOWER(email) <> LOWER($2))",
         org_id, exclude_email,
@@ -498,7 +498,7 @@ async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
     # org so one organisation cannot expire another's pending invite by
     # inviting the same person.
     await pool.execute(
-        "UPDATE invites SET expires_at = NOW() "
+        "UPDATE public.invites SET expires_at = NOW() "
         "WHERE LOWER(email)=LOWER($1) AND org_id=$2::uuid AND accepted_at IS NULL",
         email, org_id,
     )
@@ -529,7 +529,7 @@ async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
     # error into a sub-second 500.
     if employee_id:
         await pool.execute(
-            """INSERT INTO invites
+            """INSERT INTO public.invites
                    (invite_id, email, role, token, invited_by, expires_at,
                     full_name, member_role, org_id, module_grants, employee_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb,
@@ -540,7 +540,7 @@ async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
         )
     else:
         await pool.execute(
-            """INSERT INTO invites
+            """INSERT INTO public.invites
                    (invite_id, email, role, token, invited_by, expires_at,
                     full_name, member_role, org_id, module_grants)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb)""",
@@ -615,7 +615,7 @@ async def list_org_invites(
     rows = await pool.fetch(
         "SELECT invite_id, email, member_role, full_name, module_grants, "
         "       created_at, expires_at, invited_by "
-        "FROM invites "
+        "FROM public.invites "
         "WHERE org_id=$1::uuid AND accepted_at IS NULL AND expires_at > NOW() "
         "ORDER BY created_at DESC",
         org_id,
@@ -649,7 +649,7 @@ async def revoke_org_invite(
     admin could revoke any other organisation's invite by guessing an id.
     """
     row = await pool.fetchrow(
-        "UPDATE invites SET expires_at = NOW() "
+        "UPDATE public.invites SET expires_at = NOW() "
         "WHERE invite_id=$1 AND org_id=$2::uuid AND accepted_at IS NULL "
         "RETURNING invite_id",
         invite_id, org_id,

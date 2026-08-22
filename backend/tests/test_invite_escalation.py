@@ -100,7 +100,7 @@ async def test_invite_listing_never_returns_a_token_or_link(
             return []
         if "staging.user_roles" in query:
             return [{"role_code": GOD}]
-        if "FROM invites" in query:
+        if "FROM public.invites" in query:
             # The route must not even ASK for the token.
             assert "i.token" not in query, "list_invites still selects the token"
             return [row]

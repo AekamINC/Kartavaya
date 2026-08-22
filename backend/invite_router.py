@@ -482,9 +482,9 @@ async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depe
     else: await run("DELETE FROM automations              WHERE created_by=$1",    user_id)
 
     # ── Invites ───────────────────────────────────────────────────────────────
-    if r: await run("UPDATE invites SET invited_by=$1 WHERE invited_by=$2", r, user_id)
-    else: await run("UPDATE invites SET invited_by=NULL WHERE invited_by=$1", user_id)
-    await run("DELETE FROM invites WHERE email=(SELECT email FROM users WHERE user_id=$1)", user_id)
+    if r: await run("UPDATE public.invites SET invited_by=$1 WHERE invited_by=$2", r, user_id)
+    else: await run("UPDATE public.invites SET invited_by=NULL WHERE invited_by=$1", user_id)
+    await run("DELETE FROM public.invites WHERE email=(SELECT email FROM users WHERE user_id=$1)", user_id)
 
     # ── Sessions / tokens ─────────────────────────────────────────────────────
     for tbl in ("refresh_tokens", "sessions"):
@@ -509,7 +509,7 @@ async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depend
 
     # Expire old pending invites for same email
     await pool.execute(
-        "UPDATE invites SET expires_at=NOW() WHERE email=$1 AND accepted_at IS NULL",
+        "UPDATE public.invites SET expires_at=NOW() WHERE email=$1 AND accepted_at IS NULL",
         body.email.lower(),
     )
 
@@ -518,7 +518,7 @@ async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depend
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
 
     await pool.execute(
-        """INSERT INTO invites
+        """INSERT INTO public.invites
                (invite_id, email, role, token, invited_by, expires_at,
                 full_name, member_role, receives_approval_emails)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
@@ -623,7 +623,7 @@ async def list_invites(pool=Depends(get_pool), admin=Depends(_require_admin)):
         """SELECT i.invite_id, i.email, i.role, i.created_at, i.expires_at,
                   i.accepted_at, i.full_name, i.member_role, i.receives_approval_emails,
                   COALESCE(u.full_name, u.name, u.email) AS invited_by_name
-           FROM invites i
+           FROM public.invites i
            LEFT JOIN users u ON u.user_id = i.invited_by
            WHERE i.org_id IS NULL OR i.org_id = ANY($1::uuid[])
            ORDER BY i.created_at DESC LIMIT 100""",
@@ -679,7 +679,7 @@ async def revoke_invite(invite_id: str, pool=Depends(get_pool), admin=Depends(_r
     """
     caller_orgs = await _org_ids_for(pool, admin["user_id"])
     result = await pool.execute(
-        "DELETE FROM invites WHERE invite_id=$1 "
+        "DELETE FROM public.invites WHERE invite_id=$1 "
         "AND (org_id IS NULL OR org_id = ANY($2::uuid[]))",
         invite_id, list(caller_orgs),
     )

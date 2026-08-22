@@ -191,21 +191,51 @@ export function attention(o) {
  * There is no "which modules may I reach" endpoint an ordinary member can call:
  * `GET /v1/org/modules` is org-settings-gated and would 403 for exactly the
  * people this question is about. So it PROBES the module with the cheapest read
- * behind the same gate — the product catalogue the order form already needs —
- * and caches the one promise for the session. A 403 is the answer; any other
- * failure is not, and leaves the action available rather than hiding a control
- * over a dropped connection.
+ * behind the same gate and caches the one promise for the session. A 403 is the
+ * answer; any other failure is not, and leaves the action available rather than
+ * hiding a control over a dropped connection.
+ *
+ * ── THE PROBE MOVED, AND WHY IT HAD TO ──────────────────────────────────────
+ * It used to read `/v1/ganit/products`. That endpoint's gate is now
+ * `require_any_module("ganit", "vikray")` — the catalogue is one catalogue, and
+ * a sales-only firm is entitled to it — so the probe would have started
+ * answering "yes, you have Finance" to every Vikray user alive, and the order
+ * screen would have offered an Invoice button that 403s on the click. It reads
+ * `/v1/ganit/invoices?limit=1` instead: still the cheapest read in the module,
+ * and still behind `require_module("ganit")` alone.
+ *
+ * The products it used to return came from the same call, so the two questions
+ * had been sharing one request. They are separate now: `loadProducts()` reads
+ * the shared catalogue and works for a firm with no Finance module at all.
  */
 let ganitProbe = null;
 export function probeGanit() {
   if (!ganitProbe) {
-    ganitProbe = api.get('/v1/ganit/products')
-      .then(r => ({ ok: true, products: r.data?.data || [] }))
+    ganitProbe = api.get('/v1/ganit/invoices', { params: { limit: 1 } })
+      .then(() => ({ ok: true }))
       .catch(e => (e.response?.status === 403
-        ? { ok: false, products: [] }
-        : { ok: true, products: [], soft: true }));
+        ? { ok: false }
+        : { ok: true, soft: true }));
   }
   return ganitProbe;
+}
+
+/**
+ * The product catalogue, once per session.
+ *
+ * `/v1/products` is gated on Ganit OR Vikray, so this resolves for a firm that
+ * bought Sales alone — which is the whole point of the move. A failure returns
+ * an empty list rather than throwing: an order form with no product dropdown is
+ * degraded, an order form that will not render is broken.
+ */
+let productPromise = null;
+export function loadProducts() {
+  if (!productPromise) {
+    productPromise = api.get('/v1/products')
+      .then(r => ({ products: r.data?.data || [] }))
+      .catch(() => ({ products: [] }));
+  }
+  return productPromise;
 }
 
 /** `null` while unknown, then `true` / `false`. Never blocks a render. */

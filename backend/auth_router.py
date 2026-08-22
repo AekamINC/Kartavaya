@@ -668,7 +668,7 @@ async def preview_invite(request: Request, token: str):
     # `PROPOSED_073_org_scoped_invites.sql`, which is a PROPOSAL — naming those
     # columns in the select list would raise UndefinedColumnError on an
     # unmigrated database instead of degrading to the platform-invite shape.
-    invite = await pool.fetchrow("SELECT * FROM invites WHERE token=$1", token)
+    invite = await pool.fetchrow("SELECT * FROM public.invites WHERE token=$1", token)
     if (
         not invite
         or invite["accepted_at"] is not None
@@ -775,7 +775,7 @@ async def decline_invite(request: Request, token: str):
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "UPDATE invites SET expires_at = NOW() "
+        "UPDATE public.invites SET expires_at = NOW() "
         "WHERE token=$1 AND accepted_at IS NULL AND expires_at > NOW() "
         "RETURNING invite_id, email",
         token,
@@ -786,12 +786,325 @@ async def decline_invite(request: Request, token: str):
     return {"ok": True}
 
 
+@router.post("/invite/{token}/claim")
+@limiter.limit("10/minute")
+async def claim_invite(request: Request, token: str, user=Depends(require_user)):
+    """Apply an invitation to the account the caller is ALREADY signed in with.
+
+    ── THE DEAD END THIS CLOSES ─────────────────────────────────────────────
+    `POST /auth/accept-invite` mints an account, so it 409s when one already
+    exists for the invited address. The invite screen answered that with "Sign
+    in with it and this invitation is applied to the account you already have",
+    and nothing applied it: `POST /auth/login` does not read `invites`. The
+    person signed in, held no `user_roles` row for the organisation that
+    invited them, and had no way to discover why. That is reachable by anybody
+    who acquires an account inside the seven-day window, and by every colleague
+    who is already in one organisation and is invited to a second.
+
+    ── WHAT MAKES IT SAFE ───────────────────────────────────────────────────
+    A token is a bearer credential, so the only thing standing between a leaked
+    link and a membership is who may spend it:
+
+      · THE CALLER MUST BE SIGNED IN. `require_user`, not an anonymous post.
+      · THE ADDRESSES MUST MATCH. The signed-in account's email must equal the
+        invite's, compared case-insensitively. Without this, anybody holding a
+        link could attach THEMSELVES to the organisation it was meant for —
+        which is a worse hole than the dead end it fixes.
+      · THE INVITE MUST BE LIVE. Not accepted, not expired. Same single answer
+        as the preview for a token that is not, so this cannot be used to
+        enumerate tokens.
+      · THE SEAT IS RE-CHECKED before anything is written, exactly as
+        `accept_invite` does, and for the same reason: a reservation taken at
+        issue time is not a hold unless somebody reads it back.
+
+    It is IDEMPOTENT. Every write inside `_apply_org_invite` is
+    `ON CONFLICT DO NOTHING` or a fill-only UPDATE, so claiming twice is not an
+    error — a person who clicks the link again has not done anything wrong.
+
+    It does NOT mint a session or touch the password. The caller already has
+    both; this endpoint's whole subject is the membership.
+    """
+    pool = await get_pool()
+    invite = await pool.fetchrow(
+        "SELECT * FROM public.invites WHERE token=$1", token,
+    )
+    if not invite or invite["accepted_at"] is not None:
+        raise HTTPException(status_code=404, detail=_INVITE_DEAD)
+    if invite["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=404, detail=_INVITE_DEAD)
+
+    if (user.get("email") or "").lower() != (invite["email"] or "").lower():
+        # Deliberately NOT a 404. The caller is authenticated and the token is
+        # live, so there is no enumeration to protect here — and "this
+        # invitation is for somebody else" is the one sentence that stops a
+        # person forwarding a colleague's link and wondering why nothing
+        # happened.
+        audit(
+            "auth.invite_claim_refused", request, user_id=user["user_id"],
+            detail={"invite_id": invite["invite_id"], "reason": "email_mismatch"},
+            severity="warn",
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"This invitation was sent to {invite['email']}, and you are "
+                   "signed in as a different account. Sign in as that address, "
+                   "or ask whoever invited you to send one to this one.",
+        )
+
+    invite_org_id = invite["org_id"] if "org_id" in invite.keys() else None
+    if not invite_org_id:
+        # A platform-console invite carries no organisation, so there is no
+        # membership to apply and nothing this endpoint can do for the caller.
+        raise HTTPException(
+            status_code=400,
+            detail="This invitation does not join an organisation. You already "
+                   "have an account, so there is nothing left to accept.",
+        )
+
+    from routers.org_invites import assert_seat_available
+
+    await assert_seat_available(
+        pool, str(invite_org_id), email=invite["email"], user_id=user["user_id"],
+    )
+
+    await _apply_org_invite(pool, request, invite, user["user_id"])
+
+    await pool.execute(
+        "UPDATE public.invites SET accepted_at=NOW() WHERE token=$1", token,
+    )
+
+    org_name = await pool.fetchval(
+        "SELECT name FROM staging.organisations WHERE id=$1::uuid", str(invite_org_id),
+    )
+    audit(
+        "auth.invite_claimed", request, org_id=str(invite_org_id),
+        user_id=user["user_id"], detail={"invite_id": invite["invite_id"]},
+    )
+    return {"ok": True, "org": org_name, "role": invite["member_role"] or "org_member"}
+
+
+async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
+    """Turn an org-scoped invitation into real membership for `user_id`.
+
+    ── WHY THIS IS A FUNCTION AND NOT A BLOCK ───────────────────────────────
+    It was a block inside `accept_invite`, and it was reachable by exactly one
+    door: a person WITHOUT an account, setting a password. Anybody who already
+    had an account hit the 409 above it — and the invite screen told them, in as
+    many words, "sign in with it and this invitation is applied to the account
+    you already have". Nothing applied it. `POST /auth/login` does not read
+    `invites` at all, so that person signed in, held no `user_roles` row for the
+    organisation that invited them, and had no way to find out why. A dead end
+    presented as a resolution.
+
+    `POST /auth/invite/{token}/claim` is the second door, and it must produce
+    the identical membership: same role ceiling, same grant re-validation
+    against the org's live subscriptions, same employee link, same audit row.
+    Two copies of that would be two places for a grant rule to drift, and the
+    direction it drifts in is somebody holding access their org is not paying
+    for. So there is one copy, and both doors call it.
+
+    Everything below is the block as it stood, moved. Its comments are the
+    original ones and they explain decisions that are still exactly as they
+    were.
+    """
+    invite_org_id = invite["org_id"] if "org_id" in invite.keys() else None
+    if not invite_org_id:
+        return
+
+    org_role = invite["member_role"] or "org_member"
+    if org_role not in ("org_owner", "org_admin", "org_member"):
+        org_role = "org_member"
+
+    await pool.execute(
+        "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+        "VALUES ($1, $2::uuid, $3, $4) "
+        "ON CONFLICT DO NOTHING",
+        user_id, str(invite_org_id), org_role, invite["invited_by"],
+    )
+
+    # ── An owner accepting claims the org row as well ────────────────────
+    #
+    # `POST /api/v1/admin/orgs` no longer refuses a firm whose owner has no
+    # account: it creates the organisation with `owner_user_id` NULL and
+    # invites them as `org_owner`. This is the other half of that — the
+    # moment the account exists, the org row learns who owns it.
+    #
+    # `owner_user_id IS NULL` in the predicate is the whole safety of it:
+    # this can only ever FILL an empty owner, never take an organisation
+    # away from the person already named on it. An `org_owner` invitation
+    # into an org that already has an owner writes the role row above and
+    # leaves this column alone, which is correct — an org may have two
+    # owners, but `owner_user_id` records the founder.
+    if org_role == "org_owner":
+        claimed = await pool.fetchval(
+            "UPDATE staging.organisations SET owner_user_id=$1, updated_at=NOW() "
+            " WHERE id=$2::uuid AND owner_user_id IS NULL "
+            " RETURNING team_id",
+            user_id, str(invite_org_id),
+        )
+
+        # ── And a seat on the founding project ───────────────────────────
+        #
+        # The console created that project for them before they had an
+        # account, so there is no `team_members` row for this address and the
+        # generic "activate any pending team invites" sync below finds
+        # nothing. An owner who cannot open their own first project is the
+        # onboarding failure this whole path exists to remove.
+        #
+        # `ON CONFLICT DO NOTHING` on both, and only when the claim above
+        # actually took: an owner joining an org that already has one is
+        # nobody's founder and must not be seated on a project they were
+        # never put on.
+        if claimed:
+            await pool.execute(
+                "INSERT INTO team_members "
+                "  (member_id, team_id, email, user_id, role, status) "
+                "SELECT 'mem_' || substr(md5(random()::text), 1, 12), $1, $2, "
+                "       $3::text, 'owner', 'active' "
+                " WHERE NOT EXISTS (SELECT 1 FROM team_members "
+                "                    WHERE team_id=$1 AND user_id=$3::text)",
+                claimed, invite["email"], user_id,
+            )
+            await pool.execute(
+                "INSERT INTO project_assignments "
+                "  (assignment_id, team_id, user_id, role) "
+                "VALUES ('pa_' || substr(md5(random()::text), 1, 12), $1, "
+                "        $2::text, 'owner') "
+                "ON CONFLICT (team_id, user_id) DO NOTHING",
+                claimed, user_id,
+            )
+
+    raw_grants = invite["module_grants"] if "module_grants" in invite.keys() else None
+    try:
+        grants = json.loads(raw_grants) if isinstance(raw_grants, str) else (raw_grants or [])
+    except (TypeError, ValueError):
+        grants = []
+
+    if grants:
+        active = {
+            r["module_code"]
+            for r in await pool.fetch(
+                "SELECT module_code FROM staging.module_subscriptions "
+                "WHERE org_id=$1::uuid AND is_active = TRUE",
+                str(invite_org_id),
+            )
+        }
+        from middleware.role_tiers import default_level_for, refuse_grant_shape
+
+        for g in grants:
+            code = (g or {}).get("code")
+            if not code or code not in active:
+                continue
+            # `or "viewer"` was the whole of this path's validation, and it
+            # was applied to a value read straight out of the invite JSON.
+            # Nothing checked that the level was one the module has a use
+            # for, so any writer of `invites.module_grants` — present or
+            # future — had an unvalidated route into the grant table, and a
+            # module whose new grants start higher (Sanvaad, editor) was
+            # silently downgraded on acceptance.
+            #
+            # `refuse_grant_shape`, not `refuse_grant`: the granting
+            # authority here belonged to the INVITER and was checked when the
+            # invite was created. The caller is the invitee, who holds no org
+            # role yet — passing theirs would skip the separated-duty rule
+            # and passing the owner's would assert something untrue. See
+            # `role_tiers.refuse_grant`.
+            level = (g or {}).get("role") or default_level_for(code)
+            if refuse_grant_shape(code, level) is not None:
+                continue
+            await pool.execute(
+                "INSERT INTO staging.org_member_modules "
+                "    (user_id, org_id, module_code, role, granted_by) "
+                "VALUES ($1, $2::uuid, $3, $4, $5) "
+                "ON CONFLICT DO NOTHING",
+                user_id, str(invite_org_id), code, level, invite["invited_by"],
+            )
+
+    # ── The employee record this invitation was raised from ─────────────
+    #
+    # `manav_employees.user_id` is the ONLY column joining the personnel
+    # side of the product to the account side, and measured on 2026-08-21 it
+    # was NULL on all 98 live rows. Making it by hand afterwards is what the
+    # Link logins screen is for, and it is mostly impossible: the largest
+    # org has 71 employees and 7 accounts. So the link is made HERE, at the
+    # one moment both halves are known for certain — the invitation says
+    # which employee, and the INSERT above says which account.
+    #
+    # Inside `if invite_org_id:` on purpose. The UPDATE is scoped by
+    # organisation as well as by employee id, so an employee_id on an invite
+    # with no org could never be followed; migration 187 refuses that row
+    # outright with `invites_employee_needs_org`.
+    #
+    # NOTHING BELOW MAY FAIL THIS REQUEST. The person has just chosen a
+    # password and must end up signed in. Every failure is logged and left
+    # for the repair screen:
+    #
+    #   · `employee_id` missing from the row — migration 187 is not applied.
+    #     `invite.keys()` answers that without a catalogue query and without
+    #     an exception, and the invite path refuses to MINT one in that
+    #     state anyway, so this is belt and braces.
+    #   · nought rows updated — the employee record was deleted between the
+    #     invitation and the acceptance, or belongs to another organisation,
+    #     or is already linked to somebody. None of those is an error here.
+    #     A deleted employee is a real thing that happens in seven days.
+    #   · a unique violation — `uq_manav_employee_login` (migration 101)
+    #     refusing a second employee record for one account in one org. That
+    #     is the index doing its job, and the correct response is to leave
+    #     the employee unlinked rather than to turn away somebody who has
+    #     already set their password over a collision they cannot see.
+    #
+    # `user_id IS NULL` in the predicate is not an optimisation either: it
+    # means this can only ever FILL an empty link, never overwrite one. An
+    # acceptance must not be able to take an employee record away from an
+    # account that already holds it.
+    employee_id = invite["employee_id"] if "employee_id" in invite.keys() else None
+    if employee_id:
+        try:
+            linked = await pool.fetchval(
+                "UPDATE staging.manav_employees "
+                "   SET user_id=$1, updated_at=NOW() "
+                " WHERE id=$2::uuid AND org_id=$3::uuid AND user_id IS NULL "
+                " RETURNING id",
+                user_id, str(employee_id), str(invite_org_id),
+            )
+            if linked is None:
+                logger.warning(
+                    "invite %s named an employee record that could not be "
+                    "linked (deleted, in another organisation, or already "
+                    "linked). The account was created and is signed in; the "
+                    "employee is left for Manav → Link logins.",
+                    invite["invite_id"],
+                )
+            else:
+                # Audited exactly like `manav.link_employee_login`, because
+                # it is the same change to the same column: this row decides
+                # whose payslip a person may open.
+                audit(
+                    "manav.employee_login_linked",
+                    request,
+                    org_id=str(invite_org_id),
+                    user_id=user_id,
+                    resource_type="manav_employee",
+                    resource_id=str(employee_id),
+                    detail={"linked_user_id": user_id, "via": "invite_accepted",
+                            "invite_id": invite["invite_id"]},
+                    severity="warn",
+                )
+        except Exception:
+            logger.warning(
+                "invite %s could not be linked to its employee record; the "
+                "account was still created and the acceptance stands",
+                invite["invite_id"], exc_info=True,
+            )
+
+
+
 @router.post("/accept-invite")
 @limiter.limit("10/minute")
 async def accept_invite(request: Request, body: AcceptInviteBody):
     """Called when a user clicks their invite link and sets their password."""
     pool = await get_pool()
-    invite = await pool.fetchrow("SELECT * FROM invites WHERE token=$1", body.token)
+    invite = await pool.fetchrow("SELECT * FROM public.invites WHERE token=$1", body.token)
     if not invite:
         raise HTTPException(status_code=400, detail="Invite link is invalid or has expired")
 
@@ -852,7 +1165,7 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
         member_role, receives_approval_emails,
     )
     await pool.execute(
-        "UPDATE invites SET accepted_at=NOW() WHERE token=$1", body.token
+        "UPDATE public.invites SET accepted_at=NOW() WHERE token=$1", body.token
     )
 
     # ── Org-scoped invite (migration 073) ────────────────────────────────────
@@ -868,140 +1181,13 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     #
     # `invite_org_id` was resolved above, before the account was created, so the
     # seat check could run while refusing was still free.
+    #
+    # The body lives in `_apply_org_invite` because `POST /auth/invite/{token}/
+    # claim` — the door for somebody who ALREADY has an account — has to produce
+    # the identical membership, and two copies of a grant rule is one copy too
+    # many.
     if invite_org_id:
-        org_role = invite["member_role"] or "org_member"
-        if org_role not in ("org_owner", "org_admin", "org_member"):
-            org_role = "org_member"
-
-        await pool.execute(
-            "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
-            "VALUES ($1, $2::uuid, $3, $4) "
-            "ON CONFLICT DO NOTHING",
-            user_id, str(invite_org_id), org_role, invite["invited_by"],
-        )
-
-        raw_grants = invite["module_grants"] if "module_grants" in invite.keys() else None
-        try:
-            grants = json.loads(raw_grants) if isinstance(raw_grants, str) else (raw_grants or [])
-        except (TypeError, ValueError):
-            grants = []
-
-        if grants:
-            active = {
-                r["module_code"]
-                for r in await pool.fetch(
-                    "SELECT module_code FROM staging.module_subscriptions "
-                    "WHERE org_id=$1::uuid AND is_active = TRUE",
-                    str(invite_org_id),
-                )
-            }
-            from middleware.role_tiers import default_level_for, refuse_grant_shape
-
-            for g in grants:
-                code = (g or {}).get("code")
-                if not code or code not in active:
-                    continue
-                # `or "viewer"` was the whole of this path's validation, and it
-                # was applied to a value read straight out of the invite JSON.
-                # Nothing checked that the level was one the module has a use
-                # for, so any writer of `invites.module_grants` — present or
-                # future — had an unvalidated route into the grant table, and a
-                # module whose new grants start higher (Sanvaad, editor) was
-                # silently downgraded on acceptance.
-                #
-                # `refuse_grant_shape`, not `refuse_grant`: the granting
-                # authority here belonged to the INVITER and was checked when the
-                # invite was created. The caller is the invitee, who holds no org
-                # role yet — passing theirs would skip the separated-duty rule
-                # and passing the owner's would assert something untrue. See
-                # `role_tiers.refuse_grant`.
-                level = (g or {}).get("role") or default_level_for(code)
-                if refuse_grant_shape(code, level) is not None:
-                    continue
-                await pool.execute(
-                    "INSERT INTO staging.org_member_modules "
-                    "    (user_id, org_id, module_code, role, granted_by) "
-                    "VALUES ($1, $2::uuid, $3, $4, $5) "
-                    "ON CONFLICT DO NOTHING",
-                    user_id, str(invite_org_id), code, level, invite["invited_by"],
-                )
-
-        # ── The employee record this invitation was raised from ─────────────
-        #
-        # `manav_employees.user_id` is the ONLY column joining the personnel
-        # side of the product to the account side, and measured on 2026-08-21 it
-        # was NULL on all 98 live rows. Making it by hand afterwards is what the
-        # Link logins screen is for, and it is mostly impossible: the largest
-        # org has 71 employees and 7 accounts. So the link is made HERE, at the
-        # one moment both halves are known for certain — the invitation says
-        # which employee, and the INSERT above says which account.
-        #
-        # Inside `if invite_org_id:` on purpose. The UPDATE is scoped by
-        # organisation as well as by employee id, so an employee_id on an invite
-        # with no org could never be followed; migration 187 refuses that row
-        # outright with `invites_employee_needs_org`.
-        #
-        # NOTHING BELOW MAY FAIL THIS REQUEST. The person has just chosen a
-        # password and must end up signed in. Every failure is logged and left
-        # for the repair screen:
-        #
-        #   · `employee_id` missing from the row — migration 187 is not applied.
-        #     `invite.keys()` answers that without a catalogue query and without
-        #     an exception, and the invite path refuses to MINT one in that
-        #     state anyway, so this is belt and braces.
-        #   · nought rows updated — the employee record was deleted between the
-        #     invitation and the acceptance, or belongs to another organisation,
-        #     or is already linked to somebody. None of those is an error here.
-        #     A deleted employee is a real thing that happens in seven days.
-        #   · a unique violation — `uq_manav_employee_login` (migration 101)
-        #     refusing a second employee record for one account in one org. That
-        #     is the index doing its job, and the correct response is to leave
-        #     the employee unlinked rather than to turn away somebody who has
-        #     already set their password over a collision they cannot see.
-        #
-        # `user_id IS NULL` in the predicate is not an optimisation either: it
-        # means this can only ever FILL an empty link, never overwrite one. An
-        # acceptance must not be able to take an employee record away from an
-        # account that already holds it.
-        employee_id = invite["employee_id"] if "employee_id" in invite.keys() else None
-        if employee_id:
-            try:
-                linked = await pool.fetchval(
-                    "UPDATE staging.manav_employees "
-                    "   SET user_id=$1, updated_at=NOW() "
-                    " WHERE id=$2::uuid AND org_id=$3::uuid AND user_id IS NULL "
-                    " RETURNING id",
-                    user_id, str(employee_id), str(invite_org_id),
-                )
-                if linked is None:
-                    logger.warning(
-                        "invite %s named an employee record that could not be "
-                        "linked (deleted, in another organisation, or already "
-                        "linked). The account was created and is signed in; the "
-                        "employee is left for Manav → Link logins.",
-                        invite["invite_id"],
-                    )
-                else:
-                    # Audited exactly like `manav.link_employee_login`, because
-                    # it is the same change to the same column: this row decides
-                    # whose payslip a person may open.
-                    audit(
-                        "manav.employee_login_linked",
-                        request,
-                        org_id=str(invite_org_id),
-                        user_id=user_id,
-                        resource_type="manav_employee",
-                        resource_id=str(employee_id),
-                        detail={"linked_user_id": user_id, "via": "invite_accepted",
-                                "invite_id": invite["invite_id"]},
-                        severity="warn",
-                    )
-            except Exception:
-                logger.warning(
-                    "invite %s could not be linked to its employee record; the "
-                    "account was still created and the acceptance stands",
-                    invite["invite_id"], exc_info=True,
-                )
+        await _apply_org_invite(pool, request, invite, user_id)
 
     # Activate any pending team invites for this email
     await pool.execute(

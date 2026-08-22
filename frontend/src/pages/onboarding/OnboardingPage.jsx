@@ -12,6 +12,7 @@ import StepModules from './StepModules';
 import StepInvite from './StepInvite';
 import StepTemplate from './StepTemplate';
 import StepDone from './StepDone';
+import { toWireGrants } from '../org/ModuleGrantEditor';
 import { OB_PRESETS, OB_TEMPLATES } from './data';
 import { Check, ChevLeft } from './icons';
 
@@ -113,6 +114,10 @@ function normaliseInvites(list) {
   return list.map((x) => ({
     ...x,
     role: x?.role === 'admin' ? 'org_admin' : x?.role === 'member' ? 'org_member' : (x?.role || 'org_member'),
+    // A list saved before invitations carried grants has no `grants` key at
+    // all, and the step reads `.length` on it. Restored as an array here rather
+    // than defended against at four call sites.
+    grants: Array.isArray(x?.grants) ? x.grants : [],
   }));
 }
 
@@ -363,6 +368,32 @@ export default function OnboardingPage() {
   );
 
   /**
+   * Codes an INVITATION may name, which is a narrower list than "active".
+   *
+   * `_validate_grants` reads `staging.module_subscriptions` and REJECTS the
+   * whole invitation over a single module the org has no active row for — it
+   * does not drop that one and send the rest. So the filter has to match that
+   * table, not the catalogue's friendlier idea of active.
+   *
+   * `!m.bundled` is the whole difference. `get_modules` computes
+   * `active = (row and is_active) or bundled`, so Sahayak and eSign report
+   * active for every org whether or not a subscription row exists, and the two
+   * cases are indistinguishable in the payload. Offering one and guessing wrong
+   * fails the entire invitation with a 400 the owner cannot act on; leaving them
+   * out costs an invited colleague two modules that an admin can grant from
+   * Members in a second. The recoverable side of the trade is the one to be on.
+   *
+   * `null` while the catalogue is unread, so the picker falls back rather than
+   * claiming the org has nothing.
+   */
+  const grantableCodes = useMemo(
+    () => (Array.isArray(catalogue)
+      ? catalogue.filter((m) => m.active && !m.bundled).map((m) => m.code)
+      : null),
+    [catalogue],
+  );
+
+  /**
    * StepModules → `PATCH /v1/org/modules`, and ONLY the delta.
    *
    * Sending the twelve cards as they stand would be refused three different
@@ -443,7 +474,31 @@ export default function OnboardingPage() {
          */
         await api.post(
           '/v1/org/invites',
-          { email: inv.email, org_role: inv.role },
+          {
+            email: inv.email,
+            org_role: inv.role,
+            /**
+             * The half of the invitation that was never sent.
+             *
+             * `InviteCreate.module_grants` has taken `[{code, role}]` since the
+             * endpoint was written, and `accept_invite` is what turns it into
+             * `org_member_modules` rows. Posting `{email, org_role}` alone meant
+             * every colleague invited by this wizard accepted into zero grant
+             * rows: `_module_grants` returned `[]`, `navConfig.js` hides every
+             * entry carrying `module:`, and the guaranteed first thing a new
+             * team member saw was core PM and nothing else — after the owner had
+             * just spent a step choosing the org's modules.
+             *
+             * OMITTED when empty rather than sent as `[]`. The two mean the same
+             * thing to `_validate_grants`, which returns early on a falsy list,
+             * and "projects only" is a real choice a person can make here — an
+             * empty key on the wire would suggest the server has a default to
+             * fall back to, and on this path it does not.
+             */
+            ...(inv.grants?.length
+              ? { module_grants: toWireGrants(inv.grants) }
+              : {}),
+          },
           { noRetry: true },
         );
         sent += 1;
@@ -578,7 +633,9 @@ export default function OnboardingPage() {
               canSet={canSetModules}
             />
           )}
-          {step.id === 'invite' && <StepInvite value={state} onChange={setState} />}
+          {step.id === 'invite' && (
+            <StepInvite value={state} onChange={setState} activeCodes={grantableCodes} />
+          )}
           {step.id === 'project' && <StepTemplate value={state} onChange={setState} />}
         </div>
 

@@ -121,7 +121,7 @@ def hiring(mock_pool):
             return state["seat_limit"]
         if "COUNT(DISTINCT user_id)" in query:
             return state["seats_joined"]
-        if "COUNT(*) FROM invites" in query:
+        if "COUNT(*) FROM public.invites" in query:
             return state["seats_pending"]
         if "SELECT name FROM staging.organisations" in query:
             return "Test Org"
@@ -156,12 +156,12 @@ def hiring(mock_pool):
 
 
 def _invite_inserts(state):
-    return [q for q, _ in state["executed"] if "INSERT INTO invites" in q]
+    return [q for q, _ in state["executed"] if "INSERT INTO public.invites" in q]
 
 
 def _invite_insert_args(state):
     for q, a in state["executed"]:
-        if "INSERT INTO invites" in q:
+        if "INSERT INTO public.invites" in q:
             return q, a
     return None, None
 

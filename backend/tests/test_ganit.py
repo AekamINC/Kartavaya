@@ -6,6 +6,9 @@ Coverage:
   POST   /api/v1/ganit/products            — create product
   PATCH  /api/v1/ganit/products/{id}       — update
   DELETE /api/v1/ganit/products/{id}       — soft-delete
+    (these four live in `routers/products.py` now and are registered on both
+     `/api/v1/products` and the Ganit paths above — one implementation, two
+     URLs. `tests/test_products_one_catalogue.py` covers the move itself.)
   GET    /api/v1/ganit/invoices            — list, filter by type/status
   POST   /api/v1/ganit/invoices            — create with GST computation
   GET    /api/v1/ganit/invoices/{id}       — detail with payments
@@ -34,10 +37,21 @@ PRODUCT_ROW = {
 
 @pytest.fixture(autouse=True)
 def bypass_module_gate(app):
+    """Both gates, because the catalogue no longer sits behind Ganit's.
+
+    `/api/v1/ganit/products` is now `routers.products`' four handlers registered
+    a second time, and their gate is `require_any_module("ganit", "vikray")` —
+    one catalogue, billed by Finance and sold by Sales. Overriding only Ganit's
+    gate left the product tests answering 403 while the invoice tests passed,
+    which is the correct behaviour of the new gate and a stale fixture.
+    """
     from routers.ganit import _gate
+    from routers.products import _gate as _catalogue_gate
     app.dependency_overrides[_gate] = lambda: None
+    app.dependency_overrides[_catalogue_gate] = lambda: "ganit"
     yield
     app.dependency_overrides.pop(_gate, None)
+    app.dependency_overrides.pop(_catalogue_gate, None)
 
 
 # ── _compute_invoice (pure function) ───────────────────────────

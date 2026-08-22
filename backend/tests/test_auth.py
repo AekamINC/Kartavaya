@@ -551,7 +551,7 @@ async def test_preview_invite_flags_an_address_that_now_has_an_account(api_clien
 
 async def test_decline_invite_expires_the_row(api_client, mock_pool):
     async def fetchrow_side_effect(query, *args):
-        if "UPDATE invites SET expires_at" in query:
+        if "UPDATE public.invites SET expires_at" in query:
             return {"invite_id": "inv_abc", "email": "rohan@aekam.co"}
         return None
 
@@ -655,7 +655,14 @@ def test_the_project_assignment_sync_casts_its_one_placeholder():
     import auth_router
 
     src = inspect.getsource(auth_router.accept_invite)
-    stmt = re.search(r"INSERT INTO project_assignments.*?\"\"\"", src, re.S)
+    # THE SYNC, specifically — the statement that reads `team_members`. There is
+    # a second `INSERT INTO project_assignments` in this handler now (the
+    # founding owner's seat, covered by the test below), and matching whichever
+    # came first in the file would have made this assertion depend on the order
+    # of two unrelated statements.
+    stmt = re.search(
+        r"pool\.execute\(\"\"\"\s*INSERT INTO project_assignments.*?\"\"\"", src, re.S,
+    )
     assert stmt, "the project_assignments sync is no longer recognisable"
 
     body = stmt.group(0)
@@ -667,3 +674,36 @@ def test_the_project_assignment_sync_casts_its_one_placeholder():
         "so accepting an invitation 500s after the account row is already "
         "committed"
     )
+
+
+def test_the_founding_owner_seat_casts_its_user_placeholder():
+    """The same trap, in the statement added for the org-creation path.
+
+    `POST /api/v1/admin/orgs` no longer refuses a firm whose owner has no
+    account: it creates the org with `owner_user_id` NULL, creates the founding
+    project, and invites the owner. On acceptance this handler claims the org row
+    and seats them on that project — two writes that reach
+    `project_assignments.user_id` (varchar) and `team_members.user_id` (text)
+    with one parameter each. Uncast, that is the identical 500 the test above
+    exists for, on the identical path: after the account row is committed, with
+    the invite already spent.
+    """
+    import inspect
+    import re
+
+    import auth_router
+
+    # `_apply_org_invite`, not `accept_invite`: the membership block was lifted
+    # out of the handler so that `POST /auth/invite/{token}/claim` — the door
+    # for somebody who already has an account — produces identical membership
+    # rather than a second copy of these rules.
+    src = inspect.getsource(auth_router._apply_org_invite)
+    seat = re.search(r"if claimed:(.*?)\n    raw_grants", src, re.S)
+    assert seat, "the founding-owner seat is no longer recognisable"
+
+    body = seat.group(0)
+    assert "INSERT INTO team_members" in body
+    assert "INSERT INTO project_assignments" in body
+    # Every parameter that carries a user id is cast where it lands.
+    assert "$3::text" in body, "the team_members seat does not cast its user id"
+    assert "$2::text" in body, "the project_assignments seat does not cast its user id"

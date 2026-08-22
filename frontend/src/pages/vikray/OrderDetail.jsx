@@ -34,7 +34,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import {
   FLOW_STAGES, nextStatus, ADVANCE_LABEL, asItems, lineAmount,
-  previewTotals, useGanitAccess, probeGanit, isRecordId, notFound,
+  previewTotals, useGanitAccess, loadProducts, isRecordId, notFound,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
 
@@ -73,7 +73,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
   }, [orderId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { probeGanit().then(r => setProducts(r.products)); }, []);
+  useEffect(() => { loadProducts().then(r => setProducts(r.products)); }, []);
 
   const requestClose = useCallback(() => {
     closingRef.current = true;

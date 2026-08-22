@@ -246,14 +246,26 @@ async def test_platform_staff_may_still_create_an_org(api_client, as_platform, w
     """The narrowing is on the FIELDS, not on org creation. Creating an
     organisation is provisioning; setting what it is charged is not.
 
-    Reaching the owner lookup — a 404 for an address with no account — is the
-    proof it got past the gate.
+    ── WHAT PROVES IT GOT PAST THE GATE, AND WHY THAT MOVED ─────────────────
+    This used to assert 404 — "no user found with that email, they must
+    register first" — because an unknown owner address was the first thing the
+    handler refused after the role check. That refusal is GONE: the product has
+    no public registration, so telling an operator to have the customer register
+    was advice nobody could take, and it was the single thing stopping a new
+    firm being onboarded. An unknown address now creates the org and invites the
+    owner to it.
+
+    So the proof moves one step further in, to the plan lookup — a 400 for a
+    plan code this mock pool does not answer. Still a refusal from the BODY of
+    the handler rather than from its gate, which is the whole assertion.
     """
     wired["role"] = STAFF
     resp = await api_client.post("/api/v1/admin/orgs", json={
         "name": "New Co", "owner_email": "nobody@test.com",
     })
-    assert resp.status_code == 404, resp.text
+    assert resp.status_code == 400, resp.text
+    assert "plan" in resp.json()["detail"].lower(), \
+        "the refusal is no longer the plan lookup — check what now stands in front of it"
 
 
 async def test_a_billing_role_may_set_markup_at_creation(api_client, as_platform, wired):
@@ -262,7 +274,41 @@ async def test_a_billing_role_may_set_markup_at_creation(api_client, as_platform
     resp = await api_client.post("/api/v1/admin/orgs", json={
         "name": "New Co", "owner_email": "nobody@test.com", "markup_pct": 0.45,
     })
-    assert resp.status_code == 404, resp.text     # past the gate, no such owner
+    # Past the gate; refused by the plan lookup. See the note above for why this
+    # is no longer the owner lookup.
+    assert resp.status_code == 400, resp.text
+
+
+async def test_an_unknown_owner_address_no_longer_refuses_the_org(api_client, as_platform, wired):
+    """The refusal that made a new customer impossible to onboard.
+
+    `POST /api/v1/admin/orgs` answered 404 "They must register first before an
+    org can be created for them" for any address without an account — which is
+    every genuinely new customer, in a product whose ONLY account-minting path
+    is `POST /auth/accept-invite`. The identical sentence had already been
+    removed from `org_members.add_member` for the same reason; the console kept
+    its copy.
+
+    Pinned as a source assertion because the handler's behaviour past this point
+    needs a real database (an org row, a founding team, an invitation), and this
+    file drives a mock pool. What must never come back is the sentence.
+    """
+    import inspect
+
+    from routers import admin_orgs
+
+    # Comments STRIPPED before asserting. The block that removed these
+    # refusals explains them at length, and a substring search over the raw
+    # source would match the explanation and fail forever.
+    src = "\n".join(
+        line for line in inspect.getsource(admin_orgs.create_org).splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "must register first" not in src
+    assert "must create a team first" not in src
+    assert "No user found with email" not in src
+    # And the positive half: the org is created and the owner invited instead.
+    assert "issue_invite" in src
 
 
 async def test_a_billing_role_may_amend_what_it_could_set(api_client, as_platform, wired):

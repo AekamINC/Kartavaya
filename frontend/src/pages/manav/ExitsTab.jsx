@@ -79,10 +79,34 @@ const BLANK_INTERVIEW = {
 };
 
 /** Clearance as an array whatever arrived — see the jsonb note in `db.py`. */
+/* The clearance checklist, whichever shape the row is in.
+ *
+ * This returned `[]` for anything that was not an array, and ten of the eleven
+ * live exits are not arrays: they carry an earlier shape of the same idea,
+ * `{"hr": false, "finance": false, "it_assets": true}` — the area is the key
+ * and the value is whether it is done. So those exits rendered an EMPTY
+ * checklist, which is why nobody noticed that the backend's
+ * `complete_offboarding` guard was passing them: iterating a jsonb object there
+ * yields keys, `isinstance("hr", dict)` is False, nothing is ever pending, and
+ * two exits have already been closed with items untouched.
+ *
+ * Normalising here rather than rewriting the rows: they are somebody's real
+ * clearance state, and changing a customer's data to suit our newer shape is a
+ * different decision from reading what is there. The object form is converted
+ * to the array form on the way in, so everything below — the ticking, the
+ * counts, the PATCH — works on one shape. A tick then WRITES the array form,
+ * which is the migration happening one deliberate click at a time. */
 function asClearance(v) {
   if (Array.isArray(v)) return v;
   if (typeof v === 'string') {
-    try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; }
+    try { return asClearance(JSON.parse(v)); } catch { return []; }
+  }
+  if (v && typeof v === 'object') {
+    return Object.entries(v).map(([key, done]) => ({
+      item: key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
+      owner: '',
+      done: Boolean(done),
+    }));
   }
   return [];
 }

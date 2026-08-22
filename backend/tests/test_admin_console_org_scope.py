@@ -181,7 +181,7 @@ async def test_the_invite_listing_is_scoped_to_the_callers_orgs(
     r = await api_client.get("/api/admin/invites")
     assert r.status_code == 200, r.text
 
-    query, args = next((q, a) for q, a in captured if "FROM invites" in q)
+    query, args = next((q, a) for q, a in captured if "FROM public.invites" in q)
     sql = "\n".join(
         line for line in query.splitlines() if not line.strip().startswith("--")
     )

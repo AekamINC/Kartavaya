@@ -64,7 +64,7 @@ def test_an_existing_account_is_still_added_directly():
 def test_the_helper_still_supersedes_a_pending_invite_for_the_same_org():
     """Re-inviting must not leave two live tokens for one address."""
     code = _code(inv.issue_invite)
-    assert "UPDATE invites SET expires_at = NOW()" in code
+    assert "UPDATE public.invites SET expires_at = NOW()" in code
     assert "org_id=$2::uuid" in code, "superseding is no longer scoped to this org"
 
 

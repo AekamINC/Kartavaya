@@ -740,6 +740,28 @@
   border-radius: var(--r-xs); color: var(--on-surface-3);
 }
 .ob__x:hover { background: var(--s-container); color: var(--danger); }
+/* One invitee: the row, and — when it is open — the module grants that will
+   travel with their invitation. The wrapper exists because `.ob__row` is a
+   single flex line and the grant editor cannot sit inside it; it has to break
+   underneath, attached to the row it belongs to rather than floating free. */
+.ob__item { display: flex; flex-direction: column; }
+.ob__mods {
+  flex-shrink: 0; cursor: pointer; padding: 4px 9px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-pill);
+  background: var(--s-lowest); color: var(--on-surface-2);
+  font-family: inherit; font-size: 11.5px; font-weight: 500;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.ob__mods:hover { background: var(--s-container); color: var(--on-surface); }
+.ob__mods[aria-expanded="true"] { background: var(--s-container); color: var(--on-surface); }
+.ob__mods:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* Joined to the row above it: one record, opened. */
+.ob__item.open .ob__row { border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.ob__grants {
+  padding: 10px; border: 1px solid var(--outline-variant); border-top: 0;
+  border-radius: 0 0 var(--r-sm) var(--r-sm); background: var(--s-lowest);
+}
+.ob__grants-f { margin: 9px 0 0; }
 .ob__empty {
   display: flex; flex-direction: column; gap: 5px;
   padding: 24px; margin-bottom: 14px; text-align: center;

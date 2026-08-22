@@ -1,0 +1,1173 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The joining side</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF;
+    --rose:#A83E63; --amber:#8A6A18; --green:#2E7D52; --blue:#2F6690;
+    --paper:#FBF7EC; --pen:#26303E; --pencil:#6B7280; --ink-blue:#25406B;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'IBM Plex Mono',ui-monospace,'Cascadia Mono',monospace;
+    --fh:'Kalam',cursive;
+  }
+  :root[data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F;
+    --rose:#E894B4; --amber:#DCC072; --green:#7ED4A2; --blue:#8FB8DC;
+    --paper:#15171C; --pen:#DDE3EA; --pencil:#98A1AD; --ink-blue:#9DB9E0;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 70px;background:var(--bg);color:var(--ink);
+       font:400 14px/1.6 var(--fu);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font:500 27px/1.18 var(--fd);margin:0 0 4px;letter-spacing:-.01em}
+  h2{font:500 19px/1.25 var(--fd);margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--rule)}
+  h3{font:600 13px/1.3 var(--fu);margin:22px 0 7px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink3)}
+  h4{font:600 14px/1.3 var(--fu);margin:18px 0 5px}
+  p{margin:0 0 11px;max-width:88ch}
+  .lede{color:var(--ink2);font-size:15px;max-width:82ch;margin-bottom:2px}
+  .meta{color:var(--ink3);font-size:11.5px;font-family:var(--fm);margin:0 0 16px}
+  .ctl button{font:inherit;font-size:11.5px;font-weight:600;padding:6px 13px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--surf);color:var(--ink2);border-radius:999px;margin-left:5px}
+  .ctl button.on{background:var(--pr);color:var(--onp);border-color:var(--pr)}
+  .card{border:1px solid var(--rule);border-radius:13px;background:var(--surf);padding:16px 18px;margin:14px 0;
+        box-shadow:0 1px 2px var(--sh)}
+  .card.hot{border-color:var(--rose);border-left-width:4px}
+  .card.ok{border-color:var(--green);border-left-width:4px}
+  .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card.blue{border-color:var(--blue);border-left-width:4px}
+  .card h3,.card h4{margin-top:0}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}
+  th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink3);
+     border-bottom:1.5px solid var(--rule)}
+  td.num{text-align:right;font-family:var(--fm);font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.note td{color:var(--ink3);font-size:11.5px;font-style:italic}
+  tr.hot td:first-child{box-shadow:inset 3px 0 var(--rose)}
+  tr.ok td:first-child{box-shadow:inset 3px 0 var(--green)}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .mono{font-family:var(--fm);font-size:.93em}
+  pre{font-family:var(--fm);font-size:12px;line-height:1.55;background:var(--low);border:1px solid var(--rule);
+      border-radius:9px;padding:12px 14px;overflow-x:auto;margin:10px 0}
+  .tag{display:inline-block;font:600 10px/1 var(--fu);letter-spacing:.04em;text-transform:uppercase;
+       padding:4px 7px;border-radius:5px;white-space:nowrap}
+  .tag.no{background:var(--rose);color:#fff}
+  .tag.ok{background:var(--green);color:#fff}
+  .tag.part{background:var(--amber);color:#fff}
+  .tag.q{background:var(--cont);color:var(--ink3);border:1px solid var(--rule)}
+  .quiet{color:var(--ink3)}
+  strong{font-weight:640}
+  ul,ol{margin:0 0 11px;padding-left:22px;max-width:86ch}
+  li{margin-bottom:5px}
+  .foot{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px}
+
+  /* ── the hand-drawn sheet ─────────────────────────────────────────── */
+  .sheet{background:var(--paper);color:var(--pen);border:2px solid var(--pen);
+    border-radius:255px 15px 225px 15px/15px 225px 15px 255px;
+    padding:22px 26px 26px;margin:18px 0;font-family:var(--fh);position:relative;
+    box-shadow:2px 3px 0 var(--sh)}
+  .sheet h4{font-family:var(--fh);font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:.01em}
+  .sheet p,.sheet li{font-family:var(--fh);font-size:16.5px;line-height:1.5;max-width:none}
+  .sheet .note{color:var(--pencil);font-size:15px}
+  .sheet .arrow{font-size:19px;color:var(--ink-blue)}
+  .sk{border:2px solid var(--pen);border-radius:14px 6px 16px 8px/8px 16px 6px 14px;
+    padding:10px 13px;background:transparent}
+  .sk.dashed{border-style:dashed}
+  .sk-row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+  .sk-row>*{flex:1 1 180px}
+  .crumb{font-family:var(--fh);font-size:17px;color:var(--ink-blue);margin:8px 0 2px}
+  .crumb b{color:var(--pen)}
+  .keyline{font-family:var(--fm);font-size:11.5px;color:var(--pen);background:rgba(125,125,125,.10);
+    border-radius:5px;padding:5px 8px;display:inline-block;margin-top:4px;word-break:break-all}
+  .tick{color:var(--green);font-weight:700}
+  .cross{color:var(--rose);font-weight:700}
+  .lbl{display:inline-block;background:var(--pen);color:var(--paper);font-family:var(--fu);
+    font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 6px;border-radius:4px;transform:rotate(-1.5deg)}
+</style>
+
+<div class="wrap">
+
+<div class="top">
+  <div>
+    <h1>The joining side</h1>
+    <p class="lede">Offboarding is fully modelled &mdash; a table, a child ledger, four
+      endpoints, a tab and a Niyam event. Onboarding is modelled nowhere, at any layer.
+      This is the mirror, built from the offboarding files rather than from an idea of
+      what onboarding ought to be.</p>
+    <p class="meta">Proposal 84 &middot; 2026-08-22 &middot; read from
+      <span class="mono">083</span>, <span class="mono">164</span>,
+      <span class="mono">routers/manav.py</span>, <span class="mono">ExitsTab.jsx</span>
+      and <span class="mono">onboarding_chain.py</span> &middot; every number below was
+      SELECTed from the live database, read-only</p>
+  </div>
+  <div class="ctl">
+    <button id="bl" class="on" onclick="T('light')">Light</button>
+    <button id="bd" onclick="T('dark')">Dark</button>
+  </div>
+</div>
+
+<h2>0 &middot; What was measured</h2>
+
+<p>Every figure here came from <span class="mono">SELECT</span>s run through
+<span class="mono">railway run -e staging -s Kartavya</span> against the Supabase database
+staging and production share. Nothing was written. The probe script was deleted.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Fact</th><th class="num">Measured</th><th>What it means for this design</th></tr>
+  <tr><td>Tables whose name contains <span class="mono">onboard</span>,
+      <span class="mono">joiner</span> or <span class="mono">induction</span>, either schema</td>
+      <td class="num">0</td><td>Nothing to migrate, nothing to preserve. Greenfield.</td></tr>
+  <tr><td>Employees on the register</td><td class="num">98</td>
+      <td>97 active, across 2 orgs (71 and 27).</td></tr>
+  <tr><td>Employees with a login linked</td><td class="num">2</td>
+      <td>2 of 98. The joiner-facing half of this design reaches almost nobody today
+      &mdash; see &sect;6.</td></tr>
+  <tr><td>Employees with a joining date</td><td class="num">98</td>
+      <td>Every one. <span class="mono">date_of_joining</span> is reliable enough to key a
+      backfill on.</td></tr>
+  <tr><td>Joined in the last 90 days</td><td class="num">14</td>
+      <td>Joined during 2026: <strong>16</strong>, of which <strong>2</strong> have a login.
+      Future-dated joiners: <strong>0</strong>.</td></tr>
+  <tr><td>Employees with a reporting manager written</td><td class="num">0</td>
+      <td>Unchanged since migration 164 measured it. A buddy or a first-week owner
+      <strong>cannot</strong> be derived from <span class="mono">reporting_to</span>. It is
+      stored, never inferred.</td></tr>
+  <tr><td>Employees with department / designation / email</td>
+      <td class="num">86 / 97 / 98</td>
+      <td>The three routable facts are populated. Checklist items can be templated by
+      department.</td></tr>
+  <tr><td>Employees with a salary structure</td><td class="num">85</td>
+      <td>13 of 98 have none &mdash; a real outstanding onboarding item, invisible today.</td></tr>
+  <tr><td><span class="mono">manav_offboarding</span> rows</td><td class="num">11</td>
+      <td>3 completed, 3 settled, 3 in_clearance, 2 initiated. Across 2 orgs.</td></tr>
+  <tr><td><span class="mono">manav_exit_interviews</span> rows</td><td class="num">1</td>
+      <td>The interview half is barely used.</td></tr>
+  <tr><td><span class="mono">manav_offboarding_custody</span> rows</td><td class="num">0</td>
+      <td>Built (164), reachable, never written to. Its <em>shape</em> is still the right
+      precedent; its adoption is not evidence against it.</td></tr>
+  <tr class="hot"><td><span class="mono">clearance</span> values that are a jsonb
+      <strong>object</strong>, not an array</td><td class="num">10 of 11</td>
+      <td>See the defect below. This is the single most important measurement in this
+      document.</td></tr>
+  <tr><td>Assets on the register / assigned / returned</td>
+      <td class="num">100 / 70 / 1</td>
+      <td>Categories: laptop 30, other 25, furniture 12, phone 12, tablet 11, vehicle 10.
+      <span class="mono">manav_assets.assigned_to</span> already exists &mdash; equipment
+      issue does not need a new home.</td></tr>
+  <tr><td><span class="mono">public.invites</span> rows / accepted / carrying an
+      <span class="mono">employee_id</span></td><td class="num">37 / 20 / 1</td>
+      <td>Migration 187 landed recently; exactly one invitation has ever linked to a
+      personnel file.</td></tr>
+  <tr><td><span class="mono">employee.joined</span> events emitted, ever</td>
+      <td class="num">2</td><td>The event exists and fires. It is the only
+      <span class="mono">employee.*</span> event type present in
+      <span class="mono">niyam_events</span>.</td></tr>
+  <tr><td>Armed Niyam rules on <span class="mono">employee.joined</span></td>
+      <td class="num">0</td>
+      <td>Of 8 armed rules in the database, none is on any employee event. Automation
+      designed against this event fires for nobody until a rule is armed.</td></tr>
+  <tr><td>Skill templates in <span class="mono">hub_skill_templates</span></td>
+      <td class="num">78</td>
+      <td>3 carry <span class="mono">module='manav'</span> (regional send guard, attendance
+      exceptions, unpaid reimbursements). <strong>None names
+      <span class="mono">execute_onboarding</span>.</strong> Confirmed unreachable &mdash;
+      see &sect;5.</td></tr>
+  <tr><td><span class="mono">staging.hr_documents</span> rows</td><td class="num">0</td>
+      <td>The table exists (id, org_id, employee_id, type, name, file_url, file_size,
+      uploaded_by, uploaded_at) and is empty. Document collection has a home already.</td></tr>
+</table>
+</div>
+
+<div class="card hot">
+  <h4>A live defect, found while measuring &mdash; the exit-completion guard has never fired</h4>
+  <p><span class="mono">complete_offboarding</span> refuses to close an exit while clearance
+  is outstanding. Its check is:</p>
+  <pre>pending = [c.get("item") for c in clearance if isinstance(c, dict) and not c.get("done")]</pre>
+  <p>That assumes <span class="mono">clearance</span> is a <em>list of objects</em>, which is
+  what <span class="mono">_DEFAULT_CLEARANCE</span> and migration 083 both specify.
+  <strong>Ten of the eleven live rows hold an object instead</strong>, identical in every
+  one:</p>
+  <pre>{"hr": false, "finance": false, "it_assets": true}</pre>
+  <p>Iterating a dict yields its <em>keys</em> &mdash; three strings.
+  <span class="mono">isinstance("hr", dict)</span> is False, so the comprehension is empty,
+  <span class="mono">pending</span> is empty, and <strong>the refusal never happens</strong>.
+  Every one of those ten exits can be completed with nothing ticked. The single row that is
+  correctly an array has 6 items with keys <span class="mono">item / owner / done /
+  done_at</span> &mdash; exactly as designed.</p>
+  <p class="quiet">The frontend is already defensive about this
+  (<span class="mono">asClearance()</span> in ExitsTab.jsx returns <span class="mono">[]</span>
+  for a non-array), which is why the screen shows &ldquo;&mdash;&rdquo; rather than crashing,
+  and why nobody noticed. The ten rows look like seed data, not user input. <strong>Out of
+  scope for this proposal to fix &mdash; but the mirror must not inherit it</strong>, which
+  is why the schema below carries a <span class="mono">jsonb_typeof</span> CHECK that 083
+  did not.</p>
+</div>
+
+<h2>1 &middot; The schema</h2>
+
+<p>Two tables, mirroring the two that exist. Naming, column order, defaults, nullability and
+comment style are taken from 083 and 164 rather than chosen: <span class="mono">uuid</span> PK
+defaulting to <span class="mono">gen_random_uuid()</span>, <span class="mono">uuid org_id</span>
+and <span class="mono">employee_id</span>, <span class="mono">text</span> actor columns
+because <span class="mono">users.user_id</span> is text throughout this schema, and
+<strong>no foreign keys to <span class="mono">manav_employees</span></strong> &mdash; the
+<span class="mono">org_id + employee_id</span> pair is how every other table in this module
+scopes, and adding FKs on only these two would be inconsistent without being safer. That is
+083's argument verbatim and it has not stopped being true.</p>
+
+<div class="card blue">
+  <h4>One migration, not two &mdash; and the reason is a house rule</h4>
+  <p>164 had to add its roll-up columns to an existing table with
+  <span class="mono">ADD COLUMN IF NOT EXISTS</span>. <strong>An inline CHECK on
+  <span class="mono">ADD COLUMN IF NOT EXISTS</span> is skipped entirely when the column
+  already exists</strong> &mdash; the whole clause is, not just the column &mdash; so a
+  re-run of a partially-applied migration leaves a column with no constraint, and
+  <span class="mono">pg_constraint</span>, not the migration file, is the only honest answer
+  to &ldquo;is it enforced&rdquo;.</p>
+  <p>This design has no such exposure and must keep it that way: <strong>everything here is
+  <span class="mono">CREATE TABLE</span></strong>, where inline CHECKs are unconditional.
+  The roll-up columns 164 had to bolt on are declared inline from the start. Nothing is
+  ALTERed, so the rule never comes into play.</p>
+</div>
+
+<h3>Migration 195 &mdash; <span class="mono">195_employee_onboarding.sql</span></h3>
+
+<pre>-- 195 · Employee onboarding — the mirror of 083/164.
+--
+-- WHAT THIS FILE TOUCHES, exactly:
+--   CREATES  staging.manav_onboarding                (new)
+--   CREATES  staging.manav_onboarding_provisioning   (new)
+--   CREATES  seven indexes on those two tables
+--   ALTERS   nothing. DROPS nothing. INSERTs, UPDATEs and DELETEs nothing.
+--
+-- Conventions matched to 083 (which matched manav_leave_requests): uuid PK
+-- defaulting to gen_random_uuid(), uuid org_id and employee_id, text status
+-- with a default, timestamptz created_at/updated_at defaulting to now().
+-- Actor columns are text because users.user_id is text throughout this schema.
+--
+-- No foreign keys to manav_employees, matching 083 and the rest of the module.
+
+BEGIN;
+
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '60s';
+-- Both are inert outside a transaction block (PostgreSQL emits
+-- "WARNING: SET LOCAL can only be used in transaction blocks"), which is why
+-- the BEGIN is not decoration. Copied from 164, 095 and siblings.
+
+
+CREATE TABLE IF NOT EXISTS staging.manav_onboarding (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id              uuid NOT NULL,
+    employee_id         uuid NOT NULL,
+
+    -- Why they are arriving. The mirror of exit_type, and it exists for the
+    -- same reason: it drives whether probation applies, and it is the split
+    -- every joining report needs. A rehire is not a new hire, and an intern
+    -- being converted is neither.
+    joining_type        text NOT NULL DEFAULT 'new_hire',
+    source              text,
+
+    -- Dates. `offer_date` is when it was agreed; `joining_date` is when they
+    -- start. The mirror of resignation_date / last_working_day.
+    --
+    -- joining_date is recorded here and NOT read from
+    -- manav_employees.date_of_joining, for the reason 083 gives about notice:
+    -- the planned date and the actual date diverge (a joiner defers a week),
+    -- and the personnel file records what is true now while this record has to
+    -- keep what was planned. All 98 live employees have a date_of_joining, so
+    -- the backfill door in §3 can seed this from it.
+    offer_date          date,
+    joining_date        date,
+
+    -- Probation is the mirror of notice: a duration, recorded rather than
+    -- computed, because waivers are common and the actual figure is what the
+    -- confirmation letter and the appraisal cycle need.
+    probation_days      integer NOT NULL DEFAULT 0,
+    probation_waived    boolean NOT NULL DEFAULT FALSE,
+
+    -- The checklist. A jsonb list of {item, owner, done, done_at, note} — the
+    -- SAME shape as manav_offboarding.clearance, deliberately, so one renderer
+    -- serves both screens. See §2 for why this is jsonb and the provisioning
+    -- ledger below is not.
+    --
+    -- THE CHECK IS NEW AND 083 SHOULD HAVE HAD IT. Ten of eleven live
+    -- `clearance` values are a jsonb OBJECT, not an array (measured
+    -- 2026-08-22), and complete_offboarding's outstanding-items guard silently
+    -- passes on every one of them because iterating a dict yields strings.
+    -- Refusing the wrong container at write time is the difference between a
+    -- guard and a decoration.
+    checklist           jsonb NOT NULL DEFAULT '[]'::jsonb,
+
+    -- Who shows them around. NOT derived from manav_employees.reporting_to:
+    -- that column is TEXT against a uuid id and is unwritten on all 98 live
+    -- rows (re-measured 2026-08-22, unchanged since 164 said the same), so
+    -- anything derived from it resolves to nobody for every employee in the
+    -- database. It is a decision a human makes. Stored, not inferred.
+    buddy_employee_id   uuid,
+
+    -- Payroll readiness. The mirror of settlement: a pointer, never a restated
+    -- figure. 85 of 98 employees have a salary structure; the other 13 are an
+    -- outstanding onboarding item that nothing surfaces today.
+    salary_structure_id uuid,
+    payroll_ready_at    timestamptz,
+
+    -- Would you confirm them. The mirror of rehire_eligible — the one question
+    -- everybody asks at the end of probation and nobody writes down. NULL
+    -- until decided; it is a three-state fact, not a boolean with a default.
+    probation_outcome   boolean,
+    confirmed_on        date,
+
+    -- The roll-up, declared inline rather than bolted on as 164 had to.
+    -- provisioning_scanned_at says when the system last LOOKED — which is how
+    -- "nothing outstanding" is told apart from "never checked". Those two look
+    -- identical in every report that omits this column, and only one of them
+    -- is good news. 164's argument, and it is the right one.
+    access_granted_at       timestamptz,
+    access_granted_by       text,
+    equipment_issued_at     timestamptz,
+    documents_collected_at  timestamptz,
+    provisioning_scanned_at timestamptz,
+    provisioning_notes      text,
+
+    status              text NOT NULL DEFAULT 'initiated',
+    notes               text,
+    initiated_by        text,
+    created_at          timestamptz DEFAULT now(),
+    updated_at          timestamptz DEFAULT now(),
+
+    CONSTRAINT manav_onboarding_joining_type_ck CHECK (joining_type IN (
+        'new_hire', 'rehire', 'transfer', 'conversion', 'contractor_to_payroll',
+        'acquisition', 'returning'
+    )),
+    CONSTRAINT manav_onboarding_status_ck CHECK (status IN (
+        'initiated', 'in_progress', 'documents_pending', 'ready',
+        'completed', 'cancelled'
+    )),
+    -- Dates must run forwards, exactly as 083 insists for the exit. A joining
+    -- date before the offer date is a typo every time.
+    CONSTRAINT manav_onboarding_dates_ck CHECK (
+        offer_date IS NULL OR joining_date IS NULL
+        OR joining_date &gt;= offer_date
+    ),
+    -- The container check 083 lacked.
+    CONSTRAINT manav_onboarding_checklist_ck CHECK (
+        jsonb_typeof(checklist) = 'array'
+    )
+);
+
+-- One live onboarding per employee. Mirrors
+-- manav_offboarding_one_live_per_employee exactly, including the cancelled
+-- exclusion so a mistaken record can be cancelled and redone. A second live
+-- row is either a duplicate or a rehire that has not been modelled, and both
+-- should fail loudly rather than leave two joinings fighting over one
+-- confirmation.
+CREATE UNIQUE INDEX IF NOT EXISTS manav_onboarding_one_live_per_employee
+    ON staging.manav_onboarding (org_id, employee_id)
+    WHERE status &lt;&gt; 'cancelled';
+
+CREATE INDEX IF NOT EXISTS idx_manav_onboarding_org      ON staging.manav_onboarding (org_id);
+CREATE INDEX IF NOT EXISTS idx_manav_onboarding_status   ON staging.manav_onboarding (org_id, status);
+CREATE INDEX IF NOT EXISTS idx_manav_onboarding_joining  ON staging.manav_onboarding (org_id, joining_date);
+-- "Whose probation ends soon" — the query the confirmation reminder is built
+-- from, and the one a jsonb checklist could never serve.
+CREATE INDEX IF NOT EXISTS idx_manav_onboarding_probation
+    ON staging.manav_onboarding (org_id, joining_date)
+    WHERE probation_outcome IS NULL AND status &lt;&gt; 'cancelled';
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The ledger. One row per THING, not one row per joining.
+-- ─────────────────────────────────────────────────────────────────────────────
+--
+-- 164's argument, mirrored: `checklist` above is the right shape for a firm's
+-- own steps ("desk ready", "first-week plan sent"). It is the WRONG shape for
+-- provisioning, for the same reason it was wrong for custody — a grant or an
+-- issue names a SECOND thing, and the question actually asked later is "who
+-- else holds this laptop" or "which joiners are still waiting on IT", which a
+-- jsonb blob on one person's row cannot answer without scanning every joining
+-- the firm has ever recorded.
+CREATE TABLE IF NOT EXISTS staging.manav_onboarding_provisioning (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id          uuid NOT NULL,
+    onboarding_id   uuid NOT NULL,
+    employee_id     uuid NOT NULL,
+
+    -- THREE verbs where offboarding has two, and the asymmetry is real rather
+    -- than sloppy. Custody at exit has exactly two directions: work moves to
+    -- somebody (reassign) and access stops (revoke). Joining has those two
+    -- inverted — access starts (grant), a thing is handed over (issue) — plus
+    -- one with NO exit equivalent: the firm COLLECTS something from the joiner
+    -- (a PAN copy, a signed Form 11, a degree certificate). Nobody hands the
+    -- firm a document on their way out. Folding 'collect' into 'issue' would
+    -- lose the direction, and direction is the whole content of the row.
+    action          text NOT NULL,
+
+    -- What kind of thing. Deliberately NOT a foreign key, for 164's reason:
+    -- the subjects live across two schemas and key on different types
+    -- (staging.manav_assets.id is uuid, staging.user_roles.role_code is text,
+    -- staging.hr_documents.id is uuid). An FK would have to pick one and would
+    -- then refuse to record the others.
+    subject_type    text NOT NULL,
+
+    -- The machine handle: manav_assets.id::text, user_roles.role_code,
+    -- hr_documents.id::text. NULL is legal — "the desk by the window" has no
+    -- row to point at, and refusing that record is how it ends up in nobody's
+    -- notes instead.
+    subject_ref     text,
+
+    -- NAMES, NOT IDS. Every reader of this register displays this column and
+    -- never subject_ref. A row that cannot be labelled cannot be shown to
+    -- anybody, so it is refused at write time rather than rendered as a raw
+    -- uuid later. 164's rule, and check-rendered-ids depends on it.
+    subject_label   text NOT NULL,
+
+    -- 'issue' only. Both columns, for 164's reason: the id alone renders as an
+    -- opaque handle, the name alone cannot be re-resolved later.
+    issued_by_user_id text,
+    issued_by_name    text,
+
+    -- 'grant' only. `granted_at` is when access actually started, which is NOT
+    -- when the row was written: accounts are commonly opened on the joining
+    -- day and recorded the following week, and an access-review answer that
+    -- reports the recording date understates the window.
+    granted_at      timestamptz,
+    granted_by      text,
+
+    -- 'collect' only. Points at staging.hr_documents (which exists and holds
+    -- 0 rows) when the file has been uploaded; NULL while it is still awaited.
+    document_id     uuid,
+    due_on          date,
+
+    -- 'pending' is the default because that is what a newly-raised item IS.
+    -- 'waived' exists so a firm can close a line honestly — the joiner has no
+    -- prior PF account, the role does not need the portal — instead of marking
+    -- it done and lying to its own records.
+    status          text NOT NULL DEFAULT 'pending',
+    waived_reason   text,
+
+    note            text,
+    recorded_by     text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT manav_onb_prov_action_ck CHECK (action IN (
+        'grant', 'issue', 'collect'
+    )),
+    CONSTRAINT manav_onb_prov_status_ck CHECK (status IN (
+        'pending', 'done', 'waived'
+    )),
+    CONSTRAINT manav_onb_prov_subject_ck CHECK (subject_type IN (
+        'account', 'role_grant', 'module_grant', 'team_membership',
+        'device', 'asset', 'workspace',
+        'statutory_declaration', 'document', 'bank_mandate',
+        'training', 'introduction', 'policy_acknowledgement', 'other'
+    )),
+    -- A grant marked done means a time. "Done" with no timestamp cannot answer
+    -- the only question an access review asks, which is when it started.
+    CONSTRAINT manav_onb_prov_granted_at_ck CHECK (
+        action &lt;&gt; 'grant' OR status &lt;&gt; 'done' OR granted_at IS NOT NULL
+    ),
+    -- An issue with nobody issuing it is the exact failure this register exists
+    -- to prevent: equipment marked handed over, by nobody. Enforced only on
+    -- completion, so an item can be raised before IT has picked it up.
+    CONSTRAINT manav_onb_prov_issuer_ck CHECK (
+        action &lt;&gt; 'issue' OR status &lt;&gt; 'done'
+        OR (issued_by_user_id IS NOT NULL OR issued_by_name IS NOT NULL)
+    ),
+    -- A waiver without a reason is a tick-box. This is the one column that
+    -- turns "we decided not to" from an absence into a record.
+    CONSTRAINT manav_onb_prov_waived_ck CHECK (
+        status &lt;&gt; 'waived' OR waived_reason IS NOT NULL
+    )
+);
+
+-- One row per (joining, verb, thing). Without this, a service that re-scans on
+-- every page open writes a duplicate line per visit. Partial, because
+-- subject_ref is legitimately NULL for free-text items and NULLs are distinct
+-- in a unique index — those rows must be allowed to repeat rather than
+-- silently collapsing into one. 164's reasoning, unchanged.
+CREATE UNIQUE INDEX IF NOT EXISTS manav_onb_prov_one_per_subject
+    ON staging.manav_onboarding_provisioning
+       (org_id, onboarding_id, action, subject_type, subject_ref)
+    WHERE subject_ref IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_manav_onb_prov_onb
+    ON staging.manav_onboarding_provisioning (org_id, onboarding_id);
+
+-- "What is still open on this joiner" — the query the whole module exists for.
+CREATE INDEX IF NOT EXISTS idx_manav_onb_prov_pending
+    ON staging.manav_onboarding_provisioning (org_id, employee_id)
+    WHERE status = 'pending';
+
+COMMENT ON TABLE staging.manav_onboarding IS
+    'One row per joining: dates, probation, the checklist and confirmation. The mirror of manav_offboarding.';
+COMMENT ON TABLE staging.manav_onboarding_provisioning IS
+    'One row per thing a joiner is given or must hand over: grants (with the time access started), issues (with a named issuer) and collections. subject_label is the display field; subject_ref is a machine handle and is never rendered.';
+COMMENT ON COLUMN staging.manav_onboarding.provisioning_scanned_at IS
+    'When provisioning was last scanned. NULL distinguishes "never checked" from "nothing outstanding".';
+COMMENT ON COLUMN staging.manav_onboarding.buddy_employee_id IS
+    'Chosen by a human. NOT derived from manav_employees.reporting_to, which is unwritten on all 98 live rows.';
+
+COMMIT;</pre>
+
+<h2>2 &middot; The checklist model &mdash; why both shapes, and which is which</h2>
+
+<p>Offboarding already answered this question twice and gave two different answers, correctly.
+083 put the clearance list in <strong>jsonb</strong>; 164 put custody in a <strong>real
+table</strong> and spent a paragraph explaining why it was not more jsonb. Onboarding takes
+the same split, drawn on the same line, and <strong>invents no third pattern</strong>.</p>
+
+<div class="sk-row">
+  <div class="sk">
+    <h4 style="margin-top:0">jsonb <span class="mono">checklist</span></h4>
+    <p style="font-family:var(--fu);font-size:13px">Steps that are a <em>tick</em>. One
+    subject, one owner, one boolean. Nobody will ever query across joinings for them.</p>
+    <ul style="font-family:var(--fu);font-size:12.5px">
+      <li>Desk and seating ready</li>
+      <li>Buddy assigned and introduced</li>
+      <li>First-week plan shared</li>
+      <li>Team introduction done</li>
+      <li>Payroll set up</li>
+      <li>Induction / policy walkthrough</li>
+    </ul>
+  </div>
+  <div class="sk dashed">
+    <h4 style="margin-top:0"><span class="mono">..._provisioning</span> rows</h4>
+    <p style="font-family:var(--fu);font-size:13px">Things that name a <em>second party</em>
+    or need querying from the other end.</p>
+    <ul style="font-family:var(--fu);font-size:12.5px">
+      <li>Accounts &amp; access (grant &mdash; needs the time it started)</li>
+      <li>Equipment (issue &mdash; needs who handed it over; 70 of 100 assets are already
+        assigned)</li>
+      <li>Documents (collect &mdash; lands in <span class="mono">hr_documents</span>)</li>
+      <li>Statutory declarations (collect &mdash; Form 11, Form 2, PAN, previous-employer
+        Form 16)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h4>The test that decides which side an item falls on</h4>
+  <p><strong>Does anybody ever ask this question from the other direction?</strong></p>
+  <p>&ldquo;Which joiners are still waiting on an IT account&rdquo; and &ldquo;who issued
+  this laptop&rdquo; are asked from the other direction. &ldquo;Was the desk ready&rdquo; is
+  not. 164 put it as: <em>&ldquo;what did Iyer inherit&rdquo; is a question a jsonb blob on
+  Sharma's row cannot answer without scanning every exit the firm has ever recorded.</em>
+  The joining-side form of that sentence is &ldquo;what is IT still owed, across everybody
+  who started this month&rdquo;.</p>
+  <p class="quiet">The two are not alternatives and the roll-up columns are the seam:
+  <span class="mono">access_granted_at</span>, <span class="mono">equipment_issued_at</span>
+  and <span class="mono">documents_collected_at</span> summarise the ledger onto the joining
+  row so &ldquo;is this joining safe to close&rdquo; is one query. They are a summary, never
+  a substitute &mdash; the ledger says WHICH account, these say whether all of it is done.
+  Exactly 164's relationship between <span class="mono">manav_offboarding_custody</span> and
+  the six columns it added.</p>
+</div>
+
+<h3>The default checklist</h3>
+
+<p>The mirror of <span class="mono">_DEFAULT_CLEARANCE</span> in
+<span class="mono">routers/manav.py:1837</span>, same shape, same owner vocabulary, and it
+goes in the router beside it rather than in the migration &mdash; 083 seeds nothing and
+neither does 195.</p>
+
+<pre>_DEFAULT_ONBOARDING = [
+    {"item": "Offer letter signed and filed",        "owner": "HR",                "done": False},
+    {"item": "Statutory documents collected",        "owner": "HR",                "done": False},
+    {"item": "Bank and payroll details captured",    "owner": "Finance",           "done": False},
+    {"item": "Accounts and system access created",   "owner": "IT",                "done": False},
+    {"item": "Laptop and accessories issued",        "owner": "IT",                "done": False},
+    {"item": "ID card and access card issued",       "owner": "Admin",             "done": False},
+    {"item": "Desk and seating ready",               "owner": "Admin",             "done": False},
+    {"item": "Buddy assigned and introduced",        "owner": "Reporting manager", "done": False},
+    {"item": "First-week plan shared",               "owner": "Reporting manager", "done": False},
+    {"item": "Induction and policy walkthrough",     "owner": "HR",                "done": False},
+]</pre>
+
+<p class="quiet">Ten items to offboarding's six, and that is not padding: an exit is mostly
+<em>taking back</em>, which the custody ledger handles, while a joining is mostly
+<em>setting up</em>. The four items that touch accounts, equipment, ID cards and documents
+each also raise a provisioning row &mdash; the jsonb line is the summary tick, the ledger row
+is the fact. <strong>The jsonb tick is never the source of truth for anything the ledger
+covers</strong>; <span class="mono">/complete</span> reads the ledger.</p>
+
+<h2>3 &middot; The endpoints</h2>
+
+<p>Same router, same gate, same shapes. <span class="mono">routers/manav.py</span> declares
+<span class="mono">_gate = require_module_or_self(MODULE)</span> at line 57 and every
+offboarding route takes <span class="mono">levels=Depends(_gate)</span>, then calls
+<span class="mono">_require(levels, ADMIN)</span> for writes and nothing at all for reads
+(the list routes are viewer-gated by the dependency alone). <strong>Do not use
+<span class="mono">LEVELS.index()</span> anywhere</strong> &mdash;
+<span class="mono">_can</span> goes through <span class="mono">any_level_satisfies</span>
+for the separated-duty reason stated at <span class="mono">routers/manav.py:253</span>.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Route</th><th>Gate</th><th>Mirrors</th><th>Body / response</th></tr>
+  <tr><td><span class="mono">GET /v1/manav/onboarding</span><br>
+      <span class="quiet">?status=</span></td>
+      <td><span class="tag q">viewer</span></td>
+      <td><span class="mono">GET /offboarding</span> (:1857)</td>
+      <td>Joins <span class="mono">manav_employees</span> for
+      <span class="mono">employee_name, employee_code, department, designation</span>, plus a
+      correlated <span class="mono">count(*)</span> of pending provisioning rows as
+      <span class="mono">open_provisioning</span> &mdash; the mirror of
+      <span class="mono">has_interview</span>. <span class="mono">{"data": [...]}</span>,
+      newest first.</td></tr>
+  <tr><td><span class="mono">POST /v1/manav/onboarding</span></td>
+      <td><span class="tag no">admin</span></td>
+      <td><span class="mono">POST /offboarding</span> (:1881)</td>
+      <td><span class="mono">OnboardingCreate</span>: employee_id, joining_type, source,
+      offer_date, joining_date, probation_days, probation_waived, checklist,
+      buddy_employee_id, notes. Refuses 404 on an unknown employee, <strong>409 naming the
+      person</strong> if a live record exists &mdash; word-for-word the mirror of
+      <em>&ldquo;{name} already has an exit in progress&rdquo;</em>. Falls back to
+      <span class="mono">_DEFAULT_ONBOARDING</span> when checklist is empty. Also calls
+      <span class="mono">_employee_in_org</span> (:274) &mdash; every write taking an
+      employee id does.</td></tr>
+  <tr><td><span class="mono">PATCH /v1/manav/onboarding/{id}</span></td>
+      <td><span class="tag no">admin</span></td>
+      <td><span class="mono">PATCH /offboarding/{id}</span> (:1935)</td>
+      <td>Same allowlisted-key <span class="mono">SET</span> builder, same
+      <span class="mono">::date</span> casts on the date columns, and
+      <strong><span class="mono">checklist</span> bound as a LIST, never
+      <span class="mono">json.dumps</span>'d</strong> &mdash; db.py's codec encodes it once,
+      and dumping first is what produced JSON strings across 38 columns.</td></tr>
+  <tr><td><span class="mono">POST /v1/manav/onboarding/{id}/complete</span></td>
+      <td><span class="tag no">admin</span></td>
+      <td><span class="mono">POST /offboarding/{id}/complete</span> (:1978)</td>
+      <td>Sets <span class="mono">status='completed'</span>,
+      <span class="mono">confirmed_on</span>, and emits
+      <span class="mono">employee.onboarded</span> in the same transaction. <strong>Refuses
+      409 while anything is outstanding, naming up to four items</strong> &mdash; and reads
+      BOTH the jsonb checklist and the provisioning ledger, guarding the container type so it
+      cannot repeat 083's silent pass.</td></tr>
+  <tr><td><span class="mono">GET /api/v1/custody/onboarding/{employee_id}</span><br>
+      <span class="mono">POST /api/v1/custody/onboarding/{employee_id}</span><br>
+      <span class="mono">PATCH /api/v1/custody/onboarding/items/{id}</span></td>
+      <td><span class="tag part">viewer / admin</span></td>
+      <td><span class="mono">routers/custody.py:705, :742, :769</span></td>
+      <td>The provisioning ledger, in the router where the offboarding ledger already lives
+      (<span class="mono">custody.py</span> imports
+      <span class="mono">services.custody.offboarding</span> at :111 &mdash; add
+      <span class="mono">services/custody/onboarding.py</span> beside it). Strips id-bearing
+      columns from the response exactly as
+      <span class="mono">_LEAVER_ID_COLUMNS</span> (:663) does.</td></tr>
+</table>
+</div>
+
+<div class="card warn">
+  <h4>The <span class="mono">/complete</span> guard, written so it cannot rot the way 083's did</h4>
+  <pre>items = row["checklist"]
+if not isinstance(items, list):          # 10 of 11 live clearance values are dicts
+    raise HTTPException(500, "…checklist is not a list; it cannot be checked.")
+pending = [c["item"] for c in items if isinstance(c, dict) and not c.get("done")]
+
+open_prov = await conn.fetch(
+    "SELECT subject_label FROM staging.manav_onboarding_provisioning "
+    "WHERE org_id=$1::uuid AND onboarding_id=$2::uuid AND status='pending' "
+    "ORDER BY created_at LIMIT 5", org_id, str(onboarding_id))
+pending += [r["subject_label"] for r in open_prov]   # LABEL, never subject_ref</pre>
+  <p>The <span class="mono">isinstance</span> is a <strong>refusal</strong>, not a coercion.
+  A silent <span class="mono">[]</span> is exactly how the exit guard became decoration; a
+  500 that names the row is how a bad container gets fixed instead of tolerated. The
+  <span class="mono">jsonb_typeof</span> CHECK on the table means it can only ever fire on a
+  row written before the constraint existed &mdash; and there are none.</p>
+</div>
+
+<h3>Where it hooks into <span class="mono">create_employee</span></h3>
+
+<p><span class="mono">create_employee</span> (:1056) already runs an
+<span class="mono">INSERT</span> and <span class="mono">employee_joined</span> in
+<strong>one transaction</strong>, on the stated principle that <em>the event exists iff the
+personnel file does</em>. The onboarding row joins that transaction, on the same principle:
+a joining record that can be absent for a person who has joined is the same defect
+offboarding had before 083.</p>
+
+<pre>async with pool.acquire() as _conn:
+    async with _conn.transaction():
+        row = await _conn.fetchrow("INSERT INTO staging.manav_employees … RETURNING *", …)
+
+        # NEW — third statement in the existing transaction.
+        # date_of_joining is the planned date; §1 explains why it is copied
+        # rather than joined. Every one of the 98 live employees has one.
+        await _conn.execute(
+            "INSERT INTO staging.manav_onboarding "
+            "(org_id, employee_id, joining_type, joining_date, checklist, initiated_by) "
+            "VALUES ($1::uuid, $2::uuid, 'new_hire', $3::date, $4, $5)",
+            org_id, row["id"], row["date_of_joining"],
+            _DEFAULT_ONBOARDING, user["user_id"])
+
+        await employee_joined(_conn, org_id=org_id, actor_id=user["user_id"],
+                              employee_id=row["id"], row=dict(row))</pre>
+
+<p>The invitation stays exactly where it is &mdash; <strong>outside</strong> the transaction,
+after the commit, non-fatal. That placement is argued at length in the existing comment and
+none of its reasons change: <span class="mono">public.invites</span> is read by the login
+path, and holding an HR transaction open across an SMTP call means a slow mail server
+locking a personnel table.</p>
+
+<p><strong>The response gains nothing.</strong>
+<span class="mono">create_employee</span> returns <span class="mono">{status, id, name,
+employee_code}</span> plus an optional <span class="mono">invite</span> key, and the comment
+there is explicit that <span class="mono">RETURNING *</span> must not widen what leaves the
+API. An <span class="mono">onboarding</span> key would be a key that is always present and
+usually says nothing &mdash; the same argument that made <span class="mono">invite</span>
+absent rather than <span class="mono">null</span>.</p>
+
+<h3>The 98 employees who already exist</h3>
+
+<p>None of them gets a row from the hook, because they were created before it. Two doors,
+and <strong>no backfill migration</strong>:</p>
+
+<ul>
+  <li><span class="mono">POST /v1/manav/onboarding</span> is the manual door &mdash; an admin
+    starts a record for anyone, including someone who joined in 2019. The unique partial index
+    is the only thing that can refuse it.</li>
+  <li>The Joiners tab offers <em>&ldquo;14 people joined in the last 90 days and have no
+    onboarding record&rdquo;</em> as a one-click seed, exactly as the Exits tab filters out
+    people who already have a live exit. <strong>Opt-in per person</strong>, because a record
+    seeded for someone who joined in 2019 is 10 unticked boxes nobody will ever tick, and a
+    checklist that starts wrong is worse than no checklist.</li>
+</ul>
+
+<h3>Niyam</h3>
+
+<p><span class="mono">employee.joined</span> already exists and already fires &mdash; it is
+emitted from the INSERT and 2 events have been recorded. It stays exactly as it is; the
+onboarding row is a sibling of the event, not a consumer of it.</p>
+
+<p>Add <span class="mono">employee.onboarded</span> to
+<span class="mono">services/niyam/subjects.py</span>, the mirror of
+<span class="mono">employee_exited</span> (:885) which is emitted at <em>completion</em> and
+not initiation for the reason its docstring gives &mdash; <em>someone serving notice has not
+exited</em>. Someone in their first week has not been onboarded. Carry
+<span class="mono">joining_type</span> off the onboarding row (its CHECK is the vocabulary,
+passed by the caller since the employee row does not hold it), plus
+<span class="mono">department</span> and <span class="mono">designation</span> and nothing
+else &mdash; <strong>PAN, Aadhaar and bank details must never be event material</strong>,
+which <span class="mono">employee_joined</span>'s docstring already states.</p>
+
+<div class="card">
+  <p><strong>Measured, and it changes what to promise:</strong> there are 8 armed Niyam rules
+  in the database and <strong>not one is on any employee event</strong> (they are on
+  task.status_changed &times;2, task.created, task.overdue, invoice.overdue, report.due,
+  contact.stale, lead.converted). Proposal 39's line &mdash; <em>&ldquo;Employee joins &rarr;
+  create the onboarding checklist&rdquo;</em> &mdash; describes an automation that
+  <strong>fires for nobody today</strong>. That is the argument for the hook above being a
+  direct write rather than a rule: the record must exist because the employee exists, not
+  because somebody remembered to arm something.</p>
+</div>
+
+<h2>4 &middot; The UI</h2>
+
+<p>One new tab, <span class="mono">joiners</span>, in the <span class="mono">TABS</span>
+array at <span class="mono">frontend/src/pages/ManavPage.jsx:55</span>, placed immediately
+<strong>before</strong> <span class="mono">exits</span> &mdash; joining precedes leaving, and
+the two read as a pair. <span class="mono">useTabPrefs</span> lets a firm reorder it anyway.
+The file is <span class="mono">frontend/src/pages/manav/JoinersTab.jsx</span>, and it is
+<span class="mono">ExitsTab.jsx</span> with the verbs turned around.</p>
+
+<h3>What is reused, not rebuilt</h3>
+
+<div class="scroll">
+<table>
+  <tr><th>Import</th><th>From</th><th>Why</th></tr>
+  <tr><td><span class="mono">useList, ErrorNote, Shim, errText</span></td>
+      <td><span class="mono">./_shared</span></td>
+      <td>Every Manav tab's loading, error and retry contract. Nothing new.</td></tr>
+  <tr><td><span class="mono">useTableView</span> + <span class="mono">TableToolbar</span></td>
+      <td>the DataTable barrel</td>
+      <td>Filter chip on <span class="mono">status</span>, exactly as ExitsTab does
+      (<span class="mono">filters: [{key:'status', label:'Status'}]</span>).</td></tr>
+  <tr><td><span class="mono">CreatedHead</span> / <span class="mono">CreatedCell</span></td>
+      <td><span class="mono">ui/CreatedColumn</span></td>
+      <td>The server orders by <span class="mono">created_at</span>; the sortable header has
+      to agree with the order rows arrive in rather than contradict it.</td></tr>
+  <tr><td><span class="mono">DateInput</span></td>
+      <td><span class="mono">ui/DateInput</span></td>
+      <td><strong>No native <span class="mono">&lt;input type="date"&gt;</span> anywhere.</strong>
+      Offer date, joining date, confirmation date. Playwright must use
+      <span class="mono">setDate()</span>.</td></tr>
+  <tr><td><span class="mono">useModuleWrite</span></td>
+      <td><span class="mono">hooks/useModuleWrite</span></td>
+      <td>F32 &mdash; the module is read from the route, never named in the component. Gives
+      <span class="mono">canWrite</span> and the denial string for the button
+      <span class="mono">title</span>.</td></tr>
+  <tr><td><span class="mono">ConfirmDialog</span>, <span class="mono">Empty</span>,
+      <span class="mono">useToast</span></td>
+      <td>editorial / ui</td>
+      <td>The confirm before Complete, the empty state, the toasts.</td></tr>
+</table>
+</div>
+
+<h3>The screen</h3>
+
+<div class="sheet">
+  <h4>Manav &rarr; Joiners</h4>
+  <p class="note">3 in progress &middot; 12 completed &middot; 5 on probation
+    <span style="float:right" class="lbl">+ Start onboarding</span></p>
+  <div class="sk">
+    <p><b>Employee</b> &nbsp; Type &nbsp; Joining date &nbsp; Checklist &nbsp; Provisioning
+      &nbsp; Status &nbsp; Created &nbsp; &#9656;</p>
+    <p class="note">Priya Nair &middot; EMP-0142 &nbsp; New hire &nbsp; 12 Aug 2026 &nbsp;
+      <b>7/10</b> &nbsp; <b>2 open</b> &nbsp; <span class="tick">in progress</span></p>
+    <p class="note">Rahul Desai &middot; EMP-0141 &nbsp; Rehire &nbsp; 01 Aug 2026 &nbsp;
+      10/10 &nbsp; &mdash; &nbsp; ready</p>
+  </div>
+  <p class="crumb">&#9662; expanded &mdash; <b>the checklist, then the ledger</b></p>
+  <div class="sk dashed">
+    <p><span class="cross">&#9633;</span> Accounts and system access created &middot;
+      <span class="note">IT</span></p>
+    <p><span class="tick">&#9745;</span> Laptop and accessories issued &middot;
+      <span class="note">IT &middot; done 12 Aug</span></p>
+    <p class="note">&mdash;&mdash; provisioning &mdash;&mdash;</p>
+    <p><b>grant</b> &nbsp; Kartavaya account &nbsp; <span class="note">pending</span></p>
+    <p><b>issue</b> &nbsp; ThinkPad T14 &middot; AST-0031 &nbsp;
+      <span class="note">issued by Anil Kumar, 12 Aug</span></p>
+    <p><b>collect</b> &nbsp; PAN card copy &nbsp; <span class="note">pending &middot; due 20 Aug</span></p>
+  </div>
+  <p class="note">Buddy: <b>Meera Joshi</b> &nbsp;&middot;&nbsp; Probation 90 days, ends
+    10 Nov &nbsp;&middot;&nbsp; <span class="arrow">&rarr;</span> Complete onboarding</p>
+</div>
+
+<div class="card">
+  <h4>The rules the screen must not break</h4>
+  <ul>
+    <li><strong>Names, not IDs.</strong> The row shows
+      <span class="mono">employee_name</span> and <span class="mono">employee_code</span> from
+      the server join, the buddy by name, the issuer by
+      <span class="mono">issued_by_name</span>, and every ledger line by
+      <span class="mono">subject_label</span>. <span class="mono">subject_ref</span> is never
+      rendered &mdash; it exists to be passed back, not shown.
+      <span class="mono">check-rendered-ids.mjs</span> is positional, so an id must not reach
+      a text position at all.</li>
+    <li><strong><span class="mono">--row-h</span>.</strong> The table sits on the token like
+      every other; the expanded panel is a sibling <span class="mono">&lt;tr&gt;</span>, which
+      is how ExitsTab does it, so the row contract is not violated by a variable-height
+      cell.</li>
+    <li><strong>The employee picker excludes anyone who already has a live record</strong>
+      &mdash; ExitsTab's <span class="mono">leaving</span> Set, mirrored. Offering a name that
+      will 409 is a form that knows better than it behaves.</li>
+    <li><strong>The form says what it does not do.</strong> ExitsTab's create form carries a
+      paragraph explaining that starting an exit does not remove anyone. The mirror:
+      <em>&ldquo;This starts the checklist. It does not create a login &mdash; invite them
+      from the employee record or Settings &rarr; Members.&rdquo;</em> The two are genuinely
+      separate and the screen should stop people assuming otherwise.</li>
+    <li><strong>Defensive container read.</strong> Copy <span class="mono">asClearance()</span>
+      verbatim as <span class="mono">asChecklist()</span>. It is the only reason the ten
+      malformed exit rows render as &ldquo;&mdash;&rdquo; instead of crashing the tab.</li>
+  </ul>
+</div>
+
+<p class="quiet">A separate tab for provisioning is <strong>not</strong> proposed, even though
+custody got one. Custody's tab earns its place because it answers a cross-person question
+(&ldquo;what did Iyer inherit&rdquo;) that has no single row to hang off. Provisioning is
+read per joiner, from the joiner's row, and a tab holding 0 rows is what
+<span class="mono">manav_offboarding_custody</span> has today.</p>
+
+<h2>5 &middot; <span class="mono">execute_onboarding</span> &mdash; replace it</h2>
+
+<p>Read in full at <span class="mono">backend/services/skills/action/onboarding_chain.py</span>
+(83 lines). It is registered in <span class="mono">skill_dispatcher.py:393</span>, listed in
+<span class="mono">modules.py:367</span> as needing <span class="mono">manav</span> +
+<span class="mono">vetana</span>, and pinned by three tests. <strong>It has never run.</strong></p>
+
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Finding</th><th>Severity</th></tr>
+  <tr class="hot"><td class="num">1</td>
+      <td><strong>It is a report wearing an action's name.</strong> Of its five steps, four
+      only CHECK whether something is already true and then append the label to
+      <span class="mono">steps_completed</span>. It provisions nothing, assigns nothing and
+      creates nothing. A firm reading five ticks would believe five things were done.</td>
+      <td><span class="tag no">fatal</span></td></tr>
+  <tr class="hot"><td class="num">2</td>
+      <td><span class="mono">completed.append("allocate_assets")</span> is
+      <strong>unconditional</strong> &mdash; the comment says <em>&ldquo;just log, actual
+      allocation is manual&rdquo;</em> and there is no log. That step reports success for
+      every employee, always, including one who was given nothing.</td>
+      <td><span class="tag no">fatal</span></td></tr>
+  <tr class="hot"><td class="num">3</td>
+      <td>Step 2 queries <span class="mono">staging.user_roles WHERE user_id = $1::uuid</span>
+      but binds <span class="mono">manav_employees.user_id</span>, which is
+      <strong>TEXT</strong> &mdash; and <span class="mono">users.user_id</span> is text
+      throughout this schema, which is why every actor column in 083 is text. A non-uuid
+      handle raises. It is unobserved only because <strong>2 of 98 employees have a
+      <span class="mono">user_id</span> at all</strong>, so 96 of them skip the branch.</td>
+      <td><span class="tag no">bug</span></td></tr>
+  <tr><td class="num">4</td>
+      <td>It calls <span class="mono">send_email</span> synchronously from inside an async
+      skill. Its own comment records that the <span class="mono">await</span> raised once and
+      <span class="mono">"welcome_email"</span> was silently never recorded.</td>
+      <td><span class="tag part">smell</span></td></tr>
+  <tr><td class="num">5</td>
+      <td>The welcome-mail template hand-writes its markup and never passes through
+      <span class="mono">_base()</span>, where the product's escaping lives &mdash; one of the
+      nine <span class="mono">preview_emails.py</span> flags. The body escapes correctly; the
+      pattern does not follow the <span class="mono">email_service.py</span> choke points.</td>
+      <td><span class="tag part">smell</span></td></tr>
+  <tr class="hot"><td class="num">6</td>
+      <td><strong>Unreachable.</strong> 78 skill templates exist; 3 carry
+      <span class="mono">module='manav'</span>; none names
+      <span class="mono">execute_onboarding</span> in its
+      <span class="mono">steps[].skill_function</span>. Measured against the live catalog
+      2026-08-22, not read off a migration.</td>
+      <td><span class="tag no">dead</span></td></tr>
+</table>
+</div>
+
+<div class="card hot">
+  <h4>Verdict: the module does <span style="text-decoration:underline">not</span> call it, and no template is seeded for it as written</h4>
+  <p><strong>Do not call it.</strong> A module whose whole value is an honest record of what
+  was done cannot delegate to a function that reports success for work it did not do. Point 2
+  alone disqualifies it, and it is not a bug that can be patched out &mdash; there is no
+  allocation for that step to perform, because allocation is
+  <span class="mono">manav_assets.assigned_to</span> and a provisioning row.</p>
+  <p><strong>Do not seed a template for it either.</strong> Seeding is the one thing that
+  would make it reachable, and the first time it ran it would email a joiner and return four
+  false ticks.</p>
+  <p><strong>Rewrite it in place, keeping the name.</strong> The name is load-bearing in three
+  test files (<span class="mono">test_every_skill.py:123</span> pins its required argument as
+  <span class="mono">employee_id</span>;
+  <span class="mono">test_a_skill_can_run_unattended.py:56</span> lists it as needing to be
+  told which employee; <span class="mono">modules.py:367</span> pins its module set) and
+  renaming it churns all three for nothing. Re-point the body at
+  <span class="mono">staging.manav_onboarding</span> so it answers <em>&ldquo;what is
+  outstanding on this joining&rdquo;</em> &mdash; a read, no mail, no writes &mdash; and only
+  then seed a template. The <span class="mono">vetana</span> entry in
+  <span class="mono">modules.py</span> stays honest, because
+  <span class="mono">salary_structure_id</span> is one of the things it reports on.</p>
+</div>
+
+<div class="card warn">
+  <h4><span class="mono">manav_onboarding_checklist</span> must stay a ghost</h4>
+  <p>It is one of the seventeen names in <span class="mono">GHOSTS_OF_059</span>
+  (<span class="mono">tests/test_every_skill.py:231</span>), a documented function that was
+  never written. The test asserts that frozenset is <strong>exactly</strong> equal &mdash;
+  <em>&ldquo;if it has been edited, the exclusion needs rewriting rather than
+  extending&rdquo;</em>. Implementing it, or adding the new module's function to that set,
+  breaks the assertion in both directions. It has nothing to do with this design and should
+  be left alone.</p>
+</div>
+
+<h2>6 &middot; The two moments the owner named</h2>
+
+<p><em>&ldquo;Onboarding missing on invite and new employee.&rdquo;</em> Two moments, two
+different people, and only one of them is fixed by everything above.</p>
+
+<h3>Moment one &mdash; the admin, adding an employee</h3>
+
+<p>Today: fill the form, tick <em>create login</em> or not, press save. One row is written,
+one Niyam event fires, and if the box was ticked one email goes out. Then <strong>nothing at
+all</strong>. There is no list of what is owed, nobody is told, and the 13 employees with no
+salary structure are invisible. Sections 1&ndash;4 are the whole answer to this moment.</p>
+
+<h3>Moment two &mdash; the joiner, following the link</h3>
+
+<div class="card hot">
+  <h4>What the joiner sees today, in full</h4>
+  <p><span class="mono">/accept-invite?token=…</span> &rarr; a preview of the invitation
+  (org name, inviter) &rarr; two fields, <strong>name and password</strong> &rarr; submit
+  &rarr; a toast reading <em>&ldquo;Welcome to Kartavaya!&rdquo;</em> &rarr;
+  <span class="mono">navigate('/dashboard')</span>.</p>
+  <p>That is the entire joining experience. The dashboard of an established firm is somebody
+  else's board, somebody else's tasks, and a sidebar of modules they may or may not have been
+  granted. Nothing tells them what they are expected to do, nothing tells them who their buddy
+  is, and nothing collects the PAN copy HR is waiting on.</p>
+  <p class="quiet">Measured: 37 invites, 20 accepted, and <strong>exactly one</strong> carries
+  an <span class="mono">employee_id</span> (migration 187 is recent). 2 of 98 employees have a
+  linked login at all.</p>
+</div>
+
+<div class="card">
+  <h4><span class="mono">OnboardingChecklist.jsx</span> is not the answer, and cannot be made into one</h4>
+  <p>It is the <strong>org's</strong> setup guide, not a person's: its four steps are
+  <em>create your first project</em>, <em>invite a team member</em>, <em>add your first
+  task</em>, <em>name your organisation</em>. Derived live from
+  <span class="mono">/teams</span>, <span class="mono">/users</span> and
+  <span class="mono">/tasks</span> &mdash; org-wide counts, nothing about the viewer.</p>
+  <p>For anyone joining an established firm <strong>all four are already true on the first
+  render</strong>. <span class="mono">allDone</span> becomes true, the effect at :123 calls
+  <span class="mono">dismiss()</span>, and the card removes itself before it has been read.
+  Its state also lives in <span class="mono">localStorage</span> under
+  <span class="mono">kartavya_onboarding</span> &mdash; per browser, so it is not a record of
+  anything either.</p>
+  <p class="quiet">It is also the component that once crashed the entire product for every
+  new customer at the exact moment they finished setup (a <span class="mono">dismiss()</span>
+  effect below an early return &rarr; &ldquo;Rendered fewer hooks than expected&rdquo;). It is
+  mounted by AppShell <em>outside</em> the page ErrorBoundary. Leave it alone.</p>
+</div>
+
+<h3>What should exist: <span class="mono">/welcome</span></h3>
+
+<p>A first-run route, reached from <span class="mono">AcceptInvitePage</span>'s submit
+handler instead of <span class="mono">/dashboard</span> &mdash; <strong>only</strong> when the
+accepted invite carried an <span class="mono">employee_id</span>. That column exists
+(migration 187) and is exactly the signal: an invite with one is a <em>joiner</em>, an invite
+without one is a colleague being given access. The existing branch already discriminates
+(<span class="mono">data.user?.role === 'client' ? '/client' : '/dashboard'</span>); this adds
+a third arm and changes nothing else.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>The page shows</th><th>Source</th><th>Why only this</th></tr>
+  <tr><td>&ldquo;Welcome, {name}. You have joined {org} as {designation}.&rdquo;</td>
+      <td>the onboarding row + employee row</td>
+      <td>Names, never ids. The designation is populated on 97 of 98.</td></tr>
+  <tr><td>Their buddy, by name</td><td><span class="mono">buddy_employee_id</span> &rarr; name</td>
+      <td>The single most useful fact on day one, and the one nowhere else in the product.</td></tr>
+  <tr><td><strong>Only the <span class="mono">collect</span> rows</strong> &mdash; documents
+      and declarations they owe, with due dates and an upload control</td>
+      <td><span class="mono">manav_onboarding_provisioning WHERE action='collect' AND status='pending'</span></td>
+      <td>These are the only items the joiner can act on. Showing them &ldquo;laptop
+      pending&rdquo; is telling them to nag IT.</td></tr>
+  <tr><td>A dismissable link back to the same page from the dashboard afterwards</td>
+      <td>&mdash;</td>
+      <td>Not a forced modal, ever. The house rule for OnboardingChecklist, and it holds here.</td></tr>
+  <tr class="note"><td colspan="3">Uploads land in <span class="mono">staging.hr_documents</span>
+    (0 rows, correct shape) with the file in R2 &mdash; <strong>no file bytes in any column,
+    ever</strong>. The provisioning row's <span class="mono">document_id</span> then points at
+    it and the item closes itself.</td></tr>
+</table>
+</div>
+
+<p>The gate is a real one: <strong>the joiner is not an HR admin</strong>. This page must not
+go through <span class="mono">_gate</span> at admin. It is the
+<span class="mono">require_module_or_self</span> case the dependency is named for &mdash; a
+person reading their own record, the same door that lets an employee see their own HR row and
+nothing else. A dedicated <span class="mono">GET /v1/manav/onboarding/me</span> that resolves
+the employee from the caller's own <span class="mono">user_id</span> and never takes an id
+from the URL is the safe shape.</p>
+
+<div class="card warn">
+  <p><strong>And it reaches almost nobody until the linking problem is solved.</strong> 2 of
+  98 employees have a login; the largest org has 71 employees and 0 links. Everything in this
+  section is correct and will be invisible for most of the register. That is an argument for
+  building moment one first, not an argument against moment two &mdash; but the sequencing
+  should be honest.</p>
+</div>
+
+<h2>7 &middot; Risks</h2>
+
+<p>Staging and production share one Supabase database. Migration 195 runs against live rows
+in two real organisations.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Operation</th><th>Effect on live data</th><th>Risk</th></tr>
+  <tr><td>2 &times; <span class="mono">CREATE TABLE IF NOT EXISTS</span></td>
+      <td>Catalog-only. <strong>No existing table is read, locked, rewritten or touched.</strong>
+      A new table cannot conflict with a running query because nothing references it yet.</td>
+      <td><span class="tag ok">none</span></td></tr>
+  <tr><td>7 &times; <span class="mono">CREATE INDEX IF NOT EXISTS</span></td>
+      <td>On the two new, empty tables. Instant. <span class="mono">CONCURRENTLY</span> is
+      deliberately not used &mdash; it cannot run inside the transaction block the
+      <span class="mono">SET LOCAL</span>s require, and on an empty table it buys nothing.</td>
+      <td><span class="tag ok">none</span></td></tr>
+  <tr><td><span class="mono">ALTER TABLE</span></td>
+      <td><strong>None.</strong> Unlike 164, nothing existing is modified &mdash; so the
+      lock-queue hazard 164 had to cap with <span class="mono">lock_timeout</span> does not
+      arise at all. The timeouts are kept anyway, as house style and as a floor.</td>
+      <td><span class="tag ok">none</span></td></tr>
+  <tr><td><span class="mono">INSERT</span> / <span class="mono">UPDATE</span> /
+      <span class="mono">DELETE</span> / <span class="mono">DROP</span></td>
+      <td><strong>None.</strong> No seed data, so a second run cannot restate a fact a human
+      has since corrected.</td>
+      <td><span class="tag ok">none</span></td></tr>
+  <tr><td>Running it twice</td>
+      <td>Nothing happens. Every statement is <span class="mono">IF NOT EXISTS</span> and
+      there is no <span class="mono">ADD COLUMN</span>, so the inline-CHECK-skipping rule
+      never applies. Re-running is free.</td>
+      <td><span class="tag ok">none</span></td></tr>
+  <tr class="hot"><td><strong>The <span class="mono">create_employee</span> hook</strong></td>
+      <td>This, not the DDL, is the only real write-path change. It adds a third statement to
+      a transaction that today writes a personnel row and an event. <strong>An
+      <span class="mono">INSERT</span> that fails now fails the hire.</strong></td>
+      <td><span class="tag part">contained</span></td></tr>
+  <tr class="note"><td colspan="3">Why it is contained: the only constraint that can refuse
+    that INSERT is <span class="mono">manav_onboarding_one_live_per_employee</span>, and it
+    cannot collide &mdash; the <span class="mono">employee_id</span> was generated by the
+    statement immediately above and no other row can hold it. The
+    <span class="mono">checklist</span> CHECK cannot fire on a server-side constant.
+    <span class="mono">joining_date</span> is nullable and
+    <span class="mono">date_of_joining</span> is already validated upstream. If the
+    belt-and-braces position is wanted, the INSERT can go after the commit alongside the
+    invitation &mdash; but then a joining record can be absent for a person who has joined,
+    which is the exact defect 083 was written to end.</td></tr>
+  <tr><td>Production reading these tables</td>
+      <td>Production runs <span class="mono">main</span>, which is far behind
+      <span class="mono">staging</span> and has no code referencing either table. It sees two
+      tables it never queries. <strong>Confirm <span class="mono">meta.branch</span> before
+      trusting any live probe of the deployed behaviour</strong> &mdash; staging has silently
+      tracked main before.</td>
+      <td><span class="tag ok">none</span></td></tr>
+  <tr><td>The 10 malformed <span class="mono">clearance</span> rows</td>
+      <td><strong>Not touched by this migration.</strong> Fixing them is a separate
+      data-repair decision on production rows and needs its own risk report and its own
+      approval. Named here so it is not lost.</td>
+      <td><span class="tag q">out of scope</span></td></tr>
+</table>
+</div>
+
+<h3>Order of work</h3>
+
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Step</th><th>Independent?</th></tr>
+  <tr><td class="num">1</td><td>Migration 195. Two tables, seven indexes, nothing else.
+      Nothing reads them yet.</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td class="num">2</td><td>The four <span class="mono">/onboarding</span> routes in
+      <span class="mono">routers/manav.py</span>, beside the offboarding block. Still no hook
+      &mdash; records are created only by <span class="mono">POST</span>.</td>
+      <td><span class="tag ok">yes</span></td></tr>
+  <tr><td class="num">3</td><td><span class="mono">JoinersTab.jsx</span> + the
+      <span class="mono">TABS</span> entry. At this point a firm can run onboarding manually,
+      end to end.</td><td><span class="tag ok">yes</span></td></tr>
+  <tr><td class="num">4</td><td>The <span class="mono">create_employee</span> hook and
+      <span class="mono">employee.onboarded</span>. The only write-path change, shipped alone
+      so a regression has one suspect.</td><td><span class="tag part">after 1&ndash;3</span></td></tr>
+  <tr><td class="num">5</td><td>The provisioning ledger &mdash;
+      <span class="mono">services/custody/onboarding.py</span> + three routes + the expanded
+      panel.</td><td><span class="tag part">after 2</span></td></tr>
+  <tr><td class="num">6</td><td><span class="mono">/welcome</span> and the
+      <span class="mono">accept-invite</span> third arm.</td>
+      <td><span class="tag part">after 5</span></td></tr>
+  <tr><td class="num">7</td><td>Rewrite <span class="mono">execute_onboarding</span> as a
+      read over the new table; seed its template <strong>only then</strong>.</td>
+      <td><span class="tag part">last</span></td></tr>
+</table>
+</div>
+
+<div class="foot">
+  Proposal 84 &middot; schema mirrored from
+  <span class="mono">083_offboarding_and_exit_interviews.sql</span> and
+  <span class="mono">164_offboarding_custody.sql</span>, both read in full &middot;
+  endpoints and gates read from <span class="mono">routers/manav.py</span> &middot; UI read
+  from <span class="mono">ExitsTab.jsx</span> and <span class="mono">ManavPage.jsx</span>
+  &middot; every figure SELECTed from the live database on 2026-08-22 &middot;
+  <strong>no row, column or table was written in preparing this</strong>; the probe script was
+  deleted.
+</div>
+
+</div>
+
+<script>
+function T(m){document.documentElement.setAttribute('data-t',m==='dark'?'dark':'light');
+document.getElementById('bl').className=m==='dark'?'':'on';
+document.getElementById('bd').className=m==='dark'?'on':'';}
+</script>

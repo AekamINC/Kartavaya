@@ -226,7 +226,7 @@ def _wire(mock_pool, *, role=GOD, joined=5, org_row=None):
             return 15
         if "COUNT(DISTINCT user_id)" in query:
             return joined
-        if "FROM invites" in query:
+        if "FROM public.invites" in query:
             return 7
         return None
 

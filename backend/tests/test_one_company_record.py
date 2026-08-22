@@ -11,7 +11,7 @@ customers with the firm's orders split between them.
 import inspect
 import pathlib
 
-from routers import ganit, vikray
+from routers import ganit, products, vikray
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 
@@ -123,7 +123,11 @@ def test_cost_defaults_to_null_and_not_to_zero():
 
 
 def test_the_api_carries_cost_and_margin():
-    code = _code(ganit.list_products)
+    # The catalogue moved out of Ganit and into `routers/products.py` — one
+    # catalogue, gated on Finance OR Sales, because a product is billed by one
+    # and sold by the other. Ganit still serves the old URLs, with these exact
+    # functions. See `test_products_one_catalogue.py`.
+    code = _code(products.list_products)
     assert "cost_price" in code and "margin" in code and "margin_pct" in code
 
 
@@ -131,7 +135,7 @@ def test_a_cost_can_be_cleared_but_other_fields_cannot():
     """"I no longer know what this costs" is a real thing to say. The general
     `v is not None` filter discarded it, leaving a stale cost and a margin
     computed from it."""
-    code = _code(ganit.update_product)
+    code = _code(products.update_product)
     assert 'k == "cost_price"' in code
 
 

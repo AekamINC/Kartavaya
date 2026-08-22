@@ -86,32 +86,11 @@ class LineItem(BaseModel):
     discount_pct: float = 0
 
 
-class ProductCreate(BaseModel):
-    name: str
-    hsn_code: str = ""
-    sac_code: str = ""
-    unit: str = "NOS"
-    price: float = 0
-    #: What it costs US. Optional and defaulting to None, NEVER to 0 — zero
-    #: cost claims the item is free and renders every margin as 100%. See
-    #: migration 137: `margin` and `margin_pct` are GENERATED from this and
-    #: `price`, so nothing can store a margin that disagrees with them.
-    cost_price: float | None = None
-    gst_rate: float = 18.0
-    description: str = ""
-    is_service: bool = False
-
-
-class ProductUpdate(BaseModel):
-    name: str | None = None
-    hsn_code: str | None = None
-    sac_code: str | None = None
-    unit: str | None = None
-    price: float | None = None
-    cost_price: float | None = None
-    gst_rate: float | None = None
-    description: str | None = None
-    is_service: bool | None = None
+# `ProductCreate` and `ProductUpdate` moved with the routes, to
+# `routers/products.py`. Re-exported here because the wiring tests and any
+# out-of-tree importer still name them on this module, and a payload shape that
+# exists in two files is a payload shape that will disagree with itself.
+from routers.products import ProductCreate, ProductUpdate  # noqa: E402,F401
 
 
 class InvoiceCreate(BaseModel):
@@ -422,95 +401,31 @@ async def _doc_prefix(pool, org_id: str, invoice_type: str) -> str:
 
 
 # ── Products / Services ─────────────────────────────────────
+#
+# The catalogue MOVED to `routers/products.py` and these four paths are the same
+# four functions registered a second time — not a copy, not a redirect.
+#
+# Why it moved: a product is billed by Ganit, sold by Vikray and counted by the
+# stock ledger, and the routes sat behind `require_module("ganit")`. A firm that
+# bought Sales and not Finance could place orders against products it was not
+# allowed to list, and could not create one. Same shape as `graha_clients`, same
+# answer: `require_any_module("ganit", "vikray")`, which is the gate carried by
+# the imported handlers below.
+#
+# The old URLs stay because clients are already calling them — `InvoiceForm`,
+# `ProductsTab`, and Vikray's order form — and a module path that answers is
+# cheaper to keep than a coordinated rename. New callers use `/api/v1/products`.
+from routers.products import (  # noqa: E402
+    create_product as _shared_create_product,
+    delete_product as _shared_delete_product,
+    list_products as _shared_list_products,
+    update_product as _shared_update_product,
+)
 
-@router.get("/products")
-async def list_products(
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    rows = await pool.fetch(
-        "SELECT id, name, hsn_code, sac_code, unit, price, cost_price, "
-        "margin, margin_pct, gst_rate, "
-        "description, is_service, created_at "
-        "FROM staging.ganit_products WHERE org_id=$1::uuid AND is_active=TRUE "
-        "ORDER BY name",
-        org_id,
-    )
-    return {"data": [dict(r) for r in rows]}
-
-
-@router.post("/products")
-async def create_product(
-    body: ProductCreate,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_products "
-        "(org_id, name, hsn_code, sac_code, unit, price, cost_price, gst_rate, "
-        " description, is_service) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) "
-        "RETURNING id, name, margin, margin_pct",
-        org_id, body.name, body.hsn_code, body.sac_code, body.unit,
-        body.price, body.cost_price, body.gst_rate, body.description, body.is_service,
-    )
-    return {"status": "created", **dict(row)}
-
-
-@router.patch("/products/{product_id}")
-async def update_product(
-    product_id: UUID,
-    body: ProductUpdate,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    sent = body.dict(exclude_unset=True)
-    # `cost_price` may be set back to NULL, and every other field may not. "I no
-    # longer know what this costs" is a real thing to say, and the general
-    # `v is not None` filter would silently discard it — leaving a stale cost and
-    # a margin computed from it. Clearing any other field to NULL is a mistake,
-    # not a statement, so those keep the filter.
-    updates = {k: v for k, v in sent.items()
-               if v is not None or k == "cost_price"}
-    if not updates:
-        raise HTTPException(400, "No fields to update")
-
-    sets = []
-    params = [str(product_id), org_id]
-    idx = 3
-    for k, v in updates.items():
-        sets.append(f"{k}=${idx}")
-        params.append(v)
-        idx += 1
-    sets.append("updated_at=NOW()")
-
-    await pool.execute(
-        f"UPDATE staging.ganit_products SET {', '.join(sets)} "
-        f"WHERE id=$1::uuid AND org_id=$2::uuid",
-        *params,
-    )
-    return {"status": "updated"}
-
-
-@router.delete("/products/{product_id}")
-async def delete_product(
-    product_id: UUID,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    await pool.execute(
-        "UPDATE staging.ganit_products SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(product_id), org_id,
-    )
-    return {"status": "deleted"}
+router.add_api_route("/products", _shared_list_products, methods=["GET"])
+router.add_api_route("/products", _shared_create_product, methods=["POST"])
+router.add_api_route("/products/{product_id}", _shared_update_product, methods=["PATCH"])
+router.add_api_route("/products/{product_id}", _shared_delete_product, methods=["DELETE"])
 
 
 # ── Invoices ─────────────────────────────────────────────────

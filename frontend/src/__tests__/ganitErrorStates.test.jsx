@@ -52,7 +52,7 @@ const { ToastProvider } = await import('../components/ui');
 const { default: InvoicesTab } = await import('../pages/ganit/InvoicesTab');
 const { default: PayablesTab } = await import('../pages/ganit/PayablesTab');
 const { default: BankTab } = await import('../pages/ganit/BankTab');
-const { default: ProductsTab } = await import('../pages/ganit/ProductsTab');
+const { default: ProductsTab } = await import('../pages/catalogue/ProductsTab');
 const { default: StatsTab } = await import('../pages/ganit/StatsTab');
 
 let container = null;

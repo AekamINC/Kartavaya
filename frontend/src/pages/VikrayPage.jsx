@@ -50,6 +50,13 @@ import { inrShort } from '../lib/inr';
 import ClientsTab from './graha/ClientsTab';
 import ContactsTab from './graha/ContactsTab';
 
+// The catalogue is ONE catalogue. It is mounted here and in Ganit — the same
+// file, not a copy — because a product is billed by Finance, sold by Sales and
+// counted by the stock ledger. Before this, a firm on Sales alone could place
+// orders against products it was not allowed to list and could not create one.
+// `/api/v1/products` is gated `require_any_module("ganit", "vikray")`.
+import ProductsTab from './catalogue/ProductsTab';
+
 import DashboardTab from './vikray/DashboardTab';
 import OrdersTab from './vikray/OrdersTab';
 import StockTab from './vikray/StockTab';
@@ -73,11 +80,16 @@ import CustomersTab from './vikray/CustomersTab';
 // are the people at them, and CUSTOMERS is what those companies have actually
 // bought. Nothing was replaced.
 //
-// Nine tabs now, past ModuleTabs' inline max of 8, so the tail moves into the
+// Ten tabs now, past ModuleTabs' inline max of 8, so the tail moves into the
 // More popover — and the order is a preference every user can rearrange
 // (`useTabPrefs`), which is what that popover is for.
+//
+// `products` sits next to `stock` because they are the two halves of one
+// question — what we sell, and how many of it we have — and `StockTab` already
+// lists every row of this catalogue with its quantity beside it. It could not
+// be reached from here at all until now.
 const TABS = [
-  'dashboard', 'orders', 'stock', 'pipeline', 'targets',
+  'dashboard', 'orders', 'products', 'stock', 'pipeline', 'targets',
   'clients', 'contacts', 'customers', 'analytics',
 ];
 
@@ -245,6 +257,7 @@ export default function VikrayPage() {
             onOpen={setOpenOrderId}
           />
         )}
+        {tab === 'products' && <ProductsTab />}
         {tab === 'stock' && <StockTab />}
         {tab === 'pipeline' && <PipelineTab onOpenOrder={openOrder} />}
         {tab === 'targets' && <TargetsTab />}

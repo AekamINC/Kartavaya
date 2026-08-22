@@ -544,6 +544,15 @@ ALLOWED: dict[tuple[str, str], str] = {
         "`WHERE LOWER(email)=LOWER($1)` on an address the caller typed. The "
         "projection is `user_id` and nothing else, and every lookup writes "
         "`platform.user_lookup` — hit or miss, so enumeration leaves a pattern.",
+    ("routers/admin_orgs.py", "nominate_org_owner"):
+        "`WHERE LOWER(u.email)=LOWER($1)` on an address the caller typed — the "
+        "same shape as `search_user_by_email` above, and the projection is "
+        "`user_id` plus the system flag, with no address in it. The refusal "
+        "for an org that already has an owner is a `SELECT 1`, deliberately: "
+        "WHICH person owns a customer's organisation is the customer's fact, "
+        "and the console does not need it in order to refuse. Every message "
+        "and the response echo `body.email`, the caller's own input. Audited "
+        "at warn as `platform.org_owner_nominated`, by user_id.",
     ("routers/admin_orgs.py", "set_org_contact_email"):
         "Writes `staging.organisations.email` — an ORGANISATION's point of "
         "contact, not a person's mailbox. The owner's rule names this "
@@ -562,6 +571,15 @@ ALLOWED: dict[tuple[str, str], str] = {
         "Mails those same Aekam accounts. It reads the requester's address to "
         "put it in the mail; the SCREEN that made it durable and searchable no "
         "longer carries it — see list_skill_requests.",
+    ("routers/org_invites.py", "issue_invite"):
+        "Reached from Aekam's side only since `create_org` stopped refusing an "
+        "owner who has no account — it now creates the organisation and INVITES "
+        "them to own it, because the product has no public registration and "
+        "'they must register first' was advice nobody could take. The address "
+        "it reads is `body.owner_email`, typed by the console operator in the "
+        "same request: superseding a pending invite for it, writing the invite "
+        "row, and mailing the link. Nothing about any OTHER person is read, and "
+        "no address is returned to the caller that the caller did not supply.",
     ("routers/org_invites.py", "count_seats"):
         "Counts pending invites by address so a seat is not double-counted. A "
         "COUNT, which is the one thing the owner's rule says billing gets.",

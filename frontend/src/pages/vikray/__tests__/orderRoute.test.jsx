@@ -64,8 +64,11 @@ const ORDER = {
 function answer(url) {
   if (url === '/v1/vikray/orders') return Promise.resolve({ data: { data: [ORDER] } });
   if (url.startsWith(`/v1/vikray/orders/${ID}`)) return Promise.resolve({ data: ORDER });
-  // `probeGanit` reads the product catalogue behind the Finance gate.
-  if (url.startsWith('/v1/ganit/products')) return Promise.resolve({ data: { data: [] } });
+  // Two separate reads now, and they used to be one. `loadProducts` reads the
+  // SHARED catalogue (`/v1/products`, gated Ganit OR Vikray); `probeGanit` asks
+  // a Finance-only endpoint whether this firm holds Finance at all.
+  if (url.startsWith('/v1/products')) return Promise.resolve({ data: { data: [] } });
+  if (url.startsWith('/v1/ganit/invoices')) return Promise.resolve({ data: { data: [] } });
   return Promise.resolve({ data: { data: [] } });
 }
 

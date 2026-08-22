@@ -778,6 +778,26 @@ export function AcceptInvitePage() {
    * happen: `invite_router.py` and `org_invites.py` both refuse to CREATE such
    * an invite (409, "Add them from the Members tab instead"). What lands here
    * is somebody who signed up during the seven days their invitation was live.
+   *
+   * ── The lede used to promise something no code does ─────────────────────────
+   * It read "Sign in with it and this invitation is applied to the account you
+   * already have." NOTHING applies it. `accept_invite` is the only reader of
+   * `invites`, and on this branch it 409s before it writes anything;
+   * `POST /auth/login` never looks at the table at all. So the person signed in,
+   * found the organisation they were invited to nowhere in their switcher, and
+   * had no idea what to do next — the screen had told them it was handled.
+   *
+   * What replaces it is the move that DOES work today: `POST /v1/org/members`
+   * adds an address that already has an account, immediately, and the person who
+   * invited them is exactly who can press it. Naming the inviter and the tab is
+   * the difference between an instruction and a shrug. The invitation itself is
+   * left standing rather than declined for them — it costs a seat, but revoking
+   * somebody's invitation on their behalf because they happened to open the link
+   * is not this screen's decision to make.
+   *
+   * This is copy only. Carrying the invitation onto an existing account is being
+   * built server-side; when it lands, this branch stops being reachable and the
+   * words go with it.
    */
   if (invite.account_exists) return (
     <AuthShell>
@@ -785,9 +805,16 @@ export function AcceptInvitePage() {
         kick="Invitation"
         title="You already have an"
         accent="account."
-        lede="Sign in with it and this invitation is applied to the account you already have."
+        lede="Sign in with the password you already use — this link cannot add the organisation for you."
       />
       <InviteContext invite={invite} />
+      <Banner kind="info">
+        {invite.invited_by_name ? <><strong>{invite.invited_by_name}</strong> can</> : 'Whoever invited you can'}
+        {' '}add you to {invite.org_name || 'the organisation'} in seconds:
+        Organisation ▸ Members ▸ <strong>Add or invite a member</strong>, with this
+        same address. You will see it in your organisation switcher straight away
+        — there is nothing to accept once they have.
+      </Banner>
       <div className="au__actions">
         <AuButton type="button" onClick={() => navigate('/login')}>Sign in</AuButton>
         <button type="button" className="au__link au__link--mute" onClick={decline} disabled={loading}>

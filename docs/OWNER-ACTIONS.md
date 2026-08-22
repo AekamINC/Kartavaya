@@ -62,6 +62,38 @@ the evicted `team_members` and `user_roles` rows, and `niyam_rules_before_arming
 
 ---
 
+### 3. Unicode Group has no owner — name one and I will appoint them
+
+**Status:** OPEN · this is the only thing between that org and its own settings.
+
+**What I measured** (live database, 2026-08-22): Unicode Group holds **5
+`org_admin` rows and 0 `org_owner`**. Aekam Inc and the test org have one each.
+
+**Why it matters.** `org_owner` is the authority that appoints a payroll
+approver, and it is the ONLY role that may switch the organisation's own modules
+on and off (`PATCH /v1/org/modules` is gated `ORG_OWNER_ONLY`). Unicode Group
+cannot do either, and until today could not acquire an owner by any route: the
+console could not assign one, the org could not invite one — only an existing
+owner may mint another, a bootstrap that could never start — and
+`role_tiers.refuse_grant` carries a documented fallback whose whole purpose is
+to stop that org being locked out of appointing an approver.
+
+**What I have already done.** Every organisation created from now on seats its
+founder as `org_owner` (`create_org`), and there is a new god-mode-only console
+action, `POST /api/v1/admin/orgs/{org_id}/owner`, which appoints an owner for an
+org that has NONE. It 409s if the org already has one, and it will only raise
+somebody who is already an `org_admin` of that organisation — so it is a
+bootstrap, never a way for Aekam to change who runs a customer's firm.
+
+**What you do:** tell me which of Unicode Group's five administrators is the
+owner. I will not guess: this decides who can appoint the person that releases
+their payroll.
+
+**What I finish once you have:** run the appointment, verify the row, and
+re-examine whether `refuse_grant`'s no-owner fallback can be retired.
+
+---
+
 ## DONE
 
 *(nothing yet — items move here with the date and what I finished)*

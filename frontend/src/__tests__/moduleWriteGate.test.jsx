@@ -44,7 +44,7 @@ const { ToastProvider } = await import('../components/ui');
 const { default: ModuleAccess } = await import('../components/module/ModuleAccess');
 const { default: WriteGate } = await import('../components/module/WriteGate');
 const { default: useModuleWrite } = await import('../hooks/useModuleWrite');
-const { default: ProductsTab } = await import('../pages/ganit/ProductsTab');
+const { default: ProductsTab } = await import('../pages/catalogue/ProductsTab');
 
 let container = null;
 let root = null;

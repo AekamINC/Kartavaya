@@ -98,7 +98,7 @@ def wired(mock_pool):
             return state["limit"]
         if "COUNT(DISTINCT user_id)" in query:
             return state["joined"]
-        if "COUNT(*) FROM invites" in query:
+        if "COUNT(*) FROM public.invites" in query:
             return state["pending"]
         return None
 
@@ -166,7 +166,7 @@ async def test_no_account_is_created_when_the_seat_check_refuses(api_client, wir
     written = " | ".join(wired["executed"])
     assert "INSERT INTO users" not in written.replace("\n", " "), \
         "the account was created and only then was the seat refused"
-    assert "UPDATE invites SET accepted_at" not in written, \
+    assert "UPDATE public.invites SET accepted_at" not in written, \
         "the invitation was consumed by an acceptance that did not happen"
     assert "staging.user_roles" not in written, \
         "the membership row was written past the seat limit"

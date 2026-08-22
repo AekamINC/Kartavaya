@@ -61,7 +61,7 @@ class _Pool:
             return self._seat_limit
         if "COUNT(DISTINCT user_id)" in q:
             return self._joined
-        if "FROM invites" in q:
+        if "FROM public.invites" in q:
             return self._pending
         raise AssertionError(f"unstubbed fetchval: {q[:80]}")
 

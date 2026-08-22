@@ -572,33 +572,59 @@ async def create_org(
         max_users=body.max_users,
     )
 
+    # ── The two refusals that made a new firm impossible to onboard ─────────
+    #
+    # This handler used to answer 404 "They must register first before an org
+    # can be created for them", and then 400 "User has no active team. They must
+    # create a team first." Both described a product that does not exist:
+    #
+    #   · THERE IS NO PUBLIC REGISTRATION. The only account-minting path in the
+    #     whole backend is `POST /auth/accept-invite`. "Register first" is
+    #     advice nobody can take — the identical sentence was removed from
+    #     `org_members.add_member` for exactly this reason, and the console kept
+    #     its copy.
+    #   · CREATING THE FIRST PROJECT IS NOT THE OPERATOR'S TO DO. `POST /teams`
+    #     needs `require_user`, so the second refusal told Aekam to wait while
+    #     the customer signed in and made a project — a fourth step in a journey
+    #     nothing on the screen described.
+    #
+    # Together they meant the console could only create an org for somebody who
+    # was ALREADY a working user of the product, which is not what a new
+    # customer is. So neither refuses any more:
+    #
+    #   no account  → the org is created and the owner is INVITED to it. They
+    #                 become its owner when they accept, which is the same
+    #                 mechanism every other member already joins by.
+    #   no project  → this handler creates the founding one, with the org set on
+    #                 it from the first insert.
+    #
+    # What is still refused is the genuine collision: a team that already
+    # belongs to an organisation.
     owner = await pool.fetchrow(
         "SELECT user_id, email FROM users WHERE LOWER(email)=LOWER($1)",
         body.owner_email,
     )
-    if not owner:
-        raise HTTPException(
-            404,
-            f"No user found with email '{body.owner_email}'. "
-            "They must register first before an org can be created for them.",
+
+    tm = None
+    if owner:
+        tm = await pool.fetchrow(
+            "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' LIMIT 1",
+            owner["user_id"],
         )
 
-    tm = await pool.fetchrow(
-        "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' LIMIT 1",
-        owner["user_id"],
-    )
-    if not tm:
-        raise HTTPException(
-            400,
-            "User has no active team. They must create a team first.",
+    if tm:
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.organisations WHERE team_id=$1",
+            tm["team_id"],
         )
+        if existing:
+            raise HTTPException(409, "An organisation already exists for this team")
 
-    existing = await pool.fetchrow(
-        "SELECT id FROM staging.organisations WHERE team_id=$1",
-        tm["team_id"],
-    )
-    if existing:
-        raise HTTPException(409, "An organisation already exists for this team")
+    # A founding project, when the owner has none — or has no account yet. The
+    # id is minted here so the org row can name it in the same INSERT, exactly
+    # as it does for an existing team.
+    founding_team = tm is None
+    team_id = tm["team_id"] if tm else f"team_{uuid.uuid4().hex[:12]}"
 
     plan = await pool.fetchrow(
         "SELECT id, code, default_credits FROM staging.plans WHERE code=$1 AND is_active=TRUE",
@@ -634,11 +660,61 @@ async def create_org(
                 " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
                 " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)",
-                org_id, tm["team_id"], body.name, owner["user_id"],
+                org_id, team_id, body.name,
+                owner["user_id"] if owner else None,
                 r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
                 storage_limit, body.markup_pct, monthly_credits, monthly_price,
                 body.max_users, body.is_platform_org,
             )
+
+            # ── The founding project, and the org stamped on it ──────────────
+            #
+            # `teams.org_id` is load-bearing, not metadata: `get_visible_team_ids`
+            # resolves an org_owner/org_admin's projects as "every team in my
+            # org" (`SELECT team_id FROM teams WHERE org_id=$1`). A founding team
+            # left at NULL is invisible to the very person who owns it — which is
+            # the same defect `POST /teams` was fixed for, arriving by a
+            # different door.
+            #
+            # `created_by` is NOT NULL and is the owner where there is one; where
+            # the owner has not accepted yet it is the console operator, which is
+            # true — Aekam did create this shell — rather than a fiction.
+            if founding_team:
+                await conn.execute(
+                    "INSERT INTO teams (team_id, name, created_by, org_id) "
+                    "VALUES ($1, $2, $3, $4)",
+                    team_id, body.name,
+                    owner["user_id"] if owner else user["user_id"], org_id,
+                )
+            else:
+                # An adopted team keeps whatever it already had if that is an
+                # org — this handler has already refused a team that belongs to
+                # one — so in practice this fills a NULL and nothing else.
+                await conn.execute(
+                    "UPDATE teams SET org_id=$1, updated_at=NOW() "
+                    "WHERE team_id=$2 AND org_id IS NULL",
+                    org_id, team_id,
+                )
+
+            # The owner's own membership of the founding project. Only when
+            # there IS an owner: an invited one gets theirs from
+            # `accept_invite`, which cannot write a row for an account that does
+            # not exist yet.
+            if founding_team and owner:
+                await conn.execute(
+                    "INSERT INTO team_members "
+                    "  (member_id, team_id, email, user_id, role, status) "
+                    "VALUES ($1, $2, $3, $4, 'owner', 'active')",
+                    f"mem_{uuid.uuid4().hex[:12]}", team_id,
+                    owner["email"], owner["user_id"],
+                )
+                await conn.execute(
+                    "INSERT INTO project_assignments "
+                    "  (assignment_id, team_id, user_id, role, assigned_by) "
+                    "VALUES ($1, $2, $3, 'owner', $4)",
+                    f"assign_{uuid.uuid4().hex[:12]}", team_id,
+                    owner["user_id"], user["user_id"],
+                )
 
             # -- The org's Niyam system account -------------------------------
             # One per organisation (migration 148 backfilled the existing ones;
@@ -717,18 +793,39 @@ async def create_org(
                 actor_id=user["user_id"],
             )
 
-            await conn.execute(
-                "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
-                "VALUES ($1, $2, 'org_admin', $3)",
-                owner["user_id"], org_id, user["user_id"],
-            )
+            # ── `org_owner`, and it used to be `org_admin` ───────────────────
+            #
+            # That single hardcoded string meant `org_owner` had NO REACHABLE
+            # WRITER anywhere in the product: the console cannot assign it
+            # (`CONSOLE_ASSIGNABLE_ORG_ROLES`), `org_members.add_member` refuses
+            # it (`valid_roles`), and `org_invites._assert_may_grant_role` lets
+            # only an existing owner mint another — a bootstrap that could never
+            # start. Everything gated on `ORG_OWNER_ONLY` was therefore
+            # permanently unreachable for every customer, including
+            # `PATCH /v1/org/modules`: an organisation could not switch its own
+            # modules on or off, ever.
+            #
+            # Measured on the live database, 2026-08-22: Unicode Group holds 5
+            # org_admins and 0 org_owners. It is a real org in exactly this
+            # state, and `org_invites._validate_grants` already carries a special
+            # case for it.
+            #
+            # Nothing else changes: `org_owner` outranks `org_admin` everywhere
+            # the two are compared, and every existing org_admin keeps their row.
+            if owner:
+                await conn.execute(
+                    "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                    "VALUES ($1, $2, 'org_owner', $3)",
+                    owner["user_id"], org_id, user["user_id"],
+                )
 
             # Inside, with the rows it describes. An `org_created` event for an
             # org that rolled back is a line in the audit trail that names an
             # organisation nobody can find.
             await _log_event(conn, str(org_id), "org_created", {
                 "name": body.name,
-                "owner": owner["email"],
+                "owner": owner["email"] if owner else body.owner_email,
+                "owner_pending": owner is None,
                 "plan": body.plan_code,
                 "created_by": user["user_id"],
                 # Written down where it is searchable, not only in the logs: an
@@ -737,6 +834,60 @@ async def create_org(
                 "platform_line": bool(platform_line),
                 "billing_schema_pending": billing_pending,
             })
+
+    # ── The founding project's kanban columns ────────────────────────────────
+    #
+    # `POST /teams` calls this for every project it makes, and a project without
+    # the five default columns renders an empty board rather than an empty To Do
+    # list. Outside the transaction because it is idempotent by construction (it
+    # counts first) and because a column insert is not worth rolling an
+    # organisation back over.
+    if founding_team:
+        try:
+            from server import ensure_default_columns   # deferred: server imports this module
+
+            await ensure_default_columns(pool, team_id)
+        except Exception:                        # noqa: BLE001 — reported, not raised
+            log.exception(
+                "Organisation %s was created but its founding project got no "
+                "default columns. The project is real; opening the board and "
+                "adding a column repairs it.", org_id,
+            )
+
+    # ── The owner, when the owner has no account yet ──────────────────────────
+    #
+    # This is the path that used to be a 404. The org exists, its founding
+    # project exists, and the person it belongs to is invited to it as
+    # `org_owner` — the same invitation every other member joins by, so
+    # `accept_invite` does the rest: creates the account, writes the
+    # `user_roles` row, and (below, in `auth_router`) fills
+    # `organisations.owner_user_id`.
+    #
+    # AFTER the commit, and it does not raise. The org is already real; a mail
+    # failure or a seat check must not report a created org as uncreated. The
+    # link comes back in the response either way, and `POST /v1/org/invites`
+    # re-issues it.
+    owner_invite = None
+    owner_invite_error = None
+    if owner is None:
+        try:
+            from routers.org_invites import issue_invite
+
+            invite = await issue_invite(
+                pool, user, str(org_id), body.owner_email.lower(), "org_owner",
+                None, [], None,
+            )
+            owner_invite = {
+                "invite_id": invite.invite_id,
+                "invite_link": invite.invite_link,
+                "expires_at": invite.expires_at,
+            }
+        except Exception as exc:                 # noqa: BLE001 — reported, not raised
+            owner_invite_error = str(getattr(exc, "detail", exc))
+            log.exception(
+                "Organisation %s was created but its owner invitation was not "
+                "sent. Re-send it from the org's Members tab.", org_id,
+            )
 
     # ── The one step that cannot join the transaction ────────────────────────
     #
@@ -751,7 +902,27 @@ async def create_org(
     # sent them into the 409 in the first place. The org is real, the owner can
     # open it, and `PUT /{org_id}/r2` creates the bucket on demand.
     bucket_name = None
+    r2_verified = None
     if body.r2:
+        # Verified here as well as in the browser, because the browser is not a
+        # gate — it is a courtesy. This does NOT raise: the org exists by now,
+        # and refusing it over a storage credential would report a created org
+        # as uncreated. The verdict is returned instead, so the operator sees a
+        # bad credential on the screen that accepted it.
+        try:
+            check = await verify_r2_credentials(
+                body.r2.account_id, body.r2.access_key_id,
+                body.r2.secret_access_key, body.r2.bucket_name,
+            )
+            r2_verified = bool(check.get("valid"))
+            if not r2_verified:
+                log.warning(
+                    "Organisation %s was created with R2 credentials that do not "
+                    "verify: %s", org_id, check.get("error"),
+                )
+        except Exception:                        # noqa: BLE001 — reported, not raised
+            log.exception("R2 verification failed for new organisation %s", org_id)
+
         try:
             bucket_name = await create_org_bucket(str(org_id))
         except Exception:                        # noqa: BLE001 — reported, not raised
@@ -764,10 +935,21 @@ async def create_org(
     return {
         "org_id": str(org_id),
         "name": body.name,
-        "owner": owner["email"],
+        "owner": owner["email"] if owner else body.owner_email,
         "plan": body.plan_code,
-        "r2_bucket": bucket_name,
+        "team_id": team_id,
+        "founding_project_created": founding_team,
+        # None when the owner already had an account and is seated now; a dict
+        # when they were invited instead and will own the org on acceptance.
+        # `owner_invite_error` is the third state and the one that needs a
+        # person: the org is real and nobody has been asked to run it.
+        "owner_invite": owner_invite,
+        "owner_invite_error": owner_invite_error,
+        "r2_bucket": bucket_name or (body.r2.bucket_name if body.r2 else None),
         "r2_configured": body.r2 is not None,
+        # None when no credentials were supplied, False when they were and did
+        # not verify — a created org whose storage will refuse every upload.
+        "r2_verified": r2_verified,
         # Stated rather than assumed, exactly as the top-up's `invoiced` flag is:
         # `platform_line` is None BOTH for a free org that correctly has no line
         # and for a paying org whose line could not be written, and only the
@@ -2373,6 +2555,153 @@ async def get_member_modules(
     return {"user_id": target_user_id, "modules": [dict(r) for r in rows]}
 
 
+# ── The owner an organisation has no other way to acquire ───────────────────
+
+
+class NominateOwner(BaseModel):
+    email: EmailStr
+
+
+@router.post("/{org_id}/owner")
+async def nominate_org_owner(
+    org_id: str,
+    body: NominateOwner,
+    request: Request,
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
+):
+    """Appoint an owner for an organisation that has NONE. Bootstrap only.
+
+    ── THE DEADLOCK THIS BREAKS ─────────────────────────────────────────────
+    `org_owner` is the authority that appoints a payroll approver
+    (`role_tiers.ORG_OWNER_ONLY`) and the only role that may switch the
+    organisation's own modules on and off (`PATCH /v1/org/modules`). Until now
+    nothing in this backend could write one into an EXISTING org:
+
+      · `org_members.update_member_role` accepts only org_admin / org_member;
+      · `admin_orgs.assign_role` narrows to `CONSOLE_ASSIGNABLE_ORG_ROLES`,
+        which deliberately excludes owner;
+      · `org_invites._assert_may_grant_role` lets only an owner invite an owner
+        — a bootstrap that cannot start.
+
+    `create_org` now seats the founder as `org_owner`, so every organisation
+    created from today has one. That does nothing for the ones that already
+    exist: measured on the live database on 2026-08-22, Unicode Group holds five
+    `org_admin` rows and zero owners, and `role_tiers.refuse_grant` carries a
+    documented fallback specifically so that org is not locked out of appointing
+    an approver. This endpoint is the remedy that fallback has been waiting for.
+
+    ── WHY IT IS SO NARROW ──────────────────────────────────────────────────
+    Aekam must not be able to change who runs a customer's organisation. So:
+
+      · GOD MODE ONLY (`SUPERUSER_ONLY_ROLES`) — not the whole console.
+      · It REFUSES when the org already has an owner. That is what keeps it a
+        bootstrap and not a takeover: there is no path here that removes,
+        replaces or demotes an existing owner, and the refusal names them.
+      · The nominee must ALREADY be an org_admin of this organisation. The
+        console cannot introduce a new person as owner; it can only raise
+        somebody the customer already trusts with administration.
+      · It INSERTS, and never updates. The existing `org_admin` row is left
+        exactly where it is — `org_owner` outranks it everywhere the two are
+        compared, and removing the lower row would be rewriting a live grant to
+        achieve nothing.
+      · It is audited at `warn`, like every other cross-tenant console write.
+    """
+    pool = await get_pool()
+
+    org = await pool.fetchrow(
+        "SELECT id, name FROM staging.organisations WHERE id=$1::uuid", org_id,
+    )
+    if not org:
+        raise HTTPException(404, "Organisation not found")
+
+    # A boolean, deliberately. The refusal is "this organisation already has an
+    # owner"; WHICH person that is belongs to the customer, and the console does
+    # not need it to refuse.
+    existing_owner = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE org_id=$1::uuid AND role_code='org_owner' LIMIT 1",
+        org_id,
+    )
+    if existing_owner:
+        raise HTTPException(
+            409,
+            f"{org['name']} already has an owner. This endpoint appoints an "
+            "owner for an organisation that has none; it cannot replace one. "
+            "The organisation's own owner invites any further owners.",
+        )
+
+    # `user_id` and the system flag, and NOT the address. The caller typed the
+    # address, so selecting it back would return a customer's mailbox to Aekam
+    # for no gain — and the owner's rule is that Aekam does not see client
+    # emails. `search_user_by_email` in this same file projects exactly these
+    # columns for the same reason. Every message below uses `body.email`, which
+    # is the caller's own input.
+    target = await pool.fetchrow(
+        "SELECT u.user_id, COALESCE(u.is_system, FALSE) AS is_system "
+        "FROM users u WHERE LOWER(u.email)=LOWER($1)",
+        body.email,
+    )
+    if not target:
+        raise HTTPException(404, f"No user found with email '{body.email}'")
+    if target["is_system"]:
+        raise HTTPException(
+            400, "That address belongs to a system account and cannot own an "
+                 "organisation.")
+
+    is_admin = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code='org_admin'",
+        target["user_id"], org_id,
+    )
+    if not is_admin:
+        raise HTTPException(
+            400,
+            f"{body.email} is not an administrator of {org['name']}. An owner "
+            "is raised from the organisation's existing administrators — this "
+            "console does not introduce one.",
+        )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                "VALUES ($1, $2::uuid, 'org_owner', $3) "
+                "ON CONFLICT DO NOTHING",
+                target["user_id"], org_id, user["user_id"],
+            )
+            # `owner_user_id IS NULL` only: the column records the founder, and
+            # an org created before this endpoint existed may name somebody who
+            # is no longer the right answer — but overwriting it here would be a
+            # second, unasked-for change to a populated column.
+            await conn.execute(
+                "UPDATE staging.organisations SET owner_user_id=$1, updated_at=NOW() "
+                " WHERE id=$2::uuid AND owner_user_id IS NULL",
+                target["user_id"], org_id,
+            )
+            await _log_event(conn, org_id, "org_owner_nominated", {
+                "user_id": target["user_id"],
+                "by": user["user_id"],
+            })
+
+    _audit_emit(
+        "platform.org_owner_nominated",
+        request,
+        user_id=user["user_id"],
+        detail={"org_id": org_id, "org": org["name"],
+                "owner_user_id": target["user_id"]},
+        severity="warn",
+    )
+
+    return {
+        "status": "appointed",
+        "org_id": org_id,
+        # The caller's own input, echoed. Not a column read back off a
+        # customer's user row.
+        "owner": body.email,
+        "role_code": "org_owner",
+    }
+
+
 # ── R2 Credentials ──────────────────────────────────────────
 
 @router.post("/r2/verify")
@@ -2383,6 +2712,7 @@ async def verify_r2(
     """Test R2 credentials before assigning to an org."""
     result = await verify_r2_credentials(
         body.account_id, body.access_key_id, body.secret_access_key,
+        body.bucket_name,
     )
     return result
 
@@ -2398,6 +2728,7 @@ async def set_org_r2(
 
     result = await verify_r2_credentials(
         body.account_id, body.access_key_id, body.secret_access_key,
+        body.bucket_name,
     )
     if not result["valid"]:
         raise HTTPException(400, f"R2 credentials invalid: {result['error']}")
@@ -2419,11 +2750,27 @@ async def set_org_r2(
     bucket = await create_org_bucket(org_id)
 
     await _log_event(pool, org_id, "r2_configured", {
-        "bucket": bucket,
+        "bucket": bucket or body.bucket_name,
+        "created": bucket is not None,
+        "scope": result.get("scope"),
         "set_by": user["user_id"],
     })
 
-    return {"status": "configured", "bucket": bucket, "valid": True}
+    # A bucket-scoped token cannot create a bucket, and does not need to. The
+    # credentials are stored either way; the operator is told which case they
+    # are in rather than being shown a success that hid a missing bucket.
+    return {
+        "status": "configured",
+        "bucket": bucket or body.bucket_name,
+        "bucket_ready": bucket is not None,
+        "scope": result.get("scope"),
+        "valid": True,
+        "note": None if bucket else (
+            f"Credentials verified, but bucket '{body.bucket_name}' could not be "
+            "created with this token — create it in the Cloudflare dashboard. "
+            "Uploads will resolve as soon as it exists."
+        ),
+    }
 
 
 # ── Storage Analytics ───────────────────────────────────────

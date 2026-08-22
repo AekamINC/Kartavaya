@@ -1,17 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import {
-  Button, Checkbox, ConfirmDialog, ErrorState, Sheet, SkeletonTable, useToast,
+  Button, ConfirmDialog, ErrorState, Sheet, SkeletonTable, useToast,
 } from '../../components/ui';
 import MemberTable from './MemberTable';
 import AccessMatrix from './AccessMatrix';
-import { Lock } from './ModuleCard';
+import { moduleLabel, sensitiveGrantMessage, sensitiveGrantRaises } from './catalogue';
 import {
-  ORG_MODULES, orgModuleColor, sensitiveGrantMessage, sensitiveGrantRaises,
-} from './catalogue';
-import {
-  DEFAULT_GRANT_LEVEL, isSeparatedDuty, levelLabel, validLevels,
-} from './levels';
+  ModuleGrantList, defaultGrantsFor, setLevelIn, toWireGrants, toggleGrantIn,
+} from './ModuleGrantEditor';
+import { DEFAULT_GRANT_LEVEL, levelLabel } from './levels';
 
 /**
  * TabMembers — who is in the org, and what each of them can reach.
@@ -48,6 +46,15 @@ import {
  * · `require_module` admits any org_admin without consulting a grant row, so an
  *   admin's grants are intent and not yet a limit. The sheet says so on admin
  *   rows.
+ *
+ * ── The grant editor now serves the invitation too ──────────────────────────
+ * `GrantRow` moved to `ModuleGrantEditor.jsx` and this screen imports it back,
+ * because the same control has to sit in the ADD form as well as in the member
+ * sheet. Until now the only moment an admin could decide what a colleague
+ * reaches was after that colleague had already accepted and landed on an empty
+ * module rail. The add form asks first, and posts the answer as
+ * `module_grants` — which `POST /v1/org/members` has accepted the whole time
+ * (`AddMemberBody.module_grants`) and no screen ever sent.
  */
 
 const ROLE_OPTIONS = [
@@ -73,69 +80,6 @@ const Info = (
   </svg>
 );
 
-/** One module row inside the grant sheet: on/off, then at what level. */
-function GrantRow({ mod, grant, levelsEditable, onToggle, onLevel }) {
-  const on = Boolean(grant);
-  const level = grant?.level || DEFAULT_GRANT_LEVEL;
-  const levels = validLevels(mod.code);
-
-  return (
-    <div className={`ogr__r${on ? ' on' : ''}`} style={{ '--c': orgModuleColor(mod.code) }}>
-      <Checkbox
-        checked={on}
-        label={`${mod.label} access`}
-        onChange={() => onToggle(mod.code)}
-      />
-      <span className="ogr__n">
-        {mod.label}
-        <span className="ogr__hi" lang="hi">{mod.hi}</span>
-        <span className="of__h"> {mod.en}</span>
-      </span>
-
-      {mod.sensitive && <span className="omod__lock">{Lock} SENSITIVE</span>}
-
-      <span className="ogr__lv" role="group" aria-label={`${mod.label} level`}>
-        {levels.map(l => (
-          <button
-            key={l}
-            type="button"
-            className={`ogr__b${on && level === l ? ' on' : ''}`}
-            disabled={!on || !levelsEditable}
-            aria-pressed={on && level === l}
-            onClick={() => onLevel(mod.code, l)}
-          >
-            {levelLabel(l)}
-          </button>
-        ))}
-      </span>
-
-      {/* Stated on the row it applies to, not in a footnote — and stated whether
-          or not the module is currently on, because the moment it matters is
-          while you are deciding to grant it, not after.
-
-          The sentence deliberately no longer ends "grant both if one person does
-          both". `staging.org_member_modules` is UNIQUE (user_id, org_id,
-          module_code), so a second grant row on the same module CANNOT EXIST —
-          sending admin and approver for one module in the same save violates the
-          unique index. The role model allows holding both; the schema does not
-          yet represent it. Promising it here would be a promise this screen
-          cannot keep. See the report. */}
-      {isSeparatedDuty(mod.code) && (
-        <span className="ogr__note">
-          <strong>Admin does not include Approver here.</strong>
-          {on && (
-            <> Admin is breadth — salary structures, chart of accounts. Approver is
-              depth — releasing payments, closing periods. Whoever sets what people
-              are paid must not also be the one who releases the money, so pick the
-              one this person actually does. One grant per module is all this
-              stores today.</>
-          )}
-        </span>
-      )}
-    </div>
-  );
-}
-
 /**
  * `defaultView` is which of the two halves this mount opens on.
  *
@@ -152,6 +96,8 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(null);
 
+  // `member` null means the sheet is editing the grants for the person in the
+  // ADD form, who has no member row yet — one sheet, two subjects.
   const [editing, setEditing] = useState(null);   // { member, draft: [{code, level}] }
   const [savingGrants, setSavingGrants] = useState(false);
   const [confirm, setConfirm] = useState(null);
@@ -160,6 +106,19 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
   const [addMobile, setAddMobile] = useState('');
   const [addRole, setAddRole] = useState('org_member');
   const [adding, setAdding] = useState(false);
+  // `null` is "the admin has not touched the picker", NOT "no modules". It
+  // resolves to `defaultGrantsFor(activeModules)` at the point of use, so the
+  // default keeps tracking the subscription as it lands instead of being frozen
+  // by whatever was known at mount.
+  const [addDraft, setAddDraft] = useState(null);
+
+  // The redemption link for the invitation THIS press just created, held in
+  // memory for this render only and never re-read from the listing. Same rule
+  // as AdminPage: `GET /v1/org/invites` has no `token` field to leak one from,
+  // and that is deliberate — a list endpoint that carried it would be a page of
+  // live credentials.
+  const [freshInvite, setFreshInvite] = useState(null);
+  const [copied, setCopied] = useState('');
 
   // Invitations sent but not yet accepted. They occupy a seat, so they belong
   // beside the member list rather than on a screen of their own — an org at its
@@ -167,10 +126,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
   const [invites, setInvites] = useState([]);
 
   // `null` means "not looked up", which is what the matrix needs to tell apart
-  // from "nothing is subscribed". Fetched on the first switch to the matrix
-  // rather than on mount: the list view does not use it, and a parallel request
-  // whose result is never rendered is the exact defect 10 §"What's wrong today"
-  // opens with.
+  // from "nothing is subscribed".
   const [view, setView] = useState(defaultView === 'matrix' ? 'matrix' : 'list');
   const [activeModules, setActiveModules] = useState(null);
 
@@ -206,12 +162,20 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       .catch(() => {})
   ), []);
 
-  // Mounting straight onto the matrix has to fetch what the click that never
-  // happened would have fetched, or `/settings/roles` opens with all twelve
-  // columns dimmed and reads as "nothing is subscribed".
-  useEffect(() => {
-    if (defaultView === 'matrix') loadActiveModules();
-  }, [defaultView, loadActiveModules]);
+  /**
+   * Read on mount now, in BOTH views.
+   *
+   * It used to be fetched only when the matrix was opened, on the grounds that
+   * "the list view does not use it, and a parallel request whose result is never
+   * rendered is the exact defect 10 §What's wrong today opens with". That
+   * reasoning was right and no longer applies: the add form renders it. The set
+   * of modules an invitation may name IS the org's active subscription —
+   * `_validate_grants` rejects the whole invitation for one module the org does
+   * not have — so the picker cannot be honest without this read, and mounting
+   * straight onto the matrix still needs what the click that never happened
+   * would have fetched.
+   */
+  useEffect(() => { loadActiveModules(); }, [loadActiveModules]);
 
   // The tab bar wants the count and this is where the list is. Through a ref,
   // and keyed on the NUMBER rather than on the callback: parents pass an inline
@@ -269,45 +233,108 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
   });
 
   /**
-   * Add if they already have an account, invite if they do not.
+   * The modules the add form will send. `addDraft` null means untouched, and an
+   * untouched picker is not "nothing" — it is the server's own default branch,
+   * mirrored: every active module except the sensitive three. See
+   * `defaultGrantsFor`.
+   */
+  const addGrants = addDraft || defaultGrantsFor(activeModules);
+
+  /**
+   * Add if they already have an account, invite if they do not — and say which.
    *
-   * `POST /v1/org/members` refuses an email with no account, and until now that
-   * was the end of the road: the only invite endpoint was Aekam's platform
-   * console, so bringing in a genuinely new person meant asking Aekam. The 404
-   * is the signal that this is a new person, not an error to report.
+   * ── The 404 branch that used to live here ───────────────────────────────────
+   * `POST /v1/org/members` used to answer 404 for an address with no account,
+   * and this function read that as "new person" and posted `/v1/org/invites`
+   * itself. That 404 NO LONGER EXISTS: `org_members.add_member` now calls
+   * `issue_invite` on that branch and answers **200** with
+   * `{status: "invited", …}`. So the fallback was unreachable, and — worse — the
+   * success line above it claimed "{email} added as org member" for somebody who
+   * had only been invited and would not appear in the list the toast sent them
+   * to look at. The server returns a distinct `status` and a written `message`
+   * precisely so this screen would not say that; it is read here now, and the
+   * dead branch is gone rather than kept as a comment pretending to be code.
    *
-   * The two outcomes are told apart in the toast, because they are genuinely
-   * different — one person can sign in now, the other has mail waiting.
+   * ── Why the outcome is still only knowable from the response ────────────────
+   * There is no "does this address have an account" endpoint to consult first,
+   * and there must not be: an unauthenticated-adjacent oracle that answers that
+   * question is account enumeration. One request, and the reply says which of
+   * the two things happened.
    */
   const addMember = async () => {
     if (!addEmail.trim()) return;
+    const email = addEmail.trim();
+    const grants = toWireGrants(addGrants);
     setAdding(true);
+    setFreshInvite(null);
     try {
       const res = await api.post('/v1/org/members', {
-        email: addEmail.trim(), role: addRole, mobile_number: addMobile.trim(),
+        email, role: addRole, mobile_number: addMobile.trim(),
+        // Omitted entirely when empty. `add_member` reads a MISSING list as
+        // "apply the org default" and an empty one the same way, but the invite
+        // preflight validates every entry it is given — so sending `[]` where
+        // the admin deliberately cleared the picker and sending nothing must
+        // stay the same request, and the shorter one is the one already tested.
+        ...(grants.length ? { module_grants: grants } : {}),
       });
-      pushToast({ type: 'success', title: `${addEmail} added as ${String(res.data.role).replace('_', ' ')}` });
-      setAddEmail(''); setAddMobile('');
+
+      if (res.data?.status === 'invited') {
+        setFreshInvite({ invite_id: res.data.invite_id, invite_link: res.data.invite_link });
+        pushToast({
+          type: grants.length ? 'warning' : 'success',
+          title: `Invitation sent to ${email}`,
+          // The server's own sentence, not a paraphrase — it is the one place
+          // that knows why this became an invitation.
+          message: [
+            res.data.message
+              || 'They have no account yet, so an invitation was sent. They join this organisation when they accept it.',
+            // The one thing the reply does NOT carry. `add_member` hands
+            // `issue_invite` an empty grant list on this branch, so the modules
+            // picked above were not attached to the invitation and nothing will
+            // write them on acceptance. Saying "invited with 6 modules" here
+            // would be the same lie in a new place — grant them from this list
+            // once the person accepts, or invite from Onboarding ▸ Team, which
+            // posts to `/v1/org/invites` and does carry them.
+            grants.length
+              ? 'Module access was not attached to the invitation — grant it here once they accept.'
+              : '',
+          ].filter(Boolean).join(' '),
+        });
+        setAddEmail(''); setAddMobile(''); setAddDraft(null);
+        loadInvites();
+        return;
+      }
+
+      pushToast({
+        type: 'success',
+        title: `${email} added as ${String(res.data.role || addRole).replace('_', ' ')}`,
+        message: grants.length
+          ? `They can reach ${grants.length} module${grants.length === 1 ? '' : 's'} now.`
+          : 'They arrive with no module access until you grant it.',
+      });
+      setAddEmail(''); setAddMobile(''); setAddDraft(null);
       load();
       loadInvites();
     } catch (err) {
-      if (err?.response?.status !== 404) {
-        pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to add member' });
-        setAdding(false);
-        return;
-      }
-      try {
-        await api.post('/v1/org/invites', { email: addEmail.trim(), org_role: addRole });
-        pushToast({ type: 'success', title: `Invitation sent to ${addEmail}` });
-        setAddEmail(''); setAddMobile('');
-        loadInvites();
-      } catch (inviteErr) {
-        pushToast({
-          type: 'error',
-          title: inviteErr?.response?.data?.detail || 'Failed to invite',
-        });
-      }
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to add member' });
     } finally { setAdding(false); }
+  };
+
+  const copyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(freshInvite.invite_link);
+      setCopied(freshInvite.invite_id);
+    } catch {
+      // Clipboard permission is the browser's to refuse and there is nothing
+      // here to retry. The link is deliberately NOT printed on screen as a
+      // fallback: it carries a working token, and a token on a settings page is
+      // a credential anyone behind the operator can read.
+      pushToast({
+        type: 'error',
+        title: 'Could not copy the link',
+        message: 'The invitation email has already gone out.',
+      });
+    }
   };
 
   const revokeInvite = async (inv) => {
@@ -322,22 +349,20 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
 
   const openGrants = (m) => setEditing({ member: m, draft: m.grants.map(g => ({ ...g })) });
 
-  const toggleGrant = (code) => setEditing(e => {
-    const has = e.draft.some(g => g.code === code);
-    return {
-      ...e,
-      draft: has
-        ? e.draft.filter(g => g.code !== code)
-        // A grant starts at the least it can be and is raised deliberately —
-        // Kartavya has no viewer, so validLevels decides the floor, not a
-        // constant.
-        : [...e.draft, { code, level: validLevels(code)[0] || DEFAULT_GRANT_LEVEL }],
-    };
+  /**
+   * The same sheet, opened on the person who is about to be added or invited.
+   * `member: null` is what tells the save which of the two it is: one is a PUT
+   * against a user_id that exists, the other is a draft that travels with the
+   * next POST.
+   */
+  const openAddGrants = () => setEditing({
+    member: null, draft: addGrants.map(g => ({ ...g })),
   });
 
+  const toggleGrant = (code) => setEditing(e => ({ ...e, draft: toggleGrantIn(e.draft, code) }));
+
   const setGrantLevel = (code, level) => setEditing(e => ({
-    ...e,
-    draft: e.draft.map(g => (g.code === code ? { ...g, level } : g)),
+    ...e, draft: setLevelIn(e.draft, code, level),
   }));
 
   /**
@@ -360,6 +385,14 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
    * an authorisation — see levels.js on why this file never enforces.
    */
   const commitGrants = async () => {
+    // The add form's draft. Nothing is written here — there is no member row to
+    // write against yet — so it is held until the POST that creates one, which
+    // is the only request that can carry it.
+    if (!editing.member) {
+      setAddDraft(editing.draft);
+      setEditing(null);
+      return;
+    }
     setSavingGrants(true);
     try {
       // {code, role} objects. UpdateModulesBody accepts these and bare strings
@@ -379,10 +412,17 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
   };
 
   const saveGrants = () => {
-    const raises = sensitiveGrantRaises(editing.member.grants, editing.draft);
+    // A person who does not exist yet holds nothing, so every sensitive module
+    // in the draft is a raise — which is right: an invitation that hands over
+    // payroll is the same act as a grant that does, and the confirmation is the
+    // same one. It is the honest baseline, not an empty-state shortcut.
+    const held = editing.member ? editing.member.grants : [];
+    const raises = sensitiveGrantRaises(held, editing.draft);
     if (!raises.length) return commitGrants();
 
-    const who = editing.member.full_name || editing.member.email;
+    const who = editing.member
+      ? (editing.member.full_name || editing.member.email)
+      : (addEmail.trim() || 'this person');
     return setConfirm({
       title: raises.length === 1
         ? `Give ${who} ${raises[0].label} at ${levelLabel(raises[0].level)}?`
@@ -447,10 +487,15 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
 
       <section className="st__group">
         <h2 className="st__gt">Add or invite a member</h2>
+        {/* The old sentence ended "Either way they arrive with no module access
+            until you grant it." That was a description of the defect, written as
+            if it were the design: the module rail of every new colleague was
+            empty until an admin came back and filled it. Access is decided here
+            now, before they arrive. */}
         <p className="of__h of__h--lede">
           If they already have a Kartavaya account they join straight away. If they
-          do not, we send them an invitation. Either way they arrive with no module
-          access until you grant it.
+          do not, we send them an invitation. Choose what they can reach before
+          they arrive — the sensitive three are never included by default.
         </p>
         <div className="of">
           <div className="of__f">
@@ -470,12 +515,46 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
               {ROLE_OPTIONS.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
             </select>
           </div>
+          {/* The picker names what it is about to hand over, in full, rather
+              than a count. "6 modules" is not something an admin can check; a
+              list with Vetana missing from it is. */}
+          <div className="of__f of__f--wide">
+            <span className="of__l" id="add-grants-l">Module access</span>
+            {/* `of__f` as well as the modifier: `.of__f--row` only changes the
+                direction of a flex box it does not itself declare. */}
+            <div className="of__f of__f--row">
+              <span className="of__h of__h--flush" data-testid="add-grants-summary">
+                {addGrants.length
+                  ? addGrants.map(g => `${moduleLabel(g.code)} · ${levelLabel(g.level || DEFAULT_GRANT_LEVEL)}`).join(', ')
+                  : 'No modules — they will reach projects and tasks only.'}
+              </span>
+              <Button variant="ghost" onClick={openAddGrants} aria-describedby="add-grants-l">
+                Choose modules
+              </Button>
+            </div>
+          </div>
           <div className="of__f of__f--act">
             <Button variant="fill" onClick={addMember} disabled={adding || !addEmail.trim()}>
               {adding ? 'Working…' : 'Add or invite'}
             </Button>
           </div>
         </div>
+
+        {/* Shown once, for the invitation this operator just created, and only
+            as a button — the link carries a working token. It is here rather
+            than on the row below because the listing has no token to offer and
+            must not grow one. */}
+        {freshInvite?.invite_link && (
+          <div className="of__f of__f--row">
+            <span className="of__h of__h--flush">
+              The invitation email is on its way. If it is slow, send the link
+              yourself — it works once and expires in seven days.
+            </span>
+            <Button variant="ghost" onClick={copyInviteLink}>
+              {copied === freshInvite.invite_id ? 'Copied' : 'Copy invite link'}
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* Pending invitations sit beside the members because they OCCUPY A SEAT.
@@ -508,7 +587,13 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       <Sheet
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
-        title={editing ? `Module access — ${editing.member.full_name || editing.member.email}` : ''}
+        title={
+          editing
+            ? `Module access — ${editing.member
+              ? (editing.member.full_name || editing.member.email)
+              : (addEmail.trim() || 'the person you are adding')}`
+            : ''
+        }
       >
         {editing && (
           <>
@@ -519,7 +604,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
                 nothing until it reads them. Saying so is the only honest option
                 — the alternative is an owner tightening an admin's access and
                 believing it took effect. */}
-            {editing.member.role_code === 'org_admin' && (
+            {(editing.member ? editing.member.role_code : addRole) === 'org_admin' && (
               <p className="opend opend--stack">
                 {Info}
                 <span>
@@ -542,22 +627,26 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
               </p>
             )}
 
-            <div className="ogr">
-              {ORG_MODULES.map(mod => (
-                <GrantRow
-                  key={mod.code}
-                  mod={mod}
-                  grant={editing.draft.find(g => g.code === mod.code)}
-                  levelsEditable={grantsCarryLevels}
-                  onToggle={toggleGrant}
-                  onLevel={setGrantLevel}
-                />
-              ))}
-            </div>
+            {/* Two different lists, deliberately.
+                · An EXISTING member sees every module in the catalogue, because
+                  a grant that outlives its subscription is exactly the row an
+                  admin needs to find and turn off — same reason AccessMatrix
+                  paints the lapsed column instead of hiding it.
+                · Somebody being ADDED sees only what the org actually has.
+                  `_validate_grants` rejects the whole request over one module
+                  the org is not subscribed to, so offering it here would fail
+                  the add rather than trim it. */}
+            <ModuleGrantList
+              draft={editing.draft}
+              codes={editing.member ? null : activeModules}
+              levelsEditable={editing.member ? grantsCarryLevels : true}
+              onToggle={toggleGrant}
+              onLevel={setGrantLevel}
+            />
 
             <div className="ogr__acts">
               <Button variant="fill" onClick={saveGrants} disabled={savingGrants}>
-                {savingGrants ? 'Saving…' : 'Save access'}
+                {savingGrants ? 'Saving…' : editing.member ? 'Save access' : 'Use these modules'}
               </Button>
               <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             </div>

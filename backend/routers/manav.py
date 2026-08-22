@@ -1843,6 +1843,74 @@ _DEFAULT_CLEARANCE = [
     {"item": "Knowledge transfer documented", "owner": "Reporting manager", "done": False},
 ]
 
+def _pending_clearance(value) -> list[str]:
+    """Which clearance items are still outstanding — whichever shape they are in.
+
+    ── THE GUARD THAT HAS NEVER FIRED ───────────────────────────────────────
+    `complete_offboarding` refuses to close an exit while clearance is
+    outstanding, and it read the column like this:
+
+        pending = [c.get("item") for c in clearance
+                   if isinstance(c, dict) and not c.get("done")]
+
+    which is correct for the ARRAY that `_DEFAULT_CLEARANCE` writes — six
+    `{item, owner, done}` objects — and silently vacuous for anything else.
+    Iterating a jsonb OBJECT yields its KEYS, every key is a string,
+    `isinstance("hr", dict)` is False, and `pending` comes back empty. The
+    refusal then passes and the exit closes with nothing ticked.
+
+    Measured on the live database, 2026-08-22, `staging.manav_offboarding`:
+
+        array   1 row      the shape 083 and `_DEFAULT_CLEARANCE` specify
+        object  10 rows    {"hr": false, "finance": false, "it_assets": true}
+                           — 8 still open, and 2 ALREADY CLOSED this way
+
+    So ten of eleven exits in the product could be completed with an
+    unreturned laptop on them, and two already were. The frontend's
+    `asClearance()` returns `[]` for the object shape as well, which is why
+    nobody saw a half-ticked list and wondered.
+
+    ── WHY BOTH SHAPES ARE READ RATHER THAN ONE MIGRATED ────────────────────
+    The object rows are real customer records, not debris — they are an earlier
+    shape of the same idea, `{area: done}`, and rewriting somebody's clearance
+    state is a change to their data rather than a repair to ours. So this reads
+    what is there. `docs/OWNER-ACTIONS.md` carries the question of normalising
+    the ten rows; the guard does not wait for the answer.
+
+    Anything that is neither an array nor an object is treated as ONE
+    outstanding item rather than as none. An unreadable checklist is not a
+    completed one, and the refusal is recoverable — amending the checklist is
+    a control the screen already offers — where a silent close is not.
+    """
+    if not value:
+        # Genuinely nothing to clear. An exit created with `clearance: []`
+        # said so on purpose; `_DEFAULT_CLEARANCE` is what fills an omission.
+        return []
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return ["the clearance checklist could not be read"]
+
+    if isinstance(value, list):
+        return [
+            str(c.get("item") or "unnamed item")
+            for c in value if isinstance(c, dict) and not c.get("done")
+        ]
+
+    if isinstance(value, dict):
+        # `{"hr": false, "finance": false, "it_assets": true}` — the key IS the
+        # item. Underscores read as spaces so the refusal names something a
+        # person recognises rather than a column name.
+        return [
+            str(k).replace("_", " ")
+            for k, v in value.items() if not v
+        ]
+
+    return ["the clearance checklist could not be read"]
+
+
 _EXIT_TYPES = ("resignation", "termination", "retirement", "end_of_contract",
                "abandonment", "redundancy", "death")
 _OFFBOARDING_STATUSES = ("initiated", "in_clearance", "interview_done", "settled",
@@ -2001,13 +2069,7 @@ async def complete_offboarding(
     if row["status"] == "completed":
         raise HTTPException(409, "This exit is already completed")
 
-    clearance = row["clearance"] or []
-    if isinstance(clearance, str):
-        try:
-            clearance = json.loads(clearance)
-        except (ValueError, TypeError):
-            clearance = []
-    pending = [c.get("item") for c in clearance if isinstance(c, dict) and not c.get("done")]
+    pending = _pending_clearance(row["clearance"])
     if pending:
         shown = ", ".join(str(p) for p in pending[:4])
         more = " and more" if len(pending) > 4 else ""

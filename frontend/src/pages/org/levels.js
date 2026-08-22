@@ -85,3 +85,29 @@ export function levelSatisfies(held, required, moduleCode) {
 
 /** True where holding admin still leaves approval out of reach. */
 export const isSeparatedDuty = moduleCode => SEPARATED_DUTY_MODULES.includes(moduleCode);
+
+/**
+ * Where a NEW grant starts, per module — the mirror of
+ * `role_tiers.NEW_GRANT_LEVEL_BY_MODULE` / `default_level_for()`.
+ *
+ * It matters now that the pickers SEND a level rather than letting the column
+ * default decide. `validLevels(code)[0]` — which is what the member sheet used
+ * — answers `viewer` for Sanvaad, and a Sanvaad viewer cannot post: the grant
+ * would be spent and the person still could not speak in the thread they were
+ * invited to. The server writes `editor` there when no level is given, and a
+ * picker that quietly sends something weaker than the server's own default is a
+ * downgrade nobody asked for.
+ */
+export const NEW_GRANT_LEVEL_BY_MODULE = { sanvaad: EDITOR };
+
+/**
+ * The level a new grant on this module starts at. Same two guards as the
+ * server's: the per-module entry wins, and it is discarded if the module has no
+ * use for it — `validLevels` is the same set the CHECK constraint enforces, so
+ * a default outside it would create a grant the database refuses.
+ */
+export function defaultLevelFor(moduleCode) {
+  const levels = validLevels(moduleCode);
+  const wanted = NEW_GRANT_LEVEL_BY_MODULE[moduleCode] || DEFAULT_GRANT_LEVEL;
+  return levels.includes(wanted) ? wanted : (levels[0] || DEFAULT_GRANT_LEVEL);
+}

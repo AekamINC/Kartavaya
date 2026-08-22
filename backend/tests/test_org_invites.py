@@ -73,7 +73,7 @@ def wired(mock_pool):
             return state["limit"]
         if "COUNT(DISTINCT user_id)" in query:
             return state["seats_used"]
-        if "COUNT(*) FROM invites" in query:
+        if "COUNT(*) FROM public.invites" in query:
             return state["pending"]
         if "SELECT name FROM staging.organisations" in query:
             return "Test Org"
@@ -101,7 +101,7 @@ def wired(mock_pool):
         return []
 
     async def execute_side(query, *args):
-        if query.strip().upper().startswith("INSERT INTO INVITES"):
+        if query.strip().upper().startswith("INSERT INTO PUBLIC.INVITES"):
             state["inserted"] = {"args": args, "query": query}
         return "INSERT 0 1"
 
