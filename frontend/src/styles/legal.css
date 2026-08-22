@@ -1,0 +1,243 @@
+/* legal.css — the public legal document pages.
+ *
+ * Loaded only by /privacy, /subprocessors, /security and /dpa, on top of
+ * landing.css, and built entirely from the same tokens as the product. No new
+ * colours are introduced: a palette change propagates here without a second
+ * edit, exactly as it does on the landing page.
+ *
+ * ONE DEPARTURE FROM THE FLUID RULE. Everywhere else in this product a page is
+ * fluid and left-aligned, because the content is tables, boards and dense
+ * forms that earn the whole screen. These four pages are continuous prose read
+ * top to bottom, and a 1240px measure is roughly 180 characters a line, which
+ * nobody finishes. `.lgl__wrap` is therefore a reading measure. It is a
+ * different content type, not an exception to the rule.
+ */
+
+.lgl {
+  /* --lgl-measure, not a bare ch value inline: the tables in the sub-processor
+     page need to break OUT of the measure, and they do it by referring to this
+     same token rather than by guessing a second number. */
+  --lgl-measure: 74ch;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.lgl__wrap {
+  width: min(var(--lgl-measure), 100% - 44px);
+  margin: 0 auto;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.lgl__nav {
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+/* The header is the one band that spans the viewport — a reading measure that
+   also constrains the masthead reads as a broken page rather than a designed
+   one. It overrides the measure locally instead of using .lwrap so the two
+   never drift apart. */
+.lgl__nav-in {
+  width: min(1240px, 100% - 44px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+.lgl__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--on-surface);
+}
+.lgl__nav-links {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.lgl__nav-a,
+.lgl__foot-a {
+  color: var(--on-surface-2);
+  text-decoration: none;
+  font-size: 0.9rem;
+  border-radius: var(--r-sm);
+}
+.lgl__nav-a:hover,
+.lgl__foot-a:hover { color: var(--on-surface); text-decoration: underline; }
+.lgl__nav-a:focus-visible,
+.lgl__foot-a:focus-visible,
+.lgl__brand:focus-visible,
+.lgl__anchor:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* ── Document ─────────────────────────────────────────────────────────── */
+
+.lgl__main { flex: 1; padding: 56px 0 88px; }
+
+.lgl__h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+}
+.lgl__lede {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--on-surface-2);
+  margin: 0 0 12px;
+}
+.lgl__meta {
+  font-size: 0.875rem;
+  color: var(--on-surface-3);
+  margin: 0 0 32px;
+}
+
+/* Draft banner. --danger would overstate it (this is unfinished, not broken)
+   and --primary would understate it, so it borrows the danger hue at low
+   opacity over the surface — no new token, still legible in both themes. */
+.lgl__draft {
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  padding: 14px 18px;
+  margin: 0 0 40px;
+  line-height: 1.55;
+}
+
+.lgl__body { font-size: 1rem; line-height: 1.7; }
+.lgl__body p { margin: 0 0 16px; }
+.lgl__body ul,
+.lgl__body ol { margin: 0 0 18px; padding-left: 22px; }
+.lgl__body li { margin: 0 0 8px; }
+.lgl__body strong { color: var(--on-surface); }
+.lgl__body a { color: var(--primary-text); }
+
+.lgl__sec { margin: 0 0 40px; scroll-margin-top: 84px; }
+.lgl__h2 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 0 0 14px;
+}
+.lgl__anchor {
+  color: var(--on-surface-3);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.lgl__h2:hover .lgl__anchor { color: var(--primary-text); }
+
+/* A defined term, and the plain-language gloss beside it. */
+.lgl__dl { margin: 0 0 20px; }
+.lgl__dl dt { font-weight: 650; margin: 14px 0 4px; }
+.lgl__dl dd { margin: 0; color: var(--on-surface-2); }
+
+/* ── Outstanding-fact marker ──────────────────────────────────────────── */
+
+.lgl__tk {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  color: var(--on-surface);
+  border: 1px dashed var(--danger);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: normal;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+
+/* The sub-processor table is the one thing on these pages that genuinely
+   needs more than a reading measure. It breaks out symmetrically and scrolls
+   inside itself below that, so the page body never scrolls sideways. */
+.lgl__tablewrap {
+  width: min(1240px, 100vw - 44px);
+  margin-left: 50%;
+  transform: translateX(-50%);
+  overflow-x: auto;
+  margin-bottom: 28px;
+}
+.lgl__table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.lgl__table th,
+.lgl__table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.lgl__table th {
+  font-weight: 650;
+  color: var(--on-surface-2);
+  border-bottom-color: var(--outline);
+  white-space: nowrap;
+}
+.lgl__table tbody tr:hover { background: var(--s-lowest); }
+
+/* Tier caption above each block of the sub-processor table. */
+.lgl__tier {
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-3);
+  margin: 28px 0 10px;
+}
+
+/* ── Callout ──────────────────────────────────────────────────────────── */
+
+.lgl__note {
+  border-left: 3px solid var(--primary);
+  background: var(--s-lowest);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  padding: 14px 18px;
+  margin: 0 0 24px;
+}
+.lgl__note p:last-child { margin-bottom: 0; }
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.lgl__foot {
+  border-top: 1px solid var(--outline-variant);
+  padding: 28px 0;
+  background: var(--surface);
+}
+.lgl__foot-links {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.lgl__foot-base { font-size: 0.85rem; color: var(--on-surface-3); }
+
+/* ── Print ────────────────────────────────────────────────────────────── */
+
+/* The DPA gets printed and attached to contracts. Chrome to PDF should produce
+   something a lawyer can sign, so the chrome comes off and the measure widens
+   to the page rather than staying at 74ch inside an A4 sheet. */
+@media print {
+  .lgl__nav, .lgl__foot { display: none; }
+  .lgl { min-height: 0; }
+  .lgl__wrap { width: 100%; }
+  .lgl__main { padding: 0; }
+  .lgl__sec { break-inside: avoid-page; }
+  .lgl__tablewrap { width: 100%; margin-left: 0; transform: none; overflow: visible; }
+  .lgl__table { min-width: 0; }
+  .lgl__tk { border-style: solid; }
+}

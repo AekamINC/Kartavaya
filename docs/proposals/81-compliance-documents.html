@@ -1,0 +1,342 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The paperwork that unblocks the sale</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF;
+    --rose:#A83E63; --amber:#8A6A18; --green:#2E7D52; --blue:#2F6690;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,'Cascadia Mono',monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F;
+    --rose:#E894B4; --amber:#DCC072; --green:#7ED4A2; --blue:#8FB8DC;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 70px;background:var(--bg);color:var(--ink);
+       font:400 14px/1.6 var(--fu);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font:500 27px/1.18 var(--fd);margin:0 0 4px;letter-spacing:-.01em}
+  h2{font:500 19px/1.25 var(--fd);margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--rule)}
+  h3{font:600 13px/1.3 var(--fu);margin:22px 0 7px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink3)}
+  h4{font:600 14px/1.3 var(--fu);margin:18px 0 5px}
+  p{margin:0 0 11px;max-width:88ch}
+  .lede{color:var(--ink2);font-size:15px;max-width:82ch;margin-bottom:2px}
+  .meta{color:var(--ink3);font-size:11.5px;font-family:var(--fm);margin:0 0 16px}
+  .ctl button{font:inherit;font-size:11.5px;font-weight:600;padding:6px 13px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--surf);color:var(--ink2);border-radius:999px;margin-left:5px}
+  .ctl button.on{background:var(--pr);color:var(--onp);border-color:var(--pr)}
+  .card{border:1px solid var(--rule);border-radius:13px;background:var(--surf);padding:16px 18px;margin:14px 0;
+        box-shadow:0 1px 2px var(--sh)}
+  .card.hot{border-color:var(--rose);border-left-width:4px}
+  .card.ok{border-color:var(--green);border-left-width:4px}
+  .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card.blue{border-color:var(--blue);border-left-width:4px}
+  .card h3,.card h4{margin-top:0}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}
+  th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink3);
+     border-bottom:1.5px solid var(--rule)}
+  td.num{text-align:right;font-family:var(--fm);font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.note td{color:var(--ink3);font-size:11.5px;font-style:italic;background:var(--low);border-bottom:none}
+  code,.mono{font-family:var(--fm);font-size:12px;background:var(--cont);padding:1px 5px;border-radius:4px}
+  ul,ol{margin:0 0 11px;padding-left:22px;max-width:88ch}
+  li{margin:0 0 5px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tag{display:inline-block;font:600 10px/1 var(--fu);letter-spacing:.04em;text-transform:uppercase;
+       padding:3px 7px;border-radius:5px;background:var(--cont);color:var(--ink2);vertical-align:middle}
+  .tag.no{background:var(--rose);color:#fff}
+  .tag.yes{background:var(--green);color:#fff}
+  .tag.part{background:var(--amber);color:#fff}
+  .state{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:14px 0}
+  .st{border:1px solid var(--rule);border-radius:11px;padding:12px 14px;background:var(--low)}
+  .st .n{font-weight:640;margin-bottom:4px}
+  .st .d{font-size:12px;color:var(--ink3);line-height:1.5}
+  .st.def{border-color:var(--pr);border-width:2px;background:var(--surf)}
+  .foot{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px}
+  .quiet{color:var(--ink3)}
+  strong{font-weight:640}
+</style>
+
+<div class="wrap">
+
+<div class="top">
+  <div>
+    <h1>The paperwork that unblocks the sale</h1>
+    <p class="lede">Four public documents and one internal runbook, written to the DPDP
+      Act and shipped as real routes. None of it is a certificate — no certificate for
+      DPDP exists. What it is: the answer to every question an Indian firm's counsel
+      asks before signing, in a form they can read without asking us.</p>
+    <p class="meta">Proposal 81 &middot; 2026-08-22 &middot; sub-processors derived from
+      backend outbound hosts &middot; four routes live behind a draft banner</p>
+  </div>
+  <div class="ctl">
+    <button id="bl" class="on" onclick="T('light')">Light</button>
+    <button id="bd" onclick="T('dark')">Dark</button>
+  </div>
+</div>
+
+<div class="card blue">
+  <h3>The thing worth knowing first</h3>
+  <p><strong>Nobody certifies anyone as "DPDP compliant."</strong> The Act creates
+  obligations and a regulator, not an accreditation scheme. The certificates buyers
+  actually recognise are <strong>SOC&nbsp;2 Type&nbsp;II</strong> and
+  <strong>ISO&nbsp;27001</strong>, and both are months and lakhs away.</p>
+  <p>What closes deals in the meantime is documentation: a firm's counsel wants a
+  privacy policy, a DPA they can sign, a named sub-processor list, and a security page.
+  Those are free. This proposal is those four, plus the internal process that makes
+  their promises true.</p>
+</div>
+
+<h2>What shipped</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Document</th><th>Route</th><th>What it settles</th><th>State</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Privacy policy</strong></td>
+      <td><code>/privacy</code></td>
+      <td>Who we are, the two roles, what we collect, sensitive categories named, rights, retention, the Grievance Officer</td>
+      <td><span class="tag part">draft</span></td>
+    </tr>
+    <tr>
+      <td><strong>Sub-processors</strong></td>
+      <td><code>/subprocessors</code></td>
+      <td>Fourteen entries in three tiers, with region and data category; and who is <em>not</em> on the list</td>
+      <td><span class="tag part">draft</span></td>
+    </tr>
+    <tr>
+      <td><strong>Security</strong></td>
+      <td><code>/security</code></td>
+      <td>Isolation, encryption, auth, audit trail, backups, vulnerability reporting — and the gaps</td>
+      <td><span class="tag part">draft</span></td>
+    </tr>
+    <tr>
+      <td><strong>DPA</strong></td>
+      <td><code>/dpa</code></td>
+      <td>Thirteen clauses. Incorporated by reference; prints to PDF for counsel who want a signed copy</td>
+      <td><span class="tag part">draft</span></td>
+    </tr>
+    <tr>
+      <td><strong>Grievance &amp; breach process</strong></td>
+      <td><code>docs/COMPLIANCE-PROCESS.md</code></td>
+      <td>Internal runbook: the clocks, the first hour, which reports are owed, adding a sub-processor</td>
+      <td><span class="tag yes">ready</span></td>
+    </tr>
+    <tr class="note">
+      <td colspan="4">Terms of service is deliberately still absent from the footer, and
+      still renders as an honest "coming" state rather than a <code>#</code>. It is a
+      commercial contract, not a compliance document, and guessing at it would be the
+      one piece of this set written without a reason.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Four decisions worth arguing with</h2>
+
+<h3>1. One source of truth, not four documents</h3>
+
+<p>Every checkable fact lives in
+<code>frontend/src/pages/legal/legalFacts.js</code> and is rendered from there. The
+retention period in the DPA and the retention period in the policy are the same
+constant, so they cannot drift.</p>
+
+<p>This matters more here than in most code. The audience is accounting firms —
+people who cross-check documents for a living. A DPA promising 90-day deletion beside
+a policy promising 30 is not a typo to them; it is evidence that nobody is minding
+the process.</p>
+
+<h3>2. Missing facts shout instead of pretending</h3>
+
+<div class="card warn">
+  <p>Facts only you can supply are <code>TKTK(...)</code> and render as an amber
+  <strong>MISSING — what is owed</strong> marker. Eight remain. While any remain, every
+  page carries a banner saying it is a draft and not a statement of Aekam Inc's
+  position.</p>
+  <p>The failure this prevents is specific: a plausible-looking placeholder
+  ("123 Business Park, Andheri East") surviving into production, where it stops being a
+  placeholder and becomes <em>a false statement on a legal document</em>. A box that
+  says MISSING cannot be mistaken for content.</p>
+</div>
+
+<h3>3. The sub-processor list was derived, not remembered</h3>
+
+<p>The fourteen entries came from grepping outbound hosts in <code>backend/services/</code>
+and <code>backend/routers/</code>, not from recalling what we signed up for. A list
+assembled from memory is wrong within a quarter and nobody notices until a diligence
+questionnaire catches it — at which point the entire document set loses its credibility
+at the worst possible moment.</p>
+
+<p>They are grouped by <em>when the vendor comes into play</em> rather than
+alphabetically, because the question a reader arrives with is "who sees my data if I do
+nothing?", and an alphabetical list only answers it after every row has been read.</p>
+
+<div class="state">
+  <div class="st def">
+    <div class="n">Always &nbsp;<span class="tag">6 vendors</span></div>
+    <div class="d">Supabase, Railway, Vercel, Cloudflare R2, Resend, Sentry. No
+      configuration avoids them.</div>
+  </div>
+  <div class="st">
+    <div class="n">Feature-dependent &nbsp;<span class="tag">4</span></div>
+    <div class="d">Expo, Gemini, Serper, Apify. Off until an administrator switches the
+      module on; switching off stops the transmission.</div>
+  </div>
+  <div class="st">
+    <div class="n">Your own connections &nbsp;<span class="tag">4 groups</span></div>
+    <div class="d">Meta, the social platforms, Google Business Profile, IndiaMART and
+      JustDial. Reached with credentials the firm supplies.</div>
+  </div>
+</div>
+
+<h3>4. The security page names its own gaps</h3>
+
+<p>Section 8 of <code>/security</code> is headed <em>What we do not have yet</em> and
+lists four things: no SOC 2, no ISO 27001, no published penetration test, no MFA, no
+Indian data residency.</p>
+
+<p>This follows the rule the landing page's Trust section already set — only claims
+that are true and checkable. A security page that lists strengths and omits gaps gets
+read by a CA firm as a page that is hiding something, and the omission surfaces during
+diligence rather than during the sale. Naming them costs one paragraph and buys the
+other seven sections their credibility.</p>
+
+<div class="card ok">
+  <p><strong>The residency answer stays honest.</strong> The database is in Singapore
+  and the pages say so, in three places. Indian law does not currently require general
+  personal data to stay in India, and no country has been notified as restricted under
+  s.16 — so the honest answer is also a sufficient one. It only becomes a problem if a
+  customer discovers it after we implied otherwise.</p>
+</div>
+
+<h2>What is owed before any of this goes live</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Owed</th><th>Why it cannot be guessed</th><th>Where to get it</th></tr></thead>
+  <tbody>
+    <tr><td>CIN and registered office address</td><td>Must match the MCA record exactly</td><td>Incorporation certificate</td></tr>
+    <tr><td>Jurisdiction city</td><td>DPA clause 12 is unenforceable without it</td><td>Normally where the registered office sits</td></tr>
+    <tr><td>Grievance Officer name</td><td>DPDP s.13 requires a real person</td><td>You, or whoever will actually answer</td></tr>
+    <tr><td>A monitored grievance mailbox</td><td colspan="2"><strong>Must exist and be watched before the address is published.</strong> A grievance address that bounces is worse than none — it converts a complaint into evidence of non-compliance.</td></tr>
+    <tr><td>A monitored security mailbox</td><td colspan="2">Same, for vulnerability reports. The page promises acknowledgement in 72 hours.</td></tr>
+    <tr><td>Railway deployment region</td><td>Read it off the service; do not assume</td><td>Railway dashboard</td></tr>
+    <tr><td>R2 bucket location</td><td>The code configures <code>region="auto"</code>, so it cannot be inferred from the source at all</td><td>Cloudflare dashboard</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="card hot">
+  <h3>And one that is not a blocker but is not optional either</h3>
+  <p><strong>None of this has been reviewed by counsel.</strong> It is a complete draft
+  written to the Act — the right shape, the right clauses, defensible reasoning — but a
+  lawyer has not read it. Get an Indian data protection lawyer over the DPA and the
+  privacy policy before the banner comes down. That is a few hours of billing against a
+  document that will be attached to every contract you sign for the next three years.</p>
+</div>
+
+<h2>The certificates, and when to buy them</h2>
+
+<p>Documentation unblocks the SMB sale. Certificates unblock the enterprise one, and
+they are worth buying in this order and not the reverse.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Standard</th><th>Who asks</th><th>When</th><th>Rough cost</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>ISO 27001:2022</strong></td>
+      <td>Indian enterprise, EU, most RFPs</td>
+      <td><strong>First.</strong> The SPDI Rules name it as the "reasonable security practices" safe harbour under IT Act s.43A — so it caps statutory liability, which SOC 2 does not.</td>
+      <td class="num">₹4–10L yr 1</td>
+    </tr>
+    <tr>
+      <td><strong>SOC 2 Type II</strong></td>
+      <td>US buyers, VC diligence</td>
+      <td>When a US customer or investor demands it. Type II needs a 3–12 month observation window, so start the tooling well before the audit.</td>
+      <td class="num">$15–40K/yr</td>
+    </tr>
+    <tr>
+      <td>ISO 27701</td>
+      <td>Privacy-conscious enterprise</td>
+      <td>Bolt-on once 27001 exists; cheap by comparison</td>
+      <td class="num">+₹2–3L</td>
+    </tr>
+    <tr>
+      <td>GDPR</td>
+      <td>EU customers</td>
+      <td><strong>No certificate exists.</strong> A DPA, SCCs and a records-of-processing document — legal fees only</td>
+      <td class="num">—</td>
+    </tr>
+    <tr class="note">
+      <td colspan="4">Not needed: PCI DSS (no gateway — an invoice is marked paid only
+      from bank reconciliation, so cardholder data never touches us), HIPAA, FedRAMP.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>The trap is buying SOC 2 first because it sounds more prestigious. To an Indian CA
+firm it means very little, and it does nothing for s.43A liability.</p>
+
+<h2>Two things the gate suite caught, and what they were right about</h2>
+
+<p>Worth recording, because both are cases where the ratchets earned their keep on a
+change that had nothing to do with what they were built to guard.</p>
+
+<ul>
+  <li><code>check-orphan-selectors</code> found <code>.lgl__h3</code> — a rule written
+  and then never used. Deleted rather than baselined. CSS that ships without its markup
+  is the first millimetre of the drift these checks exist to stop.</li>
+  <li><code>check-table-rows</code> flagged the sub-processor table for not sitting on
+  <code>--row-h</code>. It is now in <code>EXEMPT</code> with a reason: every cell is a
+  wrapping sentence, so a fixed 66px would either clip the description or hollow out the
+  short rows. The token exists to give a comfortable hit target on a row you act on, and
+  nothing in this table is clickable. It also has to print — a forced row height
+  paginates a long description across a page break.</li>
+</ul>
+
+<h2>What happens next</h2>
+
+<ol>
+  <li>Create and staff the two mailboxes. Nothing else can go live first.</li>
+  <li>Fill the eight facts in <code>legalFacts.js</code>. The banner disappears on its
+  own when the last one lands — <code>LEGAL_READY</code> is computed, not set.</li>
+  <li>Lawyer reads the DPA and the privacy policy.</li>
+  <li>Ship. Add the four links to the sales deck and the RFP response boilerplate.</li>
+  <li>Fix the CERT-In gap: 180 days of logs with an India-resident copy. This is the one
+  live legal exposure the documents describe but the infrastructure does not yet meet,
+  and it is independent of everything above.</li>
+  <li>Start ISO 27001 when there are two or three paying enterprise customers.</li>
+</ol>
+
+<div class="foot">
+  <p>Proposal 81 &middot; Aekam Inc &middot; drafted 2026-08-22.
+  Public pages: <code>/privacy</code>, <code>/subprocessors</code>,
+  <code>/security</code>, <code>/dpa</code>.
+  Source of truth: <code>frontend/src/pages/legal/legalFacts.js</code>.
+  Runbook: <code>docs/COMPLIANCE-PROCESS.md</code>.</p>
+  <p class="quiet">Written to the Digital Personal Data Protection Act, 2023 and the
+  CERT-In Directions of 28 April 2022. Not legal advice, and not reviewed by counsel.</p>
+</div>
+
+</div>
+
+<script>
+  function T(m){
+    document.documentElement.setAttribute('data-t', m);
+    document.getElementById('bl').classList.toggle('on', m === 'light');
+    document.getElementById('bd').classList.toggle('on', m === 'dark');
+  }
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) T('dark');
+</script>

@@ -105,6 +105,14 @@ const PayPage               = lazyPage(() => import('./pages/PayPage'));
 const CustomizeSettingsPage = lazyPage(() => import('./pages/CustomizeSettingsPage'));
 const LandingPage           = lazyPage(() => import('./pages/marketing/LandingPage'));
 
+/* Legal documents. Public, outside the app shell, and lazy like the landing
+   page so a visitor reading a privacy policy never downloads the product
+   bundle. They share one chunk in practice — nobody reads exactly one. */
+const PrivacyPolicyPage     = lazyPage(() => import('./pages/legal/PrivacyPolicyPage'));
+const SubProcessorsPage     = lazyPage(() => import('./pages/legal/SubProcessorsPage'));
+const SecurityPage          = lazyPage(() => import('./pages/legal/SecurityPage'));
+const DpaPage               = lazyPage(() => import('./pages/legal/DpaPage'));
+
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
 // Pattern: withContext(Page, contextKey) — avoids a boilerplate function per page.
@@ -161,6 +169,16 @@ function AppRouter() {
             Declared with the other public routes so the protected shell never
             sees it and cannot bounce a paying customer to /login. */}
         <Route path="/i/:token"         element={<PayPage />} />
+
+        {/* Legal documents. Public by definition — these are read by people
+            evaluating the product and by their counsel, neither of whom has an
+            account, and they are linked from the footer and from search
+            results. Declared with the other public routes so the protected
+            shell never bounces a reader to /login. */}
+        <Route path="/privacy"          element={<PrivacyPolicyPage />} />
+        <Route path="/subprocessors"    element={<SubProcessorsPage />} />
+        <Route path="/security"         element={<SecurityPage />} />
+        <Route path="/dpa"              element={<DpaPage />} />
 
         {/* Public landing at `/` — see RootGate. Declared before the protected
             shell so the exact-match wins for an anonymous visitor. */}

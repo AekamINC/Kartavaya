@@ -4,10 +4,16 @@ import { KLogo, KWordmark } from '../../../lib/brand';
 /**
  * Footer.
  *
- * The legal column links to routes that do not exist yet. They are marked so
- * rather than pointed at '#', because a privacy policy link that goes nowhere
- * is a worse signal to this audience than an honest "coming" state — and a '#'
- * link looks live until someone clicks it.
+ * The legal column is live as of the compliance pass: privacy, sub-processors,
+ * security and the DPA are real routes. Terms of service is still `null`, and
+ * stays that way rather than becoming a '#' — a '#' looks live until someone
+ * clicks it, and a legal link that goes nowhere is a worse signal to this
+ * audience than an honest "coming" state.
+ *
+ * Plain <a>, not <Link>. These are full navigations by choice: the reader is
+ * leaving the sales page for a document, crawlers and a pasted-into-a-
+ * questionnaire URL must both resolve, and the footer stays free of a router
+ * dependency it otherwise has no use for.
  *
  * NO LANGUAGE SELECTOR, and that is a decision rather than an omission. `22`'s
  * structure diagram lists one, but `24` §"The language selector cannot do what
@@ -35,7 +41,10 @@ const COLUMNS = [
   {
     h: 'Legal',
     links: [
-      { label: 'Privacy policy',   href: null },
+      { label: 'Privacy policy',   href: '/privacy' },
+      { label: 'Sub-processors',   href: '/subprocessors' },
+      { label: 'Security',         href: '/security' },
+      { label: 'Data processing',  href: '/dpa' },
       { label: 'Terms of service', href: null },
     ],
   },
