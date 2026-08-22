@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import LegalPage, { Sec, TK } from './LegalPage';
 import {
-  ENTITY, HOSTING, RETENTION, SECURITY_CONTACT, CERT_IN,
+  ENTITY, HOSTING, RETENTION, SECURITY_CONTACT, CERT_IN, INFRA_CERTS,
 } from './legalFacts';
 
 /**
@@ -89,6 +89,25 @@ export default function SecurityPage() {
           and the data each receives, is on the{' '}
           <Link to="/subprocessors">sub-processors page</Link>.
         </p>
+
+        {/* Scoped precisely, and deliberately placed BEFORE section 8 rather
+            than inside it. A supplier's certificate is a real answer to a real
+            questionnaire question, and it is worth stating. It is also the
+            single easiest claim in this document to overstate by one word —
+            "we are ISO 27001 certified" — in front of the one audience trained
+            to ask for the certificate number. Naming whose certificate it is,
+            in the same sentence, is what keeps it true. */}
+        <p>
+          <strong>Our providers' certifications are theirs, not ours.</strong>{' '}
+          {INFRA_CERTS.slice(0, -1).join(', ')} and{' '}
+          {INFRA_CERTS[INFRA_CERTS.length - 1]} each maintain ISO 27001
+          certification and SOC 2 reporting for their own operations, and we
+          will share what they publish. That covers the platforms underneath{' '}
+          {ENTITY.product}. It says nothing about {ENTITY.name}'s own controls,
+          because a certificate covers only the scope it names and does not
+          extend to a tenant building on top. Section 8 is where we account for
+          ourselves.
+        </p>
       </Sec>
 
       <Sec n={6} h="Backups and recovery">
@@ -140,7 +159,11 @@ export default function SecurityPage() {
           </li>
           <li>
             <strong>Multi-factor authentication is not yet available.</strong>{' '}
-            Sign-in is password-based today.
+            Sign-in is password-based today. Organisation settings show a
+            two-factor section, but every control in it is disabled: there is no
+            enrolment flow and no verification step at sign-in, so there is
+            nothing to enforce. The setting is scaffolding for work not yet
+            done, and we would rather say so here than let it read as a feature.
           </li>
           <li>
             <strong>No Indian data residency.</strong> Stated plainly in section

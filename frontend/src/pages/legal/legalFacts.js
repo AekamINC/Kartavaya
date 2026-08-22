@@ -69,6 +69,21 @@ export const RETENTION = {
   logDays:              CERT_IN.logRetentionDays,
 };
 
+/**
+ * INFRA_CERTS — what our providers hold, which is NOT what we hold.
+ *
+ * The distinction is the entire reason this constant is named the way it is.
+ * "Our infrastructure is ISO 27001 certified" is true and useful in a security
+ * questionnaire; "Kartavaya is ISO 27001 certified" is a misrepresentation
+ * aimed at the one audience trained to verify it. Certification covers the
+ * scope the certificate names — the provider's own operations — and never
+ * extends up the stack to a tenant. Anything rendered from this constant must
+ * say whose certificate it is.
+ */
+export const INFRA_CERTS = [
+  'Supabase', 'Railway', 'Vercel', 'Cloudflare', 'Amazon Web Services',
+];
+
 export const HOSTING = {
   dbRegion: 'Singapore',
   dbVendor: 'Supabase',
@@ -114,6 +129,10 @@ export const SUB_PROCESSORS = [
   { name: 'Resend', tier: 'core',
     purpose: 'Transactional email: invitations, password resets, notifications, invoices.',
     region:  'Tokyo',
+    data:    'Recipient name and email address, and the message body' },
+  { name: 'Amazon Web Services (SES)', tier: 'core',
+    purpose: 'Transactional email, alongside Resend. Both are live senders, so both are disclosed.',
+    region:  TKTK('the AWS region SES sends from — read it off the console, do not infer it from .env.example'),
     data:    'Recipient name and email address, and the message body' },
   { name: 'Sentry', tier: 'core',
     purpose: 'Error monitoring. Payloads are scrubbed before transmission, but a stack trace can carry fragments of a request.',

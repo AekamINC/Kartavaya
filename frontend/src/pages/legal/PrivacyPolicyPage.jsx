@@ -121,8 +121,9 @@ export default function PrivacyPolicyPage() {
       <Sec n={5} h="Where your data lives">
         <p>{HOSTING.residencyNote}</p>
         <p>
-          Files you upload are stored with Cloudflare R2 and transactional email
-          is sent through Resend. The full list, with the region and the
+          Files you upload are stored with Cloudflare R2, and transactional email
+          is sent through Resend and Amazon SES — both are live senders, so both
+          are disclosed. The full list, with the region and the
           categories of data each one receives, is on the{' '}
           <Link to="/subprocessors">sub-processors page</Link>, which we update
           in the same change that adds the vendor.
