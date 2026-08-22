@@ -148,7 +148,8 @@ async function openForm(people = [PRIYA]) {
 
 describe('an eligible scheme with no bands is refused before the request is sent', () => {
   it('the model refuses it', () => {
-    const form = { ...blankScheme(), employee_id: 'emp-1', eligible: true, revenue_scope: 'own', effective_from: '2026-04-01' };
+    const form = { ...blankScheme(), employee_id: 'emp-1', eligible: true, revenue_scope: 'own',
+      basis: 'turnover', period: 'monthly', effective_from: '2026-04-01' };
     const problems = schemeProblems(form);
     expect(problems.some(p => /no rate is stated/i.test(p))).toBe(true);
   });
@@ -159,6 +160,9 @@ describe('an eligible scheme with no bands is refused before the request is sent
       employee_id: 'emp-1',
       eligible: true,
       revenue_scope: 'own',
+      // Stated, not inherited: blankScheme() leaves both blank on purpose.
+      basis: 'turnover',
+      period: 'monthly',
       effective_from: '2026-04-01',
       bands: [{ from_amount: '100000', rate_percent: '3' }],
     };
@@ -312,6 +316,7 @@ describe('the payload', () => {
     setValue(fieldInput('Person'), 'emp-1');
     setValue(fieldInput('In force from'), '2026-04-01');
     setValue(fieldInput('Whose revenue'), 'own');
+    setValue(fieldInput('Measured on'), 'turnover');
     setValue(fieldInput('Settles'), 'monthly');
     tick(container.querySelector('.mn-elig input'));
     await settle();

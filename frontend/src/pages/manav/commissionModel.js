@@ -77,8 +77,15 @@ export const blankBand = () => ({ from_amount: '', rate_percent: '' });
 /** A blank arrangement. Nothing that decides money is pre-answered. */
 export const blankScheme = () => ({
   eligible: false,
-  basis: 'turnover',
-  period: 'monthly',
+  // NOT PRE-ANSWERED, and these two are where a silent default costs real
+  // money. A firm that agreed ANNUAL commission and never opens the "Settles"
+  // dropdown would be paid TWELVE times; a firm paying on GROSS PROFIT that
+  // never opens "Measured on" would be paid on turnover, a much larger number.
+  // `revenue_scope` below already refused to guess for exactly this reason and
+  // these two sat beside it still guessing. `schemeProblems` refuses both
+  // until they are chosen.
+  basis: '',
+  period: '',
   revenue_scope: '',
   effective_from: '',
   effective_to: '',
@@ -214,8 +221,15 @@ export function bandProblems(bands) {
 export function schemeProblems(form) {
   const out = [];
   if (!form.employee_id) out.push('Choose the person this arrangement is for.');
-  if (!BASES.includes(form.basis)) out.push('Choose what the commission is measured on.');
-  if (!PERIODS.includes(form.period)) out.push('Choose how often it settles.');
+  // Only checked for SHAPE here. Whether they must be answered at all depends
+  // on `eligible` and is asked below, beside the other two questions that only
+  // apply to somebody who is actually on commission.
+  if (form.basis && !BASES.includes(form.basis)) {
+    out.push('What the commission is measured on must be turnover or gross profit.');
+  }
+  if (form.period && !PERIODS.includes(form.period)) {
+    out.push('How often it settles must be monthly, quarterly or annual.');
+  }
   if (!form.effective_from) {
     out.push('An arrangement needs a start date. Without one it cannot be resolved as '
       + "of any period, and last quarter's commission has to keep computing on last "
@@ -231,6 +245,18 @@ export function schemeProblems(form) {
   }
   out.push(...bandProblems(form.bands));
   if (form.eligible) {
+    // A person NOT on commission has no basis and no settlement period to
+    // state, so these are asked here and not above — the same rule
+    // `revenue_scope` follows, and the same rule migration 191 enforces with
+    // `..._eligible_needs_terms_ck`.
+    if (!form.basis) {
+      out.push('Say what the commission is measured on. Turnover and gross profit '
+        + 'are different numbers for the same sales, and there is no default.');
+    }
+    if (!form.period) {
+      out.push('Say how often the commission settles. The same agreed rate settles '
+        + 'twelve times a year or once, and there is no default.');
+    }
     if (!form.revenue_scope) {
       out.push('Say WHOSE revenue this measures. Their own sales and their whole '
         + "department's are different amounts of money, and there is no default.");

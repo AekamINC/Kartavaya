@@ -276,8 +276,17 @@ class Scheme:
     """
 
     eligible: bool
-    basis: str                       # 'turnover' | 'gross_profit'
-    period: str                      # 'monthly' | 'quarterly' | 'annual'
+    #: 'turnover' | 'gross_profit'. None means the firm has not said, which is
+    #: only permissible on an INELIGIBLE scheme — exactly the rule
+    #: `revenue_scope` below already follows. NO DEFAULT: turnover and gross
+    #: profit are different numbers for the same sales, so this product does
+    #: not pick one. `compute()` returns NOT_ON_COMMISSION before it reads
+    #: this, so None can never reach the arithmetic.
+    basis: Optional[str]
+    #: 'monthly' | 'quarterly' | 'annual'. Same rule, and the more expensive
+    #: of the two to guess: monthly and annual are the same agreed rate paid
+    #: twelve times or once.
+    period: Optional[str]
     effective_from: date
     #: One of REVENUE_SCOPES. None means the firm has not said whose revenue
     #: this measures, which is only permissible on an INELIGIBLE scheme. No
@@ -288,10 +297,25 @@ class Scheme:
     effective_to: Optional[date] = None   # EXCLUSIVE; None = still in force
 
     def __post_init__(self):
-        if self.basis not in BASES:
+        if self.basis is not None and self.basis not in BASES:
             raise ValueError(f"basis must be one of {BASES}, got {self.basis!r}")
-        if self.period not in PERIODS:
+        if self.period is not None and self.period not in PERIODS:
             raise ValueError(f"period must be one of {PERIODS}, got {self.period!r}")
+        # Required the moment somebody IS on commission, and not before. A
+        # recorded "this person gets no commission" has no basis and no
+        # settlement period to state, and demanding them would be asking a
+        # firm to answer a question that does not apply to them.
+        if self.eligible:
+            if self.basis is None:
+                raise ValueError(
+                    "Say what the commission is measured on — turnover, or "
+                    "gross profit. They are different numbers for the same "
+                    "sales, and there is no default.")
+            if self.period is None:
+                raise ValueError(
+                    "Say how often the commission settles — monthly, "
+                    "quarterly or annual. The same agreed rate settles twelve "
+                    "times a year or once, and there is no default.")
         if self.revenue_scope is not None and self.revenue_scope not in REVENUE_SCOPES:
             raise ValueError(
                 f"revenue_scope must be one of {REVENUE_SCOPES}, got "

@@ -662,6 +662,9 @@ function SchemeForm({ employee, preset, onCancel, onSaved }) {
               value={form.basis}
               onChange={e => set({ basis: e.target.value })}
             >
+              {/* NO DEFAULT. Turnover and gross profit are different amounts
+                  of money, so the product does not pick one. */}
+              <option value="">Not stated</option>
               {BASES.map(b => <option key={b} value={b}>{BASIS_LABEL[b]}</option>)}
             </select>
           </label>
@@ -673,6 +676,9 @@ function SchemeForm({ employee, preset, onCancel, onSaved }) {
               value={form.period}
               onChange={e => set({ period: e.target.value })}
             >
+              {/* NO DEFAULT. Monthly and annual are the same rate paid a
+                  different number of times, so the product does not pick. */}
+              <option value="">Not stated</option>
               {PERIODS.map(p => <option key={p} value={p}>{PERIOD_LABEL[p]}</option>)}
             </select>
           </label>

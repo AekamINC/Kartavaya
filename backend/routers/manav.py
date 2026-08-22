@@ -4350,8 +4350,14 @@ class CommissionBandIn(BaseModel):
 class CommissionSchemeCreate(BaseModel):
     employee_id: str
     eligible: bool = False          # a default that REFUSES — see migration 189
-    basis: str = "turnover"
-    period: str = "monthly"
+    #: NO DEFAULT, for the same reason `revenue_scope` below has none: both
+    #: decide how much money is owed. `basis` chooses between turnover and
+    #: gross profit, which are different numbers for the same sales; `period`
+    #: decides whether the agreed rate is paid once a year or twelve times.
+    #: They used to default to 'turnover' and 'monthly', so a firm that never
+    #: said would be paid on terms this product invented for it.
+    basis: str | None = None
+    period: str | None = None
     effective_from: str = ""
     effective_to: str | None = None
     #: One of commission.REVENUE_SCOPES — 'own' or 'department'. NO DEFAULT:
@@ -4524,8 +4530,8 @@ async def create_commission_scheme(
     try:
         scheme = C.Scheme(
             eligible=bool(body.eligible),
-            basis=str(body.basis),
-            period=str(body.period),
+            basis=(body.basis or None),
+            period=(body.period or None),
             effective_from=eff_from,
             effective_to=eff_to,
             revenue_scope=body.revenue_scope or None,
