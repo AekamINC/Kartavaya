@@ -1,0 +1,369 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compliance is a setting — and one thing that cannot be</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF;
+    --rose:#A83E63; --amber:#8A6A18; --green:#2E7D52; --blue:#2F6690;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,'Cascadia Mono',monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F;
+    --rose:#E894B4; --amber:#DCC072; --green:#7ED4A2; --blue:#8FB8DC;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 70px;background:var(--bg);color:var(--ink);
+       font:400 14px/1.6 var(--fu);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font:500 27px/1.18 var(--fd);margin:0 0 4px;letter-spacing:-.01em}
+  h2{font:500 19px/1.25 var(--fd);margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--rule)}
+  h3{font:600 13px/1.3 var(--fu);margin:22px 0 7px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink3)}
+  h4{font:600 14px/1.3 var(--fu);margin:18px 0 5px}
+  p{margin:0 0 11px;max-width:88ch}
+  .lede{color:var(--ink2);font-size:15px;max-width:82ch;margin-bottom:2px}
+  .meta{color:var(--ink3);font-size:11.5px;font-family:var(--fm);margin:0 0 16px}
+  .ctl button{font:inherit;font-size:11.5px;font-weight:600;padding:6px 13px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--surf);color:var(--ink2);border-radius:999px;margin-left:5px}
+  .ctl button.on{background:var(--pr);color:var(--onp);border-color:var(--pr)}
+  .card{border:1px solid var(--rule);border-radius:13px;background:var(--surf);padding:16px 18px;margin:14px 0;
+        box-shadow:0 1px 2px var(--sh)}
+  .card.hot{border-color:var(--rose);border-left-width:4px}
+  .card.ok{border-color:var(--green);border-left-width:4px}
+  .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card.blue{border-color:var(--blue);border-left-width:4px}
+  .card h3,.card h4{margin-top:0}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}
+  th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink3);
+     border-bottom:1.5px solid var(--rule)}
+  td.num{text-align:right;font-family:var(--fm);font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.note td{color:var(--ink3);font-size:11.5px;font-style:italic;background:var(--low);border-bottom:none}
+  code,.mono{font-family:var(--fm);font-size:12px;background:var(--cont);padding:1px 5px;border-radius:4px}
+  pre{font-family:var(--fm);font-size:11.5px;line-height:1.6;background:var(--low);border:1px solid var(--rule);
+      border-radius:9px;padding:12px 14px;overflow-x:auto;margin:10px 0}
+  ul,ol{margin:0 0 11px;padding-left:22px;max-width:88ch}
+  li{margin:0 0 5px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tag{display:inline-block;font:600 10px/1 var(--fu);letter-spacing:.04em;text-transform:uppercase;
+       padding:3px 7px;border-radius:5px;background:var(--cont);color:var(--ink2);vertical-align:middle}
+  .tag.no{background:var(--rose);color:#fff}
+  .tag.yes{background:var(--green);color:#fff}
+  .tag.part{background:var(--amber);color:#fff}
+  .state{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:14px 0}
+  .st{border:1px solid var(--rule);border-radius:11px;padding:12px 14px;background:var(--low)}
+  .st .n{font-weight:640;margin-bottom:4px}
+  .st .d{font-size:12px;color:var(--ink3);line-height:1.5}
+  .st.def{border-color:var(--pr);border-width:2px;background:var(--surf)}
+  .src{font-size:11.5px;color:var(--ink3)}
+  .src a{color:var(--blue)}
+  .foot{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px}
+  .quiet{color:var(--ink3)}
+  strong{font-weight:640}
+</style>
+
+<div class="wrap">
+
+<div class="top">
+  <div>
+    <h1>Compliance is a setting</h1>
+    <p class="lede">The owner's rule: no government requirement is ever mandatory in the
+      product — each module carries settings where the firm ticks what applies to it.
+      Here is how to build that so it never quietly produces a wrong document, what each
+      module's settings should be, and the one place the rule cannot hold.</p>
+    <p class="meta">Proposal 80 &middot; 2026-08-22 &middot; schema audited read-only
+      &middot; Pahchan researched against the DPDP Act and its 2025 Rules</p>
+  </div>
+  <div class="ctl">
+    <button id="bl" class="on" onclick="T('light')">Light</button>
+    <button id="bd" onclick="T('dark')">Dark</button>
+  </div>
+</div>
+
+<div class="card ok">
+  <h3>The pattern already exists — in Pahchan</h3>
+  <p><span class="mono">pahchan_policy</span> is exactly the table this proposal is
+  about, built for one module and never generalised. Per org it carries geofence radius,
+  grace minutes, whether punching outside a geofence is allowed, an accuracy threshold,
+  <strong>photo retention in days</strong>, <strong>record retention in years</strong>,
+  report recipients and cadence, standard hours, three overtime settings, week start and
+  shift times.</p>
+  <p>And the two live orgs genuinely differ: one allows punching outside the geofence,
+  the other does not; one keeps records 5 years, the other 3.</p>
+  <p><strong>So the answer to "how should this work" is: like Pahchan, everywhere.</strong>
+  What follows is that pattern generalised, plus the two rules that stop it becoming a
+  way to make warnings disappear.</p>
+</div>
+
+<h2>Three states, not two</h2>
+
+<p>A tick-box has two states and that is one too few. "Off" cannot distinguish
+<em>this does not apply to us</em> from <em>we have not got to it yet</em>, and those
+demand opposite behaviour from the product.</p>
+
+<div class="state">
+  <div class="st">
+    <div class="n">Not applicable</div>
+    <div class="d">The firm states this does not apply — a composition dealer charging no
+      GST, a practice with no employees under ESI. Field hidden. No warning. Nothing
+      counted as missing, because nothing is.</div>
+  </div>
+  <div class="st def">
+    <div class="n">Applicable &nbsp;<span class="tag">default</span></div>
+    <div class="d">It applies, and we <strong>never stop you</strong>. The field is shown,
+      optional, and the product names the consequence of leaving it empty: "no HSN — the
+      buyer's input credit may be questioned". Nothing is blocked. Ever.</div>
+  </div>
+  <div class="st">
+    <div class="n">Enforced</div>
+    <div class="d">The firm <em>chooses</em> the guardrail, because it would rather be
+      stopped than be wrong. Only reachable by someone deliberately ticking it.</div>
+  </div>
+</div>
+
+<p>The default is always the middle one. Nothing arrives enforced.</p>
+
+<h2>The two rules that keep it honest</h2>
+
+<div class="card warn">
+  <h4>1 · "Not applicable" is a decision, not an absence</h4>
+  <p>Who set it, when, and optionally why. Without that, six months later nobody can tell
+  <em>"we are a composition dealer so GST does not apply"</em> from <em>"someone unticked
+  it to make a warning go away"</em>. One is a fact about the business; the other is a
+  problem hiding.</p>
+</div>
+
+<div class="card warn">
+  <h4>2 · Freeze the profile onto the document</h4>
+  <p>This one is not optional, and the product already has the pattern:
+  <span class="mono">vetana_payslips.statutory_treatment</span> records how each payslip
+  was computed, so a March settings change cannot restate January.</p>
+  <p>Invoices need the same. A document issued while HSN was <em>not applicable</em> must
+  keep reading that way for ever. Otherwise switching a setting on retroactively makes a
+  year of correctly-issued invoices look non-compliant — and switching one off makes a
+  year of genuinely deficient ones look clean. Both are worse than the original problem.</p>
+</div>
+
+<h2>What each module's settings should be</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Module</th><th>Settings</th></tr>
+  <tr>
+    <td><strong>Ganit</strong><br><span class="quiet">Finance / invoicing</span></td>
+    <td>GST registered · composition scheme · HSN required · e-invoicing applicable
+      <span class="quiet">(suggest from turnover, never auto-enforce)</span> · e-way bill ·
+      reverse charge · 194Q TDS · document prefixes <span class="tag yes">shipped</span> ·
+      default place of supply · rounding</td>
+  </tr>
+  <tr>
+    <td><strong>Procurement</strong><br><span class="quiet">to be built</span></td>
+    <td>approval on/off and its rules · prefix · budgets · over-receipt tolerance ·
+      three-way-match strictness · close-short reasons
+      <span class="quiet">(all specified in proposal 77)</span></td>
+  </tr>
+  <tr>
+    <td><strong>Vetana</strong><br><span class="quiet">Payroll</span></td>
+    <td>PF · ESI · professional tax <span class="quiet">(per state)</span> · TDS ·
+      gratuity · statutory bonus · LWF · <strong>50% wage-rule check</strong> ·
+      <strong>rounding convention</strong> — ÷26 or ÷30, which the research names as a
+      dispute trigger when earnings and recoveries use different divisors without
+      contractual backing</td>
+  </tr>
+  <tr>
+    <td><strong>Manav</strong><br><span class="quiet">HR</span></td>
+    <td>attendance required · shifts in use · probation period · notice period · asset
+      return gates F&amp;F · exit interview required · leave encashment policy</td>
+  </tr>
+  <tr>
+    <td><strong>Pahchan</strong><br><span class="quiet">Attendance</span></td>
+    <td>Already has: radius, grace, outside-geofence, accuracy threshold, photo retention,
+      record retention, reports, standard hours, overtime ×3, week start, shift times.
+      <strong>Needs adding: biometric consent policy and the opt-out path</strong> — see
+      below.</td>
+  </tr>
+</table>
+</div>
+
+<h2>Pahchan — the research, and the one finding</h2>
+
+<h3>What the law says</h3>
+<div class="card blue">
+  <ul>
+    <li>The <strong>DPDP Rules 2025 were notified on 13 November 2025</strong>. The
+      framework is operative, not forthcoming.</li>
+    <li>Biometric data is classified as sensitive personal data. Processing requires
+      <strong>explicit, informed consent</strong>.</li>
+    <li><strong>It cannot be a condition of employment.</strong> Consent given under
+      employment pressure is expressly identified as not free consent.</li>
+    <li><strong>A reasonable alternative must be offered</strong> — an ID badge is the
+      example given — to any employee who declines.</li>
+    <li>Encryption, access control and secure storage are required; retention is limited
+      to the purpose, after which the data must be securely erased.</li>
+  </ul>
+</div>
+
+<h3>What we have — and it is better than I expected</h3>
+<div class="card ok">
+  <table>
+    <tr><th>Control</th><th>State</th></tr>
+    <tr><td><strong>No biometric template is stored</strong></td>
+        <td><span class="tag yes">good</span> The audit searched every column in the
+          schema for a template, embedding, descriptor or bytea. There is none. Pahchan
+          stores a <em>reference photo</em> and a <em>punch photo</em> — images, not a
+          mathematical template. Legally a materially smaller exposure.</td></tr>
+    <tr><td>Retention is configured</td>
+        <td><span class="tag yes">good</span> <span class="mono">punch_photo_retention_days</span>
+          (90) and <span class="mono">record_retention_years</span> (3–5), per org, and
+          the two live orgs have chosen different values.</td></tr>
+    <tr><td>A versioned notice exists</td>
+        <td><span class="tag yes">good</span> <span class="mono">pahchan_notice_acknowledgements</span>
+          records the notice version, the <em>device</em> clock as the legally relevant
+          moment, the source, and whether it happened offline. That is careful work.</td></tr>
+    <tr><td>Geofence and accuracy are recorded per punch</td>
+        <td><span class="tag yes">good</span> lat, lng, accuracy, distance, mock-location
+          flag, and a review verdict. Enough to defend or dispute any single punch.</td></tr>
+  </table>
+</div>
+
+<div class="card hot">
+  <h3>The finding</h3>
+  <p><strong>Consent is recorded against a USER ACCOUNT. The people being photographed
+  are EMPLOYEES. Most employees have no account.</strong></p>
+  <p>Measured on the live database:</p>
+  <ul>
+    <li><strong>12 employees</strong> of a real org (Unicode Group) have enrollment
+      photos, and <strong>699 punches</strong> exist against them.</li>
+    <li><strong>3 acknowledgement rows exist in the entire product</strong> — one per
+      org, each by an administrator account. Every one has
+      <span class="mono">employee_id = NULL</span>.</li>
+    <li>So <strong>zero of the twelve enrolled people</strong> have a consent record
+      against them in this system.</li>
+  </ul>
+  <p>The acknowledgement is keyed <span class="mono">(org_id, user_id, notice_version)</span>,
+  which records that <em>the operator of the app</em> saw the notice — appropriate for a
+  self-service punch, and not the same thing as the data principal consenting. Under the
+  DPDP Act the data principal is the employee whose face is stored.</p>
+  <p><strong>And there is no opt-out anywhere.</strong> The schema was searched for any
+  column meaning declined, exempt, opted-out or alternative. Outside eSign, there is
+  none. The law requires that an employee can refuse and be given another way to mark
+  attendance; today the product cannot record that they did.</p>
+  <p class="quiet">Stated fairly: consent may well exist on paper — bulk enrolment with a
+  paper code was a deliberate design. The point is not that the firm is non-compliant.
+  It is that <strong>the system cannot show consent, and if asked, could not produce
+  it.</strong></p>
+</div>
+
+<h3>What Pahchan's settings should gain</h3>
+<div class="card">
+  <table>
+    <tr><th>Setting</th><th>Why</th></tr>
+    <tr><td><strong>Consent model</strong> — per employee / org-wide notice / recorded on
+        paper</td>
+        <td>Lets a firm say honestly how they obtained it, including "on paper, outside
+          this system", which is a legitimate answer and currently unrecordable.</td></tr>
+    <tr><td><strong>Enrolment requires acknowledgement</strong> <span class="quiet">(default off)</span></td>
+        <td>When on, a face cannot be enrolled until that employee has acknowledged. Off
+          by default, per the owner's rule — but a firm that wants the guardrail can have
+          it.</td></tr>
+    <tr><td><strong>Alternative attendance allowed</strong> <span class="quiet">(default on)</span></td>
+        <td>The legally required escape hatch. An employee marked as opted out uses manual
+          or code-based attendance and is never chased for a photo.</td></tr>
+    <tr><td><strong>Photo on every punch</strong> <span class="quiet">(default on)</span></td>
+        <td>Some firms want geofence only. Data minimisation is a DPDP principle, and the
+          cheapest compliance is not collecting the image at all.</td></tr>
+    <tr><td><strong>Retention</strong> <span class="tag yes">exists</span></td>
+        <td>Already settable. Worth confirming the purge actually runs — the values are
+          configured, and a retention setting nothing enforces is a promise, not a
+          control.</td></tr>
+  </table>
+  <p>Plus one schema change that is not a setting:
+  <span class="mono">pahchan_notice_acknowledgements.employee_id</span> already exists and
+  is nullable. <strong>Populate it.</strong> The column was built for exactly this and
+  has never been used.</p>
+</div>
+
+<h2>Where the rule cannot hold</h2>
+
+<div class="card warn">
+  <p>Two things I would make <em>hard</em> to switch off rather than impossible — off with
+  a typed confirmation and a recorded reason, so the decision is deliberate and
+  attributable:</p>
+  <ul>
+    <li><strong>Invoice number and date.</strong> Without them the document cannot be
+      referenced in a return or in a credit note. It is not an invoice; it is a note. The
+      code refuses this today
+      (<span class="mono">_refuse_final_if_incomplete</span>) and drafts stay permissive,
+      which is the right shape — an incomplete draft is the workflow, an incomplete FINAL
+      is a lie.</li>
+    <li><strong>The e-invoicing 30-day clock.</strong> Day 31 is rejected by the IRP with
+      no late path. A firm that switches this warning off does not escape the rule; it
+      only stops being told.</li>
+  </ul>
+  <p>Everything else — HSN, GSTIN, place of supply, PF, ESI, PT, gratuity, bonus, LWF,
+  the wage rule, biometric consent — optional, with the consequence stated. Exactly as
+  asked.</p>
+</div>
+
+<h2>How to build it once</h2>
+
+<pre>staging.module_compliance_settings
+    org_id, module, rule_key,
+    state          'not_applicable' | 'applicable' | 'enforced'
+    set_by, set_at, reason
+    UNIQUE (org_id, module, rule_key)</pre>
+
+<p>One table, one resolver, every module. A rule with no row resolves to
+<span class="mono">applicable</span>, so nothing needs seeding and nothing arrives
+enforced. Pahchan keeps <span class="mono">pahchan_policy</span> for its operational
+numbers — radius, grace, hours — because those are not compliance states; only the
+applies/does-not-apply questions move here.</p>
+
+<p>The frozen copy on each document is a jsonb column, alongside the
+<span class="mono">statutory_treatment</span> that already does this for payslips.</p>
+
+<div class="card blue">
+  <h3>What I would do first</h3>
+  <ol>
+    <li><strong>Populate <span class="mono">employee_id</span> on the Pahchan
+      acknowledgement.</strong> The column exists. This is the only item in this document
+      with a live legal exposure attached.</li>
+    <li><strong>Add the opt-out path.</strong> Required by law, absent from the schema.</li>
+    <li>Build the settings table and resolver, and move the Ganit rules onto it.</li>
+    <li>Freeze the profile onto invoices, as payslips already do.</li>
+    <li>Give the remaining modules their settings screens as each is next touched.</li>
+  </ol>
+</div>
+
+<div class="foot">
+  <p>Schema audited read-only against the live database 2026-08-22. Row counts measured,
+  not recalled. Legal claims sourced below. Nothing built.</p>
+  <p class="src"><strong>Sources.</strong>
+    <a href="https://ksandk.com/labour-employment/employee-biometrics-india-safeguards/">Employee biometrics in India: privacy concerns and legal safeguards</a> &middot;
+    <a href="https://www.lexology.com/library/detail.aspx?g=01c19289-4cbf-4ec2-8704-20f9666fac0f">Lexology — DPDP rules decoded for employers</a> &middot;
+    <a href="https://www.aristolegal.co.in/post/mastering-biometric-data-compliance-in-india-2025-handbook">Biometric data compliance in India, 2025 handbook</a> &middot;
+    <a href="https://crgcl.com/blog/cybersecurity/biometric-data-compliance-checklist-india-dpdp-act/">Biometric data compliance checklist — DPDP-ready</a> &middot;
+    <a href="https://saachihrms.com/blog/dpdp-act-2025-employee-data-privacy-india-hr">DPDP and employee data for Indian HR teams</a> &middot;
+    <a href="https://onfra.io/blogs/biometric-data-and-dpdp-what-every-indian-office-must-know-before-its-too-late/">Biometric data and DPDP</a> &middot;
+    <a href="https://amlegalsdpdpa.com/privacy-topics/employee-data-protection-dpdpa-india">Employee data protection under the DPDPA</a>
+  </p>
+</div>
+
+</div>
+
+<script>
+  function T(m){
+    document.documentElement.setAttribute('data-t', m);
+    document.getElementById('bl').classList.toggle('on', m === 'light');
+    document.getElementById('bd').classList.toggle('on', m === 'dark');
+  }
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) T('dark');
+</script>

@@ -22,6 +22,32 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Open from the 2026-08-22 session
 
+- [ ] Pahchan: populate `employee_id` on the notice acknowledgement `db` `api` `!!`
+  THE ONLY ITEM ON THIS LIST WITH A LIVE LEGAL EXPOSURE. 12 employees of a
+  real org (Unicode Group) have enrolment photos and 699 punches against them.
+  The entire product holds THREE acknowledgement rows, one per org, each by an
+  admin account, every one with employee_id = NULL. So zero of the twelve
+  enrolled people have a consent record. The column already exists and was
+  built for this. Under the DPDP Act the data principal is the employee whose
+  face is stored — consent may well exist on paper, but the system cannot show
+  it and could not produce it if asked. See proposal 80.
+- [ ] Pahchan: the opt-out path `db` `api` `!!`
+  Biometric attendance CANNOT be a condition of employment and a reasonable
+  alternative must be offered to anyone who declines. The schema has no column
+  meaning declined, exempt or opted-out anywhere outside eSign. An employee who
+  refuses cannot be recorded as having refused.
+- [ ] Module compliance settings — build it once `db` `api` `!`
+  Proposal 80. One table (`module_compliance_settings`), one resolver, every
+  module. THREE states not two: not_applicable / applicable (default, never
+  blocks, names the consequence) / enforced (only if the firm ticks it). No row
+  means `applicable`, so nothing needs seeding and nothing arrives enforced.
+  `pahchan_policy` already IS this pattern for one module — generalise it.
+- [ ] Freeze the compliance profile onto the document `db`
+  `vetana_payslips.statutory_treatment` already does this for payslips. Invoices
+  need the same, or switching a setting on retroactively makes a year of
+  correctly-issued invoices look non-compliant.
+
+
 STATUTORY AND SMALL — proposal 79 ranks these above everything in 77/78.
 Together roughly a week, and all four are currently wrong.
 
