@@ -22,13 +22,20 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Open from the 2026-08-22 session
 
-- [ ] Purchase Order system inside Finance `api` `web` `db` `!` `@me`
-  PROPOSAL WRITTEN: `docs/proposals/77-purchase-orders.html`. Three tables, one
-  column on vendor bills, ~8 routes, 3 screens, 2 skills. ONE DECISION NEEDED
-  before code: is approval in version one? It changes the state machine and is
-  awkward to retrofit, because issued POs would already exist having never been
-  approved. Recommendation in the proposal: one optional approver with a
-  threshold, off by default.
+- [ ] Purchase Order system inside Finance `api` `web` `db` `!`
+  PROPOSAL COMPLETE: `docs/proposals/77-purchase-orders.html`, rewritten
+  2026-08-22 with competitor research, the FAQ every PO product answers, and
+  the India rules no foreign tool handles (194Q, place of supply, MSME clock).
+  DECIDED: approval is OPTIONAL and configurable (rules on amount / department
+  / category, one or two approvers, re-approval threshold, self-approval,
+  prefix, budgets, receiving tolerance, close-short reasons). Built all-in-one,
+  not phased.
+  5 tables + 1 column + 1 allowlist entry, ~14 routes, 4 screens + settings,
+  3 skills. Roughly twice the commission-and-bonus work.
+  ONE PUSHBACK STANDS: budget-per-department assumes departments are real.
+  `manav_employees.department` is free text, blank on 11 of 98. The setting
+  ships off by default and departments need to become records before it is
+  dependable.
 - [x] Invoice prefix per org — SHIPPED 2026-08-22
   `organisations.settings->'doc_prefixes'`, GET/PUT `/v1/org/doc-prefixes`, and
   an Org Settings → Numbering tab. Sanitised at both ends: the value reaches a

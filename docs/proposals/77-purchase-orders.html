@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Purchase orders — the commitment the books never recorded</title>
+<title>Purchase orders — the complete module</title>
 <style>
   :root{
     --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
@@ -38,6 +38,7 @@
   .card.hot{border-color:var(--rose);border-left-width:4px}
   .card.ok{border-color:var(--green);border-left-width:4px}
   .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card.blue{border-color:var(--blue);border-left-width:4px}
   .card h3{margin-top:0}
   table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}
   th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
@@ -62,11 +63,15 @@
   .tag.no{background:var(--rose);color:#fff}
   .tag.yes{background:var(--green);color:#fff}
   .tag.part{background:var(--amber);color:#fff}
-  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;margin:14px 0}
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:8px;margin:14px 0}
   .step{border:1px solid var(--rule);border-radius:10px;background:var(--low);padding:11px 12px}
   .step .n{font:600 10px/1 var(--fm);color:var(--ink3);letter-spacing:.06em}
   .step .t{font-weight:600;margin:6px 0 3px;font-size:13px}
   .step .d{font-size:11.5px;color:var(--ink3);line-height:1.45}
+  .q{font-weight:640;color:var(--ink);margin:16px 0 4px}
+  .a{color:var(--ink2);margin:0 0 12px}
+  .src{font-size:11.5px;color:var(--ink3)}
+  .src a{color:var(--blue)}
   .foot{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px}
   .quiet{color:var(--ink3)}
   strong{font-weight:640}
@@ -77,11 +82,13 @@
 <div class="top">
   <div>
     <h1>Purchase orders</h1>
-    <p class="lede">A module, not a field. What it has to record, what the database
-      already gives us, the one hard problem inside it, and what I would deliberately
-      leave out of the first version.</p>
-    <p class="meta">Proposal 77 &middot; branch <span class="mono">staging</span> &middot;
-      every count below measured read-only against the live database on 2026-08-22</p>
+    <p class="lede">The complete module, built in one go rather than in phases. What the
+      market does, what customers ask for over and over, what India adds that no foreign
+      product handles, and the settings that make approval optional without making it
+      useless.</p>
+    <p class="meta">Proposal 77 &middot; rewritten 2026-08-22 &middot; branch
+      <span class="mono">staging</span> &middot; database counts measured read-only;
+      market claims sourced and linked at the foot</p>
   </div>
   <div class="ctl">
     <button id="bl" class="on" onclick="T('light')">Light</button>
@@ -89,40 +96,205 @@
   </div>
 </div>
 
-<div class="card">
-  <h3>What a purchase order is, in one sentence</h3>
-  <p>A <strong>commitment to spend money that has not been spent yet</strong> — and that
-  is the whole reason it needs its own object. Every other financial record in this
-  product describes something that has already happened. A vendor bill is a debt that
-  exists. A payment is money that has moved. A purchase order is the only record of money
-  a firm has <em>promised</em> and not yet owed.</p>
-  <p>Without it, the question "what have we committed to this quarter?" has no answer
-  here, and the first time a commitment appears in the books is when the vendor's bill
-  arrives — by which point it is too late to disagree with it.</p>
+<div class="card ok">
+  <h3>Decisions already taken</h3>
+  <ul>
+    <li><strong>Approval is optional, and configurable</strong> — not a fixed step. Who
+      approves what kind of PO, whether two approvers are needed, thresholds, and the PO
+      prefix all live in PO module settings.</li>
+    <li><strong>Built all-in-one</strong>, not in phases. The "leave it for v2" list from
+      the first draft of this proposal is gone; what remains excluded is excluded on
+      merit, and each exclusion says why.</li>
+  </ul>
 </div>
 
-<h2>What already exists</h2>
+<h2>What already exists here</h2>
 
 <div class="kpis">
-  <div class="kpi"><div class="v">80</div><div class="l"><span class="mono">ganit_vendors</span> — the counterparty, already modelled</div></div>
-  <div class="kpi"><div class="v">189</div><div class="l"><span class="mono">ganit_vendor_bills</span> — where a PO ends up</div></div>
-  <div class="kpi"><div class="v">106</div><div class="l"><span class="mono">ganit_products</span> — line items, already priced</div></div>
+  <div class="kpi"><div class="v">80</div><div class="l"><span class="mono">ganit_vendors</span> — the counterparty</div></div>
+  <div class="kpi"><div class="v">189</div><div class="l"><span class="mono">ganit_vendor_bills</span> — where a PO lands</div></div>
+  <div class="kpi"><div class="v">106</div><div class="l"><span class="mono">ganit_products</span> — priced catalogue</div></div>
   <div class="kpi bad"><div class="v">0</div><div class="l">purchase-order tables of any kind</div></div>
 </div>
 
-<p>So this is not a green field. The counterparty, the catalogue and the destination all
-exist and are populated. What is missing is the object in between — and the fact that
-<span class="mono">ganit_vendor_bills</span> already carries
-<span class="mono">line_items</span> as jsonb, the same shape invoices use, means a PO can
-be built to pour into it rather than beside it.</p>
+<p>Not a green field. The counterparty, the catalogue and the destination all exist and
+are populated. <span class="mono">ganit_vendor_bills</span> already carries
+<span class="mono">line_items</span> as jsonb — the same shape invoices use — so a PO can
+be built to pour <em>into</em> it rather than sit beside it.</p>
 
 <div class="card warn">
-  <h3>One thing to decide before any code</h3>
-  <p><span class="mono">ganit_vendor_bills.acceptance_date</span> already exists and is
-  read by the MSME payment-clock check. If a PO introduces its own idea of "received on",
-  the two will disagree the first time somebody uses both — and the MSME clock is a
-  statutory deadline, not a nicety. <strong>The PO must write that column, not shadow
-  it.</strong></p>
+  <h3>Settle this before any code</h3>
+  <p><span class="mono">ganit_vendor_bills.acceptance_date</span> already exists and feeds
+  the MSME payment-clock check, which is a <strong>statutory deadline</strong>. If a PO
+  introduces its own idea of "received on", the two disagree the first time somebody uses
+  both. <strong>The PO writes that column; it does not shadow it.</strong></p>
+</div>
+
+<h2>What the market actually does</h2>
+
+<div class="scroll">
+<table>
+  <tr>
+    <th>Product</th><th>Where it sits</th><th>PO approach</th><th>What we should take</th>
+  </tr>
+  <tr>
+    <td><strong>Zoho Books</strong><br><span class="quiet">the direct competitor</span></td>
+    <td>Cloud accounting, strong India/GST</td>
+    <td>PO with HSN and GST per line, vendor GSTIN auto-filled from the vendor record,
+        email or PDF to vendor. Approval is a <em>setting</em> with a threshold — "above
+        ₹50,000 needs the finance head".</td>
+    <td>The threshold model, and GSTIN auto-fill. This is the bar a customer will compare
+        us against, because it is what they are most likely already using.</td>
+  </tr>
+  <tr>
+    <td><strong>TallyPrime</strong><br><span class="quiet">what CAs actually use</span></td>
+    <td>Desktop, dominant with Indian accountants</td>
+    <td>PO as an inventory voucher; strong on stock and compliance, weak on workflow and
+        anything collaborative.</td>
+    <td>The <em>data</em> expectations of a CA: they will want the PO to reconcile against
+        the bill and the stock, not to be a pretty document.</td>
+  </tr>
+  <tr>
+    <td><strong>Busy</strong></td>
+    <td>Indian SME, multi-branch</td>
+    <td>Full modules for manufacturing, advanced inventory, multi-branch.</td>
+    <td>Multi-branch delivery addresses. A firm with two offices orders to both.</td>
+  </tr>
+  <tr>
+    <td><strong>Vyapar</strong></td>
+    <td>Mobile-first, very small businesses</td>
+    <td>Light. Billing and basic inventory.</td>
+    <td>Little — but it shows the floor. If our PO is harder than Vyapar's invoice, a
+        small firm will not use it.</td>
+  </tr>
+  <tr>
+    <td><strong>Precoro, Procurify,<br>ProcurementExpress</strong></td>
+    <td>Dedicated procurement SaaS</td>
+    <td>Where the real workflow lives: approval matrices, revisions with history,
+        budget tracking, partial receipts, exception routing.</td>
+    <td>The revision model and the approval matrix. These products exist <em>because</em>
+        ERP modules create POs but do not orchestrate them.</td>
+  </tr>
+  <tr>
+    <td><strong>NetSuite, Dynamics 365,<br>Odoo, Epicor</strong></td>
+    <td>ERP</td>
+    <td>Approval matrices by amount, department, category; multi-level chains; formal
+        change-order process on confirmed POs.</td>
+    <td>The three axes an approval rule is written on: <strong>amount, department,
+        category</strong>. Everything else is a variation of those.</td>
+  </tr>
+  <tr class="note">
+    <td colspan="4">The consistent finding across the dedicated tools: <em>ERP modules
+      handle PO creation but lack the workflow orchestration, approval routing and vendor
+      coordination that dedicated tools provide.</em> Teams end up tracking POs in
+      spreadsheets and email, which breaks as volume grows. That gap is the opportunity —
+      and it is a workflow gap, not a document gap.</td>
+  </tr>
+</table>
+</div>
+
+<h2>What customers ask for, over and over</h2>
+
+<p>These are the questions the help centres of every PO product answer, which is the
+best available evidence of what people actually hit. Each one is a design requirement.</p>
+
+<div class="card">
+  <p class="q">"Can I edit a PO after it has been approved?"</p>
+  <p class="a">The single most-asked question, at every vendor. The answer has to be yes —
+  and the answer has to be <strong>a revision, not an overwrite</strong>. Each version
+  shows what changed and who approved it; the original is never destroyed.</p>
+
+  <p class="q">"Does editing it send it back for approval?"</p>
+  <p class="a">Depends on the change, and the rule is well established: a small edit
+  within the existing authorisation flows through; a change that <em>materially raises
+  the value, adds scope, or extends the term</em> needs fresh approval — down the same
+  path it would have taken originally. We implement exactly that, and the threshold for
+  "material" is a setting.</p>
+
+  <p class="q">"Half the order arrived. Now what?"</p>
+  <p class="a">Partial receipt, and it is the feature that separates real PO systems from
+  document generators. Covered in full below.</p>
+
+  <p class="q">"The vendor billed us for more than they delivered."</p>
+  <p class="a">Three-way match: PO against receipt against bill, with discrepancies
+  flagged rather than silently accepted. This is the exception worth actual money.</p>
+
+  <p class="q">"Can I close a PO that will never be fully delivered?"</p>
+  <p class="a">Close short — with a reason. Without it, every partially-fulfilled order
+  sits open for ever and the committed-spend figure is permanently wrong.</p>
+
+  <p class="q">"How much have we committed this quarter?"</p>
+  <p class="a">Budget tracking with limits and alerts as spend approaches them. Not every
+  tool has it; the ones that do are the ones finance teams keep.</p>
+
+  <p class="q">"Can the vendor see it without me emailing a PDF?"</p>
+  <p class="a">The honest finding here is a warning, not a feature: "send PO as email PDF"
+  covers only part of a supplier mix, and a tool that only emails shows a
+  <em>Sent</em> status that is weaker than it looks — the order may actually have moved
+  over WhatsApp. Since we already have WhatsApp, this is ours to win.</p>
+</div>
+
+<h2>What India adds that no foreign product handles</h2>
+
+<div class="card blue">
+  <table>
+    <tr><th>Rule</th><th>What it means for a PO</th></tr>
+    <tr>
+      <td><strong>GST place of supply</strong></td>
+      <td>Inter-state is IGST, intra-state splits CGST+SGST. The PO must decide this the
+          same way the invoice does, from the vendor's state — or the PO total and the
+          bill total differ and the three-way match fails on tax alone.</td>
+    </tr>
+    <tr>
+      <td><strong>Section 194Q TDS</strong></td>
+      <td>A buyer with turnover over ₹10 crore deducts 0.1% on purchases from a resident
+          seller past ₹50 lakh in a year. <strong>It bites at payment or credit,
+          whichever is earlier — and advances count.</strong> A PO is where a firm first
+          sees it coming, so the module should warn when a vendor is approaching the
+          threshold rather than letting the bill be the first anyone hears of it.</td>
+    </tr>
+    <tr>
+      <td><strong>194Q on the gross</strong></td>
+      <td>Turnover for the ₹10cr test <em>excludes</em> GST; the TDS itself is computed on
+          the purchase value <em>including</em> GST. Two different bases, and getting them
+          the wrong way round is a real filing error.</td>
+    </tr>
+    <tr>
+      <td><strong>MSME payment clock</strong></td>
+      <td>Already in this product, already reading
+          <span class="mono">acceptance_date</span>. The PO receipt is what should set it.</td>
+    </tr>
+    <tr>
+      <td><strong>HSN on every line</strong></td>
+      <td>The catalogue already carries it. The PO must too, or the bill cannot be matched
+          line to line.</td>
+    </tr>
+    <tr class="note">
+      <td colspan="2">None of Precoro, Procurify or Coupa know what 194Q is. This is the
+        part a CA firm cannot get from a foreign tool at any price.</td>
+    </tr>
+  </table>
+</div>
+
+<h2>The hard problem: three quantities, not one</h2>
+
+<div class="card hot">
+  <p>An ordinary document has a quantity. A purchase-order line has three, and they are
+  routinely all different:</p>
+  <table>
+    <tr><th>Quantity</th><th>Means</th><th>Set when</th></tr>
+    <tr><td><span class="mono">ordered</span></td><td>what we asked for</td><td>the PO is issued</td></tr>
+    <tr><td><span class="mono">received</span></td><td>what turned up</td><td>each delivery</td></tr>
+    <tr><td><span class="mono">billed</span></td><td>what the vendor charged for</td><td>each bill</td></tr>
+  </table>
+  <p><strong>The gaps between them are the entire module.</strong> ordered &gt; received
+  is a late supplier. received &gt; billed is an accrual — goods received not invoiced,
+  which a CA needs at period end. billed &gt; received is a vendor charging for goods that
+  never came, which is the one worth real money.</p>
+  <p>A design storing one quantity per line cannot express any of those states, and no
+  reporting on top recovers them. Which is why <strong>receipts are their own table</strong>
+  — a counter that gets overwritten loses the arrival history, and "when did this arrive?"
+  is exactly what the MSME clock and any dispute both turn on.</p>
 </div>
 
 <h2>The lifecycle</h2>
@@ -131,44 +303,72 @@ be built to pour into it rather than beside it.</p>
   <div class="step"><div class="n">01</div><div class="t">Draft</div>
     <div class="d">Editable. No number yet — a serial spent on a draft is a gap in the series.</div></div>
   <div class="step"><div class="n">02</div><div class="t">Awaiting approval</div>
-    <div class="d">Optional, per org. Below a threshold it can skip straight to issued.</div></div>
+    <div class="d">Only if the rules say so. Skipped entirely when no rule matches.</div></div>
   <div class="step"><div class="n">03</div><div class="t">Issued</div>
-    <div class="d">Numbered, sent to the vendor, no longer freely editable.</div></div>
+    <div class="d">Numbered, sent, no longer freely editable — revisions from here.</div></div>
   <div class="step"><div class="n">04</div><div class="t">Part received</div>
-    <div class="d">Some quantity has arrived. This is the state that makes it hard.</div></div>
-  <div class="step"><div class="n">05</div><div class="t">Closed</div>
-    <div class="d">Fully received and billed, or closed short on purpose.</div></div>
+    <div class="d">Some quantity arrived. Where the value is.</div></div>
+  <div class="step"><div class="n">05</div><div class="t">Received</div>
+    <div class="d">Everything arrived; may still be unbilled.</div></div>
+  <div class="step"><div class="n">06</div><div class="t">Closed</div>
+    <div class="d">Billed out, or closed short with a reason.</div></div>
 </div>
 
-<p>Four of those five are ordinary. <strong>Part received is where every purchase-order
-system earns or loses its keep</strong>, and it is worth being explicit about why.</p>
+<h2>Settings — the part you asked for</h2>
 
-<h2>The hard problem: partial receipt</h2>
+<p>All of it lives in <strong>Finance → Purchase orders → Settings</strong>, per org.
+Nothing here is mandatory; an org that configures none of it gets a PO module that
+numbers documents and never asks anyone for permission.</p>
 
-<div class="card hot">
-  <h3>Three quantities per line, not one</h3>
-  <p>An ordinary document has a quantity. A purchase-order line has three, and they are
-  routinely all different:</p>
-  <table>
-    <tr><th>Quantity</th><th>Means</th><th>Set when</th></tr>
-    <tr><td><span class="mono">ordered</span></td><td>what we asked for</td><td>the PO is issued</td></tr>
-    <tr><td><span class="mono">received</span></td><td>what actually turned up</td><td>each delivery</td></tr>
-    <tr><td><span class="mono">billed</span></td><td>what the vendor has charged for</td><td>each bill</td></tr>
-    <tr class="note"><td colspan="3">The gaps between them are the entire value of the module.
-      ordered &gt; received is a supplier who is late. received &gt; billed is a bill still to
-      come — an accrual. billed &gt; received is a vendor charging for goods that never
-      arrived, which is the one a firm most wants caught.</td></tr>
-  </table>
-  <p>A design that stores one quantity per line cannot express any of those three
-  states, and no amount of reporting on top can recover them.</p>
+<div class="scroll">
+<table>
+  <tr><th>Setting</th><th>Shape</th><th>Default</th></tr>
+  <tr><td><strong>Prefix</strong></td>
+      <td>Letters only, 2–8 characters — same rule and same storage as the invoice
+          prefixes shipped this week (<span class="mono">settings.doc_prefixes</span>).</td>
+      <td><span class="mono">PO</span></td></tr>
+  <tr><td><strong>Approval required</strong></td>
+      <td>Off / On. Off means the whole approval concept never appears.</td>
+      <td>Off</td></tr>
+  <tr><td><strong>Approval rules</strong></td>
+      <td>An ordered list. Each rule matches on <strong>amount</strong> ≥ X,
+          <strong>department</strong>, and/or <strong>category</strong>, and names
+          <strong>who approves</strong> and <strong>how many</strong> must approve.
+          First match wins; no match means no approval needed.</td>
+      <td>empty</td></tr>
+  <tr><td><strong>Two-approver rules</strong></td>
+      <td>A property of the rule, not a separate feature: <span class="mono">approvers_required: 2</span>.
+          Sequential or either-of is a per-rule choice.</td>
+      <td>1</td></tr>
+  <tr><td><strong>Re-approval threshold</strong></td>
+      <td>A revision that raises the total by more than X% or ₹Y goes back for approval.
+          Directly from the FAQ finding above.</td>
+      <td>10% or ₹10,000</td></tr>
+  <tr><td><strong>Self-approval</strong></td>
+      <td>May a person approve a PO they raised?</td>
+      <td>Not allowed</td></tr>
+  <tr><td><strong>Budget limits</strong></td>
+      <td>Optional per department per period, with an alert threshold.</td>
+      <td>off</td></tr>
+  <tr><td><strong>Receiving</strong></td>
+      <td>Whether over-receipt is allowed, and by what tolerance.</td>
+      <td>refuse over-receipt</td></tr>
+  <tr><td><strong>Close-short reasons</strong></td>
+      <td>The firm's own list, so the reason is a value and not free text nobody reports on.</td>
+      <td>a starter list</td></tr>
+</table>
 </div>
 
-<h3>Which means receipts are their own table</h3>
-<p>A delivery is an event with a date, a person and a quantity, and there can be several
-against one line. Storing <span class="mono">received_qty</span> on the line and
-overwriting it loses the history — and "when did this arrive?" is exactly the question
-the MSME clock and any dispute both turn on. So:
-<span class="mono">ganit_po_receipts</span>, one row per delivery per line.</p>
+<div class="card">
+  <h3>Why "first match wins" and not a chain</h3>
+  <p>Every ERP eventually grows multi-level chains, and every one of them becomes
+  impossible for the customer to reason about. An ordered list where the first matching
+  rule decides is something a person can read aloud — <em>"anything over two lakh in
+  Audit needs both partners"</em> — and it covers the amount/department/category axes
+  that the ERPs themselves reduce to. If a firm genuinely needs sequential escalation,
+  <span class="mono">approvers_required: 2</span> with a sequential flag gives it without
+  a graph.</p>
+</div>
 
 <h2>Schema</h2>
 
@@ -177,69 +377,88 @@ the MSME clock and any dispute both turn on. So:
   <tr><th>Table</th><th>Holds</th><th>Notes that matter</th></tr>
   <tr>
     <td><span class="mono">ganit_purchase_orders</span></td>
-    <td>org, vendor, po_number, po_date, expected_date, status, currency, totals,
-        terms, delivery address, created_by, approved_by, approved_at</td>
-    <td>Numbered from <span class="mono">next_doc_number</span> — which needs a new entry
-        in <span class="mono">_ALLOWED_DOC_TABLES</span>, currently four tables. Prefix
-        <span class="mono">PO</span>, overridable per org through the
-        <span class="mono">doc_prefixes</span> setting shipped this week.</td>
+    <td>org, vendor, po_number, revision, po_date, expected_date, status, department,
+        category, currency, place_of_supply, is_igst, totals, terms, delivery address,
+        created_by, closed_reason</td>
+    <td>Numbered through <span class="mono">next_doc_number</span>, which needs a new
+        entry in <span class="mono">_ALLOWED_DOC_TABLES</span> (four tables today).
+        <span class="mono">place_of_supply</span> and <span class="mono">is_igst</span>
+        decided the same way the invoice decides them, or the match fails on tax.</td>
   </tr>
   <tr>
     <td><span class="mono">ganit_po_lines</span></td>
     <td>po_id, product_id (nullable), description, hsn, qty_ordered, unit, rate,
         gst_rate, line_total</td>
-    <td>A real table, <em>not</em> jsonb. Invoices keep lines as jsonb because nothing
-        ever queries inside them; PO lines are queried constantly — "what is on order
-        for this product" is the second question anyone asks.</td>
+    <td>A real table, <em>not</em> jsonb. Invoice lines are jsonb because nothing queries
+        inside them; PO lines are queried constantly — "what is on order for this
+        product" is the second question anyone asks.</td>
   </tr>
   <tr>
     <td><span class="mono">ganit_po_receipts</span></td>
     <td>po_line_id, qty, received_on, received_by, note</td>
-    <td>One row per delivery. Never overwritten, so the arrival history survives.
-        Feeds <span class="mono">ganit_vendor_bills.acceptance_date</span> rather than
-        competing with it.</td>
+    <td>One row per delivery. Never overwritten. Writes
+        <span class="mono">ganit_vendor_bills.acceptance_date</span> rather than competing
+        with it.</td>
+  </tr>
+  <tr>
+    <td><span class="mono">ganit_po_revisions</span></td>
+    <td>po_id, revision, changed_by, changed_at, diff (jsonb), reason, re_approved</td>
+    <td>The answer to the most-asked question. The original is never destroyed; each
+        version records what changed and who approved it.</td>
+  </tr>
+  <tr>
+    <td><span class="mono">ganit_po_approvals</span></td>
+    <td>po_id, revision, approver_id, decided_at, decision, note</td>
+    <td>One row per approver per revision, so a two-approver rule is expressible and a
+        rejection keeps its reason.</td>
   </tr>
   <tr class="note">
-    <td colspan="3">No fourth table for the bill link: <span class="mono">ganit_vendor_bills</span>
-      gains a nullable <span class="mono">po_id</span>. A bill without a PO stays legal —
-      most firms will raise POs for some spend and not all, and a design that refuses an
-      un-ordered bill would stop them recording real invoices.</td>
+    <td colspan="3">Plus a nullable <span class="mono">po_id</span> on
+      <span class="mono">ganit_vendor_bills</span>. A bill WITHOUT a PO stays legal — most
+      firms raise POs for some spend and not all, and refusing an un-ordered bill would
+      stop them recording real invoices.</td>
   </tr>
 </table>
 </div>
 
 <h2>What the module answers</h2>
 <ul>
-  <li><strong>Committed spend</strong> — issued POs not yet fully received. The number
-    that does not exist today at all.</li>
-  <li><strong>Goods received, not invoiced</strong> — the accrual a CA firm needs at
-    period end, currently assembled by hand or not at all.</li>
-  <li><strong>Billed but never received</strong> — the exception worth real money.</li>
-  <li><strong>Late suppliers</strong> — <span class="mono">expected_date</span> passed
-    with quantity outstanding. This is a <em>skill</em>, and it fits the shelf's existing
-    shape exactly: name the vendor, the phone number, the days late.</li>
+  <li><strong>Committed spend</strong> — issued, not yet received. Does not exist today
+    in any form.</li>
+  <li><strong>Goods received, not invoiced</strong> — the period-end accrual, currently
+    assembled by hand or not at all.</li>
+  <li><strong>Billed but never received</strong> — the exception worth money.</li>
+  <li><strong>Late suppliers</strong> — expected date passed with quantity outstanding.
+    A <em>skill</em>, and it fits the shelf's shape exactly: vendor name, phone number,
+    days late.</li>
+  <li><strong>194Q approaching</strong> — a vendor nearing ₹50 lakh for the year, warned
+    at PO time rather than at bill time.</li>
+  <li><strong>Budget vs committed</strong>, per department, where limits are set.</li>
 </ul>
 
-<h2>What I would leave out of version one</h2>
+<h2>Still excluded — and why</h2>
 <div class="card ok">
   <table>
-    <tr><th>Left out</th><th>Why</th></tr>
-    <tr><td>Multi-level approval chains</td>
-      <td>One approver, one threshold. Chains are a settings screen and a state machine
-          for a problem no user of this product has reported having.</td></tr>
+    <tr><th>Excluded</th><th>Reason</th></tr>
     <tr><td>Requisitions (a request to raise a PO)</td>
-      <td>A second document in front of the first, valuable only in firms large enough to
-          separate the asker from the buyer. Neither live org is.</td></tr>
-    <tr><td>Blanket / open-ended POs</td>
-      <td>Call-offs against a standing order are a genuinely different object. Adding it
-          later costs nothing; guessing at it now shapes the schema wrongly.</td></tr>
-    <tr><td>Three-way match automation</td>
-      <td>The <em>data</em> for it is what this proposal builds. Automatically approving a
-          bill because it matches is a decision to make after somebody has watched the
-          match be right for a few months.</td></tr>
+      <td>A second document in front of the first, valuable only where the asker and the
+          buyer are different people. Neither live org is that shape. Adding it later
+          costs nothing because it hangs off the PO rather than changing it.</td></tr>
+    <tr><td>Blanket / call-off POs</td>
+      <td>Genuinely a different object — a standing agreement drawn down over time.
+          Guessing at it now shapes the schema wrongly; it is additive later.</td></tr>
+    <tr><td>Automatic three-way-match approval</td>
+      <td>The <em>data</em> for the match is built. Automatically approving a bill
+          because it matches is a decision to make after somebody has watched the match
+          be right for a few months. The exceptions are surfaced from day one.</td></tr>
     <tr><td>Landed cost apportionment</td>
       <td>Freight and duty split across lines. Real, and squarely an inventory feature —
-          it belongs with Vikray stock, not here.</td></tr>
+          it belongs with Vikray stock.</td></tr>
+    <tr><td>EDI / supplier portals</td>
+      <td>Enterprise supplier integration. We have WhatsApp, which is the channel these
+          suppliers actually use.</td></tr>
+    <tr class="note"><td colspan="2">Everything from the first draft's "leave for v2" list
+      — approval, revisions, budgets, three-way match data, close-short — is now IN.</td></tr>
   </table>
 </div>
 
@@ -247,34 +466,54 @@ the MSME clock and any dispute both turn on. So:
 <div class="scroll">
 <table>
   <tr><th>Piece</th><th>Shape</th><th>Size</th></tr>
-  <tr><td>Migration</td><td>3 tables, 1 column on vendor bills, 1 allowlist entry,
-      guards + VERIFY in the house style</td><td>one file</td></tr>
-  <tr><td>API</td><td>CRUD, issue, approve, receive, close; numbering through the
-      existing allocator</td><td>~8 routes</td></tr>
-  <tr><td>Screens</td><td>List, form with lines, detail with receipts, plus the vendor-bill
-      link control</td><td>3 screens + 1 control</td></tr>
-  <tr><td>Skills</td><td>Late suppliers; received-not-invoiced. Both fit the existing
-      shelf and the contact rules shipped this week</td><td>2 handlers</td></tr>
-  <tr class="note"><td colspan="3">Comparable to the commission-and-bonus work: a
-    migration, a router section, a tab, and tests. Not comparable to Niyam or Sahayak.</td></tr>
+  <tr><td>Migration</td><td>5 tables, 1 column on vendor bills, 1 allowlist entry, guards
+      and VERIFY in the house style</td><td>one file</td></tr>
+  <tr><td>Settings</td><td>Approval rules, prefix, budgets, receiving tolerance,
+      close-short reasons</td><td>1 screen + 1 router section</td></tr>
+  <tr><td>API</td><td>CRUD, issue, approve/reject, revise, receive, close, match</td><td>~14 routes</td></tr>
+  <tr><td>Screens</td><td>List, form with lines, detail with receipts and revision
+      history, approval queue, vendor-bill link control</td><td>4 screens + 1 control</td></tr>
+  <tr><td>Skills</td><td>Late suppliers; received-not-invoiced; 194Q approaching</td><td>3 handlers</td></tr>
+  <tr class="note"><td colspan="3">Roughly twice the commission-and-bonus work. The
+    approval rules and the revision history are the two parts that carry real design
+    risk; everything else is ordinary CRUD over a schema that is already argued out.</td></tr>
 </table>
 </div>
 
 <div class="card warn">
-  <h3>The decision I need from you</h3>
-  <p><strong>Is approval in or out of version one?</strong> It is the difference between
-  a document a buyer raises and sends, and a document that waits for somebody. Everything
-  else above I would build the same way either way — but approval changes the state
-  machine, adds a screen, and is the one part that is awkward to add afterwards because
-  issued POs would already exist without ever having been approved.</p>
-  <p>My recommendation: <strong>include a single optional approver with a
-  threshold</strong>, off by default. A firm that does not want it never sees it, and one
-  that does is not asking for a migration six weeks later.</p>
+  <h3>One thing I would still push back on</h3>
+  <p><strong>Budget limits per department</strong> assume departments hold budgets. In
+  this product <span class="mono">manav_employees.department</span> is a free-text
+  column, not a modelled entity with an owner — and 11 of 98 employees have it blank.
+  Budgets keyed on a string nobody governs will quietly stop matching. I would build the
+  setting and leave it off by default, and flag that making it dependable needs
+  departments to become real records first.</p>
 </div>
 
 <div class="foot">
-  Written 2026-08-22. Counts measured read-only against the live database; no figure here
-  is estimated. Nothing in this proposal has been built.
+  <p>Written 2026-08-22. Database counts measured read-only against the live database.
+  Market and FAQ claims are sourced below and were checked, not recalled.</p>
+  <p class="src"><strong>Sources.</strong>
+    <a href="https://aaxonix.com/resources/zoho-books-purchase-order-india/">Zoho Books purchase order management (India)</a> &middot;
+    <a href="https://www.zoho.com/in/books/gst-accounting-software/">Zoho Books GST accounting</a> &middot;
+    <a href="https://www.techjockey.com/compare/busy-accounting-software-vs-tally-erp-9-vs-vyapar">Busy vs TallyPrime vs Vyapar</a> &middot;
+    <a href="https://elitemindz.co/blog/best-accounting-software-india">Best accounting software India 2026</a> &middot;
+    <a href="https://precoro.com/blog/why-implementing-3-way-matching-is-important/">Precoro — why three-way matching matters</a> &middot;
+    <a href="https://tipalti.com/ap-automation/po-matching/">Tipalti — PO matching</a> &middot;
+    <a href="https://www.centime.com/posts/mastering-purchase-order-matching">Centime — 2-way, 3-way and 4-way matching</a> &middot;
+    <a href="https://www.procuredesk.com/best-procurement-software-3-way-match/">ProcureDesk — 3-way match tools</a> &middot;
+    <a href="https://help.precoro.com/how-to-edit-the-purchase-order-after-it-was-approved">Precoro — editing an approved PO</a> &middot;
+    <a href="https://www.stampli.com/resources/po-revisions-change-orders/">Stampli — PO revisions and change orders</a> &middot;
+    <a href="https://learn.microsoft.com/en-us/dynamics365/supply-chain/procurement/purchase-order-changes-after-confirmation">Dynamics 365 — changes after confirmation</a> &middot;
+    <a href="https://www.stampli.com/resources/requisition-approval-routing/">Stampli — routing by department, amount and category</a> &middot;
+    <a href="https://tipalti.com/resources/learn/approval-matrix/">Tipalti — approval matrix</a> &middot;
+    <a href="https://www.controlhub.com/blog/ideal-purchase-order-process-approval-matrix">ControlHub — PO process and approval matrix</a> &middot;
+    <a href="https://www.linenow.co/blog/guides/po-software-features-small-teams-need">PO features small teams need</a> &middot;
+    <a href="https://www.moxo.com/blog/purchase-order-tracking-software">Moxo — PO tracking and vendor channels</a> &middot;
+    <a href="https://taxguru.in/income-tax/tds-goods-purchase-india-section-194q.html">TaxGuru — Section 194Q</a> &middot;
+    <a href="https://taxgarden.in/blog/tds-on-purchase-of-goods-section-194q-393-guide-india-fy-2026-27">Section 194Q guide FY 2026-27</a> &middot;
+    <a href="https://www.indiafilings.com/learn/section-194q-tds">IndiaFilings — 194Q</a>
+  </p>
 </div>
 
 </div>
@@ -285,6 +524,5 @@ the MSME clock and any dispute both turn on. So:
     document.getElementById('bl').classList.toggle('on', m === 'light');
     document.getElementById('bd').classList.toggle('on', m === 'dark');
   }
-  // Follow the reader's own setting on first paint; the buttons then override it.
   if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) T('dark');
 </script>
