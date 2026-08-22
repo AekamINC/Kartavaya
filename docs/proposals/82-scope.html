@@ -407,14 +407,114 @@ drafts. Three groups matter, and the first one answers an inbox item.</p>
   in the scope below.</p>
 </div>
 
-<h2>8 &middot; Every proposal from 55 to 83</h2>
+<h2>8 &middot; Every proposal from 53 to 83</h2>
 
-<p>Twenty-nine proposals, written 16&ndash;22 August. What became real, and what is still
-paper.</p>
+<p>Thirty-one proposals, written 16&ndash;22 August, <strong>re-read in full</strong>. The first pass classified four of them from their opening paragraph and got them wrong; those corrections are marked below.</p>
+
+<div class="card hot">
+  <h3>Four the first pass got wrong</h3>
+  <div class="scroll">
+  <table>
+    <tr><th>#</th><th>What I said</th><th>What it actually is</th></tr>
+    <tr><td class="num">53</td><td><em>not mentioned at all</em></td>
+        <td><strong>Open-source scrapers, and a thin runner in India.</strong> Crawl4AI +
+            Playwright behind the provider column, replacing six Apify rows. The India runner
+            is not about hardware: Indian sites serve, rate-limit and block by geography, so an
+            Indian egress IP is often the difference between a page and a captcha. Also a real
+            answer to a CA firm asking where prospect data is handled. <strong>Carries open
+            owner decisions.</strong></td></tr>
+    <tr><td class="num">54</td><td><em>not mentioned at all</em></td>
+        <td><strong>The Plan, 16 August</strong> &mdash; seven tracks, and it supersedes
+            proposal 12&rsquo;s open-item list. Track 7 is
+            <em>&ldquo;the elephant: a production release decision&rdquo;</em>, which is
+            exactly the question you asked me and I set aside. This plan should be reconciled
+            against the workstreams in section 9 rather than left beside them.</td></tr>
+    <tr><td class="num">69</td><td>one proposal</td>
+        <td><strong>There are two files both numbered 69</strong>, 36KB and 21KB, with
+            different section structures. A second number collision, after the two 080
+            migrations.</td></tr>
+    <tr class="hot"><td class="num">70</td><td>&ldquo;grounding; feeds the skills catalogue&rdquo;</td>
+        <td><strong>Half of it is the Reports architecture proposal</strong> &mdash; and it
+            answers inbox 16 and 17 directly. It found that
+            <span class="mono">/reports</span> was printing lifetime totals under a weekly
+            heading, bucketing throughput on <span class="mono">updated_at</span>, and naming a
+            &ldquo;champion&rdquo; from time-entry rows labelled as tasks done. It also
+            established that this is <strong>not three surfaces but six</strong>, and that
+            consolidating them needs <em>one function</em>:
+            <span class="mono">report_section()</span> beside the existing
+            <span class="mono">report_widget()</span>, returning the same
+            <span class="mono">{label, data: rows}</span> shape &mdash; no new renderer, no new
+            PDF engine, no new export code.</td></tr>
+  </table>
+  </div>
+  <p><strong>Where 70 stands now:</strong> the numbers were fixed on 2026-08-19
+  (<span class="mono">9b085413</span>) &mdash; completion buckets on
+  <span class="mono">completed_at</span>, state facts return under
+  <span class="mono">as_of</span> instead of being filed under the date range, undatable rows
+  are counted as <span class="mono">done_undated</span> rather than dropped, and the tables are
+  schema-qualified. <strong>The six-surface consolidation was never built</strong>, and
+  <span class="mono">report_section()</span> does not exist. That is the real content of inbox
+  16.</p>
+</div>
+
+<div class="card warn">
+  <h3>Proposal 73&rsquo;s six wrong numbers, re-checked against today&rsquo;s code</h3>
+  <div class="scroll">
+  <table>
+    <tr><th>#</th><th>The claim</th><th>Now</th></tr>
+    <tr class="ok"><td class="num">1</td><td>Dristi revenue counts drafts and adds credit notes</td>
+        <td><span class="tag ok">FIXED</span> filters <span class="mono">payment_status='paid'</span></td></tr>
+    <tr class="hot"><td class="num">2</td><td>GSTR-3B counts draft invoices as outward supply
+        &mdash; 102 drafts, &#8377;1.00cr taxable, &#8377;17.96L of tax a preparer would pay in cash</td>
+        <td><span class="tag no">OPEN</span> <span class="mono">gst_period.py:175</span> filters
+            only <span class="mono">is_active</span> and <span class="mono">cancelled_at</span>.
+            Pinned by <span class="mono">test_gst_builders_agree.py</span> as a strict xfail.</td></tr>
+    <tr class="ok"><td class="num">3</td><td>The statement of account prints drafts to the client</td>
+        <td><span class="tag ok">FIXED</span> <span class="mono">doc_status &lt;&gt; 'draft'</span></td></tr>
+    <tr class="ok"><td class="num">4</td><td>Sales leaderboard shows 0% for people who may have sold</td>
+        <td><span class="tag ok">FIXED</span> now joins on
+            <span class="mono">u.user_id = t.salesperson_id</span>, deliberately</td></tr>
+    <tr class="hot"><td class="num">5</td><td>CRM &ldquo;Won value&rdquo; measures deals
+        <em>created</em> in the window &mdash; 42% short on one org</td>
+        <td><span class="tag no">OPEN</span> <span class="mono">crm_report.py:84</span> still
+            windows on <span class="mono">created_at</span>;
+            <span class="mono">won_at</span> is used only for average cycle days</td></tr>
+    <tr class="ok"><td class="num">6</td><td>Payroll will pay ten people who have left</td>
+        <td><span class="tag ok">FIXED</span> <span class="mono">is_active</span> threaded
+            through the monthly run</td></tr>
+  </table>
+  </div>
+  <p><strong>Four of six fixed.</strong> But one of the two &ldquo;further payroll faults&rdquo;
+  73 mentioned in passing is not only still live, it is worse than described &mdash; and it is
+  the one that decides what people are paid.</p>
+</div>
+
+<div class="card hot">
+  <h3>The live payroll defect this re-read turned up</h3>
+  <p><span class="mono">routers/vetana.py:1009</span> and <span class="mono">:1020</span>, inside
+  the monthly salary computation:</p>
+  <pre>paid_leaves   = SELECT COUNT(*) FROM staging.manav_leave_requests ...
+unpaid_leaves = SELECT COUNT(*) FROM staging.manav_leave_requests ...</pre>
+  <p><strong>It counts leave REQUESTS, not leave DAYS.</strong> One approved five-day leave
+  counts as 1. Proposal 73 measured 151 requests against 292 actual days across the product,
+  so leave is understated by roughly half &mdash; and these two values feed the pro-rata salary
+  calculation directly.</p>
+  <p><strong>And a second fault in the same expression:</strong> the predicate is
+  <span class="mono">start_date &lt;= month_end AND end_date &gt;= month_start</span>, which
+  matches any leave <em>overlapping</em> the month. A leave spanning two months is therefore
+  counted in full in <em>both</em>.</p>
+  <p>The fix already exists elsewhere in the codebase &mdash;
+  <span class="mono">manav.py:2967</span> uses <span class="mono">SUM(lr.days)</span>. The HR
+  path was corrected and the payroll path was not.</p>
+</div>
 
 <div class="scroll">
 <table>
   <tr><th>#</th><th>Proposal</th><th>State</th></tr>
+  <tr><td class="num">53<br>54</td>
+      <td>Open-source scrapers + an India runner &middot; <strong>The Plan, 16 August</strong></td>
+      <td><span class="tag q">OPEN DECISIONS</span> Neither has been actioned or superseded.
+          54&rsquo;s Track 7 is the production release question.</td></tr>
 
   <tr class="ok"><td class="num">55<br>56<br>57</td>
       <td><strong>Niyam</strong> &middot; Niyam, Running &middot; Starter Rules</td>
