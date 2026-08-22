@@ -47,8 +47,19 @@ def test_the_owner_check_runs_before_the_delete():
 
 
 def test_removal_also_clears_the_module_grants_and_team_row():
-    """A member removed from user_roles but left in org_member_modules and
-    team_members is removed from the screen and not from the product."""
+    """A member removed from user_roles but left in org_member_modules and the
+    project-membership tables is removed from the screen and not from the
+    product.
+
+    BOTH membership tables, and the second one is the one that now carries the
+    access. Phase 2 of the `team_members` retirement (PROPOSED_080) moved every
+    project-membership READ onto `public.project_assignments`; a removal that
+    deleted only the `team_members` row would take the member off the console
+    and leave them holding the org's project. The write side keeps feeding both
+    tables — that is what keeps the step-4 rename reversible — so the delete
+    has to clear both too.
+    """
     src = _src()
     assert "DELETE FROM staging.org_member_modules" in src
-    assert "DELETE FROM team_members" in src
+    assert "DELETE FROM public.team_members" in src
+    assert "DELETE FROM public.project_assignments" in src

@@ -129,6 +129,13 @@ async def _create_public_tables(conn):
         )
     """)
 
+    # `team_members` STAYS, and is created before `project_assignments` on
+    # purpose. Phase 2 of the tenancy cutover moved the READS onto
+    # `project_assignments`; the WRITES still go to both, and PROPOSED_080's
+    # rename is only reversible while this table is still maintained. A local
+    # database missing it would make every dual-writing code path — the invite
+    # flow, `auth_router`, `services/project_purge.py` — fail on a machine where
+    # it is supposed to be easiest to notice.
     await conn.execute("""
         CREATE TABLE IF NOT EXISTS team_members (
             id TEXT PRIMARY KEY DEFAULT ('tm_' || substr(md5(random()::text), 1, 12)),
@@ -392,10 +399,21 @@ async def _seed_data(conn):
         ON CONFLICT (team_id) DO NOTHING
     """, team_id, "Local Dev Project", admin_id, org_id)
 
-    # Assign admin to team
+    # Assign admin to team — BOTH membership tables, mirroring what the live
+    # database looks like after migration 195: `project_assignments` is a strict
+    # superset of the active `team_members` rows, at identical roles. The seed
+    # wrote only the first, so a local database reproduced neither the old world
+    # (both tables) nor the new one (a superset) — it reproduced a state that has
+    # never existed live, which is the worst kind of fixture. Any code still
+    # reading `team_members` now finds the row it finds in production.
     await conn.execute("""
         INSERT INTO project_assignments (team_id, user_id, role)
         VALUES ($1, $2, 'owner')
+        ON CONFLICT (team_id, user_id) DO NOTHING
+    """, team_id, admin_id)
+    await conn.execute("""
+        INSERT INTO team_members (team_id, user_id, role, status)
+        VALUES ($1, $2, 'owner', 'active')
         ON CONFLICT (team_id, user_id) DO NOTHING
     """, team_id, admin_id)
 

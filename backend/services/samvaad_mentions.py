@@ -5,13 +5,18 @@ notify, push.
 ── Why this is not `services/mentions.py` ────────────────────────────────────
 
 `services/mentions.py` is task-shaped. It takes a `task_id`, reads the task's
-`team_id`, resolves candidates out of `team_members`, writes a `mentions` row
-keyed to a `comment_id`, and sends an email whose deep link is built from the
-task id. Not one of those five things exists here: a channel has an `org_id` and
-not a `team_id`, `team_members` is the legacy tenant path that must not appear
-in new code (`user_roles` is the sole tenant path), the row is keyed to a
-`message_id`, and there is no task to link to — so `send_mention_email` would
-have to fabricate a task id and would produce a broken link in a real inbox.
+`team_id`, resolves candidates out of `public.project_assignments`, writes a
+`mentions` row keyed to a `comment_id`, and sends an email whose deep link is
+built from the task id. Not one of those five things exists here: a channel has
+an `org_id` and not a `team_id`, PROJECT membership is the wrong grain for a
+channel that belongs to the whole org (`staging.user_roles` is the sole tenant
+path), the row is keyed to a `message_id`, and there is no task to link to — so
+`send_mention_email` would have to fabricate a task id and would produce a
+broken link in a real inbox.
+
+(That file resolved candidates out of `public.team_members` until 2026-08-22.
+The distinction this paragraph draws is unaffected: it was never about WHICH
+project table, it is about project membership versus org membership.)
 
 The two-pass RESOLUTION STRATEGY is the part worth keeping, and it is
 reimplemented here rather than imported, because the query that feeds pass 1 is

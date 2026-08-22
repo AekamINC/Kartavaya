@@ -154,13 +154,31 @@ async def test_every_branch_of_the_membership_probe_is_scoped_to_the_task_s_team
     was stripped from the first branch — the second branch still contained the
     substring. It proved the query mentioned a team somewhere, which is not the
     same as scoping to one, and that is the exact shape of a decorative test.
+
+    THERE IS ONE BRANCH NOW, and that is the assertion rather than an
+    exemption from it. This probe UNIONed `project_assignments` with
+    `team_members` because the two tables disagreed about who was in a project.
+    Migration 195 (`195_reconcile_team_members_into_project_assignments.sql`,
+    applied 2026-08-22) reconciled them — every active `team_members` row now
+    has a `project_assignments` row at the identical role — so phase 2 of
+    `PROPOSED_080_team_members_retire.sql` dropped the second branch. Asserting
+    `>= 2` after that would demand a second reader of a settled fact, which is
+    what the retirement exists to remove. The per-branch scoping check below is
+    unchanged and is the part that was ever load-bearing.
     """
     pool = _Pool(member=True)
     await A.assert_may_act_on_task(pool, _task(), _user("user_member444"))
     assert pool.queries, "no membership query was issued at all"
 
-    branches = [b for b in pool.queries[0].upper().split("UNION") if b.strip()]
-    assert len(branches) >= 2, "expected both membership tables to be consulted"
+    probe = pool.queries[0].upper()
+    assert "TEAM_MEMBERS" not in probe, (
+        "the membership probe reads team_members again. Project membership is "
+        "public.project_assignments since migration 195; a second reader is a "
+        "second rule and it will drift, which is how this probe and the "
+        "approvals queue came to disagree in the first place."
+    )
+    branches = [b for b in probe.split("UNION") if b.strip()]
+    assert branches, "the membership query has no branches at all"
     for i, branch in enumerate(branches):
         assert "TEAM_ID=$1" in branch, (
             f"UNION branch {i} has no team predicate — it matches the user in "

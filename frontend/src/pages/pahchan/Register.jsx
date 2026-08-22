@@ -318,6 +318,28 @@ function Detail({ row, photoRetentionDays }) {
   const outside = row.distance_m != null && (row.flags || []).includes('geo');
   const refCount = (row.reference_ids || []).length;
 
+  /* ── The vertical half of a "geo" flag ─────────────────────────────────────
+     A `geo` flag on a multi-storey site was unreadable. The distance said
+     fifteen metres, the horizontal test plainly passed, and the reviewer had no
+     way at all to see that the punch was flagged for being four floors up —
+     `altitude_m` and `altitude_tolerance_m` reached the database in migration
+     193 and no screen has ever shown either.
+
+     Rendered ONLY where the site actually checks altitude. `site_altitude_tolerance_m`
+     is null for every site that does not, which is most of them and is the
+     correct default: an extra "Vertical · not checked" row on every punch in the
+     product would be six hundred lines of noise to make one line readable.
+
+     `altitude_gap_m` is computed by the server (`abs(punch − site)`), so it is
+     present only when the DEVICE reported an altitude too. A phone that reports
+     none is ordinary — indoors, and permanently on some Android hardware — and
+     that is a third state, said in words rather than shown as a missing row. */
+  const vTol = row.site_altitude_tolerance_m == null ? null : Number(row.site_altitude_tolerance_m);
+  const vGap = row.altitude_gap_m == null ? null : Number(row.altitude_gap_m);
+  const checksAltitude = vTol != null && row.site_altitude_m != null;
+  const vOutside = checksAltitude && vGap != null && vGap > vTol;
+  const vAcc = row.altitude_accuracy_m == null ? null : Number(row.altitude_accuracy_m);
+
   const deleteOn = (() => {
     if (!photoRetentionDays || !row.has_photo) return null;
     const d = new Date(row.captured_at);
@@ -381,6 +403,27 @@ function Detail({ row, photoRetentionDays }) {
             tone={outside ? 'var(--danger)' : undefined}
           />
           <MetaRow k="Site" v={row.site_name || 'None matched'} />
+          {/* Same register as Accuracy and From site above: a number, and the
+              number it was judged against. */}
+          {checksAltitude && (
+            <MetaRow
+              k="Height vs site"
+              v={vGap == null
+                ? 'No altitude reported'
+                : `${Math.round(vGap)} m out of ±${Math.round(vTol)} m`}
+              tone={vOutside ? 'var(--danger)' : undefined}
+            />
+          )}
+          {checksAltitude && vGap != null && vAcc != null && (
+            <MetaRow
+              k="Height accuracy"
+              v={`±${Math.round(vAcc)} m`}
+              // An uncertainty as large as the window means the gap decided
+              // nothing. Toned like an unbounded horizontal accuracy, for the
+              // same reason: it must not read as ordinary metadata.
+              tone={vAcc >= vTol ? 'var(--tertiary)' : undefined}
+            />
+          )}
           <MetaRow k="Captured" v="In-app camera" />
           <MetaRow
             k="Delivery"
@@ -398,6 +441,24 @@ function Detail({ row, photoRetentionDays }) {
           />
           <MetaRow k="Photo deleted" v={deleteOn || (row.has_photo ? '—' : 'Already deleted')} />
         </div>
+
+        {/* THE SENTENCE THAT MAKES THE FLAG ANSWERABLE.
+            A punch inside the radius and outside the vertical window carries the
+            same `geo` flag as one two streets away — deliberately, because 07 §2
+            keeps the flag vocabulary fixed. Without this line the reviewer reads
+            "Outside site · 15 m" and has no way to reconcile the two. */}
+        {vOutside && (
+          <div className="note note--warn rv-det__note">
+            <b>Flagged on height, not distance.</b> This punch was {Math.round(Number(row.distance_m ?? 0))}m from
+            {' '}{row.site_name || 'the site'} — inside its area — but {Math.round(vGap)}m above or below the
+            height it is set to, which allows ±{Math.round(vTol)}m. Both tests share the
+            <b> Outside site</b> flag.
+            {vAcc != null && vAcc >= vTol && (
+              <> The phone reported its height to ±{Math.round(vAcc)}m, which is as wide as the
+              window itself — this gap is inside the device’s own uncertainty and settles nothing.</>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

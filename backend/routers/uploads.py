@@ -145,9 +145,12 @@ async def upload(
 ):
     # Validate team membership before accepting the upload
     if team_id:
+        # PROJECT membership, one table since migration 195 made
+        # `project_assignments` a strict superset of active `team_members`.
+        # Canonical note: `middleware/roles.may_reach_project`.
         member = await pool.fetchrow(
-            "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
-            "UNION SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
+            "SELECT 1 FROM public.project_assignments "
+            "WHERE team_id=$1 AND user_id=$2 LIMIT 1",
             team_id, user["user_id"]
         )
         from middleware.roles import is_platform_staff

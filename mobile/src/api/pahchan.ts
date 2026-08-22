@@ -25,7 +25,58 @@ export interface Punch {
   flags:           PunchFlag[];
   accuracy_m:      number | null;
   distance_m:      number | null;
+  /** Metres above sea level as the DEVICE reported it, and how sure it was.
+   *  Both are null on a device that reports no altitude — ordinary indoors, and
+   *  permanent on some Android hardware. Never 0: 0 is sea level, and a site
+   *  above it would flag every punch from a phone that simply could not say. */
+  altitude_m?:          number | null;
+  altitude_accuracy_m?: number | null;
   review_verdict:  'ok' | 'flagged' | null;
+}
+
+/**
+ * One site as the employee's own screen may see it — `GET /me` -> `rules.sites`.
+ *
+ * A place, not a person: this is the one part of `rules` that names anything at
+ * all, and a site name is what lets somebody work out which fence they were
+ * inside. No ids of any kind.
+ */
+export interface RuleSite {
+  name:                 string;
+  radius_m:             number | null;
+  altitude_m:           number | null;
+  altitude_tolerance_m: number | null;
+  /** True only when the site has BOTH an altitude and a tolerance. An altitude
+   *  with no tolerance is recorded and not checked, which is a third state. */
+  checks_altitude:      boolean;
+}
+
+/**
+ * The rules this employee is actually judged by.
+ *
+ * Every rule in this module was visible to the org and invisible to the person
+ * it decides about: the Policy screen is behind an org-admin gate, and the
+ * employee's own register showed flags with no numbers behind any of them. A
+ * "geo" flag on an honest punch is a question an employee cannot answer without
+ * the figure they missed by.
+ *
+ * Optional on the type because a build newer than its backend must render the
+ * rest of the Me tab rather than crash on a missing key — and because every
+ * figure here is the ORG'S, read from its saved policy. A client-side default
+ * would be a promise about a different system.
+ */
+export interface AttendanceRules {
+  grace_minutes:             number | null;
+  accuracy_flag_threshold_m: number | null;
+  allow_outside_geofence:    boolean | null;
+  standard_hours_per_day:    number | null;
+  overtime_enabled:          boolean | null;
+  sites:                     RuleSite[];
+  /** Flag code -> a plain-English sentence, written by the server so the phone
+   *  and the reviewer's screen cannot drift into two vocabularies. */
+  flag_meanings:             Record<string, string>;
+  /** 07 §2, said out loud: a flag asks somebody to look, it never refuses. */
+  nothing_is_refused:        boolean;
 }
 
 export interface RetentionPromise {
@@ -54,6 +105,9 @@ export interface MyAttendance {
   retention: RetentionPromise;
   /** Absent on a backend older than the notice. Treated as "not acknowledged". */
   notice?:   NoticeState;
+  /** Absent on a backend older than the rules block. The section simply does
+   *  not render — never a hardcoded radius or threshold in its place. */
+  rules?:    AttendanceRules;
 }
 
 export const pahchanApi = {
@@ -82,6 +136,12 @@ export const pahchanApi = {
     lat?:            number;
     lng?:            number;
     accuracy_m?:     number;
+    /** Metres above sea level, and the device's own uncertainty about it. Both
+     *  stay UNDEFINED when the fix carried none — sending 0 would place the
+     *  punch at sea level and flag every one made at a site above it. The
+     *  server stores whatever arrives whether or not the site checks height. */
+    altitude_m?:          number;
+    altitude_accuracy_m?: number;
     site_id?:        string | null;
     photo_key?:      string | null;
     device_id?:      string | null;
@@ -127,7 +187,16 @@ export const pahchanApi = {
     ).then(r => r.data),
 
   sites: () =>
-    apiClient.get<{ data: { id: string; name: string; lat: number; lng: number; radius_m: number }[] }>(
+    apiClient.get<{
+      data: {
+        id: string; name: string; lat: number; lng: number; radius_m: number;
+        // Nullable, and null is the common case — a site with no vertical pair
+        // is judged on distance alone, which is the right default.
+        altitude_m?: number | null;
+        altitude_tolerance_m?: number | null;
+        is_active?: boolean;
+      }[];
+    }>(
       '/v1/pahchan/sites',
     ).then(r => r.data.data),
 };

@@ -95,8 +95,12 @@ in `NO_APPROVER_MODULES`, and the RBAC spec's permission matrix renders the
 Kartavya/Approver cell as an em-dash — a module-level approver check would deny
 every user in the org, including the founder. The approver for a task is the
 TIER-3 project role, which is already implemented as
-`approvals_router.is_project_owner` (team_members.role OR project_assignments.role
-in owner/admin), with org admin as the escape hatch. Exactly that predicate is
+`approvals_router.is_project_owner` (`project_assignments.role` in
+owner/admin), with org admin as the escape hatch. That predicate read
+`team_members` OR `project_assignments` until the tenancy phase-2 cutover on
+2026-08-22; migration 195 had made the second a strict superset of the first at
+identical roles, so dropping the first arm admitted and refused exactly the same
+people. Exactly that predicate is
 reused here so the gate and the Approvals queue cannot disagree about who may
 decide.
 

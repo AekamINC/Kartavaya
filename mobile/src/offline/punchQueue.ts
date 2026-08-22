@@ -54,6 +54,20 @@ export interface QueuedPunch {
   /** Metres. Never defaulted to 0 — absent stays undefined and the server flags
    *  it, because 0 would read as a perfect fix. */
   accuracy_m?:     number;
+  /** Metres above sea level, and the device's own uncertainty about it.
+   *
+   *  THE SAME RULE AS `accuracy_m`, AND IT MATTERS MORE HERE. A device that
+   *  reports no altitude is ordinary — indoors, and permanently on some Android
+   *  hardware — so `undefined` is a state that will occur on real punches every
+   *  day. Defaulting either to 0 would put the punch at sea level, and a site
+   *  with a vertical window set anywhere above that would flag every punch from
+   *  that handset for a fact about the hardware.
+   *
+   *  Held on the queue rather than only sent live because a punch may sit here
+   *  for 72 hours: a field the queue does not carry is a field an offline punch
+   *  loses, and there is no way to recover it afterwards. */
+  altitude_m?:          number;
+  altitude_accuracy_m?: number;
   site_id?:        string | null;
   /** Object-store key, set once the photo has uploaded. Null until then. */
   photo_key?:      string | null;
@@ -197,6 +211,10 @@ export interface EnqueuePunchInput {
   lat?:          number;
   lng?:          number;
   accuracy_m?:   number;
+  /** Both absent unless the fix carried them. Never coerced to 0 — see
+   *  `QueuedPunch.altitude_m`. */
+  altitude_m?:          number;
+  altitude_accuracy_m?: number;
   site_id?:      string | null;
   photo_uri?:    string | null;
   photo_key?:    string | null;
@@ -223,6 +241,13 @@ export function enqueuePunch(input: EnqueuePunchInput): string {
     lat:           input.lat,
     lng:           input.lng,
     accuracy_m:    input.accuracy_m,
+    // NO `?? 0` and NO `?? null` on these two. `undefined` survives
+    // `JSON.stringify` by being dropped from the object entirely, which is
+    // exactly right: the key is absent on the wire and the server's
+    // `Optional[float] = None` reads it as "not reported". A null would be
+    // equivalent; a 0 would be a claim about sea level that nobody made.
+    altitude_m:          input.altitude_m,
+    altitude_accuracy_m: input.altitude_accuracy_m,
     site_id:       input.site_id ?? null,
     photo_uri:     input.photo_uri ?? null,
     photo_key:     input.photo_key ?? null,
@@ -296,6 +321,10 @@ export async function flushPunches(): Promise<PunchFlushResult> {
         lat:             punch.lat,
         lng:             punch.lng,
         accuracy_m:      punch.accuracy_m,
+        // Replayed exactly as captured. A punch that waited three days for
+        // signal is judged against the height it was actually made at.
+        altitude_m:          punch.altitude_m,
+        altitude_accuracy_m: punch.altitude_accuracy_m,
         site_id:         punch.site_id,
         photo_key:       punch.photo_key,
         device_id:       punch.device_id,

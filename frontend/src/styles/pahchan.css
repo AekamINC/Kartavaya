@@ -272,6 +272,24 @@
 .ph__hint-top  { margin-top: var(--sp-2); }
 .ph__hint-wide { margin-top: var(--sp-3); max-width: 64ch; }
 
+/* The vertical pair — altitude and its tolerance — sits on its own row with a
+   rule above it. Not decoration: it is the one group on this form where BLANK
+   is the recommended answer, and a pair of empty number fields inline with the
+   coordinates reads as two things somebody forgot to fill in. */
+.ph__vert {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+}
+/* "optional", beside a field label. Said on the label rather than only in the
+   hint below, because the hint is the part people skip. */
+.ph__opt {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--on-surface-3);
+}
+
 /* ══ Policy ═══════════════════════════════════════════════════════════════ */
 .ph__f { display: block; margin-bottom: var(--sp-4); }
 
@@ -513,4 +531,74 @@
 
 @media (prefers-reduced-motion: reduce) {
   .phn__chev { transition: none; }
+}
+
+/* ══ The rules an employee is judged by ═══════════════════════════════════
+   `pages/pahchan/Rules.jsx`, on the employee's own History tab. Left-aligned
+   and fluid like every other page: the grid is `auto-fill` rather than a fixed
+   column count, so it is one column on a phone and three on a desk without a
+   breakpoint deciding which. */
+.ph__rules { max-width: 76ch; }
+
+.ph__rulegrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0;
+}
+.ph__rule {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3);
+  background: var(--s-low);
+  border-radius: var(--r-sm);
+}
+.ph__rule-k {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* The number is the point of the panel, so it is the largest thing in the tile. */
+.ph__rule-v { font-size: var(--t-body); font-weight: 600; color: var(--on-surface); }
+.ph__rule-n { font-size: var(--t-label-sm); color: var(--on-surface-3); line-height: 1.6; }
+
+.ph__ruleh {
+  font-size: var(--t-label);
+  font-weight: 700;
+  color: var(--on-surface);
+  margin: var(--sp-5) 0 var(--sp-2);
+}
+
+.ph__sitelist { list-style: none; padding: 0; margin: 0; }
+.ph__sitelist > li {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--outline-variant);
+  font-size: var(--t-body-sm);
+}
+.ph__sitelist > li:last-child { border-bottom: none; }
+
+.ph__flags { margin: 0; }
+/* Label and sentence side by side above 620px, stacked below it. The label is
+   the reviewer's own wording (`PUNCH_LABELS`), so it is short and fixed-width
+   enough to sit in a column. */
+.ph__flag {
+  display: grid;
+  grid-template-columns: minmax(120px, 170px) 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.ph__flag:last-child { border-bottom: none; }
+.ph__flag > dt { font-size: var(--t-label); font-weight: 700; }
+.ph__flag > dd {
+  margin: 0;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: 1.6;
+}
+
+@media (max-width: 620px) {
+  .ph__flag { grid-template-columns: 1fr; gap: 2px; }
 }

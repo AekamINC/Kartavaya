@@ -79,9 +79,11 @@ async def get_dashboard_data(dashboard_id: str, pool=Depends(get_pool), user=Dep
     # Build set of teams the user can access
     _allowed_teams = None
     if not await is_platform_staff(user["user_id"]):
+        # PROJECT membership, one table since migration 195 made
+        # `project_assignments` a strict superset of active `team_members`.
+        # Canonical note: `middleware/roles.may_reach_project`.
         rows = await pool.fetch(
-            "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' "
-            "UNION SELECT team_id FROM project_assignments WHERE user_id=$1",
+            "SELECT team_id FROM public.project_assignments WHERE user_id=$1",
             user["user_id"],
         )
         _allowed_teams = {r["team_id"] for r in rows}

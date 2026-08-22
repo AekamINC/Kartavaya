@@ -455,8 +455,14 @@ async def test_task_template_patch_refuses_a_data_uri_attachment(
 
 
 async def test_project_template_refuses_a_data_uri_on_a_seeded_task(
-    api_client, mock_pool, as_admin,
+    api_client, mock_pool, as_admin, with_org_id,
 ):
+    # `with_org_id` since migration 200: `POST /api/templates/projects` resolves
+    # the caller's organisation now, because `project_templates` had no tenant
+    # column at all and was scoped by AUTHOR — which showed platform staff every
+    # customer's template and hid a colleague's from their own firm. Without the
+    # override this 403s at the org gate before the payload is looked at, which
+    # would test the gate rather than the data URI.
     resp = await api_client.post("/api/templates/projects", json={
         "name": "Site build",
         "config": {"sample_tasks": [
@@ -469,9 +475,14 @@ async def test_project_template_refuses_a_data_uri_on_a_seeded_task(
 
 
 async def test_project_template_with_an_ordinary_config_still_saves(
-    api_client, mock_pool, as_admin,
+    api_client, mock_pool, as_admin, with_org_id,
 ):
-    mock_pool.fetchrow.return_value = {"template_id": "ptmpl_1", "name": "Site build"}
+    # `org_id` is in the returned row because the INSERT writes it (migration
+    # 200). The handler returns `dict(row)`, so a fixture row missing the column
+    # is a fixture that no longer models the table.
+    mock_pool.fetchrow.return_value = {
+        "template_id": "ptmpl_1", "name": "Site build", "org_id": with_org_id,
+    }
     resp = await api_client.post("/api/templates/projects", json={
         "name": "Site build",
         "config": {"columns": [{"name": "To Do"}], "sample_tasks": [{"title": "Survey"}]},

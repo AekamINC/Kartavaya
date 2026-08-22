@@ -35,8 +35,18 @@ async def purge_project(pool, team_id: str) -> None:
                 "DELETE FROM time_entries WHERE task_id IN "
                 "(SELECT task_id FROM tasks WHERE team_id=$1)", team_id)
             await conn.execute("DELETE FROM tasks WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM project_assignments WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM team_members WHERE team_id=$1", team_id)
+            # BOTH membership tables, and that is not redundancy. Phase 2 of the
+            # tenancy cutover moved the READS onto `project_assignments`; the
+            # WRITES still go to both, because PROPOSED_080 only stays reversible
+            # while `team_members` is maintained. A purge that stopped deleting
+            # from `team_members` would leave rows behind pointing at a team that
+            # no longer exists — and nothing would raise, because these tables
+            # carry no foreign key to `teams`. That is exactly the silent orphan
+            # this cascade's docstring is about.
+            await conn.execute(
+                "DELETE FROM public.project_assignments WHERE team_id=$1::text", team_id)
+            await conn.execute(
+                "DELETE FROM public.team_members WHERE team_id=$1::text", team_id)
             await conn.execute("DELETE FROM project_columns WHERE team_id=$1", team_id)
             await conn.execute("DELETE FROM automations WHERE team_id=$1", team_id)
             try:

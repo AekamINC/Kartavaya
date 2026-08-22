@@ -24,6 +24,7 @@ here and are easy to undo by accident:
 
 Schema: migrations/PROPOSED_064_pahchan.sql (not yet applied).
 """
+import json
 import math
 from datetime import date, datetime, timedelta, timezone
 
@@ -32,7 +33,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from auth_router import require_user
 from db import get_pool
@@ -139,6 +140,27 @@ class PunchBody(BaseModel):
     # Never defaulted to 0 — a missing accuracy is None and flags. Zero would read
     # as a perfect fix and clear the very check it should fail.
     accuracy_m: Optional[float] = None
+    # ── Altitude, and why None is not 0 here either ──────────────────────────
+    #
+    # Migration 193 added these two columns on 2026-08-22 and NOTHING has ever
+    # written them: the schema was the whole of the feature. Every mobile
+    # geolocation fix already carries an altitude — `ClockScreen` read
+    # lat/lng/accuracy and stopped, with altitude sitting right there in the
+    # same object.
+    #
+    # It matters for exactly one thing this module cannot otherwise do: a
+    # multi-storey site. Two floors of one building are the same latitude and
+    # longitude to within a metre, so a horizontal geofence cannot tell the
+    # warehouse from the office above it. Vertical separation can, when the
+    # site says what its floor is worth.
+    #
+    # `None` is "this device did not report one", which is ordinary — indoor
+    # fixes and some Android devices give no altitude at all — and it must stay
+    # distinguishable from a device reporting sea level. Defaulting to 0 would
+    # place every silent device on the beach and flag every punch at a site
+    # above it.
+    altitude_m: Optional[float] = None
+    altitude_accuracy_m: Optional[float] = None
     site_id: Optional[UUID] = None
     photo_key: Optional[str] = None
     device_id: Optional[str] = None
@@ -193,6 +215,38 @@ class SiteBody(BaseModel):
     lat: float
     lng: float
     radius_m: int = Field(150, gt=0)
+    # ── The vertical half of the fence ───────────────────────────────────────
+    #
+    # BOTH OPTIONAL, and a site that names neither behaves exactly as it did
+    # before migration 193 — the check is skipped entirely. That is the
+    # default, and it is the right one: consumer GPS altitude is far noisier
+    # than its horizontal fix, and a site at ground level gains nothing from a
+    # test that would flag honest punches on a cloudy day.
+    #
+    # The bounds mirror the CHECK constraints migration 193 declared, so a bad
+    # value is refused here with a sentence rather than at the database with a
+    # constraint name. `altitude_m` spans Dead Sea shore to above Everest;
+    # `altitude_tolerance_m` must be positive, and 193's own header suggests
+    # setting it "so the separation is larger than the noise" — a storey is
+    # roughly 3m and a decent fix is ±10m, so a tolerance under about 15m will
+    # flag more honest punches than dishonest ones.
+    altitude_m: Optional[float] = Field(None, gt=-500, lt=9000)
+    altitude_tolerance_m: Optional[int] = Field(None, gt=0)
+
+    @model_validator(mode="after")
+    def _tolerance_needs_an_altitude(self):
+        """`pahchan_sites_altitude_pair_ck`, said in English.
+
+        A tolerance with no altitude is a window around nothing. The constraint
+        refuses it; this refuses it with a sentence the person filling the form
+        can act on.
+        """
+        if self.altitude_tolerance_m is not None and self.altitude_m is None:
+            raise ValueError(
+                "A vertical tolerance needs an altitude to be a tolerance of. "
+                "Set the site's altitude, or leave both blank to skip the check."
+            )
+        return self
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -256,6 +310,137 @@ async def _policy(pool, org_id: str) -> dict:
     return dict(row) if row else dict(DEFAULT_POLICY)
 
 
+# ── The policy that actually applies to one person, at one place ─────────────
+#
+# `pahchan_policy` is keyed on `org_id` and nothing else, so a firm had ONE
+# attendance policy for everybody. One radius for every site is the clearest
+# failure of that: 150m is generous around a city office and useless around a
+# factory compound, and widening it for the compound widens it for the office
+# too. The same goes for every figure in the row — a shift that starts at 09:00
+# for staff and 07:00 for plant, a grace period that is ten minutes for salaried
+# people and zero for contractors on an hourly rate.
+#
+# Migration 196 adds `pahchan_policy_overrides`, four scopes, most specific wins:
+#
+#     org  →  site  →  category  →  employee
+#
+# `category` is `manav_employees.employment_type`, which already exists and
+# already separates the people whose rules genuinely differ (measured live:
+# 69 full_time, 15 intern, 14 contract). Inventing a second taxonomy would mean
+# an HR admin maintaining two classifications of the same people, which is how
+# two classifications come to disagree.
+
+#: The keys an override may carry. NOT an allowlist for tidiness — the same list
+#: is a CHECK constraint on the table (196), and it exists because retention and
+#: reporting must stay org-level:
+#:
+#:   · retention is a DPDP promise made to every person in the organisation, in
+#:     ONE notice quoting ONE number. `_retention` exists because a notice
+#:     quoting a figure that was not the one in force has already shipped here.
+#:     A per-employee window would make that notice wrong for somebody BY
+#:     CONSTRUCTION, and they would be the last to know.
+#:   · reporting is a commercial arrangement with the org, not a fact about a
+#:     site.
+#:
+#: Enforced in BOTH places on purpose: the constraint is what stops a bad row
+#: existing, and this is what gives the person writing it a sentence instead of
+#: a constraint name.
+POLICY_OVERRIDABLE_KEYS: frozenset[str] = frozenset({
+    "default_radius_m",
+    "grace_minutes",
+    "allow_outside_geofence",
+    "accuracy_flag_threshold_m",
+    "standard_hours_per_day",
+    "overtime_daily_threshold_hours",
+    "overtime_weekly_threshold_hours",
+    "overtime_multiplier",
+    "overtime_enabled",
+    "week_starts_on",
+    "shift_start_time",
+    "shift_end_time",
+    "overnight_shift",
+})
+
+#: Least specific first. `_resolve_policy` applies them in this order, so a later
+#: entry overwrites an earlier one KEY BY KEY — never wholesale. A site override
+#: that names only `default_radius_m` leaves the employee's grace period exactly
+#: where the org put it, which is the whole reason overrides are partial.
+_SCOPE_ORDER = ("site", "category", "employee")
+
+
+async def _resolve_policy(
+    pool,
+    org_id: str,
+    *,
+    employee: Optional[dict] = None,
+    site_id: Optional[str] = None,
+) -> dict:
+    """The policy as it applies to THIS punch: org, then site, then category,
+    then employee.
+
+    Returns a plain dict in the same shape `_policy` returns, so every existing
+    caller keeps working and nothing downstream has to learn about scopes.
+
+    ── WHAT MAKES THIS SAFE TO PUT IN THE PUNCH PATH ────────────────────────
+    An org with no override rows resolves EXACTLY what `_policy` resolves — the
+    merge loop runs zero times. That is the property that made migration 196
+    additive in effect and not just in form.
+
+    Nothing here can refuse a punch. An unreadable override, a scope naming a
+    site that has been deleted, a key that is no longer overridable: all of them
+    are skipped, and the org-wide value stands. 07 §2 — nothing blocks a punch —
+    applies to the code that DECIDES the rules just as much as to the code that
+    applies them, and a policy lookup that could 500 would be a new way to stop
+    somebody clocking in.
+    """
+    resolved = await _policy(pool, org_id)
+
+    # One query for every override this org has. There are at most a handful per
+    # org and they are read on every punch, so a per-scope round trip would be
+    # three queries to answer a question that is nearly always "no overrides".
+    rows = await pool.fetch(
+        "SELECT scope_kind, scope_ref, overrides "
+        "FROM staging.pahchan_policy_overrides WHERE org_id=$1::uuid",
+        org_id,
+    )
+    if not rows:
+        return resolved
+
+    # Which value of `scope_ref` matches at each level, for this punch. `None`
+    # means the level cannot match — no site resolved, no employee, an employee
+    # with no employment_type — and a level that cannot match is skipped rather
+    # than matched against the empty string.
+    wanted = {
+        "site": str(site_id) if site_id else None,
+        "category": (employee or {}).get("employment_type") or None,
+        "employee": str(employee["id"]) if employee and employee.get("id") else None,
+    }
+
+    by_scope: dict[str, dict] = {}
+    for r in rows:
+        kind, ref = r["scope_kind"], r["scope_ref"]
+        if wanted.get(kind) is None or ref != wanted[kind]:
+            continue
+        raw = r["overrides"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(raw, dict):
+            by_scope[kind] = raw
+
+    for kind in _SCOPE_ORDER:
+        for key, value in (by_scope.get(kind) or {}).items():
+            # Re-checked here as well as by the constraint. A key that WAS
+            # overridable when the row was written and is not any more must stop
+            # applying rather than keep applying invisibly.
+            if key in POLICY_OVERRIDABLE_KEYS:
+                resolved[key] = value
+
+    return resolved
+
+
 #: The three figures the retention promise is made of, and the ONE place the
 #: policy column names are translated into the names the clients read.
 #:
@@ -286,8 +471,15 @@ def _retention(policy: dict) -> dict:
 
 
 async def _employee_for(pool, org_id: str, user_id: str) -> Optional[dict]:
+    # `employment_type` is selected because `_resolve_policy` scopes on it — it
+    # is the `category` level of org -> site -> category -> employee, and it is
+    # the column that already separates the people whose attendance rules
+    # genuinely differ (measured live 2026-08-22: 69 full_time, 15 intern, 14
+    # contract). Selected HERE rather than fetched again in the resolver so the
+    # punch path stays one employee lookup, and so a caller that has an employee
+    # row always has enough to resolve their policy from it.
     return await pool.fetchrow(
-        "SELECT id, name FROM staging.manav_employees "
+        "SELECT id, name, employment_type FROM staging.manav_employees "
         "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
         org_id, user_id,
     )
@@ -375,7 +567,8 @@ async def _nearest_site(pool, org_id: str, lat: float, lng: float):
     is a handful of rows per org and PostGIS is not installed — adding an
     extension for a ten-row nearest-neighbour would be the wrong trade."""
     sites = await pool.fetch(
-        "SELECT id, name, lat, lng, radius_m FROM staging.pahchan_sites "
+        "SELECT id, name, lat, lng, radius_m, altitude_m, altitude_tolerance_m "
+        "FROM staging.pahchan_sites "
         "WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
@@ -387,12 +580,42 @@ async def _nearest_site(pool, org_id: str, lat: float, lng: float):
     return best, best_d
 
 
+def _altitude_gap_m(
+    reported_m: Optional[float],
+    site_altitude_m: Optional[float],
+    site_tolerance_m: Optional[int],
+) -> Optional[float]:
+    """How far above or below the site's floor this punch claims to be.
+
+    `None` means the question was not asked, and there are three ways for that
+    to be the right answer — all of which must behave identically to a product
+    that has no altitude feature at all:
+
+      · the site names no altitude          (the default; 193 says NULL means
+                                             "do not check")
+      · the site names no tolerance         (a floor with no window around it)
+      · the device reported no altitude     (ordinary indoors, and on some
+                                             Android hardware, always)
+
+    The third is the one worth stating: a device that CANNOT report altitude
+    must not be flagged for it. Migration 193's own header makes the same point
+    about sea level — a device that reports nothing has to stay
+    distinguishable from one reporting zero — and this is that rule at the
+    other end of the wire.
+    """
+    if reported_m is None or site_altitude_m is None or site_tolerance_m is None:
+        return None
+    return abs(float(reported_m) - float(site_altitude_m))
+
+
 def _compute_flags(
     body: PunchBody,
     policy: dict,
     distance_m: Optional[float],
     site_radius_m: Optional[int],
     has_reference_pair: bool,
+    altitude_gap_m: Optional[float] = None,
+    site_altitude_tolerance_m: Optional[int] = None,
 ) -> list[str]:
     """
     07 §2's table, in one place.
@@ -412,6 +635,26 @@ def _compute_flags(
         # parking-level staff specifically. So: flag, never block.
         flags.append("accuracy")
     if distance_m is not None and site_radius_m is not None and distance_m > site_radius_m:
+        if "geo" not in flags:
+            flags.append("geo")
+    # ── The vertical half of the same fence ──────────────────────────────────
+    #
+    # Reuses "geo" rather than adding a flag code. It is the same finding — the
+    # punch is not where the site is — and the reviewer's question ("was this
+    # person here?") does not change because the discrepancy is vertical. A new
+    # code would also have to be taught to every consumer of `flags`: the
+    # review screen, the attendance bridge, the reports and the mobile client.
+    #
+    # This is what makes a multi-storey site possible. Two floors of one
+    # building share a latitude and longitude to within a metre, so the
+    # horizontal test above can never separate the warehouse from the office
+    # over it. Nothing is REFUSED here, exactly as nothing is refused anywhere
+    # else in this function — 07 §2, every branch records and flags.
+    if (
+        altitude_gap_m is not None
+        and site_altitude_tolerance_m is not None
+        and altitude_gap_m > float(site_altitude_tolerance_m)
+    ):
         if "geo" not in flags:
             flags.append("geo")
     if body.mock_location is True:
@@ -523,14 +766,13 @@ async def create_punch(
     if existing:
         return {"punch": dict(existing), "duplicate": True}
 
-    policy = await _policy(pool, org_id)
-
     site = None
     distance_m = None
     if body.lat is not None and body.lng is not None:
         if body.site_id:
             site = await pool.fetchrow(
-                "SELECT id, lat, lng, radius_m FROM staging.pahchan_sites "
+                "SELECT id, lat, lng, radius_m, altitude_m, altitude_tolerance_m "
+                "FROM staging.pahchan_sites "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(body.site_id), org_id,
             )
@@ -541,15 +783,49 @@ async def create_punch(
         else:
             site, distance_m = await _nearest_site(pool, org_id, body.lat, body.lng)
 
+    # ── The policy is resolved AFTER the site, and that ordering is the point ─
+    #
+    # It used to be the first thing this handler read, when there was one policy
+    # per org and nothing about a punch could change it. Migration 196 adds
+    # site → category → employee overrides, and the site is not known until the
+    # geofence resolution above has run — so reading the policy first would
+    # resolve the org-wide `accuracy_flag_threshold_m` and then judge the punch
+    # against a site that overrides it.
+    #
+    # Nothing between the old position and this one reads `policy`.
+    policy = await _resolve_policy(
+        pool, org_id, employee=employee,
+        site_id=str(site["id"]) if site else None,
+    )
+
     ref_count = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.pahchan_enrollment_photos "
         "WHERE employee_id=$1::uuid AND replaced_at IS NULL AND approved_at IS NOT NULL",
         str(employee["id"]),
     )
+    # Both are None unless the site declares an altitude AND a tolerance AND the
+    # device reported one — see `_altitude_gap_m`. `site.keys()` rather than a
+    # bare subscript because `_nearest_site` selects a narrower row than the
+    # by-id branch above, and an absent key there must read as "not checked"
+    # rather than raise.
+    site_altitude_m = site["altitude_m"] if site and "altitude_m" in site.keys() else None
+    site_altitude_tolerance_m = (
+        site["altitude_tolerance_m"]
+        if site and "altitude_tolerance_m" in site.keys() else None
+    )
+    altitude_gap_m = _altitude_gap_m(
+        body.altitude_m, site_altitude_m, site_altitude_tolerance_m,
+    )
+
     flags = _compute_flags(
         body, policy, distance_m,
         int(site["radius_m"]) if site else None,
         has_reference_pair=(ref_count or 0) >= 2,
+        altitude_gap_m=altitude_gap_m,
+        site_altitude_tolerance_m=(
+            int(site_altitude_tolerance_m)
+            if site_altitude_tolerance_m is not None else None
+        ),
     )
 
     if body.photo_key:
@@ -588,10 +864,12 @@ async def create_punch(
             """INSERT INTO staging.pahchan_punches
                    (org_id, employee_id, direction, captured_at, synced_at, photo_key,
                     lat, lng, accuracy_m, distance_m, geofence_id, source,
-                    mock_location, flags, client_punch_id)
+                    mock_location, flags, client_punch_id,
+                    altitude_m, altitude_accuracy_m)
                VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6,
                        $7, $8, $9, $10, $11, $12,
-                       $13, $14::text[], $15)
+                       $13, $14::text[], $15,
+                       $16, $17)
                RETURNING id, direction, captured_at, received_at, flags, source""",
             org_id, str(employee["id"]), body.direction, body.captured_at,
             # An offline punch synced now; a live one has no separate sync moment.
@@ -600,6 +878,11 @@ async def create_punch(
             body.lat, body.lng, body.accuracy_m, distance_m,
             str(site["id"]) if site else None,
             body.source, body.mock_location, flags, body.client_punch_id,
+            # Stored whether or not it was CHECKED. A punch at a site with no
+            # declared altitude still records what the device reported, which
+            # is what lets an operator set a site's altitude later from real
+            # observations rather than from a map.
+            body.altitude_m, body.altitude_accuracy_m,
         )
     except asyncpg.UniqueViolationError:
         # (org_id, client_punch_id) is unique org-wide, so this is a different
@@ -633,6 +916,80 @@ async def create_punch(
 
 # ── The employee's own record ─────────────────────────────────────────────────
 
+async def _rules_for_employee(pool, org_id: str, policy: dict) -> dict:
+    """The rules this person is actually judged by, in their own words.
+
+    ── WHY THIS EXISTS ──────────────────────────────────────────────────────
+    Every rule in this module was visible to the org and invisible to the
+    person it decides about. An employee could see their punches and their
+    flags and could not see WHY anything was flagged: not the radius, not the
+    grace period, not the accuracy threshold, and — since migration 193 — not
+    the altitude window either. A "geo" flag on an honest punch is a question
+    an employee cannot answer without the number they missed by.
+
+    That asymmetry is the whole objection to biometric attendance, and it is
+    the one this module's own header sets out to avoid. The DPDP notice already
+    tells them what is RECORDED; this tells them what is JUDGED.
+
+    ── WHAT IT DOES NOT CONTAIN ─────────────────────────────────────────────
+    Nothing about anybody else. No employee ids, no colleague's punches, no
+    reviewer names. The sites come back because a site is a place, not a
+    person, and an employee needs to know which fence they are inside.
+
+    Inactive sites are omitted: a fence nobody is judged against is noise on a
+    screen whose whole purpose is to be readable.
+    """
+    sites = await pool.fetch(
+        "SELECT name, radius_m, altitude_m, altitude_tolerance_m "
+        "FROM staging.pahchan_sites "
+        "WHERE org_id=$1::uuid AND is_active IS NOT FALSE ORDER BY name",
+        org_id,
+    )
+    return {
+        # Each of these is a sentence the Me tab can render as-is. The numbers
+        # come from the policy the org actually saved, never from the defaults
+        # in this file — an employee reading a hardcoded 100m while their org
+        # runs at 40m is exactly the failure `_retention` was fixed for.
+        "grace_minutes": policy["grace_minutes"],
+        "accuracy_flag_threshold_m": policy["accuracy_flag_threshold_m"],
+        "allow_outside_geofence": policy["allow_outside_geofence"],
+        "standard_hours_per_day": policy.get("standard_hours_per_day"),
+        "overtime_enabled": policy.get("overtime_enabled"),
+        "sites": [
+            {
+                "name": r["name"],
+                "radius_m": r["radius_m"],
+                # Both, or neither. A tolerance with no altitude cannot exist
+                # (`pahchan_sites_altitude_pair_ck`), and an altitude with no
+                # tolerance is recorded but not checked — so the client can say
+                # "this site also checks your floor" on exactly the sites where
+                # that is true.
+                "altitude_m": r["altitude_m"],
+                "altitude_tolerance_m": r["altitude_tolerance_m"],
+                "checks_altitude": r["altitude_m"] is not None
+                                   and r["altitude_tolerance_m"] is not None,
+            }
+            for r in sites
+        ],
+        # What each flag MEANS, so the register is readable without a manual.
+        # Keyed by the code stored in `pahchan_punches.flags`, and every one of
+        # them ends the same way for a reason: none of them refuses a punch.
+        "flag_meanings": {
+            "geo": "You were outside the site's area — or, where a site checks "
+                   "it, above or below its floor by more than it allows.",
+            "accuracy": "Your phone was not sure where it was. Weak signal "
+                        "indoors and underground does this.",
+            "mock": "The phone reported that its location was being simulated.",
+            "offline": "Recorded without a connection and sent later.",
+            "noref": "There are no approved reference photos for you yet. HR "
+                     "enrols those; it is not something you did.",
+            "retries": "The camera failed several times before this photo.",
+            "reuse": "This photo had already been attached to another punch.",
+        },
+        "nothing_is_refused": True,
+    }
+
+
 @router.get("/me")
 async def my_punches(
     days: int = 30,
@@ -659,6 +1016,11 @@ async def my_punches(
     version = (notice_version or PAHCHAN_NOTICE_VERSION)[:_NOTICE_VERSION_MAX]
     employee = await _employee_for(pool, org_id, user["user_id"])
     if not employee:
+        # Read ONCE and named, rather than fetched inside the dict twice or
+        # smuggled through a walrus: `retention` and `rules` are two views of
+        # the same policy row, and two reads is two chances for them to be two
+        # different policies.
+        policy = await _policy(pool, org_id)
         return {
             "employee": None,
             "punches": [],
@@ -669,7 +1031,13 @@ async def my_punches(
             # request and never once errored. This is the branch 100% of callers
             # take today (see the comment below), so 100% of DPDP notices served
             # quoted a retention window that was not the one in force.
-            "retention": _retention(await _policy(pool, org_id)),
+            "retention": _retention(policy),
+            # The SAME rules block as the branch below. Somebody whose account
+            # is not yet linked to a personnel record is precisely the person
+            # most likely to be wondering what happens when they punch, and
+            # answering "no employee row, so no rules" would be a screen that
+            # goes blank at the moment it is most needed.
+            "rules": await _rules_for_employee(pool, org_id, policy),
             # STILL ANSWERED, and this branch is the common one rather than the
             # edge case: 0 of 81 employee rows carry a user_id today, so
             # `_employee_for` returns None for everybody. The acknowledgement is
@@ -683,18 +1051,31 @@ async def my_punches(
     since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 120)))
     rows = await pool.fetch(
         "SELECT id, direction, captured_at, received_at, source, flags, "
-        "       accuracy_m, distance_m, review_verdict "
+        "       accuracy_m, distance_m, altitude_m, altitude_accuracy_m, "
+        "       review_verdict "
         "FROM staging.pahchan_punches "
         "WHERE employee_id=$1::uuid AND captured_at >= $2 "
         "ORDER BY captured_at DESC",
         str(employee["id"]), since,
     )
-    policy = await _policy(pool, org_id)
+    # Their OWN policy, not the org's. An employee on a contract whose grace
+    # period is zero must not be shown the salaried ten minutes: a screen whose
+    # entire purpose is "the rule you are judged by" is worse than nothing if it
+    # states a rule somebody else is judged by.
+    #
+    # No `site_id`: the Me tab is a standing statement rather than a punch, and
+    # a per-site figure belongs beside the site in the `sites` list, which
+    # `_rules_for_employee` already carries.
+    policy = await _resolve_policy(pool, org_id, employee=employee)
     return {
         "employee": {"id": str(employee["id"]), "name": employee["name"]},
         "punches": [dict(r) for r in rows],
         # Stated in plain words on the Me tab, not buried in a policy page.
         "retention": _retention(policy),
+        # And the rules those punches were judged against. See
+        # `_rules_for_employee`: what is recorded was already disclosed; what
+        # decides was not.
+        "rules": await _rules_for_employee(pool, org_id, policy),
         "notice": {
             "version": version,
             "acknowledged_at": await _notice_ack(pool, org_id, user["user_id"], version),
@@ -850,6 +1231,17 @@ async def register(
     rows = await pool.fetch(
         """SELECT p.id, p.direction, p.captured_at, p.received_at, p.source,
                   p.flags, p.accuracy_m, p.distance_m, p.mock_location,
+                  -- The vertical half of the fence, and the two numbers that
+                  -- make a "geo" flag readable. Without them a reviewer looking
+                  -- at a multi-storey site sees a flagged punch whose distance
+                  -- is fifteen metres and no reason at all — the horizontal
+                  -- test passed and the vertical one is why it is here.
+                  p.altitude_m, p.altitude_accuracy_m,
+                  s.altitude_m           AS site_altitude_m,
+                  s.altitude_tolerance_m AS site_altitude_tolerance_m,
+                  CASE WHEN p.altitude_m IS NOT NULL AND s.altitude_m IS NOT NULL
+                       THEN abs(p.altitude_m - s.altitude_m)
+                  END AS altitude_gap_m,
                   -- The detail states the coordinates (07 §3). They are behind
                   -- `_review_gate` like the rest of this row, and they go no
                   -- further: the client draws the accuracy radius itself rather
@@ -964,7 +1356,9 @@ async def list_sites(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, name, lat, lng, radius_m, is_active FROM staging.pahchan_sites "
+        "SELECT id, name, lat, lng, radius_m, altitude_m, altitude_tolerance_m, "
+        "       is_active "
+        "FROM staging.pahchan_sites "
         "WHERE org_id=$1::uuid ORDER BY name",
         org_id,
     )
@@ -981,10 +1375,122 @@ async def create_site(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.pahchan_sites (org_id, name, lat, lng, radius_m) "
-        "VALUES ($1::uuid, $2, $3, $4, $5) RETURNING id, name, radius_m",
+        "INSERT INTO staging.pahchan_sites "
+        "  (org_id, name, lat, lng, radius_m, altitude_m, altitude_tolerance_m) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) "
+        "RETURNING id, name, radius_m, altitude_m, altitude_tolerance_m",
         org_id, body.name, body.lat, body.lng, body.radius_m,
+        body.altitude_m, body.altitude_tolerance_m,
     )
+    return dict(row)
+
+
+class SiteAmend(BaseModel):
+    """Every field of a site, all optional — a PATCH.
+
+    There was no way to amend a site at all: `POST` and `GET`, and nothing
+    between them. A radius typed wrong, a pin dropped on the wrong side of a
+    building, or an office that moved meant creating a second site and leaving
+    the first one flagging every punch at it. The altitude pair made that worse
+    rather than better, because it is the field most likely to be got wrong
+    first and corrected from real observations later.
+
+    `is_active` is here rather than as a DELETE. A site is named by
+    `pahchan_punches.geofence_id` on every punch ever recorded at it, and
+    deleting one would either orphan those rows or take the attendance history
+    with it. Deactivating stops it being offered and leaves the record intact.
+    """
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_m: Optional[int] = Field(None, gt=0)
+    altitude_m: Optional[float] = Field(None, gt=-500, lt=9000)
+    altitude_tolerance_m: Optional[int] = Field(None, gt=0)
+    is_active: Optional[bool] = None
+    #: Clearing the vertical check is a real thing to want, and it cannot be
+    #: said by omission — an absent `altitude_m` means "leave it alone", which
+    #: is what every other field means. This says "stop checking altitude here",
+    #: and it clears BOTH columns, because a tolerance without an altitude is
+    #: what `pahchan_sites_altitude_pair_ck` refuses.
+    clear_altitude: bool = False
+
+
+#: The columns `PATCH /sites/{id}` may write. A server-side allowlist, not a
+#: trust in the model: the SET clause interpolates these names, and the rule in
+#: CLAUDE.md is that a dynamic identifier comes from a list like this one rather
+#: than from whatever a payload happened to carry.
+_SITE_AMENDABLE = ("name", "lat", "lng", "radius_m",
+                   "altitude_m", "altitude_tolerance_m", "is_active")
+
+
+@router.patch("/sites/{site_id}")
+async def amend_site(
+    site_id: UUID,
+    body: SiteAmend,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Amend a site. Nothing here re-judges a punch that has already happened.
+
+    A punch stores `distance_m` and its flags AT CAPTURE, so moving a fence
+    changes what happens next and never what was already decided. That is the
+    correct behaviour and it is worth stating: an operator who widens a radius
+    to stop honest punches being flagged is not silently clearing yesterday's
+    flags, and an operator who tightens one is not retroactively accusing
+    anybody.
+    """
+    pool = await get_pool()
+
+    updates = {
+        k: v for k, v in body.dict(exclude_unset=True).items()
+        if k in _SITE_AMENDABLE and v is not None
+    }
+    if body.clear_altitude:
+        # Both, together. `pahchan_sites_altitude_pair_ck` refuses a tolerance
+        # with no altitude, so clearing one without the other would be refused
+        # by the database with a constraint name instead of a sentence.
+        updates["altitude_m"] = None
+        updates["altitude_tolerance_m"] = None
+
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+
+    # The pair rule again, on the amend path: the site as it will BE, not as it
+    # was sent. Setting a tolerance on a site that has no altitude is refused
+    # here rather than at the constraint.
+    if "altitude_tolerance_m" in updates and updates["altitude_tolerance_m"] is not None:
+        resulting_altitude = updates.get("altitude_m")
+        if resulting_altitude is None:
+            resulting_altitude = await pool.fetchval(
+                "SELECT altitude_m FROM staging.pahchan_sites "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                str(site_id), org_id,
+            )
+        if resulting_altitude is None:
+            raise HTTPException(
+                400,
+                "A vertical tolerance needs an altitude to be a tolerance of. "
+                "Set the site's altitude in the same change, or leave both blank "
+                "to skip the check.",
+            )
+
+    sets, params, idx = [], [str(site_id), org_id], 3
+    for k, v in updates.items():
+        sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+
+    row = await pool.fetchrow(
+        f"UPDATE staging.pahchan_sites SET {', '.join(sets)} "
+        f" WHERE id=$1::uuid AND org_id=$2::uuid "
+        f" RETURNING id, name, lat, lng, radius_m, altitude_m, "
+        f"           altitude_tolerance_m, is_active",
+        *params,
+    )
+    if not row:
+        raise HTTPException(404, "Site not found")
     return dict(row)
 
 
@@ -1287,6 +1793,274 @@ async def enrollment_queue(
     return {
         "pending_approval": [dict(r) for r in pending],
         "incomplete": [dict(r) for r in missing],
+    }
+
+
+# ── Scoped policy: the same settings, for one site, category or person ───────
+
+
+class PolicyScopeBody(BaseModel):
+    """A partial override for one scope.
+
+    `overrides` carries ONLY the keys this scope changes. That is the whole
+    design decision and migration 196 argues it out: a full policy copy per
+    scope would freeze every other setting at the value it had when the override
+    was written, so an org that later shortened its grace period firm-wide would
+    find one site silently keeping the old one — with the screen showing the new
+    value and the punch judged by the old.
+    """
+    scope_kind: str = Field(..., pattern="^(site|category|employee)$")
+    scope_ref: str = Field(..., min_length=1, max_length=200)
+    overrides: dict
+    note: Optional[str] = Field(None, max_length=400)
+
+
+def _validated_overrides(raw: dict) -> dict:
+    """The keys an override may carry, refused with a sentence.
+
+    The same list is a CHECK constraint on the table. Both, deliberately: the
+    constraint is what stops a bad row existing whatever writes it, and this is
+    what gives the person filling in the form something they can act on instead
+    of a constraint name.
+    """
+    if not isinstance(raw, dict) or not raw:
+        raise HTTPException(
+            400, "An override has to change something. Choose at least one setting.",
+        )
+
+    refused = sorted(set(raw) - POLICY_OVERRIDABLE_KEYS)
+    if refused:
+        raise HTTPException(
+            400,
+            f"These settings are the same for everybody in the organisation and "
+            f"cannot be set per site, category or person: {', '.join(refused)}. "
+            "Retention is quoted to every employee in one privacy notice, so a "
+            "different window for different people would make that notice wrong "
+            "for somebody by construction.",
+        )
+    return {k: raw[k] for k in raw}
+
+
+@router.get("/policy/scopes")
+async def list_policy_scopes(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Every override this org has, with the site or person it names.
+
+    The label is resolved HERE rather than on the client, because the client
+    must never be handed an id to render — `scope_ref` holds a uuid for the
+    `site` and `employee` kinds, and the screen shows a name.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """SELECT o.id, o.scope_kind, o.scope_ref, o.overrides, o.note,
+                  o.created_at, o.updated_at,
+                  CASE o.scope_kind
+                       WHEN 'site'     THEN s.name
+                       WHEN 'employee' THEN e.name
+                       ELSE o.scope_ref
+                  END AS scope_label
+             FROM staging.pahchan_policy_overrides o
+             LEFT JOIN staging.pahchan_sites s
+                    ON o.scope_kind = 'site'
+                   AND s.org_id = o.org_id
+                   AND s.id::text = o.scope_ref
+             LEFT JOIN staging.manav_employees e
+                    ON o.scope_kind = 'employee'
+                   AND e.org_id = o.org_id
+                   AND e.id::text = o.scope_ref
+            WHERE o.org_id = $1::uuid
+            ORDER BY array_position(ARRAY['site','category','employee']::text[],
+                                    o.scope_kind),
+                     scope_label""",
+        org_id,
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        # A scope whose site or employee has been deleted. The row is shown
+        # rather than hidden — an override that has stopped applying is exactly
+        # the thing an admin wants to find and remove — but it is labelled as
+        # what it is, and never as a bare id.
+        if d["scope_label"] is None:
+            d["scope_label"] = "(no longer exists)"
+            d["orphaned"] = True
+        else:
+            d["orphaned"] = False
+        out.append(d)
+    return {"data": out}
+
+
+@router.put("/policy/scopes")
+async def upsert_policy_scope(
+    body: PolicyScopeBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Create or replace one scope's override.
+
+    PUT and not PATCH, and the distinction matters: `overrides` REPLACES the
+    scope's whole override set. An admin who removes a key from the form means
+    "this scope no longer overrides that", and a merge would leave it silently
+    in force — the same failure the partial-override design exists to avoid, one
+    level down.
+
+    A scope naming something that does not exist is refused. The resolver treats
+    an orphan as matching nothing, which is right for a site deleted AFTER the
+    override was written and quite wrong as a way to CREATE one: an override
+    that has never applied to anything is a setting somebody believes is in
+    force.
+    """
+    overrides = _validated_overrides(body.overrides)
+    pool = await get_pool()
+
+    if body.scope_kind == "site":
+        exists = await pool.fetchval(
+            "SELECT 1 FROM staging.pahchan_sites WHERE id=$1::uuid AND org_id=$2::uuid",
+            body.scope_ref, org_id,
+        )
+        if not exists:
+            raise HTTPException(404, "No such site in this organisation")
+    elif body.scope_kind == "employee":
+        exists = await pool.fetchval(
+            "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+            body.scope_ref, org_id,
+        )
+        if not exists:
+            raise HTTPException(404, "No such employee in this organisation")
+    else:
+        # A category is a value of `manav_employees.employment_type`, not a row,
+        # so "does it exist" means "does anybody in this org have it". Refusing
+        # an unused category stops a typo becoming an override that never fires.
+        exists = await pool.fetchval(
+            "SELECT 1 FROM staging.manav_employees "
+            "WHERE org_id=$1::uuid AND employment_type=$2 LIMIT 1",
+            org_id, body.scope_ref,
+        )
+        if not exists:
+            raise HTTPException(
+                404,
+                f"No employee in this organisation has the employment type "
+                f"'{body.scope_ref}', so an override for it would never apply.",
+            )
+
+    row = await pool.fetchrow(
+        """INSERT INTO staging.pahchan_policy_overrides
+               (org_id, scope_kind, scope_ref, overrides, note, created_by, updated_by)
+           VALUES ($1::uuid, $2, $3, $4::jsonb, $5, $6, $6)
+           ON CONFLICT (org_id, scope_kind, scope_ref) DO UPDATE SET
+               overrides  = EXCLUDED.overrides,
+               note       = EXCLUDED.note,
+               updated_by = EXCLUDED.updated_by,
+               updated_at = NOW()
+        RETURNING id, scope_kind, scope_ref, overrides, note, updated_at""",
+        org_id, body.scope_kind, body.scope_ref, json.dumps(overrides),
+        body.note, user["user_id"],
+    )
+
+    # Audited at warn, like the org-level retention change above and for the
+    # same reason: this decides how somebody's attendance is judged, and who
+    # decided it has to survive. `scope_ref` is in the detail rather than in any
+    # response the client renders.
+    audit(
+        "pahchan.policy_scope_set",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_policy_scope",
+        resource_id=str(row["id"]),
+        detail={"scope_kind": body.scope_kind, "scope_ref": body.scope_ref,
+                "keys": sorted(overrides)},
+        severity="warn",
+    )
+    return dict(row)
+
+
+@router.delete("/policy/scopes/{scope_id}")
+async def delete_policy_scope(
+    scope_id: UUID,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Remove an override. The scope falls back to the level above it.
+
+    A real DELETE rather than a soft one: unlike a site, an override names no
+    punch and no history. Nothing points at it, so removing it orphans nothing —
+    and an override kept as a tombstone is a rule an admin can see and cannot
+    tell is inactive.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "DELETE FROM staging.pahchan_policy_overrides "
+        " WHERE id=$1::uuid AND org_id=$2::uuid "
+        " RETURNING scope_kind, scope_ref",
+        str(scope_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "No such policy override in this organisation")
+
+    audit(
+        "pahchan.policy_scope_removed",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_policy_scope",
+        resource_id=str(scope_id),
+        detail={"scope_kind": row["scope_kind"], "scope_ref": row["scope_ref"]},
+        severity="warn",
+    )
+    return {"status": "removed", "scope_kind": row["scope_kind"]}
+
+
+@router.get("/policy/effective")
+async def effective_policy(
+    employee_id: Optional[UUID] = None,
+    site_id: Optional[UUID] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """What the policy RESOLVES to for a given person at a given site.
+
+    Four levels merging key by key is easy to get wrong in one's head, and an
+    admin who cannot see the answer will not trust the overrides. This is the
+    same `_resolve_policy` the punch path runs — not a second implementation of
+    the merge, which is how the screen and the engine come to disagree.
+    """
+    pool = await get_pool()
+    employee = None
+    if employee_id:
+        employee = await pool.fetchrow(
+            "SELECT id, name, employment_type FROM staging.manav_employees "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(employee_id), org_id,
+        )
+        if not employee:
+            raise HTTPException(404, "No such employee in this organisation")
+
+    resolved = await _resolve_policy(
+        pool, org_id,
+        employee=dict(employee) if employee else None,
+        site_id=str(site_id) if site_id else None,
+    )
+    return {
+        "policy": resolved,
+        # Which levels were consulted, so the answer is explicable rather than
+        # merely correct. Names, never ids.
+        "scoped_by": {
+            "site": bool(site_id),
+            "category": bool(employee and employee["employment_type"]),
+            "employee": bool(employee),
+        },
+        "employee": employee["name"] if employee else None,
     }
 
 

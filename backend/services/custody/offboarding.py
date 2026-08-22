@@ -195,14 +195,32 @@ LIMIT 1
 
 #: Is this login reachable inside this org at all? See the module docstring for
 #: why the task leg is in here and not left out as redundant.
+#:
+#: The membership leg reads `public.project_assignments` and NOT
+#: `public.team_members`. Phase 1 of the tenancy cutover (migration 195,
+#: applied 2026-08-22) copied every active `team_members` row that had no
+#: counterpart into `project_assignments`, so the second table is now a strict
+#: superset of the first at identical roles — measured again before this edit:
+#: 198 active team_members, 219 project_assignments, 0 unmatched, 0 role
+#: disagreements. Counted specifically for THIS query: the number of distinct
+#: users who are reachable in an org through `team_members` but not through
+#: `project_assignments` is ZERO, so no email match that used to be accepted is
+#: now rejected. Schema-qualified because a `qa_cleanup_20260822.team_members`
+#: shadow copy exists in this database and an unqualified name is one
+#: `search_path` away from reading it (migration 142's lesson).
+#:
+#: No `status` filter: `project_assignments` has no status column. It does not
+#: need one — a row's existence IS the grant, where `team_members` modelled a
+#: pending invite as a row plus a status. All 198 live team_members rows are
+#: 'active' anyway, so the filter it replaces was already a no-op.
 _REACHABLE_SQL = """
 SELECT EXISTS (SELECT 1 FROM staging.user_roles r
                 WHERE r.org_id = $1::uuid AND r.user_id = $2::text)
     OR EXISTS (SELECT 1 FROM staging.org_member_modules m
                 WHERE m.org_id = $1::uuid AND m.user_id = $2::text)
-    OR EXISTS (SELECT 1 FROM public.team_members mem
-                 JOIN public.teams t ON t.team_id = mem.team_id
-                WHERE t.org_id = $1::uuid AND mem.user_id = $2::text)
+    OR EXISTS (SELECT 1 FROM public.project_assignments pa
+                 JOIN public.teams t ON t.team_id = pa.team_id
+                WHERE t.org_id = $1::uuid AND pa.user_id = $2::text)
     OR EXISTS (SELECT 1 FROM public.tasks tk
                  JOIN public.teams t2 ON t2.team_id = tk.team_id
                 WHERE t2.org_id = $1::uuid
@@ -394,9 +412,24 @@ async def outstanding_follow_ups(
 
 #: Three tables, because access in this product is three separate grants and
 #: pulling one does not pull the others. `user_roles` is the tenant path,
-#: `org_member_modules` is per-module entitlement, and `team_members` is the row
-#: that actually puts a person inside a team's data. All 201 live team_members
-#: rows carry a user_id and status 'active', so the match needs no email fallback.
+#: `org_member_modules` is per-module entitlement, and `project_assignments` is
+#: the row that actually puts a person inside a team's data. All 219 live
+#: project_assignments rows carry a user_id, so the match needs no email fallback.
+#:
+#: THE MEMBERSHIP LEG MOVED, 2026-08-22. It read `public.team_members` until
+#: phase 2 of the tenancy cutover; it now reads `public.project_assignments`,
+#: which migration 195 made a strict superset of it (219 rows against 198, no
+#: unmatched active row, no role disagreement). Getting this leg wrong is
+#: expensive in a specific way: a membership this query MISSES is a leaver left
+#: standing inside a team's data with the register showing them clear, and a
+#: membership it INVENTS is a clearance item raised against somebody who does
+#: not hold it. A superset can only do the second, and it cannot even do that,
+#: because every extra row in `project_assignments` is a grant made through the
+#: newer path that was always real access.
+#:
+#: `pa.assigned_at`, not `created_at` — `project_assignments` spells the column
+#: differently from `team_members` and there is no `created_at` on it at all, so
+#: the old name would be an UndefinedColumnError, not a NULL.
 #:
 #: OUT OF SCOPE ON PURPOSE — Aekam's own platform grants. Ten live user_roles
 #: rows carry org_id NULL with role_code platform_admin / platform_manager /
@@ -419,13 +452,12 @@ SELECT 'module_grant', m.module_code, m.module_code, m.granted_at
   FROM staging.org_member_modules m
  WHERE m.org_id = $1::uuid AND m.user_id = $2::text
 UNION ALL
-SELECT 'team_membership', tm.name, tm.team_id, mem.created_at
-  FROM public.team_members mem
-  JOIN public.teams tm ON tm.team_id = mem.team_id
- WHERE tm.org_id = $1::uuid
-   AND tm.deleted_at IS NULL
-   AND mem.user_id = $2::text
-   AND mem.status = 'active'
+SELECT 'team_membership', t.name, t.team_id, pa.assigned_at
+  FROM public.project_assignments pa
+  JOIN public.teams t ON t.team_id = pa.team_id
+ WHERE t.org_id = $1::uuid
+   AND t.deleted_at IS NULL
+   AND pa.user_id = $2::text
 ORDER BY 1 ASC, 2 ASC
 """
 

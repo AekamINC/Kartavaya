@@ -77,6 +77,17 @@ async def get_my_desk(pool, org_id: str, user_id: str, horizon_days: int = 7) ->
         org_id, user_id, now, horizon,
     )
 
+    # BOTH legs gate on `public.project_assignments` alone. The task-approval
+    # leg used to add an `OR EXISTS (… team_members … status='active')` — the
+    # `public.approvals` leg never did, so the two halves of one query held two
+    # different opinions about who may approve, and the second half surfaced
+    # items the first half hid. Phase 2 of the tenancy cutover settles that on
+    # the newer table, and migration 195 is what makes settling it safe: every
+    # active `team_members` row now has a matching `project_assignments` row at
+    # the same role (198 against 219, 0 unmatched, 0 role disagreements,
+    # measured 2026-08-22), so the dropped leg cannot have found an owner or
+    # admin that the kept leg does not. A desk that stops listing an approval
+    # somebody can still action is the failure this paragraph exists to rule out.
     approvals = await pool.fetch(
         f"""
         WITH org_teams AS ({_ORG_TEAMS})
@@ -88,7 +99,7 @@ async def get_my_desk(pool, org_id: str, user_id: str, horizon_days: int = 7) ->
         LEFT JOIN users u ON u.user_id = a.requested_by
         WHERE a.team_id IN (SELECT team_id FROM org_teams)
           AND a.status = 'pending'
-          AND EXISTS (SELECT 1 FROM project_assignments pa
+          AND EXISTS (SELECT 1 FROM public.project_assignments pa
                       WHERE pa.team_id = a.team_id AND pa.user_id = $2
                         AND pa.role IN ('owner','admin'))
         UNION ALL
@@ -100,12 +111,9 @@ async def get_my_desk(pool, org_id: str, user_id: str, horizon_days: int = 7) ->
         WHERE t.team_id IN (SELECT team_id FROM org_teams)
           AND t.approval_status IN ('pending','pending_client')
           AND t.archived_at IS NULL
-          AND (EXISTS (SELECT 1 FROM project_assignments pa
-                       WHERE pa.team_id = t.team_id AND pa.user_id = $2
-                         AND pa.role IN ('owner','admin'))
-            OR EXISTS (SELECT 1 FROM team_members tmem
-                       WHERE tmem.team_id = t.team_id AND tmem.user_id = $2
-                         AND tmem.role IN ('owner','admin') AND tmem.status = 'active'))
+          AND EXISTS (SELECT 1 FROM public.project_assignments pa
+                      WHERE pa.team_id = t.team_id AND pa.user_id = $2
+                        AND pa.role IN ('owner','admin'))
         ORDER BY requested_at DESC NULLS LAST
         LIMIT 200
         """,

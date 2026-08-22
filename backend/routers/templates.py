@@ -8,6 +8,7 @@ import uuid, json
 
 from auth_router import require_user
 from db import get_pool
+from middleware.org_resolver import get_org_id
 from middleware.roles import is_platform_staff
 from utils import assert_config_attachments
 
@@ -19,10 +20,12 @@ _TEMPLATE_NOT_FOUND = "Template not found"
 # ── Shared helpers ───────────────────────────────────────────────────────────────
 
 async def _is_team_member(pool, team_id: str, user_id: str) -> bool:
+    """PROJECT membership. One table since migration 195 made
+    `project_assignments` a strict superset of active `team_members` at
+    identical roles — the dropped leg admitted nobody this one does not.
+    Canonical note: `middleware/roles.may_reach_project`."""
     row = await pool.fetchrow("""
-        SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'
-        UNION
-        SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2
+        SELECT 1 FROM public.project_assignments WHERE team_id=$1 AND user_id=$2
     """, team_id, user_id)
     return row is not None
 
@@ -75,46 +78,133 @@ class TaskTemplateBody(BaseModel):
 
 
 # ── Project templates ─────────────────────────────────────────────────────────────
+#
+# ── WHAT WAS WRONG, AND IT WAS WRONG IN BOTH DIRECTIONS ──────────────────────
+#
+# `public.project_templates` had NO tenant column — `template_id, name,
+# description, config, created_by, created_at` and nothing else — so these
+# handlers scoped it by the only column they had, the AUTHOR. That produced two
+# opposite failures from one omission:
+#
+#   UPWARD.    Platform staff got `SELECT * FROM project_templates` unfiltered:
+#              every customer's board layout, custom fields and sample tasks,
+#              from one endpoint, with nothing recording that it happened.
+#   SIDEWAYS.  Everybody else saw only rows they had authored, so a template one
+#              colleague built was invisible to the rest of their own firm. That
+#              is the other half of the owner's report — "needs more templates"
+#              is not a shortage. The whole database holds ONE project template
+#              and FOUR task templates, and each was visible to one person.
+#
+# And `apply` never checked the template at all: it looked the config up by id
+# and wrote columns, field definitions and tasks from it into a project the
+# caller does belong to, so any signed-in user could name any template id in the
+# product and read its contents through the board it produced.
+#
+# Migration 200 adds `org_id`, backfilled from the author's earliest org grant.
+#
+# ── WHY `org_id IS NULL` IS STILL ADMITTED ───────────────────────────────────
+#
+# A template whose author holds no org grant cannot be attributed, and 200 left
+# those NULL rather than refusing to run. Dropping them from every listing would
+# make somebody's template vanish on deploy, so a NULL row keeps exactly its old
+# behaviour: visible to its author, and to nobody else. Live count of such rows
+# today: 0. The branch exists so that number staying 0 is not load-bearing.
+
+
+def _org_scope(org_id: str, user_id: str) -> tuple[str, list]:
+    """The WHERE clause and its parameters for "templates this caller may see".
+
+    One place, because the listing, the delete check and `apply` must agree —
+    a template you can apply but cannot see, or see but cannot apply, is worse
+    than either rule on its own.
+    """
+    return (
+        "(t.org_id = $1::uuid OR (t.org_id IS NULL AND t.created_by = $2))",
+        [org_id, user_id],
+    )
+
 
 @router.get("/projects")
-async def list_project_templates(pool=Depends(get_pool), user=Depends(require_user)):
-    if await is_platform_staff(user["user_id"]):
-        rows = await pool.fetch("SELECT * FROM project_templates ORDER BY created_at DESC")
-    else:
-        rows = await pool.fetch(
-            "SELECT * FROM project_templates WHERE created_by=$1 ORDER BY created_at DESC",
-            user["user_id"],
-        )
+async def list_project_templates(
+    pool=Depends(get_pool),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """Every template belonging to the caller's organisation.
+
+    NOT "every template I wrote", and NOT — for platform staff — every template
+    in the product. Aekam sees what the org it is acting in sees, which is the
+    same rule every other module applies to platform accounts and the only one
+    that leaves a record of which org was opened.
+    """
+    where, params = _org_scope(org_id, user["user_id"])
+    rows = await pool.fetch(
+        f"SELECT t.* FROM public.project_templates t "
+        f"WHERE {where} ORDER BY t.created_at DESC",
+        *params,
+    )
     return [dict(r) for r in rows]
 
 
 @router.post("/projects")
-async def create_project_template(body: ProjectTemplateCreate, pool=Depends(get_pool), user=Depends(require_user)):
+async def create_project_template(
+    body: ProjectTemplateCreate,
+    pool=Depends(get_pool),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
     assert_config_attachments(body.config)
     tid = f"ptmpl_{uuid.uuid4().hex[:10]}"
     row = await pool.fetchrow(
-        "INSERT INTO project_templates (template_id, name, description, config, created_by) "
-        "VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING *",
-        tid, body.name, body.description, json.dumps(body.config), user["user_id"]
+        "INSERT INTO public.project_templates "
+        "  (template_id, name, description, config, created_by, org_id) "
+        "VALUES ($1,$2,$3,$4::jsonb,$5,$6::uuid) RETURNING *",
+        tid, body.name, body.description, json.dumps(body.config),
+        user["user_id"], org_id,
     )
     return dict(row)
 
 
 @router.delete("/projects/{template_id}")
-async def delete_project_template(template_id: str, pool=Depends(get_pool), user=Depends(require_user)):
-    tmpl = await pool.fetchrow("SELECT created_by FROM project_templates WHERE template_id=$1", template_id)
+async def delete_project_template(
+    template_id: str,
+    pool=Depends(get_pool),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """Delete a template of your own organisation.
+
+    Two questions, and they are separate: WHICH templates exist for you (the org
+    scope) and WHETHER you may remove this one (authorship, or platform staff).
+    Collapsing them would let any member of an org delete a colleague's
+    template; keeping only the second would 404 rather than 403 across a tenant
+    boundary, which tells the caller a template id is real.
+    """
+    where, params = _org_scope(org_id, user["user_id"])
+    tmpl = await pool.fetchrow(
+        f"SELECT t.created_by FROM public.project_templates t "
+        f"WHERE t.template_id=$3 AND {where}",
+        *params, template_id,
+    )
     if not tmpl:
+        # Also the cross-tenant case, and deliberately the same answer as a
+        # template that does not exist: a 403 here would confirm that somebody
+        # else's template id is real.
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
     if tmpl["created_by"] != user["user_id"] and not await is_platform_staff(user["user_id"]):
         raise HTTPException(403, "Not authorised")
-    await pool.execute("DELETE FROM project_templates WHERE template_id=$1", template_id)
+    await pool.execute(
+        "DELETE FROM public.project_templates WHERE template_id=$1", template_id,
+    )
     return {"ok": True}
 
 
 @router.post("/projects/{template_id}/apply")
 async def apply_project_template(
     template_id: str, team_id: str,
-    pool=Depends(get_pool), user=Depends(require_user)
+    pool=Depends(get_pool),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
 ):
     """Create columns and sample tasks from template into existing team."""
     if not await is_platform_staff(user["user_id"]):
@@ -124,7 +214,21 @@ async def apply_project_template(
         # project. Membership is not a licence to reshape the board.
         from services.task_actor import assert_may_write_task
         await assert_may_write_task(pool, team_id=team_id, user=user)
-    tmpl = await pool.fetchrow("SELECT config FROM project_templates WHERE template_id=$1", template_id)
+
+    # ── THE TEMPLATE IS SCOPED TOO, and it never was ─────────────────────────
+    #
+    # This read was `WHERE template_id=$1` and nothing else. The gate above
+    # proves the caller may write to the DESTINATION project; it says nothing
+    # about the SOURCE. So any signed-in user could name any template id in the
+    # product and have its columns, its custom field definitions and its sample
+    # task titles written into a board they own — reading another firm's
+    # template through the artefact it produced.
+    where, params = _org_scope(org_id, user["user_id"])
+    tmpl = await pool.fetchrow(
+        f"SELECT t.config FROM public.project_templates t "
+        f"WHERE t.template_id=$3 AND {where}",
+        *params, template_id,
+    )
     if not tmpl:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
     cfg = tmpl["config"] if isinstance(tmpl["config"], dict) else json.loads(tmpl["config"])
@@ -181,9 +285,9 @@ async def list_task_templates(team_id: Optional[str] = None, pool=Depends(get_po
             rows = await pool.fetch("""
                 SELECT DISTINCT tt.* FROM task_templates tt
                 LEFT JOIN (
-                    SELECT team_id FROM team_members WHERE user_id=$1 AND status='active'
-                    UNION
-                    SELECT team_id FROM project_assignments WHERE user_id=$1
+                    -- PROJECT membership; see `_is_team_member` above for why
+                    -- `project_assignments` alone is the whole set.
+                    SELECT team_id FROM public.project_assignments WHERE user_id=$1
                 ) my_teams ON my_teams.team_id = tt.team_id
                 WHERE tt.team_id IS NULL OR my_teams.team_id IS NOT NULL
                 ORDER BY tt.is_default DESC, tt.created_at ASC
@@ -249,8 +353,14 @@ async def set_default_template(template_id: str, pool=Depends(get_pool), user=De
     if not tmpl:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
     if not await is_platform_staff(user["user_id"]):
+        # PROJECT role. This one read `team_members` ONLY — no
+        # `project_assignments` leg at all — so a project owner seated by the
+        # newer table was refused the default-template switch on their own
+        # project. Migration 195 makes the single table the complete answer
+        # rather than the narrower half of it.
         member = await pool.fetchrow(
-            "SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
+            "SELECT role FROM public.project_assignments "
+            "WHERE team_id=$1 AND user_id=$2 LIMIT 1",
             tmpl["team_id"], user["user_id"]
         )
         if not member or member["role"] not in ("owner", "admin"):

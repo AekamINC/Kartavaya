@@ -601,3 +601,129 @@ def test_the_module_vocabularies_still_match_migration_164():
     assert vocabulary("manav_offboarding_custody_action_ck", "action") == ("reassign", "revoke")
     assert vocabulary("manav_offboarding_custody_status_ck", "status") == (
         "outstanding", "done", "waived")
+
+
+# ── phase 2 of the tenancy cutover ────────────────────────────────────────────
+#
+# The membership leg of both membership queries moved from `public.team_members`
+# to `public.project_assignments` on 2026-08-22, after migration 195 made the
+# second a strict superset of the first at identical roles (198 active rows
+# against 219, 0 unmatched, 0 role disagreements — re-measured live before the
+# change).
+#
+# These are SOURCE assertions, and that is a deliberate limitation, not an
+# oversight. The pool in this file is a MagicMock, so nothing here can prove a
+# query parses or returns the right rows; what a mock CAN prove is that the
+# module still names the table it is supposed to name. The parse was proven
+# separately, the same way the module docstring records for 2026-08-19: every
+# statement below was executed read-only against the live Supabase database on
+# 2026-08-22 with real ids, and both returned rows.
+#
+# Why this is worth pinning at all: getting the membership leg wrong here is
+# expensive in two directions and both are quiet. A membership these queries
+# MISS is a leaver still standing inside a team's data with the register showing
+# them clear. A membership they INVENT is a clearance item raised against
+# somebody who does not hold it, and a register that raises false items is a
+# register people learn to sign off unread.
+
+
+def test_the_membership_leg_reads_project_assignments_and_not_team_members():
+    """Both queries, because they answer the same question for different callers.
+
+    `_REACHABLE_SQL` decides whether an email match may be accepted at all;
+    `_ACCESS_SQL` decides what the leaver is reported as still holding. A change
+    that moved one and not the other would produce the worst combination
+    available: an employee whose login cannot be resolved (so every list is
+    empty) reported next to an access list that is empty for a different reason.
+    """
+    for name, sql in (("_REACHABLE_SQL", oc._REACHABLE_SQL),
+                      ("_ACCESS_SQL", oc._ACCESS_SQL)):
+        assert "public.project_assignments" in sql, \
+            f"{name} no longer reads the project-membership table"
+        # NOT a bare `"team_members" not in sql`: 'team_membership' — the
+        # access_kind this leg emits — has 'team_members' as a prefix, so that
+        # spelling fails on the correct code and would have been "fixed" by
+        # renaming the access_kind, which is the one thing here the register's
+        # stored subject_type values depend on.
+        assert "public.team_members" not in sql and "FROM team_members" not in sql, \
+            (f"{name} still reads team_members. It is still WRITTEN — the "
+             f"PROPOSED_080 rename stays reversible only while it is — but it "
+             f"is no longer READ here.")
+
+
+def test_every_membership_table_is_schema_qualified():
+    """A `qa_cleanup_20260822.team_members` shadow table exists in this database.
+
+    Migration 142 is what this project learned from an unqualified name landing
+    in the wrong schema: the statement runs, returns rows, and answers about
+    somebody else's data. An offboarding query that read a cleanup snapshot
+    would report a leaver's access as of whenever that snapshot was taken.
+    """
+    for name, sql in (("_REACHABLE_SQL", oc._REACHABLE_SQL),
+                      ("_ACCESS_SQL", oc._ACCESS_SQL)):
+        for table in ("project_assignments", "teams", "tasks", "users"):
+            for line in sql.splitlines():
+                if table in line and "FROM" in line or (table in line and "JOIN" in line):
+                    assert f"public.{table}" in line or f"staging.{table}" in line, \
+                        f"{name} names {table} without a schema: {line.strip()!r}"
+
+
+def test_the_access_query_takes_the_column_project_assignments_actually_has():
+    """`project_assignments` has `assigned_at`; it has no `created_at` at all.
+
+    `team_members` spelled it `created_at`, and carrying that name across would
+    not have produced a NULL granted_at — it would have produced an
+    UndefinedColumnError on every offboarding scan, which PgBouncer returns as
+    a message-less 500.
+    """
+    assert "pa.assigned_at" in oc._ACCESS_SQL
+    assert "created_at" not in oc._ACCESS_SQL
+
+
+def test_the_membership_leg_carries_no_status_filter():
+    """`project_assignments` has no status column — the row IS the grant.
+
+    `team_members` needed `status='active'` because it modelled a pending invite
+    as a row plus a status. Carrying that predicate across would be an
+    UndefinedColumnError; leaving it out changes no answer, because all 198 live
+    team_members rows are 'active'.
+    """
+    assert "status = 'active'" not in oc._ACCESS_SQL
+    assert "status='active'" not in oc._ACCESS_SQL
+
+
+def test_the_access_query_still_filters_soft_deleted_teams_and_the_callers_org():
+    """The two predicates that make this leg tenant-safe rather than a list of
+    every project in the database.
+
+    `t.org_id = $1::uuid` is the tenancy guard. `t.deleted_at IS NULL` is the one
+    that stops a purged project reappearing as an outstanding clearance item
+    nobody can action, because the project it names is gone.
+    """
+    membership = oc._ACCESS_SQL.split("'team_membership'", 1)[1]
+    assert "t.org_id = $1::uuid" in membership
+    assert "t.deleted_at IS NULL" in membership
+    assert "pa.user_id = $2::text" in membership
+
+
+@pytest.mark.asyncio
+async def test_a_team_membership_row_is_still_reported_as_outstanding_access(pool):
+    """End to end through `live_access`: the column rename must not change the
+    SHAPE the register consumes.
+
+    `_ACCESS_KIND_TO_SUBJECT` maps 'team_membership' onto the ledger's
+    subject_type, and `unrevoked_access` matches on `access_ref`. If the moved
+    leg had started returning a different access_ref — the assignment id, say,
+    instead of the team id — every previously-recorded revocation would stop
+    suppressing its line and the whole register would re-raise itself.
+    """
+    wire(pool, leaver=leaver_row(linked_user_id="user_priya"),
+         access=[{"access_kind": "team_membership", "label": "Indirect Tax",
+                  "access_ref": "team_abc", "granted_at": None}])
+
+    grants = await oc.live_access(pool, ORG, "user_priya")
+
+    assert [g["access_kind"] for g in grants] == ["team_membership"]
+    assert grants[0]["access_ref"] == "team_abc"
+    assert oc._ACCESS_KIND_TO_SUBJECT["team_membership"] == "team_membership"
+    assert "team_membership" in oc._ACCESS_SUBJECT_TYPES

@@ -109,6 +109,82 @@ test('accuracy_m is never defaulted to 0 — absent stays absent', async () => {
   assert.notEqual(body.accuracy_m, 0);
 });
 
+/* ── The altitude pair ────────────────────────────────────────────────────────
+   Migration 193 gave a site an `altitude_m` and an `altitude_tolerance_m`; the
+   phone never sent a height to compare against them, so the vertical fence
+   could not fire on any punch in the product. These four are about the ONE way
+   wiring it up could do harm rather than nothing. */
+
+test('THE HARMFUL DEFAULT — a device reporting no altitude sends null, never 0', async () => {
+  // This is the defect that would make the feature worse than its absence. A
+  // phone that reports no altitude is ORDINARY: indoors, and permanently on
+  // some Android hardware. 0 is not "unknown" — it is sea level. A site at 14m
+  // with a ±10m window would then flag every punch from that handset, every
+  // day, for a fact about the phone rather than about the person.
+  const id = enqueuePunch({ direction: 'in', photo_uri: '/p/1.jpg' });
+  attachPhotoKey(id, 'k');
+  await flushPunches();
+
+  const body = net.calls[0].body as Record<string, unknown>;
+  assert.notEqual(body.altitude_m, 0, 'a missing altitude was defaulted to sea level');
+  assert.notEqual(body.altitude_accuracy_m, 0);
+  // Absent or null, either of which the server reads as "not reported"
+  // (`Optional[float] = None`). What must never appear is a number.
+  assert.ok(
+    body.altitude_m === undefined || body.altitude_m === null,
+    `altitude_m reached the wire as ${String(body.altitude_m)}`,
+  );
+  assert.ok(
+    body.altitude_accuracy_m === undefined || body.altitude_accuracy_m === null,
+    `altitude_accuracy_m reached the wire as ${String(body.altitude_accuracy_m)}`,
+  );
+});
+
+test('an altitude of 0 that was REALLY reported is kept, not treated as missing', async () => {
+  // The mirror of the test above, and the reason neither may be written with a
+  // falsy check. A punch on the Mumbai seafront legitimately reads 0m, and a
+  // `|| undefined` anywhere on this path would discard it.
+  const id = enqueuePunch({
+    direction: 'in', altitude_m: 0, altitude_accuracy_m: 4, photo_uri: '/p/1.jpg',
+  });
+  attachPhotoKey(id, 'k');
+  await flushPunches();
+
+  const body = net.calls[0].body as Record<string, unknown>;
+  assert.equal(body.altitude_m, 0);
+  assert.equal(body.altitude_accuracy_m, 4);
+});
+
+test('an OFFLINE punch does not lose its altitude — it survives the store', async () => {
+  // The queue is MMKV-backed JSON, and a punch may sit in it for 72 hours. A
+  // field the queue does not carry is a field an offline punch loses for good,
+  // with no way to recover it: the fix it came from is long gone.
+  const id = enqueuePunch({
+    direction: 'in', altitude_m: 41.5, altitude_accuracy_m: 12, photo_uri: '/p/1.jpg',
+  });
+  attachPhotoKey(id, 'k');
+
+  // Fails, is re-read from storage, then flushes — the real offline path.
+  __goOffline();
+  await flushPunches();
+  __resetNet();
+  await flushPunches();
+
+  const body = net.calls[0].body as Record<string, unknown>;
+  assert.equal(body.altitude_m, 41.5);
+  assert.equal(body.altitude_accuracy_m, 12);
+});
+
+test('a queued punch holds the altitude pair as read, unrounded', async () => {
+  // Read off the queue rather than the wire: the server decides the tolerance
+  // window, and a client that rounded 41.5 to 42 would be moving somebody
+  // across a fence boundary the phone has no business deciding.
+  enqueuePunch({ direction: 'in', altitude_m: 41.5, altitude_accuracy_m: 12.25 });
+  const [q] = getQueuedPunches();
+  assert.equal(q.altitude_m, 41.5);
+  assert.equal(q.altitude_accuracy_m, 12.25);
+});
+
 test('mock_location null and false are different facts', async () => {
   // null = not checked on this platform (iOS). false = checked and clean.
   const a = enqueuePunch({ direction: 'in', photo_uri: '/a.jpg' });

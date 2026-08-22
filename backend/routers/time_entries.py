@@ -165,9 +165,11 @@ async def time_report(
         filters.append(f"tk.team_id=${len(vals)+1}")
         vals.append(team_id)
     elif not is_staff:
+        # PROJECT membership, one table since migration 195 made
+        # `project_assignments` a strict superset of active `team_members`.
+        # Canonical note: `middleware/roles.may_reach_project`.
         user_teams = await pool.fetch(
-            "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' "
-            "UNION SELECT team_id FROM project_assignments WHERE user_id=$1",
+            "SELECT team_id FROM public.project_assignments WHERE user_id=$1",
             user["user_id"],
         )
         team_ids = [r["team_id"] for r in user_teams]
@@ -180,7 +182,7 @@ async def time_report(
         is_team_admin = False
         if team_id:
             owner = await pool.fetchrow(
-                "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')",
+                "SELECT 1 FROM public.project_assignments WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')",
                 team_id, user["user_id"]
             )
             is_team_admin = owner is not None

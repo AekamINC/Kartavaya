@@ -155,6 +155,53 @@ test('no condition returns early without recording the punch', () => {
   assert.doesNotMatch(submit, /if\s*\([^)]*enrollment[^)]*\)\s*\{?\s*return/, 'a missing reference pair must not block');
 });
 
+// ── The altitude pair ─────────────────────────────────────────────────────────
+
+test('readFix reads the altitude that was sitting in coords all along', () => {
+  // `pos.coords` carries `altitude` and `altitudeAccuracy` beside the lat, lng
+  // and accuracy this function already read. Migration 193 gave a site a
+  // vertical window and nothing ever sent a height to compare against it, so
+  // the check could not fire on any punch in the product.
+  assert.match(code, /altitude_m:\s*pos\.coords\.altitude/, 'the fix does not read coords.altitude');
+  assert.match(
+    code, /altitude_accuracy_m:\s*pos\.coords\.altitudeAccuracy/,
+    'the fix does not read coords.altitudeAccuracy',
+  );
+});
+
+test('THE HARMFUL DEFAULT — a missing altitude stays undefined, never 0', () => {
+  // A device that reports no altitude is ordinary: indoors, and permanently on
+  // some Android hardware. 0 is not "unknown", it is sea level — a site at 14m
+  // with a ±10m window would flag every punch from that handset for a fact
+  // about the phone. `??` and not `||` for the same reason in reverse: a real
+  // reading of 0 on the seafront must survive.
+  assert.match(
+    code, /altitude_m:\s*pos\.coords\.altitude\s*\?\?\s*undefined/,
+    'altitude is not coalesced to undefined — check for a `|| 0` or a `?? 0`',
+  );
+  assert.match(
+    code, /altitude_accuracy_m:\s*pos\.coords\.altitudeAccuracy\s*\?\?\s*undefined/,
+    'altitudeAccuracy is not coalesced to undefined',
+  );
+  assert.doesNotMatch(
+    code, /pos\.coords\.altitude(Accuracy)?\s*(\?\?|\|\|)\s*0/,
+    'a missing altitude is being defaulted to sea level',
+  );
+});
+
+test('the altitude pair is handed to the QUEUE, not only to a live send', () => {
+  // A punch may sit in the queue for 72 hours. A field the queue does not carry
+  // is a field an offline punch loses, and the fix it came from is long gone.
+  const enqueue = code.indexOf('enqueuePunch(');
+  assert.ok(enqueue !== -1, 'enqueuePunch is not called');
+  const call = code.slice(enqueue, code.indexOf('});', enqueue));
+  assert.match(call, /altitude_m:\s*fix\.altitude_m/, 'the queued punch carries no altitude');
+  assert.match(
+    call, /altitude_accuracy_m:\s*fix\.altitude_accuracy_m/,
+    'the queued punch carries no altitude accuracy',
+  );
+});
+
 // ── Queue before network ──────────────────────────────────────────────────────
 
 test('the punch is QUEUED before anything on the network is touched', () => {

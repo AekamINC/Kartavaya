@@ -356,12 +356,36 @@ async def add_member(
         "SELECT team_id FROM staging.organisations WHERE id=$1::uuid", org_id,
     )
     if org and org["team_id"]:
+        # ── BOTH membership tables, deliberately ────────────────────────────
+        #
+        # Phase 2 of the `team_members` retirement (PROPOSED_080) removes READS
+        # of `team_members` and keeps every WRITE: the rename in step 4 is
+        # reversible only while the old table is still maintained. This writer
+        # fed `team_members` alone, so the org seat it granted was invisible to
+        # `may_reach_project`, the templates gate, uploads, views, time entries
+        # and dashboards — every reader phase 2 moved onto
+        # `project_assignments`. A new org member could be listed by the member
+        # console and still be refused their own org's project.
+        #
+        # Two statements rather than one, so each placeholder is deduced against
+        # exactly one column: `team_members.user_id` is `text` and
+        # `project_assignments.user_id` is `character varying`, and a single
+        # statement spanning both needs the explicit `::text` cast that
+        # `auth_router.accept_invite` documents.
         await pool.execute(
-            "INSERT INTO team_members (member_id, team_id, email, user_id, role, status) "
+            "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status) "
             "VALUES ($1, $2, $3, $4, 'member', 'active') "
             "ON CONFLICT DO NOTHING",
             f"mem_{uuid.uuid4().hex[:12]}", org["team_id"],
             target["email"], target["user_id"],
+        )
+        await pool.execute(
+            "INSERT INTO public.project_assignments "
+            "  (assignment_id, team_id, user_id, role, assigned_by) "
+            "VALUES ($1, $2, $3, 'member', $4) "
+            "ON CONFLICT (team_id, user_id) DO NOTHING",
+            f"assign_{uuid.uuid4().hex[:12]}", org["team_id"],
+            target["user_id"], user["user_id"],
         )
 
     # Defaults for the two branches that grant nothing sensitive: no caller role
@@ -469,8 +493,19 @@ async def remove_member(
         "SELECT team_id FROM staging.organisations WHERE id=$1::uuid", org_id,
     )
     if org and org["team_id"]:
+        # BOTH tables, and this direction is the one that must not be missed.
+        # Deleting from `team_members` alone would leave the
+        # `project_assignments` row standing — and since phase 2 that row IS
+        # the access, so a removed member would keep the org's project. The
+        # dual-delete also keeps the two tables reconciled, which is the
+        # precondition migration 195 established and PROPOSED_080 step 4
+        # depends on for its reversibility.
         await pool.execute(
-            "DELETE FROM team_members WHERE team_id=$1 AND user_id=$2",
+            "DELETE FROM public.team_members WHERE team_id=$1 AND user_id=$2",
+            org["team_id"], target_user_id,
+        )
+        await pool.execute(
+            "DELETE FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",
             org["team_id"], target_user_id,
         )
 

@@ -41,8 +41,11 @@ design.
 
 TWO WAYS TO BE ONE, AND BOTH HAD TO BE COVERED
 ──────────────────────────────────────────────
-  1. A `client` row in `project_assignments` or `team_members` — the client of
-     a project.
+  1. A `client` row in `project_assignments` — the client of a project. This
+     read was `project_assignments` OR `team_members` until 2026-08-22; see
+     `project_role` for why one table now answers what two used to. The same
+     two accounts are refused either way — they hold role='client' in BOTH
+     tables, and always did.
   2. A `task_clients` row and NO project row — someone the client-approval
      forward reached. `server.client_can_access_task` is the FALLBACK on
      `PUT /api/tasks/{id}`, so that row was a WRITE grant, and its own docstring
@@ -67,10 +70,20 @@ team_95beaa7529a9, and `auth_router` copies `team_members.role` straight into
 is. `task_clients` is empty, so case 2 has never happened and the forward has
 never been used. The refusal is two accounts on one project.
 
+RE-MEASURED 2026-08-22, after migration 195 reconciled the two tables:
+
+    project_assignments   member 147 · owner 64 · admin 6 · client 2
+    team_members (active) 198 rows, every one mirrored above at the same role
+
+Still the same two `client` accounts, and they hold the row in BOTH tables. So
+dropping the `team_members` fallback in `project_role` changes the refusal for
+nobody — it cannot, because a client refused through `team_members` has an
+identical `project_assignments` row to be refused through instead.
+
 NO MIGRATION, AND THAT IS ON PURPOSE
 ────────────────────────────────────
-Every column this reads — `project_assignments.role`, `team_members.role`,
-`task_clients.user_id` — has existed since migration 001. There is one `staging`
+Every column this reads — `project_assignments.role`, `task_clients.user_id` —
+has existed since migration 001. There is one `staging`
 schema and production writes to it, so a fix that needed a column would be
 inert on production until somebody applied DDL by hand. This one is live the
 moment it deploys, and the 121-125 migration range stays unused.
@@ -139,10 +152,28 @@ def _role_of(row) -> Optional[str]:
 async def project_role(pool, team_id: Optional[str], user_id: str) -> Optional[str]:
     """This user's role ON THIS PROJECT, or None if they hold no row.
 
-    Both tables, because a user may hold either: `team_members` is written at
-    invite time and `project_assignments` at acceptance, and
-    `server.is_project_member` already falls back the same way. Asking only one
-    would make the answer depend on which half of the invite flow ran.
+    ONE table now — `public.project_assignments`. It used to be two, falling
+    back to `team_members` because that one was written at invite time and this
+    one at acceptance, so asking only one made the answer depend on which half
+    of the invite flow had run. Migration 195 (phase 1 of the tenancy cutover,
+    applied 2026-08-22) closed that split by copying every active `team_members`
+    row with no counterpart into `project_assignments`: 127 rows, all
+    role='member', none with a NULL user_id. Re-measured immediately before this
+    change — 198 active `team_members`, 219 `project_assignments`, ZERO active
+    rows unmatched, ZERO roles disagreeing. So the fallback could only ever
+    return a role the first query had already returned, and the second lookup
+    was a round trip to be told the same thing.
+
+    That is the whole safety argument, and it is a SUPERSET argument, not a
+    "the old table is dead" one: the fallback can be dropped because every
+    grant it could find is in the table above it. `team_members` is still
+    WRITTEN — `auth_router` and the invite flow keep both tables in step — and
+    it stays written until PROPOSED_080's rename, because the rename is only
+    reversible while it is maintained.
+
+    Schema-qualified. There is a `qa_cleanup_20260822.team_members` shadow copy
+    in this database; migration 142 is what this project learned from an
+    unqualified name resolving to the wrong schema.
 
     NEVER the JWT. `users.role` is a per-user GLOBAL column that rode in the
     token, so it answers what the flag said when the token was minted, and it
@@ -152,15 +183,9 @@ async def project_role(pool, team_id: Optional[str], user_id: str) -> Optional[s
     """
     if not team_id:
         return None
-    role = _role_of(await pool.fetchrow(
-        "SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",
-        team_id, user_id,
-    ))
-    if role:
-        return role
     return _role_of(await pool.fetchrow(
-        "SELECT role FROM team_members "
-        "WHERE team_id=$1 AND user_id=$2 AND status='active'",
+        "SELECT role FROM public.project_assignments "
+        "WHERE team_id = $1::text AND user_id = $2::text",
         team_id, user_id,
     ))
 
@@ -255,8 +280,9 @@ async def assert_client_of_project(
     """Refuse a client-approval forward whose TARGET is not a client here.
 
     THE SERVER IS THE BOUNDARY, NOT THE DROPDOWN. `GET /api/teams/{id}/clients`
-    already returns exactly the right list — `team_members.role='client'` scoped
-    to the team — and both UIs already render it (`ApprovalsPage.jsx`,
+    already returns exactly the right list — `project_assignments.role='client'`
+    scoped to the team, and it read `team_members` until the phase-2 cutover on
+    2026-08-22 — and both UIs already render it (`ApprovalsPage.jsx`,
     `TaskDrawer.jsx`). Neither forward path checked that the posted email came
     from it: both did a bare `SELECT ... FROM users WHERE email=$1` over the
     whole users table, with no org, no project and no role predicate, and then

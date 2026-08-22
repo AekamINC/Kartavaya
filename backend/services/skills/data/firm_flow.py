@@ -592,9 +592,11 @@ LADDER = (
 #: Roles that may act on a `public.approvals` row. Taken from what the product
 #: actually enforces — `services/skills/data/my_desk.py` and
 #: `server.py`'s pending-approvals endpoint both gate on
-#: `project_assignments.role IN ('owner','admin')`, with `team_members` as the
-#: second path for the task-level mechanism. Both are read here so the answer
-#: to "who is this waiting on" matches who can actually press the button.
+#: `public.project_assignments.role IN ('owner','admin')`. `team_members` was
+#: the second path for the task-level mechanism until phase 2 of the tenancy
+#: cutover retired it as a READ; it is still WRITTEN, so nothing was revoked.
+#: That one table is read here so the answer to "who is this waiting on"
+#: matches who can actually press the button.
 APPROVER_ROLES = ("owner", "admin")
 
 #: The org-level roles a stuck approval escalates to. NOT a reporting line —
@@ -769,9 +771,20 @@ async def check_approvals_that_sit(
 
     # ── who can actually press the button ──────────────────────────────────
     #
-    # NAMES, never ids. Both membership paths are read because the product
-    # enforces both, and a "waiting on" that names somebody with no button is
-    # worse than naming nobody.
+    # NAMES, never ids. ONE membership path — `public.project_assignments` —
+    # because that is now the only one the product enforces here: `my_desk`'s
+    # pending-approvals query was switched to it in the same change, and a
+    # "waiting on" that names somebody with no button is worse than naming
+    # nobody. The UNION with `public.team_members` that used to sit under this
+    # query cannot have contributed a name of its own since migration 195: every
+    # active `team_members` row has a `project_assignments` row at the identical
+    # role (198 against 219, 0 unmatched, 0 disagreements, measured 2026-08-22),
+    # so the second half of the UNION was de-duplicating rows into the first.
+    #
+    # `full_name` on `project_assignments` is blank on 193 of the 219 live rows,
+    # which is why `public.users` is COALESCEd FIRST and the table's own column
+    # is only the last resort. Reading the assignment row's copy first would
+    # have made most approvers nameless.
     team_ids = sorted({r["team_id"] for r in rows})
     approvers: dict[str, list[str]] = {}
     if team_ids:
@@ -785,16 +798,6 @@ async def check_approvals_that_sit(
             LEFT JOIN public.users u ON u.user_id = pa.user_id
             WHERE pa.team_id::text = ANY($1::text[])
               AND pa.role::text = ANY($2::text[])
-            UNION
-            SELECT tm.team_id::text, tm.role::text,
-                   COALESCE(NULLIF(btrim(u2.full_name), ''),
-                            NULLIF(btrim(u2.name), ''),
-                            NULLIF(btrim(tm.full_name), ''))
-            FROM public.team_members tm
-            LEFT JOIN public.users u2 ON u2.user_id = tm.user_id
-            WHERE tm.team_id::text = ANY($1::text[])
-              AND tm.role::text = ANY($2::text[])
-              AND tm.status = 'active'
             """,
             team_ids, list(APPROVER_ROLES),
         )

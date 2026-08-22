@@ -110,9 +110,18 @@ def _wire(mock_pool, *, project_role="admin", task_row=TASK, column=None,
           task_client=False, org_admin=False, forward_target=None):
     """Answer the queries a task write path asks, with ONE knob that matters.
 
-    `project_role` is what `project_assignments` / `team_members` say about the
-    CALLER on this project — the thing the guard is supposed to read. Every
-    refusal test in this file changes only that knob.
+    `project_role` is what `public.project_assignments` says about the CALLER on
+    this project — the thing the guard is supposed to read. Every refusal test
+    in this file changes only that knob.
+
+    It used to mean "what `project_assignments` OR `team_members` says", and one
+    knob covered both because the guard fell back from the first to the second.
+    Phase 2 of the tenancy cutover dropped that fallback (migration 195 had
+    already made `project_assignments` a strict superset at identical roles), so
+    the knob now describes one table and the tests are unchanged — which is the
+    point: if dropping the fallback had cost anybody a role, a refusal test here
+    would have gone green for the wrong reason and a permission test would have
+    gone red.
     """
     async def fetchrow_side(query, *args):
         q = " ".join(query.split())
@@ -138,7 +147,17 @@ def _wire(mock_pool, *, project_role="admin", task_row=TASK, column=None,
                     "display": "X", "full_name": "X"}
         if "FROM task_clients" in q:
             return {"1": 1} if task_client else None
-        if "FROM project_assignments" in q or "FROM team_members" in q:
+        # `public.project_assignments` is `task_actor.project_role`'s ONLY read
+        # since phase 2 of the tenancy cutover (2026-08-22). The bare names are
+        # still matched because `server.py`'s own membership predicates have not
+        # been migrated yet and this fixture answers for them too — drop them
+        # from this line only when the last unqualified reader is gone, and NOT
+        # by loosening it to a bare "project_assignments", which would also
+        # match `SELECT team_id FROM project_assignments` in `fetch_side` and
+        # start answering a list query with a single role row.
+        if ("FROM public.project_assignments" in q
+                or "FROM project_assignments" in q
+                or "FROM team_members" in q):
             if project_role is None:
                 return None
             # Owner/admin-filtered probes must not be satisfied by a client row.
@@ -157,7 +176,12 @@ def _wire(mock_pool, *, project_role="admin", task_row=TASK, column=None,
 
     async def fetch_side(query, *args):
         q = " ".join(query.split())
-        if "team_id FROM teams" in q or "SELECT team_id FROM project_assignments" in q:
+        # `get_visible_team_ids` schema-qualifies since phase 2 of the tenancy
+        # cutover. Matched on the fragment WITHOUT the schema so both spellings
+        # hit — an unmatched visibility query returns [] and shows up as a 403
+        # on a read route, which reads exactly like a guard bug and is not one.
+        if "team_id FROM teams" in q or "SELECT team_id FROM public.project_assignments" in q \
+                or "SELECT team_id FROM project_assignments" in q:
             return [{"team_id": "team_001"}]
         return []
 
@@ -364,6 +388,10 @@ class TestRefusesTheClient:
         assert r.status_code == 200, r.text
         assert all(x["status"] == 403 for x in r.json()["results"]), r.json()
 
+        # Counts `public.project_assignments` reads. It counted BOTH tables'
+        # reads before 2026-08-22 and the number was still 1, because the memo
+        # is on the answer and not on the query — so this assertion means the
+        # same thing it always did, against one table instead of two.
         role_reads = [c for c in conn.fetchrow.call_args_list
                       if "project_assignments" in " ".join(str(c.args[0]).split())]
         assert len(role_reads) == 1, (
@@ -506,9 +534,12 @@ class RolePool:
 
     async def fetchrow(self, query, *args):
         q = " ".join(query.split())
-        if "FROM project_assignments" in q:
+        # `server.is_project_member` names the schema since phase 2 of the
+        # tenancy cutover; the bare spelling is kept so this pool still answers
+        # for any caller that has not been migrated yet.
+        if "FROM public.project_assignments" in q or "FROM project_assignments" in q:
             return {"role": self.pa_role} if self.pa_role else None
-        if "FROM team_members" in q:
+        if "FROM public.team_members" in q or "FROM team_members" in q:
             return {"role": self.tm_role} if self.tm_role else None
         if "FROM teams" in q:
             return {"org_id": self.org_id}
@@ -574,14 +605,36 @@ class TestIsProjectMember:
             "the admin question must be asked ABOUT THIS TEAM'S ORG, not globally"
 
     async def test_a_membership_row_still_wins_with_no_admin_row_at_all(self, monkeypatch):
+        """A `project_assignments` row is a membership on its own — and is now the ONLY one.
+
+        This test used to assert BOTH halves: that a `project_assignments` row
+        won, and that a `team_members` row won through the explicit fallback
+        underneath it. The second half is gone with phase 2 of the
+        `PROPOSED_080` retirement, and the assertion is inverted rather than
+        deleted, because "a team_members row is no longer a membership" is the
+        load-bearing new fact and it deserves to fail loudly if it reverses.
+
+        What makes the inversion safe is migration 195, not optimism. Measured
+        live on 2026-08-22 after it was applied: 198 active `team_members` rows,
+        219 `project_assignments` rows, ZERO active `team_members` rows without a
+        `project_assignments` twin, and ZERO rows where the two disagree about
+        role. `RolePool(tm_role=...)` therefore describes a combination that no
+        longer exists in the database — which is exactly why refusing it costs
+        nobody their project.
+        """
         async def _no(user_id, org_id=None):
             return False
         monkeypatch.setattr("middleware.roles.is_org_admin", _no)
         from server import is_project_member
         assert (await is_project_member(RolePool(pa_role="owner"), "team_001",
                                         {"user_id": "u", "role": "member"}))["role"] == "owner"
-        assert (await is_project_member(RolePool(tm_role="member"), "team_001",
-                                        {"user_id": "u", "role": "member"}))["role"] == "member"
+        assert await is_project_member(RolePool(tm_role="member"), "team_001",
+                                       {"user_id": "u", "role": "member"}) is None, (
+            "a `team_members` row with no `project_assignments` twin was still "
+            "accepted as a project membership. Phase 2 reads one table; if this "
+            "fallback comes back it re-creates the divergence migration 195 "
+            "closed, and the two readers of this rule start disagreeing again"
+        )
 
     async def test_it_returns_the_real_role_not_a_synthetic_label(self, monkeypatch):
         """Five of its ten call sites inspect `mem['role']`.
@@ -751,7 +804,9 @@ def _wire_forward(mock_pool, *, target, target_is_project_client, caller_role="o
             return target
         if "FROM tasks" in q:
             return TASK
-        if "FROM project_assignments" in q or "FROM team_members" in q:
+        if ("FROM public.project_assignments" in q
+                or "FROM project_assignments" in q
+                or "FROM team_members" in q):
             # args are (team_id, user_id) on every one of these.
             subject = args[1] if len(args) > 1 else None
             if target and subject == target["user_id"]:

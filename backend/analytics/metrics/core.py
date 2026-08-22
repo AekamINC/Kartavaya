@@ -241,7 +241,10 @@ absent_metric(
     unit="pct",
     grain="flow",
     absent="The denominator does not exist: no capacity, contracted-hours or "
-           "FTE column on public.users, public.team_members or "
+           "FTE column on public.users, public.project_assignments (the "
+           "membership table, re-checked 2026-08-22 — assignment_id, team_id, "
+           "user_id, role, assigned_at, assigned_by, receives_approval_emails, "
+           "full_name, position, company_name, member_role) or "
            "staging.manav_employees. Hours worked are recorded; hours "
            "available are not.",
 )

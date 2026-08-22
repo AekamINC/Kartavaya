@@ -34,14 +34,30 @@ async def _resolve_mentions(pool, body: str, team_id):
     """
     found = {}
 
-    # Pass 1 — team members, matched on their full display name.
+    # Pass 1 — project members, matched on their full display name.
+    #
+    # `public.project_assignments`, not `public.team_members`. This is PROJECT
+    # membership — "who is on this task's project and may therefore be named in
+    # its comments" — which is exactly what phase 2 of the tenancy cutover moves
+    # onto `project_assignments`. Migration 195 made that table a strict superset
+    # of the active rows in `team_members` (219 against 198, no unmatched row, no
+    # role disagreement, measured 2026-08-22), so the candidate pool can only be
+    # the same or larger: nobody who used to be mentionable stops being so.
+    #
+    # No `status` filter, because `project_assignments` has no status column — a
+    # row IS the membership. `team_members` needed one to model a pending invite;
+    # all 198 live rows are 'active' regardless.
+    #
+    # Schema-qualified: a `qa_cleanup_20260822.team_members` shadow table exists
+    # in this database, and migration 142 is what this project learned about
+    # unqualified names resolving into the wrong schema.
     if team_id:
         members = await pool.fetch(
             """
             SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS display
-            FROM team_members tm
-            JOIN users u ON u.user_id = tm.user_id
-            WHERE tm.team_id = $1 AND tm.status = 'active'
+            FROM public.project_assignments pa
+            JOIN public.users u ON u.user_id = pa.user_id
+            WHERE pa.team_id = $1::text
             """,
             team_id,
         )

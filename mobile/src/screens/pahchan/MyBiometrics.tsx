@@ -6,6 +6,7 @@ import { pahchanApi, enrollmentApi, type ReferencePhoto } from '../../api/pahcha
 import { FAMILY } from '../../theme/fonts';
 import { useAuth } from '../../hooks/useAuth';
 import AttendanceNotice from './AttendanceNotice';
+import RulesCard from './RulesCard';
 import { localAck } from './noticeAck';
 import { PAHCHAN_NOTICE_VERSION } from './noticeCopy';
 
@@ -186,6 +187,14 @@ export default function MyBiometrics({ t }: { t: any }) {
         retention={r}
         acknowledgedAt={noticeAckedAt}
       />
+
+      {/* ── What decides about you, after what is held about you ────────────
+          Deliberately below the notice and the retention promise, because those
+          two answer "what is recorded" and this answers "what is judged" — and
+          somebody reading this screen because a punch was flagged is looking for
+          the second. Renders nothing on a backend older than the rules block:
+          see RulesCard, which has no defaults of its own on purpose. */}
+      <RulesCard t={t} rules={mine?.rules} />
     </View>
   );
 }

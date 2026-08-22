@@ -487,13 +487,33 @@ async def may_reach_project(pool, team_id: str | None, user_id: str) -> bool:
     admin to their own tenant's projects and to no one else's. A team with no
     `org_id` has no tenant to administer, so the admin leg simply does not open
     on it and membership remains the only way in.
+
+    ── WHY THE `team_members` LEG IS GONE ─────────────────────────────────────
+
+    This is the CANONICAL note for the whole phase-2 sweep; the other thirteen
+    migrated reads point here rather than restate it.
+
+    Project membership ran on two tables that disagreed. Migration
+    `195_reconcile_team_members_into_project_assignments.sql` closed the gap —
+    every active `team_members` row now has a `project_assignments` row at the
+    IDENTICAL role — so `project_assignments` is a strict superset and dropping
+    the `team_members` leg from a READ cannot revoke anybody. Measured on the
+    live database after 195 landed: 198 active `team_members`, 219
+    `project_assignments`, 0 missing, 0 role disagreements, and the 21 extra
+    rows are all `owner`. That is the entire safety argument, and it holds only
+    while every writer keeps feeding BOTH tables — which is why phase 2 removes
+    reads and touches no write. See `PROPOSED_080_team_members_retire.sql`,
+    step 2 of "THE ORDER THAT MUST BE FOLLOWED".
+
+    This particular leg is PROJECT membership, not org membership, despite
+    living in the role middleware: the org question is asked separately below,
+    at request time, against `staging.user_roles`. The two were never the same
+    check and are not merged here.
     """
     if not team_id:
         return False
     row = await pool.fetchrow(
-        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
-        "UNION ALL "
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+        "SELECT 1 FROM public.project_assignments WHERE team_id=$1 AND user_id=$2 "
         "LIMIT 1",
         team_id, user_id,
     )

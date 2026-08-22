@@ -42,7 +42,16 @@ def _pool_for(widgets, member_of):
 
     async def _fetch(sql, *args):
         calls.append((sql, args))
-        if "team_members" in sql:
+        # The membership query. It read `team_members` UNION
+        # `project_assignments` until phase 2 of the retirement recorded in
+        # `PROPOSED_080_team_members_retire.sql`; migration 195 made
+        # `project_assignments` a strict superset at identical roles, so the
+        # route now asks one table. Matching on the wrong name here does not
+        # fail loudly — it returns [], `_allowed_teams` comes back EMPTY, and
+        # the deadlines widget short-circuits to no tasks at all. The test then
+        # reports "the deadlines widget never queried", which is a fixture
+        # miss wearing the costume of a product bug.
+        if "project_assignments" in sql:
             return [_row(team_id=t) for t in member_of]
         return []
 

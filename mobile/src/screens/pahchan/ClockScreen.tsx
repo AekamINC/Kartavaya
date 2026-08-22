@@ -104,6 +104,10 @@ interface Fix {
   lat?: number;
   lng?: number;
   accuracy_m?: number;
+  /** Metres above sea level, and how sure the device is of it. Both stay
+   *  undefined when the fix carried none — see `readFix`. */
+  altitude_m?: number;
+  altitude_accuracy_m?: number;
   mock_location?: boolean | null;
   /** Why there is no fix, if there isn't one. Shown to the employee verbatim. */
   problem?: string;
@@ -161,6 +165,21 @@ async function readFix(): Promise<Fix> {
       // Never rounded and never defaulted to 0 (§4). A missing accuracy stays
       // undefined so the server flags it, because 0 would read as a perfect fix.
       accuracy_m: pos.coords.accuracy ?? undefined,
+      // ── The vertical half of the fix ──────────────────────────────────────
+      // `altitude` and `altitudeAccuracy` sit in the same `coords` object that
+      // lat, lng and accuracy are read from, and were the only members of it
+      // this function ignored. Migration 193 gave a site an altitude and a
+      // tolerance; nothing ever sent a height to compare against them, so the
+      // vertical fence could not fire on any punch in the product.
+      //
+      // `?? undefined`, NEVER `?? 0`, and this is the one that would do harm.
+      // A device reporting no altitude is ORDINARY — indoors, and permanently
+      // on some Android hardware — and 0 is not "unknown", it is sea level. A
+      // site at 14m with a ±10m window would then flag every punch from that
+      // handset, every day, for a fact about the phone rather than the person.
+      // Absent stays absent and the server records "not reported".
+      altitude_m: pos.coords.altitude ?? undefined,
+      altitude_accuracy_m: pos.coords.altitudeAccuracy ?? undefined,
       // Android exposes this; iOS does not, so `undefined` there means "not
       // checked on this platform", which is not the same as "checked, clean".
       mock_location: (pos as { mocked?: boolean }).mocked ?? null,
@@ -394,6 +413,10 @@ export default function ClockScreen() {
         lat:           fix.lat,
         lng:           fix.lng,
         accuracy_m:    fix.accuracy_m,
+        // Queued, not only sent: a punch may wait 72 hours here, and a field
+        // the queue does not carry is one an offline punch loses for good.
+        altitude_m:          fix.altitude_m,
+        altitude_accuracy_m: fix.altitude_accuracy_m,
         mock_location: fix.mock_location,
         retry_count:   retakes,
         photo_uri:     small.uri,

@@ -8,6 +8,7 @@ import { SkeletonRegion, SkeletonCard, SkeletonTable } from '../../components/ui
 import Note from '../../components/module/Note';
 import { noticeLines } from '../../lib/pahchanNotice';
 import DateInput from '../../components/ui/DateInput';
+import RulesPanel from './Rules';
 
 /**
  * History — the employee's own month. `17-mobile-app.md:129` lists it as
@@ -563,6 +564,18 @@ export default function History() {
           </DataTable>
         )}
       </Section>
+
+      {/* ── The rules, before the retention promise ─────────────────────────
+          Order is deliberate. "What is held about you" answers what is
+          RECORDED; this answers what is JUDGED, and the second is the one that
+          costs somebody a conversation with their manager. It renders nothing
+          on a backend older than the `rules` block rather than falling back to
+          figures of its own — see RulesPanel. */}
+      {data.rules && (
+        <Section title="What decides a flag" hi="नियम">
+          <RulesPanel rules={data.rules} />
+        </Section>
+      )}
 
       <Section title="What is held about you" hi="आपका विवरण">
         {/* 07 §9, in plain words and not buried in a policy page: "someone whose

@@ -607,8 +607,17 @@ async def create_org(
 
     tm = None
     if owner:
+        # PROJECT membership, not org membership: the question is "does this
+        # person already have a project this organisation can be founded on",
+        # and the org collision is checked one statement below against
+        # `staging.organisations.team_id`. Asking `staging.user_roles` here
+        # would answer a different question and return no team at all.
+        #
+        # `project_assignments` alone since migration 195 made it a strict
+        # superset of active `team_members` — so this finds at least the team
+        # it found before. Canonical note: `middleware/roles.may_reach_project`.
         tm = await pool.fetchrow(
-            "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' LIMIT 1",
+            "SELECT team_id FROM public.project_assignments WHERE user_id=$1 LIMIT 1",
             owner["user_id"],
         )
 
@@ -1794,9 +1803,12 @@ async def add_member(
     invitation with the 409 all five writers share, whoever is asking: the cap
     is the customer's contract, not a permission.
 
-    The `team_members` row stays too. It is not a second membership model — it
-    is the row the rest of the product joins through, and an org_admin without
-    one is an invitation that lands somewhere unusable.
+    The project-membership row stays too, and it is now written to BOTH tables.
+    It is not a second membership model — it is the row the rest of the product
+    joins through, and an org_admin without one is an invitation that lands
+    somewhere unusable. The product reads `project_assignments`; this endpoint
+    used to write only `team_members`, so the seat it granted was invisible to
+    every reader migrated in phase 2. See the block comment at the write.
     """
     pool = await get_pool()
 
@@ -1835,18 +1847,53 @@ async def add_member(
         pool, org_id, email=body.email, user_id=target["user_id"],
     )
 
+    # ── BOTH membership tables, deliberately ────────────────────────────────
+    #
+    # Phase 2 of the `team_members` retirement (PROPOSED_080) removes READS of
+    # `team_members` and keeps every WRITE. The rename in step 4 is reversible
+    # only while the old table is still maintained, so a writer that fed one
+    # table would reopen the very divergence migration 195 just closed — and
+    # this writer fed only `team_members`, which meant a god-mode-added org
+    # admin got a seat the whole rest of the product no longer reads.
+    #
+    # The pre-check is NOT redundant with `ON CONFLICT DO NOTHING`:
+    # `public.team_members` has no unique constraint on (team_id, user_id) —
+    # its only unique index is the surrogate `id` — so the ON CONFLICT clause
+    # there matches nothing and the SELECT is what actually stops the duplicate.
+    # `public.project_assignments` DOES carry UNIQUE (team_id, user_id), so its
+    # ON CONFLICT is real and needs no guard.
+    #
+    # No `::text` cast is needed on any of the three statements below, and the
+    # reason is worth stating because the opposite case cost this project a
+    # broken invite path: `team_members.user_id` is `text` while
+    # `project_assignments.user_id` is `character varying`, and asyncpg has to
+    # deduce ONE type per placeholder PER PREPARED STATEMENT. These are three
+    # separate statements, so each placeholder sees exactly one column and the
+    # deduction is unambiguous. The cast is mandatory only where a single
+    # statement spans both tables — see `auth_router.accept_invite`, whose
+    # `INSERT INTO project_assignments … SELECT … FROM team_members` carries
+    # the full story of the 500 that produced half-created accounts.
     is_team_member = await pool.fetchval(
-        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
+        "SELECT 1 FROM public.team_members "
+        "WHERE team_id=$1 AND user_id=$2 AND status='active'",
         org["team_id"], target["user_id"],
     )
     if not is_team_member:
         await pool.execute(
-            "INSERT INTO team_members (member_id, team_id, email, user_id, role, status) "
+            "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status) "
             "VALUES ($1, $2, $3, $4, 'member', 'active') "
             "ON CONFLICT DO NOTHING",
             f"mem_{uuid.uuid4().hex[:12]}", org["team_id"],
             body.email, target["user_id"],
         )
+    await pool.execute(
+        "INSERT INTO public.project_assignments "
+        "  (assignment_id, team_id, user_id, role, assigned_by) "
+        "VALUES ($1, $2, $3, 'member', $4) "
+        "ON CONFLICT (team_id, user_id) DO NOTHING",
+        f"assign_{uuid.uuid4().hex[:12]}", org["team_id"],
+        target["user_id"], user["user_id"],
+    )
 
     await pool.execute(
         "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "

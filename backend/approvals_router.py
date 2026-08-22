@@ -157,10 +157,13 @@ async def assert_may_act_on_task(pool, task, user) -> None:
 
     team_id = task.get("team_id")
     if team_id:
+        # PROJECT membership, and `project_assignments` alone now answers it:
+        # migration 195 made it a strict superset of active `team_members` at
+        # identical roles, so the dropped leg cannot have admitted anybody this
+        # one does not. Canonical note: `middleware/roles.may_reach_project`.
         member = await pool.fetchrow(
-            "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
-            "UNION SELECT 1 FROM team_members "
-            "WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
+            "SELECT 1 FROM public.project_assignments "
+            "WHERE team_id=$1 AND user_id=$2 LIMIT 1",
             team_id, user["user_id"],
         )
         if member:
@@ -177,15 +180,18 @@ async def assert_may_act_on_task(pool, task, user) -> None:
 
 
 async def is_project_owner(pool, team_id: str, user_id: str) -> bool:
-    """Return True if the user is an owner or admin of the given team (via either membership table)."""
-    member = await pool.fetchrow("""
-        SELECT role FROM team_members
-        WHERE team_id=$1 AND user_id=$2 AND status='active'
-    """, team_id, user_id)
-    if member and member["role"] in ("owner", "admin"):
-        return True
+    """Return True if the user is an owner or admin of the given team.
+
+    Was two round trips — `team_members` first, `project_assignments` as the
+    fallback — because the two tables disagreed about who held which role.
+    Migration 195 reconciled them: every active `team_members` row has a
+    `project_assignments` row at the SAME role, so the first query could only
+    ever have answered what the second already does. One query now, and the
+    UNIQUE (team_id, user_id) on `project_assignments` makes it a single index
+    probe. Canonical note: `middleware/roles.may_reach_project`.
+    """
     pa = await pool.fetchrow("""
-        SELECT role FROM project_assignments
+        SELECT role FROM public.project_assignments
         WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')
     """, team_id, user_id)
     return bool(pa)
@@ -315,9 +321,13 @@ async def request_approval(task_id: str, payload: ApprovalRequest,
     if not task["team_id"]:
         raise HTTPException(400, "Cannot request approval for personal tasks")
 
+    # Who gets asked to approve — PROJECT membership, so `project_assignments`.
+    # `status='active'` has no counterpart there and needs none: the table only
+    # ever holds live grants, and a pending invitation has no `user_id` to
+    # notify. Canonical note: `middleware/roles.may_reach_project`.
     owner = await pool.fetchrow("""
-        SELECT user_id FROM team_members
-        WHERE team_id=$1 AND role IN ('owner','admin') AND status='active'
+        SELECT user_id FROM public.project_assignments
+        WHERE team_id=$1 AND role IN ('owner','admin')
         ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END LIMIT 1
     """, task["team_id"])
     if not owner:
@@ -454,7 +464,15 @@ async def reject_task(task_id: str, payload: ApprovalRequest,
 
 @router.get("/tasks/pending-approval", response_model=List[dict])
 async def get_pending_approvals(pool=Depends(get_pool), user=Depends(require_user)):
-    """Return all tasks with approval_status='pending' that the user can action."""
+    """Return all tasks with approval_status='pending' that the user can action.
+
+    Both branches ask PROJECT membership and both now ask it of
+    `project_assignments` alone. The admin branch previously OR'd the two
+    tables, so it could show an admin a queue row whose task detail
+    `may_reach_project` would then refuse — the two lists are back in step
+    because they read the same table. Canonical note:
+    `middleware/roles.may_reach_project`.
+    """
     from middleware.roles import is_org_admin
     if await is_org_admin(user["user_id"]):
         # Admins see only teams they are actually a member of — no cross-team data leak.
@@ -465,10 +483,8 @@ async def get_pending_approvals(pool=Depends(get_pool), user=Depends(require_use
             JOIN users u ON u.user_id = t.created_by_user_id
             LEFT JOIN teams tm ON tm.team_id = t.team_id
             WHERE t.approval_status = 'pending'
-              AND (
-                EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
-                OR EXISTS (SELECT 1 FROM team_members tmem WHERE tmem.team_id=t.team_id AND tmem.user_id=$1 AND tmem.status='active')
-              )
+              AND EXISTS (SELECT 1 FROM public.project_assignments pa
+                           WHERE pa.team_id=t.team_id AND pa.user_id=$1)
             ORDER BY t.approval_requested_at DESC
         """, user["user_id"])
     else:
@@ -478,10 +494,10 @@ async def get_pending_approvals(pool=Depends(get_pool), user=Depends(require_use
             FROM tasks t
             JOIN users u ON u.user_id = t.created_by_user_id
             LEFT JOIN teams tm ON tm.team_id = t.team_id
-            JOIN team_members tmem ON tmem.team_id = t.team_id AND tmem.user_id = $1
+            JOIN public.project_assignments pa
+              ON pa.team_id = t.team_id AND pa.user_id = $1
             WHERE t.approval_status = 'pending'
-              AND tmem.role IN ('owner', 'admin')
-              AND tmem.status = 'active'
+              AND pa.role IN ('owner', 'admin')
             ORDER BY t.approval_requested_at DESC
         """, user["user_id"])
     return [dict(t) for t in tasks]

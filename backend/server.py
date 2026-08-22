@@ -4,9 +4,13 @@ Monolith routes stay; new v2 routers mounted at the bottom.
 R2 upload router replaces the old base64 /api/upload endpoint.
 
 Bug fixes (2026-05-14):
-  FIX #4: get_visible_team_ids now UNIONs team_members so users who
-          were invited and registered after the invite (no project_assignments
-          row) can still see their teams.
+  FIX #4: get_visible_team_ids UNIONed team_members so users who were invited
+          and registered after the invite (no project_assignments row) could
+          still see their teams. SUPERSEDED 2026-08-22 — migration 195 copied
+          every one of those rows into project_assignments (the gap was 127),
+          so the UNION now has nothing left to add and the reads below ask one
+          table. See "PHASE 2" on get_visible_team_ids for what still writes
+          both, and why it must keep doing so.
   FIX #5: update_team_member guards the project_assignments role UPDATE
           with `if payload.role` to avoid writing NULL when only status
           is being changed.
@@ -636,7 +640,34 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
     """Return team IDs visible to user_id, WITHIN ONE ORGANISATION.
 
     Caches result in _team_ids_request_cache for the duration of a request.
-    FIX #4: UNIONs team_members so users invited before registering still see teams.
+
+    ── PHASE 2: THIS READS `project_assignments`, NOT `team_members` ───────────
+
+    Project membership used to be answered by TWO tables that disagreed, and
+    every leg below UNIONed them. `PROPOSED_080_team_members_retire.sql` records
+    the six-step retirement; migration 195 was step 1 and is applied.
+
+    Measured on the live database AFTER 195, on 2026-08-22:
+
+        team_members (every row status='active')                   198
+        project_assignments                                        219
+        active team_members with NO project_assignments row           0
+        project_assignments with no active team_members row          21
+        rows where the two disagree about ROLE                        0
+
+    `project_assignments` is a strict superset of `team_members` at identical
+    roles. That — and only that — is what makes dropping the `team_members` leg
+    safe: it cannot narrow anybody's answer, because there is no row it was
+    contributing that the other table does not already carry. If somebody
+    reverses migration 195, this function starts revoking access silently, so
+    do not un-apply it without putting the leg back first.
+
+    THE WRITES STILL GO TO BOTH TABLES. `create_team`, `_ensure_default_owner`,
+    `add_team_member`, `update_team_member` and `remove_team_member` all
+    maintain `team_members` alongside `project_assignments`, because step 4 of
+    the retirement is a RENAME and a rename is only reversible while the renamed
+    table is still current. Cutting the reads over and the writes over in one
+    change throws the rollback away.
 
     ── `include_archived` DEFAULTS TO TRUE, AND THAT DIRECTION IS DELIBERATE ──
 
@@ -770,14 +801,17 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
             "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org)
         result = [r["team_id"] for r in all_teams]
     elif org:
-        # THE SAME THREE LEGS, ANCHORED TO `teams`. `project_assignments` and
-        # `team_members` carry no `org_id` of their own, so a UNION of them
-        # cannot be scoped — which is exactly how a member of two orgs got both
-        # orgs' teams. Anchoring on `teams` and asking the membership questions
-        # as EXISTS puts `t.org_id = $2` in front of every leg at once, so there
-        # is one place the predicate can go missing instead of three.
+        # THE SAME LEGS, ANCHORED TO `teams`. `project_assignments` carries no
+        # `org_id` of its own, so a membership query cannot be scoped on its own
+        # — which is exactly how a member of two orgs got both orgs' teams.
+        # Anchoring on `teams` and asking the membership questions as EXISTS
+        # puts `t.org_id = $2` in front of every leg at once, so there is one
+        # place the predicate can go missing instead of three.
         #
-        # `t.deleted_at IS NULL` now covers all three legs. It previously
+        # There were THREE legs here until 2026-08-22; the `team_members` one is
+        # gone, per the phase-2 note in this function's docstring. Two remain.
+        #
+        # `t.deleted_at IS NULL` now covers both legs. It previously
         # governed only the `user_roles` leg, so a soft-deleted project still
         # appeared for anyone holding a direct assignment row on it.
         #
@@ -824,22 +858,16 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
             WHERE t.deleted_at IS NULL
               AND (
                 (t.org_id = $2::uuid AND (
-                    EXISTS (SELECT 1 FROM project_assignments pa
+                    EXISTS (SELECT 1 FROM public.project_assignments pa
                              WHERE pa.team_id = t.team_id AND pa.user_id = $1)
-                    OR EXISTS (SELECT 1 FROM team_members tm
-                                WHERE tm.team_id = t.team_id AND tm.user_id = $1
-                                  AND tm.status = 'active')
                     OR EXISTS (SELECT 1 FROM staging.user_roles ur
                                 WHERE ur.user_id = $1 AND ur.org_id = t.org_id
                                   AND ur.role_code IN ('org_owner','org_admin','org_member'))
                 ))
-                OR (t.org_id IS NULL AND (
-                    EXISTS (SELECT 1 FROM project_assignments pa
+                OR (t.org_id IS NULL AND
+                    EXISTS (SELECT 1 FROM public.project_assignments pa
                              WHERE pa.team_id = t.team_id AND pa.user_id = $1)
-                    OR EXISTS (SELECT 1 FROM team_members tm
-                                WHERE tm.team_id = t.team_id AND tm.user_id = $1
-                                  AND tm.status = 'active')
-                ))
+                )
               )
             """,
             user_id, org,
@@ -852,21 +880,20 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
         # to leak from, and the `user_roles` leg is dropped entirely because it
         # would match nothing — what is left is their own membership rows, which
         # is also what reaches the 2 live teams that carry no `org_id` at all.
+        #
+        # This was a UNION with `team_members` until 2026-08-22. It is now one
+        # SELECT, so the query is no longer a set operation across two columns
+        # of different types — which is the shape that used to need a cast.
         rows = await pool.fetch(
-            """
-            SELECT team_id FROM project_assignments WHERE user_id=$1
-            UNION
-            SELECT team_id FROM team_members WHERE user_id=$1 AND status='active'
-            """,
+            "SELECT team_id FROM public.project_assignments WHERE user_id=$1",
             user_id,
         )
         result = [r["team_id"] for r in rows]
 
     # Drop archived projects, if this caller asked to. Applied to the ASSEMBLED
-    # list rather than to each query above, because the non-admin branch UNIONs
-    # `project_assignments` and `team_members`, neither of which carries
-    # `archived_at` — filtering there would mean three more joins to express one
-    # rule, and a rule expressed three times is a rule that will disagree with
+    # list rather than to each query above: `project_assignments` does not carry
+    # `archived_at`, so filtering there would mean repeating one rule once per
+    # branch, and a rule expressed three times is a rule that will disagree with
     # itself.
     #
     # Guarded on the column existing: migration 104 is applied by hand and the
@@ -948,15 +975,16 @@ async def is_project_member(pool, team_id: str, user: dict) -> dict | None:
 
     # Membership first: it is the specific answer, and the caller needs the real
     # role rather than the label an admin escape hatch would overwrite it with.
+    #
+    # ONE TABLE. There used to be a second fetch here — "fallback: team_members
+    # covers users added after their invite acceptance" — and it was true until
+    # migration 195 copied all 127 of those rows across. Live after 195: zero
+    # active `team_members` rows lack a `project_assignments` twin, and zero
+    # rows disagree about role, so the fallback could only ever return a row
+    # this query has already returned. Deleting it removes a second definition
+    # of the same rule, which is the whole point of phase 2.
     row = await pool.fetchrow(
-        "SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",
-        team_id, user["user_id"]
-    )
-    if row:
-        return row
-    # Fallback: team_members covers users added after their invite acceptance
-    row = await pool.fetchrow(
-        "SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
+        "SELECT role FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",
         team_id, user["user_id"]
     )
     if row:
@@ -2515,22 +2543,30 @@ def _may_approve(team_col: str, idx: int) -> str:
     stats all call it. Two readers of one number must not be able to disagree
     about who may see it — that is the whole content of this bug.
 
-    ── Why `role IN ('owner','admin')` on both tables ────────────────────────
+    ── Why `role IN ('owner','admin')` ───────────────────────────────────────
 
     An approval is an act of authority, not of membership. A plain member of a
     project is not entitled to approve its work, and the badge's old admin
     branch admitted `pa.user_id=$1` with no role at all — which is the widest
     of the four rules and the reason its number was the largest.
+
+    ── ONE TABLE, SINCE 2026-08-22 ───────────────────────────────────────────
+
+    Cause (1) above — "203 team_members rows, 92 project_assignments rows, 129
+    people in the first and not the second" — is the exact divergence migration
+    195 closed. Measured live after it: 49 active `team_members` rows carry
+    owner/admin, and every one of them has a `project_assignments` row at the
+    SAME role (the owner/admin-only-in-team_members population is 0). So the
+    second EXISTS that used to sit here could not admit anybody the first does
+    not already admit, and it is gone. It read `tm.user_id=${idx}` against a
+    `text` column while the first reads a `character varying` one, which is the
+    ambiguity `auth_router`'s sync comment warns about; with one table left, the
+    parameter has exactly one target type and needs no cast.
     """
     return (
-        f" AND ("
-        f"EXISTS (SELECT 1 FROM public.project_assignments pa "
+        f" AND EXISTS (SELECT 1 FROM public.project_assignments pa "
         f"WHERE pa.team_id={team_col} AND pa.user_id=${idx} "
         f"AND pa.role IN ('owner','admin'))"
-        f" OR EXISTS (SELECT 1 FROM public.team_members tm "
-        f"WHERE tm.team_id={team_col} AND tm.user_id=${idx} "
-        f"AND tm.role IN ('owner','admin') AND tm.status='active')"
-        f")"
     )
 
 
@@ -2679,14 +2715,14 @@ async def approval_stats(pool=Depends(get_db), user=Depends(require_user), org=D
 # They sit beside /approvals/pending on purpose: the queue and the switch that
 # fills it are one surface, and the caller predicate must be the same in both.
 
+# Same rule as `_may_approve`, and it lost its `team_members` arm in the same
+# change and for the same measured reason: after migration 195 no owner/admin
+# exists in that table without an identical `project_assignments` row.
 _POLICY_PROJECTS_PREDICATE = """
-    t.deleted_at IS NULL AND t.archived_at IS NULL AND (
-        EXISTS (SELECT 1 FROM project_assignments pa
-                 WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
-     OR EXISTS (SELECT 1 FROM team_members tm
-                 WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin')
-                   AND tm.status='active')
-    )
+    t.deleted_at IS NULL AND t.archived_at IS NULL
+    AND EXISTS (SELECT 1 FROM public.project_assignments pa
+                 WHERE pa.team_id=t.team_id AND pa.user_id=$1
+                   AND pa.role IN ('owner','admin'))
 """
 
 _POLICY_UNAVAILABLE = (
@@ -2926,12 +2962,13 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
         # Must be owner/admin of the project
         task = await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1", task_id)
         if not task: raise HTTPException(404, "Task not found")
+        # `is_tm` — the same question asked of `team_members` — used to sit
+        # here. It is gone with the rest of phase 2; see `_may_approve`, which
+        # is the fragment the QUEUE uses for this identical rule. The two must
+        # agree about who may approve, and the surest way to keep them agreeing
+        # is for both to name one table.
         is_pa = await pool.fetchrow(
-            "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')",
-            task["team_id"], user["user_id"]
-        )
-        is_tm = await pool.fetchrow(
-            "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin') AND status='active'",
+            "SELECT 1 FROM public.project_assignments WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')",
             task["team_id"], user["user_id"]
         )
         is_admin = (await is_org_admin(user["user_id"], org) if org
@@ -2940,7 +2977,7 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
             is_admin = await task_is_in_org(
                 pool, org, team_id=task["team_id"],
                 owner_ids=(task["user_id"], task["created_by_user_id"]))
-        if not (is_pa or is_tm or is_admin):
+        if not (is_pa or is_admin):
             raise HTTPException(403, "Only project owner/admin can review task approvals")
 
         if status == "rejected":
@@ -2951,12 +2988,8 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
         return await _approve_task_mark_done(pool, dict(task), task_id, notes, user)
     approval=await pool.fetchrow("SELECT * FROM approvals WHERE approval_id=$1",approval_id)
     if not approval: raise HTTPException(404)
-    mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",approval["team_id"],user["user_id"])
-    if not mem:
-        mem = await pool.fetchrow(
-            "SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
-            approval["team_id"], user["user_id"]
-        )
+    # One table, as above and for the same reason.
+    mem=await pool.fetchrow("SELECT role FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",approval["team_id"],user["user_id"])
     is_owner_admin = mem and mem["role"] in ("owner","admin")
     is_system_admin = (await is_org_admin(user["user_id"], org) if org
                        else await is_org_admin(user["user_id"]))
@@ -3278,9 +3311,14 @@ async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depen
     for s in subtasks:
         if s["subtask_id"]==subtask_id:
             if body.assignee_user_id is not None:
-                # Validate the assignee belongs to this task's team
+                # Validate the assignee belongs to this task's team. This was a
+                # UNION across both membership tables; `project_assignments` is
+                # now a superset of the active rows in the other, so the second
+                # arm could only ever return a duplicate. Dropping it also drops
+                # a set operation whose two `user_id` columns had different
+                # types — the shape that makes asyncpg guess and PgBouncer 500.
                 member=await pool.fetchrow(
-                    "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 UNION SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
+                    "SELECT 1 FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",
                     task["team_id"], body.assignee_user_id
                 )
                 if not member: raise HTTPException(400,"Assignee is not a member of this project")
@@ -3328,13 +3366,13 @@ async def list_teams(since:Optional[str]=None,
     admin_here = await is_org_admin(user["user_id"], str(org) if org else None)
     my_admin_teams: set[str] = set()
     if not admin_here:
+        # One table since phase 2 — see `get_visible_team_ids`. `can_admin` must
+        # agree with `require_project_admin`, which reads `is_project_member`,
+        # which reads `project_assignments`; a card offering an Archive button
+        # that the archive route then refuses is worse than no button.
         mine = await pool.fetch(
-            "SELECT team_id FROM project_assignments "
-            "WHERE user_id=$1 AND team_id=ANY($2::text[]) AND role IN ('owner','admin') "
-            "UNION "
-            "SELECT team_id FROM team_members "
-            "WHERE user_id=$1 AND team_id=ANY($2::text[]) AND status='active' "
-            "  AND role IN ('owner','admin')",
+            "SELECT team_id FROM public.project_assignments "
+            "WHERE user_id=$1 AND team_id=ANY($2::text[]) AND role IN ('owner','admin')",
             user["user_id"], team_ids)
         my_admin_teams = {r["team_id"] for r in mine}
     out = []
@@ -3394,8 +3432,16 @@ async def _ensure_default_owner(pool, team_id: str, creator: dict):
     owner = await pool.fetchrow("SELECT user_id, email FROM users WHERE email=$1", DEFAULT_OWNER_EMAIL)
     if not owner:
         return
-    # team_id is freshly created here, so no existing row can collide —
-    # neither table has a unique constraint on (team_id,user_id) to upsert against.
+    # DUAL WRITE, and it stays dual until the whole of `PROPOSED_080` is done —
+    # the reads moved to `project_assignments` in phase 2, the writes did not,
+    # because the rename in step 4 is only reversible while this table is still
+    # being maintained.
+    #
+    # team_id is freshly created here, so no existing row can collide.
+    # `team_members` has no unique constraint on (team_id,user_id) to upsert
+    # against; `project_assignments` does (migration 009,
+    # `project_assignments_team_user_unique`), so if this ever stops being
+    # called on a brand-new team the second INSERT is the one that will raise.
     await pool.execute(
         "INSERT INTO team_members (member_id,team_id,email,user_id,role,status) "
         "VALUES ($1,$2,$3,$4,'owner','active')",
@@ -3562,10 +3608,9 @@ async def list_users(request:Request,pool=Depends(get_db),user=Depends(require_u
 @api_router.get("/teams/{team_id}")
 async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return a project with its member list and the caller's role."""
-    # Check project_assignments first, fall back to team_members
-    mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
-    if not mem:
-        mem=await pool.fetchrow("SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",team_id,user["user_id"])
+    # `project_assignments` alone — the `team_members` fallback that used to sit
+    # under this line went with the rest of phase 2.
+    mem=await pool.fetchrow("SELECT role FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
     if not mem:
         # No membership row of either kind. Before refusing, ask the SAME
         # question GET /teams asks, via the same helper — otherwise list and
@@ -3593,6 +3638,24 @@ async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user),o
         # frontend's your_role handling needs no new branch.
         mem={"role":"admin"}
     team=await pool.fetchrow("SELECT * FROM teams WHERE team_id=$1",team_id)
+    # ── THIS ROSTER DELIBERATELY STAYS ON `team_members`, AND IT IS THE THING
+    #    THAT BLOCKS `PROPOSED_080` STEP 4 ──────────────────────────────────
+    #
+    # It is not an authorisation read — the gate above already answered that
+    # from `project_assignments`. It is the read-back of the member CRUD three
+    # routes below, and that CRUD writes BOTH tables on purpose (phase 2 cuts
+    # the reads over, not the writes; the rename in step 4 is only reversible
+    # while `team_members` is still maintained).
+    #
+    # It also cannot move yet even if the writes did. `project_assignments` has
+    # no `member_id`, no `email` and no `status` (verified against the live
+    # catalogue 2026-08-22), so it cannot represent a person who was invited by
+    # email and has not registered — `add_team_member` writes exactly that row,
+    # with `user_id` NULL and `status='invited'`, and skips the assignment
+    # table because `user_id` is NOT NULL there. Retiring `team_members`
+    # therefore needs a decision first: either `project_assignments` grows those
+    # three columns, or pending invitations move to a table of their own. That
+    # decision is the owner's, and it is not a read cutover.
     members=await pool.fetch("""
         SELECT tm.*,COALESCE(u.full_name,u.name,u.email) AS display_name,
                u.position,u.company_name,u.member_role,u.receives_approval_emails
@@ -3602,29 +3665,57 @@ async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user),o
 
 @api_router.get("/teams/{team_id}/clients")
 async def list_team_clients(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
-    """Returns users with role='client' in the team — for the send-to-client dropdown."""
+    """Returns users with role='client' in the team — for the send-to-client dropdown.
+
+    Reads `project_assignments`, not `team_members`: this list decides who a
+    task may be FORWARDED to, which is an access question, and it must give the
+    same answer as `is_project_member` — the gate one line above — or the
+    dropdown offers a name the forward then refuses. Live 2026-08-22 both tables
+    hold the same 2 client rows, so this is not a widening here; it is the same
+    answer from the table that will still exist after step 4.
+
+    INNER JOIN, not LEFT: an assignment naming a user that does not exist would
+    render a blank line rather than be dropped. Zero such rows live, and the
+    join keeps it that way.
+    """
     mem=await is_project_member(pool,team_id,user)
     if not mem: raise HTTPException(403,_NOT_TEAM_MEMBER)
     rows=await pool.fetch("""
-        SELECT tm.user_id, COALESCE(u.full_name,u.name,u.email) AS display_name, u.email
-        FROM team_members tm
-        LEFT JOIN users u ON u.user_id=tm.user_id
-        WHERE tm.team_id=$1 AND tm.status='active' AND tm.user_id IS NOT NULL
-          AND tm.role='client'
+        SELECT pa.user_id, COALESCE(u.full_name,u.name,u.email) AS display_name, u.email
+        FROM public.project_assignments pa
+        JOIN public.users u ON u.user_id=pa.user_id
+        WHERE pa.team_id=$1 AND pa.role='client'
         ORDER BY display_name ASC
     """,team_id)
     return [dict(r) for r in rows]
 
 @api_router.get("/teams/{team_id}/members")
 async def list_team_members(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
-    """Returns member list for @mention autocomplete. Accessible to all project members incl. clients."""
+    """Returns member list for @mention autocomplete. Accessible to all project members incl. clients.
+
+    Reads `project_assignments`. @mention is an access question — you may only
+    usefully mention somebody who can open the task — so it must match
+    `get_visible_team_ids`, and that now names this table alone.
+
+    THIS IS A SMALL WIDENING, and it is the point. Live 2026-08-22 there are 21
+    `project_assignments` rows with no active `team_members` twin: people
+    granted a project through the newer path (`auth_router`'s sync,
+    `invite_router`, the org console). Every one of them can already open the
+    project — `get_visible_team_ids` admitted them before this change too — and
+    none of them could be @mentioned on it. That was the defect, not the fix.
+
+    The `user_id IS NOT NULL` filter this query used to carry is now the
+    schema's job: `project_assignments.user_id` is NOT NULL, so a pending
+    email-only invitation simply has no row here. Those people cannot read the
+    task yet either, so offering them in the picker was never right.
+    """
     mem=await is_project_member(pool,team_id,user)
     if not mem: raise HTTPException(403,_NOT_TEAM_MEMBER)
     rows=await pool.fetch("""
-        SELECT tm.user_id, COALESCE(u.full_name,u.name,u.email) AS display_name, u.email
-        FROM team_members tm
-        LEFT JOIN users u ON u.user_id=tm.user_id
-        WHERE tm.team_id=$1 AND tm.status='active' AND tm.user_id IS NOT NULL
+        SELECT pa.user_id, COALESCE(u.full_name,u.name,u.email) AS display_name, u.email
+        FROM public.project_assignments pa
+        JOIN public.users u ON u.user_id=pa.user_id
+        WHERE pa.team_id=$1
         ORDER BY display_name ASC
     """,team_id)
     return [dict(r) for r in rows]
@@ -3656,10 +3747,54 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
     updates.append(f"updated_at=${len(vals)+1}"); vals.append(now_utc()); vals+=[team_id,member_id]
     row=await pool.fetchrow(f"UPDATE team_members SET {', '.join(updates)} WHERE team_id=${len(vals)-1} AND member_id=${len(vals)} RETURNING *",*vals)
     if not row: raise HTTPException(404)
-    # FIX #5: only sync project_assignments role when a role was actually provided.
-    # Without this guard a status-only PATCH would write None/NULL into role.
-    if payload.role and row["user_id"]:
-        await pool.execute("UPDATE project_assignments SET role=$1 WHERE team_id=$2 AND user_id=$3",payload.role,team_id,row["user_id"])
+    # ── BOTH HALVES OF THIS PATCH NOW REACH `project_assignments` ────────────
+    #
+    # FIX #5 (2026-05-14) made the ROLE sync conditional, because a status-only
+    # PATCH was writing NULL into `project_assignments.role`. That guard is
+    # right and stays. What it left behind was the other half: the STATUS was
+    # never synced at all, because `project_assignments` has no `status` column
+    # — membership there is the existence of the row.
+    #
+    # That was survivable only while the reads UNIONed both tables and asked
+    # `team_members.status='active'`. Phase 2 stopped asking: `is_project_member`
+    # and `get_visible_team_ids` now read `project_assignments` alone, so
+    # deactivating somebody in the roster while leaving their assignment row
+    # standing would have REVOKED NOTHING — they would keep the project, the
+    # tasks and the board, and the screen would say they were removed. A
+    # deactivation that does not deactivate is the worst possible outcome of a
+    # read cutover, and it is the one this closes.
+    #
+    # So: any status that is not 'active' deletes the assignment row, and 'active'
+    # puts it back. Re-activation needs the role, and `payload.role` may be
+    # absent on a status-only PATCH — `row` is the UPDATE's RETURNING, so it
+    # carries the role as it now stands whether or not this call changed it.
+    #
+    # `team_members.role` is unconstrained text; `project_assignments.role` has
+    # a CHECK for ('owner','admin','member','client'). A roster role outside that
+    # set would make this INSERT raise and turn a member edit into a 500, so it
+    # is mapped to 'member' — the least privilege the CHECK admits — rather than
+    # rejected. Live 2026-08-22 every role in both tables is inside the set, so
+    # this maps nothing today; it exists so a future stray value degrades to
+    # "still a member" instead of an error.
+    #
+    # The upsert is `ON CONFLICT (team_id,user_id)`, the unique constraint
+    # migration 009 added and the live catalogue confirms. `$3::varchar` is
+    # explicit because `user_id` is `character varying` here and `text` in the
+    # roster row this value came out of.
+    if row["user_id"]:
+        _pa_role = row["role"] if row["role"] in ("owner","admin","member","client") else "member"
+        if payload.status is not None and payload.status != "active":
+            await pool.execute(
+                "DELETE FROM public.project_assignments WHERE team_id=$1 AND user_id=$2::varchar",
+                team_id, row["user_id"])
+        elif payload.role or payload.status == "active":
+            await pool.execute(
+                "INSERT INTO public.project_assignments "
+                "(assignment_id,team_id,user_id,role,assigned_by) "
+                "VALUES ($1,$2,$3::varchar,$4,$5) "
+                "ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
+                f"assign_{uuid.uuid4().hex[:12]}", team_id, row["user_id"],
+                _pa_role, user["user_id"])
     return TeamMemberOut(**dict(row))
 
 @api_router.delete("/teams/{team_id}")
@@ -4160,13 +4295,17 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
     if new_status == "done" and team_id:
         try:
             # "Project admin" is read from `project_assignments`, which is where
-            # the approval gate already reads it (server.py:2409). The other copy
-            # of the rule, `team_members.role`, gives a different answer: it names
-            # an owner or admin on 44 of 52 live projects where
-            # `project_assignments` names one on all 52, and on at least one
-            # project the two disagree about who the admins are. Two fan-outs
-            # answering "who runs this project" differently is how a person ends
-            # up on one list and not the other.
+            # the approval gate reads it. When this was written the other copy of
+            # the rule, `team_members.role`, gave a DIFFERENT answer: an owner or
+            # admin on 44 of 52 live projects where `project_assignments` named
+            # one on all 52, and on at least one project the two disagreed about
+            # who the admins were. Two fan-outs answering "who runs this project"
+            # differently is how a person ends up on one list and not the other.
+            #
+            # That divergence is closed: migration 195 reconciled the two and
+            # every membership read in this file was cut over to
+            # `project_assignments` on 2026-08-22. This query needed no change —
+            # it was already reading the table that won.
             #
             # Assignees are taken from the task, not from membership, so someone
             # assigned to a project they do not belong to is still told their own

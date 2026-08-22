@@ -17,11 +17,12 @@ router = APIRouter(prefix="/api/views", tags=["views"])
 async def _assert_team_access(pool, team_id: str, user: dict):
     if await is_platform_staff(user["user_id"]):
         return
+    # PROJECT membership, one table since migration 195 made
+    # `project_assignments` a strict superset of active `team_members`.
+    # Canonical note: `middleware/roles.may_reach_project`.
     row = await pool.fetchrow(
-        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
-        "UNION ALL "
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
-        "LIMIT 1",
+        "SELECT 1 FROM public.project_assignments "
+        "WHERE team_id=$1 AND user_id=$2 LIMIT 1",
         team_id, user["user_id"],
     )
     if not row:

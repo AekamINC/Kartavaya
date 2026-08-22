@@ -94,6 +94,88 @@ re-examine whether `refuse_grant`'s no-owner fallback can be retired.
 
 ---
 
+### 4. Ten exits carry an old clearance shape — normalise them, or leave them?
+
+**Status:** OPEN · the guard is fixed either way; this is about the ten rows.
+
+**What I found.** `POST /v1/manav/offboarding/{id}/complete` refuses to close an
+exit while clearance is outstanding — "what it cannot do is close silently and
+discover next quarter that a laptop was never returned". **That guard has never
+fired.** It read the column as a list of `{item, owner, done}`, and 10 of the 11
+live exits carry an older shape, an object: `{"hr": false, "finance": false,
+"it_assets": true}`. Iterating an object yields strings, nothing is ever counted
+as pending, and the exit closes with every item untouched. Two exits have
+already been closed that way. The screen showed an empty checklist rather than a
+half-ticked one, which is why nobody noticed.
+
+**Already done, no decision needed:** the backend now reads both shapes, and the
+screen renders the object form as a real, tickable checklist. Ticking an item
+writes the new shape, so the ten rows convert themselves one deliberate click at
+a time.
+
+**What you decide:** whether I should also rewrite the ten rows into the new
+shape in one pass. I have not, because they are somebody's real clearance state
+and changing a customer's data to suit our newer shape is a different decision
+from reading what is there.
+
+**Also worth your eye, and NOT something I can decide:** two exits were completed
+with clearance untouched. If a laptop or an ID card is genuinely outstanding on
+either, that is a real-world chase, not a code fix. I can name the two records
+whenever you want them.
+
+**What I finish once you say:** one migration, backed up first, counts verified.
+
+---
+
+### 5. The 10 org-less projects — I measured them, and they are not what we assumed
+
+**Status:** OPEN · this is the last thing between tenancy phase 3 and the
+`org_id NOT NULL` constraint (PROPOSED_079). Everything else in the cutover is
+done.
+
+**The standing assumption**, which I was told and which I checked rather than
+trusted: *"teams with org_id NULL are live projects"*. Measured against the live
+database on 2026-08-22, all ten are test debris:
+
+| what | count | evidence |
+|---|---|---|
+| soft-deleted "Solar Technocast" duplicates | **8** | created 18 Jul within 30 seconds of each other, `deleted_at` 25 Jul, **0 tasks each** |
+| "FY 2026-27 Statutory Audit — Shah & Associates" and "…Shah and Associates" | **2** | created 28 Jul 43 seconds apart, near-duplicate names, **0 tasks**, only the 5 default columns |
+
+The two that are not deleted were **created by the QA Org Admin account** — one
+of the logins evicted from every live org in the 22 August cleanup — with
+Kartavya App Admin as the other owner. Neither belongs to any organisation,
+neither has ever held a task, and nobody outside those two accounts can see
+them.
+
+**Why it matters now.** PROPOSED_079 constrains `teams.org_id` to NOT NULL.
+That is phase 4 of the cutover and it fails while any of these ten exists.
+PROPOSED_078's own open question (Q5, decision 1) is exactly this.
+
+**What you decide** — three options, my recommendation first:
+
+1. **Delete all ten.** They are QA artefacts with no tasks, and eight are
+   already deleted. Backed up to a restore schema first, counts verified after,
+   the same way the 22 August cleanup was done.
+2. Assign the two live ones to an organisation, and delete the eight deleted
+   ones. Says which firm they belong to — but they have no content to belong to
+   anyone.
+3. Leave `teams.org_id` nullable permanently, and drop PROPOSED_079's
+   constraint. This keeps the door open for a project that belongs to no
+   organisation, which is a real thing to want and a real thing to have to
+   defend for every query that scopes by org.
+
+**I have not touched them.** You named org-less teams specifically as the thing
+not to clean, and the measurement disagreeing with that is exactly when I should
+show you the measurement rather than act on it. A delete is irreversible.
+
+**What I finish once you say:** the deletion or the assignment, then PROPOSED_079
+and PROPOSED_081 (RLS is on for 98 tables and off for 203). The rename in
+PROPOSED_080 stays last and stays a separate decision — its own header says to
+watch a full business cycle between the rename and the drop.
+
+---
+
 ## DONE
 
 *(nothing yet — items move here with the date and what I finished)*
