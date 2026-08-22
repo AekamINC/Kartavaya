@@ -22,6 +22,59 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Open from the 2026-08-22 session
 
+- [ ] **Arm the two crons that are finished and unscheduled** `infra` `@me` `!!`
+  Both need pasting into the Railway dashboard: the Railway MCP available to Claude
+  reads config fine but returns `Unauthorized` on writes.
+
+  **1. `cron-publish`** — the service already exists (`d7f9b207`), on `curlimages/curl`,
+  with `CRON_SECRET` set. It has no start command and no schedule, so it does nothing.
+  `publish` currently runs once a day inside `cron-daily`.
+
+  Start Command (literal — Railway does NOT shell-interpret this field, the `sh -c`
+  wrapper does that itself):
+
+      sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavya-staging.up.railway.app/api/internal/cron/$p"); echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1; done; exit $rc'
+
+  Cron Schedule: `*/15 * * * *`
+
+  Copied from `cron-niyam`, which is armed and working. **After saving, force a FRESH
+  deploy** (bump `DEPLOY_NUDGE`) — a redeploy reuses the old config snapshot, so the
+  service looks armed while still running the empty command. Once it returns 200,
+  remove `publish` from the `cron-daily` list, which is currently
+  `hr invoices crm stock marketing publish skills scraper-prices`. That order matters:
+  briefly running twice is safe, briefly not at all is not.
+
+  **2. `POST /api/reports/dispatch`** — THE report cron, and nothing calls it.
+  `/cron/reports` is a 501 stub and must stay one (`scheduler.py:778`), but the job it
+  points at is complete: `routers/reports.py:480` reads
+  `report_schedules WHERE next_run_at <= now`, renders the PDF and Excel, mails every
+  recipient inside an `org_scope`, and advances `next_run_at`. Its own docstring says
+  "called hourly by Railway cron".
+
+  Different secret and different header from every other cron here —
+  `REPORT_DISPATCH_SECRET`, sent as `X-Dispatch-Secret`. Do NOT use the `?request_secret=`
+  query form: it still works for back-compatibility but writes the secret into every
+  access, proxy and platform log the request passes through.
+
+      sh -c 'c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Dispatch-Secret: $REPORT_DISPATCH_SECRET" "https://kartavya-staging.up.railway.app/api/reports/dispatch"); echo "dispatch -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || exit 1'
+
+  Cron Schedule: `0 * * * *` (hourly, as the docstring specifies).
+
+  **Known caveat before arming, not a blocker:** this path sends with `org_id = NULL`
+  on the outbound record (`email_service.py:1203`), because there is no request
+  underneath it for `outbound.begin()` to read an org from. Every report it mails will
+  be invisible to the org-scoped reads in `routers/billing.py`. The fix is one join —
+  `dispatch_reports` already holds the schedule's `team_id` and `teams.org_id` has
+  existed since migration 028 — either passing `org_id=` or wrapping the loop body in
+  `outbound.org_scope(org_id)`. Worth doing first if report sends need to be billable.
+
+- [ ] Never arm `/cron/reports` or `/cron/esign` `infra`
+  Both are 501 stubs — the endpoint exists only to say the feature does not. Arming
+  either buys an hourly red light, not a feature. The real jobs are above
+  (`/api/reports/dispatch`) and, for esign, NOT the nearest neighbour:
+  `document_expiry.process_expiry` is real and unscheduled but does a DIFFERENT job —
+  contracts expiring within 7 days — so wiring it to the esign URL would mislabel it.
+
 - [ ] Pahchan: populate `employee_id` on the notice acknowledgement `db` `api` `!!`
   THE ONLY ITEM ON THIS LIST WITH A LIVE LEGAL EXPOSURE. 12 employees of a
   real org (Unicode Group) have enrolment photos and 699 punches against them.

@@ -602,7 +602,73 @@ by inbox order, since every inbox item carries equal priority.</p>
   </ul>
 </div>
 
-<h2>8 &middot; Still open</h2>
+<h2>8 &middot; Crons — armed, and the two that are still not</h2>
+
+<div class="card ok">
+  <h4>Niyam rules: all eight now live</h4>
+  <p>Six of eight rules were unarmed. <span class="mono">enabled</span> and
+  <span class="mono">is_armed</span> are separate gates and a rule needs both, so four of
+  them would have done nothing even if only &ldquo;armed&rdquo;. All eight now carry both,
+  with the prior state saved to
+  <span class="mono">qa_cleanup_20260822.niyam_rules_before_arming</span>.</p>
+  <p>Blast radius measured before arming, not after: <strong>0</strong> overdue Aekam
+  invoices, <strong>9</strong> tasks overdue by three days or more, <strong>0</strong> stale
+  contacts, and <span class="mono">task.status_changed</span> is forward-only.</p>
+  <p class="quiet">One to watch: <em>&ldquo;Email the customer a weekly payment
+  reminder&rdquo;</em> is the only rule that mails <strong>external customers</strong>. It
+  sends nothing today, but the moment a real invoice goes overdue it emails that customer
+  directly with no further gate.</p>
+</div>
+
+<div class="card warn">
+  <h4>Two finished jobs that nothing schedules</h4>
+  <p>Both need pasting into the Railway dashboard — the Railway MCP reads config but
+  returns <span class="mono">Unauthorized</span> on writes. Exact values are in
+  <span class="mono">TASKS.md</span>.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Job</th><th>State</th><th>Schedule</th></tr>
+    <tr><td><span class="mono">cron-publish</span></td>
+        <td>The service <strong>exists</strong> (<span class="mono">d7f9b207</span>) with
+            <span class="mono">CRON_SECRET</span> set, and has no start command, so it does
+            nothing. <span class="mono">publish</span> runs once daily inside
+            <span class="mono">cron-daily</span> meanwhile.</td>
+        <td class="mono">*/15 * * * *</td></tr>
+    <tr class="hot"><td><span class="mono">POST /api/reports/dispatch</span></td>
+        <td><strong>The report cron, and nothing calls it.</strong>
+            <span class="mono">reports.py:480</span> reads due schedules, renders PDF and
+            Excel, mails every recipient in an <span class="mono">org_scope</span> and
+            advances <span class="mono">next_run_at</span>. Its own docstring says
+            &ldquo;called hourly by Railway cron&rdquo;. Uses
+            <span class="mono">REPORT_DISPATCH_SECRET</span> as
+            <span class="mono">X-Dispatch-Secret</span> — a different secret and header
+            from every other cron.</td>
+        <td class="mono">0 * * * *</td></tr>
+  </table>
+  </div>
+  <p><strong>Caveat on the report cron, worth fixing first if report mail should be
+  billable:</strong> it sends with <span class="mono">org_id = NULL</span> on the outbound
+  record, because there is no request underneath it for
+  <span class="mono">outbound.begin()</span> to read an org from. Every report it mails is
+  invisible to the org-scoped reads in <span class="mono">billing.py</span>. One join fixes
+  it — <span class="mono">dispatch_reports</span> already holds the schedule&rsquo;s
+  <span class="mono">team_id</span>.</p>
+</div>
+
+<div class="card blue">
+  <h4>And two that must stay unarmed</h4>
+  <p><span class="mono">/cron/reports</span> and <span class="mono">/cron/esign</span> are
+  <strong>501 stubs</strong> — endpoints that exist only to say the feature does not.
+  501 is &ldquo;Not Implemented&rdquo;: the request was fine, the server is what is missing.
+  Arming either buys an hourly red light, not a feature.</p>
+  <p>They were left in place rather than deleted so the next reader does not conclude the URL
+  was never planned and build a second one. For esign, note the trap:
+  <span class="mono">document_expiry.process_expiry</span> is real and unscheduled, but does
+  a <em>different</em> job — contracts expiring within seven days — so wiring it to
+  the esign URL would mislabel it.</p>
+</div>
+
+<h2>9 &middot; Still open</h2>
 
 <div class="card">
   <table>
