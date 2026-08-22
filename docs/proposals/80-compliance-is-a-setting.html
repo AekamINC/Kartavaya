@@ -379,6 +379,113 @@ demand opposite behaviour from the product.</p>
   has never been used.</p>
 </div>
 
+<h2>Custom attendance policies — and who gets to see them</h2>
+
+<p>Truein&rsquo;s headline is 70+ customisable attendance policies. That number is not
+seventy concepts: it is roughly <strong>ten policy families multiplied by the levels they
+can be applied at</strong>. Their levels are site, staff category and role.</p>
+
+<div class="card ok">
+  <h3>The shape already exists here, in one dimension</h3>
+  <p><span class="mono">pahchan_policy</span> holds about seventeen org-level settings,
+  and <span class="mono">pahchan_sites.radius_m</span> already overrides
+  <span class="mono">pahchan_policy.default_radius_m</span> per site. That is a resolution
+  chain in miniature, working today for exactly one setting.</p>
+  <p>Generalised, the chain is:</p>
+  <pre>org default  →  site  →  staff category  →  employee</pre>
+  <p>First match wins — the same rule the PO approval matrix uses in proposal 77, and the
+  same reason: an ordered list is something a person can read aloud, and a graph is not.</p>
+  <p>The ten families: <strong>shift timing</strong>, <strong>grace</strong>,
+  <strong>late mark</strong>, <strong>half-day threshold</strong>,
+  <strong>early out</strong>, <strong>overtime</strong>, <strong>geofence</strong>,
+  <strong>photo requirement</strong>, <strong>regularisation window</strong>,
+  <strong>retention</strong>. Seven of the ten are already settable at org level. So this
+  is not a new system — it is a <span class="mono">scope</span> column and one resolver.</p>
+</div>
+
+<h3>The half that matters: what the EMPLOYEE sees</h3>
+
+<div class="card hot">
+  <p>Today the employee sees <strong>verdicts, not rules</strong>.
+  <span class="mono">AttendanceHistory</span> shows late / present / needs review, and its
+  own comment says why it cannot do better:</p>
+  <blockquote style="margin:10px 0;padding:10px 14px;border-left:3px solid var(--rule);color:var(--ink2)">
+    <em>&ldquo;asserting the org&rsquo;s shift policy, and it would be wrong for every
+    six-day week&rdquo;</em>
+  </blockquote>
+  <p>The client does not have the policy, so it cannot explain anything. There is exactly
+  one place with the right instinct — <span class="mono">ClockScreen</span> already says
+  <em>&ldquo;Your device reports a simulated location. This punch will be flagged
+  prominently.&rdquo;</em> That is the pattern; it just lives in one screen and covers one
+  condition.</p>
+</div>
+
+<p>The change is to send the <strong>resolved</strong> policy to the device — not the raw
+configuration, the answer for <em>this</em> person at <em>this</em> site — and render it
+as plain sentences.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Where</th><th>What it says today</th><th>What it should say</th></tr>
+  <tr>
+    <td><strong>Clock screen</strong><br><span class="quiet">before punching</span></td>
+    <td>Nothing about the rules.</td>
+    <td>Shift 9:30&ndash;18:30 &middot; 15 minutes&rsquo; grace &middot; within 150 m of
+        Andheri Office</td>
+  </tr>
+  <tr>
+    <td><strong>A flagged punch</strong></td>
+    <td><span class="mono">late</span> &middot; <span class="mono">geo</span> — a label.</td>
+    <td>Marked late — you clocked in at 09:52. Grace ended 09:45.<br>
+        Outside the geofence — 210 m from Andheri Office, limit 150 m.</td>
+  </tr>
+  <tr>
+    <td><strong>History</strong></td>
+    <td>A coloured chip.</td>
+    <td>The rule and the margin, so a month of &ldquo;late&rdquo; can be understood
+        without asking anyone.</td>
+  </tr>
+  <tr class="note">
+    <td colspan="3">Every one of these numbers already exists on the punch row —
+      <span class="mono">distance_m</span>, <span class="mono">accuracy_m</span>,
+      <span class="mono">captured_at</span>, <span class="mono">flags</span>. Nothing new
+      is measured. The difference is that the employee is told what was measured and what
+      it was compared against.</td>
+  </tr>
+</table>
+</div>
+
+<div class="card blue">
+  <h4>Why this is worth more than the policy engine itself</h4>
+  <ol>
+    <li><strong>&ldquo;Why was I marked late?&rdquo; is the first support question in every
+      attendance product.</strong> Answered on the device, the ticket never opens.</li>
+    <li><strong>DPDP transparency.</strong> An employee whose face and location are being
+      processed should be able to see the rules they are judged by. Today they cannot, and
+      that sits awkwardly beside a consent notice that says what we collect but not what we
+      do with it.</li>
+    <li><strong>Nobody else does it.</strong> Truein, greytHR and Spintly all show the
+      ADMIN the policy and the EMPLOYEE the verdict. Showing the employee the rule is a
+      small change that no competitor has made.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h4>What it costs</h4>
+  <ul>
+    <li>A <span class="mono">scope</span> column on the policy settings
+      (<span class="mono">org</span> / <span class="mono">site</span> /
+      <span class="mono">category</span> / <span class="mono">employee</span>) and one
+      resolver — the sites table and the org policy already exist.</li>
+    <li>One endpoint returning the resolved policy for the caller, so the device holds the
+      answer rather than the configuration.</li>
+    <li>The sentences on three existing mobile screens.</li>
+  </ul>
+  <p>Small, and it pairs naturally with the two consent items — all three touch the same
+  screens, and all three are about telling the employee something the system already
+  knows.</p>
+</div>
+
 <h2>Where the rule cannot hold</h2>
 
 <div class="card warn">

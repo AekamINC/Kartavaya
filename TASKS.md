@@ -36,6 +36,17 @@ Cross out with `- [x]` or just tell me it's done.
   alternative must be offered to anyone who declines. The schema has no column
   meaning declined, exempt or opted-out anywhere outside eSign. An employee who
   refuses cannot be recorded as having refused.
+- [ ] Pahchan: custom policies + show the employee the RULE `db` `api` `web`
+  Truein's "70+ policies" is ~10 families x the levels they apply at. Our shape
+  already exists in one dimension: `pahchan_sites.radius_m` overrides
+  `pahchan_policy.default_radius_m`. Generalise to
+  org -> site -> staff category -> employee, first match wins.
+  THE HALF THAT MATTERS: the employee sees verdicts, not rules.
+  AttendanceHistory's own comment admits it cannot assert shift policy because
+  the client does not have it. Send the RESOLVED policy to the device and say
+  "Marked late — you clocked in at 09:52, grace ended 09:45". Every number is
+  already on the punch row. No competitor does this — they all show the ADMIN
+  the policy and the EMPLOYEE the verdict.
 - [ ] Module compliance settings — build it once `db` `api` `!`
   Proposal 80. One table (`module_compliance_settings`), one resolver, every
   module. THREE states not two: not_applicable / applicable (default, never
