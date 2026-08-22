@@ -75,6 +75,23 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // Layout regressions that ONLY a real browser can see.
+      //
+      // The owner reported every dropdown in the task drawer blank. The values
+      // were in the DOM and correctly coloured — the chevron beside them was
+      // 141px of a 165px button and squeezed each label to zero width, because
+      // a stale bare `.ch { width: 100% }` in sanvaad.css collided with the
+      // picker's chevron class.
+      //
+      // No jsdom test can catch that: jsdom performs no layout, so every width
+      // there is 0 whether the bug is present or not. It has to be measured
+      // against the deployed bundle. Same no-`setup` reason as `skills`: the
+      // owner signs in with Google and has no password for auth.setup.ts.
+      name: 'ui',
+      testMatch: /drawerpickers\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       // The skill shelf and the corner dock, driven as a person drives them.
       // Same reason as `tonight` for having no `setup` dependency: the owner
       // account signs in with Google and has no password for `auth.setup.ts`
