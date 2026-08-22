@@ -321,9 +321,32 @@ them down.</p>
 </table>
 </div>
 
+<div class="card hot">
+  <h3>Storage — two bugs found after this scope was first written</h3>
+  <p><strong>Test connection fails on credentials that work.</strong>
+  <span class="mono">verify_r2_credentials</span> tests by calling
+  <span class="mono">list_buckets</span>, which is an <em>account-level</em> permission. An R2
+  API token scoped to a single bucket — the least-privilege setup Cloudflare recommends
+  — cannot list buckets and is rejected, though it can read and write that bucket
+  perfectly. It also never tests the bucket at all:
+  <span class="mono">R2Credentials</span> carries
+  <span class="mono">bucket_name</span> and the verifier is called with three of its four
+  fields. <strong>This is what blocked the new org.</strong></p>
+  <p><strong>The org id is written twice.</strong>
+  <span class="mono">pahchan.py:467</span> builds
+  <span class="mono">pahchan/{org_id}/punch</span>, and on the platform bucket the resolver
+  prepends <span class="mono">org/{org_id}/</span> as well. Harmless to reads, but no other
+  caller does it.</p>
+  <p>Beyond the bugs, the keys have four different grammars, no date partition, no entity id
+  on any eSign file, and discard the original filename — so a bucket cannot answer
+  &ldquo;show me the files for this agreement&rdquo; without the database.
+  <strong>Proposal 83</strong> has the full flow, the proposed single grammar, and a sketch
+  of the Storage tab.</p>
+</div>
+
 <h2>4 &middot; The scope</h2>
 
-<p>Twelve workstreams, ordered by what unblocks or protects the most — not by size, and not
+<p>Thirteen workstreams, ordered by what unblocks or protects the most — not by size, and not
 by inbox order, since every inbox item carries equal priority.</p>
 
 <div class="scroll">
@@ -382,11 +405,16 @@ by inbox order, since every inbox item carries equal priority.</p>
       <td>Inbox 15. Templates usable as campaigns; whether social moves in.</td>
       <td><span class="tag q">scope first</span></td></tr>
 
+  <tr class="hot"><td class="num">K</td><td><strong>R2 storage</strong></td>
+      <td>Fix the test-connection check that blocks org creation; one key grammar; the
+          Storage tab that shows a file&rsquo;s path. <strong>Proposal 83.</strong></td>
+      <td><span class="tag part">step 1 is small</span></td></tr>
+
   <tr class="hot"><td class="num">L</td><td><strong>Two-factor authentication</strong></td>
       <td>Build it. Optional per org, never mandatory — see below.</td>
       <td><span class="tag no">large</span></td></tr>
 
-  <tr><td class="num">K</td><td>Mobile</td><td>See below.</td><td><span class="tag part">medium</span></td></tr>
+  <tr><td class="num">M</td><td>Mobile</td><td>See below.</td><td><span class="tag part">medium</span></td></tr>
 </table>
 </div>
 
@@ -601,7 +629,7 @@ by inbox order, since every inbox item carries equal priority.</p>
 <div class="foot">
   Proposal 82 &middot; every count measured read-only against the live database on
   2026-08-22 &middot; seven inbox items verified, ten recorded as reported and marked
-  unverified &middot; migration 193 applied and verified &middot; 263 seeded tasks and 3,448 child rows deleted after a full in-database backup &middot; twelve workstreams.
+  unverified &middot; migration 193 applied and verified &middot; 263 seeded tasks and 3,448 child rows deleted after a full in-database backup &middot; thirteen workstreams.
 </div>
 
 </div>
