@@ -13,6 +13,7 @@ import { parseCsv, guessMapping, looksLikeHeader, toLines, FIELDS } from '../../
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 
 export default function BankTab() {
   const { pushToast } = useToast();
@@ -388,6 +389,10 @@ export default function BankTab() {
                 <HeadCell sortKey="reference" sort={view.sort} onSort={view.onSort}>Reference</HeadCell>
                 <HeadCell sortKey="amount" sort={view.sort} onSort={view.onSort} num>Amount</HeadCell>
                 <HeadCell sortKey="is_reconciled" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
+                {/* STATEMENT DATE is the bank's date on the line; this is
+                    when the line was imported into the books. On a
+                    back-dated import the two differ by weeks. */}
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -404,6 +409,7 @@ export default function BankTab() {
                         ? <Badge text="Matched" color="var(--ok)" />
                         : <Badge text="Unmatched" color="var(--warn)" />}
                     </td>
+                    <CreatedCell value={s.created_at} />
                     <td>
                       {s.is_reconciled ? (
                         <button type="button" className="gn-act gn-act--danger"
@@ -425,7 +431,7 @@ export default function BankTab() {
                   </tr>
                   {matchFor === s.id && (
                     <tr>
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <div className="gn-match">
                           <p className="gn-match__h">
                             {Number(s.amount || 0) < 0

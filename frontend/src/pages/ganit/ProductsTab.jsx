@@ -12,6 +12,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 
 const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', cost_price: '', gst_rate: 18, description: '', is_service: false };
 
@@ -248,6 +249,7 @@ export default function ProductsTab() {
                 <HeadCell sortKey="margin" sort={view.sort} onSort={view.onSort} num>Margin</HeadCell>
                 <HeadCell sortKey="gst_rate" sort={view.sort} onSort={view.onSort} num>GST</HeadCell>
                 <HeadCell sortKey="is_service" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -285,6 +287,7 @@ export default function ProductsTab() {
                         color={p.is_service ? 'var(--st-in-review)' : 'var(--st-in-progress)'}
                       />
                     </td>
+                    <CreatedCell value={p.created_at} />
                     <td>
                       <span className="gn-tbl__acts">
                         <button
@@ -312,7 +315,7 @@ export default function ProductsTab() {
                   </tr>
                   {editId === p.id && canWrite && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <form className="gn-form gn-form--accent" onSubmit={saveEdit}>
                           <h4 className="gn-form__h">Edit {p.name}</h4>
                           <ProductFields value={editForm} onChange={setEditForm} />

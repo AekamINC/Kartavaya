@@ -27,6 +27,7 @@ import { useList, ErrorNote, Shim, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 import TableToolbar from '../../components/ui/TableToolbar';
 
 const EXIT_TYPES = [
@@ -290,7 +291,12 @@ export default function ExitsTab({ onUpdate }) {
             <thead>
               <tr>
                 <th>Employee</th><th>Type</th><th>Last day</th>
-                <th>Clearance</th><th>Interview</th><th>Status</th><th />
+                <th>Clearance</th><th>Interview</th><th>Status</th>
+                {/* `SELECT o.*` returns created_at and the server already
+                    orders by it, so this header agrees with the order the
+                    list arrives in rather than contradicting it. */}
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -316,12 +322,13 @@ export default function ExitsTab({ onUpdate }) {
                           {String(r.status).replace(/_/g, ' ')}
                         </span>
                       </td>
+                      <CreatedCell value={r.created_at} />
                       <td className="gr__td--mute">{open ? '▾' : '▸'}</td>
                     </tr>
 
                     {open && (
                       <tr>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <div className="mn-exit__panel">
                             {r.reason && <p className="of__h">“{r.reason}”</p>}
                             <p className="of__h">

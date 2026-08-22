@@ -27,6 +27,7 @@ import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
@@ -346,6 +347,7 @@ export default function ExpensesTab() {
                 <HeadCell sortKey="tax_amount" sort={view.sort} onSort={view.onSort} num>Tax</HeadCell>
                 <HeadCell sortKey="total" sort={view.sort} onSort={view.onSort} num>Total</HeadCell>
                 <HeadCell sortKey="is_billable" sort={view.sort} onSort={view.onSort}>Billable</HeadCell>
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -361,6 +363,7 @@ export default function ExpensesTab() {
                     <td className="tbl__num gn-tbl__mute">{inr(Number(ex.tax_amount || 0))}</td>
                     <td className="tbl__num">{inr(Number(ex.total))}</td>
                     <td>{ex.is_billable ? <Badge text="Yes" color="var(--ok)" /> : '—'}</td>
+                    <CreatedCell value={ex.created_at} />
                     <td>
                       <span className="gn-tbl__acts">
                         <button type="button" className="gn-act" onClick={() => startEdit(ex)}>Edit</button>
@@ -380,7 +383,7 @@ export default function ExpensesTab() {
                   </tr>
                   {editId === ex.id && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <form className="gn-form gn-form--accent" onSubmit={saveEdit}>
                           <h4 className="gn-form__h">Edit expense</h4>
                           <ExpenseFields value={editForm} onChange={setEditForm} categories={categories} />

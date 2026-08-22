@@ -29,6 +29,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 import TableToolbar from '../../components/ui/TableToolbar';
 
 /** The quarter containing `d`, as the two ISO dates the API wants. */
@@ -370,6 +371,11 @@ export default function TargetsTab() {
                 <th className="tbl__num">Target</th>
                 <th className="tbl__num">Actual</th>
                 <th>Achievement</th>
+                {/* The only sortable header on this table. The rest are
+                    plain <th> and always have been; giving them sort keys
+                    is a separate change, and claiming to sort a column
+                    that does not is worse than the plain header. */}
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
                 <th className="vk-tg__acts">&nbsp;</th>
               </tr>
             </thead>
@@ -394,6 +400,7 @@ export default function TargetsTab() {
                       </span>
                     )}
                   </td>
+                  <CreatedCell value={t.created_at} />
                   <td className="vk-tg__acts">
                     {editId === t.id ? (
                       <>

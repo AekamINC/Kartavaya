@@ -21,6 +21,7 @@ import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 
 /**
  * `newNonce` lets the page header's "+ Invoice" button open this tab's create
@@ -163,6 +164,11 @@ export default function InvoicesTab({ newNonce = 0 }) {
                 <HeadCell sortKey="amount_paid" sort={view.sort} onSort={view.onSort} num>Paid</HeadCell>
                 <HeadCell sortKey="balance_due" sort={view.sort} onSort={view.onSort} num>Due</HeadCell>
                 <HeadCell sortKey="status" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
+                {/* An invoice already shows its INVOICE DATE, which is the
+                    date on the document. `created_at` is when the record was
+                    raised in this system, and the two genuinely differ on a
+                    back-dated invoice — so both columns earn their place. */}
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
               </tr>
             </thead>
             <tbody>
@@ -219,6 +225,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
                     {inr(Number(inv.balance_due))}
                   </td>
                   <td><Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || 'var(--on-surface-3)'} /></td>
+                  <CreatedCell value={inv.created_at} />
                 </tr>
               ))}
             </tbody>

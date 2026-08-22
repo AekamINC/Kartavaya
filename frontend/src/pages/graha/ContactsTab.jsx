@@ -26,6 +26,7 @@ import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 
 /**
  * The Indian financial year to date: 1 April → today.
@@ -490,6 +491,7 @@ export default function ContactsTab({ crm = true }) {
                 <HeadCell sortKey="contact_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
                 <HeadCell sortKey="source" sort={view.sort} onSort={view.onSort}>Source</HeadCell>
                 <HeadCell sortKey="lead_score" sort={view.sort} onSort={view.onSort} num>Score</HeadCell>
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
                 <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -517,6 +519,7 @@ export default function ContactsTab({ crm = true }) {
                   <td><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} /></td>
                   <td>{c.source ? <Badge text={c.source} color={SOURCE_COLORS[c.source] || 'var(--on-surface-3)'} /> : '—'}</td>
                   <td className="gr__td--mute">{c.lead_score ?? '—'}</td>
+                  <CreatedCell value={c.created_at} />
                   <td>
                     <button className="k-btn k-btn--reject" onClick={e => { e.stopPropagation(); deleteContact(c.id); }}>Delete</button>
                   </td>
