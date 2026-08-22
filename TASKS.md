@@ -22,6 +22,34 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Open from the 2026-08-22 session
 
+- [ ] GSTR-2B reconciliation + vendor chase `api` `web` `!`
+  RANKED #1 by proposal 78: the CA firm's actual daily pain, and it sits
+  downstream of the purchase register the PO module creates. A bill must be in
+  BOTH the purchase register and GSTR-2B or the ITC is delayed or denied. One
+  documented case moved vendor response from 30% to 70% purely by making
+  follow-up systematic — and we already have the follow-up machinery, since the
+  skills shelf now names a vendor with a phone, an email and a link.
+- [ ] PO over WhatsApp `api` `web` `?`
+  Small once the PO module exists. The research finding is blunt: tools that
+  only email show a "Sent" status weaker than it looks, because the order
+  actually moved over another channel. In India that channel is WhatsApp and we
+  have the Cloud API wired. Precoro cannot do this at $999/month.
+- [ ] Reorder status report `web` `api` `?`
+  Tally's best idea: closing stock, pending POs, pending sales orders, net
+  available, shortfall, one report. Nearly free once POs exist beside stock.
+- [ ] Departments as real records `db` `api` `@me`
+  Unblocks PO budgets, approval-by-department AND the commission scope work.
+  `manav_employees.department` is free text today, blank on 11 of 98.
+- [ ] Audit our compliance against the named bar `@me` `?`
+  Proposal 78 is honest about where we are behind: greytHR ships statutory
+  changes 1-2 weeks after the circular (we have no such process — it is you).
+  Keka names 7 states for PT explicitly. Payroll edge cases (arrears, shift
+  differentials, mid-cycle joiners, unpaid-leave interaction) are where payroll
+  actually breaks and deserve a test sweep before we claim parity. Form 16/24Q:
+  all four competitors generate them; we have a working paper that is explicit
+  it is NOT the certificate.
+
+
 - [ ] Purchase Order system inside Finance `api` `web` `db` `!`
   PROPOSAL COMPLETE: `docs/proposals/77-purchase-orders.html`, rewritten
   2026-08-22 with competitor research, the FAQ every PO product answers, and
