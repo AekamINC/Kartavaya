@@ -264,44 +264,71 @@ otherwise                       →  this org's OWN bucket</pre>
 
 <h2>4 &middot; One grammar</h2>
 
-<p><strong>Each module owns a folder; inside it, a folder per kind of content; inside that,
-whose it is.</strong> Every key in every module, built from the same six parts:</p>
+<p>The owner&rsquo;s shape, stated as four examples:</p>
+<pre>esign/document/user_id/...
+projects/{team_id}/user_id/...
+personal/user_id/...
+pahchan/org#_id/user_id/...</pre>
 
-<pre>{module}/{kind}/{owner}/{owner_id}/{YYYY}/{MM}/{ulid}--{slug}{ext}
-    │       │       │         │         │           │       │
-    │       │       │         │         └── date ───┘       └── the name a person typed,
-    │       │       │         │             partition           lowercased and safe
-    │       │       │         └── which one
-    │       │       └── what it belongs to: document, client, employee, team, user
-    │       └── what KIND of thing this file is
-    └── which module owns it</pre>
+<p>The rule underneath them: <strong>the module owns the top folder, then what the file
+belongs to, then <em>who did it</em>, and the acting user is always the last folder before
+the files.</strong> Applied everywhere, with a date partition added so that retention and
+listing are possible at all:</p>
 
-<p>On the platform bucket the resolver still prepends
-<span class="mono">org/&lt;org_id&gt;/</span>, and on an org&rsquo;s own bucket it does not
-&mdash; unchanged, because that prefix is what tells a reader which bucket holds the object.
-<strong>The tenant never appears in the caller&rsquo;s folder again</strong>, which fixes
-bug 2 by construction.</p>
+<pre>{module}/{belongs to}/{kind}/{user_id}/{YYYY}/{MM}/{ulid}--{slug}{ext}</pre>
 
 <div class="scroll">
 <table>
-  <tr><th>Today</th><th>Under one grammar</th></tr>
-  <tr class="hot"><td class="mono">srijan/images/9f2a1c.png<br>
-      <span class="quiet">every image, every user, every purpose &mdash; one folder</span></td>
-      <td class="mono">srijan/social-image/user/usr_7/2026/08/01JQ8...--diwali-post.png<br>
-      srijan/blog-image/user/usr_7/2026/08/01JQ8...--gst-explainer.png<br>
-      srijan/logo/user/usr_12/2026/08/01JQ8...--mark-v3.png</td></tr>
-  <tr><td class="mono">esign/originals/9f2a.pdf<br>esign/signatures/44bd.png</td>
-      <td class="mono">esign/original/document/doc_9f2a/2026/08/01JQ8...--supply-agreement.pdf<br>
-      esign/signature/document/doc_9f2a/2026/08/01JQ8...--sign-kasti.png</td></tr>
-  <tr><td class="mono">crm/cl_88/documents/7c31.pdf</td>
-      <td class="mono">crm/document/client/cl_88/2026/08/01JQ8...--gst-certificate.pdf</td></tr>
-  <tr><td class="mono">pahchan/&lt;org&gt;/punch/aa19.jpg</td>
-      <td class="mono">pahchan/punch/employee/emp_12/2026/08/01JQ8...--clock-in.jpg</td></tr>
-  <tr><td class="mono">projects/team_ab/f10c.xlsx</td>
-      <td class="mono">projects/attachment/team/team_ab/2026/08/01JQ8...--tb-march.xlsx</td></tr>
-  <tr><td class="mono">personal/&lt;user&gt;/22e8.png</td>
-      <td class="mono">personal/upload/user/usr_7/2026/08/01JQ8...--screenshot.png</td></tr>
+  <tr><th>Module</th><th>Key</th><th>Kinds</th></tr>
+  <tr><td><strong>eSign</strong></td>
+      <td class="mono">esign/{document_id}/{kind}/{user_id}/2026/08/01JQ8...--supply-agreement.pdf</td>
+      <td class="quiet">original, signature, signed, certificate</td></tr>
+  <tr><td><strong>Projects</strong></td>
+      <td class="mono">projects/{team_id}/{user_id}/2026/08/01JQ8...--tb-march.xlsx</td>
+      <td class="quiet">&mdash;</td></tr>
+  <tr><td><strong>CRM</strong></td>
+      <td class="mono">crm/{client_id}/{user_id}/2026/08/01JQ8...--gst-certificate.pdf</td>
+      <td class="quiet">&mdash;</td></tr>
+  <tr><td><strong>Sahayak</strong></td>
+      <td class="mono">srijan/{content_type}/{user_id}/2026/08/01JQ8...--diwali-post.png</td>
+      <td class="quiet">social-image, blog-image, logo, letterhead&hellip;</td></tr>
+  <tr><td><strong>Personal</strong></td>
+      <td class="mono">personal/{user_id}/2026/08/01JQ8...--screenshot.png</td>
+      <td class="quiet">the user IS the owner, so the segment appears once</td></tr>
+  <tr><td><strong>Pahchan</strong></td>
+      <td class="mono">pahchan/{kind}/{employee_id}/2026/08/01JQ8...--clock-in.jpg</td>
+      <td class="quiet">punch, reference</td></tr>
 </table>
+</div>
+
+<div class="card warn">
+  <h3>Two places the shape collides with the layer below &mdash; both need a decision</h3>
+
+  <h4>1 &middot; <span class="mono">pahchan/org#_id/</span> &mdash; the org is already there</h4>
+  <p>The storage layer supplies the tenant itself, and it does so differently depending on
+  which bucket the org is on:</p>
+  <pre>own bucket       key_prefix = ""                 the BUCKET is the tenant
+platform bucket  key_prefix = "org/{org_id}/"    the PREFIX is the tenant</pre>
+  <p>So writing the org id into the caller&rsquo;s folder as well is
+  <strong>redundant on an org&rsquo;s own bucket</strong> (the whole bucket belongs to them)
+  and <strong>duplicated on the platform bucket</strong>, which is bug 2 above &mdash; the id
+  appears twice in one key. It is never load-bearing, because no reader ever parses it: the
+  key is stored verbatim and <span class="mono">_client_for_key</span> only looks at whether
+  it starts <span class="mono">org/</span>.</p>
+  <p><strong>Recommendation:</strong> leave the org out of every caller&rsquo;s folder and let
+  the layer that owns tenancy keep owning it. If you would rather see it, the honest way is
+  to make the Storage tab <em>display</em> the resolved org above the key, not to write it
+  into the key twice.</p>
+
+  <h4>2 &middot; <span class="mono">esign/document/user_id/</span> &mdash; which document?</h4>
+  <p>Written literally, this loses the one thing eSign most needs: every signature for every
+  agreement still shares a folder, so the bucket still cannot answer &ldquo;show me the files
+  for this agreement&rdquo;. The table above therefore reads the second segment as the
+  <strong>document&rsquo;s id</strong> &mdash; matching
+  <span class="mono">projects/{team_id}/</span>, where you did write the id.</p>
+  <p>That also keeps &ldquo;a folder per kind of content&rsquo;&rsquo; from the earlier
+  instruction: kind sits between the document and the user, so one agreement&rsquo;s four
+  file types stay together under one document folder.</p>
 </div>
 
 <div class="card hot">
@@ -314,18 +341,12 @@ folder   = "srijan/images"          &lt;-- flat</pre>
   <p>So every image any person generates, for any purpose, lands in one folder under a random
   name, and <strong>the person who asked for it is never recorded on the file at all</strong>
   &mdash; not in the folder, not in the filename, not even in the
-  <span class="mono">user_id</span> the storage layer was handed. Not even the
-  <span class="mono">personal/{user_id}</span> fallback would help, because the value passed
-  is the literal string <span class="mono">system</span>.</p>
-  <p>Two changes, and they are independent of the rest of this proposal:</p>
-  <ol>
-    <li><strong>Pass the real requesting user</strong> instead of
-      <span class="mono">"system"</span>. This is a one-line fix at each site and it is
-      worth doing on its own.</li>
-    <li><strong>Give the content type its own folder</strong> &mdash; social image, blog
-      image, logo, letterhead, product shot &mdash; taken from the brief that generated it,
-      which Srijan already knows at the moment it calls upload.</li>
-  </ol>
+  <span class="mono">user_id</span> the storage layer was handed. The
+  <span class="mono">personal/{user_id}</span> fallback would not have helped either, because
+  the value passed is the literal string <span class="mono">system</span>.</p>
+  <p>Two fixes, independent of everything else here: <strong>pass the real requesting
+  user</strong> (one line at each site), and <strong>give the content type its own
+  folder</strong>, taken from the brief Srijan already holds when it calls upload.</p>
 </div>
 
 <div class="card ok">
@@ -333,8 +354,9 @@ folder   = "srijan/images"          &lt;-- flat</pre>
   <ul>
     <li><strong>A key explains itself.</strong> Paste one into a ticket and anybody can say
       what it is, whose it is and when it arrived &mdash; without a database.</li>
-    <li><strong>&ldquo;Show me everything this person generated&rdquo;</strong> becomes a
-      prefix listing instead of an impossible question.</li>
+    <li><strong>&ldquo;Everything this person uploaded&rdquo;</strong> and
+      <strong>&ldquo;everything for this client&rdquo;</strong> both become prefix listings
+      instead of impossible questions.</li>
     <li><strong>Retention becomes possible.</strong> Punch photos older than the policy window
       are a date prefix, so a lifecycle rule can expire them &mdash; which the Pahchan
       retention setting currently promises and cannot deliver.</li>
@@ -343,19 +365,6 @@ folder   = "srijan/images"          &lt;-- flat</pre>
     <li><strong>The filename survives</strong>, so support can search for what the customer
       actually called it.</li>
   </ul>
-</div>
-
-<div class="card warn">
-  <h4>The one thing this ordering costs</h4>
-  <p>Putting <em>kind</em> before <em>owner</em> means the files for a single document are no
-  longer under one prefix: an agreement&rsquo;s original, signatures, signed copy and
-  certificate sit under four. So &ldquo;delete everything for this document&rdquo; is four
-  prefix deletes rather than one.</p>
-  <p>That is a real cost and it is worth paying, because <strong>the kinds per module are a
-  short, closed, known list</strong> &mdash; eSign has exactly four &mdash; so the operation is
-  a loop over a constant, not a search. Browsing, which happens constantly, gets the shape
-  people actually think in; entity-wide deletion, which happens rarely, pays four calls
-  instead of one. The Storage tab in the next section does that loop for you.</p>
 </div>
 
 <h2>5 &middot; Showing the path in the org</h2>
