@@ -139,6 +139,13 @@ class InvoiceCreate(BaseModel):
     discount: float = 0
     notes: str = ""
     terms: str = ""
+    #: The reference the CUSTOMER gave us — their purchase order, contract or
+    #: work-order number. Blank means they gave none; the router coalesces a
+    #: blank to NULL because `ganit_invoices_customer_ref_ck` refuses '' (two
+    #: ways of saying "no reference" would make "invoices with one" ambiguous).
+    #:
+    #: NOT a link to a purchase-order record. It is a string they supplied.
+    customer_ref: str = ""
     doc_status: str = ""
 
 
@@ -375,6 +382,45 @@ async def _next_invoice_number(pool, org_id: str, prefix: str = "INV") -> str:
     return await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", prefix)
 
 
+#: What each document type is called when no org has said otherwise.
+DEFAULT_DOC_PREFIXES = {
+    "tax_invoice": "INV", "proforma": "PI", "credit_note": "CN",
+    "debit_note": "DN", "quotation": "QTN",
+}
+
+
+async def _doc_prefix(pool, org_id: str, invoice_type: str) -> str:
+    """The prefix THIS org numbers this document type with.
+
+    Was hardcoded, so every firm on the platform numbered its invoices
+    INV-YYYY-NNNN whether that matched its books or not. The override lives in
+    `organisations.settings->'doc_prefixes'`, the jsonb that already holds
+    `publish_batch_limit` — a key rather than five columns, because code ships
+    on merge and migrations are applied by hand afterwards, and five new
+    columns would 500 the invoice-create path for the whole gap between.
+
+    An absent or unusable value falls back to the built-in, so a malformed
+    setting cannot stop a firm invoicing. It is SANITISED rather than trusted:
+    the value reaches a GST document serial, and `next_doc_number` builds
+    `PREFIX-YYYY-NNNN` by string concatenation — a prefix carrying a hyphen or
+    a digit would make the series unparseable by its own reader.
+    """
+    fallback = DEFAULT_DOC_PREFIXES.get(invoice_type, "INV")
+    try:
+        raw = await pool.fetchval(
+            "SELECT settings->'doc_prefixes'->>$2 FROM staging.organisations "
+            "WHERE id = $1::uuid",
+            org_id, invoice_type,
+        )
+    except Exception:
+        # A settings column that is not an object, or any read failure, must
+        # not stop an invoice being raised.
+        return fallback
+
+    cleaned = "".join(ch for ch in (raw or "").strip().upper() if ch.isalpha())
+    return cleaned[:8] if cleaned else fallback
+
+
 # ── Products / Services ─────────────────────────────────────
 
 @router.get("/products")
@@ -513,11 +559,27 @@ async def list_invoices(
         "SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.due_date, "
         "i.place_of_supply, i.is_igst, "
         "i.subtotal, i.cgst, i.sgst, i.igst, i.total, i.amount_paid, i.balance_due, "
-        "i.payment_status, i.created_at, i.updated_at, "
+        "i.payment_status, i.created_at, i.updated_at, i.customer_ref, "
         "c.name as contact_name, c.company as contact_company, "
+        # WHO raised it, as a NAME. `created_by` is `users.user_id` and a user
+        # id must never reach the screen, so the resolution happens here rather
+        # than being left to a caller that cannot do it.
+        #
+        # The ladder stops at names and does NOT fall back to email. The one
+        # other place in this codebase that resolves this column
+        # (`graha.py:1466`) coalesces to `u.email`, which quietly prints a
+        # person's address into a table column — the platform-privacy rule
+        # inverted. A missing name is an absence the UI states; it is not an
+        # excuse to disclose something else.
+        "COALESCE(NULLIF(btrim(u.name), ''), NULLIF(btrim(u.full_name), '')) "
+        "  AS created_by_name, "
+        # Whether an actor was recorded AT ALL, so the UI can tell "nobody did
+        # this" from "the account that did it is gone".
+        "(i.created_by IS NOT NULL) AS has_creator, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "LEFT JOIN public.users u ON u.user_id = i.created_by "
         "WHERE i.org_id=$1::uuid "
         + ("" if since_dt is not None else "AND i.is_active=TRUE ")
     )
@@ -605,9 +667,8 @@ async def create_invoice(
             "cgst": computed["cgst"], "sgst": computed["sgst"], "igst": computed["igst"],
         }, body.contact_id)
 
-    prefix_map = {"tax_invoice": "INV", "proforma": "PI", "credit_note": "CN",
-                  "debit_note": "DN", "quotation": "QTN"}
-    inv_number = await _next_invoice_number(pool, org_id, prefix_map.get(body.invoice_type, "INV"))
+    inv_number = await _next_invoice_number(
+        pool, org_id, await _doc_prefix(pool, org_id, body.invoice_type))
 
     # The INSERT and its event commit or vanish together: the emitter rides the
     # write's own connection (emit.py's one rule). RETURNING * because the
@@ -618,14 +679,15 @@ async def create_invoice(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
-                " balance_due, notes, terms, created_by, doc_status, client_id) "
+                " balance_due, notes, terms, created_by, doc_status, client_id, "
+                " customer_ref) "
                 # `client_id` is appended as $23 rather than slotted in beside
                 # `contact_id`: $18 is deliberately bound twice (total and
                 # balance_due), so renumbering to keep the columns tidy is a
                 # chance to break the one placeholder that is not 1:1.
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
                 " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22, "
-                " NULLIF($23,'')::uuid) "
+                " NULLIF($23,'')::uuid, NULLIF(btrim($24),'')) "
                 "RETURNING *",
                 org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
                 inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
@@ -637,6 +699,8 @@ async def create_invoice(
                 # untyped NULL through PgBouncer is the parse error that reads
                 # as an instant 500. An empty string is the "no company" value.
                 client_id or "",
+                # Blank -> NULL at the placeholder, so the CHECK never sees ''.
+                body.customer_ref or "",
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],

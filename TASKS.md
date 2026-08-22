@@ -20,6 +20,46 @@ Cross out with `- [x]` or just tell me it's done.
 
 ## Inbox — add here
 
+### Open from the 2026-08-22 session
+
+- [ ] Purchase Order system inside Finance `api` `web` `db` `!`
+  A module, not a field: its own table and numbering series, an approval step,
+  receipt-against-PO, and a link to vendor bills. Scoped proposal owed —
+  `docs/proposals/` — before any code.
+- [ ] Invoice prefix per org `api` `db`
+  Hardcoded today at `routers/ganit.py:608`
+  (`{tax_invoice: "INV", credit_note: "CN", …}`). `organisations.settings`
+  exists and is `{}`, and `utils.next_doc_number` is the single allocator, so
+  this plugs in at one point.
+- [ ] PO / customer reference field on the invoice `api` `web` `db`
+  The customer's own reference, printed on the document. NOT the PO module.
+- [ ] Credit note is hidden `web`
+  It works — Finance → Invoices → + New invoice → Type → Credit Note — but
+  nobody finds it. Wants a direct action.
+- [ ] `updated_by` does not exist in this product `db` `api` `@me`
+  2 of 259 tables have the column and ONE has ever been written to. Showing
+  "last updated by" needs a migration across ~90 tables AND every write path
+  in the backend. Costed proposal owed; it is not a display change.
+- [ ] Created / Updated / Created-by columns on the remaining tables `web` `api`
+  9 of ~50 done. The other 41 are not on `useTableView` so each needs sort
+  wiring, and `created_by` needs a name join on ~50 endpoints — the raw column
+  is a user id and can never be rendered.
+- [ ] `vikray/customers` and `vikray/stock` return no `created_at` `api` `@me`
+  Sales customers are DERIVED (no customer table) and stock rows are
+  per-product levels, not records. Needs a decision on what "created" means
+  before a column can be added.
+- [ ] cron-publish is half-armed `@me`
+  Service and CRON_SECRET reference exist; the start command and
+  `*/15 * * * *` schedule still need pasting in the Railway dashboard. Inert
+  until then, and `cron-daily` still publishes nightly so nothing regressed.
+- [ ] Dead `.ch` block in `sanvaad.css` `web` `?`
+  Orphaned when the channel row moved to `m2row`. Baselined, harmless now that
+  the chevron is `pk-chev`, but it wants a hand edit — the `ch__*` family
+  beside it is still live.
+- [ ] Stray `$c` file at the repo root `?`
+  334 bytes of cron output captured by accident on 16 Aug. Untracked. Delete?
+
+
 - [ ] Scan a bill — drop an image, read HSN, GSTIN and the tax split off it `api` `web` `?`
   Design exists (`Scan a bill पठन`: drop zone, Choose file / Enter manually, Save) and there is a
   `Scan bill` button beside `+ Invoice` on the Ganit header. Nothing behind either today.

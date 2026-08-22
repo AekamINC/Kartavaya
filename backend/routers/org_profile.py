@@ -1100,6 +1100,142 @@ async def get_upi_accounts(
     }
 
 
+#: The document types a firm can renumber. Anything outside this set is
+#: refused rather than stored: an unknown key would sit in `settings` looking
+#: configured and be read by nothing.
+DOC_TYPES = ("tax_invoice", "proforma", "credit_note", "debit_note", "quotation")
+
+#: What each is called when a firm has said nothing. Mirrors
+#: `routers/ganit.DEFAULT_DOC_PREFIXES`; the test keeps them equal.
+BUILTIN_PREFIXES = {
+    "tax_invoice": "INV", "proforma": "PI", "credit_note": "CN",
+    "debit_note": "DN", "quotation": "QTN",
+}
+
+
+class DocPrefixUpdate(BaseModel):
+    #: {"tax_invoice": "AEK"} — only the types being overridden need appear.
+    #: An empty string CLEARS the override and returns that type to the
+    #: built-in, which is different from omitting the key (leave as-is).
+    prefixes: dict[str, str]
+
+
+@router.get("/doc-prefixes")
+async def get_doc_prefixes(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """What this org numbers each document type with, and the built-in beside
+    it — so the screen can show "INV (default)" rather than an empty box that
+    looks unset when it is merely unchanged."""
+    pool = await get_pool()
+    raw = await pool.fetchval(
+        "SELECT settings->'doc_prefixes' FROM staging.organisations "
+        "WHERE id = $1::uuid", org_id)
+    stored = {}
+    if raw:
+        try:
+            stored = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except Exception:
+            # A malformed value is reported as "nothing set" rather than 500ing
+            # the settings page. `ganit._doc_prefix` falls back the same way.
+            stored = {}
+    return {
+        "data": [
+            {"invoice_type": t,
+             "prefix": (stored.get(t) or "").strip().upper() or None,
+             "default": BUILTIN_PREFIXES[t],
+             "effective": ((stored.get(t) or "").strip().upper()
+                           or BUILTIN_PREFIXES[t])}
+            for t in DOC_TYPES
+        ],
+        "note": (
+            "Changing a prefix starts a NEW number series at 0001. Documents "
+            "already issued keep the number they were issued with — a GST "
+            "serial is not renumbered after the fact."
+        ),
+    }
+
+
+@router.put("/doc-prefixes")
+async def put_doc_prefixes(
+    body: DocPrefixUpdate,
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """Set this org's document prefixes.
+
+    THE VALUE REACHES A GST DOCUMENT SERIAL, so it is validated rather than
+    stored as typed. `next_doc_number` builds `PREFIX-YYYY-NNNN` by string
+    concatenation and parses the last one back out to increment it — a prefix
+    containing a hyphen or a digit makes the series unreadable by its own
+    reader, and the next invoice would restart at 0001 for ever.
+
+    Letters only, upper-cased, 2-8 characters. An empty value clears the
+    override; an omitted key is left alone.
+    """
+    pool = await get_pool()
+
+    unknown = sorted(set(body.prefixes) - set(DOC_TYPES))
+    if unknown:
+        raise HTTPException(
+            400,
+            f"Not a document type: {', '.join(unknown)}. "
+            f"Expected one of {', '.join(DOC_TYPES)}. Nothing was saved.")
+
+    cleaned: dict[str, str] = {}
+    for doc_type, value in body.prefixes.items():
+        raw = (value or "").strip().upper()
+        if not raw:
+            cleaned[doc_type] = ""          # explicit clear
+            continue
+        if not raw.isalpha():
+            raise HTTPException(
+                400,
+                f"'{value}' cannot be used for {doc_type}: a prefix is letters "
+                f"only. Digits and hyphens would break the number series, "
+                f"which is read back as PREFIX-YYYY-NNNN. Nothing was saved.")
+        if not 2 <= len(raw) <= 8:
+            raise HTTPException(
+                400,
+                f"'{value}' cannot be used for {doc_type}: a prefix is 2 to 8 "
+                f"letters. Nothing was saved.")
+        cleaned[doc_type] = raw
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchval(
+                "SELECT COALESCE(settings->'doc_prefixes', '{}'::jsonb) "
+                "FROM staging.organisations WHERE id = $1::uuid", org_id)
+            merged = {}
+            if current:
+                try:
+                    merged = json.loads(current) if isinstance(current, str) else dict(current)
+                except Exception:
+                    merged = {}
+            for doc_type, value in cleaned.items():
+                if value:
+                    merged[doc_type] = value
+                else:
+                    merged.pop(doc_type, None)
+
+            await conn.execute(
+                "UPDATE staging.organisations "
+                "SET settings = COALESCE(settings, '{}'::jsonb) "
+                "                || jsonb_build_object('doc_prefixes', $2::jsonb) "
+                "WHERE id = $1::uuid",
+                org_id, json.dumps(merged))
+
+    return {
+        "status": "saved",
+        "prefixes": merged,
+        "note": (
+            "Documents already issued keep their numbers. The next document of "
+            "each changed type starts a new series at 0001."
+        ),
+    }
+
+
 @router.put("/upi-accounts")
 async def put_upi_accounts(
     body: UpiUpdate,

@@ -185,7 +185,13 @@ async def test_named_company_is_written(rig):
         user={"user_id": "u1"}, org_id="org1")
 
     q, args = _insert(p)
-    assert "client_id)" in q, "the column is not in the INSERT at all"
+    # THE PROPERTY, NOT THE POSITION. This asserted `"client_id)"` — which is
+    # only true while client_id is the LAST column in the INSERT. Adding
+    # `customer_ref` after it broke a test that has nothing to do with customer
+    # references. What matters is that the column is named at all.
+    columns = q[q.index("(") + 1:q.index(")")]
+    assert "client_id" in [c.strip() for c in columns.split(",")], (
+        "the column is not in the INSERT at all")
     assert "NULLIF($23,'')::uuid" in q, "client_id is not bound as a nullable uuid"
     assert args[_CLIENT_ARG] == "cl-1"
 
