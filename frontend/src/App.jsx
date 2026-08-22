@@ -9,11 +9,11 @@
  *     Add a new one by adding a line to CONTEXT_ROUTES, not a new function.
  *
  * To add a new page:
- *   1. const MyPage = lazy(() => import('./pages/MyPage'))
+ *   1. const MyPage = lazyPage(() => import('./pages/MyPage'))
  *   2. Add a <Route> in the correct position below
  *   3. If the page needs teamId/teams from context, add it to CONTEXT_ROUTES
  */
-import React, { Suspense, lazy, useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useOutletContext } from 'react-router-dom';
 import './App.css';
 import './styles/index.css';
@@ -29,6 +29,7 @@ import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
 import AdminShell                      from './components/admin/AdminShell';
 import { currentUser }                 from './lib/auth';
+import { lazyPage, markAppLoaded } from './lib/lazyPage';
 import { navContext }                  from './components/layout/navConfig';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
@@ -36,73 +37,73 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { isInstalledApp } from './lib/platform';
 
 // ── Auth pages (lazy — no reason to block the bundle for these) ────────────────
-const LoginPage           = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
-const AcceptInvitePage    = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.AcceptInvitePage })));
-const ForgotPasswordPage  = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.ForgotPasswordPage })));
-const ResetPasswordPage   = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.ResetPasswordPage })));
-const ApprovePage         = lazy(() => import('./pages/ApprovePage'));
+const LoginPage           = lazyPage(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const AcceptInvitePage    = lazyPage(() => import('./pages/LoginPage').then(m => ({ default: m.AcceptInvitePage })));
+const ForgotPasswordPage  = lazyPage(() => import('./pages/LoginPage').then(m => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage   = lazyPage(() => import('./pages/LoginPage').then(m => ({ default: m.ResetPasswordPage })));
+const ApprovePage         = lazyPage(() => import('./pages/ApprovePage'));
 
 // ── App pages ─────────────────────────────────────────────────────────────────
-const DashboardPage         = lazy(() => import('./pages/DashboardPage'));
-const ProjectsPage          = lazy(() => import('./pages/ProjectsPage'));
-const BoardsPage            = lazy(() => import('./pages/BoardsPage'));
-const ProjectBoardPage      = lazy(() => import('./pages/ProjectBoardPage'));
-const TasksListPage         = lazy(() => import('./pages/TasksListPage'));
-const TeamsPage             = lazy(() => import('./pages/TeamsPage'));
-const ActivityFeedPage      = lazy(() => import('./pages/ActivityFeedPage'));
-const TimeReportPage        = lazy(() => import('./pages/TimeReportPage'));
-const ReportsPage           = lazy(() => import('./pages/ReportsPage'));
-const ApprovalsPage         = lazy(() => import('./pages/ApprovalsPage'));
-const TemplatesPage         = lazy(() => import('./pages/TemplatesPage'));
-const CategoriesPage        = lazy(() => import('./pages/CategoriesPage'));
-const AdminPage             = lazy(() => import('./pages/AdminPage'));
-const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
-const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
-const InboxPage             = lazy(() => import('./pages/InboxPage'));
+const DashboardPage         = lazyPage(() => import('./pages/DashboardPage'));
+const ProjectsPage          = lazyPage(() => import('./pages/ProjectsPage'));
+const BoardsPage            = lazyPage(() => import('./pages/BoardsPage'));
+const ProjectBoardPage      = lazyPage(() => import('./pages/ProjectBoardPage'));
+const TasksListPage         = lazyPage(() => import('./pages/TasksListPage'));
+const TeamsPage             = lazyPage(() => import('./pages/TeamsPage'));
+const ActivityFeedPage      = lazyPage(() => import('./pages/ActivityFeedPage'));
+const TimeReportPage        = lazyPage(() => import('./pages/TimeReportPage'));
+const ReportsPage           = lazyPage(() => import('./pages/ReportsPage'));
+const ApprovalsPage         = lazyPage(() => import('./pages/ApprovalsPage'));
+const TemplatesPage         = lazyPage(() => import('./pages/TemplatesPage'));
+const CategoriesPage        = lazyPage(() => import('./pages/CategoriesPage'));
+const AdminPage             = lazyPage(() => import('./pages/AdminPage'));
+const ClientProjectsPage    = lazyPage(() => import('./pages/ClientProjectsPage'));
+const ClientBoardPage       = lazyPage(() => import('./pages/ClientBoardPage'));
+const InboxPage             = lazyPage(() => import('./pages/InboxPage'));
 // BillingPage is no longer routed. `10-org-settings.md` folded it into
 // `pages/org/TabBilling.jsx`; `/billing` redirects to that tab below so
 // bookmarks and emailed links still land somewhere real.
-const OnboardingPage        = lazy(() => import('./pages/onboarding/OnboardingPage'));
-const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
-const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
-const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage'));
-const AdminUsagePage        = lazy(() => import('./pages/admin/AdminUsagePage'));
-const AdminPulsePage        = lazy(() => import('./pages/admin/AdminPulsePage'));
-const SupportSessionsPage   = lazy(() => import('./pages/admin/SupportSessionsPage'));
-const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
-const ConnectorsPage        = lazy(() => import('./pages/ConnectorsPage'));
-const ConnectorGuidePage    = lazy(() => import('./pages/ConnectorGuidePage'));
-const SocialAccountsPage    = lazy(() => import('./pages/SocialAccountsPage'));
-const NiyamPage             = lazy(() => import('./pages/NiyamPage'));
-const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
-const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
-const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
-const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
-const HubSkillsPage         = lazy(() => import('./pages/HubSkillsPage'));
-const OrgSahayakPage         = lazy(() => import('./pages/OrgSahayakPage'));
+const OnboardingPage        = lazyPage(() => import('./pages/onboarding/OnboardingPage'));
+const AdminBillingPage      = lazyPage(() => import('./pages/AdminBillingPage'));
+const AdminOrgsPage         = lazyPage(() => import('./pages/AdminOrgsPage'));
+const AdminCostDashboardPage = lazyPage(() => import('./pages/AdminCostDashboardPage'));
+const AdminUsagePage        = lazyPage(() => import('./pages/admin/AdminUsagePage'));
+const AdminPulsePage        = lazyPage(() => import('./pages/admin/AdminPulsePage'));
+const SupportSessionsPage   = lazyPage(() => import('./pages/admin/SupportSessionsPage'));
+const OrgSettingsPage       = lazyPage(() => import('./pages/OrgSettingsPage'));
+const ConnectorsPage        = lazyPage(() => import('./pages/ConnectorsPage'));
+const ConnectorGuidePage    = lazyPage(() => import('./pages/ConnectorGuidePage'));
+const SocialAccountsPage    = lazyPage(() => import('./pages/SocialAccountsPage'));
+const NiyamPage             = lazyPage(() => import('./pages/NiyamPage'));
+const RolesAccessPage       = lazyPage(() => import('./pages/RolesAccessPage'));
+const HubDashboardPage      = lazyPage(() => import('./pages/HubDashboardPage'));
+const HubClientsPage        = lazyPage(() => import('./pages/HubClientsPage'));
+const HubClientDetailPage   = lazyPage(() => import('./pages/HubClientDetailPage'));
+const HubSkillsPage         = lazyPage(() => import('./pages/HubSkillsPage'));
+const OrgSahayakPage         = lazyPage(() => import('./pages/OrgSahayakPage'));
 
 // Graha and Vikray are routed through a module SHELL rather than straight at
 // their page. The shell renders the page and an `<Outlet/>` beneath it, which
 // is what lets `/graha/deals/:dealId` and `/vikray/orders/:orderId` exist
 // without throwing the list away — see `pages/graha/GrahaModule.jsx`.
-const GrahaModule           = lazy(() => import('./pages/graha/GrahaModule'));
-const GrahaDealRoute        = lazy(() => import('./pages/graha/DealRoute'));
-const GanitPage             = lazy(() => import('./pages/GanitPage'));
-const ManavPage             = lazy(() => import('./pages/ManavPage'));
-const VikrayModule          = lazy(() => import('./pages/vikray/VikrayModule'));
-const VikrayOrderRoute      = lazy(() => import('./pages/vikray/OrderRoute'));
-const PahchanPage           = lazy(() => import('./pages/PahchanPage'));
-const VetanaPage            = lazy(() => import('./pages/VetanaPage'));
-const DristiPage            = lazy(() => import('./pages/DristiPage'));
-const PracharPage           = lazy(() => import('./pages/PracharPage'));
-const EsignPage             = lazy(() => import('./pages/EsignPage'));
-const SanvaadPage           = lazy(() => import('./pages/SanvaadPage'));
-const SigningPage           = lazy(() => import('./pages/SigningPage'));
+const GrahaModule           = lazyPage(() => import('./pages/graha/GrahaModule'));
+const GrahaDealRoute        = lazyPage(() => import('./pages/graha/DealRoute'));
+const GanitPage             = lazyPage(() => import('./pages/GanitPage'));
+const ManavPage             = lazyPage(() => import('./pages/ManavPage'));
+const VikrayModule          = lazyPage(() => import('./pages/vikray/VikrayModule'));
+const VikrayOrderRoute      = lazyPage(() => import('./pages/vikray/OrderRoute'));
+const PahchanPage           = lazyPage(() => import('./pages/PahchanPage'));
+const VetanaPage            = lazyPage(() => import('./pages/VetanaPage'));
+const DristiPage            = lazyPage(() => import('./pages/DristiPage'));
+const PracharPage           = lazyPage(() => import('./pages/PracharPage'));
+const EsignPage             = lazyPage(() => import('./pages/EsignPage'));
+const SanvaadPage           = lazyPage(() => import('./pages/SanvaadPage'));
+const SigningPage           = lazyPage(() => import('./pages/SigningPage'));
 // The public pay page. Lazy like its neighbours, so the app shell's bundle is
 // not on the critical path for a customer who will only ever see this one page.
-const PayPage               = lazy(() => import('./pages/PayPage'));
-const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
-const LandingPage           = lazy(() => import('./pages/marketing/LandingPage'));
+const PayPage               = lazyPage(() => import('./pages/PayPage'));
+const CustomizeSettingsPage = lazyPage(() => import('./pages/CustomizeSettingsPage'));
+const LandingPage           = lazyPage(() => import('./pages/marketing/LandingPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -390,6 +391,11 @@ function StagingBanner() {
 }
 
 export default function App() {
+  // The stale-chunk guard spends one reload per tab. Give it back once the app
+  // has actually rendered, so a LATER deploy in the same long-lived tab gets
+  // its own single retry instead of inheriting a spent one.
+  useEffect(() => { markAppLoaded(); }, []);
+
   return (
     <ErrorBoundary>
       <CustomizeProvider>
