@@ -1,0 +1,290 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purchase orders — the commitment the books never recorded</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF;
+    --rose:#A83E63; --amber:#8A6A18; --green:#2E7D52; --blue:#2F6690;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,'Cascadia Mono',monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F;
+    --rose:#E894B4; --amber:#DCC072; --green:#7ED4A2; --blue:#8FB8DC;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 70px;background:var(--bg);color:var(--ink);
+       font:400 14px/1.6 var(--fu);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font:500 27px/1.18 var(--fd);margin:0 0 4px;letter-spacing:-.01em}
+  h2{font:500 19px/1.25 var(--fd);margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--rule)}
+  h3{font:600 13px/1.3 var(--fu);margin:22px 0 7px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink3)}
+  p{margin:0 0 11px;max-width:84ch}
+  .lede{color:var(--ink2);font-size:15px;max-width:80ch;margin-bottom:2px}
+  .meta{color:var(--ink3);font-size:11.5px;font-family:var(--fm);margin:0 0 16px}
+  .ctl button{font:inherit;font-size:11.5px;font-weight:600;padding:6px 13px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--surf);color:var(--ink2);border-radius:999px;margin-left:5px}
+  .ctl button.on{background:var(--pr);color:var(--onp);border-color:var(--pr)}
+  .card{border:1px solid var(--rule);border-radius:13px;background:var(--surf);padding:16px 18px;margin:14px 0;
+        box-shadow:0 1px 2px var(--sh)}
+  .card.hot{border-color:var(--rose);border-left-width:4px}
+  .card.ok{border-color:var(--green);border-left-width:4px}
+  .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card h3{margin-top:0}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}
+  th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink3);
+     border-bottom:1.5px solid var(--rule)}
+  td.num{text-align:right;font-family:var(--fm);font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.note td{color:var(--ink3);font-size:11.5px;font-style:italic;background:var(--low);border-bottom:none}
+  code,.mono{font-family:var(--fm);font-size:12px;background:var(--cont);padding:1px 5px;border-radius:4px}
+  pre{font-family:var(--fm);font-size:11.5px;line-height:1.6;background:var(--low);border:1px solid var(--rule);
+      border-radius:9px;padding:12px 14px;overflow-x:auto;margin:10px 0}
+  ul,ol{margin:0 0 11px;padding-left:22px;max-width:84ch}
+  li{margin:0 0 5px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin:16px 0}
+  .kpi{border:1px solid var(--rule);border-radius:11px;background:var(--surf);padding:12px 13px}
+  .kpi .v{font:600 22px/1.1 var(--fm);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .kpi .l{font-size:11px;color:var(--ink3);margin-top:5px;line-height:1.4}
+  .kpi.bad .v{color:var(--rose)}
+  .kpi.good .v{color:var(--green)}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tag{display:inline-block;font:600 10px/1 var(--fu);letter-spacing:.04em;text-transform:uppercase;
+       padding:4px 8px;border-radius:5px;background:var(--cont);color:var(--ink2);vertical-align:middle}
+  .tag.no{background:var(--rose);color:#fff}
+  .tag.yes{background:var(--green);color:#fff}
+  .tag.part{background:var(--amber);color:#fff}
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;margin:14px 0}
+  .step{border:1px solid var(--rule);border-radius:10px;background:var(--low);padding:11px 12px}
+  .step .n{font:600 10px/1 var(--fm);color:var(--ink3);letter-spacing:.06em}
+  .step .t{font-weight:600;margin:6px 0 3px;font-size:13px}
+  .step .d{font-size:11.5px;color:var(--ink3);line-height:1.45}
+  .foot{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px}
+  .quiet{color:var(--ink3)}
+  strong{font-weight:640}
+</style>
+
+<div class="wrap">
+
+<div class="top">
+  <div>
+    <h1>Purchase orders</h1>
+    <p class="lede">A module, not a field. What it has to record, what the database
+      already gives us, the one hard problem inside it, and what I would deliberately
+      leave out of the first version.</p>
+    <p class="meta">Proposal 77 &middot; branch <span class="mono">staging</span> &middot;
+      every count below measured read-only against the live database on 2026-08-22</p>
+  </div>
+  <div class="ctl">
+    <button id="bl" class="on" onclick="T('light')">Light</button>
+    <button id="bd" onclick="T('dark')">Dark</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>What a purchase order is, in one sentence</h3>
+  <p>A <strong>commitment to spend money that has not been spent yet</strong> — and that
+  is the whole reason it needs its own object. Every other financial record in this
+  product describes something that has already happened. A vendor bill is a debt that
+  exists. A payment is money that has moved. A purchase order is the only record of money
+  a firm has <em>promised</em> and not yet owed.</p>
+  <p>Without it, the question "what have we committed to this quarter?" has no answer
+  here, and the first time a commitment appears in the books is when the vendor's bill
+  arrives — by which point it is too late to disagree with it.</p>
+</div>
+
+<h2>What already exists</h2>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">80</div><div class="l"><span class="mono">ganit_vendors</span> — the counterparty, already modelled</div></div>
+  <div class="kpi"><div class="v">189</div><div class="l"><span class="mono">ganit_vendor_bills</span> — where a PO ends up</div></div>
+  <div class="kpi"><div class="v">106</div><div class="l"><span class="mono">ganit_products</span> — line items, already priced</div></div>
+  <div class="kpi bad"><div class="v">0</div><div class="l">purchase-order tables of any kind</div></div>
+</div>
+
+<p>So this is not a green field. The counterparty, the catalogue and the destination all
+exist and are populated. What is missing is the object in between — and the fact that
+<span class="mono">ganit_vendor_bills</span> already carries
+<span class="mono">line_items</span> as jsonb, the same shape invoices use, means a PO can
+be built to pour into it rather than beside it.</p>
+
+<div class="card warn">
+  <h3>One thing to decide before any code</h3>
+  <p><span class="mono">ganit_vendor_bills.acceptance_date</span> already exists and is
+  read by the MSME payment-clock check. If a PO introduces its own idea of "received on",
+  the two will disagree the first time somebody uses both — and the MSME clock is a
+  statutory deadline, not a nicety. <strong>The PO must write that column, not shadow
+  it.</strong></p>
+</div>
+
+<h2>The lifecycle</h2>
+
+<div class="flow">
+  <div class="step"><div class="n">01</div><div class="t">Draft</div>
+    <div class="d">Editable. No number yet — a serial spent on a draft is a gap in the series.</div></div>
+  <div class="step"><div class="n">02</div><div class="t">Awaiting approval</div>
+    <div class="d">Optional, per org. Below a threshold it can skip straight to issued.</div></div>
+  <div class="step"><div class="n">03</div><div class="t">Issued</div>
+    <div class="d">Numbered, sent to the vendor, no longer freely editable.</div></div>
+  <div class="step"><div class="n">04</div><div class="t">Part received</div>
+    <div class="d">Some quantity has arrived. This is the state that makes it hard.</div></div>
+  <div class="step"><div class="n">05</div><div class="t">Closed</div>
+    <div class="d">Fully received and billed, or closed short on purpose.</div></div>
+</div>
+
+<p>Four of those five are ordinary. <strong>Part received is where every purchase-order
+system earns or loses its keep</strong>, and it is worth being explicit about why.</p>
+
+<h2>The hard problem: partial receipt</h2>
+
+<div class="card hot">
+  <h3>Three quantities per line, not one</h3>
+  <p>An ordinary document has a quantity. A purchase-order line has three, and they are
+  routinely all different:</p>
+  <table>
+    <tr><th>Quantity</th><th>Means</th><th>Set when</th></tr>
+    <tr><td><span class="mono">ordered</span></td><td>what we asked for</td><td>the PO is issued</td></tr>
+    <tr><td><span class="mono">received</span></td><td>what actually turned up</td><td>each delivery</td></tr>
+    <tr><td><span class="mono">billed</span></td><td>what the vendor has charged for</td><td>each bill</td></tr>
+    <tr class="note"><td colspan="3">The gaps between them are the entire value of the module.
+      ordered &gt; received is a supplier who is late. received &gt; billed is a bill still to
+      come — an accrual. billed &gt; received is a vendor charging for goods that never
+      arrived, which is the one a firm most wants caught.</td></tr>
+  </table>
+  <p>A design that stores one quantity per line cannot express any of those three
+  states, and no amount of reporting on top can recover them.</p>
+</div>
+
+<h3>Which means receipts are their own table</h3>
+<p>A delivery is an event with a date, a person and a quantity, and there can be several
+against one line. Storing <span class="mono">received_qty</span> on the line and
+overwriting it loses the history — and "when did this arrive?" is exactly the question
+the MSME clock and any dispute both turn on. So:
+<span class="mono">ganit_po_receipts</span>, one row per delivery per line.</p>
+
+<h2>Schema</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Table</th><th>Holds</th><th>Notes that matter</th></tr>
+  <tr>
+    <td><span class="mono">ganit_purchase_orders</span></td>
+    <td>org, vendor, po_number, po_date, expected_date, status, currency, totals,
+        terms, delivery address, created_by, approved_by, approved_at</td>
+    <td>Numbered from <span class="mono">next_doc_number</span> — which needs a new entry
+        in <span class="mono">_ALLOWED_DOC_TABLES</span>, currently four tables. Prefix
+        <span class="mono">PO</span>, overridable per org through the
+        <span class="mono">doc_prefixes</span> setting shipped this week.</td>
+  </tr>
+  <tr>
+    <td><span class="mono">ganit_po_lines</span></td>
+    <td>po_id, product_id (nullable), description, hsn, qty_ordered, unit, rate,
+        gst_rate, line_total</td>
+    <td>A real table, <em>not</em> jsonb. Invoices keep lines as jsonb because nothing
+        ever queries inside them; PO lines are queried constantly — "what is on order
+        for this product" is the second question anyone asks.</td>
+  </tr>
+  <tr>
+    <td><span class="mono">ganit_po_receipts</span></td>
+    <td>po_line_id, qty, received_on, received_by, note</td>
+    <td>One row per delivery. Never overwritten, so the arrival history survives.
+        Feeds <span class="mono">ganit_vendor_bills.acceptance_date</span> rather than
+        competing with it.</td>
+  </tr>
+  <tr class="note">
+    <td colspan="3">No fourth table for the bill link: <span class="mono">ganit_vendor_bills</span>
+      gains a nullable <span class="mono">po_id</span>. A bill without a PO stays legal —
+      most firms will raise POs for some spend and not all, and a design that refuses an
+      un-ordered bill would stop them recording real invoices.</td>
+  </tr>
+</table>
+</div>
+
+<h2>What the module answers</h2>
+<ul>
+  <li><strong>Committed spend</strong> — issued POs not yet fully received. The number
+    that does not exist today at all.</li>
+  <li><strong>Goods received, not invoiced</strong> — the accrual a CA firm needs at
+    period end, currently assembled by hand or not at all.</li>
+  <li><strong>Billed but never received</strong> — the exception worth real money.</li>
+  <li><strong>Late suppliers</strong> — <span class="mono">expected_date</span> passed
+    with quantity outstanding. This is a <em>skill</em>, and it fits the shelf's existing
+    shape exactly: name the vendor, the phone number, the days late.</li>
+</ul>
+
+<h2>What I would leave out of version one</h2>
+<div class="card ok">
+  <table>
+    <tr><th>Left out</th><th>Why</th></tr>
+    <tr><td>Multi-level approval chains</td>
+      <td>One approver, one threshold. Chains are a settings screen and a state machine
+          for a problem no user of this product has reported having.</td></tr>
+    <tr><td>Requisitions (a request to raise a PO)</td>
+      <td>A second document in front of the first, valuable only in firms large enough to
+          separate the asker from the buyer. Neither live org is.</td></tr>
+    <tr><td>Blanket / open-ended POs</td>
+      <td>Call-offs against a standing order are a genuinely different object. Adding it
+          later costs nothing; guessing at it now shapes the schema wrongly.</td></tr>
+    <tr><td>Three-way match automation</td>
+      <td>The <em>data</em> for it is what this proposal builds. Automatically approving a
+          bill because it matches is a decision to make after somebody has watched the
+          match be right for a few months.</td></tr>
+    <tr><td>Landed cost apportionment</td>
+      <td>Freight and duty split across lines. Real, and squarely an inventory feature —
+          it belongs with Vikray stock, not here.</td></tr>
+  </table>
+</div>
+
+<h2>What it costs</h2>
+<div class="scroll">
+<table>
+  <tr><th>Piece</th><th>Shape</th><th>Size</th></tr>
+  <tr><td>Migration</td><td>3 tables, 1 column on vendor bills, 1 allowlist entry,
+      guards + VERIFY in the house style</td><td>one file</td></tr>
+  <tr><td>API</td><td>CRUD, issue, approve, receive, close; numbering through the
+      existing allocator</td><td>~8 routes</td></tr>
+  <tr><td>Screens</td><td>List, form with lines, detail with receipts, plus the vendor-bill
+      link control</td><td>3 screens + 1 control</td></tr>
+  <tr><td>Skills</td><td>Late suppliers; received-not-invoiced. Both fit the existing
+      shelf and the contact rules shipped this week</td><td>2 handlers</td></tr>
+  <tr class="note"><td colspan="3">Comparable to the commission-and-bonus work: a
+    migration, a router section, a tab, and tests. Not comparable to Niyam or Sahayak.</td></tr>
+</table>
+</div>
+
+<div class="card warn">
+  <h3>The decision I need from you</h3>
+  <p><strong>Is approval in or out of version one?</strong> It is the difference between
+  a document a buyer raises and sends, and a document that waits for somebody. Everything
+  else above I would build the same way either way — but approval changes the state
+  machine, adds a screen, and is the one part that is awkward to add afterwards because
+  issued POs would already exist without ever having been approved.</p>
+  <p>My recommendation: <strong>include a single optional approver with a
+  threshold</strong>, off by default. A firm that does not want it never sees it, and one
+  that does is not asking for a migration six weeks later.</p>
+</div>
+
+<div class="foot">
+  Written 2026-08-22. Counts measured read-only against the live database; no figure here
+  is estimated. Nothing in this proposal has been built.
+</div>
+
+</div>
+
+<script>
+  function T(m){
+    document.documentElement.setAttribute('data-t', m);
+    document.getElementById('bl').classList.toggle('on', m === 'light');
+    document.getElementById('bd').classList.toggle('on', m === 'dark');
+  }
+  // Follow the reader's own setting on first paint; the buttons then override it.
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) T('dark');
+</script>

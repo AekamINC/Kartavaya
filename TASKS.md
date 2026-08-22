@@ -22,20 +22,25 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Open from the 2026-08-22 session
 
-- [ ] Purchase Order system inside Finance `api` `web` `db` `!`
-  A module, not a field: its own table and numbering series, an approval step,
-  receipt-against-PO, and a link to vendor bills. Scoped proposal owed —
-  `docs/proposals/` — before any code.
-- [ ] Invoice prefix per org `api` `db`
-  Hardcoded today at `routers/ganit.py:608`
-  (`{tax_invoice: "INV", credit_note: "CN", …}`). `organisations.settings`
-  exists and is `{}`, and `utils.next_doc_number` is the single allocator, so
-  this plugs in at one point.
-- [ ] PO / customer reference field on the invoice `api` `web` `db`
-  The customer's own reference, printed on the document. NOT the PO module.
-- [ ] Credit note is hidden `web`
-  It works — Finance → Invoices → + New invoice → Type → Credit Note — but
-  nobody finds it. Wants a direct action.
+- [ ] Purchase Order system inside Finance `api` `web` `db` `!` `@me`
+  PROPOSAL WRITTEN: `docs/proposals/77-purchase-orders.html`. Three tables, one
+  column on vendor bills, ~8 routes, 3 screens, 2 skills. ONE DECISION NEEDED
+  before code: is approval in version one? It changes the state machine and is
+  awkward to retrofit, because issued POs would already exist having never been
+  approved. Recommendation in the proposal: one optional approver with a
+  threshold, off by default.
+- [x] Invoice prefix per org — SHIPPED 2026-08-22
+  `organisations.settings->'doc_prefixes'`, GET/PUT `/v1/org/doc-prefixes`, and
+  an Org Settings → Numbering tab. Sanitised at both ends: the value reaches a
+  GST serial and a digit or hyphen would make the series unreadable by its own
+  parser. Changing a prefix starts a NEW series at 0001 and the screen says so
+  above the fields.
+- [x] PO / customer reference on the invoice — SHIPPED 2026-08-22
+  Migration 192 applied. `ganit_invoices.customer_ref`, on the form beside the
+  dates, and a "Their ref" column on the list.
+- [x] Credit note is hidden — SHIPPED 2026-08-22
+  Its own "+ Credit note" button beside "+ New invoice". Same form, different
+  opening document type.
 - [ ] `updated_by` does not exist in this product `db` `api` `@me`
   2 of 259 tables have the column and ONE has ever been written to. Showing
   "last updated by" needs a migration across ~90 tables AND every write path
