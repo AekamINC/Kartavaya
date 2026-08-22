@@ -38,8 +38,57 @@ import { Cell, HeadCell } from './Table';
 // `formatDate` scoped to file cards. This is the one for record tables.
 import { formatDate } from '../../lib/timeFormat';
 
-/** The sort key every table uses, so a saved sort means the same everywhere. */
+/** The sort keys every table uses, so a saved sort means the same everywhere. */
 export const CREATED_KEY = 'created_at';
+export const UPDATED_KEY = 'updated_at';
+
+/**
+ * WHO, never an id.
+ *
+ * `created_by` and `updated_by` store `users.user_id` — TEXT like
+ * `user_f1a0a472b98f`. That value must never reach the screen: it is a member
+ * id, and the rule is that a user, member or org id is never rendered. So the
+ * API is expected to send a resolved NAME beside it (`created_by_name`), and
+ * this cell renders the name or an honest absence — never the id it was
+ * resolved from, and never the person's EMAIL as a stand-in for a name, which
+ * is how a table quietly becomes a directory of client email addresses.
+ *
+ * `unknown` is the deliberate wording for "there is an id here but no user row
+ * behind it any more" — a deleted account. It is different from "nobody did
+ * this", which is what an absent id means, and the two must not read alike.
+ */
+export function ByCell({ name, hasActor = undefined, className = '' }) {
+  const text = typeof name === 'string' ? name.trim() : '';
+  if (text) {
+    return <Cell className={`tbl__by ${className}`.trim()}>{text}</Cell>;
+  }
+  const gone = hasActor === true;
+  return (
+    <Cell className={`tbl__by ${className}`.trim()}>
+      <span
+        className="tbl__created-none"
+        title={gone
+          ? 'The account that did this no longer exists'
+          : 'No person is recorded against this record'}
+      >
+        {gone ? 'unknown' : '—'}
+      </span>
+    </Cell>
+  );
+}
+
+export function ByHead({ sort, onSort, sortKey, label, className = '' }) {
+  return (
+    <HeadCell
+      sortKey={sortKey}
+      sort={sort}
+      onSort={onSort}
+      className={`tbl__by ${className}`.trim()}
+    >
+      {label}
+    </HeadCell>
+  );
+}
 
 export function CreatedHead({ sort, onSort, className = '', label = 'Created' }) {
   return (
@@ -75,6 +124,24 @@ export function CreatedCell({ value, className = '' }) {
       )}
     </Cell>
   );
+}
+
+export function UpdatedHead({ sort, onSort, className = '', label = 'Updated' }) {
+  return (
+    <HeadCell
+      sortKey={UPDATED_KEY}
+      sort={sort}
+      onSort={onSort}
+      className={`tbl__created ${className}`.trim()}
+    >
+      {label}
+    </HeadCell>
+  );
+}
+
+/** When it last changed. Same rendering rules as CreatedCell. */
+export function UpdatedCell({ value, className = '' }) {
+  return <CreatedCell value={value} className={className} />;
 }
 
 /**

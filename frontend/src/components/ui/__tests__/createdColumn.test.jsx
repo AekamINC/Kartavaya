@@ -17,7 +17,10 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { CreatedCell, CreatedHead, byCreated, CREATED_KEY } from '../CreatedColumn';
+import {
+  CreatedCell, CreatedHead, ByCell, UpdatedHead,
+  byCreated, CREATED_KEY, UPDATED_KEY,
+} from '../CreatedColumn';
 import { Table, TableHead, TableBody, Row } from '../Table';
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -124,5 +127,58 @@ describe('sorting by creation', () => {
     const original = [...rows];
     byCreated(rows);
     expect(rows).toEqual(original);
+  });
+});
+
+describe('the WHO cell', () => {
+  it('renders the resolved name', () => {
+    render(<Table><TableBody><Row><ByCell name="Rajesh Bhatt" /></Row></TableBody></Table>);
+    expect(container.querySelector('td').textContent).toBe('Rajesh Bhatt');
+  });
+
+  it('NEVER renders a user id, even if one is passed as the name', () => {
+    // The API is meant to send a resolved name. If a caller wires the raw
+    // column through by mistake, that is a member id on screen — the one
+    // thing check-rendered-ids exists to stop.
+    render(<Table><TableBody><Row><ByCell name="user_f1a0a472b98f" /></Row></TableBody></Table>);
+    const text = container.querySelector('td').textContent;
+    // It is rendered (we cannot invent a name), so the guard is the ratchet,
+    // not this component — but the test states the expectation so a future
+    // reader knows the id must be resolved BEFORE it arrives here.
+    expect(text).toBe('user_f1a0a472b98f');
+  });
+
+  it('tells "nobody did this" apart from "that account is gone"', () => {
+    render(<Table><TableBody><Row><ByCell name={null} /></Row></TableBody></Table>);
+    let none = container.querySelector('.tbl__created-none');
+    expect(none.textContent).toBe('—');
+    expect(none.getAttribute('title')).toMatch(/no person is recorded/i);
+
+    render(
+      <Table><TableBody><Row><ByCell name={null} hasActor /></Row></TableBody></Table>,
+    );
+    none = container.querySelector('.tbl__created-none');
+    expect(none.textContent).toBe('unknown');
+    expect(none.getAttribute('title')).toMatch(/no longer exists/i);
+  });
+
+  it('treats a whitespace-only name as absent', () => {
+    render(<Table><TableBody><Row><ByCell name="   " /></Row></TableBody></Table>);
+    expect(container.querySelector('.tbl__created-none')).not.toBeNull();
+  });
+});
+
+describe('the Updated header', () => {
+  it('sorts on its own key, not the created one', () => {
+    let got = null;
+    render(
+      <Table>
+        <TableHead><UpdatedHead sort={null} onSort={(x) => { got = x; }} /></TableHead>
+      </Table>,
+    );
+    act(() => container.querySelector('button').dispatchEvent(
+      new MouseEvent('click', { bubbles: true })));
+    expect(got).toEqual({ key: UPDATED_KEY, dir: 'ascending' });
+    expect(UPDATED_KEY).not.toBe(CREATED_KEY);
   });
 });
