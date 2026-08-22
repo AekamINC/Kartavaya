@@ -21,6 +21,7 @@ from services.skill_ack_wiring import ACK_WIRING, apply_wiring
 #: A name appears here in the commit that wires it and not before.
 OVERDUE_SKILLS = {
     "find_overdue_invoices": "invoices",
+    "find_overdue_vendor_bills": "vendor_bills",
 }
 
 

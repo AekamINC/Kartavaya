@@ -236,6 +236,40 @@ ACK_WIRING: dict[str, AckWiring] = {
         label_of=_entity_label,
     ),
 
+    # ── find_overdue_vendor_bills ───────────────────────────────────────────
+    #
+    # The payables side of the same handler: unpaid and partially-paid vendor
+    # bills past their due date. It repeats for exactly the reason the mechanism
+    # was written — the row leaves only when somebody pays a vendor, and this
+    # skill cannot record a payment.
+    #
+    # IDENTITY, MATERIAL and INCIDENTAL are as `find_overdue_invoices`: the same
+    # handler, the same five fields, the same absence of any amount to hash.
+    #
+    # THE ONE THING THAT IS NOT THE SAME, and the reason this is its own commit:
+    #   `propose_payment_run` reads the SAME BILLS and is wired with a real
+    #   MATERIAL bucket (`balance_due`, `status`), because that handler selects
+    #   the balance and this one does not. So one bill can be acknowledged twice
+    #   under two skills with two different meanings — "stop proposing me this
+    #   payment while the balance is 42,000" over there, "stop listing this bill
+    #   as overdue at all" here — and the two acks are correctly independent:
+    #   the ack table is keyed (org, skill, finding_key) and the identities are
+    #   computed from different fields, so neither can ever match the other's
+    #   row. That is the intended behaviour and not an oversight, because the
+    #   two skills answer different questions about the same debt.
+    #
+    #   It does mean the WEAKER promise wins if a user acks here: a bill hidden
+    #   from the overdue list is hidden however its balance moves. Anyone who
+    #   wants "tell me again when it grows" should acknowledge it in
+    #   `propose_payment_run`, where the balance exists to be hashed.
+    "find_overdue_vendor_bills": AckWiring(
+        findings_at="result",
+        identity_of=_entity_identity,
+        material_of=None,
+        recompute=None,
+        label_of=_entity_label,
+    ),
+
     "propose_payment_run": AckWiring(
         findings_at="bills",
         identity_of=lambda f: {"bill": f.get("bill")},
