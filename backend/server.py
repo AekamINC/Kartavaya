@@ -4112,6 +4112,14 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
     # Notify: assignees + creator, excluding the actor
     notif_targets = list({uid for uid in assignees + ([creator_id] if creator_id else []) if uid and uid != actor_id})
 
+    # A move to `done` is announced by the task-done block below, which routes to
+    # the project's admins and the task's assignees. Letting the generic
+    # status-changed fan-out run as well hands an assignee two emails for one
+    # click. Personal tasks keep this path: the done block only runs when the
+    # task belongs to a project.
+    if new_status == "done" and team_id:
+        notif_targets = []
+
     # In-app notifications
     for uid in notif_targets:
         try:
@@ -4142,7 +4150,12 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
     except Exception as _e:
         logger.warning("status_changed email failed: %s", _e)
 
-    # Task-done: notify ALL project members
+    # Task-done: the project's admins, plus the people the task was assigned to.
+    #
+    # This used to be every active member of the project, which is how a task
+    # completed in one person's own list mailed five uninvolved people. A
+    # project is not an audience: the admins are accountable for it and the
+    # assignees did the work, and nobody else asked to hear about it.
     if new_status == "done" and team_id:
         try:
             member_rows = await pool.fetch("""
@@ -4151,7 +4164,8 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
                 JOIN users u ON u.user_id = tm.user_id
                 WHERE tm.team_id=$1 AND tm.status='active' AND tm.user_id IS NOT NULL
                   AND tm.user_id != $2
-            """, team_id, actor_id)
+                  AND (tm.role IN ('owner','admin') OR tm.user_id = ANY($3::text[]))
+            """, team_id, actor_id, assignees)
             project_row  = await pool.fetchrow("SELECT name FROM teams WHERE team_id=$1", team_id) if not locals().get("project_name") else None
             project_name = (project_row["name"] if project_row else None) if project_row else locals().get("project_name")
             from email_service import send_task_done_email
