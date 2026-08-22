@@ -213,12 +213,21 @@ def test_an_expired_snooze_lets_the_bill_back_through():
 
 # ── 8 · nothing else got wired by accident ──────────────────────────────────
 
-def test_exactly_one_skill_is_wired():
+#: Every skill wired so far, in the order the list is asserted. ONE SKILL PER
+#: COMMIT: this literal grows by exactly one name per commit, and the commit
+#: that adds the name is the commit that argues that skill's three-way split.
+WIRED = [
+    "find_overdue_invoices",
+    "propose_payment_run",
+]
+
+
+def test_only_the_reviewed_skills_are_wired():
     """ONE SKILL PER COMMIT. A bulk wiring is N unreviewed judgements arriving
     as one green build, and every way of getting one wrong is silent. When this
-    number changes, the diff should be a single entry and the commit message
+    list changes, the diff should be a single entry and the commit message
     should argue that skill's three-way split."""
-    assert sorted(ACK_WIRING) == ["propose_payment_run"]
+    assert sorted(ACK_WIRING) == sorted(WIRED)
 
 
 def test_an_unwired_skill_is_returned_untouched():

@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 1 of the 61 assigned skills.
+Wired so far: 2 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -137,7 +137,105 @@ def _payables_recompute(out: dict, surviving: Sequence[dict]) -> None:
     out["by_bucket"] = buckets
 
 
+# ── the find_overdue family ─────────────────────────────────────────────────
+#
+# Five registry names — invoices, vendor bills, follow-ups, tasks, stalled
+# agreements — share ONE handler, `services/skills/data/overdue_finder.py`, and
+# therefore one return shape. They are still five separate wirings, because they
+# are five separate skills with five separate ack sets: acknowledging an overdue
+# invoice must not silence an overdue task. The shape is shared; the judgement
+# about what an acknowledgement MEANS is not, so each gets its own entry and its
+# own commit.
+#
+# THE HANDLER RETURNS A BARE LIST. `_run_function_step` wraps a non-dict result
+# as `{"result": ...}` before the ack layer runs, so `findings_at` is "result"
+# and not the name of any key the handler itself writes. That wrapping happens
+# two lines above the ack block in the dispatcher; if it ever stops, these five
+# wirings fail open (`findings` is not a list -> data returned untouched) rather
+# than filtering the wrong thing.
+
+def _entity_identity(f: Finding) -> dict:
+    """IDENTITY for the find_overdue family: the row, and which ledger it is in.
+
+    `entity.id` is the table's primary key. It is a raw UUID and an excellent
+    stable INPUT to the key — `skill_ack.finding_key` hashes it away, so the
+    `check-rendered-ids` rule is not breached by using it here.
+
+    `module` rides along because the same handler serves five skills and the
+    ack set is keyed by (org, skill, finding_key): a wiring that keyed on the id
+    alone would still be correctly scoped, but a future skill that merged two
+    modules into one run would silently share keys across ledgers. Naming the
+    module costs nothing and is stable for the life of the row.
+
+    NOT `label`: an invoice number can be corrected and a task can be renamed,
+    and neither makes it a different overdue thing. NOT `owner`: a task
+    reassigned is the same late task.
+
+    The one degenerate case: if `entity.id` were ever absent, every id-less
+    finding would hash to the same key. It cannot be absent — it is selected as
+    a primary key and stringified unconditionally — and the safe direction if it
+    somehow were is that such a finding matches no real acknowledgement, because
+    no real acknowledgement was ever filed under the null key.
+    """
+    entity = f.get("entity") or {}
+    return {"module": entity.get("module"), "entity_id": entity.get("id")}
+
+
+def _entity_label(f: Finding) -> str:
+    entity = f.get("entity") or {}
+    return f"{entity.get('label')} — {f.get('owner_name')}"
+
+
 ACK_WIRING: dict[str, AckWiring] = {
+    # ── find_overdue_invoices ───────────────────────────────────────────────
+    #
+    # The receivables chase list. `find_overdue(module="invoices")` returns every
+    # unpaid, partial or overdue tax invoice past its due date, every run, and
+    # the only thing that removes one is the customer paying. A firm that has
+    # agreed thirty days' grace with a client reads the same row for thirty days.
+    #
+    # IDENTITY — the invoice row plus its module. See `_entity_identity`.
+    #
+    # MATERIAL — None, and this is the entry where that answer has to be argued
+    #   rather than assumed. The finding carries FIVE fields: `entity`,
+    #   `owner`, `owner_name`, `days_past`, and the contact/link keys
+    #   `reachable` attaches. Not one of them is an amount or a status. The
+    #   handler does not select the balance at all, and every state change that
+    #   would matter — paid, cancelled, deactivated — removes the row from the
+    #   query entirely, so the finding disappears on its own rather than moving.
+    #   There is literally no field whose movement could void the ack.
+    #
+    #   The consequence is stated plainly because it is the cost of this wiring:
+    #   an acknowledgement here is UNCONDITIONAL, so an invoice acked at five
+    #   days overdue stays hidden at two hundred. `snooze_until` is the honest
+    #   instrument for "not this week" and the UI should reach for it first;
+    #   a permanent ack here means "stop telling me about this invoice", and
+    #   withdrawing it is one DELETE away.
+    #
+    #   Adding a balance to the handler's return would give this bucket
+    #   something real, and it is NOT done here: the same rows feed four other
+    #   skills and two of the five modules (tasks, follow-ups) have no amount at
+    #   all, so a money field would have to be nullable and would then be
+    #   material-for-some-modules — a per-module judgement smuggled into a
+    #   shared handler. Recorded as owed, not done quietly.
+    #
+    # INCIDENTAL — `days_past` ticks with the calendar and is in NEITHER bucket;
+    #   it is in `skill_ack._DRIFT_FIELDS`, so putting it in either would raise
+    #   rather than quietly killing every ack at midnight. `owner_name`,
+    #   `email`, `phone` and `link` are incidental too: they say who to ring,
+    #   not what is owed.
+    #
+    # RECOMPUTE — None, deliberately. The wrapper dict is `{"result": [...]}`
+    #   and carries no total, no count and no bucket split. Nothing can go
+    #   stale because nothing is derived.
+    "find_overdue_invoices": AckWiring(
+        findings_at="result",
+        identity_of=_entity_identity,
+        material_of=None,
+        recompute=None,
+        label_of=_entity_label,
+    ),
+
     "propose_payment_run": AckWiring(
         findings_at="bills",
         identity_of=lambda f: {"bill": f.get("bill")},
