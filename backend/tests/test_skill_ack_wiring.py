@@ -218,6 +218,7 @@ def test_an_expired_snooze_lets_the_bill_back_through():
 #: that adds the name is the commit that argues that skill's three-way split.
 WIRED = [
     "find_overdue_invoices",
+    "find_overdue_tasks",
     "find_overdue_vendor_bills",
     "propose_payment_run",
 ]

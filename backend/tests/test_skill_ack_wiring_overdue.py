@@ -22,6 +22,7 @@ from services.skill_ack_wiring import ACK_WIRING, apply_wiring
 OVERDUE_SKILLS = {
     "find_overdue_invoices": "invoices",
     "find_overdue_vendor_bills": "vendor_bills",
+    "find_overdue_tasks": "tasks",
 }
 
 
@@ -225,3 +226,18 @@ def test_every_wired_family_member_reads_the_dispatcher_wrapper_key():
     handler-side key would filter nothing, for ever, silently."""
     for skill in OVERDUE_SKILLS:
         assert ACK_WIRING[skill].findings_at == "result"
+
+
+# ── 9 · the multi-assignee trap, which only tasks has ───────────────────────
+
+def test_adding_an_assignee_to_a_task_does_not_orphan_the_acknowledgement():
+    """`public.tasks` assigns through `assignee_user_ids`, a text[], and the
+    handler selects `assignee_user_ids[1]`. Adding a second assignee — or
+    removing the first — changes `owner` without changing anything about the
+    task. Had `owner` been in IDENTITY the ack would be orphaned by that edit;
+    in MATERIAL it would be voided. Both for a change that did not touch the
+    due date, the title or the status."""
+    before = _finding("tasks", owner="user_7")
+    after = _finding("tasks", owner="user_11", owner_name="Rahul Menon")
+    acks = _ack_for("find_overdue_tasks", before)
+    assert apply_wiring("find_overdue_tasks", _out([after]), acks)["result"] == []

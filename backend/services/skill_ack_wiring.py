@@ -270,6 +270,48 @@ ACK_WIRING: dict[str, AckWiring] = {
         label_of=_entity_label,
     ),
 
+    # ── find_overdue_tasks ──────────────────────────────────────────────────
+    #
+    # `public.tasks`, past `due_at`, not done and not cancelled. The longest
+    # list of the five in every real org, and the one most likely to be skimmed:
+    # a firm carrying forty overdue tasks it has consciously deprioritised reads
+    # the same forty every morning, which is how a list stops being read.
+    #
+    # IDENTITY — `entity.id` + `entity.module`, as the rest of the family, and
+    #   this module is where the argument for leaving `owner` OUT stops being
+    #   theoretical. For tasks the handler selects `assignee_user_ids[1]` — the
+    #   FIRST element of a text[] that a task can have several of. Adding a
+    #   second assignee, or removing the first, changes that value without
+    #   changing anything about the task. In IDENTITY it would orphan the
+    #   acknowledgement on a re-assignment; in MATERIAL it would void it. Both
+    #   for an edit that did not touch the due date, the title or the status.
+    #
+    # MATERIAL — None. The shape carries no amount and no status: `status` is
+    #   applied in the WHERE clause (`NOT IN ('done','cancelled')`) and never
+    #   returned, so a completed task LEAVES the list rather than moving within
+    #   it. `due_at` is not returned either — only `days_past`, derived from it,
+    #   which is drift.
+    #
+    #   That last one is the honest weakness of this entry, and it differs from
+    #   the invoice case in kind rather than degree: a task whose DUE DATE is
+    #   pushed out and then missed again is, to a person, a new failure — and
+    #   this wiring cannot see it, because the handler returns the age and not
+    #   the date it was measured from. The fix is a `due` field on the finding,
+    #   which is a change to a handler five skills share; it is recorded as owed
+    #   rather than made in a commit whose subject is the wiring.
+    #
+    # INCIDENTAL — `days_past`, `owner`, `owner_name`, and the `link` that opens
+    #   the task.
+    #
+    # RECOMPUTE — None. `{"result": [...]}` derives nothing.
+    "find_overdue_tasks": AckWiring(
+        findings_at="result",
+        identity_of=_entity_identity,
+        material_of=None,
+        recompute=None,
+        label_of=_entity_label,
+    ),
+
     "propose_payment_run": AckWiring(
         findings_at="bills",
         identity_of=lambda f: {"bill": f.get("bill")},
