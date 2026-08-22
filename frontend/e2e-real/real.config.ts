@@ -88,7 +88,7 @@ export default defineConfig({
       // against the deployed bundle. Same no-`setup` reason as `skills`: the
       // owner signs in with Google and has no password for auth.setup.ts.
       name: 'ui',
-      testMatch: /drawerpickers\.spec\.ts/,
+      testMatch: /(drawerpickers|createdcolumn)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
