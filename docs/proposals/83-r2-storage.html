@@ -264,16 +264,17 @@ otherwise                       →  this org's OWN bucket</pre>
 
 <h2>4 &middot; One grammar</h2>
 
-<p>Every key, in every module, built from the same six parts:</p>
+<p><strong>Each module owns a folder; inside it, a folder per kind of content; inside that,
+whose it is.</strong> Every key in every module, built from the same six parts:</p>
 
-<pre>{module}/{entity}/{entity_id}/{kind}/{YYYY}/{MM}/{ulid}--{slug}{ext}
-   │        │          │         │       │           │       │
-   │        │          │         │       └── date ───┘       └── the name a person typed,
-   │        │          │         │           partition           lowercased and safe
-   │        │          │         └── what this file IS to that entity
-   │        │          └── which one
-   │        └── what it hangs off
-   └── which module owns it</pre>
+<pre>{module}/{kind}/{owner}/{owner_id}/{YYYY}/{MM}/{ulid}--{slug}{ext}
+    │       │       │         │         │           │       │
+    │       │       │         │         └── date ───┘       └── the name a person typed,
+    │       │       │         │             partition           lowercased and safe
+    │       │       │         └── which one
+    │       │       └── what it belongs to: document, client, employee, team, user
+    │       └── what KIND of thing this file is
+    └── which module owns it</pre>
 
 <p>On the platform bucket the resolver still prepends
 <span class="mono">org/&lt;org_id&gt;/</span>, and on an org&rsquo;s own bucket it does not
@@ -284,19 +285,47 @@ bug 2 by construction.</p>
 <div class="scroll">
 <table>
   <tr><th>Today</th><th>Under one grammar</th></tr>
-  <tr><td class="mono">esign/originals/9f2a1c.pdf</td>
-      <td class="mono">esign/document/doc_9f2a/original/2026/08/01JQ8...--supply-agreement.pdf</td></tr>
-  <tr><td class="mono">esign/signatures/44bd0e.png</td>
-      <td class="mono">esign/document/doc_9f2a/signature/2026/08/01JQ8...--sign-kasti.png</td></tr>
+  <tr class="hot"><td class="mono">srijan/images/9f2a1c.png<br>
+      <span class="quiet">every image, every user, every purpose &mdash; one folder</span></td>
+      <td class="mono">srijan/social-image/user/usr_7/2026/08/01JQ8...--diwali-post.png<br>
+      srijan/blog-image/user/usr_7/2026/08/01JQ8...--gst-explainer.png<br>
+      srijan/logo/user/usr_12/2026/08/01JQ8...--mark-v3.png</td></tr>
+  <tr><td class="mono">esign/originals/9f2a.pdf<br>esign/signatures/44bd.png</td>
+      <td class="mono">esign/original/document/doc_9f2a/2026/08/01JQ8...--supply-agreement.pdf<br>
+      esign/signature/document/doc_9f2a/2026/08/01JQ8...--sign-kasti.png</td></tr>
   <tr><td class="mono">crm/cl_88/documents/7c31.pdf</td>
-      <td class="mono">crm/client/cl_88/document/2026/08/01JQ8...--gst-certificate.pdf</td></tr>
+      <td class="mono">crm/document/client/cl_88/2026/08/01JQ8...--gst-certificate.pdf</td></tr>
   <tr><td class="mono">pahchan/&lt;org&gt;/punch/aa19.jpg</td>
-      <td class="mono">pahchan/employee/emp_12/punch/2026/08/01JQ8...--clock-in.jpg</td></tr>
+      <td class="mono">pahchan/punch/employee/emp_12/2026/08/01JQ8...--clock-in.jpg</td></tr>
   <tr><td class="mono">projects/team_ab/f10c.xlsx</td>
-      <td class="mono">projects/team/team_ab/attachment/2026/08/01JQ8...--tb-march.xlsx</td></tr>
+      <td class="mono">projects/attachment/team/team_ab/2026/08/01JQ8...--tb-march.xlsx</td></tr>
   <tr><td class="mono">personal/&lt;user&gt;/22e8.png</td>
-      <td class="mono">personal/user/usr_7/upload/2026/08/01JQ8...--screenshot.png</td></tr>
+      <td class="mono">personal/upload/user/usr_7/2026/08/01JQ8...--screenshot.png</td></tr>
 </table>
+</div>
+
+<div class="card hot">
+  <h3>Sahayak images are the worst case, and they hide the user entirely</h3>
+  <p>Both places that store a generated image
+  (<span class="mono">ai_router.py:2168</span> and <span class="mono">:2491</span>) pass:</p>
+  <pre>filename = f"srijan-{uuid4().hex[:8]}.{ext}"
+user_id  = "system"                 &lt;-- hardcoded, at BOTH sites
+folder   = "srijan/images"          &lt;-- flat</pre>
+  <p>So every image any person generates, for any purpose, lands in one folder under a random
+  name, and <strong>the person who asked for it is never recorded on the file at all</strong>
+  &mdash; not in the folder, not in the filename, not even in the
+  <span class="mono">user_id</span> the storage layer was handed. Not even the
+  <span class="mono">personal/{user_id}</span> fallback would help, because the value passed
+  is the literal string <span class="mono">system</span>.</p>
+  <p>Two changes, and they are independent of the rest of this proposal:</p>
+  <ol>
+    <li><strong>Pass the real requesting user</strong> instead of
+      <span class="mono">"system"</span>. This is a one-line fix at each site and it is
+      worth doing on its own.</li>
+    <li><strong>Give the content type its own folder</strong> &mdash; social image, blog
+      image, logo, letterhead, product shot &mdash; taken from the brief that generated it,
+      which Srijan already knows at the moment it calls upload.</li>
+  </ol>
 </div>
 
 <div class="card ok">
@@ -304,8 +333,8 @@ bug 2 by construction.</p>
   <ul>
     <li><strong>A key explains itself.</strong> Paste one into a ticket and anybody can say
       what it is, whose it is and when it arrived &mdash; without a database.</li>
-    <li><strong>Every file for an entity is one prefix.</strong> Deleting a client, closing a
-      project or honouring a DPDP erasure request becomes a prefix delete instead of a join.</li>
+    <li><strong>&ldquo;Show me everything this person generated&rdquo;</strong> becomes a
+      prefix listing instead of an impossible question.</li>
     <li><strong>Retention becomes possible.</strong> Punch photos older than the policy window
       are a date prefix, so a lifecycle rule can expire them &mdash; which the Pahchan
       retention setting currently promises and cannot deliver.</li>
@@ -314,6 +343,19 @@ bug 2 by construction.</p>
     <li><strong>The filename survives</strong>, so support can search for what the customer
       actually called it.</li>
   </ul>
+</div>
+
+<div class="card warn">
+  <h4>The one thing this ordering costs</h4>
+  <p>Putting <em>kind</em> before <em>owner</em> means the files for a single document are no
+  longer under one prefix: an agreement&rsquo;s original, signatures, signed copy and
+  certificate sit under four. So &ldquo;delete everything for this document&rdquo; is four
+  prefix deletes rather than one.</p>
+  <p>That is a real cost and it is worth paying, because <strong>the kinds per module are a
+  short, closed, known list</strong> &mdash; eSign has exactly four &mdash; so the operation is
+  a loop over a constant, not a search. Browsing, which happens constantly, gets the shape
+  people actually think in; entity-wide deletion, which happens rarely, pays four calls
+  instead of one. The Storage tab in the next section does that loop for you.</p>
 </div>
 
 <h2>5 &middot; Showing the path in the org</h2>
