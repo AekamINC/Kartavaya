@@ -56,7 +56,7 @@ export function HeadCell({ sortKey, sort, onSort, num, className = '', children 
       <button type="button" className="tbl__sort" aria-sort={dir || 'none'}
         onClick={() => { const d = nextSort(dir); onSort(d ? { key: sortKey, dir: d } : null); }}>
         {children}
-        <svg className="ch" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        <svg className="pk-chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
         </svg>

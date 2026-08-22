@@ -788,8 +788,8 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .pk__tr:hover { background: var(--s-low); border-color: var(--outline-variant); }
 .pk__tr[aria-expanded="true"] { background: var(--s-low); border-color: var(--outline); }
 .pk__tr.is-empty { color: var(--on-surface-3); }
-.pk__tr .ch { flex: none; margin-left: 1px; opacity: .5; transition: transform var(--dur-fast) var(--ease-standard); }
-.pk__tr[aria-expanded="true"] .ch { transform: rotate(180deg); }
+.pk__tr .pk-chev { flex: none; margin-left: 1px; opacity: .5; transition: transform var(--dur-fast) var(--ease-standard); }
+.pk__tr[aria-expanded="true"] .pk-chev { transform: rotate(180deg); }
 .pk__lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* `field` dress: full-width, 36px, bordered — matches .fldx__in exactly, so a
    picker and an input in the same form row are the same object. */
@@ -1633,12 +1633,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    discover sorting was to hover every heading in turn. The owner reported it as
    "I can't see column sort". .35 is faint enough not to compete with the
    heading and present enough to say the column is a control. */
-.tbl__sort .ch { opacity: .35; transition: opacity var(--dur-fast) var(--ease-standard); }
-.tbl__sort:hover .ch { opacity: .8; }
-.tbl__sort[aria-sort="ascending"] .ch, .tbl__sort[aria-sort="descending"] .ch { opacity: 1; }
+.tbl__sort .pk-chev { opacity: .35; transition: opacity var(--dur-fast) var(--ease-standard); }
+.tbl__sort:hover .pk-chev { opacity: .8; }
+.tbl__sort[aria-sort="ascending"] .pk-chev, .tbl__sort[aria-sort="descending"] .pk-chev { opacity: 1; }
 /* The sorted column's heading is the one that is DOING something. */
 .tbl th[aria-sort="ascending"], .tbl th[aria-sort="descending"] { color: var(--on-surface); }
-.tbl__sort[aria-sort="descending"] .ch { transform: rotate(180deg); }
+.tbl__sort[aria-sort="descending"] .pk-chev { transform: rotate(180deg); }
 /* ── The row states, for all four systems at once ─────────────────────────
    Order is load-bearing and is the reference's own (app.css:184-187): zebra,
    then hover, then selection, then the last-row reset. Every one of these

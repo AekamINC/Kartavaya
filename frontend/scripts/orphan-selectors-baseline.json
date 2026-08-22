@@ -2181,6 +2181,11 @@
     "wahdr": {
       "file": "src/styles/sanvaad.css",
       "line": 1758
+    },
+    "ch": {
+      "file": "src/styles/sanvaad.css",
+      "line": 438,
+      "why": "Dead since the Sanvaad channel row was converted to `m2row`. It is held rather than deleted ONLY because removing CSS by selector match is how the `.side` rule was lost once; the `ch__*` family below it is still very much alive (ch__ic has ~10 consumers), so this needs a hand edit, not a script. Until then it is harmless: the chevron that used to collide with it is now `pk-chev`, and check-class-collisions fails if anything claims the name again."
     }
   }
 }

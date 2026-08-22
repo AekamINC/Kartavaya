@@ -185,7 +185,7 @@
   /* Sort direction chevron. Not an action, but it is the only thing that says
      a column header is sortable. Below the .7 the hover state uses, so a
      sorted column still reads as the loud one. */
-  .tbl__sort .ch { opacity: .4; }
+  .tbl__sort .pk-chev { opacity: .4; }
 }
 
 /* ── Tablet band, 768–1023 ────────────────────────────────────────────────
