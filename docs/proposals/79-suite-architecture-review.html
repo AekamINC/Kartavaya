@@ -1,0 +1,417 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice, procurement, payroll, HR — what the law needs and what we have</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF;
+    --rose:#A83E63; --amber:#8A6A18; --green:#2E7D52; --blue:#2F6690;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,'Cascadia Mono',monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F;
+    --rose:#E894B4; --amber:#DCC072; --green:#7ED4A2; --blue:#8FB8DC;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 70px;background:var(--bg);color:var(--ink);
+       font:400 14px/1.6 var(--fu);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font:500 27px/1.18 var(--fd);margin:0 0 4px;letter-spacing:-.01em}
+  h2{font:500 19px/1.25 var(--fd);margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--rule)}
+  h3{font:600 13px/1.3 var(--fu);margin:22px 0 7px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink3)}
+  h4{font:600 14px/1.3 var(--fu);margin:18px 0 5px}
+  p{margin:0 0 11px;max-width:88ch}
+  .lede{color:var(--ink2);font-size:15px;max-width:82ch;margin-bottom:2px}
+  .meta{color:var(--ink3);font-size:11.5px;font-family:var(--fm);margin:0 0 16px}
+  .ctl button{font:inherit;font-size:11.5px;font-weight:600;padding:6px 13px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--surf);color:var(--ink2);border-radius:999px;margin-left:5px}
+  .ctl button.on{background:var(--pr);color:var(--onp);border-color:var(--pr)}
+  .card{border:1px solid var(--rule);border-radius:13px;background:var(--surf);padding:16px 18px;margin:14px 0;
+        box-shadow:0 1px 2px var(--sh)}
+  .card.hot{border-color:var(--rose);border-left-width:4px}
+  .card.ok{border-color:var(--green);border-left-width:4px}
+  .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card.blue{border-color:var(--blue);border-left-width:4px}
+  .card h3,.card h4{margin-top:0}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}
+  th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink3);
+     border-bottom:1.5px solid var(--rule)}
+  td.num{text-align:right;font-family:var(--fm);font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.note td{color:var(--ink3);font-size:11.5px;font-style:italic;background:var(--low);border-bottom:none}
+  code,.mono{font-family:var(--fm);font-size:12px;background:var(--cont);padding:1px 5px;border-radius:4px}
+  ul,ol{margin:0 0 11px;padding-left:22px;max-width:88ch}
+  li{margin:0 0 5px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tag{display:inline-block;font:600 10px/1 var(--fu);letter-spacing:.04em;text-transform:uppercase;
+       padding:3px 7px;border-radius:5px;background:var(--cont);color:var(--ink2);vertical-align:middle}
+  .tag.no{background:var(--rose);color:#fff}
+  .tag.yes{background:var(--green);color:#fff}
+  .tag.part{background:var(--amber);color:#fff}
+  .src{font-size:11.5px;color:var(--ink3)}
+  .src a{color:var(--blue)}
+  .foot{margin-top:44px;padding-top:14px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px}
+  .quiet{color:var(--ink3)}
+  strong{font-weight:640}
+</style>
+
+<div class="wrap">
+
+<div class="top">
+  <div>
+    <h1>Invoice · Procurement · Payroll · HR</h1>
+    <p class="lede">An architecture review. What each domain is legally obliged to record
+      in India as of 2026, what this database actually holds today, and the gap between
+      the two — measured column by column, not remembered.</p>
+    <p class="meta">Proposal 79 &middot; 2026-08-22 &middot; schema audited read-only
+      against the live database &middot; statutory claims sourced and linked at the foot</p>
+  </div>
+  <div class="ctl">
+    <button id="bl" class="on" onclick="T('light')">Light</button>
+    <button id="bd" onclick="T('dark')">Dark</button>
+  </div>
+</div>
+
+<div class="card hot">
+  <h3>Two corrections to proposals 77 and 78</h3>
+  <p><strong>1. Departments ARE real records.</strong> I said twice that
+  <span class="mono">department</span> is free text and not a modelled entity. Half wrong.
+  <span class="mono">manav_departments</span> exists, holds <strong>30 rows</strong>, and
+  carries a <span class="mono">head_employee_id</span> — an owner, which is precisely what
+  a budget needs. What is missing is only the link: <span class="mono">manav_employees.department</span>
+  is TEXT with no foreign key. And 86 of 98 employees carry a department string, of which
+  <strong>85 already match a real department row by name</strong>.</p>
+  <p>So budget-by-department and approval-by-department are far more viable than I said.
+  The job is a foreign key and one data fix for a single mismatched row — not modelling
+  departments from scratch.</p>
+  <p><strong>2. The Labour Codes are already in force.</strong> All four commenced
+  <strong>21 November 2025</strong>. That is not a forthcoming change to plan for; it is
+  law that has been operative for nine months, and it changes how every salary in this
+  product must be structured.</p>
+</div>
+
+<h2>1 · Invoice</h2>
+
+<h3>What the law requires now</h3>
+<div class="scroll">
+<table>
+  <tr><th>Rule</th><th>Detail</th><th>Bites when</th></tr>
+  <tr><td><strong>E-invoicing (IRN)</strong></td>
+      <td>Mandatory at <strong>₹5 crore</strong> aggregate turnover, counted from any year
+          since FY 2017-18.</td>
+      <td>The moment a client crosses ₹5cr — and most CA-firm clients will.</td></tr>
+  <tr><td><strong>The 30-day rule</strong></td>
+      <td>From 1 April 2025, a business at ₹10cr+ must report an invoice to the IRP within
+          <strong>30 days of the invoice date</strong>. After that the IRP <em>rejects</em>
+          it and no IRN is generated. Credit and debit notes are in scope too.</td>
+      <td>Day 31. There is no appeal and no late path.</td></tr>
+  <tr><td><strong>Cancellation window</strong></td>
+      <td>An IRN can be cancelled within 24 hours. Miss it and the only remedy is a
+          <strong>credit note</strong>, itself reported to the IRP.</td>
+      <td>Hour 25.</td></tr>
+</table>
+</div>
+
+<h3>What we have</h3>
+<div class="card warn">
+  <table>
+    <tr><th>Field</th><th>State</th><th>Consequence</th></tr>
+    <tr><td><span class="mono">irn</span></td><td><span class="tag part">column only</span></td>
+        <td>The column exists. Nothing that makes it usable does.</td></tr>
+    <tr><td><span class="mono">ack_no</span>, <span class="mono">ack_date</span></td>
+        <td><span class="tag no">missing</span></td>
+        <td>The IRP's acknowledgement cannot be stored, so there is no proof of when we
+            reported — which is the only defence against the 30-day rule.</td></tr>
+    <tr><td><span class="mono">signed_qr</span> / <span class="mono">qr_code</span></td>
+        <td><span class="tag no">missing</span></td>
+        <td>The signed QR is <em>mandatory on the printed invoice</em>. Without it the
+            document is not a compliant e-invoice however correct the figures are.</td></tr>
+    <tr><td><span class="mono">einvoice_status</span></td><td><span class="tag no">missing</span></td>
+        <td>No way to tell "not applicable" from "not yet reported" from "rejected" — and
+            those are three completely different problems.</td></tr>
+    <tr><td><span class="mono">eway_bill_no</span></td><td><span class="tag no">missing</span></td>
+        <td>No e-way bill linkage at all.</td></tr>
+    <tr><td><span class="mono">original_invoice_id</span></td><td><span class="tag no">missing</span></td>
+        <td><strong>The one that matters most.</strong> A credit note cannot say which
+            invoice it credits. GST requires that reference, the IRP requires it, and
+            without it a credit note is an orphan document.</td></tr>
+    <tr><td><span class="mono">is_reverse_charge</span></td><td><span class="tag no">missing on invoices</span></td>
+        <td>Present on <span class="mono">ganit_vendor_bills</span>, absent on
+            <span class="mono">ganit_invoices</span>. RCM sales cannot be marked.</td></tr>
+  </table>
+</div>
+
+<div class="card hot">
+  <h4>The architectural read</h4>
+  <p>E-invoicing here is <strong>a stub, not a feature</strong>: one column with no state
+  machine, no acknowledgement, no QR and no failure handling. That is worse than not
+  having it, because the column implies a capability that does not exist.</p>
+  <p>And <strong>credit notes are functionally incomplete</strong>. They can be created —
+  that shipped this week — but they cannot reference the invoice they reverse. Given the
+  24-hour IRN cancellation window, the credit note <em>is</em> the correction mechanism
+  for e-invoicing. It has to carry the link before e-invoicing is worth starting.</p>
+</div>
+
+<h2>2 · Procurement</h2>
+
+<div class="card">
+  <p><strong>Nothing exists.</strong> No purchase order, no requisition, no goods receipt,
+  no anything. The landing zone does:
+  <span class="mono">ganit_vendor_bills</span> (189 rows) and
+  <span class="mono">ganit_vendors</span> (80).</p>
+  <p>Fully specified in <strong>proposal 77</strong>; competitive position in
+  <strong>78</strong>. Nothing to add here except the architect's note: the PO is the only
+  object in the system that records a <em>future</em> obligation. Everything else —
+  invoice, bill, payment, payslip — records something that already happened. That is why
+  it cannot be a field on the vendor bill, and it is also why committed spend is
+  currently unanswerable.</p>
+</div>
+
+<h2>3 · Payroll</h2>
+
+<h3>The Labour Codes changed the base</h3>
+
+<div class="card hot">
+  <p>In force since <strong>21 November 2025</strong>, replacing 29 laws with four codes.
+  The change that reaches every payslip:</p>
+  <p><strong>Basic + DA + retaining allowance must be at least 50% of total
+  remuneration.</strong> If allowances exceed 50%, the excess is <em>automatically
+  reclassified as wages</em> for PF, gratuity, ESI and bonus.</p>
+  <p>Two more that change the arithmetic:</p>
+  <ul>
+    <li><strong>Fixed-term staff get gratuity after 1 year</strong> — no five-year wait.</li>
+    <li><strong>Full and final settlement within two working days</strong> of the last
+      working day, under Section 17(2) of the Code on Wages. Not "by the next payroll
+      run". Two days.</li>
+  </ul>
+</div>
+
+<h3>What we have, against what payroll must produce</h3>
+
+<div class="scroll">
+<table>
+  <tr><th>Component</th><th>State</th><th>Note</th></tr>
+  <tr><td>basic, hra, da, gross</td><td><span class="tag yes">present</span></td><td>on the payslip</td></tr>
+  <tr><td>PF employee + employer</td><td><span class="tag yes">present</span></td><td></td></tr>
+  <tr><td>ESI employee + employer</td><td><span class="tag yes">present</span></td><td></td></tr>
+  <tr><td>Professional tax</td><td><span class="tag yes">present</span></td><td></td></tr>
+  <tr><td>TDS</td><td><span class="tag yes">present</span></td><td></td></tr>
+  <tr><td><span class="mono">statutory_treatment</span></td><td><span class="tag yes">present</span></td>
+      <td>Freezes how a payslip was computed. Genuinely good design — a March edit cannot
+          restate January.</td></tr>
+  <tr><td><strong>gratuity</strong></td><td><span class="tag no">missing</span></td>
+      <td>Payable on retirement, resignation after 5 years, death, disability or
+          retrenchment — and now after 1 year for fixed-term. Formula is
+          (Basic+DA) × 15 ÷ 26 × years. <strong>Interest at 10% p.a. applies if unpaid
+          beyond 30 days.</strong></td></tr>
+  <tr><td><strong>bonus</strong></td><td><span class="tag no">missing on the payslip</span></td>
+      <td>Statutory bonus is 8.33% minimum, 20% maximum, under the Payment of Bonus Act —
+          a different thing from the discretionary bonus we shipped this week, and both
+          need to exist.</td></tr>
+  <tr><td><strong>LWF</strong></td><td><span class="tag no">missing</span></td>
+      <td>Labour Welfare Fund, half-yearly, state by state.</td></tr>
+  <tr><td><strong>arrears</strong></td><td><span class="tag no">missing</span></td>
+      <td>Named by the market as one of the places payroll actually breaks.</td></tr>
+  <tr><td><strong>leave encashment</strong></td><td><span class="tag no">missing</span></td>
+      <td>A required F&amp;F component, and taxable beyond the exempt limit.</td></tr>
+  <tr><td><span class="mono">gross</span> / <span class="mono">ctc</span> on the
+      STRUCTURE</td><td><span class="tag no">missing</span></td>
+      <td><strong>The most consequential absence in this document.</strong> See below.</td></tr>
+</table>
+</div>
+
+<div class="card hot">
+  <h4>Why the missing <span class="mono">gross</span> on the salary structure matters</h4>
+  <p>93 salary structures exist and all 93 carry <span class="mono">basic</span>. None
+  carries <span class="mono">gross</span> or <span class="mono">ctc</span>.</p>
+  <p>Which means <strong>basic-as-a-percentage-of-gross is not computable from the
+  structure</strong> — and that is exactly the test the Code on Wages now imposes. We
+  cannot tell a firm whether its salary structures comply with the 50% rule, because the
+  denominator is not stored. It can be summed from the components, but a sum is not the
+  same as a declared gross, and the reclassification rule turns on the declared figure.</p>
+  <p>This is one column and a check. It is also the single highest-value payroll change
+  available, because every firm in India is currently restructuring salaries because of
+  it — and nobody in this market is telling them whether they got it right.</p>
+</div>
+
+<h3>Full and final settlement</h3>
+<div class="card warn">
+  <p>We have <span class="mono">manav_offboarding</span> (11 rows) and
+  <span class="mono">manav_exit_interviews</span>. We do not have an F&amp;F computation.
+  What one has to contain, from the research:</p>
+  <ul>
+    <li>Unpaid salary to the last working day, plus arrears</li>
+    <li>Pro-rata bonus — owed to anyone who worked <strong>30+ days</strong> in the year</li>
+    <li>Leave encashment</li>
+    <li>Gratuity where eligible</li>
+    <li>Pro-rata annual allowances (LTA, medical) to the last working day</li>
+    <li>Recoveries — notice shortfall, advances, unreturned assets</li>
+    <li>TDS under s.192 computed on the <em>full year's</em> income including the F&amp;F
+      month, before payment is released</li>
+  </ul>
+  <p>Two traps the sources name explicitly: <strong>using ÷30 for earnings and ÷26 for
+  recovery</strong> (or the reverse) without contractual backing invites disputes; and
+  the employee who left at <strong>4 years 9 months</strong> — the gratuity edge case
+  everyone gets wrong.</p>
+  <p>We have <span class="mono">manav_assets</span> with 100 rows, so the "F&amp;F held
+  because HR is waiting for the laptop" case is already modellable. That is a real
+  advantage — most payroll tools cannot see assets at all.</p>
+</div>
+
+<h2>4 · HR</h2>
+
+<div class="card ok">
+  <h3>This is the strongest part of the product</h3>
+  <div class="scroll">
+  <table>
+    <tr><th>Table</th><th>Rows</th><th>Table</th><th>Rows</th></tr>
+    <tr><td>manav_schedules</td><td class="num">867</td><td>manav_candidates</td><td class="num">101</td></tr>
+    <tr><td>manav_attendance</td><td class="num">481</td><td>manav_assets</td><td class="num">100</td></tr>
+    <tr><td>manav_leave_requests</td><td class="num">242</td><td>manav_departments</td><td class="num">30</td></tr>
+    <tr><td>manav_leave_balances</td><td class="num">107</td><td>manav_job_openings</td><td class="num">26</td></tr>
+    <tr><td>manav_leave_types</td><td class="num">22</td><td>manav_expense_claims</td><td class="num">15</td></tr>
+    <tr><td>manav_shift_definitions</td><td class="num">12</td><td>manav_offboarding</td><td class="num">11</td></tr>
+  </table>
+  </div>
+  <p>Attendance, leave with types and balances, shifts and schedules, recruitment,
+  onboarding, assets, offboarding, exit interviews, expense claims, departments with
+  heads. Against the competitive set in proposal 78, the <em>coverage</em> is comparable
+  to Keka and broader than greytHR. What Darwinbox adds beyond this — LMS, succession,
+  workforce analytics — is the part explicitly called overspecified for a firm this size.</p>
+  <p>And it all hangs off one employee record, which is the structural advantage Zoho
+  does not have.</p>
+</div>
+
+<div class="card warn">
+  <h4>The one HR gap that blocks other things</h4>
+  <p><span class="mono">manav_employees.department</span> is TEXT with no foreign key to
+  <span class="mono">manav_departments</span>, even though the table exists and 85 of 86
+  named employees already match a real row.</p>
+  <p>It blocks three separate things: PO budgets by department, PO approval routing by
+  department, and the commission <span class="mono">revenue_scope: 'department'</span>
+  that shipped this week and currently resolves against a string. One foreign key, one
+  data fix, three unblocked features.</p>
+</div>
+
+<h2>The statute calendar — where the gap really is</h2>
+
+<div class="card">
+  <p>45 rows across <strong>37 obligation keys</strong>, and the coverage is genuinely
+  good on the tax side: GST returns and thresholds and rates, e-invoice threshold, ITC
+  time limit and reversal, TDS deposit and statements and certificates, advance tax by
+  quarter, EPF and ESI remittance, MSME payment disallowance.</p>
+  <p><strong>On the labour side there is exactly one key:</strong>
+  <span class="mono">esi.wage_ceiling</span>.</p>
+  <p>Nothing for gratuity, nothing for the Payment of Bonus Act, nothing for LWF, and
+  nothing for the wage definition that came into force in November 2025. The mechanism is
+  right — dated law, read <span class="mono">as_of</span>, which is better architecture
+  than any competitor's hardcoded rates. It is simply not populated for the half of the
+  law that governs payroll.</p>
+  <p class="quiet">This is also the honest answer to "where are we behind greytHR". Not
+  the architecture — the <em>content</em>, and the process that keeps it current.</p>
+</div>
+
+<h2>What I would do, in order</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Change</th><th>Why here</th><th>Size</th></tr>
+  <tr><td class="num">1</td><td><strong>Department foreign key</strong></td>
+      <td>One key, one row to fix, three features unblocked. Nothing else in this table
+          has that ratio.</td><td>tiny</td></tr>
+  <tr><td class="num">2</td><td><strong><span class="mono">gross</span> on the salary
+      structure + a 50% wage-rule check</strong></td>
+      <td>Every firm in India is restructuring salaries right now because of a law that
+          has been in force nine months, and nobody is telling them whether they got it
+          right. One column, one check, enormous relevance.</td><td>small</td></tr>
+  <tr><td class="num">3</td><td><strong><span class="mono">original_invoice_id</span> on
+      invoices</strong></td>
+      <td>A credit note that cannot name the invoice it reverses is an orphan under GST —
+          and the credit note is the correction path once the 24-hour IRN window
+          closes.</td><td>small</td></tr>
+  <tr><td class="num">4</td><td><strong>Labour obligations in the statute calendar</strong></td>
+      <td>Gratuity, bonus, LWF, wage definition. The mechanism exists and is better than
+          the competition's; it is unpopulated.</td><td>small</td></tr>
+  <tr><td class="num">5</td><td><strong>Payslip: gratuity, bonus, LWF, arrears,
+      leave encashment</strong></td>
+      <td>Five columns and the arithmetic behind them. Turns payroll from "salary" into
+          "payroll".</td><td>medium</td></tr>
+  <tr><td class="num">6</td><td><strong>F&amp;F settlement</strong></td>
+      <td>Needs #5 first. Two working days is now the legal deadline, and assets are
+          already modelled — a real edge.</td><td>medium</td></tr>
+  <tr><td class="num">7</td><td><strong>GSTR-2B reconciliation</strong></td>
+      <td>Proposal 78's #1 by value. Sits here only because #1–#4 are days and this is
+          weeks.</td><td>medium</td></tr>
+  <tr><td class="num">8</td><td><strong>Purchase orders</strong> (proposal 77)</td>
+      <td>Creates the purchase register #7 reconciles.</td><td>large</td></tr>
+  <tr><td class="num">9</td><td><strong>E-invoicing, properly</strong></td>
+      <td>Needs #3 first. A real state machine, acknowledgement, signed QR, the 30-day
+          clock and the rejection path — not one column.</td><td>large</td></tr>
+  <tr class="note"><td colspan="4">Items 1 to 4 are together perhaps a week and are all
+    small, statutory, and currently wrong. I would do them before anything in proposals
+    77 or 78.</td></tr>
+</table>
+</div>
+
+<div class="card blue">
+  <h3>The architect's summary, in five lines</h3>
+  <ul>
+    <li><strong>HR is the strongest domain</strong> and needs one foreign key, not a
+      rebuild.</li>
+    <li><strong>Payroll computes salary, not payroll</strong> — no gratuity, bonus, LWF,
+      arrears or encashment, and it cannot test the wage rule that has governed Indian
+      salaries since November 2025.</li>
+    <li><strong>Invoicing is compliant for a normal invoice</strong> and incomplete for
+      the two documents that matter under stress: the credit note and the e-invoice.</li>
+    <li><strong>Procurement does not exist</strong>, and is the only place a future
+      obligation could ever be recorded.</li>
+    <li><strong>The statute calendar is the best idea in the product</strong> — dated law
+      rather than hardcoded rates — and it is half empty.</li>
+  </ul>
+</div>
+
+<div class="foot">
+  <p>Schema audited read-only against the live database 2026-08-22; every row count and
+  every missing column above was measured, not recalled. Statutory claims are sourced
+  below. Nothing in this proposal has been built.</p>
+  <p class="src"><strong>Invoicing and GST.</strong>
+    <a href="https://tallysolutions.com/accounting/e-invoicing-rules-in-india/">Tally — e-invoicing rules in India</a> &middot;
+    <a href="https://www.gimbooks.com/blog/5-crore-e-invoice-turnover-rule-2026/">₹5 crore e-invoice threshold</a> &middot;
+    <a href="https://www.ey.com/en_in/technical/alerts-hub/2023/09/nic-issues-advisory-on-new-time-limit-for-reporting-of-invoices-on-the-invoice-registration-portal">EY — NIC advisory on the IRP time limit</a> &middot;
+    <a href="https://taxpro.co.in/what-is-the-30-day-irn-reporting-rule-in-2026-and-how-to-make-sure-your-business-never-misses-it">The 30-day IRN reporting rule</a> &middot;
+    <a href="https://righttoinformation.wiki/gst-e-invoice-30-day-reporting-time-limit-india">30-day rule and ITC</a> &middot;
+    <a href="https://www.xflowpay.com/blog/e-invoice-limit">E-invoice limits 2026</a>
+  </p>
+  <p class="src"><strong>Labour codes and payroll.</strong>
+    <a href="https://payroll.org/news-resources/news/news-detail/2025/12/17/india-s-new-labour-codes-are-in-force-payroll-teams-must-act">PayrollOrg — the codes are in force</a> &middot;
+    <a href="https://www.india-briefing.com/news/salary-structure-india-labor-code-compliance-guide-44332.html/">India Briefing — new salary structure rules</a> &middot;
+    <a href="https://lawchakra.in/legal-updates/labour-codes-wage-rule-salaries-taxes/">LawChakra — the 50% wage rule</a> &middot;
+    <a href="https://www.scconline.com/blog/post/2026/04/26/ministry-faqs-four-labour-codes-india-2026/">Ministry FAQs on the four codes</a> &middot;
+    <a href="https://www.zfour.in/post/india-labour-codes-2026-50-percent-basic-pay-rule">50% basic pay: PF, ESI, gratuity impact</a>
+  </p>
+  <p class="src"><strong>Gratuity, bonus and F&amp;F.</strong>
+    <a href="https://paybooks.in/article/how-to-handle-gratuity-bonus-and-ff-settlement-without-getting-it-wrong/">Paybooks — gratuity, bonus and F&amp;F</a> &middot;
+    <a href="https://salarybox.in/blog/full-final-settlement-guide-how-to-calculate-employee-ff-in-india-with-examples/">F&amp;F calculation with examples</a> &middot;
+    <a href="https://www.pockethrms.com/guide/full-and-final-settlement/">PocketHRMS — F&amp;F guide</a> &middot;
+    <a href="https://futurexsolutions.com/employee-full-and-final-settlement-india-2026/">F&amp;F: calculation, timeline, legal obligations</a>
+  </p>
+</div>
+
+</div>
+
+<script>
+  function T(m){
+    document.documentElement.setAttribute('data-t', m);
+    document.getElementById('bl').classList.toggle('on', m === 'light');
+    document.getElementById('bd').classList.toggle('on', m === 'dark');
+  }
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) T('dark');
+</script>

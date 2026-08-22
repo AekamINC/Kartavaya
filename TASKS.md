@@ -22,6 +22,48 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Open from the 2026-08-22 session
 
+STATUTORY AND SMALL — proposal 79 ranks these above everything in 77/78.
+Together roughly a week, and all four are currently wrong.
+
+- [ ] Department foreign key `db` `api` `!`
+  CORRECTION to what I said in proposals 77 and 78: `manav_departments` EXISTS
+  with 30 rows AND a `head_employee_id`. Only the link is missing —
+  `manav_employees.department` is TEXT with no FK, and 85 of 86 named employees
+  already match a real department row. One key, one data fix, and it unblocks
+  PO budgets, PO approval-by-department, AND the commission
+  `revenue_scope: 'department'` that shipped this week and currently resolves
+  against a string.
+- [ ] `gross` on the salary structure + a 50% wage-rule check `db` `api` `!!`
+  The Labour Codes have been IN FORCE since 21 Nov 2025. Basic+DA must be >=50%
+  of total remuneration, and excess allowances are reclassified as wages for PF,
+  ESI, gratuity and bonus. 93 structures all carry `basic`; NONE carries `gross`
+  or `ctc`, so the test is not computable. Every firm in India is restructuring
+  salaries right now and nobody is telling them whether they got it right.
+- [ ] `original_invoice_id` on invoices `db` `api` `!`
+  A credit note cannot say which invoice it reverses. GST requires the
+  reference, and once the 24-hour IRN cancellation window closes the credit note
+  IS the correction path. Credit notes shipped this week are incomplete without
+  it.
+- [ ] Labour obligations in the statute calendar `db`
+  37 obligation keys today, excellent on tax; exactly ONE touches labour
+  (`esi.wage_ceiling`). Nothing for gratuity, the Payment of Bonus Act, LWF or
+  the Nov-2025 wage definition. The mechanism is better than any competitor's
+  hardcoded rates — it is simply unpopulated.
+
+- [ ] Payslip: gratuity, bonus, LWF, arrears, leave encashment `db` `api`
+  All five MISSING from `vetana_payslips`. Payroll currently computes salary,
+  not payroll. Gratuity carries 10% p.a. interest if unpaid past 30 days.
+- [ ] Full and final settlement `api` `web`
+  Needs the five columns above first. TWO WORKING DAYS is now the legal deadline
+  (Code on Wages s.17(2)). We already model assets (100 rows), so the "F&F held
+  waiting for the laptop" case is a real edge no payroll tool has.
+- [ ] E-invoicing is a STUB, not a feature `db` `api` `@me`
+  `irn` column exists; ack_no, ack_date, signed_qr, einvoice_status, eway_bill_no
+  ALL MISSING. The signed QR is mandatory on the printed invoice. Threshold is
+  Rs 5cr and the 30-day IRP reporting rule is absolute — day 31 is rejected with
+  no late path. Needs `original_invoice_id` first.
+
+
 - [ ] GSTR-2B reconciliation + vendor chase `api` `web` `!`
   RANKED #1 by proposal 78: the CA firm's actual daily pain, and it sits
   downstream of the purchase register the PO module creates. A bill must be in
