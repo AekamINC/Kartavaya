@@ -1633,6 +1633,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    discover sorting was to hover every heading in turn. The owner reported it as
    "I can't see column sort". .35 is faint enough not to compete with the
    heading and present enough to say the column is a control. */
+/* The Created column, on every record table. Narrow and quiet: it is a
+   scanning aid and an ordering key, not something to read. `tabular-nums` so a
+   column of dates lines up on the digits like the money columns do. */
+.tbl__created { width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--on-surface-2); }
+.tbl__created-none { color: var(--on-surface-3); }
+
 .tbl__sort .pk-chev { opacity: .35; transition: opacity var(--dur-fast) var(--ease-standard); }
 .tbl__sort:hover .pk-chev { opacity: .8; }
 .tbl__sort[aria-sort="ascending"] .pk-chev, .tbl__sort[aria-sort="descending"] .pk-chev { opacity: 1; }

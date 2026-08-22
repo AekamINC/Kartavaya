@@ -17,6 +17,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
 
 export default function ClientsTab() {
   // F32 — the module is read from the route, never named here.
@@ -230,6 +231,11 @@ export default function ClientsTab() {
                 <th>Website</th>
                 <HeadCell sortKey="contacts" sort={view.sort} onSort={view.onSort} className="gr__td--mid">Contacts</HeadCell>
                 <HeadCell sortKey="deals" sort={view.sort} onSort={view.onSort} className="gr__td--mid">Deals</HeadCell>
+                {/* `useTableView` sorts this for free: it compares dates as
+                    dates and puts blanks last in BOTH directions, which is the
+                    same contract CreatedColumn states for tables not on the
+                    hook. Nothing else is needed here. */}
+                <CreatedHead sort={view.sort} onSort={view.onSort} />
               </tr>
             </thead>
             <tbody>
@@ -253,6 +259,7 @@ export default function ClientsTab() {
                   <td className="gr__td--mute">{c.website || '—'}</td>
                   <td className="gr__td--mid">{c.contact_count}</td>
                   <td className="gr__td--mid">{c.deal_count}</td>
+                  <CreatedCell value={c.created_at} />
                 </tr>
               ))}
             </tbody>
