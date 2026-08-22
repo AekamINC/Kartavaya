@@ -498,7 +498,83 @@ by inbox order, since every inbox item carries equal priority.</p>
   when it goes. Not a release per item.</p>
 </div>
 
-<h2>7 &middot; What I need from you</h2>
+<h2>7 &middot; The four decisions — answered and acted on</h2>
+
+<div class="card ok">
+  <h3>1 &amp; 2 &middot; QA eviction and the 25% — DONE</h3>
+  <p>Backed up in full to the schema <span class="mono">qa_cleanup_20260822</span> first —
+  every table restorable, and the delete set frozen into
+  <span class="mono">deleted_task_ids</span> so no later statement could drift. Children were
+  deleted before parents, which matters here because <strong>only
+  <span class="mono">task_reminders</span> declares a foreign key to
+  <span class="mono">tasks</span></strong>: nothing else would have raised, it would just
+  have orphaned silently.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>&nbsp;</th><th class="num">before</th><th class="num">after</th><th>check</th></tr>
+    <tr><td>Tasks</td><td class="num">736</td><td class="num">473</td><td>263 deleted</td></tr>
+    <tr><td>&nbsp;&nbsp;of them QA-created</td><td class="num">351</td><td class="num">88</td><td><strong>25.1% kept</strong></td></tr>
+    <tr><td>&nbsp;&nbsp;NOT QA-created</td><td class="num">385</td><td class="num">385</td><td><span class="tag ok">untouched</span></td></tr>
+    <tr><td>Time entries</td><td class="num">292</td><td class="num">108</td><td>184</td></tr>
+    <tr><td>Notifications</td><td class="num">5,399</td><td class="num">2,587</td><td>2,812 — the fan-out bug&rsquo;s legacy</td></tr>
+    <tr><td>Activity events</td><td class="num">1,312</td><td class="num">952</td><td>360</td></tr>
+    <tr><td>QA memberships in live orgs</td><td class="num">5</td><td class="num">0</td><td><span class="tag ok">evicted</span></td></tr>
+    <tr><td>QA roles in live orgs</td><td class="num">2</td><td class="num">0</td><td><span class="tag ok">evicted</span></td></tr>
+    <tr><td>QA access to the TEST ORG</td><td class="num">5</td><td class="num">5</td><td><span class="tag ok">intact — e2e still runs</span></td></tr>
+  </table>
+  </div>
+  <p><strong>The 88 kept are not a random quarter.</strong> Five are protected because a real
+  person touched them — logged time, left a comment, was assigned, or completed them — and
+  the other 83 are simply the most recent, so no project empties out. The user rows
+  themselves were <em>not</em> deleted: the logins survive, they have just left the live orgs.</p>
+  <p class="quiet">Orphan check: <strong>zero</strong> orphans created by this delete. Two
+  time entries and 47 notifications do point at tasks that no longer exist, but all of them
+  pre-date today — a separate integrity issue, now logged.</p>
+</div>
+
+<div class="card blue">
+  <h3>3 &middot; Does <span class="mono">updated_by</span> justify ~90 tables? My answer: no</h3>
+  <p>Measured: of <strong>301 base tables</strong>, 109 carry
+  <span class="mono">updated_at</span>, 81 carry a <span class="mono">created_by</span>, and
+  exactly <strong>2</strong> carry <span class="mono">updated_by</span>.</p>
+  <p>The reason not to sweep is not cost, it is <em>truth</em>. A column arrives in one
+  migration; the write paths that populate it land one module at a time. In between you have
+  a column that is NULL on almost every row — and a blank <span class="mono">updated_by</span>
+  reads as &ldquo;nobody has edited this&rdquo;, which is a claim, not an absence. That is
+  worse than not having the column, because someone will eventually settle an argument with
+  it. The 81 tables that already carry <span class="mono">created_by</span> and never render
+  it are the same lesson, already paid for once.</p>
+  <p><strong>So: add <span class="mono">updated_by</span> where an edit is actually
+  disputed</strong> — invoices, tasks, clients and companies, employees, payroll, purchase
+  orders, quotes, orders. Roughly 12–18 tables, each in the same commit as the write path
+  that fills it and the column that shows it. Not one migration; one per module, as that
+  module is touched.</p>
+</div>
+
+<div class="card ok">
+  <h3>4 &middot; The derived Sales customer — the question dissolves</h3>
+  <p>I framed this as a choice between three dates. Checking the schema, there is no choice
+  to make: <strong>a Sales customer <em>is</em> a <span class="mono">graha_clients</span>
+  row</strong>, and that row already carries <span class="mono">created_at</span>,
+  <span class="mono">created_by</span> and <span class="mono">updated_at</span>. Nothing is
+  derived about its provenance — only its <em>customer-ness</em> is derived, from whether
+  an order points at it.</p>
+  <p>So, per your instruction — customer, client and company show <strong>created by</strong>
+  and <strong>modified by</strong>, with the date carried for the log even though it is not
+  the point:</p>
+  <ul>
+    <li><span class="mono">created_by</span> already exists on
+      <span class="mono">graha_clients</span>, <span class="mono">crm_contacts</span> and
+      <span class="mono">vikray_orders</span>. It only needs rendering.</li>
+    <li><span class="mono">updated_by</span> exists on none of them and must be added —
+      three or four tables, which is exactly the targeted approach argued above rather than
+      the 90-table sweep.</li>
+    <li><span class="mono">ganit_vendors</span> is the outlier: it has
+      <span class="mono">created_at</span> and nothing else.</li>
+  </ul>
+</div>
+
+<h2>8 &middot; Still open</h2>
 
 <div class="card">
   <table>
@@ -525,7 +601,7 @@ by inbox order, since every inbox item carries equal priority.</p>
 <div class="foot">
   Proposal 82 &middot; every count measured read-only against the live database on
   2026-08-22 &middot; seven inbox items verified, ten recorded as reported and marked
-  unverified &middot; the only write performed was migration 193, applied and verified above &middot; twelve workstreams.
+  unverified &middot; migration 193 applied and verified &middot; 263 seeded tasks and 3,448 child rows deleted after a full in-database backup &middot; twelve workstreams.
 </div>
 
 </div>
