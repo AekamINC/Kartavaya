@@ -50,6 +50,13 @@ ROSTER = [
 ]
 
 
+#: `project_assignments` is the authority the approval gate uses, and the two
+#: copies of the rule disagree: `team_members` calls ADMIN an admin of this
+#: project, `project_assignments` does not. Modelling both is the point — a
+#: fan-out reading the wrong table mails a person this one must not.
+PROJECT_ADMINS = {OWNER}
+
+
 class RecordingPool:
     """Captures every query, and answers the ones the handler depends on.
 
@@ -64,12 +71,19 @@ class RecordingPool:
     async def fetch(self, sql, *args):
         self.queries.append((sql, args))
         if "FROM team_members" in sql:
+            # The old, wrong source. Answer it faithfully so a fan-out that goes
+            # back to it fails here rather than passing on a friendlier fixture.
             rows = [r for r in ROSTER if r["user_id"] != args[1]]
             if "role IN" in sql:
                 assigned = set(args[2]) if len(args) > 2 else set()
                 rows = [r for r in rows
                         if r["role"] in ("owner", "admin") or r["user_id"] in assigned]
             return rows
+        if "project_assignments" in sql:
+            assigned = set(args[2]) if len(args) > 2 else set()
+            return [r for r in ROSTER
+                    if r["user_id"] != args[1]
+                    and (r["user_id"] in assigned or r["user_id"] in PROJECT_ADMINS)]
         if "FROM users" in sql:
             wanted = set(args[0] if args else [])
             return [r for r in ROSTER if r["user_id"] in wanted]
@@ -114,7 +128,6 @@ def test_done_reaches_admins_and_assignees(outbox):
     _mark_done(RecordingPool(), team_id=TEAM)
     got = set(outbox["done"])
     assert "keval@example.com" in got, "the project owner is an admin and is told"
-    assert "qaadmin@example.com" in got, "a project admin is told"
     assert "kastiorg@example.com" in got, "the assignee is told"
 
 
@@ -124,6 +137,21 @@ def test_an_uninvolved_project_member_is_not_emailed(outbox):
     assert "kevaluk@example.com" not in outbox["done"], (
         "a plain project member who was not assigned and is not an admin was "
         "emailed: %r" % (outbox["done"],))
+
+
+def test_admin_is_read_from_the_same_table_as_the_approval_gate(outbox):
+    """`team_members` calls ADMIN an admin of this project. It is not the authority.
+
+    The approval gate resolves owner/admin from `project_assignments`
+    (server.py:2409). Two fan-outs answering "who runs this project"
+    differently is how one list gains a person the other never had — which is
+    literally the case here: this account is an admin in `team_members` and
+    absent from `project_assignments`.
+    """
+    _mark_done(RecordingPool(), team_id=TEAM)
+    assert "qaadmin@example.com" not in outbox["done"], (
+        "the done fan-out resolved admins from team_members, which disagrees "
+        "with the approval gate: %r" % (outbox["done"],))
 
 
 def test_done_does_not_also_send_the_status_changed_mail(outbox):
@@ -147,8 +175,10 @@ def test_the_roster_is_narrowed_in_sql_not_in_python(outbox):
     pool = RecordingPool()
     _mark_done(pool, team_id=TEAM)
 
-    roster = [(q, a) for q, a in pool.queries if "FROM team_members" in q]
-    assert roster, "the done fan-out never queried the project roster"
+    roster = [(q, a) for q, a in pool.queries if "project_assignments" in q]
+    assert roster, (
+        "the done fan-out did not resolve admins from project_assignments, the "
+        "table the approval gate uses")
     sql, args = roster[0]
     assert "role IN" in sql, (
         "the roster query does not restrict by role, so it selects every member "
@@ -156,3 +186,6 @@ def test_the_roster_is_narrowed_in_sql_not_in_python(outbox):
     assert len(args) == 3 and list(args[2]) == [ASSIGNEE], (
         "the assignee list must be bound as a parameter, not interpolated: %r"
         % (args,))
+    assert not [q for q, _ in pool.queries if "FROM team_members" in q], (
+        "the done fan-out still reads team_members, the copy of the rule that "
+        "disagrees with the approval gate")

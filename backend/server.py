@@ -4158,13 +4158,30 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
     # assignees did the work, and nobody else asked to hear about it.
     if new_status == "done" and team_id:
         try:
+            # "Project admin" is read from `project_assignments`, which is where
+            # the approval gate already reads it (server.py:2409). The other copy
+            # of the rule, `team_members.role`, gives a different answer: it names
+            # an owner or admin on 44 of 52 live projects where
+            # `project_assignments` names one on all 52, and on at least one
+            # project the two disagree about who the admins are. Two fan-outs
+            # answering "who runs this project" differently is how a person ends
+            # up on one list and not the other.
+            #
+            # Assignees are taken from the task, not from membership, so someone
+            # assigned to a project they do not belong to is still told their own
+            # task is done.
             member_rows = await pool.fetch("""
                 SELECT DISTINCT u.user_id, COALESCE(u.full_name,u.name,u.email) AS name, u.email
-                FROM team_members tm
-                JOIN users u ON u.user_id = tm.user_id
-                WHERE tm.team_id=$1 AND tm.status='active' AND tm.user_id IS NOT NULL
-                  AND tm.user_id != $2
-                  AND (tm.role IN ('owner','admin') OR tm.user_id = ANY($3::text[]))
+                FROM users u
+                WHERE u.user_id <> $2
+                  AND (
+                    u.user_id = ANY($3::text[])
+                    OR EXISTS (
+                      SELECT 1 FROM project_assignments pa
+                      WHERE pa.team_id=$1 AND pa.user_id=u.user_id
+                        AND pa.role IN ('owner','admin')
+                    )
+                  )
             """, team_id, actor_id, assignees)
             project_row  = await pool.fetchrow("SELECT name FROM teams WHERE team_id=$1", team_id) if not locals().get("project_name") else None
             project_name = (project_row["name"] if project_row else None) if project_row else locals().get("project_name")
