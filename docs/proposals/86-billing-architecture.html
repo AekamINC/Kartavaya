@@ -1,0 +1,571 @@
+<title>Kartavya Billing Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --surface-alt: #f3f2ee;
+  --border: #e2e0d8;
+  --text: #1a1917;
+  --text-2: #5c5a52;
+  --text-3: #8a877d;
+  --accent: #2d6a4f;
+  --accent-light: #e8f0eb;
+  --red: #b5362a;
+  --red-light: #fceeed;
+  --amber: #a16207;
+  --amber-light: #fef9ec;
+  --blue: #1d5fa6;
+  --blue-light: #eef4fb;
+  --tag-exists: #2d6a4f;
+  --tag-exists-bg: #e8f0eb;
+  --tag-missing: #b5362a;
+  --tag-missing-bg: #fceeed;
+  --tag-partial: #a16207;
+  --tag-partial-bg: #fef9ec;
+  --tag-planned: #1d5fa6;
+  --tag-planned-bg: #eef4fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412;
+    --surface: #1e1d1a;
+    --surface-alt: #262520;
+    --border: #3a3832;
+    --text: #e8e6e0;
+    --text-2: #a9a69c;
+    --text-3: #706d64;
+    --accent: #5aab7e;
+    --accent-light: #1a2e22;
+    --red: #e06458;
+    --red-light: #2c1816;
+    --amber: #d4a12a;
+    --amber-light: #2a2210;
+    --blue: #5a9fd6;
+    --blue-light: #142030;
+    --tag-exists: #5aab7e;
+    --tag-exists-bg: #1a2e22;
+    --tag-missing: #e06458;
+    --tag-missing-bg: #2c1816;
+    --tag-partial: #d4a12a;
+    --tag-partial-bg: #2a2210;
+    --tag-planned: #5a9fd6;
+    --tag-planned-bg: #142030;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412;
+  --surface: #1e1d1a;
+  --surface-alt: #262520;
+  --border: #3a3832;
+  --text: #e8e6e0;
+  --text-2: #a9a69c;
+  --text-3: #706d64;
+  --accent: #5aab7e;
+  --accent-light: #1a2e22;
+  --red: #e06458;
+  --red-light: #2c1816;
+  --amber: #d4a12a;
+  --amber-light: #2a2210;
+  --blue: #5a9fd6;
+  --blue-light: #142030;
+  --tag-exists: #5aab7e;
+  --tag-exists-bg: #1a2e22;
+  --tag-missing: #e06458;
+  --tag-missing-bg: #2c1816;
+  --tag-partial: #d4a12a;
+  --tag-partial-bg: #2a2210;
+  --tag-planned: #5a9fd6;
+  --tag-planned-bg: #142030;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'DM Sans', system-ui, sans-serif; line-height: 1.6; }
+.container { max-width: 960px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
+
+h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.25rem; }
+.subtitle { color: var(--text-2); font-size: 0.95rem; margin-bottom: 2.5rem; }
+
+h2 { font-size: 1.15rem; font-weight: 600; margin: 2.5rem 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); letter-spacing: -0.01em; }
+h3 { font-size: 0.95rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+
+p, li { font-size: 0.875rem; color: var(--text-2); }
+p { margin-bottom: 0.75rem; }
+ul { padding-left: 1.25rem; margin-bottom: 0.75rem; }
+li { margin-bottom: 0.25rem; }
+strong { color: var(--text); font-weight: 600; }
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; background: var(--surface-alt); padding: 0.1em 0.35em; border-radius: 3px; }
+
+.tag { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0.15em 0.5em; border-radius: 3px; letter-spacing: 0.03em; text-transform: uppercase; vertical-align: middle; margin-left: 0.4em; }
+.tag-exists { color: var(--tag-exists); background: var(--tag-exists-bg); }
+.tag-missing { color: var(--tag-missing); background: var(--tag-missing-bg); }
+.tag-partial { color: var(--tag-partial); background: var(--tag-partial-bg); }
+.tag-planned { color: var(--tag-planned); background: var(--tag-planned-bg); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1.25rem; margin-bottom: 1rem; }
+.card h4 { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 1rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; color: var(--text-3); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--border); }
+td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+.tbl-wrap { overflow-x: auto; }
+
+.level-badge { display: inline-flex; align-items: center; gap: 0.3em; font-size: 0.75rem; font-weight: 600; }
+.tier { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+.tier-aekam { background: var(--accent); }
+.tier-org { background: var(--blue); }
+.tier-both { background: var(--amber); }
+
+.phase { margin-bottom: 2rem; }
+.phase-header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.75rem; }
+.phase-num { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 500; color: var(--accent); background: var(--accent-light); padding: 0.2em 0.6em; border-radius: 3px; }
+.phase-title { font-size: 1rem; font-weight: 600; }
+.phase-meta { font-size: 0.75rem; color: var(--text-3); }
+
+.summary-box { background: var(--accent-light); border: 1px solid var(--accent); border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 2rem; }
+.summary-box p { color: var(--text); margin-bottom: 0.25rem; }
+.summary-box .num { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--accent); }
+
+.note { background: var(--amber-light); border-left: 3px solid var(--amber); padding: 0.75rem 1rem; border-radius: 0 4px 4px 0; margin: 1rem 0; font-size: 0.8rem; color: var(--text-2); }
+</style>
+
+<div class="container">
+
+<h1>Billing Architecture Plan</h1>
+<p class="subtitle">Gap analysis and implementation roadmap — Kartavya by Aekam Inc</p>
+
+<div class="summary-box">
+  <p><strong>Two tiers.</strong> Aekam bills orgs for the platform (exists, mostly manual). Orgs bill their own clients through modules like Sales, CRM, Procurement (does not exist at all). Module settings for org-level customization (partially exists).</p>
+  <p style="margin-top:0.5rem;"><span class="num">17</span> capabilities exist &nbsp;·&nbsp; <span class="num">31</span> are missing &nbsp;·&nbsp; <span class="num">6</span> phases proposed</p>
+</div>
+
+<h2>I. What Exists Today</h2>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+  <tr><th style="width:35%">Capability</th><th>Status</th><th>Where</th></tr>
+</thead>
+<tbody>
+  <tr><td>Plan tiers (free/starter/growth/scale)</td><td><span class="tag tag-exists">Built</span></td><td><code>plans</code> table, seed data</td></tr>
+  <tr><td>Module catalogue (13 modules)</td><td><span class="tag tag-exists">Built</span></td><td><code>add_on_modules</code>, <code>role_tiers.ALL_MODULES</code></td></tr>
+  <tr><td>One subscription per org</td><td><span class="tag tag-exists">Built</span></td><td><code>subscriptions</code> table</td></tr>
+  <tr><td>Module activation/deactivation</td><td><span class="tag tag-exists">Built</span></td><td><code>module_subscriptions</code>, soft-flag pattern</td></tr>
+  <tr><td>Org-side module toggle (on/off within provisioned set)</td><td><span class="tag tag-exists">Built</span></td><td><code>org_modules.py</code>, org_owner only</td></tr>
+  <tr><td>Per-user module grants (viewer/editor/approver/admin)</td><td><span class="tag tag-exists">Built</span></td><td><code>org_member_modules</code></td></tr>
+  <tr><td>Module gating middleware</td><td><span class="tag tag-exists">Built</span></td><td><code>middleware/subscription.py</code></td></tr>
+  <tr><td>Seat model (org seats + Pahchan seats)</td><td><span class="tag tag-exists">Built</span></td><td><code>seat_model.py</code></td></tr>
+  <tr><td>Credit wallet (allowance + purchased, two-bucket)</td><td><span class="tag tag-exists">Built</span></td><td><code>hub_org_credits</code>, <code>credits.py</code></td></tr>
+  <tr><td>Credit ledger with idempotency</td><td><span class="tag tag-exists">Built</span></td><td><code>hub_org_credit_transactions</code></td></tr>
+  <tr><td>Per-member credit ceilings</td><td><span class="tag tag-exists">Built</span></td><td><code>hub_user_credits</code></td></tr>
+  <tr><td>Billing lines (platform/support/setup/ongoing/topup)</td><td><span class="tag tag-exists">Built</span></td><td><code>org_billing_lines</code>, migration 096</td></tr>
+  <tr><td>Platform invoices with no-double-charge</td><td><span class="tag tag-exists">Built</span></td><td><code>subscription_invoices</code> + <code>invoice_billing_lines</code></td></tr>
+  <tr><td>Manual payment recording (UPI)</td><td><span class="tag tag-exists">Built</span></td><td><code>subscription.py</code> admin endpoint</td></tr>
+  <tr><td>Usage tracking (daily metrics)</td><td><span class="tag tag-exists">Built</span></td><td><code>usage_tracking</code></td></tr>
+  <tr><td>Admin billing console</td><td><span class="tag tag-exists">Built</span></td><td><code>AdminBillingPage.jsx</code></td></tr>
+  <tr><td>Org billing tab</td><td><span class="tag tag-exists">Built</span></td><td><code>TabBilling.jsx</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>II. Gap Analysis by Category</h2>
+
+<h3>A. Core Billing & Cycle Terms <span class="tag tag-missing">12 gaps</span></h3>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+  <tr><th>Term</th><th>Level</th><th>Status</th><th>Gap Detail</th></tr>
+</thead>
+<tbody>
+  <tr>
+    <td><strong>Pro-rata / Proration</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>No proration logic anywhere. Plan changes via <code>admin_set_plan</code> do a raw UPSERT with no partial-month calculation. Org-side: Ganit invoices have no proration on services either.</td>
+  </tr>
+  <tr>
+    <td><strong>Billing Cycle Advancement</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td><code>next_billing_date</code> and <code>current_period_end</code> are set once on plan assignment but never advanced. No cron or job rolls periods forward.</td>
+  </tr>
+  <tr>
+    <td><strong>Anniversary / Billing Anchor</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>No concept of a per-org anchor day. All billing dates are manually set.</td>
+  </tr>
+  <tr>
+    <td><strong>Co-termination</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>Modules activate with no alignment to the org's billing cycle. No proration to sync renewal dates.</td>
+  </tr>
+  <tr>
+    <td><strong>In Advance vs In Arrears</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>No billing direction concept. Everything is manually invoiced with no distinction between pre-pay and post-pay.</td>
+  </tr>
+  <tr>
+    <td><strong>Automated Invoice Generation</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>Invoices are raised by hand from the admin console. No scheduled generation from billing lines.</td>
+  </tr>
+  <tr>
+    <td><strong>Credit Auto-Reset Cron</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-partial">Lazy</span></td>
+    <td>Allowance resets lazily on first spend in a new period. No scheduled job ensures it happens for idle orgs.</td>
+  </tr>
+  <tr>
+    <td><strong>Dunning / Overdue Escalation</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td><code>reminder_sent_at</code> column exists but nothing writes it. No automated reminders, no grace period logic, no access degradation.</td>
+  </tr>
+  <tr>
+    <td><strong>Subscription Pause (Soft/Hard)</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-partial">Schema only</span></td>
+    <td><code>status='paused'</code> is in the CHECK constraint but no endpoint sets it and no middleware enforces it differently from active.</td>
+  </tr>
+  <tr>
+    <td><strong>Trial Management</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-partial">Schema only</span></td>
+    <td><code>trial_ends_at</code> exists but no code checks or expires trials.</td>
+  </tr>
+  <tr>
+    <td><strong>Mid-Cycle Upgrade/Downgrade</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>Plan changes are immediate with no credit/debit calculation for the remaining period.</td>
+  </tr>
+  <tr>
+    <td><strong>Self-Serve Plan Changes</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-planned">By design</span></td>
+    <td>Deliberately not self-serve — pricing is per-org, negotiated. This is intentional, not a gap.</td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>B. Volumetric & Usage Terms <span class="tag tag-missing">6 gaps</span></h3>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+  <tr><th>Term</th><th>Level</th><th>Status</th><th>Gap Detail</th></tr>
+</thead>
+<tbody>
+  <tr>
+    <td><strong>Metered / PAYG Billing</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-partial">Tracked, not billed</span></td>
+    <td>Credit spend is tracked and displayed, but overage is informational — never automatically billed.</td>
+  </tr>
+  <tr>
+    <td><strong>Overage Auto-Billing</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td><code>overage_credits</code> is in the cost report but never turns into an invoice line.</td>
+  </tr>
+  <tr>
+    <td><strong>Tiered / Volume Pricing</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>Plan pricing is flat per-user. No graduated or bracket pricing for transaction volume (PO count, invoice count, email sends).</td>
+  </tr>
+  <tr>
+    <td><strong>Quota Limits with Enforcement</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-partial">Seats only</span></td>
+    <td>Seat caps exist (<code>max_users</code>, <code>max_pahchan_seats</code>). No caps on transactions, storage, emails, API calls, or other volumetrics.</td>
+  </tr>
+  <tr>
+    <td><strong>Rollover / Credit Carry</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-partial">Purchased only</span></td>
+    <td>Purchased credits carry over; allowance resets. No rollover cap on purchased credits.</td>
+  </tr>
+  <tr>
+    <td><strong>True-Up Reconciliation</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>No periodic reconciliation of actual headcount or usage vs contracted amounts.</td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>C. Headcount & Access Terms <span class="tag tag-partial">3 gaps</span></h3>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+  <tr><th>Term</th><th>Level</th><th>Status</th><th>Gap Detail</th></tr>
+</thead>
+<tbody>
+  <tr>
+    <td><strong>PEPM (Per Employee Per Month)</strong></td>
+    <td><span class="level-badge"><span class="tier tier-aekam"></span> Aekam</span></td>
+    <td><span class="tag tag-partial">Counted, not billed</span></td>
+    <td>Pahchan seats are counted and displayed. No automatic PEPM billing line generation.</td>
+  </tr>
+  <tr>
+    <td><strong>Active/Inactive Billing Logic</strong></td>
+    <td><span class="level-badge"><span class="tier tier-both"></span> Both</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>No policy for when a deactivated employee stops costing. Seats are counted at query time with no snapshot.</td>
+  </tr>
+  <tr>
+    <td><strong>FTE-Based Pricing</strong></td>
+    <td><span class="level-badge"><span class="tier tier-org"></span> Org</span></td>
+    <td><span class="tag tag-missing">Missing</span></td>
+    <td>No FTE calculation or billing option.</td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>D. Org-Level Module: Billing Their Own Clients <span class="tag tag-missing">All missing</span></h3>
+
+<div class="note">This entire tier does not exist. Orgs cannot bill their own clients through Kartavya modules. The gaps below represent the features needed for orgs to use billing concepts within Sales, CRM, HR, Procurement, etc.</div>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+  <tr><th>Capability</th><th>Module</th><th>Description</th></tr>
+</thead>
+<tbody>
+  <tr><td><strong>Client Billing Profiles</strong></td><td>CRM / Sales</td><td>Per-client billing cycle, payment terms, preferred currency, GST treatment, credit limit</td></tr>
+  <tr><td><strong>Recurring Service Billing</strong></td><td>CRM / Sales</td><td>Retainer/subscription invoicing for ongoing client services with auto-generation from templates</td></tr>
+  <tr><td><strong>Pro-rata on Client Services</strong></td><td>CRM / Sales</td><td>Mid-month service starts/stops generate proportional invoices</td></tr>
+  <tr><td><strong>Arrears Billing for Services</strong></td><td>Procurement</td><td>Bill vendors/suppliers after service delivery based on actuals vs PO</td></tr>
+  <tr><td><strong>Metered Client Billing</strong></td><td>Sales</td><td>Track billable hours, units, or transactions and generate invoices from actuals</td></tr>
+  <tr><td><strong>Prorated Salary Calc</strong></td><td>HR / Payroll</td><td>Mid-month joiner/leaver salary calculated by working days in period</td></tr>
+  <tr><td><strong>Quota Proration for Sales</strong></td><td>Sales / CRM</td><td>Mid-quarter hires get proportional targets</td></tr>
+  <tr><td><strong>SLA Credits</strong></td><td>Procurement</td><td>Calculate and apply service credits when vendor SLAs are missed</td></tr>
+  <tr><td><strong>Vendor Rate Cards</strong></td><td>Procurement</td><td>Negotiate and store contracted rates per vendor, with proration clause support</td></tr>
+  <tr><td><strong>Payment Ageing Reports</strong></td><td>Finance</td><td>30/60/90/120-day ageing buckets for receivables and payables</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>E. Module Settings & Customization <span class="tag tag-partial">Partially built</span></h3>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+  <tr><th>Setting Area</th><th>Status</th><th>Detail</th></tr>
+</thead>
+<tbody>
+  <tr><td><strong>Module on/off toggle</strong></td><td><span class="tag tag-exists">Built</span></td><td><code>org_modules.py</code> — org_owner can disable/re-enable provisioned modules</td></tr>
+  <tr><td><strong>Per-user module grants</strong></td><td><span class="tag tag-exists">Built</span></td><td><code>org_member_modules</code> — viewer/editor/approver/admin per module per user</td></tr>
+  <tr><td><strong>Compliance settings</strong></td><td><span class="tag tag-exists">Built</span></td><td><code>compliance_settings.py</code> — module-specific regulatory config</td></tr>
+  <tr><td><strong>Module-specific billing config</strong></td><td><span class="tag tag-missing">Missing</span></td><td>No per-module billing preferences (default payment terms, invoice templates, billing frequency per module)</td></tr>
+  <tr><td><strong>Module usage limits</strong></td><td><span class="tag tag-missing">Missing</span></td><td>No org-configurable caps on module-specific resources (max POs, max campaigns, max payroll runs)</td></tr>
+  <tr><td><strong>Module notification prefs</strong></td><td><span class="tag tag-missing">Missing</span></td><td>No per-module notification routing (who gets alerts for overdue invoices in CRM vs payroll completion)</td></tr>
+  <tr><td><strong>Module display/label customization</strong></td><td><span class="tag tag-missing">Missing</span></td><td>No ability to rename module sections or field labels to match org terminology</td></tr>
+  <tr><td><strong>Module default values</strong></td><td><span class="tag tag-missing">Missing</span></td><td>No org-level defaults for new records in a module (default tax rate, default payment terms, default approval chain)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>III. Implementation Plan</h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-num">P1</span>
+    <span class="phase-title">Billing Cycle Engine</span>
+    <span class="phase-meta">Foundation — everything else depends on this</span>
+  </div>
+  <div class="card">
+    <h4>What to build</h4>
+    <ul>
+      <li><strong>Billing anchor per org</strong> — add <code>billing_anchor_day</code> (1–28) to <code>organisations</code>; default to signup day</li>
+      <li><strong>Period advancement cron</strong> — daily job that rolls <code>current_period_start/end</code> and <code>next_billing_date</code> forward when the period expires</li>
+      <li><strong>Billing direction flag</strong> — <code>billing_direction</code> enum (advance/arrears) on <code>org_billing_lines</code> so each line knows when it is due</li>
+      <li><strong>Trial expiry check</strong> — the cron also downgrades orgs whose <code>trial_ends_at</code> has passed</li>
+      <li><strong>Pause enforcement</strong> — <code>require_module</code> middleware returns 403 on <code>status='paused'</code> with a message to the org owner</li>
+    </ul>
+    <h4>Schema changes</h4>
+    <ul>
+      <li><code>ALTER organisations ADD billing_anchor_day SMALLINT DEFAULT 1</code></li>
+      <li><code>ALTER org_billing_lines ADD billing_direction TEXT DEFAULT 'advance' CHECK (IN ('advance','arrears'))</code></li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-num">P2</span>
+    <span class="phase-title">Proration & Mid-Cycle Changes</span>
+    <span class="phase-meta">The core math — prorated charges and credits</span>
+  </div>
+  <div class="card">
+    <h4>What to build</h4>
+    <ul>
+      <li><strong>Proration service</strong> — <code>services/proration.py</code>: given (amount, cycle_start, cycle_end, event_date), return prorated charge. Handles 28/29/30/31-day months</li>
+      <li><strong>Plan upgrade proration</strong> — when <code>admin_set_plan</code> changes tier mid-cycle, calculate credit for unused days at old rate and charge for remaining days at new rate; write both as billing lines</li>
+      <li><strong>Module co-termination</strong> — when a module activates mid-cycle, prorate to align with the org's billing anchor</li>
+      <li><strong>Proration threshold</strong> — config: if remaining days &le; 3, waive the micro-charge and start billing next cycle</li>
+      <li><strong>Retroactive/backdated adjustments</strong> — admin endpoint to create a billing line with a past <code>period_start</code> for late-logged changes (HR mid-month hires recorded late)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-num">P3</span>
+    <span class="phase-title">Automated Invoicing & Dunning</span>
+    <span class="phase-meta">Invoices generate themselves; overdue ones escalate</span>
+  </div>
+  <div class="card">
+    <h4>What to build</h4>
+    <ul>
+      <li><strong>Auto-invoice cron</strong> — on billing anchor day, query all open billing lines for the period, generate a <code>subscription_invoice</code> with structured line items, GST, and UPI payee snapshot</li>
+      <li><strong>Invoice preview endpoint</strong> — already exists at <code>/billing/invoice-preview</code>; wire it into the auto-generation as the dry-run step</li>
+      <li><strong>Dunning workflow</strong> — 3-step escalation: reminder at due_date+3, warning at +7 (cc org owner), access degradation at +14 (read-only mode, not full lock). Write <code>reminder_sent_at</code></li>
+      <li><strong>Overage billing line</strong> — at period end, if <code>overage_credits > 0</code>, auto-create a billing line at <code>CREDIT_PRICE_INR</code> rate</li>
+      <li><strong>Credit auto-reset cron</strong> — explicit scheduled reset instead of lazy reset, so idle orgs get a clean ledger entry</li>
+    </ul>
+    <div class="note">Dunning sends email via the existing Resend pipeline. No payment gateway — the escalation is informational + access degradation, never an auto-charge.</div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-num">P4</span>
+    <span class="phase-title">Module Settings Framework</span>
+    <span class="phase-meta">Org-level customization per module</span>
+  </div>
+  <div class="card">
+    <h4>What to build</h4>
+    <ul>
+      <li><strong><code>module_settings</code> table</strong> — <code>(org_id, module_code, settings JSONB)</code> with one row per active module per org</li>
+      <li><strong>Settings schema per module</strong> — each module declares its configurable keys with types, defaults, and validation. Stored as a registry in <code>services/module_settings_registry.py</code></li>
+      <li><strong>Settings API</strong> — <code>GET/PATCH /v1/org/modules/{code}/settings</code>; org_owner/org_admin; validates against the registry schema</li>
+      <li><strong>Frontend: Module Settings tab</strong> — in org settings, under each module card, a "Configure" button opening a per-module settings panel</li>
+      <li><strong>Initial settings per module:</strong>
+        <ul>
+          <li><strong>Ganit (Finance):</strong> default payment terms (days), default tax rate, invoice numbering format, billing cycle preference</li>
+          <li><strong>Graha (CRM):</strong> deal stage names, default currency, lead scoring toggle</li>
+          <li><strong>Vikray (Sales):</strong> commission rate defaults, quota period (monthly/quarterly), sales tax region</li>
+          <li><strong>Kray (Procurement):</strong> PO approval threshold, vendor payment terms, 3-way match toggle</li>
+          <li><strong>Manav (HR):</strong> leave types and accrual rules, probation period default, notice period default</li>
+          <li><strong>Vetana (Payroll):</strong> pay cycle (monthly/biweekly), PF/ESI toggles, TDS regime (old/new)</li>
+          <li><strong>Prachar (Marketing):</strong> campaign budget caps, send-time optimization, unsubscribe policy</li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-num">P5</span>
+    <span class="phase-title">Org-Level Client Billing (Module Tier)</span>
+    <span class="phase-meta">Orgs bill their own clients — the second tier</span>
+  </div>
+  <div class="card">
+    <h4>What to build</h4>
+    <ul>
+      <li><strong>Client billing profile</strong> — extend <code>graha_clients</code> with: <code>billing_cycle</code>, <code>payment_terms_days</code>, <code>credit_limit</code>, <code>billing_anchor_day</code>, <code>gst_treatment</code> (registered/unregistered/composition/overseas)</li>
+      <li><strong>Recurring service lines</strong> — <code>client_billing_lines</code> table mirroring <code>org_billing_lines</code> but scoped to (org_id, client_id): retainers, subscriptions, ongoing services with auto-invoice generation</li>
+      <li><strong>Proration for client services</strong> — reuse <code>services/proration.py</code> from P2: mid-month service starts/stops generate proportional Ganit invoices</li>
+      <li><strong>Payment ageing</strong> — <code>GET /v1/ganit/ageing</code>: 30/60/90/120-day buckets for receivables, surfaced in Ganit and Graha dashboards</li>
+      <li><strong>Vendor rate cards in Kray</strong> — <code>vendor_rate_cards</code> table: contracted rates per vendor per item category, with effective dates and proration clause flag</li>
+      <li><strong>Prorated salary in Vetana</strong> — payroll run calculates mid-month joiner/leaver pay by working days in the period, using the org's configured pay cycle from module settings</li>
+      <li><strong>Sales quota proration</strong> — mid-period rep assignments get proportional targets based on remaining days in the quota period</li>
+    </ul>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-num">P6</span>
+    <span class="phase-title">Usage Metering & True-Up</span>
+    <span class="phase-meta">Volume-based billing for both tiers</span>
+  </div>
+  <div class="card">
+    <h4>What to build</h4>
+    <ul>
+      <li><strong>Usage meters registry</strong> — define countable metrics per module: invoices_generated, POs_created, emails_sent, payroll_runs, API_calls. Each meter has a quota (from plan or module settings) and an overage rate</li>
+      <li><strong>Real-time usage counter</strong> — middleware that increments <code>usage_tracking</code> on metered actions, with quota enforcement (soft limit = warning, hard limit = block)</li>
+      <li><strong>True-up endpoint</strong> — quarterly admin review: actual peak headcount and transaction counts vs contracted minimums. Generates adjustment billing lines</li>
+      <li><strong>Tiered pricing engine</strong> — <code>services/tiered_pricing.py</code>: given (volume, tiers[]), calculate total cost. Used by both Aekam (metered module pricing) and org (client volume discounts in Sales)</li>
+      <li><strong>PEPM auto-billing</strong> — monthly cron counts active employees per org, multiplies by the org's PEPM rate, creates a billing line</li>
+      <li><strong>Committed minimum enforcement</strong> — if actual usage &lt; contracted minimum, bill the minimum anyway with a note showing the delta</li>
+    </ul>
+  </div>
+</div>
+
+<h2>IV. Priority & Dependency Map</h2>
+
+<div class="card">
+<pre style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--text-2);line-height:1.8;overflow-x:auto;">
+P1 Billing Cycle Engine ──────┐
+                               ├──▶ P2 Proration & Mid-Cycle ──┐
+                               │                                ├──▶ P3 Auto-Invoice & Dunning
+                               │                                │
+P4 Module Settings ────────────┼────────────────────────────────┤
+  (independent, start anytime) │                                │
+                               └──▶ P5 Org Client Billing ──────┤
+                                     (needs P2 proration)       │
+                                                                └──▶ P6 Usage Metering & True-Up
+                                                                      (needs P3 invoicing)
+</pre>
+</div>
+
+<h2>V. Key Decisions Required</h2>
+
+<div class="grid-2">
+  <div class="card">
+    <h4>1. Billing anchor policy</h4>
+    <p>Should all orgs align to the 1st of the month (simpler, co-term by default), or allow per-org anniversary billing (more flexible, more code)?</p>
+  </div>
+  <div class="card">
+    <h4>2. Dunning severity</h4>
+    <p>At +14 days overdue: full lockout, read-only mode, or just persistent banner? This affects customer relationships.</p>
+  </div>
+  <div class="card">
+    <h4>3. Module settings scope</h4>
+    <p>Should module settings be org-wide only, or should some settings be per-user within a module (personal defaults vs org defaults)?</p>
+  </div>
+  <div class="card">
+    <h4>4. Client billing as a module</h4>
+    <p>Should P5 (org billing their clients) be a feature of Ganit, a feature of Graha, or a new standalone billing module?</p>
+  </div>
+  <div class="card">
+    <h4>5. Proration method</h4>
+    <p>Calendar days (30-day month = divide by 30) or working days (exclude weekends/holidays)? Payroll needs working days; platform billing is simpler with calendar days.</p>
+  </div>
+  <div class="card">
+    <h4>6. True-up frequency</h4>
+    <p>Monthly, quarterly, or annual? More frequent = more invoices but less sticker shock. Enterprise usually expects quarterly.</p>
+  </div>
+</div>
+
+<h2>VI. What NOT to Build</h2>
+
+<div class="card">
+  <ul>
+    <li><strong>Payment gateway</strong> — permanently ruled out. Collection stays UPI-on-invoice + manual recording.</li>
+    <li><strong>Self-serve plan changes</strong> — pricing is negotiated per-org. This is a product decision, not a gap.</li>
+    <li><strong>Multi-currency</strong> — INR only, flat pricing. No forex complexity.</li>
+    <li><strong>Automated card retry (Stripe-style)</strong> — no gateway means no retries. Dunning is email-based.</li>
+    <li><strong>Complex entitlement tokens</strong> — database-driven gating works at current scale (3 orgs). Revisit at 50+.</li>
+  </ul>
+</div>
+
+</div>
