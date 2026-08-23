@@ -152,7 +152,7 @@ class StatusAgent(BaseAgent):
         logger.info("status_agent: task %s → %s (all %d subtasks ticked)", task_id, target, total)
 
         await pool.execute(
-            "INSERT INTO task_comments (comment_id, task_id, user_id, body) VALUES ($1, $2, 'system', $3)",
+            "INSERT INTO task_comments (comment_id, task_id, user_id, body, org_id) VALUES ($1, $2, 'system', $3, (SELECT org_id FROM tasks WHERE task_id=$2))",
             f"cmt_{uuid.uuid4().hex[:12]}", task_id,
             f"All {total} subtasks ticked — status auto-changed to **{target}**.",
         )

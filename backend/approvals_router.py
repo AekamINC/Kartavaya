@@ -238,8 +238,8 @@ async def _notify(pool, task_id: str, task_title: str, recipient_id: str,
         # changes only where NEW rows point — it stores no new `type`.
         url = "/approvals" if notif_type == "request" else "/tasks"
         await pool.execute("""
-            INSERT INTO notifications (notification_id, user_id, team_id, type, title, message, task_id, url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO notifications (notification_id, user_id, team_id, type, title, message, task_id, url, org_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT org_id FROM teams WHERE team_id=$3))
         """, f"notif_{uuid.uuid4().hex[:12]}", recipient_id, team_id, notif_type, title, message, task_id, url)
     except Exception as exc:
         import logging; logging.getLogger(__name__).warning("_notify failed: %s", exc)
@@ -551,7 +551,7 @@ async def request_client_approval(task_id: str, payload: ClientApprovalRequest,
     )
 
     await pool.execute(
-        "INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+        "INSERT INTO task_clients (id,task_id,user_id,invited_by,org_id) VALUES ($1,$2,$3,$4,(SELECT org_id FROM tasks WHERE task_id=$2)) ON CONFLICT DO NOTHING",
         f"tc_{uuid.uuid4().hex[:12]}", task_id, client["user_id"], user["user_id"]
     )
     await pool.execute("""

@@ -167,7 +167,7 @@ async def create_field_definition(body: FieldDefCreate, pool=Depends(get_pool), 
         raise HTTPException(400, f"type must be one of {FIELD_TYPES}")
     field_id = f"fld_{uuid.uuid4().hex[:12]}"
     await pool.execute(
-        "INSERT INTO field_definitions (field_id, team_id, name, type, config, sort_order) VALUES ($1,$2,$3,$4,$5::jsonb,$6)",
+        "INSERT INTO field_definitions (field_id, team_id, name, type, config, sort_order, org_id) VALUES ($1,$2,$3,$4,$5::jsonb,$6,(SELECT org_id FROM teams WHERE team_id=$2))",
         field_id, body.team_id, body.name, body.type, json.dumps(body.config), body.sort_order
     )
     return {"field_id": field_id, **body.dict()}
@@ -215,7 +215,7 @@ async def set_task_field_values(task_id: str, body: list[FieldValueSet], pool=De
     for fv in body:
         val = json.dumps(fv.value)
         await pool.execute(
-            "INSERT INTO field_values (task_id, field_id, value) VALUES ($1,$2,$3::jsonb) ON CONFLICT (task_id, field_id) DO UPDATE SET value=EXCLUDED.value",
+            "INSERT INTO field_values (task_id, field_id, value, org_id) VALUES ($1,$2,$3::jsonb,(SELECT org_id FROM tasks WHERE task_id=$1)) ON CONFLICT (task_id, field_id) DO UPDATE SET value=EXCLUDED.value",
             task_id, fv.field_id, val
         )
     # Log activity

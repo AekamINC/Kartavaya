@@ -997,20 +997,20 @@ async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
         if claimed:
             await pool.execute(
                 "INSERT INTO team_members "
-                "  (member_id, team_id, email, user_id, role, status) "
+                "  (member_id, team_id, email, user_id, role, status, org_id) "
                 "SELECT 'mem_' || substr(md5(random()::text), 1, 12), $1, $2, "
-                "       $3::text, 'owner', 'active' "
+                "       $3::text, 'owner', 'active', $4::uuid "
                 " WHERE NOT EXISTS (SELECT 1 FROM team_members "
                 "                    WHERE team_id=$1 AND user_id=$3::text)",
-                claimed, invite["email"], user_id,
+                claimed, invite["email"], user_id, str(invite_org_id),
             )
             await pool.execute(
                 "INSERT INTO project_assignments "
-                "  (assignment_id, team_id, user_id, role) "
+                "  (assignment_id, team_id, user_id, role, org_id) "
                 "VALUES ('pa_' || substr(md5(random()::text), 1, 12), $1, "
-                "        $2::text, 'owner') "
+                "        $2::text, 'owner', $3::uuid) "
                 "ON CONFLICT (team_id, user_id) DO NOTHING",
-                claimed, user_id,
+                claimed, user_id, str(invite_org_id),
             )
 
     raw_grants = invite["module_grants"] if "module_grants" in invite.keys() else None
@@ -1252,11 +1252,12 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     # migration on a schema production shares, and this is the change that stops
     # the 500 today.
     await pool.execute("""
-        INSERT INTO project_assignments (assignment_id, team_id, user_id, role)
+        INSERT INTO project_assignments (assignment_id, team_id, user_id, role, org_id)
         SELECT 'pa_' || substr(md5(random()::text), 1, 12), team_id, $1::text,
-               CASE WHEN role IN ('owner','admin','member','client') THEN role ELSE 'member' END
-        FROM team_members
-        WHERE user_id=$1::text AND status='active'
+               CASE WHEN role IN ('owner','admin','member','client') THEN role ELSE 'member' END,
+               (SELECT org_id FROM teams t WHERE t.team_id = tm.team_id)
+        FROM team_members tm
+        WHERE tm.user_id=$1::text AND tm.status='active'
         ON CONFLICT (team_id, user_id) DO NOTHING
     """, user_id)
     user = await pool.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)

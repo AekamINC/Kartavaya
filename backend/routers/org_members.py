@@ -386,19 +386,19 @@ async def add_member(
         # statement spanning both needs the explicit `::text` cast that
         # `auth_router.accept_invite` documents.
         await pool.execute(
-            "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status) "
-            "VALUES ($1, $2, $3, $4, 'member', 'active') "
+            "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status, org_id) "
+            "VALUES ($1, $2, $3, $4, 'member', 'active', $5::uuid) "
             "ON CONFLICT DO NOTHING",
             f"mem_{uuid.uuid4().hex[:12]}", org["team_id"],
-            target["email"], target["user_id"],
+            target["email"], target["user_id"], org_id,
         )
         await pool.execute(
             "INSERT INTO public.project_assignments "
-            "  (assignment_id, team_id, user_id, role, assigned_by) "
-            "VALUES ($1, $2, $3, 'member', $4) "
+            "  (assignment_id, team_id, user_id, role, assigned_by, org_id) "
+            "VALUES ($1, $2, $3, 'member', $4, $5::uuid) "
             "ON CONFLICT (team_id, user_id) DO NOTHING",
             f"assign_{uuid.uuid4().hex[:12]}", org["team_id"],
-            target["user_id"], user["user_id"],
+            target["user_id"], user["user_id"], org_id,
         )
 
     # Defaults for the two branches that grant nothing sensitive: no caller role

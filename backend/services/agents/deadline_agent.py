@@ -104,8 +104,8 @@ class DeadlineAgent(BaseAgent):
                 await pool.execute(
                     """
                     INSERT INTO notifications
-                        (notification_id, user_id, type, title, message, task_id, url)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        (notification_id, user_id, type, title, message, task_id, url, org_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT org_id FROM tasks WHERE task_id=$6))
                     """,
                     f"notif_{uuid.uuid4().hex[:12]}", uid, notif_type,
                     f"Deadline {level}", msg, task["task_id"],
@@ -165,8 +165,8 @@ class DeadlineAgent(BaseAgent):
                         await pool.execute(
                             """
                             INSERT INTO notifications
-                                (notification_id, user_id, type, title, message, task_id, url)
-                            VALUES ($1, $2, 'deadline_escalation', $3, $4, $5, $6)
+                                (notification_id, user_id, type, title, message, task_id, url, org_id)
+                            VALUES ($1, $2, 'deadline_escalation', $3, $4, $5, $6, (SELECT org_id FROM tasks WHERE task_id=$5))
                             """,
                             f"notif_{uuid.uuid4().hex[:12]}", manager_id,
                             "Overdue escalation",

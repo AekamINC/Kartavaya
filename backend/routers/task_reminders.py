@@ -178,8 +178,8 @@ async def dispatch_reminders(
                 for uid in recipients:
                     if r["channel_inapp"] or r["channel_push"]:
                         await pool.execute(
-                            "INSERT INTO notifications (notification_id,user_id,team_id,type,title,message,task_id,url) "
-                            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+                            "INSERT INTO notifications (notification_id,user_id,team_id,type,title,message,task_id,url,org_id) "
+                            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,(SELECT org_id FROM teams WHERE team_id=$3))",
                             f"notif_{uuid.uuid4().hex[:12]}", uid, r["team_id"], "reminder",
                             "Task reminder", message, r["task_id"], "/tasks",
                         )

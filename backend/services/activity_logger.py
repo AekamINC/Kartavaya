@@ -36,17 +36,21 @@ async def log_event(
             return  # skip logging for personal tasks — team_id NOT NULL constraint
 
         event_id = f"evt_{uuid.uuid4().hex[:14]}"
+        _org = await pool.fetchval(
+            "SELECT org_id::text FROM public.teams WHERE team_id=$1",
+            resolved_team_id) if resolved_team_id else None
         await pool.execute(
             """
-            INSERT INTO activity_events (event_id, task_id, team_id, actor_id, type, data)
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            INSERT INTO activity_events (event_id, task_id, team_id, actor_id, type, data, org_id)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::uuid)
             """,
             event_id,
             task_id,
             resolved_team_id,
             actor_id,
             event_type,
-            json.dumps(data or {}),  # stored as jsonb — asyncpg accepts json string
+            json.dumps(data or {}),
+            _org,
         )
     except Exception as exc:
         log.warning("activity_logger swallowed error: %s", exc, exc_info=True)

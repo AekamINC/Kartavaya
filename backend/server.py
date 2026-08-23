@@ -1191,7 +1191,7 @@ async def _push_if_allowed(pool, *, user_id, kind, title, message, url, task_id,
     await send_expo_push(pool, user_id=user_id, title=title, body=message, url=url or "/", task_id=task_id)
 
 
-async def create_notification(pool, user_id, notif_type, title, message, task_id=None, team_id=None, url=None, push=True, is_mine=True):
+async def create_notification(pool, user_id, notif_type, title, message, task_id=None, team_id=None, url=None, push=True, is_mine=True, org_id=None):
     """Insert a notification row and fire a Web Push if the user has a subscription.
 
     Pass push=False to write the in-app row only (used for reminders whose
@@ -1202,9 +1202,12 @@ async def create_notification(pool, user_id, notif_type, title, message, task_id
     still lands in the Inbox with its real timestamp, because the record is when
     it happened, not when you were willing to be interrupted by it.
     """
+    _oid = org_id
+    if not _oid and team_id:
+        _oid = await _resolve_org_id(pool, team_id)
     await pool.execute(
-        "INSERT INTO notifications (notification_id,user_id,team_id,type,title,message,task_id,url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-        f"notif_{uuid.uuid4().hex[:12]}", user_id, team_id, notif_type, title, message, task_id, url,
+        "INSERT INTO notifications (notification_id,user_id,team_id,type,title,message,task_id,url,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid)",
+        f"notif_{uuid.uuid4().hex[:12]}", user_id, team_id, notif_type, title, message, task_id, url, _oid,
     )
     if not push: return
     # One background task, not two: the preference lookup is shared by both
@@ -1235,8 +1238,8 @@ async def _replace_task_reminders(pool, task_id: str, due_dt, reminders: List["R
                 fire_at = due_dt - timedelta(minutes=r.offset_minutes)
                 if fire_at <= now: continue
                 row = await conn.fetchrow(
-                    """INSERT INTO task_reminders (task_id,offset_minutes,channel_inapp,channel_push,channel_email,fire_at)
-                       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *""",
+                    """INSERT INTO task_reminders (task_id,offset_minutes,channel_inapp,channel_push,channel_email,fire_at,org_id)
+                       VALUES ($1,$2,$3,$4,$5,$6,(SELECT org_id FROM tasks WHERE task_id=$1)) RETURNING *""",
                     task_id, r.offset_minutes, "in_app" in channels, "push" in channels, "email" in channels, fire_at,
                 )
                 out.append(_reminder_row_to_out(row))
@@ -1260,7 +1263,7 @@ async def ensure_default_columns(pool, team_id):
         ]
         for name,color,order,is_done in defaults:
             await pool.execute(
-                "INSERT INTO project_columns (column_id,team_id,name,color,sort_order,is_done) VALUES ($1,$2,$3,$4,$5,$6)",
+                "INSERT INTO project_columns (column_id,team_id,name,color,sort_order,is_done,org_id) VALUES ($1,$2,$3,$4,$5,$6,(SELECT org_id FROM teams WHERE team_id=$2))",
                 f"col_{uuid.uuid4().hex[:12]}",team_id,name,color,order,is_done,
             )
 
@@ -2027,7 +2030,7 @@ async def create_column(team_id:str,payload:ProjectColumnCreate,pool=Depends(get
     if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403,"Owner or admin required")
     max_order=await pool.fetchval("SELECT COALESCE(MAX(sort_order),-1) FROM project_columns WHERE team_id=$1",team_id)
     column_id=f"col_{uuid.uuid4().hex[:12]}"
-    row=await pool.fetchrow("INSERT INTO project_columns (column_id,team_id,name,color,sort_order,is_done) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
+    row=await pool.fetchrow("INSERT INTO project_columns (column_id,team_id,name,color,sort_order,is_done,org_id) VALUES ($1,$2,$3,$4,$5,$6,(SELECT org_id FROM teams WHERE team_id=$2)) RETURNING *",
         column_id,team_id,payload.name.strip(),payload.color,max_order+1,payload.is_done)
     return ProjectColumnOut(**dict(row))
 
@@ -2304,7 +2307,7 @@ async def add_client_to_task(task_id:str,target_user_id:str,pool=Depends(get_db)
     task=await pool.fetchrow("SELECT team_id FROM tasks WHERE task_id=$1",task_id)
     if not task: raise HTTPException(404,"Task not found")
     await assert_client_of_project(pool,team_id=task["team_id"],user_id=target_user_id)
-    await pool.execute("INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",f"tc_{uuid.uuid4().hex[:12]}",task_id,target_user_id,user["user_id"])
+    await pool.execute("INSERT INTO task_clients (id,task_id,user_id,invited_by,org_id) VALUES ($1,$2,$3,$4,(SELECT org_id FROM tasks WHERE task_id=$2)) ON CONFLICT DO NOTHING",f"tc_{uuid.uuid4().hex[:12]}",task_id,target_user_id,user["user_id"])
     return {"ok":True}
 
 @api_router.delete("/tasks/{task_id}/clients/{target_user_id}")
@@ -2432,7 +2435,7 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
     # validated `TaskCreate` and never the raw body, so both copies are bounded
     # by `Attachment` — a pointer, a key, and nothing that can carry a file.
     approval_id=f"approval_{uuid.uuid4().hex[:12]}"
-    await pool.execute("INSERT INTO approvals (approval_id,team_id,requested_by,status,request_type,request_data) VALUES ($1,$2,$3,'pending','create',$4)",
+    await pool.execute("INSERT INTO approvals (approval_id,team_id,requested_by,status,request_type,request_data,org_id) VALUES ($1,$2,$3,'pending','create',$4,(SELECT org_id FROM teams WHERE team_id=$2))",
         approval_id,payload.team_id,user["user_id"],json.dumps(payload.model_dump(mode="json")))
     # Create actual task with status='requested' so it appears on the board
     first_col=await pool.fetchrow("SELECT column_id FROM project_columns WHERE team_id=$1 ORDER BY sort_order ASC LIMIT 1",payload.team_id)
@@ -2455,11 +2458,11 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
         async with _conn.transaction():
             row=await _conn.fetchrow("""
                 INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,created_by_name,
-                    title,description,status,priority,approval_id,attachments,custom_fields,subtasks,sort_order)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,'requested',$8,$9,$10::jsonb,'{}' ::jsonb,'[]'::jsonb,$11)
+                    title,description,status,priority,approval_id,attachments,custom_fields,subtasks,sort_order,org_id)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,'requested',$8,$9,$10::jsonb,'{}' ::jsonb,'[]'::jsonb,$11,$12::uuid)
                 RETURNING *""",
                 task_id,payload.team_id,column_id,user["user_id"],actor_name,
-                payload.title,payload.description,payload.priority or "medium",approval_id,atts_json,next_order)
+                payload.title,payload.description,payload.priority or "medium",approval_id,atts_json,next_order,_org)
             if _org and row:
                 from services.niyam.subjects import task_created
                 await task_created(_conn, org_id=_org, actor_id=user["user_id"],
@@ -2871,7 +2874,7 @@ async def _approve_task_send_client(
     # exactly the shape that shipped on the task-approval gate.
     await assert_client_of_project(pool, team_id=task.get("team_id"), user_id=client["user_id"])
     await pool.execute(
-        "INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+        "INSERT INTO task_clients (id,task_id,user_id,invited_by,org_id) VALUES ($1,$2,$3,$4,(SELECT org_id FROM tasks WHERE task_id=$2)) ON CONFLICT DO NOTHING",
         f"tc_{uuid.uuid4().hex[:12]}", task_id, client["user_id"], user["user_id"],
     )
     import jwt as _jwt_local
@@ -3074,8 +3077,8 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
                 col=await pool.fetchval("SELECT column_id FROM project_columns WHERE team_id=$1 ORDER BY sort_order LIMIT 1",approval["team_id"])
                 async with pool.acquire() as _conn:
                     async with _conn.transaction():
-                        _row=await _conn.fetchrow("INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,title,description,status,priority,approval_id) VALUES ($1,$2,$3,$4,$5,$6,'todo',$7,$8) RETURNING *",
-                            task_id,approval["team_id"],col,approval["requested_by"],data["title"],data.get("description"),data.get("priority","medium"),approval_id)
+                        _row=await _conn.fetchrow("INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,title,description,status,priority,approval_id,org_id) VALUES ($1,$2,$3,$4,$5,$6,'todo',$7,$8,$9::uuid) RETURNING *",
+                            task_id,approval["team_id"],col,approval["requested_by"],data["title"],data.get("description"),data.get("priority","medium"),approval_id,_org)
                         if _org and _row:
                             await task_created(_conn, org_id=_org, actor_id=user["user_id"],
                                                task_id=task_id, row=_row)
@@ -3166,11 +3169,11 @@ async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=D
     client_visible = True if author_is_client else bool(body.is_client_visible)
     if await _has_client_visible_column(pool):
         row=await pool.fetchrow(
-            "INSERT INTO task_comments (comment_id,task_id,user_id,body,is_client_visible) "
-            "VALUES ($1,$2,$3,$4,$5) RETURNING *",
+            "INSERT INTO task_comments (comment_id,task_id,user_id,body,is_client_visible,org_id) "
+            "VALUES ($1,$2,$3,$4,$5,(SELECT org_id FROM tasks WHERE task_id=$2)) RETURNING *",
             comment_id,task_id,user["user_id"],body.body,client_visible)
     else:
-        row=await pool.fetchrow("INSERT INTO task_comments (comment_id,task_id,user_id,body) VALUES ($1,$2,$3,$4) RETURNING *",comment_id,task_id,user["user_id"],body.body)
+        row=await pool.fetchrow("INSERT INTO task_comments (comment_id,task_id,user_id,body,org_id) VALUES ($1,$2,$3,$4,(SELECT org_id FROM tasks WHERE task_id=$2)) RETURNING *",comment_id,task_id,user["user_id"],body.body)
     try:
         task=await pool.fetchrow("SELECT title,team_id,created_by_user_id,assignee_user_ids FROM tasks WHERE task_id=$1",task_id)
         if task:
@@ -3512,13 +3515,13 @@ async def _ensure_default_owner(pool, team_id: str, creator: dict):
     # `project_assignments_team_user_unique`), so if this ever stops being
     # called on a brand-new team the second INSERT is the one that will raise.
     await pool.execute(
-        "INSERT INTO team_members (member_id,team_id,email,user_id,role,status) "
-        "VALUES ($1,$2,$3,$4,'owner','active')",
+        "INSERT INTO team_members (member_id,team_id,email,user_id,role,status,org_id) "
+        "VALUES ($1,$2,$3,$4,'owner','active',(SELECT org_id FROM teams WHERE team_id=$2))",
         f"mem_{uuid.uuid4().hex[:12]}", team_id, owner["email"], owner["user_id"],
     )
     await pool.execute(
-        "INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by) "
-        "VALUES ($1,$2,$3,'owner',$4)",
+        "INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by,org_id) "
+        "VALUES ($1,$2,$3,'owner',$4,(SELECT org_id FROM teams WHERE team_id=$2))",
         f"assign_{uuid.uuid4().hex[:12]}", team_id, owner["user_id"], owner["user_id"],
     )
 
@@ -3559,8 +3562,8 @@ async def create_team(payload:TeamCreate,pool=Depends(get_db),user=Depends(requi
         "INSERT INTO teams (team_id,name,created_by,brand_settings,org_id) "
         "VALUES ($1,$2,$3,$4::text::jsonb,NULLIF($5,'')::uuid) RETURNING *",
         team_id,payload.name,user["user_id"],bs,org_id or "")
-    await pool.execute("INSERT INTO team_members (member_id,team_id,email,user_id,role,status) VALUES ($1,$2,$3,$4,'owner','active')",f"mem_{uuid.uuid4().hex[:12]}",team_id,user["email"],user["user_id"])
-    await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by) VALUES ($1,$2,$3,'owner',$4)",f"assign_{uuid.uuid4().hex[:12]}",team_id,user["user_id"],user["user_id"])
+    await pool.execute("INSERT INTO team_members (member_id,team_id,email,user_id,role,status,org_id) VALUES ($1,$2,$3,$4,'owner','active',$5::uuid)",f"mem_{uuid.uuid4().hex[:12]}",team_id,user["email"],user["user_id"],org_id)
+    await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by,org_id) VALUES ($1,$2,$3,'owner',$4,$5::uuid)",f"assign_{uuid.uuid4().hex[:12]}",team_id,user["user_id"],user["user_id"],org_id)
     await _ensure_default_owner(pool,team_id,creator=user)
     await ensure_default_columns(pool,team_id)
     return TeamOut(**dict(row))
@@ -3802,10 +3805,11 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
     uid=existing_user["user_id"] if existing_user else None
     await pool.execute("DELETE FROM team_members WHERE team_id=$1 AND email=$2",team_id,email)
     if uid: await pool.execute("DELETE FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,uid)
-    row=await pool.fetchrow("INSERT INTO team_members (member_id,team_id,email,user_id,role,status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
-        f"mem_{uuid.uuid4().hex[:12]}",team_id,email,uid,payload.role,"active" if uid else "invited")
-    if uid: await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
-        f"assign_{uuid.uuid4().hex[:12]}",team_id,uid,payload.role,user["user_id"])
+    _tm_org = await pool.fetchval("SELECT org_id::text FROM teams WHERE team_id=$1", team_id)
+    row=await pool.fetchrow("INSERT INTO team_members (member_id,team_id,email,user_id,role,status,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7::uuid) RETURNING *",
+        f"mem_{uuid.uuid4().hex[:12]}",team_id,email,uid,payload.role,"active" if uid else "invited",_tm_org)
+    if uid: await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by,org_id) VALUES ($1,$2,$3,$4,$5,$6::uuid) ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
+        f"assign_{uuid.uuid4().hex[:12]}",team_id,uid,payload.role,user["user_id"],_tm_org)
     return TeamMemberOut(**dict(row))
 
 @api_router.put("/teams/{team_id}/members/{member_id}",response_model=TeamMemberOut)
@@ -3860,13 +3864,14 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
                 "DELETE FROM public.project_assignments WHERE team_id=$1 AND user_id=$2::varchar",
                 team_id, row["user_id"])
         elif payload.role or payload.status == "active":
+            _pa_org = await _resolve_org_id(pool, team_id)
             await pool.execute(
                 "INSERT INTO public.project_assignments "
-                "(assignment_id,team_id,user_id,role,assigned_by) "
-                "VALUES ($1,$2,$3::varchar,$4,$5) "
+                "(assignment_id,team_id,user_id,role,assigned_by,org_id) "
+                "VALUES ($1,$2,$3::varchar,$4,$5,$6::uuid) "
                 "ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
                 f"assign_{uuid.uuid4().hex[:12]}", team_id, row["user_id"],
-                _pa_role, user["user_id"])
+                _pa_role, user["user_id"], _pa_org)
     return TeamMemberOut(**dict(row))
 
 @api_router.delete("/teams/{team_id}")
@@ -4288,12 +4293,13 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     max_row=await pool.fetchrow(f"SELECT MAX(sort_order) AS mo FROM tasks WHERE {scope_col}=$1 AND column_id=$2",scope_val,column_id)
     next_order=(max_row["mo"] or -1)+1; task_id=f"task_{uuid.uuid4().hex[:12]}"
     actor_name=actor_display(user)
+    _org = await _resolve_org_id(pool, payload.team_id) if payload.team_id else None
     row=await pool.fetchrow("""
         INSERT INTO tasks (task_id,user_id,team_id,column_id,created_by_user_id,assigned_by_user_id,
            created_by_name,title,description,status,priority,category_id,tags,assignee_user_ids,assignee_emails,
-           due_at,reminder_at,recurrence_rule,recurrence_interval,estimated_minutes,attachments,custom_fields,subtasks,sort_order)
+           due_at,reminder_at,recurrence_rule,recurrence_interval,estimated_minutes,attachments,custom_fields,subtasks,sort_order,org_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[],$14::text[],$15::text[],
-                $16,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,$24)
+                $16,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25::uuid)
         RETURNING *""",
         task_id,user_id_field,payload.team_id,column_id,user["user_id"],
         user["user_id"] if (payload.assignee_user_ids or payload.assignee_emails) else None,
@@ -4302,7 +4308,7 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
         [e.strip().lower() for e in payload.assignee_emails if e.strip()],
         due_dt,reminder_dt,payload.recurrence.rule,payload.recurrence.interval,payload.estimated_minutes,
         json.dumps([a.model_dump(mode="json") for a in payload.attachments or []]),
-        json.dumps(payload.custom_fields or {}),json.dumps([s.model_dump() for s in payload.subtasks or []]),next_order)
+        json.dumps(payload.custom_fields or {}),json.dumps([s.model_dump() for s in payload.subtasks or []]),next_order,_org)
     team_name=None
     if payload.team_id:
         tr=await pool.fetchrow("SELECT name FROM teams WHERE team_id=$1",payload.team_id)

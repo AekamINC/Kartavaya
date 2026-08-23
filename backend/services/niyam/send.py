@@ -154,7 +154,7 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
         return Delivery("refused", why)
 
     if channel == "inapp":
-        return await _inapp(conn, user_id=user_id, kind=kind, title=title, body=body)
+        return await _inapp(conn, user_id=user_id, kind=kind, title=title, body=body, org_id=org_id)
 
     if channel == "push":
         return await _push(conn, user_id=user_id, kind=kind, title=title,
@@ -164,17 +164,18 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
                         body=body, org_id=org_id)
 
 
-async def _inapp(conn, *, user_id: str, kind: str, title: str, body: str) -> Delivery:
+async def _inapp(conn, *, user_id: str, kind: str, title: str, body: str,
+                 org_id: Optional[str] = None) -> Delivery:
     """A `notifications` row. No outbound_log row exists for this channel."""
     import uuid
     try:
         await conn.execute(
             """
             INSERT INTO public.notifications
-                (notification_id, user_id, type, title, message)
-            VALUES ($1::text, $2::text, $3::text, $4::text, $5::text)
+                (notification_id, user_id, type, title, message, org_id)
+            VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::uuid)
             """,
-            f"notif_{uuid.uuid4().hex[:12]}", user_id, kind, title, body or "")
+            f"notif_{uuid.uuid4().hex[:12]}", user_id, kind, title, body or "", org_id)
     except Exception as exc:
         return Delivery("failed", f"{type(exc).__name__}: {exc}")
     # outbound_id stays None: this is the "delivered by a channel outbound_log

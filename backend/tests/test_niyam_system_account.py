@@ -209,7 +209,7 @@ async def test_the_comment_lands_with_the_computed_actor():
         conn, config={"body": "the rule fired"}, event=_event())
     assert r.outcome == "ok"
     assert len(conn.comments) == 1
-    _cid, task_id, actor, body = conn.comments[0]
+    _cid, task_id, actor, body, _org = conn.comments[0]
     assert (task_id, actor, body) == ("task_1", ACTOR, "the rule fired")
 
 

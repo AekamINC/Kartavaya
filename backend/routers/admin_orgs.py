@@ -733,17 +733,17 @@ async def create_org(
             if founding_team and owner:
                 await conn.execute(
                     "INSERT INTO team_members "
-                    "  (member_id, team_id, email, user_id, role, status) "
-                    "VALUES ($1, $2, $3, $4, 'owner', 'active')",
+                    "  (member_id, team_id, email, user_id, role, status, org_id) "
+                    "VALUES ($1, $2, $3, $4, 'owner', 'active', $5::uuid)",
                     f"mem_{uuid.uuid4().hex[:12]}", team_id,
-                    owner["email"], owner["user_id"],
+                    owner["email"], owner["user_id"], str(org_id),
                 )
                 await conn.execute(
                     "INSERT INTO project_assignments "
-                    "  (assignment_id, team_id, user_id, role, assigned_by) "
-                    "VALUES ($1, $2, $3, 'owner', $4)",
+                    "  (assignment_id, team_id, user_id, role, assigned_by, org_id) "
+                    "VALUES ($1, $2, $3, 'owner', $4, $5::uuid)",
                     f"assign_{uuid.uuid4().hex[:12]}", team_id,
-                    owner["user_id"], user["user_id"],
+                    owner["user_id"], user["user_id"], str(org_id),
                 )
 
             # -- The org's Niyam system account -------------------------------
@@ -1947,19 +1947,19 @@ async def add_member(
     )
     if not is_team_member:
         await pool.execute(
-            "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status) "
-            "VALUES ($1, $2, $3, $4, 'member', 'active') "
+            "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status, org_id) "
+            "VALUES ($1, $2, $3, $4, 'member', 'active', $5::uuid) "
             "ON CONFLICT DO NOTHING",
             f"mem_{uuid.uuid4().hex[:12]}", org["team_id"],
-            body.email, target["user_id"],
+            body.email, target["user_id"], org_id,
         )
     await pool.execute(
         "INSERT INTO public.project_assignments "
-        "  (assignment_id, team_id, user_id, role, assigned_by) "
-        "VALUES ($1, $2, $3, 'member', $4) "
+        "  (assignment_id, team_id, user_id, role, assigned_by, org_id) "
+        "VALUES ($1, $2, $3, 'member', $4, $5::uuid) "
         "ON CONFLICT (team_id, user_id) DO NOTHING",
         f"assign_{uuid.uuid4().hex[:12]}", org["team_id"],
-        target["user_id"], user["user_id"],
+        target["user_id"], user["user_id"], org_id,
     )
 
     await pool.execute(

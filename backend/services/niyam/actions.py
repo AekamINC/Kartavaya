@@ -216,9 +216,9 @@ class TaskAddComment:
         # lands, its default is FALSE, which is exactly right here: an
         # automation's words are internal until a human decides otherwise.
         await conn.execute(
-            "INSERT INTO public.task_comments (comment_id, task_id, user_id, body) "
-            "VALUES ($1::text, $2::text, $3::text, $4::text)",
-            comment_id, task_id, actor, body)
+            "INSERT INTO public.task_comments (comment_id, task_id, user_id, body, org_id) "
+            "VALUES ($1::text, $2::text, $3::text, $4::text, $5::uuid)",
+            comment_id, task_id, actor, body, org_id)
 
         # DELIBERATE deviations from the human route, each because the author
         # is a robot: no notification fan-out and no push (a rule that should
@@ -300,11 +300,11 @@ class TaskCreateAction:
         await conn.execute(
             "INSERT INTO public.tasks (task_id, team_id, column_id, "
             "                          created_by_user_id, title, description, "
-            "                          status, priority) "
+            "                          status, priority, org_id) "
             "VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, "
-            "        $6::text, 'todo', $7::text)",
+            "        $6::text, 'todo', $7::text, $8::uuid)",
             task_id, team_id, col, actor, title, description,
-            config.get("priority") or "medium")
+            config.get("priority") or "medium", org_id)
 
         try:
             from services.activity_logger import log_event

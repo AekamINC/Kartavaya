@@ -42,8 +42,8 @@ class WorkloadAgent(BaseAgent):
                 await pool.execute(
                     """
                     INSERT INTO notifications
-                        (notification_id, user_id, type, title, message, task_id)
-                    VALUES ($1, $2, 'workload_warning', $3, $4, $5)
+                        (notification_id, user_id, type, title, message, task_id, org_id)
+                    VALUES ($1, $2, 'workload_warning', $3, $4, $5, (SELECT org_id FROM tasks WHERE task_id=$5))
                     """,
                     f"notif_{uuid.uuid4().hex[:12]}", uid,
                     "High workload",
@@ -59,7 +59,7 @@ class WorkloadAgent(BaseAgent):
                 names.append(f"{name} ({f['open_tasks']} open)")
 
             await pool.execute(
-                "INSERT INTO task_comments (comment_id, task_id, user_id, body) VALUES ($1, $2, 'system', $3)",
+                "INSERT INTO task_comments (comment_id, task_id, user_id, body, org_id) VALUES ($1, $2, 'system', $3, (SELECT org_id FROM tasks WHERE task_id=$2))",
                 f"cmt_{uuid.uuid4().hex[:12]}", task_id,
                 f"Workload alert: {', '.join(names)} — consider rebalancing.",
             )

@@ -77,7 +77,7 @@ async def start_timer(task_id: str, pool=Depends(get_pool), user=Depends(require
     )
     entry_id = f"te_{uuid.uuid4().hex[:12]}"
     await pool.execute(
-        "INSERT INTO time_entries (entry_id, task_id, user_id, started_at) VALUES ($1,$2,$3,NOW())",
+        "INSERT INTO time_entries (entry_id, task_id, user_id, started_at, org_id) VALUES ($1,$2,$3,NOW(),(SELECT org_id FROM tasks WHERE task_id=$2))",
         entry_id, task_id, user["user_id"],
     )
     try:
@@ -124,8 +124,8 @@ async def add_manual_entry(body: TimeEntryCreate, pool=Depends(get_pool), user=D
         mins = max(1, int((body.ended_at - body.started_at).total_seconds() / 60))
     await pool.execute(
         """INSERT INTO time_entries
-           (entry_id, task_id, user_id, started_at, ended_at, minutes, description)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)""",
+           (entry_id, task_id, user_id, started_at, ended_at, minutes, description, org_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT org_id FROM tasks WHERE task_id=$2))""",
         entry_id, body.task_id, user["user_id"],
         body.started_at, body.ended_at, mins, body.description,
     )

@@ -237,8 +237,8 @@ async def apply_project_template(
     for i, col in enumerate(cfg.get("columns", [])):
         col_id = f"col_{uuid.uuid4().hex[:10]}"
         await pool.execute(
-            "INSERT INTO project_columns (column_id, team_id, name, color, sort_order, is_done) "
-            "VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+            "INSERT INTO project_columns (column_id, team_id, name, color, sort_order, is_done, org_id) "
+            "VALUES ($1,$2,$3,$4,$5,$6,(SELECT org_id FROM teams WHERE team_id=$2)) ON CONFLICT DO NOTHING",
             col_id, team_id, col["name"], col.get("color", "#0082c6"), i, col.get("is_done", False)
         )
         created["columns"] += 1
@@ -246,8 +246,8 @@ async def apply_project_template(
     for field_cfg in cfg.get("fields", []):
         fid = f"fld_{uuid.uuid4().hex[:10]}"
         await pool.execute(
-            "INSERT INTO field_definitions (field_id, team_id, name, type, config, sort_order) "
-            "VALUES ($1,$2,$3,$4,$5::jsonb,$6) ON CONFLICT DO NOTHING",
+            "INSERT INTO field_definitions (field_id, team_id, name, type, config, sort_order, org_id) "
+            "VALUES ($1,$2,$3,$4,$5::jsonb,$6,(SELECT org_id FROM teams WHERE team_id=$2)) ON CONFLICT DO NOTHING",
             fid, team_id, field_cfg["name"], field_cfg["type"],
             json.dumps(field_cfg.get("config", {})), 0
         )
@@ -256,8 +256,8 @@ async def apply_project_template(
     for task_cfg in cfg.get("sample_tasks", []):
         task_id = f"task_{uuid.uuid4().hex[:10]}"
         await pool.execute(
-            "INSERT INTO tasks (task_id, team_id, created_by_user_id, title, description, status, priority) "
-            "VALUES ($1,$2,$3,$4,$5,'todo','medium')",
+            "INSERT INTO tasks (task_id, team_id, created_by_user_id, title, description, status, priority, org_id) "
+            "VALUES ($1,$2,$3,$4,$5,'todo','medium',(SELECT org_id FROM teams WHERE team_id=$2))",
             task_id, team_id, user["user_id"],
             task_cfg["title"], task_cfg.get("description", "")
         )
@@ -319,8 +319,8 @@ async def create_task_template(body: TaskTemplateBody, pool=Depends(get_pool), u
     if body.is_default and body.team_id:
         await pool.execute("UPDATE task_templates SET is_default=FALSE WHERE team_id=$1", body.team_id)
     row = await pool.fetchrow(
-        """INSERT INTO task_templates (template_id, team_id, name, icon, is_default, config, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING *""",
+        """INSERT INTO task_templates (template_id, team_id, name, icon, is_default, config, created_by, org_id)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,(SELECT org_id FROM teams WHERE team_id=$2)) RETURNING *""",
         tid, body.team_id, body.name, body.icon, body.is_default,
         json.dumps(body.config), user["user_id"]
     )

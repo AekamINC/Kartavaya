@@ -62,7 +62,7 @@ async def create_view(body: ViewCreate, pool=Depends(get_pool), user=Depends(req
     if body.is_default:
         await pool.execute("UPDATE saved_views SET is_default=FALSE WHERE team_id=$1", body.team_id)
     await pool.execute(
-        "INSERT INTO saved_views (view_id, team_id, name, type, config, created_by, is_default) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        "INSERT INTO saved_views (view_id, team_id, name, type, config, created_by, is_default, org_id) VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT org_id FROM teams WHERE team_id=$2))",
         view_id, body.team_id, body.name, body.type, body.config, user["user_id"], body.is_default
     )
     return {"view_id": view_id, **body.dict()}

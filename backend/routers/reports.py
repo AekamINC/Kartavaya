@@ -474,16 +474,18 @@ async def create_schedule(
         payload.day_of_month, payload.send_hour_utc
     )
     schedule_id = f"sched_{uuid.uuid4().hex[:12]}"
+    _org = await pool.fetchval(
+        "SELECT org_id::text FROM public.teams WHERE team_id=$1", team_id)
     row = await pool.fetchrow("""
         INSERT INTO public.report_schedules
           (schedule_id, team_id, created_by, frequency, file_formats, recipients,
-           day_of_week, day_of_month, send_hour_utc, next_run_at)
-        VALUES ($1,$2,$3,$4,$5::text[],$6::text[],$7,$8,$9,$10)
+           day_of_week, day_of_month, send_hour_utc, next_run_at, org_id)
+        VALUES ($1,$2,$3,$4,$5::text[],$6::text[],$7,$8,$9,$10,$11::uuid)
         RETURNING *
     """,
         schedule_id, team_id, user["user_id"],
         payload.frequency, payload.file_formats, payload.recipients,
-        payload.day_of_week, payload.day_of_month, payload.send_hour_utc, next_run,
+        payload.day_of_week, payload.day_of_month, payload.send_hour_utc, next_run, _org,
     )
     return dict(row)
 

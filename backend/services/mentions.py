@@ -185,7 +185,7 @@ async def process_mentions(pool, comment_id: str, body: str, task_id: str, actor
         mention_id = f"ment_{uuid.uuid4().hex[:12]}"
         try:
             await pool.execute(
-                "INSERT INTO mentions (mention_id, comment_id, mentioned_user_id) VALUES ($1,$2,$3)",
+                "INSERT INTO mentions (mention_id, comment_id, mentioned_user_id, org_id) VALUES ($1,$2,$3,(SELECT org_id FROM task_comments WHERE comment_id=$2))",
                 mention_id, comment_id, user["user_id"],
             )
         except Exception as exc:
@@ -202,8 +202,8 @@ async def process_mentions(pool, comment_id: str, body: str, task_id: str, actor
 
         await pool.execute(
             """
-            INSERT INTO notifications (notification_id, user_id, type, title, message, task_id)
-            VALUES ($1,$2,'mention',$3,$4,$5)
+            INSERT INTO notifications (notification_id, user_id, type, title, message, task_id, org_id)
+            VALUES ($1,$2,'mention',$3,$4,$5,(SELECT org_id FROM tasks WHERE task_id=$5))
             """,
             f"notif_{uuid.uuid4().hex[:12]}",
             user["user_id"],
