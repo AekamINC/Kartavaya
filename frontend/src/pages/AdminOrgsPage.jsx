@@ -846,67 +846,75 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
             or an org owner, which is what the box below does.
           </p>
 
-          <div className="adm-form adm-form--tight">
+          <form
+            className="adm-form adm-form--tight"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const email = addEmail.trim();
+              if (!email) return;
+              const role = addRole;
+              setBusy('add');
+              try {
+                const endpoint = role === 'org_owner'
+                  ? `/v1/admin/orgs/${orgId}/owner`
+                  : `/v1/admin/orgs/${orgId}/members`;
+                const payload = role === 'org_owner'
+                  ? { email }
+                  : { email, roles: ['org_admin'] };
+                const r = await api.post(endpoint, payload);
+                if (r.data?.status === 'invited') {
+                  pushToast({ type: 'success', title: `Invite sent to ${email}` });
+                } else {
+                  pushToast({ type: 'success', title: `${email} is now ${role === 'org_owner' ? 'the org owner' : 'an org admin'}` });
+                }
+                setAddEmail('');
+                setAddRole('org_admin');
+                await load();
+                onChanged?.();
+              } catch (err) {
+                pushToast({ type: 'error', title: err?.response?.data?.detail || 'That did not go through' });
+              } finally {
+                setBusy('');
+              }
+            }}
+          >
             <Field
               label={addRole === 'org_owner' ? 'Invite an org owner' : 'Invite an org admin'}
               htmlFor="om-email"
               hint={addRole === 'org_owner'
-                ? 'They become the org owner and can manage modules, roles and payroll approval. If they don’t have an account yet, an invite email is sent.'
-                : 'They become an org admin of this organisation and reach every module it has active. If they don’t have an account yet, an invite email is sent.'}
+                ? "They become the org owner and can manage modules, roles and payroll approval. If they don't have an account yet, an invite email is sent."
+                : "They become an org admin of this organisation and reach every module it has active. If they don't have an account yet, an invite email is sent."}
             >
               {p => (
                 <Input
                   {...p} type="email" value={addEmail} placeholder="person@acme.in"
-                  disabled={!mayActOnOrg}
+                  disabled={!mayActOnOrg || busy === 'add'}
                   title={godReason}
                   onChange={e => setAddEmail(e.target.value)}
+                  required
                 />
               )}
             </Field>
             <Field label="Role" htmlFor="om-role">
               {p => (
                 <Select {...p} value={addRole} onChange={e => setAddRole(e.target.value)}
-                  disabled={!mayActOnOrg} title={godReason}>
+                  disabled={!mayActOnOrg || busy === 'add'} title={godReason}>
                   <option value="org_admin">Org Admin</option>
                   <option value="org_owner">Org Owner</option>
                 </Select>
               )}
             </Field>
-          </div>
-          <div className="adm-actions">
-            <Button
-              variant="out" size="sm"
-              disabled={!mayActOnOrg || !addEmail.trim() || busy === 'add'}
-              title={godReason}
-              onClick={() => {
-                const email = addEmail.trim();
-                const role  = addRole;
-                const msg = role === 'org_owner'
-                  ? `Make ${email} the org owner of ${org.name}?`
-                  : `Make ${email} an org admin of ${org.name}?`;
-                if (!window.confirm(msg)) return;
-                act('add', async () => {
-                  const endpoint = role === 'org_owner'
-                    ? `/v1/admin/orgs/${orgId}/owner`
-                    : `/v1/admin/orgs/${orgId}/members`;
-                  const payload = role === 'org_owner'
-                    ? { email }
-                    : { email, roles: ['org_admin'] };
-                  const r = await api.post(endpoint, payload);
-                  if (r.data?.status === 'invited') {
-                    pushToast({ type: 'success', title: `Invite sent to ${email}` });
-                  } else {
-                    pushToast({ type: 'success', title: `${email} is now ${role === 'org_owner' ? 'the org owner' : 'an org admin'}` });
-                  }
-                  setAddEmail('');
-                  setAddRole('org_admin');
-                });
-              }}
-            >
-              {busy === 'add' ? 'Inviting…' : addRole === 'org_owner' ? 'Invite org owner' : 'Invite org admin'}
-            </Button>
-            {!mayActOnOrg && <span className="apg__secn">{godReason}</span>}
-          </div>
+            <div className="adm-actions">
+              <Button
+                type="submit" variant="fill" size="sm"
+                disabled={!mayActOnOrg || !addEmail.trim() || busy === 'add'}
+                title={godReason}
+              >
+                {busy === 'add' ? 'Sending…' : addRole === 'org_owner' ? 'Invite org owner' : 'Invite org admin'}
+              </Button>
+              {!mayActOnOrg && <span className="apg__secn">{godReason}</span>}
+            </div>
+          </form>
         </section>
 
         {/* The other three org roles. The invite above grants `org_admin` and
