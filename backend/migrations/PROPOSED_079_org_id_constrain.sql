@@ -1,5 +1,18 @@
 -- PROPOSED_079_org_id_constrain.sql
 -- Phase 4 of 6 — multi-tenancy cutover. See swarm-reports/audit-tenancy-org-id-cutover.md
+--
+-- ── CORRECTION, 2026-08-23 ─────────────────────────────────────────────────
+-- A handover once described this file as "teams.org_id NOT NULL, ready to
+-- run." That is wrong: this file never mentions public.teams. It constrains
+-- 13 OTHER tables (tasks, notifications, team_members, project_assignments,
+-- activity_events, approvals, boards, project_columns, saved_views,
+-- automations, task_templates, field_definitions, report_schedules) whose
+-- org_id column does not exist in public yet — measured live 2026-08-23,
+-- PROPOSED_076 (add nullable) has never been applied, so every ALTER below
+-- would fail on a missing column. This file is NOT ready to run.
+--
+-- The actual "teams.org_id NOT NULL" work shipped separately as
+-- 206_teams_org_id_not_null.sql, applied and verified 2026-08-23.
 -- REQUIRES: PROPOSED_076, 077 applied, and PROPOSED_078 output READ BY A HUMAN.
 --
 -- ############################################################################
