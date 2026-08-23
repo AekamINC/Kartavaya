@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 21 of the 61 assigned skills.
+Wired so far: 22 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1477,6 +1477,61 @@ def _stale_retainer_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]
     counts["recurring_profiles_flagged"] = len(surviving.get("recurring_profiles") or ())
 
 
+# ── check_esi_ceiling_crossings ─────────────────────────────────────────────
+#
+# Employees whose wages crossed the ESI ceiling with no contribution deducted,
+# and those newly at or below it. The handler's own first limitation is why an
+# acknowledgement is the right instrument here: "THIS READS ONE MONTH ... so
+# every row here is a question to check, not a confirmed breach." A question
+# somebody has checked and answered — "the crossing was before this period
+# began, coverage correctly stopped" — has no way of being recorded, and the
+# same names return every month.
+#
+# FINDINGS_AT — `crossed_and_still_owed` and `newly_under`. Two lists, and the
+#   default folding stays ON: they are not a time-driven ladder but two
+#   opposite findings, and an employee whose gross falls back under the ceiling
+#   has moved from "you may still owe a contribution" to "check whether
+#   coverage should have continued". Those are different questions, so an
+#   acknowledgement of one must not answer the other.
+#
+# IDENTITY — `employee_code` + `month`.
+#
+#   `employee_code` for the reason measured at `check_statutory_records_gate`:
+#   the printable `employee` is a NAME and ten of them in the largest org are
+#   carried by three people each. NOT `esi_number`, which is nullable and is
+#   frequently the very thing that is missing.
+#
+#   `month` because the handler reads ONE month and the question is asked afresh
+#   for each: an answer about July's wages is not an answer about August's, and
+#   a person whose pay crosses the ceiling in August has a new obligation.
+#
+# MATERIAL — `gross` and `contributing_this_month`. The gross is the wage the
+#   whole test turns on, and `contributing_this_month` is the ANSWER: a firm
+#   that acknowledges a crossing and then starts deducting has resolved it, and
+#   the finding should come back once so the reader sees that it did. It is a
+#   bool, and `_canon` tags booleans separately from the integers 0 and 1.
+#
+#   NOT `ceiling`, which comes from the statute calendar and is the same for
+#   every row in a run — hashing a constant adds nothing, and a genuine change
+#   to the ceiling arrives as a change in `gross > ceiling`, which moves the
+#   finding between the lists.
+#
+# INCIDENTAL — `employee`, `esi_number`, `must_continue_until` (the period end,
+#   a date derived from the month), `why` (prose).
+#
+# RECOMPUTE — the two list counts. NOT `examined`, which is `len(rows)` — every
+#   employee the query looked at, including everyone correctly contributing —
+#   and not `capped_at` / `was_capped`.
+
+def _esi_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the two list counts. `examined` is the population."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["crossed_and_still_owed"] = len(surviving.get("crossed_and_still_owed") or ())
+    counts["newly_under"] = len(surviving.get("newly_under") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1857,6 +1912,20 @@ ACK_WIRING: dict[str, AckWiring] = {
         recompute=_stale_retainer_recompute,
         label_of=lambda f: (
             f"{f.get('engagement') or 'recurring billing'} — {f.get('client')}"),
+    ),
+
+    "check_esi_ceiling_crossings": AckWiring(
+        findings_at=("crossed_and_still_owed", "newly_under"),
+        identity_of=lambda f: {
+            "employee_code": f.get("employee_code"),
+            "month": f.get("month"),
+        },
+        material_of=lambda f: {
+            "gross": f.get("gross"),
+            "contributing_this_month": f.get("contributing_this_month"),
+        },
+        recompute=_esi_recompute,
+        label_of=lambda f: f"ESI — {f.get('employee')} ({f.get('month')})",
     ),
 
     "check_late_suppliers": AckWiring(
