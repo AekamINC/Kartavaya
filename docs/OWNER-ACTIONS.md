@@ -21,6 +21,37 @@ behind it.
 
 ## OPEN
 
+### 8. M needs a machine with the Android toolchain — this environment does not have one
+
+**Status:** OPEN · nothing else in M is blocked, only these two pieces.
+
+This session finished H, J, L and the tenancy cutover's last piece, and fixed
+inbox 9 ("attendance stuck at waiting for send") by static code review — the
+bug was real: `attachPhotoKey` was only ever called from one place, and only
+on a successful upload, so a punch whose photo failed to upload at capture
+time (a phone with no signal — the exact case the offline queue exists for)
+had nothing that would ever retry it. Fixed and pushed, with 6 new tests.
+
+**What I could not do here, and why:** this environment has no JDK, no
+Android SDK, and no `adb` (checked at session start). Two things still need
+a machine that has them:
+
+1. **Reproduce inbox 9 live**, cold-restart, against a real device or
+   emulator — hot reload lies on this app, and only a device confirms the fix
+   against the actual reported symptom rather than against the code alone.
+2. **Build the APK.** `bash mobile/scripts/build-apk.sh release` from
+   `mobile/`. A debug APK carries no JS bundle and is useless off the build
+   machine; the script also applies the metaspace bump a release build needs.
+
+**What you do:** run those two on a machine with the toolchain (or hand it to
+someone who has one), or say the word if you want a different plan — e.g.
+Railway/EAS cloud build instead of local.
+
+**What I finish once done:** nothing further from me — the code is already
+merged. This is the last step, not a handoff back into a workstream.
+
+---
+
 ### 2. Drop the `qa_cleanup_20260822` restore schema?
 
 **Status:** OPEN · no rush, it costs nothing to keep.
