@@ -590,6 +590,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const [busy, setBusy] = useState('');
   const [contact, setContact] = useState('');
   const [addEmail, setAddEmail] = useState('');
+  const [addRole, setAddRole] = useState('org_admin');
   const [confirm, setConfirm] = useState(null);
 
   const me = currentUser();
@@ -838,15 +839,17 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 : `${memberCount} ${memberCount === 1 ? 'person is' : 'people are'} in this organisation.`}
             {' '}Who they are is not readable from here, and neither is what they can
             reach — that is the organisation's own information, and its admin manages it
-            at Settings → Organisation → Members. This console can invite one org admin,
-            which is what the box below does.
+            at Settings → Organisation → Members. This console can invite an org admin
+            or an org owner, which is what the box below does.
           </p>
 
           <div className="adm-form adm-form--tight">
             <Field
-              label="Invite an org admin"
+              label={addRole === 'org_owner' ? 'Invite an org owner' : 'Invite an org admin'}
               htmlFor="om-email"
-              hint="They must already have a Kartavya account. They become an org admin of this organisation and reach every module it has active."
+              hint={addRole === 'org_owner'
+                ? 'They must already have a Kartavya account. They become the org owner and can manage modules, roles and payroll approval.'
+                : 'They must already have a Kartavya account. They become an org admin of this organisation and reach every module it has active.'}
             >
               {p => (
                 <Input
@@ -857,6 +860,15 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 />
               )}
             </Field>
+            <Field label="Role" htmlFor="om-role">
+              {p => (
+                <Select {...p} value={addRole} onChange={e => setAddRole(e.target.value)}
+                  disabled={!mayActOnOrg} title={godReason}>
+                  <option value="org_admin">Org Admin</option>
+                  <option value="org_owner">Org Owner</option>
+                </Select>
+              )}
+            </Field>
           </div>
           <div className="adm-actions">
             <Button
@@ -864,22 +876,25 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
               disabled={!mayActOnOrg || !addEmail.trim() || busy === 'add'}
               title={godReason}
               onClick={() => setConfirm({
-                title: 'Invite an org admin',
-                message: `${addEmail.trim()} becomes an org admin of ${org.name} and reaches every module it has active — including payroll and the books if those are on. This is recorded against the organisation.`,
-                confirmLabel: 'Make org admin',
+                title: addRole === 'org_owner' ? 'Invite an org owner' : 'Invite an org admin',
+                message: addRole === 'org_owner'
+                  ? `${addEmail.trim()} becomes the org owner of ${org.name}. They can manage modules, roles, payroll approval and everything the organisation reaches. The org must not already have an owner.`
+                  : `${addEmail.trim()} becomes an org admin of ${org.name} and reaches every module it has active — including payroll and the books if those are on. This is recorded against the organisation.`,
+                confirmLabel: addRole === 'org_owner' ? 'Make org owner' : 'Make org admin',
                 onConfirm: () => act('add', async () => {
-                  /* `roles` is sent explicitly even though the server defaults
-                     to the same value: the endpoint refuses anything else with
-                     a 400, and a body that states what it wants is the one that
-                     gets the honest refusal if that ever changes. */
+                  const email = addEmail.trim();
                   await api.post(`/v1/admin/orgs/${orgId}/members`, {
-                    email: addEmail.trim(), roles: ['org_admin'],
+                    email, roles: ['org_admin'],
                   });
+                  if (addRole === 'org_owner') {
+                    await api.post(`/v1/admin/orgs/${orgId}/owner`, { email });
+                  }
                   setAddEmail('');
+                  setAddRole('org_admin');
                 }),
               })}
             >
-              {busy === 'add' ? 'Inviting…' : 'Invite org admin'}
+              {busy === 'add' ? 'Inviting…' : addRole === 'org_owner' ? 'Invite org owner' : 'Invite org admin'}
             </Button>
             {!mayActOnOrg && <span className="apg__secn">{godReason}</span>}
           </div>
