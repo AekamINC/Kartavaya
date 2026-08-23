@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 22 of the 61 assigned skills.
+Wired so far: 23 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1532,6 +1532,68 @@ def _esi_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
     counts["newly_under"] = len(surviving.get("newly_under") or ())
 
 
+# ── check_unmatched_receipts ────────────────────────────────────────────────
+#
+# Of the unreconciled money in, how much can be settled without a person
+# choosing. The handler "suggests; it never records a payment" — 'paid' arrives
+# from bank reconciliation and from nothing else — so every credit it lists is
+# still there next run, including the ones a person has already looked at and
+# rejected. A false match by amount coincidence, which the handler warns is "a
+# coincidence, not an identification", is proposed again every single day.
+#
+# FINDINGS_AT — `settled_by_one_invoice`, `need_a_decision`,
+#   `money_in_nothing_matches` and `invoices_whose_money_is_already_in`.
+#
+#   The first three are BANK LINES, partitioned by how well they match. The
+#   fourth is INVOICES — the mirror of the first three, from the other side.
+#   Folding is left ON: a credit that matched nothing and now matches two
+#   invoices is a different question, and an invoice can never share a key with
+#   a line anyway.
+#
+# IDENTITY — `line_id` OR `invoice_id`, whichever the list carries. Both are
+#   already emitted and both are row ids, hashed on the way into the key.
+#
+#   NOT `reference` or `description`: they are the bank's own text and the
+#   handler is explicit that a payer is not recorded anywhere, so they identify
+#   nothing on their own.
+#
+# MATERIAL — `amount` and `matched_on` for a line, `balance_due` and
+#   `payment_status` for an invoice; the lambda reads all four and the absent
+#   pair hashes as None.
+#
+#   `matched_on` is the interesting one: "reference" and "amount" are different
+#   CLAIMS about the same credit, and the handler goes out of its way to say
+#   only the first names an invoice. A suggestion that was accepted on a
+#   coincidence and is now backed by a reference deserves to be seen again.
+#
+# INCIDENTAL — `statement_date` (fixed at import), `reference`, `description`,
+#   `why`, `customer`, `invoice_number`, `invoice_date`, `due_date`, `total`.
+#
+# RECOMPUTE — `settled_by_one_invoice` and `need_a_decision` ONLY.
+#
+#   `money_in_nothing_matches` and `invoices_whose_money_is_already_in` are the
+#   two lists the handler TRUNCATES — `unexplained[:cap]`, `mirror[:cap]` —
+#   while their counts stay `len(unexplained)` and `len(mirror)`. Those counts
+#   are already larger than their lists on a capped run, before any
+#   acknowledgement exists, so they are a census by construction and rebuilding
+#   them would replace a true number with a filtered one.
+#
+#   The cost is stated rather than hidden: acknowledge every unexplained credit
+#   and the count still reads forty above an empty list. The fix is a
+#   `*_listed` count in the handler, as `check_wip_ageing` has, and it is
+#   recorded as owed rather than smuggled into a wiring commit.
+#
+#   `open_credits_examined` is the population and stays.
+
+def _unmatched_receipts_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the two counts that are NOT censuses. See the note above."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["settled_by_one_invoice"] = len(surviving.get("settled_by_one_invoice") or ())
+    counts["need_a_decision"] = len(surviving.get("need_a_decision") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1926,6 +1988,26 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_esi_recompute,
         label_of=lambda f: f"ESI — {f.get('employee')} ({f.get('month')})",
+    ),
+
+    "check_unmatched_receipts": AckWiring(
+        findings_at=("settled_by_one_invoice", "need_a_decision",
+                     "money_in_nothing_matches", "invoices_whose_money_is_already_in"),
+        identity_of=lambda f: {
+            "line_id": f.get("line_id"),
+            "invoice_id": f.get("invoice_id"),
+        },
+        material_of=lambda f: {
+            "amount": f.get("amount"),
+            "matched_on": f.get("matched_on"),
+            "balance_due": f.get("balance_due"),
+            "payment_status": f.get("payment_status"),
+        },
+        recompute=_unmatched_receipts_recompute,
+        label_of=lambda f: (
+            f"{f.get('invoice_number')} — {f.get('customer')}"
+            if f.get("invoice_id") else
+            f"credit {f.get('amount')} on {f.get('statement_date')}"),
     ),
 
     "check_late_suppliers": AckWiring(
