@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 25 of the 61 assigned skills.
+Wired so far: 26 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1703,6 +1703,82 @@ def _payment_proof_recompute(out: dict, surviving: Sequence[dict]) -> None:
         counts["claims"] = len(surviving)
 
 
+# ── check_consent_ledger ────────────────────────────────────────────────────
+#
+# Who has opted in, who has asked to stop, and who a send would reach anyway.
+# The handler proves the finding cannot resolve itself: "No INSERT or UPDATE
+# anywhere in this backend sets staging.varta_contacts.opted_in. The column is a
+# promise the schema makes and cannot keep." Nothing on the inbound path reads a
+# STOP message and changes a flag, and nothing on the send path reads the flag.
+# So a firm that has recorded a consent on paper, or honoured a stop by hand,
+# reads the identical list every run — and this is a COMPLIANCE list, which is
+# the worst kind to train somebody to skim.
+#
+# FINDINGS_AT — `asked_to_stop` and `reachable_without_a_recorded_opt_in`.
+#
+#   `opt_in_recorded` is deliberately NOT wired, for the reason
+#   `below_the_threshold` is not wired on `check_tds_thresholds`: it is the
+#   list of people who are FINE. Nothing in it asks anybody to do anything, and
+#   an acknowledge button on it would let somebody hide the evidence that
+#   consent was recorded at all — on the one report a regulator would read.
+#
+#   Folding stays ON. A contact can be in both wired lists at once — somebody
+#   who asked to stop is also reachable-without-consent — and those are two
+#   different obligations: honour the stop, and record a basis for contacting
+#   them. Acknowledging one must not answer the other.
+#
+# IDENTITY — `contact_id`, on both lists, already emitted and described by the
+#   handler as "a row handle the UI can act on, never rendered as a person".
+#
+#   NOT `phone_number`, and that is not only a privacy point: the handler
+#   normalises phones to compare them precisely because the same person appears
+#   under different spellings, so a number is not a key. NOT `who` or
+#   `company`, which are names.
+#
+# MATERIAL — `ledger_still_says_opted_in`, `opted_in_flag` and `asked_to_stop`,
+#   whichever the list carries.
+#
+#   All three are the CONTRADICTION each list is about: this person asked to
+#   stop and the ledger still says they are opted in; this person is reachable
+#   and no opt-in is recorded. The day somebody flips the flag by hand — which
+#   is the only way it can move, since no code path writes it — the finding has
+#   genuinely changed and should be seen once.
+#
+#   NOT `said` or `said_at`. The message is the EVIDENCE for the finding, not
+#   the finding: a contact who writes "STOP" twice has not created a second
+#   obligation, and hashing the newest message would resurface the finding
+#   every time they wrote in again.
+#
+# INCIDENTAL — `matched` and `confidence` (how the stop keyword was detected —
+#   a change there is the detector improving, not the person changing their
+#   mind), `last_message_at`, `why`, and the contact's name and company.
+#
+# RECOMPUTE — `asked_to_stop`, `asked_to_stop_but_ledger_says_opted_in` and
+#   `reachable_without_a_recorded_opt_in`. All three are sums over the two
+#   wired lists, and the middle one is the number that makes the section worth
+#   reading at all.
+#
+#   Everything else is the contact and message CENSUS —`whatsapp_contacts`,
+#   `flagged_opted_in`, `not_flagged`, `distinct_opt_in_timestamps`,
+#   `inbound_messages_examined` — and on a compliance report the census is the
+#   point. `distinct_opt_in_timestamps` in particular is what the handler uses
+#   to decide `opt_in_is_not_evidence`: a seed writes one timestamp for every
+#   row it touches, and rebuilding that from a filtered list would destroy the
+#   only signal it has for an opt-in it should not believe.
+
+def _consent_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the three counts that are sums over the two wired lists."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    stopped = list(surviving.get("asked_to_stop") or ())
+    counts["asked_to_stop"] = len(stopped)
+    counts["asked_to_stop_but_ledger_says_opted_in"] = sum(
+        1 for s in stopped if s.get("ledger_still_says_opted_in"))
+    counts["reachable_without_a_recorded_opt_in"] = len(
+        surviving.get("reachable_without_a_recorded_opt_in") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2146,6 +2222,18 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_payment_proof_recompute,
         label_of=lambda f: f"payment proof — {f.get('customer') or f.get('sender')}",
+    ),
+
+    "check_consent_ledger": AckWiring(
+        findings_at=("asked_to_stop", "reachable_without_a_recorded_opt_in"),
+        identity_of=lambda f: {"contact_id": f.get("contact_id")},
+        material_of=lambda f: {
+            "ledger_still_says_opted_in": f.get("ledger_still_says_opted_in"),
+            "opted_in_flag": f.get("opted_in_flag"),
+            "asked_to_stop": f.get("asked_to_stop"),
+        },
+        recompute=_consent_recompute,
+        label_of=lambda f: f"consent — {f.get('who')}",
     ),
 
     "check_late_suppliers": AckWiring(
