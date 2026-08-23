@@ -1,0 +1,284 @@
+<title>Procurement Rescope</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap');
+
+  :root {
+    --bg: #fafaf8;
+    --surface: #ffffff;
+    --surface-2: #f3f2ee;
+    --text: #1a1a18;
+    --text-2: #5c5b56;
+    --text-3: #8a8880;
+    --accent: #b45309;
+    --accent-light: #fef3c7;
+    --border: #e5e4df;
+    --code-bg: #f0efeb;
+    --danger: #b91c1c;
+    --ok: #15803d;
+    --warn: #a16207;
+    --card-shadow: 0 1px 3px rgba(26,26,24,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614;
+      --surface: #1e1e1b;
+      --surface-2: #262622;
+      --text: #e8e7e3;
+      --text-2: #a3a29c;
+      --text-3: #6b6a64;
+      --border: #2e2e2a;
+      --code-bg: #222220;
+      --accent: #f59e0b;
+      --accent-light: #422006;
+      --danger: #ef4444;
+      --ok: #22c55e;
+      --warn: #eab308;
+      --card-shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614;
+    --surface: #1e1e1b;
+    --surface-2: #262622;
+    --text: #e8e7e3;
+    --text-2: #a3a29c;
+    --text-3: #6b6a64;
+    --border: #2e2e2a;
+    --code-bg: #222220;
+    --accent: #f59e0b;
+    --accent-light: #422006;
+    --danger: #ef4444;
+    --ok: #22c55e;
+    --warn: #eab308;
+    --card-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  h1,h2,h3,h4 { line-height: 1.25; text-wrap: balance; }
+  h1 { font-size: 1.75rem; font-weight: 700; margin: 0 0 .5rem; }
+  h2 { font-size: 1.25rem; font-weight: 600; margin: 2.5rem 0 .75rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
+  h3 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 .5rem; }
+
+  .meta { color: var(--text-3); font-size: .82rem; margin-bottom: 2rem; }
+  .hi { font-family: 'Noto Sans Devanagari', sans-serif; color: var(--text-3); }
+
+  p { margin: .6rem 0; }
+  strong { font-weight: 600; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: .75rem 0;
+    box-shadow: var(--card-shadow);
+  }
+  .card h3 { margin-top: 0; }
+
+  code {
+    background: var(--code-bg);
+    padding: .15em .35em;
+    border-radius: 3px;
+    font-size: .88em;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: .72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: .15em .5em;
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+  .tag--new { background: var(--accent-light); color: var(--accent); }
+  .tag--move { background: var(--surface-2); color: var(--text-2); }
+  .tag--keep { background: var(--surface-2); color: var(--ok); }
+  .tag--drop { background: var(--surface-2); color: var(--danger); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .88rem;
+    margin: .75rem 0;
+  }
+  th { text-align: left; font-weight: 600; padding: .4rem .6rem; border-bottom: 2px solid var(--border); }
+  td { padding: .4rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .r { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    margin: .75rem 0;
+    counter-reset: step;
+  }
+  .step {
+    display: flex;
+    gap: .75rem;
+    align-items: baseline;
+    counter-increment: step;
+  }
+  .step::before {
+    content: counter(step);
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-light);
+    width: 1.6em;
+    height: 1.6em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  ul { padding-left: 1.2em; margin: .4rem 0; }
+  li { margin: .25rem 0; }
+  li::marker { color: var(--text-3); }
+
+  .risk {
+    border-left: 3px solid var(--warn);
+    padding: .6rem 1rem;
+    background: var(--surface);
+    margin: .75rem 0;
+    font-size: .9rem;
+  }
+
+  .overflow-x { overflow-x: auto; }
+</style>
+
+<h1>Procurement as its own module <span class="hi">क्रय</span></h1>
+<p class="meta">Proposal 85 &middot; rescope &middot; 23 August 2026</p>
+
+<p>
+  Purchase orders currently live as two tabs inside Finance (Ganit). Proposal 77 put them there to avoid minting a module code, but the consequence is that procurement is invisible in the sidebar, ungrantable independently, and impossible to sell separately. This proposal moves it out.
+</p>
+
+<h2>What changes</h2>
+
+<div class="card">
+  <h3>1. New module code: <code>kray</code> <span class="tag tag--new">new</span></h3>
+  <p>
+    <strong>क्रय</strong> (kray) — Sanskrit for "purchase", consistent with the naming convention (ganit, vikray, graha, manav, vetana, etc.). Added to <code>ALL_MODULES</code>, <code>HIERARCHICAL_MODULES</code>, and <code>LADDER_MODULES</code> in <code>role_tiers.py</code>.
+  </p>
+</div>
+
+<div class="card">
+  <h3>2. Own sidebar entry <span class="tag tag--new">new</span></h3>
+  <p>
+    Under the <strong>Revenue &middot; राजस्व</strong> section, after Finance:
+  </p>
+  <table>
+    <tr><th>Key</th><th>Route</th><th>English</th><th>Hindi</th><th>Module</th></tr>
+    <tr><td>graha</td><td>/graha</td><td>CRM</td><td>ग्रह</td><td>graha</td></tr>
+    <tr><td>vikray</td><td>/vikray</td><td>Sales</td><td>विक्रय</td><td>vikray</td></tr>
+    <tr><td>ganit</td><td>/ganit</td><td>Finance</td><td>गणित</td><td>ganit</td></tr>
+    <tr><td><strong>kray</strong></td><td><strong>/kray</strong></td><td><strong>Procurement</strong></td><td><strong>क्रय</strong></td><td><strong>kray</strong></td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>3. Own page: <code>KrayPage.jsx</code> <span class="tag tag--new">new</span></h3>
+  <p>
+    Same module-page pattern as every other module (ModuleHeader, ModuleTabs, KpiStrip). Three tabs:
+  </p>
+  <table>
+    <tr><th>Tab</th><th>Source</th><th>Action</th></tr>
+    <tr><td>Purchase orders</td><td><code>PurchaseOrdersTab.jsx</code></td><td><span class="tag tag--move">move</span></td></tr>
+    <tr><td>Approvals</td><td><code>POApprovalsTab.jsx</code></td><td><span class="tag tag--move">move</span></td></tr>
+    <tr><td>Settings</td><td>Inline (settings button stays in the PO tab)</td><td><span class="tag tag--keep">keep</span></td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>4. Backend gate: <code>require_module("kray")</code> <span class="tag tag--move">move</span></h3>
+  <p>
+    <code>procurement.py</code> currently gates on <code>require_module("ganit")</code>. Change to <code>require_module("kray")</code>. The router prefix <code>/api/v1/procurement</code> stays unchanged — the URL names the domain, the gate names the entitlement.
+  </p>
+</div>
+
+<div class="card">
+  <h3>5. Remove from GanitPage <span class="tag tag--drop">drop</span></h3>
+  <p>
+    Remove the <code>['purchase orders', PurchaseOrdersTab]</code> and <code>['po approvals', POApprovalsTab]</code> entries from <code>GanitPage.jsx</code>'s TABS array. Finance keeps its 14 remaining tabs.
+  </p>
+</div>
+
+<h2>The migration</h2>
+
+<p>Staging and production share one database, so entitlement rows must exist before the gate changes. Order matters.</p>
+
+<div class="steps">
+  <div class="step"><span><strong>Migration 214:</strong> insert <code>kray</code> into <code>staging.module_subscriptions</code> for every org that currently holds <code>ganit</code>. This is a read-only addition — no existing behaviour changes.</span></div>
+  <div class="step"><span><strong>Migration 214 (same file):</strong> copy every <code>staging.org_member_modules</code> row where <code>module_code = 'ganit'</code> as a <code>'kray'</code> row at the same level. Everyone who can see Finance can see Procurement on day one.</span></div>
+  <div class="step"><span><strong>Deploy backend</strong> with <code>require_module("kray")</code> in <code>procurement.py</code> and <code>"kray"</code> in <code>ALL_MODULES</code>.</span></div>
+  <div class="step"><span><strong>Deploy frontend</strong> with <code>KrayPage</code>, the new nav entry, and the two tabs removed from Ganit.</span></div>
+</div>
+
+<div class="risk">
+  <strong>Shared-DB risk:</strong> steps 1–2 are additive INSERT statements — they cannot break existing behaviour. The danger window is between step 3 (backend gates on <code>kray</code>) and step 2 (rows exist). If the backend deploys first without the migration, the route 403s for everyone. <strong>Apply migration before deploying the backend.</strong>
+</div>
+
+<h2>What this unlocks</h2>
+
+<ul>
+  <li><strong>Grantable independently.</strong> An org that does books but not purchasing can turn off <code>kray</code> without losing <code>ganit</code>. An org that only does purchasing (construction, manufacturing) can subscribe without paying for invoicing.</li>
+  <li><strong>Visible in the sidebar.</strong> A module that has no sidebar entry is a module nobody finds. The whole reason procurement "wasn't there" was that it was buried behind Finance's 16th tab.</li>
+  <li><strong>Separately sellable.</strong> A plan can include or exclude <code>kray</code> the way it does <code>esign</code> or <code>prachar</code>.</li>
+  <li><strong>Own KPI strip.</strong> Committed spend, open orders, late suppliers, and 194Q warnings surface on entry — not after clicking through Finance.</li>
+</ul>
+
+<h2>What stays the same</h2>
+
+<ul>
+  <li>The API prefix <code>/api/v1/procurement/*</code> — no URL changes.</li>
+  <li>The database tables (<code>ganit_purchase_orders</code>, <code>ganit_po_lines</code>, <code>ganit_po_receipts</code>, <code>ganit_po_revisions</code>, <code>ganit_po_approvals</code>) — table names are not module codes.</li>
+  <li>Vendor management stays in Ganit (<code>ganit_vendors</code>) — procurement reads vendors but doesn't own them.</li>
+  <li>Bill linking stays cross-module — a vendor bill in Ganit can still link to a PO in Kray.</li>
+  <li>The product catalogue stays shared (<code>ganit_products</code>) — one catalogue, many surfaces.</li>
+  <li>All existing settings, approval rules, and data — zero data migration.</li>
+</ul>
+
+<h2>Files touched</h2>
+
+<div class="overflow-x">
+<table>
+  <tr><th>File</th><th>Change</th></tr>
+  <tr><td><code>backend/middleware/role_tiers.py</code></td><td>Add <code>"kray"</code> to <code>ALL_MODULES</code>, <code>HIERARCHICAL_MODULES</code></td></tr>
+  <tr><td><code>backend/routers/procurement.py</code></td><td><code>_gate = require_module("kray")</code></td></tr>
+  <tr><td><code>backend/migrations/214_kray_module.sql</code></td><td>Entitlement rows for every existing ganit org</td></tr>
+  <tr><td><code>frontend/src/pages/KrayPage.jsx</code></td><td>New module page (same pattern as GanitPage)</td></tr>
+  <tr><td><code>frontend/src/pages/GanitPage.jsx</code></td><td>Remove two tab entries + imports</td></tr>
+  <tr><td><code>frontend/src/components/layout/navConfig.js</code></td><td>Add kray entry in revenue section</td></tr>
+  <tr><td><code>frontend/src/lib/moduleColors.js</code></td><td>Add <code>kray</code> entry with colour token</td></tr>
+  <tr><td><code>frontend/src/App.jsx</code></td><td>Add <code>/kray</code> route</td></tr>
+  <tr><td><code>frontend/src/components/layout/navIcons.js</code></td><td>Add kray icon</td></tr>
+  <tr><td><code>frontend/src/pages/org/catalogue.js</code></td><td>Add kray to the module catalogue</td></tr>
+</table>
+</div>
+
+<h2>Naming decision</h2>
+
+<table>
+  <tr><th>Candidate</th><th>Sanskrit</th><th>Notes</th></tr>
+  <tr><td><strong>kray</strong></td><td>क्रय</td><td>Purchase/buying. Mirrors <em>vikray</em> (selling). One syllable. Reads naturally beside the others.</td></tr>
+  <tr><td>kharid</td><td>खरीद</td><td>Hindi/Urdu, not Sanskrit. Breaks the naming pattern.</td></tr>
+  <tr><td>procurement</td><td>—</td><td>English. Every other module code is transliterated Sanskrit.</td></tr>
+</table>
+
+<p>
+  <strong>Recommendation: <code>kray</code></strong> — it is the buy side of <code>vikray</code> (sell), which is exactly what procurement is. The pairing is both etymologically correct and easy to remember.
+</p>
