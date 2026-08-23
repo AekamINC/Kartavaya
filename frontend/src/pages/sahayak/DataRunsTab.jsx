@@ -165,6 +165,20 @@ function RunDetail({ id, onBack }) {
             </button>
           </div>
 
+          {/* NOT opted into useColumnPrefs, and it is the runtime-column case
+              rather than a judgement call. `keys` is whatever `result_columns`
+              the driver reported, falling back to `Object.keys(results[0])` —
+              so the column SET is different per scraper and can differ between
+              two runs of the same one. There is no stable base list to declare
+              and therefore nothing an arrangement could be reconciled against:
+              one key across every scraper would mean a layout saved from a maps
+              run being resolved against a jobs run's columns, where every saved
+              id is dropped and every real column appends, i.e. the shipped
+              order with a database write behind it. A key per scraper would be
+              worse — a table key is a row identity for ever, and minting them
+              from remote data grows a row per scraper the catalogue ever adds.
+              This grid is also transient by design: it shows the first 100 rows
+              and points at the CSV export for the rest. */}
           <div className="tbl__wrap hb-scroll sr-tblwrap">
             <table className="tbl sr-tbl">
               <thead>

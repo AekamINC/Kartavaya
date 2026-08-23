@@ -26,7 +26,53 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone: the header comes out of the column declaration below,
+// which is what lets it be moved, hidden and resized. The CELL is unchanged.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The catalogue's columns, declared once, in the order they shipped. ONE key
+ * for a component mounted by two pages — a product is the same product whether
+ * you reached it from Ganit or Vikray, so a person who arranged this table
+ * under Finance must not meet the shipped order again under Sales.
+ *
+ * `fixed` on Name (which product a row IS) and Actions (Edit / Delete). Cost
+ * and Margin stay hideable on purpose: a firm that does not record cost prices
+ * sees two permanent em-dash columns, and hiding them is the whole point of
+ * this hook.
+ */
+const PRODUCT_COLUMNS = [
+  { id: 'name', label: 'Name', sortKey: 'name', fixed: true },
+  { id: 'hsn_code', label: 'HSN/SAC', sortKey: 'hsn_code' },
+  { id: 'unit', label: 'Unit', sortKey: 'unit' },
+  { id: 'price', label: 'Sale', sortKey: 'price', num: true },
+  { id: 'cost_price', label: 'Cost', sortKey: 'cost_price', num: true },
+  { id: 'margin', label: 'Margin', sortKey: 'margin', num: true },
+  { id: 'gst_rate', label: 'GST', sortKey: 'gst_rate', num: true },
+  { id: 'is_service', label: 'Type', sortKey: 'is_service' },
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+  /* WHO added the product and WHO last changed it. Appended at the END, after
+     Actions: `useColumnPrefs` stores an arrangement against ONE key for a
+     component two pages mount, so a column inserted mid-list would move the
+     table for a person who arranged it under Finance and meets it under Sales.
+     Appending leaves their arrangement alone and the Columns sheet moves these
+     wherever they want them.
+
+     Sortable, because this table sorts CLIENT side through `useTableView` over
+     the rows already loaded — no server allowlist is involved. `routers/
+     products.py` resolves both names (`services/audit_actors`), and 106 rows
+     predate migration 202 and are deliberately not backfilled, so on this table
+     `has_creator: false` is the COMMON case, not the exception: those rows read
+     as an em dash — nobody is recorded — which is the truth about them. */
+  { id: 'created_by_name', label: 'Created by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+];
 
 const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', cost_price: '', gst_rate: 18, description: '', is_service: false };
 
@@ -201,6 +247,7 @@ export default function ProductsTab() {
     searchKeys: ['name', 'hsn_code', 'sac_code'],
     filters: [{ key: 'unit', label: 'Unit' }, { key: 'gst_rate', label: 'GST' }],
   });
+  const cols = useColumnPrefs('catalogue.products', PRODUCT_COLUMNS);
   return (
     <div>
       <div className="gn-bar">
@@ -250,86 +297,113 @@ export default function ProductsTab() {
         />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="products" />
+        <TableToolbar view={view} label="products">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Name</HeadCell>
-                <HeadCell sortKey="hsn_code" sort={view.sort} onSort={view.onSort}>HSN/SAC</HeadCell>
-                <HeadCell sortKey="unit" sort={view.sort} onSort={view.onSort}>Unit</HeadCell>
-                <HeadCell sortKey="price" sort={view.sort} onSort={view.onSort} num>Sale</HeadCell>
-                <HeadCell sortKey="cost_price" sort={view.sort} onSort={view.onSort} num>Cost</HeadCell>
-                <HeadCell sortKey="margin" sort={view.sort} onSort={view.onSort} num>Margin</HeadCell>
-                <HeadCell sortKey="gst_rate" sort={view.sort} onSort={view.onSort} num>GST</HeadCell>
-                <HeadCell sortKey="is_service" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
-                <th aria-label="Actions" />
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.rows.map(p => (
                 <React.Fragment key={p.id}>
                   <tr>
-                    <td>
-                      {/* The name is a control only because it opens the
-                          editor. With no edit to open it is a label, and
-                          rendering it as a button would promise one. */}
-                      {canWrite ? (
-                        <button type="button" className="gn-link" onClick={() => startEdit(p)}>{p.name}</button>
-                      ) : p.name}
-                    </td>
-                    <td className="gn-tbl__mono">{p.hsn_code || p.sac_code || '—'}</td>
-                    <td>{p.unit}</td>
-                    <td className="tbl__num">{inr(Number(p.price))}</td>
-                    <td className="tbl__num">
-                      {p.cost_price == null ? '—' : inr(Number(p.cost_price))}
-                    </td>
-                    <td className="tbl__num">
-                      {p.margin == null ? '—' : (
-                        <>{inr(Number(p.margin))}{' '}
-                          <span className="gn-tbl__mono">
-                            ({p.margin_pct == null ? '—' : `${Number(p.margin_pct)}%`})
+                    {cols.cells({
+                      name: (
+                        <td>
+                          {/* The name is a control only because it opens the
+                              editor. With no edit to open it is a label, and
+                              rendering it as a button would promise one. */}
+                          {canWrite ? (
+                            <button type="button" className="gn-link" onClick={() => startEdit(p)}>{p.name}</button>
+                          ) : p.name}
+                        </td>
+                      ),
+                      hsn_code: <td className="gn-tbl__mono">{p.hsn_code || p.sac_code || '—'}</td>,
+                      unit: <td>{p.unit}</td>,
+                      price: <td className="tbl__num">{inr(Number(p.price))}</td>,
+                      cost_price: (
+                        <td className="tbl__num">
+                          {p.cost_price == null ? '—' : inr(Number(p.cost_price))}
+                        </td>
+                      ),
+                      margin: (
+                        <td className="tbl__num">
+                          {p.margin == null ? '—' : (
+                            <>{inr(Number(p.margin))}{' '}
+                              <span className="gn-tbl__mono">
+                                ({p.margin_pct == null ? '—' : `${Number(p.margin_pct)}%`})
+                              </span>
+                            </>
+                          )}
+                        </td>
+                      ),
+                      gst_rate: <td className="tbl__num">{Number(p.gst_rate)}%</td>,
+                      is_service: (
+                        <td>
+                          <Badge
+                            text={p.is_service ? 'Service' : 'Goods'}
+                            color={p.is_service ? 'var(--st-in-review)' : 'var(--st-in-progress)'}
+                          />
+                        </td>
+                      ),
+                      [CREATED_KEY]: <CreatedCell value={p.created_at} />,
+                      /* `hasActor` is what keeps a product added by somebody
+                         who has since left the firm (`unknown`) apart from one
+                         of the 106 rows that predate the column entirely (an em
+                         dash). Both are "no name to show"; only one of them is
+                         a person the catalogue can no longer name. */
+                      created_by_name: <ByCell name={p.created_by_name} hasActor={p.has_creator} />,
+                      [UPDATED_KEY]: <UpdatedCell value={p.updated_at} />,
+                      updated_by_name: <ByCell name={p.updated_by_name} hasActor={p.has_updater} />,
+                      actions: (
+                        <td>
+                          <span className="gn-tbl__acts">
+                            <button
+                              type="button" className="gn-act" onClick={() => startEdit(p)}
+                              disabled={!canWrite} title={denial || undefined}
+                            >
+                              Edit
+                            </button>
+                            {/* Deleting a catalogue entry that invoices already
+                                reference is not obviously reversible, so it asks. */}
+                            <button
+                              type="button" className="gn-act gn-act--danger"
+                              disabled={!canWrite} title={denial || undefined}
+                              onClick={() => setConfirm({
+                                title: `Delete ${p.name}?`,
+                                message: 'The product is removed from the catalogue. Invoices already raised keep their lines.',
+                                confirmLabel: 'Delete',
+                                onConfirm: () => remove(p),
+                              })}
+                            >
+                              Delete
+                            </button>
                           </span>
-                        </>
-                      )}
-                    </td>
-                    <td className="tbl__num">{Number(p.gst_rate)}%</td>
-                    <td>
-                      <Badge
-                        text={p.is_service ? 'Service' : 'Goods'}
-                        color={p.is_service ? 'var(--st-in-review)' : 'var(--st-in-progress)'}
-                      />
-                    </td>
-                    <CreatedCell value={p.created_at} />
-                    <td>
-                      <span className="gn-tbl__acts">
-                        <button
-                          type="button" className="gn-act" onClick={() => startEdit(p)}
-                          disabled={!canWrite} title={denial || undefined}
-                        >
-                          Edit
-                        </button>
-                        {/* Deleting a catalogue entry that invoices already
-                            reference is not obviously reversible, so it asks. */}
-                        <button
-                          type="button" className="gn-act gn-act--danger"
-                          disabled={!canWrite} title={denial || undefined}
-                          onClick={() => setConfirm({
-                            title: `Delete ${p.name}?`,
-                            message: 'The product is removed from the catalogue. Invoices already raised keep their lines.',
-                            confirmLabel: 'Delete',
-                            onConfirm: () => remove(p),
-                          })}
-                        >
-                          Delete
-                        </button>
-                      </span>
-                    </td>
+                        </td>
+                      ),
+                    })}
                   </tr>
                   {editId === p.id && canWrite && (
                     <tr>
-                      <td colSpan={10}>
+                      {/* Spans what is on screen, not a literal 10. */}
+                      <td colSpan={cols.columns.length}>
                         <form className="gn-form gn-form--accent" onSubmit={saveEdit}>
                           <h4 className="gn-form__h">Edit {p.name}</h4>
                           <ProductFields value={editForm} onChange={setEditForm} />

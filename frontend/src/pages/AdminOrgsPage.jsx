@@ -54,6 +54,8 @@ import OrgRoleGrant from './admin/OrgRoleGrant';
 import { canSuspendOrg, canManageBilling, canSeeCost } from './admin/platformRoles';
 import BillingLinesBlock from './admin/BillingLinesBlock';
 import { refusalMessage } from './admin/BillingLineRow';
+import useColumnPrefs from '../hooks/useColumnPrefs';
+import { ColumnsButton } from '../components/ui/CustomizeColumns';
 import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
 import { Secondary } from '../components/Bilingual';
@@ -431,6 +433,24 @@ function CeilingDialog(props) {
  * names — those who already have a ceiling or have already spent — and says so
  * where the table would otherwise read as "this organisation is empty".
  */
+/**
+ * The member-ceiling list, declared once. `fixed` on Person and on the ceiling
+ * button: the three money columns are meaningless without the name beside them,
+ * and "Set ceiling" is the only verb this section has — an arrangement that hid
+ * it would leave an operator reading a ceiling they cannot change.
+ *
+ * The list lives inside the org drawer, which is why the control goes in the
+ * section's existing head row beside "Top up credits" rather than growing a
+ * toolbar of its own.
+ */
+const MEMBER_CAP_COLUMNS = [
+  { id: 'person', label: 'Person', fixed: true },
+  { id: 'spent', label: 'Spent', num: true },
+  { id: 'cap', label: 'Ceiling' },
+  { id: 'remaining', label: 'Remaining' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
 function OrgCreditsSection(props) {
   // One line, for scripts/check-write-gates.mjs.
   const { canWrite, reason } = props;
@@ -449,6 +469,8 @@ function OrgCreditsSection(props) {
   }, [orgId, canRead]);
 
   useEffect(() => { load(); }, [load]);
+
+  const cols = useColumnPrefs('admin.org_member_caps', MEMBER_CAP_COLUMNS);
 
   const balance = data?.balance || null;
   const commitment = data?.commitment || null;
@@ -492,6 +514,7 @@ function OrgCreditsSection(props) {
             Credits &amp; ceilings
             <Secondary className="apg__hi" value="श्रेय" />
           </h3>
+          <ColumnsButton cols={cols} />
           <Button
             variant="out" size="sm"
             disabled={!canWrite}
@@ -576,11 +599,16 @@ function OrgCreditsSection(props) {
             ) : (
               <Table>
                 <TableHead>
-                  <HeadCell>Person</HeadCell>
-                  <HeadCell num>Spent</HeadCell>
-                  <HeadCell>Ceiling</HeadCell>
-                  <HeadCell>Remaining</HeadCell>
-                  <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+                  {cols.columns.map(c => (
+                    <HeadCell
+                      key={c.id}
+                      num={c.num}
+                      width={c.width}
+                      onResize={w => cols.setWidth(c.id, w)}
+                    >
+                      {c.sr ? <span className="k-sr-only">{c.label}</span> : c.label}
+                    </HeadCell>
+                  ))}
                 </TableHead>
                 <TableBody>
                   {rows.map(r => {
@@ -590,39 +618,47 @@ function OrgCreditsSection(props) {
                       : 0;
                     return (
                       <Row key={r.user_id}>
-                        <Cell>
-                          <span className="adm-name__c">
-                            <b>{r.name}</b>
-                            <i>{r.email}</i>
-                          </span>
-                        </Cell>
-                        <Cell num>{grouped(r.spent)}</Cell>
-                        <Cell>
-                          {!capped && '—'}
-                          {capped && r.cap === 0 && <Tag color="var(--danger)">Blocked</Tag>}
-                          {capped && r.cap > 0 && (
-                            <>
-                              <span className="mcap__cap">{grouped(r.cap)}</span>
-                              <span className="mcap__mtr">
-                                <span
-                                  className={`mcap__mtrf${pct >= 100 ? ' over' : ''}`}
-                                  style={{ '--pct': `${pct}%` }}
-                                />
+                        {cols.cells({
+                          person: (
+                            <Cell>
+                              <span className="adm-name__c">
+                                <b>{r.name}</b>
+                                <i>{r.email}</i>
                               </span>
-                            </>
-                          )}
-                        </Cell>
-                        <Cell>{capped ? grouped(r.remaining ?? 0) : 'Uncapped'}</Cell>
-                        <Cell>
-                          <Button
-                            size="sm" variant="out"
-                            disabled={!canWrite}
-                            title={canWrite ? undefined : reason || undefined}
-                            onClick={() => setTarget(r)}
-                          >
-                            Set ceiling
-                          </Button>
-                        </Cell>
+                            </Cell>
+                          ),
+                          spent: <Cell num>{grouped(r.spent)}</Cell>,
+                          cap: (
+                            <Cell>
+                              {!capped && '—'}
+                              {capped && r.cap === 0 && <Tag color="var(--danger)">Blocked</Tag>}
+                              {capped && r.cap > 0 && (
+                                <>
+                                  <span className="mcap__cap">{grouped(r.cap)}</span>
+                                  <span className="mcap__mtr">
+                                    <span
+                                      className={`mcap__mtrf${pct >= 100 ? ' over' : ''}`}
+                                      style={{ '--pct': `${pct}%` }}
+                                    />
+                                  </span>
+                                </>
+                              )}
+                            </Cell>
+                          ),
+                          remaining: <Cell>{capped ? grouped(r.remaining ?? 0) : 'Uncapped'}</Cell>,
+                          actions: (
+                            <Cell>
+                              <Button
+                                size="sm" variant="out"
+                                disabled={!canWrite}
+                                title={canWrite ? undefined : reason || undefined}
+                                onClick={() => setTarget(r)}
+                              >
+                                Set ceiling
+                              </Button>
+                            </Cell>
+                          ),
+                        })}
                       </Row>
                     );
                   })}

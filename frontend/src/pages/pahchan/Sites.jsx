@@ -493,7 +493,7 @@ export default function Sites() {
       )}
 
       {state === 'ready' && sites.length > 0 && (
-        <DataTable columns={['Site', 'Coordinates', 'Radius', 'Vertical check', 'Status', '']}>
+        <DataTable arrange="pahchan.sites" columns={['Site', 'Coordinates', 'Radius', 'Vertical check', 'Status', '']}>
           {sites.map(s => {
             const checksAltitude = s.altitude_m != null && s.altitude_tolerance_m != null;
             const active = s.is_active !== false;

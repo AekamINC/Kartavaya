@@ -27,6 +27,23 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The ledger's four columns, declared once, in the order they shipped.
+ *
+ * `fixed` on Product — it is the row's identity AND the control that opens the
+ * stock-move history underneath it, so hiding it would seal off the audit trail
+ * this tab was written to expose. `fixed` on Adjust: −1 / +1 / Adjust… are the
+ * only writes on this screen.
+ */
+const STOCK_COLUMNS = [
+  { id: 'name', label: 'Product', sortKey: 'name', fixed: true },
+  { id: 'quantity_on_hand', label: 'On hand', sortKey: 'quantity_on_hand', num: true },
+  { id: 'low_stock_threshold', label: 'Low at', sortKey: 'low_stock_threshold', num: true },
+  { id: 'adjust', label: 'Adjust', className: 'vk-stk__acts', fixed: true },
+];
 
 const REASONS = [
   ['restock', 'Restock — goods received'],
@@ -227,6 +244,7 @@ export default function StockTab() {
     searchKeys: ['name'],
     filters: [{ key: 'unit', label: 'Unit' }],
   });
+  const cols = useColumnPrefs('vikray.stock', STOCK_COLUMNS);
   return (
     <div>
       <div className="vk-bar">
@@ -252,15 +270,27 @@ export default function StockTab() {
         />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="products" />
+        <TableToolbar view={view} label="products">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl vk-stk">
             <thead>
               <tr>
-                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Product</HeadCell>
-                <HeadCell sortKey="quantity_on_hand" sort={view.sort} onSort={view.onSort} num>On hand</HeadCell>
-                <HeadCell sortKey="low_stock_threshold" sort={view.sort} onSort={view.onSort} num>Low at</HeadCell>
-                <th className="vk-stk__acts">Adjust</th>
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -270,29 +300,36 @@ export default function StockTab() {
                 return (
                   <React.Fragment key={s.product_id}>
                     <tr className={low ? 'is-low' : undefined}>
-                      <td>
-                        <button type="button" className="vk-stk__name"
-                          aria-expanded={open}
-                          onClick={() => setExpanded(open ? null : s.product_id)}>
-                          {s.name}
-                        </button>
-                        {low && <Tag color="var(--warn)">Low</Tag>}
-                      </td>
-                      <td className="tbl__num vk-stk__qty">{grouped(s.quantity_on_hand)} {s.unit}</td>
-                      <td className="tbl__num"><Threshold row={s} onSaved={load} /></td>
-                      <td className="vk-stk__acts">
-                        <button type="button" className="btn btn--ghost btn--sm"
-                          aria-label={`Remove one ${s.name}`}
-                          onClick={() => api.patch(`/v1/vikray/stock/${s.product_id}`, { quantity_delta: -1, reason: 'manual_adjustment' }).then(load)}>−1</button>
-                        <button type="button" className="btn btn--ghost btn--sm"
-                          aria-label={`Add one ${s.name}`}
-                          onClick={() => api.patch(`/v1/vikray/stock/${s.product_id}`, { quantity_delta: 1, reason: 'restock' }).then(load)}>+1</button>
-                        <button type="button" className="btn btn--out btn--sm" onClick={() => setAdjusting(s)}>Adjust…</button>
-                      </td>
+                      {cols.cells({
+                        name: (
+                          <td>
+                            <button type="button" className="vk-stk__name"
+                              aria-expanded={open}
+                              onClick={() => setExpanded(open ? null : s.product_id)}>
+                              {s.name}
+                            </button>
+                            {low && <Tag color="var(--warn)">Low</Tag>}
+                          </td>
+                        ),
+                        quantity_on_hand: <td className="tbl__num vk-stk__qty">{grouped(s.quantity_on_hand)} {s.unit}</td>,
+                        low_stock_threshold: <td className="tbl__num"><Threshold row={s} onSaved={load} /></td>,
+                        adjust: (
+                          <td className="vk-stk__acts">
+                            <button type="button" className="btn btn--ghost btn--sm"
+                              aria-label={`Remove one ${s.name}`}
+                              onClick={() => api.patch(`/v1/vikray/stock/${s.product_id}`, { quantity_delta: -1, reason: 'manual_adjustment' }).then(load)}>−1</button>
+                            <button type="button" className="btn btn--ghost btn--sm"
+                              aria-label={`Add one ${s.name}`}
+                              onClick={() => api.patch(`/v1/vikray/stock/${s.product_id}`, { quantity_delta: 1, reason: 'restock' }).then(load)}>+1</button>
+                            <button type="button" className="btn btn--out btn--sm" onClick={() => setAdjusting(s)}>Adjust…</button>
+                          </td>
+                        ),
+                      })}
                     </tr>
                     {open && (
                       <tr className="vk-stk__exp">
-                        <td colSpan={4}><Moves productId={s.product_id} /></td>
+                        {/* Spans what is on screen, not a literal 4. */}
+                        <td colSpan={cols.columns.length}><Moves productId={s.product_id} /></td>
                       </tr>
                     )}
                   </React.Fragment>

@@ -74,6 +74,37 @@ import SlideOver from './admin/SlideOver';
 import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
 import { Secondary } from '../components/Bilingual';
+import useColumnPrefs from '../hooks/useColumnPrefs';
+import { ColumnsButton } from '../components/ui/CustomizeColumns';
+
+/**
+ * The two record lists on this console, declared once each — the floor a saved
+ * arrangement resolves against.
+ *
+ * `fixed` on Invoice and on Actions in both. The invoice NUMBER is the only
+ * thing that says which invoice a row is (the org name repeats down the overdue
+ * list, and every other column is money), and Actions carries "Record payment",
+ * which is the whole reason an operator opens this page. A stale arrangement
+ * that hid either would leave a table of money nobody can act on.
+ */
+const OVERDUE_COLUMNS = [
+  { id: 'invoice', label: 'Invoice', fixed: true },
+  { id: 'org', label: 'Organisation' },
+  { id: 'total', label: 'Total', num: true },
+  { id: 'due', label: 'Due' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
+const INVOICE_COLUMNS = [
+  { id: 'invoice', label: 'Invoice', fixed: true },
+  { id: 'period', label: 'Period' },
+  { id: 'subtotal', label: 'Subtotal', num: true },
+  { id: 'gst', label: 'GST', num: true },
+  { id: 'total', label: 'Total', num: true },
+  { id: 'status', label: 'Status' },
+  { id: 'due', label: 'Due' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 /* `billingLabel` title-cases anything the map does not carry, so a status the
    server adds later reaches the operator as "Partially Paid" rather than as
@@ -104,6 +135,13 @@ export default function AdminBillingPage() {
   const [planForm, setPlanForm] = useState({ plan_code: '', billing_cycle: 'monthly' });
 
   const org = orgs.find(o => o.id === orgId) || null;
+
+  /* Both hooks sit ABOVE the `mayBill`, `loading` and `err` returns below. A
+     staff operator who is refused, or a first paint still loading, would
+     otherwise render fewer hooks than the populated console — and React counts
+     hooks, not branches. */
+  const overdueCols = useColumnPrefs('admin.billing_overdue', OVERDUE_COLUMNS);
+  const invoiceCols = useColumnPrefs('admin.billing_invoices', INVOICE_COLUMNS);
 
   /* Cross-org, and deliberately unscoped: the overdue list is the one endpoint
      that is genuinely platform-wide. */
@@ -340,7 +378,11 @@ export default function AdminBillingPage() {
       </div>
 
       <Card>
-        <CardHead title="Overdue across every organisation" sanskrit="बकाया" />
+        <CardHead
+          title="Overdue across every organisation"
+          sanskrit="बकाया"
+          actions={<ColumnsButton cols={overdueCols} />}
+        />
         <CardBody flush>
           {overdue.length === 0 ? (
             <EmptyState
@@ -352,24 +394,33 @@ export default function AdminBillingPage() {
           ) : (
             <Table>
               <TableHead>
-                <HeadCell>Invoice</HeadCell>
-                <HeadCell>Organisation</HeadCell>
-                <HeadCell num>Total</HeadCell>
-                <HeadCell>Due</HeadCell>
-                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+                {overdueCols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    num={c.num}
+                    width={c.width}
+                    onResize={w => overdueCols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="k-sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </TableHead>
               <TableBody>
                 {overdue.map(iv => (
                   <Row key={iv.id} on={iv.org_id === orgId}>
-                    <Cell><span className="adm-kv__v is-mono">{iv.invoice_number}</span></Cell>
-                    <Cell>{iv.org_name}</Cell>
-                    <Cell num>{inr(iv.total || 0)}</Cell>
-                    <Cell><Tag color="var(--danger)">{fmtDate(iv.due_date)}</Tag></Cell>
-                    <Cell>
-                      <Button size="sm" variant="out" onClick={() => payOverdue(iv)}>
-                        Record payment
-                      </Button>
-                    </Cell>
+                    {overdueCols.cells({
+                      invoice: <Cell><span className="adm-kv__v is-mono">{iv.invoice_number}</span></Cell>,
+                      org: <Cell>{iv.org_name}</Cell>,
+                      total: <Cell num>{inr(iv.total || 0)}</Cell>,
+                      due: <Cell><Tag color="var(--danger)">{fmtDate(iv.due_date)}</Tag></Cell>,
+                      actions: (
+                        <Cell>
+                          <Button size="sm" variant="out" onClick={() => payOverdue(iv)}>
+                            Record payment
+                          </Button>
+                        </Cell>
+                      ),
+                    })}
                   </Row>
                 ))}
               </TableBody>
@@ -430,7 +481,12 @@ export default function AdminBillingPage() {
       <Card>
         <CardHead
           title="Invoices"
-          actions={<span className="apg__secn">{invoices.length}</span>}
+          actions={(
+            <>
+              <span className="apg__secn">{invoices.length}</span>
+              <ColumnsButton cols={invoiceCols} />
+            </>
+          )}
         />
         <CardBody flush>
           {!orgId ? (
@@ -446,30 +502,36 @@ export default function AdminBillingPage() {
           ) : (
             <Table>
               <TableHead>
-                <HeadCell>Invoice</HeadCell>
-                <HeadCell>Period</HeadCell>
-                <HeadCell num>Subtotal</HeadCell>
-                <HeadCell num>GST</HeadCell>
-                <HeadCell num>Total</HeadCell>
-                <HeadCell>Status</HeadCell>
-                <HeadCell>Due</HeadCell>
-                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+                {invoiceCols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    num={c.num}
+                    width={c.width}
+                    onResize={w => invoiceCols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="k-sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </TableHead>
               <TableBody>
                 {invoices.map(iv => (
                   <Row key={iv.id}>
-                    <Cell><span className="adm-kv__v is-mono">{iv.invoice_number}</span></Cell>
-                    <Cell>{fmtDate(iv.period_start)} → {fmtDate(iv.period_end)}</Cell>
-                    <Cell num>{inr(iv.subtotal || 0)}</Cell>
-                    <Cell num>{inr(iv.gst || 0)}</Cell>
-                    <Cell num>{inr(iv.total || 0)}</Cell>
-                    <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
-                    <Cell>{fmtDate(iv.due_date)}</Cell>
-                    <Cell>
-                      {iv.payment_status === 'pending' && (
-                        <Button size="sm" variant="out" onClick={() => setPayTarget(iv)}>Record payment</Button>
-                      )}
-                    </Cell>
+                    {invoiceCols.cells({
+                      invoice: <Cell><span className="adm-kv__v is-mono">{iv.invoice_number}</span></Cell>,
+                      period: <Cell>{fmtDate(iv.period_start)} → {fmtDate(iv.period_end)}</Cell>,
+                      subtotal: <Cell num>{inr(iv.subtotal || 0)}</Cell>,
+                      gst: <Cell num>{inr(iv.gst || 0)}</Cell>,
+                      total: <Cell num>{inr(iv.total || 0)}</Cell>,
+                      status: <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>,
+                      due: <Cell>{fmtDate(iv.due_date)}</Cell>,
+                      actions: (
+                        <Cell>
+                          {iv.payment_status === 'pending' && (
+                            <Button size="sm" variant="out" onClick={() => setPayTarget(iv)}>Record payment</Button>
+                          )}
+                        </Cell>
+                      ),
+                    })}
                   </Row>
                 ))}
               </TableBody>

@@ -192,7 +192,7 @@ export default function AutomationsTab({ onChanged }) {
         }}
         count={3}
       >
-        <DataTable columns={['Name', 'When', 'Then', { label: 'Runs', align: 'right' }, 'State', '']}>
+        <DataTable arrange="prachar.automations" columns={['Name', 'When', 'Then', { label: 'Runs', align: 'right' }, 'State', '']}>
           {list.map((a) => (
             <tr key={a.id}>
               <Td bold>{a.name}</Td>

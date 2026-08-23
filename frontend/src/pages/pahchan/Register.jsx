@@ -792,7 +792,7 @@ export default function Register() {
             <kbd>J</kbd>/<kbd>K</kbd> move · <kbd>↵</kbd> confirm · <kbd>F</kbd> flag · <kbd>O</kbd> detail
           </p>
 
-          <DataTable
+          <DataTable arrange="pahchan.register"
             columns={[
               '', 'Person', 'Compare', 'Time',
               { label: 'Where', className: 'rv__loc' },

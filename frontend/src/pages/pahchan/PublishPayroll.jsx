@@ -215,7 +215,7 @@ export default function PublishPayroll() {
                 strength of a punch nobody has looked at. Clear them on the Register and
                 run this again.
               </Note>
-              <DataTable columns={['Employee', 'Day']}>
+              <DataTable arrange="pahchan.publish_withheld_days" columns={['Employee', 'Day']}>
                 {result.withheld_days.map(d => (
                   <tr key={`${d.employee_id}-${d.date}`}>
                     {/* The NAME. `POST …/publish` resolves it (routers/
@@ -232,7 +232,7 @@ export default function PublishPayroll() {
 
           {!!(result.skipped_manual || []).length && (
             <Section title="Left as HR entered them" hi="हस्तलिखित">
-              <DataTable columns={['Employee', 'Day']}>
+              <DataTable arrange="pahchan.publish_manual_days" columns={['Employee', 'Day']}>
                 {result.skipped_manual.map(d => (
                   <tr key={`${d.employee_id}-${d.date}`}>
                     {/* The NAME. `POST …/publish` resolves it (routers/

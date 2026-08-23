@@ -163,6 +163,25 @@ export default function PivotTab() {
           : !result ? (
             <p className="dnone">Choose rows, columns and a measure, then run the query.</p>
           ) : grid ? (
+            /* NEITHER table below is opted into useColumnPrefs, and both
+               reasons the rule names apply.
+               The cross-tab's columns ARE the answer to the query: `grid.cols`
+               is built from the DISTINCT VALUES the server returned for
+               whichever field the user picked as `group_by2` a second ago.
+               Change the column dimension and every column id changes with it,
+               so there is no base list to declare and nothing a saved
+               arrangement could be reconciled against — one key would resolve
+               a maps-by-month layout against a status-by-owner result, drop
+               every saved id and append every real one, which is the shipped
+               order with a database write behind it.
+               The flat table under it is the two-column key/value readout the
+               rule excludes outright: a dimension and its measure, both named
+               by the query and both load-bearing. Hiding either leaves a
+               column of numbers with nothing to say what they count.
+               Arranging is not what this screen is missing — the row and
+               column dimensions above ARE its arrangement control, and the CSV
+               export carries the result somewhere it can be rearranged
+               freely. */
             grid.body.length === 0 ? <p className="dnone">No rows matched.</p> : (
               <div className="tbl__wrap">
                 <table className="tbl dpiv">

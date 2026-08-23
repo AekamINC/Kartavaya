@@ -3,6 +3,8 @@ import {
   Cell, EmptyState, HeadCell, Row, Table, TableBody, TableHead, Tabs, Tag,
 } from '../../components/ui';
 import { grouped, inr } from '../../lib/inr';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * UsageBySource — one tab per cost source, each holding its own `ref_id` rows.
@@ -135,7 +137,30 @@ function itemLabel(item) {
   return tail.charAt(0).toUpperCase() + tail.slice(1).replace(/_/g, ' ');
 }
 
+/**
+ * What one source panel's table HAS. Every tab renders the same four columns
+ * over a different source, so they share ONE key: a user who hid Transactions
+ * on Scrapers meant "I do not care about transaction counts", not "…on
+ * Scrapers only", and a key per source would make them say it eight times.
+ *
+ * `Recorded only` is a platform-console column and is filtered out rather than
+ * declared hideable — a customer org has no such number to show.
+ */
+const SOURCE_COLUMNS = [
+  { id: 'item', label: 'Item', fixed: true },
+  { id: 'credits', label: 'Credits', num: true },
+  { id: 'tx', label: 'Transactions', num: true },
+  { id: 'metered', label: 'Recorded only', num: true },
+];
+
 function SourcePanel({ source, isPlatformOrg }) {
+  const base = React.useMemo(
+    () => (isPlatformOrg ? SOURCE_COLUMNS : SOURCE_COLUMNS.filter(c => c.id !== 'metered')),
+    [isPlatformOrg],
+  );
+  // Above the empty-state return below, so both paths render the same hooks.
+  const cols = useColumnPrefs('billing.usage_by_source', base);
+
   const items = source.items || [];
   const note = source.source === 'unitemised'
     ? unitemisedNote(source.tx_count || 0)
@@ -151,35 +176,52 @@ function SourcePanel({ source, isPlatformOrg }) {
           description="The source has a total for the period but no breakdown rows."
         />
       ) : (
+        <>
+        {/* The tab strip above is not a table toolbar, so the control gets the
+            trailing action bar. */}
+        <div className="tbl__abar">
+          <ColumnsButton cols={cols} />
+        </div>
         <Table className="bl__tbl">
           <TableHead>
-            <HeadCell>Item</HeadCell>
-            <HeadCell num>Credits</HeadCell>
-            <HeadCell num>Transactions</HeadCell>
-            {isPlatformOrg && <HeadCell num>Recorded only</HeadCell>}
+            {cols.columns.map(c => (
+              <HeadCell
+                key={c.id}
+                num={c.num}
+                width={c.width}
+                onResize={w => cols.setWidth(c.id, w)}
+              >
+                {c.label}
+              </HeadCell>
+            ))}
           </TableHead>
           <TableBody>
             {items.map(it => (
               <Row key={it.ref_id || itemLabel(it)}>
-                <Cell>
-                  <span className="bl__item">{itemLabel(it)}</span>
-                  {it.ref_id && <span className="bl__ref">{it.ref_id}</span>}
-                </Cell>
-                <Cell num><CreditFigure credits={it.credits} txCount={it.tx_count} /></Cell>
-                <Cell num>{grouped(it.tx_count || 0)}</Cell>
-                {isPlatformOrg && (
-                  <Cell num>
-                    <CreditFigure
-                      credits={it.metered_only_credits}
-                      txCount={it.metered_only_credits ? it.tx_count : 0}
-                      showInr={false}
-                    />
-                  </Cell>
-                )}
+                {cols.cells({
+                  item: (
+                    <Cell>
+                      <span className="bl__item">{itemLabel(it)}</span>
+                      {it.ref_id && <span className="bl__ref">{it.ref_id}</span>}
+                    </Cell>
+                  ),
+                  credits: <Cell num><CreditFigure credits={it.credits} txCount={it.tx_count} /></Cell>,
+                  tx: <Cell num>{grouped(it.tx_count || 0)}</Cell>,
+                  metered: (
+                    <Cell num>
+                      <CreditFigure
+                        credits={it.metered_only_credits}
+                        txCount={it.metered_only_credits ? it.tx_count : 0}
+                        showInr={false}
+                      />
+                    </Cell>
+                  ),
+                })}
               </Row>
             ))}
           </TableBody>
         </Table>
+        </>
       )}
     </div>
   );

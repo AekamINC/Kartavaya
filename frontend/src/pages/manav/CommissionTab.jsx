@@ -244,7 +244,7 @@ export default function CommissionTab() {
             sub="Commission is an arrangement with a person. Add employees in the Employees tab first."
           />
         ) : (
-          <DataTable columns={['Person', 'Department', 'Commission', 'Terms', '']}>
+          <DataTable arrange="manav.commission_roster" columns={['Person', 'Department', 'Commission', 'Terms', '']}>
             {people.map(emp => (
               <RosterRow
                 key={emp.id}

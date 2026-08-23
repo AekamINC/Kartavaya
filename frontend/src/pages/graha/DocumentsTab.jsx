@@ -18,6 +18,58 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+// The audit cells. This register had its OWN date rendering —
+// `new Date(d.created_at).toLocaleDateString('en-IN')`, which prints
+// "16/6/2026" — while every other table in the product prints "16 Jun 2026"
+// through `CreatedCell`. Two formats a tab apart is a reader silently doing
+// day/month arithmetic to check they agree, so the local one is gone and this
+// column is the shared one. It keeps its "Uploaded" heading: the format is the
+// product's business, the WORD is this module's.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The register's columns, declared once, in the order they shipped.
+ *
+ * `fixed` on Name — it carries the description and the tag chips as well as the
+ * title, so it is not merely the identity column, it is most of the row.
+ * `fixed` on Actions: Open and Delete are the only two things you can do to a
+ * document from here, and a register you cannot open a document from is a list
+ * of filenames.
+ */
+const DOCUMENT_COLUMNS = [
+  { id: 'name', label: 'Name', sortKey: 'name', fixed: true },
+  { id: 'folder', label: 'Folder', sortKey: 'folder' },
+  { id: 'file_size', label: 'Size', sortKey: 'file_size', num: true },
+  { id: 'file_type', label: 'Type', sortKey: 'file_type' },
+  { id: CREATED_KEY, label: 'Uploaded', sortKey: CREATED_KEY, className: 'tbl__created' },
+  /* WHO put the file here, and who last changed the record.
+
+     "Uploaded by" is the only honest verb: on this table the author column is
+     literally called `uploaded_by` (it predates the audit migrations and was
+     deliberately NOT renamed — see the note in routers/graha.py), and the
+     server hand-resolves it to the SAME `created_by_name` / `has_creator`
+     pair every other list emits. So the wire contract is identical and only
+     the heading is local.
+
+     A document register without an uploader is the case this whole exercise
+     is for: a file appears in a client's folder and the only question anyone
+     ever asks is who put it there. `updated_*` is the second half — a name or
+     a description edited after upload, which changes what the register SAYS a
+     file is without changing the file.
+
+     `has_creator` / `has_updater` are passed, not skipped: a document
+     uploaded by someone who has since left resolves to a null name, and
+     without the boolean ByCell renders an em dash meaning "nobody uploaded
+     this" — about a row that plainly exists. */
+  { id: 'created_by_name', label: 'Uploaded by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 /** 10 MB, matching `uploads.MAX_BYTES` on the server. Stated once here and
  *  once there; the server is the authority and refuses as it reads. */
@@ -152,6 +204,7 @@ export default function DocumentsTab() {
     searchKeys: ['name', 'description'],
     filters: [{ key: 'folder', label: 'Folder' }, { key: 'file_type', label: 'Type' }],
   });
+  const cols = useColumnPrefs('graha.documents', DOCUMENT_COLUMNS);
   return (
     <div>
       <div className="gr__bar">
@@ -212,54 +265,74 @@ export default function DocumentsTab() {
         <ErrorState kind={errorKind(err)} onRetry={load} />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="documents" />
+        <TableToolbar view={view} label="documents">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Name</HeadCell>
-                <HeadCell sortKey="folder" sort={view.sort} onSort={view.onSort}>Folder</HeadCell>
-                <HeadCell sortKey="file_size" sort={view.sort} onSort={view.onSort} num>Size</HeadCell>
-                <HeadCell sortKey="file_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
-                <HeadCell sortKey="created_at" sort={view.sort} onSort={view.onSort}>Uploaded</HeadCell>
-                <th><span className="sr-only">Actions</span></th>
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.rows.map(d => (
                 <tr key={d.id}>
-                  <td>
-                    <div className="gr__td--name">{d.name}</div>
-                    {d.description && <div className="gr__ls">{d.description}</div>}
-                    {/* `Array.isArray`, NOT `d.tags?.length > 0`. That guard
-                        admits a STRING — `"[]".length` is 2 — and the server
-                        was returning exactly that, so `.map` threw
-                        `TypeError: r.tags.map is not a function` and the error
-                        boundary took the whole Graha page down for any org with
-                        a document. The server side is fixed; this stays because
-                        a malformed field should cost one cell, not the page. */}
-                    {asTags(d.tags).length > 0 && (
-                      <div className="gr__chips gr__chips--tight">
-                        {asTags(d.tags).map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
-                      </div>
-                    )}
-                  </td>
-                  <td className="gr__td--mute">{d.folder || '—'}</td>
-                  <td className="gr__td--mute">{fmtSize(d.file_size)}</td>
-                  <td className="gr__td--mute gr__td--id">{d.mime_type || '—'}</td>
-                  <td className="gr__td--when">{d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—'}</td>
-                  <td>
-                    <div className="gr__sacts">
-                      {d.file_url && (
-                        <a className="k-btn k-btn--ghost" href={d.file_url} target="_blank" rel="noopener noreferrer">Open</a>
-                      )}
-                      <button className="k-btn k-btn--reject" onClick={() => deleteDoc(d.id)}>Delete</button>
-                    </div>
-                  </td>
+                  {cols.cells({
+                    name: (
+                      <td>
+                        <div className="gr__td--name">{d.name}</div>
+                        {d.description && <div className="gr__ls">{d.description}</div>}
+                        {/* `Array.isArray`, NOT `d.tags?.length > 0`. That guard
+                            admits a STRING — `"[]".length` is 2 — and the server
+                            was returning exactly that, so `.map` threw
+                            `TypeError: r.tags.map is not a function` and the
+                            error boundary took the whole Graha page down for any
+                            org with a document. The server side is fixed; this
+                            stays because a malformed field should cost one cell,
+                            not the page. */}
+                        {asTags(d.tags).length > 0 && (
+                          <div className="gr__chips gr__chips--tight">
+                            {asTags(d.tags).map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
+                          </div>
+                        )}
+                      </td>
+                    ),
+                    folder: <td className="gr__td--mute">{d.folder || '—'}</td>,
+                    file_size: <td className="gr__td--mute">{fmtSize(d.file_size)}</td>,
+                    file_type: <td className="gr__td--mute gr__td--id">{d.mime_type || '—'}</td>,
+                    [CREATED_KEY]: <CreatedCell value={d.created_at} />,
+                    created_by_name: <ByCell name={d.created_by_name} hasActor={d.has_creator} />,
+                    [UPDATED_KEY]: <UpdatedCell value={d.updated_at} />,
+                    updated_by_name: <ByCell name={d.updated_by_name} hasActor={d.has_updater} />,
+                    actions: (
+                      <td>
+                        <div className="gr__sacts">
+                          {d.file_url && (
+                            <a className="k-btn k-btn--ghost" href={d.file_url} target="_blank" rel="noopener noreferrer">Open</a>
+                          )}
+                          <button className="k-btn k-btn--reject" onClick={() => deleteDoc(d.id)}>Delete</button>
+                        </div>
+                      </td>
+                    ),
+                  })}
                 </tr>
               ))}
               {documents.length === 0 && (
-                <tr><td className="gr__none" colSpan={6}>No documents found.</td></tr>
+                <tr><td className="gr__none" colSpan={cols.columns.length}>No documents found.</td></tr>
               )}
             </tbody>
           </table>

@@ -35,7 +35,11 @@ export { default as StatusChip } from './StatusChip';
 export { default as DueChip, relDue } from './DueChip';
 export { default as StatTile } from './StatTile';
 export { Avatar, AvatarStack, avatarBg } from './Avatar';
-export { default as Table, TableHead, TableBody, Row, Cell, HeadCell, BulkBar, nextSort } from './Table';
+export { default as Table, TableHead, TableBody, Row, Cell, HeadCell, ColumnResizer, BulkBar, nextSort } from './Table';
+/* The arrangeable-columns control. It belongs beside Table rather than in its
+   own barrel: a table that opts into `hooks/useColumnPrefs` needs exactly
+   these two imports and no others. */
+export { default as CustomizeColumns, ColumnsButton } from './CustomizeColumns';
 export { default as Stepper } from './Stepper';
 export { Tabs } from './Tabs';
 export { StatusBar } from './StatusBar';

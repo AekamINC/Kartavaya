@@ -9,6 +9,8 @@ import {
   MODULE_LABEL, STATE_LABEL, STATE_TONE, TTL_CHOICES,
   byRecency, listSessions, remaining, sessionState,
 } from '../admin/supportSessions';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * TabSupportAccess — the CUSTOMER's half of support access.
@@ -73,6 +75,33 @@ const fmtWhen = (iso) => {
  */
 const levelPhrase = (lvl) => (lvl === 'editor' ? 'look at and change' : 'look at, without changing');
 
+/**
+ * What the customer sees about Aekam's access to their data, declared once.
+ *
+ * `fixed` on Who and on the decision cell in the live list: the customer's
+ * whole question is "who is in my data and what do I do about it", and an
+ * arrangement that hid either half would leave a table that answers neither.
+ * The history list has no verb, so only its Reference is pinned — that is the
+ * string a customer reads out on the phone, and the one handle on a session
+ * that is not a UUID.
+ */
+const LIVE_SESSION_COLUMNS = [
+  { id: 'who', label: 'Who', fixed: true },
+  { id: 'why', label: 'Why' },
+  { id: 'reach', label: 'What they can reach' },
+  { id: 'state', label: 'State' },
+  { id: 'until', label: 'Until' },
+  { id: 'decision', label: 'Decision', sr: true, fixed: true },
+];
+
+const PAST_SESSION_COLUMNS = [
+  { id: 'ref', label: 'Reference', fixed: true },
+  { id: 'who', label: 'Who' },
+  { id: 'why', label: 'Why' },
+  { id: 'outcome', label: 'Outcome' },
+  { id: 'asked', label: 'Asked' },
+];
+
 export default function TabSupportAccess() {
   const me = currentUser();
   const toast = useToast();
@@ -108,6 +137,12 @@ export default function TabSupportAccess() {
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(t);
   }, []);
+
+  /* Above the `hidden` return: this whole tab is absent until a session exists,
+     and a component that renders no hooks on that path and six on the next one
+     is a crash on the first request landing. */
+  const liveCols = useColumnPrefs('org.support_access', LIVE_SESSION_COLUMNS);
+  const pastCols = useColumnPrefs('org.support_access_history', PAST_SESSION_COLUMNS);
 
   if (hidden) return null;
 
@@ -194,14 +229,21 @@ export default function TabSupportAccess() {
         </p>
 
         {live.length > 0 && (
+          <>
+          <div className="tbl__abar">
+            <ColumnsButton cols={liveCols} />
+          </div>
           <Table>
             <TableHead>
-              <HeadCell>Who</HeadCell>
-              <HeadCell>Why</HeadCell>
-              <HeadCell>What they can reach</HeadCell>
-              <HeadCell>State</HeadCell>
-              <HeadCell>Until</HeadCell>
-              <HeadCell><span className="sr-only">Decision</span></HeadCell>
+              {liveCols.columns.map(c => (
+                <HeadCell
+                  key={c.id}
+                  width={c.width}
+                  onResize={w => liveCols.setWidth(c.id, w)}
+                >
+                  {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                </HeadCell>
+              ))}
             </TableHead>
             <TableBody>
               {live.map(s => {
@@ -210,6 +252,8 @@ export default function TabSupportAccess() {
                 const mods = (s.modules || []).map(m => MODULE_LABEL[m] || m).join(', ');
                 return (
                   <Row key={s.id}>
+                    {liveCols.cells({
+                    who: (
                     <Cell>
                       <b>{s.requested_by_name || s.requested_by}</b>
                       {/* The reference the customer reads out on the phone.
@@ -217,18 +261,24 @@ export default function TabSupportAccess() {
                       <br />
                       <span className="omt__e">{s.ref}</span>
                     </Cell>
-                    <Cell>{s.reason}</Cell>
+                    ),
+                    why: <Cell>{s.reason}</Cell>,
+                    reach: (
                     <Cell>
                       {mods || 'nothing'}
                       <br />
                       <span className="omt__e">— {levelPhrase(s.access_level)}</span>
                     </Cell>
-                    <Cell><Tag color={STATE_TONE[state]}>{STATE_LABEL[state]}</Tag></Cell>
+                    ),
+                    state: <Cell><Tag color={STATE_TONE[state]}>{STATE_LABEL[state]}</Tag></Cell>,
+                    until: (
                     <Cell>
                       {state === 'requested'
                         ? `asked for ${s.requested_ttl_hours === 0 ? 'no time limit' : `${s.requested_ttl_hours}h`}`
                         : (left ? `ends in ${left}` : 'until you revoke it')}
                     </Cell>
+                    ),
+                    decision: (
                     <Cell>
                       {state === 'requested' && mayApprove(s) && (
                         <>
@@ -259,11 +309,14 @@ export default function TabSupportAccess() {
                         </Button>
                       )}
                     </Cell>
+                    ),
+                    })}
                   </Row>
                 );
               })}
             </TableBody>
           </Table>
+          </>
         )}
 
         {past.length > 0 && (
@@ -273,26 +326,37 @@ export default function TabSupportAccess() {
                 ? 'Nobody from Aekam is in your data right now. What follows is what has happened before.'
                 : 'Earlier sessions.'}
             </p>
+            <div className="tbl__abar">
+              <ColumnsButton cols={pastCols} />
+            </div>
             <Table>
               <TableHead>
-                <HeadCell>Reference</HeadCell>
-                <HeadCell>Who</HeadCell>
-                <HeadCell>Why</HeadCell>
-                <HeadCell>Outcome</HeadCell>
-                <HeadCell>Asked</HeadCell>
+                {pastCols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    width={c.width}
+                    onResize={w => pastCols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </TableHead>
               <TableBody>
                 {past.map(s => (
                   <Row key={s.id}>
-                    <Cell>{s.ref}</Cell>
-                    <Cell>{s.requested_by_name || s.requested_by}</Cell>
-                    <Cell>{s.reason}</Cell>
-                    <Cell>
-                      <Tag color={STATE_TONE[sessionState(s, now)]}>
-                        {STATE_LABEL[sessionState(s, now)]}
-                      </Tag>
-                    </Cell>
-                    <Cell>{fmtWhen(s.requested_at)}</Cell>
+                    {pastCols.cells({
+                      ref: <Cell>{s.ref}</Cell>,
+                      who: <Cell>{s.requested_by_name || s.requested_by}</Cell>,
+                      why: <Cell>{s.reason}</Cell>,
+                      outcome: (
+                        <Cell>
+                          <Tag color={STATE_TONE[sessionState(s, now)]}>
+                            {STATE_LABEL[sessionState(s, now)]}
+                          </Tag>
+                        </Cell>
+                      ),
+                      asked: <Cell>{fmtWhen(s.requested_at)}</Cell>,
+                    })}
                   </Row>
                 ))}
               </TableBody>

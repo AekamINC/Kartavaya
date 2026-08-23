@@ -77,9 +77,22 @@ let asked = [];
 
 function serve(listResponse) {
   api.get.mockImplementation((url) => {
-    if (String(url).includes('/facets')) return Promise.resolve(FACETS);
-    asked.push(String(url));
-    return Promise.resolve(listResponse(String(url)));
+    const u = String(url);
+    if (u.includes('/facets')) return Promise.resolve(FACETS);
+    /* ONLY the list. This used to record — and answer with a page of content —
+       every GET that was not `/facets`, which was fine for exactly as long as
+       the tab made no other call. It now makes one: the table opted into
+       `useColumnPrefs`, which fetches `/v1/me/column-prefs` once per app life.
+       That landed AFTER the list request, so `lastUrl()` returned the prefs URL
+       and "requests a bounded page" read `limit` off a URL that has no `limit`.
+       The comment above `asked` already said "/org/content"; this makes it
+       true. Answering the prefs GET with `{}` also stops the hook being handed
+       a page of content as an arrangement — it discards it either way, but a
+       fixture that feeds a component the wrong shape is a fixture that will
+       eventually assert the wrong thing. */
+    if (!u.includes('/org/content')) return Promise.resolve({ data: {} });
+    asked.push(u);
+    return Promise.resolve(listResponse(u));
   });
 }
 

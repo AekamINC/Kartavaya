@@ -466,7 +466,7 @@ export default function History() {
               description="No punch on this day. If that is wrong, use Ask for a correction above — someone at your organisation can then add the time you actually worked."
             />
           ) : (
-            <DataTable columns={['Time', 'Direction', 'How it arrived', 'Flags', 'Review']}>
+            <DataTable arrange="pahchan.history_punches" columns={['Time', 'Direction', 'How it arrived', 'Flags', 'Review']}>
               {openList.map((p, i) => {
                 const prevIn = openList.slice(0, i).reverse().find(x => x.direction === 'in');
                 return (
@@ -540,7 +540,7 @@ export default function History() {
             description="You have not asked for any corrections. Open a day above and use Ask for a correction if a clock-in or clock-out is wrong."
           />
         ) : (
-          <DataTable columns={['Day', 'Asked for', 'Your reason', 'Answer']}>
+          <DataTable arrange="pahchan.history_corrections" columns={['Day', 'Asked for', 'Your reason', 'Answer']}>
             {mine.items.map(r => (
               <tr key={r.id}>
                 <Td mono>{new Date(r.for_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Td>

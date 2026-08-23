@@ -58,7 +58,7 @@ export default function PerformanceTab() {
                 spent entirely on approved leave does not read as poor
                 attendance.
               </p>
-              <DataTable columns={[
+              <DataTable arrange="manav.performance" columns={[
                 'Employee', 'Department',
                 { label: 'Present', align: 'right' },
                 { label: 'Absent', align: 'right' },

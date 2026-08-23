@@ -29,6 +29,7 @@ import React, { useState, useEffect, useCallback, useContext, createContext, use
 import { api } from '../../lib/api';
 import { Shimmer } from '../../components/editorial';
 import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
+import ArrangedDataTable from '../../components/ui/arrangeDataTable';
 import RestrictedNote from '../../components/module/RestrictedNote';
 import { useSecondary, Secondary } from '../../components/Bilingual';
 import { inr, inrShort, grouped } from '../../lib/inr';
@@ -377,7 +378,14 @@ export function Panel({ title, hi, right, wide, half, children }) {
  * it is the mistake `components.css` §10 exists to name. The reference agrees:
  * `ScreensThin.jsx:21` puts the pivot in `<Card flush>`, frameless.
  */
-export function DataTable({ columns, children }) {
+export function DataTable({ columns, children, arrange }) {
+  /* ARRANGEABLE — see `components/ui/arrangeDataTable.jsx`. `arrange` is
+     the table key and is the entire opt-in; every other prop is unchanged.
+     This adapter delegates rather than re-implementing, which is the one
+     place it deliberately does NOT copy the barrel: three copies of a
+     head/body permutation is three chances for a body to end up under the
+     wrong heading. */
+  if (arrange) return <ArrangedDataTable arrange={arrange} columns={columns}>{children}</ArrangedDataTable>;
   return (
     <Table>
       <TableHead>

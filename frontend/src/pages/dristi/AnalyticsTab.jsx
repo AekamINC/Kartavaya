@@ -266,7 +266,7 @@ function Debtors({ payload }) {
   const list = payload?.data || [];
   if (!list.length) return <p className="dnone">Nobody owes anything right now.</p>;
   return (
-    <DataTable columns={['Client', { label: 'Outstanding', align: 'right' }, { label: 'Invoices', align: 'right' }, { label: 'Oldest due', align: 'right' }]}>
+    <DataTable arrange="dristi.debtors" columns={['Client', { label: 'Outstanding', align: 'right' }, { label: 'Invoices', align: 'right' }, { label: 'Oldest due', align: 'right' }]}>
       {list.map((r, i) => {
         // `label` is the SQL's own output column (COALESCE(name, 'Unlinked
         // client')); the fallbacks stay for older payload shapes but the

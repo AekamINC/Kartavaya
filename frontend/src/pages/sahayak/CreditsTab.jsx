@@ -109,7 +109,7 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
           </p>
         ) : (
           <div className="hb-scroll">
-            <DataTable columns={['When', 'Description', { label: 'Amount', align: 'right' }, { label: 'Balance after', align: 'right' }]}>
+            <DataTable arrange="sahayak.credit_ledger" columns={['When', 'Description', { label: 'Amount', align: 'right' }, { label: 'Balance after', align: 'right' }]}>
               {txns.map(tx => (
                 <tr key={tx.id}>
                   <Td mono>{stamp(tx.created_at)}</Td>

@@ -228,7 +228,7 @@ export default function AssetsTab() {
                 : 'Track company equipment — laptops, phones, vehicles — and who currently holds each one.'}
             />
           ) : (
-            <DataTable columns={['Tag', 'Name', 'Category', 'Condition', 'Assigned to', 'Actions']}>
+            <DataTable arrange="manav.assets" columns={['Tag', 'Name', 'Category', 'Condition', 'Assigned to', 'Actions']}>
               {filtered.map(a => (
                 <React.Fragment key={a.id}>
                   <tr>

@@ -196,7 +196,11 @@ export default function GrahaPage() {
       setKpi([
         { label: 'Open pipeline', hi: 'प्रवाह', tone: 'p', value: lakh(f.total_pipeline), sub: `${openDeals} ${openDeals === 1 ? 'deal' : 'deals'}` },
         { label: 'Weighted forecast', hi: 'अनुमान', value: lakh(f.weighted_forecast), sub: 'by stage probability' },
-        { label: 'Won this quarter', hi: 'विजित', tone: 'ok', value: lakh(c.won_value), sub: `${c.won} of ${c.total_deals} deals` },
+        // `c.won` counts deals CLOSED in the 90 days (on `won_at`); `c.total_deals`
+        // counts deals OPENED in them. "3 of 10 deals" read as a ratio of one
+        // population and was never that, so the sub-line names the two halves
+        // separately rather than joining them with the word "of".
+        { label: 'Won in last 90 days', hi: 'विजित', tone: 'ok', value: lakh(c.won_value), sub: `${c.won} closed · ${c.total_deals} opened` },
         { label: 'Avg cycle', hi: 'चक्र', value: c.avg_cycle_days ? `${c.avg_cycle_days}d` : '—', sub: c.avg_cycle_days ? 'from open to won' : 'no closed deals yet' },
       ]);
       setCounts(k => ({ ...k, pipeline: openDeals }));

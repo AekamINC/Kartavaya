@@ -25,6 +25,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer, Empty } from '../../components/editorial';
 import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
+import ArrangedDataTable from '../../components/ui/arrangeDataTable';
 import { useSecondary, Secondary } from '../../components/Bilingual';
 
 /* ── Response unwrapping ──────────────────────────────────────────────────
@@ -365,7 +366,14 @@ export function Panel({ loading, error, onRetry, empty, emptyProps, count = 4, c
  * commit, and those are not this package's to move. When they follow, these two
  * functions are deleted and the import goes back to the barrel.
  */
-export function DataTable({ columns, children }) {
+export function DataTable({ columns, children, arrange }) {
+  /* ARRANGEABLE — see `components/ui/arrangeDataTable.jsx`. `arrange` is
+     the table key and is the entire opt-in; every other prop is unchanged.
+     This adapter delegates rather than re-implementing, which is the one
+     place it deliberately does NOT copy the barrel: three copies of a
+     head/body permutation is three chances for a body to end up under the
+     wrong heading. */
+  if (arrange) return <ArrangedDataTable arrange={arrange} columns={columns}>{children}</ArrangedDataTable>;
   return (
     <Table>
       <TableHead>

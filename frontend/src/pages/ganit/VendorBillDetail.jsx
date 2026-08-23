@@ -174,6 +174,14 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
 
                 <section className="dr__sec">
                   <h3 className="dr__lbl">Line items<Secondary className="dr__lbl-hi" value="वस्तुएँ" /></h3>
+                  {/* NOT opted into useColumnPrefs — same call, same reason as
+                      InvoiceDetail's line grid. A vendor bill's lines are the
+                      evidence behind the input tax credit claimed from it: the
+                      Rate and GST columns are what the totals below are made
+                      of, and hiding one leaves a document that no longer adds
+                      up on screen while still adding up in the books. It is
+                      also five lines of ONE bill rather than a list to scan.
+                      Arranging belongs to the bills LIST. */}
                   {items.length === 0 ? (
                     <p className="dr__empty">This bill carries no lines.</p>
                   ) : (

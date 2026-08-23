@@ -58,7 +58,7 @@ export default function PipelineTab() {
               {!top.length ? (
                 <p className="dnone">No deals have been won yet — this ranks customers by closed value.</p>
               ) : (
-                <DataTable columns={[
+                <DataTable arrange="dristi.top_customers" columns={[
                   'Name', 'Company',
                   { label: 'Deals', align: 'right' },
                   { label: 'Won value', align: 'right' },

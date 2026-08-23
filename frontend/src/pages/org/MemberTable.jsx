@@ -2,6 +2,9 @@ import React from 'react';
 import { Menu, avatarBg } from '../../components/ui';
 import { userInitials } from '../../lib/utils';
 import GrantChips from './GrantChips';
+import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * MemberTable — one row per member, grants visible without opening anything.
@@ -24,6 +27,31 @@ import GrantChips from './GrantChips';
  * on the admin rows it applies to, and the gap is in the report.
  */
 
+/**
+ * The four columns, declared once — and this table is the reason `.omt` still
+ * exists as a class name. `components.css` §10 has held every VALUE it states
+ * to `.tbl`'s for a while now; only the markup here kept its own name. That is
+ * still true after this change: opting into the arrangement does not require
+ * renaming the class, and renaming it is a separate job with its own
+ * stylesheet deletion.
+ *
+ * `fixed` on Member and on the actions cell. Member is the only column that
+ * says WHO the row is — a members table with the member hidden is four rows of
+ * "Admin · you" — and the actions cell is where you change a role or remove
+ * somebody, which is the entire point of this screen. A stale saved row must
+ * not be able to take either away.
+ *
+ * The Actions header is `sr: true`: it renders visually empty, as it did
+ * before, but the SHEET needs a name for it or the user is offered an
+ * unlabelled checkbox. That is why `label` and what is drawn are separate here.
+ */
+const MEMBER_COLUMNS = [
+  { id: 'member', label: 'Member', fixed: true },
+  { id: 'role',   label: 'Role' },
+  { id: 'grants', label: 'Module grants' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
 const ROLE_META = {
   org_owner:  { label: 'Owner',  color: 'var(--primary-text)' },
   org_admin:  { label: 'Admin',  color: 'var(--st-in-review)' },
@@ -43,15 +71,38 @@ const Dots = (
 );
 
 export default function MemberTable({ members, isOwner, selfUserId, onEditGrants, onChangeRole, onRemove }) {
+  const cols = useColumnPrefs('org.members', MEMBER_COLUMNS);
+
   return (
+    <>
+      {/* This table has no `TableToolbar` — it sits bare in the Members tab —
+          so the control gets its own trailing-aligned line. `.tbl__abar`
+          (components.css §11) is that line, and it is deliberately unframed:
+          anything with an edge directly above a table reads as a second
+          header. */}
+      <div className="tbl__abar">
+        <ColumnsButton cols={cols} />
+      </div>
     <div className="omt__wrap">
       <table className="omt">
         <thead>
           <tr>
-            <th scope="col">Member</th>
-            <th scope="col">Role</th>
-            <th scope="col">Module grants</th>
-            <th scope="col"><span className="k-sr-only">Actions</span></th>
+            {/* Four literals became the arrangement, which is what makes the
+                order, the widths and which of them render at all the SAME list
+                the cells below are keyed on. `HeadCell` is reached from
+                `ui/Table.jsx` rather than re-implemented: it is what carries
+                the resize divider, and a second copy of that divider is a
+                second copy of the keyboard fix nobody wants to pay for
+                twice. */}
+            {cols.columns.map(c => (
+              <HeadCell
+                key={c.id}
+                width={c.width}
+                onResize={w => cols.setWidth(c.id, w)}
+              >
+                {c.sr ? <span className="k-sr-only">{c.label}</span> : c.label}
+              </HeadCell>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -78,6 +129,8 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
 
             return (
               <tr key={m.user_id}>
+                {cols.cells({
+                member: (
                 <td>
                   <span className="omt__who">
                     {/* `av` then `omt__av`: the shared avatar (02 §2) supplies the
@@ -97,6 +150,8 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
                     </span>
                   </span>
                 </td>
+                ),
+                role: (
                 <td>
                   <span className="rb" style={{ '--c': meta.color }}>
                     <span className="rb__dot" />
@@ -104,6 +159,8 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
                     {self && ' · you'}
                   </span>
                 </td>
+                ),
+                grants: (
                 <td>
                   {owner || admin
                     // Not "No modules", and no longer "Org management only" for
@@ -117,6 +174,8 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
                     ? <GrantChips grants={m.grants} empty="Every active module, by role" />
                     : <GrantChips grants={m.grants} />}
                 </td>
+                ),
+                actions: (
                 <td>
                   <span className="omt__act">
                     {actions.length > 0 && (
@@ -129,11 +188,14 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
                     )}
                   </span>
                 </td>
+                ),
+                })}
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+    </>
   );
 }

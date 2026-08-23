@@ -48,7 +48,7 @@ export default function RevenueTab() {
                   and it appears here.
                 </p>
               ) : (
-                <DataTable columns={[
+                <DataTable arrange="dristi.revenue_trend" columns={[
                   'Month',
                   { label: 'Invoiced', align: 'right' },
                   { label: 'Collected', align: 'right' },

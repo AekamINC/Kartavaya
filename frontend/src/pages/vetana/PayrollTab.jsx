@@ -456,7 +456,7 @@ function RunDetail({ id, onBack, onChanged }) {
             — a run prices structures, and skips anyone without one.
           </p>
         ) : (
-          <DataTable columns={[
+          <DataTable arrange="vetana.payroll" columns={[
             'Employee',
             { label: 'Days', align: 'right' },
             { label: 'Gross', align: 'right' },

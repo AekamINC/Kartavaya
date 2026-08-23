@@ -134,7 +134,7 @@ export default function EventsTab({ onChanged }) {
             </button>
           </p>
         ) : (
-          <DataTable columns={[
+          <DataTable arrange="prachar.events" columns={[
             'Title', 'Type', 'Starts', 'Status',
             { label: 'Registered', align: 'right' }, '',
           ]}>
@@ -293,7 +293,7 @@ function EventDetail({ ev, onChanged }) {
         }}
         count={2}
       >
-        <DataTable columns={['Name', 'Email', 'Phone', 'Status', 'Registered', '']}>
+        <DataTable arrange="prachar.event_registrations" columns={['Name', 'Email', 'Phone', 'Status', 'Registered', '']}>
           {list.map((r) => (
             <tr key={r.id}>
               <Td bold>{r.name}</Td>

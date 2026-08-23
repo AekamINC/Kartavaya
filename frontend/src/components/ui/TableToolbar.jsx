@@ -16,8 +16,29 @@
  * the measured case is the pipeline screen that reported 199 deals with no next
  * step against a real 510.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { PAGE_SIZES } from '../../hooks/useTableView';
+import { ColumnsSlotContext, ColumnsSlotSetContext, useColumnsSlotSetter } from './columnsSlot';
+
+/**
+ * Wrap a `<TableToolbar>` and the table under it to make them ONE row of
+ * chrome. The table's "Columns…" control then renders inside the toolbar
+ * instead of on a second line of its own.
+ *
+ * Only pages that have both need this. A table with no toolbar keeps its own
+ * bar and a toolbar with no arrangeable table renders an empty span — see
+ * `columnsSlot.js` for why the control travels rather than the state.
+ */
+export function ArrangedTableSection({ children, className }) {
+  const [slot, setSlot] = useState(null);
+  return (
+    <ColumnsSlotSetContext.Provider value={setSlot}>
+      <ColumnsSlotContext.Provider value={slot}>
+        {className ? <div className={className}>{children}</div> : children}
+      </ColumnsSlotContext.Provider>
+    </ColumnsSlotSetContext.Provider>
+  );
+}
 
 export default function TableToolbar({
   view, label = 'rows', searchPlaceholder = 'Search…', children, showSearch = true,
@@ -27,6 +48,10 @@ export default function TableToolbar({
     filters, filterOptions, picked, onFilter, clearFilters, activeFilters,
     page, setPage, pageCount, pageSize, onPageSize, truncated, total,
   } = view;
+
+  // Non-null only inside an `ArrangedTableSection`; everywhere else this is a
+  // no-op and the toolbar renders exactly what it always did.
+  const setSlot = useColumnsSlotSetter();
 
   return (
     <div className="tv">
@@ -74,6 +99,12 @@ export default function TableToolbar({
       )}
 
       {children}
+
+      {/* The table's own control lands here, by portal, when the page has
+          paired the two. `ref` rather than a child element because the button
+          belongs to the table's hook instance and must stay there — moving the
+          STATE would give one table two opinions about its own columns. */}
+      {setSlot && <span className="tv__cols" ref={setSlot} />}
 
       <span className="tv__count" role="status">
         {matched === 0

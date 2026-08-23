@@ -52,6 +52,67 @@ import '../styles/admin.css';
 import { useLanguage } from '../components/CustomizePanel';
 import { secondaryOf } from '../lib/labels';
 import { Secondary } from '../components/Bilingual';
+import useColumnPrefs from '../hooks/useColumnPrefs';
+import { ColumnsButton } from '../components/ui/CustomizeColumns';
+
+/**
+ * The four record lists on this console, declared once each.
+ *
+ * `fixed` is on the column that NAMES the row and on the actions cell, every
+ * time. On three of these the actions cell holds the only destructive control
+ * the page has — revoke a platform role, remove an account, revoke an invite —
+ * and an arrangement saved months ago that hid it would leave an operator
+ * staring at a row they cannot act on with no way to work out why.
+ *
+ * The roles list is three columns of which two are pinned, so only Roles can be
+ * hidden. That is not an argument against declaring it: the WIDTHS are the
+ * point on that table — a person cell carrying a name over an address, beside a
+ * wrapping row of tags — and a width is as persisted as a visibility.
+ */
+const PLATFORM_ROLE_COLUMNS = [
+  { id: 'person', label: 'Person', fixed: true },
+  { id: 'roles', label: 'Roles' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
+const R2_PROJECT_COLUMNS = [
+  { id: 'project', label: 'Project', fixed: true },
+  { id: 'folder', label: 'Folder' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
+const ACCOUNT_COLUMNS = [
+  { id: 'person', label: 'Person', fixed: true },
+  { id: 'type', label: 'Account type' },
+  { id: 'company', label: 'Company' },
+  { id: 'joined', label: 'Joined' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
+const INVITE_COLUMNS = [
+  { id: 'invited', label: 'Invited', fixed: true },
+  { id: 'type', label: 'Account type' },
+  { id: 'expires', label: 'Expires' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
+/** The same head, four times over — see the twin in AdminCostDashboardPage. */
+function ArrangedHead({ cols }) {
+  return (
+    <TableHead>
+      {cols.columns.map(c => (
+        <HeadCell
+          key={c.id}
+          num={c.num}
+          width={c.width}
+          onResize={w => cols.setWidth(c.id, w)}
+        >
+          {c.sr ? <span className="k-sr-only">{c.label}</span> : c.label}
+        </HeadCell>
+      ))}
+    </TableHead>
+  );
+}
 
 const EMPTY_INVITE = { full_name: '', email: '', role: 'member', member_role: '', receives_approval_emails: true };
 
@@ -283,6 +344,10 @@ function PlatformRolesPanel() {
   const me = currentUser();
   const mayAssign = isGodMode(me?.platform_roles);
 
+  /* Above the `!mayAssign` refusal further down: a manager who is refused has
+     to render the same hooks as an owner who is not. */
+  const roleCols = useColumnPrefs('admin.platform_roles', PLATFORM_ROLE_COLUMNS);
+
   /* `GET /roles/platform`, `/users/search`, `/roles/assign` and
      `DELETE /roles/{id}` are ALL guarded on SUPERUSER_ONLY_ROLES — a role that
      can grant roles can grant itself anything, so it is never delegated. Only
@@ -364,7 +429,16 @@ function PlatformRolesPanel() {
     <>
       <div className="apg__sec">
         <Card>
-          <CardHead title="Who holds a platform role" sanskrit="भूमिकाएँ" actions={<span className="apg__secn">{grouped.length}</span>} />
+          <CardHead
+            title="Who holds a platform role"
+            sanskrit="भूमिकाएँ"
+            actions={(
+              <>
+                <span className="apg__secn">{grouped.length}</span>
+                <ColumnsButton cols={roleCols} />
+              </>
+            )}
+          />
           <CardBody flush>
             {loading ? <SkeletonPage /> : grouped.length === 0 ? (
               <EmptyState
@@ -373,62 +447,66 @@ function PlatformRolesPanel() {
               />
             ) : (
               <Table>
-                <TableHead>
-                  <HeadCell>Person</HeadCell>
-                  <HeadCell>Roles</HeadCell>
-                  <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
-                </TableHead>
+                <ArrangedHead cols={roleCols} />
                 <TableBody>
                   {grouped.map(u => (
                     <Row key={u.user_id}>
-                      <Cell>
-                        <span className="adm-name">
-                          <span className="adm-name__c">
-                            <b>{u.full_name || u.email}</b>
-                            <i>{u.email}</i>
-                          </span>
-                        </span>
-                      </Cell>
-                      <Cell>
-                        <span className="adm-actions">
-                          {u.codes.map(c => {
-                            const meta = roleMeta(c.code);
-                            return (
-                              <Tag key={c.id} color={roleColor(c.code)} title={meta.blurb}>
-                                {meta.label}
-                              </Tag>
-                            );
-                          })}
-                        </span>
-                      </Cell>
-                      <Cell>
-                        <span className="adm-actions">
-                          {u.codes.map(c => (
-                            <Button
-                              key={c.id}
-                              size="sm"
-                              variant="danger"
-                              disabled={!mayAssign}
-                              onClick={() => setConfirm({
-                                title: 'Revoke platform role',
-                                message: `${u.email} loses ${roleMeta(c.code).label} across every organisation.`,
-                                confirmLabel: 'Revoke',
-                                onConfirm: async () => {
-                                  try {
-                                    await api.delete(`/v1/admin/orgs/roles/${c.id}`);
-                                    pushToast({ type: 'success', title: 'Role revoked' });
-                                    await load();
-                                  } catch (e) {
-                                    pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not revoke' });
-                                  }
-                                },
+                      {roleCols.cells({
+                        person: (
+                          <Cell>
+                            <span className="adm-name">
+                              <span className="adm-name__c">
+                                <b>{u.full_name || u.email}</b>
+                                <i>{u.email}</i>
+                              </span>
+                            </span>
+                          </Cell>
+                        ),
+                        roles: (
+                          <Cell>
+                            <span className="adm-actions">
+                              {u.codes.map(c => {
+                                const meta = roleMeta(c.code);
+                                return (
+                                  <Tag key={c.id} color={roleColor(c.code)} title={meta.blurb}>
+                                    {meta.label}
+                                  </Tag>
+                                );
                               })}
-                            >
-                              Revoke {roleMeta(c.code).label}
-                            </Button>
-                          ))}
-                        </span>
-                      </Cell>
+                            </span>
+                          </Cell>
+                        ),
+                        actions: (
+                          <Cell>
+                            <span className="adm-actions">
+                              {u.codes.map(c => (
+                                <Button
+                                  key={c.id}
+                                  size="sm"
+                                  variant="danger"
+                                  disabled={!mayAssign}
+                                  onClick={() => setConfirm({
+                                    title: 'Revoke platform role',
+                                    message: `${u.email} loses ${roleMeta(c.code).label} across every organisation.`,
+                                    confirmLabel: 'Revoke',
+                                    onConfirm: async () => {
+                                      try {
+                                        await api.delete(`/v1/admin/orgs/roles/${c.id}`);
+                                        pushToast({ type: 'success', title: 'Role revoked' });
+                                        await load();
+                                      } catch (e) {
+                                        pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not revoke' });
+                                      }
+                                    },
+                                  })}
+                                >
+                                  Revoke {roleMeta(c.code).label}
+                                </Button>
+                              ))}
+                            </span>
+                          </Cell>
+                        ),
+                      })}
                     </Row>
                   ))}
                 </TableBody>
@@ -567,6 +645,14 @@ export default function AdminPage() {
     [users],
   );
 
+  /* All three sit ABOVE the `canOpen` refusal, the loading skeleton and the
+     error return below. Those three paths are the ones a first paint takes, and
+     a page that renders fewer hooks on them than on the landed console throws
+     the moment the read lands. */
+  const projectCols = useColumnPrefs('admin.r2_projects', R2_PROJECT_COLUMNS);
+  const accountCols = useColumnPrefs('admin.accounts', ACCOUNT_COLUMNS);
+  const inviteCols = useColumnPrefs('admin.pending_invites', INVITE_COLUMNS);
+
   const copy = (text, key) => {
     navigator.clipboard?.writeText(text);
     setCopied(key);
@@ -636,12 +722,15 @@ export default function AdminPage() {
           title="R2 folder map"
           sanskrit="फ़ोल्डर"
           actions={(
-            <Input
-              aria-label="Search projects"
-              placeholder="Project or team_id…"
-              value={teamQ}
-              onChange={e => setTeamQ(e.target.value)}
-            />
+            <>
+              <Input
+                aria-label="Search projects"
+                placeholder="Project or team_id…"
+                value={teamQ}
+                onChange={e => setTeamQ(e.target.value)}
+              />
+              <ColumnsButton cols={projectCols} />
+            </>
           )}
         />
         <CardBody flush>
@@ -660,21 +749,21 @@ export default function AdminPage() {
             />
           ) : (
             <Table>
-              <TableHead>
-                <HeadCell>Project</HeadCell>
-                <HeadCell>Folder</HeadCell>
-                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
-              </TableHead>
+              <ArrangedHead cols={projectCols} />
               <TableBody>
                 {shownTeams.map(t => (
                   <Row key={t.team_id}>
-                    <Cell>{t.name}</Cell>
-                    <Cell><span className="adm-kv__v is-mono">{t.r2_folder}</span></Cell>
-                    <Cell>
-                      <Button size="sm" variant="ghost" onClick={() => copy(t.r2_folder, t.team_id)}>
-                        {copied === t.team_id ? 'Copied' : 'Copy path'}
-                      </Button>
-                    </Cell>
+                    {projectCols.cells({
+                      project: <Cell>{t.name}</Cell>,
+                      folder: <Cell><span className="adm-kv__v is-mono">{t.r2_folder}</span></Cell>,
+                      actions: (
+                        <Cell>
+                          <Button size="sm" variant="ghost" onClick={() => copy(t.r2_folder, t.team_id)}>
+                            {copied === t.team_id ? 'Copied' : 'Copy path'}
+                          </Button>
+                        </Cell>
+                      ),
+                    })}
                   </Row>
                 ))}
               </TableBody>
@@ -696,6 +785,7 @@ export default function AdminPage() {
         />
         <span className="apg__spacer" />
         <span className="apg__secn">{shownUsers.length} of {users.length}</span>
+        <ColumnsButton cols={accountCols} />
       </div>
 
       <Card>
@@ -709,45 +799,48 @@ export default function AdminPage() {
             />
           ) : (
             <Table className="adm-rows">
-              <TableHead>
-                <HeadCell>Person</HeadCell>
-                <HeadCell>Account type</HeadCell>
-                <HeadCell>Company</HeadCell>
-                <HeadCell>Joined</HeadCell>
-                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
-              </TableHead>
+              <ArrangedHead cols={accountCols} />
               <TableBody>
                 {shownUsers.map(u => {
                   const isSelf = u.user_id === me?.user_id;
                   const name = u.full_name || u.name || u.email;
                   return (
                     <Row key={u.user_id} onClick={() => setEditing(u)}>
-                      <Cell>
-                        <span className="adm-name">
-                          <Avatar name={name} src={u.avatar} size={28} />
-                          <span className="adm-name__c">
-                            <b>{name}{isSelf ? ' (you)' : ''}</b>
-                            <i>{u.email}{u.member_role ? ` · ${u.member_role}` : ''}</i>
-                          </span>
-                        </span>
-                      </Cell>
-                      <Cell><Tag color={ACCOUNT_TONE[u.role] || ACCOUNT_TONE.member}>{u.role}</Tag></Cell>
-                      <Cell>{u.company_name || '—'}</Cell>
-                      <Cell>{fmtDate(u.created_at)}</Cell>
-                      <Cell>
-                        <span className="adm-actions" onClick={e => e.stopPropagation()} role="presentation">
-                          <Button size="sm" variant="out" onClick={() => setEditing(u)}>Edit</Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            disabled={isSelf}
-                            title={isSelf ? 'You cannot remove yourself' : undefined}
-                            onClick={() => setRemoving(u)}
-                          >
-                            Remove
-                          </Button>
-                        </span>
-                      </Cell>
+                      {accountCols.cells({
+                        person: (
+                          <Cell>
+                            <span className="adm-name">
+                              <Avatar name={name} src={u.avatar} size={28} />
+                              <span className="adm-name__c">
+                                <b>{name}{isSelf ? ' (you)' : ''}</b>
+                                <i>{u.email}{u.member_role ? ` · ${u.member_role}` : ''}</i>
+                              </span>
+                            </span>
+                          </Cell>
+                        ),
+                        type: <Cell><Tag color={ACCOUNT_TONE[u.role] || ACCOUNT_TONE.member}>{u.role}</Tag></Cell>,
+                        company: <Cell>{u.company_name || '—'}</Cell>,
+                        joined: <Cell>{fmtDate(u.created_at)}</Cell>,
+                        actions: (
+                          <Cell>
+                            {/* The stopPropagation stays on the cell: the ROW
+                                opens the editor, and a Remove click that also
+                                opened it was the original defect here. */}
+                            <span className="adm-actions" onClick={e => e.stopPropagation()} role="presentation">
+                              <Button size="sm" variant="out" onClick={() => setEditing(u)}>Edit</Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                disabled={isSelf}
+                                title={isSelf ? 'You cannot remove yourself' : undefined}
+                                onClick={() => setRemoving(u)}
+                              >
+                                Remove
+                              </Button>
+                            </span>
+                          </Cell>
+                        ),
+                      })}
                     </Row>
                   );
                 })}
@@ -814,7 +907,15 @@ export default function AdminPage() {
       </Card>
 
       <Card>
-        <CardHead title="Pending invites" actions={<span className="apg__secn">{pending === null ? '—' : pending.length}</span>} />
+        <CardHead
+          title="Pending invites"
+          actions={(
+            <>
+              <span className="apg__secn">{pending === null ? '—' : pending.length}</span>
+              <ColumnsButton cols={inviteCols} />
+            </>
+          )}
+        />
         <CardBody flush>
           {/* "Nothing is waiting" with the reassuring tick is the most
               dangerous empty state on this page: an admin who reads it stops
@@ -832,61 +933,64 @@ export default function AdminPage() {
             />
           ) : (
             <Table>
-              <TableHead>
-                <HeadCell>Invited</HeadCell>
-                <HeadCell>Account type</HeadCell>
-                <HeadCell>Expires</HeadCell>
-                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
-              </TableHead>
+              <ArrangedHead cols={inviteCols} />
               <TableBody>
                 {pending.map(iv => {
                   const days = Math.ceil((new Date(iv.expires_at) - new Date()) / 86400000);
                   return (
                     <Row key={iv.invite_id}>
-                      <Cell>
-                        <span className="adm-name">
-                          <span className="adm-name__c">
-                            <b>{iv.full_name || iv.email}</b>
-                            <i>{iv.full_name ? iv.email : ''}{iv.invited_by_name ? ` · by ${iv.invited_by_name}` : ''}</i>
-                          </span>
-                        </span>
-                      </Cell>
-                      <Cell><Tag color={ACCOUNT_TONE[iv.role] || ACCOUNT_TONE.member}>{iv.role}</Tag></Cell>
-                      <Cell>
-                        <Tag color={days <= 1 ? 'var(--danger)' : 'var(--on-surface-3)'}>
-                          {days <= 0 ? 'today' : `${days}d`}
-                        </Tag>
-                      </Cell>
-                      <Cell>
-                        <span className="adm-actions">
-                          {freshInvite?.invite_id === iv.invite_id && freshInvite.invite_link ? (
-                            <Button size="sm" variant="ghost" onClick={() => copy(freshInvite.invite_link, iv.invite_id)}>
-                              {copied === iv.invite_id ? 'Copied' : 'Copy link'}
-                            </Button>
-                          ) : null}
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => setConfirm({
-                              title: 'Revoke invite',
-                              message: `The link sent to ${iv.email} stops working immediately.`,
-                              confirmLabel: 'Revoke',
-                              onConfirm: async () => {
-                                try {
-                                  await api.delete(`/admin/invites/${iv.invite_id}`);
-                                  setInvites(prev => prev.filter(x => x.invite_id !== iv.invite_id));
-                                  pushToast({ type: 'success', title: 'Invite revoked' });
-                                } catch {
-                                  pushToast({ type: 'error', title: 'Could not revoke the invite' });
-                                  load();
-                                }
-                              },
-                            })}
-                          >
-                            Revoke
-                          </Button>
-                        </span>
-                      </Cell>
+                      {inviteCols.cells({
+                        invited: (
+                          <Cell>
+                            <span className="adm-name">
+                              <span className="adm-name__c">
+                                <b>{iv.full_name || iv.email}</b>
+                                <i>{iv.full_name ? iv.email : ''}{iv.invited_by_name ? ` · by ${iv.invited_by_name}` : ''}</i>
+                              </span>
+                            </span>
+                          </Cell>
+                        ),
+                        type: <Cell><Tag color={ACCOUNT_TONE[iv.role] || ACCOUNT_TONE.member}>{iv.role}</Tag></Cell>,
+                        expires: (
+                          <Cell>
+                            <Tag color={days <= 1 ? 'var(--danger)' : 'var(--on-surface-3)'}>
+                              {days <= 0 ? 'today' : `${days}d`}
+                            </Tag>
+                          </Cell>
+                        ),
+                        actions: (
+                          <Cell>
+                            <span className="adm-actions">
+                              {freshInvite?.invite_id === iv.invite_id && freshInvite.invite_link ? (
+                                <Button size="sm" variant="ghost" onClick={() => copy(freshInvite.invite_link, iv.invite_id)}>
+                                  {copied === iv.invite_id ? 'Copied' : 'Copy link'}
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={() => setConfirm({
+                                  title: 'Revoke invite',
+                                  message: `The link sent to ${iv.email} stops working immediately.`,
+                                  confirmLabel: 'Revoke',
+                                  onConfirm: async () => {
+                                    try {
+                                      await api.delete(`/admin/invites/${iv.invite_id}`);
+                                      setInvites(prev => prev.filter(x => x.invite_id !== iv.invite_id));
+                                      pushToast({ type: 'success', title: 'Invite revoked' });
+                                    } catch {
+                                      pushToast({ type: 'error', title: 'Could not revoke the invite' });
+                                      load();
+                                    }
+                                  },
+                                })}
+                              >
+                                Revoke
+                              </Button>
+                            </span>
+                          </Cell>
+                        ),
+                      })}
                     </Row>
                   );
                 })}

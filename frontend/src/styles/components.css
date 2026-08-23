@@ -1521,11 +1521,19 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    the head typography and the gutters — which is the argument for deleting a
    system rather than tokenising one.
 
-   `.omt` (org members) is the one `<table>` class left beside `.tbl`, and it is
-   left only because its markup — `pages/org/MemberTable.jsx` — belongs to a
-   concurrent run. Every VALUE it states is now `.tbl`'s, including the three row
-   states it had none of; see org.css §Member table. It is a class name away from
-   being deleted too, and when that page lands it should be.
+   `.omt` (org members) and `.gn-coll` (Ganit collections) are the two `<table>`
+   classes left beside `.tbl`, and both are here for the same reason: every
+   VALUE they state is now `.tbl`'s — including the three row states neither had
+   — while their MARKUP still carries its own class name. Each is a class name
+   away from being deleted; see org.css §Member table and ganit.css §Collections.
+
+   `.gn-coll` is the one that shows why this list has to be checked rather than
+   asserted. It shipped in 9880c0d3/ade0f349, AFTER the four-into-one
+   convergence, and joined none of it — no zebra, no hover, no selected tint, a
+   separator at full strength and a head boundary written as a literal. Nobody
+   added a system on purpose; somebody wrote a table and the row contract was
+   not a thing you could fail to notice. `tableSystem.test.jsx` is now that
+   thing, and its list assertion names all three.
 
    `--tbl-rule` exists because `--rule-soft` lied. `kartavaya-design.css` and
    `surface-theme.css` both declare `--rule-soft: var(--outline-variant)` — an
@@ -1662,10 +1670,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    source instead, which is also what makes the invariant testable. */
 .tbl tbody tr:nth-child(even),
 .omt tbody tr:nth-child(even),
+.gn-coll tbody tr:nth-child(even),
 .k-trow:nth-child(even) { background: var(--tbl-row-zebra); }
 
 .tbl tbody tr:hover,
 .omt tbody tr:hover,
+.gn-coll tbody tr:hover,
 .k-trow:hover { background: var(--tbl-row-hover); }
 
 /* `.on` is written at (0,2,2) rather than as the bare (0,1,0) class it is in
@@ -1673,6 +1683,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    selected row un-selected it. */
 .tbl tbody tr.on,
 .omt tbody tr.on,
+.gn-coll tbody tr.on,
 .k-trow.on { background: var(--tbl-row-on); }
 
 /* The frame draws the bottom edge; a last-row separator inside it is a double
@@ -1690,6 +1701,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    is why the one table anybody demoed looked right. */
 .tbl tbody tr,
 .omt tbody tr,
+.gn-coll tbody tr,
 .k-trow { transition: background var(--dur-fast) var(--ease-standard); }
 /* `text-align` is stated on `.tbl th, .tbl td` above, which is (0,1,1) — one
    class and one type. A bare `.tbl__num` is (0,1,0) and LOSES to it regardless
@@ -1883,6 +1895,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 }
 .tv__search { flex: 1 1 14rem; min-width: 0; }
 .tv__input { width: 100%; }
+/* Where an arrangeable table portals its "Columns…" button, so a table that
+   already has a toolbar does not grow a second line under it holding one
+   control. Empty and zero-width when nothing renders into it — every table
+   with a toolbar gets the span, only the arrangeable ones fill it. See
+   components/ui/columnsSlot.js. */
+.tv__cols { display: inline-flex; align-items: center; }
 .tv__sp { flex: 1 1 auto; }
 .tv__count,
 .tv__lbl { color: var(--on-surface-3); font-size: var(--t-label); white-space: nowrap; }
@@ -1912,3 +1930,167 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   color: var(--warn);
   font-size: var(--t-label);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   § 11 · ARRANGEABLE COLUMNS — the divider on a header, and the sheet that
+   edits the order, visibility and width behind it (inbox item 3).
+
+   Everything here is opt-in: a `<HeadCell>` without `onResize` gets no
+   `.tbl__th--rz`, so not one of the ~96 tables that has not opted in renders
+   a pixel differently. Nothing in this block states a row height, a row
+   background or a row separator — the five things the table systems diverged
+   on stay declared exactly once, in § 10, and `tableSystem.test.jsx` keeps
+   finding them there.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The <th> becomes the positioning context for its own divider. `overflow`
+   stays visible: the grip is deliberately half outside the cell so a drag
+   reads as moving the BOUNDARY between two columns, not the left one. */
+.tbl__th--rz { position: relative; }
+
+/* The divider. A <button> — see Table.jsx's ColumnResizer for why a bare
+   mousedown div was not an option here. It is invisible until the header is
+   hovered or the button itself is focused, because a permanent rule between
+   every pair of columns is a second grid the eye has to read past. */
+.tbl__grip {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: col-resize;
+  /* Above the sort button, so the last 7px of a header resizes rather than
+     sorts — a resize that also re-sorts the table is a resize nobody
+     attempted. */
+  z-index: 1;
+  /* The visible line is the ::after, so the hit area can be comfortably wider
+     than the 1px a user is aiming at. */
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.tbl__grip::after {
+  content: '';
+  position: absolute;
+  top: 18%;
+  bottom: 18%;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+}
+/* `thead tr:hover`, NOT `.tbl thead tr:hover`. The grip's own class is already
+   the scope -- it exists nowhere but on a resizable header -- and prefixing it
+   with `.tbl` meant the dividers on `.omt` and `.gn-coll`, which are the two
+   `<table>` classes that are not `.tbl`, were invisible until the grip itself
+   was hovered: a 7px target you have to find before it shows you where it is.
+   The div-grid head (`.k-table__head`) is not a `thead` at all, so it is named
+   beside it. */
+thead tr:hover .tbl__grip,
+.k-table__head:hover .tbl__grip,
+.tbl__grip:focus-visible,
+.tbl__grip:hover { opacity: 1; }
+/* Focus is its own ring, not just the revealed line: the line alone reads as
+   hover, and a keyboard user needs to know the arrows now resize. */
+.tbl__grip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* A pointer that leaves the header mid-drag must not lose the divider. */
+.tbl__grip:active { opacity: 1; }
+
+/* Coarse pointers get no divider at all. A 7px target is unhittable with a
+   thumb, and a phone reaching every column already depends on the frozen
+   first column and the 640px floor — a stray drag there would fight both. The
+   sheet's width field is the touch route to the same setting. */
+@media (pointer: coarse) {
+  .tbl__grip { display: none; }
+}
+
+/* ── The toolbar control ────────────────────────────────────────────────── */
+
+/* Sits in TableToolbar's children slot, beside the filters, so it inherits the
+   toolbar's own flow rather than claiming a corner of its own. */
+.kcols__btn { white-space: nowrap; }
+/* The bar `<DataTable arrange>` puts the control on. Those ~70 tables sit bare
+   inside a Section or a Panel with no `TableToolbar` to hang it from, so it
+   needs a line — trailing-aligned, unframed and transparent, because anything
+   with an edge above a table reads as a second header. `min-height` rather
+   than a fixed height so it does not reserve space it is not using. */
+.tbl__abar {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: var(--sp-2); margin-bottom: var(--sp-1);
+}
+/* The hidden count is the only way a user who hid three columns last month
+   finds out why this table looks short. */
+.kcols__n { color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+
+/* ── The sheet ──────────────────────────────────────────────────────────────
+   Deliberately the same object as `.ktabs__*` in module.css: same row shell,
+   same grip, same ↑/↓, same team tick. A user who has arranged their tabs
+   already knows how to do this. It is NOT an alias of those classes — the two
+   sheets hold different controls (a star there, a checkbox and a width here)
+   and welding them would make either one's next change the other's
+   regression. */
+.kcols__sub { margin: 0 0 10px; font-size: 12.5px; color: var(--on-surface-3); }
+.kcols__rows { display: flex; flex-direction: column; }
+.kcols__row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 4px;
+  background: var(--surface); border-radius: var(--r-sm);
+}
+.kcols__row + .kcols__row { border-top: 1px solid var(--outline-variant); }
+/* While dragging, the library positions the row; the radius + shadow make it
+   read as carried rather than duplicated. */
+.kcols__row.is-dragging { box-shadow: var(--shadow-3); border-top: 0; }
+.kcols__grip {
+  border: 0; background: none; color: var(--on-surface-3); cursor: grab;
+  padding: 2px 6px; font-size: 14px; border-radius: var(--r-sm);
+  font-family: inherit;
+}
+.kcols__grip:hover { color: var(--primary-text); background: var(--s-container); }
+/* The checkbox and its label are ONE label element, so the whole name is the
+   hit target rather than a 16px box beside it. */
+.kcols__show {
+  flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; cursor: pointer;
+}
+.kcols__show input:disabled { cursor: not-allowed; }
+/* A fixed or last-visible column reads as unavailable, not as unticked. */
+.kcols__show:has(input:disabled) { color: var(--on-surface-3); cursor: not-allowed; }
+.kcols__lab {
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kcols__w { display: inline-flex; align-items: center; }
+/* Narrow on purpose: it holds three digits. `auto` as the placeholder is the
+   real value of an empty field — the table decides — not a hint. */
+.kcols__wi {
+  width: 5.5rem; font-size: 12.5px; padding: 4px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.kcols__mv {
+  border: 0; background: none; color: var(--on-surface-3); cursor: pointer;
+  padding: 2px 6px; font-size: 12px; border-radius: var(--r-sm);
+  font-family: inherit;
+}
+/* Edge state is aria-disabled, never `disabled`: the buttons hit their edge
+   while focused, and a disabled element drops keyboard focus to <body>. */
+.kcols__mv:hover:not([aria-disabled="true"]) { color: var(--primary-text); background: var(--s-container); }
+.kcols__mv[aria-disabled="true"] { opacity: .35; cursor: default; }
+.kcols__grip:focus-visible, .kcols__mv:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.kcols__team {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  font-size: 12.5px; color: var(--on-surface-3); cursor: pointer;
+}
+/* The two reset verbs sit apart from Cancel/Save. "Reset to standard" only
+   rearranges the DRAFT; "Forget my layout" deletes the saved row and may
+   surface a team default underneath — different consequences, so they are two
+   buttons and never one. Only the FIRST of the pair takes `margin-right:
+   auto` — putting it on both would open a second gap between them and read as
+   three groups rather than two. */
+.modal__foot .kcols__reset { margin-right: auto; }
+/* "Forget my layout" DELETES the saved row, so it reads as the weightier of
+   the two — muted rather than dimmed, and it keeps its own name rather than
+   borrowing Reset's. */
+.kcols__forget { color: var(--on-surface-3); }
+.kcols__forget:hover:not(:disabled) { color: var(--danger); }

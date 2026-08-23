@@ -1,6 +1,8 @@
 import React from 'react';
 import { Table, TableHead, TableBody, Row, Cell, HeadCell } from '../../components/ui';
 import { inr } from '../../lib/inr';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * OrgTable — the cross-org list. 11-platform-admin.md §1 "Cross-org table".
@@ -23,6 +25,31 @@ export const ORG_FILTERS = [
   { id: 'suspended', label: 'Suspended' },
   { id: 'paid', label: 'Paying' },
   { id: 'free', label: 'Free' },
+];
+
+/**
+ * What the cross-org table HAS, declared once — the floor `useColumnPrefs`
+ * resolves a saved arrangement against.
+ *
+ * `fixed` on Organisation: it is the only cell that says WHICH org a row is,
+ * and every other column is a number that means nothing without it. There is no
+ * actions column here — the whole row is the action (click opens the slide-over)
+ * — so Organisation is the single pin.
+ *
+ * Pahchan is gated on the payload rather than declared `defaultHidden`: 07 §7
+ * says Aekam sees the count only where the aggregate is actually returned, and
+ * that is a permission fact, not a preference. It is filtered out of the base
+ * below so a saved arrangement can never resurrect a column the payload has no
+ * number for.
+ */
+export const ORG_COLUMNS = [
+  { id: 'name', label: 'Organisation', sortKey: 'name', fixed: true },
+  { id: 'plan', label: 'Plan', sortKey: 'plan' },
+  { id: 'credits', label: 'Credits', sortKey: 'credits', num: true },
+  { id: 'price', label: 'Monthly', sortKey: 'price', num: true },
+  { id: 'storage', label: 'Storage', sortKey: 'storage', num: true },
+  { id: 'pahchan', label: 'Pahchan', sortKey: 'pahchan', num: true },
+  { id: 'status', label: 'Status' },
 ];
 
 export function formatBytes(bytes) {
@@ -78,47 +105,73 @@ export function selectOrgs(orgs, { q = '', filter = 'all', sort = null } = {}) {
 }
 
 export default function OrgTable({ orgs, sort, onSort, onSelect, showPahchan }) {
+  // Filtered, not conditionally declared: the hook keys its reconcile on the id
+  // LIST, so dropping Pahchan from the base is enough to keep it out of the
+  // arrangement entirely for an org whose payload carries no aggregate.
+  const base = React.useMemo(
+    () => (showPahchan ? ORG_COLUMNS : ORG_COLUMNS.filter(c => c.id !== 'pahchan')),
+    [showPahchan],
+  );
+  const cols = useColumnPrefs('admin.orgs', base);
+
   return (
-    <Table className="adm-rows">
-      <TableHead>
-        <HeadCell sortKey="name" sort={sort} onSort={onSort}>Organisation</HeadCell>
-        <HeadCell sortKey="plan" sort={sort} onSort={onSort}>Plan</HeadCell>
-        <HeadCell sortKey="credits" sort={sort} onSort={onSort} num>Credits</HeadCell>
-        <HeadCell sortKey="price" sort={sort} onSort={onSort} num>Monthly</HeadCell>
-        <HeadCell sortKey="storage" sort={sort} onSort={onSort} num>Storage</HeadCell>
-        {/* 07 §7: Aekam sees the COUNT of Pahchan users per org and nothing
-            else. The column appears only when the payload carries the
-            aggregate, and there is deliberately no drill-through — the view it
-            comes from has no employee_id to drill into. */}
-        {showPahchan && <HeadCell sortKey="pahchan" sort={sort} onSort={onSort} num>Pahchan</HeadCell>}
-        <HeadCell>Status</HeadCell>
-      </TableHead>
-      <TableBody>
-        {orgs.map(org => (
-          <Row
-            key={org.id}
-            className={org.is_active ? undefined : 'adm-sus'}
-            tabIndex={0}
-            onClick={() => onSelect?.(org)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(org); } }}
-          >
-            <Cell>
-              <span className="adm-name">
-                <span className="adm-name__c">
-                  <b>{org.name || 'Unnamed'}</b>
-                  <i>{org.owner_name || 'No owner'}</i>
-                </span>
-              </span>
-            </Cell>
-            <Cell>{org.plan_name || org.plan_code || '—'}</Cell>
-            <Cell num>{Number(org.monthly_credits) || 0}</Cell>
-            <Cell num>{inr(org.monthly_price || 0)}</Cell>
-            <Cell num>{formatBytes(org.storage_used_bytes)}</Cell>
-            {showPahchan && <Cell num>{org.pahchan_active_users ?? '—'}</Cell>}
-            <Cell>{org.is_active ? 'Active' : 'Suspended'}</Cell>
-          </Row>
-        ))}
-      </TableBody>
-    </Table>
+    <>
+      {/* This component is handed no toolbar by its caller, so the control goes
+          in the trailing action bar directly above the table — the one place a
+          user looking at the columns will look for them. */}
+      <div className="tbl__abar">
+        <ColumnsButton cols={cols} />
+      </div>
+      <Table className="adm-rows">
+        <TableHead>
+          {cols.columns.map(c => (
+            <HeadCell
+              key={c.id}
+              sortKey={c.sortKey}
+              sort={sort}
+              onSort={c.sortKey ? onSort : undefined}
+              num={c.num}
+              width={c.width}
+              onResize={w => cols.setWidth(c.id, w)}
+            >
+              {c.label}
+            </HeadCell>
+          ))}
+        </TableHead>
+        <TableBody>
+          {orgs.map(org => (
+            <Row
+              key={org.id}
+              className={org.is_active ? undefined : 'adm-sus'}
+              tabIndex={0}
+              onClick={() => onSelect?.(org)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(org); } }}
+            >
+              {cols.cells({
+                name: (
+                  <Cell>
+                    <span className="adm-name">
+                      <span className="adm-name__c">
+                        <b>{org.name || 'Unnamed'}</b>
+                        <i>{org.owner_name || 'No owner'}</i>
+                      </span>
+                    </span>
+                  </Cell>
+                ),
+                plan: <Cell>{org.plan_name || org.plan_code || '—'}</Cell>,
+                credits: <Cell num>{Number(org.monthly_credits) || 0}</Cell>,
+                price: <Cell num>{inr(org.monthly_price || 0)}</Cell>,
+                storage: <Cell num>{formatBytes(org.storage_used_bytes)}</Cell>,
+                /* 07 §7: Aekam sees the COUNT of Pahchan users per org and
+                   nothing else, and there is deliberately no drill-through —
+                   the view it comes from has no employee_id to drill into. */
+                pahchan: <Cell num>{org.pahchan_active_users ?? '—'}</Cell>,
+                status: <Cell>{org.is_active ? 'Active' : 'Suspended'}</Cell>,
+              })}
+            </Row>
+          ))}
+        </TableBody>
+      </Table>
+    </>
   );
 }

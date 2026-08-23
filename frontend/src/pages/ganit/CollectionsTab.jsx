@@ -4,6 +4,9 @@ import { api, rows as asRows } from '../../lib/api';
 import { ErrorState, errorKind, EmptyState, SkeletonList, Tag } from '../../components/ui';
 import { inr } from '../../lib/inr';
 import { Secondary } from '../../components/Bilingual';
+import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * CollectionsTab — what is owed, and whether the customer has actually looked
@@ -37,6 +40,33 @@ import { Secondary } from '../../components/Bilingual';
  * than letting a zero be read as evidence.
  */
 
+/**
+ * The five columns. This table shipped in 9880c0d3/ade0f349 as a THIRD
+ * `<table>` system — `.gn-coll`, with its own separator weight, no zebra, no
+ * hover and no selected tint — which is what `tableSystem.test.jsx` had been
+ * failing six times over. The row contract is met now (ganit.css §Collections
+ * for the two border weights, components.css §10 for the three states), and
+ * this declaration is the other half of joining: the columns are arrangeable
+ * like every other table's rather than being five literals nobody can move.
+ *
+ * `fixed` on Invoice and on Link, and the second one is the unusual call.
+ * Invoice is the identity — the number you quote on the phone. LINK is the
+ * engagement column, and it is the entire reason this screen exists as
+ * something other than a filtered invoice list: "never opened", "opened" and
+ * "tried to pay" all read as unpaid in the ledger and need three different
+ * phone calls. A user who hid it would be left looking at a debtors report
+ * that tells them nothing the invoice list did not. It is pinned rather than
+ * merely default-visible because a stale saved row is exactly how a column
+ * disappears without anybody choosing it.
+ */
+const COLLECTION_COLUMNS = [
+  { id: 'invoice',     label: 'Invoice',     className: 'gn-mono', fixed: true },
+  { id: 'customer',    label: 'Customer' },
+  { id: 'due',         label: 'Due',         className: 'gn-num' },
+  { id: 'outstanding', label: 'Outstanding', className: 'gn-num' },
+  { id: 'link',        label: 'Link',        fixed: true },
+];
+
 const ENGAGEMENT = {
   never_opened: { label: 'Not opened',   tone: 'var(--on-surface-3)' },
   opened:       { label: 'Opened',       tone: 'var(--st-in-review)' },
@@ -59,6 +89,10 @@ export default function CollectionsTab() {
   const [since, setSince] = useState(90);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  /* Hooks before any early return — this component returns a skeleton, an
+     error state and an empty state above the table, and a hook that runs on
+     the table branch only renders a different number of hooks each time. */
+  const cols = useColumnPrefs('ganit.collections', COLLECTION_COLUMNS);
 
   useEffect(() => {
     let alive = true;
@@ -129,15 +163,33 @@ export default function CollectionsTab() {
           body="Every issued invoice in this period has been settled."
         />
       ) : (
+        <>
+        {/* No `TableToolbar` on this tab — the period selector sits in the
+            header above — so the control takes its own trailing-aligned line.
+            `.tbl__abar`, components.css §11. */}
+        <div className="tbl__abar">
+          <ColumnsButton cols={cols} />
+        </div>
         <div className="gn-coll__wrap">
           <table className="gn-coll">
             <thead>
               <tr>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th className="gn-num">Due</th>
-                <th className="gn-num">Outstanding</th>
-                <th>Link</th>
+                {/* `HeadCell` rather than five `<th>` literals: it is what
+                    carries the resize divider, and reaching for it here is how
+                    `.gn-coll` gets the divider without a second copy of the
+                    keyboard handling that was fixed by hand once already.
+                    Nothing about `.tbl` comes with it — `HeadCell` emits a
+                    plain `<th>` and this table keeps its own head skin. */}
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -145,33 +197,40 @@ export default function CollectionsTab() {
                 const e = ENGAGEMENT[r.engagement] || ENGAGEMENT.never_opened;
                 return (
                   <tr key={r.id}>
-                    <td className="gn-mono">{r.invoice_number}</td>
-                    {/* The CUSTOMER is the company. The contact is a person
-                        there, and people leave — so the company leads and the
-                        person is the smaller line under it. */}
-                    <td>
-                      {r.client_name || r.contact_name || '—'}
-                      {r.client_name && r.contact_name && (
-                        <span className="gn-coll__sub">{r.contact_name}</span>
-                      )}
-                    </td>
-                    <td className="gn-num">{r.due_date || '—'}</td>
-                    <td className="gn-num">{inr(r.balance_due)}</td>
-                    <td>
-                      <Tag color={e.tone}>{e.label}</Tag>
-                      {r.last_seen && (
-                        <span className="gn-coll__sub" title={r.last_seen}>
-                          {ago(r.last_seen)}
-                          {r.views > 1 && ` · ${r.views} views`}
-                        </span>
-                      )}
-                    </td>
+                    {cols.cells({
+                      invoice: <td className="gn-mono">{r.invoice_number}</td>,
+                      /* The CUSTOMER is the company. The contact is a person
+                         there, and people leave — so the company leads and the
+                         person is the smaller line under it. */
+                      customer: (
+                        <td>
+                          {r.client_name || r.contact_name || '—'}
+                          {r.client_name && r.contact_name && (
+                            <span className="gn-coll__sub">{r.contact_name}</span>
+                          )}
+                        </td>
+                      ),
+                      due: <td className="gn-num">{r.due_date || '—'}</td>,
+                      outstanding: <td className="gn-num">{inr(r.balance_due)}</td>,
+                      link: (
+                        <td>
+                          <Tag color={e.tone}>{e.label}</Tag>
+                          {r.last_seen && (
+                            <span className="gn-coll__sub" title={r.last_seen}>
+                              {ago(r.last_seen)}
+                              {r.views > 1 && ` · ${r.views} views`}
+                            </span>
+                          )}
+                        </td>
+                      ),
+                    })}
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

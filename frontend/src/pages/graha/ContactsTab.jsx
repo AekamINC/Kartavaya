@@ -26,7 +26,58 @@ import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone from this file: the header is rendered from the column
+// declaration below, which is what lets it be moved, hidden and resized. The
+// CELL is unchanged — CreatedCell is the product's one created-date renderer.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * What this table HAS, declared once — the floor `useColumnPrefs` resolves a
+ * saved arrangement against. It is frontend CODE and never a row, so a column
+ * added here appears for everybody, including people who arranged this table
+ * before it existed (it lands at the end, visible).
+ *
+ * `fixed` on Name and Actions: Name is how you identify which contact a row
+ * is, and Actions is how you delete one. Hiding either leaves a table you
+ * cannot act on, so the sheet renders both ticks disabled rather than letting
+ * the arrangement produce that state.
+ */
+const CONTACT_COLUMNS = [
+  { id: 'name', label: 'Name', sortKey: 'name', fixed: true },
+  { id: 'company', label: 'Company', sortKey: 'company' },
+  { id: 'email', label: 'Email', sortKey: 'email' },
+  { id: 'phone', label: 'Phone', sortKey: 'phone' },
+  { id: 'contact_type', label: 'Type', sortKey: 'contact_type' },
+  { id: 'source', label: 'Source', sortKey: 'source' },
+  { id: 'lead_score', label: 'Score', sortKey: 'lead_score', num: true },
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  /* WHO added this person, and who last changed their details.
+
+     Contacts are the row type that turns over: people come and go while the
+     customer stays, so a contact list is constantly re-keyed by whoever spoke
+     to them last. "Added by" says who put them in — the person to ask where a
+     phone number came from — and the updater pair says whether the number in
+     front of you is still the one that was added or somebody's later
+     correction. Without them a stale mobile number is indistinguishable from
+     a freshly confirmed one.
+
+     `created_by_name` / `updated_by_name` are resolved NAMES; the underlying
+     `*_by` columns are `users.user_id` and never reach the screen.
+     `has_creator` / `has_updater` keep "the account that did this is gone"
+     (`unknown`) apart from "nobody is recorded" (an em dash) — the same
+     distinction the API bothers to send two booleans for.
+
+     Before Actions, matching Created: Delete stays at the row's right edge,
+     where every other table in the product puts its verbs. */
+  { id: 'created_by_name', label: 'Added by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 /**
  * The Indian financial year to date: 1 April → today.
@@ -200,6 +251,11 @@ export default function ContactsTab({ crm = true }) {
   const view = useTableView(contacts, {
     filters: [{ key: 'contact_type', label: 'Type' }, { key: 'source', label: 'Source' }],
   });
+
+  /* The column arrangement — same placement rule as `useTableView` above: it
+     is hooks, so it has to be called ABOVE the `if (detail)` early return or
+     opening a contact renders fewer hooks than the list did. */
+  const cols = useColumnPrefs('graha.contacts', CONTACT_COLUMNS);
 
   if (detail) {
     const c = detail.contact;
@@ -479,50 +535,70 @@ export default function ContactsTab({ crm = true }) {
         />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="contacts" showSearch={false} />
+        <TableToolbar view={view} label="contacts" showSearch={false}>
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
+              {/* Heads come out of the arrangement, not out of nine literals:
+                  the order, the widths and which of them render at all are the
+                  same list the cells below are keyed on, so the two cannot
+                  drift by a column. */}
               <tr>
-                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Name</HeadCell>
-                <HeadCell sortKey="company" sort={view.sort} onSort={view.onSort}>Company</HeadCell>
-                <HeadCell sortKey="email" sort={view.sort} onSort={view.onSort}>Email</HeadCell>
-                <HeadCell sortKey="phone" sort={view.sort} onSort={view.onSort}>Phone</HeadCell>
-                <HeadCell sortKey="contact_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
-                <HeadCell sortKey="source" sort={view.sort} onSort={view.onSort}>Source</HeadCell>
-                <HeadCell sortKey="lead_score" sort={view.sort} onSort={view.onSort} num>Score</HeadCell>
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
-                <th><span className="sr-only">Actions</span></th>
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.rows.map(c => (
                 <tr key={c.id} className="gr__tr--click" onClick={() => loadDetail(c.id)}>
-                  {/* The only focusable thing in this row was Delete, so a
-                      keyboard could reach the destructive action and not the
-                      record itself. */}
-                  <td className="gr__td--name">
-                    <button
-                      type="button"
-                      className="gr__link"
-                      onClick={e => { e.stopPropagation(); loadDetail(c.id); }}
-                    >
-                      {c.name}
-                    </button>
-                  </td>
-                  {/* The client's name, with the old free-text `company` as
-                      the fallback — rows created before the field was dropped
-                      still carry it and must not read as blank. */}
-                  <td className="gr__td--mute">{c.client_name || c.company || '—'}</td>
-                  <td className="gr__td--mute">{c.email || '—'}</td>
-                  <td className="gr__td--mute">{c.phone || '—'}</td>
-                  <td><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} /></td>
-                  <td>{c.source ? <Badge text={c.source} color={SOURCE_COLORS[c.source] || 'var(--on-surface-3)'} /> : '—'}</td>
-                  <td className="gr__td--mute">{c.lead_score ?? '—'}</td>
-                  <CreatedCell value={c.created_at} />
-                  <td>
-                    <button className="k-btn k-btn--reject" onClick={e => { e.stopPropagation(); deleteContact(c.id); }}>Delete</button>
-                  </td>
+                  {cols.cells({
+                    /* The only focusable thing in this row was Delete, so a
+                       keyboard could reach the destructive action and not the
+                       record itself. */
+                    name: (
+                      <td className="gr__td--name">
+                        <button
+                          type="button"
+                          className="gr__link"
+                          onClick={e => { e.stopPropagation(); loadDetail(c.id); }}
+                        >
+                          {c.name}
+                        </button>
+                      </td>
+                    ),
+                    /* The client's name, with the old free-text `company` as
+                       the fallback — rows created before the field was dropped
+                       still carry it and must not read as blank. */
+                    company: <td className="gr__td--mute">{c.client_name || c.company || '—'}</td>,
+                    email: <td className="gr__td--mute">{c.email || '—'}</td>,
+                    phone: <td className="gr__td--mute">{c.phone || '—'}</td>,
+                    contact_type: <td><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} /></td>,
+                    source: <td>{c.source ? <Badge text={c.source} color={SOURCE_COLORS[c.source] || 'var(--on-surface-3)'} /> : '—'}</td>,
+                    lead_score: <td className="gr__td--mute">{c.lead_score ?? '—'}</td>,
+                    [CREATED_KEY]: <CreatedCell value={c.created_at} />,
+                    created_by_name: <ByCell name={c.created_by_name} hasActor={c.has_creator} />,
+                    [UPDATED_KEY]: <UpdatedCell value={c.updated_at} />,
+                    updated_by_name: <ByCell name={c.updated_by_name} hasActor={c.has_updater} />,
+                    actions: (
+                      <td>
+                        <button className="k-btn k-btn--reject" onClick={e => { e.stopPropagation(); deleteContact(c.id); }}>Delete</button>
+                      </td>
+                    ),
+                  })}
                 </tr>
               ))}
             </tbody>

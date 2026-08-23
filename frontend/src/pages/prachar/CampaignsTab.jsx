@@ -394,7 +394,7 @@ function CampaignList({ list, onOpen }) {
     // confident 0 on every row. On Unicode Group it printed the demo seed, which
     // is worse. The column returns the day a receiver exists; until then the
     // table shows the two figures a send actually produces.
-    <DataTable columns={['Name', 'Channel', 'Segment', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }]}>
+    <DataTable arrange="prachar.campaigns" columns={['Name', 'Channel', 'Segment', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }]}>
       {list.map((c) => (
         <tr key={c.id} onClick={() => onOpen(c)}>
           {/* Nothing in this row was focusable, so a campaign could not be
@@ -570,7 +570,7 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
             : reachSentence(audience.data)}
         </p>
         {(audience.data?.contacts || []).length > 0 && (
-          <DataTable columns={['Name', 'Email', 'Company', 'Type']}>
+          <DataTable arrange="prachar.campaign_audience" columns={['Name', 'Email', 'Company', 'Type']}>
             {(audience.data.contacts || []).map((p) => (
               <tr key={p.id}>
                 <Td bold>{p.name}</Td>

@@ -294,6 +294,14 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
 
                   <section className="dr__sec">
                     <h3 className="dr__lbl">Line items<Secondary className="dr__lbl-hi" value="वस्तुएँ" /></h3>
+                    {/* NOT opted into useColumnPrefs — same call, same reason
+                        as InvoiceDetail's line grid. A sales order's lines are
+                        what the customer agreed to and what the invoice raised
+                        from it will repeat; Rate and GST are the numbers the
+                        totals block below is computed from, so hiding one
+                        leaves a document that does not add up on screen. Six
+                        columns of ONE order is not a list to arrange.
+                        Arranging belongs to the orders LIST. */}
                     {items.length === 0 ? (
                       <p className="dr__empty">This order carries no lines.</p>
                     ) : (

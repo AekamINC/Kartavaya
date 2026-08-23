@@ -204,7 +204,7 @@ function Overview() {
         }}
         count={2}
       >
-        <DataTable columns={['Platform', 'Account', 'Last synced', '']}>
+        <DataTable arrange="prachar.ad_accounts" columns={['Platform', 'Account', 'Last synced', '']}>
           {(acc.data || []).map((a) => (
             <tr key={a.id}>
               <Td bold>{humanise(a.platform) || 'Unknown'}</Td>
@@ -249,7 +249,7 @@ function AdCampaigns() {
       }}
       count={4}
     >
-      <DataTable columns={['Name', 'Objective', 'Status', { label: 'Daily budget', align: 'right' }]}>
+      <DataTable arrange="prachar.ad_campaigns" columns={['Name', 'Objective', 'Status', { label: 'Daily budget', align: 'right' }]}>
         {list.map((c) => (
           <tr key={c.id}>
             <Td bold>{c.name}</Td>
@@ -284,7 +284,7 @@ function Insights() {
       }}
       count={4}
     >
-      <DataTable columns={[
+      <DataTable arrange="prachar.ad_performance" columns={[
         'Campaign', 'Date',
         { label: 'Spend', align: 'right' },
         { label: 'Impressions', align: 'right' },

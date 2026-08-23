@@ -12,8 +12,11 @@ import {
 
 import BulkBar from './BulkBar';
 import { groupTasks, PRIORITY_RANK } from './grouping';
-import { useColumnResize, useTableSelection } from './tableHooks';
+import { useTableSelection } from './tableHooks';
 import DateInput from '../ui/DateInput';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../ui/CustomizeColumns';
+import { ColumnResizer } from '../ui/Table';
 
 /**
  * TableView — sortable, filterable, groupable, selectable task table
@@ -85,6 +88,33 @@ import DateInput from '../ui/DateInput';
  * column expects; unassigned sorts last in both directions the same way an
  * undated task does, and for the same reason.
  */
+/**
+ * ── ORDER AND WIDTH ARE THE SERVER'S; VISIBILITY IS NOT ────────────────────
+ *
+ * This table now reads `useColumnPrefs`, like every other table in the
+ * product, but it opts in for TWO of the three facts. That is a decision, not
+ * unfinished work, and the reason is one control:
+ *
+ *   Which custom fields the table shows comes from `shownFields`, which comes
+ *   from `BoardToolbar`'s Fields popover — and that popover is SHARED WITH THE
+ *   KANBAN BOARD. Hiding "Estimate" there hides it in both views, which is
+ *   what a user means by hiding a field. If the columns sheet could also hide
+ *   it, there would be two switches for one idea: hide it here and it would
+ *   still be on the board, hide it there and this sheet's tick would silently
+ *   disagree. Two half-working switches is strictly worse than one that works.
+ *
+ * So `visibility: 'external'` — the hook keeps order and width, renders no
+ * tick boxes, and never writes `hidden`. `reconcileColumnPrefs` carries the
+ * argument in full.
+ *
+ * ── WHY THE IDS ARE NOT THE COLUMN KEYS ────────────────────────────────────
+ *
+ * A custom-field column's key is `f:<field_id>`, and the server's `COLUMN_ID`
+ * is `^[a-z0-9][a-z0-9_-]{0,59}$` — no colon. Sending the raw key would 422
+ * the entire arrangement, so every width on the board would silently fail to
+ * save with nothing on screen to say why. `colId()` is the one place that
+ * mapping happens.
+ */
 const BASE_COLS = [
   { key: 'title', label: 'Title', sortKey: 'title', width: 320, min: 160 },
   { key: 'column_id', label: 'Column', sortKey: 'column_id', width: 150, min: 110 },
@@ -92,6 +122,24 @@ const BASE_COLS = [
   { key: 'assignees', label: 'Assignees', sortKey: 'assignees', width: 150, min: 110 },
   { key: 'due_at', label: 'Due', sortKey: 'due_at', width: 150, min: 120 },
 ];
+
+/** `f:<uuid>` → `f_<uuid>`; the base keys pass through unchanged. */
+export const colId = (key) => String(key).replace(/^f:/, 'f_');
+
+/** The board's own arrangement row. Per BOARD because the custom-field columns
+ *  ARE per board — one arrangement across every board would be an order over a
+ *  column set that does not exist on most of them. `kv.table.widths.<boardKey>`
+ *  was already per board, so this is the granularity users already have.
+ *
+ *  Lowercased and stripped to the server's alphabet (`[a-z0-9_-]`), because
+ *  `boardId` reaches this file from a URL and a key the API refuses is a table
+ *  whose widths never save. */
+export const boardTableKey = (boardKey) =>
+  `board.table.${String(boardKey).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'default'}`;
+
+/** Where this table kept its widths before the server did. Read exactly once
+ *  per board, to migrate; see the seed below. */
+export const legacyWidthKey = (boardKey) => `kv.table.widths.${boardKey}`;
 
 /**
  * INLINE CELL EDIT — `IxViews.jsx` §10.3, whose "today" line reads: "Every edit
@@ -195,10 +243,22 @@ function CellTrigger({ editable, className, onClick, children }) {
  * So this reuses the primitive's state machine (`nextSort`) and its class
  * (`.tbl__sort`, including the reserved-width chevron) rather than its markup.
  */
-function Th({ col, sort, onSort, width, onGrip, gripActive }) {
+function Th({ col, sort, onSort, width, onResize, onPreview }) {
   const dir = sort?.key === col.sortKey ? sort.dir : null;
   return (
-    <th scope="col" style={{ width }} aria-sort={dir || 'none'}>
+    <th
+      scope="col"
+      data-colhead
+      /* `.tbl__th--rz` is what makes the cell a positioning context, and the
+         grip is `position: absolute` — without it the divider escapes to
+         `.tbl__wrap` and every column's handle stacks at the table's right
+         edge. `HeadCell` adds this class itself; this header is its own
+         component (a grip inside the sort button would re-sort on every drag),
+         so it has to say so. */
+      className={onResize ? 'tbl__th--rz' : undefined}
+      style={{ width }}
+      aria-sort={dir || 'none'}
+    >
       {col.sortKey ? (
         <button
           type="button"
@@ -216,11 +276,21 @@ function Th({ col, sort, onSort, width, onGrip, gripActive }) {
           </svg>
         </button>
       ) : col.label}
-      {onGrip && (
-        <span
-          className={['tb__grip', gripActive && 'on'].filter(Boolean).join(' ')}
-          onPointerDown={e => onGrip(e, col.key, col.min)}
-          onClick={e => e.stopPropagation()}
+      {/* Was a bare `<span onPointerDown>`: not focusable, no role, deaf to
+          every key — so the one table on this page whose columns people
+          actually drag was the one place resizing could not be done from a
+          keyboard. That was fixed by hand for the rest of the build once
+          already (5cb76413; React Aria rejected), and a second implementation
+          here would have quietly re-opened it. `ColumnResizer` is that fix,
+          shared: `data-colhead` above is how it measures a header it did not
+          have to be a `<th>` to find, and `onPreview` is how it drives a table
+          that sizes through a `<colgroup>` rather than through the cell. */}
+      {onResize && (
+        <ColumnResizer
+          label={col.label}
+          width={width}
+          onPreview={onPreview}
+          onCommit={onResize}
         />
       )}
     </th>
@@ -246,13 +316,66 @@ export default function TableView({
   // rendered without one still shows every field rather than none.
   const shownFields = shownFieldsProp || defs;
 
-  const allCols = useMemo(() => [
+  /* The page's declaration: the five fixed columns, then whatever custom
+     fields the toolbar is showing. This is the ONLY place visibility is
+     decided — a field the toolbar has hidden is simply not in the list, and
+     the hook's grammar does the rest (it drops from the saved order, and
+     returns to it when the field comes back, because the write path carries
+     ids it is not currently rendering). */
+  const declared = useMemo(() => [
     ...BASE_COLS,
     ...shownFields.map(f => ({ key: `f:${f.field_id}`, label: f.name, sortKey: null, width: 140, min: 90 })),
   ], [shownFields]);
 
-  const { widths, activeKey, onPointerDown, onPointerMove, onPointerUp } =
-    useColumnResize(allCols, `kv.table.widths.${boardKey}`);
+  const columnBase = useMemo(
+    () => declared.map(c => ({ ...c, id: colId(c.key) })),
+    [declared],
+  );
+
+  /* THE MIGRATION. Widths lived in `localStorage['kv.table.widths.<board>']`,
+     which is one device — the whole reason this moved. A user who has already
+     sized their columns must not open the page and find them reset, so on the
+     first load where the server has no row for this board, the local widths
+     are written UP and only then is the local entry retired. A failed PUT
+     leaves it alone and the next load tries again. `useColumnPrefs` owns the
+     once-only and after-the-answer-lands parts; this supplies the reading and
+     the retiring, because the old format is this file's to know. */
+  const seedWidths = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(legacyWidthKey(boardKey));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const out = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'number' && Number.isFinite(v)) out[colId(k)] = v;
+      }
+      return Object.keys(out).length ? out : null;
+    } catch { return null; }
+  }, [boardKey]);
+
+  const onSeeded = useCallback(() => {
+    // Retired only after the PUT landed. Removing it is what "stop reading
+    // localStorage for this board" means, and it has to be a removal rather
+    // than a flag: two copies of one preference is how they drift.
+    try { localStorage.removeItem(legacyWidthKey(boardKey)); } catch { /* private mode */ }
+  }, [boardKey]);
+
+  const cols = useColumnPrefs(boardTableKey(boardKey), columnBase, {
+    visibility: 'external',
+    seedWidths,
+    onSeeded,
+  });
+
+  const allCols = cols.columns;
+
+  /* The live width during a drag. `ColumnResizer` writes `th.style.width`
+     itself, but this table sizes through a `<colgroup>` — a width on the
+     `<th>` loses to the `<col>` — so the preview is state here and the
+     `<col>` is what moves. One setState per pointermove on one number; the
+     PUT is still one write per gesture. */
+  const [preview, setPreview] = useState(null);
+  const widthOf = c => (preview && preview.id === c.id ? preview.width : c.width);
 
   // ── Sort · group ──────────────────────────────────────────────────────────
   const colMap = useMemo(
@@ -420,16 +543,19 @@ export default function TableView({
 
   return (
     <>
-      <div
-        className="tbv"
-        onPointerMove={activeKey ? onPointerMove : undefined}
-        onPointerUp={activeKey ? onPointerUp : undefined}
-      >
+      <div className="tbv">
+        {/* One line, at the trailing edge, above the table it belongs to. The
+            board's own toolbar is the page's and already carries search,
+            group, Fields and the filter builder — this is the table's own
+            arrangement and has no business in a bar that Kanban also reads. */}
+        <div className="tbl__abar">
+          <ColumnsButton cols={cols} />
+        </div>
         <div className="tbl__wrap">
           <table className="tbl">
             <colgroup>
               <col style={{ width: 40 }} />
-              {allCols.map(c => <col key={c.key} style={{ width: widths[c.key] }} />)}
+              {allCols.map(c => <col key={c.id} style={{ width: widthOf(c) }} />)}
             </colgroup>
             <thead>
               <tr>
@@ -443,13 +569,13 @@ export default function TableView({
                 </th>
                 {allCols.map(c => (
                   <Th
-                    key={c.key}
+                    key={c.id}
                     col={c}
                     sort={sort}
                     onSort={onSort}
-                    width={widths[c.key]}
-                    onGrip={onPointerDown}
-                    gripActive={activeKey === c.key}
+                    width={widthOf(c)}
+                    onResize={w => { setPreview(null); cols.setWidth(c.id, w); }}
+                    onPreview={w => setPreview(w == null ? null : { id: c.id, width: w })}
                   />
                 ))}
               </tr>
@@ -512,6 +638,19 @@ export default function TableView({
                           />
                         </td>
 
+                        {/* The five fixed cells and every custom field, keyed
+                            by column id, in the arranged order. They used to be
+                            five literals followed by a `shownFields.map`, so
+                            the row's order was the order this file was written
+                            in and could not be anything else — which is fine
+                            until the HEADER can be rearranged, at which point
+                            it is every value under the wrong heading. The
+                            selection checkbox stays OUTSIDE: it is not a
+                            column, it has no header label, and it must not be
+                            movable away from the edge the rows are selected
+                            from. */}
+                        {cols.cells({
+                        title: (
                         <td>
                           <span className="tb__ttl">
                             {/* Both pending states, and the same two labels the
@@ -554,14 +693,16 @@ export default function TableView({
                             )}
                           </span>
                         </td>
+                        ),
 
-                        {/* `stopPropagation` on the cell, not on the control:
-                            the row's own `onClick` opens the drawer, and a cell
-                            whose whole job is now "click to edit" must not also
-                            open the thing the edit is meant to avoid. The title
-                            cell and the row's dead space still open it.
-                            A cell with nothing to pick from keeps the old
-                            behaviour and lets the click through — see below. */}
+                        /* `stopPropagation` on the cell, not on the control:
+                           the row's own `onClick` opens the drawer, and a cell
+                           whose whole job is now "click to edit" must not also
+                           open the thing the edit is meant to avoid. The title
+                           cell and the row's dead space still open it.
+                           A cell with nothing to pick from keeps the old
+                           behaviour and lets the click through — see below. */
+                        column_id: (
                         <td onClick={colEditable ? (e => e.stopPropagation()) : undefined}>
                           {edField === 'column_id' ? (
                             <select
@@ -600,9 +741,10 @@ export default function TableView({
                             </CellTrigger>
                           )}
                         </td>
-
-                        {/* A colour dot is never the only carrier of meaning —
-                            26 §8. The label rides beside it. */}
+                        ),
+                        /* A colour dot is never the only carrier of meaning —
+                           26 §8. The label rides beside it. */
+                        priority: (
                         <td onClick={e => e.stopPropagation()}>
                           {edField === 'priority' ? (
                             <select
@@ -632,13 +774,15 @@ export default function TableView({
                             </CellTrigger>
                           )}
                         </td>
+                        ),
 
-                        {/* Faces AND a name. `AvatarStack` alone is a row of
-                            two-letter monograms, which is a colour-only
-                            carrier the moment two people share initials — 26
-                            §8. One assignee names them; more than one is a
-                            stack with the count, and every face carries the
-                            full name in `title`. */}
+                        /* Faces AND a name. `AvatarStack` alone is a row of
+                           two-letter monograms, which is a colour-only carrier
+                           the moment two people share initials — 26 §8. One
+                           assignee names them; more than one is a stack with
+                           the count, and every face carries the full name in
+                           `title`. */
+                        assignees: (
                         <td onClick={asgEditable ? (e => e.stopPropagation()) : undefined}>
                           {edField === 'assignees' && asgEditable ? (
                             <select
@@ -690,6 +834,8 @@ export default function TableView({
                           )}
                         </td>
 
+                        ),
+                        due_at: (
                         <td onClick={e => e.stopPropagation()}>
                           {edField === 'due_at' ? (
                             <DateInput
@@ -720,15 +866,22 @@ export default function TableView({
                           )}
                         </td>
 
-                        {shownFields.map(f => (
-                          <td key={f.field_id} onClick={e => e.stopPropagation()}>
+                        ),
+                        /* One entry per shown field, spread into the same map
+                           — `cells()` picks whichever of them the arrangement
+                           actually places, so a field the toolbar has hidden
+                           costs nothing here and a field it shows lands
+                           wherever the user dragged it. */
+                        ...Object.fromEntries(shownFields.map(f => [colId(`f:${f.field_id}`), (
+                          <td onClick={e => e.stopPropagation()}>
                             <FieldRenderer
                               field={f}
                               value={values[f.field_id] ?? null}
                               onChange={v => saveValue(task.task_id, f.field_id, v)}
                             />
                           </td>
-                        ))}
+                        )])),
+                        })}
                       </tr>
                     );
                   })}

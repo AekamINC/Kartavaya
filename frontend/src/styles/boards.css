@@ -404,8 +404,13 @@
    escape the row height and the ellipsis clipping the data cells want. */
 .tb__empty { height: auto; overflow: visible; }
 
-.tb__grip { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: col-resize; }
-.tb__grip:hover, .tb__grip.on { background: color-mix(in srgb, var(--primary) 40%, transparent); }
+/* `.tb__grip` DELETED. It dressed a bare `<span onPointerDown>` — not
+   focusable, no role, deaf to every key — which was this table's own resize
+   handle. The header now renders the shared `ColumnResizer` (`.tbl__grip`,
+   components.css §11), so the widths reach the server AND the drag is
+   keyboard-operable, which it had never been here. Removed by hand rather than
+   by a script that matches selector names: one of those once ate an unrelated
+   rule through a comment. */
 
 .tb__grp td {
   height: auto; padding: 8px 12px;

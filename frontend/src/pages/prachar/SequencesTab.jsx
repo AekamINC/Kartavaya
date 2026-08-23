@@ -137,7 +137,7 @@ export default function SequencesTab({ onChanged }) {
         }}
         count={4}
       >
-        <DataTable columns={[
+        <DataTable arrange="prachar.sequences" columns={[
           'Name', 'Status',
           { label: 'Steps', align: 'right' },
           { label: 'Active', align: 'right' },
@@ -467,7 +467,7 @@ function SequenceDetail({ seq, onBack }) {
         emptyProps={{ icon: '👥', title: 'Nobody enrolled yet', sub: 'Contacts you add appear here with the step they are on.' }}
         count={3}
       >
-        <DataTable columns={['Contact', 'Email', { label: 'Step', align: 'right' }, 'Status', 'Next message']}>
+        <DataTable arrange="prachar.sequence_enrollments" columns={['Contact', 'Email', { label: 'Step', align: 'right' }, 'Status', 'Next message']}>
           {(full.data?.enrollments || []).map((e) => (
             <tr key={e.id}>
               <Td bold>{e.contact_name}</Td>

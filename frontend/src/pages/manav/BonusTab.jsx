@@ -163,7 +163,7 @@ export default function BonusTab() {
           />
         ) : (
           <>
-            <DataTable
+            <DataTable arrange="manav.bonus_awards"
               columns={['Person', { label: 'Amount', align: 'right' }, 'Why', 'Paid in', 'Decided']}
             >
               {rows.map(a => (

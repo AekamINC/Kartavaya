@@ -52,10 +52,15 @@ import { Empty } from '../../components/editorial';
 import { DataTable, Td } from '../../components/editorial';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
-import TableToolbar from '../../components/ui/TableToolbar';
+import TableToolbar, { ArrangedTableSection } from '../../components/ui/TableToolbar';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Badge, ErrorNote, Shim, errText, useResource, today } from './_shared';
+// The product's one date renderer and its one person renderer. `CreatedCell`
+// and `ByCell` render `ui/Table`'s `<Cell>`, which IS a `<td>` — the same
+// element `Td` renders — so they drop into this table unchanged and it keeps
+// one date format rather than growing a second beside `signed_on`.
+import { CreatedCell, UpdatedCell, ByCell } from '../../components/ui/CreatedColumn';
 
 // `urgency` is a bucket for colour and ordering. THE NUMBER IS THE TRUTH — the
 // server says so, and it is deliberately not a database enum because a bucket
@@ -68,6 +73,32 @@ const URGENCY_COLORS = {
   due_soon: 'var(--st-in-progress)',
   open: 'var(--ok)',
 };
+
+/**
+ * The register's columns, hoisted so the two expansion rows span
+ * `UDIN_COLUMNS.length` rather than a literal 8.
+ *
+ * `ArrangedDataTable` only retargets a spanning row when its `colSpan` EQUALS
+ * the base column count — that is how it tells "spans everything" from "a
+ * positional row" — so a hardcoded 8 under a twelve-column table both
+ * under-spans today and stops being retargeted the moment a column is hidden.
+ *
+ * The four appended at the END, after the blank actions column, because a body
+ * cell is identified by POSITION: cell *i* is column *i*. Appending leaves every
+ * existing column where a stored arrangement already expects it.
+ *
+ * `Signed on` IS NOT `Created`, and `Signed by` IS NOT `Entered by`. The first
+ * pair is the ICAI fact — who certified the document and on what date, which is
+ * what the UDIN attests. The second is a fact about this product: who typed the
+ * row in and when. A backlog entered by an articled assistant on behalf of a
+ * partner has two different names in those two columns, and showing only one of
+ * them would put somebody's name against a certification they did not make.
+ * `services/custody/udin.py` says the same thing on the SQL side.
+ */
+const UDIN_COLUMNS = [
+  'Client', 'Document', 'Signed by', 'Signed on', 'Generate by', 'Day', 'Left', '',
+  'Entered', 'Entered by', 'Updated', 'Updated by',
+];
 
 const URGENCY_LABELS = {
   not_started: 'Dated ahead',
@@ -463,10 +494,15 @@ export default function UdinTab() {
       )}
 
       {!risk.loading && !risk.error && rows.length > 0 && (
-        <div className="tv-card">
+        <ArrangedTableSection className="tv-card">
+          {/* ONE row of chrome. `TableToolbar` and the table under it are
+              paired here so the table's "Columns…" control renders INSIDE the
+              toolbar rather than on a second line of its own — see
+              `ui/columnsSlot.js` for why the button travels and the state does
+              not. The `.tv-card` frame is unchanged; the wrapper renders it. */}
           <TableToolbar view={table} label="documents" searchPlaceholder="Client, document or member…" />
-          <DataTable
-            columns={['Client', 'Document', 'Signed by', 'Signed on', 'Generate by', 'Day', 'Left', '']}
+          <DataTable arrange="manav.udin_register"
+            columns={UDIN_COLUMNS}
           >
             {table.rows.map(r => (
               <React.Fragment key={r.id}>
@@ -518,11 +554,19 @@ export default function UdinTab() {
                       </button>
                     </div>
                   </Td>
+                  {/* WHO typed the row into the register and WHO last moved it.
+                      `hasActor` is passed on both: a document entered by an
+                      assistant who has since left reads `unknown`, a different
+                      fact from "nobody is recorded against this document". */}
+                  <CreatedCell value={r.created_at} />
+                  <ByCell name={r.created_by_name} hasActor={r.has_creator} />
+                  <UpdatedCell value={r.updated_at} />
+                  <ByCell name={r.updated_by_name} hasActor={r.has_updater} />
                 </tr>
 
                 {acting && acting.id === r.id && acting.kind === 'generate' && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={UDIN_COLUMNS.length}>
                       <form className="k-formpanel" onSubmit={e => generate(e, r.id)}>
                         <h3 className="k-section__title">
                           UDIN for “{r.document_title}”
@@ -566,7 +610,7 @@ export default function UdinTab() {
 
                 {acting && acting.id === r.id && acting.kind === 'not_required' && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={UDIN_COLUMNS.length}>
                       <form className="k-formpanel" onSubmit={e => notRequired(e, r.id)}>
                         <h3 className="k-section__title">
                           No UDIN needed for “{r.document_title}”?
@@ -601,7 +645,7 @@ export default function UdinTab() {
               </React.Fragment>
             ))}
           </DataTable>
-        </div>
+        </ArrangedTableSection>
       )}
 
       <h4 className="dr__lbl">Still revocable — 48 hours from generation</h4>

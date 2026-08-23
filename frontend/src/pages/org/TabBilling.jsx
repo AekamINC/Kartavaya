@@ -10,6 +10,31 @@ import { formatDate, formatPeriod } from '../../lib/timeFormat';
 import PlanComparison from './PlanComparison';
 import { orgSeats, pahchanSeats } from './seatFigures';
 import BillingUsageSection from '../billing/BillingUsageSection';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The customer's own invoice list, declared once.
+ *
+ * `fixed` on Invoice: the number is the only cell that identifies which
+ * document a row is, and it is what the firm quotes when it pays.
+ *
+ * `Pay to` is NOT fixed and is deliberately last, because the row reads as the
+ * sentence it is — this much, of which this is tax, by this date, to this
+ * address. It stays hideable: a firm that pays every invoice by the same
+ * standing instruction does not need the payee repeated on twelve rows, and
+ * hiding it costs them nothing they cannot get back. What must never happen is
+ * the column not existing, which is the state this table shipped in.
+ */
+const ORG_INVOICE_COLUMNS = [
+  { id: 'invoice', label: 'Invoice', fixed: true },
+  { id: 'period', label: 'Period' },
+  { id: 'total', label: 'Total', num: true },
+  { id: 'gst', label: 'GST', num: true },
+  { id: 'status', label: 'Status' },
+  { id: 'due', label: 'Due' },
+  { id: 'payto', label: 'Pay to' },
+];
 
 /**
  * TabBilling — plan, credits, plan comparison and invoices.
@@ -182,6 +207,10 @@ export default function TabBilling() {
     }
   };
 
+  /* Above the loading and error returns — the skeleton and the landed tab have
+     to render the same hooks. */
+  const cols = useColumnPrefs('org.invoices', ORG_INVOICE_COLUMNS);
+
   if (loading) return <SkeletonPage withStats withTable />;
   if (failed) {
     return <ErrorState kind="server" detail="Couldn’t load billing data." onRetry={() => { setLoading(true); load(); }} />;
@@ -261,31 +290,40 @@ export default function TabBilling() {
           /* The shared Table, not a seventh hand-rolled one: `num` puts money in
              mono tabular figures so a column of totals lines up on the decimal. */
           <>
+            {/* Inside the has-invoices branch: a Columns button over "No
+                invoices yet" is a control for a table that is not there. */}
+            <div className="tbl__abar">
+              <ColumnsButton cols={cols} />
+            </div>
             <Table>
               <TableHead>
-                <HeadCell>Invoice</HeadCell>
-                <HeadCell>Period</HeadCell>
-                <HeadCell num>Total</HeadCell>
-                <HeadCell num>GST</HeadCell>
-                <HeadCell>Status</HeadCell>
-                <HeadCell>Due</HeadCell>
-                {/* Last, so a row reads as the sentence it is: this much, of
-                    which this is tax, by this date, to this address. Six
-                    columns stopped one step short of the only one that lets
-                    the reader act. */}
-                <HeadCell>Pay to</HeadCell>
+                {/* `Pay to` is last in the declaration, so a row reads as the
+                    sentence it is: this much, of which this is tax, by this
+                    date, to this address. Six columns stopped one step short of
+                    the only one that lets the reader act. */}
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    num={c.num}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </TableHead>
               <TableBody>
                 {invoices.map(iv => (
                   <Row key={iv.id}>
-                    <Cell><span className="oinv__n">{iv.invoice_number}</span></Cell>
-                    {/* "Jul 2026", not "2026-07-01 → 2026-07-31". */}
-                    <Cell>{formatPeriod(iv.period_start, iv.period_end)}</Cell>
-                    <Cell num>{inr(iv.total)}</Cell>
-                    <Cell num>{inr(iv.gst)}</Cell>
-                    <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
-                    <Cell>{formatDate(iv.due_date)}</Cell>
-                    {/* PER ROW, never once above the table. The payee is
+                    {cols.cells({
+                    invoice: <Cell><span className="oinv__n">{iv.invoice_number}</span></Cell>,
+                    /* "Jul 2026", not "2026-07-01 → 2026-07-31". */
+                    period: <Cell>{formatPeriod(iv.period_start, iv.period_end)}</Cell>,
+                    total: <Cell num>{inr(iv.total)}</Cell>,
+                    gst: <Cell num>{inr(iv.gst)}</Cell>,
+                    status: <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>,
+                    due: <Cell>{formatDate(iv.due_date)}</Cell>,
+                    /* PER ROW, never once above the table. The payee is
                         snapshotted onto the invoice at issue and deliberately
                         never refreshed, so that changing it later cannot
                         rewrite a document already sent. One payee printed over
@@ -295,7 +333,8 @@ export default function TabBilling() {
                         The name is shown only when the row carries one: it is
                         COALESCEd server-side down to the org's own name, so an
                         empty one means nothing was recorded, and inventing
-                        "Aekam" here would be this screen making up a payee. */}
+                        "Aekam" here would be this screen making up a payee. */
+                    payto: (
                     <Cell>
                       {upiOf(iv) ? (
                         <>
@@ -311,6 +350,8 @@ export default function TabBilling() {
                         <Tag color="var(--warn)">No UPI address</Tag>
                       )}
                     </Cell>
+                    ),
+                    })}
                   </Row>
                 ))}
               </TableBody>

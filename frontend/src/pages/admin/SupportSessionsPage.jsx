@@ -13,6 +13,38 @@ import {
 } from './supportSessions';
 import '../../styles/admin.css';
 import { Secondary } from '../../components/Bilingual';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The two lists on this console. `fixed` on Reference and on the actions cell
+ * in both: the reference is the string an operator reads out on the phone (the
+ * one handle on a session that is not a UUID), and the actions cell is the only
+ * way to close a session early — the whole verb this page has.
+ *
+ * They are separate keys even though five labels overlap. "Your sessions" is
+ * the operator's own work queue and "Every live session" is god-mode
+ * supervision; arranging one is not a statement about the other.
+ */
+const MY_SESSION_COLUMNS = [
+  { id: 'ref', label: 'Reference', fixed: true },
+  { id: 'org', label: 'Organisation' },
+  { id: 'state', label: 'State' },
+  { id: 'modules', label: 'Modules' },
+  { id: 'level', label: 'Level' },
+  { id: 'clock', label: 'Clock' },
+  { id: 'asked', label: 'Asked' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
+
+const ALL_SESSION_COLUMNS = [
+  { id: 'ref', label: 'Reference', fixed: true },
+  { id: 'org', label: 'Organisation' },
+  { id: 'who', label: 'Who is in' },
+  { id: 'approved_by', label: 'Approved by' },
+  { id: 'clock', label: 'Clock' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 /**
  * SupportSessionsPage — the console row `11-platform-admin.md` names and the
@@ -260,6 +292,11 @@ export default function SupportSessionsPage() {
     }
   };
 
+  /* Above the `loading` and `err` returns below — a skeleton that renders fewer
+     hooks than the landed page is a crash on the read landing. */
+  const mineCols = useColumnPrefs('admin.support_sessions_mine', MY_SESSION_COLUMNS);
+  const allCols = useColumnPrefs('admin.support_sessions_all', ALL_SESSION_COLUMNS);
+
   const head = (
     <header className="apg__head">
       <div className="apg__titles">
@@ -425,6 +462,7 @@ export default function SupportSessionsPage() {
               <span className="apg__secn" aria-live="polite">
                 {liveMine.length} active
               </span>
+              <ColumnsButton cols={mineCols} />
             </div>
 
             {mine.length === 0 ? (
@@ -436,44 +474,51 @@ export default function SupportSessionsPage() {
             ) : (
               <Table>
                 <TableHead>
-                  <HeadCell>Reference</HeadCell>
-                  <HeadCell>Organisation</HeadCell>
-                  <HeadCell>State</HeadCell>
-                  <HeadCell>Modules</HeadCell>
-                  <HeadCell>Level</HeadCell>
-                  <HeadCell>Clock</HeadCell>
-                  <HeadCell>Asked</HeadCell>
-                  <HeadCell><span className="sr-only">Actions</span></HeadCell>
+                  {mineCols.columns.map(c => (
+                    <HeadCell
+                      key={c.id}
+                      width={c.width}
+                      onResize={w => mineCols.setWidth(c.id, w)}
+                    >
+                      {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                    </HeadCell>
+                  ))}
                 </TableHead>
                 <TableBody>
                   {[...mine].sort(byRecency).map(s => {
                     const state = sessionState(s, now);
                     return (
                       <Row key={s.id}>
-                        <Cell>{s.ref}</Cell>
-                        <Cell>{s.org_name || 'An unnamed organisation'}</Cell>
-                        <Cell><StateTag state={state} /></Cell>
-                        <Cell>
-                          {(s.modules || []).map(m => MODULE_LABEL[m] || m).join(', ') || '—'}
-                        </Cell>
-                        <Cell>{s.access_level === 'editor' ? 'Look and change' : 'Look only'}</Cell>
-                        <Cell><Clock session={s} now={now} /></Cell>
-                        <Cell>{fmtWhen(s.requested_at)}</Cell>
-                        <Cell>
-                          {state === 'active' && (
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={busy === s.id}
-                              onClick={() => revoke(s, 'self')}
-                            >
-                              {busy === s.id ? 'Closing…' : 'Close now'}
-                            </Button>
-                          )}
-                          {state === 'denied' && s.denial_reason && (
-                            <span className="adm-kv__v">{s.denial_reason}</span>
-                          )}
-                        </Cell>
+                        {mineCols.cells({
+                          ref: <Cell>{s.ref}</Cell>,
+                          org: <Cell>{s.org_name || 'An unnamed organisation'}</Cell>,
+                          state: <Cell><StateTag state={state} /></Cell>,
+                          modules: (
+                            <Cell>
+                              {(s.modules || []).map(m => MODULE_LABEL[m] || m).join(', ') || '—'}
+                            </Cell>
+                          ),
+                          level: <Cell>{s.access_level === 'editor' ? 'Look and change' : 'Look only'}</Cell>,
+                          clock: <Cell><Clock session={s} now={now} /></Cell>,
+                          asked: <Cell>{fmtWhen(s.requested_at)}</Cell>,
+                          actions: (
+                            <Cell>
+                              {state === 'active' && (
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  disabled={busy === s.id}
+                                  onClick={() => revoke(s, 'self')}
+                                >
+                                  {busy === s.id ? 'Closing…' : 'Close now'}
+                                </Button>
+                              )}
+                              {state === 'denied' && s.denial_reason && (
+                                <span className="adm-kv__v">{s.denial_reason}</span>
+                              )}
+                            </Cell>
+                          ),
+                        })}
                       </Row>
                     );
                   })}
@@ -487,37 +532,45 @@ export default function SupportSessionsPage() {
               <div className="apg__sech">
                 <h2 className="apg__sect">Every live session</h2>
                 <span className="apg__secn">Aekam-wide</span>
+                <ColumnsButton cols={allCols} />
               </div>
               {/* Supervision, not administration. A god-mode admin can END a
                   colleague's session; they cannot approve one, extend one, or
                   open one on somebody else's behalf. */}
               <Table>
                 <TableHead>
-                  <HeadCell>Reference</HeadCell>
-                  <HeadCell>Organisation</HeadCell>
-                  <HeadCell>Who is in</HeadCell>
-                  <HeadCell>Approved by</HeadCell>
-                  <HeadCell>Clock</HeadCell>
-                  <HeadCell><span className="sr-only">Actions</span></HeadCell>
+                  {allCols.columns.map(c => (
+                    <HeadCell
+                      key={c.id}
+                      width={c.width}
+                      onResize={w => allCols.setWidth(c.id, w)}
+                    >
+                      {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                    </HeadCell>
+                  ))}
                 </TableHead>
                 <TableBody>
                   {all.filter(s => sessionState(s, now) === 'active').sort(byRecency).map(s => (
                     <Row key={s.id}>
-                      <Cell>{s.ref}</Cell>
-                      <Cell>{s.org_name || 'An unnamed organisation'}</Cell>
-                      <Cell>{s.requested_by_name || s.requested_by}</Cell>
-                      <Cell>{s.approved_by_name || s.approved_by}</Cell>
-                      <Cell><Clock session={s} now={now} /></Cell>
-                      <Cell>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          disabled={busy === s.id}
-                          onClick={() => revoke(s, 'aekam')}
-                        >
-                          {busy === s.id ? 'Ending…' : 'End it'}
-                        </Button>
-                      </Cell>
+                      {allCols.cells({
+                        ref: <Cell>{s.ref}</Cell>,
+                        org: <Cell>{s.org_name || 'An unnamed organisation'}</Cell>,
+                        who: <Cell>{s.requested_by_name || s.requested_by}</Cell>,
+                        approved_by: <Cell>{s.approved_by_name || s.approved_by}</Cell>,
+                        clock: <Cell><Clock session={s} now={now} /></Cell>,
+                        actions: (
+                          <Cell>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              disabled={busy === s.id}
+                              onClick={() => revoke(s, 'aekam')}
+                            >
+                              {busy === s.id ? 'Ending…' : 'End it'}
+                            </Button>
+                          </Cell>
+                        ),
+                      })}
                     </Row>
                   ))}
                 </TableBody>

@@ -7,6 +7,8 @@ import { api } from '../../lib/api';
 import { grouped } from '../../lib/inr';
 import { formatDate, formatTime } from '../../lib/timeFormat';
 import '../../styles/outbound.css';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * OutboundLog — what this organisation has actually been sent.
@@ -70,6 +72,37 @@ import '../../styles/outbound.css';
  */
 
 /** The server's own words. Never parsed, never re-written. */
+/**
+ * The two lists this file draws.
+ *
+ * `fixed` on Purpose and on What: those are the only cells that say what a row
+ * is ABOUT. Everything else on the summary is a count, and a table of counts
+ * with no subject is unreadable; everything else on the drill is a stamp, a
+ * status or an id.
+ *
+ * `Evidence` on the drill stays visible by default and deliberately so — a
+ * provider message id is the difference between "we recorded that we tried" and
+ * "a provider accepted it", which is the whole point of the coverage note above
+ * the table.
+ */
+const PURPOSE_COLUMNS = [
+  { id: 'purpose', label: 'Purpose', fixed: true },
+  { id: 'channel', label: 'Channel' },
+  { id: 'sent', label: 'Sent', num: true },
+  { id: 'suppressed', label: 'Suppressed', num: true },
+  { id: 'failed', label: 'Failed', num: true },
+  { id: 'unanswered', label: 'No answer', num: true },
+  { id: 'last', label: 'Last one' },
+];
+
+const SEND_COLUMNS = [
+  { id: 'when', label: 'When' },
+  { id: 'to', label: 'To' },
+  { id: 'what', label: 'What', fixed: true },
+  { id: 'status', label: 'Status' },
+  { id: 'evidence', label: 'Evidence' },
+];
+
 function refusal(err, fallback) {
   const detail = err?.response?.data?.detail;
   if (detail && typeof detail === 'object' && detail.message) return detail.message;
@@ -386,6 +419,9 @@ function Coverage({ data }) {
  * to add the row up.
  */
 function PurposeTable({ purposes, total, onDrill }) {
+  // Above the empty-state return below — both paths render the same hooks.
+  const cols = useColumnPrefs('billing.outbound_purposes', PURPOSE_COLUMNS);
+
   const unclassified = purposes
     .filter(p => p.purpose === 'unclassified')
     .reduce((n, p) => n + (Number(p.total) || 0), 0);
@@ -403,15 +439,21 @@ function PurposeTable({ purposes, total, onDrill }) {
 
   return (
     <>
+      <div className="tbl__abar">
+        <ColumnsButton cols={cols} />
+      </div>
       <Table className="bl__tbl">
         <TableHead>
-          <HeadCell>Purpose</HeadCell>
-          <HeadCell>Channel</HeadCell>
-          <HeadCell num>Sent</HeadCell>
-          <HeadCell num>Suppressed</HeadCell>
-          <HeadCell num>Failed</HeadCell>
-          <HeadCell num>No answer</HeadCell>
-          <HeadCell>Last one</HeadCell>
+          {cols.columns.map(c => (
+            <HeadCell
+              key={c.id}
+              num={c.num}
+              width={c.width}
+              onResize={w => cols.setWidth(c.id, w)}
+            >
+              {c.label}
+            </HeadCell>
+          ))}
         </TableHead>
         <TableBody>
           {purposes.map((p) => {
@@ -421,11 +463,15 @@ function PurposeTable({ purposes, total, onDrill }) {
             const pconf = Number(p.confirmed) || 0;
             return (
               <Row key={key}>
+                {cols.cells({
+                purpose: (
                 <Cell>
                   <span className="bl__item">{name}</span>
                   {p.purpose && <span className="bl__ref">{p.purpose}</span>}
                 </Cell>
-                <Cell>{p.channel || '—'}</Cell>
+                ),
+                channel: <Cell>{p.channel || '—'}</Cell>,
+                sent: (
                 <Cell num>
                   <Figure
                     count={psent}
@@ -440,6 +486,8 @@ function PurposeTable({ purposes, total, onDrill }) {
                     label={`Sent, ${name}`}
                   />
                 </Cell>
+                ),
+                suppressed: (
                 <Cell num>
                   <Figure
                     count={Number(p.suppressed) || 0}
@@ -447,6 +495,8 @@ function PurposeTable({ purposes, total, onDrill }) {
                     label={`Suppressed, ${name}`}
                   />
                 </Cell>
+                ),
+                failed: (
                 <Cell num>
                   <Figure
                     count={Number(p.failed) || 0}
@@ -455,6 +505,8 @@ function PurposeTable({ purposes, total, onDrill }) {
                     label={`Failed, ${name}`}
                   />
                 </Cell>
+                ),
+                unanswered: (
                 <Cell num>
                   {/* `queued` is the one word 098's CHECK permits for this
                       state. It reads as "waiting" and means the opposite —
@@ -467,7 +519,9 @@ function PurposeTable({ purposes, total, onDrill }) {
                     label={`Never answered, ${name}`}
                   />
                 </Cell>
-                <Cell>{stamp(p.last_at)}</Cell>
+                ),
+                last: <Cell>{stamp(p.last_at)}</Cell>,
+                })}
               </Row>
             );
           })}
@@ -559,6 +613,8 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
     return () => { live = false; };
   }, [open, basePath, period, purpose, status, recipient]);
 
+  const cols = useColumnPrefs('billing.outbound_log', SEND_COLUMNS);
+
   const rows = body?.data || null;
   const byRecipient = body?.scope === 'recipient';
   /* Same boundary as the card above, derived again rather than threaded
@@ -602,24 +658,40 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
 
       {rows && rows.length > 0 && (
         <>
+          <div className="tbl__abar">
+            <ColumnsButton cols={cols} />
+          </div>
           <Table className="bl__tbl">
             <TableHead>
-              <HeadCell>When</HeadCell>
-              <HeadCell>{platformView ? 'To (domain)' : 'To'}</HeadCell>
-              <HeadCell>What</HeadCell>
-              <HeadCell>Status</HeadCell>
-              <HeadCell>Evidence</HeadCell>
+              {cols.columns.map(c => (
+                <HeadCell
+                  key={c.id}
+                  width={c.width}
+                  onResize={w => cols.setWidth(c.id, w)}
+                >
+                  {/* The one label the declaration cannot carry: on the Aekam
+                      console this column holds a DOMAIN rather than an address
+                      (a customer's member addresses are the customer's), and
+                      heading a column of domains "To" is the kind of small lie
+                      a privacy rule is made of. */}
+                  {c.id === 'to' && platformView ? 'To (domain)' : c.label}
+                </HeadCell>
+              ))}
             </TableHead>
             <TableBody>
               {rows.map(r => (
                 <Row key={r.id}>
-                  <Cell>{stamp(r.created_at)}</Cell>
-                  <Cell><span className="bl__ref">{r.target || '—'}</span></Cell>
+                  {cols.cells({
+                  when: <Cell>{stamp(r.created_at)}</Cell>,
+                  to: <Cell><span className="bl__ref">{r.target || '—'}</span></Cell>,
+                  what: (
                   <Cell>
                     <span className="bl__item">{r.subject || r.purpose || 'No purpose recorded'}</span>
                     {r.ref && <span className="bl__ref">{r.ref}</span>}
                     {r.channel && <span className="bl__ref">{r.channel}</span>}
                   </Cell>
+                  ),
+                  status: (
                   <Cell>
                     <Tag color={STATUS_TONE[r.status]}>{statusWord(r.status)}</Tag>
                     {/* The kill-switch mode, and ONLY when it contradicts the
@@ -636,6 +708,8 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
                         one string that would have explained the bounce. */}
                     {r.error && <span className="ob__why">{r.error}</span>}
                   </Cell>
+                  ),
+                  evidence: (
                   <Cell>
                     {r.provider_message_id ? (
                       <span className="ob__ev">
@@ -648,6 +722,8 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
                       </span>
                     )}
                   </Cell>
+                  ),
+                  })}
                 </Row>
               ))}
             </TableBody>

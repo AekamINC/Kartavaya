@@ -2493,81 +2493,29 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-trow__meta { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .k-trow__empty { font-size: 13px; color: var(--ink-3); }
 
-/* Badge (hidden column count) */
-.k-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 1px 6px; border-radius: 99px;
-  font-size: var(--t-label-sm); font-weight: 700;
-  /* --k-primary is the RAW accent (#05b7aa at the default teal): as a fill
-     under --on-primary it measures 2.51:1. --primary is the fill half of the
-     system's only measured fill/on pair (4.63:1 light, 7.93:1 dark). 10px was
-     also under 00 §12's 11px metadata floor. */
-  background: var(--primary); color: var(--on-primary);
-}
+/* ── DELETED: `.k-badge`, `.k-col-popover*`, `.k-col-resize` ───────────────
+   The task list's private column machinery, and it went with the machinery.
 
-/* Columns popover */
-.k-col-popover {
-  position: absolute; top: calc(100% + 6px); right: 0;
-  width: 200px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.10);
-  z-index: 100;
-  overflow: hidden;
-}
-.k-col-popover__head {
-  padding: 10px 14px 8px;
-  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--ink-3);
-  border-bottom: 1px solid var(--rule-soft);
-}
-.k-col-popover__row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 14px;
-  cursor: pointer;
-  transition: background var(--dur-instant);
-}
-.k-col-popover__row:hover { background: var(--bg-soft); }
-.k-col-popover__check { position: relative; width: 15px; height: 15px; flex-shrink: 0; }
-.k-col-popover__check input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
-.k-col-popover__box {
-  display: block; width: 15px; height: 15px;
-  border-radius: 4px;
-  border: 1.5px solid var(--rule);
-  background: var(--surface);
-  transition: border-color var(--dur-fast), background var(--dur-fast);
-}
-.k-col-popover__check input:checked ~ .k-col-popover__box {
-  background: var(--k-primary);
-  border-color: var(--k-primary);
-}
-.k-col-popover__check input:checked ~ .k-col-popover__box::after {
-  content: ''; display: block;
-  width: 4px; height: 7px;
-  border: 2px solid var(--on-primary); border-top: 0; border-left: 0;
-  transform: rotate(45deg) translate(2px, -1px);
-}
-.k-col-popover__name { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+   `TasksListPage` used to keep three preferences of its own — a `visible` Set
+   in React state, widths in `localStorage['kv.taskslist.widths']`, and no
+   column order at all — and these rules dressed the two controls that edited
+   them: a popover that could only tick a column on and off, and a `<span
+   onPointerDown>` divider that was not focusable and answered no key. Both are
+   now `useColumnPrefs` + `CustomizeColumns` + `ColumnResizer`, which is the
+   same sheet and the same divider every other table in the product uses, and
+   which saves to the server instead of to this device.
 
-.k-col-resize {
-  position: absolute; right: -4px; top: 50%; transform: translateY(-50%);
-  width: 8px; height: 18px;
-  cursor: col-resize;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 2;
-}
-.k-col-resize::after {
-  content: ''; display: block;
-  width: 2px; height: 14px;
-  border-radius: 1px;
-  background: transparent;
-  /* Off-ladder 0.15s → the --dur-fast hover rung, same as every other hover
-     reveal on this table. */
-  transition: background var(--dur-fast) var(--ease-standard);
-}
-.k-col-resize:hover::after,
-.k-col-resize:active::after { background: var(--k-primary); }
+   Deleted rather than baselined, and BY HAND rather than by a script that
+   matches selector names: a delete-by-selector script once ate an unrelated
+   rule through a comment, which is why `check-orphan-selectors` reports and
+   never removes. Nothing else in the tree consumed any of the eight — that is
+   what the gate said, and it is why they could go whole.
+
+   `.k-badge` had a second declaration in `brand.css` from the auth sidebar; it
+   is gone too. The class had exactly one consumer left in the build (this
+   page's hidden-column count) and `ColumnsButton` carries that count itself
+   now, in `.kcols__n`. `.k-statuschip` is what the build actually uses for a
+   badge — see `editorial/ModuleUI.jsx`. */
 
 /* ── Board / Kanban ────────────────────────────────────────────────────── */
 .k-headerright { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
@@ -3941,16 +3889,22 @@ select.k-formpanel__input { appearance: none;
   display: flex; gap: 8px; align-items: center; margin-top: 8px;
 }
 
-/* NOTE: this is the SECOND `.k-badge` rule in this file (the first is the
-   hidden-column count pill above). Two different components share one class
-   name, and this one wins on source order — so the count pill silently takes
-   this font-size. Both are now on the 11px floor 00 §12 sets for metadata;
-   the name collision itself belongs to whoever owns these two components. */
-.k-badge {
-  font-size: var(--t-label-sm); font-weight: 700; text-transform: uppercase;
-  letter-spacing: .08em; padding: 3px 10px; border-radius: 99px;
-  display: inline-flex; align-items: center;
-}
+/* `.k-badge` DELETED here too — and this is the note that used to stand here
+   getting its answer.
+
+   It read: "this is the SECOND `.k-badge` rule in this file … two different
+   components share one class name, and this one wins on source order — so the
+   count pill silently takes this font-size … the name collision itself belongs
+   to whoever owns these two components." There were in fact THREE declarations
+   across two stylesheets for one class, at three sizes and two colours, and
+   whichever component rendered got whichever rule came last.
+
+   All three are gone, because the last consumer in the build was the task
+   list's hidden-column count and `ColumnsButton` renders that itself now
+   (`.kcols__n`). `check-orphan-selectors` found each of them the moment its
+   markup went; the collision was never resolved so much as outlived. What the
+   build actually uses for a badge is `.k-statuschip` — one declaration, one
+   owner, measured (`editorial/ModuleUI.jsx`). */
 
 .k-detail {
   background: var(--surface); border: 1px solid var(--rule);
@@ -4356,6 +4310,20 @@ select.k-formpanel__input { appearance: none;
   font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 700; margin-top: 2px;
 }
+/* The window the figure above was actually counted over. It sits UNDER the
+   word TOTAL rather than beside it because the two are one statement: a total
+   with no period is the thing this page shipped with, and the pair has to
+   break as a pair when the header column is narrow. Not uppercase and not
+   tracked — it is a date range, and tracking makes digits hard to read. */
+.k-time-total__win {
+  display: block; margin-top: 3px;
+  font-family: var(--font-ui); font-size: 10px; font-weight: 500;
+  letter-spacing: 0; text-transform: none; color: var(--ink-4, var(--ink-3));
+  font-variant-numeric: tabular-nums;
+}
+/* Whose entries these are, and out of which tenant. A full-width sentence
+   under the filter card, left-aligned with everything else on the page. */
+.trp-scope { margin: 10px 0 4px; max-width: 78ch; }
 .k-tfilters {
   display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
   padding: 16px 24px;

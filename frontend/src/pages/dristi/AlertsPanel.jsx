@@ -218,7 +218,7 @@ export default function AlertsPanel({ module, byKey }) {
             delivered to the org&rsquo;s admins.
           </p>
         ) : (
-          <DataTable columns={['Metric', 'Condition', { label: 'Window', align: 'right' }, { label: '' }]}>
+          <DataTable arrange="dristi.metric_alerts" columns={['Metric', 'Condition', { label: 'Window', align: 'right' }, { label: '' }]}>
             {mine.map((a) => {
               // Label through the catalogue first; the server's label second
               // (it names a retired metric honestly). Never the bare key.

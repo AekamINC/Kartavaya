@@ -31,6 +31,29 @@ import OrderRows from './OrderRows';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The trading-history columns, declared once, in the order they shipped.
+ *
+ * `fixed` on Customer — it is both the identity of the row and the control that
+ * expands the order list underneath it, so hiding it would remove the only way
+ * into a customer's orders. There is no actions column; Customer IS the action.
+ *
+ * GSTIN stays an ordinary hideable column and carries no requirement of any
+ * kind: it is not mandatory anywhere in this product, a customer without one is
+ * normal, and the cell already says "Not recorded" rather than treating the
+ * absence as a fault.
+ */
+const CUSTOMER_COLUMNS = [
+  { id: 'customer_name', label: 'Customer', sortKey: 'customer_name', fixed: true },
+  { id: 'gstin', label: 'GSTIN', sortKey: 'gstin' },
+  { id: 'order_count', label: 'Orders', sortKey: 'order_count', num: true },
+  { id: 'order_value', label: 'Ordered', sortKey: 'order_value', num: true },
+  { id: 'open_orders', label: 'Open', sortKey: 'open_orders', num: true },
+  { id: 'last_order_date', label: 'Last order', sortKey: 'last_order_date' },
+];
 
 /** One customer's orders, opened in place. Its own three states.
  *
@@ -89,6 +112,7 @@ export default function CustomersTab({ onOpenOrder }) {
     columns: { orders: 'order_count', value: 'order_value' },
     filters: [{ key: 'is_sales_customer', label: 'Sales customer' }],
   });
+  const cols = useColumnPrefs('vikray.customers', CUSTOMER_COLUMNS);
   return (
     <div className="vk-cu">
       <div className="vk-bar">
@@ -124,17 +148,27 @@ export default function CustomersTab({ onOpenOrder }) {
         />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="customers" showSearch={false} />
+        <TableToolbar view={view} label="customers" showSearch={false}>
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl vk-cu__t">
             <thead>
               <tr>
-                <HeadCell sortKey="customer_name" sort={view.sort} onSort={view.onSort}>Customer</HeadCell>
-                <HeadCell sortKey="gstin" sort={view.sort} onSort={view.onSort}>GSTIN</HeadCell>
-                <HeadCell sortKey="order_count" sort={view.sort} onSort={view.onSort} num>Orders</HeadCell>
-                <HeadCell sortKey="order_value" sort={view.sort} onSort={view.onSort} num>Ordered</HeadCell>
-                <HeadCell sortKey="open_orders" sort={view.sort} onSort={view.onSort} num>Open</HeadCell>
-                <HeadCell sortKey="last_order_date" sort={view.sort} onSort={view.onSort}>Last order</HeadCell>
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -148,32 +182,41 @@ export default function CustomersTab({ onOpenOrder }) {
                 return (
                   <React.Fragment key={c.customer_key}>
                     <tr>
-                      <td>
-                        <button
-                          type="button"
-                          className="vk-cu__name"
-                          aria-expanded={open}
-                          onClick={() => setExpanded(open ? null : c.customer_key)}
-                        >
-                          {title}
-                        </button>
-                        {second && <span className="vk-cu__who">{second}</span>}
-                      </td>
-                      <td className="vk-cu__gst">
-                        {c.gstin || <span className="vk-cu__nogst">Not recorded</span>}
-                      </td>
-                      <td className="tbl__num">{grouped(c.order_count)}</td>
-                      <td className="tbl__num">{inr(c.order_value)}</td>
-                      <td className="tbl__num">
-                        {Number(c.open_orders) > 0
-                          ? <b className="vk-cu__open">{grouped(c.open_orders)}</b>
-                          : <span className="vk-cu__nogst">None</span>}
-                      </td>
-                      <td className="vk-cu__last">{c.last_order_date || '—'}</td>
+                      {cols.cells({
+                        customer_name: (
+                          <td>
+                            <button
+                              type="button"
+                              className="vk-cu__name"
+                              aria-expanded={open}
+                              onClick={() => setExpanded(open ? null : c.customer_key)}
+                            >
+                              {title}
+                            </button>
+                            {second && <span className="vk-cu__who">{second}</span>}
+                          </td>
+                        ),
+                        gstin: (
+                          <td className="vk-cu__gst">
+                            {c.gstin || <span className="vk-cu__nogst">Not recorded</span>}
+                          </td>
+                        ),
+                        order_count: <td className="tbl__num">{grouped(c.order_count)}</td>,
+                        order_value: <td className="tbl__num">{inr(c.order_value)}</td>,
+                        open_orders: (
+                          <td className="tbl__num">
+                            {Number(c.open_orders) > 0
+                              ? <b className="vk-cu__open">{grouped(c.open_orders)}</b>
+                              : <span className="vk-cu__nogst">None</span>}
+                          </td>
+                        ),
+                        last_order_date: <td className="vk-cu__last">{c.last_order_date || '—'}</td>,
+                      })}
                     </tr>
                     {open && (
                       <tr className="vk-cu__exp">
-                        <td colSpan={6}>
+                        {/* Spans what is on screen, not a literal 6. */}
+                        <td colSpan={cols.columns.length}>
                           <CustomerOrders clientId={c.client_id} contactId={c.contact_id}
                                           onOpenOrder={onOpenOrder} />
                         </td>

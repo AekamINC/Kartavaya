@@ -17,7 +17,56 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone: the header is rendered from the column declaration
+// below, which is what lets it be moved, hidden and resized. The CELL is
+// unchanged — CreatedCell is the product's one created-date renderer, and
+// ByCell the one that renders a NAME and never the user id behind it.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * What this table HAS, declared once — the floor `useColumnPrefs` resolves a
+ * saved arrangement against. Frontend CODE and never a row, so a column added
+ * here appears for everybody, including people who arranged this table before
+ * it existed (it lands at the end, visible).
+ *
+ * `fixed` on Company because a CRM client IS the company: hide that and the
+ * row identifies nothing. Website carries no `sortKey` — it never did, and
+ * being arrangeable does not make a column sortable.
+ */
+const CLIENT_COLUMNS = [
+  { id: 'name', label: 'Company', sortKey: 'name', fixed: true },
+  { id: 'ref_no', label: 'Ref No', sortKey: 'ref_no' },
+  { id: 'gstin', label: 'GSTIN', sortKey: 'gstin' },
+  { id: 'website', label: 'Website' },
+  { id: 'contacts', label: 'Contacts', sortKey: 'contacts', className: 'gr__td--mid' },
+  { id: 'deals', label: 'Deals', sortKey: 'deals', className: 'gr__td--mid' },
+  // `useTableView` sorts this for free: it compares dates as dates and puts
+  // blanks last in BOTH directions, which is the same contract CreatedColumn
+  // states for tables not on the hook.
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  /* WHO added the company, and who last edited it. "Added by" rather than
+     "Created by": a CRM client is the CUSTOMER — a company that already
+     existed long before anybody typed it in here — so "created" would claim
+     something this record did not do. Somebody ADDED it to the register.
+
+     The updater half earns its column separately. A client row carries the
+     GSTIN and the address every invoice to that company is raised against, so
+     a quiet edit to either propagates into documents that have already gone
+     out. `updated_at` + `updated_by_name` is the only place on this screen
+     that says an edit happened at all.
+
+     Names, never ids: `created_by`/`updated_by` hold `users.user_id`, the API
+     resolves each to a display name (never an email — that ladder stops at
+     names on purpose), and `has_creator`/`has_updater` are what keep a
+     deleted account (`unknown`) distinct from no actor at all (an em dash). */
+  { id: 'created_by_name', label: 'Added by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+];
 
 export default function ClientsTab() {
   // F32 — the module is read from the route, never named here.
@@ -43,6 +92,12 @@ export default function ClientsTab() {
     columns: { contacts: 'contact_count', deals: 'deal_count' },
     filters: [{ key: 'is_sales_customer', label: 'Sales customer' }],
   });
+
+  /* Which columns, in what order, at what width — the sibling hook. Called
+     here beside useTableView and above every early return, for the reason
+     ContactsTab records: a branch that renders fewer hooks than the list did
+     is "Rendered fewer hooks than expected" and the screen does not open. */
+  const cols = useColumnPrefs('graha.clients', CLIENT_COLUMNS);
 
   const load = useCallback(() => {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -220,22 +275,30 @@ export default function ClientsTab() {
         />
       ) : (
         <div className="tv-card">
-          <TableToolbar view={view} label="clients" showSearch={false} />
+          <TableToolbar view={view} label="clients" showSearch={false}>
+            <ColumnsButton cols={cols} />
+          </TableToolbar>
           <div className="tbl__wrap">
           <table className="tbl">
             <thead>
+              {/* Heads come out of the arrangement, not out of seven literals:
+                  the order, the widths and which of them render at all are the
+                  same list the cells below are keyed on, so the two cannot
+                  drift by a column. */}
               <tr>
-                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Company</HeadCell>
-                <HeadCell sortKey="ref_no" sort={view.sort} onSort={view.onSort}>Ref No</HeadCell>
-                <HeadCell sortKey="gstin" sort={view.sort} onSort={view.onSort}>GSTIN</HeadCell>
-                <th>Website</th>
-                <HeadCell sortKey="contacts" sort={view.sort} onSort={view.onSort} className="gr__td--mid">Contacts</HeadCell>
-                <HeadCell sortKey="deals" sort={view.sort} onSort={view.onSort} className="gr__td--mid">Deals</HeadCell>
-                {/* `useTableView` sorts this for free: it compares dates as
-                    dates and puts blanks last in BOTH directions, which is the
-                    same contract CreatedColumn states for tables not on the
-                    hook. Nothing else is needed here. */}
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -245,21 +308,28 @@ export default function ClientsTab() {
                       keyboard — the row's onClick alone was mouse-only, and
                       nothing else in the row opened it. Same shape as
                       `ganit/InvoicesTab` and `graha/DealsTab`. */}
-                  <td className="gr__td--name">
-                    <button
-                      type="button"
-                      className="gr__link"
-                      onClick={e => { e.stopPropagation(); openDetail(c.id); }}
-                    >
-                      {c.name}
-                    </button>
-                  </td>
-                  <td className="gr__td--mute">{c.ref_no || '—'}</td>
-                  <td className="gr__td--mute">{c.gstin || '—'}</td>
-                  <td className="gr__td--mute">{c.website || '—'}</td>
-                  <td className="gr__td--mid">{c.contact_count}</td>
-                  <td className="gr__td--mid">{c.deal_count}</td>
-                  <CreatedCell value={c.created_at} />
+                  {cols.cells({
+                    name: (
+                      <td className="gr__td--name">
+                        <button
+                          type="button"
+                          className="gr__link"
+                          onClick={e => { e.stopPropagation(); openDetail(c.id); }}
+                        >
+                          {c.name}
+                        </button>
+                      </td>
+                    ),
+                    ref_no: <td className="gr__td--mute">{c.ref_no || '—'}</td>,
+                    gstin: <td className="gr__td--mute">{c.gstin || '—'}</td>,
+                    website: <td className="gr__td--mute">{c.website || '—'}</td>,
+                    contacts: <td className="gr__td--mid">{c.contact_count}</td>,
+                    deals: <td className="gr__td--mid">{c.deal_count}</td>,
+                    [CREATED_KEY]: <CreatedCell value={c.created_at} />,
+                    created_by_name: <ByCell name={c.created_by_name} hasActor={c.has_creator} />,
+                    [UPDATED_KEY]: <UpdatedCell value={c.updated_at} />,
+                    updated_by_name: <ByCell name={c.updated_by_name} hasActor={c.has_updater} />,
+                  })}
                 </tr>
               ))}
             </tbody>

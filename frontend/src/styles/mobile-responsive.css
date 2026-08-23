@@ -359,9 +359,16 @@
 
      Neither name appears here any more, because neither system exists: Graha's
      eleven tables and the ~50 `<DataTable>` call sites all render
-     `.tbl__wrap > table.tbl`. `.omt` — the org members table, whose markup a
-     concurrent run owns — is the one `<table>` class left besides `.tbl`, and it
-     is named on each rule below for exactly as long as that is true.
+     `.tbl__wrap > table.tbl`. `.omt` (org members) and `.gn-coll` (Ganit
+     collections) are the two `<table>` classes left besides `.tbl`, and both are
+     named on each rule below for exactly as long as that is true.
+
+     `.gn-coll` arrived after this section was written and had neither the floor
+     nor the freeze — it carries its own `min-width: 40rem`, which is this same
+     640px by another spelling, so only the freeze was actually missing. Its
+     wrapper is `.gn-coll__wrap`, not `.tbl__wrap`, so it needs the opaque
+     ground stated for it too: a sticky cell over a transparent wrapper shows
+     the columns sliding underneath it.
 
      The third selector is the general case and is what makes a table added next
      month inherit this without another line here. */
@@ -378,9 +385,10 @@
      cannot disagree; `.tbl th` keeps its own --s-low, as on desktop.
      `:not([colspan])` skips the group rows in the table view, which span the
      whole width and must not be pinned. */
-  .tbl__wrap { background: var(--surface); }
+  .tbl__wrap, .gn-coll__wrap { background: var(--surface); }
   .tbl > thead > tr > th:first-child:not([colspan]),
-  .omt > thead > tr > th:first-child:not([colspan]) {
+  .omt > thead > tr > th:first-child:not([colspan]),
+  .gn-coll > thead > tr > th:first-child:not([colspan]) {
     position: sticky;
     left: 0;
     z-index: 3;
@@ -392,7 +400,8 @@
      longer exist. */
 
   .tbl > tbody > tr > td:first-child:not([colspan]),
-  .omt > tbody > tr > td:first-child:not([colspan]) {
+  .omt > tbody > tr > td:first-child:not([colspan]),
+  .gn-coll > tbody > tr > td:first-child:not([colspan]) {
     position: sticky;
     left: 0;
     z-index: 2;
@@ -404,15 +413,18 @@
      design, which is the whole point of it on a `<tr>` — so the frozen cell
      takes the same tint pre-composited over the surface it sits on. */
   .tbl > tbody > tr:nth-child(even) > td:first-child:not([colspan]),
-  .omt > tbody > tr:nth-child(even) > td:first-child:not([colspan]) {
+  .omt > tbody > tr:nth-child(even) > td:first-child:not([colspan]),
+  .gn-coll > tbody > tr:nth-child(even) > td:first-child:not([colspan]) {
     background: var(--tbl-row-zebra-solid);
   }
   .tbl > tbody > tr:hover > td:first-child:not([colspan]),
-  .omt > tbody > tr:hover > td:first-child:not([colspan]) {
+  .omt > tbody > tr:hover > td:first-child:not([colspan]),
+  .gn-coll > tbody > tr:hover > td:first-child:not([colspan]) {
     background: var(--tbl-row-hover);
   }
   .tbl > tbody > tr.on > td:first-child:not([colspan]),
-  .omt > tbody > tr.on > td:first-child:not([colspan]) {
+  .omt > tbody > tr.on > td:first-child:not([colspan]),
+  .gn-coll > tbody > tr.on > td:first-child:not([colspan]) {
     background: var(--tbl-row-on);
   }
 }

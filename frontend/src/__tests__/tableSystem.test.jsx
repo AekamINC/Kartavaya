@@ -161,12 +161,23 @@ describe('one table system', () => {
     // system rather than converging one, and it is why this list is allowed to
     // SHRINK and never to grow.
     //
-    // `.omt` is the remainder and it is a class name, not a system: every value
-    // it states is `.tbl`'s (org.css §Member table). It stays until
-    // `pages/org/MemberTable.jsx` — which a concurrent run owns — renders
-    // `.tbl__wrap > table.tbl`, at which point both this entry and that whole
-    // org.css block go.
-    expect(TABLE_SYSTEMS).toEqual(['omt', 'tbl']);
+    // `.omt` and `.gn-coll` are the remainder, and both are class names rather
+    // than systems: every value each of them states is `.tbl`'s (org.css
+    // §Member table, ganit.css §Collections). Each stays until its markup
+    // renders `.tbl__wrap > table.tbl`, at which point the entry and that
+    // stylesheet block go together.
+    //
+    // `.gn-coll` is the entry that earned this assertion. It landed in
+    // 9880c0d3/ade0f349 — after the 4 → 1 convergence — and joined none of the
+    // contract, so this line failed here and five more failed below, for a
+    // table nobody had decided to make a third system. It is converged now
+    // (ganit.css §Collections for the separator and the head boundary,
+    // components.css §10 for the three row states) and it is NAMED, because a
+    // system that ships unnamed is the failure mode this whole file exists to
+    // catch. Growing this list is allowed exactly once per convergence and is
+    // never the way to make a failure go away: the values are checked below,
+    // and an unconverged system cannot pass them by being listed here.
+    expect(TABLE_SYSTEMS).toEqual(['gn-coll', 'omt', 'tbl']);
   });
 
   it('declares ONE row hover colour', () => {
@@ -326,7 +337,7 @@ describe('a phone reaches every column of every table', () => {
   // are gone with their systems, and everything that used to be them inherits
   // these by being `.tbl` — which is the point of having moved. `.omt` is still
   // its own class, so it is still named.
-  it.each(['tbl', 'omt'])('%s freezes its first column', (system) => {
+  it.each(['tbl', 'omt', 'gn-coll'])('%s freezes its first column', (system) => {
     const frozen = RULES.some(r =>
       targets(r.sel, system) && /first-child/.test(r.sel) && r.decls.position === 'sticky');
     expect(frozen).toBe(true);

@@ -27,7 +27,76 @@ import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone: the header comes out of the column declaration below,
+// which is what lets it be moved, hidden and resized. The CELLS are unchanged.
+// `ByCell` is the one that renders a NAME and never the user id behind it, and
+// `UpdatedCell` is `CreatedCell` under a second key — one date format for the
+// whole product, so a reader never has to work out whether "16 Jun 2026" and
+// "16/06/2026" in adjacent columns mean the same thing.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The two tables on this tab, declared once each. Two keys, not one: they are
+ * different lists of different things that happen to share a screen, and a
+ * single key would make hiding Tax on the summary hide it on the entries too.
+ *
+ * `fixed` on Category: it is the whole identity of a summary row — the other
+ * four cells are numbers that mean nothing without it. There is no actions
+ * column here because the summary is a read-only roll-up.
+ *
+ * And no audit columns either, deliberately: a row here is a GROUP BY over
+ * many expenses, not a record. "Created by" on a category total would have to
+ * pick one of the twenty people who contributed to it, and any pick is a
+ * sentence the screen cannot support. The audit columns belong on the entries
+ * table below, where a row is one thing one person did.
+ */
+const EXPENSE_CATEGORY_COLUMNS = [
+  { id: 'category', label: 'Category', fixed: true },
+  { id: 'count', label: 'Entries', num: true },
+  { id: 'total_amount', label: 'Net', num: true },
+  { id: 'total_tax', label: 'Tax', num: true },
+  { id: 'total', label: 'Total', num: true },
+];
+
+/** `fixed` on Title (which expense a row IS) and Actions (Edit / Delete). */
+const EXPENSE_COLUMNS = [
+  { id: 'expense_date', label: 'Date', sortKey: 'expense_date' },
+  { id: 'title', label: 'Title', sortKey: 'title', fixed: true },
+  { id: 'category', label: 'Category', sortKey: 'category' },
+  { id: 'vendor_name', label: 'Vendor', sortKey: 'vendor_name' },
+  { id: 'amount', label: 'Amount', sortKey: 'amount', num: true },
+  { id: 'tax_amount', label: 'Tax', sortKey: 'tax_amount', num: true },
+  { id: 'total', label: 'Total', sortKey: 'total', num: true },
+  { id: 'is_billable', label: 'Billable', sortKey: 'is_billable' },
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  /* WHO raised it, and who touched it last. Four columns rather than two,
+     because "Rs 40,000 on 3 Aug" and "Rs 40,000 on 3 Aug, amount changed by
+     someone yesterday" are different facts, and an expense book that cannot
+     tell them apart is the one thing an auditor will ask this screen for.
+     `created_by` / `updated_by` are `users.user_id` and can never be rendered:
+     the API resolves each to a NAME, and `has_creator` / `has_updater` are
+     what let ByCell say `unknown` for a deleted account rather than an em dash
+     that reads as "nobody did this".
+
+     "Raised by" and not "Created by": an expense is RAISED in the language
+     this module already uses for an invoice, and a column heading that echoes
+     the verb on the form is one less thing to translate while reading.
+
+     Placed before Actions rather than after it, matching Created above — a
+     row's verbs are its right-hand edge everywhere else in the product, and a
+     column of buttons stranded mid-row reads as a mistake. Anyone who already
+     arranged this table gets all four APPENDED and visible regardless
+     (`reconcileColumnPrefs`' ships-later rule), so this ordering only decides
+     the default. */
+  { id: 'created_by_name', label: 'Raised by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
@@ -205,6 +274,11 @@ export default function ExpensesTab() {
     searchKeys: ['title', 'vendor_name', 'category'],
     filters: [{ key: 'category', label: 'Category' }, { key: 'is_billable', label: 'Billable' }],
   });
+  // Both hooks run unconditionally, above every branch below — the summary
+  // panel only renders when `byCategory` has rows, and a hook inside that
+  // condition would change the hook count between renders.
+  const catCols = useColumnPrefs('ganit.expenses_by_category', EXPENSE_CATEGORY_COLUMNS);
+  const cols = useColumnPrefs('ganit.expenses', EXPENSE_COLUMNS);
   return (
     <div>
       {stats && (
@@ -223,25 +297,37 @@ export default function ExpensesTab() {
       {byCategory.length > 0 && (
         <div className="gn-panel">
           <h3 className="gn-panel__h">By category<Secondary className="dr__lbl-hi" value="श्रेणी" /></h3>
+          {/* No TableToolbar on this panel, so the control gets the house
+              trailing-aligned unframed row rather than an edge above the
+              table, which would read as a second header. */}
+          <div className="tbl__abar"><ColumnsButton cols={catCols} /></div>
           <div className="tbl__wrap">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Category</th>
-                  <th className="tbl__num">Entries</th>
-                  <th className="tbl__num">Net</th>
-                  <th className="tbl__num">Tax</th>
-                  <th className="tbl__num">Total</th>
+                  {catCols.columns.map(c => (
+                    <HeadCell
+                      key={c.id}
+                      num={c.num}
+                      className={c.className}
+                      width={c.width}
+                      onResize={w => catCols.setWidth(c.id, w)}
+                    >
+                      {c.label}
+                    </HeadCell>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {byCategory.map(c => (
                   <tr key={c.category}>
-                    <td>{c.category}</td>
-                    <td className="tbl__num">{c.count}</td>
-                    <td className="tbl__num">{inr(Number(c.total_amount || 0))}</td>
-                    <td className="tbl__num gn-tbl__mute">{inr(Number(c.total_tax || 0))}</td>
-                    <td className="tbl__num">{inr(Number(c.total || 0))}</td>
+                    {catCols.cells({
+                      category: <td>{c.category}</td>,
+                      count: <td className="tbl__num">{c.count}</td>,
+                      total_amount: <td className="tbl__num">{inr(Number(c.total_amount || 0))}</td>,
+                      total_tax: <td className="tbl__num gn-tbl__mute">{inr(Number(c.total_tax || 0))}</td>,
+                      total: <td className="tbl__num">{inr(Number(c.total || 0))}</td>,
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -334,56 +420,71 @@ export default function ExpensesTab() {
         )
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="expenses" />
+        <TableToolbar view={view} label="expenses">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <HeadCell sortKey="expense_date" sort={view.sort} onSort={view.onSort}>Date</HeadCell>
-                <HeadCell sortKey="title" sort={view.sort} onSort={view.onSort}>Title</HeadCell>
-                <HeadCell sortKey="category" sort={view.sort} onSort={view.onSort}>Category</HeadCell>
-                <HeadCell sortKey="vendor_name" sort={view.sort} onSort={view.onSort}>Vendor</HeadCell>
-                <HeadCell sortKey="amount" sort={view.sort} onSort={view.onSort} num>Amount</HeadCell>
-                <HeadCell sortKey="tax_amount" sort={view.sort} onSort={view.onSort} num>Tax</HeadCell>
-                <HeadCell sortKey="total" sort={view.sort} onSort={view.onSort} num>Total</HeadCell>
-                <HeadCell sortKey="is_billable" sort={view.sort} onSort={view.onSort}>Billable</HeadCell>
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
-                <th aria-label="Actions" />
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.rows.map(ex => (
                 <React.Fragment key={ex.id}>
                   <tr>
-                    <td className="gn-tbl__mono">{ex.expense_date}</td>
-                    <td><button type="button" className="gn-link" onClick={() => startEdit(ex)}>{ex.title}</button></td>
-                    <td><Badge text={ex.category} color="var(--st-in-review)" /></td>
-                    <td>{ex.vendor || '—'}</td>
-                    <td className="tbl__num">{inr(Number(ex.amount))}</td>
-                    <td className="tbl__num gn-tbl__mute">{inr(Number(ex.tax_amount || 0))}</td>
-                    <td className="tbl__num">{inr(Number(ex.total))}</td>
-                    <td>{ex.is_billable ? <Badge text="Yes" color="var(--ok)" /> : '—'}</td>
-                    <CreatedCell value={ex.created_at} />
-                    <td>
-                      <span className="gn-tbl__acts">
-                        <button type="button" className="gn-act" onClick={() => startEdit(ex)}>Edit</button>
-                        <button
-                          type="button" className="gn-act gn-act--danger"
-                          onClick={() => setConfirm({
-                            title: `Delete "${ex.title}"?`,
-                            message: 'The expense is removed from the books and from the category totals. This cannot be undone.',
-                            confirmLabel: 'Delete',
-                            onConfirm: () => remove(ex),
-                          })}
-                        >
-                          Delete
-                        </button>
-                      </span>
-                    </td>
+                    {cols.cells({
+                      expense_date: <td className="gn-tbl__mono">{ex.expense_date}</td>,
+                      title: <td><button type="button" className="gn-link" onClick={() => startEdit(ex)}>{ex.title}</button></td>,
+                      category: <td><Badge text={ex.category} color="var(--st-in-review)" /></td>,
+                      vendor_name: <td>{ex.vendor || '—'}</td>,
+                      amount: <td className="tbl__num">{inr(Number(ex.amount))}</td>,
+                      tax_amount: <td className="tbl__num gn-tbl__mute">{inr(Number(ex.tax_amount || 0))}</td>,
+                      total: <td className="tbl__num">{inr(Number(ex.total))}</td>,
+                      is_billable: <td>{ex.is_billable ? <Badge text="Yes" color="var(--ok)" /> : '—'}</td>,
+                      [CREATED_KEY]: <CreatedCell value={ex.created_at} />,
+                      created_by_name: <ByCell name={ex.created_by_name} hasActor={ex.has_creator} />,
+                      [UPDATED_KEY]: <UpdatedCell value={ex.updated_at} />,
+                      updated_by_name: <ByCell name={ex.updated_by_name} hasActor={ex.has_updater} />,
+                      actions: (
+                        <td>
+                          <span className="gn-tbl__acts">
+                            <button type="button" className="gn-act" onClick={() => startEdit(ex)}>Edit</button>
+                            <button
+                              type="button" className="gn-act gn-act--danger"
+                              onClick={() => setConfirm({
+                                title: `Delete "${ex.title}"?`,
+                                message: 'The expense is removed from the books and from the category totals. This cannot be undone.',
+                                confirmLabel: 'Delete',
+                                onConfirm: () => remove(ex),
+                              })}
+                            >
+                              Delete
+                            </button>
+                          </span>
+                        </td>
+                      ),
+                    })}
                   </tr>
                   {editId === ex.id && (
                     <tr>
-                      <td colSpan={10}>
+                      {/* The inline edit form spans what is actually on screen,
+                          not a literal 10 that a hidden column would falsify. */}
+                      <td colSpan={cols.columns.length}>
                         <form className="gn-form gn-form--accent" onSubmit={saveEdit}>
                           <h4 className="gn-form__h">Edit expense</h4>
                           <ExpenseFields value={editForm} onChange={setEditForm} categories={categories} />

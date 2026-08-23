@@ -13,7 +13,33 @@ import { parseCsv, guessMapping, looksLikeHeader, toLines, FIELDS } from '../../
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone: the header comes out of the column declaration below,
+// which is what lets it be moved, hidden and resized. The CELL is unchanged.
+import { CreatedCell, CREATED_KEY } from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * What this table HAS, declared once — the floor `useColumnPrefs` resolves a
+ * saved arrangement against, in the order it shipped.
+ *
+ * `fixed` on Date and Actions: a statement line has no name, so the bank's own
+ * date is how you tell one row from the next, and Actions carries Match /
+ * Unmatch — the only reason this table is not a read-only list. A stale
+ * arrangement that hid either would leave a reconciliation screen you cannot
+ * reconcile with.
+ */
+const BANK_COLUMNS = [
+  { id: 'statement_date', label: 'Date', sortKey: 'statement_date', fixed: true },
+  { id: 'description', label: 'Description', sortKey: 'description' },
+  { id: 'reference', label: 'Reference', sortKey: 'reference' },
+  { id: 'amount', label: 'Amount', sortKey: 'amount', num: true },
+  { id: 'is_reconciled', label: 'Status', sortKey: 'is_reconciled' },
+  // STATEMENT DATE is the bank's date on the line; this is when the line was
+  // imported into the books. On a back-dated import the two differ by weeks.
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 export default function BankTab() {
   const { pushToast } = useToast();
@@ -213,6 +239,7 @@ export default function BankTab() {
     searchKeys: ['description', 'reference'],
     filters: [{ key: 'matched_type', label: 'Matched to' }],
   });
+  const cols = useColumnPrefs('ganit.bank', BANK_COLUMNS);
   return (
     <div>
       {stats && (
@@ -379,59 +406,78 @@ export default function BankTab() {
         )
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="lines" />
+        <TableToolbar view={view} label="lines">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
+              {/* Heads come out of the arrangement, not out of seven literals:
+                  the same list the cells below are keyed on, so the two cannot
+                  drift by a column. */}
               <tr>
-                <HeadCell sortKey="statement_date" sort={view.sort} onSort={view.onSort}>Date</HeadCell>
-                <HeadCell sortKey="description" sort={view.sort} onSort={view.onSort}>Description</HeadCell>
-                <HeadCell sortKey="reference" sort={view.sort} onSort={view.onSort}>Reference</HeadCell>
-                <HeadCell sortKey="amount" sort={view.sort} onSort={view.onSort} num>Amount</HeadCell>
-                <HeadCell sortKey="is_reconciled" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
-                {/* STATEMENT DATE is the bank's date on the line; this is
-                    when the line was imported into the books. On a
-                    back-dated import the two differ by weeks. */}
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
-                <th aria-label="Actions" />
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.rows.map(s => (
                 <React.Fragment key={s.id}>
                   <tr>
-                    <td className="gn-tbl__mono">{s.statement_date}</td>
-                    <td>{s.description}</td>
-                    <td className="gn-tbl__mono">{s.reference || '—'}</td>
-                    <td className="tbl__num">{inr(Number(s.amount || 0))}</td>
-                    <td>
-                      {s.is_reconciled
-                        ? <Badge text="Matched" color="var(--ok)" />
-                        : <Badge text="Unmatched" color="var(--warn)" />}
-                    </td>
-                    <CreatedCell value={s.created_at} />
-                    <td>
-                      {s.is_reconciled ? (
-                        <button type="button" className="gn-act gn-act--danger"
-                          disabled={busyId === s.id} onClick={() => unmatch(s)}>
-                          {busyId === s.id ? 'Working…' : 'Unmatch'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button" className="gn-act"
-                          disabled={!canWrite || busyId === s.id}
-                          title={denial || undefined}
-                          aria-expanded={matchFor === s.id}
-                          onClick={() => openMatch(s)}
-                        >
-                          {matchFor === s.id ? 'Close' : 'Match'}
-                        </button>
-                      )}
-                    </td>
+                    {cols.cells({
+                      statement_date: <td className="gn-tbl__mono">{s.statement_date}</td>,
+                      description: <td>{s.description}</td>,
+                      reference: <td className="gn-tbl__mono">{s.reference || '—'}</td>,
+                      amount: <td className="tbl__num">{inr(Number(s.amount || 0))}</td>,
+                      is_reconciled: (
+                        <td>
+                          {s.is_reconciled
+                            ? <Badge text="Matched" color="var(--ok)" />
+                            : <Badge text="Unmatched" color="var(--warn)" />}
+                        </td>
+                      ),
+                      [CREATED_KEY]: <CreatedCell value={s.created_at} />,
+                      actions: (
+                        <td>
+                          {s.is_reconciled ? (
+                            <button type="button" className="gn-act gn-act--danger"
+                              disabled={busyId === s.id} onClick={() => unmatch(s)}>
+                              {busyId === s.id ? 'Working…' : 'Unmatch'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button" className="gn-act"
+                              disabled={!canWrite || busyId === s.id}
+                              title={denial || undefined}
+                              aria-expanded={matchFor === s.id}
+                              onClick={() => openMatch(s)}
+                            >
+                              {matchFor === s.id ? 'Close' : 'Match'}
+                            </button>
+                          )}
+                        </td>
+                      ),
+                    })}
                   </tr>
                   {matchFor === s.id && (
                     <tr>
-                      <td colSpan={7}>
+                      {/* The match panel spans whatever the arrangement is
+                          actually showing. A literal 7 here would leave the
+                          panel short — or overflowing — the moment a user hid
+                          one column. */}
+                      <td colSpan={cols.columns.length}>
                         <div className="gn-match">
                           <p className="gn-match__h">
                             {Number(s.amount || 0) < 0

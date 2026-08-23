@@ -23,6 +23,9 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge, TYPE_COLORS, SOURCE_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 const FIELDS = [
   { key: 'name', label: 'Name' },
@@ -32,6 +35,37 @@ const FIELDS = [
   { key: 'contact_type', label: 'Type' },
   { key: 'source', label: 'Source' },
   { key: 'lead_score', label: 'Score' },
+];
+
+/**
+ * The candidate table inside an expanded duplicate group. Built FROM `FIELDS`
+ * rather than restating it, so the seven comparison columns stay one list —
+ * this table exists to let a person compare the same fields across two records
+ * that claim to be one person, and a second copy of the field list is how the
+ * comparison quietly stops comparing something.
+ *
+ * `fixed` on Keep and Name. Keep is the radio the whole screen is for: hide it
+ * and the merge button below has nothing that can ever enable it. Name is how
+ * you tell the two candidates apart before you decide which one survives.
+ *
+ * One key for every group, not one per group: it is the same table rendered
+ * once per expansion, and a per-group key would mean arranging it again for
+ * each duplicate a firm happens to have.
+ */
+const DEDUPE_GROUP_COLUMNS = [
+  { id: 'keep', label: 'Keep', fixed: true },
+  ...FIELDS.map(f => ({ id: f.key, label: f.label, fixed: f.key === 'name' })),
+  { id: 'created_at', label: 'Created' },
+];
+
+/** `fixed` on Survivor (which record won) and Actions (Undo). */
+const DEDUPE_MERGE_COLUMNS = [
+  { id: 'survivor_name', label: 'Survivor', fixed: true },
+  { id: 'merged_name', label: 'Merged Contact' },
+  { id: 'moved_rows', label: 'Rows Moved' },
+  { id: 'created_at', label: 'Date' },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
 ];
 
 export default function DedupeTab() {
@@ -48,6 +82,9 @@ export default function DedupeTab() {
   const [survivors, setSurvivors] = useState({});
   const [merging, setMerging] = useState(false);
   const [undoing, setUndoing] = useState(null);
+
+  const groupCols = useColumnPrefs('graha.dedupe_candidates', DEDUPE_GROUP_COLUMNS);
+  const mergeCols = useColumnPrefs('graha.dedupe_merges', DEDUPE_MERGE_COLUMNS);
 
   useEffect(() => { loadGroups(); loadMerges(); }, []);
 
@@ -154,13 +191,16 @@ export default function DedupeTab() {
                     <p className="gr__lede">
                       Select the record to keep (survivor). All others will be merged into it.
                     </p>
+                    <div className="tbl__abar"><ColumnsButton cols={groupCols} /></div>
                     <div className="tbl__wrap">
                       <table className="tbl">
                         <thead>
                           <tr>
-                            <th>Keep</th>
-                            {FIELDS.map(f => <th key={f.key}>{f.label}</th>)}
-                            <th>Created</th>
+                            {groupCols.columns.map(c => (
+                              <HeadCell key={c.id} width={c.width} onResize={w => groupCols.setWidth(c.id, w)}>
+                                {c.label}
+                              </HeadCell>
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
@@ -172,27 +212,37 @@ export default function DedupeTab() {
                                 className={`gr__tr--click${selected ? ' on' : ''}`}
                                 onClick={() => selectSurvivor(gi, c.id)}
                               >
-                                <td className="gr__td--mid">
-                                  <input
-                                    type="radio"
-                                    name={`survivor-${gi}`}
-                                    checked={selected}
-                                    aria-label={`Keep ${c.name || c.email || c.phone}`}
-                                    onChange={() => selectSurvivor(gi, c.id)}
-                                  />
-                                </td>
-                                {FIELDS.map(f => (
-                                  <td key={f.key} className="gr__td--mute">
-                                    {f.key === 'contact_type' && c[f.key]
-                                      ? <Badge text={c[f.key]} color={TYPE_COLORS[c[f.key]] || 'var(--on-surface-3)'} />
-                                      : f.key === 'source' && c[f.key]
-                                        ? <Badge text={c[f.key]} color={SOURCE_COLORS[c[f.key]] || 'var(--on-surface-3)'} />
-                                        : (c[f.key] ?? '—')}
-                                  </td>
-                                ))}
-                                <td className="gr__td--when">
-                                  {c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                                </td>
+                                {groupCols.cells({
+                                  keep: (
+                                    <td className="gr__td--mid">
+                                      <input
+                                        type="radio"
+                                        name={`survivor-${gi}`}
+                                        checked={selected}
+                                        aria-label={`Keep ${c.name || c.email || c.phone}`}
+                                        onChange={() => selectSurvivor(gi, c.id)}
+                                      />
+                                    </td>
+                                  ),
+                                  // Still built from FIELDS, so the seven
+                                  // comparison cells and the seven declared
+                                  // columns cannot drift; `cells()` then drops
+                                  // whichever the arrangement hides.
+                                  ...Object.fromEntries(FIELDS.map(f => [f.key, (
+                                    <td className="gr__td--mute">
+                                      {f.key === 'contact_type' && c[f.key]
+                                        ? <Badge text={c[f.key]} color={TYPE_COLORS[c[f.key]] || 'var(--on-surface-3)'} />
+                                        : f.key === 'source' && c[f.key]
+                                          ? <Badge text={c[f.key]} color={SOURCE_COLORS[c[f.key]] || 'var(--on-surface-3)'} />
+                                          : (c[f.key] ?? '—')}
+                                    </td>
+                                  )])),
+                                  created_at: (
+                                    <td className="gr__td--when">
+                                      {c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                                    </td>
+                                  ),
+                                })}
                               </tr>
                             );
                           })}
@@ -224,44 +274,54 @@ export default function DedupeTab() {
         ) : merges.length === 0 ? (
           <p className="gr__quiet">No merges yet.</p>
         ) : (
+          <>
+          <div className="tbl__abar"><ColumnsButton cols={mergeCols} /></div>
           <div className="tbl__wrap">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Survivor</th>
-                  <th>Merged Contact</th>
-                  <th>Rows Moved</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th><span className="sr-only">Actions</span></th>
+                  {mergeCols.columns.map(c => (
+                    <HeadCell key={c.id} width={c.width} onResize={w => mergeCols.setWidth(c.id, w)}>
+                      {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                    </HeadCell>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {merges.map(m => (
                   <tr key={m.id}>
-                    <td className="gr__td--name">{m.survivor_name}</td>
-                    <td className="gr__td--mute">{m.merged_name}</td>
-                    <td className="gr__td--mute">{m.moved_rows ?? '—'}</td>
-                    <td className="gr__td--when">
-                      {m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
-                    <td>
-                      {m.undone_at
-                        ? <Badge text="Undone" color="var(--on-surface-3)" />
-                        : <Badge text="Merged" color="var(--ok)" />}
-                    </td>
-                    <td>
-                      {!m.undone_at && (
-                        <button className="k-btn k-btn--ghost" disabled={undoing === m.id} onClick={() => undoMerge(m.id)}>
-                          {undoing === m.id ? 'Undoing…' : 'Undo'}
-                        </button>
-                      )}
-                    </td>
+                    {mergeCols.cells({
+                      survivor_name: <td className="gr__td--name">{m.survivor_name}</td>,
+                      merged_name: <td className="gr__td--mute">{m.merged_name}</td>,
+                      moved_rows: <td className="gr__td--mute">{m.moved_rows ?? '—'}</td>,
+                      created_at: (
+                        <td className="gr__td--when">
+                          {m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                        </td>
+                      ),
+                      status: (
+                        <td>
+                          {m.undone_at
+                            ? <Badge text="Undone" color="var(--on-surface-3)" />
+                            : <Badge text="Merged" color="var(--ok)" />}
+                        </td>
+                      ),
+                      actions: (
+                        <td>
+                          {!m.undone_at && (
+                            <button className="k-btn k-btn--ghost" disabled={undoing === m.id} onClick={() => undoMerge(m.id)}>
+                              {undoing === m.id ? 'Undoing…' : 'Undo'}
+                            </button>
+                          )}
+                        </td>
+                      ),
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

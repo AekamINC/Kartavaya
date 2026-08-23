@@ -123,7 +123,7 @@ export default function CreditsTab({ clientId, wallet, onRefresh }) {
           </p>}
         >
           <div className="hb-scroll">
-            <DataTable columns={['Type', { label: 'Amount', align: 'right' }, { label: 'Balance after', align: 'right' }, 'Description', 'When']}>
+            <DataTable arrange="hub.credit_ledger" columns={['Type', { label: 'Amount', align: 'right' }, { label: 'Balance after', align: 'right' }, 'Description', 'When']}>
               {txns?.map(tx => (
                 <tr key={tx.id}>
                   <Td><StatusPill status={words(tx.tx_type)} tone={TX_TONE[tx.tx_type]} /></Td>

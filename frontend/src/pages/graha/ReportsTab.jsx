@@ -22,6 +22,47 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { formatINR } from '../../lib/utils';
 import { Badge, stageColor, SOURCE_COLORS } from './_shared';
 import { useDocumentDownload } from '../../lib/documents';
+import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * Three tables on this tab, three keys — never `graha.reports_1..3`. They are
+ * three different reports that happen to share a card stack, and a key is a
+ * database row identity for ever: a positional name would silently re-point at
+ * a different report the day the cards are reordered.
+ *
+ * None of the three is sortable (each is a server-ordered report), so no column
+ * carries a `sortKey`; the arrangement is order, visibility and width only, and
+ * none has an actions column because a report row has no verbs. The first
+ * column of each is `fixed` — Stage, Source and Rep are the dimension the whole
+ * row's numbers are ABOUT, and a table of figures with the dimension hidden is
+ * not a shorter report, it is an unreadable one.
+ */
+const VELOCITY_COLUMNS = [
+  { id: 'stage', label: 'Stage', fixed: true },
+  { id: 'count', label: 'Count' },
+  { id: 'total_value', label: 'Total Value' },
+  { id: 'avg_value', label: 'Avg Value' },
+  { id: 'avg_days_in_stage', label: 'Avg Days' },
+];
+
+const SOURCE_COLUMNS = [
+  { id: 'source', label: 'Source', fixed: true },
+  { id: 'leads', label: 'Leads' },
+  { id: 'deals', label: 'Deals' },
+  { id: 'won', label: 'Won' },
+  { id: 'won_value', label: 'Won Value' },
+];
+
+const REP_COLUMNS = [
+  { id: 'assigned_to', label: 'Rep', fixed: true },
+  { id: 'total_deals', label: 'Total' },
+  { id: 'won', label: 'Won' },
+  { id: 'lost', label: 'Lost' },
+  { id: 'won_value', label: 'Won Value' },
+  { id: 'avg_deal_value', label: 'Avg Deal' },
+];
 
 export default function ReportsTab() {
   const [conversion, setConversion] = useState(null);
@@ -37,6 +78,13 @@ export default function ReportsTab() {
      is a bug report waiting to happen. Rep performance is admin-only, and the
      server simply omits that section rather than refusing the whole file. */
   const { busy, error: dlError, run: download, clear: clearDl } = useDocumentDownload();
+
+  // ABOVE the loading and error returns below — this component returns early
+  // twice, and a render that called three fewer hooks than the loaded one is
+  // the "rendered fewer hooks than expected" crash.
+  const velCols = useColumnPrefs('graha.reports_velocity', VELOCITY_COLUMNS);
+  const srcCols = useColumnPrefs('graha.reports_sources', SOURCE_COLUMNS);
+  const repCols = useColumnPrefs('graha.reports_reps', REP_COLUMNS);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -136,13 +184,20 @@ export default function ReportsTab() {
       ) : (<>
         {conversion && (
           <div className="gr__rtiles">
-            <StatTile label="Total Deals" value={conversion.total_deals} />
-            <StatTile label="Won" value={conversion.won} />
-            <StatTile label="Lost" value={conversion.lost} />
-            <StatTile label="Open" value={conversion.open} />
-            <StatTile label="Win Rate" value={`${conversion.conversion_rate}%`} />
-            <StatTile label="Won Value" value={fmt(conversion.won_value)} />
-            <StatTile label="Avg Cycle" value={`${conversion.avg_cycle_days}d`} />
+            {/* Two cohorts, and the captions say which. `total_deals`,
+                `cohort_won`, `cohort_lost`, `open` and the win rate count
+                deals OPENED in the window; `won`, `lost`, `won_value` and the
+                cycle count deals CLOSED in it, on `won_at`/`lost_at`. They are
+                different deals, and "Won" over a figure windowed on the
+                creation date was 39% short on a real org (proposal 73, #5).
+                The server sends `basis` naming both halves. */}
+            <StatTile label="Opened in period" value={conversion.total_deals} />
+            <StatTile label="Won in period" value={conversion.won} />
+            <StatTile label="Lost in period" value={conversion.lost} />
+            <StatTile label="Opened & still open" value={conversion.open} />
+            <StatTile label="Win rate of opened" value={`${conversion.conversion_rate}%`} />
+            <StatTile label="Won value in period" value={fmt(conversion.won_value)} />
+            <StatTile label="Avg cycle to win" value={`${conversion.avg_cycle_days}d`} />
           </div>
         )}
 
@@ -174,19 +229,31 @@ export default function ReportsTab() {
         {velocity?.data?.length > 0 && (
           <div className="gr__rcard">
             <h4 className="gr__rt">Pipeline Velocity</h4>
+            {/* These cards carry no TableToolbar, so the control gets the
+                house trailing-aligned unframed row — an edge above the table
+                would read as a second card header. */}
+            <div className="tbl__abar"><ColumnsButton cols={velCols} /></div>
             <div className="tbl__wrap">
               <table className="tbl">
                 <thead>
-                  <tr>{['Stage', 'Count', 'Total Value', 'Avg Value', 'Avg Days'].map(h => <th key={h}>{h}</th>)}</tr>
+                  <tr>
+                    {velCols.columns.map(c => (
+                      <HeadCell key={c.id} width={c.width} onResize={w => velCols.setWidth(c.id, w)}>
+                        {c.label}
+                      </HeadCell>
+                    ))}
+                  </tr>
                 </thead>
                 <tbody>
                   {velocity.data.map(r => (
                     <tr key={r.stage}>
-                      <td><Badge text={r.stage} color={stageColor(r.stage)} /></td>
-                      <td>{r.count}</td>
-                      <td>{fmt(r.total_value)}</td>
-                      <td>{fmt(r.avg_value)}</td>
-                      <td>{r.avg_days_in_stage ?? '—'}d</td>
+                      {velCols.cells({
+                        stage: <td><Badge text={r.stage} color={stageColor(r.stage)} /></td>,
+                        count: <td>{r.count}</td>,
+                        total_value: <td>{fmt(r.total_value)}</td>,
+                        avg_value: <td>{fmt(r.avg_value)}</td>,
+                        avg_days_in_stage: <td>{r.avg_days_in_stage ?? '—'}d</td>,
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -198,19 +265,28 @@ export default function ReportsTab() {
         {sources?.data?.length > 0 && (
           <div className="gr__rcard">
             <h4 className="gr__rt">Lead Source Analysis</h4>
+            <div className="tbl__abar"><ColumnsButton cols={srcCols} /></div>
             <div className="tbl__wrap">
               <table className="tbl">
                 <thead>
-                  <tr>{['Source', 'Leads', 'Deals', 'Won', 'Won Value'].map(h => <th key={h}>{h}</th>)}</tr>
+                  <tr>
+                    {srcCols.columns.map(c => (
+                      <HeadCell key={c.id} width={c.width} onResize={w => srcCols.setWidth(c.id, w)}>
+                        {c.label}
+                      </HeadCell>
+                    ))}
+                  </tr>
                 </thead>
                 <tbody>
                   {sources.data.map(r => (
                     <tr key={r.source}>
-                      <td><Badge text={r.source} color={SOURCE_COLORS[r.source] || 'var(--on-surface-3)'} /></td>
-                      <td>{r.leads}</td>
-                      <td>{r.deals}</td>
-                      <td>{r.won}</td>
-                      <td>{fmt(r.won_value)}</td>
+                      {srcCols.cells({
+                        source: <td><Badge text={r.source} color={SOURCE_COLORS[r.source] || 'var(--on-surface-3)'} /></td>,
+                        leads: <td>{r.leads}</td>,
+                        deals: <td>{r.deals}</td>,
+                        won: <td>{r.won}</td>,
+                        won_value: <td>{fmt(r.won_value)}</td>,
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -222,20 +298,29 @@ export default function ReportsTab() {
         {reps?.data?.length > 0 && (
           <div className="gr__rcard">
             <h4 className="gr__rt">Rep Performance</h4>
+            <div className="tbl__abar"><ColumnsButton cols={repCols} /></div>
             <div className="tbl__wrap">
               <table className="tbl">
                 <thead>
-                  <tr>{['Rep', 'Total', 'Won', 'Lost', 'Won Value', 'Avg Deal'].map(h => <th key={h}>{h}</th>)}</tr>
+                  <tr>
+                    {repCols.columns.map(c => (
+                      <HeadCell key={c.id} width={c.width} onResize={w => repCols.setWidth(c.id, w)}>
+                        {c.label}
+                      </HeadCell>
+                    ))}
+                  </tr>
                 </thead>
                 <tbody>
                   {reps.data.map(r => (
                     <tr key={r.assigned_to}>
-                      <td className="gr__td--id">{r.assigned_to?.slice(0, 12) || '—'}</td>
-                      <td>{r.total_deals}</td>
-                      <td className="gr__td--ok">{r.won}</td>
-                      <td className="gr__td--bad">{r.lost}</td>
-                      <td>{fmt(r.won_value)}</td>
-                      <td>{fmt(r.avg_deal_value)}</td>
+                      {repCols.cells({
+                        assigned_to: <td className="gr__td--id">{r.assigned_to?.slice(0, 12) || '—'}</td>,
+                        total_deals: <td>{r.total_deals}</td>,
+                        won: <td className="gr__td--ok">{r.won}</td>,
+                        lost: <td className="gr__td--bad">{r.lost}</td>,
+                        won_value: <td>{fmt(r.won_value)}</td>,
+                        avg_deal_value: <td>{fmt(r.avg_deal_value)}</td>,
+                      })}
                     </tr>
                   ))}
                 </tbody>

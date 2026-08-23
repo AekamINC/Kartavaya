@@ -254,7 +254,7 @@ export default function Corrections() {
       )}
 
       {state === 'ready' && rows.length > 0 && (
-        <DataTable columns={['Employee', 'Day', 'Asking for', 'Reason', 'Decision']}>
+        <DataTable arrange="pahchan.corrections" columns={['Employee', 'Day', 'Asking for', 'Reason', 'Decision']}>
           {rows.map(r => {
             const at = clockOf(r.requested_at_time);
             const open = declining === r.id;

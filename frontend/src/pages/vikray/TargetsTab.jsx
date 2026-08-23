@@ -29,8 +29,54 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone: the header comes out of the column declaration below,
+// which is what lets it be moved, hidden and resized. The CELL is unchanged.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The target table's columns, declared once, in the order they shipped.
+ *
+ * Only Created carries a `sortKey`, and that is not an omission: the rest have
+ * always been plain `<th>`, and a header that claims to sort a column the view
+ * does not sort is worse than a header that claims nothing.
+ *
+ * `fixed` on Salesperson (whose target a row IS — every other cell is a number
+ * about that person) and on the actions cell, which holds Edit and Remove and
+ * the inline save pair. Achievement stays hideable: it is a bar derived from
+ * Target and Actual, so a firm that reads the two numbers directly loses
+ * nothing by folding it away.
+ */
+const TARGET_COLUMNS = [
+  { id: 'salesperson_name', label: 'Salesperson', fixed: true },
+  { id: 'period', label: 'Period' },
+  { id: 'target_amount', label: 'Target', num: true },
+  { id: 'actual_amount', label: 'Actual', num: true },
+  { id: 'achievement', label: 'Achievement' },
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  { id: 'actions', label: 'Actions', sr: true, className: 'vk-tg__acts', fixed: true },
+  /* WHO set the target and WHO last moved it, appended at the END of the
+     declaration — not slipped in beside Created, where they read better.
+     `useColumnPrefs` stores an ARRANGEMENT against this key, and a column
+     inserted into the middle of the base list arrives in a saved arrangement as
+     an unknown id with no position; appending keeps every column a person has
+     already arranged exactly where they put it, and the customise sheet is how
+     they move these next to Created if that is where they want them.
+
+     They are sortable because this table's sort is `useTableView` — CLIENT
+     side, over the rows already loaded — so any key on the row can be ordered
+     without the server being asked anything. (The header comment above about
+     plain `<th>` predates the column declaration; every header here is a
+     `HeadCell` now, and one carries a sort only if its column names a key.) */
+  { id: 'created_by_name', label: 'Created by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+];
 
 /** The quarter containing `d`, as the two ISO dates the API wants. */
 function quarterOf(d = new Date()) {
@@ -294,6 +340,7 @@ export default function TargetsTab() {
   }, [targets]);
 
   const view = useTableView(targets, { searchKeys: ['salesperson_name'] });
+  const cols = useColumnPrefs('vikray.targets', TARGET_COLUMNS);
   return (
     <div>
       <div className="vk-bar">
@@ -361,71 +408,116 @@ export default function TargetsTab() {
             </div>
           )}
           <div className="tv-card">
-          <TableToolbar view={view} label="targets" />
+          <TableToolbar view={view} label="targets">
+            <ColumnsButton cols={cols} />
+          </TableToolbar>
           <div className="tbl__wrap">
           <table className="tbl vk-tg">
             <thead>
               <tr>
-                <th>Salesperson</th>
-                <th>Period</th>
-                <th className="tbl__num">Target</th>
-                <th className="tbl__num">Actual</th>
-                <th>Achievement</th>
-                {/* The only sortable header on this table. The rest are
-                    plain <th> and always have been; giving them sort keys
-                    is a separate change, and claiming to sort a column
-                    that does not is worse than the plain header. */}
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
-                <th className="vk-tg__acts">&nbsp;</th>
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.rows.map(t => (
                 <tr key={t.id}>
-                  <td>{t.salesperson_name || <span className="vk-tg__unknown">{t.salesperson_id}</span>}</td>
-                  <td className="vk-tg__period">{t.period_start} → {t.period_end}</td>
-                  <td className="tbl__num">
-                    {editId === t.id ? (
-                      <input type="number" min="0" className="inp vk-tg__in" value={draft.target_amount}
-                        aria-label="Target amount"
-                        onChange={e => setDraft(d => ({ ...d, target_amount: Number(e.target.value) }))} />
-                    ) : inr(t.target_amount)}
-                  </td>
-                  <td className="tbl__num">{inr(t.actual_amount)}</td>
-                  <td>
-                    <Bar pct={pctOf(t)} />
-                    {Number(t.target_deals) > 0 && (
-                      <span className="vk-tg__deals">
-                        {grouped(t.actual_deals)} of {grouped(t.target_deals)} deals
-                      </span>
-                    )}
-                  </td>
-                  <CreatedCell value={t.created_at} />
-                  <td className="vk-tg__acts">
-                    {editId === t.id ? (
-                      <>
-                        <button type="button" className="btn btn--fill btn--sm" disabled={savingEdit} onClick={saveEdit}>
-                          {savingEdit ? '…' : 'Save'}
-                        </button>
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditId(null)}>Cancel</button>
-                      </>
-                    ) : (
-                      <>
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEdit(t)}>Edit</button>
-                        <button
-                          type="button" className="btn btn--ghost btn--sm vk-tg__del"
-                          onClick={() => setConfirm({
-                            title: 'Remove this target?',
-                            message: `The target for ${t.salesperson_name || 'this person'} covering ${t.period_start} to ${t.period_end} is deleted. Deals they have closed are not affected.`,
-                            confirmLabel: 'Remove target',
-                            onConfirm: () => remove(t),
-                          })}
-                        >
-                          Remove
-                        </button>
-                      </>
-                    )}
-                  </td>
+                  {cols.cells({
+                    // NEVER `t.salesperson_id`. This cell used to fall back to
+                    // it when the name did not resolve, which put a raw
+                    // `users.user_id` on screen — the names-not-ids rule broken,
+                    // and `check-rendered-ids.mjs` did not catch it because that
+                    // ratchet is positional rather than textual.
+                    //
+                    // `unknown` is the word `ByCell` uses for exactly this
+                    // state, and it means the same thing here: a target IS
+                    // assigned to somebody, but no user row stands behind the id
+                    // any more. It reads differently from an em dash, which
+                    // would say nobody is assigned — and a target with no
+                    // salesperson cannot exist, `salesperson_id` being required
+                    // on the form above.
+                    salesperson_name: (
+                      <td>
+                        {t.salesperson_name || (
+                          <span
+                            className="vk-tg__unknown"
+                            title="The account this target is assigned to no longer exists"
+                          >
+                            unknown
+                          </span>
+                        )}
+                      </td>
+                    ),
+                    period: <td className="vk-tg__period">{t.period_start} → {t.period_end}</td>,
+                    target_amount: (
+                      <td className="tbl__num">
+                        {editId === t.id ? (
+                          <input type="number" min="0" className="inp vk-tg__in" value={draft.target_amount}
+                            aria-label="Target amount"
+                            onChange={e => setDraft(d => ({ ...d, target_amount: Number(e.target.value) }))} />
+                        ) : inr(t.target_amount)}
+                      </td>
+                    ),
+                    actual_amount: <td className="tbl__num">{inr(t.actual_amount)}</td>,
+                    achievement: (
+                      <td>
+                        <Bar pct={pctOf(t)} />
+                        {Number(t.target_deals) > 0 && (
+                          <span className="vk-tg__deals">
+                            {grouped(t.actual_deals)} of {grouped(t.target_deals)} deals
+                          </span>
+                        )}
+                      </td>
+                    ),
+                    [CREATED_KEY]: <CreatedCell value={t.created_at} />,
+                    /* `hasActor` is not optional. It is what separates a target
+                       set by somebody whose account has since been deleted
+                       (`unknown`) from one with no author recorded at all (an
+                       em dash) — and a target with no author is a target
+                       nobody can be asked about. */
+                    created_by_name: <ByCell name={t.created_by_name} hasActor={t.has_creator} />,
+                    [UPDATED_KEY]: <UpdatedCell value={t.updated_at} />,
+                    updated_by_name: <ByCell name={t.updated_by_name} hasActor={t.has_updater} />,
+                    actions: (
+                      <td className="vk-tg__acts">
+                        {editId === t.id ? (
+                          <>
+                            <button type="button" className="btn btn--fill btn--sm" disabled={savingEdit} onClick={saveEdit}>
+                              {savingEdit ? '…' : 'Save'}
+                            </button>
+                            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditId(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEdit(t)}>Edit</button>
+                            <button
+                              type="button" className="btn btn--ghost btn--sm vk-tg__del"
+                              onClick={() => setConfirm({
+                                title: 'Remove this target?',
+                                message: `The target for ${t.salesperson_name || 'this person'} covering ${t.period_start} to ${t.period_end} is deleted. Deals they have closed are not affected.`,
+                                confirmLabel: 'Remove target',
+                                onConfirm: () => remove(t),
+                              })}
+                            >
+                              Remove
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    ),
+                  })}
                 </tr>
               ))}
             </tbody>

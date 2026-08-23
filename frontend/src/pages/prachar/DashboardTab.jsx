@@ -159,7 +159,7 @@ export default function DashboardTab() {
             down a narrow table. The sentence under the funnel above already
             says why, once, and two empty columns on every row is the kind of
             noise a person learns to read past. */}
-        <DataTable columns={[
+        <DataTable arrange="prachar.dashboard_recent" columns={[
           'Name', 'Status', 'Sent',
           { label: 'Recipients', align: 'right' },
           ...(measured ? [{ label: 'Opened', align: 'right' }, { label: 'Open rate', align: 'right' }] : []),

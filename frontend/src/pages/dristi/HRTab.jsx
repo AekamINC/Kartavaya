@@ -64,7 +64,7 @@ export default function HRTab() {
                   module="payroll (Vetana) — or no run has been recorded yet"
                 />
               ) : (
-                <DataTable columns={[
+                <DataTable arrange="dristi.payroll_months" columns={[
                   'Month',
                   { label: 'Gross', align: 'right' },
                   { label: 'Net', align: 'right' },

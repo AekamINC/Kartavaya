@@ -894,15 +894,44 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
    invoice editor already shipped once. */
 .gn-coll__wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .gn-coll { width: 100%; border-collapse: collapse; min-width: 40rem; }
+/* ── ON THE ROW CONTRACT, as of this run ──────────────────────────────────
+   This table arrived in 9880c0d3/ade0f349, after the four-systems-into-one
+   convergence had already landed, and it joined none of it. It was a THIRD
+   `<table>` system by the only definition that is testable — a class whose
+   cells sit on `var(--row-h)` — and `tableSystem.test.jsx` had been failing
+   six times ever since: no zebra, no hover, no selected tint, a row separator
+   at full-strength `--outline-variant` (1/0.55 = 1.82× the reference weight)
+   and a head boundary spelled as a literal where every other table spells it
+   `var(--tbl-head-rule)`.
+
+   The separator was ONE declaration covering `th` and `td` together, which is
+   the shape of the bug: a boundary and a row rule are different weights and
+   cannot share a line. They are split here, and both now name the shared
+   token rather than restating a value — which is what makes "one separator
+   weight" a fact the parser can check rather than a coincidence.
+
+   The three row STATES are not here. They are declared once, for every system
+   at once, in components.css §10 — the same way `.omt`'s were, and for the
+   same reason: this file loads AFTER components.css, so a second declaration
+   at equal specificity would win here and the invariant would stop being one.
+
+   Head typography stays this table's own (10.5px/.06em against `.tbl`'s
+   10px/.14em). That is a skin, not the row's identity, and §10 is explicit
+   that a module stylesheet may keep its own — the height, the separator and
+   the three states are what may not diverge. */
 .gn-coll th, .gn-coll td {
   height: var(--row-h);
   padding: 0 var(--sp-3);
-  border-bottom: 1px solid var(--outline-variant);
   text-align: left;
 }
+.gn-coll td { border-bottom: var(--tbl-rule); }
+/* The frame draws the bottom edge; a last-row separator inside it is a double
+   line — the same reset `.tbl` carries. */
+.gn-coll tbody tr:last-child > td { border-bottom: 0; }
 .gn-coll th {
   height: auto;
   padding-block: var(--sp-2);
+  border-bottom: var(--tbl-head-rule);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: .06em;

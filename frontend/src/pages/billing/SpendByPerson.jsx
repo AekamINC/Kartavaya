@@ -4,6 +4,8 @@ import {
 } from '../../components/ui';
 import { grouped } from '../../lib/inr';
 import { CreditFigure } from './UsageBySource';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /**
  * SpendByPerson — who in this organisation spent the credits, and what ceiling
@@ -28,6 +30,25 @@ import { CreditFigure } from './UsageBySource';
  *  · It does not render "spent nothing" and "spent zero-priced work" the same —
  *    see `CreditFigure`.
  */
+
+/**
+ * What this table HAS, declared once — the floor a saved arrangement resolves
+ * against. `fixed` on Person and on the ceiling button: Person is the whole
+ * point of the table (a row of numbers with no name attached is an accusation
+ * of nobody), and the button is the only way to act on what the row reports.
+ *
+ * The ceiling button column is gated on `maySetCeiling` below rather than
+ * declared here as hideable — an admin without the right must not be offered a
+ * column whose cells would all be empty.
+ */
+const PERSON_COLUMNS = [
+  { id: 'person', label: 'Person', fixed: true },
+  { id: 'credits', label: 'Credits', num: true },
+  { id: 'share', label: 'Share of period', num: true },
+  { id: 'ceiling', label: 'Ceiling' },
+  { id: 'tx', label: 'Transactions', num: true },
+  { id: 'setcap', label: 'Set ceiling', sr: true, fixed: true },
+];
 
 /** A ledger row with no user. Sorted last, never merged into a person. */
 const SYSTEM_ROW_NAME = 'System / unattributed';
@@ -84,6 +105,14 @@ export default function SpendByPerson({
   people, total, caps, commitment, isPlatformOrg, platformView,
   selected, onSelect, onDrill, onSetCeiling, maySetCeiling, scopeLabel,
 }) {
+  // ABOVE the empty-state return below — a hook that runs only when there are
+  // rows renders a different hook count on the two paths and React throws.
+  const base = React.useMemo(
+    () => (maySetCeiling ? PERSON_COLUMNS : PERSON_COLUMNS.filter(c => c.id !== 'setcap')),
+    [maySetCeiling],
+  );
+  const cols = useColumnPrefs('billing.spend_by_person', base);
+
   const rows = ordered(people);
   const capOf = uid => (uid ? caps?.[uid] : null);
 
@@ -116,14 +145,24 @@ export default function SpendByPerson({
             : 'No credits were charged in this period.'}
         />
       ) : (
+        <>
+        {/* No TableToolbar on this table — the commitment note above is its
+            header — so the control sits in the trailing action bar. */}
+        <div className="tbl__abar">
+          <ColumnsButton cols={cols} />
+        </div>
         <Table className="bl__tbl">
           <TableHead>
-            <HeadCell>Person</HeadCell>
-            <HeadCell num>Credits</HeadCell>
-            <HeadCell num>Share of period</HeadCell>
-            <HeadCell>Ceiling</HeadCell>
-            <HeadCell num>Transactions</HeadCell>
-            {maySetCeiling && <HeadCell><span className="k-sr-only">Set ceiling</span></HeadCell>}
+            {cols.columns.map(c => (
+              <HeadCell
+                key={c.id}
+                num={c.num}
+                width={c.width}
+                onResize={w => cols.setWidth(c.id, w)}
+              >
+                {c.sr ? <span className="k-sr-only">{c.label}</span> : c.label}
+              </HeadCell>
+            ))}
           </TableHead>
           <TableBody>
             {rows.map(p => {
@@ -132,60 +171,67 @@ export default function SpendByPerson({
               const on = selected && selected === p.user_id;
               return (
                 <Row key={p.user_id || 'system'} on={on}>
-                  <Cell>
-                    {p.user_id ? (
-                      <button
-                        type="button"
-                        className="bl__lnk"
-                        aria-pressed={on}
-                        onClick={() => onSelect?.(on ? null : p.user_id)}
-                      >
-                        <span className="bl__ph-n">{personName(p)}</span>
-                        {/* Suppressed on the Aekam console. A customer's
-                            member addresses are the customer's, and this
-                            table's job — who spent the credits — is answered
-                            by the name. See `platformView`. */}
-                        {!platformView && p.email && <span className="bl__ph-e">{p.email}</span>}
-                      </button>
-                    ) : (
-                      <span className="bl__ph">
-                        <span className="bl__ph-n">{SYSTEM_ROW_NAME}</span>
-                        <span className="bl__ph-e">Scheduled work and rows with no user recorded</span>
-                      </span>
-                    )}
-                  </Cell>
-                  <Cell num>
-                    {p.user_id ? (
-                      <button
-                        type="button"
-                        className="bl__lnk bl__lnk--fig"
-                        onClick={() => onDrill?.(p.user_id, personName(p))}
-                      >
-                        <CreditFigure credits={p.credits} txCount={p.tx_count} />
-                      </button>
-                    ) : (
-                      /* No drill-down: the transactions endpoint filters by
-                         user_id, and "no user" is not a value it can be given. */
-                      <CreditFigure credits={p.credits} txCount={p.tx_count} />
-                    )}
-                  </Cell>
-                  <Cell num>{pct === null ? '—' : `${pct}%`}</Cell>
-                  <Cell><CeilingCell cap={cap} /></Cell>
-                  <Cell num>{grouped(p.tx_count || 0)}</Cell>
-                  {maySetCeiling && (
-                    <Cell>
-                      {p.user_id && (
-                        <Button size="sm" variant="out" onClick={() => onSetCeiling?.(p, cap)}>
-                          Set ceiling
-                        </Button>
-                      )}
-                    </Cell>
-                  )}
+                  {cols.cells({
+                    person: (
+                      <Cell>
+                        {p.user_id ? (
+                          <button
+                            type="button"
+                            className="bl__lnk"
+                            aria-pressed={on}
+                            onClick={() => onSelect?.(on ? null : p.user_id)}
+                          >
+                            <span className="bl__ph-n">{personName(p)}</span>
+                            {/* Suppressed on the Aekam console. A customer's
+                                member addresses are the customer's, and this
+                                table's job — who spent the credits — is answered
+                                by the name. See `platformView`. */}
+                            {!platformView && p.email && <span className="bl__ph-e">{p.email}</span>}
+                          </button>
+                        ) : (
+                          <span className="bl__ph">
+                            <span className="bl__ph-n">{SYSTEM_ROW_NAME}</span>
+                            <span className="bl__ph-e">Scheduled work and rows with no user recorded</span>
+                          </span>
+                        )}
+                      </Cell>
+                    ),
+                    credits: (
+                      <Cell num>
+                        {p.user_id ? (
+                          <button
+                            type="button"
+                            className="bl__lnk bl__lnk--fig"
+                            onClick={() => onDrill?.(p.user_id, personName(p))}
+                          >
+                            <CreditFigure credits={p.credits} txCount={p.tx_count} />
+                          </button>
+                        ) : (
+                          /* No drill-down: the transactions endpoint filters by
+                             user_id, and "no user" is not a value it can be given. */
+                          <CreditFigure credits={p.credits} txCount={p.tx_count} />
+                        )}
+                      </Cell>
+                    ),
+                    share: <Cell num>{pct === null ? '—' : `${pct}%`}</Cell>,
+                    ceiling: <Cell><CeilingCell cap={cap} /></Cell>,
+                    tx: <Cell num>{grouped(p.tx_count || 0)}</Cell>,
+                    setcap: (
+                      <Cell>
+                        {p.user_id && (
+                          <Button size="sm" variant="out" onClick={() => onSetCeiling?.(p, cap)}>
+                            Set ceiling
+                          </Button>
+                        )}
+                      </Cell>
+                    ),
+                  })}
                 </Row>
               );
             })}
           </TableBody>
         </Table>
+        </>
       )}
 
       {isPlatformOrg && (

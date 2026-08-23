@@ -282,7 +282,7 @@ export default function LinkAccountsTab({ onUpdate }) {
               sub="Their commission and revenue figures resolve, and each of them can clock in and open their own payslip."
             />
           ) : (
-            <DataTable columns={['Code', 'Name', 'Department', 'Designation', 'Joined', '']}>
+            <DataTable arrange="manav.link_accounts" columns={['Code', 'Name', 'Department', 'Designation', 'Joined', '']}>
               {waiting.map(e => (
                 <tr
                   key={e.id}

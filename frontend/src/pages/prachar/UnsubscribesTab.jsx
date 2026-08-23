@@ -124,7 +124,7 @@ export default function UnsubscribesTab({ onChanged }) {
         {shown.length === 0 ? (
           <p className="pr__step-when">No address on the list matches “{q}”.</p>
         ) : (
-          <DataTable columns={['Email', 'Reason', 'Since', '']}>
+          <DataTable arrange="prachar.unsubscribes" columns={['Email', 'Reason', 'Since', '']}>
             {shown.map((u) => (
               <tr key={u.id}>
                 <Td bold>{u.email}</Td>

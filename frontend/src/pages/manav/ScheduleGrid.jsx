@@ -169,7 +169,7 @@ export default function ScheduleGrid({ pushToast }) {
             sub={`No shift assignments exist between ${range.from} and ${range.to}.`}
           />
         ) : (
-          <DataTable columns={['Date', 'Employee', 'Shift', 'Start', 'End']}>
+          <DataTable arrange="manav.schedule" columns={['Date', 'Employee', 'Shift', 'Start', 'End']}>
             {schedules.items.map(s => (
               <tr key={s.id}>
                 <Td className="mn-t__mono">{s.date}</Td>
@@ -222,7 +222,7 @@ function Coverage({ range, onClose }) {
                   to fill — post it under Bids.
                 </p>
               )}
-              <DataTable columns={[
+              <DataTable arrange="manav.schedule_coverage" columns={[
                 'Date', 'Shift',
                 { label: 'Assigned', align: 'right' },
               ]}>

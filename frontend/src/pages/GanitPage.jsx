@@ -47,6 +47,14 @@ import BankTab from './ganit/BankTab';
 import TimesheetTab from './ganit/TimesheetTab';
 import StatsTab from './ganit/StatsTab';
 import CollectionsTab from './ganit/CollectionsTab';
+// Procurement (proposal 77). It lives here, and not behind a module code of its
+// own, because a purchase order IS Finance: it counterparts `ganit_vendors`, it
+// pours into `ganit_vendor_bills`, and the proposal puts the screen at
+// "Finance → Purchase orders". Minting a module code would have meant a new
+// entitlement nobody has been sold, three coordinated deploys, and a plan
+// feature key — for a firm that already holds the books.
+import PurchaseOrdersTab from './procurement/PurchaseOrdersTab';
+import POApprovalsTab from './procurement/POApprovalsTab';
 // The universal analytics surface (proposal 62 D4). It lives in dristi/
 // because it stands on that module's window and chart vocabulary, but the
 // metrics are Ganit's own — this tab is one of its two doors.
@@ -59,6 +67,11 @@ const TABS = [
   // inside the contact record would 403 if it does not.
   ['clients', ClientsTab], ['contacts', () => <ContactsTab crm={false} />],
   ['products', ProductsTab], ['expenses', ExpensesTab],
+  // Directly before payables, because that is the order the money moves in:
+  // you order, it arrives, then the bill turns up. A purchase order that sat
+  // after payables would read as an afterthought to the bill rather than the
+  // thing the bill is matched against.
+  ['purchase orders', PurchaseOrdersTab], ['po approvals', POApprovalsTab],
   ['payables', PayablesTab], ['contracts', ContractsTab], ['e-sign', ESignTab],
   // Beside invoices, not at the end: it is the same money seen from the other
   // side — what is owed and whether the customer has looked at the link.

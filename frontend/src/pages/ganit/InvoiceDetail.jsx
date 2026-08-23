@@ -473,6 +473,21 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
 
                 <section className="dr__sec">
                   <h3 className="dr__lbl">Line items<Secondary className="dr__lbl-hi" value="वस्तुएँ" /></h3>
+                  {/* NOT opted into useColumnPrefs, deliberately — the one
+                      table in this module that is not a working list.
+                      These six columns ARE the tax invoice: description,
+                      HSN/SAC, quantity, rate, GST rate, amount is the line
+                      grid a GST invoice is required to carry, and the totals
+                      block immediately below is computed from them. A user who
+                      hid Rate would be looking at a document whose total no
+                      longer follows from anything on screen, and — because
+                      this is the same grid a firm checks the issued PDF
+                      against — a per-user arrangement would silently break
+                      that check for the person doing it. There is also nothing
+                      for an arrangement to solve here: this is three to ten
+                      lines of ONE document, not a list you scan across a wide
+                      screen. Arranging belongs to the invoice LIST
+                      (`ganit.invoices`), which is opted in. */}
                   {items.length === 0 ? (
                     <p className="dr__empty">This invoice carries no lines.</p>
                   ) : (

@@ -30,6 +30,48 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
+// This log rendered its own date — `toLocaleDateString('en-IN', {day, month,
+// year})` — which happens to print almost what `CreatedCell` prints and not
+// quite: no `<time datetime>` for a screen reader, no full timestamp in a
+// `title`, and a blank-date fallback that says nothing about WHY it is blank.
+// Three near-copies of one format is how a product ends up unable to say what
+// its date column means, so this is the shared cell now.
+import { CreatedCell, ByCell, CREATED_KEY } from '../../components/ui/CreatedColumn';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * What this log HAS, declared once, in the order it shipped.
+ *
+ * `fixed` on Activity — the subject line is the only cell that says WHAT
+ * happened; a log without it is a column of type badges and dates. `fixed` on
+ * Actions because Complete is the only verb on the row, and a stale
+ * arrangement that hid it would leave open activities with no way to close
+ * them.
+ */
+const ACTIVITY_COLUMNS = [
+  { id: 'activity_type', label: 'Type', sortKey: 'activity_type' },
+  { id: 'subject', label: 'Activity', sortKey: 'subject', fixed: true },
+  { id: 'linked_to', label: 'Linked to', sortKey: 'contact_name' },
+  /* "Logged by", not "Who". The old heading asked a question the column then
+     answered ambiguously — who logged it, or who it was WITH? An activity
+     already carries the other party in "Linked to", so naming the verb is
+     what separates the two columns. */
+  { id: 'created_by_name', label: 'Logged by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: 'status', label: 'Status', sortKey: 'status' },
+  { id: CREATED_KEY, label: 'Logged', sortKey: CREATED_KEY, className: 'tbl__created' },
+  /* ── NO `updated_at` / `updated_by_name` PAIR HERE, and it is not an
+     oversight ──────────────────────────────────────────────────────────────
+     `graha_activities` was deliberately left out of migration 201: it is an
+     append-only event log, so it has no `updated_by` column and
+     `list_activities` asks `actor_select("a")` for the creator half only
+     (routers/graha.py). Declaring the two columns anyway would ship a table
+     with two permanently em-dashed cells that a reader would take as "nothing
+     here has ever been edited" — a claim about the data, made by the absence
+     of a feature. When the log gains an updater the pair goes here and lands
+     appended-and-visible for everybody. */
+  { id: 'actions', label: 'Actions', sr: true, fixed: true },
+];
 
 const TYPE_COLORS = {
   call: 'var(--st-in-progress)', email: 'var(--st-in-review)',
@@ -109,6 +151,7 @@ export default function ActivitiesTab() {
     searchKeys: ['subject', 'notes', 'created_by_name'],
     filters: [{ key: 'activity_type', label: 'Type' }, { key: 'status', label: 'Status' }],
   });
+  const cols = useColumnPrefs('graha.activities', ACTIVITY_COLUMNS);
   return (
     <div>
       <div className="gr__bar">
@@ -167,18 +210,27 @@ export default function ActivitiesTab() {
         />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="activities" />
+        <TableToolbar view={view} label="activities">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <HeadCell sortKey="activity_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
-                <HeadCell sortKey="subject" sort={view.sort} onSort={view.onSort}>Activity</HeadCell>
-                <HeadCell sortKey="contact_name" sort={view.sort} onSort={view.onSort}>Linked to</HeadCell>
-                <HeadCell sortKey="created_by_name" sort={view.sort} onSort={view.onSort}>Who</HeadCell>
-                <HeadCell sortKey="status" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
-                <HeadCell sortKey="created_at" sort={view.sort} onSort={view.onSort}>Logged</HeadCell>
-                <th><span className="sr-only">Actions</span></th>
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -187,38 +239,58 @@ export default function ActivitiesTab() {
                 const dt = a.deal_id && dealTitle(a.deal_id);
                 return (
                   <tr key={a.id}>
-                    <td>
-                      <span className="gr__tic" aria-hidden="true">{ACT_ICONS[a.activity_type] || '●'}</span>{' '}
-                      <Badge text={a.activity_type} color={TYPE_COLORS[a.activity_type] || 'var(--on-surface-3)'} />
-                    </td>
-                    <td>
-                      <div className={a.is_completed ? 'gr__td--name gr__ctitle--done' : 'gr__td--name'}>{a.title}</div>
-                      {a.description && <div className="gr__ls">{a.description}</div>}
-                    </td>
-                    <td className="gr__td--mute">
-                      {dt || cn ? [dt, cn].filter(Boolean).join(' · ') : '—'}
-                    </td>
-                    {/* Whose activity this is. `created_by_name` comes from the
-                        join the list route now makes; the id is never shown, so
-                        a row with no resolvable user reads as an em dash rather
-                        than as `user_<uuid>`. */}
-                    <td className="gr__td--mute">{a.created_by_name || '—'}</td>
-                    <td>
-                      <Badge
-                        text={a.is_completed ? 'Done' : 'Open'}
-                        color={a.is_completed ? 'var(--ok)' : 'var(--warn)'}
-                      />
-                    </td>
-                    <td className="gr__td--when">
-                      {a.created_at ? new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
-                    <td>
-                      {!a.is_completed && (
-                        <button className="k-btn k-btn--ghost" disabled={completing === a.id} onClick={() => complete(a.id)}>
-                          {completing === a.id ? 'Saving…' : 'Complete'}
-                        </button>
-                      )}
-                    </td>
+                    {cols.cells({
+                      activity_type: (
+                        <td>
+                          <span className="gr__tic" aria-hidden="true">{ACT_ICONS[a.activity_type] || '●'}</span>{' '}
+                          <Badge text={a.activity_type} color={TYPE_COLORS[a.activity_type] || 'var(--on-surface-3)'} />
+                        </td>
+                      ),
+                      subject: (
+                        <td>
+                          <div className={a.is_completed ? 'gr__td--name gr__ctitle--done' : 'gr__td--name'}>{a.title}</div>
+                          {a.description && <div className="gr__ls">{a.description}</div>}
+                        </td>
+                      ),
+                      linked_to: (
+                        <td className="gr__td--mute">
+                          {dt || cn ? [dt, cn].filter(Boolean).join(' · ') : '—'}
+                        </td>
+                      ),
+                      /* Whose activity this is. `created_by_name` comes from the
+                         join the list route makes; the id is never shown.
+
+                         `<ByCell>` rather than the `|| '—'` this was, because
+                         that fallback collapsed two different absences into
+                         one dash. `has_creator` is the API telling us which:
+                         TRUE with no name means the person who logged the call
+                         has left and their user row is gone, and ByCell says
+                         `unknown`; FALSE means no actor was ever recorded (the
+                         rows this log carried before the column existed), and
+                         that is the dash. On an activity log the difference
+                         matters more than anywhere else — "we cannot say who
+                         made this call" is a finding, "nobody made it" is
+                         nonsense. */
+                      created_by_name: <ByCell name={a.created_by_name} hasActor={a.has_creator} />,
+                      status: (
+                        <td>
+                          <Badge
+                            text={a.is_completed ? 'Done' : 'Open'}
+                            color={a.is_completed ? 'var(--ok)' : 'var(--warn)'}
+                          />
+                        </td>
+                      ),
+                      [CREATED_KEY]: <CreatedCell value={a.created_at} />,
+                      actions: (
+                        <td>
+                          {!a.is_completed && (
+                            <button className="k-btn k-btn--ghost" disabled={completing === a.id} onClick={() => complete(a.id)}>
+                              {completing === a.id ? 'Saving…' : 'Complete'}
+                            </button>
+                          )}
+                        </td>
+                      ),
+                    })}
                   </tr>
                 );
               })}

@@ -8,6 +8,32 @@ import { inr } from '../../lib/inr';
 import BillingLineRow, {
   blankLine, lineBase, lineReady, monthLabel, refusalMessage,
 } from './BillingLineRow';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The ledger of what this organisation is billed, declared once.
+ *
+ * `fixed` on Kind: it is what a line IS, and every other cell is a number or a
+ * date that means nothing detached from it. There is no actions column — a line
+ * is edited through the forms above the table, not from the row — so Kind is
+ * the single pin.
+ *
+ * `Source` ships hidden. It answers "where did this line come from" and reads
+ * "—" on the great majority of rows, which is a column of dashes in front of an
+ * operator checking money. It is one tick away for the day somebody needs it,
+ * and `defaultHidden` is the page deciding out loud rather than nobody
+ * deciding — see the reconcile contract in useColumnPrefs.
+ */
+const BILLING_LINE_COLUMNS = [
+  { id: 'kind', label: 'Kind', fixed: true },
+  { id: 'description', label: 'Description' },
+  { id: 'amount', label: 'Amount', num: true },
+  { id: 'cadence', label: 'Cadence' },
+  { id: 'from', label: 'From' },
+  { id: 'until', label: 'Until' },
+  { id: 'source', label: 'Source', defaultHidden: true },
+];
 
 /**
  * BillingLinesBlock — what an org is billed, as rows instead of as a number
@@ -306,6 +332,8 @@ export default function BillingLinesBlock(props) {
    * unknown, not zero, and accusing an org of drift on a field we were not sent
    * is the same wolf in a different coat.
    */
+  const cols = useColumnPrefs('admin.org_billing_lines', BILLING_LINE_COLUMNS);
+
   const paise = v => Math.round(Number(v || 0) * 100);
   const platformLine = lines ? openLineOf(lines, 'platform') : null;
   const drift = monthlyPrice !== null && monthlyPrice !== undefined
@@ -318,6 +346,7 @@ export default function BillingLinesBlock(props) {
         <div className="apg__sech">
           <h3 className="apg__sect">Billing lines</h3>
           <span className="apg__secn">{monthLabel(periodStart)}</span>
+          <ColumnsButton cols={cols} />
         </div>
 
         {!canWrite && (
@@ -374,28 +403,35 @@ export default function BillingLinesBlock(props) {
               ) : (
                 <Table>
                   <TableHead>
-                    <HeadCell>Kind</HeadCell>
-                    <HeadCell>Description</HeadCell>
-                    <HeadCell num>Amount</HeadCell>
-                    <HeadCell>Cadence</HeadCell>
-                    <HeadCell>From</HeadCell>
-                    <HeadCell>Until</HeadCell>
-                    <HeadCell>Source</HeadCell>
+                    {cols.columns.map(c => (
+                      <HeadCell
+                        key={c.id}
+                        num={c.num}
+                        width={c.width}
+                        onResize={w => cols.setWidth(c.id, w)}
+                      >
+                        {c.label}
+                      </HeadCell>
+                    ))}
                   </TableHead>
                   <TableBody>
                     {ordered.map(l => (
                       <Row key={l.id} className={ended(l) ? 'obl__done' : undefined}>
-                        <Cell>{KIND_LABEL[l.kind] || l.kind}</Cell>
-                        <Cell>{l.description}</Cell>
-                        <Cell num>{inr(l.amount ?? 0)}</Cell>
-                        <Cell>{l.cadence === 'monthly' ? 'Monthly' : 'One-off'}</Cell>
-                        <Cell>{monthLabel(l.period_start)}</Cell>
-                        <Cell>
-                          {l.period_end
-                            ? <Tag color="var(--on-surface-3)">{monthLabel(l.period_end)}</Tag>
-                            : 'Open'}
-                        </Cell>
-                        <Cell><span className="obl__src">{sourceOf(l)}</span></Cell>
+                        {cols.cells({
+                          kind: <Cell>{KIND_LABEL[l.kind] || l.kind}</Cell>,
+                          description: <Cell>{l.description}</Cell>,
+                          amount: <Cell num>{inr(l.amount ?? 0)}</Cell>,
+                          cadence: <Cell>{l.cadence === 'monthly' ? 'Monthly' : 'One-off'}</Cell>,
+                          from: <Cell>{monthLabel(l.period_start)}</Cell>,
+                          until: (
+                            <Cell>
+                              {l.period_end
+                                ? <Tag color="var(--on-surface-3)">{monthLabel(l.period_end)}</Tag>
+                                : 'Open'}
+                            </Cell>
+                          ),
+                          source: <Cell><span className="obl__src">{sourceOf(l)}</span></Cell>,
+                        })}
                       </Row>
                     ))}
                   </TableBody>

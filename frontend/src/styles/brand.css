@@ -174,7 +174,10 @@ body {
 .k-auth-right { flex: 1; background: var(--k-white); display: flex; flex-direction: column; justify-content: center; padding: 48px 60px; max-width: 520px; }
 @media (max-width: 768px) { .k-auth-left { display: none; } .k-auth-right { padding: 32px 24px; max-width: 100%; } }
 
-.k-badge { background: rgba(0,130,198,.2); color: var(--k-mid); font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 10px; margin-left: auto; }
+/* `.k-badge` DELETED — see the note in editorial.css beside the Board section.
+   It was declared twice (here and there, at different sizes and colours) for
+   one class, and its last consumer in the build was the task list's
+   hidden-column count, which `ColumnsButton` now renders itself. */
 
 .k-powered { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 18px; margin-top: 20px; border-top: 1px solid var(--k-border); font-size: 9px; letter-spacing: 2.5px; text-transform: uppercase; }
 .k-powered-label { color: var(--k-faint); font-weight: 700; }

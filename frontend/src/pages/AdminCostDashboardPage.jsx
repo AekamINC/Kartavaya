@@ -44,6 +44,91 @@ import MarginCell from './admin/MarginCell';
 import { canSeeCost } from './admin/platformRoles';
 import '../styles/admin.css';
 import { Secondary } from '../components/Bilingual';
+import useColumnPrefs from '../hooks/useColumnPrefs';
+import { ColumnsButton } from '../components/ui/CustomizeColumns';
+
+/**
+ * The six record lists on this console, each declared once — the floor a saved
+ * arrangement resolves against. They are separate keys and not one shared one:
+ * "cost by provider" and "cost by model" happen to share four labels, and a
+ * single key would mean hiding Calls on the platform roll-up also hid it on the
+ * per-org breakdown, which is not what anyone asked for.
+ *
+ * `fixed` marks the column that says WHICH row this is — the category, the
+ * provider, the model, the org. Every other column here is a money figure, and
+ * a table of unattributed money is worse than no table. None of these lists has
+ * an actions column; the row itself is the affordance on the two that drill.
+ */
+const CATEGORY_COLUMNS = [
+  { id: 'category', label: 'Category', fixed: true },
+  { id: 'cost', label: 'Aekam cost', num: true },
+  { id: 'charge', label: 'Client charge', num: true },
+];
+
+const PROVIDER_COLUMNS = [
+  { id: 'provider', label: 'Provider', fixed: true },
+  { id: 'cost', label: 'Cost', num: true },
+  { id: 'charged', label: 'Charged', num: true },
+  { id: 'calls', label: 'Calls', num: true },
+];
+
+const TOP_ORG_COLUMNS = [
+  { id: 'org', label: 'Organisation', fixed: true },
+  { id: 'markup', label: 'Markup', num: true },
+  { id: 'cost', label: 'Cost', num: true },
+  { id: 'charged', label: 'Charged', num: true },
+  { id: 'margin', label: 'Margin', num: true },
+];
+
+const ORG_COST_COLUMNS = [
+  { id: 'org', label: 'Organisation', fixed: true },
+  { id: 'plan', label: 'Plan' },
+  { id: 'markup', label: 'Markup', num: true },
+  { id: 'cost', label: 'Cost', num: true },
+  { id: 'charged', label: 'Charged', num: true },
+  { id: 'margin', label: 'Margin', num: true },
+  { id: 'calls', label: 'AI calls', num: true },
+  { id: 'last_active', label: 'Last active' },
+];
+
+const MODEL_COLUMNS = [
+  { id: 'provider', label: 'Provider' },
+  { id: 'model', label: 'Model', fixed: true },
+  { id: 'cost', label: 'Cost', num: true },
+  { id: 'charged', label: 'Charged', num: true },
+  { id: 'calls', label: 'Calls', num: true },
+  { id: 'tokens', label: 'Tokens in / out', num: true },
+];
+
+const SCRAPER_COLUMNS = [
+  { id: 'scraper', label: 'Scraper', fixed: true },
+  { id: 'cost', label: 'Cost', num: true },
+  { id: 'charged', label: 'Charged', num: true },
+  { id: 'billed', label: 'Billed', num: true },
+  { id: 'runs', label: 'Runs', num: true },
+];
+
+/**
+ * The head every table on this page renders. Six call sites otherwise repeat
+ * the same eight props, and the one that got them wrong would be the one whose
+ * dividers quietly stopped saving.
+ */
+function ArrangedHead({ cols }) {
+  return (
+    <TableHead>
+      {cols.columns.map(c => (
+        <HeadCell
+          key={c.id}
+          num={c.num}
+          width={c.width}
+          onResize={w => cols.setWidth(c.id, w)}
+        >
+          {c.label}
+        </HeadCell>
+      ))}
+    </TableHead>
+  );
+}
 
 const PERIODS = [
   { id: '7d', label: '7 days' },
@@ -95,6 +180,12 @@ function PlatformView({ period, currency }) {
 
   useEffect(() => { setData(null); load(); }, [load]);
 
+  /* Above the `err` and `!data` returns: a first paint that is still loading
+     must render the same hooks as the landed page or React throws. */
+  const categoryCols = useColumnPrefs('admin.cost_by_category', CATEGORY_COLUMNS);
+  const providerCols = useColumnPrefs('admin.cost_by_provider', PROVIDER_COLUMNS);
+  const topOrgCols = useColumnPrefs('admin.cost_top_orgs', TOP_ORG_COLUMNS);
+
   if (err) return <ErrorState kind={errorKind(err)} grant="finance access to platform cost" onRetry={load} />;
   if (!data) return <SkeletonPage withStats withTable />;
 
@@ -133,29 +224,43 @@ function PlatformView({ period, currency }) {
       </Card>
 
       <Card>
-        <CardHead title="Cost by category" actions={<span className="apg__secn">{money.total}</span>} />
+        <CardHead
+          title="Cost by category"
+          actions={(
+            <>
+              <span className="apg__secn">{money.total}</span>
+              <ColumnsButton cols={categoryCols} />
+            </>
+          )}
+        />
         <CardBody flush>
           <Table>
-            <TableHead>
-              <HeadCell>Category</HeadCell>
-              <HeadCell num>Aekam cost</HeadCell>
-              <HeadCell num>Client charge</HeadCell>
-            </TableHead>
+            <ArrangedHead cols={categoryCols} />
             <TableBody>
+              {/* Three authored rows rather than a list, and they still go
+                  through `cells()`: the Total row has to keep step with the two
+                  above it, and a hand-ordered totals row under a rearranged
+                  header is the exact way a money table comes to lie. */}
               <Row>
-                <Cell>AI services</Cell>
-                <Cell num>{money.ai}</Cell>
-                <Cell num>{inr(data.ai_cost?.charged_inr, { decimals: 2 })}</Cell>
+                {categoryCols.cells({
+                  category: <Cell>AI services</Cell>,
+                  cost: <Cell num>{money.ai}</Cell>,
+                  charge: <Cell num>{inr(data.ai_cost?.charged_inr, { decimals: 2 })}</Cell>,
+                })}
               </Row>
               <Row>
-                <Cell>Scraper and data</Cell>
-                <Cell num>{money.scr}</Cell>
-                <Cell num>{inr(data.scraper_cost?.charged_inr, { decimals: 2 })}</Cell>
+                {categoryCols.cells({
+                  category: <Cell>Scraper and data</Cell>,
+                  cost: <Cell num>{money.scr}</Cell>,
+                  charge: <Cell num>{inr(data.scraper_cost?.charged_inr, { decimals: 2 })}</Cell>,
+                })}
               </Row>
               <Row>
-                <Cell><b>Total</b></Cell>
-                <Cell num><b>{money.total}</b></Cell>
-                <Cell num><b>{inr(data.total_cost?.charged_inr, { decimals: 2 })}</b></Cell>
+                {categoryCols.cells({
+                  category: <Cell><b>Total</b></Cell>,
+                  cost: <Cell num><b>{money.total}</b></Cell>,
+                  charge: <Cell num><b>{inr(data.total_cost?.charged_inr, { decimals: 2 })}</b></Cell>,
+                })}
               </Row>
             </TableBody>
           </Table>
@@ -163,25 +268,22 @@ function PlatformView({ period, currency }) {
       </Card>
 
       <Card>
-        <CardHead title="By provider" />
+        <CardHead title="By provider" actions={<ColumnsButton cols={providerCols} />} />
         <CardBody flush>
           {(data.ai_cost_by_provider || []).length === 0 ? (
             <EmptyState title={{ en: 'No AI usage in this period', hi: 'कोई उपयोग नहीं' }} description="Nothing has been metered yet in the selected window." />
           ) : (
             <Table>
-              <TableHead>
-                <HeadCell>Provider</HeadCell>
-                <HeadCell num>Cost</HeadCell>
-                <HeadCell num>Charged</HeadCell>
-                <HeadCell num>Calls</HeadCell>
-              </TableHead>
+              <ArrangedHead cols={providerCols} />
               <TableBody>
                 {data.ai_cost_by_provider.map(r => (
                   <Row key={r.provider}>
-                    <Cell>{r.provider}</Cell>
-                    <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>
-                    <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>
-                    <Cell num>{count(r.call_count)}</Cell>
+                    {providerCols.cells({
+                      provider: <Cell>{r.provider}</Cell>,
+                      cost: <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>,
+                      charged: <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>,
+                      calls: <Cell num>{count(r.call_count)}</Cell>,
+                    })}
                   </Row>
                 ))}
               </TableBody>
@@ -191,36 +293,38 @@ function PlatformView({ period, currency }) {
       </Card>
 
       <Card>
-        <CardHead title="Most profitable organisations" sanskrit="लाभप्रदता" />
+        <CardHead
+          title="Most profitable organisations"
+          sanskrit="लाभप्रदता"
+          actions={<ColumnsButton cols={topOrgCols} />}
+        />
         <CardBody flush>
           {(data.top_orgs_by_spend || []).length === 0 ? (
             <EmptyState title={{ en: 'No spend in this period', hi: 'कोई व्यय नहीं' }} description="Per-org profitability appears once metered usage lands." />
           ) : (
             <Table>
-              <TableHead>
-                <HeadCell>Organisation</HeadCell>
-                <HeadCell num>Markup</HeadCell>
-                <HeadCell num>Cost</HeadCell>
-                <HeadCell num>Charged</HeadCell>
-                <HeadCell num>Margin</HeadCell>
-              </TableHead>
+              <ArrangedHead cols={topOrgCols} />
               <TableBody>
                 {data.top_orgs_by_spend.map(r => (
                   <Row key={r.org_id || r.org_name}>
-                    <Cell>{r.org_name}</Cell>
-                    <Cell num>{pct(r.markup_pct)}</Cell>
-                    <Cell num>{currency === 'usd' ? usd(r.total_cost_usd) : inr((Number(r.total_cost_usd) || 0) * (Number(fx) || 0), { decimals: 2 })}</Cell>
-                    <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>
-                    <Cell num>
-                      <MarginCell
-                        compact
-                        marginInr={r.margin_inr}
-                        costUsd={r.total_cost_usd}
-                        fxRate={fx}
-                        markupPct={r.markup_pct}
-                        chargedInr={r.charged_inr}
-                      />
-                    </Cell>
+                    {topOrgCols.cells({
+                      org: <Cell>{r.org_name}</Cell>,
+                      markup: <Cell num>{pct(r.markup_pct)}</Cell>,
+                      cost: <Cell num>{currency === 'usd' ? usd(r.total_cost_usd) : inr((Number(r.total_cost_usd) || 0) * (Number(fx) || 0), { decimals: 2 })}</Cell>,
+                      charged: <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>,
+                      margin: (
+                        <Cell num>
+                          <MarginCell
+                            compact
+                            marginInr={r.margin_inr}
+                            costUsd={r.total_cost_usd}
+                            fxRate={fx}
+                            markupPct={r.markup_pct}
+                            chargedInr={r.charged_inr}
+                          />
+                        </Cell>
+                      ),
+                    })}
                   </Row>
                 ))}
               </TableBody>
@@ -255,6 +359,10 @@ function OrgsView({ period, currency, fx, onSelect }) {
     return { ...r, margin_inr: (Number(r.charged_inr) || 0) - costInr, cost_inr: costInr };
   }), [rows, fx]);
 
+  // Above the three returns below — an empty cost summary must render the same
+  // hooks as a populated one.
+  const cols = useColumnPrefs('admin.cost_orgs', ORG_COST_COLUMNS);
+
   if (err) return <ErrorState kind={errorKind(err)} grant="finance access to platform cost" onRetry={load} />;
   if (!rows) return <SkeletonPage withTable />;
   if (rows.length === 0) {
@@ -262,50 +370,53 @@ function OrgsView({ period, currency, fx, onSelect }) {
   }
 
   return (
-    <Card>
-      <CardBody flush>
-        <Table className="adm-rows">
-          <TableHead>
-            <HeadCell>Organisation</HeadCell>
-            <HeadCell>Plan</HeadCell>
-            <HeadCell num>Markup</HeadCell>
-            <HeadCell num>Cost</HeadCell>
-            <HeadCell num>Charged</HeadCell>
-            <HeadCell num>Margin</HeadCell>
-            <HeadCell num>AI calls</HeadCell>
-            <HeadCell>Last active</HeadCell>
-          </TableHead>
-          <TableBody>
-            {withMargin.map(r => (
-              <Row
-                key={r.org_id}
-                tabIndex={0}
-                onClick={() => onSelect(r)}
-                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(r); } }}
-              >
-                <Cell><b>{r.org_name}</b></Cell>
-                <Cell>{r.plan_name || 'Free'}</Cell>
-                <Cell num>{r.markup_pct != null ? pct(r.markup_pct) : '—'}</Cell>
-                <Cell num>{currency === 'usd' ? usd(r.total_cost_usd) : inr(r.cost_inr, { decimals: 2 })}</Cell>
-                <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>
-                <Cell num>
-                  <MarginCell
-                    compact
-                    marginInr={r.margin_inr}
-                    costUsd={r.total_cost_usd}
-                    fxRate={fx}
-                    markupPct={r.markup_pct}
-                    chargedInr={r.charged_inr}
-                  />
-                </Cell>
-                <Cell num>{count(r.ai_calls)}</Cell>
-                <Cell>{fmtDate(r.last_active)}</Cell>
-              </Row>
-            ))}
-          </TableBody>
-        </Table>
-      </CardBody>
-    </Card>
+    <>
+      {/* This card carries no head, so the control gets the trailing action bar
+          above it rather than being folded into a row the user is meant to
+          click through to an org. */}
+      <div className="tbl__abar">
+        <ColumnsButton cols={cols} />
+      </div>
+      <Card>
+        <CardBody flush>
+          <Table className="adm-rows">
+            <ArrangedHead cols={cols} />
+            <TableBody>
+              {withMargin.map(r => (
+                <Row
+                  key={r.org_id}
+                  tabIndex={0}
+                  onClick={() => onSelect(r)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(r); } }}
+                >
+                  {cols.cells({
+                    org: <Cell><b>{r.org_name}</b></Cell>,
+                    plan: <Cell>{r.plan_name || 'Free'}</Cell>,
+                    markup: <Cell num>{r.markup_pct != null ? pct(r.markup_pct) : '—'}</Cell>,
+                    cost: <Cell num>{currency === 'usd' ? usd(r.total_cost_usd) : inr(r.cost_inr, { decimals: 2 })}</Cell>,
+                    charged: <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>,
+                    margin: (
+                      <Cell num>
+                        <MarginCell
+                          compact
+                          marginInr={r.margin_inr}
+                          costUsd={r.total_cost_usd}
+                          fxRate={fx}
+                          markupPct={r.markup_pct}
+                          chargedInr={r.charged_inr}
+                        />
+                      </Cell>
+                    ),
+                    calls: <Cell num>{count(r.ai_calls)}</Cell>,
+                    last_active: <Cell>{fmtDate(r.last_active)}</Cell>,
+                  })}
+                </Row>
+              ))}
+            </TableBody>
+          </Table>
+        </CardBody>
+      </Card>
+    </>
   );
 }
 
@@ -324,6 +435,9 @@ function OrgView({ org, period, currency, onBack }) {
   [org.org_id, period, pushToast]);
 
   useEffect(() => { setData(null); load(); }, [load]);
+
+  const modelCols = useColumnPrefs('admin.cost_by_model', MODEL_COLUMNS);
+  const scraperCols = useColumnPrefs('admin.cost_scrapers', SCRAPER_COLUMNS);
 
   const download = async () => {
     setDl(true);
@@ -395,29 +509,24 @@ function OrgView({ org, period, currency, onBack }) {
           </Card>
 
           <Card>
-            <CardHead title="By model" />
+            <CardHead title="By model" actions={<ColumnsButton cols={modelCols} />} />
             <CardBody flush>
               {(data.ai_costs || []).length === 0 ? (
                 <EmptyState title={{ en: 'No AI usage in this period', hi: 'कोई उपयोग नहीं' }} description="Per-model cost appears once a call is metered." />
               ) : (
                 <Table>
-                  <TableHead>
-                    <HeadCell>Provider</HeadCell>
-                    <HeadCell>Model</HeadCell>
-                    <HeadCell num>Cost</HeadCell>
-                    <HeadCell num>Charged</HeadCell>
-                    <HeadCell num>Calls</HeadCell>
-                    <HeadCell num>Tokens in / out</HeadCell>
-                  </TableHead>
+                  <ArrangedHead cols={modelCols} />
                   <TableBody>
                     {data.ai_costs.map((r, i) => (
                       <Row key={`${r.provider}-${r.model}-${i}`}>
-                        <Cell>{r.provider}</Cell>
-                        <Cell><span className="adm-kv__v is-mono">{r.model}</span></Cell>
-                        <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>
-                        <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>
-                        <Cell num>{count(r.call_count)}</Cell>
-                        <Cell num>{count(r.prompt_tokens)} / {count(r.completion_tokens)}</Cell>
+                        {modelCols.cells({
+                          provider: <Cell>{r.provider}</Cell>,
+                          model: <Cell><span className="adm-kv__v is-mono">{r.model}</span></Cell>,
+                          cost: <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>,
+                          charged: <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>,
+                          calls: <Cell num>{count(r.call_count)}</Cell>,
+                          tokens: <Cell num>{count(r.prompt_tokens)} / {count(r.completion_tokens)}</Cell>,
+                        })}
                       </Row>
                     ))}
                   </TableBody>
@@ -428,24 +537,20 @@ function OrgView({ org, period, currency, onBack }) {
 
           {(data.scraper_costs || []).length > 0 && (
             <Card>
-              <CardHead title="Scrapers" />
+              <CardHead title="Scrapers" actions={<ColumnsButton cols={scraperCols} />} />
               <CardBody flush>
                 <Table>
-                  <TableHead>
-                    <HeadCell>Scraper</HeadCell>
-                    <HeadCell num>Cost</HeadCell>
-                    <HeadCell num>Charged</HeadCell>
-                    <HeadCell num>Billed</HeadCell>
-                    <HeadCell num>Runs</HeadCell>
-                  </TableHead>
+                  <ArrangedHead cols={scraperCols} />
                   <TableBody>
                     {data.scraper_costs.map((r, i) => (
                       <Row key={`${r.scraper_id}-${i}`}>
-                        <Cell><span className="adm-kv__v is-mono">{r.scraper_id}</span></Cell>
-                        <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>
-                        <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>
-                        <Cell num>{inr(r.billed_inr, { decimals: 2 })}</Cell>
-                        <Cell num>{count(r.run_count)}</Cell>
+                        {scraperCols.cells({
+                          scraper: <Cell><span className="adm-kv__v is-mono">{r.scraper_id}</span></Cell>,
+                          cost: <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>,
+                          charged: <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>,
+                          billed: <Cell num>{inr(r.billed_inr, { decimals: 2 })}</Cell>,
+                          runs: <Cell num>{count(r.run_count)}</Cell>,
+                        })}
                       </Row>
                     ))}
                   </TableBody>

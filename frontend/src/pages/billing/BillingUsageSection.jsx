@@ -16,6 +16,45 @@ import UsageBySource, {
   CREDIT_PRICE_INR, CreditFigure, indicativeInr, sourceLabel,
 } from './UsageBySource';
 import '../../styles/billing.css';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The three record lists this file draws, declared once each.
+ *
+ * `fixed` marks the cell that says what the row IS — the movement, the billing
+ * line, the thing that happened. None of the three has an actions column: they
+ * are read-only ledgers, and the drill-through hangs off a figure rather than
+ * off a button.
+ *
+ * The transaction drill's `Recorded as` ships hidden. It is a debit/credit tag
+ * that reads "debit" on almost every row of almost every period, so it earns
+ * its place only when somebody is chasing a specific movement — and turning it
+ * on is one tick. See the `defaultHidden` clause of the reconcile contract.
+ */
+const WALLET_COLUMNS = [
+  { id: 'movement', label: 'Movement', fixed: true },
+  { id: 'credits', label: 'Credits', num: true },
+  { id: 'tx', label: 'Transactions', num: true },
+];
+
+const ORG_LINE_COLUMNS = [
+  { id: 'line', label: 'Line', fixed: true },
+  { id: 'description', label: 'Description' },
+  { id: 'amount', label: 'Amount', num: true },
+  { id: 'cadence', label: 'Cadence' },
+  { id: 'from', label: 'From' },
+  { id: 'until', label: 'Until' },
+];
+
+const TRANSACTION_COLUMNS = [
+  { id: 'when', label: 'When' },
+  { id: 'what', label: 'What', fixed: true },
+  { id: 'recorded_as', label: 'Recorded as', defaultHidden: true },
+  { id: 'qty', label: 'Qty', num: true },
+  { id: 'credits', label: 'Credits', num: true },
+  { id: 'balance', label: 'Balance after', num: true },
+];
 
 /**
  * BillingUsageSection — the billing section people actually look at.
@@ -233,6 +272,10 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
     ? sourceLabel(usageSources.find(s => s.source === shownSource))
     : '';
 
+  /* Above the loading and error returns below. */
+  const walletCols = useColumnPrefs('billing.wallet_movements', WALLET_COLUMNS);
+  const lineCols = useColumnPrefs('billing.org_lines', ORG_LINE_COLUMNS);
+
   if (loading) return <SkeletonTable rows={6} />;
   if (err) {
     return (
@@ -324,18 +367,30 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
               Top-ups and period grants. These move the balance and are never added into
               a spend total.
             </p>
+            <div className="tbl__abar">
+              <ColumnsButton cols={walletCols} />
+            </div>
             <Table className="bl__tbl">
               <TableHead>
-                <HeadCell>Movement</HeadCell>
-                <HeadCell num>Credits</HeadCell>
-                <HeadCell num>Transactions</HeadCell>
+                {walletCols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    num={c.num}
+                    width={c.width}
+                    onResize={w => walletCols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </TableHead>
               <TableBody>
                 {(walletSource.items || []).map(it => (
                   <Row key={it.ref_id || it.label}>
-                    <Cell>{it.label || 'Other usage'}</Cell>
-                    <Cell num>{grouped(it.credits || 0)}</Cell>
-                    <Cell num>{grouped(it.tx_count || 0)}</Cell>
+                    {walletCols.cells({
+                      movement: <Cell>{it.label || 'Other usage'}</Cell>,
+                      credits: <Cell num>{grouped(it.credits || 0)}</Cell>,
+                      tx: <Cell num>{grouped(it.tx_count || 0)}</Cell>,
+                    })}
                   </Row>
                 ))}
               </TableBody>
@@ -429,7 +484,11 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
 
   const linesCard = (
     <Card>
-      <CardHead title="What this organisation is billed" sanskrit="बीजक" />
+      <CardHead
+        title="What this organisation is billed"
+        sanskrit="बीजक"
+        actions={<ColumnsButton cols={lineCols} />}
+      />
       <CardBody flush>
         {linesFailed ? (
           <p className="bl__note bl__note--pad">
@@ -445,22 +504,28 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
           <>
             <Table className="bl__tbl">
               <TableHead>
-                <HeadCell>Line</HeadCell>
-                <HeadCell>Description</HeadCell>
-                <HeadCell num>Amount</HeadCell>
-                <HeadCell>Cadence</HeadCell>
-                <HeadCell>From</HeadCell>
-                <HeadCell>Until</HeadCell>
+                {lineCols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    num={c.num}
+                    width={c.width}
+                    onResize={w => lineCols.setWidth(c.id, w)}
+                  >
+                    {c.label}
+                  </HeadCell>
+                ))}
               </TableHead>
               <TableBody>
                 {(lines?.data || []).map(l => (
                   <Row key={l.id} className={l.period_end ? 'bl__off' : ''}>
-                    <Cell><span className="bl__item">{l.kind}</span></Cell>
-                    <Cell>{l.description}</Cell>
-                    <Cell num>{inr(l.amount || 0)}</Cell>
-                    <Cell>{l.cadence === 'one_off' ? 'One-off' : 'Monthly'}</Cell>
-                    <Cell>{formatDate(l.period_start)}</Cell>
-                    <Cell>{l.period_end ? formatDate(l.period_end) : 'Open'}</Cell>
+                    {lineCols.cells({
+                      line: <Cell><span className="bl__item">{l.kind}</span></Cell>,
+                      description: <Cell>{l.description}</Cell>,
+                      amount: <Cell num>{inr(l.amount || 0)}</Cell>,
+                      cadence: <Cell>{l.cadence === 'one_off' ? 'One-off' : 'Monthly'}</Cell>,
+                      from: <Cell>{formatDate(l.period_start)}</Cell>,
+                      until: <Cell>{l.period_end ? formatDate(l.period_end) : 'Open'}</Cell>,
+                    })}
                   </Row>
                 ))}
               </TableBody>
@@ -581,6 +646,8 @@ function TransactionDrill({ drill, basePath, period, source, sourceLabelText, on
     return () => { live = false; };
   }, [basePath, period, source, userId]);
 
+  const txCols = useColumnPrefs('billing.usage_transactions', TRANSACTION_COLUMNS);
+
   return (
     <Modal
       open={Boolean(drill)}
@@ -600,33 +667,48 @@ function TransactionDrill({ drill, basePath, period, source, sourceLabelText, on
       )}
       {rows && rows.length > 0 && (
         <>
+          {/* Inside the rows branch: a Columns button over an empty state is a
+              control for a table that is not there. */}
+          <div className="tbl__abar">
+            <ColumnsButton cols={txCols} />
+          </div>
           <Table className="bl__tbl">
             <TableHead>
-              <HeadCell>When</HeadCell>
-              <HeadCell>What</HeadCell>
-              <HeadCell>Recorded as</HeadCell>
-              <HeadCell num>Qty</HeadCell>
-              <HeadCell num>Credits</HeadCell>
-              <HeadCell num>Balance after</HeadCell>
+              {txCols.columns.map(c => (
+                <HeadCell
+                  key={c.id}
+                  num={c.num}
+                  width={c.width}
+                  onResize={w => txCols.setWidth(c.id, w)}
+                >
+                  {c.label}
+                </HeadCell>
+              ))}
             </TableHead>
             <TableBody>
               {rows.map(t => (
                 <Row key={t.id}>
-                  <Cell>{formatDate(t.created_at)}</Cell>
-                  <Cell>
-                    <span className="bl__item">{t.kind || 'Not itemised'}</span>
-                    {t.ref_id && <span className="bl__ref">{t.ref_id}</span>}
-                    {!t.kind && <span className="bl__ref">{t.description}</span>}
-                  </Cell>
-                  <Cell>
-                    <Tag color={t.tx_type === 'debit' ? 'var(--on-surface-3)' : 'var(--ok)'}>
-                      {t.tx_type}
-                    </Tag>
-                    {t.metered_only && <Tag color="var(--warn)">metered only</Tag>}
-                  </Cell>
-                  <Cell num>{grouped(t.quantity || 0)}</Cell>
-                  <Cell num><CreditFigure credits={t.amount} txCount={1} showInr={false} /></Cell>
-                  <Cell num>{t.metered_only ? '—' : grouped(t.balance_after || 0)}</Cell>
+                  {txCols.cells({
+                    when: <Cell>{formatDate(t.created_at)}</Cell>,
+                    what: (
+                      <Cell>
+                        <span className="bl__item">{t.kind || 'Not itemised'}</span>
+                        {t.ref_id && <span className="bl__ref">{t.ref_id}</span>}
+                        {!t.kind && <span className="bl__ref">{t.description}</span>}
+                      </Cell>
+                    ),
+                    recorded_as: (
+                      <Cell>
+                        <Tag color={t.tx_type === 'debit' ? 'var(--on-surface-3)' : 'var(--ok)'}>
+                          {t.tx_type}
+                        </Tag>
+                        {t.metered_only && <Tag color="var(--warn)">metered only</Tag>}
+                      </Cell>
+                    ),
+                    qty: <Cell num>{grouped(t.quantity || 0)}</Cell>,
+                    credits: <Cell num><CreditFigure credits={t.amount} txCount={1} showInr={false} /></Cell>,
+                    balance: <Cell num>{t.metered_only ? '—' : grouped(t.balance_after || 0)}</Cell>,
+                  })}
                 </Row>
               ))}
             </TableBody>

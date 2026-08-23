@@ -1,6 +1,7 @@
 import React from 'react';
 import EmptyState from '../ui/EmptyState';
 import { Table, TableHead, HeadCell, Cell } from '../ui/Table';
+import ArrangedDataTable from '../ui/arrangeDataTable';
 import { useSecondary, Secondary } from '../Bilingual';
 
 export function TabBar({ tabs, active, onChange }) {
@@ -167,7 +168,16 @@ export function ModCard({ children, onClick, label }) {
  * `.k-modtable` is DELETED, not aliased — editorial.css declares no table rule
  * for it at all, the same way `.gr__tbl` went.
  */
-export function DataTable({ columns, children }) {
+export function DataTable({ columns, children, arrange }) {
+  /* ARRANGEABLE, with one prop and no other edit to the call site.
+     `arrange` is the table key — `'manav.assets'` — and passing it is the
+     whole opt-in: the headers, the widths and the body cells all come out of
+     one permutation, so they cannot drift apart the way a prop that reordered
+     only the headers would have made them.
+     Why a different COMPONENT rather than a branch here: `useColumnPrefs` is a
+     hook. See `ui/arrangeDataTable.jsx`, which also carries the argument for
+     permuting positionally instead of editing seventy pages. */
+  if (arrange) return <ArrangedDataTable arrange={arrange} columns={columns}>{children}</ArrangedDataTable>;
   return (
     <Table>
       <TableHead>

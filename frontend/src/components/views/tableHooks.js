@@ -1,5 +1,5 @@
 /**
- * useColumnResize · useTableSelection (04-boards-table-views.md §3).
+ * useTableSelection (04-boards-table-views.md §3).
  *
  * 04 lists these under `hooks/`. They live beside the views because the table
  * is their only consumer and this batch owns `components/views/**` — move them
@@ -7,79 +7,23 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-/**
- * Column widths, dragged by a grip in the header.
- *
- * **Pointer events, not mouse events.** The list page's `useResizableCols` binds
- * `mousemove`/`mouseup`, which do not fire from a touch or a pen, so the grip is
- * dead on the devices most likely to need a narrower column. Pointer events
- * cover all three inputs with one listener, and `setPointerCapture` keeps the
- * drag alive when the pointer leaves the 7px grip — which it does immediately,
- * because a 7px target is narrower than a hand can hold still.
- */
-export function useColumnResize(columns, storageKey) {
-  const [widths, setWidths] = useState(() => {
-    const base = Object.fromEntries(columns.map(c => [c.key, c.width]));
-    if (!storageKey) return base;
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-      for (const [k, v] of Object.entries(saved)) {
-        if (typeof v === 'number' && k in base) base[k] = v;
-      }
-    } catch { /* corrupt entry — the defaults are a fine answer */ }
-    return base;
-  });
-  const [activeKey, setActiveKey] = useState(null);
-  const drag = useRef(null);
+/* `useColumnResize` DELETED — it was the widths model this workstream
+   replaced, and by the end of it nothing imported it.
 
-  // Columns can appear after mount — showing a hidden custom field adds one. A
-  // column with no entry here gets `width: undefined`, and under
-  // `table-layout: fixed` that collapses the cell to nothing. Reconcile by key:
-  // add what is new, leave what the user has already dragged.
-  const signature = columns.map(c => c.key).join('|');
-  useEffect(() => {
-    setWidths(prev => {
-      const missing = columns.filter(c => !(c.key in prev));
-      if (!missing.length) return prev;
-      const next = { ...prev };
-      for (const c of missing) next[c.key] = c.width;
-      return next;
-    });
-    // `signature` stands in for `columns`, which is a new array every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
+   It kept a board's column widths in `localStorage['kv.table.widths.<board>']`
+   and the task list's in `kv.taskslist.widths`: one device each, so a width
+   dragged on a laptop did not exist on the desktop beside it. Both callers now
+   read `hooks/useColumnPrefs`, which stores order, visibility and width on the
+   server under one key per table — and `views/TableView.jsx` migrates whatever
+   was in the old localStorage entry before retiring it, so nobody loses a
+   layout they had already sized by hand.
 
-  // Persist on settle, not on every frame: a resize is ~60 writes a second and
-  // localStorage is synchronous.
-  useEffect(() => {
-    if (!storageKey || activeKey) return;
-    try { localStorage.setItem(storageKey, JSON.stringify(widths)); } catch { /* quota or private mode */ }
-  }, [widths, activeKey, storageKey]);
+   Its pointer-events fix is not lost: `ui/Table.jsx`'s `ColumnResizer` is
+   pointer-based with `setPointerCapture` for exactly the reason recorded
+   here — mouse events do not fire from a touch or a pen — and adds the
+   keyboard handling this never had.
 
-  const onPointerDown = useCallback((e, key, min = 80) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    drag.current = { key, startX: e.clientX, startW: widths[key], min, node: e.currentTarget };
-    setActiveKey(key);
-  }, [widths]);
-
-  const onPointerMove = useCallback((e) => {
-    const d = drag.current;
-    if (!d) return;
-    setWidths(prev => ({ ...prev, [d.key]: Math.max(d.min, d.startW + e.clientX - d.startX) }));
-  }, []);
-
-  const onPointerUp = useCallback((e) => {
-    const d = drag.current;
-    if (!d) return;
-    d.node?.releasePointerCapture?.(e.pointerId);
-    drag.current = null;
-    setActiveKey(null);
-  }, []);
-
-  return { widths, activeKey, onPointerDown, onPointerMove, onPointerUp };
-}
+   `useTableSelection` below is untouched and still the only export. */
 
 /**
  * Row selection with a shift-range anchor.

@@ -144,11 +144,30 @@ export default function TimeReportPage({ teamId }) {
      for this period". That is a wrong answer presented as a right one. The
      rejection is classified now and rendered as one of the four failure states
      (02-common-components.md); empty means empty. */
+  /* THREE OF THIS CARD'S FOUR CONTROLS WERE INERT, and the page gave no sign.
+
+     `GET /api/time/report` accepted exactly two query parameters — `team_id`
+     and `user_id_filter` — and this call sent `from`, `to` and `user_id`. FastAPI
+     drops an unknown query parameter silently, so:
+
+       · the FROM and TO pickers changed the heading and nothing else. The
+         server had no date filter at all, so TOTAL was a LIFETIME figure
+         printed under a date range the user had just chosen. That is proposal
+         70's exact finding on /reports, on a second page.
+       · the MEMBER select filtered nothing, because the parameter is named
+         `user_id_filter`.
+
+     The server now takes `from_date` / `to_date` and windows on `started_at`,
+     and these are the names it takes. It also returns `window`, `org_scoped`,
+     `entry_count` and `truncated`, all of which are rendered below rather than
+     assumed — the point of the whole exercise is that the page states what its
+     number counts. */
   const load = useCallback(() => {
     setLoading(true);
     setErr(null);
-    const params = { team_id: teamId, from, to };
-    if (memberF) params.user_id = memberF;
+    const params = { from_date: from, to_date: to };
+    if (teamId) params.team_id = teamId;
+    if (memberF) params.user_id_filter = memberF;
     api.get('/time/report', { params })
        .then(r => setData(r.data && Array.isArray(r.data.entries) ? r.data : { entries: [], total_minutes: 0 }))
        .catch(e => { setErr(e); setData({ entries: [], total_minutes: 0 }); })
@@ -190,6 +209,14 @@ export default function TimeReportPage({ teamId }) {
   const totalHours = (loading || err) ? null
     : data.total_minutes ? (data.total_minutes / 60).toFixed(1) : '0';
 
+  /* The window the SERVER used, not the one the pickers hold. Those were the
+     same thing only by accident before — the server ignored the dates — and if
+     they ever diverge again the number should show the server's answer, which
+     is the one it counted. */
+  const rangeLabel = data.window
+    ? `${data.window.from} → ${data.window.to}`
+    : `${from} → ${to}`;
+
   return (
     <div className="k-screen">
       <PageHeader
@@ -202,7 +229,15 @@ export default function TimeReportPage({ teamId }) {
             <div className="k-time-total__num">
               {totalHours === null ? '—' : <>{totalHours}<span className="k-time-total__unit">h</span></>}
             </div>
-            <div className="k-time-total__lbl">TOTAL <Secondary className="k-lbl__in" value="कुल" /></div>
+            <div className="k-time-total__lbl">
+              {/* A bare "TOTAL" over a number the reader cannot place is the
+                  failure this page shipped with. The label now carries its own
+                  window, and `truncated` says when the total is the total of
+                  the rows returned rather than of the period. */}
+              {data.truncated ? 'FIRST 500 ENTRIES' : 'TOTAL'}
+              {' '}<Secondary className="k-lbl__in" value="कुल" />
+              <span className="k-time-total__win">{rangeLabel}</span>
+            </div>
           </div>
         }
       />
@@ -226,7 +261,10 @@ export default function TimeReportPage({ teamId }) {
             </select>
           </div>
           <div className="trp-filter__acts">
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => { setFrom(weekAgoISO); setTo(todayISO); setMemberF(''); }}>
+            {/* `weekAgoISO` and `todayISO` do not exist in this module — the
+                constants are WEEK_AGO_ISO and TODAY_ISO. Reset threw a
+                ReferenceError on every click and the range never moved. */}
+            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => { setFrom(WEEK_AGO_ISO); setTo(TODAY_ISO); setMemberF(''); }}>
               Reset
             </button>
             <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => exportCSV(data.entries)} disabled={!data.entries?.length}>
@@ -236,6 +274,25 @@ export default function TimeReportPage({ teamId }) {
           </div>
         </div>
       </section>
+
+      {/* WHOSE ENTRIES, AND FROM WHERE. Measured live 2026-08-22: this endpoint
+          had no org scope, so a platform account saw all 108 entries of all
+          three organisations in one undifferentiated list, and one real person
+          with work in two orgs saw both whichever org they had switched to.
+          The server scopes to the active org now and reports whether it could
+          name one; where it could not, the page says so instead of looking
+          identical to a page that could. */}
+      {!loading && !err && (
+        <p className="k-note trp-scope">
+          Showing <b>{data.scope || 'your own entries'}</b>
+          {data.org_scoped
+            ? ' in the organisation you are currently in'
+            : ' — no organisation could be resolved for this view, so it is scoped by project membership alone'}
+          {data.truncated
+            ? '. More than 500 entries match: the total below covers the 500 shown.'
+            : '.'}
+        </p>
+      )}
 
       {loading && (
         <div className="k-twocol" aria-busy="true" aria-label="Loading time entries">
@@ -305,7 +362,7 @@ export default function TimeReportPage({ teamId }) {
                   table column headers under "No". HOURS right-aligns because a
                   left-aligned numeric column cannot be scanned for magnitude,
                   which is the only reason anyone reads a column of hours. */}
-              <DataTable columns={[
+              <DataTable arrange="reports.time_entries" columns={[
                 'Date', 'Member', 'Task', 'Note',
                 { label: 'Hours', align: 'right' },
               ]}>

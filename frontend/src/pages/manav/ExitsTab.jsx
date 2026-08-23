@@ -27,8 +27,57 @@ import { useList, ErrorNote, Shim, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+// `CreatedHead` is gone: the header comes out of the column declaration below,
+// which is what lets it be moved, hidden and resized. The CELL is unchanged.
+import {
+  CreatedCell, UpdatedCell, ByCell, CREATED_KEY, UPDATED_KEY,
+} from '../../components/ui/CreatedColumn';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+
+/**
+ * The exit register's columns, declared once, in the order they shipped. Only
+ * Created is sortable and always has been; the rest carry no `sortKey` rather
+ * than claiming an order the view does not apply.
+ *
+ * `fixed` on Employee — whose exit a row is, and the cell that also carries the
+ * employee code. `fixed` on the disclosure caret: everything you can DO to an
+ * exit (the clearance checklist, the interview, Complete exit) lives in the
+ * panel that caret opens, so it is this table's actions column wearing a
+ * different hat, and a row with no visible affordance to open reads as inert.
+ */
+const EXIT_COLUMNS = [
+  { id: 'employee_name', label: 'Employee', fixed: true },
+  { id: 'exit_type', label: 'Type' },
+  { id: 'last_working_day', label: 'Last day' },
+  { id: 'clearance', label: 'Clearance' },
+  { id: 'has_interview', label: 'Interview' },
+  { id: 'status', label: 'Status' },
+  // `SELECT o.*` returns created_at and the server already orders by it, so
+  // this column agrees with the order the list arrives in.
+  { id: CREATED_KEY, label: 'Created', sortKey: CREATED_KEY, className: 'tbl__created' },
+  { id: 'expand', label: 'Open', sr: true, fixed: true },
+  /* WHO opened the exit and WHO last amended it.
+     ── The label is "Opened by", not "Created by" ────────────────────────────
+     The database column here is `initiated_by`, not `created_by` — offboarding
+     was built before the convention and 201/202 deliberately did not rename it.
+     `routers/manav.py` aliases it to `created_by_name`/`has_creator` so the
+     WIRE contract is identical to every other list and `ByCell` needs to know
+     nothing about this table; the SCREEN says what the module says. An exit is
+     opened by the person who starts it and closed by `Complete exit` — nobody
+     "creates" a resignation, and this register's whole point is that starting
+     an exit is not the same act as finishing it.
+
+     Appended at the end of the declaration, after the expand chevron: the
+     arrangement `useColumnPrefs` has already stored against this key positions
+     the columns a person arranged, and inserting into the middle of the base
+     list is what moves them. */
+  { id: 'created_by_name', label: 'Opened by', sortKey: 'created_by_name', className: 'tbl__by' },
+  { id: UPDATED_KEY, label: 'Updated', sortKey: UPDATED_KEY, className: 'tbl__created' },
+  { id: 'updated_by_name', label: 'Updated by', sortKey: 'updated_by_name', className: 'tbl__by' },
+];
 
 const EXIT_TYPES = [
   ['resignation', 'Resignation'],
@@ -217,10 +266,17 @@ export default function ExitsTab({ onUpdate }) {
     } finally { setSaving(false); }
   }
 
+  // Both hooks sit ABOVE the two early returns. `useTableView` was below them,
+  // which meant the loading and error renders called one hook fewer than the
+  // loaded one — React counts hooks per render, so the first paint after data
+  // arrived was one "rendered more hooks than during the previous render" away
+  // from taking the tab down. Adding a second conditional hook beside it would
+  // have doubled the exposure, so both moved up instead.
+  const view = useTableView(rows, { filters: [{ key: 'status', label: 'Status' }] });
+  const cols = useColumnPrefs('manav.exits', EXIT_COLUMNS);
+
   if (exits.loading) return <Shim count={4} />;
   if (exits.error) return <ErrorNote what="Exits" error={exits.error} onRetry={exits.reload} />;
-
-  const view = useTableView(rows, { filters: [{ key: 'status', label: 'Status' }] });
   return (
     <div>
       <div className="gn-bar">
@@ -309,18 +365,27 @@ export default function ExitsTab({ onUpdate }) {
         />
       ) : (
         <div className="tv-card">
-        <TableToolbar view={view} label="exits" />
+        <TableToolbar view={view} label="exits">
+          <ColumnsButton cols={cols} />
+        </TableToolbar>
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Employee</th><th>Type</th><th>Last day</th>
-                <th>Clearance</th><th>Interview</th><th>Status</th>
-                {/* `SELECT o.*` returns created_at and the server already
-                    orders by it, so this header agrees with the order the
-                    list arrives in rather than contradicting it. */}
-                <CreatedHead sort={view.sort} onSort={view.onSort} />
-                <th />
+                {cols.columns.map(c => (
+                  <HeadCell
+                    key={c.id}
+                    sortKey={c.sortKey}
+                    sort={view.sort}
+                    onSort={c.sortKey ? view.onSort : undefined}
+                    num={c.num}
+                    className={c.className}
+                    width={c.width}
+                    onResize={w => cols.setWidth(c.id, w)}
+                  >
+                    {c.sr ? <span className="sr-only">{c.label}</span> : c.label}
+                  </HeadCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -331,28 +396,45 @@ export default function ExitsTab({ onUpdate }) {
                 return (
                   <React.Fragment key={r.id}>
                     <tr className="mn-t__row--click" onClick={() => setOpenId(open ? null : r.id)}>
-                      <td>
-                        <div className="gr__td--name">{r.employee_name}</div>
-                        {r.employee_code && <div className="gr__ls">{r.employee_code}</div>}
-                      </td>
-                      <td className="gr__td--mute">
-                        {(EXIT_TYPES.find(([v]) => v === r.exit_type) || [, r.exit_type])[1]}
-                      </td>
-                      <td className="gr__td--mute">{r.last_working_day || '—'}</td>
-                      <td className="gr__td--mute">{items.length ? `${done}/${items.length}` : '—'}</td>
-                      <td className="gr__td--mute">{Number(r.has_interview) > 0 ? 'Done' : '—'}</td>
-                      <td>
-                        <span className="tag" style={{ '--tag-c': STATUS_COLOR[r.status] }}>
-                          {String(r.status).replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <CreatedCell value={r.created_at} />
-                      <td className="gr__td--mute">{open ? '▾' : '▸'}</td>
+                      {cols.cells({
+                        employee_name: (
+                          <td>
+                            <div className="gr__td--name">{r.employee_name}</div>
+                            {r.employee_code && <div className="gr__ls">{r.employee_code}</div>}
+                          </td>
+                        ),
+                        exit_type: (
+                          <td className="gr__td--mute">
+                            {(EXIT_TYPES.find(([v]) => v === r.exit_type) || [, r.exit_type])[1]}
+                          </td>
+                        ),
+                        last_working_day: <td className="gr__td--mute">{r.last_working_day || '—'}</td>,
+                        clearance: <td className="gr__td--mute">{items.length ? `${done}/${items.length}` : '—'}</td>,
+                        has_interview: <td className="gr__td--mute">{Number(r.has_interview) > 0 ? 'Done' : '—'}</td>,
+                        status: (
+                          <td>
+                            <span className="tag" style={{ '--tag-c': STATUS_COLOR[r.status] }}>
+                              {String(r.status).replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                        ),
+                        [CREATED_KEY]: <CreatedCell value={r.created_at} />,
+                        expand: <td className="gr__td--mute">{open ? '▾' : '▸'}</td>,
+                        /* `hasActor` distinguishes an exit opened by somebody
+                           who has themselves since left (`unknown`) from one
+                           with no initiator recorded — and on THIS register the
+                           first case is not hypothetical: the person who opens
+                           an exit is often the next row in it. */
+                        created_by_name: <ByCell name={r.created_by_name} hasActor={r.has_creator} />,
+                        [UPDATED_KEY]: <UpdatedCell value={r.updated_at} />,
+                        updated_by_name: <ByCell name={r.updated_by_name} hasActor={r.has_updater} />,
+                      })}
                     </tr>
 
                     {open && (
                       <tr>
-                        <td colSpan={8}>
+                        {/* Spans what is on screen, not a literal 8. */}
+                        <td colSpan={cols.columns.length}>
                           <div className="mn-exit__panel">
                             {r.reason && <p className="of__h">“{r.reason}”</p>}
                             <p className="of__h">

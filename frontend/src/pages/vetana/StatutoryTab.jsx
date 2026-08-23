@@ -149,7 +149,7 @@ function Summary({ data, month }) {
           </p>
         ) : (
           <>
-            <DataTable columns={[
+            <DataTable arrange="vetana.statutory_employees" columns={[
               'Employee', 'Code', 'PAN', 'UAN',
               { label: 'Basic', align: 'right' }, { label: 'Gross', align: 'right' },
               { label: 'PF (E)', align: 'right' }, { label: 'PF (R)', align: 'right' },

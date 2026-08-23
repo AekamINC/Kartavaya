@@ -55,7 +55,7 @@ export default function DashboardTab() {
             salary structure effective on or before the end of that month.
           </p>
         ) : (
-          <DataTable columns={[
+          <DataTable arrange="vetana.dashboard_departments" columns={[
             'Department',
             { label: 'Employees', align: 'right' },
             { label: 'Gross', align: 'right' },

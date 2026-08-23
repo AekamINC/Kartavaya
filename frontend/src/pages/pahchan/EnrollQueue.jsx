@@ -163,7 +163,7 @@ export default function EnrollQueue() {
             description="Every reference photo submitted has been approved."
           />
         ) : (
-          <DataTable columns={['Photo', 'Employee', 'Slot', 'Taken', 'Action']}>
+          <DataTable arrange="pahchan.enroll_queue" columns={['Photo', 'Employee', 'Slot', 'Taken', 'Action']}>
             {pending.map(p => (
               <tr key={p.id}>
                 <Td><RefThumb photoId={p.id} name={p.employee_name} /></Td>
@@ -205,7 +205,7 @@ export default function EnrollQueue() {
             description="Every active employee has both reference photos on file."
           />
         ) : (
-          <DataTable columns={['Employee', 'On file', 'Status']}>
+          <DataTable arrange="pahchan.enroll_incomplete" columns={['Employee', 'On file', 'Status']}>
             {incomplete.map(e => (
               <tr key={e.employee_id}>
                 <Td>

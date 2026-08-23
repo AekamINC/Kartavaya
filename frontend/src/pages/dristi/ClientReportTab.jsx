@@ -329,6 +329,7 @@ export default function ClientReportTab() {
                 <p className="dnone">No invoices, payments or spend in this period.</p>
               ) : (
                 <DataTable
+                  arrange="dristi.client_monthly"
                   columns={['Month',
                     { label: 'Invoiced', align: 'right' },
                     { label: 'Collected', align: 'right' },

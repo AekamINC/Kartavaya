@@ -2,7 +2,6 @@
  * TasksListPage.jsx — editorial Tasks screen with resizable + toggleable columns.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useDismiss } from '../hooks/useDismiss';
 import { useSkeletonGate } from '../hooks/useSkeletonGate';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
@@ -18,7 +17,9 @@ import {
 } from '../lib/statusColors';
 import { SkeletonTable, SkeletonRegion } from '../components/ui/Skeleton';
 import { EmptyState, ErrorState, errorKind } from '../components/ui';
-import { useColumnResize } from '../components/views/tableHooks';
+import useColumnPrefs from '../hooks/useColumnPrefs';
+import { ColumnsButton } from '../components/ui/CustomizeColumns';
+import { ColumnResizer } from '../components/ui/Table';
 import { useLanguage } from '../components/CustomizePanel';
 import { secondaryOf } from '../lib/labels';
 import { Secondary } from '../components/Bilingual';
@@ -27,45 +28,38 @@ const PRIORITY_ORDER = ['urgent','high','medium','low'];
 const PRIORITY_HI    = { urgent:'अत्यावश्यक', high:'उच्च', medium:'मध्यम', low:'न्यून' };
 const STATUS_ORDER   = ['todo','in_progress','in_review','done','requested'];
 
-// All available columns. 'task' is always visible and cannot be hidden.
-const ALL_COLS = [
-  { key: 'task',       label: 'Task',         width: 340, min: 180, fixed: true  },
-  { key: 'project',    label: 'Project',      width: 180, min: 100, fixed: false },
-  { key: 'assignees',  label: 'Assignees',    width: 200, min: 120, fixed: false },
-  { key: 'category',   label: 'Category',     width: 140, min: 90,  fixed: false },
-  { key: 'due',        label: 'Due',          width: 150, min: 120, fixed: false },
-  { key: 'updated',    label: 'Last Updated', width: 130, min: 100, fixed: false },
-  { key: 'status',     label: 'Status',       width: 130, min: 90,  fixed: false },
+/**
+ * THE DIV GRID JOINS THE ONE ARRANGEMENT MODEL.
+ *
+ * This table kept its own everything: a `visible` Set in React state (lost on
+ * every reload), widths in `localStorage['kv.taskslist.widths']` (this device
+ * only, so the layout a partner set up on a laptop did not exist on the
+ * desktop next to it), and NO order at all — the seven columns were whatever
+ * order this array happened to be in, for everyone, for ever. Three columns
+ * arranged three ways on the most-visited page in the product.
+ *
+ * It is now `useColumnPrefs`, the same hook and the same server rows as every
+ * `<table>`, reached through its div-grid half (`gridCells` / `gridTemplate`).
+ * The declaration below is the only thing that had to be written: `key` became
+ * `id`, `min` went (the shared MIN_WIDTH of 48 is the floor the API enforces,
+ * and a per-column minimum the server does not know about is a rule that
+ * survives exactly as long as nobody edits the width in the sheet), and the
+ * two columns that used to be absent from `DEFAULT_VISIBLE` say
+ * `defaultHidden` instead — which is the same shipped default expressed where
+ * a saved arrangement can override it.
+ *
+ * `fixed` on Task for the reason every other table pins its identity column:
+ * it is the only cell that says which task the row is.
+ */
+const TASK_COLUMNS = [
+  { id: 'task',      label: 'Task',         width: 340, fixed: true },
+  { id: 'project',   label: 'Project',      width: 180 },
+  { id: 'assignees', label: 'Assignees',    width: 200 },
+  { id: 'category',  label: 'Category',     width: 140, defaultHidden: true },
+  { id: 'due',       label: 'Due',          width: 150 },
+  { id: 'updated',   label: 'Last Updated', width: 130, defaultHidden: true },
+  { id: 'status',    label: 'Status',       width: 130 },
 ];
-
-const DEFAULT_VISIBLE = new Set(['task','project','assignees','due','status']);
-
-function ColumnsPopover({ visible, onToggle, onClose }) {
-  const ref = useRef(null);
-  // This effect had NO `visible` guard: the listener attached unconditionally,
-  // so onClose() fired on every outside mousedown even while the popover was
-  // shut. Now gated on visible, and Escape closes it too.
-  useDismiss(visible, ref, onClose);
-
-  return (
-    <div ref={ref} className="k-col-popover">
-      <div className="k-col-popover__head">Columns</div>
-      {ALL_COLS.filter(c => !c.fixed).map(col => (
-        <label key={col.key} className="k-col-popover__row">
-          <span className="k-col-popover__check">
-            <input
-              type="checkbox"
-              checked={visible.has(col.key)}
-              onChange={() => onToggle(col.key)}
-            />
-            <span className="k-col-popover__box" />
-          </span>
-          <span className="k-col-popover__name">{col.label}</span>
-        </label>
-      ))}
-    </div>
-  );
-}
 
 export default function TasksListPage() {
   const { pushToast } = useToast();
@@ -98,8 +92,6 @@ export default function TasksListPage() {
   const [group,        setGroup]        = useState('priority');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
   const [newTaskOpen,  setNewTaskOpen]  = useState(false);
-  const [colsOpen,     setColsOpen]     = useState(false);
-  const [visible,      setVisible]      = useState(DEFAULT_VISIBLE);
   const [showArchived, setShowArchived] = useState(false);
   const [page,         setPage]         = useState(1);
   /* Persisted, because it is a workspace preference rather than a per-visit
@@ -137,25 +129,23 @@ export default function TasksListPage() {
     }), ms);
   }, []);
 
-  const activeCols = ALL_COLS.filter(c => c.fixed || visible.has(c.key));
-  // Was a local `useResizableCols` bound to `mousemove`/`mouseup`, which do not
-  // fire for touch or pen — the grip was dead on exactly the devices most
-  // likely to need a narrower column. The shared hook is pointer-based, uses
-  // `setPointerCapture` so the drag survives leaving the 7px target, and
-  // remembers the widths.
-  const { widths, activeKey, onPointerDown, onPointerMove, onPointerUp } =
-    useColumnResize(ALL_COLS, 'kv.taskslist.widths');
+  const cols = useColumnPrefs('tasks.list', TASK_COLUMNS);
 
-  const gridTemplate = activeCols.map(c => `${widths[c.key]}px`).join(' ');
+  /* The live width while a divider is being dragged, as `{id, width}`.
+     A `<table>` needs nothing like this — `ColumnResizer` writes `th.style.width`
+     and the browser reflows the column. A GRID has no such lever: the track list
+     lives on the ROW, so the only way to move one column mid-drag is to rewrite
+     `grid-template-columns`, which means the preview has to be state here. It is
+     one setState per pointermove on one string, and it ends at pointer-up — the
+     PUT is still one write per gesture, which is `ColumnResizer`'s contract and
+     the reason the divider is not doing the saving itself. */
+  const [preview, setPreview] = useState(null);
+  const gridTemplate = preview
+    ? cols.columns.map(c => (
+        c.id === preview.id ? `${preview.width}px`
+          : c.width ? `${c.width}px` : 'minmax(0, 1fr)')).join(' ')
+    : cols.gridTemplate;
   const rowStyle = { gridTemplateColumns: gridTemplate };
-
-  const toggleCol = useCallback(key => {
-    setVisible(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  }, []);
 
   const load = useCallback(async (archived = false) => {
     setLoading(true);
@@ -362,8 +352,6 @@ export default function TasksListPage() {
     done:    tasks.filter(t => t.status === 'done').length,
   };
 
-  const hiddenCount = ALL_COLS.filter(c => !c.fixed && !visible.has(c.key)).length;
-
   // MOTION-SPEC §7.4 — the skeleton waits 120ms, so flipping Archived (which
   // re-runs the whole load) no longer replaces the table with a skeleton and
   // back inside one frame of a warm request. `loaded` is what stops it holding
@@ -418,34 +406,13 @@ export default function TasksListPage() {
           </button>
         </div>
         <div className="k-filterbar__right">
-          {/* Columns toggle */}
-          <div style={{ position: 'relative' }}>
-            {/* `is-active` styled nothing: there is no `.k-btn.is-active` rule
-                in the build, only `.k-segctrl__btn.is-active` and `.k-tab
-                .is-active`. The open state was invisible. `aria-expanded`
-                carries it to assistive tech and `.pb__toggle` draws it, so the
-                two cannot drift. */}
-            <button
-              type="button"
-              className="k-btn k-btn--ghost k-btn--sm vtb__ico pb__toggle"
-              aria-expanded={colsOpen}
-              aria-haspopup="dialog"
-              onClick={() => setColsOpen(v => !v)}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-                <rect x="1" y="3" width="4" height="10" rx="1"/><rect x="6" y="3" width="4" height="10" rx="1"/><rect x="11" y="3" width="4" height="10" rx="1"/>
-              </svg>
-              Columns
-              {hiddenCount > 0 && <span className="k-badge">{hiddenCount} hidden</span>}
-            </button>
-            {colsOpen && (
-              <ColumnsPopover
-                visible={visible}
-                onToggle={toggleCol}
-                onClose={() => setColsOpen(false)}
-              />
-            )}
-          </div>
+          {/* The popover this replaces could only TICK a column on and off, and
+              its state died with the component. `ColumnsButton` opens the same
+              sheet every other table in the product opens: order, visibility
+              and width in one place, saved, and settable as the team default
+              by an org admin. It also carries the hidden count, which the
+              popover's caller computed by hand. */}
+          <ColumnsButton cols={cols} />
 
           <label className="k-fld">
             <span className="k-fld__lbl">Group by</span>
@@ -467,25 +434,42 @@ export default function TasksListPage() {
 
       {showSkeleton ? (
         <SkeletonRegion label="Loading tasks…">
-          <SkeletonTable rows={8} columns={activeCols.length} />
+          <SkeletonTable rows={8} columns={cols.columns.length} />
         </SkeletonRegion>
       ) : error ? (
         <ErrorState kind={errorKind(error)} grant="access to these tasks" onRetry={() => load(showArchived)} />
       ) : (
-        <div
-          className="k-tablewrap"
-          style={{ overflowX: 'auto' }}
-          onPointerMove={activeKey ? onPointerMove : undefined}
-          onPointerUp={activeKey ? onPointerUp : undefined}
-        >
-          {/* Header */}
+        <div className="k-tablewrap" style={{ overflowX: 'auto' }}>
+          {/* Header.
+              `data-colhead` is what lets the SHARED `ColumnResizer` measure a
+              column that has no `<th>` to sit in: it looks for
+              `closest('th, [data-colhead]')`. The handle it replaces was a bare
+              `<span onPointerDown>` — not focusable, no role, deaf to every key
+              — so the one table on this page whose columns a user actually
+              drags was the one place resizing could not be done from a
+              keyboard. That was fixed by hand once already for the rest of the
+              build (5cb76413, React Aria rejected); a second implementation
+              here would have re-opened it.
+
+              The divider is on EVERY header, including the last. It was
+              suppressed on the last one because that grip had nothing to its
+              right to push; with a stored width it does — the last column is
+              as resizable as the others, and the row scrolls. */}
           <div className="k-table__head k-trow--resizable" style={rowStyle}>
-            {activeCols.map((col, idx) => (
-              <div key={col.key} className={`k-table__hcell k-c-${col.key}`} style={{ position: 'relative', userSelect: 'none' }}>
+            {cols.columns.map(col => (
+              <div
+                key={col.id}
+                data-colhead
+                className={`k-table__hcell k-c-${col.id}`}
+                style={{ position: 'relative', userSelect: 'none' }}
+              >
                 {col.label}
-                {idx < activeCols.length - 1 && (
-                  <span className="k-col-resize" onPointerDown={e => onPointerDown(e, col.key, col.min)} />
-                )}
+                <ColumnResizer
+                  label={col.label}
+                  width={col.width}
+                  onPreview={w => setPreview(w == null ? null : { id: col.id, width: w })}
+                  onCommit={w => cols.setWidth(col.id, w)}
+                />
               </div>
             ))}
           </div>
@@ -546,6 +530,10 @@ export default function TasksListPage() {
                 const team      = teams.find(tm => tm.team_id === t.team_id);
                 const cat       = categories.find(c => c.category_id === t.category_id);
                 const assignees = (t.assignee_names || []).map(name => ({ name, color: avatarBg(name) }));
+                /* Hoisted out of what used to be a block-scoped `case`. ONE
+                   assignee gets a named pill; two or more collapse to initials
+                   — see the note on the cell below. */
+                const solo      = assignees.length === 1;
                 return (
                   /* The row was a `<button>` with `<button>`s inside it —
                      archive, and now the quick-complete tick. React logs "In
@@ -579,10 +567,14 @@ export default function TasksListPage() {
                       setDrawerTaskId(t.task_id);
                     }}
                   >
-                    {activeCols.map(col => {
-                      switch (col.key) {
-                        case 'task':
-                          return (
+                    {/* One node per column, keyed by id — `gridCells` puts them
+                        in the arranged order and drops the hidden ones, exactly
+                        as `cells()` does for a `<table>`. It was a `switch` over
+                        a filtered array, which meant this row's order was
+                        whatever order `ALL_COLS` was written in and could not be
+                        anything else. */}
+                    {cols.gridCells({
+                      task: (
                             <div key="task" className="k-trow__cell k-c-task">
                               <PriorityDot priority={t.priority} />
                               {/* `KAR-{idx + 100}` — the row's index WITHIN ITS
@@ -614,13 +606,12 @@ export default function TasksListPage() {
                                 </span>
                               )}
                             </div>
-                          );
-                        case 'project':
-                          return (
+                          ),
+                      project: (
                             <div key="project" className="k-trow__cell k-c-project">
                               {team ? <ProjectTag name={team.name} dense /> : <span className="k-trow__empty">—</span>}
                             </div>
-                          );
+                          ),
                         /* ONE assignee gets a named pill; TWO OR MORE collapse
                            to initials only.
 
@@ -630,9 +621,7 @@ export default function TasksListPage() {
                            other row in the table — which is most of why a
                            uniform 44px list reads as ragged. Initials keep the
                            row at 44px and still name everyone on hover. */
-                        case 'assignees': {
-                          const solo = assignees.length === 1;
-                          return (
+                      assignees: (
                             <div key="assignees" className="k-trow__cell k-c-assignees">
                               {assignees.length === 0
                                 ? <span className="k-trow__empty">—</span>
@@ -650,10 +639,8 @@ export default function TasksListPage() {
                               }
                               {assignees.length > 3 && <span className="k-assignee-pill__more">+{assignees.length - 3}</span>}
                             </div>
-                          );
-                        }
-                        case 'category':
-                          return (
+                          ),
+                      category: (
                             <div key="category" className="k-trow__cell k-c-category">
                               {cat
                                 ? <span className="k-cat-chip" style={{ '--cat-c': cat.color }}>
@@ -663,27 +650,22 @@ export default function TasksListPage() {
                                 : <span className="k-trow__empty">—</span>
                               }
                             </div>
-                          );
-                        case 'due':
-                          return (
+                          ),
+                      due: (
                             <div key="due" className="k-trow__cell k-c-due">
                               <DueChip date={t.due_at} status={t.status} completedAt={t.completed_at} />
                             </div>
-                          );
-                        case 'updated':
-                          return (
+                          ),
+                      updated: (
                             <div key="updated" className="k-trow__cell k-c-updated">
                               <span className="k-trow__meta">{relTime(t.updated_at) || '—'}</span>
                             </div>
-                          );
-                        case 'status':
-                          return (
+                          ),
+                      status: (
                             <div key="status" className="k-trow__cell k-c-status">
                               <StatusChip status={t.status} approvalStatus={t.approval_status} columnName={t.column_name} columnColor={t.column_color} />
                             </div>
-                          );
-                        default: return null;
-                      }
+                          ),
                     })}
 
                     {/* ── Row actions, at the END of the row ────────────────
@@ -697,9 +679,9 @@ export default function TasksListPage() {
                         hover, the way `.msg__acts` works in the reference. It is
                         absolutely positioned rather than given a grid track
                         because the column widths are user-resizable and stored
-                        (`useColumnResize`) — adding a track would invalidate
-                        every saved layout and the header row's template with
-                        it. */}
+                        (`useColumnPrefs`, now on the server) — adding a track
+                        would invalidate every saved layout and the header row's
+                        template with it. */}
                     <div className="k-trow__actions">
                       {!showArchived && (
                         <button

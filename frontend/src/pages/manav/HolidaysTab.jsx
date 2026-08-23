@@ -101,7 +101,7 @@ export default function HolidaysTab() {
               sub="Add public holidays and company-wide days off. Attendance and payroll both read this calendar."
             />
           ) : (
-            <DataTable columns={['Date', 'Name', 'Type', '']}>
+            <DataTable arrange="manav.holidays" columns={['Date', 'Name', 'Type', '']}>
               {list.items.map(h => (
                 <tr key={h.id}>
                   <Td className="mn-t__mono">{h.date}</Td>

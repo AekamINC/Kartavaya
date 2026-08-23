@@ -51,10 +51,15 @@ import { Empty } from '../../components/editorial';
 import { DataTable, Td } from '../../components/editorial';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
-import TableToolbar from '../../components/ui/TableToolbar';
+import TableToolbar, { ArrangedTableSection } from '../../components/ui/TableToolbar';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Badge, ErrorNote, Shim, errText, useResource, today } from './_shared';
+// The product's one date renderer and its one person renderer. `CreatedCell`
+// and `ByCell` render `ui/Table`'s `<Cell>`, which IS a `<td>` — the same
+// element `Td` renders — so they drop into this table unchanged and it keeps
+// one date format instead of growing a second.
+import { CreatedCell, UpdatedCell, ByCell } from '../../components/ui/CreatedColumn';
 
 // The bands, most urgent first — the same order `notices.URGENCY_ORDER` sorts
 // on. `critical` starts at 0 days because 0 means due today: rule 88C and rule
@@ -69,6 +74,33 @@ const BAND_COLORS = {
   scheduled: 'var(--on-surface-3)',
   stopped: 'var(--ok)',
 };
+
+/**
+ * The register's columns, hoisted so the expansion rows below span
+ * `NOTICE_COLUMNS.length` rather than a literal 8.
+ *
+ * `ArrangedDataTable` only retargets a spanning row when its `colSpan` EQUALS
+ * the base column count — that is how it tells "spans everything" from "a
+ * positional row" — so a hardcoded 8 under a twelve-column table both
+ * under-spans today and stops being retargeted the moment a column is hidden.
+ *
+ * The four appended at the END, after the blank actions column, because a body
+ * cell is identified by POSITION: cell *i* is column *i*. Appending leaves
+ * every existing column at the index a stored arrangement already knows;
+ * inserting before the actions column would renumber half the table for
+ * everybody who has arranged it. Somebody who wants them beside Received moves
+ * them in the Columns sheet.
+ *
+ * `Received` and `Reply due` are dates ON THE NOTICE — facts about the tax
+ * office. `Created` and `Updated` are facts about this product: when the notice
+ * was filed into the register here, and when somebody last moved it along. They
+ * are not the same question and the register needs both.
+ */
+const NOTICE_COLUMNS = [
+  'Client', 'Notice', 'Reference', 'Received', 'Reply due', 'Where it stands',
+  'Owner', '',
+  'Filed', 'Filed by', 'Updated', 'Updated by',
+];
 
 const BAND_LABELS = {
   escalated: 'Escalated',
@@ -426,9 +458,14 @@ export default function NoticesTab() {
       )}
 
       {!res.loading && !res.error && rows.length > 0 && view === 'types' && (
-        <div className="tv-card">
+        <ArrangedTableSection className="tv-card">
+          {/* ONE row of chrome. `TableToolbar` and the table under it are
+              paired here so the table's "Columns…" control renders INSIDE the
+              toolbar rather than on a second line of its own — see
+              `ui/columnsSlot.js` for why the button travels and the state does
+              not. The `.tv-card` frame is unchanged; the wrapper renders it. */}
           <TableToolbar view={table} label="notice types" searchPlaceholder="Form, code or label…" />
-          <DataTable columns={['Notice', 'Authority', 'Form', 'Reply in', 'If ignored', 'Source']}>
+          <DataTable arrange="manav.notice_types" columns={['Notice', 'Authority', 'Form', 'Reply in', 'If ignored', 'Source']}>
             {table.rows.map(r => (
               <tr key={r.code}>
                 <Td>
@@ -455,13 +492,18 @@ export default function NoticesTab() {
               </tr>
             ))}
           </DataTable>
-        </div>
+        </ArrangedTableSection>
       )}
 
       {!res.loading && !res.error && rows.length > 0 && view !== 'types' && (
-        <div className="tv-card">
+        <ArrangedTableSection className="tv-card">
+          {/* ONE row of chrome. `TableToolbar` and the table under it are
+              paired here so the table's "Columns…" control renders INSIDE the
+              toolbar rather than on a second line of its own — see
+              `ui/columnsSlot.js` for why the button travels and the state does
+              not. The `.tv-card` frame is unchanged; the wrapper renders it. */}
           <TableToolbar view={table} label="notices" searchPlaceholder="Client, reference or form…" />
-          <DataTable columns={['Client', 'Notice', 'Reference', 'Received', 'Reply due', 'Where it stands', 'Owner', '']}>
+          <DataTable arrange="manav.notices" columns={NOTICE_COLUMNS}>
             {table.rows.map(r => (
               <React.Fragment key={`${r.reference_no}-${r.received_on}`}>
                 <tr>
@@ -514,11 +556,21 @@ export default function NoticesTab() {
                       )}
                     </div>
                   </Td>
+                  {/* WHO filed the notice into the register and WHO last moved
+                      it along. `hasActor` is passed on both: a notice filed by
+                      an assistant who has since left reads `unknown`, which is a
+                      different fact from "no person is recorded against this
+                      notice" — and on a custody register, who put this here is
+                      the question the register exists to answer. */}
+                  <CreatedCell value={r.created_at} />
+                  <ByCell name={r.created_by_name} hasActor={r.has_creator} />
+                  <UpdatedCell value={r.updated_at} />
+                  <ByCell name={r.updated_by_name} hasActor={r.has_updater} />
                 </tr>
 
                 {acting && acting.id === r.id && acting.kind === 'status' && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={NOTICE_COLUMNS.length}>
                       <form className="k-formpanel" onSubmit={e => submitStatus(e, r.id)}>
                         <h3 className="k-section__title">
                           {r.form_no} {r.reference_no} — what happened?
@@ -569,7 +621,7 @@ export default function NoticesTab() {
 
                 {acting && acting.id === r.id && acting.kind === 'due' && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={NOTICE_COLUMNS.length}>
                       <form className="k-formpanel" onSubmit={e => submitDueDate(e, r.id)}>
                         <h3 className="k-section__title">
                           Reply date for {r.form_no} {r.reference_no}
@@ -609,7 +661,7 @@ export default function NoticesTab() {
               </React.Fragment>
             ))}
           </DataTable>
-        </div>
+        </ArrangedTableSection>
       )}
     </div>
   );

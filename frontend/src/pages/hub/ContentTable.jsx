@@ -34,19 +34,84 @@ import RichText from '../sahayak/RichText';
 import PlatformPreview from '../sahayak/PlatformPreview';
 import ImagePanel from '../sahayak/ImagePanel';
 import { imageBriefOf } from '../sahayak/_shared';
-import { AGENT_LABELS, StatusPill, stamp, shortStamp, words, creditLabel } from './_shared';
+import { AGENT_LABELS, StatusPill, stamp, words, creditLabel } from './_shared';
+// The audit columns are the SHARED ones, not a local copy: `CreatedCell`,
+// `UpdatedCell` and `ByCell` each render `ui/Table`'s `<Cell>`, and `<Cell>` IS
+// a `<td>` — so they drop into this hand-written `<tr>` exactly as they drop
+// into the `<Table>`-based tables. Only the HEADER could not be reused: every
+// other table's header is `ui/Table`'s `<HeadCell>`, which sorts through
+// `{key, dir}` state, while this table sorts SERVER-side through `sort`/`order`
+// strings and renders its own button. So the headers stay local and the cells
+// are shared, which is the half that carries the two absence rules.
+import {
+  CreatedCell, UpdatedCell, ByCell,
+} from '../../components/ui/CreatedColumn';
+// `ColumnResizer`, not `HeadCell` — see CONTENT_COLUMNS below for why this one
+// table keeps its own headers and borrows only the divider.
+import { ColumnResizer } from '../../components/ui/Table';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 
 /* ── Vocabulary ──────────────────────────────────────────────────────────── */
 
-/** Sortable columns. `key` is what the API accepts — see hub.CONTENT_SORTS. */
+/**
+ * The columns. `key` is what the API accepts — see hub.CONTENT_SORTS.
+ *
+ * `sortable: false` is not a style choice. This table asks the SERVER to sort
+ * (`?sort=&order=`), and `hub.CONTENT_SORTS` is a six-key allowlist that
+ * answers anything else with a 400 — so a sort button on `updated_at` or
+ * `created_by_name` would be a control whose only outcome is an error toast.
+ * The columns are still worth showing; the header simply does not promise an
+ * order it cannot deliver. Adding the three keys to `CONTENT_SORTS` (and to
+ * `_content_order`, which must qualify them with the `ci.` alias, and where
+ * `created_by_name` is a JOINed expression rather than a column on `ci`) is the
+ * backend change that would let these headers become buttons.
+ *
+ * `created_at` loses its `align: 'right'` here: it is now rendered by
+ * `CreatedCell`, whose `.tbl__created` already carries the tabular figures and
+ * the nowrap that the right-alignment was standing in for, and a right-aligned
+ * header over a left-aligned cell is the mismatch that alignment causes.
+ */
 export const SORT_COLUMNS = [
   { key: 'title', label: 'Title' },
   { key: 'agent_type', label: 'Agent' },
   { key: 'platform', label: 'Platform' },
   { key: 'status', label: 'Status' },
   { key: 'credits_used', label: 'Credits', align: 'right' },
-  { key: 'created_at', label: 'Created', align: 'right' },
+  { key: 'created_at', label: 'Created' },
+  { key: 'created_by_name', label: 'Created by', sortable: false },
+  { key: 'updated_at', label: 'Updated', sortable: false },
+  { key: 'updated_by_name', label: 'Updated by', sortable: false },
 ];
+
+/**
+ * The same nine columns, in the shape `useColumnPrefs` reconciles against —
+ * DERIVED from SORT_COLUMNS rather than restated, so the sort allowlist and the
+ * arrangement cannot disagree about what this table has.
+ *
+ * This is the one table in the batch that keeps its OWN header markup. Every
+ * other one renders `<HeadCell>`, which sorts through `{key, dir}` client state;
+ * this table asks the SERVER to sort through `?sort=&order=` and renders a
+ * button that reflects that contract, including the deliberate plain `<th>` for
+ * the three keys `hub.CONTENT_SORTS` will not accept. Swapping in `HeadCell`
+ * would either lose that distinction or reorder the header's focus ring, so the
+ * headers stay local and only the DIVIDER is borrowed — `ColumnResizer` is the
+ * audited keyboard-resizable control, and a second implementation of it here
+ * would be a second answer to "how do I widen a column with the keyboard".
+ *
+ * `fixed` on Title: it is the row's identity AND the button that opens the
+ * post, so hiding it would leave a library whose contents cannot be read.
+ * Nothing else is load-bearing — the four audit columns in particular are
+ * exactly what a firm that does not care who generated a post wants gone.
+ */
+const CONTENT_COLUMNS = SORT_COLUMNS.map(c => ({
+  id: c.key,
+  label: c.label,
+  fixed: c.key === 'title',
+  // Carried through so the header renderer below still knows both facts.
+  align: c.align,
+  sortable: c.sortable,
+}));
 
 export const GROUP_BYS = [
   { key: '', label: 'No grouping' },
@@ -98,20 +163,56 @@ export function ContentTable({ items, sort, order, onSort, groupBy, onOpen }) {
     return out;
   }, [items, groupBy]);
 
-  const colCount = SORT_COLUMNS.length;
+  const cols = useColumnPrefs('hub.content', CONTENT_COLUMNS);
+
+  // The group header's colSpan follows what is on screen. A literal nine would
+  // leave the group title short of the table the moment a user hid a column,
+  // and this header is the thing that makes the count above it believable.
+  const colCount = cols.columns.length;
 
   return (
+    <>
+    {/* This component is dropped bare into two different tabs and has no
+        TableToolbar of its own, so the control gets the house trailing-aligned
+        unframed row. */}
+    <div className="tbl__abar"><ColumnsButton cols={cols} /></div>
     <div className="tbl__wrap sr-ct__scroll">
       <table className="tbl sr-ct">
         <thead>
           <tr>
-            {SORT_COLUMNS.map(col => {
-              const on = sort === col.key;
+            {cols.columns.map(col => {
+              const on = sort === col.id;
+              const cls = col.align === 'right' ? 'tbl__num tbl__th--rz' : 'tbl__th--rz';
+              const style = col.width ? { width: `${col.width}px` } : undefined;
+              const grip = (
+                <ColumnResizer label={col.label} width={col.width}
+                  onCommit={w => cols.setWidth(col.id, w)} />
+              );
+              // A column the server will not order by is a plain <th>. Not a
+              // disabled button: a disabled control still says "this sorts, but
+              // not now", and these never sort.
+              //
+              // `aria-sort="none"` is stated rather than left off, and the
+              // first draft here left it off. A table's sort state is read by
+              // ABSENCE elsewhere — `contentTable.test.jsx` asserts that
+              // exactly one `<th>` is not "none", which is how it catches two
+              // columns claiming to be the sorted one — and a header with no
+              // attribute at all is indistinguishable from a marked one to that
+              // reading. Saying "none" makes the unsorted case explicit for the
+              // same reason the sortable headers say it.
+              if (col.sortable === false) {
+                return (
+                  <th key={col.id} className={cls} style={style} aria-sort="none">
+                    {col.label}
+                    {grip}
+                  </th>
+                );
+              }
               return (
-                <th key={col.key} className={col.align === 'right' ? 'tbl__num' : undefined}
+                <th key={col.id} className={cls} style={style}
                   aria-sort={on ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" className={`sr-ct__sort${on ? ' is-on' : ''}`}
-                    onClick={() => onSort(col.key)}
+                    onClick={() => onSort(col.id)}
                     // Says what the click will DO, not what the state is — a
                     // screen reader already gets the state from aria-sort.
                     aria-label={`Sort by ${col.label}${on && order === 'asc' ? ', descending' : ', ascending'}`}>
@@ -120,6 +221,9 @@ export function ContentTable({ items, sort, order, onSort, groupBy, onOpen }) {
                       {on ? (order === 'asc' ? '↑' : '↓') : '↕'}
                     </span>
                   </button>
+                  {/* After the sort button, exactly as `HeadCell` places it, so
+                      the header's focus order is unchanged. */}
+                  {grip}
                 </th>
               );
             })}
@@ -138,27 +242,42 @@ export function ContentTable({ items, sort, order, onSort, groupBy, onOpen }) {
             )}
             {group.items.map(item => (
               <tr key={item.id}>
-                <td>
-                  <button type="button" className="sr-ct__open" onClick={() => onOpen(item)}>
-                    {item.title || 'Untitled'}
-                  </button>
-                  {/* One line of the body, so the table still reads as content
-                      and not as a list of filenames. */}
-                  <span className="sr-ct__peek">{(item.body || '').slice(0, 90)}</span>
-                </td>
-                <td>{AGENT_LABELS[item.agent_type] || words(item.agent_type) || '—'}</td>
-                <td>{item.platform ? words(item.platform) : '—'}</td>
-                <td><StatusPill status={item.status} /></td>
-                <td className="tbl__num">
-                  {item.credits_used != null ? creditLabel(item.credits_used) : '—'}
-                </td>
-                <td className="tbl__num">{shortStamp(item.created_at)}</td>
+                {cols.cells({
+                  title: (
+                    <td>
+                      <button type="button" className="sr-ct__open" onClick={() => onOpen(item)}>
+                        {item.title || 'Untitled'}
+                      </button>
+                      {/* One line of the body, so the table still reads as
+                          content and not as a list of filenames. */}
+                      <span className="sr-ct__peek">{(item.body || '').slice(0, 90)}</span>
+                    </td>
+                  ),
+                  agent_type: <td>{AGENT_LABELS[item.agent_type] || words(item.agent_type) || '—'}</td>,
+                  platform: <td>{item.platform ? words(item.platform) : '—'}</td>,
+                  status: <td><StatusPill status={item.status} /></td>,
+                  credits_used: (
+                    <td className="tbl__num">
+                      {item.credits_used != null ? creditLabel(item.credits_used) : '—'}
+                    </td>
+                  ),
+                  /* `hasActor` is passed on both name cells and is not
+                     decoration: without it a post whose author's account has
+                     since been deleted renders the same em dash as a post with
+                     no author recorded at all, and "we can no longer say who"
+                     is not "nobody did this". */
+                  created_at: <CreatedCell value={item.created_at} />,
+                  created_by_name: <ByCell name={item.created_by_name} hasActor={item.has_creator} />,
+                  updated_at: <UpdatedCell value={item.updated_at} />,
+                  updated_by_name: <ByCell name={item.updated_by_name} hasActor={item.has_updater} />,
+                })}
               </tr>
             ))}
           </tbody>
         ))}
       </table>
     </div>
+    </>
   );
 }
 

@@ -117,7 +117,7 @@ export default function AttendanceTab({ onUpdate }) {
                 sub={`Nothing is recorded between ${range.from} and ${range.to}. Widen the dates, or mark attendance for a day.`}
               />
             ) : (
-              <DataTable columns={['Date', 'Employee', 'Status', 'Check in', 'Check out', { label: 'Hours', align: 'right' }, 'Marked by']}>
+              <DataTable arrange="manav.attendance" columns={['Date', 'Employee', 'Status', 'Check in', 'Check out', { label: 'Hours', align: 'right' }, 'Marked by']}>
                 {records.items.map(r => (
                   <tr key={r.id}>
                     <Td className="mn-t__mono">{r.date}</Td>
@@ -275,7 +275,7 @@ function MonthlySummary({ month }) {
           sub="No attendance rows exist for this month yet, so there is nothing to total."
         />
       ) : (
-        <DataTable columns={[
+        <DataTable arrange="manav.attendance_monthly_summary" columns={[
           'Code', 'Name',
           { label: 'Present', align: 'right' },
           { label: 'Absent', align: 'right' },

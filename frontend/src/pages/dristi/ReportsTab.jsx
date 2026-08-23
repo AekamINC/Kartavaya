@@ -352,7 +352,7 @@ export default function ReportsTab() {
               <Empty title="Not sent yet"
                 sub="Every delivery attempt is recorded here, including the ones that fail." />
             ) : (
-              <DataTable columns={['Sent at', 'Status', { label: 'Recipients', align: 'right' }, 'Error']}>
+              <DataTable arrange="dristi.report_deliveries" columns={['Sent at', 'Status', { label: 'Recipients', align: 'right' }, 'Error']}>
                 {logs.rows.map((l, i) => (
                   <tr key={l.id || i}>
                     <td>{l.sent_at ? new Date(l.sent_at).toLocaleString() : '—'}</td>

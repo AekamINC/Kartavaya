@@ -248,7 +248,7 @@ export default function AudienceFilter({ value, onChange }) {
 
       {sample.length > 0 && (
         <>
-          <DataTable columns={['Name', 'Email', 'Company', 'Type']}>
+          <DataTable arrange="prachar.audience_preview" columns={['Name', 'Email', 'Company', 'Type']}>
             {sample.map((c) => (
               <tr key={c.id}>
                 <Td bold>{c.name}</Td>

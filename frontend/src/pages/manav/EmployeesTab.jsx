@@ -446,7 +446,7 @@ export default function EmployeesTab({ onUpdate }) {
                 : 'Add your team members to manage attendance, leave and payroll from one place.'}
             />
           ) : (
-            <DataTable columns={['Code', 'Name', 'Department', 'Designation', 'Type', 'Login', 'Status']}>
+            <DataTable arrange="manav.employees" columns={['Code', 'Name', 'Department', 'Designation', 'Type', 'Login', 'Status']}>
               {list.items.map(e => (
                 <tr
                   key={e.id}
@@ -780,7 +780,7 @@ function EmployeeDetail({ id, onBack, onChanged }) {
               Leave balances<Secondary className="k-section__title-hi" value="अवकाश शेष" />
             </h3>
           </div>
-          <DataTable columns={[
+          <DataTable arrange="manav.employee_leave_balances" columns={[
             'Leave type',
             { label: 'Allocated', align: 'right' },
             { label: 'Used', align: 'right' },

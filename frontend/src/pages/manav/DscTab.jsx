@@ -56,7 +56,13 @@ import { Empty } from '../../components/editorial';
 import { DataTable, Td } from '../../components/editorial';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
-import TableToolbar from '../../components/ui/TableToolbar';
+import TableToolbar, { ArrangedTableSection } from '../../components/ui/TableToolbar';
+// The audit CELLS are shared; the audit HEADERS cannot be. `DataTable` builds
+// every `<th>` itself out of its `columns` prop — strings or plain objects, not
+// nodes — so `CreatedHead`/`ByHead` have no way in. See the columns array below.
+import {
+  CreatedCell, UpdatedCell, ByCell,
+} from '../../components/ui/CreatedColumn';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Badge, ErrorNote, Shim, errText, useResource, today } from './_shared';
@@ -71,6 +77,27 @@ const DSC_STATUS_COLORS = {
   expired: 'var(--danger)',
   revoked: 'var(--danger)',
 };
+
+/**
+ * The register's columns, hoisted out of the JSX so that the expansion rows
+ * below can span `DSC_COLUMNS.length` instead of a literal.
+ *
+ * That is not tidiness. `ArrangedDataTable` only retargets a spanning row when
+ * its `colSpan` EQUALS the base column count — that is how it recognises a row
+ * as "not a positional row, spans everything" — so a hardcoded 8 under a
+ * twelve-column table both under-spans today and stops being retargeted when a
+ * column is hidden. The length expression cannot drift from the array.
+ */
+const DSC_COLUMNS = [
+  'Holder', 'Client', 'Certificate', 'Valid to', 'Expiry', 'Custody', 'Status', '',
+  // Appended at the END, after the blank actions column, because
+  // `ArrangedDataTable` identifies a body cell by its POSITION: cell *i* is
+  // column *i*. Appending leaves every existing column at the index the stored
+  // arrangement already knows, where inserting before the actions column would
+  // renumber half the table. A person who wants them beside Status moves them
+  // in the Columns sheet.
+  'Created', 'Created by', 'Updated', 'Updated by',
+];
 
 const DSC_STATUS_LABELS = {
   usable: 'Usable',
@@ -570,11 +597,34 @@ export default function DscTab() {
       )}
 
       {!res.loading && !res.error && rows.length > 0 && (
-        <div className="tv-card">
+        <ArrangedTableSection className="tv-card">
+          {/* ONE row of chrome. `TableToolbar` and the table under it are
+              paired here so the table's "Columns…" control renders INSIDE the
+              toolbar rather than on a second line of its own — see
+              `ui/columnsSlot.js` for why the button travels and the state does
+              not. The `.tv-card` frame is unchanged; the wrapper renders it. */}
           <TableToolbar view={table} label="certificates" searchPlaceholder="Holder, client or serial…" />
-          <DataTable
-            columns={['Holder', 'Client', 'Certificate', 'Valid to', 'Expiry', 'Custody', 'Status', '']}
-          >
+          {/* THE AUDIT COLUMNS, and what `DataTable` would and would not take.
+              `columns` is a list of STRINGS or of `{label, align, className,
+              id, fixed}` objects — never nodes — and `ModuleUI.DataTable` builds
+              each `<th>` itself from that entry, passing `HeadCell` no `sortKey`
+              and no `onSort`. So `CreatedHead`/`ByHead` have nowhere to go here
+              and these four headers are plain labels: the register's DataTable
+              sorts nothing today, and a header that claimed otherwise would be
+              the only sortable column on a table with no sort state to hold it.
+              (The toolbar's search and filters above still work — they are
+              `useTableView`, and it is `table.rows` this maps.)
+
+              The CELLS are the shared components, because `CreatedCell` and
+              `ByCell` render `ui/Table`'s `<Cell>`, which is a `<td>` — the same
+              thing `Td` renders — so they sit in this row as ordinary cells.
+
+              They are appended AFTER the blank actions column rather than
+              before it, because `ArrangedDataTable` maps body cell *i* to
+              column *i*: appending at both ends keeps every existing column at
+              the index it already had, and a saved arrangement keeps meaning
+              what it meant. */}
+          <DataTable arrange="manav.dsc_register" columns={DSC_COLUMNS}>
             {table.rows.map(r => (
               <React.Fragment key={r.id}>
                 <tr>
@@ -629,11 +679,22 @@ export default function DscTab() {
                       )}
                     </div>
                   </Td>
+                  {/* WHO recorded the certificate and WHO last amended it.
+                      `hasActor` is passed on both: a token recorded by an
+                      articled assistant who has since left reads `unknown`,
+                      which is a different fact from "no person is recorded
+                      against this certificate" — and on a custody register,
+                      "who put this here" is the question the register exists to
+                      answer. */}
+                  <CreatedCell value={r.created_at} />
+                  <ByCell name={r.created_by_name} hasActor={r.has_creator} />
+                  <UpdatedCell value={r.updated_at} />
+                  <ByCell name={r.updated_by_name} hasActor={r.has_updater} />
                 </tr>
 
                 {acting && acting.id === r.id && acting.kind === 'revoke' && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={DSC_COLUMNS.length}>
                       <form className="k-formpanel" onSubmit={e => submitRevoke(e, r.id)}>
                         <h3 className="k-section__title">Revoke {r.holder_name}’s certificate</h3>
                         <div className="k-formpanel__grid k-formpanel__grid--2">
@@ -675,7 +736,7 @@ export default function DscTab() {
 
                 {acting && acting.id === r.id && acting.kind === 'custody' && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={DSC_COLUMNS.length}>
                       <form className="k-formpanel" onSubmit={e => submitMove(e, r.id)}>
                         <h3 className="k-section__title">Where is {r.holder_name}’s token?</h3>
                         <div className="k-formpanel__grid k-formpanel__grid--3">
@@ -732,7 +793,7 @@ export default function DscTab() {
               </React.Fragment>
             ))}
           </DataTable>
-        </div>
+        </ArrangedTableSection>
       )}
     </div>
   );

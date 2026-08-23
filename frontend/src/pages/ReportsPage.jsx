@@ -326,7 +326,7 @@ function SchedulesPanel({ teams }) {
 
               Column headers are English only: 24-bilingual-devanagari.md puts
               table column headers on the "No" list. */}
-          <DataTable columns={['Frequency', 'Format', 'Recipients', 'Next run', 'Last sent', '']}>
+          <DataTable arrange="reports.schedules" columns={['Frequency', 'Format', 'Recipients', 'Next run', 'Last sent', '']}>
             {schedules.map(s => (
               <tr key={s.schedule_id}>
                 <Td>
@@ -687,33 +687,57 @@ export default function ReportsPage({ teams: propTeams }) {
           </div>
 
           {/* 4 · Sections */}
+          {/* SEVEN CHECKBOXES THAT CONTROLLED NOTHING.
+
+              `doDownload` transmits `{from, to, fmt}` and `/reports/download`
+              accepts exactly those three. Every one of these toggles was
+              client-side state that never left the browser, so a user who
+              unticked "Detailed task list" got a PDF with the detailed task
+              list in it — and two of them named sections the generator has
+              never produced at all: there is no attachment manifest anywhere
+              in `services/report_generator.py`, and per-project is not a
+              section, it is one file per project.
+
+              A control that does nothing is worse than no control: it teaches
+              the reader that the document is theirs to shape and then hands
+              them a different document. So this is now a STATEMENT of what the
+              two files contain, taken from the generator itself, and the step
+              number goes with it — there are three steps here, not four. */}
           <div className="gr__block">
             <div className="gr__block-h">
               <span className="gr__step">4</span>
-              <h3>Include in report</h3>
+              <h3>What the document contains</h3>
               <Secondary className="gr__block-sans" value="समावेश" />
             </div>
-            <div className="gr__toggles">
+            <p className="rep-note">
+              Both files carry the same figures; the sections are fixed. Anything
+              counted as work done is scoped to the period on its completion
+              date. Open, in progress and overdue are facts about right now, not
+              about the period, and are labelled that way in the document.
+            </p>
+            <div className="gr__contains">
               {[
-                ['summary',     'Summary KPIs',          'Completed · Due · Awaiting · Overdue'],
-                ['projects',    'Per-project breakdown',  'One row per project, with counts'],
-                ['leaderboard', 'Per-member completions', 'Tasks each member closed in the period'],
-                ['throughput',  'Throughput chart',       'Bars per day or per week'],
-                ['tasks',       'Detailed task list',     'Every task with status, due, owner'],
-                ['time',        'Time tracking',          'Hours logged per task and per person'],
-                ['attachments', 'Attachment manifest',    'Files added in the period'],
-              ].map(([k, lbl, hint]) => (
-                <label key={k} className={'gr__toggle' + (sections[k] ? ' is-on' : '')}>
-                  <input type="checkbox" checked={sections[k]} onChange={() => toggleSection(k)} />
-                  <span className="gr__toggle-mark" />
-                  <span className="gr__toggle-body">
+                ['PDF', 'Task breakdown', 'Closed in the period · open now, stated separately'],
+                ['PDF', 'Per-member completions', 'From the completion record. Not a ranking'],
+                ['PDF', 'Detailed task list', 'What closed in the period, plus what is still open'],
+                ['PDF', 'Throughput trend', 'Tasks closed per day, on the completion date'],
+                ['PDF', 'Time logged', 'Entries started inside the period'],
+                ['PDF', 'Methodology & data', 'What each figure counts'],
+                ['XLSX', 'Four sheets', 'Summary · Tasks · Time Entries · By Member'],
+              ].map(([tag, lbl, hint]) => (
+                <div key={tag + lbl} className="gr__contains-row">
+                  <span className={'gr__fmt-tag gr__fmt-tag--' + tag.toLowerCase()}>{tag}</span>
+                  <span className="gr__contains-body">
                     <span className="gr__toggle-lbl">{lbl}</span>
                     <span className="gr__toggle-hint">{hint}</span>
                   </span>
-                </label>
+                </div>
               ))}
             </div>
           </div>
+
+          {/* 5 · The registers — the consolidation itself. */}
+          <RegistersPanel from={from} to={to} />
 
           {/* 5 · Delivery */}
         </div>
@@ -799,7 +823,11 @@ export default function ReportsPage({ teams: propTeams }) {
               <span className="gr__fmt"><span className="gr__fmt-tag gr__fmt-tag--xlsx">XLSX</span></span>
               <span className="gr__export-body">
                 <b>Generate Excel workbook</b>
-                <span>{sectionsOn} sheets · formulas included{projectIds.length > 1 ? ` × ${projectIds.length} projects` : ''}</span>
+                {/* Was `{sectionsOn} sheets · formulas included`, and it was
+                    wrong twice: `generate_excel` writes exactly four sheets
+                    whatever the toggles said, and it writes no formula at all —
+                    every cell is a literal value. */}
+                <span>Four sheets · values, no formulas{projectIds.length > 1 ? ` × ${projectIds.length} projects` : ''}</span>
               </span>
               <span className="gr__export-go">{busy === 'excel' ? <Spinner /> : <Arrow />}</span>
             </button>
