@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 27 of the 61 assigned skills.
+Wired so far: 28 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1870,6 +1870,71 @@ def _broadcast_recompute(out: dict, surviving: Sequence[dict]) -> None:
         sum(_n(r, "already_unsubscribed", "count") for r in surviving))
 
 
+# ── check_amendments_before_filing ──────────────────────────────────────────
+#
+# Invoices created or edited AFTER the GSTR-1 due date for the period they sit
+# in — the documents that would need a GSTR-1A amendment. The handler's first
+# limitation is why the list never clears: "NOTHING RECORDS THAT A PERIOD WAS
+# FILED. There is no filed_at, no ARN and no return log anywhere in this
+# product." So a firm that HAS amended, or that filed early and included the
+# document all along, sees exactly the same list next run and for ever after,
+# because the period's due date will never stop having passed.
+#
+# FINDINGS_AT — `created_after_the_due_date` and `edited_after_the_due_date`.
+#   Two lists, and the handler's own `elif` makes them exclusive: a document is
+#   in one or the other, never both. The default folding stays ON because the
+#   two say different things to a filer — one document is missing from the
+#   return, the other is in it with the wrong figures — and moving between them
+#   is not a clock but a re-creation.
+#
+# IDENTITY — `invoice_id` + `period`, and the period had to come from the
+#   ENVELOPE because the finding does not carry it.
+#
+#   Except it does not, and that is the decision here: `identity_of` sees only
+#   the finding, and this handler's `period` sits in the return dict. So the
+#   key is `invoice_id` + `invoice_date` instead — and that is not a workaround
+#   but the better answer, because the period IS derived from the invoice date,
+#   and an invoice re-dated into another month genuinely becomes a different
+#   filing's problem. A run for August and a run for September examine
+#   different documents, so two periods cannot collide on one id anyway.
+#
+# MATERIAL — `amount` and `doc_status`.
+#
+#   The amount because this is a TAX finding: a document amended from 42,000 to
+#   84,000 after the return has gone is a different amendment. `doc_status`
+#   because it is the document's own state and — per this repo's standing rule
+#   — it defaults to 'final', so a move away from that default is deliberate
+#   and worth surfacing.
+#
+#   NOT `last_edited`, and this is the trap on this entry: it is the field the
+#   whole `edited_after_the_due_date` list is computed FROM, so putting it in
+#   MATERIAL would void the acknowledgement on every subsequent edit — which is
+#   arguably right — but it also moves when a user opens and saves a document
+#   without changing a figure, and this handler cannot tell those apart. The
+#   amount is the honest proxy for "something changed that matters".
+#
+#   NOT `created_on` either: it never moves, so it can only add noise.
+#
+# INCIDENTAL — `document` (an invoice number a firm can correct), `customer`,
+#   `kind`, `why` (prose derived from the list the row landed in).
+#
+# RECOMPUTE — the two list counts. NOT `documents_in_period`, which is
+#   `len(rows)` — every invoice in the period, most of which are perfectly
+#   fine and are the denominator that stops two zeroes reading as a clean
+#   result. NOT `gstr1_due_on`, `statute` or `amendment_route`, which are
+#   statute facts.
+
+def _amendments_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the two list counts. `documents_in_period` is the denominator."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["created_after_the_due_date"] = len(
+        surviving.get("created_after_the_due_date") or ())
+    counts["edited_after_the_due_date"] = len(
+        surviving.get("edited_after_the_due_date") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2338,6 +2403,20 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_broadcast_recompute,
         label_of=lambda f: f"{f.get('campaign')} — {f.get('channel')}",
+    ),
+
+    "check_amendments_before_filing": AckWiring(
+        findings_at=("created_after_the_due_date", "edited_after_the_due_date"),
+        identity_of=lambda f: {
+            "invoice_id": f.get("invoice_id"),
+            "invoice_date": f.get("invoice_date"),
+        },
+        material_of=lambda f: {
+            "amount": f.get("amount"),
+            "doc_status": f.get("doc_status"),
+        },
+        recompute=_amendments_recompute,
+        label_of=lambda f: f"{f.get('document')} — {f.get('customer')}",
     ),
 
     "check_late_suppliers": AckWiring(
