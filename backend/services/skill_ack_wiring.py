@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 8 of the 61 assigned skills.
+Wired so far: 9 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -446,6 +446,92 @@ def _duplicates_recompute(out: dict, surviving: Sequence[dict]) -> None:
         counts["amount_at_risk_if_every_pair_is_a_duplicate"] = round(at_risk, 2)
 
 
+# ── check_statutory_records_gate ────────────────────────────────────────────
+#
+# Employees whose statutory identifiers are missing for a deduction the payroll
+# run makes anyway: PF enabled with no UAN, ESI enabled with no insurance
+# number, tax deducted with no PAN. The handler's own posture is REPORTS, NEVER
+# BLOCKS — UAN, ESI number and PAN are non-mandatory here and always will be —
+# which is exactly why it needs acknowledgement more than a gate would. A firm
+# whose contractor genuinely has no UAN cannot make that row go away by doing
+# the right thing, so it reads the same name every morning for ever.
+#
+# IDENTITY — `check` plus `employee_code`, and the interesting half is what is
+#   NOT here.
+#
+#   NOT `employee`, which is the NAME, and this was measured rather than
+#   assumed. Live, 2026-08-23: the largest org carries THREE active employees
+#   called Myra Bansal, three called Tara Mehta, three called Navya Reddy — ten
+#   names duplicated three ways. Keyed on the name, one acknowledgement of one
+#   person's missing PAN would hide the same gap for two colleagues, and the
+#   deductor bears the higher-rate shortfall for both. `reachable`'s own
+#   docstring says it in one line: a name is not a key.
+#
+#   `employee_code` is. Same probe: 97 active employees, ZERO blank codes, 97
+#   distinct (org, code) pairs. It is the business key a firm types on a
+#   payslip, it survives a marriage and a department move, and it is not a UUID
+#   so nothing about it is at risk of being rendered.
+#
+#   `check` is in the key because the three findings are three separate
+#   decisions about one person. Acknowledging "this contractor has no UAN" must
+#   not also silence "tax was deducted and there is no PAN", which is the one
+#   that carries money.
+#
+# MATERIAL — `payslip_month`, and it needs the argument because it LOOKS like a
+#   drift field and is not.
+#
+#   It is present only on `tds_deducted_no_pan`, where it names the payslip the
+#   tax was deducted on. It does not tick with the calendar: it advances when a
+#   PAYROLL RUN HAPPENS, which is an event, and the event is precisely "more
+#   tax has been deducted at the higher rate since you acknowledged this". So
+#   an acknowledgement covers the month it was made about and next month's run
+#   brings the finding back with real new money behind it. That is the
+#   mechanism working, not the midnight failure — a payslip month is not
+#   `days_past`, and `_DRIFT_FIELDS` agrees.
+#
+#   On the other two checks it is absent, so `material_of` hashes a None and
+#   the acknowledgement is effectively permanent. Correct: a missing UAN is a
+#   static fact until somebody fills the field in, and filling it in removes
+#   the finding from the query.
+#
+#   NOT `detail`. It is prose, and it embeds the deducted amount — so hashing
+#   it would tie every acknowledgement in this skill to a sentence's wording,
+#   and rephrasing one string in the SQL would void every ack every org holds.
+#
+# INCIDENTAL — `employee` (the printable name), `department` (a person moves
+#   teams without changing what is missing), and the contact keys.
+#
+# RECOMPUTE — `counts` and `by_department`, both of which are sums over the
+#   findings list and would otherwise describe rows the run is not showing.
+#   `coverage` is left ALONE: `active_employees`, `pf_enabled_checked`,
+#   `esi_enabled_checked` and `tds_deducted_checked` come from a separate
+#   denominator query and exist precisely so that "found nothing" and "never
+#   ran" cannot look alike. An org that acknowledged every finding has not
+#   thereby stopped having 59 employees with tax deducted.
+
+def _statutory_gate_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the per-check counts and the departmental split.
+
+    Both are assembled exactly as the handler assembles them, including the
+    three fixed check codes — a count that silently dropped a key when its last
+    finding was acknowledged would read as "this check was not run".
+    """
+    out["counts"] = {
+        code: sum(1 for f in surviving if f.get("check") == code)
+        for code in ("pf_enabled_no_uan", "esi_enabled_no_number",
+                     "tds_deducted_no_pan")
+    }
+    by_dept: dict[Any, dict] = {}
+    for f in surviving:
+        dept = f.get("department")
+        slot = by_dept.setdefault(dept, {"department": dept, "findings": 0})
+        slot["findings"] += 1
+        code = f.get("check")
+        slot[code] = slot.get(code, 0) + 1
+    out["by_department"] = sorted(
+        by_dept.values(), key=lambda d: (-d["findings"], str(d["department"])))
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -654,6 +740,17 @@ ACK_WIRING: dict[str, AckWiring] = {
         recompute=_duplicates_recompute,
         label_of=lambda f: (
             f"{_dup_refs(f)[0]} / {_dup_refs(f)[-1]} — {f.get('vendor')}"),
+    ),
+
+    "check_statutory_records_gate": AckWiring(
+        findings_at="findings",
+        identity_of=lambda f: {
+            "check": f.get("check"),
+            "employee_code": f.get("employee_code"),
+        },
+        material_of=lambda f: {"payslip_month": f.get("payslip_month")},
+        recompute=_statutory_gate_recompute,
+        label_of=lambda f: f"{f.get('check')} — {f.get('employee')}",
     ),
 
     "check_late_suppliers": AckWiring(
