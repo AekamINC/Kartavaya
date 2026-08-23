@@ -7,6 +7,7 @@ import TabTypography from './customize/TabTypography';
 import TabLayout from './customize/TabLayout';
 import TabLanguage from './customize/TabLanguage';
 import TabNotifications from './customize/TabNotifications';
+import TabSecurity from './customize/TabSecurity';
 import TabData from './customize/TabData';
 import { Secondary } from '../components/Bilingual';
 
@@ -45,6 +46,7 @@ const TABS = [
   { value: 'layout',        label: <>Layout{hi('ढाँचा')}</>,          content: <TabLayout /> },
   { value: 'language',      label: <>Language{hi('भाषा')}</>,         content: <TabLanguage /> },
   { value: 'notifications', label: <>Notifications{hi('सूचना')}</>,   content: <TabNotifications /> },
+  { value: 'security',      label: <>Security{hi('सुरक्षा')}</>,       content: <TabSecurity /> },
   { value: 'data',          label: <>Data &amp; privacy{hi('गोपनीयता')}</>, content: <TabData /> },
 ];
 

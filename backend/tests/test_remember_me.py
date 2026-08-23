@@ -56,7 +56,17 @@ def test_require_user_stores_the_claims_for_it():
 
 
 def test_login_passes_the_flag_through():
-    assert "remembered=body.remember" in _code(A.login)
+    """`login()` no longer calls `_create_token` directly — two-factor
+    authentication (workstream L) inserted a branch between "password
+    correct" and "session minted", so the token-creation tail moved into
+    `_finish_login`, shared with `verify_2fa()`. The flag must still survive
+    the whole trip: `login` passes `body.remember` into `_finish_login` (both
+    on the plain path and packed into the interim 2FA-pending token), and
+    `_finish_login` is what actually calls `_create_token`."""
+    login_code = _code(A.login)
+    assert "_finish_login(pool, request, user, body.remember)" in login_code
+    assert "_create_mfa_pending_token(user[\"user_id\"], body.remember)" in login_code
+    assert "remembered=remember" in _code(A._finish_login)
 
 
 # ── revocation: the reason a year-long token is defensible ──────────────────

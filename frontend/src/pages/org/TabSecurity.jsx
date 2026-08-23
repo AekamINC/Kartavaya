@@ -1,30 +1,28 @@
-import React from 'react';
-import { Toggle } from '../../components/ui';
+import React, { useEffect, useState } from 'react';
+import { api } from '../../lib/api';
+import { Toggle, Button } from '../../components/ui';
+import { useToast } from '../../components/ui/toast';
 
 /**
- * TabSecurity — designed, wired to nothing, and saying so.
+ * TabSecurity — org-level security policy, `GET/PATCH /api/v1/org/security`
+ * (`routers/org_security.py`). Write is org_owner only (platform_admin god
+ * mode too); read is org_admin+.
  *
- * `GET/PATCH /v1/org/security` and the `org_security` table are both listed as
- * new work in `10-org-settings.md` §4 and neither exists. Nor does two-factor
- * authentication anywhere in the product: there is no TOTP secret, no enrolment
- * flow and no verification step in `auth_router.py`, so "require 2FA" has
- * nothing to require.
+ * UPDATE 2026-08-23 (workstream L): this was rendered fully disabled while
+ * the backend and the TOTP store did not exist. Both now do — 207/208 are
+ * applied live, and `services/totp.py`/`routers/totp.py` ship real
+ * enrolment. `tfa_allowed`/`tfa_enforced` are ENFORCED (auth_router.py
+ * login() reads them); idle_timeout/ip_ranges/password_policy remain
+ * stored-only, per `enforced` in the GET response, and are rendered
+ * accordingly below rather than claimed as live.
  *
- * The controls are therefore rendered disabled rather than omitted. The shape of
- * the screen is the specification, and two of these settings carry a constraint
- * that has to survive whoever builds them — stated here, on the control, where
- * it cannot be missed:
+ * The two constraints this screen must still honour, now that it is real:
  *
- *  1 · **2FA enforce needs a lockout count before it is switchable.** Turning on
- *      "require 2FA for all members" when 6 of 14 people have no authenticator
- *      locks out 6 people immediately. The control must state the number and
- *      stay disabled until that number is knowable, or the first use of the
- *      feature is an outage.
- *
- *  2 · **IP whitelisting must validate against the admin's own address.** Saving
- *      a range that excludes the browser you are saving from locks the
- *      organisation out of its own settings, with no path back except support.
- *      Check before save, and refuse.
+ *  1 · Turning `tfa_enforced` on refuses (409) until the lockout count is
+ *      known, then requires `acknowledge_lockout` equal to the exact
+ *      number who would be locked out. Not a confirm dialog — the number.
+ *  2 · Saving `ip_ranges` refuses (400) if it would exclude the address
+ *      doing the saving. The backend checks this; the UI just surfaces it.
  */
 
 const Info = (
@@ -47,79 +45,204 @@ function Row({ title, detail, children }) {
 }
 
 export default function TabSecurity() {
+  const { pushToast } = useToast();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Local edit buffer — only these three are user-editable inline; 2FA
+  // toggles apply immediately (see below) because they carry their own
+  // confirmation step and mixing that with a pending "Save changes" button
+  // would let a saved lockout number go stale between load and click.
+  const [idleTimeout, setIdleTimeout] = useState('none');
+  const [ipRanges, setIpRanges] = useState('');
+  const [passwordPolicy, setPasswordPolicy] = useState('standard');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data: d } = await api.get('/v1/org/security');
+      setData(d);
+      setIdleTimeout(d.idle_timeout == null ? 'none' : String(d.idle_timeout));
+      setIpRanges((d.ip_ranges || []).join('\n'));
+      setPasswordPolicy(d.password_policy || 'standard');
+    } catch {
+      setData(null);
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const patch = async (body) => {
+    try {
+      await api.patch('/v1/org/security', body);
+      await load();
+      return true;
+    } catch (e) {
+      pushToast({
+        type: 'error',
+        title: e?.response?.data?.detail || 'Could not save.',
+      });
+      return false;
+    }
+  };
+
+  const toggleAllowed = async (checked) => {
+    await patch({ tfa_allowed: checked });
+  };
+
+  const toggleEnforced = async (checked) => {
+    if (!checked) { await patch({ tfa_enforced: false }); return; }
+    const two = data?.two_factor;
+    if (!two?.countable) {
+      pushToast({
+        type: 'error',
+        title: two?.reason || 'Cannot count who would be locked out yet.',
+      });
+      return;
+    }
+    const locked = two.would_be_locked_out || 0;
+    if (locked > 0) {
+      const ok = window.confirm(
+        `${locked} of ${two.members} member${two.members === 1 ? '' : 's'} have no ` +
+        `authenticator set up and will be unable to sign in the moment this saves. ` +
+        `Continue?`
+      );
+      if (!ok) return;
+    }
+    await patch({ tfa_enforced: true, acknowledge_lockout: locked });
+  };
+
+  const saveSessionSettings = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const ranges = ipRanges.split('\n').map((s) => s.trim()).filter(Boolean);
+    const ok = await patch({
+      idle_timeout: idleTimeout === 'none' ? null : Number(idleTimeout),
+      ip_ranges: ranges,
+      password_policy: passwordPolicy,
+    });
+    setSaving(false);
+    if (ok) pushToast({ type: 'success', title: 'Saved' });
+  };
+
+  if (loading) return <div className="st__group"><p className="sr__d">Loading…</p></div>;
+
+  if (!data) {
+    return (
+      <div className="st__group">
+        <p className="sr__d">Could not load security settings.</p>
+      </div>
+    );
+  }
+
+  const two = data.two_factor || {};
+
   return (
     <div>
-      <section className="st__group">
-        <p className="opend">
-          {Info}
-          <span>
-            None of this is stored yet. <code>/v1/org/security</code> and the{' '}
-            <code>org_security</code> table are unbuilt, and the product has no
-            two-factor flow to enforce, so every control here is disabled rather
-            than accepting a setting it would drop. Sign-in security is currently
-            what Supabase Auth provides.
-          </span>
-        </p>
-      </section>
+      {!data.storage_ready && (
+        <section className="st__group">
+          <p className="opend">{Info}<span>{data.storage_note}</span></p>
+        </section>
+      )}
 
       <section className="st__group">
         <h2 className="st__gt">Two-factor authentication</h2>
 
         <Row
           title="Allow two-factor authentication"
-          detail="Members can add an authenticator app to their own account. Opt-in, per person."
+          detail="Members can add an authenticator app to their own account, from Customization → Security. Opt-in, per person."
         >
-          <Toggle checked={false} disabled label="Allow two-factor authentication" />
+          <Toggle
+            checked={!!data.tfa_allowed}
+            onChange={toggleAllowed}
+            disabled={!data.storage_ready}
+            label="Allow two-factor authentication"
+          />
         </Row>
 
         <Row
           title="Require it for every member"
-          detail="Cannot be switched on until we can count how many members would be locked out by it. Turning this on while six of fourteen people have no authenticator locks out six people the moment it saves — the number has to be on screen first."
+          detail={
+            two.countable
+              ? `${two.enrolled ?? 0} of ${two.members ?? 0} member${two.members === 1 ? '' : 's'} have an authenticator set up.`
+              : (two.reason || 'Cannot count enrolment yet.')
+          }
         >
-          <Toggle checked={false} disabled label="Require two-factor authentication" />
+          <Toggle
+            checked={!!data.tfa_enforced}
+            onChange={toggleEnforced}
+            disabled={!data.storage_ready || (!data.tfa_enforced && !two.countable)}
+            label="Require two-factor authentication"
+          />
         </Row>
       </section>
 
-      <section className="st__group">
-        <h2 className="st__gt">Sessions</h2>
+      <form onSubmit={saveSessionSettings}>
+        <section className="st__group">
+          <h2 className="st__gt">Sessions</h2>
+          <Row
+            title="Idle timeout"
+            detail="Not yet enforced — stored for when session-expiry ships. Shared machines in a shared office are the case this exists for."
+          >
+            <select
+              className="of__i"
+              value={idleTimeout}
+              onChange={(e) => setIdleTimeout(e.target.value)}
+              disabled={!data.storage_ready}
+              aria-label="Idle timeout"
+            >
+              <option value="none">Never</option>
+              <option value="30">30 minutes</option>
+              <option value="120">2 hours</option>
+              <option value="480">8 hours</option>
+            </select>
+          </Row>
+        </section>
 
-        <Row
-          title="Idle timeout"
-          detail="Sign a member out after a period with no activity. Shared machines in a shared office are the case this exists for."
-        >
-          <select className="of__i" disabled defaultValue="none" aria-label="Idle timeout">
-            <option value="none">Never</option>
-            <option value="30">30 minutes</option>
-            <option value="120">2 hours</option>
-            <option value="480">8 hours</option>
-          </select>
-        </Row>
-      </section>
+        <section className="st__group">
+          <h2 className="st__gt">Network</h2>
+          <Row
+            title="Restrict sign-in to IP ranges"
+            detail="Not yet enforced — stored for when this ships. One CIDR range per line. An empty list means no restriction; the save is refused if it would exclude your own address."
+          >
+            <textarea
+              className="of__i of__i--mono"
+              rows={3}
+              value={ipRanges}
+              onChange={(e) => setIpRanges(e.target.value)}
+              disabled={!data.storage_ready}
+              placeholder="203.0.113.0/24"
+              aria-label="Allowed IP ranges"
+            />
+          </Row>
+        </section>
 
-      <section className="st__group">
-        <h2 className="st__gt">Network</h2>
+        <section className="st__group">
+          <h2 className="st__gt">Passwords</h2>
+          <Row
+            title="Minimum password policy"
+            detail="Not yet enforced — stored for when signup reads this. Length and reuse rules for members who sign in with a password."
+          >
+            <select
+              className="of__i"
+              value={passwordPolicy}
+              onChange={(e) => setPasswordPolicy(e.target.value)}
+              disabled={!data.storage_ready}
+              aria-label="Password policy"
+            >
+              <option value="standard">Standard — 8 characters</option>
+              <option value="strong">Strong — 12 characters, mixed</option>
+            </select>
+          </Row>
+        </section>
 
-        <Row
-          title="Restrict sign-in to IP ranges"
-          detail="One CIDR range per line. Whatever builds this must check the range against the address of the browser doing the saving and refuse a range that excludes it — otherwise the first mistake locks the organisation out of its own settings with no way back except support."
-        >
-          <input className="of__i of__i--mono" disabled placeholder="203.0.113.0/24" aria-label="Allowed IP ranges" />
-        </Row>
-      </section>
-
-      <section className="st__group">
-        <h2 className="st__gt">Passwords</h2>
-
-        <Row
-          title="Minimum password policy"
-          detail="Length and reuse rules for members who sign in with a password rather than a magic link."
-        >
-          <select className="of__i" disabled defaultValue="standard" aria-label="Password policy">
-            <option value="standard">Standard — 8 characters</option>
-            <option value="strong">Strong — 12 characters, mixed</option>
-          </select>
-        </Row>
-      </section>
+        <div className="dz__act">
+          <Button type="submit" variant="fill" size="sm" disabled={saving || !data.storage_ready}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

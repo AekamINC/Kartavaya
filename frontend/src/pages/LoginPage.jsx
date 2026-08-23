@@ -4,7 +4,7 @@ import { useToast } from '../components/ui/toast';
 import AuthShell from '../components/layout/AuthShell';
 import BrandLoader from '../components/layout/BrandLoader';
 import {
-  apiLogin, apiAcceptInvite, apiForgotPassword, apiResetPassword,
+  apiLogin, apiVerify2fa, apiAcceptInvite, apiForgotPassword, apiResetPassword,
   apiInvitePreview, apiDeclineInvite,
 } from '../lib/auth';
 import { moduleMeta } from '../lib/moduleColors';
@@ -384,10 +384,66 @@ export function LoginPage() {
   const [fieldErr, setFieldErr, clearErr] = useFieldErrors();
   const [shake, fireShake] = useShake();
 
+  // Two-factor: set only when `apiLogin` answers `mfa_required`. Its
+  // presence IS the "which step is this" flag — there is no separate mode
+  // enum to drift out of sync with it.
+  const [mfaToken, setMfaToken] = useState(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaErr, setMfaErr] = useState(null);
+  const [signedInEmail, setSignedInEmail] = useState('');
+
   const set = (e) => {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
     clearErr(name);
+  };
+
+  /**
+   * Shared by the plain password path and the post-2FA path — both end the
+   * same way: remember the email, work out home, warm the chunk, hold on
+   * the mark, navigate. Only how `data` was obtained differs.
+   */
+  const completeSignIn = async (data, email) => {
+    try {
+      if (remember) localStorage.setItem(REMEMBER_KEY, email);
+      else localStorage.removeItem(REMEMBER_KEY);
+    } catch { /* private mode — not worth failing a sign-in over */ }
+    const home = data.user?.role === 'client' ? '/client' : '/dashboard';
+    const hold = welcomeHoldMs();
+    preloadHome(data.user?.role === 'client');
+    if (hold) {
+      setSigningIn(true);
+      await new Promise((r) => setTimeout(r, hold));
+    }
+    navigate(returnTo || home, { replace: true });
+  };
+
+  const submitMfa = async (e) => {
+    e.preventDefault();
+    const code = mfaCode.trim();
+    if (!code) { setMfaErr('Enter the code from your authenticator app, or a recovery code.'); return; }
+    setMfaErr(null);
+    setMfaLoading(true);
+    try {
+      const data = await apiVerify2fa(mfaToken, code);
+      await completeSignIn(data, signedInEmail);
+    } catch (err) {
+      if (isNetworkError(err)) {
+        pushToast({
+          type: 'error',
+          title: 'Could not reach the server',
+          message: 'Check your connection and try again.',
+        });
+      } else if (err?.response?.status === 409) {
+        // The world changed under the pending token (2FA turned off between
+        // the two requests) — the only case worth naming, because "start
+        // over" is genuinely the fix rather than "try a different code".
+        setMfaErr('Two-factor authentication changed on this account. Sign in again.');
+      } else {
+        setMfaErr(authErrorMessage(err, 'Incorrect code. Try again.'));
+      }
+    } finally { setMfaLoading(false); }
   };
 
   const submit = async (e) => {
@@ -415,38 +471,23 @@ export function LoginPage() {
       // "Invalid email or password" — an unfixable error, because the field
       // looks correct.
       const data = await apiLogin(email, form.password);
-      try {
-        if (remember) localStorage.setItem(REMEMBER_KEY, email);
-        else localStorage.removeItem(REMEMBER_KEY);
-      } catch { /* private mode — not worth failing a sign-in over */ }
+      if (data.mfa_required) {
+        // Not a session — see apiLogin. Swap to the code-entry step; the
+        // deliberate sign-in hold (below, in completeSignIn) only fires once
+        // a real session is minted, so a 2FA-enrolled account does not see
+        // the mark twice.
+        setMfaToken(data.mfa_token);
+        setSignedInEmail(email);
+        setLoading(false);
+        return;
+      }
       // Back to where the expiry interrupted them, when there was one and it is
       // theirs to reach. `Protected` re-checks the role on arrival, so a client
       // carrying a staff path still lands in the portal.
-      const home = data.user?.role === 'client' ? '/client' : '/dashboard';
-
-      /**
-       * A deliberate hold on the mark before the app appears.
-       *
-       * WHY A DELAY IS HERE ON PURPOSE, which is otherwise indefensible: the
-       * lotus draws over 1.3s and holds to 2.3s of its 3.2s cycle
-       * (`components.css` `@keyframes lotus-trim`). Every wait in the product is
-       * shorter than that, so until now the figure was only ever seen
-       * mid-assembly — a fragment, never the flower. Three seconds is one whole
-       * draw-and-hold and the shortest window that shows it.
-       *
-       * It is scoped to a SIGN-IN, which happens once a session. It is not on
-       * a refresh, a route change or a token renewal — the boot gate and
-       * `PageLoader` cover those and neither is padded.
-       */
-      const hold = welcomeHoldMs();
-      // Started whether or not we hold — a user with motion off should still
-      // get the warm chunk, they just do not wait for it.
-      preloadHome(data.user?.role === 'client');
-      if (hold) {
-        setSigningIn(true);
-        await new Promise(r => setTimeout(r, hold));
-      }
-      navigate(returnTo || home, { replace: true });
+      //
+      // A deliberate hold on the mark before the app appears — see
+      // `completeSignIn`'s own comment for why 5s is not an arbitrary number.
+      await completeSignIn(data, email);
     } catch (err) {
       if (isNetworkError(err)) {
         pushToast({
@@ -474,6 +515,48 @@ export function LoginPage() {
      before AuthShell rather than layered over it, so there is no form behind
      the lotus to flash back into view if the navigation is slow. */
   if (signingIn) return <BrandLoader full size={196} label="Signing you in" />;
+
+  if (mfaToken) {
+    return (
+      <AuthShell shake={shake}>
+        <Head
+          kick="One more step"
+          title="Enter your"
+          accent="verification code"
+          hi="सत्यापन कोड"
+          lede="Open your authenticator app, or use one of your recovery codes."
+        />
+        {mfaErr && <Banner kind="err">{mfaErr}</Banner>}
+        <form onSubmit={submitMfa} noValidate>
+          <div className="au__fields">
+            <AuField
+              id="au-mfa-code"
+              name="code"
+              label="Code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={mfaCode}
+              onChange={(e) => { setMfaCode(e.target.value); setMfaErr(null); }}
+              autoFocus
+              required
+            />
+          </div>
+          <div className="au__actions">
+            <AuButton type="submit" loading={mfaLoading}>
+              {mfaLoading ? 'Verifying…' : 'Verify'}
+            </AuButton>
+          </div>
+        </form>
+        <button
+          type="button"
+          className="au__link"
+          onClick={() => { setMfaToken(null); setMfaCode(''); setMfaErr(null); }}
+        >
+          Back to password
+        </button>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell shake={shake}>

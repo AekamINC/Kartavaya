@@ -25,6 +25,7 @@ from limiter import limiter
 from middleware.role_tiers import (
     ADMIN, DEFAULT_GRANT_LEVEL, LEVELS, modules_for, strongest,
 )
+from services import totp as totp_service
 from services.audit import emit as audit
 from services.pulse import log_recorder_failure, record_login_pulse
 
@@ -141,6 +142,35 @@ def _decode_claims(token: str) -> Optional[dict]:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError:
         return None
+
+
+#: Minutes an interim "password correct, 2FA still owed" token lives for.
+#: Short on purpose — this is not a session, it is a receipt for one
+#: successful password check, and `require_user` refuses it everywhere (see
+#: the `purpose` check there) so its only possible use is `/auth/verify-2fa`.
+MFA_PENDING_TTL_MINUTES = 5
+
+
+def _create_mfa_pending_token(user_id: str, remembered: bool) -> str:
+    now = datetime.now(timezone.utc)
+    claims = {
+        "sub": user_id,
+        "purpose": "2fa_pending",
+        "rem": bool(remembered),
+        "iat": now,
+        "exp": now + timedelta(minutes=MFA_PENDING_TTL_MINUTES),
+    }
+    return jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _decode_mfa_pending_token(token: str) -> Optional[dict]:
+    """Returns `{"sub", "rem"}` for a valid, unexpired 2FA-pending token, or
+    None. Deliberately narrow: this is the ONLY place that accepts a
+    `purpose=2fa_pending` token for anything — everywhere else refuses it."""
+    claims = _decode_claims(token)
+    if not claims or claims.get("purpose") != "2fa_pending" or not claims.get("sub"):
+        return None
+    return {"sub": claims["sub"], "rem": bool(claims.get("rem"))}
 
 
 def _decode_token(token: str) -> Optional[str]:
@@ -288,6 +318,15 @@ async def require_user(request: Request, credentials: Optional[HTTPAuthorization
     claims = _decode_claims(token)
     user_id = claims.get("sub") if claims else None
     if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    # A token carrying `purpose` is a special-purpose receipt (the interim
+    # "password OK, 2FA still owed" token from login, or a TOTP setup token)
+    # and is a real, correctly-signed JWT — it MUST NOT be usable as a
+    # session anywhere in the product, which is the entire reason the interim
+    # state between password and code is not "a full session with an asterisk
+    # on it". Every such token is minted with a `purpose` claim precisely so
+    # this one check can refuse all of them, everywhere, in one place.
+    if claims.get("purpose"):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     pool = await get_pool()
     user = await _fetch_auth_user(pool, user_id, _USER_COLUMNS, _USER_COLUMNS_BASE)
@@ -1304,6 +1343,62 @@ async def login(request: Request, body: LoginBody):
     if not user or not ok:
         audit("auth.login_failed", request, detail={"email": body.email.lower()}, severity="warn")
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # ── Two-factor authentication ─────────────────────────────────────────
+    # Runs only after the password has already been proven correct, so this
+    # cannot become a second username-enumeration oracle — reaching this
+    # point already required knowing a valid password for this exact email.
+    _totp_present = bool(await pool.fetchval("SELECT to_regclass('staging.user_totp')"))
+    enrolled = False
+    if _totp_present:
+        enrolled = bool(await pool.fetchval(
+            "SELECT 1 FROM staging.user_totp WHERE user_id=$1", user["user_id"],
+        ))
+
+    if enrolled:
+        # Interim state, NOT a session: no cookie is set, and `require_user`
+        # refuses this token everywhere (see the `purpose` check there). The
+        # only thing it is good for is POST /auth/verify-2fa, within 5 minutes.
+        mfa_token = _create_mfa_pending_token(user["user_id"], body.remember)
+        audit("auth.login_password_ok_2fa_pending", request, user_id=user["user_id"])
+        return JSONResponse(content={"mfa_required": True, "mfa_token": mfa_token})
+
+    if _totp_present:
+        # Not enrolled — but does any org this person belongs to REQUIRE it?
+        # `org_security.py` refuses to let an org_owner flip this switch
+        # until the exact lockout count is known and acknowledged (see that
+        # file), so a real hit here is a consequence the owner who turned it
+        # on already agreed to, not a surprise this code is inventing.
+        # Platform accounts are unaffected: their `user_roles` rows carry
+        # `org_id IS NULL` (platform scope) and never match this join.
+        blocking_org = await pool.fetchval(
+            "SELECT o.name FROM staging.user_roles ur "
+            "JOIN staging.organisations o ON o.id = ur.org_id "
+            "JOIN staging.org_security os ON os.org_id = ur.org_id "
+            "WHERE ur.user_id=$1 AND ur.role_code IN ('org_owner','org_admin','org_member') "
+            "AND os.tfa_enforced = TRUE "
+            "LIMIT 1",
+            user["user_id"],
+        )
+        if blocking_org:
+            audit("auth.login_blocked_2fa_required", request, user_id=user["user_id"],
+                  detail={"org": blocking_org}, severity="warn")
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"{blocking_org} requires two-factor authentication for "
+                    "every member, and this account has none set up. Contact "
+                    "an owner of that organisation."
+                ),
+            )
+
+    return await _finish_login(pool, request, user, body.remember)
+
+
+async def _finish_login(pool, request: Request, user, remember: bool) -> JSONResponse:
+    """Everything that happens once a caller is definitively signed in —
+    shared by `login()` (no 2FA owed) and `verify_2fa()` (2FA just passed).
+    """
     pr = await pool.fetch(
         "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
         user["user_id"],
@@ -1336,9 +1431,9 @@ async def login(request: Request, body: LoginBody):
     # every later `/auth/me`. No header is honoured here — a login carries no org
     # context and there is nothing to switch to yet.
     org = await _org_for(pool, org_roles)
-    token = _create_token(user["user_id"], remembered=body.remember)
+    token = _create_token(user["user_id"], remembered=remember)
     audit("auth.login", request, user_id=user["user_id"],
-          detail={"remembered": body.remember})
+          detail={"remembered": remember})
     # Pulse (proposal 68): the ONE owner-approved login collector — surface/OS
     # enums parsed from the User-Agent, plus the phone app's version header
     # when it sends one. The raw User-Agent is never stored by Pulse and no IP
@@ -1356,6 +1451,67 @@ async def login(request: Request, body: LoginBody):
     )
     return _auth_response(token, {"token": token, "user": _safe_user(
         dict(user), platform_roles, org_roles, grants, levels, org)})
+
+
+class Verify2FABody(BaseModel):
+    mfa_token: str
+    code: str
+
+
+@router.post("/verify-2fa")
+@limiter.limit("10/minute")
+async def verify_2fa(request: Request, body: Verify2FABody):
+    """Second step of login for an account with TOTP enrolled. Takes the
+    interim token `POST /login` returned and either a 6-digit code or a
+    recovery code."""
+    pending = _decode_mfa_pending_token(body.mfa_token)
+    if not pending:
+        raise HTTPException(status_code=401, detail="This sign-in has expired. Log in again.")
+    user_id = pending["sub"]
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT secret, last_used_step FROM staging.user_totp WHERE user_id=$1", user_id,
+    )
+    if not row:
+        # Disabled between /login and /verify-2fa (a real, if narrow, race).
+        # Not a 401 naming the account — the token already proves the
+        # password was correct, so there is no enumeration risk left to
+        # protect against; this is just "the world changed under you".
+        raise HTTPException(status_code=409, detail="Two-factor authentication was turned off. Log in again.")
+
+    ok = False
+    new_step = None
+    if totp_service.looks_like_recovery_code(body.code):
+        codes = await pool.fetch(
+            "SELECT id, code_hash FROM staging.user_totp_recovery_codes "
+            "WHERE user_id=$1 AND used_at IS NULL", user_id,
+        )
+        for c in codes:
+            if totp_service.recovery_code_matches(body.code, c["code_hash"]):
+                await pool.execute(
+                    "UPDATE staging.user_totp_recovery_codes SET used_at=NOW() WHERE id=$1",
+                    c["id"],
+                )
+                ok = True
+                break
+    else:
+        secret = totp_service.decrypt_secret(row["secret"])
+        ok, new_step = totp_service.verify_code(secret, body.code, row["last_used_step"])
+        if ok:
+            await pool.execute(
+                "UPDATE staging.user_totp SET last_used_step=$2, updated_at=NOW() "
+                "WHERE user_id=$1", user_id, new_step,
+            )
+
+    if not ok:
+        audit("auth.2fa_failed", request, user_id=user_id, severity="warn")
+        raise HTTPException(status_code=401, detail="Incorrect code.")
+
+    user = await pool.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Account no longer exists.")
+    return await _finish_login(pool, request, user, pending["rem"])
 
 
 @router.post("/refresh")

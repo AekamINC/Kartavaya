@@ -29,3 +29,7 @@ sentry-sdk[fastapi]==2.22.0
 # native deps, ~60KB — chosen over qrcode/Pillow, which drags in an image stack
 # for something that is emitted as SVG.
 segno==1.6.1
+# TOTP (RFC 6238) for two-factor authentication (services/totp.py). Pure
+# Python, ~30KB, no native deps — reuses segno above for the QR, so this adds
+# no new image/QR dependency.
+pyotp==2.9.0

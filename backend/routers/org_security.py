@@ -28,6 +28,21 @@ keys on `auth.users.id`, and no row in it can ever correspond to a
 until this product grows its own TOTP store, which is exactly what the control
 says, so the control is right and stays refused — see §2.
 
+UPDATE 2026-08-23 (workstream L): both stale claims above are now false, in
+the direction this file always said they would need to move. `staging.
+org_security` exists (migration 207) and `staging.user_totp` exists
+(migration 208, one of the exact `TOTP_TABLES` names below) — actual TOTP
+enrolment, verification and hashed single-use recovery codes ship in
+`services/totp.py`, `routers/totp.py` (`/api/v1/me/2fa/*`) and
+`auth_router.py` (`login()` branches to a 2FA challenge; `verify_2fa()`
+completes it). `_enrolment()` below needed no code change to start counting
+real enrolment, exactly as designed. What is NEW beyond storage: login now
+actually REFUSES a member of an org with `tfa_enforced=true` who has no
+confirmed row in `staging.user_totp` — see `auth_router.py login()` — so
+`tfa_enforced` is enforced at the point an org_owner would expect it to be,
+even though `idle_timeout`/`ip_ranges`/`password_policy` remain stored-only
+exactly as before.
+
 ═══════════════════════════════════════════════════════════════════════════════
 1 · WHAT THIS ENDPOINT DOES AND DOES NOT DO
 ═══════════════════════════════════════════════════════════════════════════════
@@ -394,7 +409,7 @@ async def get_security(
         "storage_note": None if ready else (
             "staging.org_security does not exist yet, so these are the "
             "defaults and nothing can be saved. Apply "
-            "migrations/PROPOSED_069_org_security.sql."
+            "migrations/207_org_security.sql."
         ),
         "two_factor": {
             **enrolment,
@@ -404,21 +419,27 @@ async def get_security(
                 enrolment["countable"] and settings.get("tfa_allowed")
             ),
         },
-        # Stated per control. Storing a policy and enforcing it are different
-        # changes and only one of them has happened.
+        # Stated per control. `tfa_allowed`/`tfa_enforced` are the two that
+        # became real (workstream L, 2026-08-23): `auth_router.py login()`
+        # reads `tfa_enforced` and refuses an unenrolled member. The other
+        # three are still stored only — no middleware reads `ip_ranges`, no
+        # session expires on `idle_timeout`, signup does not read
+        # `password_policy`.
         "enforced": {
-            "tfa_allowed": False,
-            "tfa_enforced": False,
+            "tfa_allowed": True,
+            "tfa_enforced": True,
             "idle_timeout": False,
             "ip_ranges": False,
             "password_policy": False,
         },
         "enforcement_note": (
-            "These values are stored but not yet applied: no middleware reads "
-            "ip_ranges, no session expires on idle_timeout, and signup does not "
-            "read password_policy. Sign-in today is the JWT and password hash "
-            "in auth_router.py over public.users — not Supabase Auth, which is "
-            "provisioned and unused."
+            "tfa_allowed/tfa_enforced are read at login (auth_router.py) and "
+            "actually gate sign-in. idle_timeout, ip_ranges and "
+            "password_policy remain stored but not applied: no middleware "
+            "reads ip_ranges, no session expires on idle_timeout, and signup "
+            "does not read password_policy. Sign-in is the JWT and password "
+            "hash in auth_router.py over public.users — not Supabase Auth, "
+            "which is provisioned and unused."
         ),
         # So the admin can see what the allowlist will be checked against
         # BEFORE they type a range, rather than discovering it in an error.

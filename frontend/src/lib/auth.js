@@ -43,6 +43,24 @@ const NO_RETRY = { noRetry: true };
 
 export async function apiLogin(email, password) {
   const res = await api.post('/auth/login', { email, password }, NO_RETRY);
+  // Two-factor: `mfa_required: true` carries no `user`/`token` at all — this
+  // is the interim "password OK, code owed" state, not a session, and it
+  // must not be written to localStorage. The caller checks `mfa_required`
+  // and calls `apiVerify2fa` next; only THAT response gets stored below.
+  if (res.data.mfa_required) return res.data;
+  localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
+  if (res.data.token) localStorage.setItem('auth_token', res.data.token);
+  return res.data;
+}
+
+/**
+ * Second step of login when `apiLogin` returned `mfa_required`. `code` is
+ * either a 6-digit authenticator code or a recovery code — the backend tells
+ * them apart by shape, so there is nothing to choose here beyond what the
+ * user typed.
+ */
+export async function apiVerify2fa(mfaToken, code) {
+  const res = await api.post('/auth/verify-2fa', { mfa_token: mfaToken, code }, NO_RETRY);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
   if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;

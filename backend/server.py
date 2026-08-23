@@ -109,6 +109,7 @@ from routers.org_profile    import router as org_profile_router
 from routers.org_switch     import router as org_switch_router
 from routers.org_modules    import router as org_modules_router
 from routers.org_security   import router as org_security_router
+from routers.totp           import router as totp_router
 from routers.scrapers       import router as scrapers_router
 # Imported at module scope on purpose. A local import inside the startup wrapper
 # would turn a renamed symbol into a caught-and-logged line at boot, i.e. a
@@ -5415,6 +5416,7 @@ app.include_router(org_profile_router)
 app.include_router(org_switch_router)
 app.include_router(org_modules_router)
 app.include_router(org_security_router)
+app.include_router(totp_router)
 app.include_router(scrapers_router)
 app.include_router(scheduler_router)
 app.include_router(niyam_router)
