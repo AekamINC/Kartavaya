@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 23 of the 61 assigned skills.
+Wired so far: 24 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1594,6 +1594,52 @@ def _unmatched_receipts_recompute(out: dict, surviving: Mapping[str, Sequence[di
     counts["need_a_decision"] = len(surviving.get("need_a_decision") or ())
 
 
+# ── check_upi_reference_threading ───────────────────────────────────────────
+#
+# Invoices whose UPI code carries nothing a bank narration can be matched back
+# on, and the credits that arrive naming nothing. Both halves persist by
+# construction: an invoice's number is threaded into its UPI reference or it is
+# not, and the fix is a change to how codes are RENDERED — nothing a person can
+# do to one invoice removes it from this list. A firm that has read the finding,
+# understood it and decided to live with it reads it again every run.
+#
+# FINDINGS_AT — `not_threaded` (invoices) and `credits_that_name_nothing`
+#   (bank lines). Two populations, folding left ON, and neither can appear in
+#   the other's list.
+#
+# IDENTITY — `invoice_id` OR `line_id`, whichever the list carries. Both are
+#   already emitted. NOT `invoice_number`, which is precisely the string this
+#   skill is about and which a firm may CHANGE to fix the finding — keying on
+#   it would orphan the acknowledgement on the very edit that resolves it, and
+#   the finding would then vanish anyway.
+#
+# MATERIAL — `balance_due` for an invoice and `amount` for a credit, plus
+#   `why`.
+#
+#   `why` is prose and is normally the last thing to hash — it is in MATERIAL
+#   here, deliberately, because on this skill it is not decoration but the
+#   VERDICT: "carries no payment token", "this organisation has recorded no UPI
+#   receiving address", "the invoice is in USD", or the threading verdict
+#   itself. Those are four different findings about one invoice, and an
+#   acknowledgement of one must not cover another. The handler builds each from
+#   a fixed literal, so it moves only when the reason moves.
+#
+# INCIDENTAL — `invoice_date`, `statement_date` (both fixed), `customer`,
+#   `reference`, `description` (the bank's own text, which identifies nobody).
+#
+# RECOMPUTE — NONE OF IT, and that is the answer rather than an omission. Both
+#   lists are truncated to the cap (`not_threaded[:cap]`,
+#   `unnamed_open[:cap]`) while every count around them is measured over the
+#   full population — `reference_not_threaded` is `len(not_threaded)` before
+#   the slice, `credits_naming_nothing` counts every unnamed credit including
+#   the reconciled ones that never reach a list, and `invoices_not_shown`
+#   exists specifically to say the list is short. There is nothing here that is
+#   a sum over what is displayed, so there is nothing to rebuild.
+#
+#   `recompute=None` is asserted by the test rather than assumed, because the
+#   next reader will see two lists and four counts that look like their lengths.
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2004,6 +2050,24 @@ ACK_WIRING: dict[str, AckWiring] = {
             "payment_status": f.get("payment_status"),
         },
         recompute=_unmatched_receipts_recompute,
+        label_of=lambda f: (
+            f"{f.get('invoice_number')} — {f.get('customer')}"
+            if f.get("invoice_id") else
+            f"credit {f.get('amount')} on {f.get('statement_date')}"),
+    ),
+
+    "check_upi_reference_threading": AckWiring(
+        findings_at=("not_threaded", "credits_that_name_nothing"),
+        identity_of=lambda f: {
+            "invoice_id": f.get("invoice_id"),
+            "line_id": f.get("line_id"),
+        },
+        material_of=lambda f: {
+            "balance_due": f.get("balance_due"),
+            "amount": f.get("amount"),
+            "why": f.get("why"),
+        },
+        recompute=None,
         label_of=lambda f: (
             f"{f.get('invoice_number')} — {f.get('customer')}"
             if f.get("invoice_id") else
