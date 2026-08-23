@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 7 of the 61 assigned skills.
+Wired so far: 8 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -305,6 +305,147 @@ def _grni_recompute(out: dict, surviving: Sequence[dict]) -> None:
         counts["orders_with_an_accrual"] = len(surviving)
 
 
+# ── check_duplicate_vendor_bills ────────────────────────────────────────────
+#
+# THE STRONGEST CASE IN THE CATALOGUE for acknowledgement, and the reason is in
+# the finding itself: this skill reports a PAIR that is *probably* one bill
+# entered twice, and the commonest verdict a person reaches is "no — the
+# supplier really did send us two identical invoices that week". Nothing records
+# that verdict. The pair matches the same three matchers next run, and the run
+# after, for as long as both rows exist. A firm that has cleared the same six
+# pairs four times stops opening the list, and this is the one list whose whole
+# job is to run BEFORE the payment run.
+#
+# IDENTITY — the two bills, ORDER-INDEPENDENTLY.
+#
+#   Each side reduces to `internal_ref or bill_number`, and that order is the
+#   reverse of `propose_payment_run`'s `bill_number or internal_ref` — on
+#   purpose. This handler does not leave a missing supplier number empty: it
+#   renders "(no supplier number recorded)", a PLACEHOLDER STRING that is
+#   identical on every unnumbered bill in the org. Prefer `bill_number` here
+#   and two unrelated unnumbered pairs collapse to one finding_key, so the
+#   first acknowledgement hides the second pair. `internal_ref` is assigned one
+#   per row — the header of this handler says so, in the course of explaining
+#   why it discriminates nothing as a MATCHER — which makes it useless there
+#   and exactly right here.
+#
+#   The pair is SORTED before hashing. `first` is the earlier bill by date and
+#   `second` the later one, so correcting a mistyped bill date can swap the two
+#   sides of a pair that is otherwise unchanged. Keyed positionally, that edit
+#   mints a new finding_key and orphans the acknowledgement — the finding comes
+#   back as though nobody ever touched it, which is the exact failure the
+#   identity bucket exists to prevent. Sorted, the same two bills are the same
+#   fact whichever way round the handler reports them.
+#
+#   NOT `vendor` — a renamed or replaced vendor record would re-key every pair
+#   under it, the trap `propose_payment_run` documents. NOT `matcher` either,
+#   and that one is less obvious: the matcher is a CLASSIFICATION of the pair,
+#   not part of which pair it is, and it moves on its own — filling in a
+#   missing supplier number promotes a pair from matcher 2 to matcher 1 without
+#   changing either bill's amount. In IDENTITY that promotion would orphan the
+#   ack.
+#
+# MATERIAL — both sides' `total`, `already_paid` and `status`, sorted with the
+#   pair so the material bucket cannot be voided by the same swap the identity
+#   bucket survives.
+#
+#   Unlike `propose_payment_run` there is no `balance_due` here to stand in for
+#   the two of them, and the balance is NOT computed in the lambda: subtracting
+#   two floats on the way into a hash is how a state check reports movement
+#   that never happened. So the raw pair goes in and the arithmetic stays in
+#   the recompute, where a wrong last bit costs a rounded rupee rather than a
+#   resurrected finding.
+#
+#   Why status: a voided or cancelled bill changes what the pair MEANS, and the
+#   handler's window is wide enough that a voided row can still be reported.
+#
+# INCIDENTAL — `days_apart` is the calendar distance between two fixed dates,
+#   so it does NOT tick — but `bill_date` on each side is incidental for the
+#   ordinary reason (a corrected date is the same bill), and `confidence` is
+#   prose derived from `matcher`. `currency` and `amount` are duplicates of
+#   facts already in the material bucket: `amount` IS `first.total`, and
+#   hashing it again would just count one movement twice.
+#
+# RECOMPUTE — all three of `counts.pairs`, `counts.by_matcher` and
+#   `counts.amount_at_risk_if_every_pair_is_a_duplicate`. The last one is the
+#   number a reader acts on, and the handler is careful about it in a way the
+#   rebuild has to match exactly: the exposure of a pair is the LARGER
+#   still-unpaid side, never both, because if the pair really is one bill twice
+#   then one of the two is genuinely owed. Taking "the second" returned 0.00 on
+#   the live data's commonest shape — a paid bill and its unpaid twin — so the
+#   rebuild below is `max(0, first_unpaid, second_unpaid)`, the same expression
+#   the handler uses, and not a re-derivation of it.
+
+def _dup_ref(side: Any) -> str:
+    """One bill of a pair, reduced to the reference that identifies it.
+
+    `internal_ref or bill_number`, and that order is the reverse of
+    `propose_payment_run`'s — see the note above: a missing supplier number is
+    rendered here as an identical placeholder on every unnumbered bill, so it
+    can only ever be the fallback.
+    """
+    side = side if isinstance(side, Mapping) else {}
+    return str(side.get("internal_ref") or side.get("bill_number"))
+
+
+def _dup_refs(f: Finding) -> list:
+    """The two bills' references, sorted. IDENTITY — see the note above."""
+    return sorted([_dup_ref(f.get("first")), _dup_ref(f.get("second"))])
+
+
+def _dup_sides(f: Finding) -> list:
+    """Both bills' money and status, ordered by reference rather than by date.
+
+    The AMOUNTS ARE NOT STRINGIFIED. `skill_ack._canon` puts every number
+    through `Decimal` so that 4200, 4200.0 and Decimal("4200.00") hash alike;
+    calling `str()` on them here to make them sortable would defeat exactly
+    that, and a handler that started returning a Decimal where it once returned
+    a float would void every acknowledgement this skill holds. So the SORT KEY
+    is the reference string and the values ride along untouched.
+    """
+    def _side(raw: Any) -> dict:
+        raw = raw if isinstance(raw, Mapping) else {}
+        return {
+            "ref": _dup_ref(raw),
+            "total": raw.get("total"),
+            "already_paid": raw.get("already_paid"),
+            "status": raw.get("status"),
+        }
+    return sorted([_side(f.get("first")), _side(f.get("second"))],
+                  key=lambda s: s["ref"])
+
+
+def _dup_unpaid(side: Any) -> float:
+    """The still-unpaid part of one bill, as the handler computes it."""
+    side = side if isinstance(side, Mapping) else {}
+    try:
+        return float(side.get("total") or 0) - float(side.get("already_paid") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _duplicates_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the pair count, the matcher split and the exposure.
+
+    `amount_at_risk_if_every_pair_is_a_duplicate` adds the LARGER still-unpaid
+    side of each pair and never both — the handler's own rule, restated here
+    rather than re-derived, because a rebuild that disagreed with the figure it
+    replaces would be worse than no rebuild at all.
+    """
+    at_risk = 0.0
+    by_matcher: dict[str, int] = {}
+    for pair in surviving:
+        matcher = str(pair.get("matcher"))
+        by_matcher[matcher] = by_matcher.get(matcher, 0) + 1
+        at_risk += max(0.0, _dup_unpaid(pair.get("first")),
+                       _dup_unpaid(pair.get("second")))
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["pairs"] = len(surviving)
+        counts["by_matcher"] = by_matcher
+        counts["amount_at_risk_if_every_pair_is_a_duplicate"] = round(at_risk, 2)
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -504,6 +645,15 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=lambda f: {"accrual": f.get("accrual")},
         recompute=_grni_recompute,
         label_of=lambda f: f"{f.get('purchase_order')} — {f.get('vendor')}",
+    ),
+
+    "check_duplicate_vendor_bills": AckWiring(
+        findings_at="pairs",
+        identity_of=lambda f: {"pair": _dup_refs(f)},
+        material_of=lambda f: {"sides": _dup_sides(f)},
+        recompute=_duplicates_recompute,
+        label_of=lambda f: (
+            f"{_dup_refs(f)[0]} / {_dup_refs(f)[-1]} — {f.get('vendor')}"),
     ),
 
     "check_late_suppliers": AckWiring(
