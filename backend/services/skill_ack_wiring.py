@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 6 of the 61 assigned skills.
+Wired so far: 7 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -243,6 +243,68 @@ def _late_suppliers_recompute(out: dict, surviving: Sequence[dict]) -> None:
         counts["orders_late"] = len(surviving)
 
 
+# ── check_received_not_invoiced ─────────────────────────────────────────────
+#
+# GRNI: goods received and not yet billed — the period-end accrual nobody
+# remembers until the audit asks for it. The finding persists until the
+# supplier's bill arrives and is LINKED to the order, which can be weeks, and
+# a firm closing a period wants to mark the ones it has already accrued by
+# hand rather than read them again every morning.
+#
+# IDENTITY — `purchase_order`, for exactly the reasons argued at
+#   `check_late_suppliers`: `po_number` is NULL until issue, `OPEN_STATUSES`
+#   contains no draft so every finding here carries one, and the partial unique
+#   index makes it unique per org. `vendor` stays out — a renamed vendor record
+#   must not re-key its orders.
+#
+# MATERIAL — `accrual`, and it is the only field in the shape that carries
+#   money. An accrual of 12,000 was acknowledged; 48,000 is a different entry
+#   in a different set of accounts. The handler rounds it to two decimals
+#   before it reaches the finding, which is what makes it safe to hash at all:
+#   the figure is a sum of `gap * rate` in float, and an unrounded float would
+#   flap in the last bits between runs and resurface the finding for nothing.
+#   The lambda reads the rounded value and computes NOTHING.
+#
+#   `currency` is deliberately not in MATERIAL. It is a property of the order,
+#   not of the amount, and an org does not redenominate a live purchase order.
+#
+# INCIDENTAL — `ordered_on` is the PO date: it is fixed at issue and says
+#   nothing about what is unbilled. The contact keys and the vendor link are
+#   incidental as everywhere.
+#
+#   Note what is NOT in this shape and therefore cannot be hashed: the quantity
+#   received. Goods arriving in a second delivery move `accrual`, so the
+#   acknowledgement voids through the money rather than through the count —
+#   which is the right instrument, because the money is the thing that goes
+#   into the accounts.
+#
+# RECOMPUTE — `accrual_total` and `counts.orders_with_an_accrual`, and nothing
+#   else. `accrual_total` is THE number this skill exists to produce: leave it
+#   summed over suppressed findings and the skill reports an accrual for orders
+#   it is not showing, which is the reports-page defect in a figure that ends
+#   up in a set of books. `open_orders`, `orders_with_a_receipt`,
+#   `could_not_check` and the cap are population measurements from a different
+#   pass and are left alone — an org whose orders were all acknowledged has not
+#   thereby stopped having orders.
+
+def _grni_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the accrual and its count from what is left.
+
+    Summed in the same order and rounded the same way the handler does, so a
+    run with no acknowledgements produces the identical figure.
+    """
+    total = 0.0
+    for o in surviving:
+        try:
+            total += float(o.get("accrual") or 0)
+        except (TypeError, ValueError):
+            continue
+    out["accrual_total"] = round(total, 2)
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["orders_with_an_accrual"] = len(surviving)
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -434,6 +496,14 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=None,
         recompute=None,
         label_of=_entity_label,
+    ),
+
+    "check_received_not_invoiced": AckWiring(
+        findings_at="orders",
+        identity_of=lambda f: {"purchase_order": f.get("purchase_order")},
+        material_of=lambda f: {"accrual": f.get("accrual")},
+        recompute=_grni_recompute,
+        label_of=lambda f: f"{f.get('purchase_order')} — {f.get('vendor')}",
     ),
 
     "check_late_suppliers": AckWiring(

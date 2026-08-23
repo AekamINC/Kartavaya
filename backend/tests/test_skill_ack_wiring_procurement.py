@@ -217,3 +217,152 @@ def test_the_handed_back_key_round_trips():
                                          state_hash=f["_ack_state"],
                                          acknowledged_by="u1")}
     assert apply_wiring("check_late_suppliers", _late_out([_late()]), acks)["late"] == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# check_received_not_invoiced — the accrual that ends up in a set of books
+# ══════════════════════════════════════════════════════════════════════════
+
+GRNI = ACK_WIRING["check_received_not_invoiced"]
+
+
+def _grni(**kw) -> dict:
+    """One finding in exactly the shape `check_received_not_invoiced` emits."""
+    row = {
+        "purchase_order": "PO-2026-0044",
+        "vendor": "Sharma Traders",
+        "ordered_on": "2026-06-11",
+        "accrual": 12000.0,
+        "currency": "INR",
+        "email": "orders@sharmatraders.example",
+        "phone": "+91 98765 43210",
+        "link": "/ganit/vendors/3f7c1a52-0b1e-4f8a-9d21-6a5b4c3d2e10",
+    }
+    row.update(kw)
+    return row
+
+
+def _grni_out(findings) -> dict:
+    findings = list(findings)
+    return {
+        "as_at": "2026-08-23",
+        "verdict": "checked",
+        "counts": {
+            "open_orders": 12,
+            "orders_with_a_receipt": 7,
+            "orders_with_an_accrual": len(findings),
+            "could_not_check": 5,
+            "capped_at": 200,
+            "was_capped": False,
+        },
+        "accrual_total": round(sum(float(f["accrual"]) for f in findings), 2),
+        "basis": "ordered rate, goods received less quantities billed",
+        "orders": findings,
+        "limitations": ["Valued at the ORDERED rate."],
+    }
+
+
+def _grni_ack_for(finding: dict, **kw) -> dict[str, skill_ack.Ack]:
+    key = skill_ack.finding_key(GRNI.identity_of(finding))
+    state = skill_ack.state_hash(GRNI.material_of(finding))
+    return {key: skill_ack.Ack(finding_key=key, state_hash=state,
+                               acknowledged_by="u1", **kw)}
+
+
+def test_an_acknowledged_accrual_stops_being_reported():
+    f = _grni()
+    out = apply_wiring("check_received_not_invoiced", _grni_out([f]), _grni_ack_for(f))
+    assert out["orders"] == []
+    assert out["acknowledged"]["items"][0]["label"] == "PO-2026-0044 — Sharma Traders"
+
+
+def test_a_second_delivery_brings_the_accrual_back():
+    """The quantity received is not in this shape, so the acknowledgement voids
+    through the MONEY rather than through a count — which is the right
+    instrument, because the money is what goes into the accounts."""
+    acks = _grni_ack_for(_grni(accrual=12000.0))
+    out = apply_wiring("check_received_not_invoiced",
+                       _grni_out([_grni(accrual=48000.0)]), acks)
+    assert len(out["orders"]) == 1
+    assert out["acknowledged"]["count"] == 0
+
+
+def test_nothing_in_this_shape_ticks_with_the_calendar():
+    """`ordered_on` is fixed at issue and there is no age field at all, so the
+    only movement available is the accrual itself. Pinned so a handler that
+    later adds a `days_since_receipt` cannot quietly end up in either hash."""
+    acks = _grni_ack_for(_grni(ordered_on="2026-06-11"))
+    out = apply_wiring("check_received_not_invoiced",
+                       _grni_out([_grni(ordered_on="2026-05-02")]), acks)
+    assert out["orders"] == []
+    assert set(GRNI.identity_of(_grni())) == {"purchase_order"}
+    assert set(GRNI.material_of(_grni())) == {"accrual"}
+
+
+def test_a_renamed_vendor_does_not_orphan_the_grni_acknowledgement():
+    acks = _grni_ack_for(_grni(vendor="Sharma Traders"))
+    out = apply_wiring("check_received_not_invoiced",
+                       _grni_out([_grni(vendor="Sharma Traders Pvt Ltd")]), acks)
+    assert out["orders"] == []
+
+
+def test_the_accrual_total_matches_the_orders_actually_shown():
+    """THE ONE THAT MATTERS. `accrual_total` is the number this skill exists to
+    produce and it lands in a set of books. Leave it summed over suppressed
+    findings and the skill reports an accrual for orders it is not showing."""
+    keep = _grni(purchase_order="PO-1", accrual=1000.0)
+    hide = _grni(purchase_order="PO-2", accrual=9000.0)
+    out = apply_wiring("check_received_not_invoiced",
+                       _grni_out([keep, hide]), _grni_ack_for(hide))
+    assert [o["purchase_order"] for o in out["orders"]] == ["PO-1"]
+    assert out["accrual_total"] == 1000.0
+    assert out["counts"]["orders_with_an_accrual"] == 1
+
+
+def test_acknowledging_everything_leaves_a_zero_accrual_not_a_stale_one():
+    f = _grni()
+    out = apply_wiring("check_received_not_invoiced", _grni_out([f]), _grni_ack_for(f))
+    assert out["accrual_total"] == 0.0
+    assert out["counts"]["orders_with_an_accrual"] == 0
+
+
+def test_the_grni_denominators_are_left_alone():
+    f = _grni()
+    out = apply_wiring("check_received_not_invoiced", _grni_out([f]), _grni_ack_for(f))
+    assert out["counts"]["open_orders"] == 12
+    assert out["counts"]["orders_with_a_receipt"] == 7
+    assert out["counts"]["could_not_check"] == 5
+    assert out["verdict"] == "checked"
+
+
+def test_a_non_numeric_accrual_does_not_break_the_recompute():
+    """The recompute must not turn a malformed row into a failed run: the ack
+    layer is wrapped in a try/except that falls back to the UNFILTERED
+    findings, so an exception here would show acknowledged accruals again."""
+    keep = _grni(purchase_order="PO-1", accrual=None)
+    hide = _grni(purchase_order="PO-2", accrual=9000.0)
+    data = _grni_out([hide])
+    data["orders"] = [keep, hide]
+    out = apply_wiring("check_received_not_invoiced", data, _grni_ack_for(hide))
+    assert out["accrual_total"] == 0.0
+    assert len(out["orders"]) == 1
+
+
+def test_a_grni_shape_change_fails_open_not_closed():
+    f = _grni()
+    data = {"late": [_grni()], "accrual_total": 12000.0}
+    out = apply_wiring("check_received_not_invoiced", data, _grni_ack_for(f))
+    assert len(out["late"]) == 1
+    assert out["accrual_total"] == 12000.0
+    assert "acknowledged" not in out
+
+
+def test_the_grni_key_round_trips():
+    first = apply_wiring("check_received_not_invoiced", _grni_out([_grni()]),
+                         {"x": skill_ack.Ack("x")})
+    f = first["orders"][0]
+    acks = {f["_ack_key"]: skill_ack.Ack(finding_key=f["_ack_key"],
+                                         state_hash=f["_ack_state"],
+                                         acknowledged_by="u1")}
+    assert apply_wiring("check_received_not_invoiced",
+                        _grni_out([_grni()]), acks)["orders"] == []
