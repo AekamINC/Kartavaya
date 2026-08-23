@@ -389,6 +389,24 @@ async def check_194q_approaching(pool, org_id: str, fy_start: str | None = None,
         entry = tds_194q_row(r["name"], _f(r["purchased_ytd"]), _f(r["on_order"]))
         if entry["projected"] < warn_at:
             continue
+        # The two fields `services/skill_ack_wiring.py` files an acknowledgement
+        # under, and neither could be derived from what `tds_194q_row` returns.
+        #
+        #   vendor_id  because the vendor NAME is not unique. Measured live
+        #              2026-08-23: 80 active vendors and TWO groups sharing a
+        #              name — the same blind spot `check_duplicate_vendor_bills`
+        #              reports rather than papering over. Keyed on the name, one
+        #              acknowledgement would silence a second vendor's 194Q
+        #              position. `check_tds_thresholds` and
+        #              `check_msme_payment_clock` next door already return
+        #              `vendor_id` and `bill_id` the same way.
+        #   financial_year_from  because 194Q is a per-year threshold and every
+        #              vendor's running total starts again on 1 April. Without
+        #              it an acknowledgement made in March would silence the
+        #              vendor for the whole of the next year, in which they may
+        #              cross the line again.
+        entry["vendor_id"] = str(r["id"])
+        entry["financial_year_from"] = start.isoformat()
         entry = reachable(entry, kind="vendor", entity_id=r["id"],
                           email=r["vendor_email"], phone=r["vendor_phone"])
         (crossed if entry["crossed"] else approaching).append(entry)

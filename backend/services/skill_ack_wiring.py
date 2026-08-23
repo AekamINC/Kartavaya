@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 13 of the 61 assigned skills.
+Wired so far: 14 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -857,6 +857,61 @@ def _attendance_recompute(out: dict, surviving: Sequence[dict]) -> None:
         by_dept.values(), key=lambda d: (-d["findings"], str(d["department"])))
 
 
+# ── check_194q_approaching ──────────────────────────────────────────────────
+#
+# Vendors at or near the Rs 50 lakh s.194Q threshold, measured AT PO TIME —
+# purchases to date plus orders issued and not yet billed, because 194Q bites at
+# payment or credit, whichever is earlier. A vendor who has crossed stays
+# crossed for the rest of the financial year, so the finding cannot be resolved
+# at all: the only thing a firm can do is start deducting, and the product has
+# no way to be told that they have.
+#
+# FINDINGS_AT — `past_the_threshold` AND `approaching`. Two lists, and a vendor
+#   moves from the second to the first exactly once, when they cross. The
+#   mechanism folds the list name into the key, so that crossing correctly
+#   orphans an acknowledgement made while they were merely approaching — which
+#   is the one moment somebody must look again.
+#
+# IDENTITY — `vendor_id` and `financial_year_from`, both added to the handler
+#   for this wiring.
+#
+#   `vendor_id` because the vendor NAME is not unique, and that is measured
+#   rather than feared: live 2026-08-23, 80 active vendors, TWO groups sharing
+#   a name. It is the same blind spot `check_duplicate_vendor_bills` reports
+#   instead of papering over. Keyed on the name, one acknowledgement would
+#   silence a second vendor's 194Q position — and 194Q failing means the
+#   DEDUCTOR bears the tax.
+#
+#   `financial_year_from` because the threshold is annual and every running
+#   total starts again on 1 April. Without it an acknowledgement made in March
+#   silences that vendor for the whole of the following year.
+#
+# MATERIAL — `projected`, and ONLY that. It is `purchased_ytd + on_order`, and
+#   hashing all three would count one movement three times. It is also the
+#   right one on the statute: converting an order into a bill moves both
+#   components and changes the exposure not at all, and 194Q does not care
+#   which of the two a rupee is sitting in.
+#
+# INCIDENTAL — `vendor`, `threshold`, `rate`, `basis` (constants),
+#   `pct_of_threshold` and `indicative_tds` (both derived from `projected`),
+#   `crossed` and `will_cross_on_current_orders` (derived, and the crossing is
+#   already handled by the list split).
+#
+# RECOMPUTE — `counts.vendors_past_the_threshold` and
+#   `counts.vendors_approaching`, which span the two lists and are therefore
+#   the mapping form's business. `vendors_total`, `could_not_check`,
+#   `capped_at` and `was_capped` are population: an org that acknowledged every
+#   vendor near the line has not stopped having vendors.
+
+def _194q_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the two vendor counts from their own lists."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["vendors_past_the_threshold"] = len(surviving.get("past_the_threshold") or ())
+    counts["vendors_approaching"] = len(surviving.get("approaching") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1140,6 +1195,17 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_attendance_recompute,
         label_of=lambda f: f"{f.get('check')} — {f.get('employee')}",
+    ),
+
+    "check_194q_approaching": AckWiring(
+        findings_at=("past_the_threshold", "approaching"),
+        identity_of=lambda f: {
+            "vendor_id": f.get("vendor_id"),
+            "financial_year_from": f.get("financial_year_from"),
+        },
+        material_of=lambda f: {"projected": f.get("projected")},
+        recompute=_194q_recompute,
+        label_of=lambda f: f"{f.get('vendor')} — 194Q",
     ),
 
     "check_late_suppliers": AckWiring(
