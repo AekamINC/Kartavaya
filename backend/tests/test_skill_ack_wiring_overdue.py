@@ -23,6 +23,7 @@ OVERDUE_SKILLS = {
     "find_overdue_invoices": "invoices",
     "find_overdue_vendor_bills": "vendor_bills",
     "find_overdue_tasks": "tasks",
+    "find_overdue_followups": "follow_ups",
 }
 
 
@@ -241,3 +242,34 @@ def test_adding_an_assignee_to_a_task_does_not_orphan_the_acknowledgement():
     after = _finding("tasks", owner="user_11", owner_name="Rahul Menon")
     acks = _ack_for("find_overdue_tasks", before)
     assert apply_wiring("find_overdue_tasks", _out([after]), acks)["result"] == []
+
+
+# ── 10 · the module with no route ───────────────────────────────────────────
+
+def test_a_follow_up_with_no_link_or_contact_still_acknowledges():
+    """`_MODULE_KIND` maps follow_ups to None, so `reachable` attaches no
+    `link`, and a follow-up whose owner has neither email nor phone carries
+    none of the three optional keys. The wiring reads none of them; this pins
+    that, so a later entry cannot start depending on a key that is absent on
+    the one module least likely to have it."""
+    bare = {
+        "entity": {"id": "6a5b4c3d-2e10-4f8a-9d21-3f7c1a520b1e",
+                   "label": "Call Sharma re renewal", "module": "follow_ups"},
+        "owner": None,
+        "owner_name": "Unassigned",
+        "days_past": 4,
+    }
+    acks = _ack_for("find_overdue_followups", bare)
+    out = apply_wiring("find_overdue_followups", _out([bare]), acks)
+    assert out["result"] == []
+    assert out["acknowledged"]["items"][0]["label"] == "Call Sharma re renewal — Unassigned"
+
+
+def test_retitling_a_follow_up_does_not_orphan_the_acknowledgement():
+    """A follow-up's label is free text somebody retypes. "Call Sharma re
+    renewal" becoming "Call Sharma re renewal (Q3)" is the same chase."""
+    before = _finding("follow_ups")
+    after = _finding("follow_ups")
+    after["entity"] = dict(after["entity"], label="Call Sharma re renewal (Q3)")
+    acks = _ack_for("find_overdue_followups", before)
+    assert apply_wiring("find_overdue_followups", _out([after]), acks)["result"] == []

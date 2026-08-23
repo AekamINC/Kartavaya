@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 2 of the 61 assigned skills.
+Wired so far: 4 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -305,6 +305,37 @@ ACK_WIRING: dict[str, AckWiring] = {
     #
     # RECOMPUTE — None. `{"result": [...]}` derives nothing.
     "find_overdue_tasks": AckWiring(
+        findings_at="result",
+        identity_of=_entity_identity,
+        material_of=None,
+        recompute=None,
+        label_of=_entity_label,
+    ),
+
+    # ── find_overdue_followups ──────────────────────────────────────────────
+    #
+    # `staging.graha_follow_ups` past `due_at` and not completed. The CRM chase
+    # list, and the one place in this family where the ack is closest to being
+    # the RIGHT answer rather than a concession: a follow-up whose customer has
+    # said "call me after Diwali" is not completed, is genuinely past due, and
+    # will be past due every morning until somebody either rings them or ticks
+    # it off falsely. Acknowledging it is the honest third option.
+    #
+    # IDENTITY — `entity.id` + `entity.module`. The label here is the follow-up
+    #   TITLE, free text a user retypes, so keeping it out of the key matters
+    #   more on this module than on the ledgers: "Call Sharma re renewal"
+    #   becoming "Call Sharma re renewal (Q3)" must not resurrect the finding.
+    #
+    # MATERIAL — None. The shape carries no amount; `is_completed` is applied in
+    #   the WHERE clause, so completing one removes it from the list.
+    #
+    # INCIDENTAL — `days_past`. Note this module gets NO `link`: `_MODULE_KIND`
+    #   maps follow_ups to None because the frontend has no per-follow-up route.
+    #   The wiring never reads `link`, so the absence changes nothing here, and
+    #   the label falls back to the title and the owner's name.
+    #
+    # RECOMPUTE — None; nothing in `{"result": [...]}` is derived.
+    "find_overdue_followups": AckWiring(
         findings_at="result",
         identity_of=_entity_identity,
         material_of=None,
