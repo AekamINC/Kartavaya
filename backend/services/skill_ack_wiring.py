@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 26 of the 61 assigned skills.
+Wired so far: 27 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1779,6 +1779,97 @@ def _consent_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> No
         surviving.get("reachable_without_a_recorded_opt_in") or ())
 
 
+# ── check_broadcast_preflight ───────────────────────────────────────────────
+#
+# What an unsent campaign would actually do: who the segment resolves to, who
+# has no address, who resolves to the same address twice, who is already
+# unsubscribed. Nothing here edits a list or changes a campaign's status, so
+# every draft campaign is re-examined and re-reported for as long as it sits
+# unsent — and a firm that has read the preflight, accepted the gap and decided
+# to send anyway has nowhere to say so.
+#
+# IDENTITY — `campaign_id`, and NOTHING else. The finding is one campaign's
+#   preflight, so the campaign row is the fact.
+#
+#   NOT `campaign` (the name, which a person edits while drafting) and NOT
+#   `channel` or `status`: a draft that becomes scheduled is the same campaign
+#   about to do the same thing, and the status is in MATERIAL where it belongs.
+#
+# MATERIAL — `deliverable_now`, `unique_addresses`, `claimed_recipients` and
+#   `status`.
+#
+#   The first three are the numbers the preflight EXISTS to compare: a campaign
+#   acknowledged when it would reach 40 of a claimed 60 is not the same
+#   campaign when the segment resolves to 4,000. `claimed_recipients` is in on
+#   its own account because the handler warns it can be stale — "a gap between
+#   claimed and deliverable can be a stale number rather than a dirty list" —
+#   and a firm that recomputed it has changed what the report says.
+#
+#   `status` because a campaign moving from draft to scheduled is a decision
+#   somebody took, and "I read the preflight" was said about a draft.
+#
+#   NOT `no_address_at_all`, `duplicates_resolving_to_one_address` or
+#   `already_unsubscribed`: each is a nested block whose `rows` are capped
+#   samples rebuilt every run, and every one of them moves `deliverable_now`
+#   when it moves. Hashing them would count one change several times, and
+#   hashing a capped sample would void an acknowledgement because a different
+#   fifty rows happened to fit.
+#
+#   NOT `no_recorded_opt_in` either, and that one is worth naming: on an email
+#   campaign the handler sets it to the SIZE OF THE WHOLE LIST by construction —
+#   "a statement about the schema, not about the recipients" — so it moves with
+#   the segment and says nothing of its own.
+#
+# INCIDENTAL — `scheduled_at` (a date that arrives), `in_segment`,
+#   `claimed_minus_deliverable` (a subtraction of two fields already hashed),
+#   `ignored_filter_keys`, `bounced_previously` (a fixed NOT MEASURED block),
+#   `channel_can_be_delivered`.
+#
+# RECOMPUTE — `campaigns_examined`, `campaigns_on_an_undeliverable_channel` and
+#   every `*_summed_over_campaigns` figure, which are sums over exactly this
+#   list. The suffixed names are the handler's own warning that they add up
+#   SEND SLOTS rather than people, and that warning survives the rebuild
+#   untouched.
+#
+#   NOT `unsubscribe_list_size` or `whatsapp_numbers_with_an_opt_in_flag`, which
+#   are org-level counts of distinct things — the handler says so in a comment,
+#   and they are the reason those two carry no suffix. NOT `bounced_previously`,
+#   which is "deliberately null and never 0". NOT `distinct_audience_filters`,
+#   which counts the segments the query resolved rather than the campaigns
+#   shown, and NOT `campaigns_not_shown`, which exists to say the list is
+#   capped.
+
+def _broadcast_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the campaign counts and every send-slot total."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+
+    def _n(row: Any, *path: str) -> float:
+        node: Any = row
+        for step in path:
+            node = node.get(step) if isinstance(node, Mapping) else None
+        try:
+            return float(node or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    counts["campaigns_examined"] = len(surviving)
+    counts["campaigns_on_an_undeliverable_channel"] = sum(
+        1 for r in surviving if r.get("channel_can_be_delivered") is False)
+    counts["claimed_recipients_summed_over_campaigns"] = int(
+        sum(_n(r, "claimed_recipients") for r in surviving))
+    counts["deliverable_summed_over_campaigns"] = int(
+        sum(_n(r, "deliverable_now") for r in surviving))
+    counts["no_address_summed_over_campaigns"] = int(
+        sum(_n(r, "no_address_at_all", "count") for r in surviving))
+    counts["duplicate_extra_copies_summed_over_campaigns"] = int(sum(
+        _n(r, "duplicates_resolving_to_one_address", "extra_copies_avoided")
+        for r in surviving))
+    counts["already_unsubscribed_summed_over_campaigns"] = int(
+        sum(_n(r, "already_unsubscribed", "count") for r in surviving))
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2234,6 +2325,19 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_consent_recompute,
         label_of=lambda f: f"consent — {f.get('who')}",
+    ),
+
+    "check_broadcast_preflight": AckWiring(
+        findings_at="campaigns",
+        identity_of=lambda f: {"campaign_id": f.get("campaign_id")},
+        material_of=lambda f: {
+            "deliverable_now": f.get("deliverable_now"),
+            "unique_addresses": f.get("unique_addresses"),
+            "claimed_recipients": f.get("claimed_recipients"),
+            "status": f.get("status"),
+        },
+        recompute=_broadcast_recompute,
+        label_of=lambda f: f"{f.get('campaign')} — {f.get('channel')}",
     ),
 
     "check_late_suppliers": AckWiring(
