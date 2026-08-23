@@ -268,3 +268,62 @@ def test_every_wiring_names_at_least_one_bucket():
         assert len(set(buckets)) == len(buckets), (
             f"{name} names the same list twice, which would filter it once and "
             f"then filter the already-filtered result again")
+
+
+# ── 8 · when the lists are ONE POPULATION, folding is wrong ─────────────────
+
+@pytest.fixture
+def partitioned():
+    """A wiring whose lists partition one population, as `check_chase_ladder`'s
+    four do: an item is in exactly one of them and moves between them as the
+    clock runs."""
+    ACK_WIRING[SKILL] = AckWiring(
+        findings_at=("due_now", "not_yet"),
+        identity_of=lambda f: {"entity_id": f.get("entity_id")},
+        material_of=None,
+        recompute=None,
+        label_of=lambda f: str(f.get("entity_id")),
+        lists_are_one_population=True,
+    )
+    try:
+        yield ACK_WIRING[SKILL]
+    finally:
+        del ACK_WIRING[SKILL]
+
+
+def test_a_partitioned_wiring_keeps_one_key_across_its_lists(partitioned):
+    """The case folding gets wrong. An item that moves from `not_yet` to
+    `due_now` because a day passed has not become a different item — and a
+    ladder moves each of its items several times, so folding would cost the
+    user three acknowledgements of one task in a fortnight."""
+    item = {"entity_id": "task-1"}
+    acks = _ack_for(partitioned, "not_yet", item)
+    out = apply_wiring(SKILL, {"due_now": [item], "not_yet": []}, acks)
+    assert out["due_now"] == [], (
+        "the acknowledgement was orphaned by the item moving between lists — "
+        "lists_are_one_population=True must switch the folding off")
+
+
+def test_a_partitioned_wiring_gets_its_own_identity_function_back(partitioned):
+    assert _identity_for(partitioned, "due_now") is partitioned.identity_of
+    assert _identity_for(partitioned, "not_yet") is partitioned.identity_of
+
+
+def test_the_flag_defaults_to_folding(wired):
+    """The safe answer stays the default: a wiring that says nothing gets the
+    guarantee, and only a wiring that CLAIMS its lists partition one population
+    gives it up."""
+    assert wired.lists_are_one_population is False
+    same = _f(check="same_code", who="EMP-1")
+    assert (skill_ack.finding_key(_identity_for(wired, "blockers")(same))
+            != skill_ack.finding_key(_identity_for(wired, "warnings")(same)))
+
+
+def test_every_existing_wiring_states_which_shape_it_is():
+    """A single-list wiring cannot be either, and the flag must not be set on
+    one — it would read as a claim about lists that do not exist."""
+    for name, w in ACK_WIRING.items():
+        if isinstance(w.findings_at, str):
+            assert w.lists_are_one_population is False, (
+                f"{name} names one list; lists_are_one_population is a claim "
+                f"about several")

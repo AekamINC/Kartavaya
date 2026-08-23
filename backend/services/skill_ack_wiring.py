@@ -63,6 +63,20 @@ and only one of them is difficult.
       is correctly orphaned: it has become a different finding and somebody
       should look at it again.
 
+      WHEN THE LISTS ARE ONE POPULATION, folding is wrong, and
+      `lists_are_one_population=True` turns it off. The two shapes are
+      genuinely different data: payroll readiness describes one employee from
+      two angles at once, while `check_chase_ladder` PARTITIONS its items —
+      each is in exactly one of `nudges_due`, `escalations_due`,
+      `expired_and_must_be_reissued` or `waiting_but_nothing_due`, and it moves
+      between them AS THE CLOCK RUNS. Fold the list name in there and an
+      acknowledgement is orphaned when the item reaches the second nudge, again
+      at escalation, again at expiry: the user acks the same task three times
+      in a fortnight and stops. Cross-list collision is impossible for such a
+      skill anyway, because the subject is only ever in one list. The flag is a
+      claim about the handler, so the wiring takes on the uniqueness guarantee
+      the mechanism was making.
+
   RECOMPUTE RECEIVES ALL THE LISTS AT ONCE.
       An aggregate can span them — `check_payroll_readiness` counts blockers
       and warnings into one `counts` block — so a recompute called once per
@@ -141,6 +155,27 @@ class AckWiring:
 
     #: What the acknowledgement is called when a human reads the ack list back.
     label_of: Callable[[Finding], str]
+
+    #: Do this skill's several lists PARTITION one population — each subject in
+    #: exactly one list at a time — rather than describing it from several
+    #: angles?
+    #:
+    #: Default False, which folds the list name into the key so a subject
+    #: appearing in two lists at once cannot share an acknowledgement. That is
+    #: the safe answer and the right one for `check_payroll_readiness`, where
+    #: one employee is a blocker AND a warning in the same run.
+    #:
+    #: True says the opposite fact about the data and buys back the case the
+    #: folding gets WRONG. See WHEN THE LISTS ARE ONE POPULATION in the module
+    #: docstring: `check_chase_ladder` moves an item between four lists purely
+    #: with the calendar, so folding would orphan its acknowledgement up to
+    #: three times as the clock pushed it up the ladder — the midnight failure
+    #: in slow motion.
+    #:
+    #: Setting this is a CLAIM ABOUT THE HANDLER, not a convenience: the wiring
+    #: takes on the guarantee the mechanism was making, so `identity_of` must
+    #: already be unique across the whole population.
+    lists_are_one_population: bool = False
 
 
 # ── propose_payment_run ─────────────────────────────────────────────────────
@@ -1444,7 +1479,7 @@ def _identity_for(wiring: AckWiring, bucket: str) -> Callable[[Finding], Mapping
     become a different, more or less severe, finding, and somebody should look
     at it again.
     """
-    if isinstance(wiring.findings_at, str):
+    if isinstance(wiring.findings_at, str) or wiring.lists_are_one_population:
         return wiring.identity_of
 
     def _identity(f: Finding) -> Mapping[str, Any]:
