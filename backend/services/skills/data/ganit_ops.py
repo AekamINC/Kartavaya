@@ -1651,6 +1651,11 @@ async def check_invoice_series_and_splits(
 
         entry = {
             "book": book or "(no prefix)",
+            # The year rides on the finding as well as the envelope, because an
+            # acknowledgement is filed against the finding alone: without it,
+            # "this book's gap is explained" said about FY26 would silence the
+            # same book's gaps in FY27. See `services/skill_ack_wiring.py`.
+            "financial_year": financial_year,
             "numbers_present": len(seqs),
             "lowest_in_year": f"{lo:0{width}d}",
             "highest_in_year": f"{hi:0{width}d}",

@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 30 of the 61 assigned skills.
+Wired so far: 31 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -2103,6 +2103,88 @@ def _stopped_billing_recompute(out: dict, surviving: Mapping[str, Sequence[dict]
     counts["contracts_with_a_finding"] = len(surviving.get("contracts") or ())
 
 
+# ── check_invoice_series_and_splits ─────────────────────────────────────────
+#
+# Gaps and duplicates in each invoice book, and CGST/SGST charged where IGST was
+# due. A gap in a numbered series is "the thing an auditor asks about", and the
+# commonest answer is one this product cannot hold: the missing numbers were
+# raised on the old system, or spoiled and destroyed, or belong to a book the
+# firm stopped using. The handler is explicit that a head defect is "a
+# disagreement INSIDE the record rather than a determination of law", so a firm
+# that has checked one against the actual place of supply and found it correct
+# has nowhere to record that either.
+#
+# FINDINGS_AT — `series` and `tax_heads.defects`, THE SECOND DOTTED PATH. The
+#   defects sit beside `supplier_state_code`, `documents_judged`,
+#   `place_of_supply_unreadable` and `exports_excluded` — the denominators that
+#   say how much of the book could be judged at all — and separating them from
+#   their own denominators to make them wireable would be the mechanism
+#   dictating the shape of the answer.
+#
+#   Two populations: a BOOK and a DOCUMENT. Folding stays on and costs nothing.
+#
+# IDENTITY — `book` + `financial_year` for a series, `invoice_number` +
+#   `defect` for a head defect.
+#
+#   `financial_year` had to be added to the series entry: it is a per-year
+#   check, and without it "this book's gap is explained" said about FY26 would
+#   silence the same book's gaps in FY27, where the numbers are different
+#   numbers.
+#
+#   On the head-defect side no year is needed — `invoice_number` is unique per
+#   org (measured: 787 active invoices, ZERO blank, ZERO duplicates) and its
+#   date fixes the year. `defect` is in the key because one document can be
+#   wrong in more than one way and each is a separate judgement.
+#
+# MATERIAL — `numbers_present` and `missing_count` for a series; `invoice_total`
+#   and the three tax columns for a defect.
+#
+#   `numbers_present` moves as the book grows, and `missing_count` is the
+#   finding itself: a book acknowledged with three gaps must resurface at
+#   thirty. NOT `gaps`, which is the same information as a list of RANGES — one
+#   invoice raised in the middle of a gap re-splits every range around it, so
+#   hashing it would void the acknowledgement on a change `missing_count`
+#   already reports honestly.
+#
+#   `cgst`, `sgst`, `igst` and `invoice_total` because the defect IS the split:
+#   a document re-taxed onto the right head stops being a defect, and one
+#   re-taxed onto a different wrong head is a new finding. They are the only
+#   fields here that carry money.
+#
+# INCIDENTAL — `lowest_in_year`, `highest_in_year`, `first_document_dated`,
+#   `last_document_dated`, `continues_from_an_earlier_year`,
+#   `numbers_taken_by_another_book`, `numbers_used_in_an_adjacent_year` and
+#   `inconsistent_width` (all explanations of the same gaps); and on a defect,
+#   `invoice_date`, `type`, `detail`, `place_of_supply_as_recorded`,
+#   `place_of_supply_state_code`, `supplier_state_code`.
+#
+# RECOMPUTE — `counts.books` and `tax_heads.defect_count`, and nothing else.
+#
+#   `missing_numbers`, `numbers_explained_by_a_shared_counter` and
+#   `numbers_explained_by_an_adjacent_year` are DELIBERATELY NULL when the run
+#   was truncated — the handler refuses to report a gap total it cannot stand
+#   behind, because "a capped series scan INVENTS holes". A rebuild that
+#   summed them from the surviving books would replace that refusal with a
+#   number, which is the one thing this handler was written not to do.
+#
+#   `tax_heads.tax_on_the_wrong_head` is left alone for the same reason as the
+#   other censuses: `documents_judged`, `place_of_supply_unreadable` and
+#   `exports_excluded` sit beside it and describe the whole population, and a
+#   money figure rebuilt from a filtered list next to unfiltered denominators
+#   is worse than one that is honestly whole. That is a departure from the
+#   usual rule and it is recorded as owed: the honest fix is a
+#   `tax_on_the_wrong_head_listed` beside it, in the handler.
+
+def _series_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the two list lengths. Every gap total stays as the handler left it."""
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["books"] = len(surviving.get("series") or ())
+    heads = out.get("tax_heads")
+    if isinstance(heads, dict):
+        heads["defect_count"] = len(surviving.get("tax_heads.defects") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2616,6 +2698,29 @@ ACK_WIRING: dict[str, AckWiring] = {
         recompute=_stopped_billing_recompute,
         label_of=lambda f: (
             f"{f.get('contract') or 'recurring schedule'} — {f.get('bill_to')}"),
+    ),
+
+    "check_invoice_series_and_splits": AckWiring(
+        findings_at=("series", "tax_heads.defects"),
+        identity_of=lambda f: {
+            "book": f.get("book"),
+            "financial_year": f.get("financial_year"),
+            "invoice_number": f.get("invoice_number"),
+            "defect": f.get("defect"),
+        },
+        material_of=lambda f: {
+            "numbers_present": f.get("numbers_present"),
+            "missing_count": f.get("missing_count"),
+            "invoice_total": f.get("invoice_total"),
+            "cgst": f.get("cgst"),
+            "sgst": f.get("sgst"),
+            "igst": f.get("igst"),
+        },
+        recompute=_series_recompute,
+        label_of=lambda f: (
+            f"{f.get('invoice_number')} — {f.get('defect')}"
+            if f.get("invoice_number") else
+            f"series {f.get('book')} — {f.get('financial_year')}"),
     ),
 
     "check_late_suppliers": AckWiring(
