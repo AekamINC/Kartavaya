@@ -919,8 +919,8 @@ export default function ReportsPage({ teams: propTeams }) {
                 <div key={tag + lbl} className="gr__contains-row">
                   <span className={'gr__fmt-tag gr__fmt-tag--' + tag.toLowerCase()}>{tag}</span>
                   <span className="gr__contains-body">
-                    <span className="gr__toggle-lbl">{lbl}</span>
-                    <span className="gr__toggle-hint">{hint}</span>
+                    <span className="gr__contains-lbl">{lbl}</span>
+                    <span className="gr__contains-hint">{hint}</span>
                   </span>
                 </div>
               ))}

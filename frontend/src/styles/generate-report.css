@@ -20,16 +20,6 @@
 .gr__phead-right{
   display:flex; align-items:center; gap:18px;
 }
-.gr__phead-meta{
-  display:flex; flex-direction:column; align-items:flex-end;
-  font-size:11.5px; color:var(--ink-3);
-  line-height:1.4;
-}
-.gr__phead-meta b{
-  font-size:9.5px; letter-spacing:0.18em; text-transform:uppercase;
-  color:var(--ink-3); font-weight:700;
-}
-.gr__phead-meta span{ color:var(--ink); font-weight:500; font-size:13px; }
 
 /* ── Builder form ───────────────────────────────────────────────── */
 .gr__form{
@@ -226,49 +216,13 @@
   color:var(--ink-3); font-weight:600;
 }
 
-/* Section toggles */
-.gr__toggles{
-  display:grid; grid-template-columns:1fr 1fr;
-  gap:8px;
-}
-@media (max-width: 1100px){ .gr__toggles{ grid-template-columns: 1fr; } }
-.gr__toggle{
-  display:flex; align-items:flex-start; gap:12px;
-  padding:12px 14px;
-  background:var(--bg-soft);
-  border:1px solid var(--rule);
-  border-radius:10px;
-  cursor:pointer;
-  transition: all var(--dur-fast) var(--ease-standard);
-}
-.gr__toggle:hover{ border-color:var(--rule-strong); }
-.gr__toggle.is-on{
-  background:var(--surface-2);
-  border-color:color-mix(in srgb, var(--k-primary) 30%, var(--rule));
-}
-.gr__toggle input{ display:none; }
-.gr__toggle-mark{
-  width:18px; height:18px; flex-shrink:0;
-  border-radius:5px;
-  border:1.5px solid var(--rule-strong);
-  background:var(--surface-2);
-  margin-top:1px;
-  position:relative;
-  transition: all var(--dur-fast) var(--ease-standard);
-}
-.gr__toggle.is-on .gr__toggle-mark{
-  background:var(--k-gradD);
-  border-color:transparent;
-}
-.gr__toggle.is-on .gr__toggle-mark::after{
-  content:""; position:absolute; left:4px; top:1px;
-  width:6px; height:10px;
-  border:solid #fff; border-width:0 2px 2px 0;
-  transform:rotate(45deg);
-}
-.gr__toggle-body{ display:flex; flex-direction:column; gap:2px; }
-.gr__toggle-lbl{ font-size:13.5px; font-weight:600; color:var(--ink); }
-.gr__toggle-hint{ font-size:11.5px; color:var(--ink-3); }
+/* The seven "include" toggles that used to live here are GONE, and so is their
+   CSS. They were client-state only — the generator never read them — and two of
+   them named sections it has never produced. `.gr__contains` below is what
+   replaced them: a statement of what the document contains, deliberately
+   carrying no border, no hover, no pointer cursor and no checkbox affordance,
+   so a reader is not invited to click something that decides nothing. */
+
 
 /* What the document contains — a STATEMENT, not a set of controls.
    Deliberately not `.gr__toggle`: no border, no hover, no pointer cursor and
@@ -283,6 +237,8 @@
 }
 .gr__contains-row:last-child{ border-bottom:0; }
 .gr__contains-body{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.gr__contains-lbl{ font-size:13.5px; font-weight:600; color:var(--ink); }
+.gr__contains-hint{ font-size:11.5px; color:var(--ink-3); }
 
 /* Registers — one row per row-level document, three formats each. */
 .gr__regs{ display:flex; flex-direction:column; gap:0; margin-top:10px; }

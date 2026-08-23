@@ -187,39 +187,44 @@ commit message.
 
 ---
 
-### 7. Two live orgs may have had a person's email rendered as their name
+### 7. An id WAS being rendered as a person — the email never was
 
-**Status:** OPEN · code is being fixed now; this is about what was already shown.
+**Status:** OPEN for your information only. Everything here is fixed; the
+measurement changed what the finding actually is, and I would rather correct
+myself than leave the scarier version standing.
 
-**What the audit-columns sweep turned up.** About twenty read paths across CRM,
-messaging, reports, search, Dristi and Sales resolved a person's display name
-with a ladder that ended at their **email address**:
+**What I first told you.** About twenty read paths resolved a person's name with
+`COALESCE(full_name, name, email)`, so on any screen where an account had no
+name the product would print that person's email address as their label.
 
-    COALESCE(full_name, name, email)
+**What the measurement says.** Live: **0 of 35 accounts have no name.** The email
+rung had never fired on real data. It was not a working fallback — it was a
+loaded gun, and it is now removed from **56 sites** (my own grep found 47; the
+ratchet I built to end it found nine more). The ladder ends at "Unnamed member",
+taken from where the house had already made this exact decision rather than
+invented.
 
-So on any screen where an account had no name filled in, the product printed
-that person's email address as their label — in a table cell, in a report, in a
-chat sender line. Two standing rules meet there and both say no: Aekam must not
-see client emails, and a person is named by their name.
+**What WAS live, and is the real finding.** Three of those sites fell through
+past the email to a raw `users.user_id`, and that rung fires whenever the user
+row is ABSENT — a deleted approver, which does happen. One of them was the
+**organisation switcher, on every page**. Another, `hub.py`, returned
+`decided_by` raw, so the approvals queue read "granted 3 Aug by
+user_f1a0a472b98f". A further four dead fallback arms drew ids, including in
+Aekam's own admin console.
 
-**Also found and already fixed:** one CRM screen rendered a truncated raw user
-id (`slice(0, 12)`) as a person, and the Sales targets table fell back to
-rendering a `salesperson_id`. The names-not-ids ratchet is positional, so a
-SLICED id walks straight past it — I have asked for that gap to be closed.
+**The check that should have caught all of this had four holes**, and my
+diagnosis of why was wrong: I said it was positional rather than textual. It
+reads names and never values, so truncation was never the mechanism. The real
+holes were `_by` missing from its vocabulary, `?.` classed as control flow so
+`{a?.user_id}` was invisible product-wide, its interpolation walker stepping
+over nested braces so the `||` fallback arm — the likeliest place for an id —
+was structurally unreachable, and `String()` and template literals. All four are
+closed, proved against a fixture holding two shipped defects verbatim: the old
+check found 0 and exited clean, the new one finds 4 and fails.
 
-**What you decide:** nothing, to make the fix. The ladder now ends at a
-non-identifying fallback instead of an address, and that is going in regardless.
-
-**What is worth your judgement** is whether an address having been displayed
-matters to you commercially — it would have appeared to whoever could already
-open that screen, so this is not an external disclosure, and I have found no
-path where one org saw another's. If you want, I can measure exactly how many
-live accounts have no name and therefore could ever have triggered it; my
-expectation is that the number is small and possibly zero, in which case the
-ladder never fired and this is a latent fault rather than a past one.
-
-**What I finish either way:** the ladder, everywhere, and the ratchet gap if it
-can be closed without false positives.
+**Nothing for you to decide.** No path existed where one org saw another's
+address, and the address rung never fired at all. The ids that were rendered
+were visible only to people who could already open those screens.
 
 ---
 

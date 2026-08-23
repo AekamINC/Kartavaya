@@ -96,6 +96,18 @@ def _row(**over):
         "template_name": "Chase overdue invoices",
         "category": "festival",
         "requester_name": "Asha Rao",
+        # A FIXTURE THE SERVER CAN ACTUALLY PRODUCE. `list_skill_requests`
+        # selected `decided_by` raw and returned it, and
+        # `hub/skills/RequestsTab.jsx` printed it — "granted 3 Aug by
+        # user_f1a0a472b98f". The router now LEFT JOINs `users` for the
+        # decider and returns the resolved name instead, so every row it
+        # yields carries this key. A fixture missing it would be testing a
+        # shape the query cannot return, which is how a mock ends up proving
+        # nothing.
+        #
+        # None here because the base fixture is an OPEN request: nobody has
+        # decided it. The decided cases override it below.
+        "decided_by_name": None,
         "requester_email": "success+asha@simulator.amazonses.com",
         "already_active": False,
     }
@@ -319,13 +331,27 @@ async def test_a_decided_request_is_reachable_so_the_record_outlives_the_decisio
         status="declined",
         decided_at="2026-08-07T09:00:00+00:00",
         decided_by="user_aekam",
+        decided_by_name="Aekam Admin",
     )]).install(mock_pool)
 
     r = await api_client.get(QUEUE, params={"status": "declined"})
 
     assert r.status_code == 200, r.text
     assert fake.queries[0][1][0] == "declined"
-    assert r.json()["data"][0]["decided_by"] == "user_aekam"
+    # THE NAME, AND THE ASSERTION USED TO BE THE BUG. It read
+    # `data[0]["decided_by"] == "user_aekam"` — so the test REQUIRED the
+    # endpoint to hand a `users.user_id` to the browser, and
+    # `hub/skills/RequestsTab.jsx` duly printed it. Found by
+    # `check-rendered-ids.mjs` on 2026-08-23 once that ratchet learned to see
+    # a `_by` value reaching a rendered position.
+    #
+    # The point the test was making — a decided request stays reachable, the
+    # record outlives the decision — is unchanged and is what it now checks:
+    # the decision is still attributed, by name.
+    row = r.json()["data"][0]
+    assert row["decided_by_name"] == "Aekam Admin"
+    assert "decided_by" not in row, (
+        "the queue hands the browser a raw users.user_id")
 
 
 async def test_an_unknown_status_is_refused_rather_than_silently_returning_nothing(
