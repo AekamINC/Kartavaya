@@ -759,7 +759,12 @@
    "Wipro Consumer" wrapped onto two lines in a 54px row. */
 .vko__head, .vko__row {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1.6fr) 84px minmax(88px, 1fr) 106px;
+  /* No `grid-template-columns` here any more. Both the head and the rows get
+     it INLINE, off one list — `ORDER_COLUMNS` in `vikray/_shared.jsx` — because
+     a person can now reorder, resize and hide these columns, and a value left
+     here would be a second opinion that silently disagrees with the first. The
+     numbers moved to that list unchanged; `OrderRows.track()` keeps the party's
+     1.6fr and the progress bar's 88px floor. */
   gap: 12px; align-items: center;
   padding: 0 14px;
   text-align: left;

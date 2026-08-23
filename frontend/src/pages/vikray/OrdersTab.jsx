@@ -18,7 +18,9 @@ import { Empty } from '../../components/editorial';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { ORDER_LABELS } from '../../lib/statusColors';
-import { ORDER_FLOW, orderPath, onOrdersChanged } from './_shared';
+import { ORDER_FLOW, orderPath, onOrdersChanged, ORDER_COLUMNS } from './_shared';
+import useColumnPrefs from '../../hooks/useColumnPrefs';
+import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 import OrderRows from './OrderRows';
 import OrderForm from './OrderForm';
 import useModuleWrite from '../../hooks/useModuleWrite';
@@ -40,6 +42,12 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  /* This list was the one table in Vikray with no column control, because it
+     is a button-row grid rather than a <table> and the arrangement work
+     attaches to table cells. `OrderRows` now speaks the grid half of the same
+     contract, so the control belongs here — the Orders tab owns the
+     arrangement; the dashboard's card renders the shipped one. */
+  const cols = useColumnPrefs('vikray.orders', ORDER_COLUMNS);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -98,6 +106,7 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
           onClick={() => setShowForm(v => !v)}>
           {showForm ? 'Close form' : '+ New order'}
         </button>
+        <ColumnsButton cols={cols} />
       </div>
 
       {showForm && canWrite && (
@@ -132,7 +141,7 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
           />
         )
       ) : (
-        <OrderRows orders={orders} onOpen={open} />
+        <OrderRows orders={orders} onOpen={open} cols={cols} />
       )}
     </div>
   );

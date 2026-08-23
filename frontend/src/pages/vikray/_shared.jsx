@@ -39,6 +39,34 @@ export const ORDER_FLOW = ['draft', 'confirmed', 'dispatched', 'delivered', 'clo
 export const orderPath = id => `/vikray/orders/${encodeURIComponent(id)}`;
 
 /**
+ * What the order list HAS, declared once — the floor `useColumnPrefs` resolves
+ * a saved arrangement against, and the shipped layout `OrderRows` falls back to
+ * where no arrangement exists (the dashboard's card).
+ *
+ * The widths are not new numbers. They are the ones `.vko__head` / `.vko__row`
+ * already carried in `module.css`, moved here because the grid template is now
+ * built from this list: a header whose columns can drift from its rows is worse
+ * than no header, and the only way to keep them identical once a person can
+ * reorder them is for both to read the same source.
+ *
+ * `party` and `progress` carry NO width on purpose — they are the two flexible
+ * tracks, and the CSS weighted them 1.6 : 1 in the party's favour because the
+ * name is the only column a reader scans. That weighting cannot survive a
+ * generic `minmax(0, 1fr)`, so `OrderRows` restores it (see `template` there).
+ *
+ * `order` is `fixed`: a row whose identifier can be hidden is a row you cannot
+ * cite, and every other door into the record — the dashboard, the pipeline —
+ * opens from it.
+ */
+export const ORDER_COLUMNS = [
+  { id: 'order',    label: 'Order',    width: 92, fixed: true },
+  { id: 'party',    label: 'Party' },
+  { id: 'value',    label: 'Value',    width: 84, className: 'vko__val' },
+  { id: 'progress', label: 'Progress' },
+  { id: 'state',    label: 'State',    width: 106 },
+];
+
+/**
  * "An order changed" — from the record route back to the list behind it.
  *
  * `OrderDetail` used to be a child of `OrdersTab` and could call `onChanged`
