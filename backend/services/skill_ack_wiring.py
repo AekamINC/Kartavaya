@@ -595,28 +595,31 @@ ACK_WIRING: dict[str, AckWiring] = {
     #
     # IDENTITY — the invoice row plus its module. See `_entity_identity`.
     #
-    # MATERIAL — None, and this is the entry where that answer has to be argued
-    #   rather than assumed. The finding carries FIVE fields: `entity`,
-    #   `owner`, `owner_name`, `days_past`, and the contact/link keys
-    #   `reachable` attaches. Not one of them is an amount or a status. The
-    #   handler does not select the balance at all, and every state change that
-    #   would matter — paid, cancelled, deactivated — removes the row from the
-    #   query entirely, so the finding disappears on its own rather than moving.
-    #   There is literally no field whose movement could void the ack.
+    # MATERIAL — `balance`, WHICH THE HANDLER NOW RETURNS.
     #
-    #   The consequence is stated plainly because it is the cost of this wiring:
-    #   an acknowledgement here is UNCONDITIONAL, so an invoice acked at five
-    #   days overdue stays hidden at two hundred. `snooze_until` is the honest
-    #   instrument for "not this week" and the UI should reach for it first;
-    #   a permanent ack here means "stop telling me about this invoice", and
-    #   withdrawing it is one DELETE away.
+    #   The first version of this entry passed None and recorded the reason as
+    #   a debt: the shape carried no amount, so the acknowledgement was
+    #   unconditional, and somebody who silenced a bill of 42,000 kept it
+    #   silenced at 84,000. That is the wrong default in a money module, and
+    #   "the shape was inconvenient" is not a reason to ship it. So the shape
+    #   changed.
     #
-    #   Adding a balance to the handler's return would give this bucket
-    #   something real, and it is NOT done here: the same rows feed four other
-    #   skills and two of the five modules (tasks, follow-ups) have no amount at
-    #   all, so a money field would have to be nullable and would then be
-    #   material-for-some-modules — a per-module judgement smuggled into a
-    #   shared handler. Recorded as owed, not done quietly.
+    #   `overdue_finder._MODULE_MAP` now carries a `money_expr` per module and
+    #   `ganit_invoices.balance_due` is a NOT NULL numeric column, so the
+    #   receivables ledger's balance is read as-is — no arithmetic anywhere,
+    #   least of all in Python, where subtracting two floats on the way into a
+    #   state hash reports movement that never happened.
+    #
+    #   The key is ABSENT rather than zero on the three modules that have no
+    #   money (tasks, follow-ups, agreements), so this lambda hashing a None
+    #   there would be a hash over a fact the ledger never asserted — which is
+    #   why those three keep `material_of=None` and this one does not.
+    #
+    #   Not `status`: it is applied in the WHERE clause and never returned, so
+    #   a paid or cancelled invoice leaves the list rather than moving in it.
+    #   `snooze_until` remains the right instrument for "not this week"; what
+    #   changed is that "stop telling me about this invoice" no longer means
+    #   "however large it grows".
     #
     # INCIDENTAL — `days_past` ticks with the calendar and is in NEITHER bucket;
     #   it is in `skill_ack._DRIFT_FIELDS`, so putting it in either would raise
@@ -630,7 +633,7 @@ ACK_WIRING: dict[str, AckWiring] = {
     "find_overdue_invoices": AckWiring(
         findings_at="result",
         identity_of=_entity_identity,
-        material_of=None,
+        material_of=lambda f: {"balance": f.get("balance")},
         recompute=None,
         label_of=_entity_label,
     ),
@@ -642,29 +645,35 @@ ACK_WIRING: dict[str, AckWiring] = {
     # was written — the row leaves only when somebody pays a vendor, and this
     # skill cannot record a payment.
     #
-    # IDENTITY, MATERIAL and INCIDENTAL are as `find_overdue_invoices`: the same
-    # handler, the same five fields, the same absence of any amount to hash.
+    # IDENTITY and INCIDENTAL are as `find_overdue_invoices`, and so is MATERIAL
+    # now that the handler returns a balance — but the balance ARRIVES
+    # DIFFERENTLY here and that is worth one line. `ganit_vendor_bills` has no
+    # `balance_due` column and its `amount_paid` is nullable, so `money_expr` is
+    # `e.total - COALESCE(e.amount_paid, 0)`: the subtraction is Postgres's,
+    # over `numeric`, which is exact — the same expression `payables_run.py`
+    # already uses for the same bills — and never Python's over two floats.
     #
     # THE ONE THING THAT IS NOT THE SAME, and the reason this is its own commit:
-    #   `propose_payment_run` reads the SAME BILLS and is wired with a real
-    #   MATERIAL bucket (`balance_due`, `status`), because that handler selects
-    #   the balance and this one does not. So one bill can be acknowledged twice
-    #   under two skills with two different meanings — "stop proposing me this
-    #   payment while the balance is 42,000" over there, "stop listing this bill
-    #   as overdue at all" here — and the two acks are correctly independent:
+    #   `propose_payment_run` reads the SAME BILLS and is wired with its own
+    #   MATERIAL bucket (`balance_due`, `status`). So one bill can be
+    #   acknowledged twice under two skills — "stop proposing me this payment"
+    #   there, "stop listing this bill as overdue" here — and the two acks are
+    #   correctly independent:
     #   the ack table is keyed (org, skill, finding_key) and the identities are
     #   computed from different fields, so neither can ever match the other's
     #   row. That is the intended behaviour and not an oversight, because the
     #   two skills answer different questions about the same debt.
     #
-    #   It does mean the WEAKER promise wins if a user acks here: a bill hidden
-    #   from the overdue list is hidden however its balance moves. Anyone who
-    #   wants "tell me again when it grows" should acknowledge it in
-    #   `propose_payment_run`, where the balance exists to be hashed.
+    #   The two now make the SAME promise about movement, which they did not
+    #   before: both void when the balance moves. They still differ in what
+    #   they hash it alongside — `propose_payment_run` also watches `status`,
+    #   because a bill put on hold is a payment proposal that should not be
+    #   made, while this skill's status filter removes such a bill from the
+    #   list outright.
     "find_overdue_vendor_bills": AckWiring(
         findings_at="result",
         identity_of=_entity_identity,
-        material_of=None,
+        material_of=lambda f: {"balance": f.get("balance")},
         recompute=None,
         label_of=_entity_label,
     ),

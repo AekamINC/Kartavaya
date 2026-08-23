@@ -28,6 +28,11 @@ OVERDUE_SKILLS = {
 }
 
 
+#: The two modules whose ledger has a balance. The other three genuinely have
+#: no amount: a task is late or it is not.
+MONEY_MODULES = {"invoices", "vendor_bills"}
+
+
 def _finding(module: str, **kw) -> dict:
     """One finding in exactly the shape `find_overdue` emits.
 
@@ -48,6 +53,11 @@ def _finding(module: str, **kw) -> dict:
         "phone": "+91 98765 43210",
         "link": "/vikray/invoices/3f7c1a52-0b1e-4f8a-9d21-6a5b4c3d2e10",
     }
+    if module in MONEY_MODULES:
+        # PRESENT ONLY WHERE THERE IS MONEY. The handler omits the key rather
+        # than returning a zero, so a reader can tell "nothing is owed" from
+        # "this ledger has no amount at all".
+        row["balance"] = 42000.0
     row.update(kw)
     return row
 
@@ -190,16 +200,15 @@ def test_the_handed_back_key_round_trips(skill, module):
     """The end-to-end property: run, take `_ack_key`/`_ack_state` off a finding,
     store them the way the endpoint does, run again, finding is gone.
 
-    `_ack_state` is None for this family — the wiring records unconditional
-    acknowledgements because the shape carries no amount and no status — and the
-    round trip has to work with that None rather than in spite of it. Had the
-    ack been stored WITH a state while the wiring filters without one,
-    `partition_by_ack` would raise `MissingMaterialError` instead of silently
-    suppressing nothing.
+    `_ack_state` is a digest on the two money modules and None on the three
+    without one, and the round trip has to work BOTH ways rather than in spite
+    of either. The None case is the sharp one: had an ack been stored WITH a
+    state while the wiring filters without one, `partition_by_ack` would raise
+    `MissingMaterialError` rather than silently suppressing nothing.
     """
     first = apply_wiring(skill, _out([_finding(module)]), {"x": skill_ack.Ack("x")})
     f = first["result"][0]
-    assert f["_ack_state"] is None
+    assert (f["_ack_state"] is None) == (module not in MONEY_MODULES)
 
     acks = {f["_ack_key"]: skill_ack.Ack(finding_key=f["_ack_key"],
                                          state_hash=f["_ack_state"],
@@ -303,3 +312,67 @@ def test_the_esign_wiring_never_reads_a_time_derived_field():
     identity = wiring.identity_of(_finding("esign"))
     assert set(identity) == {"module", "entity_id"}
     assert wiring.material_of is None
+
+
+
+# ── 12 · the money modules void on movement, the others cannot ──────────────
+
+@pytest.mark.parametrize("skill,module", sorted(
+    (s, m) for s, m in OVERDUE_SKILLS.items() if m in MONEY_MODULES))
+def test_a_debt_that_grows_comes_back(skill, module):
+    """42,000 was acknowledged. 84,000 is a new situation wearing an old name.
+
+    This is the debt the first version of these two entries recorded rather
+    than paid: with no amount in the shape the ack was UNCONDITIONAL, so
+    silencing a bill kept it silenced however large it grew. `overdue_finder`
+    now carries a `money_expr` per module and returns the balance.
+    """
+    acks = _ack_for(skill, _finding(module, balance=42000.0))
+    out = apply_wiring(skill, _out([_finding(module, balance=84000.0)]), acks)
+    assert len(out["result"]) == 1, (
+        "the balance moved and the acknowledgement did not void — check that "
+        "material_of reads `balance`")
+    assert out["acknowledged"]["count"] == 0
+
+
+@pytest.mark.parametrize("skill,module", sorted(
+    (s, m) for s, m in OVERDUE_SKILLS.items() if m in MONEY_MODULES))
+def test_a_part_payment_brings_it_back(skill, module):
+    acks = _ack_for(skill, _finding(module, balance=42000.0))
+    out = apply_wiring(skill, _out([_finding(module, balance=22000.0)]), acks)
+    assert len(out["result"]) == 1
+
+
+@pytest.mark.parametrize("skill,module", sorted(
+    (s, m) for s, m in OVERDUE_SKILLS.items() if m in MONEY_MODULES))
+def test_the_same_balance_spelled_three_ways_is_one_state(skill, module):
+    """`ganit_invoices.balance_due` is numeric and asyncpg hands back a
+    Decimal; the handler floats it; a test writes an int. All three are one
+    amount and must hash alike, or the finding resurfaces for nothing."""
+    from decimal import Decimal
+    wiring = ACK_WIRING[skill]
+    hashes = {skill_ack.state_hash(wiring.material_of(_finding(module, balance=b)))
+              for b in (42000, 42000.0, Decimal("42000.00"))}
+    assert len(hashes) == 1
+
+
+@pytest.mark.parametrize("skill,module", sorted(
+    (s, m) for s, m in OVERDUE_SKILLS.items() if m not in MONEY_MODULES))
+def test_a_moneyless_module_keeps_an_unconditional_acknowledgement(skill, module):
+    """Tasks, follow-ups and stalled agreements have no amount anywhere in the
+    ledger, so the handler omits the key entirely rather than returning a zero.
+    Hashing that absence would be a hash over a fact the ledger never asserted,
+    which is why these three keep `material_of=None` — and why that is now an
+    argument about the data rather than about the shape."""
+    assert "balance" not in _finding(module)
+    assert ACK_WIRING[skill].material_of is None
+    first = apply_wiring(skill, _out([_finding(module)]), {"x": skill_ack.Ack("x")})
+    assert first["result"][0]["_ack_state"] is None
+
+
+def test_the_handler_only_promises_money_where_a_ledger_has_it():
+    """Read off `_MODULE_MAP` rather than the fixture, so a module that gains
+    or loses a `money_expr` fails here and is wired deliberately."""
+    from services.skills.data.overdue_finder import _MODULE_MAP
+    with_money = {m for m, spec in _MODULE_MAP.items() if spec.get("money_expr")}
+    assert with_money == MONEY_MODULES

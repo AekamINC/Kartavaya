@@ -54,6 +54,22 @@ _utc_now = utc_now
 #:   live_filter   the module's own "not deleted" condition, or "" where it has
 #:                 none. Was a hardcoded `is_active = true` for all five, and
 #:                 two of the five have no such column.
+#:   money_expr    WHAT IS STILL OWED, or None where the module has no money in
+#:                 it at all. Added for `services/skill_ack_wiring.py`: an
+#:                 acknowledgement needs a MATERIAL field or it is
+#:                 unconditional, and an unconditional ack on an overdue
+#:                 invoice means somebody silences a bill of 42,000 and it stays
+#:                 silenced when it becomes 84,000. Two of the five ledgers have
+#:                 a balance and three genuinely do not — a task is late or it
+#:                 is not, and there is no amount to move.
+#:
+#:                 THE ARITHMETIC IS POSTGRES'S, NOT PYTHON'S. `ganit_invoices`
+#:                 carries `balance_due` as a NOT NULL numeric column and it is
+#:                 read as-is; `ganit_vendor_bills` has no such column, so the
+#:                 subtraction happens in SQL over `numeric`, which is exact,
+#:                 exactly as `payables_run.py` already does it. Subtracting two
+#:                 floats in Python on the way into a state hash is how a state
+#:                 check reports movement that never happened.
 #: Where each module's records live in the UI. A finding that says a chase is
 #: twelve days late and does not open the chase has answered half the question.
 #: A module with no route simply gets no link -- `reachable` drops it -- rather
@@ -79,6 +95,9 @@ _MODULE_MAP = {
             "AND e.payment_status IN ('unpaid', 'partial', 'overdue') "
             "AND e.invoice_type = 'tax_invoice'"
         ),
+        # NOT NULL numeric: the receivables ledger keeps the balance itself, so
+        # nothing is computed here at all.
+        "money_expr": "e.balance_due",
     },
     "vendor_bills": {
         "table": "staging.ganit_vendor_bills",
@@ -89,6 +108,10 @@ _MODULE_MAP = {
         "org_clause": "e.org_id = $1::uuid",
         "live_filter": "AND e.is_active = true",
         "status_filter": "AND e.status IN ('unpaid', 'partially_paid')",
+        # No balance column on this table, and `amount_paid` is NULLABLE. The
+        # subtraction is Postgres's over `numeric` — the same expression
+        # `payables_run.py` uses — and never Python's over two floats.
+        "money_expr": "e.total - COALESCE(e.amount_paid, 0)",
     },
     "follow_ups": {
         "table": "staging.graha_follow_ups",
@@ -100,6 +123,8 @@ _MODULE_MAP = {
         # No is_active column on this table.
         "live_filter": "",
         "status_filter": "AND e.is_completed = false",
+        # A follow-up has no amount. It is due or it is not.
+        "money_expr": None,
     },
     "esign": {
         "table": "staging.ganit_contracts",
@@ -111,6 +136,8 @@ _MODULE_MAP = {
         "org_clause": "e.org_id = $1::uuid",
         "live_filter": "AND e.is_active = true",
         "status_filter": "AND e.status = 'draft'",
+        # A contract's value lives on the agreement, not on this row.
+        "money_expr": None,
     },
     "tasks": {
         "table": "public.tasks",
@@ -134,6 +161,8 @@ _MODULE_MAP = {
         ),
         "live_filter": "AND e.archived_at IS NULL",
         "status_filter": "AND e.status NOT IN ('done', 'cancelled')",
+        # A task is late or it is not. There is no amount to move.
+        "money_expr": None,
     },
 }
 
@@ -183,6 +212,13 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
     # finding and loses only the name — an overdue follow-up nobody owns is
     # still overdue, and dropping it because of a missing join would hide
     # exactly the rows most likely to be forgotten.
+    # NULL rather than a zero where a module has no money: `0` would say "this
+    # task is worth nothing", and a state hash over it would then be a hash over
+    # a fact the ledger never asserted. The key is omitted from the finding
+    # entirely below, the same way `reachable` omits a phone number it does not
+    # have.
+    money_select = spec.get("money_expr") or "NULL::numeric"
+
     query = f"""
         SELECT e.id,
                e.{spec['label_col']} AS label,
@@ -191,7 +227,8 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
                    AS owner_name,
                nullif(btrim(u.email), '')          AS owner_email,
                nullif(btrim(u.mobile_number), '')  AS owner_phone,
-               e.{spec['date_col']}  AS due
+               e.{spec['date_col']}  AS due,
+               {money_select}        AS balance
         FROM {spec['table']} e
         LEFT JOIN public.users u ON u.user_id = e.{spec['owner_col']}
         WHERE {spec['org_clause']}
@@ -204,8 +241,9 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
     """
 
     rows = await pool.fetch(query, org_id, cutoff)
-    return [
-        reachable({
+
+    def _one(r):
+        out = {
             "entity": {"id": str(r["id"]), "label": r["label"], "module": module},
             # `owner` stays an id because callers key on it — chase counts,
             # grouping, the ack key. It is NOT for printing.
@@ -216,7 +254,16 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
             # reads as a rendering bug and an id reads as noise.
             "owner_name": r["owner_name"] or "Unassigned",
             "days_past": days_between(now, r["due"]),
-        }, kind=_MODULE_KIND.get(module), entity_id=r["id"],
-            email=r["owner_email"], phone=r["owner_phone"])
-        for r in rows
-    ]
+        }
+        # PRESENT ONLY WHERE THERE IS MONEY. On tasks, follow-ups and stalled
+        # agreements the key is absent rather than zero, so a reader — and
+        # `skill_ack_wiring`'s MATERIAL bucket — can tell "nothing is owed" from
+        # "this ledger has no amount". Omitting rather than nulling follows
+        # `reachable`, which leaves out a phone number it does not have instead
+        # of returning an empty one that looks answered.
+        if r["balance"] is not None:
+            out["balance"] = float(r["balance"])
+        return reachable(out, kind=_MODULE_KIND.get(module), entity_id=r["id"],
+                         email=r["owner_email"], phone=r["owner_phone"])
+
+    return [_one(r) for r in rows]
