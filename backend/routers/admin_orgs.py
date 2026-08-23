@@ -608,6 +608,10 @@ async def create_org(
         "SELECT user_id, email FROM users WHERE LOWER(email)=LOWER($1)",
         body.owner_email,
     )
+    log.info(
+        "create_org owner lookup: email=%s found=%s",
+        body.owner_email, bool(owner),
+    )
 
     tm = None
     if owner:
@@ -913,6 +917,22 @@ async def create_org(
                 "invite_link": invite.invite_link,
                 "expires_at": invite.expires_at,
             }
+            try:
+                from email_service import send_org_owner_invite_email
+                enabled_rows = await pool.fetch(
+                    "SELECT module_code FROM staging.module_subscriptions "
+                    "WHERE org_id=$1::uuid AND is_active=TRUE",
+                    str(org_id),
+                )
+                send_org_owner_invite_email(
+                    body.owner_email.lower(),
+                    body.name,
+                    invite.invite_link.split("token=")[-1],
+                    [r["module_code"] for r in enabled_rows],
+                    expires_label=invite.expires_at.strftime("%d %b %Y"),
+                )
+            except Exception:                    # noqa: BLE001
+                log.exception("Org owner onboarding email failed for %s", org_id)
         except Exception as exc:                 # noqa: BLE001 — reported, not raised
             owner_invite_error = str(getattr(exc, "detail", exc))
             log.exception(

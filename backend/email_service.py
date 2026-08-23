@@ -841,6 +841,82 @@ def send_invite_email(to_email: str, inviter_name: str, role: str,
     )
 
 
+def send_org_owner_invite_email(
+    to_email: str, org_name: str, invite_token: str,
+    modules: list[str], expires_label: str = "7 days",
+):
+    """Invite email for a NEW org owner — includes onboarding guidance."""
+    invite_url = f"{FRONTEND_URL}/accept-invite?token={invite_token}"
+    preheader = f"You are the owner of {org_name} on Kartavaya. Accept to start setting up your organisation."
+
+    card = _info_card(
+        [
+            ("ORGANISATION", org_name),
+            ("YOUR ROLE", "Organisation Owner"),
+            ("EXPIRES", expires_label),
+        ],
+        hindi_sub={"ORGANISATION": "संगठन"},
+    )
+
+    module_list = ", ".join(m.replace("_", " ").capitalize() for m in modules) if modules else "all granted modules"
+
+    def _guide(num_hi, title, body_text):
+        return (
+            f'<tr><td style="padding:14px 0;border-bottom:1px dashed {_RULE};">'
+            f'<table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>'
+            f'<td style="width:36px;vertical-align:top;padding-right:14px;">'
+            f'<div style="width:28px;height:28px;border-radius:50%;background:{_BG_SOFT};'
+            f'border:1px solid {_RULE};text-align:center;line-height:28px;'
+            f'font-family:{_FONT_DISP};font-size:16px;color:{_INK};">{num_hi}</div></td>'
+            f'<td style="vertical-align:top;">'
+            f'<div style="font-family:{_FONT_UI};font-size:14.5px;font-weight:600;color:{_INK};margin-bottom:2px;">{title}</div>'
+            f'<div style="font-family:{_FONT_UI};font-size:13.5px;color:{_INK3};line-height:1.55;">{body_text}</div>'
+            f'</td></tr></table></td></tr>'
+        )
+
+    steps = (
+        f'<tr><td style="padding:0 36px 28px;">'
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+        + _guide("१", "Accept and create your account",
+                 "Click the button below to set your password and activate your owner account.")
+        + _guide("२", "Review your modules",
+                 f"Your organisation has access to: <strong>{_h(module_list)}</strong>. "
+                 f"Toggle modules on or off in Settings → Organisation → Modules.")
+        + _guide("३", "Invite your team",
+                 "Go to Settings → Organisation → Members. Invite colleagues as org admins or members. "
+                 "Each person gets an email to set up their own account.")
+        + _guide("४", "Set up roles and access",
+                 "Assign module access per person. Sensitive modules (Payroll, HRMS, Invoicing) "
+                 "require explicit grants — they are not switched on by default.")
+        + _guide("५", "Link HR employees to logins",
+                 "If you use the HRMS module, go to Manav → Employees. "
+                 "Each employee record can be linked to a login account so they see their own payslips and leave.")
+        + f'</table></td></tr>'
+    )
+
+    body = (
+        _body_text(f'<strong>Aekam Inc</strong> has created <strong>{_h(org_name)}</strong> for you '
+                   f'on <strong>Kartavaya</strong> — the practice management platform for Indian firms. '
+                   f'You are the organisation owner. '
+                   f'<span lang="hi" style="font-family:{FONT_HINDI};color:{PRIMARY_TEXT};'
+                   f'letter-spacing:normal;">आपका स्वागत है।</span>')
+        + card
+        + _body_text(f'<strong>Here’s how to get started:</strong>')
+        + steps
+        + _cta_row(invite_url, "Accept and get started", "primary")
+        + _body_text(f'This invitation expires in <strong>{_h(expires_label)}</strong>. '
+                     f'Only <strong>{_h(to_email)}</strong> can accept it.')
+    )
+    return send_email(
+        to_email,
+        _safe_subject(f"You are the owner of {org_name} on Kartavaya"),
+        _base(preheader, "YOUR ORGANISATION IS READY",
+              f"{_h(org_name)} is set up and waiting for you.",
+              "आपका संगठन तैयार है", "", body),
+        purpose="org_owner_invite",
+    )
+
+
 # ── 2. Welcome email ───────────────────────────────────────────────────────────
 def send_welcome_email(user_email: str, user_name: str):
     """Send a welcome email with onboarding steps to a newly registered user."""

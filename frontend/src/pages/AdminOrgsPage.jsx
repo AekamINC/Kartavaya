@@ -184,10 +184,21 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
       /* The org is created either way — the server does not refuse one over a
          storage credential — so a failed verify is reported here rather than
          hidden behind a plain success. */
-      pushToast(res.data?.r2_verified === false
-        ? { type: 'error', title: `${res.data?.name || form.name} created — but its R2 credentials did not verify`,
-            message: 'Storage will refuse uploads. Re-enter the credentials on the org.' }
-        : { type: 'success', title: `${res.data?.name || form.name} created`, message: `Plan: ${res.data?.plan}` });
+      const d = res.data || {};
+      const orgLabel = d.name || form.name;
+      if (d.r2_verified === false) {
+        pushToast({ type: 'error', title: `${orgLabel} created — but its R2 credentials did not verify`,
+          message: 'Storage will refuse uploads. Re-enter the credentials on the org.' });
+      } else if (d.owner_invite) {
+        pushToast({ type: 'success', title: `${orgLabel} created`,
+          message: `Owner invitation sent to ${d.owner}. They become org owner on acceptance.` });
+      } else if (d.owner_invite_error) {
+        pushToast({ type: 'error', title: `${orgLabel} created — but the owner invitation failed`,
+          message: `${d.owner_invite_error}. Invite them manually from the org drawer.` });
+      } else {
+        pushToast({ type: 'success', title: `${orgLabel} created`,
+          message: `${d.owner} is now the org owner. Plan: ${d.plan}` });
+      }
       onCreated();
       onClose();
     } catch (e) {
