@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 28 of the 61 assigned skills.
+Wired so far: 29 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1935,6 +1935,106 @@ def _amendments_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) ->
         surviving.get("edited_after_the_due_date") or ())
 
 
+# ── check_books_moved_since_due ─────────────────────────────────────────────
+#
+# What the documents that moved after the GSTR-1 due date are WORTH — the sizing
+# skill beside `check_amendments_before_filing`, which lists them. It repeats for
+# the same reason: nothing records that a period was filed, so the due date will
+# never stop having passed and the same documents are reported for ever.
+#
+# FINDINGS_AT — `added_after_the_due_date`, `edited_after_the_due_date` and
+#   `withdrawn_after_the_due_date`. The handler's if/elif chain makes the three
+#   exclusive and its comment says the ORDER IS LOAD-BEARING: a soft-deleted
+#   document carries a fresh `updated_at` because the deactivation IS the
+#   update, so withdrawal is tested first.
+#
+#   Folding stays ON, and here it earns its keep more than anywhere: the three
+#   buckets are three different EFFECTS ON THE RETURN — a plus, an unknown and
+#   a minus. A document that was edited and is then cancelled has gone from "we
+#   cannot say what this changed" to "this is a known minus", and an
+#   acknowledgement of the first must not cover the second.
+#
+# IDENTITY — `invoice_id` + `invoice_date`, exactly as
+#   `check_amendments_before_filing`: the period lives in the envelope, the
+#   period is derived from the date, and a re-dated document belongs to another
+#   filing. The two skills read the same documents and will produce DIFFERENT
+#   keys because the ack table is scoped by skill — deliberately, because
+#   acknowledging "I have routed this to GSTR-1A" is not acknowledging "I know
+#   what it is worth".
+#
+# MATERIAL — `value_now` and `doc_status`.
+#
+#   `value_now` is the document's current total and the whole point of the
+#   skill. NOT `supply_value`, which is the same figure with a sign applied,
+#   and NOT `effect_on_the_return`, which is `supply_value` with the bucket's
+#   sign — hashing any two of the three would count one movement twice.
+#
+#   NOT `delta_unknown`: it is a constant True on every row of the edited
+#   bucket and absent everywhere else, so it is the bucket wearing a field.
+#
+# INCIDENTAL — `document`, `customer`, `kind`, `created_on`, `last_edited`
+#   (the same open-and-save trap argued at `check_amendments_before_filing`),
+#   `withdrawn_on`, `why`.
+#
+# RECOMPUTE — the three list counts AND every figure in `value_delta`, which
+#   are sums over exactly these lists. That block is what the skill is FOR, so
+#   leaving it stale would be the reports-page defect in the one number a
+#   partner would quote.
+#
+#   The rebuild uses each row's own `effect_on_the_return` — never
+#   `supply_value` — because the handler's first cut summed the wrong one and
+#   "reported a cancelled invoice as value appearing after the filing, with the
+#   sign inverted". And `edited_value_ceiling` is summed from ABS(supply_value)
+#   and stays OUT of the net, because the handler is emphatic that it "is a
+#   CEILING on the exposure, it is not a delta".
+#
+#   NOT `bulk_touch`. It is a judgement about whether one BACKFILL touched the
+#   books — "that is one operation, not N amendments" — and it is quoted into
+#   `limitations` as prose. Recomputing it from a filtered list could make a
+#   real backfill disappear because somebody acknowledged enough of it, which
+#   is the opposite of what that flag is for. NOT `documents_in_period` or
+#   `documents_checked_for_withdrawal`, which are denominators, and not
+#   `classified`, which says whether the statute calendar had a due date at all.
+
+def _books_moved_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the three counts and the whole `value_delta` block."""
+    added = list(surviving.get("added_after_the_due_date") or ())
+    edited = list(surviving.get("edited_after_the_due_date") or ())
+    withdrawn = list(surviving.get("withdrawn_after_the_due_date") or ())
+
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["added"] = len(added)
+        counts["edited"] = len(edited)
+        counts["withdrawn"] = len(withdrawn)
+
+    delta = out.get("value_delta")
+    if not isinstance(delta, dict):
+        return
+
+    def _effect(rows: Sequence[dict]) -> float:
+        total = 0.0
+        for r in rows:
+            try:
+                total += float(r.get("effect_on_the_return") or 0)
+            except (TypeError, ValueError):
+                continue
+        return total
+
+    added_net = round(_effect(added), 2)
+    withdrawn_net = round(_effect(withdrawn), 2)
+    ceiling = 0.0
+    for r in edited:
+        try:
+            ceiling += abs(float(r.get("supply_value") or 0))
+        except (TypeError, ValueError):
+            continue
+    delta["added_net"] = added_net
+    delta["withdrawn_net"] = withdrawn_net
+    delta["net_known_delta"] = round(added_net + withdrawn_net, 2)
+    delta["edited_value_ceiling"] = round(ceiling, 2)
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2416,6 +2516,21 @@ ACK_WIRING: dict[str, AckWiring] = {
             "doc_status": f.get("doc_status"),
         },
         recompute=_amendments_recompute,
+        label_of=lambda f: f"{f.get('document')} — {f.get('customer')}",
+    ),
+
+    "check_books_moved_since_due": AckWiring(
+        findings_at=("added_after_the_due_date", "edited_after_the_due_date",
+                     "withdrawn_after_the_due_date"),
+        identity_of=lambda f: {
+            "invoice_id": f.get("invoice_id"),
+            "invoice_date": f.get("invoice_date"),
+        },
+        material_of=lambda f: {
+            "value_now": f.get("value_now"),
+            "doc_status": f.get("doc_status"),
+        },
+        recompute=_books_moved_recompute,
         label_of=lambda f: f"{f.get('document')} — {f.get('customer')}",
     ),
 
