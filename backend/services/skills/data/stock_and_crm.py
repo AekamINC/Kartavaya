@@ -55,6 +55,7 @@ those words, so nobody mistakes it for a stock valuation.
 """
 import logging
 
+from services.skill_ack import opaque_ref
 from services.skills.reachable import reachable
 
 log = logging.getLogger(__name__)
@@ -870,7 +871,8 @@ async def check_stale_retainer_rates(
 
     profiles = await pool.fetch(
         f"""
-        SELECT r.frequency,
+        SELECT r.id,
+               r.frequency,
                r.subtotal,
                r.gst_rate,
                r.next_date,
@@ -954,6 +956,11 @@ async def check_stale_retainer_rates(
             counts["status_contradicts_dates"] += 1
 
         findings.append(reachable({
+            # Same reason as `profile_ref` below, and opaque for the same
+            # reason: an engagement TITLE repeats across clients and can be
+            # retitled, `client` is a name, and a raw uuid may not appear in
+            # any field of this output but `link`.
+            "engagement_ref": opaque_ref(r["id"]),
             "engagement": r["title"],
             "client": r["client"],
             "status": r["status"],
@@ -1005,6 +1012,18 @@ async def check_stale_retainer_rates(
         )
 
     profile_rows = [{
+        # The key an acknowledgement is filed under — see
+        # `services/skill_ack_wiring.py`. A profile has no number and no title,
+        # so `client` plus the amount is the only alternative, and that changes
+        # the moment the fee is revised, which is the very thing this skill is
+        # about.
+        #
+        # OPAQUE, not the raw uuid. `test_no_id_reaches_the_engagement_output_
+        # either` bans a UUID from every field of this handler's output except
+        # `link`, and it is right to: an id beside a client name is the thing
+        # `check-rendered-ids` exists to stop. `opaque_ref` hashes it, so the
+        # stability survives and nothing renderable is leaked.
+        "profile_ref": opaque_ref(p["id"]),
         "client": p["client"],
         "frequency": p["frequency"],
         "amount_before_gst": _f(p["subtotal"]),

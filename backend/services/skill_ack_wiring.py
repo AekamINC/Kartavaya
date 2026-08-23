@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 20 of the 61 assigned skills.
+Wired so far: 21 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1395,6 +1395,88 @@ def _wip_recompute(out: dict, surviving: Sequence[dict]) -> None:
         counts["escalated_rows_listed"] = len(surviving)
 
 
+# ── check_stale_retainer_rates ──────────────────────────────────────────────
+#
+# Engagements coming up for renewal, or whose fee has not been touched in a long
+# time, and the recurring profiles that have billed the same amount for years.
+# The handler's first limitation is why this repeats for ever: "There is no rate
+# history anywhere in this system", so "the fee has not been revised" can only
+# mean "the contract row has not been edited". A firm that has DECIDED to hold a
+# fee flat has no way to say so, and reads the same engagements every run until
+# they edit a row for an unrelated reason.
+#
+# FINDINGS_AT — `contracts` and `recurring_profiles`. Two lists, and unlike the
+#   ladders these are two different POPULATIONS — engagement records and
+#   recurring billing profiles, in two tables. A subject cannot be in both, so
+#   the default folding costs nothing, and it is left ON: it guarantees an
+#   engagement can never share a key with a profile even if a future id scheme
+#   collides.
+#
+# IDENTITY — `engagement_ref` on one list, `profile_ref` on the other, BOTH
+#   ADDED to the handler here, and BOTH OPAQUE. Neither list carried an id, and
+#   neither had a usable alternative:
+#
+#     an engagement has a TITLE, which repeats across clients ("Annual audit")
+#     and can be retitled; `client` is a name.
+#     a recurring profile has NO title and NO number at all. The only other
+#     candidate was client plus amount — and the amount changes the moment the
+#     fee is revised, which is the very thing this skill exists to notice. An
+#     acknowledgement keyed on it would be orphaned by the event it is about.
+#
+#   They are `skill_ack.opaque_ref(...)` rather than the raw uuid, because
+#   `test_no_id_reaches_the_engagement_output_either` bans a UUID from every
+#   field of this handler's output except `link` — and it is right to: an id
+#   beside a client name is what `check-rendered-ids` exists to stop. Hashing
+#   the id keeps the stability and renders nothing.
+#
+#   The lambda reads whichever key is present, so one function serves both
+#   lists; the folded list name keeps them apart regardless. If BOTH are absent
+#   the key collapses to a pair of Nones and every id-less finding shares it —
+#   which is why `test_a_finding_with_no_id_does_not_raise` checks that a
+#   finding without a ref is SHOWN rather than swept up by somebody else's
+#   acknowledgement.
+#
+# MATERIAL — `contract_value` and `amount_before_gst`, again whichever the list
+#   carries, plus `status`.
+#
+#   `contract_value` is the engagement's value and `amount_before_gst` the
+#   profile's fee, and a change in either is exactly the revision the firm was
+#   being nagged to make — so the acknowledgement should void and the finding
+#   return once, showing that it happened. `status` because an engagement
+#   moving to `expired` or `terminated` is a different fact under one name.
+#
+#   NOT `distinct_amounts_billed`, which the handler calls "evidence, not
+#   proof": it counts the distinct amounts a profile has ever billed, so it
+#   moves on the FIRST revision and then never again, and hashing it alongside
+#   the amount would count that one event twice.
+#
+# INCIDENTAL — `days_to_end` (a clock), `last_changed` and `created_on` (dates
+#   whose whole purpose is to be compared with today), `reasons` and
+#   `contradiction` (derived classifications — an engagement can gain
+#   `status_contradicts_dates` because the calendar passed its end date),
+#   `reminder_days_on_the_record`, `next_invoice_on`, `first_billed`,
+#   `invoices_raised`, `frequency`, `gst_rate` and the client contact keys.
+#
+# RECOMPUTE — `counts.engagements_flagged`, `counts.recurring_profiles_flagged`
+#   and the four reason tallies, which are sums over the `contracts` list.
+#   `reminder_window_is_configured` is left alone: it is a distribution over
+#   EVERY engagement in the org and the note attached to it is a statement
+#   about the product's defaults, not about the findings.
+
+def _stale_retainer_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild both list counts and the reason tallies over the contracts."""
+    contracts = list(surviving.get("contracts") or ())
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    for reason in ("expiring_soon", "in_the_firms_reminder_window",
+                   "unchanged_too_long", "status_contradicts_dates"):
+        counts[reason] = sum(1 for c in contracts
+                             if reason in (c.get("reasons") or ()))
+    counts["engagements_flagged"] = len(contracts)
+    counts["recurring_profiles_flagged"] = len(surviving.get("recurring_profiles") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1759,6 +1841,22 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_wip_recompute,
         label_of=lambda f: f"{f.get('engagement')} — {f.get('person')}",
+    ),
+
+    "check_stale_retainer_rates": AckWiring(
+        findings_at=("contracts", "recurring_profiles"),
+        identity_of=lambda f: {
+            "engagement_ref": f.get("engagement_ref"),
+            "profile_ref": f.get("profile_ref"),
+        },
+        material_of=lambda f: {
+            "contract_value": f.get("contract_value"),
+            "amount_before_gst": f.get("amount_before_gst"),
+            "status": f.get("status"),
+        },
+        recompute=_stale_retainer_recompute,
+        label_of=lambda f: (
+            f"{f.get('engagement') or 'recurring billing'} — {f.get('client')}"),
     ),
 
     "check_late_suppliers": AckWiring(
