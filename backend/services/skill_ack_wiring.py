@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 16 of the 61 assigned skills.
+Wired so far: 17 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1103,6 +1103,91 @@ def _tds_thresholds_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]
     counts["vendors_with_no_section"] = len(surviving.get("unattributed") or ())
 
 
+# ── check_chase_ladder ──────────────────────────────────────────────────────
+#
+# What is overdue, how many chases have already been DELIVERED against it, and
+# what the next rung is. The handler never sends and never writes — it says what
+# is due and to whom — so nothing it reports can be closed from inside it. An
+# item chased by telephone, or settled in a corridor, climbs the ladder anyway
+# and arrives at "escalate to a partner" about something that was dealt with a
+# week ago.
+#
+# FINDINGS_AT — all four lists, and LISTS_ARE_ONE_POPULATION.
+#   `nudges_due`, `escalations_due`, `expired_and_must_be_reissued` and
+#   `waiting_but_nothing_due` are one set of items partitioned by what the
+#   ladder says to do next. An item is in exactly one, and it moves between them
+#   AS THE CLOCK RUNS — nothing-yet to first nudge to second nudge to
+#   escalation, on nothing but elapsed days.
+#
+#   This is the entry the flag was added for. Folding the list name into the key
+#   would orphan the acknowledgement at every rung: ack the task on Monday, find
+#   it back on Thursday under a different heading, again the week after. Three
+#   acknowledgements of one task in a fortnight is how a person learns not to
+#   bother. Cross-list collision cannot happen here because the item is in one
+#   list at a time, so the wiring takes the uniqueness guarantee on itself.
+#
+# IDENTITY — `entity_type` + `entity_id`. Both are already on the finding: this
+#   skill reads TASKS and SIGNATURE DOCUMENTS into one ladder, and the two id
+#   spaces are separate tables, so the type has to ride along. Hashed, so no
+#   UUID is rendered.
+#
+# MATERIAL — `chases_delivered`, and ONLY that.
+#
+#   It is the one field that moves on a real event: a reminder was actually
+#   DELIVERED, which the handler is careful to distinguish from one that was
+#   suppressed. Somebody who acknowledged "we have chased this twice, leave it"
+#   should see it again when a third chase goes out.
+#
+#   NOT `rung`, and this is the trap. `_rung_for(days, sent)` is a function of
+#   the day count AND the chase count, so hashing it would import the calendar
+#   into the material bucket through the back door and void every
+#   acknowledgement the moment a ladder threshold was crossed — the same
+#   midnight failure the list-folding flag was turned off to avoid, arriving by
+#   the other route. `action`, `direction` and `why` are derived from `rung` and
+#   are out for the same reason.
+#
+#   NOT `expired` either: an expired signature moves to its own list, and the
+#   population is partitioned, so the state change is visible without being
+#   hashed. It is also one-way.
+#
+# INCIDENTAL — `days_past_due` (in `_DRIFT_FIELDS`, so it would raise),
+#   `due_on`, `what`, `escalate_to`, `waiting_on`, `signers`, `kind`.
+#
+# RECOMPUTE — the four counts that are sums over the filtered lists, plus
+#   `waiting_on` and the kind split, which are sums over ALL of them. Not
+#   `capped_at` / `was_capped`, which describe the query.
+#
+#   `escalations_with_no_owner` is rebuilt too, and it has to be: it is the
+#   count a limitation line quotes by number, and a limitation that says "3
+#   item(s) have reached the escalation rung and carry NO internal owner" above
+#   a list showing one is the reports-page defect in the paragraph rather than
+#   the table. The limitation text itself is left alone — rewriting prose from a
+#   filter is a different and worse idea — so the two can still disagree, and
+#   that is recorded here rather than papered over.
+
+def _chase_ladder_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild every count that is a sum over the ladder's own lists."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    nudges = list(surviving.get("nudges_due") or ())
+    escalations = list(surviving.get("escalations_due") or ())
+    expired = list(surviving.get("expired_and_must_be_reissued") or ())
+    quiet = list(surviving.get("waiting_but_nothing_due") or ())
+    everything = nudges + escalations + expired + quiet
+
+    counts["nudges_due"] = len(nudges)
+    counts["escalations_due"] = len(escalations)
+    counts["action_due_now"] = len(nudges) + len(escalations)
+    counts["expired_signatures"] = len(expired)
+    counts["nothing_due"] = len(quiet)
+    counts["escalations_with_no_owner"] = sum(
+        1 for i in escalations if not i.get("escalate_to"))
+    counts["waiting_on"] = len(everything)
+    counts["tasks"] = sum(1 for i in everything if i.get("kind") == "task")
+    counts["signatures"] = sum(1 for i in everything if i.get("kind") == "signature")
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1423,6 +1508,19 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_tds_thresholds_recompute,
         label_of=lambda f: f"{f.get('vendor')} — {f.get('section') or 'no section'}",
+    ),
+
+    "check_chase_ladder": AckWiring(
+        findings_at=("nudges_due", "escalations_due",
+                     "expired_and_must_be_reissued", "waiting_but_nothing_due"),
+        identity_of=lambda f: {
+            "entity_type": f.get("entity_type"),
+            "entity_id": f.get("entity_id"),
+        },
+        material_of=lambda f: {"chases_delivered": f.get("chases_delivered")},
+        recompute=_chase_ladder_recompute,
+        label_of=lambda f: f"{f.get('kind')} — {f.get('what')}",
+        lists_are_one_population=True,
     ),
 
     "check_late_suppliers": AckWiring(
