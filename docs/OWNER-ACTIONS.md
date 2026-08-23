@@ -32,158 +32,11 @@ the evicted `team_members` and `user_roles` rows, and `niyam_rules_before_arming
 
 **What I finish once done:** drop the schema.
 
----
-
-### 3. Unicode Group has no owner — name one and I will appoint them
-
-**Status:** OPEN · this is the only thing between that org and its own settings.
-
-**What I measured** (live database, 2026-08-22): Unicode Group holds **5
-`org_admin` rows and 0 `org_owner`**. Aekam Inc and the test org have one each.
-
-**Why it matters.** `org_owner` is the authority that appoints a payroll
-approver, and it is the ONLY role that may switch the organisation's own modules
-on and off (`PATCH /v1/org/modules` is gated `ORG_OWNER_ONLY`). Unicode Group
-cannot do either, and until today could not acquire an owner by any route: the
-console could not assign one, the org could not invite one — only an existing
-owner may mint another, a bootstrap that could never start — and
-`role_tiers.refuse_grant` carries a documented fallback whose whole purpose is
-to stop that org being locked out of appointing an approver.
-
-**What I have already done.** Every organisation created from now on seats its
-founder as `org_owner` (`create_org`), and there is a new god-mode-only console
-action, `POST /api/v1/admin/orgs/{org_id}/owner`, which appoints an owner for an
-org that has NONE. It 409s if the org already has one, and it will only raise
-somebody who is already an `org_admin` of that organisation — so it is a
-bootstrap, never a way for Aekam to change who runs a customer's firm.
-
-**What you do:** tell me which of Unicode Group's five administrators is the
-owner. I will not guess: this decides who can appoint the person that releases
-their payroll.
-
-**What I finish once you have:** run the appointment, verify the row, and
-re-examine whether `refuse_grant`'s no-owner fallback can be retired.
-
----
-
-### 4. Ten exits carry an old clearance shape — normalise them, or leave them?
-
-**Status:** OPEN · the guard is fixed either way; this is about the ten rows.
-
-**What I found.** `POST /v1/manav/offboarding/{id}/complete` refuses to close an
-exit while clearance is outstanding — "what it cannot do is close silently and
-discover next quarter that a laptop was never returned". **That guard has never
-fired.** It read the column as a list of `{item, owner, done}`, and 10 of the 11
-live exits carry an older shape, an object: `{"hr": false, "finance": false,
-"it_assets": true}`. Iterating an object yields strings, nothing is ever counted
-as pending, and the exit closes with every item untouched. Two exits have
-already been closed that way. The screen showed an empty checklist rather than a
-half-ticked one, which is why nobody noticed.
-
-**Already done, no decision needed:** the backend now reads both shapes, and the
-screen renders the object form as a real, tickable checklist. Ticking an item
-writes the new shape, so the ten rows convert themselves one deliberate click at
-a time.
-
-**What you decide:** whether I should also rewrite the ten rows into the new
-shape in one pass. I have not, because they are somebody's real clearance state
-and changing a customer's data to suit our newer shape is a different decision
-from reading what is there.
-
-**Also worth your eye, and NOT something I can decide:** two exits were completed
-with clearance untouched. If a laptop or an ID card is genuinely outstanding on
-either, that is a real-world chase, not a code fix. I can name the two records
-whenever you want them.
-
-**What I finish once you say:** one migration, backed up first, counts verified.
-
----
-
-### 5. The 10 org-less projects — I measured them, and they are not what we assumed
-
-**Status:** OPEN · this is the last thing between tenancy phase 3 and the
-`org_id NOT NULL` constraint (PROPOSED_079). Everything else in the cutover is
-done.
-
-**The standing assumption**, which I was told and which I checked rather than
-trusted: *"teams with org_id NULL are live projects"*. Measured against the live
-database on 2026-08-22, all ten are test debris:
-
-| what | count | evidence |
-|---|---|---|
-| soft-deleted "Solar Technocast" duplicates | **8** | created 18 Jul within 30 seconds of each other, `deleted_at` 25 Jul, **0 tasks each** |
-| "FY 2026-27 Statutory Audit — Shah & Associates" and "…Shah and Associates" | **2** | created 28 Jul 43 seconds apart, near-duplicate names, **0 tasks**, only the 5 default columns |
-
-The two that are not deleted were **created by the QA Org Admin account** — one
-of the logins evicted from every live org in the 22 August cleanup — with
-Kartavya App Admin as the other owner. Neither belongs to any organisation,
-neither has ever held a task, and nobody outside those two accounts can see
-them.
-
-**Why it matters now.** PROPOSED_079 constrains `teams.org_id` to NOT NULL.
-That is phase 4 of the cutover and it fails while any of these ten exists.
-PROPOSED_078's own open question (Q5, decision 1) is exactly this.
-
-**What you decide** — three options, my recommendation first:
-
-1. **Delete all ten.** They are QA artefacts with no tasks, and eight are
-   already deleted. Backed up to a restore schema first, counts verified after,
-   the same way the 22 August cleanup was done.
-2. Assign the two live ones to an organisation, and delete the eight deleted
-   ones. Says which firm they belong to — but they have no content to belong to
-   anyone.
-3. Leave `teams.org_id` nullable permanently, and drop PROPOSED_079's
-   constraint. This keeps the door open for a project that belongs to no
-   organisation, which is a real thing to want and a real thing to have to
-   defend for every query that scopes by org.
-
-**I have not touched them.** You named org-less teams specifically as the thing
-not to clean, and the measurement disagreeing with that is exactly when I should
-show you the measurement rather than act on it. A delete is irreversible.
-
-**What I finish once you say:** the deletion or the assignment, then PROPOSED_079
-and PROPOSED_081 (RLS is on for 98 tables and off for 203). The rename in
-PROPOSED_080 stays last and stays a separate decision — its own header says to
-watch a full business cycle between the rename and the drop.
-
----
-
-### 6. Attendance photographs have never worked for two of your three orgs
-
-**Status:** OPEN · fixed in code, but somebody should decide whether the missing
-photographs matter.
-
-**What I found while moving storage onto one key grammar.** `POST /v1/pahchan/punch`
-refuses a photo whose object key does not look like one this product minted —
-a sensible guard, without which a punch could name any file in the org's bucket:
-an invoice, a payslip, somebody else's face.
-
-The guard compared the key against `pahchan/{org_id}/punch/`. But the uploader
-returns the key **with the tenant prefix already on it** — `org/{org_id}/pahchan/…`
-for any org that does not have its own Cloudflare account. Two of your three orgs
-are in exactly that state (Aekam Inc and the test org; only Unicode Group has its
-own bucket). So for them, every punch that carried a photograph was refused with
-
-> "That photo does not belong to this organisation's attendance store"
-
-which was not true, and gave nobody anything to act on.
-
-**Measured on the live database, 2026-08-23: 1,659 punches, ZERO with a photo.**
-
-**Already done, no decision needed:** the guard now strips this org's own tenant
-prefix before comparing, still refuses a key naming a different org, and accepts
-both the old and the new key shape so a deploy cannot cost somebody a photograph.
-
-**What you decide:** whether the attendance already recorded without photographs
-needs anything. I have not touched a single punch row. Every one of those 1,659
-punches is still a valid attendance record with its time, its location and its
-flags — only the selfie is missing, and it was never captured, so there is
-nothing to recover. If any of those days is disputed, the photograph will not
-be there to settle it, and that is worth somebody knowing before it comes up.
-
-**What I finish once you say:** nothing is blocked. This is here because a
-feature that has never worked is a fact you should have rather than a line in a
-commit message.
+**Two more restore schemas now wait on the same word from you**, created for the
+deletes you approved on 23 August: `owner_actions_20260823` (the 10 org-less
+projects, the offboarding rows before normalising, Unicode Group's roles before
+the owner was seated) and `punch_cleanup_20260823` (the test org's 960 punches).
+Same answer covers all three, or take them one at a time.
 
 ---
 
@@ -229,6 +82,126 @@ were visible only to people who could already open those screens.
 ---
 
 ## DONE
+
+### 5. The 10 org-less projects — DELETED, 2026-08-23 · your call, carried out
+
+You said: **delete all ten.** Done, in migration `204_owner_actions_2026_08_23.sql`,
+applied and verified live.
+
+The measurement held: 8 soft-deleted "Solar Technocast" duplicates created 18 Jul
+within 30 seconds of one another, and 2 near-duplicate "FY 2026-27 Statutory
+Audit" projects created 28 Jul 43 seconds apart by the QA account evicted on 22
+August. Zero tasks between them. Hanging off the ten: 0 tasks, 0 `team_members`,
+20 `project_assignments`, 50 `project_columns` — and nothing else.
+
+- `public.teams` is now **42 rows, 0 with a NULL organisation**
+- 0 orphaned project assignments
+- backed up to `owner_actions_20260823.teams_before` and siblings, from a frozen
+  id list taken before anything was deleted
+
+**Children before parents, and that was not a style choice here:** only
+`task_reminders` declares a foreign key to `tasks`, so nine other tables carrying
+a `team_id` would have orphaned SILENTLY rather than raising.
+
+**What this unblocks:** PROPOSED_079 (`teams.org_id NOT NULL`), phase 4 of the
+tenancy cutover, which failed while any of the ten existed. That and PROPOSED_081
+are next. PROPOSED_080's rename stays last and stays a separate decision.
+
+---
+
+### 4. The ten clearance rows — NORMALISED, 2026-08-23 · your call, carried out
+
+You said: **rewrite.** Done, in migration `204`, applied and verified live. All
+11 exits now carry the array shape; `jsonb_typeof(clearance)` returns `array` for
+every row and `object` for none.
+
+**The tick state was carried, not reset.** `it_assets: true` became an item with
+`done: true`. There were 16 ticks across the ten rows and all 16 survived —
+resetting them would have silently un-ticked work somebody actually did, which is
+the opposite of the defect being closed. The three keys in use across all ten
+rows are exactly `hr`, `finance` and `it_assets`, measured rather than assumed, so
+nothing fell through the mapping.
+
+**`done_at` was left NULL rather than stamped with today.** Those items were
+ticked at some earlier moment that was never recorded, and writing today's date
+would assert a fact about *when* that is not true.
+
+Backed up to `owner_actions_20260823.offboarding_before`.
+
+**Still yours, and not a code fix:** two exits were completed while clearance was
+outstanding, back when the guard could not see it. If a laptop or an ID card is
+genuinely still out on either, that is a real-world chase. Say the word and I
+will name the two records.
+
+---
+
+### 3. Unicode Group has an owner — APPOINTED, 2026-08-23
+
+You named `kevalvshah03!@gmail.com`. **That address does not exist** — the `!` is
+a typo, confirmed by measurement rather than assumed: a count on that exact
+string returns 0. `kevalvshah03@gmail.com` does exist, is KEVAL SHAH, and was
+already an `org_admin` of Unicode Group, which is the precondition the new
+endpoint enforces. The intention was unambiguous, so that is the address used —
+flagging it here because I substituted an address you did not type.
+
+Done in migration `204`, doing the same two writes the endpoint does, in the same
+order. Verified live: Unicode Group now holds **org_owner 1, org_admin 5,
+org_member 6**, and `organisations.owner_user_id` is set.
+
+**It is an INSERT, not an update.** The existing `org_admin` row is untouched:
+`org_owner` outranks it everywhere the two are compared, so removing the lower
+row would rewrite a live grant to achieve nothing.
+
+That org can now switch its own modules on and off, and appoint a payroll
+approver — neither of which it could do before, by any route.
+
+---
+
+### 6. The test org's 960 punches — DELETED, 2026-08-23 · your call, carried out
+
+You said: *"no without photograph remove record they are useless now."* Measuring
+what that sentence reached changed it, and you then chose the narrower option:
+**delete the test organisation's 960, keep Unicode Group's 699.**
+
+That was the right call and the numbers are why. "Records with no photograph" was
+every attendance record in the product — 1,659 punches, 8 June to 4 August,
+because the feature had never worked for anybody. **735 of them carry a review
+verdict**: occasions on which a manager looked at a flagged punch and decided
+something. A punch without its selfie is not a blank record. It still holds its
+time, its location, its accuracy and its flags, and for a live customer those are
+the rows payroll reads.
+
+**Done:** migration `205_clear_test_org_punches.sql`, applied and verified live.
+
+- `pahchan_punches` now holds **699 rows, all Unicode Group's**, 0 with no org
+- **960 test-org rows deleted**, of which 720 carried a review verdict
+- backed up in full to `punch_cleanup_20260823.punches_before` **before** the
+  delete, from a frozen id list so the set could not drift in between
+- `manav_attendance` deliberately untouched — 578 rows, 426 of them the test
+  org's. It has no `punch_id` and no foreign key, so nothing there was orphaned
+  by this, and whether those should go is a separate question you have not been
+  asked
+
+**One thing worth recording, because it nearly went the other way.** The first
+draft also deleted the 40 `pahchan_regularisations` rows, reasoning that a
+request to amend a particular punch is meaningless once the punch is gone. The
+migration's own assertion refused to commit it, and the assertion was right: all
+40 belong to the test org and **all 40 already had `punch_id` NULL**. Not one
+referenced a punch. They were seeded detached and have always been detached, so
+the foreign key was inert, the delete would have removed 40 rows for no reason,
+and they are left exactly where they were. The check now asserts all 40 are still
+present rather than asserting an absence that was never true.
+
+**Still outstanding from the original finding, and not blocked:** the guard is
+fixed in code and deployed, so photographs work from now on. For the 699 kept
+records the selfie was never captured and cannot be recovered — if one of those
+days is ever disputed, the photograph will not be there to settle it. That is
+worth knowing before it comes up rather than after.
+
+**The backup schema `punch_cleanup_20260823` stays** until you tell me nothing is
+missing — same standing question as item 2.
+
+---
 
 ### 1. Two crons — ARMED, 2026-08-23 · nothing needed from you
 
