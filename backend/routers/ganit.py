@@ -579,6 +579,7 @@ async def create_invoice(
     # Validate BEFORE the serial is consumed: Rule 46(b) numbers are
     # consecutive, and a refused create must not burn one. The number is about
     # to be assigned, so the placeholder only exempts the serial check itself.
+    compliance_snapshot = None
     if doc_status == "final":
         await _refuse_final_if_incomplete(pool, org_id, {
             "invoice_number": "(assigned on save)",
@@ -590,6 +591,8 @@ async def create_invoice(
             "line_items": computed["line_items"],
             "cgst": computed["cgst"], "sgst": computed["sgst"], "igst": computed["igst"],
         }, body.contact_id)
+        from services.compliance_settings import resolve_states
+        compliance_snapshot = await resolve_states(pool, org_id, "ganit")
 
     inv_number = await _next_invoice_number(
         pool, org_id, await _doc_prefix(pool, org_id, body.invoice_type))
@@ -604,14 +607,14 @@ async def create_invoice(
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
                 " balance_due, notes, terms, created_by, doc_status, client_id, "
-                " customer_ref) "
+                " customer_ref, compliance_snapshot) "
                 # `client_id` is appended as $23 rather than slotted in beside
                 # `contact_id`: $18 is deliberately bound twice (total and
                 # balance_due), so renumbering to keep the columns tidy is a
                 # chance to break the one placeholder that is not 1:1.
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
                 " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22, "
-                " NULLIF($23,'')::uuid, NULLIF(btrim($24),'')) "
+                " NULLIF($23,'')::uuid, NULLIF(btrim($24),''), $25::jsonb) "
                 "RETURNING *",
                 org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
                 inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
@@ -625,6 +628,7 @@ async def create_invoice(
                 client_id or "",
                 # Blank -> NULL at the placeholder, so the CHECK never sees ''.
                 body.customer_ref or "",
+                json.dumps(compliance_snapshot) if compliance_snapshot else None,
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -1366,6 +1370,7 @@ async def update_invoice_status(
     # Marking a draft final is where it becomes a statutory document — the same
     # Rule 46 gate as create-as-final and the PDF, so a draft can be saved with
     # gaps but can never LEAVE draft with them.
+    compliance_snapshot = None
     if body.doc_status == "final":
         row = await pool.fetchrow(
             "SELECT invoice_number, invoice_type, invoice_date, is_igst, is_export, "
@@ -1389,6 +1394,8 @@ async def update_invoice_status(
             "line_items": items if isinstance(items, list) else [],
             "cgst": row["cgst"], "sgst": row["sgst"], "igst": row["igst"],
         }, str(row["contact_id"]) if row["contact_id"] else None)
+        from services.compliance_settings import resolve_states
+        compliance_snapshot = await resolve_states(pool, org_id, "ganit")
 
     extras = ""
     if body.doc_status == "sent":
@@ -1396,13 +1403,16 @@ async def update_invoice_status(
     elif body.doc_status == "viewed":
         extras = ", viewed_at=NOW()"
 
+    snap_clause = ", compliance_snapshot=$5::jsonb" if compliance_snapshot is not None else ""
+    params: list = [body.doc_status, str(invoice_id), org_id, user["user_id"]]
+    if compliance_snapshot is not None:
+        params.append(json.dumps(compliance_snapshot))
+
     await pool.execute(
-        # `extras` carries no parameters — it is `sent_at=NOW()` or
-        # `viewed_at=NOW()` or nothing — so $4 is free whichever branch ran.
-        f"UPDATE staging.ganit_invoices SET doc_status=$1{extras}, "
+        f"UPDATE staging.ganit_invoices SET doc_status=$1{extras}{snap_clause}, "
         f"updated_at=NOW(), updated_by=$4 "
         f"WHERE id=$2::uuid AND org_id=$3::uuid",
-        body.doc_status, str(invoice_id), org_id, user["user_id"],
+        *params,
     )
     return {"status": "updated", "doc_status": body.doc_status}
 
@@ -1480,6 +1490,8 @@ async def convert_to_invoice(
         "line_items": _items if isinstance(_items, list) else [],
         "cgst": inv["cgst"], "sgst": inv["sgst"], "igst": inv["igst"],
     }, inv["contact_id"])
+    from services.compliance_settings import resolve_states
+    compliance_snapshot = await resolve_states(pool, org_id, "ganit")
 
     inv_number = await _next_invoice_number(pool, org_id, "INV")
 
@@ -1511,10 +1523,10 @@ async def convert_to_invoice(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-                " balance_due, notes, terms, created_by, doc_status, client_id) "
+                " balance_due, notes, terms, created_by, doc_status, client_id, compliance_snapshot) "
                 "VALUES ($1::uuid, $2, $3, $4, 'tax_invoice', $5::date, $6, "
                 " $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16, $17, $18, 'final', "
-                " NULLIF($19,'')::uuid) "
+                " NULLIF($19,'')::uuid, $20::jsonb) "
                 "RETURNING *",
                 org_id, inv["contact_id"], inv["deal_id"], inv_number,
                 inv_date, inv["due_date"],
@@ -1523,6 +1535,7 @@ async def convert_to_invoice(
                 inv["discount"], inv["total"],
                 inv["notes"], inv["terms"], user["user_id"],
                 client_id or "",
+                json.dumps(compliance_snapshot) if compliance_snapshot else None,
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -2147,6 +2160,8 @@ async def generate_recurring_invoice(
         "line_items": items if isinstance(items, list) else [],
         "cgst": cgst, "sgst": sgst, "igst": igst,
     }, str(rec["contact_id"]) if rec["contact_id"] else None)
+    from services.compliance_settings import resolve_states
+    compliance_snapshot = await resolve_states(pool, org_id, "ganit")
 
     inv_number = await _next_invoice_number(pool, org_id, "INV")
 
@@ -2177,16 +2192,17 @@ async def generate_recurring_invoice(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " is_igst, line_items, subtotal, cgst, sgst, igst, total, balance_due, "
-                " notes, terms, recurring_id, doc_status, created_by, client_id) "
+                " notes, terms, recurring_id, doc_status, created_by, client_id, compliance_snapshot) "
                 "VALUES ($1::uuid, $2, $3, 'tax_invoice', $4::date, $5::date, "
                 " $6, $7::jsonb, $8, $9, $10, $11, $12, $12, $13, $14, $15::uuid, 'final', $16, "
-                " NULLIF($17,'')::uuid) "
+                " NULLIF($17,'')::uuid, $18::jsonb) "
                 "RETURNING *",
                 org_id, str(rec["contact_id"]) if rec["contact_id"] else None,
                 inv_number, inv_date, due_date,
                 is_igst, json.dumps(items), subtotal, cgst, sgst, igst, total,
                 rec["notes"], rec["terms"], str(recurring_id), user["user_id"],
                 client_id or "",
+                json.dumps(compliance_snapshot) if compliance_snapshot else None,
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
