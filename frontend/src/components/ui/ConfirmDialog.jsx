@@ -134,7 +134,7 @@ export default function ConfirmDialog({ state, onClose }) {
               type="button"
               className={`btn ${intent === 'danger' ? 'btn--dangerfill' : `btn--${confirmVariant}`}`}
               disabled={!ready}
-              onClick={async () => { console.log('ConfirmDialog: confirm clicked', { ready, needsTyping, confirmLabel }); await onConfirm(); onClose(); }}
+              onClick={async () => { await onConfirm(); onClose(); }}
             >
               {confirmLabel}
             </button>
