@@ -627,12 +627,12 @@ async def client_approve_task(task_id: str, payload: ApprovalRequest,
         from services.web_push_service import send_web_push
         from services.expo_push_service import send_expo_push
         recipients = await pool.fetch("""
-            SELECT DISTINCT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS name
+            SELECT DISTINCT u.user_id, u.email, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name
             FROM project_assignments pa
             JOIN users u ON u.user_id = pa.user_id
             WHERE pa.team_id=$1
             UNION
-            SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS name
+            SELECT u.user_id, u.email, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name
             FROM users u WHERE u.user_id=$2
         """, task["team_id"], user["user_id"])
         notif_title = f"{client_name} approved a task"
@@ -666,7 +666,7 @@ async def get_approval_by_token(token: str, pool=Depends(get_pool)):
     task = await pool.fetchrow("""
         SELECT t.task_id, t.title, t.description, t.priority, t.due_at, t.approval_status,
                t.approval_notes AS notes, t.approval_requested_at AS requested_at,
-               COALESCE(u.full_name, u.name, u.email) AS requester_name
+               COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS requester_name
         FROM tasks t
         LEFT JOIN users u ON u.user_id = t.created_by_user_id
         WHERE t.task_id = $1
@@ -738,12 +738,12 @@ async def approve_by_token(token: str, payload_body: ApprovalRequest, pool=Depen
         )
         client_name = client_row["name"] if client_row else "Client"
         recipients = await pool.fetch("""
-            SELECT DISTINCT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS name
+            SELECT DISTINCT u.user_id, u.email, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name
             FROM project_assignments pa
             JOIN users u ON u.user_id = pa.user_id
             WHERE pa.team_id=$1
             UNION
-            SELECT DISTINCT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS name
+            SELECT DISTINCT u.user_id, u.email, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name
             FROM users u WHERE u.user_id=$2
         """, task["team_id"], client_user_id)
         from email_service import send_team_sync_email

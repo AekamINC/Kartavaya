@@ -270,6 +270,58 @@
 .gr__toggle-lbl{ font-size:13.5px; font-weight:600; color:var(--ink); }
 .gr__toggle-hint{ font-size:11.5px; color:var(--ink-3); }
 
+/* What the document contains — a STATEMENT, not a set of controls.
+   Deliberately not `.gr__toggle`: no border, no hover, no pointer cursor and
+   no checkbox affordance, because the seven checkboxes that used to sit here
+   controlled nothing and a reader must not be invited to click these. One
+   column, because it reads as a list of contents rather than a grid of
+   choices. */
+.gr__contains{ display:flex; flex-direction:column; gap:2px; margin-top:10px; }
+.gr__contains-row{
+  display:flex; align-items:flex-start; gap:10px;
+  padding:7px 0; border-bottom:1px solid var(--rule);
+}
+.gr__contains-row:last-child{ border-bottom:0; }
+.gr__contains-body{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+
+/* Registers — one row per row-level document, three formats each. */
+.gr__regs{ display:flex; flex-direction:column; gap:0; margin-top:10px; }
+.gr__reg{
+  display:flex; align-items:flex-start; gap:16px; justify-content:space-between;
+  padding:14px 0; border-bottom:1px solid var(--rule);
+}
+.gr__reg:last-child{ border-bottom:0; }
+.gr__reg-body{ min-width:0; flex:1 1 auto; }
+.gr__reg-lbl{
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  font-size:13.5px; font-weight:600; color:var(--ink);
+}
+/* `for the period` vs `as at today`. Small, but it is the whole difference
+   between a flow and a stock document, and the same button produces both. */
+.gr__reg-grain{
+  font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+  font-weight:600; color:var(--ink-3);
+}
+/* The definition's own description. These run long on purpose — each one
+   states what the register counts and what it cannot — so the column is
+   measure-capped rather than truncated: a limitation the reader cannot finish
+   reading is a limitation nobody was told. */
+.gr__reg-desc{
+  margin-top:3px; font-size:11.5px; line-height:1.5;
+  color:var(--ink-3); max-width:72ch;
+}
+.gr__reg-acts{ display:flex; gap:6px; flex-shrink:0; }
+@media (max-width: 900px){
+  .gr__reg{ flex-direction:column; gap:10px; }
+}
+/* The report that is deliberately absent, and why. Collapsed by default: it
+   answers a question only the reader who looks for it is asking. */
+.gr__reg-absent{ margin-top:14px; }
+.gr__reg-absent > summary{
+  cursor:pointer; font-size:12px; font-weight:600; color:var(--ink-2);
+  padding:6px 0;
+}
+
 /* Delivery radios */
 .gr__deliver{ display:flex; flex-direction:column; gap:10px; }
 .gr__radio{

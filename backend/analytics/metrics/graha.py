@@ -139,7 +139,7 @@ def win_rate(req: MetricRequest):
         # assigned_to is TEXT and is what the product writes; owner_id is an
         # unwritten uuid whose join once 500'd the kanban (migration 092).
         return (
-            "SELECT COALESCE(u.full_name, u.name, u.email, 'Unassigned') AS rep, "
+            "SELECT COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unassigned') AS rep, "
             + rate +
             "FROM staging.graha_deals d "
             "LEFT JOIN public.users u ON u.user_id = d.assigned_to "

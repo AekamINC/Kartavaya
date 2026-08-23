@@ -169,11 +169,45 @@ async def assemble_gstr3b(
     py, pm = int(period[:4]), int(period[5:7])
     end_exclusive = date(py + 1, 1, 1) if pm == 12 else date(py, pm + 1, 1)
 
+    # ── WHY `doc_status <> 'draft'` IS HERE, AND WHAT IT COST TO LEAVE OUT ──
+    # A draft invoice is a document that has NOT been issued to anybody. It was
+    # counted in outward supply here — and this function is behind the GSTR-3B
+    # filing SCREEN and the GSTR-3B PDF, not a preview — so the tax on unissued
+    # documents was tax a preparer pays in CASH. Measured live 2026-08-22:
+    # 102 drafts, Rs1.00cr taxable, Rs17.96L of tax.
+    #
+    # `gst_readiness` (the GSTR-1 side, services/skills/data/gst_readiness.py)
+    # has always excluded drafts. The two builders therefore reported different
+    # populations of the same table to the same preparer on the same screen,
+    # 27 vs 30 invoices in the seeded org every month, and
+    # `tests/test_gst_builders_agree.py` pinned that divergence as a strict
+    # xfail rather than choosing a side. This is the reconciliation, made
+    # towards the readiness builder because that is the direction that stops
+    # money going out: a document nobody has been issued is not a supply.
+    #
+    # `COALESCE(doc_status, '')` and not `doc_status <> 'draft'`: the column is
+    # nullable and NULL <> 'draft' is NULL, which would drop every invoice that
+    # predates the column — the same shape of bug in the opposite direction.
+    #
+    # `payment_status <> 'cancelled'` came with it, and it was NOT in the
+    # original report. Reconciling the two builders surfaced it: cancellation
+    # has TWO channels in this table — `cancelled_at`, which this query has
+    # always honoured, and `payment_status='cancelled'`, which it had never
+    # heard of. `gst_readiness` honours both. A row cancelled through the second
+    # channel alone was outward supply on the filing screen and struck off on
+    # the readiness screen, in the same session, for the same month.
+    #
+    # The identical pair of predicates is repeated on the two pre-filing check
+    # queries below, deliberately: a check that flags a GSTIN or a missing place
+    # of supply on an invoice the return does not contain sends a preparer to
+    # fix a row that was never at issue.
     invoices = await pool.fetch(
         "SELECT invoice_number, invoice_type, is_igst, is_export, line_items, "
         "subtotal, cgst, sgst, igst, cess, total "
         "FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
+        "AND COALESCE(doc_status, '') <> 'draft' "
+        "AND COALESCE(payment_status, '') <> 'cancelled' "
         "AND invoice_type IN ('tax_invoice','credit_note','debit_note') "
         "AND invoice_date >= $2::text::date AND invoice_date < $3::text::date",
         org_id, start, end_exclusive.isoformat(),
@@ -328,11 +362,40 @@ async def prefiling_checks(
 
     # Counterparty GSTINs. A number that fails its own check digit will be
     # rejected downstream and the recipient's credit refused, months later.
+    #
+    # ── THE JOIN IS ORG-SCOPED, AND IT WAS NOT ──────────────────────────────
+    #
+    # `JOIN staging.graha_contacts c ON c.id = i.contact_id` — on the id ALONE.
+    # The foreign key is on the id alone too, so nothing but the query can scope
+    # it, and an id-only join can surface ANOTHER PRACTICE'S CONTACT against
+    # this practice's invoice. Migration 163 records the same fault being proved
+    # live elsewhere in this schema, and `graha_clients` carries an identical
+    # note; this is the ninth such join.
+    #
+    # It matters more here than in most places because of what the row feeds: a
+    # GSTIN validity check on a GST RETURN. A leaked counterparty would put
+    # another firm's customer into a filing worksheet, and a rejected GSTIN
+    # surfaces months later as the recipient's input credit being refused.
+    #
+    # MEASURED BEFORE CHANGING IT, live 2026-08-23. The narrowing is a no-op on
+    # today's data and a guard for ever after:
+    #
+    #   invoices whose contact belongs to another org      0
+    #   contact ids shared by two orgs                     0
+    #   distinct parties, join as written                 28
+    #   distinct parties, join org-scoped                 28
+    #
+    # A narrowing can only ever REMOVE a cross-tenant row, never add one, so
+    # the two counts agreeing is the whole verification: nothing legitimate is
+    # lost, and the illegitimate case can no longer arrive.
     parties = await pool.fetch(
         "SELECT DISTINCT c.name, c.company, c.gstin "
         "FROM staging.ganit_invoices i "
-        "JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "JOIN staging.graha_contacts c "
+        "  ON c.id = i.contact_id AND c.org_id = i.org_id "
         "WHERE i.org_id=$1::uuid AND i.is_active AND i.cancelled_at IS NULL "
+        "AND COALESCE(i.doc_status, '') <> 'draft' "
+        "AND COALESCE(i.payment_status, '') <> 'cancelled' "
         "AND i.invoice_type IN ('tax_invoice','credit_note','debit_note') "
         "AND i.invoice_date >= $2::text::date AND i.invoice_date < $3::text::date "
         "AND COALESCE(c.gstin, '') <> ''",
@@ -359,6 +422,8 @@ async def prefiling_checks(
     no_pos = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
+        "AND COALESCE(doc_status, '') <> 'draft' "
+        "AND COALESCE(payment_status, '') <> 'cancelled' "
         "AND invoice_type IN ('tax_invoice','credit_note','debit_note') "
         "AND invoice_date >= $2::text::date AND invoice_date < $3::text::date "
         "AND COALESCE(place_of_supply, '') = ''",

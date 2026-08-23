@@ -1462,7 +1462,14 @@ async def sign_out_everywhere(request: Request, current_user: dict = Depends(req
     # client that immediately retries.
     cutoff = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(seconds=1)
     await pool.execute(
-        "UPDATE users SET sessions_valid_from=$2 WHERE user_id=$1",
+        # `updated_by` IS the account itself here, and that is the point rather
+        # than a tautology. `public.users.updated_by` (migration 202) answers
+        # "who last changed this account", and the answer has two shapes: an
+        # ADMIN changing somebody else (recorded in `org_members.py` and
+        # `invite_router.py`), or the account changing itself. Leaving the
+        # self-service half NULL would make every unattributed row read as
+        # "changed before 202" when it actually means "changed by its owner".
+        "UPDATE users SET sessions_valid_from=$2, updated_by=$1 WHERE user_id=$1",
         current_user["user_id"], cutoff)
     audit("auth.sign_out_everywhere", request, user_id=current_user["user_id"],
           severity="warn")
@@ -1510,6 +1517,20 @@ async def forgot_password(request: Request, body: ForgotPasswordBody):
         "WHERE email=$1 AND NOT COALESCE(is_system, FALSE)", body.email.lower())
     if user:
         reset_token = secrets.token_urlsafe(32)
+        # THIS STATEMENT DELIBERATELY SETS NO `updated_by`, and it is the most
+        # important omission in this file.
+        #
+        # The route is UNAUTHENTICATED. Anybody who knows an email address can
+        # reach it, and the row it writes is a reset token — not a change the
+        # account holder made or even knows about. Stamping `updated_by` with
+        # the target's own id would record that this person changed their own
+        # account, which is precisely what has NOT been established: proving
+        # control of the mailbox happens later, at `reset_password` below,
+        # which is where the attribution is written.
+        #
+        # That is the whole rule these columns exist under — a wrong name is
+        # worse than a NULL, because a NULL is visibly unknown and a name is
+        # believed. Here it would also be evidence pointing at a victim.
         await pool.execute(
             """UPDATE users SET password_reset_token=$1,
                password_reset_expires=NOW() + INTERVAL '1 hour'
@@ -1585,9 +1606,13 @@ async def reset_password(request: Request, body: ResetPasswordBody):
     if revocation_active():
         try:
             await pool.execute(
+                # NOW the attribution is earned: whoever ran this held a token
+                # delivered to the account's own mailbox, so the account is the
+                # actor. The `forgot` route above records nobody for exactly the
+                # reason this one records somebody.
                 """UPDATE users SET password_hash=$1, salt=$2,
                    password_reset_token=NULL, password_reset_expires=NULL,
-                   sessions_valid_from=$4
+                   sessions_valid_from=$4, updated_by=$3
                    WHERE user_id=$3""",
                 pw_hash, salt, user["user_id"], cutoff,
             )
@@ -1608,9 +1633,17 @@ async def reset_password(request: Request, body: ResetPasswordBody):
             )
     if not revoked:
         # Migration 118 not applied. The password change must still land.
+        # `updated_by` is on BOTH arms, so the fallback now assumes migration 202
+        # as well as the absence of 118. That is deliberate and it is not a
+        # weakening of the guard above: `_is_undefined_column` exists to survive
+        # a missing `sessions_valid_from`, and if `updated_by` were also missing
+        # this arm would raise rather than silently write an unattributed
+        # password change — which is the failure worth having, on the one table
+        # where "who changed this account" is the whole question.
         await pool.execute(
             """UPDATE users SET password_hash=$1, salt=$2,
-               password_reset_token=NULL, password_reset_expires=NULL
+               password_reset_token=NULL, password_reset_expires=NULL,
+               updated_by=$3
                WHERE user_id=$3""",
             pw_hash, salt, user["user_id"],
         )

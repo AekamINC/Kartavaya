@@ -319,7 +319,25 @@ PNL_SQL = (
     "     AND jsonb_typeof(li->'cost_price') = 'number' "
     "   GROUP BY 1"
     ") "
-    "SELECT COALESCE(u.full_name, u.name, u.email, $5::text) AS person, "
+    # THE LADDER STOPS BEFORE THE EMAIL. This read `COALESCE(u.full_name,
+    # u.name, u.email, $5::text)`, so a salesperson with no name recorded had
+    # their EMAIL printed as the row label of a COMMISSION report — a document
+    # about money, read by people outside their team and exported to file. A
+    # contact detail rendered as a label, and the inverse of the rule that
+    # Aekam must not see a customer's member emails. The owner's ruling
+    # (2026-08-23): a display-name ladder must never end at an email address.
+    #
+    # MEASURED FIRST, because the objection is "then the row loses its label":
+    # on the live database 0 of 35 accounts have neither `full_name` nor
+    # `name`. The email rung has never fired. Nothing visible changes.
+    #
+    # `$5::text` STAYS — it is this report's own caller-supplied terminal (the
+    # translated "unknown person" string), which says more in context than a
+    # fixed label would. Only the email rung was removed, so `$5` keeps its
+    # number and every other placeholder in this statement is undisturbed; the
+    # cast stays explicit because PgBouncer turns an untyped parameter
+    # expression into an instant 500 rather than a parse error you can read.
+    "SELECT COALESCE(u.full_name, u.name, $5::text) AS person, "
     "       a.turnover::float AS turnover, "
     "       a.docs::int AS docs, "
     "       c.cost::float AS cost, "

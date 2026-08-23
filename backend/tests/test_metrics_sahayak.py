@@ -99,7 +99,17 @@ def test_credits_spent_by_skill_labels_pre_095_rows_honestly():
 def test_credits_spent_by_member_resolves_names_and_never_emits_an_id():
     sql, _ = build("sahayak.credits_spent", group_by="member")
     assert "LEFT JOIN public.users u ON u.user_id = t.user_id" in sql
-    assert "COALESCE(u.full_name, u.name, u.email" in sql
+    # THE ASSERTION MOVED FROM THE TEXT TO THE PROPERTY.
+    #
+    # This used to pin the literal `COALESCE(u.full_name, u.name, u.email, …)`.
+    # Under a test named for names-never-ids, that string was the leak itself:
+    # the owner ruled on 2026-08-23 that a display ladder must never end at an
+    # email address, and a text match would have FAILED on the fix and passed on
+    # the bug — teaching the next reader to revert rather than to keep the
+    # property. So it asserts what actually matters: a name is resolved, no id
+    # reaches the label, and the ladder does not reach `.email`.
+    assert "u.full_name" in sql and "u.name" in sql
+    assert "u.email" not in sql
     assert "'System'" in sql and "'Departed member'" in sql
     # Two departed members stay two rows: group on the key, label the name.
     assert "GROUP BY t.user_id" in sql

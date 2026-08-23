@@ -357,6 +357,184 @@ function SchedulesPanel({ teams }) {
   );
 }
 
+// ── Registers — the row-level half of the reporting surface ───────────────
+/**
+ * THE CONSOLIDATION, AND WHY IT IS TWENTY LINES RATHER THAN A NEW PAGE.
+ *
+ * Proposal 70 found that this product does not have three reporting surfaces
+ * but SIX, and that folding them together needed ONE function: a second
+ * producer of the widget shape, so a row-level register could travel down the
+ * renderer, the PDF engine and the three export branches that already existed.
+ * `services/module_report.report_section` is that function and it shipped —
+ * along with fourteen definitions, an entitlement rule that gates on what a
+ * report READS rather than on its module, and `/report-sections` to list them.
+ *
+ * None of it was reachable from a screen. A register could be rendered only by
+ * first saving it into a module's saved layout, so the catalogue named
+ * documents nobody could open. That is what this panel and the `report=`
+ * parameter on `/module-report` finish.
+ *
+ * WHAT THIS PANEL DELIBERATELY IS NOT: a second report builder. It lists what
+ * the server says this caller may see, and hands each one to the SAME download
+ * door in the same three formats. There is no client-side filtering, no
+ * client-side column choice and no preview — every one of those would be a new
+ * surface, and the count in the proposal was already six.
+ *
+ * ENTITLEMENT IS THE SERVER'S ANSWER, NOT THIS COMPONENT'S. `/report-sections`
+ * returns only the definitions whose whole `reads` set the caller holds, plus
+ * `withheld_count` so this can say how many were hidden instead of making the
+ * product look small. Nothing here decides what may be seen.
+ */
+function RegistersPanel({ from, to }) {
+  const [sections, setSections] = useState(null);
+  const [withheld, setWithheld] = useState(0);
+  const [err,      setErr]      = useState(null);
+  const [busyKey,  setBusyKey]  = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    api.get('/v1/analytics/report-sections')
+      .then(r => {
+        if (!live) return;
+        setSections(Array.isArray(r.data?.sections) ? r.data.sections : []);
+        setWithheld(Number(r.data?.withheld_count) || 0);
+      })
+      /* Classified, not swallowed. A 403 here means "you hold no module that
+         publishes a register", which is a different sentence from "this
+         product has no registers" — and the empty state below would have said
+         the second one. */
+      .catch(e => { if (live) { setErr(e); setSections([]); } });
+    return () => { live = false; };
+  }, []);
+
+  async function download(sec, fmt) {
+    setBusyKey(sec.key + fmt);
+    try {
+      const res = await api.get('/v1/analytics/module-report', {
+        params: { module: sec.module, report: sec.key,
+                  date_from: from, date_to: to, format: fmt },
+        responseType: 'blob',
+      });
+      const ext = fmt === 'pdf' ? 'pdf' : fmt === 'xlsx' ? 'xlsx' : 'csv';
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${sec.key.replace(/\./g, '_')}-${from}-${to}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      pushHistory({
+        kind: 'register', fmt: ext.toUpperCase(), name: a.download, who: 'You',
+        when: new Date().toLocaleString('en-IN',
+          { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+      });
+    } catch (e) { setErr(e); }
+    finally { setBusyKey(null); }
+  }
+
+  return (
+    <div className="gr__block">
+      <div className="gr__block-h">
+        <span className="gr__step">5</span>
+        <h3>Registers</h3>
+        <Secondary className="gr__block-sans" value="पंजिका" />
+      </div>
+      <p className="rep-note">
+        Row-level documents — a list, not a summary. Each one carries its own
+        note explaining what it counts and what it cannot. They use the same
+        period as the report above.
+      </p>
+
+      {sections === null && <SkeletonText lines={3} />}
+
+      {sections !== null && err && (
+        <ErrorState kind={errorKind(err)}
+                    grant="a module that publishes registers"
+                    onRetry={() => window.location.reload()} />
+      )}
+
+      {sections !== null && !err && sections.length === 0 && (
+        <p className="rep-note">
+          No registers are available to you. They come with the modules —
+          {' '}{withheld > 0
+            ? `${withheld} exist behind modules this organisation has not granted you.`
+            : 'none is published yet.'}
+        </p>
+      )}
+
+      {sections !== null && !err && sections.length > 0 && (
+        <>
+          <div className="gr__regs">
+            {sections.map(sec => (
+              <div key={sec.key} className="gr__reg">
+                <div className="gr__reg-body">
+                  <div className="gr__reg-lbl">
+                    {sec.label}
+                    {/* `flow` reads a period; `stock` is a balance as at today.
+                        Printed because the same download button produces two
+                        different kinds of document, and the difference is
+                        exactly the "number under the wrong label" fault. */}
+                    <span className="gr__reg-grain">
+                      {sec.grain === 'stock' ? 'as at today' : 'for the period'}
+                    </span>
+                  </div>
+                  {sec.description && (
+                    <div className="gr__reg-desc">{sec.description}</div>
+                  )}
+                </div>
+                <div className="gr__reg-acts">
+                  {['pdf', 'csv', 'xlsx'].map(fmt => (
+                    <button key={fmt} type="button"
+                            className="k-btn k-btn--ghost k-btn--sm"
+                            disabled={busyKey !== null}
+                            onClick={() => download(sec, fmt)}>
+                      {busyKey === sec.key + fmt ? <Spinner /> : fmt.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {withheld > 0 && (
+            <p className="rep-note">
+              {withheld} more {withheld === 1 ? 'register needs' : 'registers need'}
+              {' '}a module this organisation has not granted you.
+            </p>
+          )}
+        </>
+      )}
+
+      {/* THE REPORT THAT IS NOT HERE, SAID ON THE SCREEN WHERE SOMEBODY WOULD
+          LOOK FOR IT.
+
+          Client cost and profit was asked for and it is not buildable. Cost
+          attribution to a client is 0% by every route that exists, measured
+          live: 0 of 289 time entries (tasks carry no client key at all), 0 of
+          11 users (no employee rate is reachable — manav_employees.user_id is
+          NULL on 96 of 98 rows), 0 of 378 expenses, 0 of 189 vendor bills.
+          Rs41.3m of recorded cost and Rs106.4m of payroll, none of it
+          attributable to any client.
+
+          Shipping it anyway would render every client at 100% margin over a
+          zero cost denominator — the single most quotable wrong number this
+          product could emit. So it is absent, and the absence is explained
+          here rather than discovered as an empty table. */}
+      <details className="gr__reg-absent">
+        <summary>Why there is no client profitability register</summary>
+        <p className="rep-note">
+          Revenue per client is recorded; cost per client is not, by any route
+          that exists today. Tasks carry no client, expenses and vendor bills
+          carry no client, and employee records are not linked to logins, so no
+          hourly cost can reach a client either. A margin column over a cost of
+          zero would show every client at 100% margin — a claim nobody made.
+          The unlocks are data entry, not engineering: a client field on the
+          expense form, and linking the employee records to their logins.
+        </p>
+      </details>
+    </div>
+  );
+}
+
+
 // ── Main page ─────────────────────────────────────────────────────
 export default function ReportsPage({ teams: propTeams }) {
   const [teams,      setTeams]      = useState(Array.isArray(propTeams) ? propTeams : []);
@@ -385,10 +563,12 @@ export default function ReportsPage({ teams: propTeams }) {
   // does not come back with it, because a superlative naming an individual in a
   // document a schedule can mail to an address list is a claim the firm cannot
   // take back. `services/report_generator.py` has the long version.
-  const [sections,   setSections]   = useState({
-    summary: true, projects: true, leaderboard: true,
-    tasks: true, throughput: true, time: false, attachments: false,
-  });
+  // No `sections` state either. It held seven booleans that never left the
+  // browser: `doDownload` transmits {from, to, fmt} and the server accepts no
+  // more, so the toggles shaped the preview and nothing else — and two of them
+  // named sections `services/report_generator.py` has never produced. The
+  // document's contents are stated on the page now instead of pretended to be
+  // chosen there.
   const [busy,       setBusy]       = useState(null);   // null | 'pdf' | 'excel'
   const [preview,    setPreview]    = useState(null);
   const [prevLoading,setPrevLoading]= useState(false);
@@ -494,7 +674,6 @@ export default function ReportsPage({ teams: propTeams }) {
   const toggleMember  = id => setMemberIds(p =>
     p.includes(id) ? p.filter(x => x !== id) : [...p, id]
   );
-  const toggleSection = k  => setSections(s => ({ ...s, [k]: !s[k] }));
 
   const uniqueMembers = [
     ...new Map(
@@ -508,8 +687,12 @@ export default function ReportsPage({ teams: propTeams }) {
   const membersPending = projectIds.some(id => !allMembers[id] && !memberErrs[id]);
 
   const rangeLabel    = from === to ? fmtDate(from) : `${fmtDate(from)} — ${fmtDate(to)}`;
-  const sectionsOn    = Object.values(sections).filter(Boolean).length;
-  const approxPages   = Math.max(2, Math.round(sectionsOn * 1.2));
+  // `approxPages` was `sectionsOn * 1.2` over toggles the server never saw, so
+  // it moved when nothing about the document did. The PDF has six fixed
+  // sections and runs to four pages or so before the task list, which is the
+  // only part that grows — so the estimate is stated as a floor with the
+  // reason, not as a figure that pretends to track a choice.
+  const approxPages   = 4;
   const tasks         = preview?.tasks || {};
   const totalMins     = preview?.total_minutes || 0;
   const totalH        = totalMins ? `${Math.floor(totalMins / 60)}h ${totalMins % 60}m` : '—';
@@ -563,18 +746,26 @@ export default function ReportsPage({ teams: propTeams }) {
         kicker="Operations · Reports"
         title="Generate report"
         sanskrit="प्रतिवेदन निर्माण"
-        lede="Build a report on demand. Pick your scope, choose what to include, and export to PDF or Excel."
+        lede="Build a report on demand, or download a register. Pick your scope and export to PDF or Excel."
         right={
           <div className="gr__phead-right">
-            <span className="gr__phead-meta">
-              <b>Last automated send</b>
-              <span>
-                {(() => {
-                  const auto = history.find(h => h.who?.startsWith('Auto'));
-                  return auto ? auto.when : '—';
-                })()}
-              </span>
-            </span>
+            {/* "LAST AUTOMATED SEND" IS GONE, because it could never populate.
+
+                It searched this browser's localStorage export history for an
+                entry whose author starts with "Auto" — and the only writer of
+                that history is `pushHistory` in this file, which sets
+                `who: 'You'` on every row. So the field read `—` on a fresh
+                browser, `—` after a thousand scheduled sends, and `—` for a
+                user on a second machine. A statistic that cannot change is not
+                a statistic; it is a decoration that looks like reassurance.
+
+                The real fact lives on `public.report_schedules.last_sent_at`,
+                per schedule, and the schedules panel below shows it against
+                the schedule it belongs to — which is where somebody can
+                actually act on it. A cross-team "last send anywhere" figure
+                would need its own endpoint, and it would answer a question
+                nobody asked: what a firm wants to know is whether THEIR
+                Monday report went out. */}
             <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowSchedules(s => !s)}>
               <CalIcon /> {showSchedules ? 'Hide schedules' : 'Manage schedules'}
             </button>
@@ -762,7 +953,7 @@ export default function ReportsPage({ teams: propTeams }) {
                 <span><b>{projectIds.length}</b> of {teams.length} projects</span>
               </div>
 
-              {sections.summary && (
+              {(
                 <div className="gr__preview-stats">
                   {prevLoading ? (
                     <div className="rep-note rep-note--cell">
@@ -779,13 +970,19 @@ export default function ReportsPage({ teams: propTeams }) {
                 </div>
               )}
 
+              {/* What the PDF actually contains, in its actual order, taken
+                  from `services/report_generator.py`. The old list was driven
+                  by the seven inert toggles, so it could promise an attachment
+                  manifest that does not exist and omit the methodology page
+                  that always does. One file per selected project — per-project
+                  is not a section here, it is a separate document. */}
               <div className="gr__preview-sections">
-                {sections.projects    && <div className="gr__preview-sec"><i>§</i> Per-project breakdown ({projectIds.length} project{projectIds.length !== 1 ? 's' : ''})</div>}
-                {sections.leaderboard && <div className="gr__preview-sec"><i>§</i> Per-member completions ({memberIds.length} member{memberIds.length !== 1 ? 's' : ''})</div>}
-                {sections.throughput  && <div className="gr__preview-sec"><i>§</i> Throughput chart</div>}
-                {sections.tasks       && <div className="gr__preview-sec"><i>§</i> Detailed task list</div>}
-                {sections.time        && <div className="gr__preview-sec"><i>§</i> Time tracking — {totalH}</div>}
-                {sections.attachments && <div className="gr__preview-sec"><i>§</i> Attachment manifest</div>}
+                <div className="gr__preview-sec"><i>§</i> Task breakdown</div>
+                <div className="gr__preview-sec"><i>§</i> Per-member completions ({uniqueMembers.length} member{uniqueMembers.length !== 1 ? 's' : ''})</div>
+                <div className="gr__preview-sec"><i>§</i> Detailed task list</div>
+                <div className="gr__preview-sec"><i>§</i> Throughput trend</div>
+                <div className="gr__preview-sec"><i>§</i> Time logged — {totalH}</div>
+                <div className="gr__preview-sec"><i>§</i> Methodology &amp; data</div>
               </div>
 
               <div className="gr__preview-foot">
@@ -810,7 +1007,7 @@ export default function ReportsPage({ teams: propTeams }) {
               <span className="gr__fmt"><span className="gr__fmt-tag">PDF</span></span>
               <span className="gr__export-body">
                 <b>Generate PDF</b>
-                <span>Editorial layout · approx. {approxPages} pages{projectIds.length > 1 ? ` × ${projectIds.length} projects` : ''}</span>
+                <span>Editorial layout · {approxPages} pages plus the task list{projectIds.length > 1 ? ` · ${projectIds.length} files, one per project` : ''}</span>
               </span>
               <span className="gr__export-go">{busy === 'pdf' ? <Spinner /> : <Arrow />}</span>
             </button>

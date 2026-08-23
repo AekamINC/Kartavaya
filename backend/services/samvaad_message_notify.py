@@ -190,6 +190,8 @@ import asyncio
 import logging
 import uuid
 
+from services.audit_actors import display_name
+
 logger = logging.getLogger(__name__)
 
 #: The `type` written into `public.notifications`.
@@ -456,13 +458,31 @@ async def fan_out_message_notification(
     # EVERY PARAMETER IS CAST. `user_id` is TEXT (`user_<hex>`, never a uuid);
     # `channel_id` is a uuid; PgBouncer turns an untyped parse error into an
     # instant 500 rather than into a message anybody can read.
-    # NOT an f-string, and never one: nothing is interpolated into this
-    # statement. Every value is a bind parameter, and the only text ever
-    # appended to it is the fixed thread predicate below.
-    sql = """
+    # NOT an f-string over REQUEST DATA, and never one: no value reaches this
+    # statement except as a bind parameter, and the only text ever appended to
+    # it is the fixed thread predicate below. The one interpolation is
+    # `audit_actors.display_name`, which is composed entirely of that module's
+    # own string constants plus a literal alias written here — no request data
+    # and no `$n`, so the `$2`/`$5` numbering is untouched.
+    #
+    # THE ACTOR LADDER NO LONGER ENDS AT AN EMAIL. THE OWNER RULED (2026-08-23)
+    # that a display-name ladder must never do so: Aekam must not see client
+    # emails, and a person is named by their name — an email used as a display
+    # fallback is a CONTACT DETAIL rendered as a LABEL, and this one is rendered
+    # into a notification title and pushed to a device. MEASURED FIRST,
+    # read-only, on the live database: **0 of 35 accounts** have neither
+    # `full_name` nor `name`, so the rung has never fired on real data.
+    #
+    # NOT LEFT BLANK — a blank sender reads as "nobody sent this", a different
+    # and false claim — so it ends at `'Unnamed member'`, the wording
+    # `routers/procurement.py:391` already uses rather than a third phrasing.
+    # A DELETED actor still returns no row from this scalar sub-select, so it is
+    # still NULL and the `or "Someone"` fallback still covers that case; the new
+    # terminal only fires for an account that exists and has no name.
+    sql = f"""
         SELECT cm.user_id,
                cm.muted,
-               (SELECT COALESCE(u.full_name, u.name, u.email)
+               (SELECT {display_name('u')}
                   FROM users u WHERE u.user_id = $2::text) AS actor_name,
                CASE WHEN cm.last_read_at IS NULL THEN NULL ELSE (
                     SELECT COUNT(*)

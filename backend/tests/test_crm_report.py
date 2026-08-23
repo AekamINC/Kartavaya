@@ -142,3 +142,82 @@ def test_render_returns_content_type_and_extension(fmt):
     content, media, ext = crm_report.render(_data(), fmt)
     assert content and isinstance(content, bytes)
     assert media and ext in ("csv", "xlsx")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# "Won value" measured the wrong deals — proposal 73, defect 5
+# ══════════════════════════════════════════════════════════════════════════
+#
+# `gather` had ONE window, `created_at > cutoff`, in the WHERE clause, and it
+# summed `won_value` inside it. So the figure headed "Won value" for the last
+# 90 days meant "deals CREATED in the last 90 days that are Won today" — a deal
+# opened in March and won last week was missing from it entirely.
+#
+# Measured live 2026-08-22, last 90 days: E2E Rs53,13,648 shown against
+# Rs66,37,948 actually won; Unicode Group Rs11,22,500 against Rs15,72,500. On
+# the financial year to date Unicode is 39% low — Rs7,30,000 of real wins under
+# a heading that claims to be the period's wins. `won_at` is filled on 33 of 33
+# won deals, so nothing blocked the correct question being asked.
+
+def test_won_value_windows_on_the_won_date_not_the_created_date():
+    """The defect itself, pinned on the predicate.
+
+    Structural rather than live: the suite is offline by design and the pool is
+    a MagicMock, so the SQL predicate IS the population and comparing it is the
+    honest offline form of the check.
+    """
+    import inspect
+    sql = " ".join(inspect.getsource(crm_report.gather).split())
+    assert "FILTER (WHERE stage='Won' AND won_at > $2)" in sql, (
+        "the won-value figure is no longer windowed on `won_at`. A deal won "
+        "inside the period but opened before it drops out of a figure headed "
+        "'Won value' — 39% short on a real org when this was last measured."
+    )
+    assert "FROM staging.graha_deals WHERE org_id=$1::uuid," not in sql, (
+        "the WHERE clause has regained a `created_at` filter. Filtering the "
+        "table on the created date puts every deal won-but-not-opened in the "
+        "window beyond reach of the FILTERs that follow."
+    )
+
+
+def test_both_cohorts_are_kept_and_the_derived_figures_use_the_created_one():
+    """Two populations, and the derived numbers must not straddle them.
+
+    `conversion_rate` divides wins by openings, so both halves have to come
+    from the deals OPENED in the window. Built from the closed-in-period count
+    instead it can exceed 100%, and `open` — openings minus wins minus losses —
+    can go NEGATIVE, because a period in which more deals close than open is
+    completely ordinary.
+    """
+    import inspect
+    src = " ".join(inspect.getsource(crm_report.gather).split())
+    for name in ("cohort_won", "cohort_lost", "won_undated", "lost_undated"):
+        assert name in src, f"{name} is gone from the conversion query"
+    assert 'conv.get("cohort_won")' in src and 'conv.get("cohort_lost")' in src, (
+        "`open` and `conversion_rate` are no longer derived from the created "
+        "cohort — they can now print a negative or a rate above 100%."
+    )
+
+
+def test_every_conversion_figure_states_its_window_on_the_face_of_the_report():
+    """The standing rule for this whole page: a number under a heading that
+    does not say what it counts is the failure mode. Six figures sit in one
+    strip and four of them count a different set of deals from the other two,
+    so each caption carries its own basis.
+    """
+    data = _data(conversion={"total_deals": 10, "cohort_won": 3, "cohort_lost": 2,
+                             "open": 5, "conversion_rate": 30.0, "won": 4,
+                             "lost": 1, "won_value": 1234567, "avg_cycle_days": 21,
+                             "won_undated": 0, "lost_undated": 0})
+    html = crm_report._html(data)
+    assert "Won value in period" in html and "Opened in period" in html
+    assert "Conversion of opened" in html
+    # The bare captions are what a reader quotes out of context. Checked
+    # inside the stat strip only — the Sources table legitimately carries a
+    # "Won to date" column over a different (lead-cohort) window.
+    strip = html.split('<div class="stat">', 1)[1].split("</section>", 1)[0]
+    assert "<span>Won</span>" not in strip
+    assert "<span>Conversion</span>" not in strip
+
+    content, _, _ = crm_report.render(data, "excel")
+    assert content

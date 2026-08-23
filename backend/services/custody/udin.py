@@ -81,6 +81,8 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from services.audit_actors import actor_joins, actor_select
+
 import asyncpg
 
 # ── the ICAI numbers, as read from the sources cited in the docstring ────────
@@ -546,16 +548,37 @@ async def load_windows(pool, *, as_of: Any) -> UdinWindows:
 # not `$2` — because PgBouncer turns an untyped parameter in an `IS NULL`
 # comparison into a parse error and an instant 500, which has cost this repo a
 # real incident (untyped `$1 + $2` in the credits ledger).
+#
+# EVERY COLUMN IS ALIAS-QUALIFIED, and that is new. This query now LEFT JOINs
+# `public.users` twice to resolve the author names, and that table carries an
+# `id`, a `created_at` and an `updated_at` of its own — so a bare `id` here is
+# `column reference "id" is ambiguous`, which PgBouncer returns as an instant
+# 500 on the one list a firm opens to find out what it is about to miss.
+#
+# `signed_by_member` IS NOT `created_by`, which is why both are here. The member
+# is who SIGNED the document — an ICAI fact, typed in, and the only person who
+# may generate or revoke the number (FAQ Q151). The actor is who typed the row
+# into this product. A backlog entered by an articled assistant on behalf of a
+# partner has two different names, and conflating them would put the assistant's
+# name against a certification they did not make.
 _SELECT_OPEN = (
-    "SELECT id, client_name, document_kind, document_title, document_ref, "
-    "       financial_year, signed_on, signed_by_member, signed_by_membership_no, "
-    "       source_module, notes "
-    "  FROM staging.udin_register "
-    " WHERE org_id = $1::uuid "
-    "   AND status = 'signed' "
-    "   AND ($2::date IS NULL OR signed_on >= $2::date) "
-    "   AND ($3::date IS NULL OR signed_on <= $3::date) "
-    " ORDER BY signed_on ASC, document_title ASC "
+    "SELECT " + actor_select("r", updated=True) +
+    "       r.id, r.client_name, r.document_kind, r.document_title, "
+    "       r.document_ref, r.financial_year, r.signed_on, r.signed_by_member, "
+    "       r.signed_by_membership_no, r.source_module, r.notes, "
+    # WHEN, beside the WHO. `signed_on` is an ICAI fact about the document;
+    # these two are facts about this product — when the row was typed in and
+    # when it was last moved. The screen renders date and person as a pair, so
+    # sending one without the other leaves a column that can only ever be an
+    # em dash next to a name that is right there.
+    "       r.created_at, r.updated_at "
+    "  FROM staging.udin_register r "
+    + actor_joins("r", updated=True) +
+    " WHERE r.org_id = $1::uuid "
+    "   AND r.status = 'signed' "
+    "   AND ($2::date IS NULL OR r.signed_on >= $2::date) "
+    "   AND ($3::date IS NULL OR r.signed_on <= $3::date) "
+    " ORDER BY r.signed_on ASC, r.document_title ASC "
     " LIMIT $4::int"
 )
 
@@ -573,7 +596,7 @@ def _describe(row: dict, *, as_of: date, window_days: int) -> dict[str, Any]:
     started = day >= 1
     remaining = days_left(signed, as_of, window_days=window_days)
     kind = row.get("document_kind") or ""
-    return {
+    out: dict[str, Any] = {
         "id": row.get("id"),
         "client_name": row.get("client_name") or "",
         "document_kind": kind,
@@ -594,6 +617,29 @@ def _describe(row: dict, *, as_of: date, window_days: int) -> dict[str, Any]:
         "is_lapsed": is_lapsed(signed, as_of, window_days=window_days),
         "urgency": urgency(remaining, started=started),
     }
+    # WHO typed the row in, and who last moved it — as NAMES, resolved in SQL by
+    # `services/audit_actors`. The raw `created_by`/`updated_by` are
+    # `users.user_id` and never appear here; only the resolved name and the
+    # boolean that separates "no actor is recorded" from "an actor is recorded
+    # and the account is gone" survive into the output.
+    #
+    # COPIED ONLY WHEN THE ROW HAS THEM, which is not defensiveness. The write
+    # path reaches this function through `_describe_written` over a plain
+    # `RETURNING`, and a RETURNING clause cannot join `public.users` — so a
+    # written row genuinely has no name to report. Defaulting `has_updater` to
+    # False there would be a LIE about the row the caller just updated; leaving
+    # the keys off says "this shape does not carry that", which is true.
+    #
+    # `created_at` and `updated_at` ride the same list for the same reason. They
+    # are the register's own stamps, not `signed_on` — that is an ICAI fact
+    # about the document, these are facts about this product — and the screen
+    # renders date and person as a pair, so one without the other leaves a
+    # column that can only ever be an em dash beside a name that is right there.
+    for key in ("created_by_name", "has_creator", "updated_by_name",
+                "has_updater", "created_at", "updated_at"):
+        if key in row:
+            out[key] = row[key]
+    return out
 
 
 async def at_risk(
@@ -677,14 +723,17 @@ async def at_risk(
 # and the yes/no is decided in Python by `is_revocable`, so a clock skew between
 # the app and the database can never silently drop a row that is still revocable.
 _SELECT_REVOCABLE = (
-    "SELECT id, client_name, document_kind, document_title, document_ref, "
-    "       financial_year, signed_on, signed_by_member, signed_by_membership_no, "
-    "       udin, udin_generated_at "
-    "  FROM staging.udin_register "
-    " WHERE org_id = $1::uuid "
-    "   AND status = 'generated' "
-    "   AND udin_generated_at >= $2::timestamptz "
-    " ORDER BY udin_generated_at DESC "
+    "SELECT " + actor_select("r", updated=True) +
+    "       r.id, r.client_name, r.document_kind, r.document_title, "
+    "       r.document_ref, r.financial_year, r.signed_on, r.signed_by_member, "
+    "       r.signed_by_membership_no, r.udin, r.udin_generated_at, "
+    "       r.created_at, r.updated_at "
+    "  FROM staging.udin_register r "
+    + actor_joins("r", updated=True) +
+    " WHERE r.org_id = $1::uuid "
+    "   AND r.status = 'generated' "
+    "   AND r.udin_generated_at >= $2::timestamptz "
+    " ORDER BY r.udin_generated_at DESC "
     " LIMIT $3::int"
 )
 
@@ -1062,9 +1111,25 @@ _SELECT_ROW_FOR_WRITE = (
 #: `AND status = 'signed'` in the WHERE, not only in Python. The Python check is
 #: what produces the sentence; this is what stops two people generating two
 #: numbers against one signature when they press the button at the same moment.
+#:
+#: `updated_by` IS SET IN THE SAME STATEMENT. `trg_touch_udin_register` already
+#: stamps `updated_at`, and it cannot stamp this one — a trigger does not know
+#: who is holding the connection. Without it the register can say a UDIN was
+#: generated and not who generated it, and FAQ Q151 makes that the operative
+#: question: only the member who generated a number may revoke it.
+#:
+#: It is NOT `signed_by_member`. That column is who certified the document; this
+#: is who worked the row in this product, and on a backlog typed up by an
+#: assistant those are two different people.
+#:
+#: NULLIF, so an absent actor stays NULL: `has_updater` in `audit_actors` is
+#: `updated_by IS NOT NULL`, and an empty string would make it TRUE with no name
+#: behind it — which the UI renders as `unknown`, i.e. "somebody did this and we
+#: have lost who". That is a different and worse claim than "nobody has".
 _UPDATE_GENERATION = (
     "UPDATE staging.udin_register "
     "   SET status = 'generated', "
+    "       updated_by = NULLIF(btrim($6::text), ''), "
     "       udin = $3::text, "
     "       udin_generated_at = $4::timestamptz, "
     "       notes = CASE WHEN $5::text = '' THEN notes "
@@ -1078,9 +1143,13 @@ _UPDATE_GENERATION = (
 #: `revocation_reason` is a column of its own and is REPLACED rather than
 #: appended, because a row can only be revoked once — the WHERE says so — so
 #: there is never a previous reason to lose.
+#:
+#: `updated_by` here for the reason `_UPDATE_GENERATION` gives at length — and
+#: more so: a revocation is the row this register is read for.
 _UPDATE_REVOCATION = (
     "UPDATE staging.udin_register "
     "   SET status = 'revoked', "
+    "       updated_by = NULLIF(btrim($7::text), ''), "
     "       revoked_at = $3::timestamptz, "
     "       revocation_reason = $4::text, "
     "       replaced_by_udin = $5::text, "
@@ -1096,9 +1165,14 @@ _UPDATE_REVOCATION = (
 #: only ways off the at-risk list are a real UDIN or a lapse, so a document that
 #: never carried the duty in the first place would nag for ever — and a list
 #: that nags about things nobody can fix is a list people stop reading.
+#:
+#: `updated_by` here too. This is the one transition that takes a document OFF
+#: the at-risk list without a number ever existing, so "who decided that" is
+#: precisely what a reviewer will ask six months later.
 _UPDATE_NOT_REQUIRED = (
     "UPDATE staging.udin_register "
     "   SET status = 'not_required', "
+    "       updated_by = NULLIF(btrim($4::text), ''), "
     "       notes = CASE WHEN $3::text = '' THEN notes "
     "                    ELSE btrim(concat_ws(chr(10), "
     "                                         NULLIF(btrim(notes), ''), "
@@ -1150,6 +1224,18 @@ def _describe_written(
         if number else None
     )
     return out
+
+
+def _optional_actor(value: Any) -> str:
+    """The `users.user_id` of whoever is making a lifecycle write, trimmed.
+
+    Returns `''` rather than None and lets `NULLIF` in each statement turn that
+    back into NULL. Doing the emptiness test in SQL rather than here means the
+    three statements cannot disagree about it — and `updated_by` set to an empty
+    string is not "no actor", it is `has_updater=TRUE` with no name behind it,
+    which reads on screen as `unknown`.
+    """
+    return "" if value is None else str(value).strip()[:128]
 
 
 def _refuse_wrong_state(status: str, *, wanted: str) -> None:
@@ -1303,9 +1389,16 @@ async def record_generation(
     now: Any,
     generated_at: Any = None,
     note: Any = None,
+    actor_id: Any = None,
     windows: UdinWindows | None = None,
 ) -> dict[str, Any] | None:
     """Attach a UDIN to a signed document, inside the 60-day window.
+
+    `actor_id` is the `users.user_id` of whoever is recording this and it lands
+    in `updated_by` in the same UPDATE. It is a PARAMETER because this module
+    never sees a request — only the router holds the login — and migration 097's
+    rule is that a function which accepts an actor and then drops it is worse
+    than one that never accepted one: the caller believes it is being recorded.
 
     THE ONE STATUTORY REFUSAL IN THIS MODULE. Past the window the ICAI portal
     itself will not issue a number, so a register that accepted one would be
@@ -1390,6 +1483,10 @@ async def record_generation(
             number,
             stamped,
             _note_line(note, on=today, what="UDIN generated"),
+            # $6. Trimmed and capped the way `created_by` is on the insert, so a
+            # row's author and its last editor cannot be stored in two shapes
+            # and then fail to join against the same `users` row.
+            _optional_actor(actor_id),
         )
     except asyncpg.UniqueViolationError as exc:
         # `uq_udin_register_udin` is (org_id, udin). Scoped to the org rather
@@ -1423,9 +1520,13 @@ async def record_revocation(
     reason: Any,
     now: Any,
     replaced_by_udin: Any = "",
+    actor_id: Any = None,
     windows: UdinWindows | None = None,
 ) -> dict[str, Any] | None:
     """Revoke a UDIN, inside the 48 hours that run from its generation.
+
+    `actor_id` lands in `updated_by` — see `record_generation` for why it is a
+    parameter and not something this module could work out for itself.
 
     STRICTLY `now < generated_at + window_hours`. "Within 48 hours from the time
     of its generation" excludes the instant 48 hours later — at exactly +48:00:00
@@ -1496,6 +1597,7 @@ async def record_revocation(
         why,
         replacement,
         _note_line(why, on=today, what="UDIN revoked"),
+        _optional_actor(actor_id),  # $7
     )
     if written is None:
         raise UdinError(
@@ -1515,9 +1617,12 @@ async def mark_not_required(
     *,
     reason: Any,
     now: Any,
+    actor_id: Any = None,
     windows: UdinWindows | None = None,
 ) -> dict[str, Any] | None:
     """Record that a signed document never carried a UDIN duty. Reason required.
+
+    `actor_id` lands in `updated_by` — see `record_generation`.
 
     The honest way off the backlog. Without it the only exits from `at_risk` are
     a real number or a lapse, so a document that was never an audit, assurance
@@ -1552,6 +1657,7 @@ async def mark_not_required(
         str(org_id),
         str(entry_id),
         _note_line(why, on=today, what="No UDIN required"),
+        _optional_actor(actor_id),  # $4
     )
     if written is None:
         raise UdinError(

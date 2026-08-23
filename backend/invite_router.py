@@ -330,9 +330,32 @@ async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), ad
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # ── WHO MADE THIS PERSON AN ADMIN ───────────────────────────────────────
+    #
+    # `body.role` above writes `users.role`, which is a PER-ORG fact stored in
+    # one global column, and until 202 nothing anywhere recorded who granted it.
+    # `_assert_may_grant` decides whether the caller MAY escalate somebody; this
+    # column is the only record afterwards that they DID. It is the most
+    # load-bearing audit column in this batch for exactly that reason.
+    #
+    # The actor is the ADMIN, never the target: this endpoint is one account
+    # editing another's row, and stamping the target would turn every admin
+    # escalation into a self-service profile edit in the trail. (The self-service
+    # paths — `auth_router`'s password writes — are the mirror case and record
+    # the account itself, which is a different true answer, not this one.)
+    #
+    # Appended after the field loop and BEFORE the id, so it takes the number
+    # the loop would have used next and the WHERE clause still reads
+    # `len(vals)`. Both numbers come from the same counter that built every
+    # clause above — hardcoding either is how a user id ends up bound into a
+    # profile column.
+    fields.append(f"updated_by=${len(vals)+1}")
+    vals.append(admin["user_id"])
+
     vals.append(user_id)
     await pool.execute(
-        f"UPDATE users SET {', '.join(fields)}, updated_at=NOW() WHERE user_id=${len(vals)}",
+        f"UPDATE public.users SET {', '.join(fields)}, updated_at=NOW() "
+        f"WHERE user_id=${len(vals)}",
         *vals
     )
     row = await pool.fetchrow(
@@ -351,7 +374,16 @@ async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), adm
     await _assert_may_grant(pool, admin, role)
     await _assert_shares_org(pool, admin, user_id, "Changing the role of")
     await _assert_target_not_platform(pool, admin, user_id, "Changing the role of")
-    await pool.execute("UPDATE users SET role=$1, updated_at=NOW() WHERE user_id=$2", role, user_id)
+    # The second door onto `users.role`, and it gets the same stamp as
+    # `update_user` for the same reason: this endpoint exists only to change a
+    # person's role, so an unstamped write here would leave the single most
+    # consequential edit in the file as the one nobody can be asked about.
+    # $3 is the admin who granted it, never the account that received it.
+    await pool.execute(
+        "UPDATE public.users SET role=$1, updated_at=NOW(), updated_by=$3 "
+        "WHERE user_id=$2",
+        role, user_id, admin["user_id"],
+    )
     return {"ok": True}
 
 
@@ -622,7 +654,7 @@ async def list_invites(pool=Depends(get_pool), admin=Depends(_require_admin)):
     rows = await pool.fetch(
         """SELECT i.invite_id, i.email, i.role, i.created_at, i.expires_at,
                   i.accepted_at, i.full_name, i.member_role, i.receives_approval_emails,
-                  COALESCE(u.full_name, u.name, u.email) AS invited_by_name
+                  COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS invited_by_name
            FROM public.invites i
            LEFT JOIN users u ON u.user_id = i.invited_by
            WHERE i.org_id IS NULL OR i.org_id = ANY($1::uuid[])
@@ -650,10 +682,23 @@ async def admin_send_reset_link(user_id: str, pool=Depends(get_pool), admin=Depe
         raise HTTPException(status_code=404, detail="User not found")
     reset_token = secrets.token_urlsafe(32)
     await pool.execute(
-        """UPDATE users SET password_reset_token=$1,
-           password_reset_expires=NOW() + INTERVAL '1 hour'
+        # STAMPED, and the docstring above is the argument: this is a WRITE
+        # despite the name. It mints a live credential against somebody else's
+        # account and invalidates any reset they had in flight, and it is the
+        # one path in this file by which an administrator could take an account
+        # over. `updated_by` is the only record on the row that the token was
+        # minted by an admin rather than requested by the account itself —
+        # `auth_router`'s self-service reset writes the same column and leaves
+        # `updated_by` alone, so the two are told apart by exactly this.
+        #
+        # `updated_at` deliberately NOT touched: nothing about the person's
+        # record changed, and moving it would report a profile edit that did not
+        # happen on every reset link an admin sends.
+        """UPDATE public.users SET password_reset_token=$1,
+           password_reset_expires=NOW() + INTERVAL '1 hour',
+           updated_by=$3
            WHERE user_id=$2""",
-        reset_token, user_id,
+        reset_token, user_id, admin["user_id"],
     )
     try:
         from email_service import send_password_reset_email

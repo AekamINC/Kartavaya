@@ -50,6 +50,12 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
+# The ladder fold and the DELETE command-tag parse are shared with
+# routers/column_prefs.py (migration 198), which resolves the same
+# personal > org > code ladder for a TABLE's columns. Two copies of a
+# resolution rule is how the two come to disagree about it; the SQL stays
+# here, next to the ON CONFLICT target that names this table's partial index.
+from routers._pref_ladder import fold_ladder, removed
 
 # One router for both surfaces: /me/tab-prefs is the caller's own row,
 # /org/tab-prefs the default underneath it. One prefix, one registration.
@@ -148,19 +154,14 @@ async def get_tab_prefs(
         "    OR (user_id IS NULL AND org_id = $2::uuid)",
         user["user_id"], org_id,
     )
-    prefs: dict[str, dict] = {}
     # Org rows first, personal rows second: the later write IS the
     # resolution, so a personal row wins whatever order the rows arrived in.
-    for want_personal in (False, True):
-        for r in rows:
-            if (r["user_id"] is not None) is not want_personal:
-                continue
-            prefs[r["module"]] = {
-                "order": list(r["tab_order"] or []),
-                "default_tab": r["default_tab"],
-                "source": "personal" if want_personal else "org",
-            }
-    return prefs
+    # That loop is `_pref_ladder.fold_ladder` — the entry shape stays here.
+    return fold_ladder(rows, "module", lambda r, personal: {
+        "order": list(r["tab_order"] or []),
+        "default_tab": r["default_tab"],
+        "source": "personal" if personal else "org",
+    })
 
 
 @router.put("/me/tab-prefs/{module}")
@@ -204,8 +205,7 @@ async def delete_my_tab_prefs(
         user["user_id"], module,
     )
     # Same command-tag parse me.py's deregister uses: "DELETE 0" → nothing.
-    removed = result.rsplit(" ", 1)[-1] not in ("0", "")
-    return {"removed": removed, "module": module}
+    return {"removed": removed(result), "module": module}
 
 
 @router.put("/org/tab-prefs/{module}")

@@ -6,6 +6,8 @@ public export; switched to send_mention_email helper.
 import re
 import uuid
 
+from services.audit_actors import display_name
+
 # Single-token handles: @alice, @alice.smith, @alice@example.com typed by hand.
 # This CANNOT match a display name containing a space, which is why the
 # member-name pass below exists — see _resolve_mentions.
@@ -20,8 +22,8 @@ async def _resolve_mentions(pool, body: str, team_id):
     mention looks like:
 
     MentionTextarea inserts the member's FULL display name — `@{display_name} `
-    (MentionTextarea.jsx) — and display_name is COALESCE(full_name, name, email),
-    e.g. "Keval Shah". MENTION_RE stops at the space and captures only "Keval",
+    (MentionTextarea.jsx) — and that display name is the one ladder in
+    `services/audit_actors.display_name`, e.g. "Keval Shah". MENTION_RE stops at the space and captures only "Keval",
     and the lookup is an exact match on email/name/full_name, so "Keval" never
     matches "Keval Shah". The result was that picking a teammate from the
     @-autocomplete stored no mention row and sent no notification, no email and
@@ -51,10 +53,35 @@ async def _resolve_mentions(pool, body: str, team_id):
     # Schema-qualified: a `qa_cleanup_20260822.team_members` shadow table exists
     # in this database, and migration 142 is what this project learned about
     # unqualified names resolving into the wrong schema.
+    #
+    # ── THE DISPLAY LADDER, AND WHY IT NO LONGER ENDS AT AN EMAIL ───────────
+    #
+    # All three queries in this file resolved a person with
+    # `COALESCE(full_name, name, email)`. THE OWNER RULED (2026-08-23) that a
+    # display-name ladder must never end at an email address: Aekam must not see
+    # client emails, and a person is named by their name — an email used as a
+    # display fallback is a CONTACT DETAIL rendered as a LABEL, on a screen that
+    # only ever wanted to say who somebody is.
+    #
+    # MEASURED FIRST, read-only, on the live database: **0 of 35 accounts** have
+    # neither `full_name` nor `name`. The rung has never fired on real data, so
+    # removing it changes nothing visible today — and it changes no MATCH
+    # either, because the composer inserts whatever this same expression
+    # produced and both sides now read it from one module.
+    #
+    # NOT LEFT BLANK — a blank reads as "nobody", a different and false claim —
+    # so it ends at `'Unnamed member'`, the wording `routers/procurement.py:391`
+    # already uses rather than a third phrasing invented beside it. The real
+    # repair for a nameless account is giving the account a name.
+    #
+    # `u.email` IS STILL SELECTED AS ITS OWN COLUMN AND MUST STAY: it is the
+    # address `send_mention_email` sends to, a contact detail used AS a contact
+    # detail. Only the display ladder changed. `display_name` emits no `$n`, so
+    # `$1` below is untouched.
     if team_id:
         members = await pool.fetch(
-            """
-            SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS display
+            f"""
+            SELECT u.user_id, u.email, {display_name('u')} AS display
             FROM public.project_assignments pa
             JOIN public.users u ON u.user_id = pa.user_id
             WHERE pa.team_id = $1::text
@@ -74,8 +101,8 @@ async def _resolve_mentions(pool, body: str, team_id):
     # Pass 2 — single-token handles, as before.
     for handle in set(MENTION_RE.findall(body)):
         user = await pool.fetchrow(
-            """
-            SELECT user_id, email, COALESCE(full_name,name,email) AS display
+            f"""
+            SELECT user_id, email, {display_name('users')} AS display
             FROM users
             WHERE LOWER(email)=LOWER($1) OR LOWER(name)=LOWER($1) OR LOWER(full_name)=LOWER($1)
             """,
@@ -92,8 +119,10 @@ async def process_mentions(pool, comment_id: str, body: str, task_id: str, actor
         return
 
     task  = await pool.fetchrow("SELECT team_id, title FROM tasks WHERE task_id=$1", task_id)
+    # A DELETED actor returns no row at all, so `"Someone"` below still covers
+    # that; `'Unnamed member'` covers only an account that exists without a name.
     actor = await pool.fetchrow(
-        "SELECT COALESCE(full_name,name,email) AS display FROM users WHERE user_id=$1", actor_id
+        f"SELECT {display_name('users')} AS display FROM users WHERE user_id=$1", actor_id
     )
     actor_name = actor["display"] if actor else "Someone"
 

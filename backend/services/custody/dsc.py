@@ -76,6 +76,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Iterable, Sequence
 
+from services.audit_actors import actor_joins, actor_select
+
 # ── the columns, listed ──────────────────────────────────────────────────────
 #: Listed rather than SELECT *, so that adding a column in 160's successor
 #: cannot silently change what callers receive — and so that a column added for
@@ -115,8 +117,32 @@ _FROM = (
     "        ON c.id = d.client_id AND c.org_id = d.org_id "
 )
 
+#: WHO recorded the certificate and WHO last amended it, as NAMES.
+#:
+#: `created_by` and `updated_by` hold `users.user_id` — the `user_`-prefixed TEXT
+#: this codebase writes into every actor column — and that value must never reach
+#: a screen. So neither raw column is in `_PUBLIC`: the register publishes the
+#: resolved NAMES and the two booleans that separate "nobody is recorded against
+#: this row" from "there is an id here and no user row behind it any more".
+#: `services/audit_actors` owns that ladder for the whole backend; writing it out
+#: here would be the twentieth hand-made copy, and `routers/graha.py:1466` is
+#: what the nineteenth looks like when it drifts — it falls back to the EMAIL.
+#:
+#: IT SITS FIRST IN THE SELECT LIST, not last, because `actor_select` is
+#: comma-TERMINATED so that it can be dropped into the middle of a column list.
+#: Appending it would leave a dangling comma in front of `FROM` and every read in
+#: this module would be a syntax error.
+_ACTORS = actor_select("d", updated=True)
+
+#: The joins that resolve them, LEFT so that a certificate recorded by somebody
+#: who has since left the firm still appears in the register. An inner join here
+#: would make rows VANISH on an employee's last day — data loss that looks like a
+#: filter working.
+_ACTOR_JOINS = actor_joins("d", updated=True)
+
 _SELECT = (
     "SELECT "
+    + _ACTORS
     + ", ".join(f"d.{c}" for c in _INTERNAL)
     + ", "
     + ", ".join(
@@ -124,6 +150,7 @@ _SELECT = (
         for c in _PUBLIC
     )
     + _FROM
+    + _ACTOR_JOINS
 )
 
 #: A deterministic tail on every listing. `valid_to` first because that is what
@@ -943,8 +970,17 @@ def _note_line(text: Any, *, on: date, what: str) -> str:
 #: The real columns of the table, in the order the write path returns them.
 #: Built from the same two tuples the read API publishes, so a column added to
 #: `_PUBLIC` is returned by a write on the day it is returned by a read.
+#:
+#: The two actor columns are in the RETURNING list and NOT in `_PUBLIC`, which
+#: is the whole trick: the CTE has to carry the raw ids forward so the joins
+#: below can resolve them, and `_SELECT_WRITTEN` names its columns explicitly, so
+#: the ids stop at the CTE boundary and never reach the caller. Without them the
+#: joins would be over columns that do not exist on `written` and every write in
+#: this module would fail at parse time.
+_ACTOR_COLUMNS: tuple[str, ...] = ("created_by", "updated_by")
+
 _WRITE_RETURNING = ", ".join(
-    _INTERNAL + tuple(c for c in _PUBLIC if c != "client_name")
+    _INTERNAL + tuple(c for c in _PUBLIC if c != "client_name") + _ACTOR_COLUMNS
 )
 
 #: The read shape, over a CTE instead of over the table.
@@ -960,6 +996,7 @@ _WRITE_RETURNING = ", ".join(
 #: crossed tenants, and print that firm's client name on this one's screen.
 _SELECT_WRITTEN = (
     "SELECT "
+    + _ACTORS
     + ", ".join(f"d.{c}" for c in _INTERNAL)
     + ", "
     + ", ".join(
@@ -969,6 +1006,7 @@ _SELECT_WRITTEN = (
     + " FROM written d "
     " LEFT JOIN staging.graha_clients c "
     "        ON c.id = d.client_id AND c.org_id = d.org_id "
+    + _ACTOR_JOINS
 )
 
 #: THE TENANCY PROOF IS THE `WHERE`, and it is why this is an INSERT … SELECT
@@ -1026,10 +1064,19 @@ _FETCH_ONE = (
 #: a first note lands alone and a second lands under it; `chr(10)` rather than
 #: an escape-string literal because it is immutable, obvious, and cannot be
 #: mangled by a driver that treats backslashes differently.
+#:
+#: `updated_by` IS SET IN THE SAME STATEMENT that sets everything else.
+#: `trg_touch_dsc_register` already stamps `updated_at`, and it cannot stamp this
+#: one: a trigger does not know who is holding the connection. Leaving it to the
+#: trigger would give the register a column that says a certificate changed and
+#: no column that says who changed it — which on a revocation is the entire
+#: question. Bound as `$5::text`, never interpolated, and cast because PgBouncer
+#: turns an untyped parameter into a parse error and an instant 500.
 _UPDATE_REVOCATION = (
     "WITH written AS ( "
     "  UPDATE staging.dsc_register d "
     "     SET revoked_on = $3::date, "
+    "         updated_by = $5::text, "
     "         notes = CASE WHEN $4::text = '' THEN d.notes "
     "                      ELSE concat_ws(chr(10), "
     "                                     NULLIF(btrim(coalesce(d.notes, '')), ''), "
@@ -1045,10 +1092,15 @@ _UPDATE_REVOCATION = (
 #: they say where the token is NOW, and a token that has gone back to the client
 #: is not in Cabinet 2 any more. The narrative of the move goes into `notes`,
 #: which is appended and never replaced, so nothing is lost.
+#:
+#: `updated_by` here for the reason `_UPDATE_REVOCATION` gives at length: a
+#: token reported lost is the row an audit is read for, and "who wrote that down"
+#: is not a question the `updated_at` timestamp can answer.
 _UPDATE_CUSTODY = (
     "WITH written AS ( "
     "  UPDATE staging.dsc_register d "
     "     SET custody_status = $3::text, "
+    "         updated_by = $8::text, "
     "         custody_location = $4::text, "
     "         custody_holder_name = $5::text, "
     "         custody_changed_on = $6::date, "
@@ -1227,8 +1279,16 @@ async def record_revocation(
     as_of,
     revoked_on,
     reason=None,
+    actor_id=None,
 ) -> dict | None:
     """Record that a certificate was killed before its own expiry date.
+
+    `actor_id` is the `users.user_id` of whoever is recording this, and it is
+    written into `updated_by` by the same UPDATE that writes the date. It is
+    accepted rather than derived because this module never sees a request: the
+    router holds the login and passes it down. Migration 097's rule is that a
+    function which ACCEPTS an actor and drops it is worse than one that does not
+    accept one — the caller believes the answer is being recorded.
 
     `revoked_on` is the day the revocation TAKES EFFECT — X.509 revocationDate
     — so the certificate is dead ON that day and not from the day after.
@@ -1284,6 +1344,10 @@ async def record_revocation(
         target,
         effective,
         _note_line(reason, on=stamp, what="Revoked"),
+        # $5. Same trimming and same ceiling as `created_by` on the insert, so a
+        # row's creator and its last editor cannot be stored in two shapes and
+        # fail to join against the same `users` row.
+        _optional_text(actor_id, field="actor_id", limit=128),
     )
     if written is None:
         # The pre-check said it was revocable and the UPDATE found nothing, so
@@ -1308,8 +1372,13 @@ async def record_custody_move(
     custody_holder_name=None,
     changed_on=None,
     note=None,
+    actor_id=None,
 ) -> dict | None:
     """Record where the physical token is now. The other half of "expired".
+
+    `actor_id` lands in `updated_by` in the same UPDATE — see
+    `record_revocation` for why it is a parameter and not something this module
+    could work out for itself.
 
     "We handed that token back in March" stops a filing exactly as dead as an
     expiry, and until this function there was nowhere to write it down. The
@@ -1354,6 +1423,8 @@ async def record_custody_move(
                        limit=256),
         moved,
         _note_line(note, on=stamp, what=f"Custody → {state}"),
+        # $8.
+        _optional_text(actor_id, field="actor_id", limit=128),
     )
     if written is None:
         return None

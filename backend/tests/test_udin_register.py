@@ -818,9 +818,19 @@ class TestTheSqlShape:
     def test_every_relation_is_schema_qualified(self):
         # A shadow table has bitten this repo (migration 142). Never rely on
         # search_path.
+        #
+        # `public.` is admitted alongside `staging.` because the author joins
+        # added for migration 201 read `public.users` — the one relation in
+        # these queries that genuinely lives there, because a login is global
+        # and not a tenant's. What this test enforces is QUALIFICATION, not the
+        # word "staging": `public.users` names its schema, which is the whole
+        # protection. `tests/test_custody_writes.py` already admits exactly this
+        # pair for exactly this reason, and two tests over the same package
+        # disagreeing about which schemas exist would be worse than either.
         for name, sql in _service_sql().items():
             for match in re.finditer(r"\b(?:FROM|JOIN)\s+(\S+)", sql):
-                assert match.group(1).startswith("staging."), f"{name}: {match.group(1)}"
+                assert match.group(1).startswith(("staging.", "public.")), \
+                    f"{name}: {match.group(1)}"
 
     def test_no_sql_does_date_arithmetic(self):
         # The window lives in exactly one place and it is Python. An `interval`
@@ -842,9 +852,16 @@ class TestTheSqlShape:
                 assert banned not in select, f"{name} selects {banned}"
 
     def test_the_open_scan_matches_its_partial_index(self):
-        assert "status = 'signed'" in udin._SELECT_OPEN
-        assert "ORDER BY signed_on ASC" in udin._SELECT_OPEN
-        assert "status = 'generated'" in udin._SELECT_REVOCABLE
+        # Alias-qualified since the author joins landed. `public.users` carries
+        # an `id`, a `created_at` and an `updated_at` of its own, so every
+        # column in these two queries had to be prefixed or the planner would
+        # refuse them as ambiguous — which PgBouncer returns as an instant 500
+        # on the default view of the busiest compliance list in the product.
+        # The predicates and the ordering are unchanged, and they are what
+        # `idx_udin_register_open` is matched on.
+        assert "r.status = 'signed'" in udin._SELECT_OPEN
+        assert "ORDER BY r.signed_on ASC" in udin._SELECT_OPEN
+        assert "r.status = 'generated'" in udin._SELECT_REVOCABLE
 
 
 # ── the migration, by shape ─────────────────────────────────────────────────

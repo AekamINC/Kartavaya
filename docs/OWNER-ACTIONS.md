@@ -21,34 +21,6 @@ behind it.
 
 ## OPEN
 
-### 1. Two crons need arming
-
-**Status:** OPEN · not urgent — both queues are empty today, so arming sends nothing.
-Housekeeping, not an outage.
-
-**Why it is here:** I have Railway approval and the CLI is authenticated, so I intend to
-do this myself via `railway config pull / plan / apply`. This entry exists only in case
-the IaC route cannot express the cron schedule — if it can, I will do it and mark this
-DONE without you.
-
-**If it falls to you:** Railway → `cron-publish` → Settings.
-
-Start Command (literal — Railway does not shell-interpret this field):
-
-```
-sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavya-staging.up.railway.app/api/internal/cron/$p"); echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1; done; exit $rc'
-```
-
-Cron Schedule: `*/15 * * * *`
-
-Then force a **fresh** deploy — a redeploy reuses the old config snapshot, so the service
-looks armed while running the empty command. Once it returns 200, `publish` comes out of
-the `cron-daily` list (`hr invoices crm stock marketing publish skills scraper-prices`).
-
-**What I finish once done:** verify a live 200, then remove `publish` from `cron-daily`.
-
----
-
 ### 2. Drop the `qa_cleanup_20260822` restore schema?
 
 **Status:** OPEN · no rush, it costs nothing to keep.
@@ -215,6 +187,90 @@ commit message.
 
 ---
 
+### 7. Two live orgs may have had a person's email rendered as their name
+
+**Status:** OPEN · code is being fixed now; this is about what was already shown.
+
+**What the audit-columns sweep turned up.** About twenty read paths across CRM,
+messaging, reports, search, Dristi and Sales resolved a person's display name
+with a ladder that ended at their **email address**:
+
+    COALESCE(full_name, name, email)
+
+So on any screen where an account had no name filled in, the product printed
+that person's email address as their label — in a table cell, in a report, in a
+chat sender line. Two standing rules meet there and both say no: Aekam must not
+see client emails, and a person is named by their name.
+
+**Also found and already fixed:** one CRM screen rendered a truncated raw user
+id (`slice(0, 12)`) as a person, and the Sales targets table fell back to
+rendering a `salesperson_id`. The names-not-ids ratchet is positional, so a
+SLICED id walks straight past it — I have asked for that gap to be closed.
+
+**What you decide:** nothing, to make the fix. The ladder now ends at a
+non-identifying fallback instead of an address, and that is going in regardless.
+
+**What is worth your judgement** is whether an address having been displayed
+matters to you commercially — it would have appeared to whoever could already
+open that screen, so this is not an external disclosure, and I have found no
+path where one org saw another's. If you want, I can measure exactly how many
+live accounts have no name and therefore could ever have triggered it; my
+expectation is that the number is small and possibly zero, in which case the
+ladder never fired and this is a latent fault rather than a past one.
+
+**What I finish either way:** the ladder, everywhere, and the ratchet gap if it
+can be closed without false positives.
+
+---
+
 ## DONE
 
-*(nothing yet — items move here with the date and what I finished)*
+### 1. Two crons — ARMED, 2026-08-23 · nothing needed from you
+
+Both are done, verified live, and this needed nothing from you in the end — the
+infrastructure-as-code route did express a cron schedule, which is what this
+entry said it was waiting to find out.
+
+**`cron-publish`** was already armed and healthy when I looked: returning
+`200 {"result":[],"left_behind":0,"organisations":0}` every fifteen minutes
+against an empty queue. So the second half is what was owed — **`publish` is now
+out of the `cron-daily` list**. Leaving it in both meant two jobs calling one
+endpoint on two schedules, which is how a queue gets published twice.
+
+**`cron-report-dispatch`** is new, at `7 * * * *` — hourly because a schedule's
+`send_hour_utc` is hour-granular so nothing finer can be honoured, and offset
+off the hour so it does not collide with the three jobs already at :00 and :15.
+`REPORT_DISPATCH_SECRET` was NOT set on staging, so a cron would have 403'd; it
+is set now and travels in a header, never a query string, because a secret in a
+query string lands in every access and proxy log between here and the app.
+
+Verified rather than assumed:
+
+```
+POST /api/reports/dispatch  correct secret → 200 {"ok":true,"dispatched":0,"errors":[]}
+                            wrong secret   → 403
+                            no secret      → 403
+```
+
+`report_schedules` holds 0 rows, so it sends nothing until somebody creates the
+first schedule — which is exactly why it is worth arming: a job that only starts
+working once the first schedule exists is a trap.
+
+**One thing I fixed before arming it, and would not have armed without.** The
+dispatcher moved a schedule's `next_run_at` forward only AFTER mailing every
+recipient, inside the same `try`. So a schedule with three recipients where the
+second address fails would mail all three again an hour later — including the
+one that already had it — and the same for the container dying mid-send, and
+for two hourly runs overlapping on a job that takes minutes. `OUTBOUND_MODE` has
+been `live` since 18 August, so every one of those is real mail to a customer's
+clients. The row is now claimed before the send. The trade is deliberate and
+stated in the code: a failed send is skipped rather than retried, because a
+missed report is visible and recoverable while a duplicate is already in
+somebody's inbox.
+
+`/cron/reports` and `/cron/esign` remain unarmed — they are 501 stubs, and the
+new service is deliberately named `cron-report-dispatch` rather than
+`cron-reports` so the two are not one word apart in a dashboard.
+
+---
+

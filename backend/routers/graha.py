@@ -1206,7 +1206,7 @@ async def deals_kanban(
         # at ZERO deals. So the join could never have produced a name even if it
         # had parsed. `assigned_to` is TEXT, is what the product actually writes,
         # and is who a reader means by the deal's owner.
-        "COALESCE(ow.full_name, ow.name, ow.email) AS owner_name "
+        "COALESCE(NULLIF(btrim(ow.full_name), ''), NULLIF(btrim(ow.name), ''), 'Unnamed member') AS owner_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
@@ -2806,8 +2806,8 @@ async def list_territories(
         "       COALESCE(("
         "         SELECT json_agg(json_build_object("
         "                  'user_id', u.user_id, "
-        "                  'name', COALESCE(u.full_name, u.name, u.email)) "
-        "                ORDER BY COALESCE(u.full_name, u.name, u.email)) "
+        "                  'name', COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')) "
+        "                ORDER BY COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')) "
         "         FROM users u WHERE u.user_id::text = ANY("
         "               SELECT unnest(t.assigned_users)::text)"
         "       ), '[]'::json) AS assigned "

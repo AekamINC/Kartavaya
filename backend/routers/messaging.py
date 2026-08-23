@@ -170,6 +170,7 @@ from middleware.module_levels import held_level
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import level_satisfies
 from middleware.subscription import require_module
+from services.audit_actors import display_name
 
 log = logging.getLogger(__name__)
 
@@ -739,8 +740,45 @@ def _channel_label_sql(uid_param: int) -> str:
     conversation it came from. The subquery only runs on the DM branch — CASE
     short-circuits — so a 300-channel org does not pay for it.
     """
+    # ── THE DISPLAY LADDER, AND WHY IT NO LONGER ENDS AT AN EMAIL ────────────
+    #
+    # Every name-a-person ladder in this router — this one, the two directory
+    # arms, the typing indicator, the two `sender_name` selects and
+    # `pinned_by_name` — used to be written `COALESCE(u.full_name, u.name,
+    # u.email)`. THE OWNER RULED (2026-08-23) that a display-name ladder must
+    # never end at an email address: two standing rules meet here — Aekam must
+    # not see client emails, and a person is named by their name — and an email
+    # used as a display fallback is a CONTACT DETAIL rendered as a LABEL, on a
+    # screen that only ever wanted to say who somebody is. A chat sender showing
+    # as an email address is not a feature being preserved; it is that leak with
+    # a friendlier justification.
+    #
+    # MEASURED FIRST, read-only, on the live database: **0 of 35 accounts** have
+    # neither `full_name` nor `name`. The email rung has never fired on real
+    # data, so removing it changes nothing anybody can see today. It was not a
+    # working fallback; it was a loaded gun.
+    #
+    # NOT LEFT BLANK. A blank cell reads as "nobody sent this", a different and
+    # false claim, so the ladder ends at a stated, non-identifying label —
+    # `'Unnamed member'`, the wording `routers/procurement.py:391` already uses
+    # for exactly this reason rather than a third phrasing invented alongside
+    # it. The real repair for a nameless account is that the account has no
+    # name; the label surfaces that instead of papering over it.
+    #
+    # ONE SOURCE: `services.audit_actors.display_name`. `_readable_by` in
+    # `services/samvaad_mentions.py` matches the composer's inserted text
+    # against the SAME expression, and `test_samvaad_directory` pins the two to
+    # each other — a ladder edited here alone silently stops resolving mentions,
+    # which is how this feature was broken for months. It emits no `$n`, so
+    # parameter numbering below is untouched.
+    #
+    # HERE SPECIFICALLY: the outer `COALESCE(…, 'Direct message')` stays. It
+    # answers a different absence — the subquery returned NO ROW, i.e. a DM with
+    # no other participant — and NULL is still what that produces, because the
+    # new terminal is inside the sub-select and only fires when a user row
+    # exists without a name.
     return f"""CASE WHEN c.type = 'dm' THEN COALESCE((
-                        SELECT COALESCE(u2.full_name, u2.name, u2.email)
+                        SELECT {display_name('u2')}
                           FROM staging.samvada_channel_members cm2
                           JOIN users u2 ON u2.user_id = cm2.user_id
                          WHERE cm2.channel_id = c.id AND cm2.user_id <> ${uid_param}
@@ -995,8 +1033,10 @@ async def directory(
     the client applies no restriction and nothing is silently withheld.
 
     THE WIRE SHAPE IS UNCHANGED; the VALUE of `full_name` is not. Scoped, it
-    carries `COALESCE(full_name, name, email)` — byte-identical to the `display`
-    the resolver matches on and to what the composer inserts after the `@`. It
+    carries `audit_actors.display_name('u')` — byte-identical to the `display`
+    the resolver matches on and to what the composer inserts after the `@`. Both
+    sides now read that one expression instead of writing the ladder out twice,
+    which is what `test_samvaad_directory` has always been pinning. It
     is not returned under a new key: both clients read `full_name`,
     `test_samvaad_mentions` bans `display_name` by name, and a fourth key would
     be a second source of truth for the one string that has to agree with the
@@ -1063,7 +1103,7 @@ async def directory(
         org_arm = f"""
             UNION
             SELECT u.user_id,
-                   COALESCE(u.full_name, u.name, u.email) AS full_name,
+                   {display_name('u')} AS full_name,
                    u.avatar AS avatar_url
               FROM staging.user_roles ur
               JOIN users u ON u.user_id = ur.user_id
@@ -1081,7 +1121,7 @@ async def directory(
         SELECT cand.user_id, cand.full_name, cand.avatar_url
           FROM (
             SELECT u.user_id,
-                   COALESCE(u.full_name, u.name, u.email) AS full_name,
+                   {display_name('u')} AS full_name,
                    u.avatar AS avatar_url
               FROM staging.samvada_channel_members cm
               JOIN users u ON u.user_id = cm.user_id
@@ -2505,8 +2545,8 @@ async def live(
         # and there is no reason to ship the sixth name to render it.
         typing_rows = []
         if may_type:
-            typing_rows = await conn.fetch("""
-                SELECT t.user_id, COALESCE(u.full_name, u.name, u.email) AS full_name
+            typing_rows = await conn.fetch(f"""
+                SELECT t.user_id, {display_name('u')} AS full_name
                 FROM staging.samvada_typing t
                 LEFT JOIN users u ON u.user_id = t.user_id
                 WHERE t.channel_id = $1::uuid AND t.user_id <> $2
@@ -2628,7 +2668,7 @@ async def list_mentions(
                -- The email and push links already carry `&thread=` for exactly
                -- this; the panel had no way to.
                m.parent_message_id,
-               COALESCE(u.full_name, u.name, u.email) AS sender_name,
+               {display_name('u')} AS sender_name,
                u.avatar AS sender_avatar
         FROM staging.samvada_mentions mn
         JOIN staging.samvada_channels c ON c.id = mn.channel_id
@@ -2828,7 +2868,7 @@ async def search_messages(
                m.parent_message_id, {pinned},
                {_channel_label_sql(1)} AS channel_name,
                c.type AS channel_type,
-               COALESCE(u.full_name, u.name, u.email) AS sender_name,
+               {display_name('u')} AS sender_name,
                u.avatar AS sender_avatar
         FROM staging.samvada_messages m
         JOIN staging.samvada_channels c ON c.id = m.channel_id AND c.org_id = $2::uuid
@@ -2992,12 +3032,16 @@ async def list_pins(
         # the honest answer; a 500 here would break the chat header, which loads
         # this on every channel open.
         return []
-    rows = await pool.fetch("""
+    # Two aliases, two ladders, one expression: the sender and whoever pinned
+    # the message are different people, and `p` is joined LEFT — an unpinned or
+    # deleted pinner still yields NULL, which the header renders as no pinner
+    # rather than as an unnamed one.
+    rows = await pool.fetch(f"""
         SELECT m.id, m.channel_id, m.content, m.sender_id, m.created_at,
                m.pinned_at, m.pinned_by, m.type, m.metadata,
-               COALESCE(u.full_name, u.name, u.email) AS sender_name,
+               {display_name('u')} AS sender_name,
                u.avatar AS sender_avatar,
-               COALESCE(p.full_name, p.name, p.email) AS pinned_by_name
+               {display_name('p')} AS pinned_by_name
         FROM staging.samvada_messages m
         LEFT JOIN users u ON u.user_id = m.sender_id
         LEFT JOIN users p ON p.user_id = m.pinned_by

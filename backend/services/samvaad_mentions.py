@@ -96,6 +96,8 @@ import unicodedata
 import uuid
 import weakref
 
+from services.audit_actors import display_name
+
 logger = logging.getLogger(__name__)
 
 #: Single-token handles typed by hand: `@alice`, `@alice.smith`, `@a@b.com`.
@@ -305,13 +307,35 @@ async def _readable_by(pool, channel_id, org_id: str, channel_type: str):
                        `UNION` rather than `UNION ALL` because a user with two
                        role rows in one org would otherwise appear twice.
 
-    `display` is `COALESCE(full_name, name, email)`, byte-identical to what
-    `MentionTextarea`/`MentionInput` insert after the `@`. If those two ever
+    `display` is `audit_actors.display_name('u')`, byte-identical to what
+    `MentionTextarea`/`MentionInput` insert after the `@` — the picker that
+    feeds them (`messaging.directory`) reads the SAME expression, and
+    `test_samvaad_directory` pins the two to each other. If those two ever
     disagree the feature silently stops resolving, which is how it was broken
     for task comments for months.
+
+    THE LADDER NO LONGER ENDS AT AN EMAIL. THE OWNER RULED (2026-08-23) that a
+    display-name ladder must never do so: Aekam must not see client emails, and
+    a person is named by their name — an email used as a display fallback is a
+    CONTACT DETAIL rendered as a LABEL, on a screen that only wanted to say who
+    somebody is. MEASURED FIRST, read-only, on the live database: **0 of 35
+    accounts** have neither `full_name` nor `name`, so the rung has never fired
+    and removing it changes nothing visible today.
+
+    NOT LEFT BLANK — a blank reads as "nobody", a different and false claim — so
+    it ends at `'Unnamed member'`, the wording `routers/procurement.py:391`
+    already uses rather than a third phrasing invented beside it. A nameless
+    account is repaired by giving the account a name; the label surfaces that.
+
+    `u.email` IS STILL SELECTED, AS ITS OWN COLUMN, AND MUST STAY. That is the
+    address the mention notifier sends to — a real use of a contact detail as a
+    contact detail. Only the DISPLAY ladder changed. Deleting the column breaks
+    sending.
+
+    `display_name` emits no `$n`, so the `$1`/`$2` numbering below is untouched.
     """
-    sql = """
-        SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS display
+    sql = f"""
+        SELECT u.user_id, u.email, {display_name('u')} AS display
           FROM staging.samvada_channel_members cm
           JOIN users u ON u.user_id = cm.user_id
          WHERE cm.channel_id = $1::uuid
@@ -324,9 +348,9 @@ async def _readable_by(pool, channel_id, org_id: str, channel_type: str):
     # channels this is usually tested on carried on working.
     args = [channel_id]
     if channel_type == "public":
-        sql += """
+        sql += f"""
         UNION
-        SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS display
+        SELECT u.user_id, u.email, {display_name('u')} AS display
           FROM staging.user_roles ur
           JOIN users u ON u.user_id = ur.user_id
          WHERE ur.org_id = $2::uuid
@@ -411,9 +435,11 @@ async def _match_handles(pool, masked: str, universe: dict) -> dict:
     if not handles:
         return {}
 
+    # The handle pass, and the same ruling: the ladder stops at names. `email`
+    # stays as its own column because this row is what the notifier mails.
     rows = await pool.fetch(
-        """
-        SELECT user_id, email, COALESCE(full_name,name,email) AS display
+        f"""
+        SELECT user_id, email, {display_name('users')} AS display
           FROM users
          WHERE LOWER(email) = ANY($1::text[])
             OR LOWER(name) = ANY($1::text[])
@@ -887,8 +913,11 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
     if not targets:
         return resolved_ids
 
+    # Same ruling. A DELETED actor still returns no row at all, so the `or
+    # "Someone"` below still covers that case; `'Unnamed member'` covers only an
+    # account that exists and has no name.
     actor = await pool.fetchrow(
-        "SELECT COALESCE(full_name, name, email) AS display FROM users WHERE user_id=$1",
+        f"SELECT {display_name('users')} AS display FROM users WHERE user_id=$1",
         actor_id,
     )
     actor_name = (actor["display"] if actor else None) or "Someone"

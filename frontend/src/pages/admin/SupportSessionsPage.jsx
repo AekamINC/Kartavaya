@@ -555,8 +555,11 @@ export default function SupportSessionsPage() {
                       {allCols.cells({
                         ref: <Cell>{s.ref}</Cell>,
                         org: <Cell>{s.org_name || 'An unnamed organisation'}</Cell>,
-                        who: <Cell>{s.requested_by_name || s.requested_by}</Cell>,
-                        approved_by: <Cell>{s.approved_by_name || s.approved_by}</Cell>,
+                        // Names only — the router resolves both and ends each
+                        // ladder at a sentence, so an `|| s.requested_by`
+                        // fallback could only ever draw an Aekam staff id.
+                        who: <Cell>{s.requested_by_name}</Cell>,
+                        approved_by: <Cell>{s.approved_by_name}</Cell>,
                         clock: <Cell><Clock session={s} now={now} /></Cell>,
                         actions: (
                           <Cell>

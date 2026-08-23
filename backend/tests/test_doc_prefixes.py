@@ -117,8 +117,33 @@ def test_the_invoice_list_returns_the_reference_and_a_creator_NAME():
 
     src = inspect.getsource(ganit.list_invoices)
     assert "i.customer_ref" in src
-    assert "created_by_name" in src
-    assert "LEFT JOIN public.users u ON u.user_id = i.created_by" in src
+
+    # THE LADDER MOVED, AND THIS TEST FOLLOWED IT RATHER THAN BEING DELETED.
+    #
+    # It used to match the resolution SQL as literal text inside this function:
+    # `created_by_name` and `LEFT JOIN public.users u ON u.user_id =
+    # i.created_by`. Migrations 201/202 put `created_by` on 77 tables and
+    # `updated_by` on 65, so that fragment is now `services/audit_actors` and
+    # this function calls `actor_select("i", …)` / `actor_joins("i", …)`.
+    #
+    # A source-text match would now fail on a refactor that made the property
+    # MORE true — the ladder has one owner instead of a copy per router — and
+    # the cheapest way to make it pass again would have been to delete it. So
+    # it checks the COMPOSED SQL: build the same fragments this function
+    # builds, and assert the properties on the string the database actually
+    # receives. That covers every caller of the module, not just this one.
+    from services.audit_actors import actor_joins, actor_select
+    composed = actor_select("i", updated=True) + actor_joins("i", updated=True)
+
+    assert "created_by_name" in composed
+    assert "LEFT JOIN public.users" in composed
+    assert ".user_id = i.created_by" in composed
+    # `has_creator` is the other half of the contract: it is what lets the UI
+    # tell "nobody is recorded" from "the account that did it is gone".
+    assert "(i.created_by IS NOT NULL) AS has_creator" in composed
+    # And this function must actually USE it, not merely be able to.
+    assert 'actor_select("i"' in src
+    assert 'actor_joins("i"' in src
 
     # The privacy rule, stated as a test: no email anywhere in the SQL.
     #
@@ -129,6 +154,10 @@ def test_the_invoice_list_returns_the_reference_and_a_creator_NAME():
     code = " ".join(
         line for line in src.splitlines()
         if not line.lstrip().startswith("#"))
-    assert "u.email" not in code, (
+    assert "email" not in code.lower(), (
         "the creator-name ladder falls back to an email address, which prints "
         "a person's address into a table column")
+    assert "email" not in composed.lower(), (
+        "services/audit_actors resolves an actor to an email address — that is "
+        "the platform-privacy rule inverted, in the one place every router now "
+        "shares")

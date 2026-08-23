@@ -29,6 +29,7 @@ from auth_router import (
     resolve_token_user_id as _auth_resolve,
 )
 from db import get_pool
+from services.audit_actors import display_name
 from utils import log_safe as _log_safe
 
 _dispatch_bearer = HTTPBearer(auto_error=False)
@@ -205,10 +206,32 @@ async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -
     from datetime import date as _date
     from_dt = _date.fromisoformat(from_date)
     to_dt   = _date.fromisoformat(to_date)
-    # Time entries
-    entries = await pool.fetch("""
+    # Time entries.
+    #
+    # THE NAME LADDER STOPS AT NAMES. This read `COALESCE(u.full_name, u.name,
+    # u.email)`, so a member row with neither name printed that person's EMAIL
+    # into a report column. That is a CONTACT DETAIL rendered as a LABEL on a
+    # screen that only wanted to say who logged the time — and it inverts the
+    # standing rule that Aekam must not see a customer's member emails. The
+    # owner's ruling (2026-08-23) is that a display-name ladder must never end
+    # at an email address.
+    #
+    # MEASURED BEFORE REMOVING IT, because the obvious objection is "then some
+    # rows go blank": on the live database 0 of 35 accounts have neither
+    # `full_name` nor `name`. The email rung has never once fired on real data,
+    # so this changes nothing anybody can see — it was not a working fallback,
+    # it was a loaded gun.
+    #
+    # `services/audit_actors.display_name()` owns the ladder now; the
+    # alternative was nine hand-written COALESCEs that drift apart, and the
+    # first one to drift drifts towards the email again. It emits no `$n`, so
+    # the parameter numbering below is untouched. The two ladders further down
+    # this file keep their OWN terminals (`'Unassigned'`, `'Unattributed'`) —
+    # those say more in a report than a generic label, so only the email rung
+    # came out of them.
+    entries = await pool.fetch(f"""
         SELECT te.entry_id, te.minutes, te.started_at, te.description,
-               COALESCE(u.full_name, u.name, u.email) AS user_name,
+               {display_name("u")} AS user_name,
                t.title AS task_title
         FROM public.time_entries te
         JOIN public.tasks t ON t.task_id = te.task_id AND t.team_id = $1
@@ -252,7 +275,10 @@ async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -
         task_list_rows = await pool.fetch("""
             SELECT t.task_id, t.title, t.status, t.priority, t.due_at, t.updated_at,
                    t.completed_at,
-                   COALESCE(u2.full_name, u2.name, u2.email, 'Unassigned') AS owner_name
+                   -- Keeps its own terminal: 'Unassigned' answers the reader's
+                   -- question ("nobody owns this") better than a generic
+                   -- label would, so only the email rung was removed.
+                   COALESCE(u2.full_name, u2.name, 'Unassigned') AS owner_name
             FROM public.tasks t
             LEFT JOIN public.users u2 ON u2.user_id = t.created_by_user_id
             WHERE t.team_id = $1
@@ -293,7 +319,9 @@ async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -
     # the column that answers the question actually being asked.
     try:
         member_rows = await pool.fetch("""
-            SELECT COALESCE(u.full_name, u.name, u.email, 'Unattributed') AS user_name,
+            -- Keeps its own terminal ('Unattributed'); email rung only removed.
+            -- `GROUP BY 1` is positional, so it follows this expression.
+            SELECT COALESCE(u.full_name, u.name, 'Unattributed') AS user_name,
                    COUNT(*) AS tasks_done
             FROM public.tasks t
             LEFT JOIN public.users u ON u.user_id = t.completed_by_user_id
@@ -548,6 +576,57 @@ async def dispatch_reports(
 
     for sched in due:
         try:
+            # ── CLAIM IT BEFORE SENDING, NOT AFTER ──────────────────────────
+            #
+            # `next_run_at` used to move only AFTER every recipient had been
+            # mailed, inside the same `try`. Two ways that sends a customer's
+            # client the same report twice:
+            #
+            #   · A schedule with three recipients where the second address
+            #     bounces at the SMTP layer. The exception skips the UPDATE, the
+            #     row is still due, and the next hour mails all three again —
+            #     including the one that already received it.
+            #   · The container dying between the send and the UPDATE. Railway
+            #     restarts it; the row is still due.
+            #
+            # And a third that arrives with scale rather than with failure: this
+            # runs every hour on a schedule that can take minutes, so two
+            # invocations can overlap, and both would read the same due row.
+            #
+            # `OUTBOUND_MODE=live` since 2026-08-18, so all three send real mail
+            # to a customer's clients.
+            #
+            # So the row is CLAIMED first: `next_run_at` moves forward in a
+            # conditional UPDATE that only takes if the row is still due. A
+            # second worker's UPDATE matches nothing and it skips. This is the
+            # ordinary claim pattern and it is why the predicate repeats
+            # `next_run_at <= $3` rather than trusting the SELECT above.
+            #
+            # THE TRADE, STATED: a send that fails is now SKIPPED rather than
+            # retried — the schedule has already moved on. That is deliberate
+            # for outbound mail. A missed report is visible and recoverable: the
+            # next one covers a longer window, and the schedules panel shows
+            # `last_sent_at` standing still. A duplicate is neither — it is
+            # already in somebody's client's inbox, and no amount of retrying
+            # takes it back.
+            next_run = _next_run(
+                sched["frequency"], sched["day_of_week"],
+                sched["day_of_month"], sched["send_hour_utc"],
+            )
+            claimed = await pool.fetchval("""
+                UPDATE public.report_schedules
+                   SET next_run_at=$2, updated_at=NOW()
+                 WHERE schedule_id=$1 AND next_run_at <= $3
+             RETURNING schedule_id
+            """, sched["schedule_id"], next_run, now)
+            if not claimed:
+                # Another invocation took it between our SELECT and here.
+                logger.info(
+                    "Report schedule %s was already claimed; skipping",
+                    _log_safe(sched["schedule_id"]),
+                )
+                continue
+
             # Determine period for this report
             freq = sched["frequency"]
             if freq == "daily":
@@ -595,15 +674,15 @@ async def dispatch_reports(
                         daily_throughput=data.get("daily_throughput", []),
                     )
 
-            next_run = _next_run(
-                freq, sched["day_of_week"],
-                sched["day_of_month"], sched["send_hour_utc"]
-            )
+            # `next_run_at` already moved, at the claim. This records only that
+            # the send SUCCEEDED — which is what the schedules panel shows, and
+            # what tells an operator the difference between "sent" and "was due
+            # and did not go".
             await pool.execute("""
                 UPDATE public.report_schedules
-                SET last_sent_at=$1, next_run_at=$2, updated_at=NOW()
-                WHERE schedule_id=$3
-            """, now, next_run, sched["schedule_id"])
+                SET last_sent_at=$1, updated_at=NOW()
+                WHERE schedule_id=$2
+            """, now, sched["schedule_id"])
             sent += 1
             logger.info("Report dispatched: %s", _log_safe(sched['schedule_id']))
         except Exception as exc:

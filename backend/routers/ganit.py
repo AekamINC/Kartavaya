@@ -24,6 +24,7 @@ from middleware.module_levels import require_level
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import APPROVER
 from middleware.subscription import require_module
+from services.audit_actors import actor_joins, actor_select
 from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
 # Imported BY NAME at module level, the vikray idiom: subjects.py owns every
@@ -476,26 +477,29 @@ async def list_invoices(
         "i.subtotal, i.cgst, i.sgst, i.igst, i.total, i.amount_paid, i.balance_due, "
         "i.payment_status, i.created_at, i.updated_at, i.customer_ref, "
         "c.name as contact_name, c.company as contact_company, "
-        # WHO raised it, as a NAME. `created_by` is `users.user_id` and a user
-        # id must never reach the screen, so the resolution happens here rather
-        # than being left to a caller that cannot do it.
+        # WHO raised it and WHO last amended it, as NAMES. `created_by` and
+        # `updated_by` are `users.user_id` and a user id must never reach the
+        # screen, so the resolution happens here rather than being left to a
+        # caller that cannot do it.
         #
-        # The ladder stops at names and does NOT fall back to email. The one
-        # other place in this codebase that resolves this column
-        # (`graha.py:1466`) coalesces to `u.email`, which quietly prints a
-        # person's address into a table column — the platform-privacy rule
-        # inverted. A missing name is an absence the UI states; it is not an
-        # excuse to disclose something else.
-        "COALESCE(NULLIF(btrim(u.name), ''), NULLIF(btrim(u.full_name), '')) "
-        "  AS created_by_name, "
-        # Whether an actor was recorded AT ALL, so the UI can tell "nobody did
-        # this" from "the account that did it is gone".
-        "(i.created_by IS NOT NULL) AS has_creator, "
-        "COUNT(*) OVER() AS _total "
+        # The ladder stops at names and does NOT fall back to email — a missing
+        # name is an absence the UI states, not an excuse to disclose a person's
+        # address instead. That rung was written out here by hand first; it now
+        # lives in `services/audit_actors` with one owner, because 77 tables
+        # carry `created_by` and 65 carry `updated_by` since migrations 201/202,
+        # and twenty hand-written copies of a privacy rule are nineteen chances
+        # to write the twentieth wrong. `graha.py` had already written one
+        # wrong: it coalesced to `u.email`.
+        #
+        # `updated_by` matters here specifically. An unpaid invoice IS editable
+        # — a product rule, not an oversight — so "raised by" alone answers half
+        # the question a disputed invoice actually raises.
+        + actor_select("i", updated=True)
+        + "COUNT(*) OVER() AS _total "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
-        "LEFT JOIN public.users u ON u.user_id = i.created_by "
-        "WHERE i.org_id=$1::uuid "
+        + actor_joins("i", updated=True)
+        + "WHERE i.org_id=$1::uuid "
         + ("" if since_dt is not None else "AND i.is_active=TRUE ")
     )
     params: list = [org_id]
@@ -742,13 +746,23 @@ async def update_invoice(
     _client_set = ", client_id=NULLIF($19,'')::uuid" if client_id is not None else ""
     _client_params = [client_id] if client_id is not None else []
 
+    # WHO amended it. This takes the slot AFTER the optional $19, by the same
+    # rule the clause above already follows: the fragment and its parameter are
+    # computed together so the two cannot disagree. Hard-coding $19 here would
+    # be correct on the path where no client is resolved and would silently
+    # bind the client id into `updated_by` on the path where one is — a wrong
+    # name in an audit column, which is worse than an empty one because a NULL
+    # is visibly unknown and a wrong name is not.
+    _by_idx = 20 if client_id is not None else 19
+    _by_set = f", updated_by=${_by_idx}"
+
     row = await pool.fetchrow(
         "UPDATE staging.ganit_invoices SET "
         " contact_id=NULLIF($1,'')::uuid, invoice_date=$2::date, due_date=$3::date,"
         " place_of_supply=$4, is_igst=$5, is_export=$6, currency=$7,"
         " line_items=$8, subtotal=$9, cgst=$10, sgst=$11, igst=$12,"
         " discount=$13, total=$14, balance_due=$14, notes=$15, terms=$16,"
-        " updated_at=NOW()" + _client_set + " "
+        " updated_at=NOW()" + _client_set + _by_set + " "
         "WHERE id=$17::uuid AND org_id=$18::uuid "
         "RETURNING id, invoice_number, total, doc_status",
         body.contact_id, inv_date, due, body.place_of_supply, body.is_igst,
@@ -757,7 +771,7 @@ async def update_invoice(
         computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
         computed["discount"], computed["total"],
         body.notes, body.terms, str(invoice_id), org_id,
-        *_client_params,
+        *_client_params, user["user_id"],
     )
     return {"status": "updated", **dict(row)}
 
@@ -1048,10 +1062,10 @@ async def cancel_invoice(
         async with _conn.transaction():
             row = await _conn.fetchrow(
                 "UPDATE staging.ganit_invoices SET payment_status='cancelled', "
-                "cancelled_at=NOW(), updated_at=NOW() "
+                "cancelled_at=NOW(), updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND payment_status NOT IN ('paid','cancelled') "
                 "RETURNING *",
-                str(invoice_id), org_id,
+                str(invoice_id), org_id, user["user_id"],
             )
             if row is not None:
                 await invoice_cancelled(
@@ -1105,10 +1119,17 @@ async def record_payment(
                 body.payment_method, body.reference, body.notes, user["user_id"],
             )
             inv_after = await _conn.fetchrow(
+                # `recorded_by` on the payment row above and `updated_by` here
+                # are the same person and are NOT redundant: the payment records
+                # who took the money, the invoice records who last moved it. A
+                # later correction changes the second and must not rewrite the
+                # first.
                 "UPDATE staging.ganit_invoices SET amount_paid=$1, balance_due=$2, "
-                "payment_status=$3, updated_at=NOW() WHERE id=$4::uuid AND org_id=$5::uuid "
+                "payment_status=$3, updated_at=NOW(), updated_by=$6 "
+                "WHERE id=$4::uuid AND org_id=$5::uuid "
                 "RETURNING *",
-                round(new_paid, 2), round(max(new_balance, 0), 2), new_status, str(invoice_id), org_id,
+                round(new_paid, 2), round(max(new_balance, 0), 2), new_status,
+                str(invoice_id), org_id, user["user_id"],
             )
             # `invoice_row` is the invoice AS RE-READ after the payment applied
             # (the UPDATE's own RETURNING), which is what the emitter's
@@ -1364,9 +1385,12 @@ async def update_invoice_status(
         extras = ", viewed_at=NOW()"
 
     await pool.execute(
-        f"UPDATE staging.ganit_invoices SET doc_status=$1{extras}, updated_at=NOW() "
+        # `extras` carries no parameters — it is `sent_at=NOW()` or
+        # `viewed_at=NOW()` or nothing — so $4 is free whichever branch ran.
+        f"UPDATE staging.ganit_invoices SET doc_status=$1{extras}, "
+        f"updated_at=NOW(), updated_by=$4 "
         f"WHERE id=$2::uuid AND org_id=$3::uuid",
-        body.doc_status, str(invoice_id), org_id,
+        body.doc_status, str(invoice_id), org_id, user["user_id"],
     )
     return {"status": "updated", "doc_status": body.doc_status}
 
@@ -1394,9 +1418,10 @@ async def accept_estimate(
         raise HTTPException(400, "Estimate already converted to invoice")
 
     await pool.execute(
-        "UPDATE staging.ganit_invoices SET estimate_status='accepted', updated_at=NOW() "
+        "UPDATE staging.ganit_invoices SET estimate_status='accepted', "
+        "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(invoice_id), org_id,
+        str(invoice_id), org_id, user["user_id"],
     )
     return {"status": "accepted"}
 
@@ -1494,9 +1519,9 @@ async def convert_to_invoice(
 
     await pool.execute(
         "UPDATE staging.ganit_invoices SET estimate_status='converted', "
-        "converted_invoice_id=$1::uuid, updated_at=NOW() "
+        "converted_invoice_id=$1::uuid, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid",
-        str(new_row["id"]), str(invoice_id), org_id,
+        str(new_row["id"]), str(invoice_id), org_id, user["user_id"],
     )
     _r = dict(new_row)
     return {"status": "converted",
@@ -1519,11 +1544,19 @@ async def list_expenses(
     query = (
         "SELECT e.id, e.title, e.category, e.amount, e.tax_amount, e.total, "
         "e.expense_date, e.vendor, e.reference, e.notes, e.receipt_urls, "
-        "e.is_billable, e.contact_id, e.project_id, e.created_at, "
-        "c.name as contact_name, COUNT(*) OVER() AS _total "
+        "e.is_billable, e.contact_id, e.project_id, e.created_at, e.updated_at, "
+        "c.name as contact_name, "
+        # WHO raised it and WHO last touched it, as NAMES. `created_by` and
+        # `updated_by` are `users.user_id` and a user id must never reach the
+        # screen, so the resolution happens here. `services/audit_actors` owns
+        # the ladder — names only, never the email fallback that
+        # `graha.py:1466` still does.
+        + actor_select("e", updated=True)
+        + "COUNT(*) OVER() AS _total "
         "FROM staging.ganit_expenses e "
         "LEFT JOIN staging.graha_contacts c ON c.id = e.contact_id "
-        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
+        + actor_joins("e", updated=True)
+        + "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
     )
     params: list = [org_id]
     idx = 2
@@ -1615,6 +1648,13 @@ async def update_expense(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # WHO amended it, in the same UPDATE that amends it. No trigger can do this
+    # — a trigger does not know who is holding the connection — so a write path
+    # that stamps `updated_at` and not `updated_by` produces a table that can
+    # say a row changed and not who changed it. Bound, never interpolated.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     await pool.execute(
         f"UPDATE staging.ganit_expenses SET {', '.join(sets)} "
@@ -1816,6 +1856,12 @@ async def update_contract(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # Same rule as the expense PATCH: the person goes in with the timestamp, in
+    # one statement. `idx` is whatever the dynamic loop above left it at, so the
+    # clause and its parameter are appended together and cannot drift apart.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     await pool.execute(
         f"UPDATE staging.ganit_contracts SET {', '.join(sets)} "
@@ -2149,6 +2195,14 @@ async def generate_recurring_invoice(
         new_day = min(next_dt.day, 28)
         new_next = date(new_year, new_month, new_day)
 
+    # NEITHER of these two writes sets `updated_by`, deliberately. Advancing
+    # `next_date` is bookkeeping the schedule does to itself once an invoice has
+    # been generated, and the `is_active=FALSE` below fires because the end date
+    # has been reached — not because anybody decided anything. Stamping the
+    # caller here would name whoever happened to trigger generation as the
+    # person who ended the client's billing, which is the wrong-name failure
+    # this whole workstream exists to avoid. `trg_touch_ganit_recurring` still
+    # moves `updated_at`, which is true: the row did change.
     if rec["end_date"] and new_next > rec["end_date"]:
         await pool.execute(
             "UPDATE staging.ganit_recurring SET is_active=FALSE, next_date=$3::date "
@@ -2176,9 +2230,13 @@ async def delete_recurring(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.ganit_recurring SET is_active=FALSE "
+        # Stopping a recurring invoice IS an amendment by a person, and the one
+        # most worth having a name against — this is the write that silently
+        # ends a customer's billing. `updated_at` is left to
+        # `trg_touch_ganit_recurring` (migration 201).
+        "UPDATE staging.ganit_recurring SET is_active=FALSE, updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(recurring_id), org_id,
+        str(recurring_id), org_id, user["user_id"],
     )
     return {"status": "deleted"}
 
@@ -2551,8 +2609,14 @@ async def record_vendor_payment(
     new_paid = round(float(bill["amount_paid"]) + body.amount, 2)
     new_status = "paid" if new_paid >= float(bill["total"]) else "partially_paid"
     await pool.execute(
-        "UPDATE staging.ganit_vendor_bills SET amount_paid=$1, status=$2 WHERE id=$3::uuid AND org_id=$4::uuid",
-        new_paid, new_status, str(bill_id), org_id,
+        # `updated_at` is NOT set here and must not be: migration 201 put a
+        # `trg_touch_ganit_vendor_bills` BEFORE UPDATE trigger on this table, so
+        # the timestamp is true whoever writes — including the procurement
+        # paths that never set it. `updated_by` is the half no trigger can do,
+        # because a trigger cannot know who is holding the connection.
+        "UPDATE staging.ganit_vendor_bills SET amount_paid=$1, status=$2, updated_by=$5 "
+        "WHERE id=$3::uuid AND org_id=$4::uuid",
+        new_paid, new_status, str(bill_id), org_id, user["user_id"],
     )
     return {"ok": True, "amount_paid": new_paid, "status": new_status}
 
@@ -2761,8 +2825,14 @@ async def save_bank_format(
         "(org_id, bank_name, mapping, has_header, created_by) "
         "VALUES ($1::uuid, $2, $3::text::jsonb, $4, $5) "
         "ON CONFLICT (org_id, bank_name) DO UPDATE "
+        # On the UPDATE arm this row is being RE-mapped by whoever is calling
+        # now, who need not be whoever first saved it — so `updated_by` reads
+        # `EXCLUDED.created_by`, the id this call supplied, and `created_by`
+        # itself is deliberately left alone. Writing the caller into
+        # `created_by` would rewrite history every time somebody adjusts a
+        # column map.
         "  SET mapping=EXCLUDED.mapping, has_header=EXCLUDED.has_header, "
-        "      updated_at=NOW()",
+        "      updated_at=NOW(), updated_by=EXCLUDED.created_by",
         org_id, name, json.dumps(body.mapping), body.has_header, user["user_id"])
     return {"status": "saved", "bank_name": name}
 

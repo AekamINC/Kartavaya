@@ -20,6 +20,7 @@ from middleware.role_tiers import (
     any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
+from services.audit_actors import actor_joins, actor_select
 # The commission rules live in ONE place and this router reaches for them
 # rather than restating them: `commission.Scheme(...)` refuses exactly what
 # migration 190 refuses — an eligible scheme with no terms, a ladder and a flat
@@ -930,9 +931,14 @@ async def list_employees(
     # The column is already returned by the detail endpoint to the same audience
     # (`_EMP_SAFE_COLS`), so this widens no audience — it just stops the list and
     # the detail view disagreeing about what a record contains.
+    # `created_by`/`updated_by` are selected here and DROPPED again by the
+    # wrapper below — they exist in this inner query only long enough to be
+    # joined into names. The explicit column list is this endpoint's privacy
+    # stance and it survives: a raw `user_f1a0…` never reaches the response.
     query = (
         "SELECT id, employee_code, name, email, phone, department, designation, "
         "employment_type, status, date_of_joining, shift, created_at, user_id, "
+        "created_by, updated_by, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.manav_employees "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
@@ -974,6 +980,33 @@ async def list_employees(
     query += linked_sql
 
     query += "ORDER BY name LIMIT 500"
+
+    # ── WHO created and WHO last amended each record, as NAMES ───────────────
+    #
+    # Wrapped rather than joined in place, and the reason is `linked_filter_sql`
+    # above: its fragment says `AND user_id IS NOT NULL` unqualified, and
+    # `public.users` also has `user_id` — plus `name` and `email`, which this
+    # SELECT list and its `ORDER BY`/`ILIKE` filters also name bare. Joining the
+    # actor tables into THIS query makes four references ambiguous and the
+    # statement fails to parse. The alternative was to qualify
+    # `_LINKED_FILTER_SQL`, but that fragment is a pure function three tests pin
+    # by exact string, so the join moves out here instead of the contract moving.
+    #
+    # The inner query keeps the LIMIT and the window `_total`; the outer one
+    # only resolves names, so neither the page size nor the count changes.
+    query = (
+        "SELECT "
+        + actor_select("e", updated=True)
+        + "e.id, e.employee_code, e.name, e.email, e.phone, e.department, "
+        "e.designation, e.employment_type, e.status, e.date_of_joining, "
+        "e.shift, e.created_at, e.user_id, e._total "
+        "FROM (" + query + ") e "
+        + actor_joins("e", updated=True)
+        # Repeated outside: a subquery's ORDER BY orders what the LIMIT cuts,
+        # not what comes back through a join. Dropping it here is how a
+        # directory arrives alphabetised in testing and shuffled in production.
+        + "ORDER BY e.name"
+    )
     rows = await pool.fetch(query, *params)
     return _listed(rows, limit=500)
 
@@ -1486,9 +1519,13 @@ async def link_employee_login(
         raise HTTPException(refusal[0], refusal[1])
 
     await pool.execute(
-        "UPDATE staging.manav_employees SET user_id=$1, updated_at=NOW() "
+        # `$4` is the ADMIN who made the link, which is a different person from
+        # `$1`, the account being linked. Confusing the two would record the
+        # employee as having granted themselves access to their own payslip —
+        # the exact claim the audit line below exists to contradict.
+        "UPDATE staging.manav_employees SET user_id=$1, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid",
-        member["user_id"], str(employee_id), org_id,
+        member["user_id"], str(employee_id), org_id, user["user_id"],
     )
     # Audited like the identity-document read above. This is the row that decides
     # who may open a payslip; a change to it that leaves no trace is the kind of
@@ -1546,9 +1583,12 @@ async def unlink_employee_login(
         return {"status": "not_linked", "employee_id": str(employee_id)}
 
     await pool.execute(
-        "UPDATE staging.manav_employees SET user_id=NULL, updated_at=NOW() "
+        # Unlinking removes somebody's self-service. `updated_by=$3` is the only
+        # place the row itself records who did that; the audit line is a
+        # separate table that a reader of this record does not have open.
+        "UPDATE staging.manav_employees SET user_id=NULL, updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(employee_id), org_id,
+        str(employee_id), org_id, user["user_id"],
     )
     audit(
         "manav.employee_login_unlinked",
@@ -1757,6 +1797,14 @@ async def update_employee(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # WHO amended the personnel record, in the same statement that amends it.
+    # This path can rewrite salary-adjacent and identity columns, so "the row
+    # changed and we cannot say who" is the worst possible answer here. `$idx`
+    # is bound, never interpolated — the loop above never emits a value into the
+    # SQL text and this must not be the one line that does.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     await pool.execute(
         f"UPDATE staging.manav_employees SET {', '.join(sets)} "
@@ -1777,9 +1825,12 @@ async def deactivate_employee(
     # Terminating someone is not an editor's call.
     _require(levels, ADMIN)
     await pool.execute(
-        "UPDATE staging.manav_employees SET is_active=FALSE, status='terminated', updated_at=NOW() "
+        # Terminating someone is the single most consequential write in this
+        # router and it left no actor at all. `$3` is the admin who did it.
+        "UPDATE staging.manav_employees SET is_active=FALSE, status='terminated', "
+        "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(employee_id), org_id,
+        str(employee_id), org_id, user["user_id"],
     )
     return {"status": "deactivated"}
 
@@ -1931,11 +1982,34 @@ async def list_offboarding(
 ):
     """Every exit, newest first. Viewer-gated like the rest of the register."""
     pool = await get_pool()
+    # ── THE CREATOR IS CALLED `initiated_by` HERE ────────────────────────────
+    #
+    # This table predates migrations 201/202 and named its author column for
+    # what starting an exit is: initiating one. 202 added `updated_by` but did
+    # NOT rename it — renaming a column with live rows to satisfy a naming
+    # convention is a migration that can only lose data, and `initiated_by` is
+    # the better name anyway.
+    #
+    # So the updater half comes from the shared module and the creator half is
+    # written out by hand from the SAME ladder (`services/audit_actors`): names
+    # only, never the email fallback, and a separate boolean for "no actor
+    # recorded" vs "an id with no user row behind it". It is aliased
+    # `created_by_name`/`has_creator` so the response contract is identical to
+    # every other list — the frontend's `ByCell` must not need to know that one
+    # table spells its author column differently.
     q = ("SELECT o.*, e.name AS employee_name, e.employee_code, e.department, e.designation, "
+         "COALESCE(NULLIF(btrim(_iu.name), ''), NULLIF(btrim(_iu.full_name), '')) "
+         "  AS created_by_name, "
+         "(o.initiated_by IS NOT NULL) AS has_creator, "
+         + actor_select("o", created=False, updated=True) +
          "       (SELECT count(*) FROM staging.manav_exit_interviews i "
          "         WHERE i.employee_id = o.employee_id AND i.org_id = o.org_id) AS has_interview "
          "FROM staging.manav_offboarding o "
          "JOIN staging.manav_employees e ON e.id = o.employee_id "
+         # LEFT, like the shared joins: an exit whose initiator has since left
+         # the firm is exactly the row this register exists to keep.
+         "LEFT JOIN public.users _iu ON _iu.user_id = o.initiated_by "
+         + actor_joins("o", created=False, updated=True) +
          "WHERE o.org_id=$1::uuid")
     params = [org_id]
     if status:
@@ -2032,6 +2106,12 @@ async def update_offboarding(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # `initiated_by` says who STARTED the exit and must never move; this says
+    # who last amended it — a different person often enough that overwriting the
+    # first with the second would erase the fact the register is for.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     row = await pool.fetchrow(
         f"UPDATE staging.manav_offboarding SET {', '.join(sets)} "
@@ -2082,18 +2162,27 @@ async def complete_offboarding(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "UPDATE staging.manav_offboarding SET status='completed', updated_at=NOW() "
+                # Closing an exit is a decision with a person behind it — the
+                # one who accepted that clearance was complete. `$3`.
+                "UPDATE staging.manav_offboarding SET status='completed', "
+                "updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
-                str(offboarding_id), org_id,
+                str(offboarding_id), org_id, user["user_id"],
             )
             # RETURNING * because `employee.exited` reads department and
             # user_id off the employee row it is about. Same connection, same
             # transaction: the event exists iff the deactivation committed.
             emp_row = await conn.fetchrow(
-                "UPDATE staging.manav_employees SET is_active=FALSE, status=$3, updated_at=NOW() "
+                "UPDATE staging.manav_employees SET is_active=FALSE, status=$3, "
+                # Same actor as the offboarding row above, and deliberately so:
+                # one action closed the exit and deactivated the person, so both
+                # rows must name the same hand. `$4` is appended after the
+                # status so $1-$3 keep their positions.
+                "updated_at=NOW(), updated_by=$4 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
                 str(row["employee_id"]), org_id,
                 "resigned" if row["exit_type"] == "resignation" else "terminated",
+                user["user_id"],
             )
             # `exit_type` comes from the offboarding row — manav_offboarding's
             # CHECK (_EXIT_TYPES) is the vocabulary. Emitted at COMPLETION, not
@@ -2198,9 +2287,14 @@ async def record_exit_interview(
     # Only advance a live exit, and never backwards from settled/completed.
     if off_id:
         await pool.execute(
-            "UPDATE staging.manav_offboarding SET status='interview_done', updated_at=NOW() "
+            # The interviewer moved the exit on, so the exit row names the
+            # interviewer. Without `$2` this status hop is the one step of an
+            # offboarding whose actor is only recoverable by joining the
+            # interview back to it by employee and time.
+            "UPDATE staging.manav_offboarding SET status='interview_done', "
+            "updated_at=NOW(), updated_by=$2 "
             "WHERE id=$1::uuid AND status IN ('initiated','in_clearance')",
-            str(off_id),
+            str(off_id), user["user_id"],
         )
     return {"status": "recorded", **dict(row)}
 
@@ -2831,11 +2925,19 @@ async def list_announcements(
     # already emailed one when it is posted. Readable at self scope.
     rows = await pool.fetch(
         "SELECT a.id, a.title, a.body, a.priority, a.pinned, "
-        "a.published_at, a.expires_at, a.created_at, "
-        "e.name as creator_name "
+        "a.published_at, a.expires_at, a.created_at, a.updated_at, "
+        # `creator_name` stays: it is the poster's EMPLOYEE name, and it is NULL
+        # for anyone who posts without a personnel record — an org admin, or
+        # Aekam support. `created_by_name` answers the same question from
+        # `public.users`, so the two disagree only in the case where the old one
+        # was silently blank. Both are kept rather than one replaced, because a
+        # screen already reading `creator_name` must not change meaning under it.
+        + actor_select("a", updated=True)
+        + "e.name as creator_name "
         "FROM staging.manav_announcements a "
         "LEFT JOIN staging.manav_employees e ON e.user_id = a.created_by AND e.org_id = a.org_id "
-        "WHERE a.org_id=$1::uuid AND a.is_active=TRUE "
+        + actor_joins("a", updated=True)
+        + "WHERE a.org_id=$1::uuid AND a.is_active=TRUE "
         "AND (a.expires_at IS NULL OR a.expires_at > NOW()) "
         "ORDER BY a.pinned DESC, a.published_at DESC",
         org_id,
@@ -2909,6 +3011,17 @@ async def update_announcement(
             sets.append(f"{k}=${idx}")
         params.append(v)
         idx += 1
+    # BOTH columns, and `updated_at` is new here: this path edited an
+    # announcement without touching the timestamp at all, so the row's
+    # `updated_at` still read as its creation time. Adding only `updated_by`
+    # would have made that worse — a name against a stale date reads as if that
+    # person made the ORIGINAL edit. `manav_announcements` has no touch trigger
+    # (migration 201 gave those to the three tables that had no `updated_at` at
+    # all), so this statement is the only writer of either column.
+    sets.append("updated_at=NOW()")
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     await pool.execute(
         f"UPDATE staging.manav_announcements SET {', '.join(sets)} "
@@ -2928,9 +3041,13 @@ async def delete_announcement(
     pool = await get_pool()
     _require(levels, EDITOR)
     await pool.execute(
-        "UPDATE staging.manav_announcements SET is_active=FALSE "
+        # A retraction is an edit, so it stamps both columns like the PATCH
+        # above. Who pulled an announcement down is a question that gets asked
+        # precisely because the notice is no longer there to be read.
+        "UPDATE staging.manav_announcements SET is_active=FALSE, "
+        "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(announcement_id), org_id,
+        str(announcement_id), org_id, user["user_id"],
     )
     return {"status": "deleted"}
 
@@ -3141,11 +3258,17 @@ async def list_schedules(
     query = (
         "SELECT s.*, e.name AS employee_name, e.department, "
         "sd.name AS shift_name, sd.start_time, sd.end_time, sd.color, "
-        "COUNT(*) OVER() AS _total "
+        # WHO rostered this person and WHO last moved the row. A rota is
+        # argued about — "I was never put on that shift" — and until migration
+        # 201 the table could show the change without showing the rosterer.
+        # `e.name` above is the person ON the shift, a different question.
+        + actor_select("s", updated=True)
+        + "COUNT(*) OVER() AS _total "
         "FROM staging.manav_schedules s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id "
         "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
-        "WHERE s.org_id=$1::uuid "
+        + actor_joins("s", updated=True)
+        + "WHERE s.org_id=$1::uuid "
     )
     params: list = [org_id]
     idx = 2
@@ -3366,10 +3489,15 @@ async def list_bids(
     # a response count. Readable at self scope so an employee can apply.
     rows = await pool.fetch(
         "SELECT b.*, sd.name AS shift_name, sd.start_time, sd.end_time, sd.color, "
-        "(SELECT COUNT(*) FROM staging.manav_shift_bid_responses WHERE bid_id=b.id) AS responses "
+        # WHO posted the bid, and WHO last touched it — which for a bid is
+        # usually whoever awarded or closed it. Both names, never the ids in
+        # `b.*`.
+        + actor_select("b", updated=True)
+        + "(SELECT COUNT(*) FROM staging.manav_shift_bid_responses WHERE bid_id=b.id) AS responses "
         "FROM staging.manav_shift_bids b "
         "JOIN staging.manav_shift_definitions sd ON sd.id = b.shift_id "
-        "WHERE b.org_id=$1::uuid AND b.status=$2 ORDER BY b.date",
+        + actor_joins("b", updated=True)
+        + "WHERE b.org_id=$1::uuid AND b.status=$2 ORDER BY b.date",
         org_id, status,
     )
     return {"data": [dict(r) for r in rows]}
@@ -3556,16 +3684,26 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Dep
         "INSERT INTO staging.manav_schedules "
         "(org_id, employee_id, shift_id, date, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5) "
-        "ON CONFLICT (employee_id, date) DO UPDATE SET shift_id=$3, status='scheduled'",
+        # The conflict arm REPLACES an existing roster row for that day, so it
+        # is an edit and names its editor — `$5`, the same parameter the insert
+        # arm uses for `created_by`, reused rather than bound twice so the
+        # statement gains no placeholder. `created_by` is untouched on that arm:
+        # whoever first rostered the day still did.
+        # `trg_touch_manav_schedules` owns `updated_at`.
+        "ON CONFLICT (employee_id, date) DO UPDATE SET shift_id=$3, "
+        "status='scheduled', updated_by=$5",
         org_id, str(employee_id), bid["shift_id"], bid["date"], user["user_id"],
     )
 
     bid_status = bid["status"]
     if accepted >= slots_needed:
         await pool.execute(
-            "UPDATE staging.manav_shift_bids SET status='filled' "
+            # `updated_by` only — `trg_touch_manav_shift_bids` (migration 201)
+            # owns `updated_at` on this table, and a second writer of a column
+            # that already has one is two things to keep in step for no gain.
+            "UPDATE staging.manav_shift_bids SET status='filled', updated_by=$3 "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND status='open'",
-            str(bid_id), org_id,
+            str(bid_id), org_id, user["user_id"],
         )
         bid_status = "filled"
 
@@ -3683,13 +3821,22 @@ async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), or
                     swap["target_employee_id"], sched["date"],
                 )
                 if target_sched:
+                    # BOTH sides of the swap name the APPROVER, not either of
+                    # the two employees whose shifts moved: the roster changed
+                    # because somebody approved it. `manav_swap_requests` keeps
+                    # `approved_by` for the request itself; these two rows had
+                    # no actor at all, so a swapped shift was a roster change
+                    # nobody appeared to have made.
+                    # `trg_touch_manav_schedules` owns `updated_at`.
                     await pool.execute(
-                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped' WHERE id=$2",
-                        target_sched["shift_id"], sched["id"],
+                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped', "
+                        "updated_by=$3 WHERE id=$2",
+                        target_sched["shift_id"], sched["id"], user["user_id"],
                     )
                     await pool.execute(
-                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped' WHERE id=$2",
-                        sched["shift_id"], target_sched["id"],
+                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped', "
+                        "updated_by=$3 WHERE id=$2",
+                        sched["shift_id"], target_sched["id"], user["user_id"],
                     )
     return {"status": action}
 
@@ -3917,10 +4064,14 @@ async def list_job_openings(
     _require(levels, VIEWER)
     q = (
         "SELECT j.*, d.name AS department_name, "
-        "(SELECT COUNT(*) FROM staging.manav_candidates c WHERE c.job_opening_id = j.id) AS candidate_count "
+        # WHO opened the role and WHO last edited it — including the edit that
+        # closes it, which is the one a hiring manager comes back asking about.
+        + actor_select("j", updated=True)
+        + "(SELECT COUNT(*) FROM staging.manav_candidates c WHERE c.job_opening_id = j.id) AS candidate_count "
         "FROM staging.manav_job_openings j "
         "LEFT JOIN staging.manav_departments d ON d.id = j.department_id "
-        "WHERE j.org_id=$1::uuid"
+        + actor_joins("j", updated=True)
+        + "WHERE j.org_id=$1::uuid"
     )
     params: list = [org_id]
     if status:
@@ -3966,6 +4117,15 @@ async def update_job_opening(
             updates.append(f"{field}=${len(vals)}")
     if not updates:
         raise HTTPException(400, "Nothing to update")
+    # Appended while `vals` still holds only SET values: the WHERE below
+    # addresses the id and org by `len(vals)-1` and `len(vals)`, so a parameter
+    # added AFTER them shifts the predicate onto the wrong value and the UPDATE
+    # matches nothing — a silent no-op, not an error.
+    #
+    # `updated_at` is left alone: migration 201 put
+    # `trg_touch_manav_job_openings` on this table and the trigger owns it.
+    vals.append(user["user_id"])
+    updates.append(f"updated_by=${len(vals)}")
     vals += [str(opening_id), org_id]
     row = await pool.fetchrow(
         f"UPDATE staging.manav_job_openings SET {', '.join(updates)} "
@@ -4148,10 +4308,16 @@ async def list_assets(
     # Names the employee each asset is issued to.
     _require(levels, VIEWER)
     q = (
-        "SELECT a.*, e.name AS employee_name "
+        "SELECT a.*, "
+        # `employee_name` is who HOLDS the asset; these two are who booked it in
+        # and who last changed it — including the assign/return writes below,
+        # which are the movements a register of company property exists for.
+        + actor_select("a", updated=True)
+        + "e.name AS employee_name "
         "FROM staging.manav_assets a "
         "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
-        "WHERE a.org_id=$1::uuid AND a.is_active=TRUE"
+        + actor_joins("a", updated=True)
+        + "WHERE a.org_id=$1::uuid AND a.is_active=TRUE"
     )
     params: list = [org_id]
     if category:
@@ -4203,10 +4369,15 @@ async def get_asset(
     pool = await get_pool()
     _require(levels, VIEWER)
     row = await pool.fetchrow(
-        "SELECT a.*, e.name AS employee_name "
+        "SELECT a.*, "
+        # Same two names as the list. The detail view is where somebody looks
+        # when the list made them ask the question.
+        + actor_select("a", updated=True)
+        + "e.name AS employee_name "
         "FROM staging.manav_assets a "
         "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
-        "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
+        + actor_joins("a", updated=True)
+        + "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
         asset_id, org_id,
     )
     if not row:
@@ -4246,6 +4417,12 @@ async def update_asset(
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
+    # Appended BEFORE `asset_id`/`org_id` join `vals`: the WHERE below addresses
+    # those two positionally as `len(vals)-1` and `len(vals)`, so a value added
+    # after them moves the predicate off the id and the UPDATE quietly matches
+    # nothing.
+    vals.append(user["user_id"])
+    updates.append(f"updated_by=${len(vals)}")
     vals += [asset_id, org_id]
     row = await pool.fetchrow(
         f"UPDATE staging.manav_assets SET {', '.join(updates)} "
@@ -4267,9 +4444,11 @@ async def delete_asset(
     pool = await get_pool()
     _require(levels, EDITOR)
     result = await pool.execute(
-        "UPDATE staging.manav_assets SET is_active=FALSE, updated_at=NOW() "
+        # Retiring an asset is a write-off. `$3` is who did it — the question
+        # asked when a laptop is missing from the register rather than the desk.
+        "UPDATE staging.manav_assets SET is_active=FALSE, updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        asset_id, org_id,
+        asset_id, org_id, user["user_id"],
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "Asset not found")
@@ -4293,10 +4472,13 @@ async def assign_asset(
     if not emp:
         raise HTTPException(404, "Employee not found")
     row = await pool.fetchrow(
+        # `$4` is the ISSUER, not the holder: `assigned_to` already says who
+        # has the asset, and handing custody of company property to somebody is
+        # a decision with a second person behind it.
         "UPDATE staging.manav_assets SET assigned_to=$1::uuid, assigned_date=CURRENT_DATE, "
-        "returned_date=NULL, updated_at=NOW() "
+        "returned_date=NULL, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid AND is_active=TRUE RETURNING *",
-        body.employee_id, asset_id, org_id,
+        body.employee_id, asset_id, org_id, user["user_id"],
     )
     if not row:
         raise HTTPException(404, "Asset not found")
@@ -4330,9 +4512,13 @@ async def return_asset(
         asset_id, org_id,
     )
     row = await pool.fetchrow(
-        "UPDATE staging.manav_assets SET assigned_to=NULL, returned_date=CURRENT_DATE, updated_at=NOW() "
+        # `assigned_to` is cleared by this write, so after it the row no longer
+        # names anybody at all unless `updated_by` does. `$3` is who took the
+        # asset back.
+        "UPDATE staging.manav_assets SET assigned_to=NULL, returned_date=CURRENT_DATE, "
+        "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE RETURNING *",
-        asset_id, org_id,
+        asset_id, org_id, user["user_id"],
     )
     if not row:
         raise HTTPException(404, "Asset not found")
@@ -4474,6 +4660,17 @@ def _scheme_payload(row, bands) -> dict:
         "effective_from": row["effective_from"],
         "effective_to": row["effective_to"],
         "notes": row["notes"],
+        # WHO agreed these terms, as a NAME. The `created_by` column itself is
+        # never put on the wire — it holds a member identifier, and this is a
+        # pay screen. `test_the_new_router_paths_never_return_a_person_identifier`
+        # reads this function's SOURCE, comments included, so the forbidden
+        # column names cannot even be written here.
+        #
+        # `.get()` because the helper is also called from paths that select the
+        # row without the actor join; a KeyError on a pay endpoint is a worse
+        # outcome than a missing byline.
+        "created_by_name": (dict(row).get("created_by_name")),
+        "has_creator": bool(dict(row).get("has_creator")),
         "bands": [{"from_amount": float(b["from_amount"]),
                    "rate_percent": float(b["rate_percent"])}
                   for b in bands],
@@ -4515,9 +4712,18 @@ async def list_commission_schemes(
         raise HTTPException(404, "Employee not found")
 
     rows = await pool.fetch(
-        "SELECT * FROM staging.manav_commission_schemes "
-        " WHERE org_id=$1::uuid AND employee_id=$2::uuid "
-        " ORDER BY period, effective_from DESC",
+        "SELECT "
+        # Creator only. A scheme is a DATED VERSION — migration 185 made it a
+        # row per arrangement precisely so terms are never edited in place — so
+        # nothing in the product updates one and an `updated_by_name` here would
+        # be a column that is NULL for every row in every org, which reads as a
+        # bug rather than as "this never changes".
+        + actor_select("s", updated=False)
+        + "s.* "
+        "  FROM staging.manav_commission_schemes s "
+        + actor_joins("s", updated=False)
+        + " WHERE s.org_id=$1::uuid AND s.employee_id=$2::uuid "
+        " ORDER BY s.period, s.effective_from DESC",
         org_id, employee_id,
     )
     out = []
@@ -4691,10 +4897,14 @@ async def set_bonus_eligibility(
     _require(levels, ADMIN)
     pool = await get_pool()
     row = await pool.fetchrow(
-        "UPDATE staging.manav_employees SET bonus_eligible=$3, updated_at=NOW() "
+        # `$4` — a pay-adjacent flag flipped by an admin, on the row it is
+        # flipped on. The audit line below records the same act, but a person
+        # reading the employee record is not reading the audit table.
+        "UPDATE staging.manav_employees SET bonus_eligible=$3, updated_at=NOW(), "
+        "updated_by=$4 "
         " WHERE id=$1::uuid AND org_id=$2::uuid "
         "RETURNING name, bonus_eligible",
-        employee_id, org_id, bool(body.bonus_eligible),
+        employee_id, org_id, bool(body.bonus_eligible), user["user_id"],
     )
     if not row:
         raise HTTPException(404, "Employee not found")

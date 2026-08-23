@@ -48,15 +48,35 @@ FILING SCREEN and the GSTR-3B PDF. So a draft invoice — a document that has no
 been issued to anybody — is counted in the outward tax a preparer is shown and
 pays in cash.
 
-This file does NOT fix that. Changing the population of a live GST return is
-the owner's decision, not a test's, and there is a defensible reading in which
-a firm wants accrued-but-unissued documents visible. What is NOT defensible is
-the two screens disagreeing silently, which is what happens today.
+── RESOLVED 2026-08-23, TOWARDS THE READINESS BUILDER ──────────────────────
 
-`test_the_two_gst_builders_count_the_same_invoices` is therefore marked xfail
-with this reason. It turns green the day the two populations are reconciled,
-whichever way that reconciliation goes, and it fails loudly if somebody makes
-the gap WIDER.
+The owner's call landed: `gst_period.assemble_gstr3b` now carries
+`AND COALESCE(doc_status, '') <> 'draft'`, and so do the two pre-filing check
+queries beside it, so a check can no longer flag a defect on an invoice the
+return does not contain. Re-measured live on 2026-08-22 before the change:
+102 draft invoices, Rs1.00cr of taxable value and Rs17.96L of tax that the
+filing screen and the PDF were putting in front of a preparer as cash payable.
+
+The reconciliation went towards EXCLUDING drafts because that is the direction
+that stops money leaving: a document that has not been issued to anybody is
+not an outward supply. The alternative reading — a firm wanting
+accrued-but-unissued documents visible — is a separate report, not a return.
+
+AND IT FOUND A SECOND DIVERGENCE THAT NOBODY HAD REPORTED. With `doc_status`
+reconciled this test still failed, on `payment_status`. Cancellation has TWO
+channels in `ganit_invoices`: `cancelled_at`, which both builders honoured, and
+`payment_status='cancelled'`, which only `gst_readiness` did. A row cancelled
+through the second channel alone was outward supply on the filing screen and
+struck off on the readiness screen, in the same session, for the same month.
+`gst_period` now honours both. That defect was invisible while the `doc_status`
+gap masked it — which is the argument for a test that compares PREDICATES
+rather than one that compares the one number somebody happened to notice.
+
+The xfail is gone. `test_the_two_gst_builders_count_the_same_invoices` is now
+an ordinary passing test and it fails loudly if the two populations diverge
+again, in either direction. The two half-tests above it were assertions ABOUT
+the divergence; they are rewritten as assertions that both builders now name
+`draft`, which is the same ratchet pointed the other way.
 """
 import ast
 import inspect
@@ -96,38 +116,32 @@ def _joined_sql(src: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════
 
 def test_the_readiness_builder_excludes_drafts():
-    """Pinned so the two halves of the divergence are separately visible."""
+    """Half one of the ratchet. Unchanged: this was always true."""
     assert any("draft" in s for s in _sql_literals(READINESS_SRC)), (
-        "gst_readiness no longer excludes drafts — if that was deliberate, the "
-        "xfail below should now pass and should be un-marked."
+        "gst_readiness no longer excludes drafts. The two builders have "
+        "diverged again — see the module docstring."
     )
 
 
-def test_the_filing_builder_does_not_mention_drafts_at_all():
-    """The other half. `assemble_gstr3b` is behind the filing SCREEN and the
-    PDF, not only the skill, so this is a statement about what a firm files."""
+def test_the_filing_builder_excludes_drafts_too():
+    """Half two, INVERTED on 2026-08-23 when the divergence was resolved.
+
+    `assemble_gstr3b` is behind the filing SCREEN and the PDF, not only the
+    skill, so this is a statement about what a firm files. It used to assert
+    that `gst_period` did not mention `draft` anywhere — a pin on the defect.
+    It now asserts the opposite, because the defect is fixed and the thing
+    worth guarding is the fix.
+    """
     sql = _joined_sql(PERIOD_SRC)
     assert "ganit_invoices" in sql, "extraction is wrong, not the module"
-    assert "draft" not in sql.lower(), (
-        "gst_period now mentions drafts. If it now excludes them, the two "
-        "builders may agree — re-run the xfail below and un-mark it."
+    assert "doc_status" in sql.lower() and "draft" in sql.lower(), (
+        "gst_period no longer excludes draft invoices from the GSTR-3B "
+        "population. A draft is a document that has not been issued to "
+        "anybody; counting it as outward supply is tax paid in cash on a "
+        "supply that did not happen (Rs17.96L measured live, 2026-08-22)."
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "MEASURED LIVE 2026-08-20: the GSTR-1 readiness population and the "
-        "GSTR-3B filing population disagree by exactly the number of DRAFT "
-        "invoices in the period — 27 vs 30 in the seeded org, every month. "
-        "gst_readiness excludes doc_status='draft'; gst_period does not mention "
-        "draft at all, so an unissued document is counted in the outward tax a "
-        "preparer pays in cash on the filing screen and in the PDF. "
-        "Reconciling the two changes a live GST return and is the OWNER'S "
-        "decision, not a test's. This turns green when they agree, whichever "
-        "way it is resolved."
-    ),
-    strict=True,
-)
 def test_the_two_gst_builders_count_the_same_invoices():
     """One period, one org, one set of rows — two different populations.
 
@@ -156,22 +170,29 @@ def test_the_two_gst_builders_count_the_same_invoices():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# a second defect found in the same file, reported not fixed
+# a second defect found in the same file — measured, then fixed
 # ══════════════════════════════════════════════════════════════════════════
+#
+# `prefiling_checks` joined `staging.graha_contacts` ON THE ID ALONE. The
+# foreign key is on the id alone too, so nothing but the query can scope it,
+# and an id-only join can surface another practice's contact against this
+# practice's invoice. Migration 163 records the same fault proved live
+# elsewhere in this schema; `graha_clients` carries an identical note.
+#
+# It was reported rather than fixed, on the grounds that it sits in the filing
+# path. That reasoning does not survive the measurement: a narrowing can only
+# ever REMOVE a cross-tenant row and never add one, so the question is simply
+# whether any legitimate row is lost. Live, 2026-08-23:
+#
+#   invoices whose contact belongs to another org      0
+#   contact ids shared by two orgs                     0
+#   distinct parties, join as written                 28
+#   distinct parties, join org-scoped                 28
+#
+# Identical. So it is a no-op today and a guard for ever, and leaving a
+# cross-tenant join in a path that feeds a GST return pending a decision was
+# the more expensive of the two options.
 
-@pytest.mark.xfail(
-    reason=(
-        "services/gst_period.py joins staging.graha_contacts on the id ALONE "
-        "in prefiling_checks — `JOIN staging.graha_contacts c ON "
-        "c.id = i.contact_id` with no org_id. The FK is on the id alone, so an "
-        "id-only join can surface ANOTHER PRACTICE'S CONTACT against this "
-        "practice's invoice, and this one feeds a GSTIN validity check on a GST "
-        "return. Migration 163 records the same fault being proved live "
-        "elsewhere. Fixing it is a one-line narrowing but it sits in the filing "
-        "path, so it is the owner's call to land."
-    ),
-    strict=True,
-)
 def test_every_graha_join_in_the_filing_path_is_org_scoped():
     """The FK is on the id alone; only the query can scope it."""
     sql = _joined_sql(PERIOD_SRC)

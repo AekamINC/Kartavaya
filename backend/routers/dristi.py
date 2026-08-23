@@ -22,6 +22,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from middleware.module_levels import held_level
+from services.audit_actors import display_name
 from services.report_schedule_window import blocked_reason, is_due
 from services import analytics_window as aw
 
@@ -588,7 +589,23 @@ async def sales_analytics(
     if "graha" in allowed:
         leaderboard = await pool.fetch(
         "SELECT t.salesperson_id, "
-        "COALESCE(u.full_name, u.name, u.email) AS name, "
+        # THE LEADERBOARD NAMES PEOPLE BY NAME. This ended `…, u.email)`, so a
+        # salesperson with no name recorded appeared on an analytics
+        # leaderboard as their EMAIL ADDRESS — a contact detail rendered as a
+        # label, and on a screen Aekam staff read, which inverts the rule that
+        # Aekam must not see a customer's member emails. The owner's ruling
+        # (2026-08-23): a display-name ladder must never end at an email.
+        #
+        # MEASURED BEFORE THE CHANGE: 0 of 35 live accounts have neither
+        # `full_name` nor `name`, so this rung has never fired on real data.
+        # Removing it changes nothing visible; leaving it was a standing risk.
+        #
+        # The terminal is a STATED label, not blank — a blank name on a
+        # leaderboard row reads as a row about nobody, which is false; the row
+        # is about a real person whose name we simply do not hold. Ladder owned
+        # by `services/audit_actors.display_name()`; it emits no `$n`.
+        + display_name("u")
+        + " AS name, "
         "t.target_amount, "
         "COALESCE(d.won, 0) AS actual_amount, "
         "CASE WHEN t.target_amount > 0 "

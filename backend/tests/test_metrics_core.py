@@ -120,7 +120,18 @@ def test_workload_labels_are_names_never_ids():
     sql, _ = build("core.workload")
     # Resolution happens in SQL, with the house display chain and an honest
     # label for the unresolvable.
-    assert "COALESCE(u.full_name, u.name, u.email, 'Unassigned')" in sql, sql
+    # THE ASSERTION MOVED FROM THE TEXT TO THE PROPERTY.
+    #
+    # This used to pin the literal `COALESCE(u.full_name, u.name, u.email, …)`.
+    # Under a test named for names-never-ids, that string was the leak itself:
+    # the owner ruled on 2026-08-23 that a display ladder must never end at an
+    # email address, and a text match would have FAILED on the fix and passed on
+    # the bug — teaching the next reader to revert rather than to keep the
+    # property. So it asserts what actually matters: a name is resolved, no id
+    # reaches the label, and the ladder does not reach `.email`.
+    assert "u.full_name" in sql and "u.name" in sql, sql
+    assert "'Unassigned'" in sql, sql
+    assert "u.email" not in sql, sql
     assert "LEFT JOIN public.users u ON u.user_id = a.uid" in sql, sql
     assert "unnest(t.assignee_user_ids)" in sql, sql
     # The SELECT list carries no raw id — label and count only.

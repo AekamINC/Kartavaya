@@ -129,6 +129,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
+from services.audit_actors import actor_joins, actor_select
+
 import asyncpg
 
 __all__ = [
@@ -413,8 +415,24 @@ def describe_urgency(u: NoticeUrgency) -> str:
 # is not a user, member, org or client identifier. `services/custody/dsc.py`
 # publishes its own row id for the same reason and says so at the same length.
 
+#: WHO filed the notice into the register and WHO last moved it along, as
+#: NAMES. `created_by` and `updated_by` hold `users.user_id`, which may not be
+#: rendered, so the resolution happens in SQL and the raw ids are not in this
+#: projection at all — `services/audit_actors` owns the ladder for the whole
+#: backend and stops at names, deliberately, where `routers/graha.py:1466`
+#: falls back to the person's EMAIL.
+#:
+#: IT SITS SECOND IN THE LIST rather than last: `actor_select` is
+#: comma-TERMINATED so it can be dropped into the middle of a column list, and
+#: appending it would leave a dangling comma in front of `FROM`. `r.org_id`
+#: stays first because `test_the_statement_reads_org_id_back_for_the_guard`
+#: asserts on that exact opening — the tenancy guard in `_decorate` can only
+#: fire on a column the statement actually returns.
+_ACTORS = actor_select("r", updated=True)
+
 _SELECT_COLUMNS = """
     SELECT r.org_id,
+""" + "           " + _ACTORS + """
            r.id,
            r.reference_no,
            r.received_on,
@@ -424,6 +442,15 @@ _SELECT_COLUMNS = """
            r.status,
            r.replied_on,
            r.notes,
+           -- WHEN, beside the WHO above. These are the register's own audit
+           -- stamps and are NOT `received_on`/`replied_on`: those are dates on
+           -- the notice, facts about the tax office, while these are facts
+           -- about this product — when the row was filed here and when somebody
+           -- last touched it. A register that can say who moved a notice along
+           -- but not when is half a trail, and the screen renders them as a
+           -- pair.
+           r.created_at,
+           r.updated_at,
            c.name                             AS client_name,
            t.code                             AS notice_type,
            t.label                            AS notice_type_label,
@@ -458,7 +485,17 @@ _JOINS = """
       -- is an assignment this product makes rather than a value a client
       -- supplies, so the exposure is a name the practice itself wrote down.
       LEFT JOIN public.users       u ON u.id = r.owner_user_id
-"""
+""" + (
+    # Two MORE joins onto the same global table, and they cannot share `u`:
+    # `owner_user_id` is a uuid against `users.id` while the actor columns are
+    # the `user_`-prefixed TEXT in `users.user_id`, and the owner, the person
+    # who filed the notice and the person who last moved it are three different
+    # people often enough that one join cannot serve them. LEFT, so a notice
+    # filed by somebody who has since left the firm still appears in the
+    # register — an inner join here would make rows vanish on a leaving date,
+    # which is data loss that looks like a filter working.
+    "      " + actor_joins("r", updated=True) + "\n"
+)
 
 _SELECT = _SELECT_COLUMNS + "      FROM staging.notice_register r\n" + _JOINS
 
@@ -829,11 +866,17 @@ def _log_line(what: str, *, on: date, note: Any = None) -> str:
 #: Every column `_SELECT_COLUMNS` and its joins need, read back off the row that
 #: was just written. `due_on` is in here and is generated -- RETURNING sees the
 #: computed row, so the caller gets the real deadline rather than a prediction.
+#:
+#: `created_by` and `updated_by` are carried out of the CTE so the author joins
+#: have columns to resolve against, and they stop there: `_SELECT_COLUMNS` names
+#: every column it returns, so the ids never reach the caller. Without them the
+#: joins would reference columns that do not exist on `written` and every write
+#: in this module would fail at parse time rather than at runtime.
 _WRITE_RETURNING = (
     "org_id, id, client_id, notice_type_id, owner_user_id, "
     "reference_no, received_on, due_on, due_on_override, "
     "reply_window_days, reply_window_months, window_in_working_days, "
-    "status, replied_on, closed_on, notes"
+    "status, replied_on, closed_on, notes, created_by, updated_by"
 )
 
 #: Resolve a notice type by CODE, inside one practice's visible catalogue.
@@ -932,6 +975,19 @@ _UPDATE_STATUS = """
     WITH written AS (
         UPDATE staging.notice_register r
            SET status     = $3::text,
+               -- WHO moved it, in the SAME statement that moves it. `updated_at`
+               -- is stamped for this table too, and a timestamp that says a
+               -- statutory correspondence record changed without saying who
+               -- changed it is not evidence of anything -- which is the one
+               -- thing this register exists to be. Bound and cast: an untyped
+               -- parameter is a PgBouncer parse error and an instant 500.
+               -- NULLIF, so "no actor was supplied" stays NULL rather than
+               -- becoming an empty string. `has_updater` in audit_actors is
+               -- `updated_by IS NOT NULL`, and an empty string would make it
+               -- TRUE with no name behind it -- which the UI renders as the
+               -- word `unknown`, i.e. "somebody did this and we lost who".
+               -- That is a different and worse claim than "nobody has".
+               updated_by = NULLIF(btrim($8::text), ''),
                replied_on = COALESCE(r.replied_on, $4::date),
                closed_on  = COALESCE(r.closed_on,  $5::date),
                notes      = btrim(concat_ws(chr(10),
@@ -952,6 +1008,10 @@ _UPDATE_DUE_DATE = """
     WITH written AS (
         UPDATE staging.notice_register r
            SET due_on_override = $3::date,
+               -- Moving a deadline is the change a partner is most likely to be
+               -- asked to justify, so it is the last one that should be
+               -- anonymous. See `_UPDATE_STATUS`.
+               updated_by      = NULLIF(btrim($6::text), ''),
                notes           = btrim(concat_ws(chr(10),
                                                  NULLIF(btrim(r.notes), ''),
                                                  $4::text))
@@ -1133,8 +1193,16 @@ async def record_status_change(
     to_status: str,
     on_date: Any = None,
     note: Any = None,
+    actor_id: Any = None,
 ) -> dict[str, Any] | None:
     """Move one notice along its own lifecycle. Returns the decorated row.
+
+    `actor_id` is the `users.user_id` of whoever is recording the move and it
+    goes into `updated_by` in the same UPDATE. It is a PARAMETER because this
+    module never sees a request -- only the router holds the login. Migration
+    097's rule is that a function which accepts an actor and then drops it is
+    worse than one that never accepted one: the caller believes the answer is
+    being written down.
 
     The whole of the lifecycle, in one function with one transition table,
     because four near-identical functions is how one of them ends up missing a
@@ -1235,6 +1303,10 @@ async def record_status_change(
         closed,
         _log_line(what, on=stamp, note=note),
         current,
+        # $8. Trimmed and capped exactly as `created_by` is on the insert, so a
+        # row's author and its last editor cannot be stored in two shapes and
+        # then fail to join against the same `users` row.
+        _plain_text(actor_id, field="actor_id", limit=128),
     )
     written = _one(rows, org_id, stamp)
     if written is None:
@@ -1256,6 +1328,7 @@ async def record_due_date(
     as_of: date,
     due_on_override: Any,
     note: Any = None,
+    actor_id: Any = None,
 ) -> dict[str, Any] | None:
     """Record the date the officer actually gave -- an extension, or a
     correction to a date read off the paper. Returns the decorated row.
@@ -1318,6 +1391,8 @@ async def record_due_date(
         new_due,
         line,
         list(LIVE_STATUSES),
+        # $6 -- see `record_status_change`.
+        _plain_text(actor_id, field="actor_id", limit=128),
     )
     written = _one(rows, org_id, stamp)
     if written is None:

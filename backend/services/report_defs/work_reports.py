@@ -245,7 +245,24 @@ WORK_SQL = (
     # two people who share a display name stay two lines; a merged line is
     # exactly the misattribution a promotion review must not make. `u.id`
     # appears in GROUP BY and never in a selected column (names-not-ids).
-    "SELECT COALESCE(u.full_name, u.name, u.email, "
+    # …and the name ladder stops at names. This read `COALESCE(u.full_name,
+    # u.name, u.email, CASE …)`, so a person with no name recorded had their
+    # EMAIL printed as the row label of a promotion-review report. A contact
+    # detail rendered as a label, and the inverse of the rule that Aekam must
+    # not see a customer's member emails; the owner's ruling (2026-08-23) is
+    # that a display-name ladder must never end at an email address.
+    #
+    # MEASURED BEFORE REMOVING IT: 0 of 35 live accounts have neither
+    # `full_name` nor `name`, so this rung has never fired on real data — it
+    # was a latent leak, not a fallback anybody was relying on.
+    #
+    # The `CASE` TERMINAL STAYS, and it is why this site does not call
+    # `display_name()`: it draws a distinction a fixed label cannot, between
+    # "no person is recorded on this row at all" ($4) and "there is an id here
+    # but no `users` row behind it" ($5) — the same two absences `ByCell`
+    # renders differently. Only the email rung came out, so `$4`/`$5` keep
+    # their numbers. The workload query further down this file is identical.
+    "SELECT COALESCE(u.full_name, u.name, "
     "       CASE WHEN c.uid IS NULL THEN $4::text ELSE $5::text END) AS person, "
     "       SUM(c.assigned_in)::int AS assigned_in, "
     "       SUM(c.closed_in)::int AS closed_in, "
@@ -444,7 +461,9 @@ async def work_by_person(pool, org_id: str, window=None) -> list:
 #: never on its own, because "eleven overdue" says nothing until you know
 #: whether it is eleven of twelve or eleven of ninety.
 LOAD_SQL = (
-    "SELECT COALESCE(u.full_name, u.name, u.email, "
+    # Email rung removed; the two-way `CASE` terminal stays for the same
+    # reason as the contribution query above ($2/$3 keep their numbers).
+    "SELECT COALESCE(u.full_name, u.name, "
     "       CASE WHEN a.uid IS NULL THEN $2::text ELSE $3::text END) AS person, "
     "       COUNT(*)::int AS open_now, "
     # now(), not CURRENT_DATE: due_at is a timestamptz and the product's own

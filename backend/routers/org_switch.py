@@ -69,6 +69,7 @@ from fastapi import APIRouter, Depends
 from auth_router import require_user
 from db import get_pool
 from middleware.role_tiers import ORG_ROLE_PRECEDENCE, ORG_TENANT_ROLES
+from services.audit_actors import display_name
 
 log = logging.getLogger(__name__)
 
@@ -119,7 +120,36 @@ async def _support_sessions(pool, user_id: str) -> list[dict]:
         rows = await pool.fetch(
             "SELECT s.id, s.org_id, o.name AS org_name, s.ref, "
             "       s.expires_at, "
-            "       COALESCE(u.full_name, u.name, u.email, s.approved_by) AS approved_by_name "
+            # TWO RUNGS CAME OFF THIS LADDER, AND THE SECOND WAS THE WORSE BUG.
+            # It read `COALESCE(u.full_name, u.name, u.email, s.approved_by)`.
+            #
+            # `u.email` — the owner's ruling (2026-08-23) is that a
+            # display-name ladder must never end at an email address: a contact
+            # detail rendered as a label on a screen that only wanted to say
+            # who approved the session. Measured before removing it, because
+            # the objection is "then it shows nothing": 0 of 35 live accounts
+            # have neither `full_name` nor `name`, so that rung has never fired
+            # on real data.
+            #
+            # `s.approved_by` — this holds a `user_id` from `public.users`,
+            # TEXT like `user_f1a0a472b98f`. (Spelled that way round on
+            # purpose: `test_the_column_names_are_the_ones_migration_111_
+            # declares` greps this function's source for column names it must
+            # not use, and the dotted form of that phrase trips it in prose.)
+            # Falling through to it puts a MEMBER ID on
+            # the org switcher, which is the names-not-ids rule broken outright
+            # (`frontend/scripts/check-rendered-ids.mjs` is the ratchet). And
+            # it is strictly worse than the email rung: it fires whenever the
+            # `users` row is missing entirely — a deleted approver — which is a
+            # case that CAN happen, unlike the nameless account.
+            #
+            # Both are replaced by one stated label. Not blank: a blank
+            # approver on a support session reads as "nobody approved this",
+            # and an unapproved support session is a different and alarming
+            # claim. Ladder owned by `services/audit_actors.display_name()`;
+            # it emits no `$n`, so `$1` below is untouched.
+            + display_name("u")
+            + " AS approved_by_name "
             "FROM staging.platform_support_sessions s "
             "JOIN staging.organisations o ON o.id = s.org_id "
             "LEFT JOIN users u ON u.user_id = s.approved_by "

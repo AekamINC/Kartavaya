@@ -21,9 +21,32 @@ def _code(fn) -> str:
 
 
 def test_the_list_returns_names_not_ids():
-    """The screen rendered `u.slice(0, 12)` — twelve characters of a uuid."""
+    """The screen rendered `u.slice(0, 12)` — twelve characters of a user id.
+
+    THE ASSERTION MOVED FROM THE TEXT TO THE PROPERTY, and under this test's
+    own name that is the whole point. It used to pin the literal
+    `COALESCE(u.full_name, u.name, u.email)` — so a test called
+    "returns names not ids" REQUIRED a ladder that returns an email address
+    when a name is missing, and would have failed on the fix and passed on the
+    bug. The owner ruled on 2026-08-23 that a display ladder must never end at
+    an email: it is a contact detail rendered as a label, and it inverts the
+    rule that Aekam must not see a customer's member emails.
+
+    Measured before the rung came off, because the objection is "then the row
+    names nobody": 0 of 35 live accounts have neither `full_name` nor `name`.
+    It had never fired on real data.
+
+    `tests/test_audit_actors.py` now walks the whole backend refusing any
+    ladder that reaches `.email`; this test keeps the narrower guarantee that
+    THIS endpoint resolves a name at all.
+    """
     code = _code(graha.list_territories)
-    assert "COALESCE(u.full_name, u.name, u.email)" in code
+    assert "u.full_name" in code and "u.name" in code
+    assert "u.email" not in code, (
+        "the territory list names people by email address when they have no "
+        "name on file")
+    # And the id it resolves FROM must not travel to the client beside the
+    # name it resolved to — a name plus the id is still the id rendered.
     assert "'assigned'" not in code or "AS assigned" in code
 
 

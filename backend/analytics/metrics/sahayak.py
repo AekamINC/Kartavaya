@@ -67,7 +67,7 @@ _ORG_DEBITS = (
 #: with no user is the system's, a user the join cannot resolve has left.
 #: `t.user_id` appears only inside IS NULL — the id itself is never output.
 _MEMBER_LABEL = (
-    "COALESCE(u.full_name, u.name, u.email, "
+    "COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), "
     "CASE WHEN t.user_id IS NULL THEN 'System' ELSE 'Departed member' END)"
 )
 
@@ -111,7 +111,14 @@ def credits_spent(req: MetricRequest):
             "LEFT JOIN public.users u ON u.user_id = t.user_id "
             "WHERE t.org_id = $1::uuid AND t.tx_type = 'debit' "
             "AND t.created_at::date BETWEEN $2::date AND $3::date "
-            "GROUP BY t.user_id, u.full_name, u.name, u.email "
+            # `u.email` is GONE from the GROUP BY as well as from the label.
+            # A GROUP BY key that no expression in the SELECT depends on does
+            # not just sit there harmlessly: it SPLITS rows. Two accounts
+            # sharing a display name would already be separated by
+            # `t.user_id` here, so grouping on the address bought nothing and
+            # kept a column of client email addresses flowing through a query
+            # whose whole output is supposed to be names.
+            "GROUP BY t.user_id, u.full_name, u.name "
             "ORDER BY value DESC, member",
             [req.org_id, req.window.start, req.window.end],
         )

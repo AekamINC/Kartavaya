@@ -18,6 +18,10 @@ from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_platform_role
 from services.audit import emit as _audit_emit
+# WHO last changed an organisation, as a NAME. `organisations.updated_by` holds
+# `public.users.user_id`, and a user id is never rendered anywhere in this
+# product. Neither helper adds a `$n`, so no parameter number in this file moves.
+from services.audit_actors import actor_joins, actor_select
 # The one seat counter, and the one refusal. This module had its OWN copy that
 # counted only joined members: an org at 4 joined + 1 invited would admit a
 # fifth from the console here, and the invitee's own click then made six in a
@@ -700,9 +704,26 @@ async def create_org(
                 # org — this handler has already refused a team that belongs to
                 # one — so in practice this fills a NULL and nothing else.
                 await conn.execute(
-                    "UPDATE teams SET org_id=$1, updated_at=NOW() "
+                    # LEFT UNQUALIFIED, and not by preference. `teams` is in
+                    # `public` and migration 142 is why every statement in this
+                    # tree should say so — but
+                    # `tests/test_the_founding_project_carries_the_org_id`
+                    # asserts the literal text "UPDATE teams SET org_id" against
+                    # this file's source, so qualifying it here fails a ratchet
+                    # that belongs to another file. The qualification and that
+                    # assertion have to move in one commit.
+                    #
+                    # `updated_by` is the console operator, not the org's owner.
+                    # A founding team's `created_by` is the owner where there is
+                    # one (see the branch above), but adopting an EXISTING team
+                    # into an org is an Aekam action taken from the platform
+                    # console, and the person who did it is the one somebody will
+                    # want when the team turns up under an org its members did
+                    # not expect.
+                    "UPDATE teams SET org_id=$1, updated_at=NOW(), "
+                    "updated_by=$3 "
                     "WHERE team_id=$2 AND org_id IS NULL",
-                    org_id, team_id,
+                    org_id, team_id, user["user_id"],
                 )
 
             # The owner's own membership of the founding project. Only when
@@ -1016,12 +1037,26 @@ async def list_orgs(
         # leaves an audit row. `POST /orgs` still TAKES an owner_email, because
         # that is an address Aekam was given in order to create the account.
         "COALESCE(NULLIF(TRIM(u.full_name),''), NULLIF(TRIM(u.name),''), "
-        "         'Name not on file') as owner_name "
+        "         'Name not on file') as owner_name, "
+        # WHO LAST CHANGED THIS CUSTOMER'S TERMS, and when. Every commercial
+        # field on this row — markup, credits, fee, seat cap, payee, the
+        # platform flag — is settable from this console by any of ten platform
+        # accounts, and until 202 the row said nothing about which. The name
+        # resolved here is an AEKAM operator being shown to Aekam, which is the
+        # safe direction; `services/audit_actors` stops at names either way.
+        #
+        # `created=False`: `organisations` got `updated_by` from 202 and no
+        # `created_by` — verified against the live catalogue — so asking for a
+        # creator here would name a column that does not exist and 500 the whole
+        # console list.
+        + actor_select("o", created=False, updated=True)
+        + "o.updated_at "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
         "LEFT JOIN staging.plans p ON p.id = s.plan_id "
         "LEFT JOIN users u ON u.user_id = o.owner_user_id "
-        "ORDER BY o.created_at DESC"
+        + actor_joins("o", created=False, updated=True)
+        + "ORDER BY o.created_at DESC"
     )
     return {"data": [dict(r) for r in rows]}
 
@@ -1514,9 +1549,16 @@ async def set_org_contact_email(
                 }
 
             await conn.execute(
-                "UPDATE staging.organisations SET email=$1, updated_at=NOW() "
-                "WHERE id=$2::uuid",
-                new_email, org_id,
+                # The audit row below carries the operator too, and this column
+                # is written anyway: they are not the same trail. An event is a
+                # line in a log somebody has to go and read; `updated_by` is on
+                # the ROW, so the next person to open this organisation sees who
+                # last changed it without knowing to ask. 202 added the column
+                # for changes of exactly this kind — the firm's contact address,
+                # its GSTIN, its seat cap.
+                "UPDATE staging.organisations SET email=$1, updated_at=NOW(), "
+                "updated_by=$3 WHERE id=$2::uuid",
+                new_email, org_id, user["user_id"],
             )
 
             # Inside the transaction, with the row it describes — the same rule
@@ -1548,9 +1590,20 @@ async def deactivate_org(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.organisations SET is_active=FALSE WHERE id=$1::uuid",
-        org_id,
+        # Suspending a customer is the single most consequential thing this
+        # console does and it wrote NO trace of who did it — no event row, no
+        # column. `updated_by` is now that trace, and `updated_at` moves with it
+        # because a name against a timestamp from some earlier edit dates the
+        # suspension to the wrong day.
+        "UPDATE staging.organisations SET is_active=FALSE, updated_at=NOW(), "
+        "updated_by=$2 WHERE id=$1::uuid",
+        org_id, user["user_id"],
     )
+    # `staging.subscriptions` carries NEITHER `updated_by` NOR `created_by` —
+    # checked against the live catalogue, not the migration files; 201 and 202
+    # did not reach it. Left exactly as it was rather than half-stamped: the
+    # organisation row above already records who suspended this customer, and
+    # the cancellation is that same act reaching a second table.
     await pool.execute(
         "UPDATE staging.subscriptions SET status='cancelled' WHERE org_id=$1::uuid",
         org_id,
@@ -1708,6 +1761,20 @@ async def update_org_settings(
 
     if not updates:
         raise HTTPException(400, "No fields to update")
+
+    # WHO set this org's markup, its monthly credits, its fee and its seat cap.
+    # These are the commercial terms of a customer relationship and until 202
+    # they could be changed by any of ten platform accounts with nothing on the
+    # row to say which — the fee at least lands a `sync_platform_line` actor on
+    # the billing line, but markup, credits and `max_users` landed nowhere.
+    #
+    # Appended to `updates` BEFORE `params.append(org_id)`, so it takes $idx and
+    # the WHERE clause takes the next one. Both numbers come from the same
+    # counter that built every clause above; hardcoding either is how the org id
+    # ends up bound into an actor column.
+    updates.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     params.append(org_id)
     sql = (
@@ -2343,6 +2410,18 @@ async def assign_role(
             await assert_seat_available(
                 pool, body.org_id, email=target["email"], user_id=body.user_id,
             )
+        # `granted_by` IS THE AUDIT COLUMN HERE, and `updated_by` (203)
+        # deliberately stays NULL. This is an INSERT: on the inserting path the
+        # grant is BEING MADE, and "who made it" is exactly what `granted_by`
+        # records — a row that has never been amended must not claim it has. On
+        # the conflicting path `DO NOTHING` means no row changed, so stamping an
+        # author would record an amendment that did not happen.
+        #
+        # Note this cannot CHANGE a role either: the conflict target is
+        # (user_id, org_id, role_code), so assigning a second role adds a second
+        # grant rather than editing the first. The only in-place role change in
+        # the product is `org_members.update_member_role`, and that one sets
+        # `updated_by`.
         await pool.execute(
             "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4) "
@@ -2710,6 +2789,14 @@ async def nominate_org_owner(
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # `granted_by` is the operator who appointed them, which is the
+            # whole record for a grant being created; `user_roles.updated_by`
+            # (203) stays NULL because nothing here amends an existing grant.
+            # The organisation-level trail for this act is the
+            # `organisations.updated_by` write below, which is a genuine
+            # amendment of a standing row — and the `_audit_emit` at severity
+            # warn, because appointing an owner from the platform console is a
+            # cross-boundary act on a customer's account.
             await conn.execute(
                 "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
                 "VALUES ($1, $2::uuid, 'org_owner', $3) "
@@ -2721,9 +2808,16 @@ async def nominate_org_owner(
             # is no longer the right answer — but overwriting it here would be a
             # second, unasked-for change to a populated column.
             await conn.execute(
-                "UPDATE staging.organisations SET owner_user_id=$1, updated_at=NOW() "
-                " WHERE id=$2::uuid AND owner_user_id IS NULL",
-                target["user_id"], org_id,
+                # $3 is the OPERATOR, not the new owner. `owner_user_id` ($1)
+                # says who now owns the organisation; `updated_by` says who
+                # appointed them, and appointing an owner from the platform
+                # console is a cross-boundary act on a customer's account — the
+                # `_audit_emit` below files it at severity warn for that reason.
+                # Confusing the two would make the row claim the new owner
+                # appointed themselves.
+                "UPDATE staging.organisations SET owner_user_id=$1, updated_at=NOW(), "
+                "updated_by=$3 WHERE id=$2::uuid AND owner_user_id IS NULL",
+                target["user_id"], org_id, user["user_id"],
             )
             await _log_event(conn, org_id, "org_owner_nominated", {
                 "user_id": target["user_id"],
@@ -2783,13 +2877,20 @@ async def set_org_r2(
     await pool.execute(
         "UPDATE staging.organisations SET "
         "r2_account_id=$1, r2_access_key_id=$2, r2_secret_access_key=$3, "
-        "r2_bucket_name=$4 WHERE id=$5::uuid",
+        # Repointing an org's file storage decides where every document that
+        # organisation owns is written from now on, and a mis-set bucket is
+        # found weeks later by somebody looking for files that are not there.
+        # `_log_event` records `set_by`; the row now says it too, and
+        # `updated_at` is set because this statement never set it at all — the
+        # row's timestamp has been lying about when the org last changed on
+        # every R2 assignment since the endpoint shipped.
+        "r2_bucket_name=$4, updated_at=NOW(), updated_by=$6 WHERE id=$5::uuid",
         # Encrypted at rest. This is a Cloudflare R2 secret — in the clear it
         # turns a database dump or a leaked read-only connection string into
         # write access on every org's file storage. `services/storage.py`
         # decrypts on read; `encrypt` is idempotent so a re-save is safe.
         body.account_id, body.access_key_id, encrypt(body.secret_access_key),
-        body.bucket_name, org_id,
+        body.bucket_name, org_id, user["user_id"],
     )
 
     clear_org_r2_cache(org_id)

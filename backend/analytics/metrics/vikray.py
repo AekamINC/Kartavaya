@@ -240,7 +240,7 @@ def target_attainment(req: MetricRequest):
     # timeline, so the total is unchanged.
     period = bucket_expr(req.bucket, "COALESCE(d.won_at, d.updated_at)")
     return (
-        "SELECT COALESCE(u.full_name, u.name, u.email, 'Unknown salesperson') AS label, "
+        "SELECT COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unknown salesperson') AS label, "
         "t.period_start, t.period_end, "
         "(COALESCE(won.amount, 0) / NULLIF(t.target_amount, 0) * 100)::float AS value, "
         "COALESCE(won.amount, 0)::float AS actual_amount, "

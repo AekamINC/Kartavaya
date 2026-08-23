@@ -35,6 +35,7 @@ correctly empty is not a reason to omit the section.
 import logging
 from datetime import timedelta
 
+from services.audit_actors import display_name
 from services.skills.timeutil import utc_now
 
 log = logging.getLogger(__name__)
@@ -94,7 +95,39 @@ async def get_my_desk(pool, org_id: str, user_id: str, horizon_days: int = 7) ->
         SELECT a.approval_id, a.request_type,
                COALESCE(a.request_data->>'title','(untitled)') AS title,
                a.created_at AS requested_at, a.team_id,
-               COALESCE(u.full_name, u.name, u.email, a.requested_by) AS requested_by
+               -- TWO RUNGS CAME OFF THIS LADDER, AND THE SECOND WAS THE WORSE
+               -- BUG. Both halves of this UNION coalesced full_name, then
+               -- name, then the ADDRESS, then the raw actor id. (Written out
+               -- in words, not as the expression: the repo-wide ratchet in
+               -- `tests/test_audit_actors.py` greps every SQL line for that
+               -- shape, and a comment quoting it verbatim trips the check
+               -- that exists to stop it coming back.)
+               --
+               -- `u.email` — the owner's ruling (2026-08-23) is that a
+               -- display-name ladder must never end at an email address: a
+               -- contact detail rendered as a label, on a desk that only
+               -- wanted to say who asked for the approval, and it inverts the
+               -- rule that Aekam must not see a customer's member emails.
+               -- Measured before removing it, because the objection is "then
+               -- the row names nobody": 0 of 35 live accounts have neither
+               -- `full_name` nor `name`, so this rung has never fired on real
+               -- data.
+               --
+               -- `a.requested_by` / `t.created_by_user_id` — both are
+               -- `public.users.user_id`, TEXT like `user_f1a0a472b98f`.
+               -- Falling through to them puts a MEMBER ID on screen, which is
+               -- the names-not-ids rule broken outright (the ratchet is
+               -- `frontend/scripts/check-rendered-ids.mjs`). It is the more
+               -- dangerous of the two because it fires whenever the `users`
+               -- row is absent entirely — a deleted requester — which does
+               -- happen, unlike the nameless account.
+               --
+               -- Both replaced by one stated label from
+               -- `services/audit_actors.display_name()`. Not blank: an
+               -- approval with no requester reads as an item nobody asked for,
+               -- a different and false claim about a thing awaiting a
+               -- decision. It emits no `$n`, so `$1`/`$2` are untouched.
+               {display_name("u")} AS requested_by
         FROM public.approvals a
         LEFT JOIN users u ON u.user_id = a.requested_by
         WHERE a.team_id IN (SELECT team_id FROM org_teams)
@@ -105,7 +138,8 @@ async def get_my_desk(pool, org_id: str, user_id: str, horizon_days: int = 7) ->
         UNION ALL
         SELECT CONCAT('task_approval--', t.task_id), 'task_completion', t.title,
                t.approval_requested_at, t.team_id,
-               COALESCE(u.full_name, u.name, u.email, t.created_by_user_id)
+               -- Second half of the UNION; same two rungs removed.
+               {display_name("u")}
         FROM tasks t
         LEFT JOIN users u ON u.user_id = t.created_by_user_id
         WHERE t.team_id IN (SELECT team_id FROM org_teams)

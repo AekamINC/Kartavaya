@@ -1872,6 +1872,22 @@ async def list_skill_requests(
             "       COALESCE(NULLIF(TRIM(u.full_name), ''), "
             "                NULLIF(TRIM(u.name), ''), "
             "                'Name not on file') AS requester_name, "
+            # THE DECIDER GOT THE SAME TREATMENT, seven lines late.
+            #
+            # `r.decided_by` was selected raw and returned raw, and
+            # `hub/skills/RequestsTab.jsx` rendered it — so the screen that took
+            # such care over `requester_name` printed an Aekam staff id in the
+            # next column. Found by `check-rendered-ids.mjs` on 2026-08-23,
+            # after that ratchet was taught to see a `_by` value reaching a
+            # rendered position; it had walked past this since the endpoint
+            # shipped.
+            #
+            # Same ladder, same terminal wording as the requester above — two
+            # phrasings for one absence on one screen is how a reader learns to
+            # believe they mean different things.
+            "       COALESCE(NULLIF(TRIM(d.full_name), ''), "
+            "                NULLIF(TRIM(d.name), ''), "
+            "                'Name not on file') AS decided_by_name, "
             # LIVE, from the grant table. Never from r.status — see the note
             # above about `granted` being a record rather than the grant.
             "       EXISTS(SELECT 1 FROM staging.hub_org_skills os "
@@ -1882,6 +1898,10 @@ async def list_skill_requests(
             "JOIN staging.organisations o ON o.id = r.org_id "
             "JOIN staging.hub_skill_templates t ON t.id = r.template_id "
             "LEFT JOIN users u ON u.user_id = r.requested_by "
+            # LEFT, so an undecided request still appears. An INNER join here
+            # would hide every PENDING row — the only rows this queue exists to
+            # show — which is a filter that looks like it is working.
+            "LEFT JOIN users d ON d.user_id = r.decided_by "
             f"{where} "
             f"ORDER BY r.requested_at DESC LIMIT ${len(vals)}",
             *vals,
@@ -1913,7 +1933,10 @@ async def list_skill_requests(
                 "status": r["status"],
                 "requested_at": r["requested_at"],
                 "decided_at": r["decided_at"],
-                "decided_by": r["decided_by"],
+                # The NAME, never `r["decided_by"]`, which is a `users.user_id`.
+                # `decided_at` is what tells the screen whether a decision has
+                # been made at all; the name answers who made it.
+                "decided_by_name": r["decided_by_name"],
                 # `[]` here means NOBODY WAS TOLD. On an open request that is the
                 # fan-out having failed, and it is the single most important
                 # thing this screen can surface — the row is the only surviving

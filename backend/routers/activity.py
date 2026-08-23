@@ -12,6 +12,7 @@ from db import get_pool
 from middleware.org_resolver import active_org_id
 from middleware.role_tiers import PLATFORM_ROLE_PRECEDENCE, is_god_mode, modules_for
 from middleware.roles import may_reach_project
+from services.audit_actors import display_name
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +93,33 @@ async def team_activity(
     limit_idx  = len(vals) + 1
     offset_idx = len(vals) + 2
     try:
+        # ── THE ACTOR LADDER, AND WHY IT NO LONGER ENDS AT AN EMAIL ─────────
+        #
+        # All three feeds in this file named the actor with
+        # `COALESCE(u.full_name, u.name, u.email)`. THE OWNER RULED
+        # (2026-08-23) that a display-name ladder must never end at an email
+        # address: Aekam must not see client emails, and a person is named by
+        # their name — an email used as a display fallback is a CONTACT DETAIL
+        # rendered as a LABEL, on a feed that only ever wanted to say who did
+        # something. An activity feed is the worst place for it: it is the one
+        # surface a platform role may cross into another org to read.
+        #
+        # MEASURED FIRST, read-only, on the live database: **0 of 35 accounts**
+        # have neither `full_name` nor `name`. The email rung has never fired on
+        # real data, so removing it changes nothing visible today.
+        #
+        # NOT LEFT BLANK. A blank actor reads as "nobody did this", which is a
+        # different and false claim — the very distinction an audit row exists
+        # to preserve — so the ladder ends at a stated, non-identifying label,
+        # `'Unnamed member'`, the wording `routers/procurement.py:391` already
+        # uses rather than a third phrasing invented beside it.
+        #
+        # The join stays LEFT, so a DELETED actor still yields NULL here and the
+        # feed still renders that as unknown. `display_name` emits no `$n`, so
+        # the `${limit_idx}` / `${offset_idx}` numbering below is untouched.
         rows = await pool.fetch(f"""
             SELECT ae.*,
-                   COALESCE(u.full_name, u.name, u.email) AS actor_name,
+                   {display_name('u')} AS actor_name,
                    t.title AS task_title
             FROM activity_events ae
             LEFT JOIN users u ON u.user_id = ae.actor_id
@@ -179,7 +204,7 @@ async def feed_activity(
         offset_idx = len(vals) + 2
         rows = await pool.fetch(f"""
             SELECT ae.*,
-                   COALESCE(u.full_name, u.name, u.email) AS actor_name,
+                   {display_name('u')} AS actor_name,
                    t.title AS task_title,
                    tm.name AS team_name
             FROM activity_events ae
@@ -227,9 +252,9 @@ async def task_activity(
     if not may_bypass:
         if not await may_reach_project(pool, task_team["team_id"], user["user_id"]):
             raise HTTPException(403, "Access denied")
-    rows = await pool.fetch("""
+    rows = await pool.fetch(f"""
         SELECT ae.*,
-               COALESCE(u.full_name, u.name, u.email) AS actor_name
+               {display_name('u')} AS actor_name
         FROM activity_events ae
         LEFT JOIN users u ON u.user_id = ae.actor_id
         WHERE ae.task_id=$1

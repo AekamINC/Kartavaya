@@ -320,8 +320,19 @@ def test_the_names_that_read_right_and_are_wrong_stay_out():
         r"u\.avatar_url\b": "the column is `avatar`; `AS avatar_url` is the wire name",
         # samvada_mentions.read_at is a timestamptz.
         r"\bis_read\b": "the mention row records read_at, not a boolean",
-        # MentionTextarea's shape, which this module deliberately does not reuse.
-        r"\bdisplay_name\b": "Sanvaad's directory returns full_name, not display_name",
+        # MentionTextarea's shape, which this module deliberately does not
+        # reuse. THE BAN IS ON THE WIRE KEY, not on the identifier: since
+        # 2026-08-23 this service and the directory both compose their display
+        # ladder by CALLING `services.audit_actors.display_name`, which is the
+        # one place the owner's "a display name never ends at an email address"
+        # ruling is written. Banning the bare word would forbid reading from
+        # that module and push every site back to hand-writing the ladder —
+        # which is exactly how the email rung reached sixty places. What must
+        # still never appear is a COLUMN or JSON key of that name: both clients
+        # read `full_name`, and a second key is a second source of truth for the
+        # one string the resolver has to match.
+        r"""(?:AS\s+display_name\b|["']display_name["'])""":
+            "Sanvaad's directory returns full_name, not display_name",
         # File attachments are excluded from this work by the owner.
         r"samvada_message_attachments": "attachments are out of scope for this feature",
         r"\blast_seen\b(?!_at)": "the presence column is last_seen_at",

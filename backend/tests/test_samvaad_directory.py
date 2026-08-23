@@ -42,6 +42,7 @@ import pytest
 import routers.messaging as messaging
 import services.samvaad_mentions as mentions
 from conftest import TEST_ORG_ID
+from services.audit_actors import display_name
 
 DIRECTORY = "/api/v1/messaging/directory"
 
@@ -56,7 +57,20 @@ MEMBER_ROW = {"?column?": 1}
 #: wire name and may differ, the EXPRESSION may not — it is what the composer
 #: inserts after the `@` and what the resolver matches the inserted text
 #: against, and those two disagreeing is the original Sanvaad mention bug.
-DISPLAY = "COALESCE(u.full_name, u.name, u.email)"
+#:
+#: PINNED TO THE PROPERTY, NOT TO A SPELLING. This used to be the literal
+#: `COALESCE(u.full_name, u.name, u.email)`, which made the leak the owner
+#: banned on 2026-08-23 — a display ladder ending at an email address — a thing
+#: the suite REQUIRED. Both sides now compose the ladder from the one module
+#: that owns it, so this constant is whatever that module emits: the identity
+#: the mention feature depends on is enforced by construction, and the separate
+#: assertion below is that neither side reaches an email column.
+DISPLAY = display_name("u")
+
+#: The call, as it is written in both source files. The rendered constant above
+#: cannot appear in either any more — they interpolate it — so the source-level
+#: identity test matches on this.
+DISPLAY_CALL = "display_name('u')"
 
 _ROLE_CODES = re.compile(r"role_code IN \(([^)]*)\)")
 
@@ -327,7 +341,7 @@ async def test_a_member_with_no_full_name_is_offered(
     api_client, as_member, with_org_id, mock_pool
 ):
     """`full_name` is nullable in `public.users`. The resolver coalesces to
-    `name` then `email`, so such a person IS mentionable — and both pickers drop
+    `name` and then to a stated label, so such a person IS mentionable — and both pickers drop
     a row whose `full_name` is blank, so they were never offered.
 
     The fix is on the wire and not in the clients: scoped, `full_name` carries
@@ -336,7 +350,9 @@ async def test_a_member_with_no_full_name_is_offered(
     """
     row = {
         "user_id": NAMELESS,
-        "full_name": "nameless@test.example",
+        # What the ladder now yields for such a member. It used to be their
+        # EMAIL — the leak, sitting in a fixture.
+        "full_name": "Unnamed member",
         "avatar_url": None,
     }
     _wire(mock_pool, channel={"type": "private"}, membership=MEMBER_ROW, rows=[row])
@@ -370,14 +386,22 @@ def test_the_scoped_directory_offers_the_string_the_resolver_matches():
     """
     resolver = _norm(_code_of(mentions._readable_by))
     picker = _norm(_code_of(messaging.directory))
-    assert DISPLAY in resolver, (
-        "_readable_by no longer resolves against COALESCE(full_name, name, "
-        "email); the picker below is now pinned to the wrong string"
+    assert DISPLAY_CALL in resolver, (
+        "_readable_by no longer composes its display string from "
+        "audit_actors.display_name; the picker is now pinned to another spelling"
     )
-    assert DISPLAY in picker, (
+    assert DISPLAY_CALL in picker, (
         "the channel-scoped directory does not return the display string the "
         "resolver will match, so a picked name can resolve to nobody"
     )
+    # The owner's ruling, asserted as a property rather than as a spelling: a
+    # display ladder never ends at a contact detail. Measured 2026-08-23, 0 of
+    # 35 live accounts would ever have reached that rung, so this removes no
+    # behaviour anybody has seen — it removes the possibility.
+    for name, code in (("_readable_by", resolver), ("directory", picker)):
+        assert "u.email" not in code.replace("u.user_id, u.email,", ""), (
+            f"{name} names a person by their email address again"
+        )
 
 
 def test_the_public_arm_admits_the_same_org_roles_as_the_resolver():

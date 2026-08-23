@@ -112,6 +112,7 @@ def load_all() -> None:
     """
     from services.report_defs import (        # noqa: F401
         commission_reports,
+        department_reports,
         expense_register,
         payables_ageing,
         people_reports,

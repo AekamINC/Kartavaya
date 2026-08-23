@@ -1373,9 +1373,52 @@ async def module_report(
     date_from: str = "",
     date_to: str = "",
     format: str = "json",
+    report: str = "",
     user=Depends(require_user),
     org_id=Depends(get_org_id),
 ):
+    """A module's arrangement — or, with `report=`, ONE named register.
+
+    ── WHY `report=` IS A PARAMETER HERE AND NOT A SECOND ROUTE ──────────────
+
+    Proposal 70 found that /reports is not three reporting surfaces but SIX,
+    and that consolidating them needed exactly one thing: a second PRODUCER of
+    the widget shape, so that a row-level register could travel down the
+    renderer, the PDF engine and the three export branches that already exist.
+    `services/module_report.report_section` is that producer and it shipped.
+
+    What was still missing was a DOOR. `/report-sections` lists the registers a
+    caller may see; nothing could then ask for one. The only way to render a
+    section was to save it into a module's layout first, which means a
+    register was reachable only by editing a view — so the catalogue named
+    documents nobody could open, and the honest arithmetic in the proposal
+    ("net six to six") stayed true.
+
+    A separate route would have needed its own copy of the gate, its own
+    window parsing and its own csv/xlsx/pdf branches — four more places for
+    the six surfaces to drift apart, which is the thing being consolidated.
+    So this is one parameter that swaps the LAYOUT and nothing else:
+
+        layout = [{"report": key}]   instead of the saved arrangement
+
+    Every line below this point is untouched. `report_entry` dispatches on the
+    entry's shape, `report_section` re-gates on `ReportDef.reads`, and the four
+    format branches discriminate on `label` + `data`/`absent` exactly as they
+    already did. No new renderer, no new PDF engine, no new export code — the
+    proposal's words, and now literally true.
+
+    ── THE GATE IS NOT WEAKENED BY THIS ─────────────────────────────────────
+
+    `require_module(module)` still runs first, on the module named in the URL.
+    Then `report_section` refuses the section unless EVERY code in its `reads`
+    passes `_gate` — which is `require_module` again, per module. A section
+    whose `module` differs from the URL's therefore has to pass BOTH, and the
+    one it would skip (its own, via `report_section`'s "the page's own module"
+    shortcut) is precisely the one the URL gate has already asked about. That
+    is checked below rather than reasoned about: a `report` whose owning module
+    is not the `module` in the URL is refused outright, so the shortcut can
+    never be the way past a grant.
+    """
     if format not in FORMATS:
         raise HTTPException(400, f"unknown format: {format!r} — one of {', '.join(FORMATS)}")
     if not date_from or not date_to:
@@ -1384,6 +1427,29 @@ async def module_report(
     if module not in modules_in_registry():
         raise HTTPException(404, f"unknown module: {module!r} — see /api/v1/analytics/catalogue")
 
+    # ── The named register, resolved BEFORE the gate runs. ────────────────
+    # A 404 for an unknown key is not a leak: `REPORT_DEFS` is the product's
+    # own vocabulary, the same way `REGISTRY` is for /run, and /report-sections
+    # already tells a caller which keys exist for them. What would be a leak is
+    # letting the key choose the module — hence the equality check.
+    section_def = None
+    if report:
+        from services.report_defs import REPORT_DEFS, load_all
+        load_all()
+        section_def = REPORT_DEFS.get(report)
+        if section_def is None:
+            raise HTTPException(
+                404, f"unknown report: {report!r} — see "
+                     f"/api/v1/analytics/report-sections")
+        if section_def.module != module:
+            # The register names its own owner. Asking for `manav.…` under
+            # `module=core` would reach `report_section`'s "the page's own
+            # module" shortcut with the WRONG module and skip the one gate
+            # that matters.
+            raise HTTPException(
+                400, f"report {report!r} belongs to the {section_def.module} "
+                     f"module, not {module!r}")
+
     # THE gate, /run's own: subscription state, the sensitive-module audit
     # row, platform-role refusal. Core PM is the one ungated surface —
     # membership, already proven by get_org_id, is its whole entitlement.
@@ -1391,8 +1457,15 @@ async def module_report(
         await require_module(module)(request, org_id)
 
     pool = await get_pool()
-    layout, source = await _module_arrangement(pool, user["user_id"], org_id, module)
-    label = MODULE_TITLES.get(module, module.title())
+    if section_def is not None:
+        # ONE entry, and it is a section. `source` says so in the payload so a
+        # UI (and a support reader looking at a saved file) can tell a register
+        # apart from a module page that happens to contain one.
+        layout, source = [{"report": report}], f"section:{report}"
+        label = section_def.label
+    else:
+        layout, source = await _module_arrangement(pool, user["user_id"], org_id, module)
+        label = MODULE_TITLES.get(module, module.title())
 
     # The gate the service seam expects: /run's own door, asked once per
     # foreign module a saved view drags in; a refusal WITHHOLDS the widget.
@@ -1442,7 +1515,13 @@ async def module_report(
     # Module codes are ASCII by construction (registry keys are the ratchet),
     # so unlike the client report the stem needs no fallback — and it carries
     # the module and the period, never an org or user id.
-    stem = f"module-report_{module}_{win.start.isoformat()}_{win.end.isoformat()}"
+    # The filename says WHICH document this is. A register downloaded as
+    # `module-report_manav_…` is a file nobody can identify in a downloads
+    # folder six weeks later. `report` is a registry key — ASCII, dotted — so
+    # only the dot needs replacing to keep the extension unambiguous.
+    stem = (f"report_{report.replace('.', '_')}_"
+            f"{win.start.isoformat()}_{win.end.isoformat()}" if report else
+            f"module-report_{module}_{win.start.isoformat()}_{win.end.isoformat()}")
     period = f"{win.start.isoformat()} to {win.end.isoformat()}"
 
     if format == "csv":

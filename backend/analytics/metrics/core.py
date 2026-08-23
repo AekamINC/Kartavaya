@@ -174,7 +174,7 @@ def workload(req: MetricRequest):
     # COALESCE order is the house display chain (full_name, name, email) —
     # the same one approvals_router and activity.py resolve people with.
     return (
-        "SELECT COALESCE(u.full_name, u.name, u.email, 'Unassigned') AS label, "
+        "SELECT COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unassigned') AS label, "
         "COUNT(*) AS value "
         "FROM public.tasks t "
         "JOIN public.teams tm ON tm.team_id = t.team_id "

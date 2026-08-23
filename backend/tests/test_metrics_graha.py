@@ -215,7 +215,18 @@ def test_win_rate_by_rep_joins_assigned_to_and_labels_names_never_ids():
     assert "owner_id" not in sql, (
         "owner_id is an unwritten uuid — joining it 500'd the kanban (migration 092)"
     )
-    assert "COALESCE(u.full_name, u.name, u.email, 'Unassigned') AS rep" in sql
+    # THE ASSERTION MOVED FROM THE TEXT TO THE PROPERTY.
+    #
+    # This used to pin the literal `COALESCE(u.full_name, u.name, u.email, …)`.
+    # Under a test named for names-never-ids, that string was the leak itself:
+    # the owner ruled on 2026-08-23 that a display ladder must never end at an
+    # email address, and a text match would have FAILED on the fix and passed on
+    # the bug — teaching the next reader to revert rather than to keep the
+    # property. So it asserts what actually matters: a name is resolved, no id
+    # reaches the label, and the ladder does not reach `.email`.
+    assert "u.full_name" in sql and "u.name" in sql
+    assert "'Unassigned') AS rep" in sql
+    assert "u.email" not in sql
     select_list = sql.split(" FROM ")[0]
     assert "user_id" not in select_list and "assigned_to" not in select_list, (
         f"raw id in output columns\n{select_list}"

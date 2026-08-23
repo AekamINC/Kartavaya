@@ -35,6 +35,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_any_module
+from services.audit_actors import actor_joins, actor_select
 
 log = logging.getLogger(__name__)
 
@@ -91,11 +92,31 @@ async def list_products(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, name, hsn_code, sac_code, unit, price, cost_price, "
-        "margin, margin_pct, gst_rate, "
-        "description, is_service, created_at "
-        "FROM staging.ganit_products WHERE org_id=$1::uuid AND is_active=TRUE "
-        "ORDER BY name",
+        # WHO added the product and WHO last repriced it, as NAMES. A price is
+        # the one field in this catalogue an argument later gets had about, and
+        # until migration 202 the table carried no author column at all — so
+        # "who changed this to 4,500?" had no answer anywhere in the product.
+        # `created_by`/`updated_by` hold `users.user_id`, which must never reach
+        # a screen, so `services/audit_actors` resolves them here and the raw
+        # ids are NOT in this select list.
+        #
+        # 106 rows predate 202 and are deliberately not backfilled: `has_creator`
+        # is FALSE on every one of them, and the UI shows an em dash rather than
+        # inventing an author who cannot be checked.
+        #
+        # IT GOES FIRST, not last. `actor_select` is comma-TERMINATED so it can
+        # be dropped into the middle of a column list; appending it leaves a
+        # dangling comma in front of `FROM`, which is a syntax error on every
+        # request to this endpoint. The first version of this line did exactly
+        # that and a mock pool would never have noticed — a live probe did.
+        "SELECT " + actor_select("p", updated=True)
+        + "p.id, p.name, p.hsn_code, p.sac_code, p.unit, p.price, "
+        "p.cost_price, p.margin, p.margin_pct, p.gst_rate, "
+        "p.description, p.is_service, p.created_at, p.updated_at "
+        "FROM staging.ganit_products p "
+        + actor_joins("p", updated=True)
+        + "WHERE p.org_id=$1::uuid AND p.is_active=TRUE "
+        "ORDER BY p.name",
         org_id,
     )
     return {"data": [dict(r) for r in rows]}
@@ -112,11 +133,17 @@ async def create_product(
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_products "
         "(org_id, name, hsn_code, sac_code, unit, price, cost_price, gst_rate, "
-        " description, is_service) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) "
+        " description, is_service, created_by) "
+        # `created_by` is stamped on the INSERT and nowhere else. The alternative
+        # — leaving it null and letting the audit log carry the answer — is what
+        # the 106 pre-202 rows already are, and reading an author back out of the
+        # audit trail means a join per row against a table that is trimmed on a
+        # schedule. Bound as $11, never interpolated.
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
         "RETURNING id, name, margin, margin_pct",
         org_id, body.name, body.hsn_code, body.sac_code, body.unit,
         body.price, body.cost_price, body.gst_rate, body.description, body.is_service,
+        user["user_id"],
     )
     return {"status": "created", **dict(row)}
 
@@ -149,6 +176,16 @@ async def update_product(
         params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # WHO repriced it, in the SAME statement that reprices it. A trigger cannot
+    # do this — it does not know who is holding the connection — so a write path
+    # that stamps `updated_at` and not `updated_by` leaves a table that can say
+    # a price moved and not who moved it, which on a catalogue with a generated
+    # `margin` is the one question anybody asks. `idx` is whatever the loop left
+    # it at, so this is bound at the right position however many fields were
+    # sent; getting that number wrong is an instant 500, not a wrong answer.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     await pool.execute(
         f"UPDATE staging.ganit_products SET {', '.join(sets)} "

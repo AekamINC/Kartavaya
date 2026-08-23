@@ -255,7 +255,9 @@ export default function TabSupportAccess() {
                     {liveCols.cells({
                     who: (
                     <Cell>
-                      <b>{s.requested_by_name || s.requested_by}</b>
+                      {/* No `|| s.requested_by`: the router resolves this and
+                          ends at a sentence. The fallback drew a member id. */}
+                      <b>{s.requested_by_name}</b>
                       {/* The reference the customer reads out on the phone.
                           A UUID cannot be dictated and will not be checked. */}
                       <br />
@@ -346,7 +348,7 @@ export default function TabSupportAccess() {
                   <Row key={s.id}>
                     {pastCols.cells({
                       ref: <Cell>{s.ref}</Cell>,
-                      who: <Cell>{s.requested_by_name || s.requested_by}</Cell>,
+                      who: <Cell>{s.requested_by_name}</Cell>,
                       why: <Cell>{s.reason}</Cell>,
                       outcome: (
                         <Cell>

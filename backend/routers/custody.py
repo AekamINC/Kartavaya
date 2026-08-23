@@ -1173,6 +1173,10 @@ async def dsc_revoke(
             as_of=_now().date(),
             revoked_on=body.revoked_on,
             reason=body.reason,
+            # The same actor string the create path writes into `created_by`.
+            # Threaded rather than left to the service, which never sees a
+            # request: only this layer holds the login.
+            actor_id=_created_by(user),
         )
     except dsc.CustodyError as exc:
         raise _guard(exc)
@@ -1217,6 +1221,7 @@ async def dsc_custody(
             custody_holder_name=body.custody_holder_name,
             changed_on=body.changed_on,
             note=body.note,
+            actor_id=_created_by(user),
         )
     except dsc.CustodyError as exc:
         raise _guard(exc)
@@ -1362,6 +1367,8 @@ async def udin_generate(
             now=moment,
             generated_at=body.generated_at,
             note=body.note,
+            # The same actor string the create path writes into `created_by`.
+            actor_id=_created_by(user),
         )
     except udin.UdinError as exc:
         raise _refused(exc)
@@ -1409,6 +1416,7 @@ async def udin_revoke(
             reason=body.reason,
             now=moment,
             replaced_by_udin=body.replaced_by_udin,
+            actor_id=_created_by(user),
         )
     except udin.UdinError as exc:
         raise _refused(exc)
@@ -1448,7 +1456,8 @@ async def udin_not_required(
     pool = await get_pool()
     try:
         row = await udin.mark_not_required(
-            pool, org_id, entry_id, reason=body.reason, now=moment
+            pool, org_id, entry_id, reason=body.reason, now=moment,
+            actor_id=_created_by(user),
         )
     except udin.UdinError as exc:
         raise _refused(exc)
@@ -1589,6 +1598,8 @@ async def notice_status(
             to_status=body.status,
             on_date=body.on_date,
             note=body.note,
+            # The same actor string the create path writes into `created_by`.
+            actor_id=_created_by(user),
         )
     except notices.NoticeError as exc:
         raise _guard(exc)
@@ -1635,6 +1646,7 @@ async def notice_due_date(
             as_of=_now().date(),
             due_on_override=body.due_on_override,
             note=body.note,
+            actor_id=_created_by(user),
         )
     except notices.NoticeError as exc:
         raise _guard(exc)

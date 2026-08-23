@@ -74,14 +74,54 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         "SELECT name, gstin, pan, billing_address FROM staging.organisations "
         "WHERE id=$1::uuid", org_id)
 
+    # ── TWO COHORTS, NAMED, BECAUSE THEY ARE NOT THE SAME DEALS ─────────────
+    #
+    # This query used to have ONE window — `created_at > cutoff` in the WHERE —
+    # and it counted `won_value` inside it. So "Won value" for the last 90 days
+    # meant "the value of deals CREATED in the last 90 days that happen to be
+    # Won today". A deal opened in March and won last week was not in it; a deal
+    # opened last week and won in two years' time would be. Measured live
+    # 2026-08-22, last 90 days: E2E Rs53,13,648 shown against Rs66,37,948 won,
+    # Unicode Rs11,22,500 against Rs15,72,500. On the financial year to date
+    # Unicode is 39% low — Rs7,30,000 of real wins missing from a figure headed
+    # "Won value".
+    #
+    # The fix is NOT to move the whole query onto `won_at`, because
+    # `total_deals` and the conversion rate are honest questions about the
+    # CREATED cohort and moving them would swap one mislabelled number for
+    # another. Both cohorts are computed here and both are labelled on every
+    # renderer:
+    #
+    #   · `total_deals` / `cohort_won` / `cohort_lost` / `conversion_rate`
+    #     — deals OPENED in the window and where they stand TODAY. The
+    #       conversion rate has to be built from this pair or it divides wins
+    #       from one population by openings from another.
+    #   · `won` / `won_value` / `lost` / `avg_cycle_days`
+    #     — deals CLOSED in the window, on `won_at` / `lost_at`. This is what
+    #       "won in this period" means to the person reading it.
+    #
+    # `won_at` is filled on 33 of 33 won deals and `lost_at` on 22 of 22 lost
+    # ones (live, 2026-08-22, both real orgs and the seeded one), so neither
+    # closed figure loses rows to a NULL date. `won_undated` and `lost_undated`
+    # carry the exception anyway rather than letting a future NULL quietly
+    # shrink a total — the same rule `done_undated` follows on the work report.
+    #
+    # The WHERE no longer carries `created_at > $2`: a deal won inside the
+    # window may have been opened long before it, and filtering the table first
+    # would put that deal beyond reach of every FILTER below.
     conversion = await pool.fetchrow(
-        "SELECT COUNT(*) AS total_deals, "
-        "  COUNT(*) FILTER (WHERE stage='Won') AS won, "
-        "  COUNT(*) FILTER (WHERE stage='Lost') AS lost, "
-        "  COALESCE(SUM(value) FILTER (WHERE stage='Won'), 0) AS won_value, "
+        "SELECT COUNT(*) FILTER (WHERE created_at > $2) AS total_deals, "
+        "  COUNT(*) FILTER (WHERE stage='Won'  AND created_at > $2) AS cohort_won, "
+        "  COUNT(*) FILTER (WHERE stage='Lost' AND created_at > $2) AS cohort_lost, "
+        "  COUNT(*) FILTER (WHERE stage='Won'  AND won_at  > $2) AS won, "
+        "  COUNT(*) FILTER (WHERE stage='Lost' AND lost_at > $2) AS lost, "
+        "  COALESCE(SUM(value) FILTER (WHERE stage='Won' AND won_at > $2), 0) "
+        "    AS won_value, "
+        "  COUNT(*) FILTER (WHERE stage='Won'  AND won_at  IS NULL) AS won_undated, "
+        "  COUNT(*) FILTER (WHERE stage='Lost' AND lost_at IS NULL) AS lost_undated, "
         "  AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400)"
-        "    FILTER (WHERE stage='Won' AND won_at IS NOT NULL)::int AS avg_cycle_days "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid AND created_at > $2",
+        "    FILTER (WHERE stage='Won' AND won_at > $2)::int AS avg_cycle_days "
+        "FROM staging.graha_deals WHERE org_id=$1::uuid",
         org_id, cutoff)
 
     forecast = await pool.fetch(
@@ -115,16 +155,55 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         # Joined to `users` because the screen's version groups by `assigned_to`
         # and returns no name at all — a report that names people by id is not a
         # report anybody can act on.
+        # Same correction as the conversion block above, and it matters more
+        # here because these figures sit against a PERSON'S NAME. `Deals` is
+        # the allocation — what was opened and routed to them in the window —
+        # and `Won`/`Won value` are what they CLOSED in it, on `won_at`. Under
+        # one created_at window a rep who closed a long deal opened last year
+        # showed zero beside their own name.
         reps = await pool.fetch(
-            "SELECT COALESCE(u.full_name, u.name, u.email, 'Unassigned') AS person, "
-            "  COUNT(*) AS total_deals, "
-            "  COUNT(*) FILTER (WHERE d.stage='Won') AS won, "
-            "  COUNT(*) FILTER (WHERE d.stage='Lost') AS lost, "
-            "  COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won'), 0) AS won_value "
+            # THE LADDER STOPS BEFORE THE EMAIL. It read `COALESCE(u.full_name,
+            # u.name, u.email, 'Unassigned')`, so a rep with no name recorded
+            # had their EMAIL printed as the row label of a CRM performance
+            # report — and this report is exported to CSV and XLSX, so the
+            # address travelled out of the product. That is a contact detail
+            # rendered as a label, and it inverts the rule that Aekam must not
+            # see a customer's member emails. The owner's ruling (2026-08-23)
+            # is that a display-name ladder must never end at an email address.
+            #
+            # This agrees with the note above rather than contradicting it: a
+            # report that names people by id is not actionable, and neither is
+            # one that names them by inbox. Both are the identifier standing in
+            # for the person; only the NAME is the label.
+            #
+            # MEASURED BEFORE REMOVING IT: 0 of 35 live accounts have neither
+            # `full_name` nor `name`, so the email rung has never fired on real
+            # data and this changes nothing anybody can see.
+            #
+            # `'Unassigned'` STAYS — it is this report's own terminal and says
+            # more here than a generic label would, so only the email rung came
+            # out. It also cannot be swapped for `display_name()` for a second
+            # reason: this expression is repeated verbatim in the GROUP BY
+            # below, and the two must stay character-identical or the query
+            # fails at runtime. Edit both or neither.
+            "SELECT COALESCE(u.full_name, u.name, 'Unassigned') AS person, "
+            "  COUNT(*) FILTER (WHERE d.created_at > $2) AS total_deals, "
+            "  COUNT(*) FILTER (WHERE d.stage='Won'  AND d.won_at  > $2) AS won, "
+            "  COUNT(*) FILTER (WHERE d.stage='Lost' AND d.lost_at > $2) AS lost, "
+            "  COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won' AND d.won_at > $2), 0) "
+            "    AS won_value "
             "FROM staging.graha_deals d "
             "LEFT JOIN users u ON u.user_id = d.assigned_to "
-            "WHERE d.org_id=$1::uuid AND d.created_at > $2 AND d.assigned_to IS NOT NULL "
-            "GROUP BY COALESCE(u.full_name, u.name, u.email, 'Unassigned') "
+            "WHERE d.org_id=$1::uuid AND d.assigned_to IS NOT NULL "
+            # The other half of the pair — kept character-identical to the
+            # SELECT expression above.
+            "GROUP BY COALESCE(u.full_name, u.name, 'Unassigned') "
+            # A person whose whole window is zeros is dropped rather than
+            # printed as a line of noughts beside their name: the query now
+            # spans the table, so every rep who ever held a deal would appear.
+            "HAVING COUNT(*) FILTER (WHERE d.created_at > $2) > 0 "
+            "    OR COUNT(*) FILTER (WHERE d.stage='Won'  AND d.won_at  > $2) > 0 "
+            "    OR COUNT(*) FILTER (WHERE d.stage='Lost' AND d.lost_at > $2) > 0 "
             "ORDER BY won_value DESC",
             org_id, cutoff)
 
@@ -138,7 +217,10 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         "  COALESCE(c.name, '') AS contact, "
         "  COALESCE(c.source, '') AS source, "
         "  COALESCE(tr.name, '') AS territory, "
-        "  COALESCE(u.full_name, u.name, u.email, '') AS owner "
+        # Keeps its own `''` terminal: this is the raw CSV/XLSX sheet, where
+        # every other unresolved column beside it is an empty cell too, and a
+        # sudden prose label in one column would read as data. Email rung only.
+        "  COALESCE(u.full_name, u.name, '') AS owner "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
@@ -150,8 +232,15 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
 
     conv = dict(conversion) if conversion else {}
     total = conv.get("total_deals") or 0
-    conv["open"] = total - (conv.get("won") or 0) - (conv.get("lost") or 0)
-    conv["conversion_rate"] = round((conv.get("won") or 0) / total * 100, 1) if total else 0
+    # BOTH derived figures are built from the CREATED cohort, never from the
+    # closed-in-period counts beside them. `open` used to subtract `won` and
+    # `lost` from `total_deals`; once those two moved onto `won_at`/`lost_at`
+    # that subtraction started mixing populations and could go NEGATIVE — a
+    # period in which more deals were won than were opened is ordinary, and it
+    # would have printed "Still open: -2".
+    conv["open"] = total - (conv.get("cohort_won") or 0) - (conv.get("cohort_lost") or 0)
+    conv["conversion_rate"] = (round((conv.get("cohort_won") or 0) / total * 100, 1)
+                               if total else 0)
 
     return {
         "org": dict(org) if org else {},
@@ -222,13 +311,22 @@ def to_excel(data: dict) -> bytes:
         ["Organisation", (data["org"].get("name") or "")],
         ["Period", f"Last {data['period_days']} days"],
         ["Generated", data["generated_at"].strftime("%Y-%m-%d %H:%M UTC")],
-        ["Deals opened", conv.get("total_deals") or 0],
-        ["Won", conv.get("won") or 0],
-        ["Lost", conv.get("lost") or 0],
-        ["Still open", conv.get("open") or 0],
-        ["Conversion rate %", conv.get("conversion_rate") or 0],
-        ["Won value", float(conv.get("won_value") or 0)],
-        ["Average cycle (days)", conv.get("avg_cycle_days") or 0],
+        # Every label says WHICH cohort and over WHAT window. Two of these rows
+        # count deals OPENED in the period and four count deals CLOSED in it;
+        # they are different deals and the sheet has to say so, because a
+        # column of six numbers under one "Period" line reads as one population.
+        ["Deals opened in period", conv.get("total_deals") or 0],
+        ["— of those, won so far", conv.get("cohort_won") or 0],
+        ["— of those, lost so far", conv.get("cohort_lost") or 0],
+        ["— of those, still open", conv.get("open") or 0],
+        ["Conversion rate % (of deals opened in period)",
+         conv.get("conversion_rate") or 0],
+        ["Won in period (on won date)", conv.get("won") or 0],
+        ["Won value in period (on won date)", float(conv.get("won_value") or 0)],
+        ["Lost in period (on lost date)", conv.get("lost") or 0],
+        ["Average cycle, opened to won (days)", conv.get("avg_cycle_days") or 0],
+        ["Won deals with no won date (all time)", conv.get("won_undated") or 0],
+        ["Lost deals with no lost date (all time)", conv.get("lost_undated") or 0],
     ])
     sheet("Forecast", ["Stage", "Deals", "Pipeline value", "Weighted value"],
           [[r["stage"], r["count"], float(r["total_value"]), float(r["weighted_value"])]
@@ -236,11 +334,12 @@ def to_excel(data: dict) -> bytes:
     sheet("Velocity", ["Stage", "Deals", "Value", "Average days in stage"],
           [[r["stage"], r["count"], float(r["total_value"]), r["avg_days_in_stage"] or 0]
            for r in data["velocity"]])
-    sheet("Sources", ["Source", "Leads", "Deals", "Won", "Won value"],
+    sheet("Sources", ["Source", "Leads", "Deals", "Won to date", "Won value to date"],
           [[r["source"], r["leads"], r["deals"], r["won"], float(r["won_value"])]
            for r in data["sources"]])
     if data["includes_reps"]:
-        sheet("By person", ["Person", "Deals", "Won", "Lost", "Won value"],
+        sheet("By person", ["Person", "Deals opened", "Won in period", "Lost in period",
+               "Won value in period"],
               [[r["person"], r["total_deals"], r["won"], r["lost"], float(r["won_value"])]
                for r in data["reps"]])
     sheet("Deals", [label for _, label in DEAL_COLUMNS],
@@ -292,13 +391,18 @@ def _html(data: dict) -> str:
         ids.append(f"PAN {_esc(org['pan'])}")
     addr = _esc(org.get("billing_address") or "")
 
+    # The stat strip is the most-quoted part of this document, so each caption
+    # carries its own basis. "Won" and "Won value" are deals CLOSED in the
+    # period (on `won_at`); "Deals opened" and "Conversion" are the deals
+    # OPENED in it. Three words per caption is the whole cost of not having
+    # somebody quote the wrong population in a board pack.
     stats = [
-        ("Deals opened", str(conv.get("total_deals") or 0)),
-        ("Won", str(conv.get("won") or 0)),
-        ("Lost", str(conv.get("lost") or 0)),
-        ("Conversion", f"{conv.get('conversion_rate') or 0}%"),
-        ("Won value", f"₹{_inr(conv.get('won_value'))}"),
-        ("Avg cycle", f"{conv.get('avg_cycle_days') or 0} days"),
+        ("Opened in period", str(conv.get("total_deals") or 0)),
+        ("Won in period", str(conv.get("won") or 0)),
+        ("Lost in period", str(conv.get("lost") or 0)),
+        ("Conversion of opened", f"{conv.get('conversion_rate') or 0}%"),
+        ("Won value in period", f"₹{_inr(conv.get('won_value'))}"),
+        ("Avg cycle to win", f"{conv.get('avg_cycle_days') or 0} days"),
     ]
     stat_html = "".join(
         f'<div class="stat"><b>{_esc(v)}</b><span>{_esc(k)}</span></div>'
@@ -308,7 +412,8 @@ def _html(data: dict) -> str:
     if data["includes_reps"]:
         reps_section = (
             "<h2>By person</h2>"
-            + _table(["Person", "Deals", "Won", "Lost", "Won value"],
+            + _table(["Person", "Deals opened", "Won in period", "Lost in period",
+               "Won value in period"],
                      [[r["person"], r["total_deals"], r["won"], r["lost"],
                        "₹" + _inr(r["won_value"])] for r in data["reps"]]))
 
@@ -373,7 +478,7 @@ def _html(data: dict) -> str:
             r["avg_days_in_stage"] or 0] for r in data["velocity"]])}
 
   <h2>Where the deals came from</h2>
-  {_table(["Source", "Leads", "Deals", "Won", "Won value"],
+  {_table(["Source", "Leads", "Deals", "Won to date", "Won value to date"],
           [[r["source"], r["leads"], r["deals"], r["won"],
             "₹" + _inr(r["won_value"])] for r in data["sources"]])}
   {_bars([(r["source"], float(r["won_value"])) for r in data["sources"]])}

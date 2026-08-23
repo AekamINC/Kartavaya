@@ -319,8 +319,21 @@ async def add_member(
 
     if body.mobile_number:
         await pool.execute(
-            "UPDATE users SET mobile_number=$1 WHERE user_id=$2",
-            body.mobile_number.strip(), target["user_id"],
+            # ── ONE ACCOUNT'S ROW, WRITTEN BY SOMEBODY ELSE ─────────────────
+            #
+            # This is an org admin editing ANOTHER PERSON'S account record while
+            # adding them to the organisation, so `updated_by` is the admin and
+            # not the target. Those are two different facts and the wrong one
+            # here would read as the member having changed their own number.
+            #
+            # Schema-qualified while it is being touched: `users` is in `public`
+            # and migration 142 exists because a statement that trusted
+            # `search_path` found a shadow table in the other schema.
+            # `updated_at` moves with the actor — a name against a stale
+            # timestamp dates the edit to somebody else's.
+            "UPDATE public.users SET mobile_number=$1, updated_at=NOW(), "
+            "updated_by=$3 WHERE user_id=$2",
+            body.mobile_number.strip(), target["user_id"], user["user_id"],
         )
 
     existing = await pool.fetchval(
@@ -527,11 +540,23 @@ async def update_member_role(
         raise HTTPException(400, "You cannot change your own role")
 
     pool = await get_pool()
+    # WHO PROMOTED THEM. This is the ONLY statement in the product that
+    # changes a `role_code` in place — every other path INSERTs a new grant
+    # (which `granted_by` records) or DELETEs one — and until migration 203 it
+    # recorded nothing at all. `granted_by` answers who admitted this person
+    # to the org months ago; it must not be read as the answer to who made
+    # them an admin today, which is the question an audit asks of this table
+    # first and the one that matters after an incident.
+    #
+    # `updated_at` is deliberately NOT set here: `trg_touch_user_roles` (203)
+    # owns the timestamp, so it stays true even for a writer that never heard
+    # of the column. `updated_by` is the half no trigger can supply, because a
+    # trigger cannot know who is holding the connection.
     await pool.execute(
-        "UPDATE staging.user_roles SET role_code=$1 "
+        "UPDATE staging.user_roles SET role_code=$1, updated_by=$4 "
         "WHERE user_id=$2 AND org_id=$3::uuid "
         "AND role_code IN ('org_admin','org_member')",
-        role, target_user_id, org_id,
+        role, target_user_id, org_id, user["user_id"],
     )
     return {"status": "updated", "role": role}
 

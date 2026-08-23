@@ -597,8 +597,36 @@ from services.task_actor import (  # noqa: E402
 )
 
 def actor_display(user: dict, fallback: str = "Someone") -> str:
-    """Return the best display name for a user dict. Prefers full_name > name > email."""
-    return user.get("full_name") or user.get("name") or user.get("email") or fallback
+    """The display name for a user dict — and it does NOT fall back to email.
+
+    THE OWNER'S RULING (2026-08-23): a display-name ladder must never end at an
+    email address. Two standing rules meet here and point the same way — Aekam
+    must not see client emails, and a person is named by their name. An email as
+    a display fallback is a CONTACT DETAIL rendered as a LABEL, and this helper
+    put one into notification bodies: `tasks_bulk.py` writes "Assigned by
+    {actor_display(user)}", which for a nameless account mailed that account's
+    address to everyone on the task.
+
+    MEASURED BEFORE REMOVING THE RUNG, because the objection is "then some rows
+    show nothing": on the live database **0 of 35 accounts** have neither
+    `full_name` nor `name`. The email rung has never fired on real data. It was
+    not a working fallback, it was a loaded gun.
+
+    `fallback` stays and stays LAST — callers pass "Someone", which is a stated
+    absence. A blank would read as "nobody did this", a different and false
+    claim. `strip()` because `users.name` is NOT NULL in places and an empty
+    string is not a name: `or` alone treats "" as falsey by luck rather than by
+    rule, and one `" "` would slip through as a name made of a space.
+
+    The SQL twin of this ladder is `services/audit_actors.display_name()`, and
+    `tests/test_audit_actors.py` walks the whole backend refusing any ladder
+    that reaches `.email` — including a new copy of this one.
+    """
+    for key in ("full_name", "name"):
+        v = user.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return fallback
 
 # `active_org_id` is the non-raising wrapper around `get_org_id`, and it now
 # lives beside the thing it wraps (`middleware/org_resolver.py`) rather than
@@ -1076,7 +1104,7 @@ async def notify_org_owner_project_state(pool, team: dict, actor: dict, what: st
         if not team.get("org_id"):
             return
         owners = await pool.fetch(
-            "SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS name "
+            "SELECT u.user_id, u.email, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name "
             "FROM staging.user_roles r JOIN users u ON u.user_id = r.user_id "
             "WHERE r.org_id=$1 AND r.role_code='org_owner'",
             str(team["org_id"]))
@@ -2134,7 +2162,7 @@ async def client_tasks(pool=Depends(get_db),user=Depends(require_user)):
     uid = user["user_id"]
     rows=await pool.fetch("""
         SELECT t.*,
-               COALESCE(cu.full_name,cu.name,cu.email) AS created_by_name
+               COALESCE(NULLIF(btrim(cu.full_name), ''), NULLIF(btrim(cu.name), ''), 'Unnamed member') AS created_by_name
         FROM tasks t
         LEFT JOIN users cu ON cu.user_id=t.created_by_user_id
         WHERE t.archived_at IS NULL
@@ -2208,7 +2236,7 @@ async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
                t.title                                AS task_title,
                a.request_data,
                a.created_at,
-               COALESCE(u.full_name, u.name, u.email) AS requested_by_name
+               COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS requested_by_name
         FROM   approvals a
         JOIN   users u ON u.user_id = a.requested_by
         LEFT   JOIN tasks t ON t.task_id = a.task_id
@@ -2232,7 +2260,7 @@ async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
                 'description', t.description
             )                                      AS request_data,
             t.approval_requested_at                AS created_at,
-            COALESCE(u.full_name, u.name, u.email) AS requested_by_name
+            COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS requested_by_name
         FROM   tasks t
         JOIN   users u ON u.user_id = t.created_by_user_id
         WHERE  t.approval_status = 'pending_client'
@@ -2441,7 +2469,7 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
     try:
         reviewers = await pool.fetch("""
             SELECT u.user_id, u.email,
-                   COALESCE(u.full_name, u.name, u.email) AS name,
+                   COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name,
                    COALESCE(u.receives_approval_emails, TRUE) AS wants_email
             FROM project_assignments pa
             JOIN users u ON u.user_id = pa.user_id
@@ -2608,7 +2636,7 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
     # `request_data->>'title'`. Either can be null on a malformed row, so the
     # client keeps its fallback — a response is not a guarantee.
     rows = await pool.fetch(f"""
-        SELECT a.*, COALESCE(u.full_name,u.name,u.email) AS requester_name,
+        SELECT a.*, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS requester_name,
                u.email AS requested_by_email,
                COALESCE(NULLIF(TRIM(t.title), ''),
                         NULLIF(TRIM(a.request_data->>'title'), '')) AS task_title
@@ -2630,7 +2658,7 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
             t.team_id,
             t.priority,
             t.due_at AS task_due_at,
-            COALESCE(u.full_name, u.name, u.email) AS requester_name,
+            COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS requester_name,
             u.email AS requested_by_email,
             'task_completion' AS request_type,
             jsonb_build_object('title', t.title, 'description', t.description, 'priority', t.priority) AS request_data
@@ -2661,7 +2689,7 @@ async def approval_history(pool=Depends(get_db), user=Depends(require_user), org
             t.approval_status AS status,
             t.approval_notes AS notes,
             t.approval_decided_at AS updated_at,
-            COALESCE(u.full_name, u.name, u.email) AS requester_name
+            COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS requester_name
         FROM tasks t
         JOIN users u ON u.user_id = t.created_by_user_id
         WHERE t.approval_status IN ('approved','rejected')
@@ -2789,8 +2817,19 @@ async def set_approval_policy(team_id: str, payload: ApprovalPolicyIn,
     if not await is_task_approver(pool, team_id, user):
         raise HTTPException(403, "Only a project owner or admin can change the approval requirement.")
     await pool.execute(
-        "UPDATE teams SET requires_approval=$1, updated_at=NOW() WHERE team_id=$2",
-        payload.requires_approval, team_id)
+        # `public.teams` gained `updated_by` in migration 202, beside the
+        # `created_by`, `archived_by` and `deleted_by` it already had. It is NOT
+        # redundant with those: each of them records ONE act and is CLEARED by
+        # its inverse — unarchiving nulls `archived_by`, restoring nulls
+        # `deleted_by` — so without this column the only trace of who un-binned
+        # a project is that the trace is gone. `updated_by` is the standing
+        # answer to "who last touched this row" and survives all of them.
+        #
+        # There is no touch trigger on `teams`, so `updated_at` is set by hand
+        # in the same statement.
+        "UPDATE teams SET requires_approval=$1, updated_at=NOW(), updated_by=$3 "
+        "WHERE team_id=$2",
+        payload.requires_approval, team_id, user["user_id"])
     return {"team_id": team_id, "name": team["name"],
             "requires_approval": payload.requires_approval}
 
@@ -3412,7 +3451,7 @@ async def list_deleted_teams(pool=Depends(get_db), user=Depends(require_user),
         return []
     rows = await pool.fetch(f"""
         SELECT t.*,
-               COALESCE(u.full_name, u.name, u.email) AS deleted_by_name,
+               COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS deleted_by_name,
                EXTRACT(EPOCH FROM (NOW() - t.deleted_at)) / 86400 AS days_deleted
         FROM teams t
         LEFT JOIN users u ON u.user_id = t.deleted_by
@@ -3505,8 +3544,11 @@ async def update_team_brand(team_id:str, body:dict, pool=Depends(get_db), user=D
     mem = await is_project_member(pool, team_id, user)
     if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
     await pool.execute(
-        "UPDATE teams SET brand_settings=$1::jsonb, updated_at=NOW() WHERE team_id=$2",
-        json.dumps(body), team_id
+        # Who restyled the project. See the note on `requires_approval` above
+        # for why this is not redundant with the other `*_by` columns.
+        "UPDATE teams SET brand_settings=$1::jsonb, updated_at=NOW(), updated_by=$3 "
+        "WHERE team_id=$2",
+        json.dumps(body), team_id, user["user_id"]
     )
     return {"ok": True}
 
@@ -3597,7 +3639,7 @@ async def list_users(request:Request,pool=Depends(get_db),user=Depends(require_u
         raise HTTPException(403, "This action requires an org owner or org admin")
 
     rows = await pool.fetch(
-        "SELECT u.user_id,COALESCE(u.full_name,u.name,u.email) AS display_name,"
+        "SELECT u.user_id,COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS display_name,"
         "u.email,u.role,u.company_name "
         "FROM users u "
         "JOIN staging.user_roles ur ON ur.user_id = u.user_id "
@@ -3660,7 +3702,7 @@ async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user),o
     # three columns, or pending invitations move to a table of their own. That
     # decision is the owner's, and it is not a read cutover.
     members=await pool.fetch("""
-        SELECT tm.*,COALESCE(u.full_name,u.name,u.email) AS display_name,
+        SELECT tm.*,COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS display_name,
                u.position,u.company_name,u.member_role,u.receives_approval_emails
         FROM team_members tm LEFT JOIN users u ON u.user_id=tm.user_id
         WHERE tm.team_id=$1 ORDER BY tm.created_at ASC""",team_id)
@@ -3684,7 +3726,7 @@ async def list_team_clients(team_id:str,pool=Depends(get_db),user=Depends(requir
     mem=await is_project_member(pool,team_id,user)
     if not mem: raise HTTPException(403,_NOT_TEAM_MEMBER)
     rows=await pool.fetch("""
-        SELECT pa.user_id, COALESCE(u.full_name,u.name,u.email) AS display_name, u.email
+        SELECT pa.user_id, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS display_name, u.email
         FROM public.project_assignments pa
         JOIN public.users u ON u.user_id=pa.user_id
         WHERE pa.team_id=$1 AND pa.role='client'
@@ -3715,7 +3757,7 @@ async def list_team_members(team_id:str,pool=Depends(get_db),user=Depends(requir
     mem=await is_project_member(pool,team_id,user)
     if not mem: raise HTTPException(403,_NOT_TEAM_MEMBER)
     rows=await pool.fetch("""
-        SELECT pa.user_id, COALESCE(u.full_name,u.name,u.email) AS display_name, u.email
+        SELECT pa.user_id, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS display_name, u.email
         FROM public.project_assignments pa
         JOIN public.users u ON u.user_id=pa.user_id
         WHERE pa.team_id=$1
@@ -3807,7 +3849,12 @@ async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(require_user
     if team["deleted_at"] is not None:
         raise HTTPException(404, "Project not found")
     await pool.execute(
-        "UPDATE teams SET deleted_at=NOW(), deleted_by=$1 WHERE team_id=$2",
+        # `deleted_by` and `updated_by` hold the same id on THIS statement and
+        # stop being equal the moment somebody restores the project below —
+        # `restore_team` nulls `deleted_by`, and then `updated_by` is the only
+        # thing that still knows a person put this in the bin.
+        "UPDATE teams SET deleted_at=NOW(), deleted_by=$1, "
+        "updated_at=NOW(), updated_by=$1 WHERE team_id=$2",
         user["user_id"], team_id
     )
     await notify_org_owner_project_state(pool, team, user, "deleted")
@@ -3863,7 +3910,11 @@ async def archive_team(team_id: str, pool=Depends(get_db), user=Depends(require_
     # date — the archive stamp is a fact about when it finished, and a second
     # click should not move it.
     changed = await pool.execute(
-        "UPDATE teams SET archived_at=NOW(), archived_by=$1 "
+        # `updated_by` rides the same `archived_at IS NULL` guard, so a second
+        # click still updates NO row — which is what `changed.endswith(" 0")`
+        # below depends on to avoid mailing the org owner twice.
+        "UPDATE teams SET archived_at=NOW(), archived_by=$1, "
+        "updated_at=NOW(), updated_by=$1 "
         "WHERE team_id=$2 AND archived_at IS NULL",
         user["user_id"], team_id)
     # Only on the transition. A second click updates no row, and the org owner
@@ -3886,7 +3937,13 @@ async def unarchive_team(team_id: str, pool=Depends(get_db), user=Depends(requir
     if not team:
         raise HTTPException(404, "Project not found or not archived")
     await pool.execute(
-        "UPDATE teams SET archived_at=NULL, archived_by=NULL WHERE team_id=$1", team_id)
+        # THIS is the statement `updated_by` exists for. It ERASES
+        # `archived_by`, so before migration 202 un-archiving a project was an
+        # act with no author anywhere in the database — the row simply looked
+        # as though it had never been archived.
+        "UPDATE teams SET archived_at=NULL, archived_by=NULL, "
+        "updated_at=NOW(), updated_by=$2 WHERE team_id=$1",
+        team_id, user["user_id"])
     return {"ok": True}
 
 
@@ -3900,7 +3957,12 @@ async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(require_use
         team_id
     )
     if not team: raise HTTPException(404, "Project not found in bin or restore window expired")
-    await pool.execute("UPDATE teams SET deleted_at=NULL, deleted_by=NULL WHERE team_id=$1", team_id)
+    # Same as un-archiving: this ERASES `deleted_by`, so without `updated_by`
+    # taking a project back out of the bin was an act with no author at all.
+    await pool.execute(
+        "UPDATE teams SET deleted_at=NULL, deleted_by=NULL, "
+        "updated_at=NOW(), updated_by=$2 WHERE team_id=$1",
+        team_id, user["user_id"])
     return {"ok": True}
 
 @api_router.delete("/teams/{team_id}/purge")
@@ -3926,7 +3988,13 @@ async def set_team_color(team_id:str,body:dict,pool=Depends(get_db),user=Depends
     color = body.get("color")
     if not color or not isinstance(color, str) or not color.startswith("#"):
         raise HTTPException(400, "color must be a hex string e.g. #05b7aa")
-    await pool.execute("UPDATE teams SET color=$1 WHERE team_id=$2", color, team_id)
+    # ANY project member may recolour, which is exactly why it is worth
+    # recording: this is the one write on `teams` that is not gated on
+    # owner/admin. It set neither a timestamp nor an author before.
+    await pool.execute(
+        "UPDATE teams SET color=$1, updated_at=NOW(), updated_by=$3 "
+        "WHERE team_id=$2",
+        color, team_id, user["user_id"])
     return {"ok": True, "color": color}
 
 @api_router.delete("/teams/{team_id}/members/{member_id}")
@@ -4035,9 +4103,9 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
                t.approval_status, t.approved_by, t.approval_notes,
                t.approval_requested_at, t.approval_decided_at, t.approval_id,
                t.archived_at,
-               COALESCE(cu.full_name,cu.name,cu.email) AS created_by_name,
+               COALESCE(NULLIF(btrim(cu.full_name), ''), NULLIF(btrim(cu.name), ''), 'Unnamed member') AS created_by_name,
                ARRAY(
-                 SELECT COALESCE(au.full_name,au.name,au.email)
+                 SELECT COALESCE(NULLIF(btrim(au.full_name), ''), NULLIF(btrim(au.name), ''), 'Unnamed member')
                  FROM unnest(t.assignee_user_ids) AS uid
                  LEFT JOIN users au ON au.user_id=uid
                ) AS assignee_names,
@@ -4335,7 +4403,7 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
             # assigned to a project they do not belong to is still told their own
             # task is done.
             member_rows = await pool.fetch("""
-                SELECT DISTINCT u.user_id, COALESCE(u.full_name,u.name,u.email) AS name, u.email
+                SELECT DISTINCT u.user_id, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name, u.email
                 FROM users u
                 WHERE u.user_id <> $2
                   AND (
@@ -4395,9 +4463,9 @@ async def _fetch_enriched_task(pool, task_id: str, viewer_id: Optional[str] = No
     """
     row = await pool.fetchrow("""
         SELECT t.*,
-               COALESCE(cu.full_name, cu.name, cu.email) AS created_by_name,
+               COALESCE(NULLIF(btrim(cu.full_name), ''), NULLIF(btrim(cu.name), ''), 'Unnamed member') AS created_by_name,
                ARRAY(
-                 SELECT COALESCE(u.full_name, u.name, u.email)
+                 SELECT COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')
                  FROM unnest(t.assignee_user_ids) AS aid
                  JOIN users u ON u.user_id = aid
                ) AS assignee_names,
@@ -4493,7 +4561,7 @@ async def task_is_in_org(pool, org: str | None, *, team_id: str | None,
 @api_router.get("/tasks/{task_id}",response_model=TaskOut)
 async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return a single task by ID, enforcing visibility and access rules."""
-    row=await pool.fetchrow("SELECT t.*,COALESCE(u.full_name,u.name,u.email) AS created_by_name FROM tasks t LEFT JOIN users u ON u.user_id=t.created_by_user_id WHERE t.task_id=$1",task_id)
+    row=await pool.fetchrow("SELECT t.*,COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS created_by_name FROM tasks t LEFT JOIN users u ON u.user_id=t.created_by_user_id WHERE t.task_id=$1",task_id)
     if not row: raise HTTPException(404)
     uid=user["user_id"]; is_creator=row["created_by_user_id"]==uid
     # Resolved once: this gates both private-attachment visibility and the

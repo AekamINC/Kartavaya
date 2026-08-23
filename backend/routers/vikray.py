@@ -14,6 +14,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services.audit_actors import actor_joins, actor_select, display_name
 from utils import next_doc_number
 
 router = APIRouter(prefix="/api/v1/vikray", tags=["vikray-sales"])
@@ -197,10 +198,19 @@ async def list_orders(
     pool = await get_pool()
     q = (
         "SELECT o.*, c.company AS contact_company, c.name AS contact_name, "
-        "COUNT(*) OVER() AS _total "
+        # WHO raised the order and WHO last amended it, as NAMES. `o.*` already
+        # carries `created_by`/`updated_by`, but those are `users.user_id` TEXT
+        # — a member id, which never reaches a screen — so the display value is
+        # resolved here rather than by a second round trip per row from the
+        # client. `services/audit_actors` owns the ladder; the alternative was a
+        # hand-written COALESCE per router, and the one that exists
+        # (`graha.py:1466`) falls through to the EMAIL.
+        + actor_select("o", updated=True)
+        + "COUNT(*) OVER() AS _total "
         "FROM staging.vikray_orders o "
         "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id "
-        "WHERE o.org_id=$1::uuid"
+        + actor_joins("o", updated=True)
+        + "WHERE o.org_id=$1::uuid"
         + ("" if since_dt is not None else " AND o.is_active=TRUE")
     )
     params: list = [org_id]
@@ -428,10 +438,17 @@ async def get_order(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT o.*, c.company AS contact_company, c.name AS contact_name, "
-        "c.email AS contact_email, c.phone AS contact_phone "
+        # The detail view answers the same two questions as the list, in the
+        # same words. An audit trail that only exists in the table is the shape
+        # that sends somebody back to the list to find out who touched the
+        # record they already have open. Comma-terminated, so the contact
+        # columns follow it and the SELECT list never ends on a comma.
+        + actor_select("o", updated=True)
+        + "c.email AS contact_email, c.phone AS contact_phone "
         "FROM staging.vikray_orders o "
         "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id "
-        "WHERE o.id=$1::uuid AND o.org_id=$2::uuid",
+        + actor_joins("o", updated=True)
+        + "WHERE o.id=$1::uuid AND o.org_id=$2::uuid",
         order_id, org_id,
     )
     if not row:
@@ -533,6 +550,15 @@ async def update_order(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # WHO amended it, in the same statement that amends it. A trigger cannot
+    # answer this — it does not know who is holding the connection — so a write
+    # path that stamps `updated_at` and not `updated_by` leaves a row that can
+    # say it changed and not who changed it. Bound at `$idx`, never
+    # interpolated: `user["user_id"]` is server-side, but interpolating it here
+    # is how the next author learns the wrong habit.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     row = await pool.fetchrow(
         f"UPDATE staging.vikray_orders SET {', '.join(sets)} "
@@ -567,9 +593,16 @@ async def update_order_status(
             # believed it. Carrying the pre-read status into the WHERE makes
             # the loser match zero rows — no write, no event, a 409.
             row = await _conn.fetchrow(
-                "UPDATE staging.vikray_orders SET status=$1, updated_at=NOW() "
+                # `updated_by=$5` — a status move is the edit most worth
+                # attributing, and it is the one write here that a trigger will
+                # never cover. Appended LAST in both the SET list and the params
+                # tuple so the existing $1-$4 numbering is untouched; renumbering
+                # an existing placeholder to make room is how this becomes a 500.
+                "UPDATE staging.vikray_orders SET status=$1, updated_at=NOW(), "
+                "updated_by=$5 "
                 "WHERE id=$2::uuid AND org_id=$3::uuid AND status=$4 RETURNING *",
                 body.status, order_id, org_id, existing["status"],
+                user["user_id"],
             )
             if row is None:
                 # Vanished, or somebody else moved it first. Refusing here —
@@ -726,9 +759,13 @@ async def generate_invoice_from_order(
         client_id or "",
     )
     await pool.execute(
-        "UPDATE staging.vikray_orders SET invoice_id=$1, updated_at=NOW() "
+        # Attaching the invoice IS an amendment of the order, and the person who
+        # issued the invoice is the person who made it. Without `updated_by` the
+        # order's last editor would read as whoever touched it before the
+        # invoice — the wrong name, which is worse than no name.
+        "UPDATE staging.vikray_orders SET invoice_id=$1, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid",
-        inv["id"], order_id, org_id,
+        inv["id"], order_id, org_id, user["user_id"],
     )
     return {"ok": True, "invoice_id": str(inv["id"]), "invoice_number": inv_number}
 
@@ -767,10 +804,15 @@ async def cancel_order(
             # deducted) now 409s here instead of cancelling with the
             # restock silently skipped.
             _after = await _conn.fetchrow(
-                "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, updated_at=NOW() "
+                # Cancellation is a soft delete, and a soft delete with no
+                # actor is the one row in the table nobody can explain later.
+                # `$4` is appended after the pre-read status so $1-$3 keep their
+                # meaning.
+                "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, "
+                "updated_at=NOW(), updated_by=$4 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND status=$3 "
                 "RETURNING *",
-                order_id, org_id, existing["status"],
+                order_id, org_id, existing["status"], user["user_id"],
             )
             if _after is None:
                 raise HTTPException(
@@ -902,7 +944,14 @@ async def create_target(
         "(org_id, salesperson_id, period_start, period_end, target_amount, target_deals, notes, created_by) "
         "VALUES ($1::uuid, $2, $3::date, $4::date, $5, $6, $7, $8) "
         "ON CONFLICT (org_id, salesperson_id, period_start) DO UPDATE SET "
-        "target_amount=EXCLUDED.target_amount, target_deals=EXCLUDED.target_deals, notes=EXCLUDED.notes "
+        "target_amount=EXCLUDED.target_amount, target_deals=EXCLUDED.target_deals, notes=EXCLUDED.notes, "
+        # The conflict arm is an EDIT of somebody else's target row, not a
+        # create — `created_by` on that row belongs to whoever set it first and
+        # must not move. `EXCLUDED.created_by` is $8, the caller, reused rather
+        # than bound a second time so no new placeholder enters the statement.
+        # `updated_at` is left to `trg_touch_vikray_targets` (migration 201);
+        # stamping it here as well would be harmless but would hide who owns it.
+        "updated_by=EXCLUDED.created_by "
         "RETURNING *",
         org_id, body.salesperson_id,
         date.fromisoformat(body.period_start) if body.period_start else None,
@@ -921,14 +970,40 @@ async def list_targets(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT t.*, "
-        "COALESCE(u.full_name, u.name, u.email) AS salesperson_name, "
+        # WHO set the quota and WHO last moved it. A target is a number somebody
+        # is measured against, so "it changed" is a question with a person
+        # attached — and before migration 201 this table could record the new
+        # figure and nothing else. The `u` join below answers a different
+        # question (WHOSE target this is) and is left exactly as it was.
+        + actor_select("t", updated=True)
+        # WHOSE target this is, as a NAME. This ended `…, u.email)`: a
+        # salesperson with no name recorded had their EMAIL printed as the
+        # label on the row carrying their quota. That is a contact detail
+        # rendered as a label, and it inverts the standing rule that Aekam
+        # must not see a customer's member emails. The owner's ruling
+        # (2026-08-23): a display-name ladder must never end at an email.
+        #
+        # MEASURED FIRST — the objection is "then the cell goes blank": on the
+        # live database 0 of 35 accounts have neither `full_name` nor `name`,
+        # so this rung has never fired. Removing it changes nothing visible.
+        #
+        # It ends at a STATED label rather than blank because a blank name
+        # beside a quota reads as an unassigned target, which is a different
+        # and false claim — the target IS assigned, to somebody whose name we
+        # do not hold. Same module that already owns `actor_select` above, so
+        # the two ladders in this one query cannot drift apart; `display_name`
+        # emits no `$n` and leaves `$1` below alone. The other two sites in
+        # this file (targets leaderboard, orders pipeline) are the same fix.
+        + display_name("u")
+        + " AS salesperson_name, "
         "COALESCE(d.amount, 0) AS actual_amount, "
         "COALESCE(d.deals, 0) AS actual_deals, "
         "COALESCE(x.amount, 0) AS unattributed_amount, "
         "COALESCE(x.deals, 0) AS unattributed_deals "
         "FROM staging.vikray_targets t "
         "LEFT JOIN users u ON u.user_id = t.salesperson_id "
-        "LEFT JOIN LATERAL (" + _ATTAINMENT_SQL + ") d ON TRUE "
+        + actor_joins("t", updated=True)
+        + "LEFT JOIN LATERAL (" + _ATTAINMENT_SQL + ") d ON TRUE "
         "LEFT JOIN LATERAL (" + _UNATTRIBUTED_SQL + ") x ON TRUE "
         "WHERE t.org_id=$1::uuid "
         "ORDER BY t.period_start DESC",
@@ -947,7 +1022,8 @@ async def targets_leaderboard(
     now = date.today()
     rows = await pool.fetch(
         "SELECT t.salesperson_id, "
-        "COALESCE(u.full_name, u.name, u.email) AS salesperson_name, "
+        + display_name("u")
+        + " AS salesperson_name, "
         "t.target_amount, t.target_deals, "
         "COALESCE(d.amount, 0) AS actual_amount, "
         "COALESCE(d.deals, 0) AS actual_deals, "
@@ -988,6 +1064,17 @@ async def update_target(
         updates.append(f"notes=${len(vals)}")
     if not updates:
         raise HTTPException(400, "Nothing to update")
+    # WHO moved the quota, in the same statement that moves it. Appended while
+    # `vals` still holds only SET values, BEFORE `target_id`/`org_id` join the
+    # list — the WHERE clause below addresses those two by `len(vals)-1` and
+    # `len(vals)`, so anything added after them silently shifts the predicate
+    # onto the wrong parameter and the UPDATE matches nothing.
+    #
+    # `updated_at` is deliberately absent: migration 201 put
+    # `trg_touch_vikray_targets` on this table, so the timestamp has an owner
+    # and a second writer of the same column is a second thing to keep in step.
+    vals.append(user["user_id"])
+    updates.append(f"updated_by=${len(vals)}")
     vals += [target_id, org_id]
     row = await pool.fetchrow(
         f"UPDATE staging.vikray_targets SET {', '.join(updates)} "
@@ -1118,7 +1205,8 @@ async def pipeline(
         "SELECT o.id, o.order_number, o.status, o.total, o.order_date, "
         "o.expected_delivery, o.invoice_id, o.contact_id, "
         "c.company AS contact_company, c.name AS contact_name, "
-        "COALESCE(u.full_name, u.name, u.email) AS owner_name "
+        + display_name("u")
+        + " AS owner_name "
         "FROM staging.vikray_orders o "
         # Org-scoped on both sides. `GET /orders` joins on `c.id` alone; a
         # contact_id that ever pointed outside the org would cross a tenant
@@ -1297,8 +1385,17 @@ async def stock_moves(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT *, COUNT(*) OVER() AS _total FROM staging.vikray_stock_moves "
-        "WHERE org_id=$1::uuid AND product_id=$2::uuid ORDER BY created_at DESC LIMIT 100",
+        "SELECT m.*, "
+        # Creator only — and that is a schema fact, not an oversight. Migration
+        # 201 deliberately SKIPPED this table: it is an append-only ledger where
+        # a wrong movement is corrected by a counter-movement, never by editing
+        # the row, so there is no `updated_by` to resolve and adding one would
+        # invite exactly the in-place edit the ledger exists to forbid.
+        + actor_select("m", updated=False)
+        + "COUNT(*) OVER() AS _total FROM staging.vikray_stock_moves m "
+        + actor_joins("m", updated=False)
+        + "WHERE m.org_id=$1::uuid AND m.product_id=$2::uuid "
+        "ORDER BY m.created_at DESC LIMIT 100",
         org_id, product_id,
     )
     # 100, the tightest cap in the codebase, on a ledger that grows with every

@@ -123,6 +123,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import is_org_admin
 from middleware.subscription import require_module
+from services.audit_actors import display_name
 
 log = logging.getLogger(__name__)
 
@@ -404,7 +405,25 @@ async def _search_messages(pool, uid, org_id, tsq, like, unaccent, limit):
     )
     rows = await pool.fetch(
         "SELECT m.id, m.content, c.name AS channel_name, "
-        "COALESCE(u.full_name, u.name, u.email) AS author_name "
+        # THE AUTHOR IS NAMED BY NAME, NEVER BY EMAIL. This ended
+        # `…, u.email)`, so a sender with no name recorded had their EMAIL
+        # printed as the author label on a search result — a contact detail
+        # rendered as a label, on the surface most likely to be read by
+        # somebody who should not hold it. The owner's ruling (2026-08-23) is
+        # that a display-name ladder never ends at an email address.
+        #
+        # MEASURED FIRST: 0 of 35 live accounts have neither `full_name` nor
+        # `name`, so the email rung has never fired and removing it changes
+        # nothing visible. It was a latent leak, not a fallback in use.
+        #
+        # It ends at a STATED label rather than blank on purpose: a blank
+        # author reads as "nobody sent this", a different and false claim.
+        # `services/audit_actors.display_name()` is the single owner of the
+        # ladder — the alternative was a hand-written COALESCE per router,
+        # which is exactly how this one came to differ. It emits no `$n`, so
+        # the numbering of `$1`–`$5` here is untouched.
+        + display_name("u")
+        + " AS author_name "
         f"{base} ORDER BY m.created_at DESC LIMIT $5",
         uid, org_id, tsq, like, limit,
     )

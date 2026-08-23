@@ -95,7 +95,11 @@ function RequestRow({ r }) {
 
       {r.decided_at && (
         <div className="mkq__meta">
-          <span>{r.status} {stamp(r.decided_at)} by {r.decided_by}</span>
+          {/* `decided_by_name`, not `decided_by`. The router selected the id
+              raw and this line printed it; it now resolves a name with the
+              same ladder and the same 'Name not on file' wording it already
+              used for the requester eight lines above. */}
+          <span>{r.status} {stamp(r.decided_at)} by {r.decided_by_name}</span>
         </div>
       )}
     </li>

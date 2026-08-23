@@ -18,6 +18,10 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, require_platform_role
 from middleware.role_tiers import ALL_MODULES, BILLING_CONSOLE_ROLES, is_god_mode, strongest
 from middleware.subscription import clear_module_cache
+# Actor names for the PLATFORM-side invoice lists. Never for a tenant-facing
+# one: see `_without_platform_actors`. Adds no `$n`, so no parameter number in
+# this file moves.
+from services.audit_actors import actor_joins, actor_select
 # The ATTENDANCE seat counter. Org seats are counted by
 # `routers/org_invites.count_seats`, imported at its one call site below to keep
 # this module's import graph out of `auth_router`. The two counts are reported
@@ -341,6 +345,36 @@ def _with_payee(inv: dict) -> dict:
         "upi_payee_name": (inv.get("upi_payee_name") or "").strip() or None,
         "payable_by_upi": bool(vpa),
     }
+
+
+#: The two columns 202 added to `staging.subscription_invoices` that hold an
+#: AEKAM operator's `public.users.user_id`.
+_PLATFORM_ACTOR_COLUMNS = ("created_by", "updated_by")
+
+
+def _without_platform_actors(inv: dict) -> dict:
+    """Strip the platform's own actor ids off a document going to the CUSTOMER.
+
+    `GET /invoices` is the org's own billing tab and it is served by `SELECT *`,
+    so the moment 202 added `created_by` and `updated_by` to this table those
+    columns started riding out to every client with an Aekam staff member's user
+    id in them. That is two rules at once: a user id is never rendered anywhere,
+    and Aekam's internal identities are not part of a customer's invoice.
+
+    Stripped in Python rather than by naming columns in the SELECT, deliberately.
+    `SELECT *` here is load-bearing — `_with_payee`'s docstring turns on the
+    columns 096 adds appearing without a deploy — and a hand-written column list
+    would have to be edited by every future migration or start silently dropping
+    fields from the customer's own invoice. A denylist of the two columns that
+    must not travel fails in the safe direction: a new column reaches the client,
+    a leaked identity does not.
+
+    NOT applied to the platform's own lists. `approved_by`/`collected_by` are
+    left exactly as they are — they are UUID columns that hold NULL for every
+    real operator (see `_actor_uuid`) and removing them would change a response
+    shape three screens read for a leak that does not exist.
+    """
+    return {k: v for k, v in inv.items() if k not in _PLATFORM_ACTOR_COLUMNS}
 
 
 async def _already_billed_detail(runner, line_ids: list[UUID], month: date) -> str:
@@ -875,10 +909,28 @@ async def create_invoice(
                 )
                 invoice_number = f"KSUB-{month_str}-{seq:04d}"
 
+                # ── `created_by` — THE FIRST COLUMN ON THIS TABLE THAT CAN
+                #    ACTUALLY HOLD THE OPERATOR ─────────────────────────────
+                #
+                # `approved_by` is $10 and is `_actor_uuid(...)`, which is NULL
+                # for every real operator: the column is UUID and a user id in
+                # this product is TEXT (see `_actor_uuid`). So until 202 this
+                # document recorded WHO RAISED IT nowhere at all — `collected_by`
+                # answers a different question (who took the money) and is
+                # NULL-for-the-same-reason besides, and the only surviving trace
+                # was the `subscription_events` row written below.
+                #
+                # 202's `created_by` is TEXT and holds `public.users.user_id`
+                # verbatim, so the real id goes in. It is APPENDED to `params`
+                # rather than spliced in, because `upi_val` numbers its
+                # placeholders off `len(params)` — inserting above it would move
+                # the payee onto the wrong parameter, which is precisely the
+                # failure that comment is guarding against.
                 params = [
                     org_id, invoice_number, body.period_start, body.period_end,
                     json.dumps(body.line_items), subtotal, gst, total,
                     body.due_date, _actor_uuid(user["user_id"]),
+                    user["user_id"],
                 ]
                 # Placeholders numbered from the list rather than hardcoded, so
                 # adding a column above cannot silently shift the payee onto the
@@ -892,8 +944,14 @@ async def create_invoice(
                 row = await conn.fetchrow(
                     "INSERT INTO staging.subscription_invoices "
                     "(org_id, invoice_number, period_start, period_end, "
-                    f" line_items, subtotal, gst, total, due_date, payment_status, approved_by{gen_col}{upi_col}) "
-                    f"VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'pending', $10{gen_val}{upi_val}) "
+                    " line_items, subtotal, gst, total, due_date, payment_status, "
+                    # $11 sits between `approved_by` ($10) and the two optional
+                    # fragments. `gen_val` is a LITERAL and consumes no number,
+                    # so `upi_val`'s $12/$13 are unmoved — the arithmetic that
+                    # keeps them right is `len(params)` at the moment it runs,
+                    # and `created_by` is already in `params` by then.
+                    f" approved_by, created_by{gen_col}{upi_col}) "
+                    f"VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'pending', $10, $11{gen_val}{upi_val}) "
                     "RETURNING *",
                     *params,
                 )
@@ -1043,11 +1101,24 @@ async def record_payment(
     # raising on every call leaves every invoice permanently unpaid. The person
     # who took the payment is named in the event below either way.
     await pool.execute(
+        # `collected_by` ($4) is the UUID column that cannot hold a TEXT user id
+        # and is therefore NULL for every real operator. `updated_by` ($6) is
+        # 202's TEXT column and holds the id itself — so this is the statement
+        # where "who marked this invoice paid" stops living only in the event
+        # row. Both are written: they are different facts, and the day
+        # `collected_by` is ALTERed to TEXT the older one starts working with no
+        # change here.
+        #
+        # `updated_at` is NOT set: 202 also added
+        # `trg_touch_subscription_invoices` (BEFORE UPDATE), which owns that
+        # column for every writer of this table, including the ones that are not
+        # this router.
         "UPDATE staging.subscription_invoices SET "
         "payment_status='paid', payment_method=$1, payment_reference=$2, "
-        "paid_at=$3, collected_by=$4 WHERE id=$5",
+        "paid_at=$3, collected_by=$4, updated_by=$6 WHERE id=$5",
         body.payment_method, body.payment_reference,
         paid_at, _actor_uuid(user["user_id"]), invoice_id,
+        user["user_id"],
     )
 
     await _log_event(pool, str(inv["org_id"]), "payment_recorded", {
@@ -1064,10 +1135,17 @@ async def record_payment(
 async def list_overdue(user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES))):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT i.*, o.name as org_name "
+        "SELECT i.*, "
+        # PLATFORM-SIDE ONLY. This list is `BILLING_CONSOLE_ROLES` and shows
+        # Aekam its own operators to Aekam — which is the one direction in which
+        # naming an actor is safe. The tenant's copy of the same rows
+        # (`GET /invoices` below) gets NO actor at all, by name or by id.
+        + actor_select("i", updated=True)
+        + "o.name as org_name "
         "FROM staging.subscription_invoices i "
         "JOIN staging.organisations o ON o.id = i.org_id "
-        "WHERE i.payment_status='pending' AND i.due_date < CURRENT_DATE "
+        + actor_joins("i", updated=True)
+        + "WHERE i.payment_status='pending' AND i.due_date < CURRENT_DATE "
         "ORDER BY i.due_date"
     )
     # `payable_by_upi` on the OVERDUE list specifically, because it is often the
@@ -1107,7 +1185,7 @@ async def list_invoices(
         "WHERE org_id=$1::uuid ORDER BY created_at DESC",
         org_id,
     )
-    return {"data": [_with_payee(dict(r)) for r in rows]}
+    return {"data": [_without_platform_actors(_with_payee(dict(r))) for r in rows]}
 
 
 # ── Usage ────────────────────────────────────────────────────

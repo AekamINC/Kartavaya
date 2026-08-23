@@ -238,7 +238,18 @@ def test_attainment_ratio_is_per_target_sums_and_labels_are_names():
     sql, _ = build("vikray.target_attainment")
     assert "(COALESCE(won.amount, 0) / NULLIF(t.target_amount, 0) * 100)::float AS value" in sql
     assert "AVG(" not in sql
-    assert "COALESCE(u.full_name, u.name, u.email, 'Unknown salesperson') AS label" in sql
+    # THE ASSERTION MOVED FROM THE TEXT TO THE PROPERTY.
+    #
+    # This used to pin the literal `COALESCE(u.full_name, u.name, u.email, …)`.
+    # Under a test named for names-never-ids, that string was the leak itself:
+    # the owner ruled on 2026-08-23 that a display ladder must never end at an
+    # email address, and a text match would have FAILED on the fix and passed on
+    # the bug — teaching the next reader to revert rather than to keep the
+    # property. So it asserts what actually matters: a name is resolved, no id
+    # reaches the label, and the ladder does not reach `.email`.
+    assert "u.full_name" in sql and "u.name" in sql
+    assert "'Unknown salesperson') AS label" in sql
+    assert "u.email" not in sql
     # names-not-ids: neither the salesperson id nor the target id may reach
     # the select list.
     select_list = sql.split(" FROM ")[0]
