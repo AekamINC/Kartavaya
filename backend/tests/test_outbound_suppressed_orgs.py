@@ -393,11 +393,10 @@ async def test_send_email_from_the_listed_org_never_touches_a_provider(
 
     provider_calls: list = []
 
-    class _Emails:
-        @staticmethod
-        def send(params):
-            provider_calls.append(params)
-            return {"id": "must-never-exist"}
+    class _SES:
+        def send_email(self, **kwargs):
+            provider_calls.append(kwargs)
+            return {"MessageId": "must-never-exist"}
 
     threads_started: list = []
 
@@ -408,8 +407,7 @@ async def test_send_email_from_the_listed_org_never_touches_a_provider(
             threads_started.append(t)
             return t
 
-    monkeypatch.setattr(email_service, "_resend_client",
-                        type("_C", (), {"Emails": _Emails}))
+    monkeypatch.setattr(email_service, "ses_client", _SES())
     monkeypatch.setattr(email_service, "threading", _Threading)
 
     with outbound.org_scope(E2E_ORG, "user_e2e001"):

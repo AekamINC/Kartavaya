@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from email_service import (
     send_email, _base, _body_text, _info_card, _cta_row, _safe_subject,
-    FRONTEND_URL, _INK3, FROM_EMAIL, _resend_client, ses_client, to_plaintext,
+    FRONTEND_URL, _INK3, FROM_EMAIL, ses_client, to_plaintext,
 )
 from html import escape as _h
 import logging
@@ -340,32 +340,7 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         part.add_header("Content-Disposition", "attachment", filename=f"Payslip-{payslip_number}.pdf")
         msg.attach(part)
 
-        if _resend_client:
-            try:
-                r = _resend_client.Emails.send({
-                    "from": from_email,
-                    "to": [employee_email],
-                    "subject": subject,
-                    "html": html_content,
-                    "text": text_content,
-                    "attachments": [{"filename": f"Payslip-{payslip_number}.pdf", "content": list(pdf_bytes)}],
-                })
-                _log.info("✅ Payslip email (Resend) → %s", employee_email)
-                # What was handed over, in bytes. Resend does not meter 256 KB
-                # units the way SES does, so this is the size of the message
-                # rather than a unit count — but the PDF dominates it either
-                # way, which is the thing the `bytes` column exists to show.
-                att.sent(
-                    r.get("id") if isinstance(r, dict) else None,
-                    provider="resend",
-                    bytes=(len(pdf_bytes)
-                           + len(html_content.encode("utf-8"))
-                           + len(text_content.encode("utf-8"))),
-                )
-            except Exception as exc:
-                _log.error("❌ Payslip email (Resend) failed → %s: %s", employee_email, exc)
-                att.failed(exc, provider="resend")
-        elif ses_client:
+        if ses_client:
             try:
                 # Serialised once and reused, as in send_report_email:
                 # `as_bytes()` re-encodes the base64 attachment, so measuring it
@@ -397,7 +372,7 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
             # to notice.
             att.failed(
                 "no email provider configured "
-                "(RESEND_API_KEY / AWS_ACCESS_KEY_ID unset)",
+                "(AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY unset)",
                 provider="none",
             )
 

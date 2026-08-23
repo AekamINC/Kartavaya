@@ -402,8 +402,6 @@ def assert_cannot_send():
     """
     import email_service as E
     configured = []
-    if getattr(E, "_resend_client", None) is not None:
-        configured.append("RESEND_API_KEY")
     if getattr(E, "ses_client", None) is not None:
         configured.append("AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY")
     if configured:

@@ -522,33 +522,25 @@ def test_a_dead_outbound_log_does_not_stop_an_email(monkeypatch, mock_pool):
 
     captured = {}
 
-    class _Emails:
-        @staticmethod
-        def send(params):
-            captured.update(params)
-            return {"id": "resend-message-id"}
+    class _SES:
+        def send_email(self_, **kwargs):
+            captured.update(kwargs)
+            return {"MessageId": "ses-message-id"}
 
-    class _Client:
-        Emails = _Emails
-
-    monkeypatch.setattr(E, "_resend_client", _Client)
-    # Run the send inline. The real one hands off to a thread, and a test that
-    # joins a thread to see its side effect is a test that can hang.
+    monkeypatch.setattr(E, "ses_client", _SES())
     monkeypatch.setattr(
         E.threading, "Thread",
         lambda target, **kw: type("T", (), {"start": staticmethod(target)})(),
     )
     monkeypatch.setattr(outbound, "DRY_RUN", False)
-    # Broken at the writer's front door, so both halves fail: the attempt
-    # `begin()` records and the completion the sending thread reports.
     monkeypatch.setattr(outbound_log, "write", _boom)
 
     ok = E.send_email("keval@aekam.example", "August payslip",
                       "<!DOCTYPE html><html><body><p>Payslip</p></body></html>")
 
     assert ok is True
-    assert captured["html"], "the provider was never called — logging blocked a send"
-    assert captured["to"] == ["keval@aekam.example"]
+    assert captured.get("Message"), "the provider was never called — logging blocked a send"
+    assert captured["Destination"]["ToAddresses"] == ["keval@aekam.example"]
 
 
 async def test_a_database_that_refuses_the_row_does_not_raise_and_is_counted(

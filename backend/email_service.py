@@ -35,24 +35,14 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://app.kartavaya.com").rstri
 #: it to staging's own origin.
 PAY_URL = (os.environ.get("PAY_URL") or "https://pay.kartavaya.com").rstrip("/")
 
-# ── Email provider: Resend (primary) or AWS SES (fallback) ────────────────────
-RESEND_API_KEY        = os.environ.get("RESEND_API_KEY")
+# ── Email provider: AWS SES (primary) ─────────────────────────────────────────
 AWS_ACCESS_KEY_ID     = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
 AWS_REGION            = os.environ.get("AWS_REGION", "us-east-1")
 
-_resend_client = None
 ses_client = None
 
-if RESEND_API_KEY:
-    try:
-        import resend as _resend_lib
-        _resend_lib.api_key = RESEND_API_KEY
-        _resend_client = _resend_lib
-        logger.info("✅ Resend email configured")
-    except ImportError:
-        logger.error("❌ resend not installed — pip install resend")
-elif AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     try:
         import boto3
         ses_client = boto3.client(
@@ -67,7 +57,7 @@ elif AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     except Exception as e:
         logger.error("❌ AWS SES init failed: %s", e)
 else:
-    logger.warning("⚠️  No email provider configured (set RESEND_API_KEY or AWS_ACCESS_KEY_ID) — emails logged to console only")
+    logger.warning("⚠️  No email provider configured (set AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) — emails logged to console only")
 
 
 # ── Design tokens ─────────────────────────────────────────────────────────────
@@ -646,72 +636,41 @@ def send_email(to_email: str, subject: str, html_content: str,
         # applied and an address is verified.
         from_email = from_plan.resolve()
 
-        if _resend_client:
+        if ses_client:
             try:
-                params = {
-                    "from": from_email,
-                    "to": [to_email],
-                    "subject": subject,
-                    "html": html_content,
-                    "text": text_content,
-                }
-                if reply_to:
-                    params["reply_to"] = [reply_to]
                 if headers:
-                    # RFC 8058 one-click unsubscribe travels here and nowhere
-                    # else. A List-Unsubscribe header is not a nicety: Gmail and
-                    # Yahoo's 2024 bulk-sender rules require it above ~5,000
-                    # messages a day, and without it a marketing send is a
-                    # deliverability cliff before it is a legal problem. The
-                    # body link Prachar already has does not satisfy either
-                    # rule — the requirement is on the MESSAGE HEADERS.
-                    params["headers"] = dict(headers)
-                r = _resend_client.Emails.send(params)
-                logger.info("✅ Email sent via Resend → %s [%s]", to_email, r.get("id"))
-                att.sent(r.get("id"), provider="resend", bytes=payload_bytes)
-                return True
-            except Exception as exc:
-                logger.error("❌ Resend email failed → %s: %s", to_email, exc)
-                att.failed(exc, provider="resend")
-                return False
-        elif ses_client:
-            try:
-                msg = {
-                    "Subject": {"Data": subject, "Charset": "UTF-8"},
-                    "Body":    {"Text": {"Data": text_content, "Charset": "UTF-8"},
-                                "Html":  {"Data": html_content, "Charset": "UTF-8"}},
-                }
-                kwargs = dict(
-                    Source=from_email,
-                    Destination={"ToAddresses": [to_email]},
-                    Message=msg,
-                )
-                if reply_to:
-                    kwargs["ReplyToAddresses"] = [reply_to]
-                if headers:
-                    # SAID OUT LOUD RATHER THAN DROPPED SILENTLY. `send_email`
-                    # is SES's simple API and it has no slot for arbitrary
-                    # headers — carrying List-Unsubscribe over SES needs
-                    # `send_raw_email` with a hand-built MIME message, which is
-                    # a larger change than this one and would alter the shape of
-                    # every message SES sends, not just marketing.
-                    #
-                    # Resend is the configured provider on staging and
-                    # production, so this branch is the fallback; logging it
-                    # means a switch of provider surfaces the gap instead of
-                    # quietly shipping bulk mail with no unsubscribe header.
-                    logger.warning(
-                        "SES cannot carry custom headers via send_email; "
-                        "DROPPED %s for %s. Use send_raw_email if SES becomes "
-                        "the primary sender for marketing.",
-                        sorted(headers), purpose or "unknown-purpose",
+                    from email.mime.multipart import MIMEMultipart
+                    from email.mime.text import MIMEText
+                    mime = MIMEMultipart("alternative")
+                    mime["Subject"] = subject
+                    mime["From"] = from_email
+                    mime["To"] = to_email
+                    if reply_to:
+                        mime["Reply-To"] = reply_to
+                    for hk, hv in headers.items():
+                        mime[hk] = hv
+                    mime.attach(MIMEText(text_content, "plain", "utf-8"))
+                    mime.attach(MIMEText(html_content, "html", "utf-8"))
+                    r = ses_client.send_raw_email(
+                        Source=from_email,
+                        Destinations=[to_email],
+                        RawMessage={"Data": mime.as_string()},
                     )
-                r = ses_client.send_email(**kwargs)
+                else:
+                    msg = {
+                        "Subject": {"Data": subject, "Charset": "UTF-8"},
+                        "Body":    {"Text": {"Data": text_content, "Charset": "UTF-8"},
+                                    "Html":  {"Data": html_content, "Charset": "UTF-8"}},
+                    }
+                    kwargs = dict(
+                        Source=from_email,
+                        Destination={"ToAddresses": [to_email]},
+                        Message=msg,
+                    )
+                    if reply_to:
+                        kwargs["ReplyToAddresses"] = [reply_to]
+                    r = ses_client.send_email(**kwargs)
                 logger.info("✅ Email sent via SES → %s [%s]", to_email, r['MessageId'])
-                # The SES MessageId is the join key to a bounce or complaint
-                # notification. 960 payslips were accepted by SES and bounced
-                # seconds later; without this id stored at send time there is
-                # nothing for a delivery event to be about.
                 att.sent(r.get("MessageId"), provider="ses", bytes=payload_bytes)
                 return True
             except Exception as exc:
@@ -727,7 +686,7 @@ def send_email(to_email: str, subject: str, html_content: str,
             # the one table meant to notice.
             att.failed(
                 "no email provider configured "
-                "(RESEND_API_KEY / AWS_ACCESS_KEY_ID unset)",
+                "(AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY unset)",
                 provider="none",
             )
             return False
@@ -1644,13 +1603,7 @@ def send_report_email(
     def _send():
         if not ses_client:
             logger.info("[EMAIL-DEV] Report → %s | %s | %s–%s", to_email, team_name, period_from, period_to)
-            # This branch is NOT only local development. Module init prefers
-            # Resend when RESEND_API_KEY is set and leaves `ses_client` None —
-            # and this sender only ever speaks SES, so on a Resend deployment
-            # every scheduled report lands here and silently goes nowhere.
-            # Recording it as failed is what would make that visible; it is not
-            # this change's job to fix it.
-            att.failed("no SES client — send_report_email has no Resend path",
+            att.failed("no SES client (AWS_ACCESS_KEY_ID unset)",
                        provider="none")
             return
         # In the sending thread, once, and used for BOTH the header and the SES

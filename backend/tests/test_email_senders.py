@@ -614,43 +614,33 @@ def test_invalidate_drops_only_the_org_that_saved(monkeypatch):
 # provider call — which is a separate failure, and the one that makes all of the
 # above decorative.
 
-class _FakeResend:
+class _FakeSES:
     def __init__(self):
-        self.params = None
+        self.kwargs = None
         self.sent = threading.Event()
 
-    class _Emails:
-        def __init__(self, outer):
-            self.outer = outer
+    def send_email(self, **kwargs):
+        self.kwargs = kwargs
+        self.sent.set()
+        return {"MessageId": "ses_test"}
 
-        def send(self, params):
-            self.outer.params = params
-            self.outer.sent.set()
-            return {"id": "re_test"}
-
-    @property
-    def Emails(self):
-        return self._Emails(self)
+    def send_raw_email(self, **kwargs):
+        self.kwargs = kwargs
+        self.sent.set()
+        return {"MessageId": "ses_test"}
 
 
 @pytest.fixture
-def _live_resend(monkeypatch):
-    """A send that is not suppressed and does not touch a real provider.
-
-    `conftest` sets `OUTBOUND_MODE=dry` and it must stay set — nothing in this
-    suite may be able to deliver. `outbound.DRY_RUN` is read at call time
-    precisely "so a test may patch it" (outbound.py:340), which is the one
-    supported way to exercise the code past the gate.
-    """
+def _live_ses(monkeypatch):
+    """A send that is not suppressed and does not touch a real provider."""
     import email_service
-    fake = _FakeResend()
+    fake = _FakeSES()
     monkeypatch.setattr(outbound, "DRY_RUN", False)
-    monkeypatch.setattr(email_service, "_resend_client", fake)
-    monkeypatch.setattr(email_service, "ses_client", None)
+    monkeypatch.setattr(email_service, "ses_client", fake)
     return fake
 
 
-def test_send_email_puts_the_resolved_address_in_the_from(_live_resend):
+def test_send_email_puts_the_resolved_address_in_the_from(_live_ses):
     import email_service
     es._remember("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", {
         "payroll": es.Sender("payroll@unicodegroup.com", "Unicode Payroll", True),
@@ -658,26 +648,21 @@ def test_send_email_puts_the_resolved_address_in_the_from(_live_resend):
     with outbound.org_scope("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"):
         email_service.send_email("e@example.com", "Payslip", "<p>hi</p>",
                                  purpose="payslip")
-    assert _live_resend.sent.wait(timeout=5), "the sending thread never ran"
-    assert _live_resend.params["from"] == '"Unicode Payroll" <payroll@unicodegroup.com>'
+    assert _live_ses.sent.wait(timeout=5), "the sending thread never ran"
+    assert _live_ses.kwargs["Source"] == '"Unicode Payroll" <payroll@unicodegroup.com>'
 
 
-def test_send_email_falls_back_for_an_org_that_configured_nothing(_live_resend):
+def test_send_email_falls_back_for_an_org_that_configured_nothing(_live_ses):
     import email_service
     es._remember("cccccccc-cccc-cccc-cccc-cccccccccccc", {})
     with outbound.org_scope("cccccccc-cccc-cccc-cccc-cccccccccccc"):
         email_service.send_email("e@example.com", "Payslip", "<p>hi</p>",
                                  purpose="payslip")
-    assert _live_resend.sent.wait(timeout=5)
-    # THE STATE EVERY ORG IS IN TODAY. This is the assertion that says the
-    # change is safe to deploy against an unmigrated database.
-    assert _live_resend.params["from"] == email_service.FROM_EMAIL
+    assert _live_ses.sent.wait(timeout=5)
+    assert _live_ses.kwargs["Source"] == email_service.FROM_EMAIL
 
 
-def test_send_email_derives_the_purpose_from_a_ref_when_none_is_given(_live_resend):
-    # `outbound._row` files the log row under the ref's head when no purpose is
-    # passed. The From must agree with the log row, or the address and the audit
-    # trail describe two different messages.
+def test_send_email_derives_the_purpose_from_a_ref_when_none_is_given(_live_ses):
     import email_service
     es._remember("dddddddd-dddd-dddd-dddd-dddddddddddd", {
         "payroll": es.Sender("payroll@unicodegroup.com", None, True),
@@ -685,17 +670,13 @@ def test_send_email_derives_the_purpose_from_a_ref_when_none_is_given(_live_rese
     with outbound.org_scope("dddddddd-dddd-dddd-dddd-dddddddddddd"):
         email_service.send_email("e@example.com", "Payslip", "<p>hi</p>",
                                  ref="payslip:PS-2026-08-42")
-    assert _live_resend.sent.wait(timeout=5)
-    assert _live_resend.params["from"] == "payroll@unicodegroup.com"
+    assert _live_ses.sent.wait(timeout=5)
+    assert _live_ses.kwargs["Source"] == "payroll@unicodegroup.com"
 
 
-def test_a_suppressed_send_resolves_nothing(_live_resend, monkeypatch):
-    # OUTBOUND_MODE=dry returns before the provider is touched, and it must also
-    # return before any lookup: a message that is not being sent has no From,
-    # and a database round-trip for one would be work on the request path for a
-    # send that is not happening.
+def test_a_suppressed_send_resolves_nothing(_live_ses, monkeypatch):
     import email_service
     monkeypatch.setattr(outbound, "DRY_RUN", True)
     email_service.send_email("e@example.com", "Payslip", "<p>hi</p>",
                              purpose="payslip")
-    assert not _live_resend.sent.wait(timeout=0.5)
+    assert not _live_ses.sent.wait(timeout=0.5)

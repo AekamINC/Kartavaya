@@ -251,6 +251,7 @@ _BUCKET: dict[str, str] = {
     # Mapped correctly regardless: the org-less case is a property of WHERE
     # they are sent from, not of what they are.
     "invite": "no-reply",
+    "org_owner_invite": "no-reply",
     "welcome": "no-reply",
     "password_reset": "no-reply",
 

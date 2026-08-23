@@ -88,7 +88,7 @@ def test_no_run_of_blank_lines():
     assert not any(ln != ln.strip() for ln in text.splitlines())
 
 
-def test_send_email_passes_a_text_part_to_resend(monkeypatch):
+def test_send_email_passes_a_text_part_to_ses(monkeypatch):
     """The provider call itself carries `text`, not just `html`.
 
     Asserted at the provider boundary because that is the only place the
@@ -98,36 +98,24 @@ def test_send_email_passes_a_text_part_to_resend(monkeypatch):
 
     captured = {}
 
-    class _Emails:
-        @staticmethod
-        def send(params):
-            captured.update(params)
-            return {"id": "test"}
+    class _SES:
+        def send_email(self, **kwargs):
+            captured.update(kwargs)
+            return {"MessageId": "test"}
 
-    class _Client:
-        Emails = _Emails
-
-    # Run the send inline: the real one hands off to a thread, and a test that
-    # joins a thread to see its side effect is a test that can hang.
-    monkeypatch.setattr(E, "_resend_client", _Client)
+    monkeypatch.setattr(E, "ses_client", _SES())
     monkeypatch.setattr(E.threading, "Thread",
                         lambda target, **kw: type("T", (), {"start": staticmethod(target)})())
-    # Open the gate at `outbound.DRY_RUN`, which is where the gate now is.
-    # This line used to patch `outbound.suppressed`, and it stopped meaning
-    # anything the day `send_email` switched to `outbound.begin()` so it could
-    # report the provider's message id back into `staging.outbound_log`.
-    # Patching a name the sender no longer calls left the conftest-wide
-    # OUTBOUND_MODE=dry in force, `send_email` returned at the gate, and the
-    # provider boundary this test exists to watch was never reached. `begin()`
-    # reads DRY_RUN at call time precisely so a test may patch it.
     monkeypatch.setattr("outbound.DRY_RUN", False)
 
     E.send_email("nobody@example.invalid", "Reset your Kartavaya password", _doc())
 
-    assert captured["html"].startswith("<!DOCTYPE html>")
-    assert captured["text"], "no text/plain alternative was sent"
-    assert "<table" not in captured["text"]
-    assert "https://kartavaya.com/reset-password?token=TOK" in captured["text"]
+    html = captured["Message"]["Body"]["Html"]["Data"]
+    text = captured["Message"]["Body"]["Text"]["Data"]
+    assert html.startswith("<!DOCTYPE html>")
+    assert text, "no text/plain alternative was sent"
+    assert "<table" not in text
+    assert "https://kartavaya.com/reset-password?token=TOK" in text
 
 
 @pytest.mark.parametrize("slug", ["01-invite", "27-esign-request"])

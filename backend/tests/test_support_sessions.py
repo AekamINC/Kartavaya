@@ -873,14 +873,11 @@ async def test_a_provider_refusal_actually_rolls_the_grant_back(monkeypatch):
     import email_service
     import outbound
 
-    class _Refuses:
-        class Emails:
-            @staticmethod
-            def send(params):
-                raise RuntimeError("Resend 422: recipient domain does not exist")
+    class _RefusesSES:
+        def send_email(self, **kwargs):
+            raise RuntimeError("SES 400: Email address is not verified")
 
-    monkeypatch.setattr(email_service, "_resend_client", _Refuses())
-    monkeypatch.setattr(email_service, "ses_client", None)
+    monkeypatch.setattr(email_service, "ses_client", _RefusesSES())
     # The suite runs under `OUTBOUND_MODE=dry`, where the kill switch suppresses
     # the message before any provider is asked and the send reports success —
     # that carve-out is deliberate and has its own test below. This one is about

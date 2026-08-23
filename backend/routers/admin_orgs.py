@@ -1944,18 +1944,6 @@ async def add_member(
             pool, user, str(org_id), body.email.lower(), INVITABLE_ORG_ROLE,
             None, [], None,
         )
-        try:
-            from email_service import send_invite_email
-            inviter_name = user.get("full_name") or user.get("name") or user.get("email") or "Kartavaya"
-            send_invite_email(
-                body.email.lower(), inviter_name, INVITABLE_ORG_ROLE,
-                invite.invite_link.split("token=")[-1],
-                workspace_name=org_name or "Kartavaya",
-                expires_label=invite.expires_at.strftime("%d %b %Y"),
-            )
-        except Exception:
-            log.exception("Invite email failed for %s -> %s", org_id, body.email)
-
         await _log_event(pool, org_id, "org_admin_invited", {
             "email": body.email,
             "roles": [INVITABLE_ORG_ROLE],
@@ -2832,18 +2820,6 @@ async def nominate_org_owner(
             pool, user, str(org_id), body.email.lower(), "org_owner",
             None, [], None,
         )
-        try:
-            from email_service import send_invite_email
-            inviter_name = user.get("full_name") or user.get("name") or user.get("email") or "Kartavaya"
-            send_invite_email(
-                body.email.lower(), inviter_name, "org_owner",
-                invite.invite_link.split("token=")[-1],
-                workspace_name=org["name"] or "Kartavaya",
-                expires_label=invite.expires_at.strftime("%d %b %Y"),
-            )
-        except Exception:
-            log.exception("Owner invite email failed for %s -> %s", org_id, body.email)
-
         _audit_emit(
             "platform.org_owner_invited",
             request,

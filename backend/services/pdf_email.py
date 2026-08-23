@@ -53,7 +53,7 @@ def send_pdf_email(
     answer is — that is the same contract `email_service.send_email` states.
     """
     from email_service import (
-        FROM_EMAIL, _metered_bytes, _resend_client, ses_client, to_plaintext,
+        FROM_EMAIL, _metered_bytes, ses_client, to_plaintext,
     )
     from outbound import begin
     from services import email_senders
@@ -107,31 +107,7 @@ def send_pdf_email(
         part.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(part)
 
-        if _resend_client:
-            try:
-                r = _resend_client.Emails.send({
-                    "from": from_email,
-                    "to": [to_email],
-                    "subject": subject,
-                    "html": html_content,
-                    "text": text_content,
-                    "attachments": [{"filename": filename, "content": list(pdf_bytes)}],
-                })
-                _log.info("✅ %s (Resend) → %s", label, to_email)
-                # Resend does not meter 256 KB units the way SES does, so this
-                # is the size of the message rather than a unit count. The PDF
-                # dominates it either way, which is what the column is for.
-                att.sent(
-                    r.get("id") if isinstance(r, dict) else None,
-                    provider="resend",
-                    bytes=(len(pdf_bytes)
-                           + len(html_content.encode("utf-8"))
-                           + len(text_content.encode("utf-8"))),
-                )
-            except Exception as exc:
-                _log.error("❌ %s (Resend) failed → %s: %s", label, to_email, exc)
-                att.failed(exc, provider="resend")
-        elif ses_client:
+        if ses_client:
             try:
                 # Serialised ONCE. `as_bytes()` re-encodes the base64
                 # attachment, so measuring with a second call doubles the work
@@ -155,7 +131,7 @@ def send_pdf_email(
             _log.info("[EMAIL-DEV] %s → %s | %s", label, to_email, ref)
             att.failed(
                 "no email provider configured "
-                "(RESEND_API_KEY / AWS_ACCESS_KEY_ID unset)",
+                "(AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY unset)",
                 provider="none",
             )
 

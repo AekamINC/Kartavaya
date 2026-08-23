@@ -266,16 +266,17 @@ def _units(size) -> int:
     return max(1, math.ceil((size or 0) / _SES_UNIT)) if size else 1
 
 
-def _fake_resend(sent: list, message_id: str = "resend-message-id"):
-    class _Emails:
-        @staticmethod
-        def send(params):
-            # The org a sending thread can see. None is correct and is the
-            # premise of the test that reads it back.
-            sent.append({"params": params, "context_org": outbound.current_org()})
-            return {"id": message_id}
+def _fake_ses(sent: list, message_id: str = "ses-message-id"):
+    class _SES:
+        def send_email(self, **kwargs):
+            sent.append({"kwargs": kwargs, "context_org": outbound.current_org()})
+            return {"MessageId": message_id}
 
-    return type("_Client", (), {"Emails": _Emails})
+        def send_raw_email(self, **kwargs):
+            sent.append({"kwargs": kwargs, "context_org": outbound.current_org()})
+            return {"MessageId": message_id}
+
+    return _SES()
 
 
 def _boom(*args, **kwargs):
@@ -380,7 +381,7 @@ async def test_a_send_finished_on_a_background_thread_keeps_the_requests_org(
     import email_service
 
     sent: list = []
-    monkeypatch.setattr(email_service, "_resend_client", _fake_resend(sent))
+    monkeypatch.setattr(email_service, "ses_client", _fake_ses(sent))
     shim = _CapturingThreading()
     monkeypatch.setattr(email_service, "threading", shim)
     monkeypatch.setattr(outbound_log, "_schedule", lambda: None)
@@ -401,7 +402,7 @@ async def test_a_send_finished_on_a_background_thread_keeps_the_requests_org(
     )
     row = rows[0]
     assert row["status"] == "sent", "the outcome reported from the thread landed"
-    assert row["provider_message_id"] == "resend-message-id"
+    assert row["provider_message_id"] == "ses-message-id"
     # THE ASSERTION. The org was captured on the request's thread and carried
     # across the hand-off in the Attempt's own fields; re-deriving it anywhere
     # downstream produces None here.
@@ -427,7 +428,7 @@ async def test_the_sending_thread_genuinely_has_no_request_context(
     import email_service
 
     sent: list = []
-    monkeypatch.setattr(email_service, "_resend_client", _fake_resend(sent))
+    monkeypatch.setattr(email_service, "ses_client", _fake_ses(sent))
     shim = _CapturingThreading()
     monkeypatch.setattr(email_service, "threading", shim)
 
@@ -639,7 +640,6 @@ async def test_a_sent_payslip_records_the_bytes_ses_actually_meters(
             raw_seen["len"] = len(RawMessage["Data"])
             return {"MessageId": "0100018f-c0ffee-SES"}
 
-    monkeypatch.setattr(employee_email, "_resend_client", None)
     monkeypatch.setattr(employee_email, "ses_client", _SES)
     shim = _CapturingThreading()
     monkeypatch.setattr(employee_email, "threading", shim)
@@ -822,7 +822,7 @@ async def test_a_dead_writer_does_not_stop_an_email_sent_inside_a_request(
     import email_service
 
     sent: list = []
-    monkeypatch.setattr(email_service, "_resend_client", _fake_resend(sent))
+    monkeypatch.setattr(email_service, "ses_client", _fake_ses(sent))
     shim = _CapturingThreading()
     monkeypatch.setattr(email_service, "threading", shim)
     monkeypatch.setattr(outbound_log, "write", _boom)
@@ -832,7 +832,7 @@ async def test_a_dead_writer_does_not_stop_an_email_sent_inside_a_request(
 
     shim.join()
     assert sent, "the provider was never called — logging blocked a send"
-    assert sent[0]["params"]["to"] == ["arjun.patel@client.example"]
+    assert sent[0]["kwargs"]["Destination"]["ToAddresses"] == ["arjun.patel@client.example"]
 
 
 def test_the_shutdown_hook_drains_the_log_before_the_pool_closes():
