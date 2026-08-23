@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 15 of the 61 assigned skills.
+Wired so far: 16 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -994,6 +994,80 @@ def _money(value: Any) -> float:
         return 0.0
 
 
+# ── check_tds_thresholds ────────────────────────────────────────────────────
+#
+# Vendors whose credited value in the financial year has crossed, or is within
+# ten per cent of, the TDS threshold for their recorded section. Like 194Q the
+# finding cannot be resolved: crossing is a fact about the year, and starting to
+# deduct does not un-cross it. Unlike 194Q the handler is honest that it usually
+# cannot answer at all — no live org has both a section on the vendor and a
+# threshold in the calendar — so its `unattributed` list is the one a firm
+# actually works through, and it is exactly the list somebody will want to close
+# vendor by vendor as they decide "this one has no section because it needs
+# none".
+#
+# FINDINGS_AT — `crossed`, `within_the_last_10_percent`,
+#   `section_recorded_but_no_threshold` and `unattributed`. FOUR of the five
+#   lists.
+#
+#   `below_the_threshold` is deliberately NOT wired, and that is a judgement
+#   rather than an omission: it is the reassurance list. Nothing in it asks
+#   anybody to do anything, and an acknowledge button on it would invite
+#   somebody to silence the evidence that the check ran at all — which is the
+#   denominator this handler exists to protect. Its count is therefore also
+#   left alone, correctly, because the list it counts is never filtered.
+#
+# IDENTITY — `vendor_id` (already returned) and `financial_year` (added here,
+#   one line). Same two reasons as 194Q: the vendor NAME is not unique — two
+#   groups of active vendors share one, measured live — and the running total
+#   restarts on 1 April, so an acknowledgement made in March must not cover the
+#   following year.
+#
+#   NOT `section`. It is recorded ON the vendor and a firm correcting it from
+#   194J to 194C has not made this a different vendor; the correction shows up
+#   as the threshold moving, which is what the list split already reports.
+#
+# MATERIAL — `credited_taxable_value` and `documents_with_no_tds_recorded`.
+#   The first is the running total the whole verdict turns on, and the handler
+#   is explicit that it is the taxable value and NOT `credited_including_tax`,
+#   which sits beside it for reconciliation only — so hashing the gross would
+#   tie the acknowledgement to a figure no threshold is tested on.
+#
+#   The second is the actionable half: a vendor who crossed and now has every
+#   document carrying TDS is in a materially different position from one who
+#   crossed with nine documents and nothing deducted.
+#
+#   NOT `paid_in_year`. The handler's own limitation says it is "near-empty BY
+#   CONSTRUCTION" — `amount_paid` carries no date and `ganit_vendor_payments`
+#   holds one row in the entire database — so hashing it would tie every
+#   acknowledgement to a column that is about to change meaning the moment
+#   somebody fixes it.
+#
+# INCIDENTAL — `vendor`, `threshold`, `statute`, `statute_key_asked_for`, `why`,
+#   `documents`, `credited_including_tax`, `tds_recorded`.
+#
+# RECOMPUTE — only the counts whose lists are actually filtered:
+#   `vendors_with_no_section` (which IS `len(unattributed)`), `crossed`,
+#   `within_the_last_10_percent` and `section_recorded_but_no_threshold`.
+#   `below` is untouched because its list is untouched. Everything else —
+#   `vendors_total`, `vendors_with_a_recorded_section`, the expense counts,
+#   `tds_recorded_total`, `could_not_check` — is population, and
+#   `could_not_check` in particular is what stops a `crossed` count of zero
+#   reading as an all-clear.
+
+def _tds_thresholds_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the four counts whose lists this wiring filters, and no others."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["crossed"] = len(surviving.get("crossed") or ())
+    counts["within_the_last_10_percent"] = len(
+        surviving.get("within_the_last_10_percent") or ())
+    counts["section_recorded_but_no_threshold"] = len(
+        surviving.get("section_recorded_but_no_threshold") or ())
+    counts["vendors_with_no_section"] = len(surviving.get("unattributed") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1299,6 +1373,21 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_msme_recompute,
         label_of=lambda f: f"{f.get('bill')} — {f.get('vendor')}",
+    ),
+
+    "check_tds_thresholds": AckWiring(
+        findings_at=("crossed", "within_the_last_10_percent",
+                     "section_recorded_but_no_threshold", "unattributed"),
+        identity_of=lambda f: {
+            "vendor_id": f.get("vendor_id"),
+            "financial_year": f.get("financial_year"),
+        },
+        material_of=lambda f: {
+            "credited_taxable_value": f.get("credited_taxable_value"),
+            "documents_with_no_tds_recorded": f.get("documents_with_no_tds_recorded"),
+        },
+        recompute=_tds_thresholds_recompute,
+        label_of=lambda f: f"{f.get('vendor')} — {f.get('section') or 'no section'}",
     ),
 
     "check_late_suppliers": AckWiring(

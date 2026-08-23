@@ -768,6 +768,11 @@ async def check_tds_thresholds(
         taxable = _f(r["taxable"])
         entry = reachable({
             "vendor_id": str(r["id"]),
+            # The year an acknowledgement is filed against. Every running total
+            # below restarts on 1 April, so without it a finding acknowledged in
+            # March would stay silenced through the whole of the next year — see
+            # `services/skill_ack_wiring.py`.
+            "financial_year": fy,
             "vendor": r["name"],
             "section": section or None,
             "credited_taxable_value": round(taxable, 2),
