@@ -221,6 +221,7 @@ WIRED = [
     "find_overdue_invoices",
     "find_overdue_tasks",
     "find_overdue_vendor_bills",
+    "find_stalled_agreements",
     "propose_payment_run",
 ]
 

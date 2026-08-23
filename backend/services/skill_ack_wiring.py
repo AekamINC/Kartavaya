@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 4 of the 61 assigned skills.
+Wired so far: 5 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -336,6 +336,42 @@ ACK_WIRING: dict[str, AckWiring] = {
     #
     # RECOMPUTE — None; nothing in `{"result": [...]}` is derived.
     "find_overdue_followups": AckWiring(
+        findings_at="result",
+        identity_of=_entity_identity,
+        material_of=None,
+        recompute=None,
+        label_of=_entity_label,
+    ),
+
+    # ── find_stalled_agreements ─────────────────────────────────────────────
+    #
+    # `staging.ganit_contracts` still in `draft`, untouched for fourteen days.
+    # eSign is web-only, so this finding and its acknowledgement are both web
+    # surfaces; nothing here needs a mobile destination.
+    #
+    # IDENTITY — `entity.id` + `entity.module`, and the contract title is left
+    #   out for the same reason as everywhere else in the family: a retitled
+    #   draft is the same stalled draft.
+    #
+    # MATERIAL — None, and on this module the reasoning is worth stating
+    #   because the finding's underlying signal is ITSELF a clock. There is no
+    #   due date on a contract; "stalled" means `updated_at` is older than the
+    #   threshold. So ANY edit to the draft resets it, the row drops out of the
+    #   query, and the finding disappears without the ack doing anything.
+    #
+    #   The consequence: if the draft then sits untouched for another fourteen
+    #   days it comes BACK, and the stored acknowledgement — which is
+    #   unconditional — suppresses it again. That is deliberate and it is the
+    #   correct reading of what the user said: "this draft is parked, stop
+    #   telling me". Somebody who wants to be reminded after the pause should
+    #   snooze rather than acknowledge. A wiring that tried to be cleverer would
+    #   have to hash `updated_at`, which is in `_DRIFT_FIELDS` and would raise.
+    #
+    # INCIDENTAL — `days_past`, the owner fields, and the `/sign/documents/…`
+    #   link.
+    #
+    # RECOMPUTE — None.
+    "find_stalled_agreements": AckWiring(
         findings_at="result",
         identity_of=_entity_identity,
         material_of=None,

@@ -24,6 +24,7 @@ OVERDUE_SKILLS = {
     "find_overdue_vendor_bills": "vendor_bills",
     "find_overdue_tasks": "tasks",
     "find_overdue_followups": "follow_ups",
+    "find_stalled_agreements": "esign",
 }
 
 
@@ -273,3 +274,32 @@ def test_retitling_a_follow_up_does_not_orphan_the_acknowledgement():
     after["entity"] = dict(after["entity"], label="Call Sharma re renewal (Q3)")
     acks = _ack_for("find_overdue_followups", before)
     assert apply_wiring("find_overdue_followups", _out([after]), acks)["result"] == []
+
+
+# ── 11 · the module whose signal is itself a clock ──────────────────────────
+
+def test_an_acknowledged_draft_that_is_edited_and_stalls_again_stays_hidden():
+    """`find_stalled_agreements` has no due date: "stalled" means `updated_at`
+    is older than the threshold, so ANY edit resets it and the row leaves the
+    query without the ack doing anything. Fourteen quiet days later it returns
+    — and the stored acknowledgement, which is unconditional, suppresses it
+    again.
+
+    That is deliberate. It is the correct reading of "this draft is parked,
+    stop telling me", and somebody who wants reminding after the pause should
+    snooze rather than acknowledge. A wiring that tried to be cleverer would
+    have to hash `updated_at`, which is in `_DRIFT_FIELDS` and raises.
+    """
+    acks = _ack_for("find_stalled_agreements", _finding("esign", days_past=14))
+    later = _finding("esign", days_past=15)      # edited, then quiet again
+    assert apply_wiring("find_stalled_agreements", _out([later]), acks)["result"] == []
+
+
+def test_the_esign_wiring_never_reads_a_time_derived_field():
+    """The static form of the case above, over this entry's own lambdas: no
+    date and no age reaches either hash, whatever the handler starts
+    returning."""
+    wiring = ACK_WIRING["find_stalled_agreements"]
+    identity = wiring.identity_of(_finding("esign"))
+    assert set(identity) == {"module", "entity_id"}
+    assert wiring.material_of is None
