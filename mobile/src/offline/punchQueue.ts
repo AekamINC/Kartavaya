@@ -32,6 +32,7 @@ import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system';
 import { storage } from '../lib/storage';
 import { apiClient } from '../api/client';
+import { pahchanApi } from '../api/pahchan';
 
 const PUNCH_KEY = 'punch_queue';
 
@@ -275,6 +276,42 @@ export function attachPhotoKey(clientPunchId: string, photoKey: string): void {
   if (idx === -1) return;
   q[idx] = { ...q[idx], photo_key: photoKey };
   write(q);
+}
+
+/**
+ * Retry the one upload that has no other retry path.
+ *
+ * Inbox 9, "attendance stuck at waiting for send": `attachPhotoKey` is only
+ * ever called from ONE site (`ClockScreen`'s capture handler), and only when
+ * that call's own `pahchanApi.uploadPhoto` succeeds. The upload most likely
+ * to fail is the one made at capture time on a phone with no signal — which
+ * is the exact scenario this whole queue exists for. `flushPunches` below
+ * refuses to even attempt sending a punch with no `photo_key` (07 §4: it
+ * cannot be verified without one), so a punch whose first upload failed had
+ * NOTHING that would ever try that upload again. It sat under "N waiting to
+ * send" until the 72-hour retention alarm, fully online the whole time.
+ *
+ * Called before `flushPunches` on every sync trigger (`App.tsx`'s NetInfo
+ * reconnect handler). Failures here are swallowed exactly as
+ * `flushPunches`'s own photo gate already treats a missing key — waiting is
+ * not an error, and the next sync tries again. `photo_uri` is the local
+ * pointer `enqueuePunch` kept for precisely this: the file survives on the
+ * device until `flushPunches` deletes it, which only happens after a send
+ * that this function is what makes possible.
+ */
+export async function retryPendingPhotoUploads(): Promise<void> {
+  const q = read();
+  for (const punch of q) {
+    if (punch.photo_key || !punch.photo_uri) continue;
+    try {
+      const { photo_key } = await pahchanApi.uploadPhoto(punch.photo_uri, 'punch');
+      attachPhotoKey(punch.client_punch_id, photo_key);
+    } catch {
+      // Still no signal, or the file is gone. Leave photo_key null —
+      // flushPunches will find it still missing and wait again, same as
+      // before this function existed. The next sync trigger tries again.
+    }
+  }
 }
 
 // ── Flush ─────────────────────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ import { apiClient } from '../api/client';
 import { apiRefresh } from '../api/auth';
 import { storage } from '../lib/storage';
 import { flushQueue, getQueueCount } from './mutationQueue';
+import { flushPunches, getPunchCount, retryPendingPhotoUploads } from './punchQueue';
 import { queryClient } from './queryClient';
 import { coveredFloor, pagePlan } from './deltaCursor';
 
@@ -47,6 +48,9 @@ const SINCE_KEY = 'sync_since';
 export interface SyncOutcome {
   ran:      boolean;
   pushed:   number;
+  /** Punches sent. Own field: `pushed` is mutationQueue's count, and a
+   *  dropped punch is an unpaid day — worth its own number, not folded in. */
+  pushedPunches: number;
   changed:  number;
   removed:  number;
   /** The device has been away longer than the deletion history is kept. */
@@ -171,7 +175,7 @@ const MAX_PAGES = 10;
  */
 export async function syncSession(): Promise<SyncOutcome> {
   const out: SyncOutcome = {
-    ran: false, pushed: 0, changed: 0, removed: 0, resynced: false,
+    ran: false, pushed: 0, pushedPunches: 0, changed: 0, removed: 0, resynced: false,
     truncated: false,
   };
 
@@ -192,6 +196,24 @@ export async function syncSession(): Promise<SyncOutcome> {
       // A change that could not be sent stays queued and is tried again next
       // time. Pulling on top of it is still safe: the queue replays in order
       // and its writes win, because they happen after.
+    }
+  }
+
+  // Punches, on the owner's own "every open, in background" rule — inbox 9:
+  // this call never existed before, so opening the app did nothing for a
+  // punch that was stuck, no matter how many times someone tried. Its own
+  // queue, its own retention, its own failure handling (never thrown) —
+  // see punchQueue.ts's module header for why this is not mutationQueue.
+  const queuedPunches = getPunchCount();
+  if (queuedPunches > 0) {
+    try {
+      await retryPendingPhotoUploads();
+      const result = await flushPunches();
+      out.pushedPunches = result.sent;
+    } catch {
+      // Never thrown by flushPunches itself (see its own header), but a
+      // punch that failed here stays queued and is tried on the next open,
+      // the next reconnect, or the next capture — never lost.
     }
   }
 

@@ -14,7 +14,7 @@ import { AuthProvider } from './hooks/useAuth';
 import { queryClient, persistOptions, setupQueryPersistence } from './offline/queryClient';
 import { useFonts } from './theme/fonts';
 import { flushQueue, getQueueCount, getQueueSummary, clearQueue, friendlyFlushError } from './offline/mutationQueue';
-import { flushPunches, getPunchCount, getPunchSummary } from './offline/punchQueue';
+import { flushPunches, getPunchCount, getPunchSummary, retryPendingPhotoUploads } from './offline/punchQueue';
 import { agoLabel } from './hooks/useQueueStatus';
 import { amplitude, duration, useReducedMotion, DUR, EASE } from './theme/motion';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -277,6 +277,11 @@ function InnerApp() {
     // queue must not skip attendance, and vice versa. Failures here are carried
     // forward rather than surfaced as errors, because the punch is not lost;
     // expiry is the only thing worth interrupting someone about.
+    //
+    // Inbox 9 — retry any photo upload that failed at capture time BEFORE
+    // flushPunches, which will otherwise wait on that punch forever: see
+    // retryPendingPhotoUploads's own header for why nothing else ever did.
+    await retryPendingPhotoUploads();
     const punchResult = await flushPunches();
     if (punchResult.expired.length > 0) {
       // A punch that aged out past 72 hours cannot be recovered by retrying, and

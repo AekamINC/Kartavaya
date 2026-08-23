@@ -28,6 +28,7 @@ import {
   getPunchSummary,
   getQueuedPunches,
   pruneExpired,
+  retryPendingPhotoUploads,
 } from '../punchQueue.ts';
 import { clearQueue, enqueueMutation, getQueueCount } from '../mutationQueue.ts';
 import { __resetStorage } from '../../test/stubs/react-native-mmkv.ts';
@@ -482,6 +483,100 @@ test('a punch waiting for its photo does not block a later ready one', async () 
   const r = await flushPunches();
   assert.equal(r.sent, 1);
   assert.equal(r.pending, 1);
+});
+
+// ── Inbox 9: the photo upload that had no retry path ──────────────────────────
+//
+// `attachPhotoKey` was only ever called from one place in the app — the
+// capture handler, and only on success. A punch whose capture-time upload
+// failed (the normal "employee is offline" case) had no code path left that
+// would ever try that upload again, and `flushPunches`'s own gate above
+// refuses to even attempt sending it. `retryPendingPhotoUploads` is the fix:
+// called before `flushPunches` on every sync trigger.
+
+const PHOTO_URL = '/v1/pahchan/punch/photo';
+
+test('retryPendingPhotoUploads recovers a punch whose capture-time upload failed', async () => {
+  // No attachPhotoKey call — this IS the stuck state the bug report names.
+  enqueuePunch({ direction: 'in', photo_uri: '/p/retry.jpg' });
+  net.handler = async (call) =>
+    call.url === PHOTO_URL ? { data: { photo_key: 'recovered_key' } } : { data: {} };
+
+  await retryPendingPhotoUploads();
+
+  const [punch] = getQueuedPunches();
+  assert.equal(punch.photo_key, 'recovered_key');
+});
+
+test('a punch recovered by retryPendingPhotoUploads then sends on the next flush', async () => {
+  enqueuePunch({ direction: 'in', photo_uri: '/p/retry2.jpg' });
+  net.handler = async (call) =>
+    call.url === PHOTO_URL ? { data: { photo_key: 'k2' } } : { data: {} };
+
+  await retryPendingPhotoUploads();
+  const r = await flushPunches();
+
+  assert.equal(r.sent, 1, 'the punch that was stuck now sends');
+});
+
+test('retryPendingPhotoUploads leaves a still-offline punch waiting, not errored', async () => {
+  enqueuePunch({ direction: 'in', photo_uri: '/p/retry3.jpg' });
+  __goOffline();
+
+  await retryPendingPhotoUploads();
+
+  const [punch] = getQueuedPunches();
+  assert.equal(punch.photo_key, null, 'no signal yet — still waiting, exactly as before this function existed');
+  assert.equal(getPunchCount(), 1, 'not dropped');
+});
+
+test('retryPendingPhotoUploads does not re-upload a punch that already has a key', async () => {
+  const id = enqueuePunch({ direction: 'in', photo_uri: '/p/already.jpg' });
+  attachPhotoKey(id, 'existing_key');
+  let photoCalls = 0;
+  net.handler = async (call) => {
+    if (call.url === PHOTO_URL) photoCalls += 1;
+    return { data: {} };
+  };
+
+  await retryPendingPhotoUploads();
+
+  assert.equal(photoCalls, 0, 'a punch with a key already needs no upload attempt');
+  assert.equal(getQueuedPunches()[0].photo_key, 'existing_key', 'untouched');
+});
+
+test('retryPendingPhotoUploads skips a punch with no photo at all', async () => {
+  // e.g. a site where photo-on-punch is off. Nothing to upload, nothing to retry.
+  enqueuePunch({ direction: 'in' });
+  let photoCalls = 0;
+  net.handler = async (call) => {
+    if (call.url === PHOTO_URL) photoCalls += 1;
+    return { data: {} };
+  };
+
+  await retryPendingPhotoUploads();
+
+  assert.equal(photoCalls, 0);
+});
+
+test('retryPendingPhotoUploads does not block one punch\'s recovery on another\'s failure', async () => {
+  enqueuePunch({ direction: 'in', captured_at: ago(2), photo_uri: '/p/fails.jpg' });
+  const ok = enqueuePunch({ direction: 'out', captured_at: ago(1), photo_uri: '/p/ok.jpg' });
+  // Distinguish by call order: the queue is read oldest-first internally
+  // (insertion order here, since retryPendingPhotoUploads walks the raw
+  // read()), so the failing punch's upload is attempted first.
+  let photoCallCount = 0;
+  net.handler = async (call) => {
+    if (call.url !== PHOTO_URL) return { data: {} };
+    photoCallCount += 1;
+    if (photoCallCount === 1) throw new Error('Network Error');
+    return { data: { photo_key: 'ok_key' } };
+  };
+
+  await retryPendingPhotoUploads();
+
+  const byId = new Map(getQueuedPunches().map(p => [p.client_punch_id, p.photo_key]));
+  assert.equal(byId.get(ok), 'ok_key', 'the second punch recovered despite the first failing');
 });
 
 // ── Isolation from the mutation queue ─────────────────────────────────────────
