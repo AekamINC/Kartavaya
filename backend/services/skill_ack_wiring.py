@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 17 of the 61 assigned skills.
+Wired so far: 18 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1188,6 +1188,83 @@ def _chase_ladder_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) 
     counts["signatures"] = sum(1 for i in everything if i.get("kind") == "signature")
 
 
+# ── check_approvals_that_sit ────────────────────────────────────────────────
+#
+# Pending approvals, laddered by how long they have waited. The handler's second
+# limitation is the whole case for this wiring, in its own words: "Run daily,
+# this names the same approvals every day until they are decided." It cannot
+# subtract what was already sent, because `staging.reminders.entity_id` is a
+# uuid and `public.approvals.approval_id` is text, so no approval chase can ever
+# be recorded. Every row reports `chases_delivered: 0` for ever.
+#
+# FINDINGS_AT — `ping_the_approver`, `copy_the_requester`, `escalations_due`,
+#   `waiting_but_nothing_due` and `on_a_deleted_project`. Five lists, and
+#   LISTS_ARE_ONE_POPULATION for the same reason as `check_chase_ladder`: they
+#   partition the pending approvals by what to do next, an approval is in
+#   exactly one, and it moves between them as the days pass.
+#
+# IDENTITY — `approval_id` alone. The handler already calls it "a row handle for
+#   the UI to act on, not a value to render as a name", and it is TEXT rather
+#   than a uuid — which is exactly why this ladder has no chase history, and
+#   exactly why it is a good key.
+#
+#   NOT `project`, `what` or `requested_by`: an approval moved to another
+#   project, or retitled, is the same request waiting.
+#
+# MATERIAL — None, and this is one of the few places that answer is forced by a
+#   defect rather than chosen. The only field that could carry movement is
+#   `chases_delivered`, and the handler pins it at 0 on every row for ever — a
+#   constant is not a state. `rung` is likewise pinned at one. So there is
+#   nothing in this shape that can move, and an acknowledgement here is
+#   unconditional: "stop showing me this approval" until it is decided, which
+#   removes it from the query, or until somebody withdraws the ack.
+#
+#   `rung_the_age_alone_would_reach` and `aged_past_escalation` DO move — and
+#   both move with the calendar alone, which is precisely why they are not in
+#   this bucket. They are the handler's honest substitute for a ladder it
+#   cannot walk, not a change in the fact.
+#
+# INCIDENTAL — `days_waiting`, `raised_on`, `waiting_on`, `escalate_to`,
+#   `project_deleted` (which the list split already carries), and the derived
+#   `action` / `direction` / `why`.
+#
+# RECOMPUTE — every count that is a sum over the five lists, and NOT the four
+#   that are not. `approvals_all_statuses` and `decided` come from a status
+#   census over the whole table, `capped_at` / `was_capped` describe the query,
+#   and `by_status` is that census — an org that acknowledged every pending
+#   approval has not decided any of them.
+#
+#   `with_no_approver_to_ping` and `aged_past_escalation` are rebuilt because a
+#   limitation line quotes each BY NUMBER, and a paragraph that says four above
+#   a list of one is the reports-page defect in prose. The prose itself is left
+#   alone, so the two can still disagree; rewriting a limitation from a filter
+#   would be worse than the disagreement.
+
+def _approvals_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild every count that is a sum over the ladder's own five lists."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    ping = list(surviving.get("ping_the_approver") or ())
+    copy_requester = list(surviving.get("copy_the_requester") or ())
+    escalations = list(surviving.get("escalations_due") or ())
+    quiet = list(surviving.get("waiting_but_nothing_due") or ())
+    orphaned = list(surviving.get("on_a_deleted_project") or ())
+    live = ping + copy_requester + escalations + quiet
+
+    counts["ping_the_approver"] = len(ping)
+    counts["copy_the_requester"] = len(copy_requester)
+    counts["escalations_due"] = len(escalations)
+    counts["action_due_now"] = len(ping) + len(copy_requester) + len(escalations)
+    counts["nothing_due_yet"] = len(quiet)
+    counts["on_a_deleted_project"] = len(orphaned)
+    counts["on_a_live_project"] = len(live)
+    counts["pending"] = len(live) + len(orphaned)
+    counts["with_no_approver_to_ping"] = sum(1 for i in live if not i.get("waiting_on"))
+    counts["aged_past_escalation"] = sum(
+        1 for i in live if i.get("aged_past_escalation"))
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1520,6 +1597,16 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=lambda f: {"chases_delivered": f.get("chases_delivered")},
         recompute=_chase_ladder_recompute,
         label_of=lambda f: f"{f.get('kind')} — {f.get('what')}",
+        lists_are_one_population=True,
+    ),
+
+    "check_approvals_that_sit": AckWiring(
+        findings_at=("ping_the_approver", "copy_the_requester", "escalations_due",
+                     "waiting_but_nothing_due", "on_a_deleted_project"),
+        identity_of=lambda f: {"approval_id": f.get("approval_id")},
+        material_of=None,
+        recompute=_approvals_recompute,
+        label_of=lambda f: f"{f.get('what')} — {f.get('project')}",
         lists_are_one_population=True,
     ),
 
