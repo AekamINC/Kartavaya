@@ -646,7 +646,10 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const act = async (label, fn) => {
     setBusy(label);
     try { await fn(); await load(); onChanged?.(); }
-    catch (e) { pushToast({ type: 'error', title: e?.response?.data?.detail || 'That did not go through' }); }
+    catch (e) {
+      console.error('act() error:', e);
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'That did not go through' });
+    }
     finally { setBusy(''); }
   };
 
@@ -881,24 +884,44 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                   ? `${addEmail.trim()} becomes the org owner of ${org.name}. They can manage modules, roles, payroll approval and everything the organisation reaches. The org must not already have an owner.`
                   : `${addEmail.trim()} becomes an org admin of ${org.name} and reaches every module it has active — including payroll and the books if those are on. This is recorded against the organisation.`,
                 confirmLabel: addRole === 'org_owner' ? 'Make org owner' : 'Make org admin',
-                onConfirm: () => act('add', async () => {
+                onConfirm: async () => {
                   const email = addEmail.trim();
-                  if (addRole === 'org_owner') {
-                    const r = await api.post(`/v1/admin/orgs/${orgId}/owner`, { email });
-                    if (r.data?.status === 'invited') {
-                      pushToast({ type: 'success', title: `Owner invite sent to ${email}` });
+                  const role = addRole;
+                  console.log('onConfirm fired', { email, role, orgId });
+                  try {
+                    setBusy('add');
+                    if (role === 'org_owner') {
+                      console.log('posting to /owner');
+                      const r = await api.post(`/v1/admin/orgs/${orgId}/owner`, { email });
+                      console.log('owner response', r.data);
+                      if (r.data?.status === 'invited') {
+                        pushToast({ type: 'success', title: `Owner invite sent to ${email}` });
+                      } else {
+                        pushToast({ type: 'success', title: `${email} is now the org owner` });
+                      }
+                    } else {
+                      console.log('posting to /members');
+                      const r = await api.post(`/v1/admin/orgs/${orgId}/members`, {
+                        email, roles: ['org_admin'],
+                      });
+                      console.log('members response', r.data);
+                      if (r.data?.status === 'invited') {
+                        pushToast({ type: 'success', title: `Invite sent to ${email}` });
+                      } else {
+                        pushToast({ type: 'success', title: `${email} added as org admin` });
+                      }
                     }
-                  } else {
-                    const r = await api.post(`/v1/admin/orgs/${orgId}/members`, {
-                      email, roles: ['org_admin'],
-                    });
-                    if (r.data?.status === 'invited') {
-                      pushToast({ type: 'success', title: `Invite sent to ${email}` });
-                    }
+                    setAddEmail('');
+                    setAddRole('org_admin');
+                    await load();
+                    onChanged?.();
+                  } catch (e) {
+                    console.error('invite/add failed:', e);
+                    pushToast({ type: 'error', title: e?.response?.data?.detail || 'That did not go through' });
+                  } finally {
+                    setBusy('');
                   }
-                  setAddEmail('');
-                  setAddRole('org_admin');
-                }),
+                },
               })}
             >
               {busy === 'add' ? 'Inviting…' : addRole === 'org_owner' ? 'Invite org owner' : 'Invite org admin'}
