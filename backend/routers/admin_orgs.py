@@ -1921,15 +1921,56 @@ async def add_member(
         "FROM users WHERE LOWER(email)=LOWER($1)",
         body.email,
     )
-    if not target:
-        raise HTTPException(404, f"No user found with email '{body.email}'")
-    if target.get("is_system"):
-        # The Niyam automation account (migration 148): a user_roles row would
-        # surface it in every member list and charge the org a seat. Even god
-        # mode does not get to make a robot an org admin.
+
+    if target and target.get("is_system"):
         raise HTTPException(
             400, "That address belongs to a system account and cannot be "
                  "added to an organisation.")
+
+    # ── When the person has no account, INVITE them ─────────────────────────
+    #
+    # The product is invite-only with no public sign-up, so "No user found" was
+    # advice nobody could take. When the target doesn't exist yet, fall back to
+    # the same invite flow the org's own Members tab uses: create an invite row,
+    # send the invite email, and return the link so the console operator can
+    # copy it if the mail doesn't arrive.
+    if not target:
+        from routers.org_invites import issue_invite
+
+        org_name = await pool.fetchval(
+            "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id,
+        )
+        invite = await issue_invite(
+            pool, user, str(org_id), body.email.lower(), INVITABLE_ORG_ROLE,
+            None, [], None,
+        )
+        try:
+            from email_service import send_invite_email
+            inviter_name = user.get("full_name") or user.get("name") or user.get("email") or "Kartavaya"
+            send_invite_email(
+                body.email.lower(), inviter_name, INVITABLE_ORG_ROLE,
+                invite.invite_link.split("token=")[-1],
+                workspace_name=org_name or "Kartavaya",
+                expires_label=invite.expires_at.strftime("%d %b %Y"),
+            )
+        except Exception:
+            log.exception("Invite email failed for %s -> %s", org_id, body.email)
+
+        await _log_event(pool, org_id, "org_admin_invited", {
+            "email": body.email,
+            "roles": [INVITABLE_ORG_ROLE],
+            "added_by": user["user_id"],
+            "added_by_email": user.get("email"),
+            "method": "invite",
+        })
+
+        return {
+            "status": "invited",
+            "email": body.email,
+            "roles": [INVITABLE_ORG_ROLE],
+            "modules": [],
+            "invite_link": invite.invite_link,
+        }
 
     await assert_seat_available(
         pool, org_id, email=body.email, user_id=target["user_id"],
@@ -1990,15 +2031,6 @@ async def add_member(
         target["user_id"], org_id, INVITABLE_ORG_ROLE, user["user_id"],
     )
 
-    # No `staging.org_member_modules` write, on either path.
-    #
-    # The auto-grant branch that used to be here computed an EMPTY list for an
-    # org_admin already — it only ever granted modules to an `org_member`, and
-    # this endpoint no longer creates one. `role_tiers.SENSITIVE_MODULES`, which
-    # that branch consulted, is no longer imported by this file: the org's own
-    # member console (`routers/org_members.py`) is where the auto-grant rule now
-    # lives, alongside the role it applies to.
-
     await _log_event(pool, org_id, "org_admin_invited", {
         "email": body.email,
         "roles": [INVITABLE_ORG_ROLE],
@@ -2010,8 +2042,6 @@ async def add_member(
         "status": "added",
         "email": body.email,
         "roles": [INVITABLE_ORG_ROLE],
-        # Kept as an empty list rather than dropped: a console reading
-        # `res.modules.length` on an older deploy must not find `undefined`.
         "modules": [],
     }
 
@@ -2788,46 +2818,98 @@ async def nominate_org_owner(
         "FROM users u WHERE LOWER(u.email)=LOWER($1)",
         body.email,
     )
-    if not target:
-        raise HTTPException(404, f"No user found with email '{body.email}'")
-    if target["is_system"]:
+
+    if target and target["is_system"]:
         raise HTTPException(
             400, "That address belongs to a system account and cannot own an "
                  "organisation.")
 
+    # ── When the person has no account, invite them as org_owner ─────────────
+    if not target:
+        from routers.org_invites import issue_invite
+
+        invite = await issue_invite(
+            pool, user, str(org_id), body.email.lower(), "org_owner",
+            None, [], None,
+        )
+        try:
+            from email_service import send_invite_email
+            inviter_name = user.get("full_name") or user.get("name") or user.get("email") or "Kartavaya"
+            send_invite_email(
+                body.email.lower(), inviter_name, "org_owner",
+                invite.invite_link.split("token=")[-1],
+                workspace_name=org["name"] or "Kartavaya",
+                expires_label=invite.expires_at.strftime("%d %b %Y"),
+            )
+        except Exception:
+            log.exception("Owner invite email failed for %s -> %s", org_id, body.email)
+
+        _audit_emit(
+            "platform.org_owner_invited",
+            request,
+            user_id=user["user_id"],
+            detail={"org_id": org_id, "org": org["name"],
+                    "email": body.email, "method": "invite"},
+            severity="warn",
+        )
+
+        return {
+            "status": "invited",
+            "org_id": org_id,
+            "owner": body.email,
+            "role_code": "org_owner",
+            "invite_link": invite.invite_link,
+        }
+
+    # If the target exists but isn't an org_admin yet, seat them as one first
     is_admin = await pool.fetchval(
         "SELECT 1 FROM staging.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code='org_admin'",
         target["user_id"], org_id,
     )
     if not is_admin:
-        raise HTTPException(
-            400,
-            f"{body.email} is not an administrator of {org['name']}. An owner "
-            "is raised from the organisation's existing administrators — this "
-            "console does not introduce one.",
+        org_row = await pool.fetchrow(
+            "SELECT id, team_id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE",
+            org_id,
         )
+        if org_row:
+            await assert_seat_available(pool, org_id, email=body.email, user_id=target["user_id"])
+            is_team_member = await pool.fetchval(
+                "SELECT 1 FROM public.team_members "
+                "WHERE team_id=$1 AND user_id=$2 AND status='active'",
+                org_row["team_id"], target["user_id"],
+            )
+            if not is_team_member:
+                await pool.execute(
+                    "INSERT INTO public.team_members (member_id, team_id, email, user_id, role, status, org_id) "
+                    "VALUES ($1, $2, $3, $4, 'member', 'active', $5::uuid) "
+                    "ON CONFLICT DO NOTHING",
+                    f"mem_{uuid.uuid4().hex[:12]}", org_row["team_id"],
+                    body.email, target["user_id"], org_id,
+                )
+            await pool.execute(
+                "INSERT INTO public.project_assignments "
+                "  (assignment_id, team_id, user_id, role, assigned_by, org_id) "
+                "VALUES ($1, $2, $3, 'member', $4, $5::uuid) "
+                "ON CONFLICT (team_id, user_id) DO NOTHING",
+                f"assign_{uuid.uuid4().hex[:12]}", org_row["team_id"],
+                target["user_id"], user["user_id"], org_id,
+            )
+            await pool.execute(
+                "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                "VALUES ($1, $2::uuid, 'org_admin', $3) "
+                "ON CONFLICT (user_id, org_id, role_code) DO NOTHING",
+                target["user_id"], org_id, user["user_id"],
+            )
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # `granted_by` is the operator who appointed them, which is the
-            # whole record for a grant being created; `user_roles.updated_by`
-            # (203) stays NULL because nothing here amends an existing grant.
-            # The organisation-level trail for this act is the
-            # `organisations.updated_by` write below, which is a genuine
-            # amendment of a standing row — and the `_audit_emit` at severity
-            # warn, because appointing an owner from the platform console is a
-            # cross-boundary act on a customer's account.
             await conn.execute(
                 "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
                 "VALUES ($1, $2::uuid, 'org_owner', $3) "
                 "ON CONFLICT DO NOTHING",
                 target["user_id"], org_id, user["user_id"],
             )
-            # `owner_user_id IS NULL` only: the column records the founder, and
-            # an org created before this endpoint existed may name somebody who
-            # is no longer the right answer — but overwriting it here would be a
-            # second, unasked-for change to a populated column.
             await conn.execute(
                 # $3 is the OPERATOR, not the new owner. `owner_user_id` ($1)
                 # says who now owns the organisation; `updated_by` says who

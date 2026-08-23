@@ -848,8 +848,8 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
               label={addRole === 'org_owner' ? 'Invite an org owner' : 'Invite an org admin'}
               htmlFor="om-email"
               hint={addRole === 'org_owner'
-                ? 'They must already have a Kartavya account. They become the org owner and can manage modules, roles and payroll approval.'
-                : 'They must already have a Kartavya account. They become an org admin of this organisation and reach every module it has active.'}
+                ? 'They become the org owner and can manage modules, roles and payroll approval. If they don’t have an account yet, an invite email is sent.'
+                : 'They become an org admin of this organisation and reach every module it has active. If they don’t have an account yet, an invite email is sent.'}
             >
               {p => (
                 <Input
@@ -883,11 +883,18 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 confirmLabel: addRole === 'org_owner' ? 'Make org owner' : 'Make org admin',
                 onConfirm: () => act('add', async () => {
                   const email = addEmail.trim();
-                  await api.post(`/v1/admin/orgs/${orgId}/members`, {
-                    email, roles: ['org_admin'],
-                  });
                   if (addRole === 'org_owner') {
-                    await api.post(`/v1/admin/orgs/${orgId}/owner`, { email });
+                    const r = await api.post(`/v1/admin/orgs/${orgId}/owner`, { email });
+                    if (r.data?.status === 'invited') {
+                      pushToast({ type: 'success', title: `Owner invite sent to ${email}` });
+                    }
+                  } else {
+                    const r = await api.post(`/v1/admin/orgs/${orgId}/members`, {
+                      email, roles: ['org_admin'],
+                    });
+                    if (r.data?.status === 'invited') {
+                      pushToast({ type: 'success', title: `Invite sent to ${email}` });
+                    }
                   }
                   setAddEmail('');
                   setAddRole('org_admin');
