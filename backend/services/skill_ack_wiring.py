@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 14 of the 61 assigned skills.
+Wired so far: 15 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -912,6 +912,88 @@ def _194q_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
     counts["vendors_approaching"] = len(surviving.get("approaching") or ())
 
 
+# ── check_msme_payment_clock ────────────────────────────────────────────────
+#
+# Bills owed to micro and small enterprises past the MSMED s.15 window. The
+# consequence of a breach is not a reminder — it is disallowance of the
+# deduction and interest at three times the bank rate — and NOTHING the firm
+# does inside this product can close the finding except paying, which this skill
+# cannot record. So the same bills return every run, including the ones the firm
+# has already disputed, already scheduled, or already settled by a route the
+# ledger does not know about.
+#
+# FINDINGS_AT — `past_the_window`, `inside_the_window` and `not_classified`.
+#   THREE lists, and they are three different statements: a breach, a clock
+#   still running, and a bill whose vendor nobody has classified. A bill moves
+#   from the second list to the first when the window closes, and the folded
+#   list name orphans the acknowledgement at exactly that moment — which is
+#   right, because "I know, it is due next week" is not "I know, we are in
+#   breach".
+#
+# IDENTITY — `bill_id`, which the handler already returns. One field, because
+#   the bill row IS the fact: the vendor, the window and the leg are all
+#   properties of it. `bill` (the supplier's number) is deliberately NOT the
+#   key here even though `propose_payment_run` uses it — that handler has no id
+#   to hand and this one does, and a supplier number can be corrected.
+#
+# MATERIAL — `outstanding_including_tax` and `status`. The first is what is
+#   actually at risk; the second because a bill put on hold or cancelled is a
+#   different situation under the same number. `taxable_value` is deliberately
+#   out: it moves only when the bill itself is edited, which moves the
+#   outstanding too, so it would count one change twice.
+#
+# INCIDENTAL — and THIS ENTRY IS WHERE THE DRIFT GUARD DOES NOT SAVE ANYBODY.
+#   `age_in_days` and `days_past_the_window` both tick with the calendar, and
+#   NEITHER SPELLING IS IN `_DRIFT_FIELDS`: that frozenset holds `age_days`,
+#   `days_past`, `days_past_due` and `days_overdue`, and these two are none of
+#   them. The exception would not fire. So they are kept out of both hashes by
+#   the same reasoning the guard exists to encode, and a test pins it — the
+#   guard is a list of names somebody wrote down, not a law of nature.
+#
+#   `pay_by` is incidental too: it is a deadline computed from the bill date
+#   and the window, so it is fixed while both are, and it moves only when
+#   something already in the key or the material bucket moves.
+#
+#   `clock_started_from`, `clock_started_on`, `acceptance_date`, `bill_date`,
+#   `leg`, `window_applied_days`, `agreed_terms_days`, `enterprise_class`,
+#   `vendor_kind`, `udyam_number` and `vendor` are facts about how the clock was
+#   set, not about what is owed.
+#
+# RECOMPUTE — the three bill counts and BOTH figures in `amount_at_risk`, which
+#   are sums over `past_the_window` ALONE. That asymmetry is the whole reason
+#   this recompute is written by hand: rebuilding the money from all three
+#   surviving lists would add bills that are not in breach to a figure whose
+#   name says they are.
+#
+#   Everything else in `counts` is the vendor and bill population, and
+#   `could_not_check` is the number the handler wrote a paragraph to defend —
+#   vendors never tested against the section at all. An acknowledgement changes
+#   none of it.
+
+def _msme_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the three counts, and the money from the BREACHED list only."""
+    breached = list(surviving.get("past_the_window") or ())
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["bills_past_the_window"] = len(breached)
+        counts["bills_inside_the_window"] = len(surviving.get("inside_the_window") or ())
+        counts["bills_not_classified"] = len(surviving.get("not_classified") or ())
+    at_risk = out.get("amount_at_risk")
+    if isinstance(at_risk, dict):
+        at_risk["outstanding_including_tax"] = round(
+            sum(_money(e.get("outstanding_including_tax")) for e in breached), 2)
+        at_risk["taxable_value_of_breached_bills"] = round(
+            sum(_money(e.get("taxable_value")) for e in breached), 2)
+
+
+def _money(value: Any) -> float:
+    """A finding's amount as a float, or 0.0. Never raises inside a rebuild."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1206,6 +1288,17 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=lambda f: {"projected": f.get("projected")},
         recompute=_194q_recompute,
         label_of=lambda f: f"{f.get('vendor')} — 194Q",
+    ),
+
+    "check_msme_payment_clock": AckWiring(
+        findings_at=("past_the_window", "inside_the_window", "not_classified"),
+        identity_of=lambda f: {"bill_id": f.get("bill_id")},
+        material_of=lambda f: {
+            "outstanding_including_tax": f.get("outstanding_including_tax"),
+            "status": f.get("status"),
+        },
+        recompute=_msme_recompute,
+        label_of=lambda f: f"{f.get('bill')} — {f.get('vendor')}",
     ),
 
     "check_late_suppliers": AckWiring(
