@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 24 of the 61 assigned skills.
+Wired so far: 25 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1640,6 +1640,69 @@ def _unmatched_receipts_recompute(out: dict, surviving: Mapping[str, Sequence[di
 #   next reader will see two lists and four counts that look like their lengths.
 
 
+# ── check_payment_proof_claims ──────────────────────────────────────────────
+#
+# Inbound images a customer sent as proof of payment. The handler is emphatic
+# that every row is a CLAIM: "Nothing on this output records a payment, changes
+# an invoice's balance or stops a collection chase", and — the line that decides
+# this wiring — "There is nowhere to FILE a claim. No table records one ... A
+# claims store is owed before this can be more than a screen."
+#
+# So a claim somebody has already confirmed on the reconciliation screen comes
+# back tomorrow looking exactly like one nobody has touched. Until a claims
+# store exists, an acknowledgement IS the only place that decision can live —
+# and this is the one skill in the catalogue where the ack table is standing in
+# for a table the product has not got. That is worth saying out loud, because it
+# means the wiring should be revisited, not kept, when the store is built.
+#
+# IDENTITY — `claim_id`, the inbound message row. Already emitted, hashed into
+#   the key. NOT `sender` or `customer`, which are a phone number and a name.
+#
+# MATERIAL — `attachment_kind` and `likely_invoices_basis`.
+#
+#   NOT `likely_invoices`. It is a SUGGESTION list rebuilt on every run "on two
+#   weak grounds", capped at five, and it moves whenever any unrelated invoice
+#   is raised or settled. Hashing it would void the acknowledgement on somebody
+#   else's paperwork. `likely_invoices_basis` is the one-line statement of HOW
+#   the suggestion was made, and a claim that went from "nothing links this
+#   proof to an open invoice" to a real basis is a genuinely different position.
+#
+#   NOT `message_text`: it is the customer's own words truncated to 400
+#   characters, so it cannot change without the message changing, and the
+#   message is the identity.
+#
+#   NOT `confirmed` / `status`. Both are LITERALS — the handler writes
+#   `"confirmed": False` and `"claims_confirmed": 0` on every row, because
+#   there is nowhere to record a confirmation. A constant is not a state, and
+#   hashing one would suggest the field means something.
+#
+# INCIDENTAL — `received_at` (fixed at arrival), `statement_rows_to_confirm_
+#   against` and both `*_not_shown` counters (all rebuilt per run),
+#   `what_a_person_does` (fixed prose).
+#
+# RECOMPUTE — `counts.claims`, which IS a sum over the list, minus one
+#   correction: the handler slices `claims[:cap]` while `counts.claims` is
+#   `len(claims)`. On a capped run the count is already the larger number, so
+#   the rebuild only ever makes it agree with a list it was never equal to.
+#   That is the same census/sample tension as `check_unmatched_receipts`, and
+#   the opposite decision is taken here for one reason: `claims` is capped at
+#   the same `cap` the query uses, so the two differ only when the org has more
+#   than two hundred proofs in the window — against zero inbound media in every
+#   live org today. Rebuilding is right until that changes, and the test says
+#   which assumption it rests on.
+#
+#   `claims_confirmed` is left alone at 0, because it is a literal.
+#   Everything else in `counts` is the WhatsApp population and the inbound
+#   denominator — the numbers the handler uses to say "a measured absence over
+#   a stated denominator and not a clean result".
+
+def _payment_proof_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the claim count. See the note above on the cap."""
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["claims"] = len(surviving)
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2072,6 +2135,17 @@ ACK_WIRING: dict[str, AckWiring] = {
             f"{f.get('invoice_number')} — {f.get('customer')}"
             if f.get("invoice_id") else
             f"credit {f.get('amount')} on {f.get('statement_date')}"),
+    ),
+
+    "check_payment_proof_claims": AckWiring(
+        findings_at="claims",
+        identity_of=lambda f: {"claim_id": f.get("claim_id")},
+        material_of=lambda f: {
+            "attachment_kind": f.get("attachment_kind"),
+            "likely_invoices_basis": f.get("likely_invoices_basis"),
+        },
+        recompute=_payment_proof_recompute,
+        label_of=lambda f: f"payment proof — {f.get('customer') or f.get('sender')}",
     ),
 
     "check_late_suppliers": AckWiring(

@@ -217,6 +217,7 @@ def test_an_expired_snooze_lets_the_bill_back_through():
 #: COMMIT: this literal grows by exactly one name per commit, and the commit
 #: that adds the name is the commit that argues that skill's three-way split.
 WIRED = [
+    "check_payment_proof_claims",
     "check_upi_reference_threading",
     "check_unmatched_receipts",
     "check_esi_ceiling_crossings",
