@@ -23,8 +23,18 @@ it. Two things were wrong, and this file holds both.
      moving to done, and the done block speaks for the event alone.
 
 Personal tasks carry no team_id and never reach the done block, so they keep
-the status-changed path untouched. The last test pins that, because narrowing
-a fan-out is exactly the kind of change that takes a quiet path down with it.
+the status-changed path. That path is now narrowed too, and it is the third
+thing this file holds:
+
+  3. A task with no project is somebody's OWN list — that is what the New Task
+     dropdown means by "Personal" and what `team_id IS NULL` means in the
+     schema. It has no admins and no audience, so the only person entitled to
+     hear about it is the person whose list it is. The old rule, assignees plus
+     creator, is right for a project task and would have mailed a stranger
+     about a private list the first time anybody assigned one.
+
+The last three tests pin all of that, because narrowing a fan-out is exactly
+the kind of change that takes a quiet path down with it.
 """
 import asyncio
 
@@ -167,7 +177,44 @@ def test_a_personal_task_keeps_the_status_changed_path(outbox):
     _mark_done(RecordingPool(), team_id=None)
     assert outbox["done"] == [], "a task with no project has no project members"
     assert outbox["status"], (
-        "the assignee and the creator still hear about a task with no project")
+        "the owner still hears about a task with no project")
+
+
+def test_a_personal_task_reaches_its_OWNER_and_nobody_else(outbox):
+    """The other half of the routing fix.
+
+    A task with no project is somebody's own list — that is what the New Task
+    dropdown means by "Personal" and what `team_id IS NULL` means in the schema.
+    It has no admins and no audience, so the only person entitled to hear about
+    it is the person whose list it is.
+
+    The old rule was assignees + creator, which is right for a project task and
+    wrong here: it would mail a stranger about a private list the first time
+    anybody assigned one. Measured on the live database 2026-08-23, all 24
+    personal tasks carry ZERO assignees, so this changes nobody's mail today —
+    it changes what happens the first time somebody does.
+    """
+    _mark_done(RecordingPool(), team_id=None)
+    # ADMIN is `created_by_user_id` in `_mark_done` — the owner of the list.
+    assert outbox["status"] == ["qaadmin@example.com"], (
+        "a personal task mailed somebody other than its owner: %r"
+        % (outbox["status"],))
+    assert "kastiorg@example.com" not in outbox["status"], (
+        "the assignee of a PERSONAL task was mailed — a personal task has no "
+        "audience to assign to")
+
+
+def test_a_personal_task_does_not_email_the_person_who_ticked_it_off(outbox):
+    """The common case, and the whole point of the exclusion: you do not get an
+    email because you completed your own task."""
+    row = {"title": "Ring the accountant", "assignee_user_ids": []}
+    existing = {"created_by_user_id": ACTOR, "team_id": None}
+    actor = {"user_id": ACTOR, "full_name": "Kasti Pranami"}
+    asyncio.run(server._notify_status_changed(
+        RecordingPool(), row, existing, "in_progress", "done", actor, TASK))
+
+    assert outbox["status"] == []
+    assert outbox["done"] == []
 
 
 def test_the_roster_is_narrowed_in_sql_not_in_python(outbox):

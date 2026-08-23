@@ -74,6 +74,11 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "find_overdue_invoices":      frozenset({"ganit"}),
     "find_overdue_vendor_bills":  frozenset({"ganit"}),
     "find_stalled_agreements":    frozenset({"ganit"}),
+    # Procurement is Finance, not a new module code — a purchase order is a
+    # Ganit document and its approvals sit beside the invoice ones.
+    "check_late_suppliers":       frozenset({"ganit"}),
+    "check_received_not_invoiced": frozenset({"ganit"}),
+    "check_194q_approaching":     frozenset({"ganit"}),
     "find_overdue_followups":     frozenset({"graha"}),
     "find_overdue_tasks":         FREE,
     "aggregate_kpis":             frozenset({"ganit", "graha", "manav"}),

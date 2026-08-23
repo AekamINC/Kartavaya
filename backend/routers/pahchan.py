@@ -707,13 +707,33 @@ async def upload_punch_photo(
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(400, "Not an image")
 
-    folder = f"pahchan/{org_id}/{'reference' if kind == 'reference' else 'punch'}"
+    # ── THE KEY, IN THE ONE GRAMMAR (proposal 83 §4) ────────────────────────
+    #
+    # This was `folder = f"pahchan/{org_id}/punch"`, and on the platform bucket
+    # the storage layer then prepended `org/{org_id}/` — so the stored key named
+    # the same organisation TWICE. That is proposal 83's bug 2, and it was not
+    # merely ugly: see the guard in `create_punch`, which expected the key to
+    # START with `pahchan/` and therefore refused every photo taken by an org on
+    # the platform bucket. Two of the three orgs are on it. Measured
+    # 2026-08-23: 1,659 punches, ZERO with a photo_key.
+    #
+    # `pahchan/{kind}/{employee_id}/YYYY/MM/{id}--name.jpg`. The EMPLOYEE rather
+    # than the acting account, because a punch photograph belongs to the person
+    # in it, and the employee id is the one that survives their account being
+    # replaced. `_employee_for` returns None for most accounts on this database
+    # — the employee↔login link is still mostly unmade — and a missing scope
+    # segment is DROPPED rather than rendered as an empty folder, so those keys
+    # are `pahchan/punch/YYYY/MM/…` and remain perfectly valid.
+    photo_kind = "reference" if kind == "reference" else "punch"
+    pool = await get_pool()
+    employee = await _employee_for(pool, org_id, user["user_id"])
     result = await storage.upload_file(
         file_bytes=data,
         filename=file.filename or "capture.jpg",
         content_type=file.content_type or "image/jpeg",
         user_id=user["user_id"],
-        folder=folder,
+        module="pahchan",
+        scope=[photo_kind, str(employee["id"]) if employee else None],
         org_id=org_id,
     )
     if not result.get("key"):
@@ -829,12 +849,37 @@ async def create_punch(
     )
 
     if body.photo_key:
-        # The key must be one this endpoint's own uploader minted for THIS org's
-        # punch folder — `pahchan/{org}/punch/{uuid}.ext`. Without this, a punch
-        # can name any object in the org's bucket: an invoice, a payslip, or a
-        # reference photograph. A malformed key is §2's one permitted 4xx.
-        expected = f"pahchan/{org_id}/punch/"
-        if not body.photo_key.startswith(expected):
+        # ── The key must be one this endpoint's own uploader minted ──────────
+        #
+        # Without this a punch can name ANY object in the org's bucket: an
+        # invoice, a payslip, or somebody else's reference photograph. A
+        # malformed key is §2's one permitted 4xx.
+        #
+        # IT REFUSED EVERY PHOTO ON THE PLATFORM BUCKET. The check was
+        # `startswith(f"pahchan/{org_id}/punch/")`, and `upload_file` returns
+        # the key WITH the tenant prefix on it — `org/{org_id}/pahchan/…` for an
+        # org without its own R2 account. Two of the three orgs are in exactly
+        # that state, so for them this branch raised on every punch that
+        # carried a photograph. Measured 2026-08-23: 1,659 punches, ZERO with a
+        # photo_key. The feature has never worked for those orgs and the 400
+        # said the photo belonged to another organisation, which was not true
+        # and gave nobody anything to go on.
+        #
+        # So: strip the tenant prefix if it is there — and only THIS org's, so
+        # a key naming another org's prefix still fails — then accept either
+        # grammar. The old shape stays accepted because a client may hold a key
+        # minted seconds before a deploy, and refusing it would lose a punch
+        # photograph to a release.
+        remainder = body.photo_key
+        tenant_prefix = f"org/{org_id}/"
+        if remainder.startswith(tenant_prefix):
+            remainder = remainder[len(tenant_prefix):]
+
+        accepted = (
+            "pahchan/punch/",                 # the grammar (proposal 83 §4)
+            f"pahchan/{org_id}/punch/",       # the shape before it
+        )
+        if not remainder.startswith(accepted):
             raise HTTPException(400, "That photo does not belong to this organisation's attendance store")
 
         # A photo already attached to a different punch.

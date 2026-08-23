@@ -201,7 +201,14 @@ async def upload(
     if ext in VIDEO_EXTENSIONS and mime == "application/octet-stream":
         mime = "video/quicktime" if ext == ".mov" else f"video/{ext.lstrip('.')}"
 
-    folder = f"projects/{team_id}" if team_id else None
+    # `projects/{team_id}/{user_id}/YYYY/MM/…`, or `personal/{user_id}/…` when
+    # there is no project. Both are the grammar (proposal 83 §4); the second
+    # was already the shape `upload_file` fell back to, and it is now minted
+    # rather than assembled from an f-string, so it gains the date partition and
+    # keeps the original filename like everything else.
+    #
+    # `personal/` is the one module where the user segment appears once: there
+    # the user IS what the file belongs to.
 
     org_id = None
     if team_id:
@@ -224,7 +231,8 @@ async def upload(
             filename=file.filename or "upload",
             content_type=mime,
             user_id=user["user_id"],
-            folder=folder,
+            module="projects" if team_id else "personal",
+            scope=[team_id] if team_id else [],
             org_id=org_id,
         )
     except Exception as exc:

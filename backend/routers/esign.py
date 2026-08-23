@@ -194,7 +194,13 @@ async def _refresh_artefact_urls(org_id: str, d: dict) -> dict:
     return d
 
 
-async def _store_signature_image(signature_data: str, org_id: str) -> str:
+async def _store_signature_image(
+    signature_data: str,
+    org_id: str,
+    *,
+    doc_id: str = "",
+    signer_id: str = "",
+) -> str:
     """A drawn or uploaded signature as an object key. A typed name passes through.
 
     Returns what belongs in `sign_signers.signature_data`: `r2:<key>` when the
@@ -241,14 +247,26 @@ async def _store_signature_image(signature_data: str, org_id: str) -> str:
 
     subtype = m.group(1).lower()
     subtype = "jpeg" if subtype == "jpg" else subtype
+    # ── THE DOCUMENT IS IN THE KEY NOW, AND IT WAS NOT ──────────────────────
+    #
+    # `folder="esign/signatures"` put EVERY signature ever captured, for every
+    # document, in one flat prefix. Proposal 83 §3 names it: "to answer 'show me
+    # the files for this agreement' you must query the database; the bucket
+    # cannot answer it." Nor could deleting an agreement delete its files,
+    # because its files were not gathered anywhere.
+    #
+    # `esign/{document_id}/signature/{signer}/YYYY/MM/…` — the grammar
+    # (proposal 83 §4). The signer id rather than a user id because an external
+    # party acting through a token is not a product user; it is still the
+    # "who did it" segment the grammar asks for, and it is the one that lets a
+    # signer's own captures be found without reading the database.
     result = await upload_file(
         file_bytes=image,
         filename=f"signature.{'jpg' if subtype == 'jpeg' else subtype}",
         content_type=f"image/{subtype}",
-        # An external party acting through a token — there is no product user
-        # here. `folder` is given, so this name never reaches the key.
-        user_id="signer",
-        folder="esign/signatures",
+        user_id=str(signer_id) if signer_id else "",
+        module="esign",
+        scope=[str(doc_id), "signature"],
         org_id=org_id,
     )
     key = (result or {}).get("key") or ""
@@ -461,12 +479,16 @@ async def upload_document_file(
 
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
+    # `esign/{document_id}/original/{user}/YYYY/MM/{id}--the-real-filename.pdf`.
+    # The original name survives now: the key was a bare uuid, so "I uploaded
+    # Supply-Agreement.pdf" could not be answered from storage at all.
     upload_result = await upload_file(
         file_bytes=file_bytes,
         filename=filename,
         content_type="application/pdf",
         user_id=user["user_id"],
-        folder="esign/originals",
+        module="esign",
+        scope=[str(doc_id), "original"],
         org_id=org_id,
     )
 
@@ -877,8 +899,17 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     # recorded against bytes that are not anywhere. The org comes off the
     # document row — this endpoint is public and has no org dependency to lean
     # on, the same resolution the emitters below use.
+    # `doc_id` and `signer_id` are what put a signature IN its agreement's
+    # folder rather than in one flat prefix holding every signature ever
+    # captured — proposal 83 §3's first complaint about the old grammar, and
+    # the reason "show me the files for this agreement" could only be answered
+    # from the database. Both come off the row already fetched; neither costs a
+    # query. Keyword-only and defaulted, so a caller that has not been threaded
+    # produces a key that is merely less specific rather than one that raises.
     stored_signature = await _store_signature_image(
         body.signature_data, str(signer["org_id"]),
+        doc_id=str(signer["document_id"]),
+        signer_id=str(signer["id"]),
     )
 
     client_ip = request.client.host if request.client else "unknown"
@@ -1251,12 +1282,17 @@ async def _generate_signed_certificate(pool, doc_id, org_id: str):
     cert_hash = hashlib.sha256(cert_json.encode()).hexdigest()
 
     cert_bytes = cert_json.encode()
+    # No acting user, and that is the truth rather than a gap: a completion
+    # certificate is minted by the product when the last signer finishes, not
+    # by a person. `user_id=""` leaves the segment out; `"system"` would have
+    # rendered a folder named after an account that does not exist.
     upload_result = await upload_file(
         file_bytes=cert_bytes,
         filename=f"certificate-{str(doc_id)[:8]}.json",
         content_type="application/json",
-        user_id="system",
-        folder="esign/certificates",
+        user_id="",
+        module="esign",
+        scope=[str(doc_id), "certificate"],
         org_id=org_id,
     )
 
@@ -1301,12 +1337,14 @@ async def _generate_signed_pdf(pool, doc_id, org_id: str):
     )
     pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
 
+    # Same: the executed document is produced by the product, not by a person.
     upload_result = await upload_file(
         file_bytes=pdf_bytes,
         filename=f"signed-{str(doc_id)[:8]}.pdf",
         content_type="application/pdf",
-        user_id="system",
-        folder="esign/signed",
+        user_id="",
+        module="esign",
+        scope=[str(doc_id), "signed"],
         org_id=org_id,
     )
 

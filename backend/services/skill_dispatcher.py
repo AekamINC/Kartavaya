@@ -136,6 +136,24 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "check_duplicate_vendor_bills":
                                   ("services.skills.data.ganit_ops",
                                    "check_duplicate_vendor_bills", {"limit": 200}),
+
+    # Procurement (proposal 77, migration 197) · the three checks a purchase
+    # ledger can answer and an invoice ledger cannot. All READ — none is in
+    # WRITE_SKILL_FUNCTIONS, and none should be: chasing a late supplier, an
+    # unbilled receipt or a 194Q threshold is a decision a person makes.
+    "check_late_suppliers":       ("services.skills.data.procurement_ops",
+                                   "check_late_suppliers", {"limit": 200}),
+    #                              GRNI: goods received, never invoiced. The
+    #                              liability a closing balance sheet misses.
+    "check_received_not_invoiced":
+                                  ("services.skills.data.procurement_ops",
+                                   "check_received_not_invoiced", {"limit": 200}),
+    #                              s.194Q: TDS on purchases past the threshold.
+    #                              Dated law, so it reads the statute rather
+    #                              than a literal — same rule as the GST slabs
+    #                              two entries above.
+    "check_194q_approaching":     ("services.skills.data.procurement_ops",
+                                   "check_194q_approaching", {"limit": 200}),
     #                              A PACK: drafts the chase, sends nothing. Not
     #                              in WRITE_SKILL_FUNCTIONS, and must not be —
     #                              see the test that pins the distinction.

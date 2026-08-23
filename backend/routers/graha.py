@@ -21,6 +21,7 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, is_org_admin
 from middleware.role_tiers import ORG_MANAGEMENT_ROLES, held_module_levels
 from middleware.subscription import require_any_module, require_module
+from services.audit_actors import actor_joins, actor_select
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
 from utils import assert_file_url
@@ -250,7 +251,22 @@ async def list_clients(
         "SELECT cl.*, "
         "(SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, "
         "(SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count, "
-        "COUNT(*) OVER() AS _total FROM staging.graha_clients cl WHERE cl.org_id=$1::uuid "
+        # Who created this company and who last touched it, BY NAME. `cl.*`
+        # above already ships `created_by`/`updated_by`, but those are
+        # `users.user_id` TEXT — a member id, which is the one thing no screen
+        # may render. `actor_select` resolves both to a display name and adds
+        # the `has_creator`/`has_updater` booleans that let the UI tell "nobody
+        # is recorded" (em dash) apart from "there is an id but the account is
+        # gone" (unknown). Written here rather than by hand because the
+        # hand-written copy in `list_activities` below is what drifted into
+        # printing an email address; see `services/audit_actors`.
+        + actor_select("cl", updated=True) +
+        "COUNT(*) OVER() AS _total FROM staging.graha_clients cl "
+        # After the FROM and before the WHERE. Neither fragment carries a `$n`,
+        # so the `$1::uuid` below and every `${n}` appended after it keep the
+        # numbering they had.
+        + actor_joins("cl", updated=True) +
+        "WHERE cl.org_id=$1::uuid "
         + ("" if since_dt is not None else "AND cl.is_active=TRUE ")
     )
     params: list = [org_id]
@@ -354,6 +370,16 @@ async def update_client(
     if not sets:
         raise HTTPException(400, "Nothing to update")
     sets.append("updated_at=NOW()")
+    # WHO, in the same statement as WHEN. Two statements would let the stamp
+    # and the actor disagree — a crash between them leaves `updated_at` moved
+    # and `updated_by` still naming the PREVIOUS editor, which is worse than no
+    # audit column at all because it reads as a confident answer. `idx` is
+    # advanced first so this takes the next free placeholder and `org_id`
+    # slides to `idx + 1`; the bind order below matches because `vals` is
+    # appended in the same order the numbers were handed out.
+    idx += 1
+    sets.append(f"updated_by=${idx}")
+    vals.append(user["user_id"])
     await pool.execute(
         f"UPDATE staging.graha_clients SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=${idx + 1}::uuid",
@@ -380,10 +406,16 @@ async def delete_client(
     #
     # `update_client` has the same shape and the same silence; it is left alone
     # here only because this commit is about the delete path.
+    # A soft delete is an edit like any other, and the one edit people most
+    # want to trace afterwards — "who removed this company?" has no answer
+    # anywhere else, because the row is still here and nothing else records the
+    # act. `$3` is appended at the END of the existing binds so the `$1`/`$2`
+    # the WHERE clause already uses are undisturbed.
     tag = await pool.execute(
-        "UPDATE staging.graha_clients SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE staging.graha_clients SET is_active=FALSE, updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
-        str(client_id), org_id,
+        str(client_id), org_id, user["user_id"],
     )
     if tag.split()[-1] == "0":
         raise HTTPException(404, "Client not found")
@@ -425,7 +457,13 @@ async def list_contacts(
         # the two return the same rows.
         "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
         "c.gstin, c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, "
-        "c.created_at, c.updated_at, c.client_id, c.custom_data, cl2.name AS client_name, COUNT(*) OVER() AS _total "
+        "c.created_at, c.updated_at, c.client_id, c.custom_data, cl2.name AS client_name, "
+        # The author and the last editor as NAMES. This SELECT is explicit
+        # column by column, so `created_by`/`updated_by` themselves stay off
+        # the wire entirely — the ids are only ever join keys here, which is
+        # the shape every list should have had.
+        + actor_select("c", updated=True) +
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_contacts c "
         # `AND cl2.org_id = c.org_id`: a join on the id alone would print
         # another organisation's company name against this org's contact if a
@@ -436,6 +474,13 @@ async def list_contacts(
 
     if label_id:
         query += "JOIN staging.graha_contact_labels cl ON cl.contact_id = c.id "
+
+    # LAST of the joins, so it cannot come between the optional label JOIN and
+    # the FROM it attaches to. Both actor joins are LEFT: an inner join would
+    # make every contact created by a since-deleted colleague VANISH from the
+    # list, and a filter that silently removes rows looks exactly like one that
+    # is working.
+    query += actor_joins("c", updated=True)
 
     query += ("WHERE c.org_id=$1::uuid "
               + ("" if since_dt is not None else "AND c.is_active=TRUE "))
@@ -839,6 +884,12 @@ async def update_contact(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # The actor goes in the SAME statement as the stamp. `idx` is whatever the
+    # loop above left free, and `params` is appended in lockstep with it, so
+    # this cannot disturb the `$1`/`$2` the WHERE clause holds.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     await pool.execute(
         f"UPDATE staging.graha_contacts SET {', '.join(sets)} "
@@ -857,9 +908,12 @@ async def delete_contact(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_contacts SET is_active=FALSE, updated_at=NOW() "
+        # Same reasoning as `delete_client`: the row survives the delete, so
+        # `updated_by` is the only record that this person removed it.
+        "UPDATE staging.graha_contacts SET is_active=FALSE, updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(contact_id), org_id,
+        str(contact_id), org_id, user["user_id"],
     )
     return {"status": "deleted"}
 
@@ -956,6 +1010,11 @@ async def list_deals(
         "d.territory_id, tr.name as territory_name, "
         "c.name as contact_name, c.company as contact_company, "
         "cl.name as client_name, "
+        # The deal's author and its last editor, resolved to names. A deal is
+        # the record people argue about — "who moved this to Won?" — and the
+        # answer was only ever in the Niyam event stream, which the deals table
+        # cannot join to.
+        + actor_select("d", updated=True) +
         # F4 (b): the row count BEFORE the LIMIT, so the caller can say
         # "showing 200 of 510" instead of silently presenting 200 as all of them.
         # Measured on staging: the pipeline screen showed "199 deals have no next
@@ -972,6 +1031,9 @@ async def list_deals(
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
         "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
+        # Two more LEFT JOINs and no new `$n` — every `${idx}` appended below
+        # keeps the number it would have had before this line existed.
+        + actor_joins("d", updated=True) +
         "WHERE d.org_id=$1::uuid "
         + ("" if since_dt is not None else "AND d.is_active=TRUE ")
     )
@@ -1271,6 +1333,14 @@ async def update_deal(
             params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
+    # In the SET list, not a second statement — the UPDATE below already runs
+    # inside a transaction with the stage-change event, and splitting the
+    # actor out would mean the row and the event could disagree about who did
+    # it. `idx` is the next free placeholder after the loop; `params` grows
+    # with it, and `$1`/`$2` (deal id, org id) are untouched.
+    sets.append(f"updated_by=${idx}")
+    params.append(user["user_id"])
+    idx += 1
 
     # ── THE STAGE CHANGE IS AN EVENT, AND ONLY A REAL ONE ──────────────────
     #
@@ -1320,9 +1390,12 @@ async def delete_deal(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_deals SET is_active=FALSE, updated_at=NOW() "
+        # Who deleted it. The row stays (revenue reporting still counts it), so
+        # nothing else in the database would ever say.
+        "UPDATE staging.graha_deals SET is_active=FALSE, updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        deal_id, UUID(org_id),
+        deal_id, UUID(org_id), user["user_id"],
     )
     return {"status": "deleted"}
 
@@ -1355,9 +1428,16 @@ async def archive_deal(
     if row["stage"] not in CLOSED_STAGES:
         raise HTTPException(400, "Only a Won or Lost deal can be archived")
     await pool.execute(
-        "UPDATE staging.graha_deals SET archived_at=NOW(), updated_at=NOW() "
+        # Archiving is a judgement call — it takes a deal off the board early,
+        # ahead of the seven-day sweep — so the person who made it belongs on
+        # the row. The sweep itself is a cron job with no user and writes no
+        # actor, which is the honest distinction: an archived deal with a NULL
+        # `updated_by` was taken by the clock, one with a name was taken by a
+        # person.
+        "UPDATE staging.graha_deals SET archived_at=NOW(), updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND archived_at IS NULL",
-        deal_id, UUID(org_id))
+        deal_id, UUID(org_id), user["user_id"])
     return {"status": "archived"}
 
 
@@ -1377,9 +1457,13 @@ async def unarchive_deal(
                                  "migration 133 has not been applied "
                                  "to this database.")
     res = await pool.execute(
-        "UPDATE staging.graha_deals SET archived_at=NULL, updated_at=NOW() "
+        # The mirror of the archive above: putting a deal back on the board is
+        # the correction of somebody else's call, and both halves have to be
+        # attributable or neither is.
+        "UPDATE staging.graha_deals SET archived_at=NULL, updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND archived_at IS NOT NULL",
-        deal_id, UUID(org_id))
+        deal_id, UUID(org_id), user["user_id"])
     if res and res.endswith(" 0"):
         raise HTTPException(404, "Deal not found or not archived")
     return {"status": "unarchived"}
@@ -1458,15 +1542,41 @@ async def list_activities(
     synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     # WHOSE activity it is, by NAME. The column was `created_by` alone, a bare
-    # uuid, so no screen could say who logged the call — and a uuid is never
-    # what a person is shown.
+    # id, so no screen could say who logged the call — and an id is never what
+    # a person is shown.
+    #
+    # ── WHY THE EMAIL RUNG IS GONE ────────────────────────────────────────
+    # This line used to read `COALESCE(u.full_name, u.name, u.email)`. The
+    # `u.email` fallback looked like defensive coding — always print SOMETHING
+    # — and was the opposite: a user row with both name columns blank silently
+    # printed that person's EMAIL ADDRESS into a table cell. Graha's actors
+    # include portal clients, so the leak lands squarely on the platform-
+    # privacy rule (Aekam must not see client emails, and a tenant's activity
+    # log is not a directory of them either). It also cannot be caught by the
+    # names-not-ids ratchet, which looks for id SHAPES; an email renders as a
+    # perfectly plausible display name.
+    #
+    # `actor_select` stops at the two name columns and answers the "always
+    # print something" worry properly, with `has_creator`: NULL name + TRUE
+    # means "there is an actor here we can no longer resolve" (the UI shows
+    # `unknown`), NULL name + FALSE means "nobody is recorded" (an em dash).
+    # That is the distinction the email fallback was destroying.
+    #
+    # The join also gains its schema: `LEFT JOIN users u` was unqualified and
+    # relied on `search_path`, which is the exact footgun migration 142 exists
+    # to close.
+    #
+    # `updated=False`: `graha_activities` was deliberately left out of
+    # migration 201 — it is an append-only event log, so it has no
+    # `updated_by` to resolve and asking for one would be a column that does
+    # not exist.
     query = (
         "SELECT a.id, a.deal_id, a.contact_id, a.activity_type, a.title, a.description, "
         "a.scheduled_at, a.completed_at, a.is_completed, a.created_by, a.created_at, a.updated_at, "
-        "COALESCE(u.full_name, u.name, u.email) AS created_by_name, "
+        + actor_select("a") +
         "COUNT(*) OVER() AS _total "
         "FROM staging.graha_activities a "
-        "LEFT JOIN users u ON u.user_id = a.created_by "
+        + actor_joins("a") +
         "WHERE a.org_id=$1::uuid "
     )
     params: list = [org_id]
@@ -1561,10 +1671,18 @@ async def list_follow_ups(
         "SELECT f.id, f.title, f.description, f.due_at, f.remind_at, "
         "f.is_completed, f.completed_at, f.assigned_to, f.contact_id, f.deal_id, "
         "f.created_by, f.created_at, f.updated_at, "
-        "c.name as contact_name, d.title as deal_title, COUNT(*) OVER() AS _total "
+        "c.name as contact_name, d.title as deal_title, "
+        # `f.created_by` is already on the wire above and stays there (callers
+        # compare it to the current user), but it is an id and cannot be shown.
+        # These four columns are what the screen actually renders: who set the
+        # follow-up and who last changed it, plus the two booleans that keep
+        # "no actor" distinct from "actor we cannot resolve".
+        + actor_select("f", updated=True) +
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_follow_ups f "
         "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
         "LEFT JOIN staging.graha_deals d ON d.id = f.deal_id "
+        + actor_joins("f", updated=True) +
         "WHERE f.org_id=$1::uuid "
     )
     params: list = [org_id]
@@ -1638,9 +1756,18 @@ async def complete_follow_up(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_follow_ups SET is_completed=TRUE, completed_at=NOW() "
+        # This statement never mentions `updated_at` and still moves it —
+        # `trg_touch_follow_ups` (migration 138) does that, which is why the
+        # delta sync can see a completion at all. That makes writing the actor
+        # here MANDATORY rather than optional: without it the trigger advances
+        # the stamp while `updated_by` keeps naming whoever last edited the
+        # title, so the row would confidently attribute the completion to the
+        # wrong person. A trigger cannot know who is on the request; only this
+        # statement does.
+        "UPDATE staging.graha_follow_ups SET is_completed=TRUE, completed_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(follow_up_id), org_id,
+        str(follow_up_id), org_id, user["user_id"],
     )
     return {"status": "completed"}
 
@@ -1791,11 +1918,19 @@ async def convert_lead(
                 raise HTTPException(400, "Contact is already a customer")
 
             updated = await _conn.fetchrow(
+                # `updated_by` rides in the same statement as the conversion,
+                # inside the same transaction as the event. The event already
+                # carries `actor_id`, but the event log is a separate stream a
+                # tenant cannot query from the contact row — without this
+                # column the contact itself still says whoever last edited a
+                # phone number was the last person to touch it, which is false
+                # from the moment the conversion commits.
                 "UPDATE staging.graha_contacts "
-                "SET contact_type='customer', converted_at=NOW(), updated_at=NOW() "
+                "SET contact_type='customer', converted_at=NOW(), "
+                "updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid "
                 "RETURNING *",
-                str(contact_id), org_id,
+                str(contact_id), org_id, user["user_id"],
             )
             # The row AS CONVERTED — read back from the UPDATE, not the row we
             # checked — so `contact_type` is what the contact became and
@@ -2305,6 +2440,18 @@ async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, l
                 reasons.append(f"+{pts} {sig}" if pts > 0 else f"{pts} {sig}")
 
     score = max(0, min(100, score))
+    # ── NO `updated_by` HERE, DELIBERATELY ────────────────────────────────
+    # This is the only UPDATE in the file that moves `updated_at` and leaves
+    # `updated_by` alone, and it has to be. Scoring is not an edit a person
+    # made: it is derived from activity counts and re-derived in bulk by
+    # `/contacts/rescore-all`, which walks EVERY contact in the org. Stamping
+    # the caller's id here would rewrite the last-editor of the entire contact
+    # book to whoever happened to press Rescore — the audit column would be
+    # destroyed by the one action least worth recording. The alternative,
+    # threading a `user` argument down into this helper so it could be written,
+    # buys nothing: there is no honest value to write, because no person edited
+    # the row. `updated_at` still moves, which is correct — the row DID change
+    # and the delta sync must ship it.
     await pool.execute(
         "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
         "WHERE id=$3::uuid AND org_id=$4::uuid",
@@ -2426,43 +2573,74 @@ async def report_conversion(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # THE SCREEN AND THE DOWNLOADED REPORT MUST COUNT THE SAME DEALS.
+    # `services/crm_report.py` was corrected on 2026-08-23 to window won value
+    # on `won_at`; this endpoint is the screen behind the same figures and it
+    # had the identical defect — five separate `created_at > cutoff` queries,
+    # one of which summed `Won` value. A screen that disagrees with the
+    # document it generates is worse than a screen with no figures, because the
+    # reader cannot tell which one lied (the same argument `gst_period` makes
+    # for there being exactly one implementation of GSTR-3B).
+    #
+    # Measured live 2026-08-22, last 90 days: E2E Rs53,13,648 shown against
+    # Rs66,37,948 actually won; Unicode Group Rs11,22,500 against Rs15,72,500.
+    # On the financial year to date Unicode is 39% low.
+    #
+    # Five round trips collapse to one, and BOTH cohorts are returned and named
+    # so the UI can label rather than guess:
+    #   · `total_deals` / `cohort_won` / `cohort_lost` / `open` /
+    #     `conversion_rate` — deals OPENED in the window, and where they stand
+    #     today. The rate must divide those two or it straddles populations.
+    #   · `won` / `lost` / `won_value` / `avg_cycle_days` — deals CLOSED in the
+    #     window, on `won_at` / `lost_at`.
     pool = await get_pool()
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    total = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.graha_deals "
-        "WHERE org_id=$1::uuid AND created_at > $2",
+    row = await pool.fetchrow(
+        "SELECT COUNT(*) FILTER (WHERE created_at > $2) AS total_deals, "
+        "  COUNT(*) FILTER (WHERE stage='Won'  AND created_at > $2) AS cohort_won, "
+        "  COUNT(*) FILTER (WHERE stage='Lost' AND created_at > $2) AS cohort_lost, "
+        "  COUNT(*) FILTER (WHERE stage='Won'  AND won_at  > $2) AS won, "
+        "  COUNT(*) FILTER (WHERE stage='Lost' AND lost_at > $2) AS lost, "
+        "  COALESCE(SUM(value) FILTER (WHERE stage='Won' AND won_at > $2), 0) "
+        "    AS won_value, "
+        "  COUNT(*) FILTER (WHERE stage='Won'  AND won_at  IS NULL) AS won_undated, "
+        "  COUNT(*) FILTER (WHERE stage='Lost' AND lost_at IS NULL) AS lost_undated, "
+        "  AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400)"
+        "    FILTER (WHERE stage='Won' AND won_at > $2)::int AS avg_cycle_days "
+        "FROM staging.graha_deals WHERE org_id=$1::uuid",
         org_id, cutoff,
     )
-    won = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.graha_deals "
-        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Won'",
-        org_id, cutoff,
-    )
-    lost = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.graha_deals "
-        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Lost'",
-        org_id, cutoff,
-    )
-    won_value = await pool.fetchval(
-        "SELECT COALESCE(SUM(value),0) FROM staging.graha_deals "
-        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Won'",
-        org_id, cutoff,
-    )
-    avg_cycle = await pool.fetchval(
-        "SELECT AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400)::int "
-        "FROM staging.graha_deals "
-        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Won' AND won_at IS NOT NULL",
-        org_id, cutoff,
-    )
-
-    rate = round(won / total * 100, 1) if total > 0 else 0
+    r = dict(row) if row else {}
+    total = int(r.get("total_deals") or 0)
+    cohort_won = int(r.get("cohort_won") or 0)
+    cohort_lost = int(r.get("cohort_lost") or 0)
     return {
-        "total_deals": total, "won": won, "lost": lost,
-        "open": total - won - lost,
-        "conversion_rate": rate,
-        "won_value": float(won_value),
-        "avg_cycle_days": avg_cycle or 0,
+        # The created cohort.
+        "total_deals": total,
+        "cohort_won": cohort_won,
+        "cohort_lost": cohort_lost,
+        "open": total - cohort_won - cohort_lost,
+        "conversion_rate": round(cohort_won / total * 100, 1) if total else 0,
+        # Closed in the window. `won` and `lost` keep their old names because
+        # the UI reads them, but they now answer the question the label on the
+        # screen has always claimed to be answering.
+        "won": int(r.get("won") or 0),
+        "lost": int(r.get("lost") or 0),
+        "won_value": float(r.get("won_value") or 0),
+        "avg_cycle_days": int(r.get("avg_cycle_days") or 0),
+        # Rows that belong to no period, carried rather than absorbed. 0 of 33
+        # wins and 0 of 22 losses today; the field exists so the first undated
+        # one is visible instead of quietly shrinking a total.
+        "won_undated": int(r.get("won_undated") or 0),
+        "lost_undated": int(r.get("lost_undated") or 0),
         "period_days": days,
+        # What each half counts, IN the payload, so a renderer cannot file a
+        # closed-in-period figure under an opened-in-period heading.
+        "basis": {
+            "opened_in_period": ["total_deals", "cohort_won", "cohort_lost",
+                                 "open", "conversion_rate"],
+            "closed_in_period": ["won", "lost", "won_value", "avg_cycle_days"],
+        },
     }
 
 
@@ -2475,16 +2653,30 @@ async def report_rep_performance(
 ):
     pool = await get_pool()
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    # Same correction as `/reports/conversion` above, and it matters more here
+    # because these figures sit against a person. `total_deals` is what was
+    # ROUTED to them in the window; `won` / `lost` / `won_value` are what they
+    # CLOSED in it. Under a single `created_at` window a rep who closed a long
+    # deal opened before the window showed zero beside their own name.
     rows = await pool.fetch(
         "SELECT d.assigned_to, "
-        "COUNT(*) as total_deals, "
-        "COUNT(*) FILTER (WHERE d.stage='Won') as won, "
-        "COUNT(*) FILTER (WHERE d.stage='Lost') as lost, "
-        "COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won'), 0) as won_value, "
-        "COALESCE(AVG(d.value), 0) as avg_deal_value "
+        "COUNT(*) FILTER (WHERE d.created_at > $2) as total_deals, "
+        "COUNT(*) FILTER (WHERE d.stage='Won'  AND d.won_at  > $2) as won, "
+        "COUNT(*) FILTER (WHERE d.stage='Lost' AND d.lost_at > $2) as lost, "
+        "COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won' AND d.won_at > $2), 0) "
+        "  as won_value, "
+        # Average size of what was ROUTED in the window, not of what closed:
+        # it is the allocation figure sitting beside the outcome figures.
+        "COALESCE(AVG(d.value) FILTER (WHERE d.created_at > $2), 0) as avg_deal_value "
         "FROM staging.graha_deals d "
-        "WHERE d.org_id=$1::uuid AND d.created_at > $2 AND d.assigned_to IS NOT NULL "
-        "GROUP BY d.assigned_to ORDER BY won_value DESC",
+        "WHERE d.org_id=$1::uuid AND d.assigned_to IS NOT NULL "
+        "GROUP BY d.assigned_to "
+        # The query now spans the table, so a rep with nothing at all in the
+        # window would otherwise print as a line of noughts against their name.
+        "HAVING COUNT(*) FILTER (WHERE d.created_at > $2) > 0 "
+        "    OR COUNT(*) FILTER (WHERE d.stage='Won'  AND d.won_at  > $2) > 0 "
+        "    OR COUNT(*) FILTER (WHERE d.stage='Lost' AND d.lost_at > $2) > 0 "
+        "ORDER BY won_value DESC",
         org_id, cutoff,
     )
     return {"data": [dict(r) for r in rows], "period_days": days}
@@ -2861,9 +3053,20 @@ async def list_web_forms(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, name, slug, fields, settings, auto_assign_to, auto_source, "
-        "submission_count, is_active, created_at "
-        "FROM staging.graha_web_forms WHERE org_id=$1::uuid ORDER BY created_at DESC",
+        # Aliased `w` only so the actor fragments have something to hang off —
+        # the column list is otherwise unchanged. A web form is an org-admin
+        # object that outlives the admin who made it, so "who published this
+        # form?" is the question this list could never answer.
+        "SELECT w.id, w.name, w.slug, w.fields, w.settings, w.auto_assign_to, w.auto_source, "
+        "w.submission_count, w.is_active, "
+        # `actor_select` is comma-TERMINATED, so it must be followed by another
+        # column and never by the FROM — the two timestamps sit after it for
+        # exactly that reason.
+        + actor_select("w", updated=True) +
+        "w.created_at, w.updated_at "
+        "FROM staging.graha_web_forms w "
+        + actor_joins("w", updated=True) +
+        "WHERE w.org_id=$1::uuid ORDER BY w.created_at DESC",
         org_id,
     )
     return {"data": [dict(r) for r in rows]}
@@ -2885,6 +3088,15 @@ async def create_web_form(
         raise HTTPException(400, "Invalid slug")
     try:
         row = await pool.fetchrow(
+            # `$8` is `user["user_id"]` — a TEXT member id like
+            # `user_f1a0a472b98f`. Until migration 202 this column was `uuid`,
+            # so this bind could not have worked: every form creation would
+            # have died in the parameter cast, which under PgBouncer surfaces
+            # as an instant 500 with no useful message. 202 retyped the column
+            # to TEXT to match `public.users.user_id` (the same type the other
+            # 76 audit columns carry), and this INSERT became correct without
+            # a line of it changing. Left as-is on purpose — the fix belonged
+            # in the column, not here.
             "INSERT INTO staging.graha_web_forms "
             "(org_id, name, slug, fields, settings, auto_assign_to, auto_source, created_by) "
             "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6,'')::uuid, $7, $8) "
@@ -2909,9 +3121,15 @@ async def delete_web_form(
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_web_forms SET is_active=FALSE "
+        # `trg_touch_graha_web_forms` moves `updated_at` for this statement
+        # whether or not it asks, so the actor MUST be written alongside it:
+        # a stamp that advances while `updated_by` still names the previous
+        # editor is an audit trail that points at the wrong person, which is
+        # strictly worse than an empty one. `$3` is appended after the existing
+        # binds so the WHERE clause keeps `$1`/`$2`.
+        "UPDATE staging.graha_web_forms SET is_active=FALSE, updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(form_id), org_id,
+        str(form_id), org_id, user["user_id"],
     )
     return {"status": "deleted"}
 
@@ -3057,6 +3275,15 @@ async def submit_web_form(
     )
 
     await pool.execute(
+        # NO `updated_by` here, and it is not an oversight. This route is
+        # unauthenticated by design — it is the public form endpoint — so
+        # there is no member to name, and the only two alternatives are both
+        # wrong: writing NULL would ERASE the admin who last edited the form
+        # every time a stranger submitted it, and inventing a system id would
+        # put a value in the column that no user page can resolve. The counter
+        # is not an edit anyone made to the form's definition, so the form's
+        # last editor stays whoever it was. `trg_touch_graha_web_forms` still
+        # advances `updated_at`, which is honest: the row did change.
         "UPDATE staging.graha_web_forms SET submission_count=submission_count+1 "
         "WHERE id=$1::uuid",
         form_id,
@@ -3086,12 +3313,29 @@ async def list_approval_rules(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.graha_approval_rules WHERE org_id=$1::uuid AND is_active=TRUE"
+    # `r.*` rather than the bare `*` this had: once `public.users` is joined
+    # twice, an unqualified star would drag both user rows into the result and
+    # collide on `name`, `created_at` and `user_id`. The alias keeps the
+    # response shape exactly what it was, plus the four actor columns.
+    #
+    # An approval rule decides whose signature a deal needs, so "who set this
+    # threshold?" is a governance question, not a nicety — and migration 202
+    # is what made it answerable by giving this table `created_by` at all.
+    # The actor columns lead and `r.*` closes the list: `actor_select` is
+    # comma-TERMINATED, so putting it last would butt a comma straight against
+    # the FROM. Ordering inside a SELECT list has no meaning to a JSON
+    # response, so this costs nothing.
+    q = ("SELECT "
+         + actor_select("r", updated=True)
+         + "r.* "
+         "FROM staging.graha_approval_rules r "
+         + actor_joins("r", updated=True)
+         + "WHERE r.org_id=$1::uuid AND r.is_active=TRUE")
     params: list = [org_id]
     if entity_type:
         params.append(entity_type)
-        q += f" AND entity_type=${len(params)}"
-    q += " ORDER BY threshold_amount ASC"
+        q += f" AND r.entity_type=${len(params)}"
+    q += " ORDER BY r.threshold_amount ASC"
     rows = await pool.fetch(q, *params)
     return {"data": [dict(r) for r in rows]}
 
@@ -3108,10 +3352,18 @@ async def create_approval_rule(
     if body.entity_type not in valid_types:
         raise HTTPException(400, f"entity_type must be one of: {', '.join(valid_types)}")
     row = await pool.fetchrow(
+        # `created_by` is new here — migration 202 added the column, and this
+        # INSERT is the only place a rule is ever born, so without this bind
+        # the column would be NULL for every rule the product creates and the
+        # list endpoint above would resolve a name for nobody. The value is the
+        # TEXT member id, matching `public.users.user_id`; there is no uuid
+        # cast because 202 typed the column TEXT deliberately (the same lesson
+        # `graha_web_forms.created_by` cost).
         "INSERT INTO staging.graha_approval_rules "
-        "(org_id, entity_type, threshold_amount, approver_role) "
-        "VALUES ($1::uuid, $2, $3, $4) RETURNING *",
+        "(org_id, entity_type, threshold_amount, approver_role, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5) RETURNING *",
         org_id, body.entity_type, body.threshold_amount, body.approver_role,
+        user["user_id"],
     )
     return dict(row)
 
@@ -3132,6 +3384,14 @@ async def update_approval_rule(
         vals.append(body.approver_role); updates.append(f"approver_role=${len(vals)}")
     if not updates:
         raise HTTPException(400, "Nothing to update")
+    # Appended BEFORE the two WHERE binds, because those are addressed as
+    # `len(vals)-1` and `len(vals)` — anything pushed after them would silently
+    # renumber the id and the org and the statement would filter on the actor
+    # id instead. `updated_at` is not set here and does not need to be:
+    # `trg_touch_graha_approval_rules` moves it, which is precisely why the
+    # actor cannot be left out — the stamp advances either way, and only this
+    # statement knows whose change it was.
+    vals.append(user["user_id"]); updates.append(f"updated_by=${len(vals)}")
     vals += [rule_id, org_id]
     row = await pool.fetchrow(
         f"UPDATE staging.graha_approval_rules SET {', '.join(updates)} "
@@ -3152,9 +3412,13 @@ async def delete_approval_rule(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.graha_approval_rules SET is_active=FALSE, updated_at=NOW() "
+        # Retiring a rule changes who has to approve a deal from that moment
+        # on. That is the single most consequential write on this table and it
+        # recorded no author at all.
+        "UPDATE staging.graha_approval_rules SET is_active=FALSE, updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        rule_id, org_id,
+        rule_id, org_id, user["user_id"],
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "Approval rule not found")
@@ -3170,10 +3434,39 @@ async def list_approval_requests(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # THIS TABLE ALREADY HAD ITS ACTORS AND WAS RENDERING THEM AS IDS.
+    #
+    # `graha_approval_requests` records `requested_by` and `approved_by`, so
+    # migrations 201/202 gave it nothing — it was never missing an author.
+    # What it was missing is the RESOLUTION: this query sent `ar.*`, and
+    # `ApprovalsTab.jsx` printed `r.requested_by?.slice(0, 12)` — a truncated
+    # `users.user_id` on screen, which is the names-not-ids rule broken, and
+    # `approved_by` was not shown at all. The ratchet
+    # (`check-rendered-ids.mjs`) is positional and a 12-character slice of
+    # `user_f1a0a472b98f` does not read as an id shape, so nothing caught it.
+    #
+    # `actor_select`/`actor_joins` cannot be used here: they resolve columns
+    # NAMED `created_by`/`updated_by`. The ladder is the same one, written out
+    # against this table's own column names, and it stops at names — no email
+    # rung, for the reason `list_activities` above no longer has one.
+    #
+    # Aliased `created_by_name`/`has_creator` so the frontend contract is
+    # identical to every other table's; the approver keeps its own name because
+    # "approved by" is a different fact from "last edited by" and must not be
+    # read as one.
     q = (
-        "SELECT ar.*, ru.threshold_amount, ru.approver_role, COUNT(*) OVER() AS _total "
+        "SELECT ar.*, ru.threshold_amount, ru.approver_role, "
+        "COALESCE(NULLIF(btrim(_rq.name), ''), NULLIF(btrim(_rq.full_name), '')) "
+        "  AS created_by_name, "
+        "(ar.requested_by IS NOT NULL) AS has_creator, "
+        "COALESCE(NULLIF(btrim(_ap.name), ''), NULLIF(btrim(_ap.full_name), '')) "
+        "  AS approved_by_name, "
+        "(ar.approved_by IS NOT NULL) AS has_approver, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_approval_requests ar "
         "JOIN staging.graha_approval_rules ru ON ru.id = ar.rule_id "
+        "LEFT JOIN public.users _rq ON _rq.user_id = ar.requested_by "
+        "LEFT JOIN public.users _ap ON _ap.user_id = ar.approved_by "
         "WHERE ar.org_id=$1::uuid"
     )
     params: list = [org_id]
@@ -3261,22 +3554,59 @@ async def list_documents(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.graha_documents "
-         "WHERE org_id=$1::uuid AND is_active=TRUE")
+    # ── THE CREATOR IS CALLED `uploaded_by` ON THIS TABLE ──────────────────
+    # `graha_documents` predates the audit-column migrations and named its
+    # author column `uploaded_by` — which is the same fact as `created_by`
+    # everywhere else in this file, holding the same `public.users.user_id`
+    # TEXT. Migration 201 therefore did NOT give it a `created_by`; renaming
+    # the existing column would have been the tidier answer and was rejected,
+    # because `upload_document` and `create_document` both write it by name and
+    # a rename is a deploy-ordering trap: the old code writes to a column that
+    # no longer exists for as long as the two are out of step.
+    #
+    # So the creator half is hand-written here against `uploaded_by`, using the
+    # SAME ladder as `services/audit_actors` and emitting the SAME two output
+    # names (`created_by_name`, `has_creator`). The frontend contract is
+    # identical to every other list — a document is not a special case on
+    # screen, only in this one column name. `actor_select`/`actor_joins` are
+    # still used for the updater half, which is an ordinary `updated_by`.
+    #
+    # `d.*` and not `*`: with `public.users` joined twice, a bare star would
+    # pour both user rows into the result — every document would carry the
+    # uploader's EMAIL, which is the exact leak this whole exercise exists to
+    # close, arriving through the back door. Every filter below is qualified
+    # for the same reason: unqualified `name` and `created_at` become ambiguous
+    # the moment `users` is in the FROM list, and Postgres answers that with an
+    # error rather than a guess.
+    q = ("SELECT d.*, "
+         "COALESCE(NULLIF(btrim(_cu.name), ''), NULLIF(btrim(_cu.full_name), '')) "
+         "AS created_by_name, "
+         "(d.uploaded_by IS NOT NULL) AS has_creator, "
+         + actor_select("d", created=False, updated=True) +
+         "COUNT(*) OVER() AS _total "
+         "FROM staging.graha_documents d "
+         # `_cu` is `audit_actors.CREATOR_ALIAS` by hand — the same alias the
+         # generated half would have used, so the two never collide and a
+         # reader sees one convention. `public.` is spelled out: migration 142
+         # exists because a query trusted `search_path` and found a shadow
+         # table in the other schema.
+         "LEFT JOIN public.users _cu ON _cu.user_id = d.uploaded_by "
+         + actor_joins("d", created=False, updated=True) +
+         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE")
     params: list = [org_id]
     if folder:
         params.append(folder)
-        q += f" AND folder=${len(params)}"
+        q += f" AND d.folder=${len(params)}"
     if contact_id:
         params.append(contact_id)
-        q += f" AND contact_id=${len(params)}::uuid"
+        q += f" AND d.contact_id=${len(params)}::uuid"
     if deal_id:
         params.append(deal_id)
-        q += f" AND deal_id=${len(params)}::uuid"
+        q += f" AND d.deal_id=${len(params)}::uuid"
     if search:
         params.append(f"%{search}%")
-        q += f" AND (name ILIKE ${len(params)} OR description ILIKE ${len(params)})"
-    q += " ORDER BY created_at DESC LIMIT 200"
+        q += f" AND (d.name ILIKE ${len(params)} OR d.description ILIKE ${len(params)})"
+    q += " ORDER BY d.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
     from services.storage import sign_key
     # Post-processes each row to mint a signed file URL, so it cannot hand
@@ -3351,6 +3681,30 @@ async def upload_document(
         if not owned:
             raise HTTPException(404, "Client not found")
 
+    # ── TWO DIFFERENT "FOLDERS", AND THEY WERE THE SAME STRING ──────────────
+    #
+    # `folder` below is a COLUMN on `staging.graha_documents`. The documents
+    # list filters on it (`AND folder=$n`) and the `/documents/folders` rollup
+    # groups by it, so it is a fact about the record and it keeps exactly the
+    # value it has always had — including `crm/unfiled/documents`, which the
+    # docstring above argues for and which is still right: a document arrives
+    # before anyone has decided whose it is, and forcing that decision at upload
+    # time is how documents end up filed against the wrong client.
+    #
+    # The OBJECT KEY is a different question, and it used to be answered with
+    # this same string. It is now the grammar (proposal 83 §4):
+    # `crm/{client_id}/{user_id}/YYYY/MM/{id}--gst-certificate.pdf`. Three
+    # things follow from that:
+    #
+    #   · THE UPLOADER IS RECORDED ON THE FILE. The old key named the client and
+    #     not the person, so "who filed this" was answerable only from the
+    #     database.
+    #   · THE ORIGINAL FILENAME SURVIVES — §3's fourth complaint, the key having
+    #     been a bare uuid.
+    #   · A DOCUMENT WITH NO CLIENT is stored under its uploader rather than
+    #     pooled in a shared `unfiled` prefix. §3 calls that pool "a bucket of
+    #     last resort that nothing ever revisits"; the COLUMN still says
+    #     unfiled, so nothing on any screen changes.
     folder = f"crm/{client_id or 'unfiled'}/documents"
     try:
         stored = await upload_file(
@@ -3358,13 +3712,14 @@ async def upload_document(
             filename=file.filename or "document",
             content_type=file.content_type or "application/octet-stream",
             user_id=user["user_id"],
-            folder=folder,
+            module="crm",
+            scope=[client_id],
             org_id=org_id,
         )
     except HTTPException:
         raise
     except Exception:
-        log.exception("CRM document upload failed: size=%d folder=%s", size, folder)
+        log.exception("CRM document upload failed: size=%d client=%s", size, client_id)
         raise HTTPException(503, "Upload service temporarily unavailable — please try again in a moment.")
 
     pool = await get_pool()
@@ -3501,6 +3856,14 @@ async def update_document(
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
+    # BEFORE `vals += [doc_id, org_id]`, because the WHERE clause addresses
+    # those two as `len(vals)-1` and `len(vals)`; appending after them would
+    # renumber the id and the org and this statement would go looking for a
+    # document whose id is a member id. `uploaded_by` is left alone — the
+    # person who filed the document is not the person who renamed it, and
+    # overwriting the one with the other is how a table ends up with a single
+    # actor column pretending to be two.
+    vals.append(user["user_id"]); updates.append(f"updated_by=${len(vals)}")
     vals += [doc_id, org_id]
     row = await pool.fetchrow(
         f"UPDATE staging.graha_documents SET {', '.join(updates)} "
@@ -3521,9 +3884,13 @@ async def delete_document(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.graha_documents SET is_active=FALSE, updated_at=NOW() "
+        # A CRM document is a contract or a proposal; "who removed it?" is the
+        # question an argument turns on later, and the soft delete leaves no
+        # other trace of the act.
+        "UPDATE staging.graha_documents SET is_active=FALSE, updated_at=NOW(), "
+        "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
-        doc_id, org_id,
+        doc_id, org_id, user["user_id"],
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "Document not found")

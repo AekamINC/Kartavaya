@@ -48,7 +48,15 @@ OPEN = datetime.now(timezone.utc) + timedelta(days=5)
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"signature-ink" * 8
 DRAWN = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode()
 
-STORED_KEY = "esign/signatures/1f2e3d4c.png"
+#: What `upload_file` hands back, in the grammar of proposal 83 §4. The value
+#: itself is only ever echoed into the column, so its shape matters here as
+#: documentation rather than as behaviour — but a stale one would describe a
+#: layout the product no longer writes.
+STORED_KEY = (
+    "esign/00000000-0000-0000-0000-0000000000dd/signature/"
+    "00000000-0000-0000-0000-0000000000aa/2026/08/01M0PD8DD09QVSEPMHQ7M6RN91"
+    "--signature.png"
+)
 
 
 class _Req:
@@ -175,9 +183,28 @@ async def test_a_drawn_signature_is_stored_as_an_object_and_the_column_holds_the
     assert out["signed"] is True
     # The image was handed to storage, decoded, not as a string.
     assert stored["file_bytes"] == PNG_BYTES
-    assert stored["folder"] == "esign/signatures"
     assert stored["content_type"] == "image/png"
     assert stored["org_id"] == ORG_ID
+
+    # ── THE KEY NAMES ITS AGREEMENT NOW ─────────────────────────────────────
+    #
+    # This asserted `folder == "esign/signatures"`, which put every signature
+    # ever captured — for every document, for every org — in one flat prefix.
+    # Proposal 83 §3: "to answer 'show me the files for this agreement' you must
+    # query the database; the bucket cannot answer it", and deleting an
+    # agreement could not delete its files because its files were not gathered
+    # anywhere.
+    #
+    # The grammar (§4) is module / what it belongs to / who did it / date:
+    # `esign/{document_id}/signature/{signer_id}/YYYY/MM/{id}--signature.png`.
+    # `folder` is not passed at all any more, so its absence is part of the
+    # assertion.
+    assert "folder" not in stored, "the caller-invented prefix is back"
+    assert stored["module"] == "esign"
+    assert stored["scope"] == [str(DOC_ID), "signature"]
+    # The signer, not a product user: an external party acting through a token
+    # is still the "who did it" segment the grammar asks for.
+    assert stored["user_id"] == str(SIGNER_ID)
     # And the row got a pointer.
     assert pool.signature_written == f"r2:{STORED_KEY}"
     assert "base64" not in pool.signature_written

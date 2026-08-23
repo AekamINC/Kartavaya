@@ -72,7 +72,23 @@ ORG = "00000000-0000-4000-8000-000000000037"
 # The alternative — freezing the clock inside the module under test — would be
 # testing a different program. What these tests are about is the offsets, so the
 # offsets are what is pinned; the anchor moves with the world.
-TODAY = date.today()
+# ── UTC, because the code under test is UTC ──────────────────────────────────
+#
+# This was `date.today()`, which is the LOCAL date, and the module under test
+# computes every one of its day counts from `utc_now().date()`
+# (`inbox_triage.py:401, 628, 950`). India is UTC+5:30, so between midnight and
+# 05:30 IST the two disagree by a day and every fixture dated "TODAY minus ten"
+# is nine days old to the code reading it.
+#
+# It failed at 00:05 IST on 2026-08-23 as `assert 9 == 10`, which reads exactly
+# like a date rollover and is not one: this assertion has been correct for
+# 18.5 hours a day and wrong for the other 5.5 since it was written. A test that
+# is right most of the time is the worst kind of flake, because the run that
+# catches it is the run nobody believes.
+#
+# Everything below is relative to this constant, so moving it fixes every day
+# count in the file at once.
+TODAY = datetime.now(timezone.utc).date()
 NOW = datetime.combine(TODAY, time(9, 0), tzinfo=timezone.utc)
 
 

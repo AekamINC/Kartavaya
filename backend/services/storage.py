@@ -15,12 +15,13 @@ import asyncio
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 import logging
 
 from fastapi import HTTPException
 
 from services.encryption import decrypt
+from services.storage_keys import LEGACY_KEYS, build_key
 
 log = logging.getLogger(__name__)
 
@@ -559,6 +560,8 @@ async def upload_file(
     user_id: str,
     folder: Optional[str] = None,
     org_id: Optional[str] = None,
+    module: Optional[str] = None,
+    scope: Optional[Sequence[str]] = None,
 ) -> dict:
     """
     Upload a file to the org's dedicated R2 bucket.
@@ -566,10 +569,33 @@ async def upload_file(
     LOCAL_STORAGE_PATH is set.
     Raises StorageNotConfigured when none of them resolves. A file is never
     returned as bytes-in-a-URL, on any configuration.
+
+    ── TWO WAYS TO NAME THE OBJECT, AND ONLY ONE OF THEM IS THE GRAMMAR ─────
+
+    `module` + `scope` mint a key in the one grammar (`services/storage_keys`,
+    proposal 83 §4): module / what it belongs to / who did it / year / month /
+    a time-sortable id and the original filename. Every caller should use it.
+
+    `folder` is the old shape — a caller-invented prefix and a bare uuid — and
+    it is kept because a caller that has not moved yet must keep working, not
+    because it is an option. It produced FOUR different grammars for one idea,
+    eSign keys with no document id in them, no date anywhere so no retention
+    sweep was possible, a discarded original filename, and `pahchan/{org_id}/`
+    naming the tenant a second time inside a key the resolver had already
+    prefixed with it.
+
+    Passing both is a caller in the middle of moving; `module` wins, and it is
+    the one that will still be here.
     """
-    ext = Path(filename).suffix
-    prefix = folder or f"personal/{user_id}"
-    key = f"{prefix}/{uuid.uuid4().hex}{ext}"
+    if module and not LEGACY_KEYS:
+        key = build_key(
+            module, scope=scope or (), user_id=user_id,
+            filename=filename, org_id=org_id,
+        )
+    else:
+        ext = Path(filename).suffix
+        prefix = folder or f"personal/{user_id}"
+        key = f"{prefix}/{uuid.uuid4().hex}{ext}"
 
     if LOCAL_STORAGE_PATH:
         dest = Path(LOCAL_STORAGE_PATH) / key

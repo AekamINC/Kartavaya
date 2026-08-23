@@ -30,6 +30,7 @@ from middleware.role_tiers import (
     OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES, SAHAYAK_COMMERCIAL_ROLES,
 )
 from middleware.subscription import require_module
+from services.audit_actors import actor_joins, actor_select
 from services.ai_router import (
     generate, generate_image, generate_rich_content, deduct_credits,
     detect_language, generate_stream, LANGUAGE_NAMES,
@@ -111,13 +112,19 @@ router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 #: `NULLS LAST` on every one of them: `platform` and `credits_used` are null on
 #: a large share of rows, and Postgres sorts nulls FIRST on DESC. Without this,
 #: "sort by credits, highest first" opens on a page of blanks.
+#: EVERY VALUE IS ALIAS-QUALIFIED, and that is not cosmetic. Both content lists
+#: now LEFT JOIN `public.users` twice to resolve the author names, and that table
+#: carries `id`, `created_at` and `updated_at` of its own — so a bare `created_at`
+#: or a bare `id` in the ORDER BY is `column reference "created_at" is ambiguous`,
+#: which PgBouncer hands back as an instant 500 on the default sort of the
+#: busiest list in Sahayak. The tiebreaks below are qualified for the same reason.
 CONTENT_SORTS: dict[str, str] = {
-    "created_at":   "created_at",
-    "title":        "lower(coalesce(title, ''))",
-    "agent_type":   "agent_type",
-    "status":       "status",
-    "platform":     "platform",
-    "credits_used": "credits_used",
+    "created_at":   "ci.created_at",
+    "title":        "lower(coalesce(ci.title, ''))",
+    "agent_type":   "ci.agent_type",
+    "status":       "ci.status",
+    "platform":     "ci.platform",
+    "credits_used": "ci.credits_used",
 }
 
 CONTENT_PAGE_MAX = 100
@@ -139,8 +146,8 @@ def _content_order(sort: Optional[str], order: Optional[str]) -> str:
             f"Cannot sort by '{sort}'. Valid: {', '.join(CONTENT_SORTS)}.",
         )
     direction = "ASC" if (order or "desc").lower() == "asc" else "DESC"
-    tail = "" if col == "created_at" else ", created_at DESC"
-    return f" ORDER BY {col} {direction} NULLS LAST{tail}, id"
+    tail = "" if col == "ci.created_at" else ", ci.created_at DESC"
+    return f" ORDER BY {col} {direction} NULLS LAST{tail}, ci.id"
 
 
 _hub_gate = require_module("sahayak")
@@ -1150,19 +1157,36 @@ async def list_content(
     pool = await get_pool()
     await _verify_client_access(pool, str(client_id), org_id)
 
-    query = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.hub_content_items "
-             "WHERE client_id=$1::uuid")
+    # `ci.*` and NOT a bare `*`. The two LEFT JOINs below put `public.users` in
+    # the FROM list, and `*` across a join splices whole user rows — email,
+    # password_hash, salt, password_reset_token — into every content item. One
+    # character is the difference between resolving a name and dumping a
+    # credential store, which is why the alias is named before the joins exist.
+    #
+    # WHO generated it and WHO last touched it, as NAMES: `created_by` and
+    # `updated_by` hold `users.user_id`, and a user id may not reach a screen.
+    # `services/audit_actors` owns that ladder; the raw ids are popped below.
+    head = ("SELECT ci.*, "
+            + actor_select("ci", updated=True)
+            + "COUNT(*) OVER() AS _total ")
+    query = (head
+             + "FROM staging.hub_content_items ci "
+             + actor_joins("ci", updated=True)
+             + "WHERE ci.client_id=$1::uuid")
     params: list = [str(client_id)]
 
+    # Every filter column is alias-qualified now that a second and third table
+    # are in scope. `status` is unique to the content table today; qualifying it
+    # anyway costs three characters and removes the class of bug entirely.
     if status:
         params.append(status)
-        query += f" AND status=${len(params)}"
+        query += f" AND ci.status=${len(params)}"
     if agent_type:
         params.append(agent_type)
-        query += f" AND agent_type=${len(params)}"
+        query += f" AND ci.agent_type=${len(params)}"
     if platform:
         params.append(platform)
-        query += f" AND platform=${len(params)}"
+        query += f" AND ci.platform=${len(params)}"
 
     query += _content_order(sort, order)
     params.append(limit)
@@ -1175,6 +1199,13 @@ async def list_content(
     data = [dict(r) for r in rows]
     for item in data:
         item.pop("_total", None)
+        # `ci.*` hands back the raw actor ids as well as the resolved names, and
+        # `users.user_id` is exactly the value CLAUDE.md forbids rendering. They
+        # are dropped here rather than by listing all twenty-eight columns in the
+        # SELECT — the explicit list is the version that silently stops returning
+        # a column somebody adds to the table next month.
+        item.pop("created_by", None)
+        item.pop("updated_by", None)
     return {
         "data": await sign_content_images(org_id, data),
         "total": total, "limit": limit, "offset": offset,
@@ -3370,6 +3401,7 @@ async def execute_org_skill(
                     style=img_brief.style,
                     aspect_ratio=img_brief.aspect_ratio,
                     org_id=org_id,
+                    user_id=user_id,
                 )
                 image_url = img_result["image_url"]
                 image_key = img_result.get("image_key") or ""
@@ -3863,6 +3895,10 @@ async def generate_org_content(
                 style=img_brief.style,
                 aspect_ratio=img_brief.aspect_ratio,
                 org_id=org_id,
+                # Who asked for it. Every image used to land under
+                # `user_id="system"` in one flat folder — proposal 83's second
+                # bug — so nothing could say whose it was.
+                user_id=user.get("user_id"),
             )
             image_url = img_result["image_url"]
             image_key = img_result.get("image_key") or ""
@@ -3951,19 +3987,27 @@ async def list_org_content(
     ones it could reach arrived as one unbroken scroll.
     """
     pool = await get_pool()
-    query = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.hub_content_items "
-             "WHERE org_id=$1::uuid")
+    # `ci.*` and NOT `*` — see `list_content`, which this list renders with the
+    # same component: a bare `*` across the author joins would return two whole
+    # `public.users` rows per item, password hash included.
+    head = ("SELECT ci.*, "
+            + actor_select("ci", updated=True)
+            + "COUNT(*) OVER() AS _total ")
+    query = (head
+             + "FROM staging.hub_content_items ci "
+             + actor_joins("ci", updated=True)
+             + "WHERE ci.org_id=$1::uuid")
     params: list = [org_id]
 
     if status:
         params.append(status)
-        query += f" AND status=${len(params)}"
+        query += f" AND ci.status=${len(params)}"
     if agent_type:
         params.append(agent_type)
-        query += f" AND agent_type=${len(params)}"
+        query += f" AND ci.agent_type=${len(params)}"
     if platform:
         params.append(platform)
-        query += f" AND platform=${len(params)}"
+        query += f" AND ci.platform=${len(params)}"
 
     query += _content_order(sort, order)
     params.append(limit)
@@ -3983,13 +4027,25 @@ async def list_org_content(
     if rows:
         total = int(dict(rows[0]).get("_total", len(rows)))
     else:
-        count_q = query.split(" ORDER BY ")[0].replace(
-            "SELECT *, COUNT(*) OVER() AS _total", "SELECT COUNT(*)", 1)
+        # The projection is replaced by the string it was BUILT from rather than
+        # by a re-typed copy of it. The previous version matched a literal
+        # "SELECT *, COUNT(*) OVER() AS _total", and the moment the select list
+        # grew an author fragment that match would have failed silently: the
+        # replace is a no-op, the count query keeps `COUNT(*) OVER()` and the
+        # window function makes `fetchval` return the first row's total — which
+        # on an empty page is no row at all, and the pager loses its last page
+        # again. Deriving both from `head` makes the two impossible to drift.
+        count_q = query.split(" ORDER BY ")[0].replace(head, "SELECT COUNT(*) ", 1)
         total = int(await pool.fetchval(count_q, *params[:-2]) or 0)
 
     data = [dict(r) for r in rows]
     for item in data:
         item.pop("_total", None)
+        # The raw actor ids, dropped for the reason `list_content` gives at
+        # length: `users.user_id` is never rendered, and the resolved names are
+        # what this list now carries in their place.
+        item.pop("created_by", None)
+        item.pop("updated_by", None)
     await sign_content_images(org_id, data)
     return {
         "data": data, "total": total, "limit": limit, "offset": offset,
@@ -4393,6 +4449,10 @@ async def quick_generate(
                 style=img_brief.style,
                 aspect_ratio=img_brief.aspect_ratio,
                 org_id=org_id,
+                # Who asked for it. Every image used to land under
+                # `user_id="system"` in one flat folder — proposal 83's second
+                # bug — so nothing could say whose it was.
+                user_id=user.get("user_id"),
             )
             # The mime the provider ACTUALLY answered with, not a literal.
             # Recraft V4 returns image/webp and Gemini image/jpeg; `image/png`

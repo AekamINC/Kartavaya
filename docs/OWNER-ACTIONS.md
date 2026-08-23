@@ -176,6 +176,45 @@ watch a full business cycle between the rename and the drop.
 
 ---
 
+### 6. Attendance photographs have never worked for two of your three orgs
+
+**Status:** OPEN · fixed in code, but somebody should decide whether the missing
+photographs matter.
+
+**What I found while moving storage onto one key grammar.** `POST /v1/pahchan/punch`
+refuses a photo whose object key does not look like one this product minted —
+a sensible guard, without which a punch could name any file in the org's bucket:
+an invoice, a payslip, somebody else's face.
+
+The guard compared the key against `pahchan/{org_id}/punch/`. But the uploader
+returns the key **with the tenant prefix already on it** — `org/{org_id}/pahchan/…`
+for any org that does not have its own Cloudflare account. Two of your three orgs
+are in exactly that state (Aekam Inc and the test org; only Unicode Group has its
+own bucket). So for them, every punch that carried a photograph was refused with
+
+> "That photo does not belong to this organisation's attendance store"
+
+which was not true, and gave nobody anything to act on.
+
+**Measured on the live database, 2026-08-23: 1,659 punches, ZERO with a photo.**
+
+**Already done, no decision needed:** the guard now strips this org's own tenant
+prefix before comparing, still refuses a key naming a different org, and accepts
+both the old and the new key shape so a deploy cannot cost somebody a photograph.
+
+**What you decide:** whether the attendance already recorded without photographs
+needs anything. I have not touched a single punch row. Every one of those 1,659
+punches is still a valid attendance record with its time, its location and its
+flags — only the selfie is missing, and it was never captured, so there is
+nothing to recover. If any of those days is disputed, the photograph will not
+be there to settle it, and that is worth somebody knowing before it comes up.
+
+**What I finish once you say:** nothing is blocked. This is here because a
+feature that has never worked is a fact you should have rather than a line in a
+commit message.
+
+---
+
 ## DONE
 
 *(nothing yet — items move here with the date and what I finished)*

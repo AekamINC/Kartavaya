@@ -90,6 +90,9 @@ from routers.lead_sources   import router as lead_sources_router
 from routers.graha          import router as graha_router
 from routers.ganit          import router as ganit_router
 from routers.products       import router as products_router
+from routers.column_prefs   import router as column_prefs_router
+from routers.procurement    import router as procurement_router
+from routers.storage_browser import router as storage_browser_router
 from routers.manav          import router as manav_router
 from routers.vikray         import router as vikray_router
 from routers.vetana         import router as vetana_router
@@ -4248,6 +4251,27 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
     # Notify: assignees + creator, excluding the actor
     notif_targets = list({uid for uid in assignees + ([creator_id] if creator_id else []) if uid and uid != actor_id})
 
+    # ── A PERSONAL TASK IS ONE PERSON'S, AND ONLY THAT PERSON HEARS ─────────
+    #
+    # The other half of the routing fix. "Done" on a task in a PROJECT reaches
+    # the project's admins and the task's assignees (the block at the foot of
+    # this function). A task with no project has neither — it is somebody's own
+    # list, which is what the New Task dropdown means by "Personal", and what
+    # `team_id IS NULL` means in the schema.
+    #
+    # So the audience is the OWNER: the person whose list it is. Not the
+    # assignees, because a personal task does not have an audience to assign
+    # to — measured on the live database 2026-08-23, all 24 personal tasks
+    # carry ZERO assignees, and none is assigned to anybody but its creator,
+    # so this changes nobody's mail today. It changes what happens the first
+    # time somebody assigns one, which is the moment the old rule would have
+    # started mailing a stranger about a private list.
+    #
+    # `!= actor_id` still applies, and it is the whole of the common case: you
+    # do not get an email because you ticked off your own task.
+    if not team_id:
+        notif_targets = [creator_id] if creator_id and creator_id != actor_id else []
+
     # A move to `done` is announced by the task-done block below, which routes to
     # the project's admins and the task's assignees. Letting the generic
     # status-changed fan-out run as well hands an assignee two emails for one
@@ -5277,6 +5301,9 @@ app.include_router(lead_sources_router)
 app.include_router(graha_router)
 app.include_router(ganit_router)
 app.include_router(products_router)
+app.include_router(column_prefs_router)
+app.include_router(procurement_router)
+app.include_router(storage_browser_router)
 app.include_router(manav_router)
 app.include_router(vikray_router)
 app.include_router(vetana_router)

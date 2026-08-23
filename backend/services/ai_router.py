@@ -2062,6 +2062,8 @@ async def generate_image(
     style: str = "auto",
     aspect_ratio: Optional[str] = None,
     org_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    content_type: str = "image",
 ) -> dict:
     """Generate an image and upload it to R2. Read the block comment above.
 
@@ -2160,12 +2162,29 @@ async def generate_image(
     # to hold files whose extension, content type and bytes all disagree.
     mime = result.pop("mime", "") or "image/png"
     ext = _EXT_BY_MIME.get(mime, "png")
+    # ── THE PERSON WHO ASKED FOR IT IS RECORDED ON THE FILE ─────────────────
+    #
+    # This passed `user_id="system"` and `folder="srijan/images"`, so every
+    # image any person generated landed in one flat folder under a random
+    # filename with the requester recorded nowhere at all — proposal 83's
+    # second bug. Nothing could answer "which of these did I make", nothing
+    # could clear one person's images when they left, and a shared folder with
+    # no owner is a shared folder nobody may safely delete from.
+    #
+    # `srijan/{content_type}/{user_id}/YYYY/MM/{id}--prompt-slug.png` is the
+    # grammar (proposal 83 §4). `user_id` is optional and defaults to None
+    # rather than to "system": a caller that has not been threaded yet produces
+    # `srijan/{content_type}/YYYY/MM/…`, which is missing the owner and honest
+    # about it, where "system" was a lie that read like a fact.
     upload = await upload_file(
         file_bytes=img_bytes,
-        filename=f"srijan-{uuid.uuid4().hex[:8]}.{ext}",
+        # The prompt, slugified, so a key says what the image is. The old name
+        # was `srijan-{8 hex}` and answered nothing.
+        filename=f"{(prompt or 'image')[:60]}.{ext}",
         content_type=mime,
-        user_id="system",
-        folder="srijan/images",
+        user_id=user_id or "",
+        module="srijan",
+        scope=[content_type],
         org_id=org_id,
     )
     result["image_url"] = upload["url"]
@@ -2483,12 +2502,19 @@ async def generate_rich_content(
                                 mime = mime.replace("data:", "")
                                 ext = "png" if "png" in mime else "jpg"
                                 img_bytes = b64mod.b64decode(b64_data)
+                                # Same grammar as `generate_image` above, and
+                                # the same reason: an image returned inline by a
+                                # chat completion has an owner too. `user_id`
+                                # comes from the call, defaulting to unset
+                                # rather than to the "system" that was never
+                                # true.
                                 upload = await upload_file(
                                     file_bytes=img_bytes,
-                                    filename=f"srijan-{uuid.uuid4().hex[:8]}.{ext}",
+                                    filename=f"inline-image.{ext}",
                                     content_type=mime,
-                                    user_id="system",
-                                    folder="srijan/images",
+                                    user_id=user_id or "",
+                                    module="srijan",
+                                    scope=["inline"],
                                     org_id=org_id,
                                 )
                                 images.append({"url": upload["url"], "mime": mime})
