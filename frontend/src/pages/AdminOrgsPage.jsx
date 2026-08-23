@@ -881,41 +881,25 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
               onClick={() => {
                 const email = addEmail.trim();
                 const role  = addRole;
-                setConfirm({
-                  title: role === 'org_owner' ? 'Invite an org owner' : 'Invite an org admin',
-                  message: role === 'org_owner'
-                    ? `${email} becomes the org owner of ${org.name}. They can manage modules, roles, payroll approval and everything the organisation reaches. The org must not already have an owner.`
-                    : `${email} becomes an org admin of ${org.name} and reaches every module it has active — including payroll and the books if those are on. This is recorded against the organisation.`,
-                  confirmLabel: role === 'org_owner' ? 'Make org owner' : 'Make org admin',
-                  confirmStyle: 'primary',
-                  onConfirm: async () => {
-                    window.alert('onConfirm reached: ' + role + ' / ' + email + ' / ' + orgId);
-                    setBusy('add');
-                    try {
-                      const endpoint = role === 'org_owner'
-                        ? `/v1/admin/orgs/${orgId}/owner`
-                        : `/v1/admin/orgs/${orgId}/members`;
-                      const payload = role === 'org_owner'
-                        ? { email }
-                        : { email, roles: ['org_admin'] };
-                      const r = await api.post(endpoint, payload);
-                      window.alert('POST done: ' + JSON.stringify(r.data));
-                      if (r.data?.status === 'invited') {
-                        pushToast({ type: 'success', title: `Invite sent to ${email}` });
-                      } else {
-                        pushToast({ type: 'success', title: `${email} is now ${role === 'org_owner' ? 'the org owner' : 'an org admin'}` });
-                      }
-                      setAddEmail('');
-                      setAddRole('org_admin');
-                      await load();
-                      onChanged?.();
-                    } catch (e) {
-                      window.alert('POST failed: ' + (e?.response?.data?.detail || e.message));
-                      pushToast({ type: 'error', title: e?.response?.data?.detail || 'That did not go through' });
-                    } finally {
-                      setBusy('');
-                    }
-                  },
+                const msg = role === 'org_owner'
+                  ? `Make ${email} the org owner of ${org.name}?`
+                  : `Make ${email} an org admin of ${org.name}?`;
+                if (!window.confirm(msg)) return;
+                act('add', async () => {
+                  const endpoint = role === 'org_owner'
+                    ? `/v1/admin/orgs/${orgId}/owner`
+                    : `/v1/admin/orgs/${orgId}/members`;
+                  const payload = role === 'org_owner'
+                    ? { email }
+                    : { email, roles: ['org_admin'] };
+                  const r = await api.post(endpoint, payload);
+                  if (r.data?.status === 'invited') {
+                    pushToast({ type: 'success', title: `Invite sent to ${email}` });
+                  } else {
+                    pushToast({ type: 'success', title: `${email} is now ${role === 'org_owner' ? 'the org owner' : 'an org admin'}` });
+                  }
+                  setAddEmail('');
+                  setAddRole('org_admin');
                 });
               }}
             >
