@@ -764,7 +764,7 @@ async def create_org(
                 "        'Niyam', 'Niyam', '!system-account-cannot-log-in', "
                 "        '!none', 'member', TRUE) "
                 "ON CONFLICT (user_id) DO NOTHING",
-                org_id,
+                str(org_id),
             )
 
             await conn.execute(

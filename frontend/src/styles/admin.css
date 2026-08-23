@@ -249,19 +249,6 @@
 .adm-mod.is-sensitive.on { background: var(--warn-container); color: var(--on-warn-container); }
 .adm-mod__s { margin-left: auto; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; color: var(--warn); }
 
-/* A module that exists but that this endpoint refuses. It is shown, not hidden —
-   an operator has to be able to see the module is real — and it is not
-   clickable, because `POST /v1/admin/orgs/:id/modules/:code` validates against
-   its own eight-code list and 400s on the other four. `--on-surface-disabled`
-   is the token WCAG 1.4.3 exempts, and an inactive control is exactly its one
-   legitimate use (00 §`--on-surface-faint`). */
-.adm-mod.is-unwired { border-style: dashed; cursor: not-allowed; }
-/* Only the OFF state dims. A module that is genuinely active but not switchable
-   here keeps its container colour, or the console would report it as off. */
-.adm-mod.is-unwired:not(.on) { color: var(--on-surface-disabled); }
-.adm-mod.is-unwired:not(.on):hover { background: transparent; }
-.adm-mod__s.is-quiet { color: var(--on-surface-disabled); font-weight: 500; letter-spacing: .04em; }
-.adm-mod.on .adm-mod__s.is-quiet { color: inherit; opacity: .72; }
 
 /* ── Trend bars ───────────────────────────────────────────────────────────── */
 .adm-trend { display: flex; align-items: flex-end; gap: 2px; min-height: 110px; overflow-x: auto; padding-bottom: var(--sp-1); }

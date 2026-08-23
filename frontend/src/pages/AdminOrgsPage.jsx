@@ -53,7 +53,7 @@ import SlideOver from './admin/SlideOver';
 import OrgRoleGrant from './admin/OrgRoleGrant';
 import { canSuspendOrg, canManageBilling, canSeeCost } from './admin/platformRoles';
 import BillingLinesBlock from './admin/BillingLinesBlock';
-import { refusalMessage } from './admin/BillingLineRow';
+
 import useColumnPrefs from '../hooks/useColumnPrefs';
 import { ColumnsButton } from '../components/ui/CustomizeColumns';
 import TopUpDialog from './admin/TopUpDialog';
@@ -61,18 +61,9 @@ import '../styles/admin.css';
 import { Secondary } from '../components/Bilingual';
 
 /* Module codes as `require_module(...)` spells them, with the sensitive set
-   marked. START-HERE, decision 2: Vetana, Ganit and Manav default to no access
-   BY ROLE — the marking here is so an operator switching a module on for a
-   whole org knows which ones carry employee and financial records.
-
-   `wired: false` is the four codes `role_tiers.ALL_MODULES` knows about but
-   `routers/admin_orgs.py:812` does not. That endpoint validates against its own
-   eight-code list and 400s on anything else, so before this flag Sanvaad,
-   Varta, eSign and Pahchan were four toggles that failed with "Unknown module".
-   They are still listed — an operator has to be able to see that a module
-   exists and is not switchable here — and they are not clickable. */
-const ENDPOINT_MODULES = ['graha', 'ganit', 'manav', 'vikray', 'vetana', 'dristi', 'prachar', 'sahayak'];
-
+   marked. Vetana, Ganit and Manav default to no access BY ROLE — the marking
+   here is so an operator switching a module on for a whole org knows which
+   ones carry employee and financial records. */
 const ALL_MODULES = [
   { code: 'graha', label: 'Graha · CRM' },
   { code: 'vikray', label: 'Vikray · Sales' },
@@ -86,7 +77,7 @@ const ALL_MODULES = [
   { code: 'ganit', label: 'Ganit · Invoicing', sensitive: true },
   { code: 'manav', label: 'Manav · HRMS', sensitive: true },
   { code: 'vetana', label: 'Vetana · Payroll', sensitive: true },
-].map(m => ({ ...m, wired: ENDPOINT_MODULES.includes(m.code) }));
+];
 
 const PLANS = [
   { code: 'free', label: 'Free' },
@@ -304,151 +295,12 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
   );
 }
 
-/* ── Credits, ceilings and the two buckets ─────────────────────────────────── */
-
-/**
- * The console-side ceiling editor (BUILD SPEC §4.5; A6 owns the org-facing one).
- *
- * ABSOLUTE, never additive. `allocate_user_credits` used to do
- * `allocated = allocated + EXCLUDED.allocated`, so a ceiling could only ever go
- * up — an admin who typed 200 twice gave the member 400 with no way back. The
- * input therefore shows the CURRENT value and replaces it.
- */
-function CeilingDialog(props) {
-  // One line, for scripts/check-write-gates.mjs — see admin/BillingLineRow.jsx.
-  const { canWrite, reason } = props;
-  const { open, orgId, member, isPlatformOrg, onClose, onSaved } = props;
-
-  const [value, setValue] = useState('');
-  const [busy, setBusy] = useState('');
-  const [refusal, setRefusal] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    setValue(member?.cap === null || member?.cap === undefined ? '' : String(member.cap));
-    setRefusal('');
-  }, [open, member]);
-
-  const run = async (tag, fn) => {
-    setBusy(tag);
-    setRefusal('');
-    try {
-      await fn();
-      onSaved?.();
-      onClose?.();
-    } catch (e) {
-      // `InvalidCapValue` already says what is wrong and what 0 means. Rendered,
-      // never parsed.
-      setRefusal(refusalMessage(e, 'The ceiling was not changed.'));
-    } finally { setBusy(''); }
-  };
-
-  const typed = value.trim();
-  const cap = typed === '' ? null : Math.floor(Number(typed));
-  const valid = typed !== '' && Number.isFinite(cap) && cap >= 0;
-
-  return (
-    <Modal
-      open={open}
-      onOpenChange={v => { if (!v) onClose?.(); }}
-      title={`Ceiling · ${member?.name || member?.email || 'member'}`}
-      dataTestId="ceiling"
-      size="sm"
-      footer={(
-        <>
-          <Button
-            variant="fill"
-            disabled={!canWrite || !valid || Boolean(busy)}
-            title={canWrite ? undefined : reason || undefined}
-            onClick={() => run('set', () => api.put(
-              `/v1/billing/orgs/${orgId}/members/${member.user_id}/cap`, { cap },
-            ))}
-          >
-            {busy === 'set' ? 'Saving…' : 'Set ceiling'}
-          </Button>
-          <Button
-            variant="danger"
-            disabled={!canWrite || member?.cap === null || member?.cap === undefined || Boolean(busy)}
-            title={canWrite ? undefined : reason || undefined}
-            onClick={() => run('clear', () => api.delete(
-              `/v1/billing/orgs/${orgId}/members/${member.user_id}/cap`,
-            ))}
-          >
-            {busy === 'clear' ? 'Removing…' : 'Remove ceiling'}
-          </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </>
-      )}
-    >
-      <div className="mcap__form">
-        <Field
-          label="Ceiling, in credits"
-          htmlFor="mcap-value"
-          hint="Replaces the current value — it is not added to it. 0 refuses every spend by this member."
-        >
-          {p => (
-            <Input
-              {...p}
-              type="number" inputMode="numeric" min="0" step="1"
-              value={value}
-              disabled={!canWrite || Boolean(busy)}
-              title={canWrite ? undefined : reason || undefined}
-              onChange={e => setValue(e.target.value)}
-            />
-          )}
-        </Field>
-        <p className="mcap__note">
-          A ceiling limits this person’s share of the shared organisation balance. It does not
-          give them their own credits.
-          {member?.spent ? ` They have spent ${grouped(member.spent)} credits this period.` : ''}
-          {isPlatformOrg && ' Balance is unlimited here; ceilings still bind.'}
-        </p>
-        {refusal && <p className="inb__note" role="alert">{refusal}</p>}
-      </div>
-    </Modal>
-  );
-}
-
-/**
- * Credits, the two buckets, and who may spend how much of them.
- *
- * The buckets are shown separately everywhere they appear. One combined number
- * hides the only distinction that matters to a client who has paid: purchased
- * credits carry over indefinitely, the monthly allowance does not.
- *
- * TWO DIFFERENT GATES, and the asymmetry is the spec's, not a mistake here:
- * reading a balance is FINANCE_CONSOLE_ROLES (god mode + finance), while setting
- * a ceiling is BILLING_CONSOLE_ROLES (which also admits platform_manager). A
- * manager can therefore raise a ceiling without being able to read the balance
- * it is drawn against, so this refuses the READ in words rather than rendering
- * an empty table that looks like an org with no members.
- *
- * ── The roster this section used to be joined against ────────────────────────
- *
- * It was `members` from `GET /v1/admin/orgs/{id}` — the organisation's whole
- * roster — left-joined onto the ceiling rows so that a person with no ceiling
- * still had a line to set one on. That read no longer returns a roster: a
- * platform account may see a member COUNT for another organisation and nothing
- * else. So this lists only the people `/v1/billing/orgs/{id}/balance` itself
- * names — those who already have a ceiling or have already spent — and says so
- * where the table would otherwise read as "this organisation is empty".
- */
-/**
- * The member-ceiling list, declared once. `fixed` on Person and on the ceiling
- * button: the three money columns are meaningless without the name beside them,
- * and "Set ceiling" is the only verb this section has — an arrangement that hid
- * it would leave an operator reading a ceiling they cannot change.
- *
- * The list lives inside the org drawer, which is why the control goes in the
- * section's existing head row beside "Top up credits" rather than growing a
- * toolbar of its own.
- */
+/* ── Credits and the two buckets ───────────────────────────────────────────── */
 const MEMBER_CAP_COLUMNS = [
   { id: 'person', label: 'Person', fixed: true },
   { id: 'spent', label: 'Spent', num: true },
   { id: 'cap', label: 'Ceiling' },
   { id: 'remaining', label: 'Remaining' },
-  { id: 'actions', label: 'Actions', sr: true, fixed: true },
 ];
 
 function OrgCreditsSection(props) {
@@ -458,7 +310,6 @@ function OrgCreditsSection(props) {
 
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
-  const [target, setTarget] = useState(null);
   const [toppingUp, setToppingUp] = useState(false);
 
   const load = useCallback(() => {
@@ -527,7 +378,7 @@ function OrgCreditsSection(props) {
 
         {!canRead && (
           <p className="obl__note">
-            Reading this organisation’s balance needs platform owner or account/finance access,
+            Reading this organisation's balance needs platform owner or account/finance access,
             so the buckets and the ceilings are not shown — a ceiling means nothing without the
             balance it is drawn against. Topping up still works: writing credits and reading a
             balance are different grants.
@@ -646,18 +497,6 @@ function OrgCreditsSection(props) {
                             </Cell>
                           ),
                           remaining: <Cell>{capped ? grouped(r.remaining ?? 0) : 'Uncapped'}</Cell>,
-                          actions: (
-                            <Cell>
-                              <Button
-                                size="sm" variant="out"
-                                disabled={!canWrite}
-                                title={canWrite ? undefined : reason || undefined}
-                                onClick={() => setTarget(r)}
-                              >
-                                Set ceiling
-                              </Button>
-                            </Cell>
-                          ),
                         })}
                       </Row>
                     );
@@ -681,17 +520,6 @@ function OrgCreditsSection(props) {
           </>
         )}
       </section>
-
-      <CeilingDialog
-        open={Boolean(target)}
-        orgId={orgId}
-        member={target}
-        isPlatformOrg={isPlatformOrg}
-        canWrite={canWrite}
-        reason={reason}
-        onClose={() => setTarget(null)}
-        onSaved={load}
-      />
 
       <TopUpDialog
         open={toppingUp}
@@ -881,7 +709,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
           </div>
 
           <p className="obl__note">
-            This is the address Aekam uses to reach the organisation, not a person’s
+            This is the address Aekam uses to reach the organisation, not a person's
             login. It exists so that when whoever set it up leaves, there is still
             somewhere to write. It cannot be cleared — an organisation with no point of
             contact is the state this field exists to prevent.
@@ -954,7 +782,6 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 'adm-mod',
                 on ? 'on' : '',
                 m.sensitive ? 'is-sensitive' : '',
-                m.wired ? '' : 'is-unwired',
               ].filter(Boolean).join(' ');
               return (
                 <button
@@ -962,26 +789,17 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                   type="button"
                   className={cls}
                   aria-pressed={on}
-                  disabled={!m.wired || busy === m.code}
-                  title={m.wired ? undefined : 'This module is not in the activation endpoint’s list yet — switching it here would fail.'}
+                  disabled={busy === m.code}
                   onClick={() => act(m.code, () => (on
                     ? api.delete(`/v1/admin/orgs/${orgId}/modules/${m.code}`)
                     : api.post(`/v1/admin/orgs/${orgId}/modules/${m.code}`)))}
                 >
                   {m.label}
                   {m.sensitive && <span className="adm-mod__s">Sensitive</span>}
-                  {!m.wired && <span className="adm-mod__s is-quiet">Not wired</span>}
                 </button>
               );
             })}
           </div>
-          {ALL_MODULES.some(m => !m.wired) && (
-            <p className="apg__secn">
-              Sanvaad, Varta, eSign and Pahchan are live modules but are not in the
-              activation endpoint’s accepted list, so they cannot be switched from here
-              yet. Use the Billing console, which activates against a different table.
-            </p>
-          )}
         </section>
 
         {/* ── People: a number, and the one invitation that is permitted ──────
@@ -1007,7 +825,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 ? 'Nobody is in this organisation yet.'
                 : `${memberCount} ${memberCount === 1 ? 'person is' : 'people are'} in this organisation.`}
             {' '}Who they are is not readable from here, and neither is what they can
-            reach — that is the organisation’s own information, and its admin manages it
+            reach — that is the organisation's own information, and its admin manages it
             at Settings → Organisation → Members. This console can invite one org admin,
             which is what the box below does.
           </p>
@@ -1211,7 +1029,7 @@ export default function AdminOrgsPage() {
         Platform fees is the platform line of every active organisation, added up. It is
         not monthly recurring revenue: support plans and ongoing support recur too, are
         billed as lines of their own, and are not in this figure — so read it as a floor,
-        never as the total. An organisation’s real recurring total is on its own billing
+        never as the total. An organisation's real recurring total is on its own billing
         lines, in its drawer.
         {totals.suspendedFees > 0 && (
           ` A further ${inr(totals.suspendedFees)} a month sits on the ${totals.suspended} suspended `
