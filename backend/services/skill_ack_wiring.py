@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 19 of the 61 assigned skills.
+Wired so far: 20 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1333,6 +1333,68 @@ def _quotation_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> 
     counts["already_lapsed"] = len(surviving.get("already_lapsed") or ())
 
 
+# ── check_wip_ageing ────────────────────────────────────────────────────────
+#
+# Unbilled time entries past the escalation threshold. A time entry leaves this
+# list when it is INVOICED, and the commonest reason one sits there for months
+# is a decision the product cannot record: a fixed-fee engagement where the time
+# will never be billed, or a write-off waiting for a partner to sign it off.
+# Both read as "still unbilled" for ever.
+#
+# FINDINGS_AT — `escalated.rows`, A DOTTED PATH, and the first user of one. The
+#   rows sit beside `threshold_days` and `entries`, and that is right: the
+#   threshold and the true total belong with the rows they describe.
+#
+#   `by_engagement` and `by_person` are NOT wired. They are aggregations of the
+#   same time, not findings — acknowledging "the Sharma audit" would silence a
+#   summary line, and the entries under it would carry on being reported by the
+#   list that actually lists them.
+#
+# IDENTITY — `entry_id`, the time entry itself. NOT `task_id`: a task carries
+#   many entries and the fact being acknowledged is one person's one stretch of
+#   work. NOT `person` or `engagement`, which are labels on it.
+#
+# MATERIAL — `hours` and `billable`.
+#
+#   `hours` because an entry corrected from 2 to 20 is a different piece of WIP.
+#   `billable` because it is the DECISION the acknowledgement is standing in
+#   for: a firm that acknowledges an old entry and then marks it a write-off has
+#   answered the question properly, and the finding should come back once so the
+#   reader sees that it did. It is a tri-state — True, False, or None for "not
+#   recorded" — and `_canon` tags the boolean and the None separately, so those
+#   three do not collide.
+#
+#   NOT `rate_per_hour`: the money is not this skill's finding, and the handler
+#   is at pains to say so — `rupees` is a RANGE precisely because so much is
+#   unclassified.
+#
+# INCIDENTAL — `age_days`, which IS in `_DRIFT_FIELDS` and would raise; also
+#   `worked_on` (fixed), `task_status` (the task may close while its time stays
+#   unbilled), `billability` (prose derived from `billable`), `note`, `task`.
+#
+# RECOMPUTE — `counts.escalated_rows_listed` and nothing else, because almost
+#   nothing else in this return is a sum over the rows.
+#
+#   `escalated.entries` and `counts.past_escalation_threshold` are the CENSUS —
+#   the true number past the threshold, which already exceeds `len(rows)`
+#   whenever the list is capped. Rebuilding either from the survivors would
+#   destroy the one figure that tells a reader the list is a sample. Same for
+#   `escalated.hours`, every figure under `hours` and `rupees`, the ageing
+#   bands, `coverage`, and the two `*_listed` counts for the aggregation lists
+#   this wiring does not touch.
+
+def _wip_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the one count that is a sum over the listed rows.
+
+    `escalated.entries` and `past_escalation_threshold` are deliberately NOT
+    touched: they are the census the rows are a sample of, and on a capped run
+    they are already larger than the list.
+    """
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["escalated_rows_listed"] = len(surviving)
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1686,6 +1748,17 @@ ACK_WIRING: dict[str, AckWiring] = {
         recompute=_quotation_recompute,
         label_of=lambda f: f"{f.get('quotation_number')} — {f.get('customer')}",
         lists_are_one_population=True,
+    ),
+
+    "check_wip_ageing": AckWiring(
+        findings_at="escalated.rows",
+        identity_of=lambda f: {"entry_id": f.get("entry_id")},
+        material_of=lambda f: {
+            "hours": f.get("hours"),
+            "billable": f.get("billable"),
+        },
+        recompute=_wip_recompute,
+        label_of=lambda f: f"{f.get('engagement')} — {f.get('person')}",
     ),
 
     "check_late_suppliers": AckWiring(
