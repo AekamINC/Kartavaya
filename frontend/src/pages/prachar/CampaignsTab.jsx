@@ -46,7 +46,7 @@ const mondayIndex = (d) => (d.getDay() + 6) % 7;
 /** A campaign is editable only while the server would accept the edit. */
 const isMovable = (c) => c.status === 'draft' || c.status === 'scheduled';
 
-export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
+export default function CampaignsTab({ scheduleNonce = 0, seedTemplate = null, onChanged }) {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
@@ -66,7 +66,11 @@ export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
   const campaigns = data || [];
 
   // The header's Schedule button. Nonce, not boolean — see PracharPage.
-  useEffect(() => { if (scheduleNonce > 0) setForm(blank()); }, [scheduleNonce]);
+  // TemplatesTab's "Use for campaign" trips the same nonce with a template
+  // id riding beside it, so the form opens pre-seeded instead of blank.
+  useEffect(() => {
+    if (scheduleNonce > 0) setForm({ ...blank(), template_id: seedTemplate || '' });
+  }, [scheduleNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shown = useMemo(
     () => (channels.length ? campaigns.filter((c) => channels.includes(c.channel)) : campaigns),
@@ -111,6 +115,11 @@ export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
     if (!form.subject.trim()) return pushToast({ type: 'error', title: 'A campaign needs a subject line.' });
     const payload = {
       name: form.name.trim(),
+      // The link, not just the copied text — `template_id` is what
+      // `POST .../send` uses to read `compliance_class` off the template
+      // (prachar.py:887-895), so a campaign started from a template stays
+      // classified even after its subject/body have been edited here.
+      template_id: form.template_id || null,
       subject: form.subject.trim(),
       body_html: form.body_html,
       channel: form.channel,
@@ -625,7 +634,7 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
 /* ── Form ─────────────────────────────────────────────────────────────── */
 
 const blank = () => ({
-  name: '', subject: '', body_html: '', channel: 'email', scheduled_at: '',
+  name: '', template_id: '', subject: '', body_html: '', channel: 'email', scheduled_at: '',
   // `{}` here is the same value the old payload hard-coded, but it is now a
   // starting point the operator can change rather than the only value there is.
   audience_filter: {},
@@ -641,7 +650,7 @@ const toForm = (c) => {
     when = `${dayKey(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
   return {
-    id: c.id, name: c.name || '', subject: c.subject || '',
+    id: c.id, name: c.name || '', template_id: c.template_id || '', subject: c.subject || '',
     body_html: c.body_html || '', channel: c.channel || 'email', scheduled_at: when,
     // Reading this back is half the fix. `save()` sends whatever the form
     // holds, so a form that did not load the stored filter would overwrite it
@@ -655,11 +664,65 @@ function CampaignForm({ form, setForm, onSave, onCancel, busy }) {
   // the same question rather than taking the answer as a prop.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  // Inbox 15: "marketing templates cannot become campaigns" — reproduced as
+  // exactly that. The FK (`prachar_campaigns.template_id`) and the send-path
+  // handling of it (prachar.py:887-895, resolving subject/body/compliance
+  // class from the template) were both already built; TemplatesTab.jsx had
+  // no button and this form had no field, so there was never a way to reach
+  // either. This is the field.
+  const templates = useResource(
+    () => api.get('/v1/prachar/templates').then(rows), [],
+  );
+  const templateList = templates.data || [];
+
+  // The cross-tab seed (PracharPage's `seedTemplate`) sets `template_id`
+  // before this list has loaded — apply it once the template is actually
+  // available, but only into a still-blank form, so re-opening an edited
+  // draft never overwrites what the operator already typed.
+  useEffect(() => {
+    if (!form.id && form.template_id && !form.subject && !form.body_html && templateList.length) {
+      const t = templateList.find((x) => x.id === form.template_id);
+      if (t) setForm((f) => ({ ...f, subject: t.subject || '', body_html: t.body_html || '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateList.length, form.template_id]);
+
+  const applyTemplate = (id) => {
+    const t = templateList.find((x) => x.id === id);
+    setForm({
+      ...form,
+      template_id: id,
+      // Copied in, not linked live — matching TemplatesTab's own Duplicate,
+      // which copies rather than references. The operator edits a campaign's
+      // own subject/body from here on; template_id is kept only so the send
+      // path can still read the template's compliance_class.
+      ...(t ? { subject: form.subject || t.subject || '', body_html: form.body_html || t.body_html || '' } : {}),
+    });
+  };
+
   return (
     <div>
       <BackButton onClick={onCancel} label="Back to campaigns" />
       <div className="k-formpanel">
         <h3 className="pr__form-t">{form.id ? 'Edit campaign' : 'New campaign'}</h3>
+        {!form.id && (
+          <label className="k-formpanel__label">Start from a template
+            <select
+              className="k-formpanel__input"
+              value={form.template_id}
+              onChange={(e) => applyTemplate(e.target.value)}
+              disabled={templateList.length === 0}
+            >
+              <option value="">Blank campaign</option>
+              {templateList.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}{t.category ? ` — ${humanise(t.category)}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="k-formpanel__grid k-formpanel__grid--2">
           <label className="k-formpanel__label">Campaign name
             <input className="k-formpanel__input" placeholder="e.g. July newsletter" value={form.name} onChange={set('name')} />

@@ -82,6 +82,15 @@ export default function PracharPage() {
   // as GrahaPage's `newDealNonce`: a counter rather than a boolean, so pressing
   // the header button twice re-opens the form the second time.
   const [scheduleNonce, setScheduleNonce] = useState(0);
+  // Inbox 15: "templates cannot become campaigns" — the cross-tab half of
+  // the fix. TemplatesTab's "Use for campaign" hands a template id here;
+  // CampaignsTab reads it once, the same nonce trip that opens the form.
+  const [seedTemplate, setSeedTemplate] = useState(null);
+  const useTemplateForCampaign = (templateId) => {
+    setTab('campaigns');
+    setScheduleNonce((n) => n + 1);
+    setSeedTemplate(templateId);
+  };
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   // `key` is destructured out rather than spread. `useTabPanelMotion` returns
   // `{ key, style }` and the key is the whole mechanism — it remounts the panel
@@ -191,7 +200,9 @@ export default function PracharPage() {
         {...motion}
       >
         {tab === 'campaigns'
-          ? <CampaignsTab scheduleNonce={scheduleNonce} onChanged={reload} />
+          ? <CampaignsTab scheduleNonce={scheduleNonce} seedTemplate={seedTemplate} onChanged={reload} />
+          : tab === 'templates'
+          ? <Active onChanged={reload} onUseAsCampaign={useTemplateForCampaign} />
           : <Active onChanged={reload} />}
       </div>
     </div>

@@ -76,7 +76,7 @@ const varsIn = (t) => {
   return [...found];
 };
 
-export default function TemplatesTab({ onChanged }) {
+export default function TemplatesTab({ onChanged, onUseAsCampaign }) {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
@@ -262,6 +262,12 @@ export default function TemplatesTab({ onChanged }) {
                   <div className="pr__tpl-body">{t.body_text || stripTags(t.body_html) || 'This template has no body yet.'}</div>
 
                   <div className="pr__tpl-act">
+                    {onUseAsCampaign && (
+                      <button type="button" className="k-btn k-btn--primary k-btn--sm"
+                        onClick={() => onUseAsCampaign(t.id)} disabled={!canWrite} title={denial || undefined}>
+                        Use for campaign
+                      </button>
+                    )}
                     <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setForm(toForm(t))}>Edit</button>
                     <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => duplicate(t)} disabled={busy}>Duplicate</button>
                     <button type="button" className="pr__del" onClick={() => remove(t)} disabled={busy}>Delete</button>
