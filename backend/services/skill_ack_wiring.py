@@ -37,6 +37,48 @@ rather than a default: it means somebody looked at the return shape and found
 nothing that could go stale.
 
 
+== A HANDLER MAY HAVE MORE THAN ONE LIST ===================================
+
+`findings_at` took a single string because that is the shape the FIRST wiring
+happened to need, not because anybody decided a skill has one list. Nine of
+them do not. `check_payroll_readiness` returns `blockers` and `warnings`;
+`check_msme_payment_clock` returns `past_the_window`, `inside_the_window` and
+`not_classified`; `check_approvals_that_sit` returns five. Wiring only the
+first list of such a skill is worse than not wiring it: the acknowledgement
+button appears, half the findings answer to it, and the other half repeat for
+ever under a feature that looks finished.
+
+So `findings_at` takes a string OR a sequence of strings. Three things change,
+and only one of them is difficult.
+
+  THE KEY MUST BE UNIQUE ACROSS THE LISTS, NOT WITHIN EACH.
+      The same employee can be a blocker (no salary structure — they are not
+      paid at all) and a warning (an advance whose recovery will be capped) in
+      one run. If both hash to one `finding_key`, acknowledging the mild one
+      silences the severe one, silently, in the direction that costs somebody
+      their salary. Leaving that to each wiring's `identity_of` means every
+      future entry has to remember it, and the failure is invisible when they
+      do not — so `_identity_for` folds the LIST NAME into the identity for
+      every multi-key wiring instead. A finding that later MOVES between lists
+      is correctly orphaned: it has become a different finding and somebody
+      should look at it again.
+
+  RECOMPUTE RECEIVES ALL THE LISTS AT ONCE.
+      An aggregate can span them — `check_payroll_readiness` counts blockers
+      and warnings into one `counts` block — so a recompute called once per
+      list could only ever rebuild such a total from half its inputs. That is
+      the reports-page defect again, arrived at through the back door. A
+      multi-key wiring's recompute is therefore handed a MAPPING of
+      {key: survivors}; a single-key wiring is still handed a plain LIST, so
+      not one existing entry has to be rewritten.
+
+  THE SHAPE CHECK IS ALL-OR-NOTHING.
+      If any named key is missing or is not a list, the data is returned
+      untouched. Filtering the lists that survived a handler's shape change
+      while recomputing a total across the shape it no longer has is the one
+      outcome worse than not filtering at all.
+
+
 == THE ANNOTATION, AND A DELIBERATE DEPARTURE ==============================
 
 `partition_by_ack` returns SURVIVING findings unmodified, and its docstring
@@ -69,8 +111,11 @@ Finding = Mapping[str, Any]
 class AckWiring:
     """One skill's answer to "which fields are which"."""
 
-    #: Key in the handler's return dict holding the list of findings.
-    findings_at: str
+    #: Where the findings live in the handler's return dict: ONE key, or
+    #: SEVERAL. See A HANDLER MAY HAVE MORE THAN ONE LIST in the module
+    #: docstring — the multi-key form changes three things and the change to
+    #: `identity_of` is the one that matters.
+    findings_at: str | Sequence[str]
 
     #: WHICH FACT this is. Must be stable for the whole life of the underlying
     #: fact — if it changes, the acknowledgement is orphaned and the finding
@@ -84,7 +129,15 @@ class AckWiring:
 
     #: Rebuild any aggregate in the return dict from the surviving findings.
     #: `None` asserts there are none. Mutates the dict in place.
-    recompute: Optional[Callable[[dict, Sequence[dict]], None]]
+    #:
+    #: The second argument follows `findings_at`: a LIST of survivors for a
+    #: single-key wiring, and a MAPPING of {key: survivors} for a multi-key
+    #: one. It is a mapping rather than one call per list because an aggregate
+    #: can span the lists — `check_payroll_readiness` counts blockers AND
+    #: warnings — and a recompute handed one list at a time could only ever
+    #: rebuild such a total from half its inputs, which is the reports-page
+    #: failure with a fresh coat of paint.
+    recompute: Optional[Callable[[dict, Any], None]]
 
     #: What the acknowledgement is called when a human reads the ack list back.
     label_of: Callable[[Finding], str]
@@ -777,6 +830,47 @@ ACK_WIRING: dict[str, AckWiring] = {
 }
 
 
+def _buckets_of(wiring: AckWiring) -> tuple[str, ...]:
+    """The keys a wiring's findings live under, single-key form included."""
+    if isinstance(wiring.findings_at, str):
+        return (wiring.findings_at,)
+    return tuple(wiring.findings_at)
+
+
+def _identity_for(wiring: AckWiring, bucket: str) -> Callable[[Finding], Mapping[str, Any]]:
+    """The wiring's `identity_of`, made unique ACROSS lists where there are several.
+
+    A single-key wiring gets its own function back, unchanged and unwrapped, so
+    every key already computed by `propose_payment_run` and the nine that
+    followed it stays byte-identical.
+
+    A multi-key wiring gets the LIST NAME folded in, and that is the safety
+    property the whole extension turns on. `check_payroll_readiness` can report
+    the same employee as a BLOCKER (no salary structure — they are not paid at
+    all) and as a WARNING (an advance whose recovery will be capped). Those are
+    two different statements about one person, and if `identity_of` reads only
+    the employee and the check code it is one wiring's job, done by hand, to
+    guarantee no blocker ever collides with a warning. Get it wrong and
+    acknowledging the mild one silences the severe one — silently, and in the
+    direction that costs somebody their salary.
+
+    So the mechanism does it instead of trusting the wiring: the bucket name is
+    part of the identity, structurally, for every multi-key entry. A finding
+    that later MOVES from one list to the other is correctly orphaned — it has
+    become a different, more or less severe, finding, and somebody should look
+    at it again.
+    """
+    if isinstance(wiring.findings_at, str):
+        return wiring.identity_of
+
+    def _identity(f: Finding) -> Mapping[str, Any]:
+        # `_list` leads with an underscore for the same reason `_ack_key` does,
+        # and it is a name no handler emits as a column.
+        return {"_list": bucket, **dict(wiring.identity_of(f))}
+
+    return _identity
+
+
 def apply_wiring(skill_function: str, data: Any, ack_set: Mapping[str, Any]) -> Any:
     """Filter one handler's output through an org's acknowledgements.
 
@@ -796,31 +890,54 @@ def apply_wiring(skill_function: str, data: Any, ack_set: Mapping[str, Any]) -> 
         # called correctly.
         return data
 
-    findings = data.get(wiring.findings_at)
-    if not isinstance(findings, list):
+    buckets = _buckets_of(wiring)
+    lists = {key: data.get(key) for key in buckets}
+    if not all(isinstance(found, list) for found in lists.values()):
         # The handler changed shape under a wiring that still names the old key.
         # Returning the data unfiltered is the safe direction: showing a finding
         # that was acknowledged is a nuisance, hiding one that was not is a
         # missed payment.
+        #
+        # ALL of them, not the ones that happen to be present. A multi-key
+        # wiring whose second list vanished would otherwise filter the first
+        # and recompute a total across a shape it no longer understands, which
+        # is the one outcome worse than not filtering at all.
         return data
 
-    surviving, suppressed = skill_ack.partition_by_ack(
-        findings, ack_set,
-        identity_of=wiring.identity_of,
-        material_of=wiring.material_of,
-    )
+    surviving_by_bucket: dict[str, list[dict]] = {}
+    suppressed: list[dict] = []
 
-    # The annotation the UI needs to hand a key back. See the module docstring.
-    for f in surviving:
-        f["_ack_key"] = skill_ack.finding_key(wiring.identity_of(f))
-        f["_ack_state"] = (
-            skill_ack.state_hash(wiring.material_of(f))
-            if wiring.material_of else None
+    for key in buckets:
+        identity_of = _identity_for(wiring, key)
+        kept, hidden = skill_ack.partition_by_ack(
+            lists[key], ack_set,
+            identity_of=identity_of,
+            material_of=wiring.material_of,
         )
 
-    data[wiring.findings_at] = surviving
+        # The annotation the UI needs to hand a key back. See the module
+        # docstring. It is computed with the SAME identity function the filter
+        # used — including the folded bucket name — or the ack would be filed
+        # under a key this function never looks up.
+        for f in kept:
+            f["_ack_key"] = skill_ack.finding_key(identity_of(f))
+            f["_ack_state"] = (
+                skill_ack.state_hash(wiring.material_of(f))
+                if wiring.material_of else None
+            )
+
+        surviving_by_bucket[key] = kept
+        suppressed.extend(hidden)
+        data[key] = kept
+
     if wiring.recompute is not None:
-        wiring.recompute(data, surviving)
+        # Single-key wirings are called with a LIST, exactly as before, so no
+        # existing entry has to be rewritten to suit a shape it does not have.
+        wiring.recompute(
+            data,
+            surviving_by_bucket[buckets[0]] if isinstance(wiring.findings_at, str)
+            else surviving_by_bucket,
+        )
 
     # Say that something was hidden, and by whom. A list that silently shrinks
     # is indistinguishable from a query that broke.
