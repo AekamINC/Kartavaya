@@ -130,9 +130,19 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   }, []);
 
   const mentionSource = teamMembers.length > 0 ? teamMembers : members;
+  /* THE LADDER MUST NOT REACH AN EMAIL, and here that is two rules at once.
+     The owner's (2026-08-23): a person is named by their name, and an address
+     used as a label is a contact detail rendered as an identity — the backend's
+     `display_name()` was fixed for exactly this and ends at 'Unnamed member'.
+     And the mechanical one: the composer INSERTS whatever it shows, and the
+     resolver MATCHES on what `display_name()` produces. A rung the two do not
+     share is a mention that is offered, picked, inserted — and then resolves to
+     nobody, silently, which is the failure this whole item is about.
+     MEASURED: 0 of 35 accounts have neither name, so this changes nothing on
+     screen today; it stops the two sides drifting the first time one does. */
   const mentionMembers = mentionSource.map(m => ({
     user_id:      m.user_id,
-    display_name: m.display_name || m.full_name || m.email || 'Unknown',
+    display_name: m.display_name || m.full_name || m.name || 'Unnamed member',
   }));
 
   useEffect(() => () => clearTimeout(closeTimer.current), []);

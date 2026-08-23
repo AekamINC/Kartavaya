@@ -530,10 +530,20 @@ export function shouldDeliver(type, {
   // Unknown mode = not yet loaded, or a kind with no row in the preference
   // table. Both mean "the user has not switched this off".
   const allowed = mode === 'off' ? false : mode === 'mine_only' ? isMine : true;
+  /* `allowed` GATES ALL FOUR, and it did not gate the first two.
+     `toast` and `sound` read only the clock, so a kind the person had switched
+     OFF — or set to "mine only", while somebody else's arrived — still slid a
+     card across the screen and still made a noise. Push and email honoured the
+     same switch in the same function, two lines below, which is what made it
+     read as correct. Off has to mean off on the channel you are looking at,
+     otherwise the setting is advice.
+
+     Quiet hours still do NOT silence `email`: that channel is queued and a
+     held message is delivered late rather than lost. */
   return {
-    toast: !quietNow,
-    sound: !quietNow && prefs?.notifSound !== false,
-    push: !quietNow && allowed && notifPermission() === 'granted',
+    toast: allowed && !quietNow,
+    sound: allowed && !quietNow && prefs?.notifSound !== false,
+    push: allowed && !quietNow && notifPermission() === 'granted',
     email: allowed,
   };
 }

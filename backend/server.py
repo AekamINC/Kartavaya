@@ -3198,12 +3198,37 @@ async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=D
                     ))
                 except Exception as _pe:
                     logger.warning("comment push failed: %s", _pe)
-            from services.mentions import process_mentions
-            await process_mentions(pool,comment_id,body.body,task_id,user["user_id"])
-            from services.activity_logger import log_event
-            await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="commented",data={"preview":preview[:80]})
     except Exception as e:
         logger.warning("comment fan-out failed: %s", e)
+
+    # ── MENTIONS AND THE ACTIVITY LOG GET THEIR OWN FATE ────────────────────
+    #
+    # These two used to sit at the foot of the block above, inside the SAME
+    # `try` as the recipient fan-out and the push. One `except` over five
+    # unrelated jobs means the first one to raise cancels every job after it,
+    # and the only trace is a warning line reading "comment fan-out failed" —
+    # which names none of the four things that did not then happen.
+    #
+    # That is not a hypothetical ordering worry. `public.mentions` holds ZERO
+    # rows all time (measured 2026-08-23), and mentions ran LAST, after a
+    # `task_clients` query, a notification loop and a push fan-out. Whatever
+    # else was true, the arrangement guaranteed that any hiccup upstream would
+    # take the mention with it and report something else.
+    #
+    # Separate try blocks, each naming its own job. Mentions before the activity
+    # log because being summoned is the one a person is waiting on.
+    try:
+        from services.mentions import process_mentions
+        await process_mentions(pool,comment_id,body.body,task_id,user["user_id"])
+    except Exception as e:
+        logger.warning("comment mentions failed for %s: %s", comment_id, e)
+
+    try:
+        preview=body.body[:140]+("…" if len(body.body)>140 else "")
+        from services.activity_logger import log_event
+        await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="commented",data={"preview":preview[:80]})
+    except Exception as e:
+        logger.warning("comment activity log failed for %s: %s", comment_id, e)
     actor_name=actor_display(user)
     return CommentOut(comment_id=row["comment_id"],task_id=row["task_id"],user_id=row["user_id"],user_name=actor_name,body=row["body"],created_at=row["created_at"],is_client_visible=client_visible)
 

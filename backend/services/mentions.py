@@ -14,7 +14,7 @@ from services.audit_actors import display_name
 MENTION_RE = re.compile(r'@([\w.-]+)')
 
 
-async def _resolve_mentions(pool, body: str, team_id):
+async def _resolve_mentions(pool, body: str, team_id, actor_id: str | None = None):
     """
     Resolve @mentions to user rows.
 
@@ -35,6 +35,10 @@ async def _resolve_mentions(pool, body: str, team_id):
     for hand-typed handles and for anyone outside the task's team.
     """
     found = {}
+    # What is still UNCLAIMED. Pass 1 blanks each span it matches, and pass 2
+    # reads this rather than `body`, so a name already resolved in full cannot
+    # be re-read as a shorter handle inside itself.
+    residual = body.lower()
 
     # Pass 1 — project members, matched on their full display name.
     #
@@ -78,6 +82,26 @@ async def _resolve_mentions(pool, body: str, team_id):
     # address `send_mention_email` sends to, a contact detail used AS a contact
     # detail. Only the display ladder changed. `display_name` emits no `$n`, so
     # `$1` below is untouched.
+    #
+    # ── A TASK WITH NO PROJECT STILL HAS PEOPLE TO NAME ─────────────────────
+    #
+    # `team_id` is NULL for a PERSONAL task — somebody's own list, what the New
+    # Task dropdown means by "Personal" (`server.py:4326`). There are 36 of them
+    # on the live database. This pass used to be skipped entirely for all of
+    # them, so a mention there could only ever fall through to pass 2's
+    # single-token regex — which cannot match a display name containing a space,
+    # and nearly every display name contains one. The composer still offered the
+    # picker and still inserted "@Keval Shah", so the person typing had every
+    # reason to believe they had summoned somebody. Nothing was stored, nothing
+    # was sent, and nothing said so.
+    #
+    # The candidate pool for a task with no project is the people the ACTOR
+    # shares an organisation with. Not "everybody": `ur.org_id IS NOT NULL` is
+    # load-bearing, because in `user_roles` a NULL org_id is a PLATFORM grant —
+    # a value, not an absence — and treating it as one would make every Aekam
+    # staff account mentionable from every customer's private task, and every
+    # customer's member mentionable by them.
+    members = []
     if team_id:
         members = await pool.fetch(
             f"""
@@ -88,18 +112,46 @@ async def _resolve_mentions(pool, body: str, team_id):
             """,
             team_id,
         )
-        lowered = body.lower()
+    elif actor_id:
+        members = await pool.fetch(
+            f"""
+            SELECT DISTINCT u.user_id, u.email, {display_name('u')} AS display
+            FROM staging.user_roles mine
+            JOIN staging.user_roles theirs ON theirs.org_id = mine.org_id
+            JOIN public.users u ON u.user_id = theirs.user_id
+            WHERE mine.user_id = $1
+              AND mine.org_id IS NOT NULL
+            """,
+            actor_id,
+        )
+
+    if members:
         # Longest display name first: a member called "Keval" must not shadow
         # "Keval Shah" when both are on the team.
         for m in sorted(members, key=lambda r: len(r["display"] or ""), reverse=True):
             display = (m["display"] or "").strip()
             if not display:
                 continue
-            if f"@{display.lower()}" in lowered:
+            needle = f"@{display.lower()}"
+            if needle in residual:
                 found[m["user_id"]] = m
+                # CONSUME the text this name matched. Sorting longest-first puts
+                # "Keval Shah" ahead of "Keval", but ahead is not instead: a
+                # bare "@Keval" is still a substring of "@Keval Shah", so both
+                # matched and BOTH were notified — one of them a colleague who
+                # was never named, told they had been. Blanking the span is what
+                # makes longest-first actually mean "wins".
+                residual = residual.replace(needle, " ")
 
-    # Pass 2 — single-token handles, as before.
-    for handle in set(MENTION_RE.findall(body)):
+    # Pass 2 — single-token handles, as before, but over what pass 1 LEFT.
+    #
+    # Reading `body` here undid pass 1's whole point: "@Keval Shah" resolves the
+    # right person in pass 1, then MENTION_RE finds the bare "Keval" inside the
+    # same words and `setdefault` adds a DIFFERENT colleague of that name — who
+    # is then told they were summoned somewhere they were not named. The unit
+    # test missed it because a fake pool has nobody called Keval; the live
+    # database is where two people share a first name.
+    for handle in set(MENTION_RE.findall(residual)):
         user = await pool.fetchrow(
             f"""
             SELECT user_id, email, {display_name('users')} AS display
@@ -126,7 +178,7 @@ async def process_mentions(pool, comment_id: str, body: str, task_id: str, actor
     )
     actor_name = actor["display"] if actor else "Someone"
 
-    for user in await _resolve_mentions(pool, body, task["team_id"] if task else None):
+    for user in await _resolve_mentions(pool, body, task["team_id"] if task else None, actor_id):
         if user["user_id"] == actor_id:
             continue
 
@@ -136,8 +188,17 @@ async def process_mentions(pool, comment_id: str, body: str, task_id: str, actor
                 "INSERT INTO mentions (mention_id, comment_id, mentioned_user_id) VALUES ($1,$2,$3)",
                 mention_id, comment_id, user["user_id"],
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # This was a bare `except: pass`, and it is why the table was
+            # trusted. MEASURED 2026-08-23: `public.mentions` holds ZERO rows,
+            # all time, while 22 Sanvaad mentions notified people over the same
+            # period — the shape of the report that a mention "only works in
+            # Sanvaad". A row that fails to write must say so; the notification
+            # below still goes out either way, because being told beats being
+            # indexed.
+            import logging
+            logging.getLogger(__name__).warning(
+                "mention row not stored for %s: %s", user["user_id"], exc)
 
         await pool.execute(
             """

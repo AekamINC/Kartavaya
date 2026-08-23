@@ -453,6 +453,44 @@ async def process_pending_reminders():
             # `purpose` argument below already gives: the types are
             # user-visible strings and an unmapped one falls back to a default,
             # so one word the preference table knows beats a dozen it might not.
+            # ── THE IN-APP COPY, WHICH THIS LOOP NEVER WROTE ──────────
+            #
+            # MEASURED 2026-08-23: 1,150 `follow_up_due` reminders exist, 663 of
+            # them sent, and `public.notifications` holds NOT ONE row of any
+            # follow-up kind. This loop had exactly two channels, email and
+            # push, so a person who works inside the product — no mail open, no
+            # phone to hand — was never told a CRM follow-up was due. That is
+            # the whole of "follow-up notifications don't arrive": they arrive,
+            # just never where the person is looking.
+            #
+            # QUIET HOURS DO NOT APPLY TO THIS CHANNEL, and that is deliberate
+            # rather than an omission. An in-app notification has no queue
+            # behind it: holding one does not defer it to the morning, it throws
+            # it away. The email below IS queued (`status='pending'` is the
+            # queue) which is why quiet hours legitimately hold that one. Niyam's
+            # send layer draws the same line for the same reason.
+            #
+            # A preference switched OFF is still final — `prefs_verdict` with
+            # `quiet_hours_apply=False` answers "does this person want reminders
+            # at all", and nothing here overrides a no.
+            if rem["recipient_user_id"]:
+                try:
+                    in_app, _why_app = await prefs_verdict(
+                        pool, rem["recipient_user_id"], "reminder",
+                        is_mine=False, quiet_hours_apply=False)
+                    if in_app:
+                        from utils import create_notification
+                        await create_notification(
+                            pool, rem["recipient_user_id"], "reminder",
+                            _subject_for_type(rem["reminder_type"]),
+                            rem["message"] or "",
+                            url=_url_for_type(rem["reminder_type"]),
+                        )
+                except Exception as exc:
+                    # Its own try: the email below is a separate promise and
+                    # must not be cancelled by a failure to draw a bell.
+                    log.warning("in-app reminder failed for %s: %s", rem["id"], exc)
+
             allowed, why = await prefs_verdict(
                 pool, rem["recipient_user_id"], "reminder",
                 is_mine=False, quiet_hours_apply=True)
@@ -529,6 +567,22 @@ async def process_pending_reminders():
             )
 
     return {"processed": len(pending), "sent": sent}
+
+
+
+def _url_for_type(reminder_type: str) -> str:
+    """Where the bell takes you.
+
+    A notification a person cannot act on is a nag. Each of the three kinds has
+    exactly one screen that answers it, and an unknown kind goes to the inbox
+    rather than to a guess — `/graha?tab=follow%20ups` for a type that is not a
+    follow-up would be a wrong answer delivered confidently.
+    """
+    return {
+        "follow_up_due":    "/graha",
+        "invoice_overdue":  "/ganit",
+        "task_due":         "/tasks",
+    }.get(reminder_type, "/inbox")
 
 
 def _subject_for_type(reminder_type: str) -> str:
