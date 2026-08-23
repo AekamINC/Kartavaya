@@ -373,10 +373,49 @@ def test_the_token_does_not_carry_the_address_in_the_clear(_key):
 
     URLs travel — referrer headers, proxy logs, the request log in server.py, the
     browser history of whoever the mail was forwarded to.
+
+    ── THE SECOND ASSERTION HERE USED TO BE A COIN FLIP ─────────────────────
+
+    It was `assert "bob" not in token.lower()` — the local part, three letters,
+    searched for as a substring of a 233-character base64 blob. Those three
+    letters turn up by chance, and `.lower()` makes it likelier still by
+    collapsing every casing of them onto one.
+
+    Measured over 20,000 freshly minted tokens on 2026-08-23:
+
+        'bob' as a substring        122 of 20,000   (0.61%, ~1 run in 164)
+        the FULL address              0 of 20,000
+
+    So the property being tested has never once failed, and the assertion
+    failed about one full-suite run in a hundred and sixty — which is the worst
+    kind of flake, because the run that catches it is the run nobody believes.
+    It cost a real investigation tonight before a push.
+
+    What replaces it tests the thing the docstring is actually about: the
+    address is not recoverable from the token WITHOUT THE KEY. A substring
+    search over ciphertext was only ever a proxy for that, and a bad one.
     """
     token = unsub.mint("64e7bea6-0000-4000-8000-000000000001", "bob@example.com")
+
+    # The whole address, which is what would leak into a URL. This one is
+    # exact, so it is not a coin flip.
     assert "bob@example.com" not in token
-    assert "bob" not in token.lower()
+    assert "example.com" not in token
+
+    # And the real property: without the key the token yields nothing. Reading
+    # it back is `test_the_unsubscribe_token_round_trips`; this is the other
+    # half — that the round trip is the ONLY way in.
+    import base64
+
+    for decoder in (base64.urlsafe_b64decode, base64.b64decode):
+        try:
+            raw = decoder(token + "=" * (-len(token) % 4))
+        except Exception:
+            continue
+        assert b"bob@example.com" not in raw, (
+            "the address survives a plain base64 decode — the token is encoded, "
+            "not encrypted"
+        )
 
 
 def test_a_tampered_or_foreign_token_is_refused(_key):
