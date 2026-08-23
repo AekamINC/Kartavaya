@@ -327,3 +327,64 @@ def test_every_existing_wiring_states_which_shape_it_is():
             assert w.lists_are_one_population is False, (
                 f"{name} names one list; lists_are_one_population is a claim "
                 f"about several")
+
+
+# ── 9 · a bucket may be a dotted path ───────────────────────────────────────
+
+@pytest.fixture
+def nested():
+    """A wiring whose findings sit one level down, as `check_wip_ageing`'s do
+    under `escalated.rows` — beside the threshold and the census those rows are
+    a capped sample of."""
+    ACK_WIRING[SKILL] = AckWiring(
+        findings_at="escalated.rows",
+        identity_of=lambda f: {"entry_id": f.get("entry_id")},
+        material_of=None,
+        recompute=lambda out, surviving: out.setdefault("seen", len(surviving)),
+        label_of=lambda f: str(f.get("entry_id")),
+    )
+    try:
+        yield ACK_WIRING[SKILL]
+    finally:
+        del ACK_WIRING[SKILL]
+
+
+def _nested_out(rows):
+    return {"escalated": {"threshold_days": 30, "entries": 91, "rows": list(rows)},
+            "by_person": [{"person": "Priya"}]}
+
+
+def test_a_nested_bucket_is_read_and_written_in_place(nested):
+    row = {"entry_id": "e-1"}
+    key = skill_ack.finding_key(nested.identity_of(row))
+    acks = {key: skill_ack.Ack(finding_key=key, acknowledged_by="u1")}
+
+    out = apply_wiring(SKILL, _nested_out([row, {"entry_id": "e-2"}]), acks)
+    assert out["escalated"]["rows"] == [{"entry_id": "e-2", "_ack_key": skill_ack.finding_key(
+        nested.identity_of({"entry_id": "e-2"})), "_ack_state": None}]
+    # The siblings of the list are untouched — this is why the nesting exists.
+    assert out["escalated"]["threshold_days"] == 30
+    assert out["escalated"]["entries"] == 91
+    assert out["by_person"] == [{"person": "Priya"}]
+    assert out["seen"] == 1
+    assert out["acknowledged"]["count"] == 1
+
+
+def test_a_missing_parent_fails_open(nested):
+    """Anything absent on the way down is a shape change, handled exactly like
+    a missing top-level key: show the findings unfiltered."""
+    row = {"entry_id": "e-1"}
+    key = skill_ack.finding_key(nested.identity_of(row))
+    acks = {key: skill_ack.Ack(finding_key=key, acknowledged_by="u1")}
+    out = apply_wiring(SKILL, {"rows": [row]}, acks)
+    assert out["rows"] == [row]
+    assert "acknowledged" not in out
+
+
+def test_a_parent_that_is_not_a_mapping_fails_open(nested):
+    row = {"entry_id": "e-1"}
+    key = skill_ack.finding_key(nested.identity_of(row))
+    acks = {key: skill_ack.Ack(finding_key=key, acknowledged_by="u1")}
+    out = apply_wiring(SKILL, {"escalated": [row]}, acks)
+    assert out["escalated"] == [row]
+    assert "acknowledged" not in out

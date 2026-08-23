@@ -86,6 +86,12 @@ and only one of them is difficult.
       {key: survivors}; a single-key wiring is still handed a plain LIST, so
       not one existing entry has to be rewritten.
 
+  A KEY MAY BE A DOTTED PATH. `check_wip_ageing` returns its findings under
+      `escalated.rows`, beside the threshold and the census those rows are a
+      capped sample of, and the nesting is right for a reader. `"escalated.rows"`
+      reads and writes through it. Anything missing on the way down is treated
+      as a shape change and fails OPEN, exactly like a missing top-level key.
+
   THE SHAPE CHECK IS ALL-OR-NOTHING.
       If any named key is missing or is not a list, the data is returned
       untouched. Filtering the lists that survived a handler's shape change
@@ -1713,6 +1719,42 @@ def _buckets_of(wiring: AckWiring) -> tuple[str, ...]:
     return tuple(wiring.findings_at)
 
 
+def _read_bucket(data: Mapping[str, Any], path: str) -> Any:
+    """Read `"a"` or `"a.b"` out of a handler's return dict.
+
+    A dotted path exists because `check_wip_ageing` puts its findings under
+    `escalated.rows`, beside the threshold and the census the rows are a sample
+    of. Making that skill un-wireable over a nesting the handler had good reason
+    for would be the mechanism dictating the shape of the answer.
+
+    Anything missing on the way down returns None, which the caller treats as
+    "the handler changed shape" and fails OPEN.
+    """
+    node: Any = data
+    for step in path.split("."):
+        if not isinstance(node, Mapping):
+            return None
+        node = node.get(step)
+    return node
+
+
+def _write_bucket(data: dict, path: str, value: list) -> None:
+    """Write the surviving findings back where they were read from.
+
+    Silently does nothing if the parent has gone — the caller has already
+    established the path exists, and a rebuild that invented a nesting would be
+    worse than one that skipped it.
+    """
+    steps = path.split(".")
+    node: Any = data
+    for step in steps[:-1]:
+        node = node.get(step) if isinstance(node, Mapping) else None
+        if not isinstance(node, dict):
+            return
+    if isinstance(node, dict):
+        node[steps[-1]] = value
+
+
 def _identity_for(wiring: AckWiring, bucket: str) -> Callable[[Finding], Mapping[str, Any]]:
     """The wiring's `identity_of`, made unique ACROSS lists where there are several.
 
@@ -1767,7 +1809,7 @@ def apply_wiring(skill_function: str, data: Any, ack_set: Mapping[str, Any]) -> 
         return data
 
     buckets = _buckets_of(wiring)
-    lists = {key: data.get(key) for key in buckets}
+    lists = {key: _read_bucket(data, key) for key in buckets}
     if not all(isinstance(found, list) for found in lists.values()):
         # The handler changed shape under a wiring that still names the old key.
         # Returning the data unfiltered is the safe direction: showing a finding
@@ -1804,7 +1846,7 @@ def apply_wiring(skill_function: str, data: Any, ack_set: Mapping[str, Any]) -> 
 
         surviving_by_bucket[key] = kept
         suppressed.extend(hidden)
-        data[key] = kept
+        _write_bucket(data, key, kept)
 
     if wiring.recompute is not None:
         # Single-key wirings are called with a LIST, exactly as before, so no
