@@ -27,6 +27,7 @@ from services.skill_ack import (
     MissingMaterialError,
     apply_acks,
     finding_key,
+    opaque_ref,
     partition_by_ack,
     sanitise_label,
     state_hash,
@@ -503,3 +504,41 @@ def test_a_label_that_redacts_to_nothing_never_costs_the_acknowledgement(label):
     """
     out = sanitise_label(label)
     assert out.strip(), "an empty label would be rejected by the CHECK and lose the ack"
+
+
+# ── opaque_ref · a key for a handler that may not print an id ───────────────
+
+def test_opaque_ref_is_the_same_for_a_uuid_and_its_string():
+    """asyncpg returns a `uuid.UUID` for a uuid column and a `str` the moment
+    somebody adds `::text` to the SELECT. `_canon` encodes those two
+    differently — the UUID falls through to the repr branch — so without the
+    stringify, tidying a query would silently orphan every acknowledgement a
+    skill holds."""
+    import uuid as _uuid
+    u = _uuid.uuid4()
+    assert opaque_ref(u) == opaque_ref(str(u))
+    assert opaque_ref(str(u).upper()) == opaque_ref(str(u))
+
+
+def test_opaque_ref_separates_two_rows():
+    import uuid as _uuid
+    assert opaque_ref(_uuid.uuid4()) != opaque_ref(_uuid.uuid4())
+
+
+def test_opaque_ref_leaks_no_uuid():
+    """The whole point: `stock_and_crm` carries a test banning a UUID from
+    every field of its output but `link`, and an engagement has no business key
+    at all. The digest keeps the stability and renders nothing."""
+    import re
+    import uuid as _uuid
+    ref = opaque_ref(_uuid.uuid4())
+    assert re.fullmatch(r"[0-9a-f]{32}", ref)
+    assert "-" not in ref
+
+
+def test_opaque_ref_satisfies_the_finding_key_check_constraint():
+    """Same shape as `finding_key`, so it passes migration 159's
+    `^[0-9a-f]{16,128}$` if it ever reaches the table directly."""
+    import re
+    import uuid as _uuid
+    assert re.fullmatch(r"[0-9a-f]{16,128}", opaque_ref(_uuid.uuid4()))

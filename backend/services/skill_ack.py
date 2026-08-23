@@ -357,6 +357,35 @@ def state_hash(material: Mapping[str, Any]) -> str:
     return _digest(material, bucket="material")
 
 
+def opaque_ref(value: Any) -> str:
+    """A stable, renderable-safe stand-in for a row id.
+
+    Some handlers cannot put a raw id in their output at all. `stock_and_crm.py`
+    carries a test — `test_no_id_reaches_the_engagement_output_either` — that
+    bans a UUID from every field except `link`, and it is right to: an id beside
+    a client name is exactly what `check-rendered-ids` exists to stop, and a
+    href is followed rather than read.
+
+    But a wiring still needs something stable to key on, and for an engagement
+    or a recurring profile there is no business key at all — no number, no
+    reference, and a title that repeats across clients. So the id is HASHED on
+    the way out. The stability survives, nothing renderable is leaked, and the
+    result is the same shape as `finding_key` so it satisfies migration 159's
+    CHECK if it ever reaches the table directly.
+
+    Not a security boundary, exactly as `finding_key` is not: it is a lookup
+    handle for a per-org set of tens of rows.
+
+    THE VALUE IS STRINGIFIED FIRST, and that is not tidiness. asyncpg returns a
+    `uuid.UUID` for a uuid column and a `str` the moment somebody adds `::text`
+    to the SELECT, and `_canon` gives those two different encodings — the UUID
+    falls through to the repr branch. Hashing them apart would silently orphan
+    every acknowledgement this skill holds on the day a query was tidied up.
+    """
+    return blake2s(_canon(str(value)).encode("utf-8"),
+                   digest_size=_DIGEST_BYTES).hexdigest()
+
+
 def sanitise_label(label: str) -> str:
     """Strip contact details out of a human-readable finding label.
 
