@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 9 of the 61 assigned skills.
+Wired so far: 10 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -585,6 +585,75 @@ def _statutory_gate_recompute(out: dict, surviving: Sequence[dict]) -> None:
         by_dept.values(), key=lambda d: (-d["findings"], str(d["department"])))
 
 
+# ── check_payroll_readiness ─────────────────────────────────────────────────
+#
+# THE SKILL `services/skill_ack.py` IS WRITTEN AROUND — its docstring names this
+# handler in the second sentence: "check_payroll_readiness names the same
+# employee with no salary structure every month". It was blocked until the
+# commit before this one, because it returns TWO lists and `findings_at` took
+# one string, and wiring only `blockers` would have left every warning repeating
+# for ever under a button that looked finished.
+#
+# FINDINGS_AT — `blockers` AND `warnings`. The distinction is load-bearing and
+#   the handler's own docstring defends it: a blocker changes who gets paid or
+#   whether the run can happen; a warning changes an amount somebody should
+#   decide deliberately. `_identity_for` folds the list name into the key, so
+#   acknowledging a capped advance recovery can never silence "this employee has
+#   no salary structure and the run omits them entirely".
+#
+# IDENTITY — `month`, `check`, `employee_code`. All three needed a handler
+#   change, and both are the sanctioned kind: a return shape that did not emit
+#   the stable field its identity requires.
+#
+#   `employee_code` because `employee` is the printable NAME, and the name is
+#   not a key — measured live, the largest org carries ten names held by three
+#   active people each. Keyed on the name, one acknowledgement of one person's
+#   missing bank details would silence two colleagues', and the colleagues would
+#   not be paid. Live probe 2026-08-23: 131 blockers and 69 warnings in the
+#   seeded org, ZERO of them missing a code.
+#
+#   `month` because payroll is monthly and an acknowledgement is filed against
+#   the finding alone. Without it, "Priya has no salary structure"
+#   acknowledged in August stays silenced in September — and in September the
+#   run omits her again. That is a person not paid for a second month, hidden
+#   by a button somebody pressed once.
+#
+#   And `month` is NOT the midnight bug wearing a monthly coat. `_DRIFT_FIELDS`
+#   refuses fields that move WHILE THE FACT STAYS THE SAME; a new payroll month
+#   is a new run, a new decision and new money. The same reasoning as
+#   `payslip_month` in `check_statutory_records_gate`, and the same test:
+#   running the skill twice in one month must resurrect nothing.
+#
+# MATERIAL — `amount`, which four of the nine checks carry: the pending leave's
+#   days, the locked run's `total_net`, the structure's `basic`, the advance's
+#   recovery, the expense claim. Somebody acknowledged an advance recovering
+#   5,418; 54,180 is a different decision about the same person.
+#
+#   On the five checks with no amount the key is absent, so the ack is
+#   unconditional — correct, because those are binary facts. An employee has a
+#   salary structure or has not, and filling one in removes the finding.
+#
+#   NOT `detail`. It is prose, and for four checks it embeds the very number
+#   that is already in `amount` — hashing it would tie every acknowledgement to
+#   a sentence's wording and count one movement twice.
+#
+# INCIDENTAL — `employee` (the printable name; a marriage is not a new
+#   finding), and the contact keys.
+#
+# RECOMPUTE — `counts`, which SPANS BOTH LISTS. This is the case the mapping
+#   form of the recompute exists for: `{"blockers": n, "warnings": n}` rebuilt
+#   from one list at a time could only ever be half right, and a payroll screen
+#   reporting four blockers above a list of two is the reports-page defect in
+#   front of somebody about to pay ninety-seven people.
+
+def _payroll_readiness_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the blocker/warning counts from BOTH surviving lists."""
+    out["counts"] = {
+        "blockers": len(surviving.get("blockers") or ()),
+        "warnings": len(surviving.get("warnings") or ()),
+    }
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -813,6 +882,18 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=lambda f: {"payslip_month": f.get("payslip_month")},
         recompute=_statutory_gate_recompute,
         label_of=lambda f: f"{f.get('check')} — {f.get('employee')}",
+    ),
+
+    "check_payroll_readiness": AckWiring(
+        findings_at=("blockers", "warnings"),
+        identity_of=lambda f: {
+            "month": f.get("month"),
+            "check": f.get("check"),
+            "employee_code": f.get("employee_code"),
+        },
+        material_of=lambda f: {"amount": f.get("amount")},
+        recompute=_payroll_readiness_recompute,
+        label_of=lambda f: f"{f.get('check')} — {f.get('employee') or 'the run'}",
     ),
 
     "check_late_suppliers": AckWiring(

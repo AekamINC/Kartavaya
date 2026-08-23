@@ -217,6 +217,7 @@ def test_an_expired_snooze_lets_the_bill_back_through():
 #: COMMIT: this literal grows by exactly one name per commit, and the commit
 #: that adds the name is the commit that argues that skill's three-way split.
 WIRED = [
+    "check_payroll_readiness",
     "check_statutory_records_gate",
     "check_duplicate_vendor_bills",
     "check_received_not_invoiced",
@@ -239,8 +240,11 @@ def test_only_the_reviewed_skills_are_wired():
 
 
 def test_an_unwired_skill_is_returned_untouched():
+    # `aggregate_kpis` returns figures and no findings list, so it is one of
+    # the entries measured as NOT needing an acknowledgement — it will still be
+    # unwired when every skill that needs one is done.
     data = {"bills": [_bill()], "total_due": 42000.0}
-    assert apply_wiring("check_payroll_readiness", data, _ack_for(_bill())) is data
+    assert apply_wiring("aggregate_kpis", data, _ack_for(_bill())) is data
 
 
 def test_a_handler_that_changed_shape_fails_open_not_closed():

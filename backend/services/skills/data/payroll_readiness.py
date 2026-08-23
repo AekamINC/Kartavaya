@@ -52,7 +52,9 @@ async def check_payroll_readiness(
 
     Defaults to the current month, which is the month somebody is about to run.
 
-    Returns {month, blockers: [...], warnings: [...], counts}.
+    Returns {month, blockers: [...], warnings: [...], counts}. Every finding
+    carries `month` and `employee_code` so an acknowledgement can be filed
+    against it — see `services/skill_ack_wiring.py`.
     """
     month = month or utc_now().strftime("%Y-%m")
 
@@ -75,7 +77,15 @@ async def check_payroll_readiness(
                    COUNT(*)     OVER (PARTITION BY s.employee_id) AS n_candidates
             FROM staging.vetana_salary_structures s, bounds b
             WHERE s.org_id = $1::uuid AND s.is_active = TRUE AND s.effective_from <= b.month_end
-        )
+        ),
+        -- The nine branches, wrapped so the EMPLOYEE CODE can be joined on once
+        -- rather than added to each of them. `employee_code` is what
+        -- `services/skill_ack_wiring.py` keys an acknowledgement on: measured
+        -- live, the largest org has ten NAMES carried by three active people
+        -- each, so keying on `employee_name` would let one acknowledgement of
+        -- one person's blocker silence two colleagues' — and a blocker here
+        -- means somebody is not paid at all.
+        findings AS (
         SELECT 'blocker'::text AS severity, 'no_salary_structure'::text AS check_code,
                e.name AS employee_name, e.id AS employee_id,
                e.email AS employee_email, e.phone AS employee_phone,
@@ -142,7 +152,16 @@ async def check_payroll_readiness(
         FROM emp e JOIN staging.manav_expense_claims c ON c.employee_id = e.id AND c.org_id = $1::uuid
         CROSS JOIN bounds b
         WHERE c.status = 'pending' AND c.payslip_id IS NULL AND c.expense_date <= b.month_end
-        ORDER BY severity, check_code, employee_name
+        )
+        -- LEFT JOIN, and org-scoped on both sides. `run_already_locked` carries
+        -- no employee at all and must keep its row; a finding that lost its
+        -- place in the list because nobody owns it would be the one blocker
+        -- that stops the whole run.
+        SELECT f.*, e2.employee_code
+        FROM findings f
+        LEFT JOIN staging.manav_employees e2
+               ON e2.id = f.employee_id AND e2.org_id = $1::uuid
+        ORDER BY f.severity, f.check_code, f.employee_name
         LIMIT $3
         """,
         org_id, month, limit,
@@ -150,8 +169,18 @@ async def check_payroll_readiness(
 
     def _finding(r):
         out = {
+            # `month` rides on every finding, not only on the envelope, because
+            # an acknowledgement is filed against the finding alone. Without it
+            # "Priya has no salary structure" acknowledged in August would stay
+            # silenced in September — and in September the run will omit her
+            # again, which is a person not paid for a second month.
+            "month": month,
             "check": r["check_code"],
             "employee": r["employee_name"],
+            # NOT for printing — the printable name is `employee`. This is the
+            # stable business key an acknowledgement is filed under; see the
+            # note on the `findings` CTE above.
+            "employee_code": r["employee_code"],
             "detail": r["detail"],
         }
         if r["amount"] is not None:
