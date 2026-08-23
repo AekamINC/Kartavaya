@@ -11,7 +11,15 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 31 of the 61 assigned skills.
+Wired: 32 skills — every one measured as needing an acknowledgement, out of the
+93 in `SKILL_REGISTRY`. The other 61 were measured and excluded: five WRITE
+skills, ~14 that return a single aggregate or a narrative, ~8 that return a work
+list rather than findings, ~6 DETECT scorers whose output moves on every run,
+and ~15 period-scoped statutory or calendar skills whose findings expire when
+the period closes. `brief_unpaid_reimbursements` is the one that looks like a
+candidate and is not: its only per-item value is `oldest`, a single exemplar
+dict, and the handler says what it is — "Money owed to employees, not a
+decision anybody still has to make".
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
