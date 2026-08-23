@@ -55,6 +55,7 @@ import logging
 import re
 from datetime import date, timedelta
 
+from services.skill_ack import opaque_ref
 from services.skills.reachable import reachable
 from services.skills.timeutil import utc_now
 
@@ -394,6 +395,13 @@ async def check_retainers_that_stopped_billing(
             continue
 
         due_soon.append(reachable({
+            # The key an acknowledgement is filed under — see
+            # `services/skill_ack_wiring.py`. A recurring schedule has no
+            # number and no title, and its customer name is not unique, so the
+            # row id is the only stable handle. OPAQUE, because this output
+            # carries no link and a bare uuid beside a customer name is what
+            # `check-rendered-ids` exists to stop.
+            "schedule_ref": opaque_ref(row["id"]),
             "bill_to": row["bill_to"] or "(no customer named on the schedule)",
             "next_due": row["next_date"].isoformat() if row["next_date"] else None,
             "frequency": row["frequency"],
@@ -426,7 +434,8 @@ async def check_retainers_that_stopped_billing(
     # It will not stay exact, which is why it is a caveat and not a comment.
     contract_rows = await pool.fetch(
         """
-        SELECT k.title,
+        SELECT k.id,
+               k.title,
                k.contract_value,
                k.start_date,
                k.end_date,
@@ -515,6 +524,9 @@ async def check_retainers_that_stopped_billing(
             continue
 
         contracts.append(reachable({
+            # Same reason as `schedule_ref` above: a contract TITLE repeats
+            # across customers and can be retitled.
+            "contract_ref": opaque_ref(row["id"]),
             "contract": row["title"],
             "bill_to": row["bill_to"] or "(customer name unavailable)",
             "contract_value": value,

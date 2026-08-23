@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 29 of the 61 assigned skills.
+Wired so far: 30 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -2035,6 +2035,74 @@ def _books_moved_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -
     delta["edited_value_ceiling"] = round(ceiling, 2)
 
 
+# ── check_retainers_that_stopped_billing ────────────────────────────────────
+#
+# Recurring schedules that will fail when the generator next runs, and live
+# contracts that billed nothing this period. Neither can be closed from here:
+# the handler "reports what the recurring generator WILL do, read off its code —
+# not what it did", and there is no history to consult because `ganit_recurring`
+# has no last-run column and no error column. A firm that has looked at a
+# stalled schedule and decided to leave it stalled — the client is on a break,
+# the work is paused — reads it again every run for ever.
+#
+# FINDINGS_AT — `due_soon` (schedules) and `contracts`. Two POPULATIONS in two
+#   tables, so folding costs nothing and stays on.
+#
+# IDENTITY — `schedule_ref` and `contract_ref`, both added to the handler here
+#   and both OPAQUE.
+#
+#   Neither list carried an id and neither had an alternative. A recurring
+#   schedule has no number and no title at all; a contract has a TITLE that
+#   repeats across customers and can be retitled; and `bill_to` on both is a
+#   customer NAME the handler itself sometimes cannot resolve, rendering "(no
+#   customer named on the schedule)" or "(customer name unavailable)" — the
+#   placeholder trap that `check_duplicate_vendor_bills` documents, which would
+#   collapse every nameless schedule into one key.
+#
+#   They are `opaque_ref(...)` rather than raw uuids because this output carries
+#   NO link — `reachable` is called with `kind="client"` and no entity_id — so
+#   an id here would be a bare uuid beside a customer name, which is exactly
+#   what `check-rendered-ids` exists to stop.
+#
+# MATERIAL — `amount_before_tax` for a schedule, `contract_value` and
+#   `invoiced_since_start` for a contract.
+#
+#   A schedule re-priced is a different schedule about to bill the wrong
+#   figure. On the contract side both numbers are needed and neither implies
+#   the other: `contract_value` is what was agreed and `invoiced_since_start`
+#   is what has gone out, and the whole finding is the gap between them.
+#
+#   NOT `invoices_in_period`. It counts invoices in THIS month, so it resets
+#   every month — a calendar-driven field wearing a count, and the second-worst
+#   thing that can be put in this bucket after a day counter.
+#
+#   NOT `faults` or `findings`. They are the derived reason lists, and a
+#   schedule can gain `next due more than one cycle in the past` purely because
+#   time passed. That is `days_past` reaching the material bucket through a
+#   list of strings.
+#
+# INCIDENTAL — `next_due`, `schedule_ends`, `last_invoice_from_this_schedule`,
+#   `runs` (all dates), `frequency`, `gst_rate_percent`, `bill_to`, `contract`.
+#
+# RECOMPUTE — `schedules_with_a_fault` and `contracts_with_a_finding`, the two
+#   counts that are lengths of these lists.
+#
+#   NOT `schedules_due_within_horizon` or `live_contracts_examined`, which are
+#   `len(due_rows)` and `len(contract_rows)` — the populations the handler
+#   deliberately reports beside the findings, because "healthy definitions are
+#   not listed" and the denominator is the only thing that stops an empty list
+#   reading as a clean generator. NOT `contracts_with_no_customer_to_check`,
+#   which counts contracts this check could not test at all.
+
+def _stopped_billing_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the two finding counts. The populations beside them are the point."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["schedules_with_a_fault"] = len(surviving.get("due_soon") or ())
+    counts["contracts_with_a_finding"] = len(surviving.get("contracts") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2532,6 +2600,22 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_books_moved_recompute,
         label_of=lambda f: f"{f.get('document')} — {f.get('customer')}",
+    ),
+
+    "check_retainers_that_stopped_billing": AckWiring(
+        findings_at=("due_soon", "contracts"),
+        identity_of=lambda f: {
+            "schedule_ref": f.get("schedule_ref"),
+            "contract_ref": f.get("contract_ref"),
+        },
+        material_of=lambda f: {
+            "amount_before_tax": f.get("amount_before_tax"),
+            "contract_value": f.get("contract_value"),
+            "invoiced_since_start": f.get("invoiced_since_start"),
+        },
+        recompute=_stopped_billing_recompute,
+        label_of=lambda f: (
+            f"{f.get('contract') or 'recurring schedule'} — {f.get('bill_to')}"),
     ),
 
     "check_late_suppliers": AckWiring(

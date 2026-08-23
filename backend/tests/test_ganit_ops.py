@@ -132,6 +132,9 @@ class _Pool:
 def _recurring(**kw):
     """One row in the shape the retainer query actually returns."""
     row = {
+        # `SELECT rec.*` carries the row id, and the handler hashes it into
+        # `schedule_ref` so an acknowledgement has something stable to key on.
+        "id": "11111111-0000-4000-8000-000000000001",
         "frequency": "monthly",
         "cycle_days": 31,
         "next_date": TODAY + timedelta(days=3),
@@ -156,6 +159,8 @@ def _recurring(**kw):
 
 def _contract(**kw):
     row = {
+        # Hashed into `contract_ref` — see `_recurring` above.
+        "id": "22222222-0000-4000-8000-000000000001",
         "title": "Annual Retainer FY26 — #20",
         "contract_value": 1126140,
         "start_date": date(2026, 4, 1),
