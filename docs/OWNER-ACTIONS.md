@@ -21,34 +21,21 @@ behind it.
 
 ## OPEN
 
-### 8. M needs a machine with the Android toolchain — this environment does not have one
+### 8. M · APK 2.0.4 built — cold-restart reproduction still owed
 
-**Status:** OPEN · nothing else in M is blocked, only these two pieces.
+**Status:** OPEN · only the live device test remains.
 
-This session finished H, J, L and the tenancy cutover's last piece, and fixed
-inbox 9 ("attendance stuck at waiting for send") by static code review — the
-bug was real: `attachPhotoKey` was only ever called from one place, and only
-on a successful upload, so a punch whose photo failed to upload at capture
-time (a phone with no signal — the exact case the offline queue exists for)
-had nothing that would ever retry it. Fixed and pushed, with 6 new tests.
+`build/Kartavaya-2.0.4-release.apk` — 63 MB, v2-signed, built from this
+machine's Android Studio JBR + SDK. Install it on a device and cold-restart
+to confirm the inbox 9 fix (retryPendingPhotoUploads) actually clears the
+stuck punch queue on a real phone.
 
-**What I could not do here, and why:** this environment has no JDK, no
-Android SDK, and no `adb` (checked at session start). Two things still need
-a machine that has them:
+**What you do:** install the APK on a test device, queue a punch with a
+failed photo upload (airplane mode at capture), restore connectivity, kill
+and reopen the app. The punch should clear.
 
-1. **Reproduce inbox 9 live**, cold-restart, against a real device or
-   emulator — hot reload lies on this app, and only a device confirms the fix
-   against the actual reported symptom rather than against the code alone.
-2. **Build the APK.** `bash mobile/scripts/build-apk.sh release` from
-   `mobile/`. A debug APK carries no JS bundle and is useless off the build
-   machine; the script also applies the metaspace bump a release build needs.
-
-**What you do:** run those two on a machine with the toolchain (or hand it to
-someone who has one), or say the word if you want a different plan — e.g.
-Railway/EAS cloud build instead of local.
-
-**What I finish once done:** nothing further from me — the code is already
-merged. This is the last step, not a handoff back into a workstream.
+**What I finish once done:** nothing — M is code-complete, this is
+verification only.
 
 ---
 
