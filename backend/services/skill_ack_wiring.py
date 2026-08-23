@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 5 of the 61 assigned skills.
+Wired so far: 6 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -184,6 +184,63 @@ def _entity_identity(f: Finding) -> dict:
 def _entity_label(f: Finding) -> str:
     entity = f.get("entity") or {}
     return f"{entity.get('label')} — {f.get('owner_name')}"
+
+
+# ── check_late_suppliers ────────────────────────────────────────────────
+#
+# Open purchase orders whose expected date has passed with quantity still
+# outstanding. It repeats until the goods arrive or somebody edits the
+# order, and the commonest real reason a firm wants it silenced is the one
+# the product cannot record: the supplier rang and said next Tuesday.
+#
+# IDENTITY — `purchase_order` ALONE, and this one is safe for a reason that
+#   lives in another module and must be said out loud. `po_number` is
+#   NULLABLE — migration 197 leaves it NULL until the order is ISSUED,
+#   because a serial spent on a draft is a gap in a numbered series. A key
+#   over a null number would collapse every draft into ONE finding_key and
+#   the first acknowledgement would hide all of them.
+#
+#   It cannot happen here because this handler filters
+#   `status = ANY(OPEN_STATUSES)` and `OPEN_STATUSES` is
+#   {issued, part_received, received} — no drafts, so every finding carries
+#   a number, and `ganit_purchase_orders_org_number_uq` makes it unique per
+#   org. The wiring is therefore correct because of a frozenset in
+#   `services/purchase_orders.py`; a test pins that constant so widening it
+#   to include drafts fails here rather than silently hiding orders.
+#
+#   NOT `vendor` — the same trap as `propose_payment_run`. The vendor name
+#   is joined from `ganit_vendors` and a renamed or replaced vendor record
+#   would re-key every one of that vendor's orders.
+#
+# MATERIAL — `qty_outstanding` and `order_value`. Somebody acknowledged an
+#   order with three units outstanding; six units outstanding, or an order
+#   amended from 40,000 to 90,000, is a new situation wearing an old
+#   number. Both come straight from the row (`qty_ordered - qty_received`
+#   is rounded once by the handler and passed through here unchanged) — the
+#   arithmetic is NOT redone in the lambda, because float subtraction inside
+#   a hash is how a state check reports movement that never happened.
+#
+# INCIDENTAL — `days_late` ticks with the calendar and is refused by
+#   `_DRIFT_FIELDS`. `expected_on` is incidental too, and that is a
+#   judgement rather than an obvious one: moving the expected date FORWARD
+#   removes the finding from the query altogether, and moving it backwards
+#   changes nothing about what is outstanding. `currency`, `vendor` and the
+#   contact keys are incidental for the usual reasons.
+#
+# RECOMPUTE — `counts.orders_late`, and NOTHING ELSE in that block.
+#   `could_not_check`, `open_without_an_expected_date`, `orders_total`,
+#   `orders_open`, `capped_at` and `was_capped` are measured against the
+#   whole population by a separate query and are not sums over the list;
+#   rebuilding them from the surviving findings would turn the denominator
+#   rule this handler is built on into a lie. `verdict` likewise: "could
+#   not check" is a statement about purchase orders existing, not about how
+#   many rows survived an acknowledgement.
+
+def _late_suppliers_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the ONE count that is a sum over the findings list."""
+    counts = out.get("counts")
+    if isinstance(counts, dict):
+        counts["orders_late"] = len(surviving)
 
 
 ACK_WIRING: dict[str, AckWiring] = {
@@ -377,6 +434,17 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=None,
         recompute=None,
         label_of=_entity_label,
+    ),
+
+    "check_late_suppliers": AckWiring(
+        findings_at="late",
+        identity_of=lambda f: {"purchase_order": f.get("purchase_order")},
+        material_of=lambda f: {
+            "qty_outstanding": f.get("qty_outstanding"),
+            "order_value": f.get("order_value"),
+        },
+        recompute=_late_suppliers_recompute,
+        label_of=lambda f: f"{f.get('purchase_order')} — {f.get('vendor')}",
     ),
 
     "propose_payment_run": AckWiring(
