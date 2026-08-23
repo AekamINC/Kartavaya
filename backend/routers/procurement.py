@@ -102,7 +102,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/procurement", tags=["procurement-purchase-orders"])
 
-_gate = require_module("ganit")
+_gate = require_module("kray")
 
 # Shared, never re-implemented. Two copies of a response contract is how one of
 # them ends up reporting a total the other does not, and the whole point of the

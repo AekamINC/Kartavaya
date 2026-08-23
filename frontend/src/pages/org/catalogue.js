@@ -60,6 +60,7 @@ export const ORG_MODULES = [
   { code: 'graha',   label: 'Graha',   hi: 'ग्रह',   en: 'CRM',        blurb: 'Contacts, deals and pipelines.' },
   { code: 'vikray',  label: 'Vikray',  hi: 'विक्रय', en: 'Sales',      blurb: 'Orders, stock and targets.' },
   { code: 'ganit',   label: 'Ganit',   hi: 'गणित',  en: 'Finance',    blurb: 'Invoices, GST, expenses and payables.', sensitive: true },
+  { code: 'kray',    label: 'Kray',    hi: 'क्रय',  en: 'Procurement', blurb: 'Purchase orders, vendors and approvals.', sensitive: true },
   { code: 'vetana',  label: 'Vetana',  hi: 'वेतन',  en: 'Payroll',    blurb: 'Salary structures and payroll runs.', sensitive: true },
   { code: 'manav',   label: 'Manav',   hi: 'मानव',  en: 'HRMS',       blurb: 'Employee records, leave and assets.', sensitive: true },
   { code: 'prachar', label: 'Prachar', hi: 'प्रचार', en: 'Marketing',  blurb: 'Campaigns, posts and channels.' },

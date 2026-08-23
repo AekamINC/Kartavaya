@@ -63,7 +63,7 @@ BUNDLED_MODULES = {"sahayak", "esign"}
 # `pahchan` is here because its rows are face-match scores and selfies against a
 # named employee — biometric-adjacent data that is at least as sensitive as the
 # HR file it attaches to, and the standing constraints already single it out.
-SENSITIVE_MODULES = {"vetana", "ganit", "manav", "pahchan"}
+SENSITIVE_MODULES = {"vetana", "ganit", "manav", "pahchan", "kray"}
 
 # Which modules each platform role may reach now lives in ONE file. It used to be
 # hardcoded tuples here and in four other modules; adding a role meant finding

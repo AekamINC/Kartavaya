@@ -371,7 +371,7 @@ HR_MODULES: frozenset[str] = frozenset({"manav", "vetana"})
 #: is not a module code, and renaming those is a data migration for no gain.
 ALL_MODULES: frozenset[str] = frozenset({
     "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
-    "ganit", "esign", "varta", "pahchan", "manav", "vetana",
+    "ganit", "esign", "varta", "pahchan", "manav", "vetana", "kray",
 })
 
 #: ── THE RENAME, AND WHY THERE IS NO ALIAS HERE ANY MORE ─────────────────────
@@ -515,7 +515,7 @@ SAHAYAK_COMMERCIAL_ROLES: tuple[str, ...] = (
 #: Modules whose grants are withheld by default when a member is added without an
 #: explicit list. Broader than HR_MODULES: it adds `ganit`, the org's finances.
 #: Payroll, personnel files and the books are not handed out by omission.
-SENSITIVE_MODULES: frozenset[str] = HR_MODULES | {"ganit"}
+SENSITIVE_MODULES: frozenset[str] = HR_MODULES | {"ganit", "kray"}
 
 
 # ── Tier 2: org roles ─────────────────────────────────────────────────────────
@@ -614,7 +614,7 @@ LADDER_MODULES: frozenset[str] = ALL_MODULES | {"kartavya"}
 #: membership, so the next module has to be classified to land.
 HIERARCHICAL_MODULES: frozenset[str] = frozenset({
     "kartavya", "graha", "vikray", "prachar", "dristi", "sahayak", "sanvaad",
-    "esign", "manav", "pahchan", "varta",
+    "esign", "manav", "pahchan", "varta", "kray",
 })
 
 #: Modules where APPROVER AND ADMIN ARE NOT A HIERARCHY.

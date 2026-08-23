@@ -23,7 +23,7 @@ from limiter import limiter
 from middleware.module_levels import require_level
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import APPROVER
-from middleware.subscription import require_module
+from middleware.subscription import require_module, require_any_module
 from services.audit_actors import actor_joins, actor_select
 from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
@@ -42,6 +42,7 @@ from utils import assert_file_url, assert_file_urls, next_doc_number
 router = APIRouter(prefix="/api/v1/ganit", tags=["ganit-invoicing"])
 
 _gate = require_module("ganit")
+_payables_gate = require_any_module("ganit", "kray")
 
 # F4 (b). Shared with graha.py rather than re-implemented: two copies of a
 # response contract is how one of them ends up reporting a total the other does
@@ -2395,6 +2396,8 @@ async def create_invoice_from_deal(
 
 
 # ── Vendors & Vendor Bills (Accounts Payable) ────────────────
+# Payables is a SHARED SURFACE: a firm with only Kray (procurement) must see
+# vendors and vendor bills too, so these endpoints gate on either module.
 
 def _checked_gstin(raw: str | None) -> str:
     """Validate a vendor GSTIN, or raise 400 naming the specific fault.
@@ -2420,7 +2423,7 @@ async def list_vendors(
     search: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
     q = "SELECT * FROM staging.ganit_vendors WHERE org_id=$1::uuid AND is_active=TRUE"
@@ -2438,7 +2441,7 @@ async def create_vendor(
     body: VendorCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
     gstin = _checked_gstin(body.gstin)
@@ -2456,7 +2459,7 @@ async def update_vendor(
     body: VendorUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
     updates, vals = [], []
@@ -2489,7 +2492,7 @@ async def list_vendor_bills(
     vendor_id: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
     q = (
@@ -2514,7 +2517,7 @@ async def list_vendor_bills(
 async def payables_summary(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
     totals = await pool.fetchrow(
@@ -2545,7 +2548,7 @@ async def get_vendor_bill(
     bill_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -2569,7 +2572,7 @@ async def create_vendor_bill(
     body: VendorBillCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
 ):
     # A scanned bill is the largest file this module handles and
     # `attachment_url` is the whole of its storage: one client-supplied string
@@ -2614,7 +2617,7 @@ async def record_vendor_payment(
     body: VendorBillPayment,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_payables_gate),
     _a=Depends(_approver),
 ):
     pool = await get_pool()

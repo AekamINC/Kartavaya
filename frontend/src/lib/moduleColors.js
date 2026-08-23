@@ -20,6 +20,7 @@
 export const MODULES = {
   graha:     { color: 'var(--m-graha)',     en: 'CRM',        hi: 'ग्रह',     route: '/graha' },
   ganit:     { color: 'var(--m-ganit)',     en: 'Finance',    hi: 'गणित',    route: '/ganit' },
+  kray:      { color: 'var(--m-kray)',      en: 'Procurement', hi: 'क्रय',    route: '/kray' },
   manav:     { color: 'var(--m-manav)',     en: 'HRMS',       hi: 'मानव',    route: '/manav' },
   vikray:    { color: 'var(--m-vikray)',    en: 'Sales',      hi: 'विक्रय',  route: '/vikray' },
   vetana:    { color: 'var(--m-vetana)',    en: 'Payroll',    hi: 'वेतन',    route: '/vetana' },

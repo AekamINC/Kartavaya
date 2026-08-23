@@ -75,6 +75,7 @@ export const NAV_FULL = [
       { key: 'graha', to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्रह',    gu: 'ગ્રહ',   module: 'graha' },
       { key: 'vikray', to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },
       { key: 'ganit', to: '/ganit',   icon: 'ganit',   en: 'Finance',   hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
+      { key: 'kray',  to: '/kray',    icon: 'kray',    en: 'Procurement', hi: 'क्रय',   gu: 'ક્રય',   module: 'kray' },
     ],
   },
   {

@@ -36,6 +36,7 @@
   --m-boards:    #4F5BA6;
   --m-approvals: #5A7A33;
   --m-reports:   #2F7268;
+  --m-kray:      #7A5C2E;
 }
 [data-theme="dark"] {
   --m-graha:     #8FB8DC;
@@ -53,6 +54,7 @@
   --m-boards:    #A8B2E4;
   --m-approvals: #ADC97E;
   --m-reports:   #85C6BA;
+  --m-kray:      #D4B87A;
 }
 
 /* ── Module header ─────────────────────────────────────────────────────────

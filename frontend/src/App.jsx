@@ -89,6 +89,7 @@ const OrgSahayakPage         = lazyPage(() => import('./pages/OrgSahayakPage'));
 const GrahaModule           = lazyPage(() => import('./pages/graha/GrahaModule'));
 const GrahaDealRoute        = lazyPage(() => import('./pages/graha/DealRoute'));
 const GanitPage             = lazyPage(() => import('./pages/GanitPage'));
+const KrayPage              = lazyPage(() => import('./pages/KrayPage'));
 const ManavPage             = lazyPage(() => import('./pages/ManavPage'));
 const VikrayModule          = lazyPage(() => import('./pages/vikray/VikrayModule'));
 const VikrayOrderRoute      = lazyPage(() => import('./pages/vikray/OrderRoute'));
@@ -321,6 +322,7 @@ function AppRouter() {
             <Route path="deals/:dealId"        element={<GrahaDealRoute />} />
           </Route>
           <Route path="ganit"                  element={<GanitPage />} />
+          <Route path="kray"                   element={<KrayPage />} />
           <Route path="manav"                  element={<ManavPage />} />
           {/* Same shape, same reasons — a sales order was an id in
               `VikrayPage.openOrderId` and nothing else. */}
