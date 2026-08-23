@@ -669,12 +669,13 @@ async def create_org(
         async with conn.transaction():
             await conn.execute(
                 "INSERT INTO staging.organisations "
-                "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
+                "(id, team_id, name, owner_user_id, email, r2_account_id, r2_access_key_id, "
                 " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
                 " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)",
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)",
                 org_id, team_id, body.name,
                 owner["user_id"] if owner else None,
+                body.owner_email.lower(),
                 r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
                 storage_limit, body.markup_pct, monthly_credits, monthly_price,
                 body.max_users, body.is_platform_org,

@@ -77,6 +77,7 @@ const ALL_MODULES = [
   { code: 'ganit', label: 'Ganit · Invoicing', sensitive: true },
   { code: 'manav', label: 'Manav · HRMS', sensitive: true },
   { code: 'vetana', label: 'Vetana · Payroll', sensitive: true },
+  { code: 'kray', label: 'Kray · Procurement', sensitive: true },
 ];
 
 const PLANS = [
@@ -199,7 +200,7 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
       open={open}
       onClose={onClose}
       title="New organisation"
-      subtitle="The owner must already have an account — orgs are attached to a person, not created empty."
+      subtitle="The owner becomes the point of contact and org owner. If they have no account yet, an invitation is sent."
       footer={(
         <>
           <Button variant="fill" disabled={busy === 'create' || blocked} onClick={submit}>
@@ -213,7 +214,7 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
         <Field label="Organisation name" htmlFor="co-name">
           {p => <Input {...p} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Acme & Co" />}
         </Field>
-        <Field label="Owner email" htmlFor="co-owner" hint="Must be a registered user.">
+        <Field label="Owner email" htmlFor="co-owner" hint="Becomes the org owner and point of contact. Invited if not yet registered.">
           {p => <Input {...p} type="email" value={form.owner_email} onChange={e => setForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="ca@acme.in" />}
         </Field>
         <Field label="Plan" htmlFor="co-plan">

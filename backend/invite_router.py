@@ -258,7 +258,8 @@ class UserOut(BaseModel):
     member_role: Optional[str] = None
     receives_approval_emails: Optional[bool] = True
     avatar: Optional[str] = None
-    # provider intentionally omitted — OAuth provider type is internal metadata
+    org_name: Optional[str] = None
+    org_id: Optional[str] = None
     created_at: datetime
 
 
@@ -292,16 +293,25 @@ async def list_users(pool=Depends(get_pool), admin=Depends(_require_admin)):
     """
     caller_orgs = await _org_ids_for(pool, admin["user_id"])
     rows = await pool.fetch(
-        """SELECT user_id, email, name, full_name, role, position, company_name,
-                  member_role, receives_approval_emails, avatar, created_at
+        """SELECT u.user_id, u.email, u.name, u.full_name, u.role, u.position,
+                  u.company_name, u.member_role, u.receives_approval_emails,
+                  u.avatar, u.created_at,
+                  o.name AS org_name, o.id::text AS org_id
            FROM users u
+           LEFT JOIN LATERAL (
+               SELECT r.org_id
+               FROM staging.user_roles r
+               WHERE r.user_id = u.user_id AND r.org_id IS NOT NULL
+               LIMIT 1
+           ) lr ON TRUE
+           LEFT JOIN staging.organisations o ON o.id = lr.org_id
            WHERE EXISTS (SELECT 1 FROM staging.user_roles r
                           WHERE r.user_id = u.user_id
                             AND r.org_id = ANY($1::uuid[]))
               OR NOT EXISTS (SELECT 1 FROM staging.user_roles r2
                               WHERE r2.user_id = u.user_id
                                 AND r2.org_id IS NOT NULL)
-           ORDER BY created_at DESC""",
+           ORDER BY u.created_at DESC""",
         list(caller_orgs),
     )
     return [UserOut(**dict(r)) for r in rows]

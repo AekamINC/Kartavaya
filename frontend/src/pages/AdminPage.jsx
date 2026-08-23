@@ -84,7 +84,7 @@ const R2_PROJECT_COLUMNS = [
 const ACCOUNT_COLUMNS = [
   { id: 'person', label: 'Person', fixed: true },
   { id: 'type', label: 'Account type' },
-  { id: 'company', label: 'Company' },
+  { id: 'org', label: 'Organisation' },
   { id: 'joined', label: 'Joined' },
   { id: 'actions', label: 'Actions', sr: true, fixed: true },
 ];
@@ -569,6 +569,7 @@ export default function AdminPage() {
   const [err, setErr] = useState(null);
 
   const [q, setQ] = useState('');
+  const [orgFilter, setOrgFilter] = useState('');
   const [teamQ, setTeamQ] = useState('');
   const [invite, setInvite] = useState(EMPTY_INVITE);
   const [sending, setSending] = useState(false);
@@ -626,12 +627,22 @@ export default function AdminPage() {
     [invites],
   );
 
+  const orgOptions = useMemo(() => {
+    const map = new Map();
+    for (const u of users) {
+      if (u.org_id && u.org_name) map.set(u.org_id, u.org_name);
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [users]);
+
   const shownUsers = useMemo(() => {
+    let list = users;
+    if (orgFilter) list = list.filter(u => u.org_id === orgFilter);
     const needle = q.trim().toLowerCase();
-    if (!needle) return users;
-    return users.filter(u => [u.full_name, u.name, u.email, u.company_name, u.member_role]
+    if (!needle) return list;
+    return list.filter(u => [u.full_name, u.name, u.email, u.org_name, u.member_role]
       .some(f => String(f || '').toLowerCase().includes(needle)));
-  }, [users, q]);
+  }, [users, q, orgFilter]);
 
   const shownTeams = useMemo(() => {
     if (teams === null) return null;
@@ -779,10 +790,21 @@ export default function AdminPage() {
       <div className="apg__tools">
         <Input
           aria-label="Search accounts"
-          placeholder="Name, email or company…"
+          placeholder="Name, email or organisation…"
           value={q}
           onChange={e => setQ(e.target.value)}
         />
+        <select
+          className="k-select k-select--sm"
+          aria-label="Filter by organisation"
+          value={orgFilter}
+          onChange={e => setOrgFilter(e.target.value)}
+        >
+          <option value="">All organisations</option>
+          {orgOptions.map(([id, name]) => (
+            <option key={id} value={id}>{name}</option>
+          ))}
+        </select>
         <span className="apg__spacer" />
         <span className="apg__secn">{shownUsers.length} of {users.length}</span>
         <ColumnsButton cols={accountCols} />
@@ -819,7 +841,7 @@ export default function AdminPage() {
                           </Cell>
                         ),
                         type: <Cell><Tag color={ACCOUNT_TONE[u.role] || ACCOUNT_TONE.member}>{u.role}</Tag></Cell>,
-                        company: <Cell>{u.company_name || '—'}</Cell>,
+                        org: <Cell>{u.org_name || '—'}</Cell>,
                         joined: <Cell>{fmtDate(u.created_at)}</Cell>,
                         actions: (
                           <Cell>
