@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 18 of the 61 assigned skills.
+Wired so far: 19 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -1265,6 +1265,68 @@ def _approvals_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> 
         1 for i in live if i.get("aged_past_escalation"))
 
 
+# ── check_quotation_expiry ──────────────────────────────────────────────────
+#
+# Open quotations against their validity date, with a three-beat chase and a
+# lapsed list. It "DRAFTS, IT DOES NOT SEND": no message goes out, no reminder
+# row is written and no status changes — so a quote chased by telephone, or one
+# the customer has already declined verbally, sits on the list until somebody
+# marks it, and the handler says as much ("A quote accepted verbally and never
+# marked accepted will still be chased").
+#
+# FINDINGS_AT — `chase_due_now`, `chase_not_yet_due`, `already_lapsed` and
+#   `open_without_validity`, with LISTS_ARE_ONE_POPULATION. Every open quotation
+#   is in exactly one, and it walks from `chase_not_yet_due` to `chase_due_now`
+#   to `already_lapsed` on the calendar alone. Folding the list name would
+#   orphan the acknowledgement twice on the way through, which is the ladder
+#   failure `check_chase_ladder` documents.
+#
+# IDENTITY — `quotation_id`, already emitted by the handler. NOT
+#   `quotation_number`, which is a document number a firm can correct, and NOT
+#   `customer`: `staging.crm_accounts` is empty, so the customer name is blank
+#   on every row this skill can currently produce.
+#
+# MATERIAL — `amount` and `status`. A quote re-priced from 40,000 to 90,000 is a
+#   different offer under the same number, and a move between the open states is
+#   a real change in where the deal stands. Both come straight off the row.
+#
+# INCIDENTAL — `days_until_expiry` and `days_since_expiry`, and NEITHER IS IN
+#   `_DRIFT_FIELDS`: the frozenset holds `days_until` and `days_left`, not these
+#   two spellings, so nothing would have raised. They are the second entry in
+#   this file where the guard does not fire and the judgement has to stand on
+#   its own.
+#
+#   `valid_until` is incidental too, which is worth stating: extending a quote's
+#   validity moves it back down the beats, and with the population partitioned
+#   that move is already free. Hashing the date would void the acknowledgement
+#   for an extension that made the finding LESS urgent.
+#
+#   `beat`, `beat_name`, `first_beat_on`, `why`, `suggested_action` and `draft`
+#   are all derived from the date; `deal` and `currency` are labels.
+#
+# RECOMPUTE — the three counts that are sums over the lists this wiring
+#   filters: `chase_due_now`, `chase_not_yet_due`, `already_lapsed`.
+#
+#   NOT `open_without_a_validity_date`, and this one is a trap worth naming: it
+#   sits beside the other three and reads like a fourth list length, but the
+#   handler takes it from the CENSUS query (`totals`), not from
+#   `len(no_validity)`. Rebuilding it from the surviving list would quietly
+#   convert a population figure into a filtered one. `quotations_recorded`,
+#   `open_and_sent_to_customer`, `drafts_never_sent`, `already_closed`,
+#   `coverage` and the cap are census too — and on this skill the census is the
+#   whole point, because the table is empty in every live org and an empty
+#   result must never read as "nothing is expiring".
+
+def _quotation_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the three beat counts. The validity count is a CENSUS — see above."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["chase_due_now"] = len(surviving.get("chase_due_now") or ())
+    counts["chase_not_yet_due"] = len(surviving.get("chase_not_yet_due") or ())
+    counts["already_lapsed"] = len(surviving.get("already_lapsed") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1607,6 +1669,16 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=None,
         recompute=_approvals_recompute,
         label_of=lambda f: f"{f.get('what')} — {f.get('project')}",
+        lists_are_one_population=True,
+    ),
+
+    "check_quotation_expiry": AckWiring(
+        findings_at=("chase_due_now", "chase_not_yet_due", "already_lapsed",
+                     "open_without_validity"),
+        identity_of=lambda f: {"quotation_id": f.get("quotation_id")},
+        material_of=lambda f: {"amount": f.get("amount"), "status": f.get("status")},
+        recompute=_quotation_recompute,
+        label_of=lambda f: f"{f.get('quotation_number')} — {f.get('customer')}",
         lists_are_one_population=True,
     ),
 
