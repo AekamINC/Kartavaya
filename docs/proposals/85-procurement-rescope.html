@@ -58,7 +58,7 @@
     background: var(--bg);
     color: var(--text);
     line-height: 1.65;
-    max-width: 720px;
+    max-width: 760px;
     margin: 0 auto;
     padding: 3rem 1.5rem 4rem;
   }
@@ -67,6 +67,7 @@
   h1 { font-size: 1.75rem; font-weight: 700; margin: 0 0 .5rem; }
   h2 { font-size: 1.25rem; font-weight: 600; margin: 2.5rem 0 .75rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
   h3 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 .5rem; }
+  h4 { font-size: .92rem; font-weight: 600; margin: 1rem 0 .4rem; color: var(--text-2); }
 
   .meta { color: var(--text-3); font-size: .82rem; margin-bottom: 2rem; }
   .hi { font-family: 'Noto Sans Devanagari', sans-serif; color: var(--text-3); }
@@ -105,6 +106,7 @@
   .tag--move { background: var(--surface-2); color: var(--text-2); }
   .tag--keep { background: var(--surface-2); color: var(--ok); }
   .tag--drop { background: var(--surface-2); color: var(--danger); }
+  .tag--share { background: #dbeafe; color: #1e40af; }
 
   table {
     width: 100%;
@@ -145,7 +147,7 @@
     flex-shrink: 0;
   }
 
-  ul { padding-left: 1.2em; margin: .4rem 0; }
+  ul, ol { padding-left: 1.2em; margin: .4rem 0; }
   li { margin: .25rem 0; }
   li::marker { color: var(--text-3); }
 
@@ -157,128 +159,415 @@
     font-size: .9rem;
   }
 
+  .decision {
+    border-left: 3px solid var(--accent);
+    padding: .6rem 1rem;
+    background: var(--surface);
+    margin: .75rem 0;
+    font-size: .9rem;
+  }
+
   .overflow-x { overflow-x: auto; }
+
+  details { margin: .5rem 0; }
+  details summary { cursor: pointer; font-weight: 500; color: var(--text-2); font-size: .9rem; }
+  details summary:hover { color: var(--text); }
+  details[open] summary { color: var(--text); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: .75rem 0; }
+  @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .kpi { text-align: center; padding: .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+  .kpi-val { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .kpi-label { font-size: .78rem; color: var(--text-3); margin-top: .2rem; }
 </style>
 
 <h1>Procurement as its own module <span class="hi">क्रय</span></h1>
-<p class="meta">Proposal 85 &middot; rescope &middot; 23 August 2026</p>
+<p class="meta">Proposal 85 &middot; rescope &middot; 23 August 2026 &middot; supersedes proposal 77's placement decision</p>
+
+<h2>The problem</h2>
 
 <p>
-  Purchase orders currently live as two tabs inside Finance (Ganit). Proposal 77 put them there to avoid minting a module code, but the consequence is that procurement is invisible in the sidebar, ungrantable independently, and impossible to sell separately. This proposal moves it out.
+  Procurement today is two tabs inside Finance (Ganit), gated on <code>require_module("ganit")</code>. Proposal 77 put it there to avoid minting a module code. The consequences:
 </p>
+<ul>
+  <li><strong>Invisible.</strong> No sidebar entry. A user who needs purchase orders must know to click Finance first, then scroll past invoices, clients, contacts, products, and expenses to find the 7th tab.</li>
+  <li><strong>Ungrantable.</strong> You cannot give a procurement manager access to purchase orders without giving them access to invoices, bank reconciliation, contracts, and e-sign.</li>
+  <li><strong>Unsellable.</strong> A construction firm that needs purchasing but not invoicing must buy the entire Finance module.</li>
+  <li><strong>No KPIs on entry.</strong> Committed spend, budget utilisation, late suppliers, and TDS 194Q warnings are buried behind a tab inside a tab.</li>
+  <li><strong>Vendor management is scattered.</strong> Vendors live in ganit.py (CRUD at lines 2426–2477) but purchase orders reference them from procurement.py. A vendor's complete picture — bills, payments, orders, receipts, three-way match — spans two modules with no unified view.</li>
+</ul>
 
-<h2>What changes</h2>
+<h2>What this proposal does</h2>
+
+<p>Create a standalone module <code>kray</code> (<strong>क्रय</strong>, Sanskrit for "purchase" — the buy side of <code>vikray</code>/<strong>विक्रय</strong>, sell) with its own sidebar entry, its own page, its own tabs, its own entitlement, and a complete procurement scope.</p>
+
+<h2>Module scope: what Kray owns</h2>
+
+<p>Kray owns the <strong>purchase-to-pay cycle</strong> — everything from the decision to buy through receiving to the three-way match. Ganit owns what happens after: the vendor bill, the payment, and the ledger entry.</p>
+
+<h3>Tab structure</h3>
+
+<div class="overflow-x">
+<table>
+  <tr><th>#</th><th>Tab</th><th>What it shows</th><th>Source</th><th>Action</th></tr>
+  <tr>
+    <td class="r">1</td>
+    <td><strong>Purchase orders</strong></td>
+    <td>All POs with status filter, create form, committed spend stats. The main workhorse.</td>
+    <td><code>PurchaseOrdersTab.jsx</code></td>
+    <td><span class="tag tag--move">move from ganit</span></td>
+  </tr>
+  <tr>
+    <td class="r">2</td>
+    <td><strong>Vendors</strong></td>
+    <td>Vendor list with GSTIN, contact info, total orders, total billed, payment status. Create/edit vendor. Vendor detail drawer showing: all POs for this vendor, all bills, all payments, three-way match summary.</td>
+    <td><code>VendorsTab.jsx</code> (new)<br><code>VendorDetail.jsx</code> (new)</td>
+    <td><span class="tag tag--new">new tab</span></td>
+  </tr>
+  <tr>
+    <td class="r">3</td>
+    <td><strong>Payables</strong></td>
+    <td>Vendor bills (the existing payables tab, which is the vendor-bill list + create form + ageing buckets + payment recording). Moved here because vendor bills are the other side of a PO — they belong with the purchase, not with the invoice.</td>
+    <td><code>PayablesTab.jsx</code><br><code>VendorBillDetail.jsx</code></td>
+    <td><span class="tag tag--move">move from ganit</span></td>
+  </tr>
+  <tr>
+    <td class="r">4</td>
+    <td><strong>Approvals</strong></td>
+    <td>Approval queue + three exception reports (late suppliers, GRNI, TDS 194Q).</td>
+    <td><code>POApprovalsTab.jsx</code></td>
+    <td><span class="tag tag--move">move from ganit</span></td>
+  </tr>
+  <tr>
+    <td class="r">5</td>
+    <td><strong>Budgets</strong></td>
+    <td>Departmental budgets vs committed spend. Budget limits, utilisation bars, alerts when a department crosses threshold. Currently a settings sub-panel + one report endpoint — promoted to a real tab.</td>
+    <td><code>BudgetsTab.jsx</code> (new)</td>
+    <td><span class="tag tag--new">new tab</span></td>
+  </tr>
+  <tr>
+    <td class="r">6</td>
+    <td><strong>Reports</strong></td>
+    <td>Consolidated procurement reports: committed spend, received-not-invoiced (GRNI accrual), late suppliers, TDS 194Q warning, vendor spend analysis, PO ageing.</td>
+    <td><code>KrayReportsTab.jsx</code> (new)</td>
+    <td><span class="tag tag--new">new tab</span></td>
+  </tr>
+  <tr>
+    <td class="r">7</td>
+    <td><strong>Settings</strong></td>
+    <td>PO prefix, approval rules with named approvers, receiving tolerance, close-short reasons, budget config. Currently the POSettingsPanel inside the PO tab — promoted to a top-level tab.</td>
+    <td><code>POSettingsPanel.jsx</code> &rarr; <code>KraySettingsTab.jsx</code></td>
+    <td><span class="tag tag--move">promote</span></td>
+  </tr>
+</table>
+</div>
+
+<h3>KPI strip (on entry)</h3>
+
+<div class="grid-2">
+  <div class="kpi"><div class="kpi-val">&#8377;12.4L</div><div class="kpi-label">committed spend (open orders)</div></div>
+  <div class="kpi"><div class="kpi-val">3</div><div class="kpi-label">pending approvals</div></div>
+  <div class="kpi"><div class="kpi-val">2</div><div class="kpi-label">late suppliers</div></div>
+  <div class="kpi"><div class="kpi-val">&#8377;48.2L</div><div class="kpi-label">unpaid vendor bills</div></div>
+</div>
+<p style="font-size:.82rem; color:var(--text-3); text-align:center;">Illustrative — actual data from <code>/v1/procurement/reports/*</code> and <code>/v1/ganit/payables-summary</code>.</p>
+
+<h2>The vendor question</h2>
+
+<div class="decision">
+  <strong>Decision required:</strong> Where does vendor CRUD live?
+</div>
+
+<p>Vendors (<code>ganit_vendors</code>) currently live in <code>ganit.py</code> at three endpoints: list, create, update (lines 2426–2477). Both procurement and ganit read them. Three options:</p>
 
 <div class="card">
-  <h3>1. New module code: <code>kray</code> <span class="tag tag--new">new</span></h3>
-  <p>
-    <strong>क्रय</strong> (kray) — Sanskrit for "purchase", consistent with the naming convention (ganit, vikray, graha, manav, vetana, etc.). Added to <code>ALL_MODULES</code>, <code>HIERARCHICAL_MODULES</code>, and <code>LADDER_MODULES</code> in <code>role_tiers.py</code>.
-  </p>
+  <h3>Option A: Vendors move to Kray entirely <span class="tag tag--move">move</span></h3>
+  <p>Vendor CRUD moves to <code>procurement.py</code>, gated on <code>kray</code>. Ganit reads vendors (for bill creation) via a shared read endpoint or cross-module call. <strong>Pros:</strong> vendors are a purchasing concern — you buy from them. The vendor detail naturally shows POs, receipts, bills, payments. <strong>Cons:</strong> an org with ganit but not kray can no longer create vendors. Requires a shared vendor-read endpoint.</p>
 </div>
 
 <div class="card">
-  <h3>2. Own sidebar entry <span class="tag tag--new">new</span></h3>
-  <p>
-    Under the <strong>Revenue &middot; राजस्व</strong> section, after Finance:
-  </p>
-  <table>
-    <tr><th>Key</th><th>Route</th><th>English</th><th>Hindi</th><th>Module</th></tr>
-    <tr><td>graha</td><td>/graha</td><td>CRM</td><td>ग्रह</td><td>graha</td></tr>
-    <tr><td>vikray</td><td>/vikray</td><td>Sales</td><td>विक्रय</td><td>vikray</td></tr>
-    <tr><td>ganit</td><td>/ganit</td><td>Finance</td><td>गणित</td><td>ganit</td></tr>
-    <tr><td><strong>kray</strong></td><td><strong>/kray</strong></td><td><strong>Procurement</strong></td><td><strong>क्रय</strong></td><td><strong>kray</strong></td></tr>
-  </table>
+  <h3>Option B: Vendors stay in Ganit, Kray reads them <span class="tag tag--keep">keep</span></h3>
+  <p>Vendor CRUD stays in <code>ganit.py</code>. Kray's Vendors tab is a <strong>read + enriched view</strong> (vendor list with PO data, spend data, three-way match) that calls <code>/v1/ganit/vendors</code> for the base list and enriches with procurement data. <strong>Pros:</strong> no migration of ownership. Ganit remains self-sufficient. <strong>Cons:</strong> two modules rendering the same entity. Creating a vendor from inside Kray means calling ganit's endpoint.</p>
 </div>
 
 <div class="card">
-  <h3>3. Own page: <code>KrayPage.jsx</code> <span class="tag tag--new">new</span></h3>
-  <p>
-    Same module-page pattern as every other module (ModuleHeader, ModuleTabs, KpiStrip). Three tabs:
-  </p>
-  <table>
-    <tr><th>Tab</th><th>Source</th><th>Action</th></tr>
-    <tr><td>Purchase orders</td><td><code>PurchaseOrdersTab.jsx</code></td><td><span class="tag tag--move">move</span></td></tr>
-    <tr><td>Approvals</td><td><code>POApprovalsTab.jsx</code></td><td><span class="tag tag--move">move</span></td></tr>
-    <tr><td>Settings</td><td>Inline (settings button stays in the PO tab)</td><td><span class="tag tag--keep">keep</span></td></tr>
-  </table>
+  <h3>Option C: Vendors become shared infrastructure <span class="tag tag--share">shared</span></h3>
+  <p>Vendor CRUD moves to a shared router (<code>/api/v1/vendors</code>) gated on <code>kray OR ganit</code> — either module entitles vendor management. Both Kray and Ganit render vendor views in their own context. <strong>Pros:</strong> cleanest ownership — vendors are a first-class entity, not an appendage. <strong>Cons:</strong> new router, new endpoint prefix.</p>
 </div>
+
+<p><strong>Recommendation: Option A.</strong> A vendor is fundamentally who you buy from. Bills and payments are what you owe them. The ownership line is: Kray owns the vendor and the order; Ganit owns the bill and the payment. An org that has neither module has no vendors.</p>
+
+<h2>What moves out of Ganit</h2>
+
+<div class="overflow-x">
+<table>
+  <tr><th>Surface</th><th>Current location</th><th>Destination</th><th>Notes</th></tr>
+  <tr><td>Purchase orders tab</td><td>GanitPage tab 6</td><td>KrayPage tab 1</td><td>Existing <code>PurchaseOrdersTab.jsx</code></td></tr>
+  <tr><td>PO approvals tab</td><td>GanitPage tab 7</td><td>KrayPage tab 4</td><td>Existing <code>POApprovalsTab.jsx</code></td></tr>
+  <tr><td>Payables tab</td><td>GanitPage tab 8</td><td>KrayPage tab 3</td><td>Existing <code>PayablesTab.jsx</code> + <code>VendorBillDetail.jsx</code></td></tr>
+  <tr><td>Vendor CRUD</td><td><code>ganit.py</code> lines 2426–2477</td><td><code>procurement.py</code></td><td>If Option A is chosen</td></tr>
+  <tr><td>Vendor bill CRUD</td><td><code>ganit.py</code> lines 2497–2663</td><td><code>procurement.py</code></td><td>Create bill, record payment, link/unlink PO</td></tr>
+  <tr><td>PO settings panel</td><td>Inside PurchaseOrdersTab</td><td>KrayPage tab 7 (Settings)</td><td>Promoted from sub-panel to top-level</td></tr>
+</table>
+</div>
+
+<h2>What stays in Ganit</h2>
+
+<ul>
+  <li><strong>Invoices</strong> — outbound billing, the receivables side.</li>
+  <li><strong>Clients &amp; contacts</strong> — CRM overlap; stays with invoices.</li>
+  <li><strong>Products catalogue</strong> — shared between invoices and POs via <code>/v1/products</code>. Neither module "owns" it; it stays where it is.</li>
+  <li><strong>Expenses</strong> — employee expense claims, not vendor purchases.</li>
+  <li><strong>Contracts</strong> — document management, not procurement.</li>
+  <li><strong>E-sign</strong> — document signing; unrelated.</li>
+  <li><strong>Collections</strong> — receivables follow-up.</li>
+  <li><strong>Recurring invoices</strong> — outbound billing automation.</li>
+  <li><strong>Bank reconciliation</strong> — reads vendor payments but doesn't own the vendor.</li>
+  <li><strong>Timesheet</strong> — time tracking for billing.</li>
+  <li><strong>Stats &amp; Analytics</strong> — DSO, collection rates, ageing.</li>
+</ul>
+
+<p>After the move, GanitPage drops from 16 tabs to <strong>12 tabs</strong>: invoices, clients, contacts, products, expenses, contracts, e-sign, collections, recurring, bank, timesheet, stats/analytics.</p>
+
+<h2>Cross-module seams</h2>
+
+<p>The purchase-to-pay cycle spans two modules. These are the integration points:</p>
+
+<div class="overflow-x">
+<table>
+  <tr><th>Seam</th><th>Kray side</th><th>Ganit side</th><th>How it works</th></tr>
+  <tr>
+    <td><strong>Bill linking</strong></td>
+    <td>PO exists, has lines and receipts</td>
+    <td>Vendor bill carries <code>po_id</code></td>
+    <td><code>POST /v1/procurement/vendor-bills/{id}/link</code> — already in procurement.py. Writes <code>ganit_vendor_bills.po_id</code>. Both modules can read the link.</td>
+  </tr>
+  <tr>
+    <td><strong>Three-way match</strong></td>
+    <td>Ordered qty + received qty (PO + receipts)</td>
+    <td>Billed qty (vendor bill lines)</td>
+    <td><code>GET /v1/procurement/purchase-orders/{id}/match</code> — already in procurement.py. Reads across both table sets.</td>
+  </tr>
+  <tr>
+    <td><strong>MSME acceptance date</strong></td>
+    <td>First receipt date</td>
+    <td><code>ganit_vendor_bills.acceptance_date</code></td>
+    <td>Recording a receipt writes the acceptance date on linked bills. Already implemented in the <code>record_receipt</code> endpoint.</td>
+  </tr>
+  <tr>
+    <td><strong>Vendor payments</strong></td>
+    <td>Vendor detail shows payment status</td>
+    <td><code>ganit_vendor_payments</code> table</td>
+    <td>Kray reads vendor payment data for enriched views. Ganit owns the payment recording (bank reconciliation).</td>
+  </tr>
+  <tr>
+    <td><strong>Products</strong></td>
+    <td>PO lines reference products</td>
+    <td>Invoice lines reference products</td>
+    <td>Shared <code>/v1/products</code> endpoint. One catalogue, both modules read it.</td>
+  </tr>
+  <tr>
+    <td><strong>TDS 194Q</strong></td>
+    <td>Warning at PO time</td>
+    <td>Deduction at payment time</td>
+    <td>Report reads from both <code>ganit_vendor_bills</code> (purchased YTD) and <code>ganit_purchase_orders</code> (on order). The warning lives in Kray; the actual deduction is a Ganit concern.</td>
+  </tr>
+</table>
+</div>
+
+<h2>Backend changes</h2>
+
+<h3>Module registration</h3>
 
 <div class="card">
-  <h3>4. Backend gate: <code>require_module("kray")</code> <span class="tag tag--move">move</span></h3>
-  <p>
-    <code>procurement.py</code> currently gates on <code>require_module("ganit")</code>. Change to <code>require_module("kray")</code>. The router prefix <code>/api/v1/procurement</code> stays unchanged — the URL names the domain, the gate names the entitlement.
-  </p>
+  <p>In <code>backend/middleware/role_tiers.py</code>:</p>
+  <ul>
+    <li>Add <code>"kray"</code> to <code>ALL_MODULES</code> frozenset</li>
+    <li>Add <code>"kray"</code> to <code>HIERARCHICAL_MODULES</code> (supports viewer/editor/approver levels)</li>
+    <li><code>LADDER_MODULES</code> inherits from <code>ALL_MODULES</code> automatically</li>
+  </ul>
 </div>
+
+<h3>Router changes</h3>
 
 <div class="card">
-  <h3>5. Remove from GanitPage <span class="tag tag--drop">drop</span></h3>
-  <p>
-    Remove the <code>['purchase orders', PurchaseOrdersTab]</code> and <code>['po approvals', POApprovalsTab]</code> entries from <code>GanitPage.jsx</code>'s TABS array. Finance keeps its 14 remaining tabs.
-  </p>
+  <h4>procurement.py</h4>
+  <ul>
+    <li><code>_gate = require_module("ganit")</code> &rarr; <code>_gate = require_module("kray")</code></li>
+    <li>Move vendor CRUD from <code>ganit.py</code> (3 endpoints: list, create, update)</li>
+    <li>Move vendor bill CRUD from <code>ganit.py</code> (list, detail, create, record payment)</li>
+    <li>New endpoint: <code>GET /v1/procurement/vendors/{id}/summary</code> — unified vendor view with PO count, open orders, billed total, paid total, outstanding, three-way match health</li>
+    <li>New endpoint: <code>GET /v1/procurement/reports/vendor-spend</code> — spend by vendor with YTD, MTD, open commitments</li>
+    <li>New endpoint: <code>GET /v1/procurement/reports/po-ageing</code> — open POs bucketed by age (current, 1-30, 31-60, 61-90, 90+ days)</li>
+  </ul>
+
+  <h4>ganit.py</h4>
+  <ul>
+    <li>Remove vendor CRUD (lines 2426–2477) — ONLY if Option A is chosen</li>
+    <li>Remove vendor bill CRUD (lines 2497–2663) — bills belong with the vendor</li>
+    <li>Keep vendor payment recording in bank reconciliation context (the payment already exists, bank just matches it)</li>
+    <li>Vendor reads for invoice creation: add a thin read-only proxy or accept that the frontend calls the kray endpoint</li>
+  </ul>
 </div>
 
-<h2>The migration</h2>
+<h3>Approval levels</h3>
 
-<p>Staging and production share one database, so entitlement rows must exist before the gate changes. Order matters.</p>
+<p>The existing approval design is preserved unchanged. Approval is NOT gated on <code>require_level("kray", APPROVER)</code>. The PO approval rule names specific people in settings — the module entitlement gate would refuse the very people the firm nominated. <code>may_approve</code> enforces the firm's own rule; the module gate only checks the viewer has <code>kray</code> access at all.</p>
+
+<h3>Editor-level gating</h3>
+
+<p>Same position as ganit: ordinary writes are NOT raised to <code>editor</code> level. Every existing <code>ganit</code> grant predates the level column or defaults to <code>viewer</code>. Since kray entitlements are seeded by copying ganit rows, the same problem applies. Tightening needs the grant-level backfill first.</p>
+
+<h2>Frontend changes</h2>
+
+<h3>New files</h3>
+
+<div class="overflow-x">
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>frontend/src/pages/KrayPage.jsx</code></td><td>Module page shell: ModuleHeader, ModuleTabs, KpiStrip. 7 tabs.</td></tr>
+  <tr><td><code>frontend/src/pages/kray/VendorsTab.jsx</code></td><td>Vendor list + create form. Shows PO count, total ordered, total billed, outstanding.</td></tr>
+  <tr><td><code>frontend/src/pages/kray/VendorDetail.jsx</code></td><td>Vendor detail drawer: contact info, all POs, all bills, all payments, three-way match summary.</td></tr>
+  <tr><td><code>frontend/src/pages/kray/BudgetsTab.jsx</code></td><td>Budget management: department list, limits, utilisation bars, overspend alerts.</td></tr>
+  <tr><td><code>frontend/src/pages/kray/KrayReportsTab.jsx</code></td><td>Report chooser: committed spend, GRNI, late suppliers, TDS 194Q, vendor spend, PO ageing.</td></tr>
+  <tr><td><code>frontend/src/pages/kray/KraySettingsTab.jsx</code></td><td>Promoted from POSettingsPanel. PO prefix, approval rules, receiving tolerance, close reasons, budget config.</td></tr>
+</table>
+</div>
+
+<h3>Moved files (directory change)</h3>
+
+<div class="overflow-x">
+<table>
+  <tr><th>From</th><th>To</th></tr>
+  <tr><td><code>pages/procurement/PurchaseOrdersTab.jsx</code></td><td><code>pages/kray/PurchaseOrdersTab.jsx</code></td></tr>
+  <tr><td><code>pages/procurement/PurchaseOrderDetail.jsx</code></td><td><code>pages/kray/PurchaseOrderDetail.jsx</code></td></tr>
+  <tr><td><code>pages/procurement/POApprovalsTab.jsx</code></td><td><code>pages/kray/POApprovalsTab.jsx</code></td></tr>
+  <tr><td><code>pages/procurement/POSettingsPanel.jsx</code></td><td><code>pages/kray/KraySettingsTab.jsx</code></td></tr>
+  <tr><td><code>pages/procurement/_shared.jsx</code></td><td><code>pages/kray/_shared.jsx</code></td></tr>
+  <tr><td><code>pages/ganit/PayablesTab.jsx</code></td><td><code>pages/kray/PayablesTab.jsx</code></td></tr>
+  <tr><td><code>pages/ganit/VendorBillDetail.jsx</code></td><td><code>pages/kray/VendorBillDetail.jsx</code></td></tr>
+</table>
+</div>
+
+<h3>Modified files</h3>
+
+<div class="overflow-x">
+<table>
+  <tr><th>File</th><th>Change</th></tr>
+  <tr><td><code>GanitPage.jsx</code></td><td>Remove 3 tabs (purchase orders, po approvals, payables) + their imports. 16 &rarr; 12 tabs remaining (invoices drop to position after contacts).</td></tr>
+  <tr><td><code>navConfig.js</code></td><td>Add <code>kray</code> entry in Revenue section after ganit.</td></tr>
+  <tr><td><code>navIcons.js</code></td><td>Add kray icon (shopping bag or cart glyph).</td></tr>
+  <tr><td><code>moduleColors.js</code></td><td>Add <code>kray: 'var(--m-kray)'</code> + define <code>--m-kray</code> token in editorial.css.</td></tr>
+  <tr><td><code>App.jsx</code></td><td>Add <code>/kray</code> route pointing to <code>KrayPage</code>.</td></tr>
+  <tr><td><code>pages/org/catalogue.js</code></td><td>Add kray to module catalogue (name, description, icon).</td></tr>
+</table>
+</div>
+
+<h2>Database tables</h2>
+
+<p>No table renames. Table names are storage identifiers, not module codes. The <code>ganit_</code> prefix on procurement tables is historical, not semantic.</p>
+
+<div class="overflow-x">
+<table>
+  <tr><th>Table</th><th>Module owner</th><th>Read by</th></tr>
+  <tr><td><code>ganit_purchase_orders</code></td><td>Kray</td><td>Kray, Ganit (three-way match)</td></tr>
+  <tr><td><code>ganit_po_lines</code></td><td>Kray</td><td>Kray</td></tr>
+  <tr><td><code>ganit_po_receipts</code></td><td>Kray</td><td>Kray</td></tr>
+  <tr><td><code>ganit_po_approvals</code></td><td>Kray</td><td>Kray</td></tr>
+  <tr><td><code>ganit_po_revisions</code></td><td>Kray</td><td>Kray</td></tr>
+  <tr><td><code>ganit_po_settings</code></td><td>Kray</td><td>Kray</td></tr>
+  <tr><td><code>ganit_vendors</code></td><td>Kray (Option A) / Ganit (Option B)</td><td>Kray, Ganit, Documents</td></tr>
+  <tr><td><code>ganit_vendor_bills</code></td><td>Kray</td><td>Kray, Ganit (bank recon), Documents</td></tr>
+  <tr><td><code>ganit_vendor_payments</code></td><td>Ganit (bank recon owns writes)</td><td>Kray (read for vendor summary)</td></tr>
+  <tr><td><code>ganit_products</code></td><td>Shared (products router)</td><td>Kray, Ganit, Vikray</td></tr>
+</table>
+</div>
+
+<h2>Migration plan</h2>
+
+<p>Staging and production share one database. Entitlement rows must exist before the gate changes. Order is non-negotiable.</p>
 
 <div class="steps">
-  <div class="step"><span><strong>Migration 214:</strong> insert <code>kray</code> into <code>staging.module_subscriptions</code> for every org that currently holds <code>ganit</code>. This is a read-only addition — no existing behaviour changes.</span></div>
-  <div class="step"><span><strong>Migration 214 (same file):</strong> copy every <code>staging.org_member_modules</code> row where <code>module_code = 'ganit'</code> as a <code>'kray'</code> row at the same level. Everyone who can see Finance can see Procurement on day one.</span></div>
-  <div class="step"><span><strong>Deploy backend</strong> with <code>require_module("kray")</code> in <code>procurement.py</code> and <code>"kray"</code> in <code>ALL_MODULES</code>.</span></div>
-  <div class="step"><span><strong>Deploy frontend</strong> with <code>KrayPage</code>, the new nav entry, and the two tabs removed from Ganit.</span></div>
+  <div class="step"><span><strong>Migration 214a — seed module entitlements.</strong> INSERT <code>kray</code> into <code>staging.module_subscriptions</code> for every org that currently holds <code>ganit</code>. Additive, zero-risk.</span></div>
+  <div class="step"><span><strong>Migration 214b — seed member entitlements.</strong> For every <code>staging.org_member_modules</code> row where <code>module_code = 'ganit'</code>, INSERT a <code>'kray'</code> row at the same level. Everyone who has Finance can see Procurement on day one. Also additive.</span></div>
+  <div class="step"><span><strong>Deploy backend.</strong> <code>require_module("kray")</code> in procurement.py, <code>"kray"</code> in ALL_MODULES. Vendor + bill endpoints moved. The old ganit vendor endpoints return 404 (if removed) or redirect.</span></div>
+  <div class="step"><span><strong>Deploy frontend.</strong> KrayPage live, GanitPage loses 3 tabs, new nav entry visible.</span></div>
 </div>
 
 <div class="risk">
-  <strong>Shared-DB risk:</strong> steps 1–2 are additive INSERT statements — they cannot break existing behaviour. The danger window is between step 3 (backend gates on <code>kray</code>) and step 2 (rows exist). If the backend deploys first without the migration, the route 403s for everyone. <strong>Apply migration before deploying the backend.</strong>
+  <strong>Shared-DB risk:</strong> Steps 1–2 are additive INSERTs — they cannot break existing behaviour. The danger window is between step 3 (backend gates on <code>kray</code>) and step 2 (entitlement rows exist). If the backend deploys first without the migration, <code>/v1/procurement/*</code> returns 403 for everyone. <strong>Always apply migration before deploying the backend.</strong>
+</div>
+
+<div class="risk">
+  <strong>Vendor endpoint move risk:</strong> If vendor CRUD moves from <code>/v1/ganit/vendors</code> to <code>/v1/procurement/vendors</code>, any frontend page still calling the old endpoint gets a 404. The frontend deploy must happen in the SAME deploy cycle as the backend, or the old endpoints must stay as redirects during the transition.
 </div>
 
 <h2>What this unlocks</h2>
 
 <ul>
-  <li><strong>Grantable independently.</strong> An org that does books but not purchasing can turn off <code>kray</code> without losing <code>ganit</code>. An org that only does purchasing (construction, manufacturing) can subscribe without paying for invoicing.</li>
-  <li><strong>Visible in the sidebar.</strong> A module that has no sidebar entry is a module nobody finds. The whole reason procurement "wasn't there" was that it was buried behind Finance's 16th tab.</li>
-  <li><strong>Separately sellable.</strong> A plan can include or exclude <code>kray</code> the way it does <code>esign</code> or <code>prachar</code>.</li>
-  <li><strong>Own KPI strip.</strong> Committed spend, open orders, late suppliers, and 194Q warnings surface on entry — not after clicking through Finance.</li>
+  <li><strong>Grantable independently.</strong> An org that does books but not purchasing can turn off <code>kray</code> without losing <code>ganit</code>. A construction firm can subscribe to procurement without paying for invoicing.</li>
+  <li><strong>Visible in the sidebar.</strong> Procurement is no longer the 7th tab inside someone else's module.</li>
+  <li><strong>Separately sellable.</strong> Plans can include/exclude <code>kray</code> independently, like <code>esign</code> or <code>prachar</code>.</li>
+  <li><strong>Own KPI strip.</strong> Committed spend, pending approvals, late suppliers, and unpaid bills surface immediately on module entry.</li>
+  <li><strong>Unified vendor view.</strong> One tab that shows everything about a vendor: orders, receipts, bills, payments, three-way match health. No more jumping between Finance tabs.</li>
+  <li><strong>First-class budgets.</strong> Department budgets promoted from a settings sub-panel to a real tab with utilisation tracking and overspend alerts.</li>
+  <li><strong>Consolidated reports.</strong> All procurement reports in one place: committed spend, GRNI accrual, late suppliers, TDS 194Q, vendor spend analysis, PO ageing.</li>
+  <li><strong>Ganit gets simpler.</strong> Finance drops from 16 tabs to 12. The remaining tabs are purely about invoicing, collections, banking, and the outbound money.</li>
 </ul>
-
-<h2>What stays the same</h2>
-
-<ul>
-  <li>The API prefix <code>/api/v1/procurement/*</code> — no URL changes.</li>
-  <li>The database tables (<code>ganit_purchase_orders</code>, <code>ganit_po_lines</code>, <code>ganit_po_receipts</code>, <code>ganit_po_revisions</code>, <code>ganit_po_approvals</code>) — table names are not module codes.</li>
-  <li>Vendor management stays in Ganit (<code>ganit_vendors</code>) — procurement reads vendors but doesn't own them.</li>
-  <li>Bill linking stays cross-module — a vendor bill in Ganit can still link to a PO in Kray.</li>
-  <li>The product catalogue stays shared (<code>ganit_products</code>) — one catalogue, many surfaces.</li>
-  <li>All existing settings, approval rules, and data — zero data migration.</li>
-</ul>
-
-<h2>Files touched</h2>
-
-<div class="overflow-x">
-<table>
-  <tr><th>File</th><th>Change</th></tr>
-  <tr><td><code>backend/middleware/role_tiers.py</code></td><td>Add <code>"kray"</code> to <code>ALL_MODULES</code>, <code>HIERARCHICAL_MODULES</code></td></tr>
-  <tr><td><code>backend/routers/procurement.py</code></td><td><code>_gate = require_module("kray")</code></td></tr>
-  <tr><td><code>backend/migrations/214_kray_module.sql</code></td><td>Entitlement rows for every existing ganit org</td></tr>
-  <tr><td><code>frontend/src/pages/KrayPage.jsx</code></td><td>New module page (same pattern as GanitPage)</td></tr>
-  <tr><td><code>frontend/src/pages/GanitPage.jsx</code></td><td>Remove two tab entries + imports</td></tr>
-  <tr><td><code>frontend/src/components/layout/navConfig.js</code></td><td>Add kray entry in revenue section</td></tr>
-  <tr><td><code>frontend/src/lib/moduleColors.js</code></td><td>Add <code>kray</code> entry with colour token</td></tr>
-  <tr><td><code>frontend/src/App.jsx</code></td><td>Add <code>/kray</code> route</td></tr>
-  <tr><td><code>frontend/src/components/layout/navIcons.js</code></td><td>Add kray icon</td></tr>
-  <tr><td><code>frontend/src/pages/org/catalogue.js</code></td><td>Add kray to the module catalogue</td></tr>
-</table>
-</div>
 
 <h2>Naming decision</h2>
 
 <table>
   <tr><th>Candidate</th><th>Sanskrit</th><th>Notes</th></tr>
-  <tr><td><strong>kray</strong></td><td>क्रय</td><td>Purchase/buying. Mirrors <em>vikray</em> (selling). One syllable. Reads naturally beside the others.</td></tr>
+  <tr><td><strong>kray</strong></td><td>क्रय</td><td>Purchase/buying. Mirrors <em>vikray</em> (selling). One syllable. Etymologically paired.</td></tr>
   <tr><td>kharid</td><td>खरीद</td><td>Hindi/Urdu, not Sanskrit. Breaks the naming pattern.</td></tr>
   <tr><td>procurement</td><td>—</td><td>English. Every other module code is transliterated Sanskrit.</td></tr>
+  <tr><td>kray-vikray pair</td><td>क्रय-विक्रय</td><td>The pair is a common Hindi phrase meaning "buying and selling" / "trade". The symmetry is immediately obvious to any Hindi speaker.</td></tr>
 </table>
 
 <p>
-  <strong>Recommendation: <code>kray</code></strong> — it is the buy side of <code>vikray</code> (sell), which is exactly what procurement is. The pairing is both etymologically correct and easy to remember.
+  <strong>Recommendation: <code>kray</code></strong> — it is the buy side of <code>vikray</code> (sell), which is exactly what procurement is. The pairing is both etymologically correct and immediately recognisable.
 </p>
+
+<h2>Files touched — complete list</h2>
+
+<div class="overflow-x">
+<table>
+  <tr><th>File</th><th>Change</th></tr>
+  <tr><td><code>backend/middleware/role_tiers.py</code></td><td>Add <code>"kray"</code> to <code>ALL_MODULES</code>, <code>HIERARCHICAL_MODULES</code></td></tr>
+  <tr><td><code>backend/routers/procurement.py</code></td><td><code>_gate = require_module("kray")</code>; absorb vendor + bill CRUD; new endpoints for vendor summary, vendor spend, PO ageing</td></tr>
+  <tr><td><code>backend/routers/ganit.py</code></td><td>Remove vendor CRUD (2426–2477), vendor bill CRUD (2497–2663); keep vendor-payment in bank recon</td></tr>
+  <tr><td><code>backend/services/purchase_orders.py</code></td><td>No changes — already module-agnostic</td></tr>
+  <tr><td><code>backend/migrations/214_kray_module.sql</code></td><td>Seed <code>module_subscriptions</code> + <code>org_member_modules</code> for every ganit org</td></tr>
+  <tr><td><code>frontend/src/pages/KrayPage.jsx</code></td><td>New module page: 7 tabs, KpiStrip</td></tr>
+  <tr><td><code>frontend/src/pages/kray/VendorsTab.jsx</code></td><td>New: vendor list + create + enriched view</td></tr>
+  <tr><td><code>frontend/src/pages/kray/VendorDetail.jsx</code></td><td>New: vendor drawer with POs, bills, payments, match</td></tr>
+  <tr><td><code>frontend/src/pages/kray/BudgetsTab.jsx</code></td><td>New: department budgets, utilisation bars</td></tr>
+  <tr><td><code>frontend/src/pages/kray/KrayReportsTab.jsx</code></td><td>New: consolidated report chooser</td></tr>
+  <tr><td><code>frontend/src/pages/kray/KraySettingsTab.jsx</code></td><td>Promoted from POSettingsPanel</td></tr>
+  <tr><td><code>frontend/src/pages/kray/PurchaseOrdersTab.jsx</code></td><td>Move from <code>pages/procurement/</code></td></tr>
+  <tr><td><code>frontend/src/pages/kray/PurchaseOrderDetail.jsx</code></td><td>Move from <code>pages/procurement/</code></td></tr>
+  <tr><td><code>frontend/src/pages/kray/POApprovalsTab.jsx</code></td><td>Move from <code>pages/procurement/</code></td></tr>
+  <tr><td><code>frontend/src/pages/kray/PayablesTab.jsx</code></td><td>Move from <code>pages/ganit/</code></td></tr>
+  <tr><td><code>frontend/src/pages/kray/VendorBillDetail.jsx</code></td><td>Move from <code>pages/ganit/</code></td></tr>
+  <tr><td><code>frontend/src/pages/kray/_shared.jsx</code></td><td>Move from <code>pages/procurement/</code> + merge bill shared constants</td></tr>
+  <tr><td><code>frontend/src/pages/GanitPage.jsx</code></td><td>Remove 3 tab entries + imports (16 &rarr; 12 tabs)</td></tr>
+  <tr><td><code>frontend/src/components/layout/navConfig.js</code></td><td>Add kray entry in revenue section</td></tr>
+  <tr><td><code>frontend/src/components/layout/navIcons.js</code></td><td>Add kray icon</td></tr>
+  <tr><td><code>frontend/src/lib/moduleColors.js</code></td><td>Add <code>kray</code> entry with colour token</td></tr>
+  <tr><td><code>frontend/src/App.jsx</code></td><td>Add <code>/kray</code> route</td></tr>
+  <tr><td><code>frontend/src/pages/org/catalogue.js</code></td><td>Add kray to module catalogue</td></tr>
+  <tr><td><code>frontend/src/components/editorial.css</code></td><td>Add <code>--m-kray</code> colour token</td></tr>
+</table>
+</div>
+
+<h2>Open questions for owner</h2>
+
+<ol>
+  <li><strong>Vendor ownership</strong> — Option A (move to kray), B (stay in ganit), or C (shared router)?</li>
+  <li><strong>Module colour</strong> — what hue for <code>--m-kray</code>? Suggestion: a teal/dark cyan to distinguish from ganit's existing colour, evoking purchasing/logistics.</li>
+  <li><strong>Sidebar icon</strong> — shopping bag, cart, or package glyph?</li>
+  <li><strong>Section placement</strong> — Revenue section (beside vikray/ganit) or a new "Operations" section?</li>
+  <li><strong>Vendor bill CRUD</strong> — does it move to kray (recommended: bills belong with the vendor) or stay in ganit (bills are payables, payables are finance)?</li>
+</ol>
