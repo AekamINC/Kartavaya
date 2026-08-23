@@ -396,16 +396,26 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
     )
 
 
-def generate_invoice_pdf(invoice: dict, org: dict, contact: dict = None) -> bytes:
+def generate_invoice_pdf(
+    invoice: dict, org: dict, contact: dict = None,
+    compliance_states: dict = None,
+) -> bytes:
     """Render an invoice to a PDF byte string via WeasyPrint.
 
     Raises `services.doc_validation.DocumentIncomplete` — before WeasyPrint is
     even imported — when the document is missing a mandatory particular. The
     check runs here rather than in the router so that every caller is covered,
     not only the download endpoint.
+
+    `compliance_states` is the org's resolved `ganit` compliance settings
+    (`services/compliance_settings.py::resolve_states`) — optional, and
+    unchanged (GSTIN/HSN gaps always advisory) for any caller that omits it,
+    which today is `recurring_invoice_generator.py` and
+    `scripts/render_documents.py`. `routers/ganit.py`'s download route
+    resolves and passes it.
     """
     invoice, org, contact = invoice or {}, org or {}, contact or {}
-    check = validate_tax_invoice(invoice, org, contact)
+    check = validate_tax_invoice(invoice, org, contact, compliance_states=compliance_states)
     check.raise_if_incomplete()
     # `doc_render.render_pdf` is the single PDF path for the whole set. It
     # catches OSError as well as ImportError, because WeasyPrint imports fine

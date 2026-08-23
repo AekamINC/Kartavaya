@@ -154,16 +154,32 @@ def _addr_blank(addr: Any) -> bool:
 
 # ── Tax invoice ──────────────────────────────────────────────────────────────
 
-def validate_tax_invoice(invoice: dict, org: dict, contact: dict | None = None) -> DocumentCheck:
+def validate_tax_invoice(
+    invoice: dict, org: dict, contact: dict | None = None,
+    compliance_states: dict | None = None,
+) -> DocumentCheck:
     """Rule 46 particulars for a Ganit invoice.
 
     Applies the tax-document rules only to `tax_invoice` / `credit_note` /
     `debit_note`. A quotation or proforma gets the identity checks and nothing
     else, because it is not a tax document.
+
+    `compliance_states` is the org's resolved `module_compliance_settings`
+    for `ganit` (`services/compliance_settings.py`), keyed by rule_key —
+    `{"gstin_required": "applicable", "hsn_required": "enforced", ...}`.
+    Omitted or missing keys default to `"applicable"`, which reproduces the
+    hardcoded behaviour this function had before workstream H: GSTIN and HSN
+    gaps are always advisory, never blocking, for every org. A firm can now
+    move either to `"not_applicable"` (the gap disappears — a composition
+    dealer charging no GST) or `"enforced"` (the gap blocks issuance), but
+    nothing changes for an org that has never touched the setting.
     """
     invoice = invoice or {}
     org = org or {}
     contact = contact or {}
+    states = compliance_states or {}
+    gstin_state = states.get("gstin_required", "applicable")
+    hsn_state = states.get("hsn_required", "applicable")
 
     inv_type = (invoice.get("invoice_type") or "").strip()
     is_tax_doc = inv_type in TAX_DOCUMENT_TYPES
@@ -218,20 +234,22 @@ def validate_tax_invoice(invoice: dict, org: dict, contact: dict | None = None) 
 
     # ── tax-document particulars ────────────────────────────────────────────
     if is_tax_doc:
-        if _blank(org.get("gstin")):
-            # ADVISORY, not blocking. Owner's ruling 2026-08-03: GST registration
-            # is not mandatory below the turnover threshold, so a real supplier
-            # may legitimately have no GSTIN — and blocking would stop that firm
-            # from invoicing at all, which is a worse failure than an incomplete
-            # document. It renders with the `.unset` treatment instead, so the
-            # gap is visible on the document rather than invented or hidden.
-            chk.advisory.append(Gap(
+        if _blank(org.get("gstin")) and gstin_state != "not_applicable":
+            # ADVISORY by default (owner's ruling 2026-08-03: GST registration
+            # is not mandatory below the turnover threshold, and blocking would
+            # stop a real, unregistered supplier from invoicing at all, which
+            # is worse than an incomplete document). `not_applicable` above
+            # skips this gap entirely — the firm has said GST does not apply
+            # to them, which is a fact, not a workaround. `enforced` below
+            # promotes it to blocking for a firm that wants the guardrail.
+            gap = Gap(
                 "org.gstin", "Supplier GSTIN",
                 "Absent on a supplier below the registration threshold, which is "
                 "normal. If you ARE registered, the document fails e-invoice "
                 "validation and blocks the recipient's input tax credit without it.",
                 _ORG_PROFILE_FIX,
-            ))
+            )
+            (chk.blocking if gstin_state == "enforced" else chk.advisory).append(gap)
 
         # HSN/SAC per line. Rule 46(g). This is the same defect GSTR-3B is
         # designed to surface by name; the previous renderer printed an em-dash
@@ -240,31 +258,35 @@ def validate_tax_invoice(invoice: dict, org: dict, contact: dict | None = None) 
             i for i, li in enumerate(invoice.get("line_items") or [], 1)
             if _blank((li or {}).get("hsn_code")) and _blank((li or {}).get("sac_code"))
         ]
-        if missing_hsn:
+        if missing_hsn and hsn_state != "not_applicable":
             shown = ", ".join(str(i) for i in missing_hsn[:8])
             more = f" (+{len(missing_hsn) - 8} more)" if len(missing_hsn) > 8 else ""
-            # ADVISORY, not blocking. Owner's ruling 2026-08-20, and the same
-            # ruling GSTIN got above: a missing particular must not stop a firm
-            # from invoicing. Refusing the document does not produce the HSN
-            # code — it produces an unbilled supply, which is the worse of the
-            # two failures and the one the firm feels immediately.
+            # ADVISORY by default (owner's ruling 2026-08-20): a missing
+            # particular must not stop a firm from invoicing — refusing the
+            # document does not produce the HSN code, it produces an unbilled
+            # supply. `not_applicable` above skips the gap outright.
+            # `enforced` below promotes it to blocking, for a firm that would
+            # rather be stopped than file an incomplete return.
             #
-            # This is NOT a decision to file an incomplete return. The gap
-            # survives with somewhere to land: `check_gstr1_readiness`
-            # (services/skills/data/gst_readiness.py) names every invoice in
-            # this state before a filing, and the GSTR-1 builder still holds
-            # these back rather than filing them — 60 live invoices today. So
-            # the code is chased on the filing screen, where a preparer is
-            # already looking at the return, instead of at the counter while
-            # somebody waits for a bill.
-            chk.advisory.append(Gap(
+            # At `applicable` this is NOT a decision to file an incomplete
+            # return either: the gap survives with somewhere to land —
+            # `check_gstr1_readiness` (services/skills/data/gst_readiness.py)
+            # names every invoice in this state before a filing, and the
+            # GSTR-1 builder still holds these back rather than filing them.
+            gap = Gap(
                 "invoice.line_items.hsn_code", "HSN/SAC code",
                 f"Rule 46(g) — every line needs an HSN or SAC code. "
-                f"Line {shown}{more} has neither. The invoice issues; it is held "
-                f"back from GSTR-1 until the code is filled, and appears in the "
-                f"GSTR-1 readiness worklist until then.",
+                f"Line {shown}{more} has neither. "
+                + (
+                    "The invoice cannot be issued until every line has one."
+                    if hsn_state == "enforced" else
+                    "The invoice issues; it is held back from GSTR-1 until the "
+                    "code is filled, and appears in the GSTR-1 readiness "
+                    "worklist until then."
+                ),
                 _INVOICE_FIX,
-            ))
+            )
+            (chk.blocking if hsn_state == "enforced" else chk.advisory).append(gap)
 
         # The tax split must not contradict itself. `18-documents.md`: IGST or
         # CGST+SGST as separate lines, never a merged "GST".

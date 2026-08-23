@@ -351,7 +351,12 @@ async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_
             str(contact_id), org_id,
         )
 
-    check = validate_tax_invoice(invoice, org_d, dict(contact) if contact else None)
+    from services.compliance_settings import resolve_states
+    compliance_states = await resolve_states(pool, org_id, "ganit")
+    check = validate_tax_invoice(
+        invoice, org_d, dict(contact) if contact else None,
+        compliance_states=compliance_states,
+    )
     if not check.ok:
         raise HTTPException(422, check.as_payload())
 
@@ -836,11 +841,14 @@ async def get_invoice(
             items = json.loads(items)
         except (TypeError, ValueError):
             items = []
+    from services.compliance_settings import resolve_states
     from services.doc_validation import validate_tax_invoice
+    compliance_states = await resolve_states(pool, org_id, "ganit")
     check = validate_tax_invoice(
         {**inv, "line_items": items if isinstance(items, list) else [],
          "invoice_date": str(inv.get("invoice_date") or "")},
         org_d, contact,
+        compliance_states=compliance_states,
     )
 
     return {
@@ -944,8 +952,12 @@ async def download_invoice_pdf(
         from services.storage import sign_key
         org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
 
+    from services.compliance_settings import resolve_states
+    compliance_states = await resolve_states(pool, org_id, "ganit")
     try:
-        pdf_bytes = await asyncio.to_thread(generate_invoice_pdf, invoice, org_dict, contact)
+        pdf_bytes = await asyncio.to_thread(
+            generate_invoice_pdf, invoice, org_dict, contact, compliance_states,
+        )
     except DocumentIncomplete as e:
         # Not a server failure — the document is legally incomplete and we
         # refuse to emit one that looks finished. 422 with every missing field

@@ -1238,6 +1238,102 @@ async def acknowledge_notice(
     }
 
 
+# ── Per-employee consent — the data principal, not the account ───────────────
+# `staging.pahchan_employee_consents` (migration 209). `/notice/ack` above
+# records that an ACCOUNT saw the notice UI; most employees have none
+# (measured live: 25 of 27 Unicode Group employees have no login), so the
+# DPDP question — did THIS EMPLOYEE consent to biometric processing, and by
+# what method — needed a path that does not require one. An admin records
+# what was actually obtained (a paper form, a witnessed verbal declination),
+# never fabricates a tap the employee never made.
+
+class EmployeeConsentBody(BaseModel):
+    employee_id: UUID
+    method: str = Field(..., pattern="^(paper|verbal_witnessed)$")
+    #: False is an opt-out, not a missing record — see migration 209.
+    consented: bool
+    note: Optional[str] = Field(None, max_length=2000)
+    notice_version: str = Field(PAHCHAN_NOTICE_VERSION, min_length=1, max_length=_NOTICE_VERSION_MAX)
+
+
+@router.post("/consent")
+async def record_employee_consent(
+    body: EmployeeConsentBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """An admin records what consent was actually obtained from one employee.
+
+    Gated the same as viewing another person's biometrics — recording
+    someone's consent (or opt-out) on their behalf is exactly that class of
+    action, not a lesser one.
+    """
+    pool = await get_pool()
+    if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
+        raise HTTPException(403, "Only an org admin can record consent for another person")
+
+    emp = await pool.fetchrow(
+        "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(body.employee_id), org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.pahchan_employee_consents "
+        "  (org_id, employee_id, notice_version, method, consented, recorded_by, note) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7) "
+        "ON CONFLICT (org_id, employee_id, notice_version) DO UPDATE SET "
+        "  method=EXCLUDED.method, consented=EXCLUDED.consented, "
+        "  recorded_by=EXCLUDED.recorded_by, recorded_at=NOW(), note=EXCLUDED.note "
+        "RETURNING id, employee_id, notice_version, method, consented, recorded_by, recorded_at, note",
+        org_id, str(body.employee_id), body.notice_version, body.method,
+        body.consented, user["user_id"], body.note,
+    )
+
+    audit(
+        "pahchan.employee_consent_recorded", request, org_id=org_id, user_id=user["user_id"],
+        resource_type="pahchan_employee_consent", resource_id=str(body.employee_id),
+        detail={"method": body.method, "consented": body.consented, "notice_version": body.notice_version},
+        severity="warn",
+    )
+    return dict(row)
+
+
+@router.get("/consent")
+async def list_employee_consents(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
+        raise HTTPException(403, "Only an org admin can view consent records")
+    rows = await pool.fetch(
+        "SELECT c.employee_id, e.name AS employee_name, c.notice_version, c.method, "
+        "c.consented, c.recorded_by, c.recorded_at, c.note "
+        "FROM staging.pahchan_employee_consents c "
+        "JOIN staging.manav_employees e ON e.id = c.employee_id "
+        "WHERE c.org_id=$1::uuid ORDER BY c.recorded_at DESC",
+        org_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def _employee_opted_out(pool, employee_id: str) -> bool:
+    """True if this employee's MOST RECENT recorded consent (any notice
+    version) declined. A newer opt-in supersedes an older opt-out, and vice
+    versa — this is a live status, not a history."""
+    latest = await pool.fetchval(
+        "SELECT consented FROM staging.pahchan_employee_consents "
+        "WHERE employee_id=$1::uuid ORDER BY recorded_at DESC LIMIT 1",
+        employee_id,
+    )
+    return latest is False
+
+
 # ── The register ──────────────────────────────────────────────────────────────
 
 @router.get("/register")
@@ -1716,6 +1812,18 @@ async def enroll_photo(
     )
     if not emp:
         raise HTTPException(404, "Employee not found")
+
+    # DPDP: consent that was declined must not be overridden by a later
+    # enrollment attempt, from any source — HR upload included. This is not
+    # a setting because there is no compliant "enforced off" for it; it is
+    # the floor, not a guardrail a firm opts into.
+    if await _employee_opted_out(pool, str(body.employee_id)):
+        raise HTTPException(
+            409,
+            "This employee has declined biometric attendance and must be offered "
+            "the alternative (manual or code-based) attendance path instead. "
+            "See Pahchan → consent records.",
+        )
 
     async with pool.acquire() as conn:
         async with conn.transaction():
