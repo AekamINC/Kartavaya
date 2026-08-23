@@ -793,6 +793,12 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     open_punches = await pool.fetch(
         """
         SELECT e.name AS employee_name, e.id AS employee_id,
+               -- The key `services/skill_ack_wiring.py` files an acknowledgement
+               -- under. The NAME is not one: ten names in the largest org are
+               -- carried by three active people each, so an ack keyed on it
+               -- would silence two colleagues' exceptions along with the one
+               -- somebody actually read.
+               e.employee_code,
                e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                a.date, a.status
@@ -812,7 +818,9 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     for r in open_punches:
         findings.append(reachable({
             "check": "unclosed_punch",
+            "month": month,
             "employee": r["employee_name"],
+            "employee_code": r["employee_code"],
             "department": r["department"],
             "date": r["date"].isoformat() if r["date"] else None,
             "detail": (
@@ -827,6 +835,12 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     absences = await pool.fetch(
         """
         SELECT e.name AS employee_name, e.id AS employee_id,
+               -- The key `services/skill_ack_wiring.py` files an acknowledgement
+               -- under. The NAME is not one: ten names in the largest org are
+               -- carried by three active people each, so an ack keyed on it
+               -- would silence two colleagues' exceptions along with the one
+               -- somebody actually read.
+               e.employee_code,
                e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                a.date
@@ -850,7 +864,9 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     for r in absences:
         findings.append(reachable({
             "check": "absent_without_approved_leave",
+            "month": month,
             "employee": r["employee_name"],
+            "employee_code": r["employee_code"],
             "department": r["department"],
             "date": r["date"].isoformat() if r["date"] else None,
             "detail": ("marked absent with no approved leave request covering the "
@@ -930,6 +946,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     for r in missing:
         findings.append(reachable({
             "check": "no_attendance_on_working_day",
+            "month": month,
             "employee": r["employee_name"],
             "employee_code": r["employee_code"],
             "department": r["department"],
@@ -956,6 +973,12 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
             GROUP BY lr.employee_id, lr.leave_type_id
         )
         SELECT e.name AS employee_name, e.id AS employee_id,
+               -- The key `services/skill_ack_wiring.py` files an acknowledgement
+               -- under. The NAME is not one: ten names in the largest org are
+               -- carried by three active people each, so an ack keyed on it
+               -- would silence two colleagues' exceptions along with the one
+               -- somebody actually read.
+               e.employee_code,
                e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                COALESCE(lt.name, '(leave type unavailable)') AS leave_type,
@@ -987,7 +1010,9 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
         entitlement = float(r["entitlement"] or 0)
         findings.append(reachable({
             "check": "leave_beyond_balance",
+            "month": month,
             "employee": r["employee_name"],
+            "employee_code": r["employee_code"],
             "department": r["department"],
             "leave_type": r["leave_type"],
             "days_taken": round(taken, 2),

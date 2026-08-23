@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 12 of the 61 assigned skills.
+Wired so far: 13 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -785,6 +785,78 @@ def _unfillable_recompute(out: dict, surviving: Sequence[dict]) -> None:
     counts["products_short"] = len(surviving)
 
 
+# ── check_attendance_exceptions ─────────────────────────────────────────────
+#
+# Day-level attendance faults: a punch that was never closed, an absence with no
+# leave request behind it, working days with no attendance row at all, and leave
+# approved beyond the balance on record. Three of the four are things a firm
+# often KNOWS about and cannot record — the fitter who forgets to punch out, the
+# founder who takes leave nobody tracks — so they are read and re-read until the
+# list is wallpaper.
+#
+# IDENTITY — `check`, `employee_code`, `month`, `date`, `leave_type`. Two of
+#   those the handler did not emit and now does.
+#
+#   `employee_code` for the reason measured at `check_statutory_records_gate`:
+#   the largest org carries ten names held by three active people each, and the
+#   handler previously identified an employee only by `employee`, the printable
+#   NAME. Three of its four SELECTs now carry the code.
+#
+#   `date` and `leave_type` are the per-check discriminators, and they are in
+#   the SAME key rather than in four separate wirings because they are simply
+#   absent on the checks that do not have them. `unclosed_punch` and
+#   `absent_without_approved_leave` are facts about ONE DAY, so the date is
+#   what makes two of them different findings about one person.
+#
+#   `month` is what scopes `no_attendance_on_working_day`, whose whole fact is
+#   "this employee has fifteen missing days in THIS month" — without it,
+#   August's acknowledgement silences September's, and September's is fifteen
+#   more days paid unverified. On the day-level checks the month is implied by
+#   the date and costs nothing.
+#
+#   On `leave_beyond_balance` the fact is ANNUAL, so including the month makes
+#   that acknowledgement monthly. Deliberate: a year's over-balance silenced
+#   once in January would stay silent for twelve months, and the question the
+#   handler asks — is this over-drawn leave accepted — is worth re-asking as the
+#   year runs on.
+#
+# MATERIAL — `missing_days`, `days_taken`, `days_over`, `entitlement`. Absent
+#   on the two day-level checks, so those acknowledgements are unconditional,
+#   which is right: a punch is unclosed or it is not, and correcting it removes
+#   the row. Where they are present they are the whole severity of the finding —
+#   fifteen missing days acknowledged is not the same as twenty-two — and each
+#   is rounded by the handler before it reaches the finding.
+#
+#   NOT `detail`, which is prose that embeds those same numbers.
+#
+# INCIDENTAL — `employee` (the printable name), `department`, `first_missing`
+#   and `last_missing`. The last two move as the month runs on WITHOUT the
+#   finding changing character, and `last_missing` in particular advances every
+#   working day the gap persists — which is `days_past` wearing a date.
+#
+# RECOMPUTE — `counts` (all four codes, kept present at zero so a check that
+#   emptied does not read as one that never ran) and `by_department`.
+#   `punch_data` is left alone: it counts attendance rows in the window, and an
+#   org that acknowledged every exception has not stopped having them.
+
+def _attendance_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the per-check counts and the departmental split."""
+    out["counts"] = {
+        code: sum(1 for f in surviving if f.get("check") == code)
+        for code in ("unclosed_punch", "absent_without_approved_leave",
+                     "no_attendance_on_working_day", "leave_beyond_balance")
+    }
+    by_dept: dict[Any, dict] = {}
+    for f in surviving:
+        dept = f.get("department")
+        slot = by_dept.setdefault(dept, {"department": dept, "findings": 0})
+        slot["findings"] += 1
+        code = f.get("check")
+        slot[code] = slot.get(code, 0) + 1
+    out["by_department"] = sorted(
+        by_dept.values(), key=lambda d: (-d["findings"], str(d["department"])))
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -1049,6 +1121,25 @@ ACK_WIRING: dict[str, AckWiring] = {
         label_of=lambda f: (
             f"{f.get('product')} — short "
             f"{abs(float(f.get('shortfall_after_all_open_orders') or 0)):g}"),
+    ),
+
+    "check_attendance_exceptions": AckWiring(
+        findings_at="findings",
+        identity_of=lambda f: {
+            "check": f.get("check"),
+            "employee_code": f.get("employee_code"),
+            "month": f.get("month"),
+            "date": f.get("date"),
+            "leave_type": f.get("leave_type"),
+        },
+        material_of=lambda f: {
+            "missing_days": f.get("missing_days"),
+            "days_taken": f.get("days_taken"),
+            "days_over": f.get("days_over"),
+            "entitlement": f.get("entitlement"),
+        },
+        recompute=_attendance_recompute,
+        label_of=lambda f: f"{f.get('check')} — {f.get('employee')}",
     ),
 
     "check_late_suppliers": AckWiring(

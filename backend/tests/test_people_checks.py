@@ -690,7 +690,8 @@ async def test_leave_beyond_balance_counts_the_entitlement_not_the_used_column(m
     """
     _freeze(monkeypatch, date(2026, 8, 20))
     pool = _att_pool(over_leave=[
-        _Row(employee_name="Tara Mehta", department="Audit",
+        _Row(employee_name="Tara Mehta", employee_code="EMP-023",
+             department="Audit",
              employee_id="33333333-0000-4000-8000-000000000023",
              employee_email="tara@example.com",
              employee_phone="+91 90000 00023",
@@ -729,6 +730,7 @@ async def test_an_absence_with_no_request_is_not_a_pending_request(monkeypatch):
     """
     _freeze(monkeypatch, date(2026, 8, 20))
     pool = _att_pool(absences=[_Row(employee_name="Isha Desai",
+                                    employee_code="EMP-031",
                                     employee_id="33333333-0000-4000-8000-000000000031",
                                     employee_email="isha@example.com",
                                     employee_phone="+91 90000 00031",
