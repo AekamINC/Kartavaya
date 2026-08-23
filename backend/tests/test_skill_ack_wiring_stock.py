@@ -158,3 +158,158 @@ def test_the_stock_key_round_trips():
                                          state_hash=f["_ack_state"],
                                          acknowledged_by="u1")}
     assert apply_wiring("check_impossible_stock", _s_out([_s()]), acks)["findings"] == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# check_unfillable_orders — and the count that is NOT a sum over the findings
+# ══════════════════════════════════════════════════════════════════════════
+
+ORDERS = ACK_WIRING["check_unfillable_orders"]
+
+
+def _line(order="SO-0031", verdict="short_now", qty=12.0) -> dict:
+    return {
+        "order": order,
+        "status": "confirmed",
+        "customer": "Sharma Traders",
+        "order_date": "2026-08-01",
+        "expected_delivery": "2026-08-20",
+        "line": "Ledger Paper A4",
+        "quantity_ordered": qty,
+        "available_when_this_order_is_picked": 0.0,
+        "verdict": verdict,
+        "short_by": qty,
+        "detail": "12 reams, and 0 left by the time this order is picked.",
+    }
+
+
+def _g(product="Ledger Paper A4", on_hand=0.0, shortfall=-12.0, lines=None) -> dict:
+    return {
+        "product": product,
+        "unit": "ream",
+        "is_service": False,
+        "on_hand": on_hand,
+        "stock_record_exists": True,
+        "committed_on_open_orders": 12.0,
+        "shortfall_after_all_open_orders": shortfall,
+        "remaining_after_all_open_orders": shortfall,
+        "lines": lines if lines is not None else [_line()],
+    }
+
+
+def _g_out(groups, fillable=37) -> dict:
+    groups = list(groups)
+    short_now = sum(1 for g in groups for l in g.get("lines", [])
+                    if l["verdict"] == "short_now")
+    short_after = sum(1 for g in groups for l in g.get("lines", [])
+                      if l["verdict"] == "short_after_others")
+    return {
+        "what_this_is": "Open order lines measured against stock on hand.",
+        "counts": {
+            "short_now": short_now,
+            "short_after_others": short_after,
+            # Counted for EVERY line walked, including lines of products that
+            # were never flagged. NOT a sum over `products`.
+            "fillable": fillable,
+            "products_short": len(groups),
+            "open_orders": 44,
+            "order_lines_examined": 210,
+        },
+        "products": groups,
+        "coverage": {"open_order_lines": 214,
+                     "lines_naming_a_catalogued_product": 210,
+                     "lines_this_check_cannot_see": 4,
+                     "lines_with_no_readable_quantity": 0,
+                     "statuses_treated_as_open": ["draft", "confirmed"]},
+        "excluded": {"lines_whose_stock_is_already_deducted": 6, "why": "..."},
+        "caveats": [],
+    }
+
+
+def _g_ack(g: dict, **kw) -> dict[str, skill_ack.Ack]:
+    key = skill_ack.finding_key(ORDERS.identity_of(g))
+    return {key: skill_ack.Ack(finding_key=key,
+                               state_hash=skill_ack.state_hash(ORDERS.material_of(g)),
+                               acknowledged_by="u1", **kw)}
+
+
+def test_an_acknowledged_short_product_stops_being_reported():
+    g = _g()
+    out = apply_wiring("check_unfillable_orders", _g_out([g]), _g_ack(g))
+    assert out["products"] == []
+    assert out["acknowledged"]["items"][0]["label"] == "Ledger Paper A4 — short 12"
+
+
+def test_a_new_order_deepening_the_shortfall_brings_it_back():
+    """The line set is NOT in the key — a group is re-formed every run and the
+    lines change whenever any order is raised, edited or fulfilled, so keying
+    on them would orphan the ack on the first new order. The shortfall is where
+    the order book gets its say: "I know we are short 12" must not silently
+    cover being short 200."""
+    acks = _g_ack(_g(shortfall=-12.0))
+    out = apply_wiring("check_unfillable_orders",
+                       _g_out([_g(shortfall=-200.0,
+                                  lines=[_line(), _line(order="SO-0044")])]), acks)
+    assert len(out["products"]) == 1
+    assert out["acknowledged"]["count"] == 0
+
+
+def test_reordering_the_lines_alone_does_not_orphan_the_acknowledgement():
+    acks = _g_ack(_g())
+    out = apply_wiring("check_unfillable_orders",
+                       _g_out([_g(lines=[_line(order="SO-0099")])]), acks)
+    assert out["products"] == []
+
+
+def test_the_two_shortage_counts_are_rebuilt():
+    keep = _g(product="A", lines=[_line(verdict="short_after_others")])
+    hide = _g(product="B", lines=[_line(), _line(order="SO-2")])
+    out = apply_wiring("check_unfillable_orders", _g_out([keep, hide]), _g_ack(hide))
+    assert out["counts"]["short_now"] == 0
+    assert out["counts"]["short_after_others"] == 1
+    assert out["counts"]["products_short"] == 1
+
+
+def test_the_fillable_count_is_left_alone():
+    """THE TRAP. `fillable` is counted for every line the handler walked,
+    including lines of products never flagged. Rebuilding it from the survivors
+    would silently redefine it as "fillable lines belonging to short products"
+    — a different and much smaller number under an unchanged name."""
+    g = _g()
+    out = apply_wiring("check_unfillable_orders", _g_out([g], fillable=37), _g_ack(g))
+    assert out["counts"]["fillable"] == 37
+
+
+def test_the_order_denominators_are_left_alone():
+    g = _g()
+    out = apply_wiring("check_unfillable_orders", _g_out([g]), _g_ack(g))
+    assert out["counts"]["open_orders"] == 44
+    assert out["counts"]["order_lines_examined"] == 210
+    assert out["coverage"]["lines_this_check_cannot_see"] == 4
+    assert out["excluded"]["lines_whose_stock_is_already_deducted"] == 6
+
+
+def test_a_group_with_no_lines_key_does_not_raise():
+    bare = {"product": "A", "on_hand": 0.0, "shortfall_after_all_open_orders": -1.0}
+    data = _g_out([_g(product="B")])
+    data["products"] = [bare]
+    out = apply_wiring("check_unfillable_orders", data, _g_ack(_g(product="B")))
+    assert len(out["products"]) == 1
+    assert out["counts"]["short_now"] == 0
+
+
+def test_an_orders_shape_change_fails_open():
+    data = {"groups": [_g()], "counts": {"products_short": 1}}
+    out = apply_wiring("check_unfillable_orders", data, _g_ack(_g()))
+    assert len(out["groups"]) == 1
+    assert "acknowledged" not in out
+
+
+def test_the_orders_key_round_trips():
+    first = apply_wiring("check_unfillable_orders", _g_out([_g()]),
+                         {"x": skill_ack.Ack("x")})
+    f = first["products"][0]
+    acks = {f["_ack_key"]: skill_ack.Ack(finding_key=f["_ack_key"],
+                                         state_hash=f["_ack_state"],
+                                         acknowledged_by="u1")}
+    assert apply_wiring("check_unfillable_orders", _g_out([_g()]), acks)["products"] == []

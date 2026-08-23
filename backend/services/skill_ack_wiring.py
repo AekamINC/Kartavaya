@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 11 of the 61 assigned skills.
+Wired so far: 12 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -718,6 +718,73 @@ def _impossible_stock_recompute(out: dict, surviving: Sequence[dict]) -> None:
     counts["unverified"] = len(surviving) - confirmed
 
 
+# ── check_unfillable_orders ─────────────────────────────────────
+#
+# Open order lines measured against stock on hand, in the order the orders will
+# be picked. `short_now` cannot be filled today at all; `short_after_others`
+# could be filled in isolation but will not be once the queue ahead has taken
+# its stock — the part a per-product low-stock alert cannot see. A firm that has
+# already told the customer, or already raised the purchase order, reads the
+# same product every morning until the goods physically arrive.
+#
+# IDENTITY — `product`, alone. The finding is a PRODUCT GROUP with the offending
+#   order lines nested inside it, so the fact being acknowledged is "I know this
+#   product is short". Same name-is-safe measurement as `check_impossible_stock`.
+#
+#   NOT the nested `lines`: a group is re-formed on every run and the line set
+#   changes whenever any order in the book is raised, edited or fulfilled.
+#   Keying on it would orphan the acknowledgement on the first new order — the
+#   very event that makes the shortage worse.
+#
+# MATERIAL — `on_hand` and `shortfall_after_all_open_orders`, which is where the
+#   line set gets its say WITHOUT being in the key. A new order for the same
+#   product deepens the shortfall and voids the ack, so "I know we are short 12"
+#   does not silently cover being short 200. Both are rounded by the handler
+#   before they reach the finding, which is what makes them safe to hash.
+#
+#   NOT `committed_on_open_orders`: it moves with the same events as the
+#   shortfall and would count one change twice.
+#
+# INCIDENTAL — `unit`, `is_service`, `stock_record_exists`,
+#   `remaining_after_all_open_orders` (the non-negative twin of the shortfall),
+#   and everything inside `lines`.
+#
+# RECOMPUTE — AND THIS IS THE TRAP IN THIS FILE. `counts` carries `short_now`,
+#   `short_after_others` and `fillable`, and they do NOT have the same
+#   relationship to the findings list:
+#
+#     short_now / short_after_others   every short line belongs to a group that
+#                                      is IN the list, because a group is only
+#                                      listed if it has one. Exact sums over the
+#                                      findings, so they MUST be rebuilt.
+#     fillable                         counted for every line the handler
+#                                      walked, including lines of products never
+#                                      flagged at all. Rebuilding it from the
+#                                      survivors would silently redefine it as
+#                                      "fillable lines belonging to short
+#                                      products" — a different and much smaller
+#                                      number under an unchanged name.
+#
+#   `open_orders` and `order_lines_examined` are population; `coverage` and
+#   `excluded` are the handler's own denominators. An org that acknowledged
+#   every shortage has not stopped having order lines that name no catalogued
+#   product.
+
+def _unfillable_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the two counts that are sums over the findings, and no others."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    tally = {"short_now": 0, "short_after_others": 0}
+    for group in surviving:
+        for line in (group.get("lines") or ()):
+            verdict = line.get("verdict")
+            if verdict in tally:
+                tally[verdict] += 1
+    counts.update(tally)
+    counts["products_short"] = len(surviving)
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -969,6 +1036,19 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_impossible_stock_recompute,
         label_of=lambda f: f"{f.get('check')} — {f.get('product')}",
+    ),
+
+    "check_unfillable_orders": AckWiring(
+        findings_at="products",
+        identity_of=lambda f: {"product": f.get("product")},
+        material_of=lambda f: {
+            "on_hand": f.get("on_hand"),
+            "shortfall_after_all_open_orders": f.get("shortfall_after_all_open_orders"),
+        },
+        recompute=_unfillable_recompute,
+        label_of=lambda f: (
+            f"{f.get('product')} — short "
+            f"{abs(float(f.get('shortfall_after_all_open_orders') or 0)):g}"),
     ),
 
     "check_late_suppliers": AckWiring(
