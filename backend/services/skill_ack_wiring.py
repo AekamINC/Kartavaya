@@ -11,7 +11,7 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired so far: 10 of the 61 assigned skills.
+Wired so far: 11 of the 61 assigned skills.
 
 
 == WHY A WIRING NEEDS FOUR THINGS, NOT TWO =================================
@@ -654,6 +654,70 @@ def _payroll_readiness_recompute(out: dict, surviving: Mapping[str, Sequence[dic
     }
 
 
+# ── check_impossible_stock ──────────────────────────────────────────────────
+#
+# Balances that cannot be true: stock below zero, a movement ledger whose
+# running total went negative, a product issued out that was never received in.
+# Nothing here is corrected — the handler says so: "a negative quantity is
+# evidence, and zeroing it destroys the evidence". So the finding cannot be
+# closed by fixing it, only by somebody deciding it is understood, which is the
+# definition of a finding that needs an acknowledgement.
+#
+# IDENTITY — `check` + `product`.
+#
+#   `product` is the product NAME, and unusually for this codebase that is
+#   safe: measured live 2026-08-23, 106 active products, ZERO blank names and
+#   ZERO duplicate names per org even case-insensitively. The catalogue holds a
+#   product once — the CRM rule that a client is a company has a stock-side
+#   twin — so the name is the key a person uses and the key the data supports.
+#   A rename would orphan the ack, and a renamed product is arguably a
+#   different catalogue entry to a reader; the alternative is a product UUID
+#   the finding does not carry.
+#
+#   `check` because the three are separate judgements about one product. "I
+#   know this balance is negative, it is a data-loading artefact" must not also
+#   silence "something was issued that was never received in".
+#
+# MATERIAL — `on_hand` and `movement_ledger_net`. A balance of −4 acknowledged
+#   is not a balance of −400: the second is a different accident. Both are read
+#   straight off the row through the handler's `_f`, and neither is recomputed
+#   here.
+#
+#   NOT `confidence`. It is derived from whether the ledger explains the
+#   balance, and it flips when an unrelated product's movement is backfilled —
+#   a classification moving under a finding that did not change.
+#
+#   NOT `implied_opening_balance` either: it IS `on_hand - movement_ledger_net`,
+#   so hashing it would count one movement twice.
+#
+# INCIDENTAL — `first_movement`, `last_movement`, `movements_recorded`,
+#   `detail`, `unit`, `is_service`, `product_is_active`.
+#
+#   `first_negative_on` and `lowest_running_total` are incidental too, and that
+#   is a judgement: the date the ledger first went negative is a fact about
+#   history that does not change while the finding stands, so hashing it buys
+#   nothing, and `lowest_running_total` moves whenever any older movement is
+#   corrected — which is the recovery a firm is being asked to perform.
+#
+# RECOMPUTE — the three per-check counts, `findings`, `confirmed` and
+#   `unverified`. NOT `products_flagged`, which is `len(rows)` — every product
+#   the query examined, not every product listed — and not `coverage`. An org
+#   that acknowledged every impossible balance has not stopped having a
+#   movement ledger that disagrees with its stock table.
+
+def _impossible_stock_recompute(out: dict, surviving: Sequence[dict]) -> None:
+    """Rebuild the per-check counts and the confirmed/unverified split."""
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    for code in ("negative_on_hand", "went_negative", "never_received"):
+        counts[code] = sum(1 for f in surviving if f.get("check") == code)
+    confirmed = sum(1 for f in surviving if f.get("confidence") == "confirmed")
+    counts["findings"] = len(surviving)
+    counts["confirmed"] = confirmed
+    counts["unverified"] = len(surviving) - confirmed
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -894,6 +958,17 @@ ACK_WIRING: dict[str, AckWiring] = {
         material_of=lambda f: {"amount": f.get("amount")},
         recompute=_payroll_readiness_recompute,
         label_of=lambda f: f"{f.get('check')} — {f.get('employee') or 'the run'}",
+    ),
+
+    "check_impossible_stock": AckWiring(
+        findings_at="findings",
+        identity_of=lambda f: {"check": f.get("check"), "product": f.get("product")},
+        material_of=lambda f: {
+            "on_hand": f.get("on_hand"),
+            "movement_ledger_net": f.get("movement_ledger_net"),
+        },
+        recompute=_impossible_stock_recompute,
+        label_of=lambda f: f"{f.get('check')} — {f.get('product')}",
     ),
 
     "check_late_suppliers": AckWiring(
