@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/ganit/billing", tags=["client-billing"])
 
 _gate = require_any_module("ganit", "graha", "vikray")
+_vendor_gate = require_any_module("ganit", "kray")
 
 
 # ── Pydantic models ──────────────────────────────────────────────────────
@@ -91,6 +92,42 @@ class MeteredUsageUpdate(BaseModel):
 class GenerateUsageInvoice(BaseModel):
     profile_id: str
     usage_ids: list[str] | None = None
+
+
+class RateCardCreate(BaseModel):
+    vendor_id: str
+    item_category: str = ""
+    rate: float = 0
+    unit: str = ""
+    effective_from: str | None = None
+    effective_to: str | None = None
+    proration_clause: bool = False
+    notes: str = ""
+
+
+class RateCardUpdate(BaseModel):
+    item_category: str | None = None
+    rate: float | None = None
+    unit: str | None = None
+    effective_from: str | None = None
+    effective_to: str | None = None
+    proration_clause: bool | None = None
+    notes: str | None = None
+
+
+class SLACreditCreate(BaseModel):
+    vendor_id: str
+    rate_card_id: str | None = None
+    sla_metric: str = ""
+    threshold: float = 0
+    actual: float = 0
+    credit_amount: float = 0
+    period: str
+    status: str = "pending"
+
+
+class SLACreditApply(BaseModel):
+    bill_id: str
 
 
 # ── Profiles CRUD ────────────────────────────────────────────────────────
@@ -608,4 +645,326 @@ async def generate_usage_invoice(
         "entries": len(usage_rows),
         "subtotal": subtotal,
         "total": total,
+    }
+
+
+# ── P5.4: Vendor Rate Cards ─────────────────────────────────────────────
+
+@router.get("/rate-cards")
+async def list_rate_cards(
+    vendor_id: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT rc.*, v.name AS vendor_name "
+        "FROM staging.vendor_rate_cards rc "
+        "JOIN staging.ganit_vendors v ON v.id = rc.vendor_id "
+        "WHERE rc.org_id = $1::uuid"
+    )
+    params: list = [org_id]
+    if vendor_id:
+        params.append(vendor_id)
+        q += f" AND rc.vendor_id = ${len(params)}::uuid"
+    q += " ORDER BY rc.effective_from DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/rate-cards")
+async def create_rate_card(
+    body: RateCardCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    vendor = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_vendors WHERE id = $1::uuid AND org_id = $2::uuid",
+        body.vendor_id, org_id,
+    )
+    if not vendor:
+        raise HTTPException(404, "Vendor not found")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.vendor_rate_cards "
+        "(org_id, vendor_id, item_category, rate, unit, effective_from, "
+        " effective_to, proration_clause, notes, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, "
+        "        COALESCE($6::date, CURRENT_DATE), $7::date, $8, $9, $10) "
+        "RETURNING *",
+        org_id, body.vendor_id, body.item_category, body.rate, body.unit,
+        body.effective_from, body.effective_to, body.proration_clause,
+        body.notes, user.get("user_id", ""),
+    )
+    return dict(row)
+
+
+@router.patch("/rate-cards/{card_id}")
+async def update_rate_card(
+    card_id: UUID,
+    body: RateCardUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("item_category", "rate", "unit", "effective_from",
+                  "effective_to", "proration_clause", "notes"):
+        val = getattr(body, field)
+        if val is not None:
+            vals.append(val)
+            cast = "::date" if field in ("effective_from", "effective_to") else ""
+            updates.append(f"{field}=${len(vals)}{cast}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals.append(str(card_id))
+    vals.append(org_id)
+    row = await pool.fetchrow(
+        f"UPDATE staging.vendor_rate_cards SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Rate card not found")
+    return dict(row)
+
+
+# ── P5.4: SLA Credits ────────────────────────────────────────────────────
+
+@router.get("/sla-credits")
+async def list_sla_credits(
+    vendor_id: str = "",
+    status: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT sc.*, v.name AS vendor_name "
+        "FROM staging.vendor_sla_credits sc "
+        "JOIN staging.ganit_vendors v ON v.id = sc.vendor_id "
+        "WHERE sc.org_id = $1::uuid"
+    )
+    params: list = [org_id]
+    if vendor_id:
+        params.append(vendor_id)
+        q += f" AND sc.vendor_id = ${len(params)}::uuid"
+    if status:
+        params.append(status)
+        q += f" AND sc.status = ${len(params)}"
+    q += " ORDER BY sc.period DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/sla-credits")
+async def create_sla_credit(
+    body: SLACreditCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    vendor = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_vendors WHERE id = $1::uuid AND org_id = $2::uuid",
+        body.vendor_id, org_id,
+    )
+    if not vendor:
+        raise HTTPException(404, "Vendor not found")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.vendor_sla_credits "
+        "(org_id, vendor_id, rate_card_id, sla_metric, threshold, actual, "
+        " credit_amount, period, status, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, "
+        "        $7, $8::date, $9, $10) "
+        "RETURNING *",
+        org_id, body.vendor_id, body.rate_card_id, body.sla_metric,
+        body.threshold, body.actual, body.credit_amount, body.period,
+        body.status, user.get("user_id", ""),
+    )
+    return dict(row)
+
+
+@router.post("/sla-credits/{credit_id}/apply")
+async def apply_sla_credit(
+    credit_id: UUID,
+    body: SLACreditApply,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            credit = await conn.fetchrow(
+                "SELECT * FROM staging.vendor_sla_credits "
+                "WHERE id = $1::uuid AND org_id = $2::uuid",
+                credit_id, org_id,
+            )
+            if not credit:
+                raise HTTPException(404, "SLA credit not found")
+            if credit["status"] != "pending":
+                raise HTTPException(409, "SLA credit is not pending")
+            bill = await conn.fetchrow(
+                "SELECT id FROM staging.ganit_vendor_bills "
+                "WHERE id = $1::uuid AND org_id = $2::uuid",
+                body.bill_id, org_id,
+            )
+            if not bill:
+                raise HTTPException(404, "Vendor bill not found")
+            row = await conn.fetchrow(
+                "UPDATE staging.vendor_sla_credits "
+                "SET status = 'applied', applied_to_bill = $1::uuid "
+                "WHERE id = $2::uuid AND org_id = $3::uuid RETURNING *",
+                body.bill_id, credit_id, org_id,
+            )
+            await conn.execute(
+                "UPDATE staging.ganit_vendor_bills "
+                "SET sla_credit_applied = COALESCE(sla_credit_applied, 0) + $1 "
+                "WHERE id = $2::uuid AND org_id = $3::uuid",
+                float(credit["credit_amount"]), body.bill_id, org_id,
+            )
+    return dict(row)
+
+
+@router.patch("/sla-credits/{credit_id}/waive")
+async def waive_sla_credit(
+    credit_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.vendor_sla_credits SET status = 'waived' "
+        "WHERE id = $1::uuid AND org_id = $2::uuid AND status = 'pending' "
+        "RETURNING *",
+        credit_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "SLA credit not found or not pending")
+    return dict(row)
+
+
+# ── P5.5: Payment Ageing ────────────────────────────────────────────────
+
+def _ageing_bucket(days_overdue: int) -> str:
+    if days_overdue <= 0:
+        return "current"
+    if days_overdue <= 30:
+        return "30"
+    if days_overdue <= 60:
+        return "60"
+    if days_overdue <= 90:
+        return "90"
+    if days_overdue <= 120:
+        return "120"
+    return "120+"
+
+
+@router.get("/ageing")
+async def payment_ageing(
+    direction: str = "receivable",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if direction not in ("receivable", "payable"):
+        raise HTTPException(400, "direction must be 'receivable' or 'payable'")
+    pool = await get_pool()
+    today = date.today()
+
+    if direction == "receivable":
+        rows = await pool.fetch(
+            "SELECT i.id, i.total, i.amount_paid, i.due_date, "
+            "       c.id AS party_id, c.name AS party_name "
+            "FROM staging.ganit_invoices i "
+            "JOIN staging.graha_clients c ON c.id = i.client_id "
+            "WHERE i.org_id = $1::uuid AND i.payment_status != 'paid'",
+            org_id,
+        )
+    else:
+        rows = await pool.fetch(
+            "SELECT b.id, b.total, b.amount_paid, b.due_date, "
+            "       v.id AS party_id, v.name AS party_name "
+            "FROM staging.ganit_vendor_bills b "
+            "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+            "WHERE b.org_id = $1::uuid AND b.status != 'paid'",
+            org_id,
+        )
+
+    totals = {"current": 0.0, "30": 0.0, "60": 0.0, "90": 0.0, "120": 0.0, "120+": 0.0}
+    by_client: dict[str, dict] = {}
+    for r in rows:
+        outstanding = float(r["total"] or 0) - float(r["amount_paid"] or 0)
+        if outstanding <= 0:
+            continue
+        due = r["due_date"] or today
+        days_overdue = (today - due).days
+        bucket = _ageing_bucket(days_overdue)
+        totals[bucket] += outstanding
+
+        party_id = str(r["party_id"])
+        entry = by_client.setdefault(party_id, {
+            "party_id": party_id,
+            "party_name": r["party_name"],
+            "current": 0.0, "30": 0.0, "60": 0.0, "90": 0.0, "120": 0.0, "120+": 0.0,
+            "total_outstanding": 0.0,
+        })
+        entry[bucket] += outstanding
+        entry["total_outstanding"] += outstanding
+
+    return {
+        "direction": direction,
+        "buckets": ["current", "30", "60", "90", "120", "120+"],
+        "by_client": list(by_client.values()),
+        "totals": totals,
+    }
+
+
+# ── P5.5: Sales Quota Proration ─────────────────────────────────────────
+
+@router.get("/quota-proration")
+async def quota_proration(
+    target: float,
+    start_date: str,
+    end_date: str,
+    join_date: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(require_any_module("ganit", "vikray")),
+):
+    try:
+        period_start = date.fromisoformat(start_date)
+        period_end = date.fromisoformat(end_date)
+        joined = date.fromisoformat(join_date)
+    except ValueError:
+        raise HTTPException(400, "Dates must be ISO format (YYYY-MM-DD)")
+    if period_end <= period_start:
+        raise HTTPException(400, "end_date must be after start_date")
+
+    working_days_total = 0
+    working_days_active = 0
+    d = period_start
+    while d < period_end:
+        if d.weekday() < 5:
+            working_days_total += 1
+            if d >= joined:
+                working_days_active += 1
+        d += __import__("datetime").timedelta(days=1)
+
+    ratio = (working_days_active / working_days_total) if working_days_total else 0.0
+    prorated_target = round(target * ratio, 2)
+
+    return {
+        "full_target": target,
+        "prorated_target": prorated_target,
+        "ratio": round(ratio, 4),
+        "working_days_total": working_days_total,
+        "working_days_active": working_days_active,
     }

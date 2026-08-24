@@ -20,6 +20,9 @@ import POApprovalsTab from './procurement/POApprovalsTab';
 import BudgetsTab from './kray/BudgetsTab';
 import KrayReportsTab from './kray/KrayReportsTab';
 import KraySettingsTab from './kray/KraySettingsTab';
+import RateCardsTab from './ganit/RateCardsTab';
+import SLACreditsTab from './ganit/SLACreditsTab';
+import AgeingTab from './ganit/AgeingTab';
 
 const TABS = [
   ['purchase orders', PurchaseOrdersTab],
@@ -27,6 +30,7 @@ const TABS = [
   ['payables', PayablesTab],
   ['approvals', POApprovalsTab],
   ['budgets', BudgetsTab],
+  ['rate-cards', RateCardsTab], ['sla-credits', SLACreditsTab], ['ageing', AgeingTab],
   ['reports', KrayReportsTab],
   ['settings', KraySettingsTab],
 ];

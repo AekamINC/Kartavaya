@@ -55,6 +55,9 @@ import AnalyticsTab from './dristi/AnalyticsTab';
 import BillingProfilesTab from './ganit/BillingProfilesTab';
 import ServiceLinesTab from './ganit/ServiceLinesTab';
 import MeteredUsageTab from './ganit/MeteredUsageTab';
+import RateCardsTab from './ganit/RateCardsTab';
+import SLACreditsTab from './ganit/SLACreditsTab';
+import AgeingTab from './ganit/AgeingTab';
 import TabDocNumbers from './org/TabDocNumbers';
 
 const TABS = [
@@ -69,6 +72,7 @@ const TABS = [
   // side — what is owed and whether the customer has looked at the link.
   ['collections', CollectionsTab],
   ['billing-profiles', BillingProfilesTab], ['service-lines', ServiceLinesTab], ['metered-usage', MeteredUsageTab],
+  ['rate-cards', RateCardsTab], ['sla-credits', SLACreditsTab], ['ageing', AgeingTab],
   ['recurring', RecurringTab], ['bank', BankTab], ['timesheet', TimesheetTab],
   ['stats', StatsTab],
   // DSO, collection rate, ageing — the /v1/analytics registry, read here the
