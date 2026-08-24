@@ -3429,7 +3429,7 @@ async def list_teams(since:Optional[str]=None,
         LEFT JOIN (SELECT team_id,COUNT(*) cnt FROM tasks GROUP BY team_id) tc ON tc.team_id=t.team_id
         LEFT JOIN (SELECT team_id,COUNT(*) cnt FROM tasks WHERE status='done' GROUP BY team_id) dc ON dc.team_id=t.team_id
         WHERE t.team_id=ANY($1::text[]) AND ($2::timestamptz IS NOT NULL OR t.deleted_at IS NULL)
-          AND ($2::timestamptz IS NULL OR t.updated_at > $2)
+          AND ($2::timestamptz IS NULL OR t.updated_at > $2::timestamptz)
         ORDER BY t.updated_at DESC
     """, team_ids, since_dt)
     # `can_admin` resolved for the whole page in two queries rather than one per

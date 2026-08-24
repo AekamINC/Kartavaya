@@ -53,10 +53,11 @@ def send_pdf_email(
     answer is — that is the same contract `email_service.send_email` states.
     """
     from email_service import (
-        FROM_EMAIL, _metered_bytes, ses_client, to_plaintext,
+        FROM_EMAIL, ses_client, to_plaintext,
     )
     from outbound import begin
     from services import email_senders
+    from services.employee_email import _metered_bytes
 
     # `begin` BEFORE the thread: this branch is the provider call, so it is the
     # only place that can say what came back, and the row has to exist before

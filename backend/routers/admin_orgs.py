@@ -650,7 +650,7 @@ async def create_org(
     if not plan:
         raise HTTPException(400, f"Invalid plan code: {body.plan_code}")
 
-    org_id = uuid.uuid4()
+    org_id = str(uuid.uuid4())
     storage_limit = PLAN_STORAGE_LIMITS.get(body.plan_code, 0)
 
     r2_account_id = body.r2.account_id if body.r2 else None
@@ -676,7 +676,7 @@ async def create_org(
                 "(id, team_id, name, owner_user_id, email, r2_account_id, r2_access_key_id, "
                 " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
                 " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)",
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)",
                 org_id, team_id, body.name,
                 owner["user_id"] if owner else None,
                 body.owner_email.lower(),
