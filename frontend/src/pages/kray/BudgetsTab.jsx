@@ -55,8 +55,8 @@ export default function BudgetsTab() {
     return (
       <EmptyState
         icon="kray"
-        heading="Budgets are off"
-        body="Turn on department budgets in Settings to track spending against limits."
+        title="Budgets are off"
+        description="Turn on department budgets in Settings to track spending against limits."
       />
     );
   }
@@ -65,8 +65,8 @@ export default function BudgetsTab() {
     return (
       <EmptyState
         icon="kray"
-        heading="No budget data"
-        body="Set department budget limits in Settings, then raise purchase orders to see spend tracking."
+        title="No budget data"
+        description="Set department budget limits in Settings, then raise purchase orders to see spend tracking."
       />
     );
   }

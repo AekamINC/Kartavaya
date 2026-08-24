@@ -129,9 +129,10 @@ export default function RateCardsTab() {
       ) : (
         <EmptyState
           icon="ganit"
-          heading="No vendor rate cards"
-          body="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
-          action={canWrite ? { label: '+ Rate Card', onClick: () => setEditing({ ...BLANK }) } : undefined}
+          title="No vendor rate cards"
+          description="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
+          action={canWrite ? '+ Rate Card' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 

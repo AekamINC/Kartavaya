@@ -152,9 +152,10 @@ export default function SLACreditsTab() {
       ) : (
         <EmptyState
           icon="ganit"
-          heading="No SLA credits"
-          body="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
-          action={canWrite ? { label: '+ SLA Credit', onClick: () => setEditing({ ...BLANK }) } : undefined}
+          title="No SLA credits"
+          description="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
+          action={canWrite ? '+ SLA Credit' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 

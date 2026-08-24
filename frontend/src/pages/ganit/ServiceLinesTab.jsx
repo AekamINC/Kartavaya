@@ -104,9 +104,10 @@ export default function ServiceLinesTab() {
       {items.length === 0 ? (
         <EmptyState
           icon="ganit"
-          heading="No service lines"
-          body="Add recurring retainers, subscriptions, or one-off charges for your clients."
-          action={canWrite ? { label: '+ Service Line', onClick: () => setEditing({ ...BLANK }) } : undefined}
+          title="No service lines"
+          description="Add recurring retainers, subscriptions, or one-off charges for your clients."
+          action={canWrite ? '+ Service Line' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       ) : null}
 

@@ -130,9 +130,10 @@ export default function VendorsTab() {
       {loading ? <SkeletonList rows={6} /> : vendors.length === 0 ? (
         <EmptyState
           icon="kray"
-          heading="No vendors yet"
-          body="Add your first supplier to start raising purchase orders."
-          action={canWrite ? { label: '+ Vendor', onClick: startNew } : undefined}
+          title="No vendors yet"
+          description="Add your first supplier to start raising purchase orders."
+          action={canWrite ? '+ Vendor' : undefined}
+          onAction={canWrite ? startNew : undefined}
         />
       ) : (
         <DataTable columns={COLUMNS} label="Vendors">

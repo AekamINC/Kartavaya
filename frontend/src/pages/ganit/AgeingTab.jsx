@@ -100,8 +100,8 @@ export default function AgeingTab() {
       ) : (
         <EmptyState
           icon="ganit"
-          heading="No ageing data"
-          body="Ageing reports appear once invoices or vendor bills are raised."
+          title="No ageing data"
+          description="Ageing reports appear once invoices or vendor bills are raised."
         />
       )}
     </div>

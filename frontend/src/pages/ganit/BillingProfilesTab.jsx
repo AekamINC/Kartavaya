@@ -123,9 +123,10 @@ export default function BillingProfilesTab() {
       ) : (
         <EmptyState
           icon="ganit"
-          heading="No billing profiles"
-          body="Create a billing profile for a client to set up their billing cycle, terms, and GST treatment."
-          action={canWrite ? { label: '+ Billing Profile', onClick: () => setEditing({ ...BLANK }) } : undefined}
+          title="No billing profiles"
+          description="Create a billing profile for a client to set up their billing cycle, terms, and GST treatment."
+          action={canWrite ? '+ Billing Profile' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 
