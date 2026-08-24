@@ -520,14 +520,15 @@ async def admin_set_plan(
     pool = await get_pool()
 
     plan = await pool.fetchrow(
-        "SELECT id, code FROM staging.plans WHERE code=$1 AND is_active=TRUE",
+        "SELECT id, code, price_monthly FROM staging.plans WHERE code=$1 AND is_active=TRUE",
         body.plan_code,
     )
     if not plan:
         raise HTTPException(400, "Invalid plan code")
 
     current = await pool.fetchrow(
-        "SELECT p.code FROM staging.subscriptions s "
+        "SELECT p.code, p.price_monthly, s.current_period_start, s.current_period_end "
+        "FROM staging.subscriptions s "
         "JOIN staging.plans p ON p.id = s.plan_id "
         "WHERE s.org_id=$1::uuid",
         org_id,
@@ -541,28 +542,55 @@ async def admin_set_plan(
     from services.billing_cycle import next_anchor, period_end_for
 
     now = datetime.now(timezone.utc)
+    today = date.today()
     anchor = await pool.fetchval(
         "SELECT billing_anchor_day FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     ) or 1
-    period_start = next_anchor(anchor, date.today())
+    period_start = next_anchor(anchor, today)
     period_end = period_end_for(period_start, body.billing_cycle)
 
-    await pool.execute(
-        "INSERT INTO staging.subscriptions "
-        "(org_id, plan_id, billing_cycle, status, activated_by, notes, "
-        " current_period_start, current_period_end, next_billing_date, updated_at) "
-        "VALUES ($1::uuid, $2, $3, 'active', $4, $5, $6, $7, $7, $8) "
-        "ON CONFLICT (org_id) DO UPDATE SET "
-        "plan_id=EXCLUDED.plan_id, billing_cycle=EXCLUDED.billing_cycle, "
-        "status='active', activated_by=EXCLUDED.activated_by, notes=EXCLUDED.notes, "
-        "current_period_start=EXCLUDED.current_period_start, "
-        "current_period_end=EXCLUDED.current_period_end, "
-        "next_billing_date=EXCLUDED.next_billing_date, updated_at=EXCLUDED.updated_at",
-        org_id, plan["id"], body.billing_cycle,
-        user["user_id"], body.notes,
-        period_start, period_end, now,
-    )
+    proration_lines = []
+    if (current and current["current_period_start"]
+            and current["current_period_end"]
+            and current["current_period_start"] < today < current["current_period_end"]):
+        from services.proration import plan_change_lines
+        old_rate = float(current["price_monthly"] or 0)
+        new_rate = float(plan["price_monthly"] or 0)
+        if old_rate != new_rate:
+            proration_lines = plan_change_lines(
+                old_rate, new_rate,
+                current["current_period_start"], current["current_period_end"],
+                today,
+            )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "INSERT INTO staging.subscriptions "
+                "(org_id, plan_id, billing_cycle, status, activated_by, notes, "
+                " current_period_start, current_period_end, next_billing_date, updated_at) "
+                "VALUES ($1::uuid, $2, $3, 'active', $4, $5, $6, $7, $7, $8) "
+                "ON CONFLICT (org_id) DO UPDATE SET "
+                "plan_id=EXCLUDED.plan_id, billing_cycle=EXCLUDED.billing_cycle, "
+                "status='active', activated_by=EXCLUDED.activated_by, notes=EXCLUDED.notes, "
+                "current_period_start=EXCLUDED.current_period_start, "
+                "current_period_end=EXCLUDED.current_period_end, "
+                "next_billing_date=EXCLUDED.next_billing_date, updated_at=EXCLUDED.updated_at",
+                org_id, plan["id"], body.billing_cycle,
+                user["user_id"], body.notes,
+                period_start, period_end, now,
+            )
+
+            for pl in proration_lines:
+                from services.billing_lines import create_line
+                await create_line(
+                    conn, org_id=org_id,
+                    kind=pl["kind"], description=pl["description"],
+                    amount=pl["amount"], cadence=pl["cadence"],
+                    period_start=current["current_period_start"],
+                    created_by=user["user_id"],
+                )
 
     if body.plan_code == "free":
         await pool.execute(
@@ -575,8 +603,13 @@ async def admin_set_plan(
     await _log_event(pool, org_id, direction, {
         "from": old_code, "to": body.plan_code,
         "set_by": user["user_id"], "notes": body.notes,
+        "proration_lines": len(proration_lines),
     })
-    return {"status": direction, "plan": body.plan_code}
+    return {
+        "status": direction,
+        "plan": body.plan_code,
+        "proration_lines": len(proration_lines),
+    }
 
 
 class BillingAnchor(BaseModel):
@@ -642,6 +675,103 @@ async def admin_pause_subscription(
     return {"status": new_status}
 
 
+# ── P2: Retroactive / Backdated Adjustments ─────────────────
+
+class BackdatedAdjustment(BaseModel):
+    description: str
+    amount: float
+    period_start: str
+    kind: str = "setup"
+
+
+@router.post("/admin/backdated-adjustment")
+async def create_backdated_adjustment(
+    body: BackdatedAdjustment,
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """Create a billing line with a past period_start for late-logged changes.
+
+    Used when an HR mid-month hire is recorded late, or when a service change
+    needs to be reflected in a past billing period.
+    """
+    from services.billing_lines import create_line
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            line = await create_line(
+                conn, org_id=org_id,
+                kind=body.kind, description=body.description,
+                amount=body.amount, cadence="one_off",
+                period_start=body.period_start,
+                created_by=user["user_id"],
+            )
+
+    await _log_event(pool, org_id, "backdated_adjustment", {
+        "line_id": line["id"],
+        "amount": body.amount,
+        "period_start": body.period_start,
+        "by": user["user_id"],
+    })
+    return line
+
+
+# ── P2: Proration Preview ───────────────────────────────────
+
+@router.get("/admin/proration-preview")
+async def proration_preview(
+    new_plan_code: str,
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """Preview what proration lines would be created for a plan change."""
+    pool = await get_pool()
+
+    new_plan = await pool.fetchrow(
+        "SELECT code, price_monthly FROM staging.plans WHERE code=$1 AND is_active=TRUE",
+        new_plan_code,
+    )
+    if not new_plan:
+        raise HTTPException(400, "Invalid plan code")
+
+    current = await pool.fetchrow(
+        "SELECT p.code, p.price_monthly, s.current_period_start, s.current_period_end "
+        "FROM staging.subscriptions s "
+        "JOIN staging.plans p ON p.id = s.plan_id "
+        "WHERE s.org_id=$1::uuid",
+        org_id,
+    )
+    if not current:
+        return {"lines": [], "reason": "No current subscription"}
+
+    today = date.today()
+    if not (current["current_period_start"]
+            and current["current_period_end"]
+            and current["current_period_start"] < today < current["current_period_end"]):
+        return {"lines": [], "reason": "Not mid-cycle — no proration needed"}
+
+    from services.proration import plan_change_lines
+    old_rate = float(current["price_monthly"] or 0)
+    new_rate = float(new_plan["price_monthly"] or 0)
+
+    lines = plan_change_lines(
+        old_rate, new_rate,
+        current["current_period_start"], current["current_period_end"],
+        today,
+    )
+    return {
+        "old_plan": current["code"],
+        "new_plan": new_plan_code,
+        "old_rate": old_rate,
+        "new_rate": new_rate,
+        "period_start": current["current_period_start"].isoformat(),
+        "period_end": current["current_period_end"].isoformat(),
+        "change_date": today.isoformat(),
+        "lines": [{"description": l["description"], "amount": float(l["amount"])} for l in lines],
+    }
+
+
 # ── Module Activation ────────────────────────────────────────
 
 @router.post("/modules/activate")
@@ -691,7 +821,7 @@ async def activate_module(
     # `requires_module` lives. A module with no catalogue row simply has no
     # declared dependency — it must not be an activation failure.
     mod = await pool.fetchrow(
-        "SELECT code, requires_module FROM staging.add_on_modules WHERE code=$1 AND is_active=TRUE",
+        "SELECT code, requires_module, price_per_user_monthly FROM staging.add_on_modules WHERE code=$1 AND is_active=TRUE",
         body.module_code,
     )
 
@@ -713,10 +843,53 @@ async def activate_module(
     )
     clear_module_cache(org_id)
 
+    cotermination_line = None
+    module_price = float(mod["price_per_user_monthly"] or 0) if mod else 0
+    if module_price > 0:
+        sub_row = await pool.fetchrow(
+            "SELECT current_period_start, current_period_end "
+            "FROM staging.subscriptions WHERE org_id=$1::uuid AND status='active'",
+            org_id,
+        )
+        if (sub_row and sub_row["current_period_start"] and sub_row["current_period_end"]
+                and sub_row["current_period_start"] < date.today() < sub_row["current_period_end"]):
+            user_count = await pool.fetchval(
+                "SELECT COUNT(*) FROM staging.user_roles WHERE org_id=$1::uuid",
+                org_id,
+            ) or 1
+            monthly_rate = module_price * user_count
+            from services.proration import module_cotermination
+            coterm = module_cotermination(
+                monthly_rate,
+                sub_row["current_period_start"], sub_row["current_period_end"],
+                date.today(),
+            )
+            if coterm:
+                try:
+                    from services.billing_lines import create_line
+                    async with pool.acquire() as conn:
+                        async with conn.transaction():
+                            cotermination_line = await create_line(
+                                conn, org_id=org_id,
+                                kind=coterm["kind"],
+                                description=f"{body.module_code}: {coterm['description']}",
+                                amount=coterm["amount"],
+                                cadence=coterm["cadence"],
+                                period_start=sub_row["current_period_start"],
+                                created_by=user["user_id"],
+                            )
+                except Exception:
+                    pass
+
     await _log_event(pool, org_id, "module_added", {
         "module": body.module_code, "by": user["user_id"],
+        "cotermination": cotermination_line is not None,
     })
-    return {"status": "activated", "module": body.module_code}
+    return {
+        "status": "activated",
+        "module": body.module_code,
+        "cotermination_line": cotermination_line,
+    }
 
 
 @router.post("/modules/deactivate")
