@@ -22,6 +22,16 @@ from services.billing_cycle import next_anchor, period_end_for
 
 logger = logging.getLogger(__name__)
 
+
+def _as_date(value: str, field: str) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(400, f"{field} is not a date (expected YYYY-MM-DD).")
+
+
 router = APIRouter(prefix="/api/v1/ganit/billing", tags=["client-billing"])
 
 _gate = require_any_module("ganit", "graha", "vikray")
@@ -283,8 +293,10 @@ async def create_service_line(
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11) "
         "RETURNING *",
         org_id, body.profile_id, body.kind, body.description,
-        body.amount, body.cadence, body.period_start,
-        body.period_end, body.billing_direction, body.auto_invoice,
+        body.amount, body.cadence,
+        _as_date(body.period_start, "period_start"),
+        _as_date(body.period_end, "period_end") if body.period_end else None,
+        body.billing_direction, body.auto_invoice,
         user.get("user_id", ""),
     )
     return dict(row)
@@ -303,6 +315,8 @@ async def update_service_line(
     for field in ("description", "amount", "period_end", "auto_invoice"):
         val = getattr(body, field)
         if val is not None:
+            if field == "period_end":
+                val = _as_date(val, field)
             vals.append(val)
             cast = "::date" if field == "period_end" else ""
             updates.append(f"{field}=${len(vals)}{cast}")
@@ -470,7 +484,8 @@ async def create_metered_usage(
         "        COALESCE($7::date, CURRENT_DATE), $8, $9) "
         "RETURNING *",
         org_id, body.profile_id, body.metric, body.quantity,
-        body.unit, body.rate, body.recorded_date,
+        body.unit, body.rate,
+        _as_date(body.recorded_date, "recorded_date") if body.recorded_date else None,
         body.source_ref, user.get("user_id", ""),
     )
     return dict(row)
@@ -498,6 +513,8 @@ async def update_metered_usage(
     for field in ("metric", "quantity", "unit", "rate", "recorded_date", "source_ref"):
         val = getattr(body, field)
         if val is not None:
+            if field == "recorded_date":
+                val = _as_date(val, field)
             vals.append(val)
             cast = "::date" if field == "recorded_date" else ""
             updates.append(f"{field}=${len(vals)}{cast}")
@@ -695,7 +712,9 @@ async def create_rate_card(
         "        COALESCE($6::date, CURRENT_DATE), $7::date, $8, $9, $10) "
         "RETURNING *",
         org_id, body.vendor_id, body.item_category, body.rate, body.unit,
-        body.effective_from, body.effective_to, body.proration_clause,
+        _as_date(body.effective_from, "effective_from") if body.effective_from else None,
+        _as_date(body.effective_to, "effective_to") if body.effective_to else None,
+        body.proration_clause,
         body.notes, user.get("user_id", ""),
     )
     return dict(row)
@@ -715,6 +734,8 @@ async def update_rate_card(
                   "effective_to", "proration_clause", "notes"):
         val = getattr(body, field)
         if val is not None:
+            if field in ("effective_from", "effective_to"):
+                val = _as_date(val, field)
             vals.append(val)
             cast = "::date" if field in ("effective_from", "effective_to") else ""
             updates.append(f"{field}=${len(vals)}{cast}")
@@ -784,7 +805,8 @@ async def create_sla_credit(
         "        $7, $8::date, $9, $10) "
         "RETURNING *",
         org_id, body.vendor_id, body.rate_card_id, body.sla_metric,
-        body.threshold, body.actual, body.credit_amount, body.period,
+        body.threshold, body.actual, body.credit_amount,
+        _as_date(body.period, "period"),
         body.status, user.get("user_id", ""),
     )
     return dict(row)
