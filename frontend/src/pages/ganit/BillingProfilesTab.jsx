@@ -143,7 +143,7 @@ export default function BillingProfilesTab() {
           <div className="gn-form__grid">
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Client" hi="ग्राहक" /></span>
+                <span className="fld__l">Client <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'ग्राहक'}</span></span>
                 <select
                   className="inp"
                   value={editing.client_id}
@@ -155,39 +155,39 @@ export default function BillingProfilesTab() {
               </label>
             )}
             <label className="fld">
-              <span className="fld__l"><Secondary en="Billing Cycle" hi="बिलिंग चक्र" /></span>
+              <span className="fld__l">Billing Cycle <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'बिलिंग चक्र'}</span></span>
               <select className="inp" value={editing.billing_cycle}
                 onChange={e => setEditing({ ...editing, billing_cycle: e.target.value })}>
                 {CYCLES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Anchor Day (1–28)" hi="एंकर दिन" /></span>
+              <span className="fld__l">Anchor Day (1–28) <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'एंकर दिन'}</span></span>
               <input className="inp" type="number" min={1} max={28}
                 value={editing.anchor_day}
                 onChange={e => setEditing({ ...editing, anchor_day: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Payment Terms (days)" hi="भुगतान शर्तें" /></span>
+              <span className="fld__l">Payment Terms (days) <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'भुगतान शर्तें'}</span></span>
               <input className="inp" type="number" min={0}
                 value={editing.payment_terms_days}
                 onChange={e => setEditing({ ...editing, payment_terms_days: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="GST Treatment" hi="जीएसटी उपचार" /></span>
+              <span className="fld__l">GST Treatment <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'जीएसटी उपचार'}</span></span>
               <select className="inp" value={editing.gst_treatment}
                 onChange={e => setEditing({ ...editing, gst_treatment: e.target.value })}>
                 {GST.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Credit Limit" hi="क्रेडिट सीमा" /></span>
+              <span className="fld__l">Credit Limit <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'क्रेडिट सीमा'}</span></span>
               <input className="inp" type="number" min={0}
                 value={editing.credit_limit}
                 onChange={e => setEditing({ ...editing, credit_limit: e.target.value })} />
             </label>
             <label className="fld gn-form__wide">
-              <span className="fld__l"><Secondary en="Notes" hi="टिप्पणियाँ" /></span>
+              <span className="fld__l">Notes <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'टिप्पणियाँ'}</span></span>
               <textarea className="inp" rows={2} value={editing.notes}
                 onChange={e => setEditing({ ...editing, notes: e.target.value })} />
             </label>

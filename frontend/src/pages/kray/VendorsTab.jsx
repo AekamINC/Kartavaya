@@ -98,21 +98,21 @@ export default function VendorsTab() {
         <form className="gn-form gn-form--inline" onSubmit={save} style={{ marginBottom: '1.5rem' }}>
           <div className="gn-form__row">
             <label className="gn-form__field">
-              <Secondary en="Name" hi="नाम" />
+              Name <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'नाम'}</span>
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
             </label>
             <label className="gn-form__field">
-              <Secondary en="GSTIN" hi="जीएसटीआईएन" />
+              GSTIN <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'जीएसटीआईएन'}</span>
               <input value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value }))} placeholder="Optional" />
             </label>
           </div>
           <div className="gn-form__row">
             <label className="gn-form__field">
-              <Secondary en="Email" hi="ईमेल" />
+              Email <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'ईमेल'}</span>
               <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
             </label>
             <label className="gn-form__field">
-              <Secondary en="Phone" hi="फ़ोन" />
+              Phone <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'फ़ोन'}</span>
               <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
             </label>
           </div>

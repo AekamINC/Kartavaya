@@ -113,7 +113,7 @@ export default function ServiceLinesTab() {
 
       {active.length > 0 && (
         <>
-          <h3 className="gn-section-head"><Secondary en="Active" hi="सक्रिय" /></h3>
+          <h3 className="gn-section-head">Active <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'सक्रिय'}</span></h3>
           <DataTable columns={COLUMNS_ACTIVE} label="Active service lines">
             {active.map(sl => (
               <tr key={sl.id}>
@@ -139,7 +139,7 @@ export default function ServiceLinesTab() {
 
       {ended.length > 0 && (
         <>
-          <h3 className="gn-section-head" style={{ marginTop: 'var(--sp-5)' }}><Secondary en="Ended" hi="समाप्त" /></h3>
+          <h3 className="gn-section-head" style={{ marginTop: 'var(--sp-5)' }}>Ended <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'समाप्त'}</span></h3>
           <DataTable columns={COLUMNS_ENDED} label="Ended service lines">
             {ended.map(sl => (
               <tr key={sl.id} style={{ opacity: 0.6 }}>
@@ -166,7 +166,7 @@ export default function ServiceLinesTab() {
           <div className="gn-form__grid">
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Billing Profile" hi="बिलिंग प्रोफ़ाइल" /></span>
+                <span className="fld__l">Billing Profile <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'बिलिंग प्रोफ़ाइल'}</span></span>
                 <select className="inp" value={editing.profile_id}
                   onChange={e => setEditing({ ...editing, profile_id: e.target.value })}>
                   <option value="">Select…</option>
@@ -178,7 +178,7 @@ export default function ServiceLinesTab() {
             )}
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Kind" hi="प्रकार" /></span>
+                <span className="fld__l">Kind <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'प्रकार'}</span></span>
                 <select className="inp" value={editing.kind}
                   onChange={e => setEditing({ ...editing, kind: e.target.value })}>
                   {KINDS.map(k => <option key={k} value={k}>{k.replace('_', ' ')}</option>)}
@@ -186,19 +186,19 @@ export default function ServiceLinesTab() {
               </label>
             )}
             <label className="fld">
-              <span className="fld__l"><Secondary en="Description" hi="विवरण" /></span>
+              <span className="fld__l">Description <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'विवरण'}</span></span>
               <input className="inp" value={editing.description}
                 onChange={e => setEditing({ ...editing, description: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Amount" hi="राशि" /></span>
+              <span className="fld__l">Amount <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'राशि'}</span></span>
               <input className="inp" type="number" min={0} step="0.01"
                 value={editing.amount}
                 onChange={e => setEditing({ ...editing, amount: e.target.value })} />
             </label>
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Cadence" hi="आवृत्ति" /></span>
+                <span className="fld__l">Cadence <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'आवृत्ति'}</span></span>
                 <select className="inp" value={editing.cadence}
                   onChange={e => setEditing({ ...editing, cadence: e.target.value })}>
                   {CADENCES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
@@ -207,20 +207,20 @@ export default function ServiceLinesTab() {
             )}
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Period Start" hi="अवधि प्रारंभ" /></span>
+                <span className="fld__l">Period Start <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'अवधि प्रारंभ'}</span></span>
                 <DateInput value={editing.period_start}
                   onChange={v => setEditing({ ...editing, period_start: v })} />
               </label>
             )}
             <label className="fld">
-              <span className="fld__l"><Secondary en="Period End" hi="अवधि समाप्ति" /></span>
+              <span className="fld__l">Period End <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'अवधि समाप्ति'}</span></span>
               <DateInput value={editing.period_end}
                 onChange={v => setEditing({ ...editing, period_end: v })} />
             </label>
             <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 'var(--sp-2)' }}>
               <input type="checkbox" checked={editing.auto_invoice}
                 onChange={e => setEditing({ ...editing, auto_invoice: e.target.checked })} />
-              <span><Secondary en="Auto-generate invoices" hi="स्वतः चालान" /></span>
+              <span>Auto-generate invoices <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'स्वतः चालान'}</span></span>
             </label>
           </div>
         )}

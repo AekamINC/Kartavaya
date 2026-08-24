@@ -16,7 +16,7 @@ function Section({ title, hi, children, loading, err, retry }) {
   return (
     <details open={open} onToggle={e => setOpen(e.currentTarget.open)} style={{ marginBottom: '1.5rem' }}>
       <summary className="gn-section-head" style={{ cursor: 'pointer', userSelect: 'none' }}>
-        <Secondary en={title} hi={hi} />
+        {title} <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{hi}</span>
       </summary>
       <div style={{ paddingTop: '.75rem' }}>
         {err ? <ErrorState kind={errorKind(err)} onRetry={retry} /> :

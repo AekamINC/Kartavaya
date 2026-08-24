@@ -127,7 +127,7 @@ export default function MeteredUsageTab() {
     <div>
       <div className="gn-bar">
         <label className="gn-bar__f">
-          <span className="gn-bar__fl"><Secondary en="Filter" hi="फ़िल्टर" /></span>
+          <span className="gn-bar__fl">Filter <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'फ़िल्टर'}</span></span>
           <select
             className="inp gn-bar__sel"
             value={filter}
@@ -227,7 +227,7 @@ export default function MeteredUsageTab() {
           <div className="gn-form__grid">
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Billing Profile" hi="बिलिंग प्रोफ़ाइल" /></span>
+                <span className="fld__l">Billing Profile <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'बिलिंग प्रोफ़ाइल'}</span></span>
                 <select className="inp" value={editing.profile_id}
                   onChange={e => setEditing({ ...editing, profile_id: e.target.value })}>
                   <option value="">Select…</option>
@@ -238,36 +238,36 @@ export default function MeteredUsageTab() {
               </label>
             )}
             <label className="fld">
-              <span className="fld__l"><Secondary en="Metric" hi="माप" /></span>
+              <span className="fld__l">Metric <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'माप'}</span></span>
               <input className="inp" value={editing.metric}
                 placeholder="e.g. Consulting Hours, Units Processed"
                 onChange={e => setEditing({ ...editing, metric: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Quantity" hi="मात्रा" /></span>
+              <span className="fld__l">Quantity <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'मात्रा'}</span></span>
               <input className="inp" type="number" min={0} step="0.01"
                 value={editing.quantity}
                 onChange={e => setEditing({ ...editing, quantity: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Unit" hi="इकाई" /></span>
+              <span className="fld__l">Unit <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'इकाई'}</span></span>
               <input className="inp" value={editing.unit}
                 placeholder="e.g. hours, units, transactions"
                 onChange={e => setEditing({ ...editing, unit: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Rate" hi="दर" /></span>
+              <span className="fld__l">Rate <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'दर'}</span></span>
               <input className="inp" type="number" min={0} step="0.01"
                 value={editing.rate}
                 onChange={e => setEditing({ ...editing, rate: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Date" hi="तिथि" /></span>
+              <span className="fld__l">Date <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'तिथि'}</span></span>
               <DateInput value={editing.recorded_date}
                 onChange={v => setEditing({ ...editing, recorded_date: v })} />
             </label>
             <label className="fld gn-form__wide">
-              <span className="fld__l"><Secondary en="Source Reference" hi="स्रोत संदर्भ" /></span>
+              <span className="fld__l">Source Reference <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'स्रोत संदर्भ'}</span></span>
               <input className="inp" value={editing.source_ref || ''}
                 placeholder="e.g. task:uuid, timesheet:uuid"
                 onChange={e => setEditing({ ...editing, source_ref: e.target.value })} />

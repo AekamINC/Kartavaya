@@ -156,7 +156,7 @@ export default function RateCardsTab() {
           <div className="gn-form__grid">
             {!editing.id && (
               <label className="fld">
-                <span className="fld__l"><Secondary en="Vendor" hi="विक्रेता" /></span>
+                <span className="fld__l">Vendor <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'विक्रेता'}</span></span>
                 <select className="inp" value={editing.vendor_id}
                   onChange={e => setEditing({ ...editing, vendor_id: e.target.value })}>
                   <option value="">Select a vendor…</option>
@@ -165,39 +165,39 @@ export default function RateCardsTab() {
               </label>
             )}
             <label className="fld">
-              <span className="fld__l"><Secondary en="Item Category" hi="वस्तु श्रेणी" /></span>
+              <span className="fld__l">Item Category <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'वस्तु श्रेणी'}</span></span>
               <input className="inp" value={editing.item_category}
                 onChange={e => setEditing({ ...editing, item_category: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Rate" hi="दर" /></span>
+              <span className="fld__l">Rate <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'दर'}</span></span>
               <input className="inp" type="number" min={0} step="0.01"
                 value={editing.rate}
                 onChange={e => setEditing({ ...editing, rate: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Unit" hi="इकाई" /></span>
+              <span className="fld__l">Unit <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'इकाई'}</span></span>
               <input className="inp" value={editing.unit}
                 placeholder="e.g. hours, units, kg"
                 onChange={e => setEditing({ ...editing, unit: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Effective From" hi="प्रभावी तिथि" /></span>
+              <span className="fld__l">Effective From <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'प्रभावी तिथि'}</span></span>
               <DateInput value={editing.effective_from}
                 onChange={v => setEditing({ ...editing, effective_from: v })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Effective To" hi="समाप्ति तिथि" /></span>
+              <span className="fld__l">Effective To <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'समाप्ति तिथि'}</span></span>
               <DateInput value={editing.effective_to}
                 onChange={v => setEditing({ ...editing, effective_to: v })} />
             </label>
             <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 'var(--sp-2)' }}>
               <input type="checkbox" checked={!!editing.proration_clause}
                 onChange={e => setEditing({ ...editing, proration_clause: e.target.checked })} />
-              <span><Secondary en="Proration Clause" hi="यथानुपात खंड" /></span>
+              <span>Proration Clause <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'यथानुपात खंड'}</span></span>
             </label>
             <label className="fld gn-form__wide">
-              <span className="fld__l"><Secondary en="Notes" hi="टिप्पणियाँ" /></span>
+              <span className="fld__l">Notes <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'टिप्पणियाँ'}</span></span>
               <textarea className="inp" rows={2} value={editing.notes}
                 onChange={e => setEditing({ ...editing, notes: e.target.value })} />
             </label>

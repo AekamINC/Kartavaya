@@ -34,7 +34,7 @@ function Section({ title, hi, partyLabel, data }) {
 
   return (
     <div style={{ marginBottom: 'var(--sp-7)' }}>
-      <h3 className="gn-section-head"><Secondary en={title} hi={hi} /></h3>
+      <h3 className="gn-section-head">{title} <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{hi}</span></h3>
 
       <DataTable columns={TOTAL_COLUMNS} label={`${title} totals`}>
         <tr>

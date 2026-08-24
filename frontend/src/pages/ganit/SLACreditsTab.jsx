@@ -186,7 +186,7 @@ export default function SLACreditsTab() {
         {editing && (
           <div className="gn-form__grid">
             <label className="fld">
-              <span className="fld__l"><Secondary en="Vendor" hi="विक्रेता" /></span>
+              <span className="fld__l">Vendor <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'विक्रेता'}</span></span>
               <select className="inp" value={editing.vendor_id}
                 onChange={e => setEditing({ ...editing, vendor_id: e.target.value })}>
                 <option value="">Select a vendor…</option>
@@ -194,36 +194,36 @@ export default function SLACreditsTab() {
               </select>
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="SLA Metric" hi="एसएलए माप" /></span>
+              <span className="fld__l">SLA Metric <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'एसएलए माप'}</span></span>
               <input className="inp" value={editing.sla_metric}
                 placeholder="e.g. Uptime %, Response Time (hrs)"
                 onChange={e => setEditing({ ...editing, sla_metric: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Threshold" hi="सीमा" /></span>
+              <span className="fld__l">Threshold <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'सीमा'}</span></span>
               <input className="inp" type="number" step="0.0001"
                 value={editing.threshold}
                 onChange={e => setEditing({ ...editing, threshold: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Actual" hi="वास्तविक" /></span>
+              <span className="fld__l">Actual <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'वास्तविक'}</span></span>
               <input className="inp" type="number" step="0.0001"
                 value={editing.actual}
                 onChange={e => setEditing({ ...editing, actual: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Credit Amount" hi="क्रेडिट राशि" /></span>
+              <span className="fld__l">Credit Amount <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'क्रेडिट राशि'}</span></span>
               <input className="inp" type="number" min={0} step="0.01"
                 value={editing.credit_amount}
                 onChange={e => setEditing({ ...editing, credit_amount: e.target.value })} />
             </label>
             <label className="fld">
-              <span className="fld__l"><Secondary en="Period" hi="अवधि" /></span>
+              <span className="fld__l">Period <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'अवधि'}</span></span>
               <DateInput value={editing.period}
                 onChange={v => setEditing({ ...editing, period: v })} />
             </label>
             <label className="fld gn-form__wide">
-              <span className="fld__l"><Secondary en="Rate Card" hi="दर कार्ड" /></span>
+              <span className="fld__l">Rate Card <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'दर कार्ड'}</span></span>
               <select className="inp" value={editing.rate_card_id}
                 onChange={e => setEditing({ ...editing, rate_card_id: e.target.value })}>
                 <option value="">None</option>
@@ -248,7 +248,7 @@ export default function SLACreditsTab() {
         </>}
       >
         <label className="fld">
-          <span className="fld__l"><Secondary en="Bill ID" hi="बिल आईडी" /></span>
+          <span className="fld__l">Bill ID <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'बिल आईडी'}</span></span>
           <input className="inp" value={applyBillId} onChange={e => setApplyBillId(e.target.value)}
             placeholder="Enter the bill ID to apply this credit to" />
         </label>
