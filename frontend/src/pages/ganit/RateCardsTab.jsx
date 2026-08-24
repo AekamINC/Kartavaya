@@ -5,6 +5,7 @@ import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
   vendor_id: '', item_category: '', rate: '', unit: '',
@@ -83,8 +84,11 @@ export default function RateCardsTab() {
 
       {items.length === 0 && !editing && (
         <EmptyState
+          illustration="invoice"
           title="No vendor rate cards"
-          message="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
+          description="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
+          action={canWrite ? '+ Rate Card' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 
@@ -166,15 +170,13 @@ export default function RateCardsTab() {
             </label>
             <label className="k-field">
               <span className="k-field-label">Effective From</span>
-              <input className="k-input" type="text" placeholder="YYYY-MM-DD"
-                value={editing.effective_from}
-                onChange={e => setEditing({ ...editing, effective_from: e.target.value })} />
+              <DateInput value={editing.effective_from}
+                onChange={v => setEditing({ ...editing, effective_from: v })} />
             </label>
             <label className="k-field">
-              <span className="k-field-label">Effective To</span>
-              <input className="k-input" type="text" placeholder="YYYY-MM-DD (optional)"
-                value={editing.effective_to}
-                onChange={e => setEditing({ ...editing, effective_to: e.target.value })} />
+              <span className="k-field-label">Effective To (optional)</span>
+              <DateInput value={editing.effective_to}
+                onChange={v => setEditing({ ...editing, effective_to: v })} />
             </label>
             <label className="k-field k-field-checkbox">
               <input type="checkbox" checked={!!editing.proration_clause}

@@ -124,8 +124,11 @@ export default function MeteredUsageTab() {
 
       {items.length === 0 && !editing && (
         <EmptyState
+          illustration="invoice"
           title="No usage entries"
-          message="Record billable hours, units, or transactions for your clients. Generate invoices from unbilled usage."
+          description="Record billable hours, units, or transactions for your clients. Generate invoices from unbilled usage."
+          action={canWrite ? '+ Usage Entry' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 

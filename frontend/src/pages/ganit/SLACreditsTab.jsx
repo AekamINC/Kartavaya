@@ -5,6 +5,7 @@ import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
   vendor_id: '', sla_metric: '', threshold: '', actual: '',
@@ -17,6 +18,7 @@ export default function SLACreditsTab() {
   const { canWrite } = useModuleWrite({ label: 'manage SLA credits' });
   const [items, setItems] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [rateCards, setRateCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -25,12 +27,14 @@ export default function SLACreditsTab() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [sc, v] = await Promise.all([
+      const [sc, v, rc] = await Promise.all([
         api.get('/v1/ganit/billing/sla-credits'),
         api.get('/v1/ganit/vendors'),
+        api.get('/v1/ganit/billing/rate-cards'),
       ]);
       setItems(asRows(sc));
       setVendors(asRows(v));
+      setRateCards(asRows(rc));
     } catch (e) { setErr(e); }
     setLoading(false);
   }, []);
@@ -96,8 +100,11 @@ export default function SLACreditsTab() {
 
       {items.length === 0 && !editing && (
         <EmptyState
+          illustration="invoice"
           title="No SLA credits"
-          message="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
+          description="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
+          action={canWrite ? '+ SLA Credit' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 
@@ -189,15 +196,20 @@ export default function SLACreditsTab() {
             </label>
             <label className="k-field">
               <span className="k-field-label">Period</span>
-              <input className="k-input" type="text" placeholder="YYYY-MM-DD"
-                value={editing.period}
-                onChange={e => setEditing({ ...editing, period: e.target.value })} />
+              <DateInput value={editing.period}
+                onChange={v => setEditing({ ...editing, period: v })} />
             </label>
             <label className="k-field">
               <span className="k-field-label">Rate Card (optional)</span>
-              <input className="k-input" value={editing.rate_card_id}
-                placeholder="Rate card ID"
-                onChange={e => setEditing({ ...editing, rate_card_id: e.target.value })} />
+              <select className="k-input" value={editing.rate_card_id}
+                onChange={e => setEditing({ ...editing, rate_card_id: e.target.value })}>
+                <option value="">None</option>
+                {rateCards.map(rc => (
+                  <option key={rc.id} value={rc.id}>
+                    {rc.vendor_name} — {rc.item_category} ({inr(rc.rate)}/{rc.unit})
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
         </ConfirmDialog>

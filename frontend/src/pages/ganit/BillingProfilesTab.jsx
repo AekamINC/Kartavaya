@@ -84,8 +84,11 @@ export default function BillingProfilesTab() {
 
       {items.length === 0 && !editing && (
         <EmptyState
+          illustration="invoice"
           title="No billing profiles"
-          message="Create a billing profile for a client to set up their billing cycle, terms, and GST treatment."
+          description="Create a billing profile for a client to set up their billing cycle, terms, and GST treatment."
+          action={canWrite ? '+ Billing Profile' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 

@@ -81,8 +81,11 @@ export default function ServiceLinesTab() {
 
       {items.length === 0 && !editing && (
         <EmptyState
+          illustration="invoice"
           title="No service lines"
-          message="Add recurring retainers, subscriptions, or one-off charges for your clients."
+          description="Add recurring retainers, subscriptions, or one-off charges for your clients."
+          action={canWrite ? '+ Service Line' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
       )}
 
