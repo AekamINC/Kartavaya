@@ -1611,7 +1611,7 @@ class TaskOut(BaseModel):
     approval_status:Optional[str]=None; approval_notes:Optional[str]=None; approved_by:Optional[str]=None
     approval_requested_at:Optional[datetime]=None; approval_decided_at:Optional[datetime]=None
     requires_approval:bool=False; created_by_name:Optional[str]=None
-    archived_at:Optional[datetime]=None; reminders:List[ReminderOut]=[]
+    archived_at:Optional[datetime]=None; reminders:List[ReminderOut]=[]; comment_count:int=0
 class TaskMoveIn(BaseModel):
     column_id:str; order:int
 class CommentCreate(BaseModel):
@@ -4156,7 +4156,8 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
                  LEFT JOIN users au ON au.user_id=uid
                ) AS assignee_names,
                pc.name AS column_name,
-               pc.color AS column_color
+               pc.color AS column_color,
+               (SELECT count(*) FROM task_comments tc WHERE tc.task_id=t.task_id) AS comment_count
         FROM tasks t
         LEFT JOIN users cu ON cu.user_id=t.created_by_user_id
         LEFT JOIN project_columns pc ON pc.column_id=t.column_id
