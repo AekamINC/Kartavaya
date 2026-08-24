@@ -1315,7 +1315,7 @@ class TeamOut(BaseModel):
         return v
 
 class TeamMemberAdd(BaseModel):
-    email:str; role:str="member"
+    email:Optional[str]=None; role:str="member"; user_id:Optional[str]=None
 class TeamMemberUpdate(BaseModel):
     role:Optional[str]=None; status:Optional[str]=None
 class TeamMemberOut(BaseModel):
@@ -3325,7 +3325,7 @@ async def add_subtask(task_id:str,body:Subtask,pool=Depends(get_db),user=Depends
     # routes at all. `_SQL_SET_SUBTASKS` is a bare `team_id=ANY(...)` predicate
     # and a client's project is in that array.
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=json.loads(task["subtasks"] or "[]")
+    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
     new_sub={"subtask_id":f"sub_{uuid.uuid4().hex[:12]}","title":body.title,"is_done":False,"order":len(subtasks)}
     subtasks.append(new_sub)
     row=await pool.fetchrow(_SQL_SET_SUBTASKS,json.dumps(subtasks),task_id,team_ids)
@@ -3343,7 +3343,7 @@ async def toggle_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=json.loads(task["subtasks"] or "[]")
+    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
     for s in subtasks:
         if s["subtask_id"]==subtask_id: s["is_done"]=not s.get("is_done",False)
     row=await pool.fetchrow(_SQL_SET_SUBTASKS,json.dumps(subtasks),task_id,team_ids)
@@ -3357,7 +3357,7 @@ async def delete_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=json.loads(task["subtasks"] or "[]")
+    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
     removed=[s for s in subtasks if s["subtask_id"]==subtask_id]
     subtasks=[s for s in subtasks if s["subtask_id"]!=subtask_id]
     row=await pool.fetchrow(_SQL_SET_SUBTASKS,json.dumps(subtasks),task_id,team_ids)
@@ -3380,7 +3380,7 @@ async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depen
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=json.loads(task["subtasks"] or "[]")
+    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
     for s in subtasks:
         if s["subtask_id"]==subtask_id:
             if body.assignee_user_id is not None:
@@ -3801,8 +3801,15 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
     """Add or re-invite a member to a project by email."""
     mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
     if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
-    email=payload.email.strip().lower()
-    existing_user=await pool.fetchrow("SELECT user_id FROM users WHERE email=$1",email)
+    if payload.user_id and not payload.email:
+        resolved=await pool.fetchrow("SELECT user_id,email FROM users WHERE user_id=$1",payload.user_id)
+        if not resolved: raise HTTPException(404,"User not found")
+        email=resolved["email"]
+        existing_user=resolved
+    else:
+        if not payload.email: raise HTTPException(422,"email or user_id required")
+        email=payload.email.strip().lower()
+        existing_user=await pool.fetchrow("SELECT user_id FROM users WHERE email=$1",email)
     uid=existing_user["user_id"] if existing_user else None
     await pool.execute("DELETE FROM team_members WHERE team_id=$1 AND email=$2",team_id,email)
     if uid: await pool.execute("DELETE FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,uid)

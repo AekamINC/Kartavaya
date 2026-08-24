@@ -98,9 +98,11 @@ export default function TeamsPage() {
 
   const addMember = async () => {
     const email = selectedUser ? selectedUser.email : inviteEmail.trim().toLowerCase();
-    if (!email || !selectedId) return;
+    const userId = selectedUser?.user_id;
+    if ((!email && !userId) || !selectedId) return;
     const res = await api.post(`/teams/${selectedId}/members`, {
-      email,
+      email: email || undefined,
+      user_id: userId || undefined,
       role: inviteRole,
       receives_approval_emails: inviteRole === 'client' ? clientApproval : undefined,
       company_name: inviteRole === 'client' ? (clientCompany.trim() || selectedUser?.company_name || '') : undefined,
