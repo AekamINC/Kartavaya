@@ -3,6 +3,7 @@ org_resolver.py — Bridge between production team_id and staging org_id.
 Production uses text team_id everywhere; staging modules use UUID org_id.
 Orgs must be created by a platform admin — no auto-creation.
 """
+import asyncio
 import logging
 
 import asyncpg
@@ -507,6 +508,8 @@ def _attribute(org_id: str, user) -> str:
     """
     try:
         set_org(org_id, user.get("user_id") if isinstance(user, dict) else None)
+        from outbound import warm_email_caps
+        asyncio.ensure_future(warm_email_caps(org_id))
     except Exception:
         logger.debug("org_resolver: could not attribute this request's sends",
                      exc_info=True)

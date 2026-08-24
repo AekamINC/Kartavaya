@@ -95,6 +95,7 @@ const PLANS = [
 const EMPTY_ORG = {
   name: '', owner_email: '', plan_code: '',
   markup_pct: 0.3, monthly_credits: '', monthly_price: '', max_users: '',
+  email_cap_daily: '', email_cap_monthly: '', email_overage_rate: '',
 };
 const EMPTY_R2 = { account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' };
 
@@ -178,6 +179,9 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
         monthly_credits: numOrNull(form.monthly_credits),
         monthly_price: numOrNull(form.monthly_price),
         max_users: numOrNull(form.max_users),
+        email_cap_daily: numOrNull(form.email_cap_daily),
+        email_cap_monthly: numOrNull(form.email_cap_monthly),
+        email_overage_rate: numOrNull(form.email_overage_rate),
       };
       if (withR2) payload.r2 = r2;
       const res = await api.post('/v1/admin/orgs', payload);
@@ -260,6 +264,19 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
           hint="Any negotiated number is typable — this field imposes no increment."
         >
           {p => <Input {...p} type="number" min="1" step="1" value={form.max_users} onChange={e => setForm(f => ({ ...f, max_users: e.target.value }))} />}
+        </Field>
+      </div>
+
+      <div className="apg__sec">
+        <h3 className="apg__sect">Email caps</h3>
+        <Field label="Daily cap" htmlFor="co-ecap-d" hint="Max emails per day. Leave empty for unlimited.">
+          {p => <Input {...p} type="number" min="0" step="1" value={form.email_cap_daily} onChange={e => setForm(f => ({ ...f, email_cap_daily: e.target.value }))} />}
+        </Field>
+        <Field label="Monthly cap" htmlFor="co-ecap-m" hint="Max emails per month. Leave empty for unlimited.">
+          {p => <Input {...p} type="number" min="0" step="1" value={form.email_cap_monthly} onChange={e => setForm(f => ({ ...f, email_cap_monthly: e.target.value }))} />}
+        </Field>
+        <Field label="Overage rate ₹" htmlFor="co-ecap-r" hint="Per-email charge above cap. Leave empty to hard-block.">
+          {p => <Input {...p} type="number" min="0" step="any" value={form.email_overage_rate} onChange={e => setForm(f => ({ ...f, email_overage_rate: e.target.value }))} />}
         </Field>
       </div>
 
@@ -592,6 +609,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const [addEmail, setAddEmail] = useState('');
   const [addRole, setAddRole] = useState('org_admin');
   const [confirm, setConfirm] = useState(null);
+  const [emailUsage, setEmailUsage] = useState(null);
 
   const me = currentUser();
   const maySuspend = canSuspendOrg(me?.platform_roles);
@@ -621,6 +639,9 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
     .catch(setErr), [orgId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.get(`/v1/admin/orgs/${orgId}/email-usage`).then(r => setEmailUsage(r.data)).catch(() => {});
+  }, [orgId]);
 
   if (err) {
     return (
@@ -785,6 +806,32 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
           canWrite={mayBill}
           reason={mayBill ? null : 'Credits and ceilings need platform owner, platform manager or account/finance access.'}
         />
+
+        {emailUsage && (emailUsage.daily_cap != null || emailUsage.monthly_cap != null) && (
+          <section className="apg__sec">
+            <h3 className="apg__sect">Email usage</h3>
+            <div className="crb">
+              {emailUsage.daily_cap != null && (
+                <div className="crb__b">
+                  <span className="crb__k">Today</span>
+                  <b className="crb__v">{emailUsage.daily_usage} / {emailUsage.daily_cap}</b>
+                </div>
+              )}
+              {emailUsage.monthly_cap != null && (
+                <div className="crb__b">
+                  <span className="crb__k">This month</span>
+                  <b className="crb__v">{emailUsage.monthly_usage} / {emailUsage.monthly_cap}</b>
+                </div>
+              )}
+              {emailUsage.overage_rate != null && (
+                <div className="crb__b">
+                  <span className="crb__k">Overage rate</span>
+                  <b className="crb__v">₹{emailUsage.overage_rate}/email</b>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="apg__sec">
           <div className="apg__sech">

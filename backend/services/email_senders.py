@@ -326,6 +326,9 @@ _BUCKET: dict[str, str] = {
     # and a firm that unsubscribed from campaign mail has not consented to lose
     # the ability to ask for help.
     "support_request": "notifications",
+
+    # Cap alert to org owner/admins and Aekam admin when usage hits 80%.
+    "email_cap_alert": "notifications",
 }
 
 

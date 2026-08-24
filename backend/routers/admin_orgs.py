@@ -109,6 +109,9 @@ class OrgCreate(BaseModel):
     # someone later believes, reconciles against and invoices.
     is_platform_org: bool = False
     r2: Optional[R2Credentials] = None
+    email_cap_daily: Optional[int] = None
+    email_cap_monthly: Optional[int] = None
+    email_overage_rate: Optional[float] = None
 
 
 #: Fields on the create body that are COMMERCIAL TERMS rather than provisioning.
@@ -121,6 +124,7 @@ class OrgCreate(BaseModel):
 #: behind the billing roles.
 COMMERCIAL_ORG_FIELDS: tuple[str, ...] = (
     "markup_pct", "monthly_credits", "monthly_price", "max_users",
+    "email_cap_daily", "email_cap_monthly", "email_overage_rate",
 )
 
 #: The one field that is god mode even among the billing roles: it is what
@@ -675,14 +679,17 @@ async def create_org(
                 "INSERT INTO staging.organisations "
                 "(id, team_id, name, owner_user_id, email, r2_account_id, r2_access_key_id, "
                 " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
-                " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
-                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE)",
+                " monthly_credits, monthly_price, max_users, is_platform_org, is_active, "
+                " email_cap_daily, email_cap_monthly, email_overage_rate) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE, "
+                " $16, $17, $18)",
                 org_id, team_id, body.name,
                 owner["user_id"] if owner else None,
                 body.owner_email.lower(),
                 r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
                 storage_limit, body.markup_pct, monthly_credits, monthly_price,
                 body.max_users, body.is_platform_org,
+                body.email_cap_daily, body.email_cap_monthly, body.email_overage_rate,
             )
 
             # ── The founding project, and the org stamped on it ──────────────
@@ -1765,6 +1772,31 @@ async def update_org_settings(
         params.append(payee["upi_payee_name"])
         idx += 1
 
+    # Email caps: nullable columns, `in body` semantics like max_users.
+    if "email_cap_daily" in body:
+        v = None if body["email_cap_daily"] is None else _number("email_cap_daily", int)
+        if v is not None and v < 0:
+            raise HTTPException(400, "email_cap_daily must be non-negative")
+        updates.append(f"email_cap_daily=${idx}")
+        params.append(v)
+        idx += 1
+
+    if "email_cap_monthly" in body:
+        v = None if body["email_cap_monthly"] is None else _number("email_cap_monthly", int)
+        if v is not None and v < 0:
+            raise HTTPException(400, "email_cap_monthly must be non-negative")
+        updates.append(f"email_cap_monthly=${idx}")
+        params.append(v)
+        idx += 1
+
+    if "email_overage_rate" in body:
+        v = None if body["email_overage_rate"] is None else _number("email_overage_rate", float)
+        if v is not None and v < 0:
+            raise HTTPException(400, "email_overage_rate must be non-negative")
+        updates.append(f"email_overage_rate=${idx}")
+        params.append(v)
+        idx += 1
+
     # God mode alone, even among the billing roles: this is the flag that skips
     # the org balance check entirely, so the role that can set it can give an
     # org free everything. Metering still happens for a platform org — the
@@ -1828,7 +1860,8 @@ async def update_org_settings(
                     )
 
     row = await pool.fetchrow(
-        "SELECT markup_pct, monthly_credits, monthly_price, max_users, is_platform_org "
+        "SELECT markup_pct, monthly_credits, monthly_price, max_users, is_platform_org, "
+        "       email_cap_daily, email_cap_monthly, email_overage_rate "
         "FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     )
@@ -1838,10 +1871,11 @@ async def update_org_settings(
         "markup_pct": float(row["markup_pct"]),
         "monthly_credits": row["monthly_credits"],
         "monthly_price": float(row["monthly_price"]),
-        # None is unlimited-by-plan, not zero. Rendered as-is so the console can
-        # tell "inherits the plan" from "capped at nothing".
         "max_users": row["max_users"],
         "is_platform_org": bool(row["is_platform_org"]),
+        "email_cap_daily": row["email_cap_daily"],
+        "email_cap_monthly": row["email_cap_monthly"],
+        "email_overage_rate": float(row["email_overage_rate"]) if row["email_overage_rate"] is not None else None,
         # ECHOED FROM WHAT WAS WRITTEN, not from the read-back above, and the
         # asymmetry is the point rather than an oversight. The five figures above
         # HAVE to be re-read: on the three NOT NULL columns a null means "leave
@@ -1855,6 +1889,31 @@ async def update_org_settings(
         # "there isn't one". `GET /admin/orgs/{org_id}` returns the stored pair
         # either way and is where a screen reads it.
         **payee,
+    }
+
+
+@router.get("/{org_id}/email-usage")
+async def get_email_usage(
+    org_id: str,
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
+):
+    """Current email usage and caps for an org."""
+    pool = await get_pool()
+    from services.email_caps import email_usage, check_email_cap
+    usage = await email_usage(pool, org_id)
+    org = await pool.fetchrow(
+        "SELECT email_cap_daily, email_cap_monthly, email_overage_rate "
+        "FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
+    if not org:
+        raise HTTPException(404, "Organisation not found")
+    return {
+        "daily_usage": usage["daily"],
+        "monthly_usage": usage["monthly"],
+        "daily_cap": org["email_cap_daily"],
+        "monthly_cap": org["email_cap_monthly"],
+        "overage_rate": float(org["email_overage_rate"]) if org["email_overage_rate"] is not None else None,
     }
 
 

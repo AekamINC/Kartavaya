@@ -164,9 +164,12 @@ That placement is the entire subtlety and it is worth the paragraph:
     that needs neither. See `set_org()`.
 """
 
+import asyncio
 import logging
 import os
+import threading
 import uuid
+from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -492,13 +495,25 @@ def begin(channel: str, target: str = "", detail: str = "", *,
     if org_blocked:
         blocked = True
 
+    # EMAIL CAP ENFORCEMENT. Checked after the org gate and before the row is
+    # written, so a capped send is recorded as 'capped' in the ledger. The
+    # check is sync and uses an in-memory counter + cached caps — no DB query
+    # on the hot path.
+    email_capped = False
+    if not blocked and channel == "email" and org_id is not None:
+        cap_result = _check_email_cap_sync(org_id)
+        if cap_result == "blocked":
+            blocked = True
+            email_capped = True
+
     fields = {
         "id": uuid.uuid4(),
         "ts": datetime.now(timezone.utc),
         "channel": channel,
         "target": target,
         "subject": detail,
-        "status": (outbound_log.STATUS_SUPPRESSED if blocked
+        "status": ("capped" if email_capped
+                   else outbound_log.STATUS_SUPPRESSED if blocked
                    else outbound_log.STATUS_QUEUED),
         # Which switch the PROCESS was under, not which one fired — staging and
         # production write to the same schema and this key is what tells their
@@ -515,14 +530,18 @@ def begin(channel: str, target: str = "", detail: str = "", *,
         # `detail` holds names of things. `suppressed_by: 'org'` is the name of
         # the switch that fired when it was NOT the mode, added on a COPY —
         # the caller's dict is the caller's.
-        "detail": (dict(context or {}, suppressed_by="org")
+        "detail": (dict(context or {}, suppressed_by="cap")
+                   if email_capped
+                   else dict(context or {}, suppressed_by="org")
                    if org_blocked else context),
         "provider": None,
         "message_id": None,
         "error": None,
     }
     att = Attempt(blocked, fields,
-                  "org" if org_blocked else ("dry" if blocked else None))
+                  "cap" if email_capped
+                  else "org" if org_blocked
+                  else ("dry" if blocked else None))
 
     try:
         if blocked:
@@ -530,12 +549,18 @@ def begin(channel: str, target: str = "", detail: str = "", *,
             # console, and a non-UTF8 terminal turns a nice arrow into mojibake.
             logger.warning(
                 "OUTBOUND[%s] suppressed %s -> %s%s",
-                "org" if org_blocked else "dry",
+                "cap" if email_capped else "org" if org_blocked else "dry",
                 channel, target or "(no target)", f" | {detail}" if detail else "",
             )
         # The live case gets no log line. Railway rotates logs per deployment,
         # which is why the August history is gone; the row is the record.
         outbound_log.write(**fields)
+
+        # Increment the in-memory counter for non-blocked email sends, and
+        # schedule a background alert check if the usage crossed 80%.
+        if not blocked and channel == "email" and org_id is not None:
+            _increment_email_counter(org_id)
+            _maybe_schedule_alert(org_id)
     except Exception:
         logger.debug("outbound: recording an attempt failed", exc_info=True)
 
@@ -583,3 +608,243 @@ def sending(channel: str, target: str = "", detail: str = "", **kwargs):
     except BaseException as exc:
         att.failed(exc)
         raise
+
+
+# ── Email cap enforcement ─────────────────────────────────────────────────────
+#
+# Process-local, approximate counters. The caps themselves are cached from the
+# DB with a TTL. This is a rate limit, not an accounting system — the billing
+# view uses the actual DB counts.
+
+_cap_lock = threading.Lock()
+
+# org_id -> {"daily_cap": int|None, "monthly_cap": int|None,
+#            "overage_rate": float|None, "loaded_at": float}
+_cap_cache: dict[str, dict] = {}
+_CAP_TTL = 300.0  # 5 minutes
+
+# org_id -> {"daily": int, "monthly": int, "day": str, "month": str}
+_email_counters: dict[str, dict] = defaultdict(
+    lambda: {"daily": 0, "monthly": 0, "day": "", "month": ""}
+)
+
+
+def _today_keys() -> tuple[str, str]:
+    """Return (day_key, month_key) in IST for period boundaries."""
+    from datetime import timedelta
+    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    return now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
+
+
+def _increment_email_counter(org_id: str) -> None:
+    """Bump the in-memory email counter for this org."""
+    try:
+        day_key, month_key = _today_keys()
+        with _cap_lock:
+            c = _email_counters[org_id]
+            if c["day"] != day_key:
+                c["daily"] = 0
+                c["day"] = day_key
+            if c["month"] != month_key:
+                c["monthly"] = 0
+                c["month"] = month_key
+            c["daily"] += 1
+            c["monthly"] += 1
+    except Exception:
+        pass
+
+
+def _check_email_cap_sync(org_id: str) -> str | None:
+    """Sync cap check using cached caps and in-memory counters.
+    Returns 'blocked' if hard-capped, 'overage' if over cap with rate, None if OK.
+    """
+    import time
+    try:
+        with _cap_lock:
+            cached = _cap_cache.get(org_id)
+
+        if cached is None or (time.monotonic() - cached.get("loaded_at", 0)) > _CAP_TTL:
+            return None  # no cached caps — allow (async warm will populate)
+
+        daily_cap = cached.get("daily_cap")
+        monthly_cap = cached.get("monthly_cap")
+        overage_rate = cached.get("overage_rate")
+
+        if daily_cap is None and monthly_cap is None:
+            return None
+
+        day_key, month_key = _today_keys()
+        with _cap_lock:
+            c = _email_counters[org_id]
+            if c["day"] != day_key:
+                c["daily"] = 0
+                c["day"] = day_key
+            if c["month"] != month_key:
+                c["monthly"] = 0
+                c["month"] = month_key
+            daily_usage = c["daily"]
+            monthly_usage = c["monthly"]
+
+        exceeded = False
+        if daily_cap is not None and daily_usage >= daily_cap:
+            exceeded = True
+        if monthly_cap is not None and monthly_usage >= monthly_cap:
+            exceeded = True
+
+        if exceeded:
+            if overage_rate is not None:
+                return "overage"
+            return "blocked"
+        return None
+    except Exception:
+        return None  # never block on a check failure
+
+
+async def warm_email_caps(org_id: str) -> None:
+    """Load an org's email caps into the process cache. Call from async context."""
+    import time
+    try:
+        from db import get_pool
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT email_cap_daily, email_cap_monthly, email_overage_rate "
+            "FROM staging.organisations WHERE id = $1::uuid",
+            org_id,
+        )
+        if row:
+            with _cap_lock:
+                _cap_cache[org_id] = {
+                    "daily_cap": row["email_cap_daily"],
+                    "monthly_cap": row["email_cap_monthly"],
+                    "overage_rate": float(row["email_overage_rate"]) if row["email_overage_rate"] is not None else None,
+                    "loaded_at": time.monotonic(),
+                }
+    except Exception:
+        logger.debug("outbound: warming email caps failed", exc_info=True)
+
+
+def _maybe_schedule_alert(org_id: str) -> None:
+    """If usage just crossed 80%, schedule an async alert in the background."""
+    try:
+        with _cap_lock:
+            cached = _cap_cache.get(org_id)
+        if not cached:
+            return
+
+        daily_cap = cached.get("daily_cap")
+        monthly_cap = cached.get("monthly_cap")
+        if daily_cap is None and monthly_cap is None:
+            return
+
+        day_key, month_key = _today_keys()
+        with _cap_lock:
+            c = _email_counters[org_id]
+            daily_usage = c.get("daily", 0)
+            monthly_usage = c.get("monthly", 0)
+
+        should_alert_daily = (
+            daily_cap is not None
+            and daily_usage == int(daily_cap * 0.8)
+        )
+        should_alert_monthly = (
+            monthly_cap is not None
+            and monthly_usage == int(monthly_cap * 0.8)
+        )
+
+        if not should_alert_daily and not should_alert_monthly:
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        if should_alert_daily:
+            loop.create_task(_fire_cap_alert(org_id, "daily", day_key))
+        if should_alert_monthly:
+            loop.create_task(_fire_cap_alert(org_id, "monthly", month_key))
+    except Exception:
+        pass
+
+
+async def _fire_cap_alert(org_id: str, cap_type: str, period_key: str) -> None:
+    """Send the 80% cap alert email if not already sent for this period."""
+    try:
+        from db import get_pool
+        from services.email_caps import record_alert
+
+        pool = await get_pool()
+        is_new = await record_alert(pool, org_id, cap_type, period_key)
+        if not is_new:
+            return
+
+        org = await pool.fetchrow(
+            "SELECT name, email_cap_daily, email_cap_monthly, email_overage_rate "
+            "FROM staging.organisations WHERE id = $1::uuid",
+            org_id,
+        )
+        if not org:
+            return
+
+        cap = org[f"email_cap_{cap_type}"]
+        if cap is None:
+            return
+
+        from services.email_caps import email_usage
+        usage = await email_usage(pool, org_id)
+        current = usage.get(cap_type, 0)
+
+        overage_rate = float(org["email_overage_rate"]) if org["email_overage_rate"] is not None else None
+        org_name = org["name"]
+
+        recipients = await _get_alert_recipients(pool, org_id)
+
+        from email_service import send_email
+
+        overage_line = (
+            f"Emails beyond the cap will be billed at ₹{overage_rate:.2f} per email."
+            if overage_rate is not None
+            else "Emails beyond the cap will be blocked."
+        )
+
+        subject = f"[Kartavaya] {org_name} — {cap_type} email cap at {int(current/cap*100)}%"
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #1a1a1a;">Email Cap Alert</h2>
+            <p><strong>{org_name}</strong> has used <strong>{current}</strong> of
+            <strong>{cap}</strong> {cap_type} emails ({int(current/cap*100)}%).</p>
+            <p>Remaining: <strong>{cap - current}</strong> emails.</p>
+            <p>{overage_line}</p>
+            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 20px 0;">
+            <p style="color: #666; font-size: 13px;">This is an automated alert from Kartavaya.</p>
+        </div>
+        """
+        for email in recipients:
+            send_email(email, subject, html, purpose="email_cap_alert")
+    except Exception:
+        logger.debug("outbound: cap alert failed for %s", org_id, exc_info=True)
+
+
+async def _get_alert_recipients(pool, org_id: str) -> list[str]:
+    """Get email addresses of org owner + admins, plus the Aekam admin."""
+    recipients = []
+    try:
+        rows = await pool.fetch(
+            "SELECT DISTINCT u.email FROM staging.user_roles ur "
+            "JOIN staging.users u ON u.user_id = ur.user_id "
+            "WHERE ur.org_id = $1::uuid AND ur.role IN ('org_owner', 'org_admin') "
+            "AND u.email IS NOT NULL",
+            org_id,
+        )
+        for r in rows:
+            if r["email"]:
+                recipients.append(r["email"])
+    except Exception:
+        pass
+
+    import os
+    aekam_admin = os.getenv("AEKAM_ADMIN_EMAIL", "admin@aekaminc.com")
+    if aekam_admin not in recipients:
+        recipients.append(aekam_admin)
+
+    return recipients
