@@ -12,7 +12,6 @@ import TabModules from './org/TabModules';
 import TabSecurity from './org/TabSecurity';
 import TabSenders from './org/TabSenders';
 import TabUpi from './org/TabUpi';
-import TabDocNumbers from './org/TabDocNumbers';
 import TabDanger from './org/TabDanger';
 
 import '../styles/org.css';
@@ -122,7 +121,6 @@ export default function OrgSettingsPage() {
     // where a customer's money lands. Not under Billing either — Billing is
     // what this org pays Aekam, this is what its own customers pay it.
     { value: 'upi',      label: <>UPI IDs{hi('यूपीआई')}</>,  content: <TabUpi /> },
-    { value: 'numbering', label: <>Numbering{hi('क्रमांक')}</>, content: <TabDocNumbers /> },
     { value: 'security', label: <>Security{hi('सुरक्षा')}</>, content: <TabSecurity /> },
     { value: 'danger',   label: <>Danger zone{hi('संकट')}</>, content: <TabDanger orgName={orgRole?.org_name} /> },
   ]), [isOwner, user?.user_id, orgRole?.org_name, counts.members, counts.modules, report]);

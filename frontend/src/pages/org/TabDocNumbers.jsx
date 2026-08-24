@@ -51,7 +51,7 @@ export default function TabDocNumbers() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const r = await api.get('/v1/org/doc-prefixes');
+      const r = await api.get('/v1/org/profile/doc-prefixes');
       const data = r?.data?.data || [];
       setRows(data);
       setDraft(Object.fromEntries(data.map((d) => [d.invoice_type, d.prefix || ''])));
@@ -76,7 +76,7 @@ export default function TabDocNumbers() {
       const prefixes = Object.fromEntries(
         changed.map((r) => [r.invoice_type, clean(draft[r.invoice_type])]),
       );
-      await api.put('/v1/org/doc-prefixes', { prefixes });
+      await api.put('/v1/org/profile/doc-prefixes', { prefixes });
       pushToast({
         kind: 'ok',
         message: `Saved. The next ${changed.length === 1

@@ -52,6 +52,7 @@ import CollectionsTab from './ganit/CollectionsTab';
 // because it stands on that module's window and chart vocabulary, but the
 // metrics are Ganit's own — this tab is one of its two doors.
 import AnalyticsTab from './dristi/AnalyticsTab';
+import TabDocNumbers from './org/TabDocNumbers';
 
 const TABS = [
   ['invoices', InvoicesTab],
@@ -69,6 +70,7 @@ const TABS = [
   // DSO, collection rate, ageing — the /v1/analytics registry, read here the
   // way every Ganit tab is reached: behind the module's own page.
   ['analytics', AnalyticsTab],
+  ['settings', TabDocNumbers],
 ];
 
 const lakh = n => {
