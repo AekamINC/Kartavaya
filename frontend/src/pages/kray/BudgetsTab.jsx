@@ -45,7 +45,7 @@ export default function BudgetsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (err) return <ErrorState kind={errorKind(err)} retry={load} />;
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
   if (loading) return <SkeletonRegion><SkeletonList rows={4} /></SkeletonRegion>;
 
   const items = data?.data || [];

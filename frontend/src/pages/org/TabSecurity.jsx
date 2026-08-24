@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Toggle, Button } from '../../components/ui';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/toast';
 
 /**
@@ -49,6 +50,7 @@ export default function TabSecurity() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [confirmDlg, setConfirmDlg] = useState(null);
 
   // Local edit buffer — only these three are user-editable inline; 2FA
   // toggles apply immediately (see below) because they carry their own
@@ -103,12 +105,12 @@ export default function TabSecurity() {
     }
     const locked = two.would_be_locked_out || 0;
     if (locked > 0) {
-      const ok = window.confirm(
-        `${locked} of ${two.members} member${two.members === 1 ? '' : 's'} have no ` +
-        `authenticator set up and will be unable to sign in the moment this saves. ` +
-        `Continue?`
-      );
-      if (!ok) return;
+      setConfirmDlg({
+        message: `${locked} of ${two.members} member${two.members === 1 ? '' : 's'} have no authenticator set up and will be unable to sign in the moment this saves. Continue?`,
+        intent: 'warn',
+        onConfirm: () => patch({ tfa_enforced: true, acknowledge_lockout: locked }),
+      });
+      return;
     }
     await patch({ tfa_enforced: true, acknowledge_lockout: locked });
   };
@@ -243,6 +245,7 @@ export default function TabSecurity() {
           </Button>
         </div>
       </form>
+      <ConfirmDialog state={confirmDlg} onClose={() => setConfirmDlg(null)} />
     </div>
   );
 }

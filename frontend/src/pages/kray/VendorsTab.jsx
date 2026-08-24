@@ -72,7 +72,7 @@ export default function VendorsTab() {
     } finally { setSaving(false); }
   }
 
-  if (err) return <ErrorState kind={errorKind(err)} retry={load} />;
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   return (
     <div>

@@ -8,6 +8,7 @@ import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 
@@ -30,6 +31,7 @@ export default function RateCardsTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -73,15 +75,20 @@ export default function RateCardsTab() {
     }
   }
 
-  async function handleDelete(id) {
-    if (!confirm('Delete this rate card?')) return;
-    try {
-      await api.delete(`/v1/ganit/billing/rate-cards/${id}`);
-      pushToast({ title: 'Rate card deleted', type: 'success' });
-      load();
-    } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
-    }
+  function handleDelete(id) {
+    setConfirm({
+      message: 'Delete this rate card?',
+      intent: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/v1/ganit/billing/rate-cards/${id}`);
+          pushToast({ title: 'Rate card deleted', type: 'success' });
+          load();
+        } catch (e) {
+          pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
+        }
+      },
+    });
   }
 
   if (loading) return <SkeletonList />;
@@ -197,6 +204,7 @@ export default function RateCardsTab() {
           </div>
         )}
       </Modal>
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }

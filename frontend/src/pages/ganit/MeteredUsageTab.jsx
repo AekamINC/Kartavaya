@@ -8,6 +8,7 @@ import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 
@@ -30,6 +31,7 @@ export default function MeteredUsageTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState(null);
   const [filter, setFilter] = useState('unbilled');
   const [generating, setGenerating] = useState(null);
 
@@ -80,15 +82,20 @@ export default function MeteredUsageTab() {
     }
   }
 
-  async function handleDelete(id) {
-    if (!confirm('Delete this usage entry?')) return;
-    try {
-      await api.delete(`/v1/ganit/billing/metered-usage/${id}`);
-      pushToast({ title: 'Usage entry deleted', type: 'success' });
-      load();
-    } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
-    }
+  function handleDelete(id) {
+    setConfirm({
+      message: 'Delete this usage entry?',
+      intent: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/v1/ganit/billing/metered-usage/${id}`);
+          pushToast({ title: 'Usage entry deleted', type: 'success' });
+          load();
+        } catch (e) {
+          pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
+        }
+      },
+    });
   }
 
   async function generateInvoice(profileId) {
@@ -268,6 +275,7 @@ export default function MeteredUsageTab() {
           </div>
         )}
       </Modal>
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }

@@ -94,7 +94,7 @@ export default function TabDocNumbers() {
   if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
   if (!rows) return <SkeletonList rows={5} />;
   if (!rows.length) {
-    return <EmptyState title="No document types" body="Nothing to number." />;
+    return <EmptyState title="No document types" description="Nothing to number." />;
   }
 
   return (

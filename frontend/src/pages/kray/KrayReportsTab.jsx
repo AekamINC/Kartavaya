@@ -19,7 +19,7 @@ function Section({ title, hi, children, loading, err, retry }) {
         <Secondary en={title} hi={hi} />
       </summary>
       <div style={{ paddingTop: '.75rem' }}>
-        {err ? <ErrorState kind={errorKind(err)} retry={retry} /> :
+        {err ? <ErrorState kind={errorKind(err)} onRetry={retry} /> :
          loading ? <SkeletonList rows={3} /> : children}
       </div>
     </details>

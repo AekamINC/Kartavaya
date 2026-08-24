@@ -8,6 +8,7 @@ import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 
@@ -35,6 +36,9 @@ export default function SLACreditsTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [confirmDlg, setConfirmDlg] = useState(null);
+  const [applyModal, setApplyModal] = useState(null);
+  const [applyBillId, setApplyBillId] = useState('');
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
@@ -75,12 +79,18 @@ export default function SLACreditsTab() {
     }
   }
 
-  async function applyToBill(id) {
-    const billId = prompt('Bill ID to apply this credit to:');
-    if (!billId) return;
+  function applyToBill(id) {
+    setApplyBillId('');
+    setApplyModal(id);
+  }
+
+  async function submitApply() {
+    if (!applyBillId.trim()) return;
+    const id = applyModal;
+    setApplyModal(null);
     setBusy(id);
     try {
-      await api.post(`/v1/ganit/billing/sla-credits/${id}/apply`, { bill_id: billId });
+      await api.post(`/v1/ganit/billing/sla-credits/${id}/apply`, { bill_id: applyBillId.trim() });
       pushToast({ title: 'Credit applied to bill', type: 'success' });
       load();
     } catch (e) {
@@ -89,17 +99,22 @@ export default function SLACreditsTab() {
     setBusy(null);
   }
 
-  async function waive(id) {
-    if (!confirm('Waive this SLA credit?')) return;
-    setBusy(id);
-    try {
-      await api.patch(`/v1/ganit/billing/sla-credits/${id}/waive`);
-      pushToast({ title: 'SLA credit waived', type: 'success' });
-      load();
-    } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to waive credit', type: 'error' });
-    }
-    setBusy(null);
+  function waive(id) {
+    setConfirmDlg({
+      message: 'Waive this SLA credit?',
+      intent: 'warn',
+      onConfirm: async () => {
+        setBusy(id);
+        try {
+          await api.patch(`/v1/ganit/billing/sla-credits/${id}/waive`);
+          pushToast({ title: 'SLA credit waived', type: 'success' });
+          load();
+        } catch (e) {
+          pushToast({ title: e.response?.data?.detail || 'Failed to waive credit', type: 'error' });
+        }
+        setBusy(null);
+      },
+    });
   }
 
   if (loading) return <SkeletonList />;
@@ -222,6 +237,24 @@ export default function SLACreditsTab() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        open={!!applyModal}
+        onOpenChange={v => { if (!v) setApplyModal(null); }}
+        title="Apply SLA Credit"
+        footer={<>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setApplyModal(null)}>Cancel</button>
+          <button type="button" className="btn btn--fill btn--sm" onClick={submitApply} disabled={!applyBillId.trim()}>Apply</button>
+        </>}
+      >
+        <label className="fld">
+          <span className="fld__l"><Secondary en="Bill ID" hi="बिल आईडी" /></span>
+          <input className="inp" value={applyBillId} onChange={e => setApplyBillId(e.target.value)}
+            placeholder="Enter the bill ID to apply this credit to" />
+        </label>
+      </Modal>
+
+      <ConfirmDialog state={confirmDlg} onClose={() => setConfirmDlg(null)} />
     </div>
   );
 }

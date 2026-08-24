@@ -3799,8 +3799,11 @@ async def list_team_members(team_id:str,pool=Depends(get_db),user=Depends(requir
 @api_router.post("/teams/{team_id}/members",response_model=TeamMemberOut)
 async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db),user=Depends(require_user)):
     """Add or re-invite a member to a project by email."""
-    mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
-    if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
+    from middleware.roles import is_platform_staff
+    god = await is_platform_staff(user["user_id"])
+    if not god:
+        mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
+        if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
     if payload.user_id and not payload.email:
         resolved=await pool.fetchrow("SELECT user_id,email FROM users WHERE user_id=$1",payload.user_id)
         if not resolved: raise HTTPException(404,"User not found")
@@ -3823,8 +3826,11 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
 @api_router.put("/teams/{team_id}/members/{member_id}",response_model=TeamMemberOut)
 async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,pool=Depends(get_db),user=Depends(require_user)):
     """Update a team member's role or status within a project."""
-    mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
-    if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
+    from middleware.roles import is_platform_staff
+    god = await is_platform_staff(user["user_id"])
+    if not god:
+        mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
+        if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
     updates,vals=[],[]
     if payload.role:   updates.append(f"role=${len(vals)+1}");   vals.append(payload.role)
     if payload.status: updates.append(f"status=${len(vals)+1}"); vals.append(payload.status)
