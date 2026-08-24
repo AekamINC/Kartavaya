@@ -56,6 +56,7 @@ import ContactsTab from './graha/ContactsTab';
 // orders against products it was not allowed to list and could not create one.
 // `/api/v1/products` is gated `require_any_module("ganit", "vikray")`.
 import ProductsTab from './catalogue/ProductsTab';
+import BillingProfilesTab from './ganit/BillingProfilesTab';
 
 import DashboardTab from './vikray/DashboardTab';
 import OrdersTab from './vikray/OrdersTab';
@@ -90,7 +91,7 @@ import CustomersTab from './vikray/CustomersTab';
 // be reached from here at all until now.
 const TABS = [
   'dashboard', 'orders', 'products', 'stock', 'pipeline', 'targets',
-  'clients', 'contacts', 'customers', 'analytics',
+  'clients', 'contacts', 'customers', 'billing', 'analytics',
 ];
 
 export default function VikrayPage() {
@@ -266,6 +267,7 @@ export default function VikrayPage() {
         {tab === 'clients' && <ClientsTab />}
         {tab === 'contacts' && <ContactsTab crm={false} />}
         {tab === 'customers' && <CustomersTab onOpenOrder={openOrder} />}
+        {tab === 'billing' && <BillingProfilesTab />}
         {tab === 'analytics' && <ModuleAnalyticsTab module="vikray" />}
       </div>
     </div>

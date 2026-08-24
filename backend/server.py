@@ -89,6 +89,7 @@ from routers.hub_connectors import router as hub_connectors_router
 from routers.lead_sources   import router as lead_sources_router
 from routers.graha          import router as graha_router
 from routers.ganit          import router as ganit_router
+from routers.client_billing import router as client_billing_router
 from routers.products       import router as products_router
 from routers.column_prefs   import router as column_prefs_router
 from routers.procurement    import router as procurement_router
@@ -5401,6 +5402,7 @@ app.include_router(hub_connectors_router)
 app.include_router(lead_sources_router)
 app.include_router(graha_router)
 app.include_router(ganit_router)
+app.include_router(client_billing_router)
 app.include_router(products_router)
 app.include_router(column_prefs_router)
 app.include_router(procurement_router)

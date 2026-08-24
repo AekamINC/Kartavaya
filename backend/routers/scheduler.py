@@ -889,7 +889,10 @@ async def run_billing(x_cron_secret: str = Header("")):
     """
     await _verify_cron(x_cron_secret)
     from services.billing_cycle import run_billing_cycle
-    return await run_billing_cycle()
+    from routers.client_billing import sweep_client_auto_invoices
+    billing = await run_billing_cycle()
+    client = await sweep_client_auto_invoices()
+    return {**billing, "client_auto_invoices": client}
 
 
 @router.post("/cron/agents", dependencies=[])

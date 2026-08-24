@@ -47,6 +47,7 @@ import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 // panel vocabulary do, but its natural audience is here — the endpoint serves
 // Graha-only callers, and until this import its only door was Dristi's.
 import ClientReportTab from './dristi/ClientReportTab';
+import BillingProfilesTab from './ganit/BillingProfilesTab';
 
 const TABS = [
   ['today', TodayTab], ['clients', ClientsTab], ['contacts', ContactsTab],
@@ -57,6 +58,7 @@ const TABS = [
   ['documents', DocumentsTab], ['dedupe', DedupeTab],
   ['analytics', () => <ModuleAnalyticsTab module="graha" />],
   ['client-report', ClientReportTab],
+  ['billing', BillingProfilesTab],
 ];
 
 const lakh = n => {

@@ -42,8 +42,14 @@ def period_end_for(start: date, cycle: str) -> date:
     """Given a period start and billing cycle, return the period end."""
     if cycle == "annual":
         return date(start.year + 1, start.month, start.day)
-    # Monthly: advance by one month
     import calendar
+    if cycle == "quarterly":
+        m = start.month + 3
+        y = start.year + (m - 1) // 12
+        m = (m - 1) % 12 + 1
+        max_day = calendar.monthrange(y, m)[1]
+        return date(y, m, min(start.day, max_day))
+    # Monthly (default)
     if start.month == 12:
         y, m = start.year + 1, 1
     else:
