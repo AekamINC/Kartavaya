@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { EmptyState, ErrorState, errorKind } from '../../components/ui';
+import { DataTable, Td } from '../../components/editorial';
+import { EmptyState } from '../../components/ui/EmptyState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList } from '../../components/ui/Skeleton';
+import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
 
-// Bucket keys match `/v1/ganit/billing/ageing`'s response exactly
-// (`{buckets, totals, by_client}`, keys "current"/"30"/"60"/"90"/"120"/"120+").
 const BUCKETS = [
   { key: 'current', label: 'Current' },
   { key: '30', label: '1-30' },
@@ -15,54 +16,48 @@ const BUCKETS = [
   { key: '120+', label: '120+' },
 ];
 
-function Section({ title, partyLabel, data }) {
+const TOTAL_COLUMNS = [
+  ...BUCKETS.map(b => ({ label: b.label, align: 'right' })),
+  { label: 'Total', align: 'right' },
+];
+
+function Section({ title, hi, partyLabel, data }) {
   if (!data) return null;
   const { by_client: parties, totals } = data;
   const grandTotal = BUCKETS.reduce((s, b) => s + Number(totals[b.key] || 0), 0);
 
-  return (
-    <div style={{ marginBottom: 32 }}>
-      <h3 className="k-section-label">{title}</h3>
+  const partyColumns = [
+    partyLabel,
+    ...BUCKETS.map(b => ({ label: b.label, align: 'right' })),
+    { label: 'Total', align: 'right' },
+  ];
 
-      <table className="k-table" style={{ marginBottom: 16 }}>
-        <thead>
-          <tr>
-            {BUCKETS.map(b => <th key={b.key}>{b.label}</th>)}
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            {BUCKETS.map(b => <td key={b.key}>{inr(totals[b.key] || 0)}</td>)}
-            <td><strong>{inr(grandTotal)}</strong></td>
-          </tr>
-        </tbody>
-      </table>
+  return (
+    <div style={{ marginBottom: 'var(--sp-7)' }}>
+      <h3 className="gn-section-head"><Secondary en={title} hi={hi} /></h3>
+
+      <DataTable columns={TOTAL_COLUMNS} label={`${title} totals`}>
+        <tr>
+          {BUCKETS.map(b => <Td key={b.key} align="right" mono>{inr(totals[b.key] || 0)}</Td>)}
+          <Td align="right" mono bold>{inr(grandTotal)}</Td>
+        </tr>
+      </DataTable>
 
       {parties.length === 0 ? (
-        <div className="k-text-muted" style={{ padding: '8px 0' }}>No open balances.</div>
+        <p className="gn-note" style={{ marginTop: 'var(--sp-2)' }}>No open balances.</p>
       ) : (
-        <table className="k-table">
-          <thead>
-            <tr>
-              <th>{partyLabel}</th>
-              {BUCKETS.map(b => <th key={b.key}>{b.label}</th>)}
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {parties
-              .slice()
-              .sort((a, b) => b.total_outstanding - a.total_outstanding)
-              .map(p => (
-                <tr key={p.party_id}>
-                  <td>{p.party_name}</td>
-                  {BUCKETS.map(b => <td key={b.key}>{inr(p[b.key] || 0)}</td>)}
-                  <td>{inr(p.total_outstanding)}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+        <DataTable columns={partyColumns} label={`${title} by party`}>
+          {parties
+            .slice()
+            .sort((a, b) => b.total_outstanding - a.total_outstanding)
+            .map(p => (
+              <tr key={p.party_id}>
+                <Td bold>{p.party_name}</Td>
+                {BUCKETS.map(b => <Td key={b.key} align="right" mono>{inr(p[b.key] || 0)}</Td>)}
+                <Td align="right" mono>{inr(p.total_outstanding)}</Td>
+              </tr>
+            ))}
+        </DataTable>
       )}
     </div>
   );
@@ -96,17 +91,17 @@ export default function AgeingTab() {
   const hasData = receivable || payable;
 
   return (
-    <div className="k-tab-body">
+    <div>
       {hasData ? (
         <>
-          <Section title="Receivables" partyLabel="Client" data={receivable} />
-          <Section title="Payables" partyLabel="Vendor" data={payable} />
+          <Section title="Receivables" hi="प्राप्य" partyLabel="Client" data={receivable} />
+          <Section title="Payables" hi="देय" partyLabel="Vendor" data={payable} />
         </>
       ) : (
         <EmptyState
-          illustration="invoice"
-          title="No ageing data"
-          description="Ageing reports appear once invoices or vendor bills are raised."
+          icon="ganit"
+          heading="No ageing data"
+          body="Ageing reports appear once invoices or vendor bills are raised."
         />
       )}
     </div>

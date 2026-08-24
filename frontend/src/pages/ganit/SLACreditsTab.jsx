@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, rows as asRows } from '../../lib/api';
-import { EmptyState, ErrorState, errorKind } from '../../components/ui';
+import { DataTable, Td } from '../../components/editorial';
+import { EmptyState } from '../../components/ui/EmptyState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
+import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
@@ -12,10 +16,19 @@ const BLANK = {
   credit_amount: '', period: '', rate_card_id: '',
 };
 
-const STATUS_CLASS = { pending: 'k-badge', applied: 'k-badge k-badge-green', waived: 'k-badge k-badge-muted' };
+const STATUS_TONE = { pending: '', applied: ' gn-tag--ok', waived: '' };
+
+const COLUMNS = [
+  'Vendor', 'SLA Metric',
+  { label: 'Threshold', align: 'right' },
+  { label: 'Actual', align: 'right' },
+  { label: 'Credit', align: 'right' },
+  'Period', 'Status', '',
+];
 
 export default function SLACreditsTab() {
-  const { canWrite } = useModuleWrite({ label: 'manage SLA credits' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'manage SLA credits' });
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [rateCards, setRateCards] = useState([]);
@@ -54,10 +67,11 @@ export default function SLACreditsTab() {
         period: form.period || null,
         rate_card_id: form.rate_card_id || null,
       });
+      pushToast({ title: 'SLA credit recorded', type: 'success' });
       setEditing(null);
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to save');
+      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
     }
   }
 
@@ -67,9 +81,10 @@ export default function SLACreditsTab() {
     setBusy(id);
     try {
       await api.post(`/v1/ganit/billing/sla-credits/${id}/apply`, { bill_id: billId });
+      pushToast({ title: 'Credit applied to bill', type: 'success' });
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to apply credit');
+      pushToast({ title: e.response?.data?.detail || 'Failed to apply credit', type: 'error' });
     }
     setBusy(null);
   }
@@ -79,9 +94,10 @@ export default function SLACreditsTab() {
     setBusy(id);
     try {
       await api.patch(`/v1/ganit/billing/sla-credits/${id}/waive`);
+      pushToast({ title: 'SLA credit waived', type: 'success' });
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to waive credit');
+      pushToast({ title: e.response?.data?.detail || 'Failed to waive credit', type: 'error' });
     }
     setBusy(null);
   }
@@ -90,66 +106,55 @@ export default function SLACreditsTab() {
   if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   return (
-    <div className="k-tab-body">
-      {canWrite && (
-        <div className="k-toolbar">
-          <button className="k-btn k-btn-primary" onClick={() => setEditing({ ...BLANK })}>
+    <div>
+      <div className="gn-bar">
+        <span className="gn-bar__sp" />
+        {canWrite && (
+          <button type="button" className="btn btn--fill btn--sm" onClick={() => setEditing({ ...BLANK })}>
             + SLA Credit
           </button>
-        </div>
-      )}
+        )}
+        {!canWrite && denial && <span className="gn-denial">{denial}</span>}
+      </div>
 
       {items.length > 0 ? (
-        <table className="k-table">
-          <thead>
-            <tr>
-              <th>Vendor</th>
-              <th>SLA Metric</th>
-              <th>Threshold</th>
-              <th>Actual</th>
-              <th>Credit Amount</th>
-              <th>Period</th>
-              <th>Status</th>
-              {canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map(s => (
-              <tr key={s.id}>
-                <td>{s.vendor_name}</td>
-                <td>{s.sla_metric}</td>
-                <td>{s.threshold}</td>
-                <td>{s.actual}</td>
-                <td>{inr(s.credit_amount)}</td>
-                <td>{s.period}</td>
-                <td><span className={STATUS_CLASS[s.status] || 'k-badge'}>{s.status}</span></td>
-                {canWrite && (
-                  <td>
-                    {s.status === 'pending' && (
-                      <>
-                        <button className="k-btn k-btn-ghost k-btn-sm" disabled={busy === s.id}
-                          onClick={() => applyToBill(s.id)}>
-                          Apply to Bill
-                        </button>
-                        <button className="k-btn k-btn-ghost k-btn-sm" disabled={busy === s.id}
-                          onClick={() => waive(s.id)}>
-                          Waive
-                        </button>
-                      </>
-                    )}
-                  </td>
+        <DataTable columns={COLUMNS} label="SLA credits">
+          {items.map(s => (
+            <tr key={s.id}>
+              <Td bold>{s.vendor_name}</Td>
+              <Td>{s.sla_metric}</Td>
+              <Td align="right" mono>{s.threshold}</Td>
+              <Td align="right" mono>{s.actual}</Td>
+              <Td align="right" mono>{inr(s.credit_amount)}</Td>
+              <Td>{s.period}</Td>
+              <Td>
+                <span className={`gn-tag${STATUS_TONE[s.status] || ''}`}>
+                  {s.status}
+                </span>
+              </Td>
+              <Td>
+                {canWrite && s.status === 'pending' && (
+                  <>
+                    <button type="button" className="btn btn--ghost btn--xs" disabled={busy === s.id}
+                      onClick={() => applyToBill(s.id)}>
+                      Apply
+                    </button>
+                    <button type="button" className="btn btn--ghost btn--xs" disabled={busy === s.id}
+                      onClick={() => waive(s.id)}>
+                      Waive
+                    </button>
+                  </>
                 )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </Td>
+            </tr>
+          ))}
+        </DataTable>
       ) : (
         <EmptyState
-          illustration="invoice"
-          title="No SLA credits"
-          description="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
-          action={canWrite ? '+ SLA Credit' : undefined}
-          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
+          icon="ganit"
+          heading="No SLA credits"
+          body="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
+          action={canWrite ? { label: '+ SLA Credit', onClick: () => setEditing({ ...BLANK }) } : undefined}
         />
       )}
 
@@ -158,52 +163,52 @@ export default function SLACreditsTab() {
         onOpenChange={v => { if (!v) setEditing(null); }}
         title="New SLA Credit"
         footer={<>
-          <button className="k-btn k-btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-          <button className="k-btn k-btn-primary" onClick={save}>Save</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(null)}>Cancel</button>
+          <button type="button" className="btn btn--fill btn--sm" onClick={save}>Save</button>
         </>}
       >
         {editing && (
-          <div className="k-form-grid">
-            <label className="k-field">
-              <span className="k-field-label">Vendor</span>
-              <select className="k-input" value={editing.vendor_id}
+          <div className="gn-form__grid">
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Vendor" hi="विक्रेता" /></span>
+              <select className="inp" value={editing.vendor_id}
                 onChange={e => setEditing({ ...editing, vendor_id: e.target.value })}>
                 <option value="">Select a vendor…</option>
                 {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </label>
-            <label className="k-field">
-              <span className="k-field-label">SLA Metric</span>
-              <input className="k-input" value={editing.sla_metric}
+            <label className="fld">
+              <span className="fld__l"><Secondary en="SLA Metric" hi="एसएलए माप" /></span>
+              <input className="inp" value={editing.sla_metric}
                 placeholder="e.g. Uptime %, Response Time (hrs)"
                 onChange={e => setEditing({ ...editing, sla_metric: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Threshold</span>
-              <input className="k-input" type="number" step="0.0001"
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Threshold" hi="सीमा" /></span>
+              <input className="inp" type="number" step="0.0001"
                 value={editing.threshold}
                 onChange={e => setEditing({ ...editing, threshold: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Actual</span>
-              <input className="k-input" type="number" step="0.0001"
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Actual" hi="वास्तविक" /></span>
+              <input className="inp" type="number" step="0.0001"
                 value={editing.actual}
                 onChange={e => setEditing({ ...editing, actual: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Credit Amount</span>
-              <input className="k-input" type="number" min={0} step="0.01"
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Credit Amount" hi="क्रेडिट राशि" /></span>
+              <input className="inp" type="number" min={0} step="0.01"
                 value={editing.credit_amount}
                 onChange={e => setEditing({ ...editing, credit_amount: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Period</span>
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Period" hi="अवधि" /></span>
               <DateInput value={editing.period}
                 onChange={v => setEditing({ ...editing, period: v })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Rate Card (optional)</span>
-              <select className="k-input" value={editing.rate_card_id}
+            <label className="fld gn-form__wide">
+              <span className="fld__l"><Secondary en="Rate Card" hi="दर कार्ड" /></span>
+              <select className="inp" value={editing.rate_card_id}
                 onChange={e => setEditing({ ...editing, rate_card_id: e.target.value })}>
                 <option value="">None</option>
                 {rateCards.map(rc => (

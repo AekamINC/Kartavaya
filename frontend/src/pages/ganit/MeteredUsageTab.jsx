@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, rows as asRows } from '../../lib/api';
-import { EmptyState, ErrorState, errorKind } from '../../components/ui';
+import { DataTable, Td } from '../../components/editorial';
+import { EmptyState } from '../../components/ui/EmptyState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
+import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
@@ -12,8 +16,15 @@ const BLANK = {
   recorded_date: '', source_ref: '',
 };
 
+const USAGE_COLUMNS = [
+  'Date', 'Metric', { label: 'Qty', align: 'right' }, 'Unit',
+  { label: 'Rate', align: 'right' }, { label: 'Amount', align: 'right' },
+  'Source', 'Status', '',
+];
+
 export default function MeteredUsageTab() {
-  const { canWrite } = useModuleWrite({ label: 'manage metered usage' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'manage metered usage' });
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +62,7 @@ export default function MeteredUsageTab() {
           recorded_date: form.recorded_date || null,
           source_ref: form.source_ref || null,
         });
+        pushToast({ title: 'Usage entry updated', type: 'success' });
       } else {
         await api.post('/v1/ganit/billing/metered-usage', {
           ...form,
@@ -59,11 +71,12 @@ export default function MeteredUsageTab() {
           recorded_date: form.recorded_date || null,
           source_ref: form.source_ref || null,
         });
+        pushToast({ title: 'Usage entry recorded', type: 'success' });
       }
       setEditing(null);
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to save');
+      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
     }
   }
 
@@ -71,9 +84,10 @@ export default function MeteredUsageTab() {
     if (!confirm('Delete this usage entry?')) return;
     try {
       await api.delete(`/v1/ganit/billing/metered-usage/${id}`);
+      pushToast({ title: 'Usage entry deleted', type: 'success' });
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to delete');
+      pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
     }
   }
 
@@ -83,10 +97,10 @@ export default function MeteredUsageTab() {
       const res = await api.post('/v1/ganit/billing/metered-usage/generate-invoice', {
         profile_id: profileId,
       });
-      alert(`Invoice created: ${res.entries} entries, ${inr(res.total)}`);
+      pushToast({ title: `Invoice created: ${res.entries} entries, ${inr(res.total)}`, type: 'success' });
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to generate invoice');
+      pushToast({ title: e.response?.data?.detail || 'Failed to generate invoice', type: 'error' });
     }
     setGenerating(null);
   }
@@ -103,43 +117,46 @@ export default function MeteredUsageTab() {
   const groups = Object.values(byProfile);
 
   return (
-    <div className="k-tab-body">
-      <div className="k-toolbar">
+    <div>
+      <div className="gn-bar">
+        <label className="gn-bar__f">
+          <span className="gn-bar__fl"><Secondary en="Filter" hi="फ़िल्टर" /></span>
+          <select
+            className="inp gn-bar__sel"
+            value={filter}
+            onChange={e => { setFilter(e.target.value); setLoading(true); }}
+          >
+            <option value="unbilled">Unbilled</option>
+            <option value="invoiced">Invoiced</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <span className="gn-bar__sp" />
         {canWrite && (
-          <button className="k-btn k-btn-primary" onClick={() => setEditing({ ...BLANK })}>
+          <button type="button" className="btn btn--fill btn--sm" onClick={() => setEditing({ ...BLANK })}>
             + Usage Entry
           </button>
         )}
-        <div className="k-toolbar-spacer" />
-        <select
-          className="k-input"
-          style={{ width: 'auto', minWidth: 120 }}
-          value={filter}
-          onChange={e => { setFilter(e.target.value); setLoading(true); }}
-        >
-          <option value="unbilled">Unbilled</option>
-          <option value="invoiced">Invoiced</option>
-          <option value="all">All</option>
-        </select>
+        {!canWrite && denial && <span className="gn-denial">{denial}</span>}
       </div>
 
-      {items.length === 0 ? (
+      {items.length === 0 && (
         <EmptyState
-          illustration="invoice"
-          title="No usage entries"
-          description="Record billable hours, units, or transactions for your clients. Generate invoices from unbilled usage."
-          action={canWrite ? '+ Usage Entry' : undefined}
-          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
+          icon="ganit"
+          heading="No usage entries"
+          body="Record billable hours, units, or transactions for your clients. Generate invoices from unbilled usage."
+          action={canWrite ? { label: '+ Usage Entry', onClick: () => setEditing({ ...BLANK }) } : undefined}
         />
-      ) : null}
+      )}
 
       {groups.map(g => (
-        <div key={g.profile_id} style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <h3 className="k-section-label" style={{ margin: 0 }}>{g.client_name}</h3>
+        <div key={g.profile_id} style={{ marginBottom: 'var(--sp-5)' }}>
+          <div className="gn-bar" style={{ marginBottom: 'var(--sp-2)' }}>
+            <h3 className="gn-section-head" style={{ margin: 0 }}>{g.client_name}</h3>
+            <span className="gn-bar__sp" />
             {canWrite && filter !== 'invoiced' && g.rows.some(r => !r.invoiced) && (
               <button
-                className="k-btn k-btn-sm"
+                type="button" className="btn btn--tonal btn--sm"
                 disabled={generating === g.profile_id}
                 onClick={() => generateInvoice(g.profile_id)}
               >
@@ -147,57 +164,42 @@ export default function MeteredUsageTab() {
               </button>
             )}
           </div>
-          <table className="k-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Metric</th>
-                <th>Qty</th>
-                <th>Unit</th>
-                <th>Rate</th>
-                <th>Amount</th>
-                <th>Source</th>
-                <th>Status</th>
-                {canWrite && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {g.rows.map(u => (
-                <tr key={u.id} style={u.invoiced ? { opacity: 0.6 } : undefined}>
-                  <td>{u.recorded_date}</td>
-                  <td>{u.metric}</td>
-                  <td>{u.quantity}</td>
-                  <td>{u.unit}</td>
-                  <td>{inr(u.rate)}</td>
-                  <td>{inr(Number(u.quantity) * Number(u.rate))}</td>
-                  <td>{u.source_ref || '—'}</td>
-                  <td>{u.invoiced ? 'Invoiced' : 'Unbilled'}</td>
-                  {canWrite && (
-                    <td>
-                      {!u.invoiced && (
-                        <>
-                          <button className="k-btn k-btn-ghost k-btn-sm"
-                            onClick={() => setEditing({
-                              ...u,
-                              quantity: String(u.quantity),
-                              rate: String(u.rate),
-                            })}>
-                            Edit
-                          </button>
-                          <button className="k-btn k-btn-ghost k-btn-sm"
-                            onClick={() => handleDelete(u.id)}>
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </td>
+          <DataTable columns={USAGE_COLUMNS} label={`Usage: ${g.client_name}`}>
+            {g.rows.map(u => (
+              <tr key={u.id} style={u.invoiced ? { opacity: 0.6 } : undefined}>
+                <Td>{u.recorded_date}</Td>
+                <Td>{u.metric}</Td>
+                <Td align="right" mono>{u.quantity}</Td>
+                <Td>{u.unit}</Td>
+                <Td align="right" mono>{inr(u.rate)}</Td>
+                <Td align="right" mono>{inr(Number(u.quantity) * Number(u.rate))}</Td>
+                <Td>{u.source_ref || '—'}</Td>
+                <Td>
+                  <span className={`gn-tag${u.invoiced ? ' gn-tag--ok' : ''}`}>
+                    {u.invoiced ? 'Invoiced' : 'Unbilled'}
+                  </span>
+                </Td>
+                <Td>
+                  {canWrite && !u.invoiced && (
+                    <>
+                      <button type="button" className="btn btn--ghost btn--xs"
+                        onClick={() => setEditing({
+                          ...u, quantity: String(u.quantity), rate: String(u.rate),
+                        })}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn btn--ghost btn--xs"
+                        onClick={() => handleDelete(u.id)}>
+                        Delete
+                      </button>
+                    </>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </Td>
+              </tr>
+            ))}
+          </DataTable>
           {!g.rows.some(r => r.invoiced) && (
-            <div style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--text-2)', marginTop: 4 }}>
+            <div style={{ textAlign: 'right', fontSize: 'var(--t-micro)', color: 'var(--on-surface-3)', marginTop: 'var(--sp-1)' }}>
               Total: {inr(g.rows.reduce((s, r) => s + Number(r.quantity) * Number(r.rate), 0))}
             </div>
           )}
@@ -209,16 +211,16 @@ export default function MeteredUsageTab() {
         onOpenChange={v => { if (!v) setEditing(null); }}
         title={editing?.id ? 'Edit Usage Entry' : 'New Usage Entry'}
         footer={<>
-          <button className="k-btn k-btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-          <button className="k-btn k-btn-primary" onClick={save}>Save</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(null)}>Cancel</button>
+          <button type="button" className="btn btn--fill btn--sm" onClick={save}>Save</button>
         </>}
       >
         {editing && (
-          <div className="k-form-grid">
+          <div className="gn-form__grid">
             {!editing.id && (
-              <label className="k-field">
-                <span className="k-field-label">Billing Profile</span>
-                <select className="k-input" value={editing.profile_id}
+              <label className="fld">
+                <span className="fld__l"><Secondary en="Billing Profile" hi="बिलिंग प्रोफ़ाइल" /></span>
+                <select className="inp" value={editing.profile_id}
                   onChange={e => setEditing({ ...editing, profile_id: e.target.value })}>
                   <option value="">Select…</option>
                   {profiles.map(p => (
@@ -227,38 +229,38 @@ export default function MeteredUsageTab() {
                 </select>
               </label>
             )}
-            <label className="k-field">
-              <span className="k-field-label">Metric</span>
-              <input className="k-input" value={editing.metric}
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Metric" hi="माप" /></span>
+              <input className="inp" value={editing.metric}
                 placeholder="e.g. Consulting Hours, Units Processed"
                 onChange={e => setEditing({ ...editing, metric: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Quantity</span>
-              <input className="k-input" type="number" min={0} step="0.01"
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Quantity" hi="मात्रा" /></span>
+              <input className="inp" type="number" min={0} step="0.01"
                 value={editing.quantity}
                 onChange={e => setEditing({ ...editing, quantity: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Unit</span>
-              <input className="k-input" value={editing.unit}
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Unit" hi="इकाई" /></span>
+              <input className="inp" value={editing.unit}
                 placeholder="e.g. hours, units, transactions"
                 onChange={e => setEditing({ ...editing, unit: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Rate</span>
-              <input className="k-input" type="number" min={0} step="0.01"
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Rate" hi="दर" /></span>
+              <input className="inp" type="number" min={0} step="0.01"
                 value={editing.rate}
                 onChange={e => setEditing({ ...editing, rate: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Date</span>
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Date" hi="तिथि" /></span>
               <DateInput value={editing.recorded_date}
                 onChange={v => setEditing({ ...editing, recorded_date: v })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Source Reference (optional)</span>
-              <input className="k-input" value={editing.source_ref || ''}
+            <label className="fld gn-form__wide">
+              <span className="fld__l"><Secondary en="Source Reference" hi="स्रोत संदर्भ" /></span>
+              <input className="inp" value={editing.source_ref || ''}
                 placeholder="e.g. task:uuid, timesheet:uuid"
                 onChange={e => setEditing({ ...editing, source_ref: e.target.value })} />
             </label>

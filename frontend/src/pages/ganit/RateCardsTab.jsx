@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, rows as asRows } from '../../lib/api';
-import { EmptyState, ErrorState, errorKind } from '../../components/ui';
+import { DataTable, Td } from '../../components/editorial';
+import { EmptyState } from '../../components/ui/EmptyState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
+import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
@@ -12,8 +16,15 @@ const BLANK = {
   effective_from: '', effective_to: '', proration_clause: false, notes: '',
 };
 
+const COLUMNS = [
+  'Vendor', 'Category',
+  { label: 'Rate', align: 'right' },
+  'Unit', 'From', 'To', 'Proration', '',
+];
+
 export default function RateCardsTab() {
-  const { canWrite } = useModuleWrite({ label: 'manage vendor rate cards' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'manage vendor rate cards' });
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,13 +61,15 @@ export default function RateCardsTab() {
       };
       if (form.id) {
         await api.patch(`/v1/ganit/billing/rate-cards/${form.id}`, payload);
+        pushToast({ title: 'Rate card updated', type: 'success' });
       } else {
         await api.post('/v1/ganit/billing/rate-cards', { ...payload, vendor_id: form.vendor_id });
+        pushToast({ title: 'Rate card created', type: 'success' });
       }
       setEditing(null);
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to save');
+      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
     }
   }
 
@@ -64,9 +77,10 @@ export default function RateCardsTab() {
     if (!confirm('Delete this rate card?')) return;
     try {
       await api.delete(`/v1/ganit/billing/rate-cards/${id}`);
+      pushToast({ title: 'Rate card deleted', type: 'success' });
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || 'Failed to delete');
+      pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
     }
   }
 
@@ -74,61 +88,50 @@ export default function RateCardsTab() {
   if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   return (
-    <div className="k-tab-body">
-      {canWrite && (
-        <div className="k-toolbar">
-          <button className="k-btn k-btn-primary" onClick={() => setEditing({ ...BLANK })}>
+    <div>
+      <div className="gn-bar">
+        <span className="gn-bar__sp" />
+        {canWrite && (
+          <button type="button" className="btn btn--fill btn--sm" onClick={() => setEditing({ ...BLANK })}>
             + Rate Card
           </button>
-        </div>
-      )}
+        )}
+        {!canWrite && denial && <span className="gn-denial">{denial}</span>}
+      </div>
 
       {items.length > 0 ? (
-        <table className="k-table">
-          <thead>
-            <tr>
-              <th>Vendor</th>
-              <th>Category</th>
-              <th>Rate</th>
-              <th>Unit</th>
-              <th>Effective From</th>
-              <th>Effective To</th>
-              <th>Proration</th>
-              {canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map(r => (
-              <tr key={r.id}>
-                <td>{r.vendor_name}</td>
-                <td>{r.item_category}</td>
-                <td>{inr(r.rate)}</td>
-                <td>{r.unit}</td>
-                <td>{r.effective_from || '—'}</td>
-                <td>{r.effective_to || '—'}</td>
-                <td>{r.proration_clause ? 'Yes' : 'No'}</td>
+        <DataTable columns={COLUMNS} label="Vendor rate cards">
+          {items.map(r => (
+            <tr key={r.id}>
+              <Td bold>{r.vendor_name}</Td>
+              <Td>{r.item_category}</Td>
+              <Td align="right" mono>{inr(r.rate)}</Td>
+              <Td>{r.unit}</Td>
+              <Td>{r.effective_from || '—'}</Td>
+              <Td>{r.effective_to || '—'}</Td>
+              <Td>{r.proration_clause ? 'Yes' : '—'}</Td>
+              <Td>
                 {canWrite && (
-                  <td>
-                    <button className="k-btn k-btn-ghost k-btn-sm"
+                  <>
+                    <button type="button" className="btn btn--ghost btn--xs"
                       onClick={() => setEditing({ ...r, rate: String(r.rate) })}>
                       Edit
                     </button>
-                    <button className="k-btn k-btn-ghost k-btn-sm" onClick={() => handleDelete(r.id)}>
+                    <button type="button" className="btn btn--ghost btn--xs" onClick={() => handleDelete(r.id)}>
                       Delete
                     </button>
-                  </td>
+                  </>
                 )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </Td>
+            </tr>
+          ))}
+        </DataTable>
       ) : (
         <EmptyState
-          illustration="invoice"
-          title="No vendor rate cards"
-          description="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
-          action={canWrite ? '+ Rate Card' : undefined}
-          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
+          icon="ganit"
+          heading="No vendor rate cards"
+          body="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
+          action={canWrite ? { label: '+ Rate Card', onClick: () => setEditing({ ...BLANK }) } : undefined}
         />
       )}
 
@@ -137,57 +140,57 @@ export default function RateCardsTab() {
         onOpenChange={v => { if (!v) setEditing(null); }}
         title={editing?.id ? 'Edit Rate Card' : 'New Rate Card'}
         footer={<>
-          <button className="k-btn k-btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-          <button className="k-btn k-btn-primary" onClick={save}>Save</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(null)}>Cancel</button>
+          <button type="button" className="btn btn--fill btn--sm" onClick={save}>Save</button>
         </>}
       >
         {editing && (
-          <div className="k-form-grid">
+          <div className="gn-form__grid">
             {!editing.id && (
-              <label className="k-field">
-                <span className="k-field-label">Vendor</span>
-                <select className="k-input" value={editing.vendor_id}
+              <label className="fld">
+                <span className="fld__l"><Secondary en="Vendor" hi="विक्रेता" /></span>
+                <select className="inp" value={editing.vendor_id}
                   onChange={e => setEditing({ ...editing, vendor_id: e.target.value })}>
                   <option value="">Select a vendor…</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </label>
             )}
-            <label className="k-field">
-              <span className="k-field-label">Item Category</span>
-              <input className="k-input" value={editing.item_category}
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Item Category" hi="वस्तु श्रेणी" /></span>
+              <input className="inp" value={editing.item_category}
                 onChange={e => setEditing({ ...editing, item_category: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Rate</span>
-              <input className="k-input" type="number" min={0} step="0.01"
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Rate" hi="दर" /></span>
+              <input className="inp" type="number" min={0} step="0.01"
                 value={editing.rate}
                 onChange={e => setEditing({ ...editing, rate: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Unit</span>
-              <input className="k-input" value={editing.unit}
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Unit" hi="इकाई" /></span>
+              <input className="inp" value={editing.unit}
                 placeholder="e.g. hours, units, kg"
                 onChange={e => setEditing({ ...editing, unit: e.target.value })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Effective From</span>
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Effective From" hi="प्रभावी तिथि" /></span>
               <DateInput value={editing.effective_from}
                 onChange={v => setEditing({ ...editing, effective_from: v })} />
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Effective To (optional)</span>
+            <label className="fld">
+              <span className="fld__l"><Secondary en="Effective To" hi="समाप्ति तिथि" /></span>
               <DateInput value={editing.effective_to}
                 onChange={v => setEditing({ ...editing, effective_to: v })} />
             </label>
-            <label className="k-field k-field-checkbox">
+            <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 'var(--sp-2)' }}>
               <input type="checkbox" checked={!!editing.proration_clause}
                 onChange={e => setEditing({ ...editing, proration_clause: e.target.checked })} />
-              <span className="k-field-label">Proration Clause</span>
+              <span><Secondary en="Proration Clause" hi="यथानुपात खंड" /></span>
             </label>
-            <label className="k-field">
-              <span className="k-field-label">Notes</span>
-              <textarea className="k-input" rows={2} value={editing.notes}
+            <label className="fld gn-form__wide">
+              <span className="fld__l"><Secondary en="Notes" hi="टिप्पणियाँ" /></span>
+              <textarea className="inp" rows={2} value={editing.notes}
                 onChange={e => setEditing({ ...editing, notes: e.target.value })} />
             </label>
           </div>
