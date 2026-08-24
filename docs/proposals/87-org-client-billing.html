@@ -1,0 +1,562 @@
+<title>Org Client Billing</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  --bg: #f8f6f1;
+  --surface: #ffffff;
+  --surface-raised: #f0eee8;
+  --border: #ddd9cf;
+  --border-strong: #c5c0b4;
+  --text: #1f1e1b;
+  --text-2: #5e5b52;
+  --text-3: #8e8a7e;
+  --accent: #1a6b5a;
+  --accent-soft: #e4f0ec;
+  --accent-text: #145545;
+  --module-ganit: #1a6b5a;
+  --module-crm: #3d5a80;
+  --module-sales: #7c5cbf;
+  --module-kray: #c4652a;
+  --module-hr: #8a6d4b;
+  --dot-active: #1a6b5a;
+  --dot-passive: #3d5a80;
+  --dot-off: #d4d0c6;
+  --decision-bg: #e4f0ec;
+  --decision-border: #1a6b5a;
+  --warn-bg: #fef3eb;
+  --warn-border: #c4652a;
+  --warn-text: #8a4318;
+  --code-bg: #eceae4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151413;
+    --surface: #1c1b18;
+    --surface-raised: #252420;
+    --border: #3a3832;
+    --border-strong: #4a4840;
+    --text: #e5e3dc;
+    --text-2: #a8a49a;
+    --text-3: #706d64;
+    --accent: #4db89e;
+    --accent-soft: #1a2e28;
+    --accent-text: #6dcdb5;
+    --module-ganit: #4db89e;
+    --module-crm: #6a8eb8;
+    --module-sales: #a68ee0;
+    --module-kray: #e08a50;
+    --module-hr: #b8996e;
+    --dot-active: #4db89e;
+    --dot-passive: #6a8eb8;
+    --dot-off: #3a3832;
+    --decision-bg: #1a2e28;
+    --decision-border: #4db89e;
+    --warn-bg: #2a1e14;
+    --warn-border: #e08a50;
+    --warn-text: #e0a870;
+    --code-bg: #252420;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151413;
+  --surface: #1c1b18;
+  --surface-raised: #252420;
+  --border: #3a3832;
+  --border-strong: #4a4840;
+  --text: #e5e3dc;
+  --text-2: #a8a49a;
+  --text-3: #706d64;
+  --accent: #4db89e;
+  --accent-soft: #1a2e28;
+  --accent-text: #6dcdb5;
+  --module-ganit: #4db89e;
+  --module-crm: #6a8eb8;
+  --module-sales: #a68ee0;
+  --module-kray: #e08a50;
+  --module-hr: #b8996e;
+  --dot-active: #4db89e;
+  --dot-passive: #6a8eb8;
+  --dot-off: #3a3832;
+  --decision-bg: #1a2e28;
+  --decision-border: #4db89e;
+  --warn-bg: #2a1e14;
+  --warn-border: #e08a50;
+  --warn-text: #e0a870;
+  --code-bg: #252420;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'DM Sans', system-ui, sans-serif; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+
+.page { max-width: 880px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+
+header { margin-bottom: 3rem; }
+h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; }
+.ref { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; font-weight: 500; color: var(--accent); margin-bottom: 0.35rem; letter-spacing: 0.04em; }
+.subtitle { color: var(--text-2); font-size: 0.9rem; margin-top: 0.35rem; max-width: 600px; }
+
+h2 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.015em; margin: 2.75rem 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 0.92rem; font-weight: 600; margin: 1.75rem 0 0.5rem; }
+
+p, li { font-size: 0.85rem; color: var(--text-2); }
+p { margin-bottom: 0.75rem; }
+ul, ol { padding-left: 1.25rem; margin-bottom: 0.75rem; }
+li { margin-bottom: 0.3rem; }
+strong { color: var(--text); font-weight: 600; }
+code { font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; background: var(--code-bg); padding: 0.12em 0.4em; border-radius: 3px; }
+
+/* Decision box */
+.decision { background: var(--decision-bg); border-left: 3px solid var(--decision-border); padding: 1rem 1.25rem; border-radius: 0 5px 5px 0; margin: 1.25rem 0; }
+.decision p { color: var(--text); margin-bottom: 0.35rem; }
+.decision p:last-child { margin-bottom: 0; }
+.decision .label { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.4rem; }
+
+.warn { background: var(--warn-bg); border-left: 3px solid var(--warn-border); padding: 0.85rem 1.15rem; border-radius: 0 5px 5px 0; margin: 1.25rem 0; }
+.warn p { color: var(--warn-text); font-size: 0.82rem; margin-bottom: 0; }
+
+/* Visibility matrix */
+.matrix { overflow-x: auto; margin: 1rem 0 1.5rem; }
+.matrix table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.matrix th { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); padding: 0.5rem 0.6rem; border-bottom: 2px solid var(--border); text-align: center; white-space: nowrap; }
+.matrix th:first-child { text-align: left; }
+.matrix td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; }
+.matrix td:first-child { text-align: left; color: var(--text); font-weight: 500; }
+.matrix tr:last-child td { border-bottom: none; }
+.matrix .desc { font-size: 0.72rem; color: var(--text-3); display: block; font-weight: 400; margin-top: 0.15rem; }
+.matrix .note { font-size: 0.7rem; color: var(--text-3); font-weight: 400; font-style: italic; }
+
+/* Module color chips */
+.mod { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; font-weight: 600; padding: 0.15em 0.5em; border-radius: 3px; white-space: nowrap; }
+.mod-ganit { color: var(--module-ganit); background: var(--accent-soft); }
+.mod-crm { color: var(--module-crm); background: color-mix(in srgb, var(--module-crm) 12%, transparent); }
+.mod-sales { color: var(--module-sales); background: color-mix(in srgb, var(--module-sales) 12%, transparent); }
+.mod-kray { color: var(--module-kray); background: color-mix(in srgb, var(--module-kray) 12%, transparent); }
+.mod-hr { color: var(--module-hr); background: color-mix(in srgb, var(--module-hr) 12%, transparent); }
+
+/* Dots for visibility */
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.dot-home { background: var(--dot-active); }
+.dot-sync { background: var(--dot-passive); }
+.dot-off { background: var(--dot-off); }
+.dot-label { font-size: 0.65rem; color: var(--text-3); }
+
+/* Legend */
+.legend { display: flex; gap: 1.25rem; align-items: center; margin: 0.5rem 0 0.75rem; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--text-3); }
+
+/* Schema cards */
+.schema { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1.15rem 1.25rem; margin: 0.75rem 0; }
+.schema-name { font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem; font-weight: 600; color: var(--accent-text); margin-bottom: 0.5rem; }
+.schema-cols { font-size: 0; }
+.schema-col { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; background: var(--surface-raised); border: 1px solid var(--border); padding: 0.2em 0.55em; border-radius: 3px; margin: 0.15rem 0.2rem 0.15rem 0; white-space: nowrap; }
+.schema-col.pk { border-color: var(--accent); color: var(--accent-text); }
+.schema-col.fk { border-color: var(--module-crm); color: var(--module-crm); }
+.schema-note { font-size: 0.75rem; color: var(--text-3); margin-top: 0.5rem; }
+
+/* Phase steps */
+.phase { margin: 1.5rem 0; }
+.phase-head { display: flex; align-items: baseline; gap: 0.65rem; margin-bottom: 0.5rem; }
+.phase-id { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; font-weight: 600; color: var(--accent-text); background: var(--accent-soft); padding: 0.2em 0.55em; border-radius: 3px; }
+.phase-title { font-size: 0.95rem; font-weight: 600; }
+
+/* Compact table */
+.tbl { overflow-x: auto; margin: 0.75rem 0; }
+.tbl table { width: 100%; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.tbl th { text-align: left; font-weight: 600; color: var(--text-3); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.45rem 0.65rem; border-bottom: 2px solid var(--border); }
+.tbl td { padding: 0.5rem 0.65rem; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: none; }
+
+@media (max-width: 640px) {
+  .page { padding: 2rem 1rem 3rem; }
+  h1 { font-size: 1.35rem; }
+}
+</style>
+
+<div class="page">
+
+<header>
+  <div class="ref">PROPOSAL 87 &middot; Extends P86 &sect;D / P5</div>
+  <h1>Org-Level Client Billing</h1>
+  <p class="subtitle">One data layer, one engine, tabs in every relevant module. Ganit is the home; CRM, Sales, and Kray get the same screens when active.</p>
+</header>
+
+<div class="decision">
+  <div class="label">Decision &mdash; resolves P86 &sect;V open question</div>
+  <p><strong>Ganit owns org-level client billing.</strong> It is not a new module code, not a feature of Graha, and not standalone. Billing is accounting. Ganit-only buyers get every capability below.</p>
+  <p>When CRM, Sales, or Kray are also active, those modules surface <em>the same tabs and the same data</em> &mdash; not copies, not synced mirrors. One component, one API, one table. The module flag gates tab visibility, nothing else.</p>
+</div>
+
+<h2>1. The Visibility Matrix</h2>
+
+<p>Every feature lives in Ganit unconditionally. Other modules show the same tab when the org has that module active. One update from any module writes once and is visible everywhere.</p>
+
+<div class="legend">
+  <span class="legend-item"><span class="dot dot-home"></span> Home &mdash; always visible</span>
+  <span class="legend-item"><span class="dot dot-sync"></span> Synced tab &mdash; visible when module is active</span>
+  <span class="legend-item"><span class="dot dot-off"></span> Not shown</span>
+</div>
+
+<div class="matrix">
+<table>
+<thead>
+  <tr>
+    <th style="text-align:left; min-width:200px">Feature</th>
+    <th><span class="mod mod-ganit">Ganit</span></th>
+    <th><span class="mod mod-crm">Graha</span></th>
+    <th><span class="mod mod-sales">Vikray</span></th>
+    <th><span class="mod mod-kray">Kray</span></th>
+    <th><span class="mod mod-hr">Manav</span></th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>Client Billing Profiles<span class="desc">Cycle, terms, currency, GST treatment, credit limit</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Recurring Service Billing<span class="desc">Retainer / subscription invoicing with auto-generation</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Pro-rata on Client Services<span class="desc">Mid-month start/stop &rarr; proportional invoices</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Metered Client Billing<span class="desc">Billable hours, units, or transactions &rarr; invoices</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Quota Proration for Sales<span class="desc">Mid-quarter hires get proportional targets</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Vendor Rate Cards<span class="desc">Contracted rates per vendor, effective dates, proration clause</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>SLA Credits<span class="desc">Calculate and apply credits when vendor SLAs are missed</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Payment Ageing Reports<span class="desc">30 / 60 / 90 / 120-day buckets, receivables &amp; payables</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+  <tr>
+    <td>Prorated Salary Calc<span class="desc">Mid-month joiner/leaver pay by working days</span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-home"></span></td>
+  </tr>
+  <tr>
+    <td>Arrears Billing for Services<span class="desc">Bill vendors after delivery, actuals vs PO</span></td>
+    <td><span class="dot dot-home"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-off"></span></td>
+    <td><span class="dot dot-sync"></span></td>
+    <td><span class="dot dot-off"></span></td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Prorated Salary is the one exception.</strong> It stays HR-only. Salary calculation is payroll math, not client billing &mdash; a Ganit user managing invoices has no business seeing salary structures, and Manav/Vetana already own the pay cycle and working-day calendar.</p>
+
+<h2>2. Why Ganit, Not a New Module</h2>
+
+<ul>
+  <li><strong>No new module code.</strong> Adding one means a new <code>ALL_MODULES</code> entry, a <code>module_subscriptions</code> row for every org, a plan-feature key, and THREE DEPLOYS in a non-negotiable order because staging and production share one database. Procurement (proposal 77) already proved this trade-off: it gates on <code>require_module("ganit")</code> because a firm that holds the books holds its purchase orders.</li>
+  <li><strong>Client billing IS accounting.</strong> Billing profiles configure how money moves. Recurring invoices land in <code>ganit_invoices</code>. Ageing reports read from <code>ganit_payments</code>. The data is already Ganit's; the features should be too.</li>
+  <li><strong>Independence for Ganit-only buyers.</strong> An org that buys only Ganit can set up client billing profiles, create recurring service lines, track metered usage, and run ageing reports &mdash; all from Ganit. They are not blocked on buying CRM.</li>
+  <li><strong>No sync, no lag.</strong> CRM and Ganit don't sync because there is nothing to sync. The CRM billing tab and the Ganit billing tab render the same component, read the same endpoint, and write the same table. Update from either side, it is already there.</li>
+</ul>
+
+<h2>3. How Cross-Module Tabs Work</h2>
+
+<div class="decision">
+  <div class="label">Architecture</div>
+  <p><strong>One component, conditionally mounted.</strong> The frontend checks the org's active modules to decide which tabs to show. The API is always <code>/api/v1/ganit/billing/*</code>. The tab component lives in <code>frontend/src/pages/ganit/</code>. Module pages import and mount it.</p>
+</div>
+
+<p>The pattern already exists: <code>procurement.py</code> gates on <code>require_module("ganit")</code> and the procurement tab appears inside Finance. This proposal extends the same pattern in the other direction &mdash; Ganit features appearing as tabs in CRM and Sales when those modules are active.</p>
+
+<h3>Frontend mounting</h3>
+<ul>
+  <li><code>GanitPage.jsx</code> &mdash; always shows the Billing Profiles tab, Recurring tab, Metered tab, Ageing tab</li>
+  <li><code>GrahaPage.jsx</code> (CRM) &mdash; shows a "Billing" tab that mounts <code>ClientBillingTab</code> when Graha is active. Same component as Ganit's.</li>
+  <li><code>VikrayPage.jsx</code> (Sales) &mdash; same "Billing" tab when Vikray is active</li>
+  <li><code>KrayPage.jsx</code> (Procurement) &mdash; shows "Rate Cards" and "SLA Credits" tabs when Kray is active</li>
+</ul>
+
+<h3>Backend gating</h3>
+<p>All billing endpoints live in a new <code>routers/client_billing.py</code>, gated <code>require_any_module("ganit", "graha", "vikray")</code> for client-facing features, and <code>require_any_module("ganit", "kray")</code> for vendor-facing ones. This mirrors the existing <code>_payables_gate</code> pattern in <code>ganit.py</code>.</p>
+
+<h2>4. Schema</h2>
+
+<p>All tables in the <code>staging</code> schema, org-scoped, following existing conventions. Every table carries <code>org_id UUID NOT NULL REFERENCES staging.organisations(id)</code>.</p>
+
+<div class="schema">
+  <div class="schema-name">client_billing_profiles</div>
+  <div class="schema-cols">
+    <span class="schema-col pk">id UUID PK</span>
+    <span class="schema-col fk">org_id UUID FK</span>
+    <span class="schema-col fk">client_id UUID FK &rarr; graha_clients</span>
+    <span class="schema-col">billing_cycle TEXT</span>
+    <span class="schema-col">anchor_day SMALLINT(1-28)</span>
+    <span class="schema-col">payment_terms_days INT</span>
+    <span class="schema-col">currency TEXT DEFAULT 'INR'</span>
+    <span class="schema-col">gst_treatment TEXT</span>
+    <span class="schema-col">credit_limit NUMERIC(14,2)</span>
+    <span class="schema-col">notes TEXT</span>
+    <span class="schema-col">created_by TEXT</span>
+    <span class="schema-col">created_at TIMESTAMPTZ</span>
+    <span class="schema-col">updated_at TIMESTAMPTZ</span>
+  </div>
+  <div class="schema-note">One profile per (org, client). <code>client_id</code> references <code>graha_clients</code> &mdash; the company, never a contact. A Ganit-only org creates the <code>graha_clients</code> row directly (the table already exists independent of the CRM module).</div>
+</div>
+
+<div class="schema">
+  <div class="schema-name">client_service_lines</div>
+  <div class="schema-cols">
+    <span class="schema-col pk">id UUID PK</span>
+    <span class="schema-col fk">org_id UUID FK</span>
+    <span class="schema-col fk">profile_id UUID FK &rarr; client_billing_profiles</span>
+    <span class="schema-col">kind TEXT CHECK (retainer|subscription|one_off)</span>
+    <span class="schema-col">description TEXT</span>
+    <span class="schema-col">amount NUMERIC(14,2)</span>
+    <span class="schema-col">cadence TEXT CHECK (monthly|quarterly|annual|one_off)</span>
+    <span class="schema-col">period_start DATE</span>
+    <span class="schema-col">period_end DATE</span>
+    <span class="schema-col">billing_direction TEXT DEFAULT 'advance'</span>
+    <span class="schema-col">auto_invoice BOOLEAN DEFAULT FALSE</span>
+    <span class="schema-col">created_by TEXT</span>
+    <span class="schema-col">created_at TIMESTAMPTZ</span>
+    <span class="schema-col">updated_at TIMESTAMPTZ</span>
+  </div>
+  <div class="schema-note">Mirrors <code>org_billing_lines</code> from P1 but scoped to (org, client). Lines are ended by setting <code>period_end</code>, never deleted. <code>auto_invoice</code> = TRUE means the billing cron generates a <code>ganit_invoices</code> row on period roll.</div>
+</div>
+
+<div class="schema">
+  <div class="schema-name">client_metered_usage</div>
+  <div class="schema-cols">
+    <span class="schema-col pk">id UUID PK</span>
+    <span class="schema-col fk">org_id UUID FK</span>
+    <span class="schema-col fk">profile_id UUID FK &rarr; client_billing_profiles</span>
+    <span class="schema-col">metric TEXT</span>
+    <span class="schema-col">quantity NUMERIC(14,4)</span>
+    <span class="schema-col">unit TEXT</span>
+    <span class="schema-col">rate NUMERIC(14,2)</span>
+    <span class="schema-col">recorded_date DATE</span>
+    <span class="schema-col">source_ref TEXT</span>
+    <span class="schema-col">invoiced BOOLEAN DEFAULT FALSE</span>
+    <span class="schema-col">created_by TEXT</span>
+    <span class="schema-col">created_at TIMESTAMPTZ</span>
+  </div>
+  <div class="schema-note">Individual usage entries. <code>metric</code> is freeform per org (hours, units, transactions). <code>source_ref</code> links to the originating record (task, timesheet, order). <code>invoiced</code> flips TRUE when rolled into a <code>ganit_invoices</code> line.</div>
+</div>
+
+<div class="schema">
+  <div class="schema-name">vendor_rate_cards</div>
+  <div class="schema-cols">
+    <span class="schema-col pk">id UUID PK</span>
+    <span class="schema-col fk">org_id UUID FK</span>
+    <span class="schema-col fk">vendor_id UUID FK &rarr; ganit_vendors</span>
+    <span class="schema-col">item_category TEXT</span>
+    <span class="schema-col">rate NUMERIC(14,2)</span>
+    <span class="schema-col">unit TEXT</span>
+    <span class="schema-col">effective_from DATE</span>
+    <span class="schema-col">effective_to DATE</span>
+    <span class="schema-col">proration_clause BOOLEAN DEFAULT FALSE</span>
+    <span class="schema-col">notes TEXT</span>
+    <span class="schema-col">created_by TEXT</span>
+    <span class="schema-col">created_at TIMESTAMPTZ</span>
+    <span class="schema-col">updated_at TIMESTAMPTZ</span>
+  </div>
+  <div class="schema-note">Contracted rates per vendor. <code>effective_to</code> NULL = still active. When a PO references an item in a rate-card category, the procurement module can auto-fill the rate and flag deviations.</div>
+</div>
+
+<div class="schema">
+  <div class="schema-name">vendor_sla_credits</div>
+  <div class="schema-cols">
+    <span class="schema-col pk">id UUID PK</span>
+    <span class="schema-col fk">org_id UUID FK</span>
+    <span class="schema-col fk">vendor_id UUID FK &rarr; ganit_vendors</span>
+    <span class="schema-col fk">rate_card_id UUID FK &rarr; vendor_rate_cards</span>
+    <span class="schema-col">sla_metric TEXT</span>
+    <span class="schema-col">threshold NUMERIC(14,4)</span>
+    <span class="schema-col">actual NUMERIC(14,4)</span>
+    <span class="schema-col">credit_amount NUMERIC(14,2)</span>
+    <span class="schema-col">period DATE</span>
+    <span class="schema-col">applied_to_bill UUID FK &rarr; ganit_vendor_bills</span>
+    <span class="schema-col">status TEXT CHECK (pending|applied|waived)</span>
+    <span class="schema-col">created_by TEXT</span>
+    <span class="schema-col">created_at TIMESTAMPTZ</span>
+  </div>
+  <div class="schema-note">When a vendor misses an SLA, the org records a credit. <code>applied_to_bill</code> links to the vendor bill it was deducted from. Stays <code>pending</code> until applied or explicitly waived.</div>
+</div>
+
+<h2>5. Reuse from P1</h2>
+
+<div class="tbl">
+<table>
+<thead>
+  <tr><th>P1 Asset</th><th>Reuse</th></tr>
+</thead>
+<tbody>
+  <tr><td><code>billing_cycle.py &rarr; next_anchor()</code></td><td>Same anchor-day math for client billing cycles. Already a pure function.</td></tr>
+  <tr><td><code>billing_cycle.py &rarr; period_end_for()</code></td><td>Period boundaries for client service lines. Needs <code>quarterly</code> added.</td></tr>
+  <tr><td><code>org_billing_lines</code> pattern</td><td>The <code>client_service_lines</code> schema mirrors the same shape: kind, amount, cadence, period_start/end, never-delete contract.</td></tr>
+  <tr><td><code>invoice_billing_lines</code> pattern</td><td>Same no-double-charge join table, but linking <code>client_service_lines</code> &rarr; <code>ganit_invoices</code> instead of platform invoices.</td></tr>
+  <tr><td>Migration 217 <code>billing_direction</code></td><td>Client service lines carry the same advance/arrears flag.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>6. What Changes in Existing Tables</h2>
+
+<div class="warn">
+  <p><strong>Shared database.</strong> Every ALTER below touches production data. Apply by hand in a low-traffic window, same protocol as migrations 096 and 217.</p>
+</div>
+
+<div class="tbl">
+<table>
+<thead>
+  <tr><th>Table</th><th>Change</th><th>Risk</th></tr>
+</thead>
+<tbody>
+  <tr><td><code>graha_clients</code></td><td>None. Already has everything a billing profile references.</td><td>None</td></tr>
+  <tr><td><code>ganit_invoices</code></td><td>ADD COLUMN <code>billing_profile_id UUID</code> FK &rarr; <code>client_billing_profiles</code>. Nullable &mdash; existing invoices keep NULL.</td><td>Low. Additive, no rewrite.</td></tr>
+  <tr><td><code>ganit_vendors</code></td><td>None. Rate cards and SLA credits FK to it.</td><td>None</td></tr>
+  <tr><td><code>ganit_vendor_bills</code></td><td>ADD COLUMN <code>sla_credit_applied NUMERIC(14,2) DEFAULT 0</code>. Tracks the total SLA credit deducted on this bill.</td><td>Low. Additive.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>7. Build Order</h2>
+
+<div class="phase">
+  <div class="phase-head">
+    <span class="phase-id">P5.1</span>
+    <span class="phase-title">Schema + Billing Profiles</span>
+  </div>
+  <ul>
+    <li>Migration: create <code>client_billing_profiles</code>, <code>client_service_lines</code>, <code>client_metered_usage</code></li>
+    <li>ALTER <code>ganit_invoices</code> to add <code>billing_profile_id</code></li>
+    <li>CRUD API at <code>/api/v1/ganit/billing/profiles</code></li>
+    <li>Billing Profiles tab in Ganit, mounted in Graha + Vikray when active</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-head">
+    <span class="phase-id">P5.2</span>
+    <span class="phase-title">Recurring Services + Auto-Invoice</span>
+  </div>
+  <ul>
+    <li>Service line management UI (add/end/view history)</li>
+    <li>Cron extension: sweep <code>client_service_lines WHERE auto_invoice AND period_start &lt;= today</code>, generate <code>ganit_invoices</code> with GST from the profile</li>
+    <li>Pro-rata calculation when a service line starts or ends mid-period, reusing <code>next_anchor()</code> and <code>period_end_for()</code></li>
+    <li>Join table to prevent double-invoicing (same pattern as <code>invoice_billing_lines</code>)</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-head">
+    <span class="phase-id">P5.3</span>
+    <span class="phase-title">Metered Billing</span>
+  </div>
+  <ul>
+    <li>Usage entry UI: manual + source-linked (from timesheets, tasks, orders)</li>
+    <li>"Generate invoice from unbilled usage" action &mdash; rolls un-invoiced rows into a <code>ganit_invoices</code> draft</li>
+    <li>Metered tab in Ganit, synced to CRM/Sales</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-head">
+    <span class="phase-id">P5.4</span>
+    <span class="phase-title">Vendor Rate Cards + SLA Credits</span>
+  </div>
+  <ul>
+    <li>Migration: create <code>vendor_rate_cards</code>, <code>vendor_sla_credits</code></li>
+    <li>ALTER <code>ganit_vendor_bills</code> to add <code>sla_credit_applied</code></li>
+    <li>Rate card management UI in Ganit and Kray</li>
+    <li>SLA credit recording + application to vendor bills</li>
+    <li>PO rate auto-fill from rate cards in procurement</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-head">
+    <span class="phase-id">P5.5</span>
+    <span class="phase-title">Payment Ageing + Quota Proration</span>
+  </div>
+  <ul>
+    <li>Ageing report: <code>GET /v1/ganit/ageing?direction=receivable|payable</code> &mdash; computed from <code>ganit_invoices</code> (receivables) and <code>ganit_vendor_bills</code> (payables), bucketed by days overdue</li>
+    <li>Ageing tab in Ganit, synced to CRM, Sales, and Kray</li>
+    <li>Sales quota proration: mid-quarter rep assignment &rarr; proportional target, using the same anchor math</li>
+  </ul>
+</div>
+
+<h2>8. Dependencies</h2>
+
+<div class="tbl">
+<table>
+<thead>
+  <tr><th>Step</th><th>Depends on</th><th>Note</th></tr>
+</thead>
+<tbody>
+  <tr><td>P5.1 Profiles</td><td><code>graha_clients</code> table (exists)</td><td>No blockers</td></tr>
+  <tr><td>P5.2 Recurring</td><td>P5.1 + P1 cycle engine</td><td><code>period_end_for()</code> needs <code>quarterly</code> cadence added</td></tr>
+  <tr><td>P5.3 Metered</td><td>P5.1</td><td>Independent of P5.2</td></tr>
+  <tr><td>P5.4 Rate Cards</td><td><code>ganit_vendors</code>, <code>ganit_vendor_bills</code> (exist), procurement router (exists)</td><td>No blockers</td></tr>
+  <tr><td>P5.5 Ageing</td><td>P5.1 (for profile-grouped view), existing invoice/bill tables</td><td>Can build the basic report without P5.1 profiles</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>9. What This Does Not Include</h2>
+
+<ul>
+  <li><strong>Prorated salary</strong> &mdash; stays in Manav/Vetana. Not client billing.</li>
+  <li><strong>Payment gateway</strong> &mdash; permanently ruled out. Collection stays UPI-on-invoice + manual recording.</li>
+  <li><strong>Multi-currency</strong> &mdash; <code>currency</code> column exists on profiles for future use but the engine processes INR only.</li>
+  <li><strong>Dunning / overdue escalation</strong> &mdash; covered separately in P86 P3. The ageing report surfaces the data; automated reminders are a different build.</li>
+  <li><strong>Platform-level billing</strong> &mdash; P1 through P4 in proposal 86. This is P5 only.</li>
+</ul>
+
+</div>
