@@ -57,6 +57,8 @@ const TASK_COLUMNS = [
   { id: 'assignees', label: 'Assignees',    width: 200 },
   { id: 'category',  label: 'Category',     width: 140, defaultHidden: true },
   { id: 'due',       label: 'Due',          width: 150 },
+  { id: 'created',   label: 'Created',      width: 130, defaultHidden: true },
+  { id: 'createdBy', label: 'Created By',   width: 140, defaultHidden: true },
   { id: 'updated',   label: 'Last Updated', width: 130, defaultHidden: true },
   { id: 'status',    label: 'Status',       width: 130 },
 ];
@@ -654,6 +656,16 @@ export default function TasksListPage() {
                       due: (
                             <div key="due" className="k-trow__cell k-c-due">
                               <DueChip date={t.due_at} status={t.status} completedAt={t.completed_at} />
+                            </div>
+                          ),
+                      created: (
+                            <div key="created" className="k-trow__cell k-c-created">
+                              <span className="k-trow__meta">{t.created_at ? new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
+                            </div>
+                          ),
+                      createdBy: (
+                            <div key="createdBy" className="k-trow__cell k-c-createdBy">
+                              <span className="k-trow__meta">{t.created_by_name || '—'}</span>
                             </div>
                           ),
                       updated: (
