@@ -98,30 +98,31 @@ export default function TabDocNumbers() {
   }
 
   return (
-    <div>
-      <p className="of__h of__h--lede">
+    <div className="gn-form" style={{ maxWidth: 520 }}>
+      <h4 className="gn-form__h">Document numbering</h4>
+      <p style={{ margin: '0 0 var(--sp-3)', color: 'var(--on-surface-2)', fontSize: 'var(--t-body)' }}>
         The letters in front of every document number. Leave a box empty to use
         the built-in.
       </p>
 
-      {/* Said before the fields, not after, and not in a tooltip. */}
-      <div className="note note--warn" role="note">
+      <div className="note note--warn" role="note" style={{ marginBottom: 'var(--sp-4)' }}>
         <strong>Changing a prefix starts a new series at 0001.</strong>{' '}
         Documents already issued keep the numbers they were issued with — a GST
         serial is never renumbered after the fact. The old series simply ends.
       </div>
 
-      <div className="of" style={{ maxWidth: 520 }}>
+      <div className="gn-form__grid" style={{ gridTemplateColumns: '1fr' }}>
         {rows.map((r) => {
           const value = draft[r.invoice_type] ?? '';
           const effective = clean(value) || r.default;
           const isChanged = clean(value) !== (r.prefix || '');
           return (
-            <label className="of__f" key={r.invoice_type}>
-              <span className="of__l">{LABELS[r.invoice_type] || r.invoice_type}</span>
+            <label className="fld" key={r.invoice_type}>
+              <span className="fld__l">{LABELS[r.invoice_type] || r.invoice_type}</span>
               <input
-                className="of__i of__i--mono"
+                className="inp"
                 type="text"
+                style={{ fontFamily: 'var(--font-mono)' }}
                 value={value}
                 disabled={!canWrite || saving}
                 title={denial || undefined}
@@ -130,9 +131,7 @@ export default function TabDocNumbers() {
                   ...d, [r.invoice_type]: clean(e.target.value),
                 }))}
               />
-              <span className="of__h">
-                {/* The example is the point: a prefix is abstract until it is
-                    shown as the number somebody will actually read. */}
+              <span className="fld__hint">
                 Next: <code>{effective}-{new Date().getFullYear()}-0001</code>
                 {!r.prefix && ' · using the built-in'}
                 {isChanged && ' · not saved yet'}
@@ -142,7 +141,7 @@ export default function TabDocNumbers() {
         })}
       </div>
 
-      <div className="of__f of__f--act">
+      <div className="gn-form__acts" style={{ marginTop: 'var(--sp-4)' }}>
         <button
           type="button"
           className="btn btn--fill btn--sm"
