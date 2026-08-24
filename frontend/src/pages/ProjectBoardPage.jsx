@@ -164,7 +164,7 @@ export default function ProjectBoardPage() {
   const projectName = project?.team?.name || project?.name || '…';
   const presenceUsers = onlineUsers.map((u, i) => ({
     name: u.name || u.email || '?',
-    color: avatarBg(m.name || m.user_id || String(i)),
+    color: avatarBg(u.name || u.user_id || String(i)),
   }));
 
   const viewProps = {
