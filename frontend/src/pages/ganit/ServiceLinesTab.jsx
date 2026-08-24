@@ -4,7 +4,7 @@ import { EmptyState, ErrorState, errorKind } from '../../components/ui';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { Modal } from '../../components/ui/modal';
 import DateInput from '../../components/ui/DateInput';
 
 const KINDS = ['retainer', 'subscription', 'one_off'];
@@ -156,13 +156,16 @@ export default function ServiceLinesTab() {
         </>
       )}
 
-      {editing && (
-        <ConfirmDialog
-          title={editing.id ? 'Edit Service Line' : 'New Service Line'}
-          onConfirm={save}
-          onCancel={() => setEditing(null)}
-          confirmLabel="Save"
-        >
+      <Modal
+        open={!!editing}
+        onOpenChange={v => { if (!v) setEditing(null); }}
+        title={editing?.id ? 'Edit Service Line' : 'New Service Line'}
+        footer={<>
+          <button className="k-btn k-btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+          <button className="k-btn k-btn-primary" onClick={save}>Save</button>
+        </>}
+      >
+        {editing && (
           <div className="k-form-grid">
             {!editing.id && (
               <label className="k-field">
@@ -223,8 +226,8 @@ export default function ServiceLinesTab() {
               <span>Auto-generate invoices</span>
             </label>
           </div>
-        </ConfirmDialog>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

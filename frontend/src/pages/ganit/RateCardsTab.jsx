@@ -4,7 +4,7 @@ import { EmptyState, ErrorState, errorKind } from '../../components/ui';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { Modal } from '../../components/ui/modal';
 import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
@@ -132,13 +132,16 @@ export default function RateCardsTab() {
         />
       )}
 
-      {editing && (
-        <ConfirmDialog
-          title={editing.id ? 'Edit Rate Card' : 'New Rate Card'}
-          onConfirm={save}
-          onCancel={() => setEditing(null)}
-          confirmLabel="Save"
-        >
+      <Modal
+        open={!!editing}
+        onOpenChange={v => { if (!v) setEditing(null); }}
+        title={editing?.id ? 'Edit Rate Card' : 'New Rate Card'}
+        footer={<>
+          <button className="k-btn k-btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+          <button className="k-btn k-btn-primary" onClick={save}>Save</button>
+        </>}
+      >
+        {editing && (
           <div className="k-form-grid">
             {!editing.id && (
               <label className="k-field">
@@ -188,8 +191,8 @@ export default function RateCardsTab() {
                 onChange={e => setEditing({ ...editing, notes: e.target.value })} />
             </label>
           </div>
-        </ConfirmDialog>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

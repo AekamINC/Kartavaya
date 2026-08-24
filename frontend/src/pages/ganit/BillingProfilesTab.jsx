@@ -4,7 +4,7 @@ import { EmptyState, ErrorState, errorKind } from '../../components/ui';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { Modal } from '../../components/ui/modal';
 
 const BLANK = {
   client_id: '', billing_cycle: 'monthly', anchor_day: 1,
@@ -126,27 +126,30 @@ export default function BillingProfilesTab() {
         />
       )}
 
-      {editing && (
-        <ConfirmDialog
-          title={editing.id ? 'Edit Billing Profile' : 'New Billing Profile'}
-          onConfirm={save}
-          onCancel={() => setEditing(null)}
-          confirmLabel="Save"
-        >
-          <div className="k-form-grid">
-            {!editing.id && (
-              <label className="k-field">
-                <span className="k-field-label">Client</span>
-                <select
-                  className="k-input"
-                  value={editing.client_id}
-                  onChange={e => setEditing({ ...editing, client_id: e.target.value })}
-                >
-                  <option value="">Select a client…</option>
-                  {available.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </label>
-            )}
+      <Modal
+        open={!!editing}
+        onOpenChange={v => { if (!v) setEditing(null); }}
+        title={editing?.id ? 'Edit Billing Profile' : 'New Billing Profile'}
+        footer={<>
+          <button className="k-btn k-btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+          <button className="k-btn k-btn-primary" onClick={save}>Save</button>
+        </>}
+      >
+        <div className="k-form-grid">
+          {editing && !editing.id && (
+            <label className="k-field">
+              <span className="k-field-label">Client</span>
+              <select
+                className="k-input"
+                value={editing.client_id}
+                onChange={e => setEditing({ ...editing, client_id: e.target.value })}
+              >
+                <option value="">Select a client…</option>
+                {available.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          )}
+          {editing && <>
             <label className="k-field">
               <span className="k-field-label">Billing Cycle</span>
               <select className="k-input" value={editing.billing_cycle}
@@ -184,9 +187,9 @@ export default function BillingProfilesTab() {
               <textarea className="k-input" rows={2} value={editing.notes}
                 onChange={e => setEditing({ ...editing, notes: e.target.value })} />
             </label>
-          </div>
-        </ConfirmDialog>
-      )}
+          </>}
+        </div>
+      </Modal>
     </div>
   );
 }
