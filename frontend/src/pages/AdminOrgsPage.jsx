@@ -610,6 +610,10 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const [addRole, setAddRole] = useState('org_admin');
   const [confirm, setConfirm] = useState(null);
   const [emailUsage, setEmailUsage] = useState(null);
+  const [ecDaily, setEcDaily] = useState('');
+  const [ecMonthly, setEcMonthly] = useState('');
+  const [ecOverage, setEcOverage] = useState('');
+  const [ecLoaded, setEcLoaded] = useState(false);
 
   const me = currentUser();
   const maySuspend = canSuspendOrg(me?.platform_roles);
@@ -640,7 +644,13 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    api.get(`/v1/admin/orgs/${orgId}/email-usage`).then(r => setEmailUsage(r.data)).catch(() => {});
+    api.get(`/v1/admin/orgs/${orgId}/email-usage`).then(r => {
+      setEmailUsage(r.data);
+      setEcDaily(r.data?.daily_cap ?? '');
+      setEcMonthly(r.data?.monthly_cap ?? '');
+      setEcOverage(r.data?.overage_rate ?? '');
+      setEcLoaded(true);
+    }).catch(() => { setEcLoaded(true); });
   }, [orgId]);
 
   if (err) {
@@ -807,31 +817,68 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
           reason={mayBill ? null : 'Credits and ceilings need platform owner, platform manager or account/finance access.'}
         />
 
-        {emailUsage && (emailUsage.daily_cap != null || emailUsage.monthly_cap != null) && (
-          <section className="apg__sec">
-            <h3 className="apg__sect">Email usage</h3>
-            <div className="crb">
-              {emailUsage.daily_cap != null && (
-                <div className="crb__b">
-                  <span className="crb__k">Today</span>
-                  <b className="crb__v">{emailUsage.daily_usage} / {emailUsage.daily_cap}</b>
+        {ecLoaded && (() => {
+          const capChanged = String(ecDaily) !== String(emailUsage?.daily_cap ?? '')
+            || String(ecMonthly) !== String(emailUsage?.monthly_cap ?? '')
+            || String(ecOverage) !== String(emailUsage?.overage_rate ?? '');
+          return (
+            <section className="apg__sec">
+              <div className="apg__sech"><h3 className="apg__sect">Email caps</h3></div>
+              {emailUsage && (emailUsage.daily_cap != null || emailUsage.monthly_cap != null) && (
+                <div className="crb" style={{ marginBottom: 12 }}>
+                  {emailUsage.daily_cap != null && (
+                    <div className="crb__b">
+                      <span className="crb__k">Today</span>
+                      <b className="crb__v">{emailUsage.daily_usage} / {emailUsage.daily_cap}</b>
+                    </div>
+                  )}
+                  {emailUsage.monthly_cap != null && (
+                    <div className="crb__b">
+                      <span className="crb__k">This month</span>
+                      <b className="crb__v">{emailUsage.monthly_usage} / {emailUsage.monthly_cap}</b>
+                    </div>
+                  )}
                 </div>
               )}
-              {emailUsage.monthly_cap != null && (
-                <div className="crb__b">
-                  <span className="crb__k">This month</span>
-                  <b className="crb__v">{emailUsage.monthly_usage} / {emailUsage.monthly_cap}</b>
+              <div className="adm-form adm-form--tight">
+                <Field label="Daily cap" htmlFor="ec-d" hint="Max emails per day. Empty = unlimited.">
+                  {p => <Input {...p} type="number" min="0" step="1" value={ecDaily} disabled={!mayBill} onChange={e => setEcDaily(e.target.value)} />}
+                </Field>
+                <Field label="Monthly cap" htmlFor="ec-m" hint="Max emails per month. Empty = unlimited.">
+                  {p => <Input {...p} type="number" min="0" step="1" value={ecMonthly} disabled={!mayBill} onChange={e => setEcMonthly(e.target.value)} />}
+                </Field>
+                <Field label="Overage rate ₹" htmlFor="ec-r" hint="Per-email charge above cap. Empty = hard block.">
+                  {p => <Input {...p} type="number" min="0" step="any" value={ecOverage} disabled={!mayBill} onChange={e => setEcOverage(e.target.value)} />}
+                </Field>
+              </div>
+              {!mayBill && <p className="apg__secn">Email caps need platform owner, platform manager or account/finance access.</p>}
+              {capChanged && (
+                <div className="adm-actions">
+                  <Button
+                    variant="fill" size="sm"
+                    disabled={!mayBill || busy === 'email-caps'}
+                    onClick={() => act('email-caps', async () => {
+                      const numOrNull = v => v === '' || v === null || v === undefined ? null : Number(v);
+                      await api.patch(`/v1/admin/orgs/${orgId}/settings`, {
+                        email_cap_daily: numOrNull(ecDaily),
+                        email_cap_monthly: numOrNull(ecMonthly),
+                        email_overage_rate: numOrNull(ecOverage),
+                      });
+                      const r = await api.get(`/v1/admin/orgs/${orgId}/email-usage`);
+                      setEmailUsage(r.data);
+                      setEcDaily(r.data?.daily_cap ?? '');
+                      setEcMonthly(r.data?.monthly_cap ?? '');
+                      setEcOverage(r.data?.overage_rate ?? '');
+                      pushToast({ type: 'success', title: 'Email caps updated' });
+                    })}
+                  >
+                    {busy === 'email-caps' ? 'Saving…' : 'Save email caps'}
+                  </Button>
                 </div>
               )}
-              {emailUsage.overage_rate != null && (
-                <div className="crb__b">
-                  <span className="crb__k">Overage rate</span>
-                  <b className="crb__v">₹{emailUsage.overage_rate}/email</b>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
+            </section>
+          );
+        })()}
 
         <section className="apg__sec">
           <div className="apg__sech">
