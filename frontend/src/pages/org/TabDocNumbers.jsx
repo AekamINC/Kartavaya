@@ -111,7 +111,7 @@ export default function TabDocNumbers() {
         serial is never renumbered after the fact. The old series simply ends.
       </div>
 
-      <div className="of">
+      <div className="of" style={{ maxWidth: 520 }}>
         {rows.map((r) => {
           const value = draft[r.invoice_type] ?? '';
           const effective = clean(value) || r.default;
