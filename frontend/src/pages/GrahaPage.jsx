@@ -48,6 +48,7 @@ import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 // Graha-only callers, and until this import its only door was Dristi's.
 import ClientReportTab from './dristi/ClientReportTab';
 import BillingProfilesTab from './ganit/BillingProfilesTab';
+import MeteredUsageTab from './ganit/MeteredUsageTab';
 
 const TABS = [
   ['today', TodayTab], ['clients', ClientsTab], ['contacts', ContactsTab],
@@ -59,6 +60,7 @@ const TABS = [
   ['analytics', () => <ModuleAnalyticsTab module="graha" />],
   ['client-report', ClientReportTab],
   ['billing', BillingProfilesTab],
+  ['metered-usage', MeteredUsageTab],
 ];
 
 const lakh = n => {

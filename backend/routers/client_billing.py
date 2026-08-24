@@ -1,9 +1,10 @@
 """
-client_billing.py — Client Billing Profiles, Service Lines, and Auto-Invoice.
+client_billing.py — Client Billing Profiles, Service Lines, Metered Usage,
+and Auto-Invoice.
 
-Proposal 87, phases P5.1 + P5.2.  Lives in its own router rather than inside
-ganit.py (3,500 lines already).  Gate: any of ganit / graha / vikray — a firm
-that holds any of those can manage its client billing.
+Proposal 87, phases P5.1 + P5.2 + P5.3.  Lives in its own router rather than
+inside ganit.py (3,500 lines already).  Gate: any of ganit / graha / vikray —
+a firm that holds any of those can manage its client billing.
 """
 import logging
 from datetime import date
@@ -66,6 +67,30 @@ class ServiceLineUpdate(BaseModel):
     amount: float | None = None
     period_end: str | None = None
     auto_invoice: bool | None = None
+
+
+class MeteredUsageCreate(BaseModel):
+    profile_id: str
+    metric: str = ""
+    quantity: float = 0
+    unit: str = ""
+    rate: float = 0
+    recorded_date: str | None = None
+    source_ref: str | None = None
+
+
+class MeteredUsageUpdate(BaseModel):
+    metric: str | None = None
+    quantity: float | None = None
+    unit: str | None = None
+    rate: float | None = None
+    recorded_date: str | None = None
+    source_ref: str | None = None
+
+
+class GenerateUsageInvoice(BaseModel):
+    profile_id: str
+    usage_ids: list[str] | None = None
 
 
 # ── Profiles CRUD ────────────────────────────────────────────────────────
@@ -353,3 +378,234 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
         )
 
     return {"date": str(today), "created": created, "skipped": skipped}
+
+
+# ── P5.3: Metered Usage CRUD ───────────────────────────────────────────
+
+@router.get("/metered-usage")
+async def list_metered_usage(
+    profile_id: str = "",
+    invoiced: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT u.*, p.client_id, c.name AS client_name "
+        "FROM staging.client_metered_usage u "
+        "JOIN staging.client_billing_profiles p ON p.id = u.profile_id "
+        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        "WHERE u.org_id = $1::uuid"
+    )
+    params: list = [org_id]
+    if profile_id:
+        params.append(profile_id)
+        q += f" AND u.profile_id = ${len(params)}::uuid"
+    if invoiced in ("true", "false"):
+        params.append(invoiced == "true")
+        q += f" AND u.invoiced = ${len(params)}::bool"
+    q += " ORDER BY u.recorded_date DESC, u.created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/metered-usage")
+async def create_metered_usage(
+    body: MeteredUsageCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    profile = await pool.fetchrow(
+        "SELECT id FROM staging.client_billing_profiles "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        body.profile_id, org_id,
+    )
+    if not profile:
+        raise HTTPException(404, "Billing profile not found")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.client_metered_usage "
+        "(org_id, profile_id, metric, quantity, unit, rate, "
+        " recorded_date, source_ref, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, "
+        "        COALESCE($7::date, CURRENT_DATE), $8, $9) "
+        "RETURNING *",
+        org_id, body.profile_id, body.metric, body.quantity,
+        body.unit, body.rate, body.recorded_date,
+        body.source_ref, user.get("user_id", ""),
+    )
+    return dict(row)
+
+
+@router.patch("/metered-usage/{usage_id}")
+async def update_metered_usage(
+    usage_id: UUID,
+    body: MeteredUsageUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    already = await pool.fetchval(
+        "SELECT invoiced FROM staging.client_metered_usage "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        usage_id, org_id,
+    )
+    if already is None:
+        raise HTTPException(404, "Usage entry not found")
+    if already:
+        raise HTTPException(409, "Cannot edit usage that has already been invoiced")
+    updates, vals = [], []
+    for field in ("metric", "quantity", "unit", "rate", "recorded_date", "source_ref"):
+        val = getattr(body, field)
+        if val is not None:
+            vals.append(val)
+            cast = "::date" if field == "recorded_date" else ""
+            updates.append(f"{field}=${len(vals)}{cast}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    vals.append(str(usage_id))
+    vals.append(org_id)
+    row = await pool.fetchrow(
+        f"UPDATE staging.client_metered_usage SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Usage entry not found")
+    return dict(row)
+
+
+@router.delete("/metered-usage/{usage_id}")
+async def delete_metered_usage(
+    usage_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT invoiced FROM staging.client_metered_usage "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        usage_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Usage entry not found")
+    if row["invoiced"]:
+        raise HTTPException(409, "Cannot delete usage that has already been invoiced")
+    await pool.execute(
+        "DELETE FROM staging.client_metered_usage "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        usage_id, org_id,
+    )
+    return {"ok": True}
+
+
+# ── P5.3: Generate Invoice from Unbilled Usage ─────────────────────────
+
+@router.post("/metered-usage/generate-invoice")
+async def generate_usage_invoice(
+    body: GenerateUsageInvoice,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Roll unbilled metered-usage rows into a draft ganit_invoices row."""
+    pool = await get_pool()
+
+    profile = await pool.fetchrow(
+        "SELECT p.*, c.name AS client_name "
+        "FROM staging.client_billing_profiles p "
+        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        "WHERE p.id = $1::uuid AND p.org_id = $2::uuid",
+        body.profile_id, org_id,
+    )
+    if not profile:
+        raise HTTPException(404, "Billing profile not found")
+
+    if body.usage_ids:
+        placeholders = ", ".join(f"${i+3}::uuid" for i in range(len(body.usage_ids)))
+        q = (
+            f"SELECT * FROM staging.client_metered_usage "
+            f"WHERE org_id = $1::uuid AND profile_id = $2::uuid "
+            f"AND invoiced = FALSE AND id IN ({placeholders}) "
+            f"ORDER BY recorded_date"
+        )
+        usage_rows = await pool.fetch(q, org_id, body.profile_id, *body.usage_ids)
+    else:
+        usage_rows = await pool.fetch(
+            "SELECT * FROM staging.client_metered_usage "
+            "WHERE org_id = $1::uuid AND profile_id = $2::uuid AND invoiced = FALSE "
+            "ORDER BY recorded_date",
+            org_id, body.profile_id,
+        )
+
+    if not usage_rows:
+        raise HTTPException(400, "No unbilled usage entries to invoice")
+
+    import json
+    line_items = []
+    subtotal = 0.0
+    for u in usage_rows:
+        amount = round(float(u["quantity"]) * float(u["rate"]), 2)
+        line_items.append({
+            "description": f"{u['metric']}: {u['quantity']} {u['unit']} @ {u['rate']}",
+            "quantity": float(u["quantity"]),
+            "rate": float(u["rate"]),
+            "amount": amount,
+        })
+        subtotal += amount
+
+    subtotal = round(subtotal, 2)
+    is_igst = profile["gst_treatment"] in ("overseas", "sez")
+    gst_rate = 18
+    gst_amount = round(subtotal * gst_rate / 100, 2)
+    total = round(subtotal + gst_amount, 2)
+    today = date.today()
+    due_date = today + __import__("datetime").timedelta(days=profile["payment_terms_days"])
+
+    invoice_id = uuid4()
+    usage_ids = [u["id"] for u in usage_rows]
+    uid = user.get("user_id", "")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "INSERT INTO staging.ganit_invoices "
+                "(id, org_id, client_id, billing_profile_id, "
+                " invoice_date, due_date, line_items, subtotal, gst_rate, "
+                " cgst, sgst, igst, total, payment_status, "
+                " notes, created_by, is_igst) "
+                "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, "
+                "        $5::date, $6::date, $7::jsonb, $8, $9, "
+                "        $10, $11, $12, $13, 'unpaid', "
+                "        $14, $15, $16)",
+                str(invoice_id), org_id, profile["client_id"],
+                profile["id"],
+                today, due_date, json.dumps(line_items), subtotal, gst_rate,
+                0 if is_igst else round(gst_amount / 2, 2),
+                0 if is_igst else round(gst_amount / 2, 2),
+                gst_amount if is_igst else 0,
+                total,
+                f"Metered usage invoice for {profile['client_name']}",
+                uid, is_igst,
+            )
+            placeholders = ", ".join(f"${i+2}::uuid" for i in range(len(usage_ids)))
+            await conn.execute(
+                f"UPDATE staging.client_metered_usage SET invoiced = TRUE "
+                f"WHERE org_id = $1::uuid AND id IN ({placeholders})",
+                org_id, *[str(uid) for uid in usage_ids],
+            )
+
+    logger.info(
+        "Generated metered invoice %s for %s: %d entries, ₹%.2f",
+        invoice_id, profile["client_name"], len(usage_rows), total,
+    )
+    return {
+        "invoice_id": str(invoice_id),
+        "entries": len(usage_rows),
+        "subtotal": subtotal,
+        "total": total,
+    }

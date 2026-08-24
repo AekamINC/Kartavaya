@@ -54,6 +54,7 @@ import CollectionsTab from './ganit/CollectionsTab';
 import AnalyticsTab from './dristi/AnalyticsTab';
 import BillingProfilesTab from './ganit/BillingProfilesTab';
 import ServiceLinesTab from './ganit/ServiceLinesTab';
+import MeteredUsageTab from './ganit/MeteredUsageTab';
 import TabDocNumbers from './org/TabDocNumbers';
 
 const TABS = [
@@ -67,7 +68,7 @@ const TABS = [
   // Beside invoices, not at the end: it is the same money seen from the other
   // side — what is owed and whether the customer has looked at the link.
   ['collections', CollectionsTab],
-  ['billing-profiles', BillingProfilesTab], ['service-lines', ServiceLinesTab],
+  ['billing-profiles', BillingProfilesTab], ['service-lines', ServiceLinesTab], ['metered-usage', MeteredUsageTab],
   ['recurring', RecurringTab], ['bank', BankTab], ['timesheet', TimesheetTab],
   ['stats', StatsTab],
   // DSO, collection rate, ageing — the /v1/analytics registry, read here the
