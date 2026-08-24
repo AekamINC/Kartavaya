@@ -27,12 +27,13 @@ export default function ServiceLinesTab() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [sl, pr] = await Promise.all([
+      const [sl, pr] = await Promise.allSettled([
         api.get('/v1/ganit/billing/service-lines'),
         api.get('/v1/ganit/billing/profiles'),
       ]);
-      setItems(asRows(sl));
-      setProfiles(asRows(pr));
+      if (sl.status === 'rejected') throw sl.reason;
+      setItems(asRows(sl.value));
+      setProfiles(pr.status === 'fulfilled' ? asRows(pr.value) : []);
     } catch (e) { setErr(e); }
     setLoading(false);
   }, []);
@@ -79,7 +80,7 @@ export default function ServiceLinesTab() {
         </div>
       )}
 
-      {items.length === 0 && !editing && (
+      {items.length === 0 ? (
         <EmptyState
           illustration="invoice"
           title="No service lines"
@@ -87,7 +88,7 @@ export default function ServiceLinesTab() {
           action={canWrite ? '+ Service Line' : undefined}
           onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
-      )}
+      ) : null}
 
       {active.length > 0 && (
         <>

@@ -27,14 +27,15 @@ export default function SLACreditsTab() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [sc, v, rc] = await Promise.all([
+      const [sc, v, rc] = await Promise.allSettled([
         api.get('/v1/ganit/billing/sla-credits'),
         api.get('/v1/ganit/vendors'),
         api.get('/v1/ganit/billing/rate-cards'),
       ]);
-      setItems(asRows(sc));
-      setVendors(asRows(v));
-      setRateCards(asRows(rc));
+      if (sc.status === 'rejected') throw sc.reason;
+      setItems(asRows(sc.value));
+      setVendors(v.status === 'fulfilled' ? asRows(v.value) : []);
+      setRateCards(rc.status === 'fulfilled' ? asRows(rc.value) : []);
     } catch (e) { setErr(e); }
     setLoading(false);
   }, []);
@@ -98,17 +99,7 @@ export default function SLACreditsTab() {
         </div>
       )}
 
-      {items.length === 0 && !editing && (
-        <EmptyState
-          illustration="invoice"
-          title="No SLA credits"
-          description="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
-          action={canWrite ? '+ SLA Credit' : undefined}
-          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
-        />
-      )}
-
-      {items.length > 0 && (
+      {items.length > 0 ? (
         <table className="k-table">
           <thead>
             <tr>
@@ -152,6 +143,14 @@ export default function SLACreditsTab() {
             ))}
           </tbody>
         </table>
+      ) : (
+        <EmptyState
+          illustration="invoice"
+          title="No SLA credits"
+          description="Record a service-level breach against a vendor to track the credit owed, then apply it to a bill or waive it."
+          action={canWrite ? '+ SLA Credit' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
+        />
       )}
 
       {editing && (

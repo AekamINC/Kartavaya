@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { ErrorState, errorKind } from '../../components/ui';
+import { EmptyState, ErrorState, errorKind } from '../../components/ui';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 
@@ -77,12 +77,13 @@ export default function AgeingTab() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [r, p] = await Promise.all([
+      const [r, p] = await Promise.allSettled([
         api.get('/v1/ganit/billing/ageing?direction=receivable'),
         api.get('/v1/ganit/billing/ageing?direction=payable'),
       ]);
-      setReceivable(r.data);
-      setPayable(p.data);
+      if (r.status === 'rejected' && p.status === 'rejected') throw r.reason;
+      setReceivable(r.status === 'fulfilled' ? r.value.data : null);
+      setPayable(p.status === 'fulfilled' ? p.value.data : null);
     } catch (e) { setErr(e); }
     setLoading(false);
   }, []);
@@ -92,10 +93,22 @@ export default function AgeingTab() {
   if (loading) return <SkeletonList />;
   if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
+  const hasData = receivable || payable;
+
   return (
     <div className="k-tab-body">
-      <Section title="Receivables" partyLabel="Client" data={receivable} />
-      <Section title="Payables" partyLabel="Vendor" data={payable} />
+      {hasData ? (
+        <>
+          <Section title="Receivables" partyLabel="Client" data={receivable} />
+          <Section title="Payables" partyLabel="Vendor" data={payable} />
+        </>
+      ) : (
+        <EmptyState
+          illustration="invoice"
+          title="No ageing data"
+          description="Ageing reports appear once invoices or vendor bills are raised."
+        />
+      )}
     </div>
   );
 }

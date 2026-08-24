@@ -26,12 +26,13 @@ export default function BillingProfilesTab() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [p, c] = await Promise.all([
+      const [p, c] = await Promise.allSettled([
         api.get('/v1/ganit/billing/profiles'),
         api.get('/v1/graha/clients'),
       ]);
-      setItems(asRows(p));
-      setClients(asRows(c));
+      if (p.status === 'rejected') throw p.reason;
+      setItems(asRows(p.value));
+      setClients(c.status === 'fulfilled' ? asRows(c.value) : []);
     } catch (e) { setErr(e); }
     setLoading(false);
   }, []);
@@ -82,17 +83,7 @@ export default function BillingProfilesTab() {
         </div>
       )}
 
-      {items.length === 0 && !editing && (
-        <EmptyState
-          illustration="invoice"
-          title="No billing profiles"
-          description="Create a billing profile for a client to set up their billing cycle, terms, and GST treatment."
-          action={canWrite ? '+ Billing Profile' : undefined}
-          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
-        />
-      )}
-
-      {items.length > 0 && (
+      {items.length > 0 ? (
         <table className="k-table">
           <thead>
             <tr>
@@ -125,6 +116,14 @@ export default function BillingProfilesTab() {
             ))}
           </tbody>
         </table>
+      ) : (
+        <EmptyState
+          illustration="invoice"
+          title="No billing profiles"
+          description="Create a billing profile for a client to set up their billing cycle, terms, and GST treatment."
+          action={canWrite ? '+ Billing Profile' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
+        />
       )}
 
       {editing && (

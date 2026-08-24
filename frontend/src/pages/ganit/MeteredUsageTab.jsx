@@ -26,12 +26,13 @@ export default function MeteredUsageTab() {
     setErr(null);
     try {
       const invoicedParam = filter === 'all' ? '' : filter === 'unbilled' ? 'false' : 'true';
-      const [u, pr] = await Promise.all([
+      const [u, pr] = await Promise.allSettled([
         api.get(`/v1/ganit/billing/metered-usage${invoicedParam ? `?invoiced=${invoicedParam}` : ''}`),
         api.get('/v1/ganit/billing/profiles'),
       ]);
-      setItems(asRows(u));
-      setProfiles(asRows(pr));
+      if (u.status === 'rejected') throw u.reason;
+      setItems(asRows(u.value));
+      setProfiles(pr.status === 'fulfilled' ? asRows(pr.value) : []);
     } catch (e) { setErr(e); }
     setLoading(false);
   }, [filter]);
@@ -122,7 +123,7 @@ export default function MeteredUsageTab() {
         </select>
       </div>
 
-      {items.length === 0 && !editing && (
+      {items.length === 0 ? (
         <EmptyState
           illustration="invoice"
           title="No usage entries"
@@ -130,7 +131,7 @@ export default function MeteredUsageTab() {
           action={canWrite ? '+ Usage Entry' : undefined}
           onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />
-      )}
+      ) : null}
 
       {groups.map(g => (
         <div key={g.profile_id} style={{ marginBottom: 24 }}>

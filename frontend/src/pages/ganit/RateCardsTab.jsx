@@ -23,12 +23,13 @@ export default function RateCardsTab() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [rc, v] = await Promise.all([
+      const [rc, v] = await Promise.allSettled([
         api.get('/v1/ganit/billing/rate-cards'),
         api.get('/v1/ganit/vendors'),
       ]);
-      setItems(asRows(rc));
-      setVendors(asRows(v));
+      if (rc.status === 'rejected') throw rc.reason;
+      setItems(asRows(rc.value));
+      setVendors(v.status === 'fulfilled' ? asRows(v.value) : []);
     } catch (e) { setErr(e); }
     setLoading(false);
   }, []);
@@ -82,17 +83,7 @@ export default function RateCardsTab() {
         </div>
       )}
 
-      {items.length === 0 && !editing && (
-        <EmptyState
-          illustration="invoice"
-          title="No vendor rate cards"
-          description="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
-          action={canWrite ? '+ Rate Card' : undefined}
-          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
-        />
-      )}
-
-      {items.length > 0 && (
+      {items.length > 0 ? (
         <table className="k-table">
           <thead>
             <tr>
@@ -131,6 +122,14 @@ export default function RateCardsTab() {
             ))}
           </tbody>
         </table>
+      ) : (
+        <EmptyState
+          illustration="invoice"
+          title="No vendor rate cards"
+          description="Add a rate card to lock in vendor pricing per item category, effective dates, and proration terms."
+          action={canWrite ? '+ Rate Card' : undefined}
+          onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
+        />
       )}
 
       {editing && (
