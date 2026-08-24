@@ -3051,7 +3051,7 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
         raise HTTPException(403, "Not authorised to review this approval")
     await pool.execute("UPDATE approvals SET status=$1,reviewed_by=$2,reviewed_at=NOW(),review_notes=$3 WHERE approval_id=$4",status,user["user_id"],notes,approval_id)
     if approval["request_type"]=="create":
-        data=json.loads(approval["request_data"])
+        data=approval["request_data"] if isinstance(approval["request_data"],dict) else json.loads(approval["request_data"])
         existing_task_id=data.get("task_id")
         if status=="approved":
             # A client request being approved IS a status change — `requested`
