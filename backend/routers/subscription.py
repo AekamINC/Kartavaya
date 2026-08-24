@@ -497,10 +497,15 @@ async def get_current(user=Depends(require_user), org_id: str = Depends(get_org_
         "AND role_code IN ('org_owner','org_admin','org_member')",
         org_id,
     )
+    anchor = await pool.fetchval(
+        "SELECT billing_anchor_day FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
     return {
         "subscription": dict(sub) if sub else None,
         "active_modules": [r["module_code"] for r in modules],
         "user_count": user_count or 0,
+        "billing_anchor_day": anchor or 1,
     }
 
 
@@ -533,9 +538,15 @@ async def admin_set_plan(
             "professional": 1, "business": 2, "enterprise": 3}
     direction = "upgraded" if tier.get(body.plan_code, 0) > tier.get(old_code, 0) else "downgraded"
 
-    cycle_days = 30 if body.billing_cycle == "monthly" else 365
+    from services.billing_cycle import next_anchor, period_end_for
+
     now = datetime.now(timezone.utc)
-    period_end = date.today() + timedelta(days=cycle_days)
+    anchor = await pool.fetchval(
+        "SELECT billing_anchor_day FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    ) or 1
+    period_start = next_anchor(anchor, date.today())
+    period_end = period_end_for(period_start, body.billing_cycle)
 
     await pool.execute(
         "INSERT INTO staging.subscriptions "
@@ -550,7 +561,7 @@ async def admin_set_plan(
         "next_billing_date=EXCLUDED.next_billing_date, updated_at=EXCLUDED.updated_at",
         org_id, plan["id"], body.billing_cycle,
         user["user_id"], body.notes,
-        date.today(), period_end, now,
+        period_start, period_end, now,
     )
 
     if body.plan_code == "free":
@@ -566,6 +577,69 @@ async def admin_set_plan(
         "set_by": user["user_id"], "notes": body.notes,
     })
     return {"status": direction, "plan": body.plan_code}
+
+
+class BillingAnchor(BaseModel):
+    anchor_day: int = Field(..., ge=1, le=28)
+
+
+@router.patch("/admin/billing-anchor")
+async def set_billing_anchor(
+    body: BillingAnchor,
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.organisations SET billing_anchor_day=$2 "
+        "WHERE id=$1::uuid",
+        org_id, body.anchor_day,
+    )
+    return {"billing_anchor_day": body.anchor_day}
+
+
+class SubscriptionPause(BaseModel):
+    action: str = Field(..., pattern="^(pause|resume)$")
+    reason: str = ""
+
+
+@router.post("/admin/pause")
+async def admin_pause_subscription(
+    body: SubscriptionPause,
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    pool = await get_pool()
+
+    sub = await pool.fetchrow(
+        "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid",
+        org_id,
+    )
+    if not sub:
+        raise HTTPException(404, "No subscription for this organisation")
+
+    if body.action == "pause":
+        if sub["status"] == "paused":
+            raise HTTPException(409, "Already paused")
+        if sub["status"] != "active":
+            raise HTTPException(400, f"Cannot pause a {sub['status']} subscription")
+        new_status = "paused"
+    else:
+        if sub["status"] != "paused":
+            raise HTTPException(400, "Subscription is not paused")
+        new_status = "active"
+
+    await pool.execute(
+        "UPDATE staging.subscriptions SET status=$2, updated_at=NOW() "
+        "WHERE org_id=$1::uuid",
+        org_id, new_status,
+    )
+    clear_module_cache(org_id)
+
+    await _log_event(pool, org_id, body.action, {
+        "set_by": user["user_id"], "reason": body.reason,
+    })
+    return {"status": new_status}
 
 
 # ── Module Activation ────────────────────────────────────────

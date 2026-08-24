@@ -879,6 +879,19 @@ async def run_stock(x_cron_secret: str = Header("")):
     return await _for_each_org(pool, "stock", _work)
 
 
+@router.post("/cron/billing", dependencies=[])
+async def run_billing(x_cron_secret: str = Header("")):
+    """Daily: advance billing periods and expire trials.
+
+    Rolls `current_period_start/end` and `next_billing_date` forward for every
+    active subscription whose period has ended.  Downgrades trialing orgs whose
+    `trial_ends_at` has passed to the free plan.
+    """
+    await _verify_cron(x_cron_secret)
+    from services.billing_cycle import run_billing_cycle
+    return await run_billing_cycle()
+
+
 @router.post("/cron/agents", dependencies=[])
 async def run_agents(x_cron_secret: str = Header("")):
     """Hourly: run the deadline agent for every active organisation.

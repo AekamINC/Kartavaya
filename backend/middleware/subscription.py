@@ -695,11 +695,14 @@ def require_module(module_code: str):
         )
         if not sub or sub["status"] in ("cancelled", "paused"):
             _cache[cache_key] = (now, False)
-            # The one refusal that is true of every module at once, which is
-            # why `require_any_module` can pass it straight through.
+            msg = (
+                "Your subscription is paused. Contact your organisation owner "
+                "or Aekam support to resume it."
+                if sub and sub["status"] == "paused"
+                else "Subscription is not active"
+            )
             raise ModuleRefusal(
-                "Subscription is not active",
-                stage="subscription", module_code=module_code)
+                msg, stage="subscription", module_code=module_code)
 
         if module_code in BUNDLED_MODULES:
             features = sub["features"] if isinstance(sub["features"], dict) else {}
