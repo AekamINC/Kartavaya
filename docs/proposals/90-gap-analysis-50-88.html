@@ -209,8 +209,44 @@ ul, ol { margin: .6rem 0; padding-left: 1.3rem; } li { margin: .35rem 0; }
 <p style="margin-bottom:0"><span class="onum">7</span><strong>Freeze new modules; retire the duplicates; add one rule:</strong> no proposal may call a table/column missing without a live query in the document, and no router ships without one test that executes its SQL. Both failure modes here are cheap to close and neither has been.</p>
 </div>
 
+<h2><span class="n">7</span>How this compares to every prior status doc</h2>
+<p class="sub">This is the fourth status audit in a recurring genre. The genre exists because each one over-claimed and the next had to correct it — the gap is always between what a document <em>says</em> and what the live system <em>does</em>.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>Era</th><th>Docs</th><th>What it measured</th><th>The failure mode it exposed</th></tr></thead>
+<tbody>
+<tr><td>5–6 Aug</td><td><code>00</code> where-we-are · <code>07</code> two-days · <code>21</code> what-does-not-work · <code>23/25</code> the tail · <code>27</code> parity-ledger · <code>29</code> resolution-plan</td><td>Shipped UI against the live DB and the prototype stylesheets. <code>21</code>: five auditors, 42 paths traced. <code>27/29</code>: 382 findings → 99 serious → 11 packages.</td><td><strong>Sold-but-broken.</strong> 8 features a customer <em>believes</em> they have don't work — 0 dead code. The Overdue tile counted a status nothing writes, so ₹3.11 cr past-due read as "0".</td></tr>
+<tr><td>16–22 Aug</td><td><code>54</code> The Plan · <code>82</code> What is actually left</td><td>All four suites, the 17-item inbox, 29 unapplied migrations, proposals 53→83 re-read.</td><td><strong>Design recorded as shipment.</strong> "Everything from 72 onward is paper." Its own §7 named four cases where a proposal called a table "missing" that already existed.</td></tr>
+<tr><td>25 Aug</td><td><strong><code>90</code> this doc</strong></td><td>802 claims across 70–88 verified against Supabase; 50–69 quick-scanned; 3 blockers re-checked by hand.</td><td><strong>Schema/API without a screen or a row.</strong> The 24-hour "DONE" batch after 82 shipped code with no data — 48 zero-row tables, 2 endpoints that 500, 10 leavers on payroll.</td></tr>
+</tbody>
+</table></div>
+
+<div class="card card--accent">
+<p style="margin:0"><strong>The same meta-pattern, in three evolving forms.</strong> <code>21</code> (Aug 5) already used the exact method this doc uses — read the code, measure against the live database, and separate what is <em>sold</em> from what is merely <em>dead</em>. It found bugs <em>behind working-looking screens</em>. By <code>82</code> the product had grown modules faster than screens, so the gap moved to <em>design mistaken for shipment</em>. By <code>90</code> the gap has moved once more, to its subtlest form yet — <em>code and schema that exist, pass tests, and have never been given a screen or a single row.</em> Each doc is the previous one's blind spot made measurable.</p>
+</div>
+
+<h3>Head-to-head with 82, the direct predecessor (overlap 55–83)</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th>#</th><th>82 said (22 Aug)</th><th>Handover-B (23 Aug)</th><th>This doc (25 Aug, live)</th><th>Delta</th></tr></thead>
+<tbody>
+<tr><td>55–68</td><td>BUILT / ARMED / DEPLOYED</td><td>—</td><td>~10–25% left (mostly usage)</td><td><span class="tag t-done">agree</span></td></tr>
+<tr><td>69</td><td>"1 of 78" skills acked</td><td>—</td><td>32 of 78 wired; 0 rows, no UI</td><td><span class="tag t-half">improved 1→32</span></td></tr>
+<tr><td>72</td><td>NOT BUILT</td><td>—</td><td>Dock shipped; Due tab dead</td><td><span class="tag t-half">82 was stale</span></td></tr>
+<tr><td>73/75</td><td>NOT BUILT</td><td>F Reports <strong>DONE</strong></td><td>~50–65% left, reports not built</td><td><span class="tag t-empty">I contradict "DONE"</span></td></tr>
+<tr><td>76</td><td>BUILT (mig 189–191)</td><td>—</td><td>Built but rate uneditable, inert</td><td><span class="tag t-half">I go deeper</span></td></tr>
+<tr><td>77</td><td>NOT BUILT (workstream G)</td><td>G Procurement <strong>DONE</strong></td><td>~45% — can't send a PO</td><td><span class="tag t-empty">I contradict "DONE"</span></td></tr>
+<tr><td>80</td><td>NOT BUILT</td><td>H NOT STARTED</td><td>~80% — table+API, no screen</td><td><span class="tag t-done">agree</span></td></tr>
+<tr><td>81</td><td>SHIPPED (legal pages)</td><td>—</td><td>Not in prod; MFA claim wrong; 3 undisclosed sub-processors</td><td><span class="tag t-empty">worse than "shipped"</span></td></tr>
+<tr><td>83</td><td>NOT BUILT (workstream K)</td><td>K Storage <strong>DONE</strong></td><td>~55% — no tab, 0 objects</td><td><span class="tag t-empty">I contradict "DONE"</span></td></tr>
+</tbody>
+</table></div>
+<p><strong>The one finding that matters.</strong> 82 was honest — "everything from 72 onward is paper." Then Handover-B claimed A–G, I and K all <strong>DONE</strong> in the next 24 hours. This doc shows what that "DONE" was: the <strong>code shipped, the data and screens did not</strong>. That is not a contradiction of 82 — it is 82's own §7 warning ("proposals recording design as shipment") applied to the 24 hours after 82 was written, and the live DB backs it.</p>
+
+<h3>What genuinely improved since Aug 5</h3>
+<p><code>21</code>'s headline bug is <strong>fixed</strong>: the Ganit Overdue tile now reads a real number (<code>204 · MSME rule 43B(h) applies</code>, seen live this session), not the "0" it showed over ₹3.11 cr of past-due invoices. But the <em>class</em> of bug relocated — this doc's Kray "Received" KPI shows committed spend, and <code>enterprise_class</code> is NULL on all 80 vendors, so the same "tile prints a wrong number the day a firm turns it on" pattern <code>21</code> caught is now sitting one module over. <strong>The bugs get fixed; the shape recurs in the newest code.</strong> That is the argument for §6 item 7's rule — a test that executes the SQL — more than any single fix.</p>
+
 <div class="footer">
-Proposal 90 · gap analysis 50–88 · verified live against Supabase <code>toacecaewujfxjfrjwco</code> and the running code · supersedes proposal 82's status column · companions: 88 (glass record), 89 (glass rescope). The full 802-claim audit and per-proposal evidence are in the session scratchpad.
+Proposal 90 · gap analysis 50–88 · verified live against Supabase <code>toacecaewujfxjfrjwco</code> and the running code · supersedes proposal 82's status column, and continues the status-audit lineage 00 → 07 → 21 → 27 → 29 → 82 · companions: 88 (glass record), 89 (glass rescope). Phased execution plan: <code>docs/plans/</code>. The full 802-claim audit is in the session scratchpad.
 </div>
 
 </div>
