@@ -485,8 +485,20 @@
  * Built on the shared `.tbl` in components.css rather than a second table
  * vocabulary. These are the Ganit-specific cells only.
  */
-.gn-tbl__mono { font-family: var(--font-mono); font-size: var(--t-label); }
-.gn-tbl__id { font-family: var(--font-mono); font-size: var(--t-label); font-weight: 600; }
+/* `white-space: nowrap` on both, and it is the row-height contract that makes
+   it necessary rather than a preference about line breaks.
+
+   An invoice number is `INV-2026-0188` and a date is `2026-08-25`. Both carry
+   hyphens, and a hyphen is a break opportunity — so in a narrow column the
+   number wraps to THREE lines and the date to two. Measured on staging at
+   1366x768: `--row-h` was 50px and the rendered `<tr>` was 60px, because
+   `height` on a `td` is a floor and wrapped content lifts it straight through.
+   The whole table was 20% taller than the token said, on the two columns least
+   able to justify it — nobody reads an identifier faster split across lines.
+   The identifier and the date are atomic; they get the width they need or they
+   ellipse, they do not fold. */
+.gn-tbl__mono { font-family: var(--font-mono); font-size: var(--t-label); white-space: nowrap; }
+.gn-tbl__id { font-family: var(--font-mono); font-size: var(--t-label); font-weight: 600; white-space: nowrap; }
 .gn-tbl__row { cursor: pointer; }
 .gn-tbl__acts { display: flex; gap: var(--sp-2); white-space: nowrap; }
 .gn-tbl__ok { color: var(--ok); }

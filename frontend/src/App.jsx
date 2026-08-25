@@ -24,6 +24,11 @@ import './styles/editorial.css';
 // the lazy-loaded page they would not exist until you first opened Customize,
 // so a saved sidebar preference would silently not apply on boot.
 import './styles/settings.css';
+// LAST, deliberately. viewport-fit.css tightens the shell on laptop-sized
+// screens, and several of its rules are single-class (`.mh`, `.mk`, `.side`)
+// against the sheets that declare them. Imported anywhere earlier it would lose
+// every one of those ties on order. See the header of the file itself.
+import './styles/viewport-fit.css';
 
 import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';

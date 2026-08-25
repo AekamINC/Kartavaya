@@ -92,6 +92,17 @@ export const DEFAULTS = {
   // page one tier looser than the design — --pad-page 32px against 28px, and
   // that token is the topbar's padding and .kv__content's padding everywhere.
   density:      'cozy',       // compact | cozy | comfy
+  // on | off. The laptop-band layer in styles/viewport-fit.css. Default ON
+  // because the complaint it answers is about the DEFAULT: at 1366x768 the
+  // module header, the KPI strip, the tab strip and two filter rows put the
+  // first row of a table at y=536 of 768, and three rows of a two-hundred-row
+  // invoice list were visible. It only ever tightens, and only on `cozy` and
+  // `comfy` — a user who chose `compact` has already answered the question.
+  //
+  // The CSS keys on `:not([data-fit="off"])`, so the feature is live before any
+  // JavaScript writes the attribute; this key exists to let it be turned OFF
+  // and to make the state visible in the exported preferences blob.
+  fit:          'on',
   font:         'newsreader', // display face
   uiFont:       'inter',      // body face — independent of `font` (00 §2)
   fontSize:     14,           // 12 → 20
@@ -330,6 +341,11 @@ export function applyPrefs(prefs) {
   // palette would never have rendered at all.
 
   root.setAttribute('data-density',  prefs.density);
+  // Normalised on the way out, and written unconditionally. Anything that is
+  // not the literal string 'off' must render as 'on': viewport-fit.css matches
+  // `:not([data-fit="off"])`, so a stray value would silently leave the layer
+  // enabled while the control showed something else.
+  root.setAttribute('data-fit',      prefs.fit === 'off' ? 'off' : 'on');
   root.setAttribute('data-sidebar',  prefs.sidebar);
   root.setAttribute('data-language', normalizeLanguage(prefs.language));
   if (prefs.sideBg)  root.setAttribute('data-sidebar-bg', prefs.sideBg);

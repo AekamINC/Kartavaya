@@ -1,0 +1,195 @@
+/* viewport-fit.css — the laptop band.
+ *
+ * WHY THIS FILE EXISTS
+ * --------------------
+ * Density in this product is a PREFERENCE ('[data-density]', three tiers, set
+ * by 'applyPrefs') and nothing in the stylesheet had ever asked how big the
+ * screen actually is. 'mobile-responsive.css' stops at 1023px, and the handful
+ * of 1100/1280/1400 breakpoints scattered through the module sheets move one
+ * grid each. Between 1024px and 1919px — which is where almost every laptop in
+ * India lives — the product rendered at exactly the same size as on a 27" panel.
+ *
+ * Measured on staging, '/ganit', 1366x768, density 'cozy' (the default):
+ *
+ *     topbar            56px
+ *     .mh   module head 107px   (kicker + 25px title + subtitle)
+ *     .mk   KPI strip   112px
+ *     .mt   tab strip    41px
+ *     .gn-bar filters    63px
+ *     + four 18px section gaps and a 24px staging banner
+ *     ------------------------------------------------
+ *     first table row starts at y=536 of 768.
+ *
+ * 70% of the viewport is chrome, and 3 rows of a 200-row invoice list are
+ * visible. At 1280x720 the table starts at y=586 and TWO rows fit. The sidebar
+ * is 252px at every one of those widths, so a 13-column table renders 1373px
+ * wide into a 1028px box and the last three columns are simply gone.
+ *
+ * WHAT IT DOES
+ * ------------
+ * Two INDEPENDENT axes, because they are independent problems:
+ *
+ *   - vertical relief keys on 'max-height'. A short window is short whether it
+ *     is 1280 or 2560 wide, and it is the vertical stack that hides the data.
+ *   - horizontal relief keys on 'max-width', and only narrows the shell.
+ *
+ * Both are floored at 'min-width: 1024px' so they never fire on the phone and
+ * tablet layouts 'mobile-responsive.css' already owns.
+ *
+ * WHY IT ONLY EVER TIGHTENS
+ * -------------------------
+ * Every rule below is scoped to '[data-density="cozy"]' or '[data-density=
+ * "comfy"]'. 'compact' is left alone: it is already 48/18/14 and a user who
+ * asked for compact has answered this question themselves. Nothing here can
+ * make a page LOOSER than the tier the user picked.
+ *
+ * SPECIFICITY, AND WHY IT IS NOT AN ACCIDENT
+ * ------------------------------------------
+ * '[data-density="cozy"]' in kartavaya-design.css is (0,1,0). A media query
+ * adds nothing, so a bare ':root { --row-h: … }' inside '@media' LOSES to it —
+ * this is the exact trap that makes "just add a breakpoint" not work here.
+ * Every token rule below is written
+ *
+ *     :root:not([data-fit="off"])[data-density="cozy"]
+ *
+ * which is (0,2,1) — ':not()' carries its argument's specificity — so it beats
+ * the tier rule on merit rather than on import order. It also means the
+ * default is ON with no JavaScript at all: the attribute is ABSENT until a user
+ * turns the feature off, and an absent attribute matches ':not([data-fit=
+ * "off"])'. 'applyPrefs' writes it anyway so the state is observable.
+ *
+ * This file is imported LAST in App.jsx, after editorial.css and settings.css,
+ * because the layout-class rules below ('.mh', '.mk', '.side') are single-class
+ * and would otherwise lose a tie to the sheets that declare them.
+ */
+
+/* ORDER: horizontal first, vertical second, and that is load-bearing.
+   '--pad-page' is claimed by both axes, and the two bands can both match — a
+   1366x768 panel is inside H1 (<=1500 wide) AND inside V2 (<=780 tall). They are
+   equal specificity, so the later rule wins, and the later rule must be the
+   TIGHTER one: vertical space is the scarcer resource on a laptop, and V2 asking
+   for 16px lost to H1's 20px when this file was ordered the other way round.
+   Measured: 1366x768 reported --pad-page 20px before the swap, 16px after. */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   1 · HORIZONTAL RELIEF — narrow desktop viewports
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Band H1: 1500px and under ─────────────────────────────────────────────
+   '.side:not(.side--rail)' and not '.side': the rail variant is a single class
+   declared later in editorial.css, so a bare '.side' rule in this file — which
+   loads later still — would win the tie and force the collapsed rail back open
+   to 216px. The ':not()' puts this rule at (0,2,0) and leaves 72px alone. */
+@media (min-width: 1024px) and (max-width: 1500px) {
+  :root:not([data-fit="off"]) .side:not(.side--rail) { width: 216px; }
+  :root:not([data-fit="off"]) .side:not(.side--rail) .side__item {
+    padding: 8px 10px;
+    gap: 9px;
+  }
+
+  /* Page padding is horizontal as well as vertical, and on a 1366 panel the
+     56px it takes from the content box is three invoice columns. Declared on
+     this axis too — not only in the vertical bands below — because a 1366x1080
+     window is narrow WITHOUT being short and would otherwise get nothing. */
+  :root:not([data-fit="off"])[data-density="cozy"]  { --pad-page: 20px; }
+  :root:not([data-fit="off"])[data-density="comfy"] { --pad-page: 26px; }
+}
+
+/* ── Band H2: 1330px and under ───────────────────────────────────────────── */
+@media (min-width: 1024px) and (max-width: 1330px) {
+  :root:not([data-fit="off"]) .side:not(.side--rail) { width: 200px; }
+  :root:not([data-fit="off"])[data-density="cozy"]  { --pad-page: 16px; }
+  :root:not([data-fit="off"])[data-density="comfy"] { --pad-page: 20px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2 · VERTICAL RELIEF — short viewports
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Band V1: 900px and under ──────────────────────────────────────────────
+   Catches 1536x864 (a 1920x1080 panel at Windows' 125% default, which is what
+   ships on most Indian laptops), 1440x900, and everything below. */
+@media (min-width: 1024px) and (max-height: 900px) {
+
+  :root:not([data-fit="off"])[data-density="cozy"] {
+    --row-h: 56px;
+    --pad-page: 20px;
+    --pad-card: 14px;
+    --gap-section: 16px;
+    --gap-tight: 8px;
+  }
+  :root:not([data-fit="off"])[data-density="comfy"] {
+    --row-h: 64px;
+    --pad-page: 26px;
+    --pad-card: 18px;
+    --gap-section: 20px;
+    --gap-tight: 10px;
+  }
+
+  /* The module header. 107px is a poster; on a short screen it is the single
+     largest block of nothing between the user and their data. */
+  :root:not([data-fit="off"]) .mh {
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    gap: 12px;
+  }
+  :root:not([data-fit="off"]) .mh__kick { margin-bottom: 2px; }
+  :root:not([data-fit="off"]) .mh__hi   { font-size: 21px; }
+  :root:not([data-fit="off"]) .mh__en   { font-size: 12.5px; }
+  :root:not([data-fit="off"]) .mh__sub  { font-size: 11.5px; margin-top: 1px; }
+  :root:not([data-fit="off"]) .mh__ic   { width: 32px; height: 32px; }
+
+  /* The KPI strip. Four cards at 112px each, and the number inside is 25px of
+     display face with 6px of margin above it. */
+  :root:not([data-fit="off"]) .mk      { margin-bottom: 12px; gap: 8px; }
+  :root:not([data-fit="off"]) .mk-load,
+  :root:not([data-fit="off"]) .mk-err  { margin-bottom: 12px; }
+  :root:not([data-fit="off"]) .mk__c   { padding: 10px 13px; }
+  :root:not([data-fit="off"]) .mk__v   { font-size: 21px; margin-top: 3px; }
+
+  /* Tabs. */
+  :root:not([data-fit="off"]) .mt      { margin-bottom: 12px; }
+  :root:not([data-fit="off"]) .mt__b   { padding: 7px 13px; }
+
+  /* Filter bars sitting above a table. */
+  :root:not([data-fit="off"]) .gn-bar  { margin-bottom: var(--sp-3); }
+
+  /* 48px of dead space under the last row of every module page. */
+  :root:not([data-fit="off"]) .mpage   { padding-bottom: 28px; }
+}
+
+/* ── Band V2: 780px and under ──────────────────────────────────────────────
+   1366x768 — still the most common laptop panel sold in India — and 1280x720.
+   Here the stack has to give up something real, not just tighten. */
+@media (min-width: 1024px) and (max-height: 780px) {
+
+  :root:not([data-fit="off"])[data-density="cozy"] {
+    --row-h: 50px;
+    --pad-page: 16px;
+    --pad-card: 12px;
+    --gap-section: 12px;
+    --gap-tight: 7px;
+  }
+  :root:not([data-fit="off"])[data-density="comfy"] {
+    --row-h: 56px;
+    --pad-page: 20px;
+    --pad-card: 14px;
+    --gap-section: 16px;
+    --gap-tight: 8px;
+  }
+
+  /* The module subtitle goes. It is a one-line description of the module the
+     user is already standing inside — "Invoices, GST, expenses and payables"
+     under a heading that reads FINANCE. It is the only genuinely redundant
+     element in the stack, and it costs 22px with its margin. The <h1> stays,
+     so the accessible heading is untouched. */
+  :root:not([data-fit="off"]) .mh__sub { display: none; }
+
+  :root:not([data-fit="off"]) .mh    { padding-bottom: 8px; margin-bottom: 10px; }
+  :root:not([data-fit="off"]) .mh__hi { font-size: 19px; }
+  :root:not([data-fit="off"]) .mk__c { padding: 8px 12px; }
+  :root:not([data-fit="off"]) .mk__v { font-size: 19px; margin-top: 2px; }
+  :root:not([data-fit="off"]) .mk__c .mk__l { font-size: var(--t-label-sm); }
+  :root:not([data-fit="off"]) .mt__b { padding: 6px 12px; font-size: 12.5px; }
+  :root:not([data-fit="off"]) .mpage { padding-bottom: 20px; }
+}

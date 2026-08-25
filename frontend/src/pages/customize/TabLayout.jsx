@@ -70,6 +70,26 @@ export default function TabLayout() {
 
       <div className="sr">
         <div className="sr__l">
+          <div className="sr__t">Fit to screen</div>
+          <div className="sr__d">
+            On a laptop panel — 1366&times;768, or a 1080p screen at Windows&rsquo; 125%
+            scaling — this tightens the page header, the stat strip and the row
+            height so more of the table is above the fold. It never loosens
+            anything, and it leaves Compact alone.
+          </div>
+        </div>
+        <div className="sr__c">
+          <Seg
+            label="Fit to screen"
+            value={prefs.fit || 'on'}
+            onChange={v => setPrefs({ fit: v })}
+            options={[{ label: 'On', value: 'on' }, { label: 'Off', value: 'off' }]}
+          />
+        </div>
+      </div>
+
+      <div className="sr">
+        <div className="sr__l">
           <div className="sr__t">Corner radius</div>
           <div className="sr__d">Drives every --r-* step, so cards, inputs and chips stay in proportion.</div>
         </div>
