@@ -52,16 +52,30 @@ const STATUS_ORDER   = ['todo','in_progress','in_review','done','requested'];
  * it is the only cell that says which task the row is.
  */
 const TASK_COLUMNS = [
-  { id: 'task',      label: 'Task',         width: 340, fixed: true },
-  { id: 'project',   label: 'Project',      width: 180 },
+  { id: 'task',      label: 'Task',         width: 340, fixed: true, sortable: true },
+  { id: 'project',   label: 'Project',      width: 180, sortable: true },
   { id: 'assignees', label: 'Assignees',    width: 200 },
-  { id: 'category',  label: 'Category',     width: 140 },
-  { id: 'due',       label: 'Due',          width: 150 },
-  { id: 'created',   label: 'Created',      width: 130 },
-  { id: 'createdBy', label: 'Created By',   width: 140 },
-  { id: 'updated',   label: 'Last Updated', width: 130 },
-  { id: 'status',    label: 'Status',       width: 130 },
+  { id: 'category',  label: 'Category',     width: 140, sortable: true },
+  { id: 'due',       label: 'Due',          width: 150, sortable: true },
+  { id: 'created',   label: 'Created',      width: 130, sortable: true },
+  { id: 'createdBy', label: 'Created By',   width: 140, sortable: true },
+  { id: 'updated',   label: 'Last Updated', width: 130, sortable: true },
+  { id: 'status',    label: 'Status',       width: 130, sortable: true },
 ];
+
+function taskSortVal(t, col, teams) {
+  switch (col) {
+    case 'task':      return (t.title || '').toLowerCase();
+    case 'project':   { const tm = teams.find(x => x.team_id === t.team_id); return tm ? tm.name.toLowerCase() : 'zzz'; }
+    case 'category':  return (t.category_id || 'zzz').toLowerCase();
+    case 'due':       return t.due_at || '9999';
+    case 'created':   return t.created_at || '';
+    case 'createdBy': return (t.created_by_name || 'zzz').toLowerCase();
+    case 'updated':   return t.updated_at || '';
+    case 'status':    return t.status || '';
+    default:          return '';
+  }
+}
 
 export default function TasksListPage() {
   const { pushToast } = useToast();
@@ -92,6 +106,8 @@ export default function TasksListPage() {
   const [search,       setSearch]       = useState('');
   const [filter,       setFilter]       = useState('all');
   const [group,        setGroup]        = useState('priority');
+  const [sortCol,      setSortCol]      = useState(null);
+  const [sortDir,      setSortDir]      = useState('asc');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
   const [newTaskOpen,  setNewTaskOpen]  = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -294,6 +310,15 @@ export default function TasksListPage() {
     return matchSearch && matchFilter;
   });
 
+  if (sortCol) {
+    filtered.sort((a, b) => {
+      const av = taskSortVal(a, sortCol, teams);
+      const bv = taskSortVal(b, sortCol, teams);
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }
+
   // `#94a3b8` was the old `todo` grey, hardcoded here as a catch-all after the
   // map it came from moved to tokens; `--on-surface-3` is the token that
   // carries "no particular state" and it flips with the theme.
@@ -458,14 +483,26 @@ export default function TasksListPage() {
               right to push; with a stored width it does — the last column is
               as resizable as the others, and the row scrolls. */}
           <div className="k-table__head k-trow--resizable" style={rowStyle}>
-            {cols.columns.map(col => (
+            {cols.columns.map(col => {
+              const def = TASK_COLUMNS.find(c => c.id === col.id);
+              const canSort = def?.sortable;
+              const active = sortCol === col.id;
+              return (
               <div
                 key={col.id}
                 data-colhead
                 className={`k-table__hcell k-c-${col.id}`}
-                style={{ position: 'relative', userSelect: 'none' }}
+                style={{ position: 'relative', userSelect: 'none', cursor: canSort ? 'pointer' : undefined }}
+                onClick={canSort ? () => {
+                  if (active) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }
+                  else { setSortCol(col.id); setSortDir('asc'); }
+                  setPage(1);
+                } : undefined}
               >
-                {col.label}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {col.label}
+                  {active && <span style={{ fontSize: 10, opacity: .7 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </span>
                 <ColumnResizer
                   label={col.label}
                   width={col.width}
@@ -473,7 +510,8 @@ export default function TasksListPage() {
                   onCommit={w => cols.setWidth(col.id, w)}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Was a bare line of text in `.pb__loading` — the PROJECT BOARD's
