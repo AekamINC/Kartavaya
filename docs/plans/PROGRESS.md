@@ -207,6 +207,31 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   structurally not a tabular list view, so this pattern doesn't apply there.
   Admin/Org/Templates/Marketplace/Connectors/Customize checked — no bar/filter
   classNames found; they use the already-safe `TableToolbar`/`.tv` (paired
-  with `.tv-card`) or have no such row. Build clean. Not yet verified live.
+  with `.tv-card`) or have no such row.
+
+  Verified live post-deploy: `.k-filterbar`, `.k-tfilters`, `.pr__bar`,
+  `.vtb__bar` all confirmed (padding/border/background/radius present).
+  While verifying Graha's Pipeline tab, found ONE more instance of the
+  corner-seam shape (fix 3's `.vk-pl__st` pattern, not the bare-row shape):
+  `.gpipe__head` (the coloured stage-header strip on each Kanban column) had
+  `border-top: 3px solid var(--c)` alone against `border-radius: var(--r-md)`
+  on all four corners — same seam, screenshotted at 3x DPI to confirm.
+  Fixed the same way: `box-shadow: inset 0 3px 0 0 var(--c)` instead of the
+  border. Re-swept the whole codebase for `border-top`/`border-bottom`/
+  `border-right` used as a lone accent (this pattern isn't limited to
+  `border-left`) — nothing else matched; the rest are legitimate hairline
+  dividers on square-cornered elements or already-clipped by a parent's
+  `overflow: hidden` (`.m2rec__top` in Sanvaad, checked specifically) ·
+  `module.css`. Build clean.
+
+  Sanvaad re-examined at the owner's request ("doesn't matter if it's
+  tabular, all pages have the issue") — checked the main channel list AND an
+  open channel (header, pinned-message strip, composer) via computed styles,
+  not just a screenshot glance. The pinned strip already has its own padding
+  and background; the chat pane itself has no card border, but it's a
+  full-height full-bleed panel (Slack/Discord shape), not built as a card the
+  way table pages are — a different, apparently deliberate layout, not the
+  same bug. No fix applied there; told the owner to point at a specific spot
+  if one still looks wrong rather than guessing further.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
