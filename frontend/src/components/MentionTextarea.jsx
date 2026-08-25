@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * MentionTextarea — the comment composer, with an `@` autocomplete.
@@ -37,6 +38,7 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
   const [popup, setPopup]   = useState(null);
   const [cursor, setCursor] = useState(0);
   const taRef = useRef(null);
+  const popupRef = useRef(null);
 
   const filtered = popup
     ? (popup.query
@@ -64,8 +66,8 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
     const spanRect   = span.getBoundingClientRect();
     document.body.removeChild(mirror);
     const elRect = el.getBoundingClientRect();
-    const top  = elRect.top  + (spanRect.top  - mirrorRect.top)  + span.offsetHeight + window.scrollY + 4;
-    const left = elRect.left + (spanRect.left - mirrorRect.left) + window.scrollX;
+    const top  = elRect.top  + (spanRect.top  - mirrorRect.top)  + span.offsetHeight + 4;
+    const left = elRect.left + (spanRect.left - mirrorRect.left);
     return { top, left };
   }
 
@@ -111,7 +113,7 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
   }
 
   useEffect(() => {
-    function down(e) { if (!taRef.current?.contains(e.target)) setPopup(null); }
+    function down(e) { if (!taRef.current?.contains(e.target) && !popupRef.current?.contains(e.target)) setPopup(null); }
     document.addEventListener("mousedown", down);
     return () => document.removeEventListener("mousedown", down);
   }, []);
@@ -130,8 +132,9 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
         aria-autocomplete="list"
         aria-expanded={!!(popup && filtered.length > 0)}
       />
-      {popup && filtered.length > 0 && (
+      {popup && filtered.length > 0 && createPortal(
         <div
+          ref={popupRef}
           role="listbox"
           aria-label="Mention a team member"
           style={{
@@ -164,7 +167,8 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
               <span style={{ fontWeight: 500, color: "var(--on-surface)" }}>{m.display_name}</span>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
