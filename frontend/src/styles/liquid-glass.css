@@ -1,225 +1,147 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   LIQUID GLASS — CSS-driven depth, shimmer and refraction effects.
+   LIQUID GLASS — CSS-driven depth, shimmer and accent-tinted effects.
    Controlled by [data-liquid-glass] on :root (set by CustomizePanel.applyPrefs).
    Presets: off | subtle | medium | full.
+   Accent vars --lg-accent / --lg-accent-deep are written by applyPrefs.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Tokens per preset ───────────────────────────────────────────────────── */
 :root[data-liquid-glass="subtle"] {
-  --lg-border:    rgba(255,255,255, .25);
-  --lg-border-b:  rgba(0,0,0, .04);
-  --lg-shine:     rgba(255,255,255, .08);
-  --lg-shadow:    0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.03);
-  --lg-shadow-h:  0 2px 8px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
-  --lg-inset:     inset 0 1px 0 rgba(255,255,255,.2);
+  --lg-border:    color-mix(in srgb, var(--lg-accent) 12%, rgba(255,255,255,.2));
+  --lg-border-b:  color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.04));
+  --lg-shine:     color-mix(in srgb, var(--lg-accent) 6%, rgba(255,255,255,.06));
+  --lg-shadow:    0 1px 3px color-mix(in srgb, var(--lg-accent) 5%, rgba(0,0,0,.04)),
+                  0 4px 12px color-mix(in srgb, var(--lg-accent) 4%, rgba(0,0,0,.03));
+  --lg-shadow-h:  0 2px 8px color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.06)),
+                  0 8px 24px color-mix(in srgb, var(--lg-accent) 6%, rgba(0,0,0,.05));
+  --lg-inset:     inset 0 1px 0 color-mix(in srgb, var(--lg-accent) 10%, rgba(255,255,255,.15));
   --lg-blur-add:  2px;
   --lg-scale-h:   1.005;
   --lg-dur:       .3s;
+  --lg-border-h:  color-mix(in srgb, var(--lg-accent) 25%, rgba(255,255,255,.35));
 }
 :root[data-liquid-glass="medium"] {
-  --lg-border:    rgba(255,255,255, .35);
-  --lg-border-b:  rgba(0,0,0, .06);
-  --lg-shine:     rgba(255,255,255, .12);
-  --lg-shadow:    0 1px 4px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.05);
-  --lg-shadow-h:  0 4px 16px rgba(0,0,0,.08), 0 12px 40px rgba(0,0,0,.06);
-  --lg-inset:     inset 0 1px 1px rgba(255,255,255,.3);
+  --lg-border:    color-mix(in srgb, var(--lg-accent) 18%, rgba(255,255,255,.28));
+  --lg-border-b:  color-mix(in srgb, var(--lg-accent) 12%, rgba(0,0,0,.06));
+  --lg-shine:     color-mix(in srgb, var(--lg-accent) 10%, rgba(255,255,255,.10));
+  --lg-shadow:    0 1px 4px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.05)),
+                  0 6px 20px color-mix(in srgb, var(--lg-accent) 6%, rgba(0,0,0,.05));
+  --lg-shadow-h:  0 4px 16px color-mix(in srgb, var(--lg-accent) 15%, rgba(0,0,0,.08)),
+                  0 12px 40px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06));
+  --lg-inset:     inset 0 1px 1px color-mix(in srgb, var(--lg-accent) 15%, rgba(255,255,255,.25));
   --lg-blur-add:  4px;
   --lg-scale-h:   1.008;
   --lg-dur:       .35s;
+  --lg-border-h:  color-mix(in srgb, var(--lg-accent) 35%, rgba(255,255,255,.45));
 }
 :root[data-liquid-glass="full"] {
-  --lg-border:    rgba(255,255,255, .45);
-  --lg-border-b:  rgba(0,0,0, .08);
-  --lg-shine:     rgba(255,255,255, .18);
-  --lg-shadow:    0 2px 6px rgba(0,0,0,.06), 0 8px 28px rgba(0,0,0,.07);
-  --lg-shadow-h:  0 6px 24px rgba(0,0,0,.10), 0 16px 56px rgba(0,0,0,.08);
-  --lg-inset:     inset 0 2px 2px rgba(255,255,255,.35);
+  --lg-border:    color-mix(in srgb, var(--lg-accent) 25%, rgba(255,255,255,.35));
+  --lg-border-b:  color-mix(in srgb, var(--lg-accent) 15%, rgba(0,0,0,.08));
+  --lg-shine:     color-mix(in srgb, var(--lg-accent) 15%, rgba(255,255,255,.14));
+  --lg-shadow:    0 2px 6px color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.06)),
+                  0 8px 28px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.07));
+  --lg-shadow-h:  0 6px 24px color-mix(in srgb, var(--lg-accent) 20%, rgba(0,0,0,.10)),
+                  0 16px 56px color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.08));
+  --lg-inset:     inset 0 2px 2px color-mix(in srgb, var(--lg-accent) 20%, rgba(255,255,255,.30));
   --lg-blur-add:  8px;
   --lg-scale-h:   1.012;
   --lg-dur:       .4s;
+  --lg-border-h:  color-mix(in srgb, var(--lg-accent) 45%, rgba(255,255,255,.55));
 }
 
-/* Dark theme adjustments */
-[data-theme="dark"][data-liquid-glass="subtle"],
-:root:not([data-theme="light"])[data-liquid-glass="subtle"] {
-  --lg-border:    rgba(255,255,255, .08);
-  --lg-border-b:  rgba(0,0,0, .15);
-  --lg-shine:     rgba(255,255,255, .04);
-  --lg-shadow:    0 1px 3px rgba(0,0,0,.15), 0 4px 12px rgba(0,0,0,.12);
-  --lg-shadow-h:  0 2px 8px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.15);
-  --lg-inset:     inset 0 1px 0 rgba(255,255,255,.06);
-}
-[data-theme="dark"][data-liquid-glass="medium"],
-:root:not([data-theme="light"])[data-liquid-glass="medium"] {
-  --lg-border:    rgba(255,255,255, .12);
-  --lg-border-b:  rgba(0,0,0, .2);
-  --lg-shine:     rgba(255,255,255, .06);
-  --lg-shadow:    0 1px 4px rgba(0,0,0,.2), 0 6px 20px rgba(0,0,0,.15);
-  --lg-shadow-h:  0 4px 16px rgba(0,0,0,.25), 0 12px 40px rgba(0,0,0,.18);
-  --lg-inset:     inset 0 1px 1px rgba(255,255,255,.08);
-}
-[data-theme="dark"][data-liquid-glass="full"],
-:root:not([data-theme="light"])[data-liquid-glass="full"] {
-  --lg-border:    rgba(255,255,255, .15);
-  --lg-border-b:  rgba(0,0,0, .25);
-  --lg-shine:     rgba(255,255,255, .08);
-  --lg-shadow:    0 2px 6px rgba(0,0,0,.25), 0 8px 28px rgba(0,0,0,.2);
-  --lg-shadow-h:  0 6px 24px rgba(0,0,0,.3), 0 16px 56px rgba(0,0,0,.22);
-  --lg-inset:     inset 0 2px 2px rgba(255,255,255,.1);
+/* Dark theme adjustments — accent stays, but whites become subtle */
+[data-theme="dark"]:not([data-liquid-glass="off"]) {
+  --lg-border:    color-mix(in srgb, var(--lg-accent) 15%, rgba(255,255,255,.06));
+  --lg-border-b:  color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.15));
+  --lg-shine:     color-mix(in srgb, var(--lg-accent) 8%, rgba(255,255,255,.04));
+  --lg-inset:     inset 0 1px 0 color-mix(in srgb, var(--lg-accent) 12%, rgba(255,255,255,.05));
+  --lg-border-h:  color-mix(in srgb, var(--lg-accent) 30%, rgba(255,255,255,.12));
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"])[data-liquid-glass="subtle"] {
-    --lg-border:    rgba(255,255,255, .08);
-    --lg-border-b:  rgba(0,0,0, .15);
-    --lg-shine:     rgba(255,255,255, .04);
-    --lg-shadow:    0 1px 3px rgba(0,0,0,.15), 0 4px 12px rgba(0,0,0,.12);
-    --lg-shadow-h:  0 2px 8px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.15);
-    --lg-inset:     inset 0 1px 0 rgba(255,255,255,.06);
-  }
-  :root:not([data-theme="light"])[data-liquid-glass="medium"] {
-    --lg-border:    rgba(255,255,255, .12);
-    --lg-border-b:  rgba(0,0,0, .2);
-    --lg-shine:     rgba(255,255,255, .06);
-    --lg-shadow:    0 1px 4px rgba(0,0,0,.2), 0 6px 20px rgba(0,0,0,.15);
-    --lg-shadow-h:  0 4px 16px rgba(0,0,0,.25), 0 12px 40px rgba(0,0,0,.18);
-    --lg-inset:     inset 0 1px 1px rgba(255,255,255,.08);
-  }
-  :root:not([data-theme="light"])[data-liquid-glass="full"] {
-    --lg-border:    rgba(255,255,255, .15);
-    --lg-border-b:  rgba(0,0,0, .25);
-    --lg-shine:     rgba(255,255,255, .08);
-    --lg-shadow:    0 2px 6px rgba(0,0,0,.25), 0 8px 28px rgba(0,0,0,.2);
-    --lg-shadow-h:  0 6px 24px rgba(0,0,0,.3), 0 16px 56px rgba(0,0,0,.22);
-    --lg-inset:     inset 0 2px 2px rgba(255,255,255,.1);
-  }
-}
-
-/* ── Shared glass surface mixin via selector list ────────────────────────── */
-/* Every card, panel, and bordered container in the system. */
+/* ── Card selector list — applies to every surface in the system ─────────── */
 :root:not([data-liquid-glass="off"]) :is(
-  .k-card,
-  .k-stat,
-  .k-hero-kpi,
-  .k-hero-kpi__card,
-  .card,
-  .vk-card,
-  .hb-card,
-  .gn-panel,
-  .tv-card,
-  .anx-card,
-  .vgw,
-  .vgw-kpi,
-  .mkt-card,
-  .mkt-stat,
-  .ix-panel,
-  .k-tmpl-card,
-  .niyam-card,
-  .niyam-panel,
-  .mn-card,
-  .sa__card,
-  .hcl-card,
-  .sh-card,
-  .dr__ap-panel,
-  .sk-card,
-  .k-quickacts
+  .k-card, .k-stat, .k-hero-kpi, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw, .vgw-kpi, .mkt-card, .mkt-stat,
+  .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
+  .mn-card, .sa__card, .hcl-card, .sh-card,
+  .dr__ap-panel, .sk-card, .k-quickacts
 ) {
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   border-bottom-color: var(--lg-border-b) !important;
   box-shadow: var(--lg-shadow), var(--lg-inset);
   transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease, border-color var(--lg-dur) ease;
   position: relative;
+  overflow: hidden;
 }
 
-/* Top specular highlight — the "glass edge" shine */
+/* Top specular highlight — the accent-tinted "glass edge" shine */
 :root:not([data-liquid-glass="off"]) :is(
-  .k-card,
-  .k-stat,
-  .k-hero-kpi__card,
-  .card,
-  .vk-card,
-  .hb-card,
-  .gn-panel,
-  .tv-card,
-  .anx-card,
-  .vgw-kpi,
-  .mkt-card,
-  .ix-panel,
-  .k-tmpl-card,
-  .niyam-card,
-  .niyam-panel,
-  .mn-card,
-  .sa__card,
-  .hcl-card,
-  .sh-card,
-  .dr__ap-panel
-)::before {
+  .k-card, .k-stat, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card, .ix-panel,
+  .k-tmpl-card, .niyam-card, .niyam-panel,
+  .mn-card, .sa__card, .hcl-card, .sh-card, .dr__ap-panel
+)::after {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   z-index: 1;
-  background: linear-gradient(
-    180deg,
-    var(--lg-shine) 0%,
-    transparent 40%
-  );
+  background: linear-gradient(180deg, var(--lg-shine) 0%, transparent 50%);
+  opacity: 1;
+  transition: opacity var(--lg-dur) ease;
 }
 
-/* Hover depth lift — interactive cards float up */
+/* Hover depth lift — cards float up with accent glow */
 :root:not([data-liquid-glass="off"]) :is(
-  .k-card,
-  .k-stat,
-  .k-hero-kpi__card,
-  .card,
-  .vk-card,
-  .hb-card,
-  .gn-panel,
-  .tv-card,
-  .anx-card,
-  .vgw-kpi,
-  .mkt-card,
-  .k-tmpl-card,
-  .niyam-card,
-  .mn-card,
-  .sa__card,
-  .hcl-card,
-  .sh-card
+  .k-card, .k-stat, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card, .k-tmpl-card,
+  .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card
 ):hover {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
   transform: translateY(-1px) scale(var(--lg-scale-h));
-  border-color: rgba(255,255,255, .5) !important;
+  border-color: var(--lg-border-h) !important;
+}
+:root:not([data-liquid-glass="off"]) :is(
+  .k-card, .k-stat, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card, .k-tmpl-card,
+  .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card
+):hover::after {
+  opacity: 1.5;
 }
 
-/* ── Shell surfaces: sidebar, topbar, mobile nav ─────────────────────────── */
+/* ── Shell surfaces ──────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .side {
   box-shadow: var(--lg-shadow), var(--lg-inset);
-  border-right-color: var(--lg-border) !important;
+  border-right: 1px solid var(--lg-border) !important;
 }
 :root:not([data-liquid-glass="off"]) .top {
   box-shadow: var(--lg-shadow);
-  border-bottom-color: var(--lg-border) !important;
+  border-bottom: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 :root:not([data-liquid-glass="off"]) .mnav {
-  box-shadow: 0 -2px 12px rgba(0,0,0,.06), var(--lg-inset);
-  border-top-color: var(--lg-border) !important;
+  box-shadow: 0 -2px 12px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06)), var(--lg-inset);
+  border-top: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
-/* ── Overlays: modal, popover, menu, picker ──────────────────────────────── */
+/* ── Overlays ────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .modal__panel {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 :root:not([data-liquid-glass="off"]) :is(.pop, .menu--float, .pk__pop) {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
@@ -229,33 +151,34 @@
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add)));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add)));
   box-shadow: var(--lg-inset);
-  border-bottom-color: var(--lg-border) !important;
+  border-bottom: 1px solid var(--lg-border) !important;
 }
 
-/* ── Toast ───────────────────────────────────────────────────────────────── */
+/* ── Toast ────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .tst {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
-/* ── Settings rows (the customize page itself should show the effect) ────── */
+/* ── Settings rows ───────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .sr {
   box-shadow: var(--lg-shadow);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   border-radius: var(--r-lg, 12px);
-  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
+  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease, border-color var(--lg-dur) ease;
 }
 :root:not([data-liquid-glass="off"]) .sr:hover {
   box-shadow: var(--lg-shadow-h);
   transform: translateY(-1px);
+  border-color: var(--lg-border-h) !important;
 }
 
 /* ── Dock ─────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .k-dock {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
@@ -263,7 +186,7 @@
 /* ── Command palette ──────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .cmdk__panel {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
@@ -272,10 +195,10 @@
 :root:not([data-liquid-glass="off"]) .k-drawer__panel,
 :root:not([data-liquid-glass="off"]) .dr {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
 }
 
-/* ── Reduced motion / reduced transparency: kill transitions + effects ──── */
+/* ── Accessibility guards ────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-liquid-glass="off"]) :is(
     .k-card, .k-stat, .hb-card, .gn-panel, .tv-card, .anx-card,

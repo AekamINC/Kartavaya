@@ -149,64 +149,89 @@ export default function TabAppearance() {
         </div>
       </div>
 
-      {/* Live preview — shows how glass looks on actual component shapes */}
-      {(prefs.liquidGlass || 'off') !== 'off' && (
-        <div className="sr" style={{ flexDirection: 'column', gap: 16 }}>
+      {/* Live preview — shows how liquid glass looks on every surface type */}
+      <div className="sr" style={{ flexDirection: 'column', gap: 16, padding: 20 }}>
+        <div>
           <div className="sr__t">Live preview</div>
-          <div className="sr__d" style={{ marginBottom: 8 }}>
-            Hover over the cards below to see the depth effect. These are the same
-            styles applied across dashboards, reports, and all module surfaces.
+          <div className="sr__d">
+            Hover over any element to see the accent-tinted depth lift.
+            Change the accent color above — borders and shadows follow it.
           </div>
+        </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <div className="k-stat">
-              <div className="k-stat__kicker">OPEN TASKS</div>
-              <div className="k-stat__val">80</div>
-              <div className="k-stat__sub">across 10 projects</div>
-            </div>
-            <div className="k-stat k-stat--warn">
-              <div className="k-stat__kicker">OVERDUE</div>
-              <div className="k-stat__val">35</div>
-              <div className="k-stat__sub">needs attention</div>
-            </div>
-            <div className="k-stat k-stat--ok">
-              <div className="k-stat__kicker">DONE THIS WEEK</div>
-              <div className="k-stat__val">7</div>
-              <div className="k-stat__sub">7 more than last week</div>
-            </div>
-            <div className="k-stat k-stat--neutral">
-              <div className="k-stat__kicker">DUE TODAY</div>
-              <div className="k-stat__val">3</div>
-              <div className="k-stat__sub">1 high priority</div>
-            </div>
+        {/* Row 1 — KPI stat cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div className="k-stat">
+            <div className="k-stat__kicker">OPEN</div>
+            <div className="k-stat__val">80</div>
+            <div className="k-stat__sub">10 projects</div>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <section className="k-card" style={{ padding: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Sample card</div>
-              <div style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
-                This is how a dashboard card, report panel, or data section looks
-                with the current glass preset. Hover to see the depth lift.
-              </div>
-            </section>
-            <section className="k-card" style={{ padding: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Another card</div>
-              <div style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
-                Every bordered surface in Kartavya — stats, KPIs, panels, tables,
-                menus, popovers — all respond to this setting.
-              </div>
-            </section>
+          <div className="k-stat k-stat--warn">
+            <div className="k-stat__kicker">OVERDUE</div>
+            <div className="k-stat__val">35</div>
+            <div className="k-stat__sub">needs review</div>
           </div>
+          <div className="k-stat k-stat--ok">
+            <div className="k-stat__kicker">DONE</div>
+            <div className="k-stat__val">7</div>
+            <div className="k-stat__sub">this week</div>
+          </div>
+          <div className="k-stat k-stat--neutral">
+            <div className="k-stat__kicker">TODAY</div>
+            <div className="k-stat__val">3</div>
+            <div className="k-stat__sub">1 high priority</div>
+          </div>
+        </div>
 
-          <div className="gn-panel" style={{ padding: 16 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Finance panel</div>
-            <div style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
-              Ganit panels, receivables KPI, report cards — they all get the same
-              glass border glow, depth shadow, and hover lift.
+        {/* Row 2 — cards + panel */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <section className="k-card" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Dashboard card</div>
+            <div style={{ fontSize: 12, color: 'var(--on-surface-2)' }}>
+              Report panels, data cards, KPI sections
+            </div>
+          </section>
+          <section className="gn-panel" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Finance panel</div>
+            <div style={{ fontSize: 12, color: 'var(--on-surface-2)' }}>
+              Ganit, receivables, invoices
+            </div>
+          </section>
+          <section className="niyam-card" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Rule card</div>
+            <div style={{ fontSize: 12, color: 'var(--on-surface-2)' }}>
+              Niyam automation rules
+            </div>
+          </section>
+        </div>
+
+        {/* Row 3 — mini table, toast, popover mock */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+          <div className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
+              <thead><tr>
+                <th style={{ padding: '8px 12px', textAlign: 'left' }}>Task</th>
+                <th style={{ padding: '8px 12px', textAlign: 'left' }}>Status</th>
+                <th style={{ padding: '8px 12px', textAlign: 'right' }}>Due</th>
+              </tr></thead>
+              <tbody>
+                <tr><td style={{ padding: '6px 12px' }}>Design review</td><td style={{ padding: '6px 12px' }}>In progress</td><td style={{ padding: '6px 12px', textAlign: 'right' }}>Today</td></tr>
+                <tr><td style={{ padding: '6px 12px' }}>API integration</td><td style={{ padding: '6px 12px' }}>Pending</td><td style={{ padding: '6px 12px', textAlign: 'right' }}>Tomorrow</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="tst" style={{ padding: '10px 14px', borderRadius: 'var(--r-lg, 12px)', fontSize: 12 }}>
+              <span style={{ fontWeight: 600 }}>Toast notification</span>
+              <div style={{ color: 'var(--on-surface-2)', marginTop: 2 }}>Task marked complete</div>
+            </div>
+            <div className="k-quickacts" style={{ padding: '10px 14px', borderRadius: 'var(--r-lg, 12px)', fontSize: 12 }}>
+              <span style={{ fontWeight: 600 }}>Quick actions</span>
+              <div style={{ color: 'var(--on-surface-2)', marginTop: 2 }}>Add task, invoice, client</div>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

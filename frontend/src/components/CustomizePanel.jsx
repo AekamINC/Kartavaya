@@ -375,7 +375,9 @@ export function applyPrefs(prefs) {
 
   // ── Glass ───────────────────────────────────────────────────────────────
   root.style.setProperty('--glass-mix', String(prefs.glassMix ?? 0.6));
-  root.setAttribute('data-liquid-glass', prefs.liquidGlass || 'off');
+  root.setAttribute('data-liquid-glass', prefs.liquidGlass || 'medium');
+  root.style.setProperty('--lg-accent', acc.mid);
+  root.style.setProperty('--lg-accent-deep', acc.deep);
 }
 
 const CustomizeCtx = createContext(null);
