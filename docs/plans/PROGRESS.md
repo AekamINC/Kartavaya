@@ -249,4 +249,20 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   · `liquid-glass.css`. Verified live post-deploy: computed `box-shadow` on
   `.ix-panel` is now `none`. **STATUS: ✅ shipped.**
 
+- `design/glass` fix 8 · Owner asked for Organisation settings' Senders and UPI
+  IDs tabs redesigned so each repeating item (one sender purpose, one UPI
+  platform) reads as its own card — currently a bare heading + two fields per
+  item, no boundary, six-plus stacked with nothing separating them. New
+  `.oc-card` class (combined with the existing `.st__group` spacing, never
+  alone — the intro banners and the trailing Save button stay unstyled,
+  they're not repeating items) gives each one border/background/radius/
+  padding · `settings.css`, `TabSenders.jsx`, `TabUpi.jsx`. Build clean. Not
+  yet verified live.
+
+  Also queued (not started): the Appearance settings' heading-font picker
+  only changes the "Kartavaya" wordmark near the sidebar logo, not headings
+  anywhere else in the app — owner-reported, needs its own investigation
+  (probably the font-family token the picker writes isn't the one the actual
+  heading rules read).
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

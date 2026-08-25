@@ -286,7 +286,7 @@ export default function TabUpi() {
       {rows.map(row => {
         const saved = Boolean(row.vpa) && !errors[row.platform];
         return (
-          <section className="st__group" key={row.platform}>
+          <section className="st__group oc-card" key={row.platform}>
             <h2 className="st__gt">
               {row.label}
               {' '}

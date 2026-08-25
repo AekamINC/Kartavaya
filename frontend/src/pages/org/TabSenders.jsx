@@ -202,7 +202,7 @@ export default function TabSenders() {
       </section>
 
       {rows.map(row => (
-        <section className="st__group" key={row.purpose}>
+        <section className="st__group oc-card" key={row.purpose}>
           <h2 className="st__gt">
             {row.purpose}
             {' '}

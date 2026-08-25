@@ -26,6 +26,20 @@
 .sr--col { flex-direction: column; align-items: stretch; gap: 11px; }
 
 .st__group { margin-bottom: 26px; }
+/* ── Per-item settings card ───────────────────────────────────────────────
+   Combined with `.st__group` (never alone) on a REPEATING row — one sender
+   purpose, one UPI platform — so each item reads as its own bounded card
+   instead of a bare heading + two fields floating on the page background.
+   `.st__group` on its own (the intro banners, the trailing Save button) is
+   deliberately left unstyled: those aren't repeating items and don't need
+   a boundary. */
+.oc-card {
+  padding: 18px 20px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.oc-card .st__gt { font-size: 11px; margin-bottom: 8px; }
 .st__gt {
   font-size: 10px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--primary-text); margin-bottom: 2px;
