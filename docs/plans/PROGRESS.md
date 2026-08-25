@@ -286,6 +286,8 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   (icon tile, "SETTINGS · व्यवस्था" kicker via the auto-seeded
   `section.settings` label, module-colour accent) · `moduleColors.js`,
   `module.css`, `navConfig.js`, `NiyamPage.jsx`. Build clean, `npm run check`
-  clean. Not yet verified live.
+  clean. Verified live post-deploy: screenshotted `/settings/automations` —
+  icon tile in the new rose accent, "SETTINGS · व्यवस्था" kicker, "नियम
+  AUTOMATIONS" title, matching Ganit/Vetana/etc. exactly. **STATUS: ✅ shipped.**
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
