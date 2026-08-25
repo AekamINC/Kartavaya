@@ -581,7 +581,7 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
   );
 
   return (
-    <div className="bl">
+    <div className="blx">
       {periodBar}
       {balanceCard}
       {sourcesCard}

@@ -19,7 +19,14 @@
  * decision made on the strength of a colour that meant nothing.
  */
 
-.bl { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+/* `.blx`, not `.bl` — `.bl` is already BrandLoader's root class in
+   components.css (unrelated: the spinner mark shown at boot and after
+   sign-in), and the two collided at equal specificity. Which one won
+   depended on final bundle order rather than anything either file
+   declared, and on org/TabBilling it was losing: BrandLoader's
+   `align-items: center; justify-content: center` centred and shrank this
+   section's card stack instead of the flex-column layout below. */
+.blx { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 
 /* ── Period picker ─────────────────────────────────────────────────────────
    The month is chosen once for the whole section, above everything it governs,
