@@ -384,4 +384,24 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   intro info-banner cards nest cleanly since `.opend` is a filled tint, not
   a bordered card. **STATUS: ✅ shipped.**
 
+- `design/glass` fix 13 · Owner: "check the modules tabs too." Fix 12's
+  blanket `.st__group` card chrome double-carded the Modules tab
+  specifically — its middle section wraps `.omod` (`ModuleCard`s, each
+  already `border + background` on `.omod__c`), so the grid ended up in a
+  card whose children are cards. Added a `.st__group--flush` exemption
+  (`padding: 0; border: 0; background: none`) and applied it to only that
+  one section in `TabModules.jsx`; the intro banner and the "Sensitive
+  modules" footer note above/below it keep the normal card chrome ·
+  `settings.css`, `TabModules.jsx`. Checked every other `.st__group` call
+  site (`TabProfile.jsx` — plain form fields, no self-carded children;
+  `TabDanger.jsx` — `.odz` is typography only, no border; the six
+  Customization tabs — `TabAppearance.jsx`'s colour/pattern swatches are
+  small picker chips nested one level inside a single section card, the
+  normal picker pattern, not a repeated-full-identity-card grid) for the
+  same shape of bug — none found. Build clean, `npm run check` clean.
+  Verified live post-deploy: computed `border` on the module-grid section is
+  `0px none`, its siblings stay `1px solid`; screenshot confirms the grid
+  reads as one flush row of independently-carded tiles rather than a card
+  full of cards. **STATUS: ✅ shipped.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
