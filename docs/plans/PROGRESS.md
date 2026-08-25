@@ -437,4 +437,14 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   at full width, no narrow-centred column, no box-in-a-box anywhere on the
   tab. **STATUS: ✅ shipped.**
 
+- `design/glass` check · Owner: "check profile tabs too." No separate
+  personal-profile page exists — `org/TabProfile.jsx` (Logo, Company, Tax,
+  Registered address, Bank details, Invoice footer) is the only Profile tab;
+  Customization's six tabs (Appearance/Typography/Layout/Language/
+  Notifications/Security/Data & privacy) were already covered by fix 13's
+  audit. Screenshotted live: every section reads as its own card, no bare
+  rows, no double-carding (the logo dropzone's own border is a normal
+  nested-control boundary, not a duplicate card edge). No defect found, no
+  code change.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
