@@ -5,59 +5,96 @@
    Accent var --lg-accent tints only the HOVER shadow.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* The accent the hover shadow is tinted with. `CustomizePanel.applyPrefs`
-   sets this on <html> to the chosen accent's mid stop — the same value
-   `--k-mid` already carries — but it only runs once React has mounted, and
-   `color-mix()` with an undeclared var() is invalid at computed-value time,
-   which drops the WHOLE `--lg-shadow-h` declaration. So every hover shadow in
-   the app was missing until the panel's first effect, and stayed missing for
-   anything rendered before it. Declared statically at the value the JS assigns,
-   so the two agree and the first paint is the finished one. Not a fallback:
-   `var(--lg-accent, …)` still fails check-tokens, and a fallback is how a token
-   stays undefined for weeks while looking fine. */
-:root { --lg-accent: var(--k-mid); }
+/* ── Static defaults on bare :root — the first paint is the finished paint ───
+   These tokens used to be declared ONLY under [data-liquid-glass="subtle|medium
+   |full"], an attribute nothing sets before React's mount effect runs. So every
+   card, modal and drawer rendered box-shadow:none on the first frame — glass ON
+   was worse than OFF until the panel mounted. Now the attribute only ever
+   OVERRIDES these defaults (which equal the "medium" preset). Every token NAME
+   below is unchanged, so all ~40 consuming rules pick up the richer values with
+   no edit. --lg-accent stays as its own line for the color-mix() reason the file
+   has always documented: an undeclared var() drops the whole --lg-shadow-h. */
+:root {
+  --lg-accent: var(--k-mid);
 
-/* ── Tokens per preset ───────────────────────────────────────────────────── */
-:root[data-liquid-glass="subtle"] {
-  --lg-shadow:    0 1px 3px rgba(0,0,0,.03), 0 4px 14px rgba(0,0,0,.025);
-  --lg-shadow-h:  0 2px 8px color-mix(in srgb, var(--lg-accent) 6%, rgba(0,0,0,.05)),
-                  0 8px 28px rgba(0,0,0,.04);
-  --lg-inset:     inset 0 .5px 0 rgba(255,255,255,.12);
-  --lg-shine:     inset 0 1px 8px rgba(255,255,255,.04), inset 0 -1px 4px rgba(0,0,0,.01);
-  --lg-blur-add:  2px;
-  --lg-scale-h:   1.003;
-  --lg-dur:       .25s;
-}
-:root[data-liquid-glass="medium"] {
   --lg-shadow:    0 1px 4px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.035);
   --lg-shadow-h:  0 4px 16px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06)),
                   0 14px 44px rgba(0,0,0,.05);
-  --lg-inset:     inset 0 .5px 0 rgba(255,255,255,.18);
-  --lg-shine:     inset 0 1px 12px rgba(255,255,255,.06), inset 0 -1px 6px rgba(0,0,0,.015);
-  --lg-blur-add:  4px;
-  --lg-scale-h:   1.005;
-  --lg-dur:       .3s;
-}
-:root[data-liquid-glass="full"] {
-  --lg-shadow:    0 2px 6px rgba(0,0,0,.05), 0 8px 28px rgba(0,0,0,.05);
-  --lg-shadow-h:  0 6px 24px color-mix(in srgb, var(--lg-accent) 12%, rgba(0,0,0,.08)),
-                  0 18px 56px rgba(0,0,0,.06);
-  --lg-inset:     inset 0 1px 0 rgba(255,255,255,.22);
-  --lg-shine:     inset 0 2px 16px rgba(255,255,255,.08), inset 0 -2px 8px rgba(0,0,0,.02);
-  --lg-blur-add:  8px;
-  --lg-scale-h:   1.008;
-  --lg-dur:       .35s;
+
+  /* --lg-inset is now a FOUR-SIDED specular rim, not a top-only bevel — light
+     wraps a curved edge at falling intensity. This is the Apple "liquid glass"
+     edge. Same token name, so every surface that already reads --lg-inset gets
+     the richer rim for free. Alphas are eyeballed over cream; the dark arm below
+     drops them for a near-black ground. */
+  --lg-inset:  inset 0  1px 0 rgba(255,255,255,.42),
+               inset 0 -1px 0 rgba(255,255,255,.16),
+               inset  1px 0 0 rgba(255,255,255,.12),
+               inset -1px 0 0 rgba(255,255,255,.12);
+  --lg-shine:  inset 0 1px 12px rgba(255,255,255,.06), inset 0 -1px 6px rgba(0,0,0,.015);
+
+  --lg-blur-add: 4px;
+
+  /* Motion, as tokens — the reduced-motion block flips these four and nothing
+     else, so the effect and its accessibility escape can never fall out of sync
+     (the old parallel selector lists did). */
+  --lg-lift:    -2px;   /* hover rise */
+  --lg-scale-h: 1.005;  /* hover swell */
+  --lg-scale-p: .988;   /* press squish — the Apple tap response */
+  --lg-dur:     .3s;
 }
 
-/* Dark adjustments */
+/* ── Per-preset overrides (Off / Subtle / Medium / Full) ─────────────────── */
+:root[data-liquid-glass="subtle"] {
+  --lg-shadow:   0 1px 3px rgba(0,0,0,.03), 0 4px 14px rgba(0,0,0,.025);
+  --lg-shadow-h: 0 2px 8px color-mix(in srgb, var(--lg-accent) 6%, rgba(0,0,0,.05)),
+                 0 8px 28px rgba(0,0,0,.04);
+  --lg-inset:  inset 0 1px 0 rgba(255,255,255,.30), inset 0 -1px 0 rgba(255,255,255,.10),
+               inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08);
+  --lg-shine:  inset 0 1px 8px rgba(255,255,255,.04), inset 0 -1px 4px rgba(0,0,0,.01);
+  --lg-blur-add: 2px;  --lg-lift: -1px;  --lg-scale-h: 1.003;  --lg-scale-p: .992;  --lg-dur: .25s;
+}
+/* "medium" == the :root defaults; declared so the tier is visible beside its
+   siblings rather than implied by an absence. */
+:root[data-liquid-glass="medium"] {
+  --lg-shadow:   0 1px 4px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.035);
+  --lg-shadow-h: 0 4px 16px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06)),
+                 0 14px 44px rgba(0,0,0,.05);
+  --lg-inset:  inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(255,255,255,.16),
+               inset 1px 0 0 rgba(255,255,255,.12), inset -1px 0 0 rgba(255,255,255,.12);
+  --lg-shine:  inset 0 1px 12px rgba(255,255,255,.06), inset 0 -1px 6px rgba(0,0,0,.015);
+  --lg-blur-add: 4px;  --lg-lift: -2px;  --lg-scale-h: 1.005;  --lg-scale-p: .988;  --lg-dur: .3s;
+}
+:root[data-liquid-glass="full"] {
+  --lg-shadow:   0 2px 6px rgba(0,0,0,.05), 0 8px 28px rgba(0,0,0,.05);
+  --lg-shadow-h: 0 6px 24px color-mix(in srgb, var(--lg-accent) 12%, rgba(0,0,0,.08)),
+                 0 18px 56px rgba(0,0,0,.06);
+  --lg-inset:  inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(255,255,255,.22),
+               inset 1px 0 0 rgba(255,255,255,.16), inset -1px 0 0 rgba(255,255,255,.16);
+  --lg-shine:  inset 0 2px 16px rgba(255,255,255,.08), inset 0 -2px 8px rgba(0,0,0,.02);
+  --lg-blur-add: 8px;  --lg-lift: -3px;  --lg-scale-h: 1.008;  --lg-scale-p: .985;  --lg-dur: .35s;
+}
+
+/* ── Dark — shadows too, not just the rim ────────────────────────────────────
+   The house shadow tokens move .07 → .5 between themes because black-on-near-
+   black is invisible; the old glass layer redefined only the rim/shine, so cards
+   lost all depth in dark. Both arms (media query for OS-dark, attribute for the
+   in-app toggle) now carry the darker shadows. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-liquid-glass="off"]) {
-    --lg-inset: inset 0 .5px 0 rgba(255,255,255,.04);
+    --lg-shadow:   0 1px 4px rgba(0,0,0,.34), 0 6px 20px rgba(0,0,0,.30);
+    --lg-shadow-h: 0 4px 16px color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.42)),
+                   0 14px 44px rgba(0,0,0,.38);
+    --lg-inset: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -1px 0 rgba(255,255,255,.05),
+                inset 1px 0 0 rgba(255,255,255,.04), inset -1px 0 0 rgba(255,255,255,.04);
     --lg-shine: inset 0 1px 8px rgba(255,255,255,.02), inset 0 -1px 4px rgba(0,0,0,.03);
   }
 }
 :root[data-theme="dark"]:not([data-liquid-glass="off"]) {
-  --lg-inset: inset 0 .5px 0 rgba(255,255,255,.04);
+  --lg-shadow:   0 1px 4px rgba(0,0,0,.34), 0 6px 20px rgba(0,0,0,.30);
+  --lg-shadow-h: 0 4px 16px color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.42)),
+                 0 14px 44px rgba(0,0,0,.38);
+  --lg-inset: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -1px 0 rgba(255,255,255,.05),
+              inset 1px 0 0 rgba(255,255,255,.04), inset -1px 0 0 rgba(255,255,255,.04);
   --lg-shine: inset 0 1px 8px rgba(255,255,255,.02), inset 0 -1px 4px rgba(0,0,0,.03);
 }
 
@@ -70,8 +107,8 @@
   .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
   .mn-card, .sa__card, .hcl-card, .sh-card,
   .dr__ap-panel, .sk-card, .k-quickacts,
-  /* `.gr__card` only. `.gr__stat` was in this list and in the hover list and
-     exists nowhere in the app — Graha's `.gr__st` is a section HEADING, not a
+  /* '.gr__card' only. '.gr__stat' was in this list and in the hover list and
+     exists nowhere in the app — Graha's '.gr__st' is a section HEADING, not a
      surface, and glassing it would have been wrong even if the name matched. */
   .gr__card
 ) {
@@ -79,18 +116,34 @@
   transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
 }
 
-/* Hover — accent-tinted shadow deepens + tiny lift */
+/* Hover / focus — accent-tinted shadow deepens + Apple-style lift and swell.
+   ':focus-within' is here too, so a card reached by keyboard rises the same way
+   the mouse makes it rise. '.tv-card' and '.gn-panel' are deliberately NOT in
+   this set: they wrap a horizontally-scrolling table, and scaling a full-width
+   region nudges its scrollbar and re-rasterises hundreds of cells. They keep the
+   depth + rim from the base rule above; only genuine card components move. */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .k-stat, .k-hero-kpi__card,
   .vk-card, .vk-pl__st,
-  .hb-card, .gn-panel, .tv-card,
+  .hb-card,
   .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card,
   .mn-card, .sa__card, .hcl-card, .sh-card,
   .gr__card
-):hover {
+):is(:hover, :focus-within) {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
-  transform: translateY(-1px) scale(var(--lg-scale-h));
+  transform: translateY(var(--lg-lift)) scale(var(--lg-scale-h));
+}
+
+/* Press — the Apple tap "squish". Overrides the hover lift while the pointer is
+   down (and on touch, where hover does not exist — the phones this product also
+   serves get their feedback here). Snappier than the release, per --lg-dur*.4. */
+:root:not([data-liquid-glass="off"]) :is(
+  .k-card, .vk-card, .hb-card, .anx-card, .mkt-card,
+  .k-tmpl-card, .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card, .gr__card
+):active {
+  transform: scale(var(--lg-scale-p));
+  transition-duration: calc(var(--lg-dur) * .4);
 }
 
 /* ── Shell surfaces ──────────────────────────────────────────────────────── */
@@ -120,18 +173,21 @@
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
-/* ── Table headers ───────────────────────────────────────────────────────── */
+/* ── Table headers ───────────────────────────────────────────────────────────
+   The rim hairline stays; the backdrop-filter is GONE. '.tbl th' is
+   'background: var(--s-low)' — a fully opaque hex — so the blur produced zero
+   visible pixels while allocating one compositing layer per sticky header cell,
+   re-sampled every scroll frame. On the widest register that was ~14 blurred
+   layers doing nothing. Pure deletion, no visual change. */
 :root:not([data-liquid-glass="off"]) .tbl th {
-  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add)));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add)));
   box-shadow: var(--lg-inset);
 }
 
-/* ── Toast ────────────────────────────────────────────────────────────────── */
+/* ── Toast ────────────────────────────────────────────────────────────────────
+   Depth + rim only. '.tst' is 'background: var(--s-lowest)', opaque, so the blur
+   never rendered — deleted, box-shadow kept. */
 :root:not([data-liquid-glass="off"]) .tst {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
-  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
 /* ── Settings rows ───────────────────────────────────────────────────────── */
@@ -144,15 +200,15 @@
   transform: translateY(-1px);
 }
 
-/* ── Dock ─────────────────────────────────────────────────────────────────── */
+/* ── Dock ───────────────────────────────────────────────────────────────────
+   Depth + rim only. '.k-dock' is 'background: var(--surface)', opaque — blur
+   deleted, box-shadow kept. */
 :root:not([data-liquid-glass="off"]) .k-dock {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
-  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
 /* ── Command palette ──────────────────────────────────────────────────────── */
-/* `.k-cmdk`, not the reference's `.cmdk__panel` — that name is not in this
+/* '.k-cmdk', not the reference's '.cmdk__panel' — that name is not in this
    codebase, so the palette was the one shell surface the preset never reached.
    Its own rule in editorial.css already carries a blur and a shadow; these
    deepen with the preset and are overridden by nothing. */
@@ -163,32 +219,28 @@
 }
 
 /* ── Drawer ────────────────────────────────────────────────────────────────── */
-/* `.dr` alone — `.k-drawer__panel` was the reference's name for the same
+/* '.dr' alone — '.k-drawer__panel' was the reference's name for the same
    element and selects nothing in this app. */
 :root:not([data-liquid-glass="off"]) .dr {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
 }
 
-/* ── Accessibility ───────────────────────────────────────────────────────── */
+/* ── Accessibility — token flips, not parallel selector lists ────────────────
+   The old block enumerated 14 classes for 'transition:none' and 13 for
+   'transform:none', and they had already drifted apart (6 movers were missing).
+   Now that all motion reads --lg-lift / --lg-scale-h / --lg-scale-p / --lg-dur,
+   flipping those four to identity disables every hover and press at once — a new
+   glassed component can never be forgotten here, because there is no list. */
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-liquid-glass="off"]) :is(
-    .k-card, .k-stat, .hb-card, .gn-panel, .tv-card, .anx-card,
-    .mkt-card, .k-tmpl-card, .niyam-card, .mn-card, .sa__card,
-    .hcl-card, .sh-card, .sr
-  ) {
-    transition: none !important;
-  }
-  :root:not([data-liquid-glass="off"]) :is(
-    .k-card, .k-stat, .hb-card, .gn-panel, .tv-card, .anx-card,
-    .mkt-card, .k-tmpl-card, .niyam-card, .mn-card, .sa__card,
-    .hcl-card, .sh-card
-  ):hover {
-    transform: none !important;
-  }
+  :root { --lg-lift: 0px; --lg-scale-h: 1; --lg-scale-p: 1; --lg-dur: .001s; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  :root[data-liquid-glass] {
-    --lg-blur-add: 0px;
-    --lg-shine: none;
+  :root { --lg-blur-add: 0px; --lg-shine: none; }
+  /* The token is not enough on the translucent surfaces: components.css:1374's
+     opt-out is (0,1,0) and this sheet re-declares backdrop-filter at higher
+     specificity. Cancel the property on the surfaces that actually blur. */
+  :root:not([data-liquid-glass="off"]) :is(.top, .mnav, .modal__panel,
+    .pop, .menu--float, .pk__pop, .k-cmdk) {
+    backdrop-filter: none; -webkit-backdrop-filter: none;
   }
 }
