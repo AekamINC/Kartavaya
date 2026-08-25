@@ -1,0 +1,216 @@
+<title>Gap Analysis — Proposals 50–88</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --bg: #faf9f6; --surface: #ffffff; --surface-alt: #f3f2ee; --border: #e2e0d8;
+  --text: #1a1917; --text-2: #5c5a52; --text-3: #8a877d;
+  --accent: #2d6a4f; --accent-light: #e8f0eb;
+  --red: #b5362a; --red-light: #fceeed;
+  --amber: #9a6a10; --amber-light: #fbf3e2;
+  --blue: #1d5fa6; --blue-light: #eef4fb;
+  --code-bg: #f0efe9; --code-fg: #2a2822;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+    --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+    --accent: #5aab7e; --accent-light: #16261d;
+    --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+    --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+  --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+  --accent: #5aab7e; --accent-light: #16261d;
+  --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+  --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.65 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+
+.kicker { font-size: .8rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: 0 0 .6rem; }
+h1 { font-size: 2.4rem; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .8rem; }
+.lede { font-size: 1.15rem; color: var(--text-2); margin: 0 0 .5rem; max-width: 64ch; }
+.meta { font-size: .85rem; color: var(--text-3); margin: 1rem 0 0; font-family: 'JetBrains Mono', monospace; }
+
+h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; margin: 3.2rem 0 .4rem; padding-top: 1.6rem; border-top: 1px solid var(--border); }
+h2 .n { color: var(--text-3); font-variant-numeric: tabular-nums; margin-right: .5rem; }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 1.8rem 0 .4rem; }
+p { margin: .7rem 0; } .sub { color: var(--text-2); margin: .2rem 0 1.1rem; }
+strong { font-weight: 600; }
+code { font-family: 'JetBrains Mono', monospace; font-size: .85em; background: var(--code-bg); color: var(--code-fg); padding: .1em .38em; border-radius: 4px; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.3rem 1.5rem; margin: 1.2rem 0; }
+.card--accent { border-left: 3px solid var(--accent); }
+.card--red { border-left: 3px solid var(--red); background: var(--red-light); }
+.card--amber { border-left: 3px solid var(--amber); background: var(--amber-light); }
+.card--blue { border-left: 3px solid var(--blue); background: var(--blue-light); }
+
+.tbl-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin: 1.2rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.tbl-scroll table { margin: 0; }
+th, td { text-align: left; padding: .55rem .9rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-weight: 600; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); position: sticky; top: 0; background: var(--surface-alt); }
+tbody tr:last-child td { border-bottom: none; }
+td.pct { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 600; padding: .1em .5em; border-radius: 5px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+.t-done { background: var(--accent-light); color: var(--accent); }
+.t-half { background: var(--amber-light); color: var(--amber); }
+.t-empty{ background: var(--red-light); color: var(--red); }
+.t-rsch { background: var(--blue-light); color: var(--blue); }
+.t-na   { background: var(--surface-alt); color: var(--text-3); }
+
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; margin: 1.4rem 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
+.stat .l { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+.stat .v { font-size: 1.55rem; font-weight: 700; margin-top: .25rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.stat .v.red { color: var(--red); } .stat .v.amber { color: var(--amber); } .stat .v.green { color: var(--accent); }
+.stat .s { font-size: .78rem; color: var(--text-2); margin-top: .15rem; }
+
+ul, ol { margin: .6rem 0; padding-left: 1.3rem; } li { margin: .35rem 0; }
+.bnum { display: inline-block; min-width: 1.6rem; font-weight: 700; color: var(--red); font-family: 'JetBrains Mono', monospace; }
+.onum { display: inline-block; min-width: 1.6rem; font-weight: 700; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+.footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: .85rem; color: var(--text-3); }
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Proposal 90 · Gap analysis</p>
+<h1>Everything from 50 to 88 — what shipped, what is wrong, what is left</h1>
+<p class="lede">A verified accounting of thirty-nine proposals. Every status was checked against the live database or the running code this session, not remembered — because in this repo, half of all historical "it's built" claims were stale, and this document caught more of them.</p>
+<p class="meta">2026-08-25 · 802 claims audited across 70–88, quick-scanned 50–69 · 3 blockers re-verified by hand against the live DB · companion to proposal 82 (which this supersedes on status)</p>
+
+<div class="card card--accent">
+<strong>The one-paragraph verdict.</strong> Roughly <strong>70% of the promised engineering exists, but only about a third of it can be used end to end by a customer.</strong> Everything from 55 to 68 shipped and works — the drop-off starts at 69, exactly where proposal 82 predicted "everything from 72 onward is paper." The dominant failure is not missing code; it is <strong>schema + API + tests with no screen and no data</strong>: 48 tables hold zero rows, and 16 columns that gate headline features are 100% NULL with no way to enter them. Fixing the six worst write-paths — one week — turns roughly eighteen already-built features back on.
+</div>
+
+<div class="statgrid">
+  <div class="stat"><div class="l">Proposals audited</div><div class="v">39</div><div class="s">50 → 88</div></div>
+  <div class="stat"><div class="l">Engineering shipped</div><div class="v green">~70%</div><div class="s">code exists</div></div>
+  <div class="stat"><div class="l">Usable end-to-end</div><div class="v amber">~⅓</div><div class="s">a customer can complete it</div></div>
+  <div class="stat"><div class="l">Zero-row tables</div><div class="v red">48</div><div class="s">built for a firm not yet using it</div></div>
+  <div class="stat"><div class="l">NULL feature columns</div><div class="v red">16</div><div class="s">100% null, no write path</div></div>
+  <div class="stat"><div class="l">Models built twice</div><div class="v red">4</div><div class="s">duplicate schemas</div></div>
+</div>
+
+<h2><span class="n">1</span>The ledger, 50 → 88</h2>
+<p class="sub"><span class="tag t-done">done</span> ships &amp; works · <span class="tag t-half">half</span> real gaps · <span class="tag t-empty">empty</span> schema/API but no UI or data · <span class="tag t-rsch">research</span> a thinking doc, not a build · <span class="tag t-na">n/a</span> a plan/decision. "Incomplete" for the built ones is engineering left, not usage.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>#</th><th>Proposal</th><th>Type</th><th class="pct">Left</th><th>The gap in one line</th></tr></thead>
+<tbody>
+<tr><td>50</td><td>Selling Sahayak per org</td><td><span class="tag t-na">n/a</span></td><td class="pct">—</td><td>Pricing analysis. Conclusion (AI = 0.15% of revenue) stands.</td></tr>
+<tr><td>51</td><td>Whole Sahayak economics</td><td><span class="tag t-rsch">research</span></td><td class="pct">open</td><td>Found every scraper sold below cost — reprice is an owner decision, not done.</td></tr>
+<tr><td>52</td><td>Getting off Apify</td><td><span class="tag t-rsch">research</span></td><td class="pct">open</td><td>"Move 6 of 19 scrapers off Apify" — owner decision, not actioned.</td></tr>
+<tr><td>53</td><td>Open-source scrapers + India runner</td><td><span class="tag t-rsch">research</span></td><td class="pct">open</td><td>Explicitly an open owner decision; nothing built.</td></tr>
+<tr><td>54</td><td>The Plan, 16 Aug</td><td><span class="tag t-na">n/a</span></td><td class="pct">—</td><td>Roadmap, superseded by 82. Track 7 (production release) still open.</td></tr>
+<tr><td>55–59</td><td>Niyam automation (engine → builder)</td><td><span class="tag t-done">done</span></td><td class="pct">~25%</td><td>Live &amp; armed — 8 rules, 367 events, 21 runs. Only 20 of ~35 event types wired.</td></tr>
+<tr><td>60–63</td><td>Analytics spine + everywhere</td><td><span class="tag t-done">done</span></td><td class="pct">~15%</td><td>Built through S6 — 13 views live. S7 mobile deferred; scheduled delivery unarmed.</td></tr>
+<tr><td>64</td><td>React Aria</td><td><span class="tag t-na">n/a</span></td><td class="pct">—</td><td>Rejected — a11y fixed by hand. Correctly closed.</td></tr>
+<tr><td>65</td><td>Analytics without Dristi</td><td><span class="tag t-done">done</span></td><td class="pct">~15%</td><td>Exports + alerts screen + module-report shipped; scheduled email still gated off.</td></tr>
+<tr><td>66</td><td>Niyam catalogue</td><td><span class="tag t-done">done</span></td><td class="pct">~25%</td><td>Event-type catalogue ~57% expanded (20/35).</td></tr>
+<tr><td>67</td><td>Board you arrange</td><td><span class="tag t-done">done</span></td><td class="pct">~10%</td><td>Drag/resize + tab reorder deployed &amp; e2e-verified.</td></tr>
+<tr><td>68</td><td>Pulse of Kartavaya</td><td><span class="tag t-done">done</span></td><td class="pct">~10%</td><td>Live, collecting data (54 logins, 4 versions).</td></tr>
+<tr><td>69</td><td>Assistant that compounds</td><td><span class="tag t-half">half</span></td><td class="pct">~55%</td><td><strong>The hinge.</strong> ack wired but 32/78 skills, 0 rows, no UI to dismiss.</td></tr>
+<tr><td>70</td><td>The Night Ledger</td><td><span class="tag t-half">half</span></td><td class="pct">~40%</td><td>Diagnoses acted on; schedules 0/78, ack 0 rows, report-merge not built.</td></tr>
+<tr><td>71</td><td>Skill that finds you</td><td><span class="tag t-done">done</span></td><td class="pct">~15%</td><td>22 skills carry contact; basically done.</td></tr>
+<tr><td>72</td><td>The Corner (dock)</td><td><span class="tag t-half">half</span></td><td class="pct">~35%</td><td>Dock built; Due tab hardcoded empty, a test pins it shut; ⌘K missing.</td></tr>
+<tr><td>73</td><td>Reports by person/client</td><td><span class="tag t-half">half</span></td><td class="pct">~50%</td><td>4 of 6 wrong numbers fixed; the reports themselves not built.</td></tr>
+<tr><td>74</td><td>What Prachar is for</td><td><span class="tag t-rsch">research</span></td><td class="pct">~5%</td><td>ICAI settled; but the merge-field lie regressed to a worse one.</td></tr>
+<tr><td>75</td><td>Every report possible</td><td><span class="tag t-half">half</span></td><td class="pct">~65%</td><td>~11 of ~34 built; bank book (its own #1) untouched.</td></tr>
+<tr><td>76</td><td>Commission &amp; consultant P&amp;L</td><td><span class="tag t-half">half</span></td><td class="pct">~40%</td><td>Schema+service built, but rate can't be edited &amp; salesperson_id NULL → inert.</td></tr>
+<tr><td>77</td><td>Purchase orders</td><td><span class="tag t-half">half</span></td><td class="pct">~45%</td><td>Module built; <strong>no way to send a PO to a vendor</strong>, no VendorDetail/reports.</td></tr>
+<tr><td>78</td><td>Competitive research</td><td><span class="tag t-rsch">research</span></td><td class="pct">~5%</td><td>One wrong claim ("departments are free text") compiled into shipped code.</td></tr>
+<tr><td>79</td><td>Suite architecture review</td><td><span class="tag t-rsch">research</span></td><td class="pct">~10%</td><td>Findings correct; statute calendar not wired to the payroll engine.</td></tr>
+<tr><td>80</td><td>Compliance is a setting</td><td><span class="tag t-empty">empty</span></td><td class="pct">~80%</td><td><strong>No screen calls it, 0 rows,</strong> only 1 of 5 modules has rules.</td></tr>
+<tr><td>81</td><td>Compliance documents</td><td><span class="tag t-half">half</span></td><td class="pct">~60%</td><td>4 pages built but not in production; 9 owner facts; MFA claim wrong.</td></tr>
+<tr><td>82</td><td>What is actually left</td><td><span class="tag t-na">n/a</span></td><td class="pct">—</td><td>The status doc itself; several of its own claims were already false.</td></tr>
+<tr><td>83</td><td>R2 storage</td><td><span class="tag t-half">half</span></td><td class="pct">~55%</td><td>Grammar + verifier built; Storage tab missing, 0 objects migrated.</td></tr>
+<tr><td>84</td><td>Employee onboarding</td><td><span class="tag t-empty">empty</span></td><td class="pct">~95%</td><td><strong>Essentially not built</strong> — no table, no routes, no UI, 0 of 7 steps.</td></tr>
+<tr><td>85</td><td>Procurement rescope (Kray)</td><td><span class="tag t-half">half</span></td><td class="pct">~50%</td><td>Module moved to kray; same gaps as 77 + vendor MSME fields unenterable.</td></tr>
+<tr><td>86</td><td>Billing architecture</td><td><span class="tag t-half">half</span></td><td class="pct">~65%</td><td>P1/P2 code built; <strong>P3/P4/P6 absent, cron unarmed, proration double-bills.</strong></td></tr>
+<tr><td>87</td><td>Org client billing</td><td><span class="tag t-half">half</span></td><td class="pct">~60%</td><td>Schema shipped but <strong>router 500s on first call</strong>; recurring doesn't recur; cross-tenant leak.</td></tr>
+<tr><td>88</td><td>Liquid glass</td><td><span class="tag t-done">done</span></td><td class="pct">~20%</td><td>Ships &amp; works; rescope in proposal 89.</td></tr>
+</tbody>
+</table></div>
+
+<h2><span class="n">2</span>What is wrong right now</h2>
+<p class="sub">Not "unbuilt" — actively wrong, or false, in the running product. The first three were re-verified by hand against the live database this session.</p>
+
+<div class="card card--red">
+<p style="margin-top:0"><span class="bnum">1</span><strong>Payroll will pay ten people who have left.</strong> The payroll-run query joins <code>manav_employees</code> on <code>is_active=TRUE</code> with no last-working-day guard. <strong>Live: 10 employees with a past offboarding date are still <code>is_active</code>.</strong> <code>vetana.py:945</code>. <em>(73, 75)</em></p>
+<p><span class="bnum">2</span><strong>Every payslip deducts a flat ₹200 professional tax regardless of state.</strong> A populated 9-row slab table (Gujarat/Maharashtra/Karnataka) exists and is read by nothing; 1,105 of 1,112 payslips carry the constant. <code>vetana.py:542</code>. <em>(78, 79)</em></p>
+<p><span class="bnum">3</span><strong>Two billing endpoints 500 on first call.</strong> Both <code>INSERT INTO ganit_invoices</code> name a column <code>gst_rate</code> that <strong>does not exist</strong> and omit <code>invoice_number</code> (NOT NULL, no default). Verified against the live schema. Shipped with zero tests touching the router. <code>client_billing.py:402, 632</code>. <em>(87)</em></p>
+<p><span class="bnum">4</span><strong>Draft invoices are dunned on client statements &amp; counted as revenue.</strong> 79 drafts worth ₹1.16 cr print on the statement of account; Dristi revenue counts 102 drafts. The one-line fix that landed in <code>gst_period.py</code> was never applied to <code>documents.py:281</code> or <code>dristi.py:332</code>. <em>(73)</em></p>
+<p><span class="bnum">5</span><strong>A cross-tenant leak in the newest router.</strong> <code>client_billing.py:188</code> never checks the client belongs to the org; the sibling creators in the same file do. <em>(87)</em></p>
+<p style="margin-bottom:0"><span class="bnum">6</span><strong>The public /security page says the product has no MFA.</strong> TOTP, login challenge, recovery codes and org enforcement shipped 23 Aug; the page was last touched the day before. Plus three undisclosed AI sub-processors (OpenRouter, HuggingFace, Groq) on the very page written to unblock the sale. <em>(81)</em></p>
+</div>
+
+<h3>Two proposals that contradict each other</h3>
+<div class="card card--amber">
+<p style="margin-top:0"><strong>86 vs 87 on client billing.</strong> 86 specified ALTERing <code>graha_clients</code> and a <code>client_billing_lines</code> table; 87 said <code>graha_clients</code> needs "None" and built differently. 87 won — but 86's "Prorated Salary Calc" is now owned by <strong>neither</strong>, and HR doesn't do it either (it prorates by attendance, never by joining date).</p>
+<p style="margin-bottom:0"><strong>87's central justification is false.</strong> It argues "procurement already gates on <code>require_module('ganit')</code>" — but the live code is <code>require_module("kray")</code>; proposal 85 minted that module the day before. The conclusion may be right; the argument isn't.</p>
+</div>
+
+<h2><span class="n">3</span>What is pending, by theme</h2>
+
+<h3>Billing (86, 87) — the engine and schema exist; neither can take money</h3>
+<p><strong>Exists:</strong> 17 platform capabilities + P1/P2 code (cycle, proration) + 5 client-billing tables + a 992-line router. <strong>Missing:</strong> the cron arming (period advancement has never run — <code>next_billing_date</code> NULL on all 5 orgs); the two 500ing INSERTs; the proration sign (a mid-cycle change double-bills); recurring recurrence; and P3 (auto-invoice, dunning, overage), P4 (module settings — which P5 needs) and P6 (metering, PEPM, true-up) entirely. Both platform-invoice tables hold 0 rows. <strong>~2 days to make what exists work; 3–4 weeks for the rest.</strong></p>
+
+<h3>Procurement / Kray (77, 85) — built, but a PO can't leave the building</h3>
+<p><strong>Exists:</strong> 5 tables, 19 routes, 4 screens, 119 tests, three-way match, 194Q watch. <strong>Missing:</strong> no PDF/email/WhatsApp to send a PO, no VendorDetail, no vendor-spend/ageing/MSME reports, and vendor MSME fields have <strong>no write path anywhere</strong>. Data: 3 POs, 1 receipt, 1 of 190 bills PO-linked. <strong>1 week for the send path; 2 for the reports.</strong></p>
+
+<h3>HR / payroll / onboarding (73, 76, 79, 84)</h3>
+<p><strong>Exists:</strong> 98 employees, 30 departments, 1,112 payslips, commission service. <strong>Missing:</strong> gratuity, statutory bonus, LWF, arrears, F&amp;F settlement — none exists. Prorated joiner/leaver salary in neither module. <strong>Employee onboarding at no layer</strong> (84 is ~95% unbuilt). One foreign key on <code>manav_employees.department</code> unblocks PO budgets, approval routing and commission scope at once.</p>
+
+<h3>Reports (70, 73, 75)</h3>
+<p><strong>Works:</strong> 15 registers, PDF/CSV/XLSX, ageing. <strong>Missing:</strong> zero report definitions for Graha, Vetana, Vikray, Prachar or Pahchan (~23 of 34 "Ready" rows). The bank book — 75's own #1 — untouched. The access-review report ("1 day", the only fully honest item) doesn't exist.</p>
+
+<h3>Compliance &amp; AI/skills (74, 80, 81, 70–72)</h3>
+<p><strong>Compliance:</strong> the table + API exist but <strong>no screen calls them</strong>, 0 rows, 1 of 5 modules wired. <strong>Skills:</strong> 93 functions, 78 templates, the dock — but 0 of 78 carry a schedule, 0 acknowledgement rows, no ack UI, the Due tab is hardcoded empty. The machinery is complete; nothing runs on its own.</p>
+
+<h3>Storage (83) &amp; design (88)</h3>
+<p><strong>Storage:</strong> the grammar and verifier work (org creation unblocked), but the Storage tab has no screen and <strong>zero objects exist in the new grammar</strong>. <strong>Design:</strong> glass ships; the rescope is proposal 89.</p>
+
+<h2><span class="n">4</span>Structural problems — visible only across proposals</h2>
+<div class="card">
+<ol style="margin:0">
+<li><strong>Schema + API without a screen — the dominant pattern.</strong> Eight features have a table, a route, tests, and no caller: compliance settings, Pahchan consent, skill acknowledgement, the storage browser, billing-anchor, pause, quota-proration, <code>client_obligations</code>. Every one was recorded as shipped.</li>
+<li><strong>48 zero-row tables.</strong> Five compliance registers with ~30 routes and 4 UI tabs; both platform-invoice tables; every WhatsApp table; every TOTP table. The product has been built for a firm that has not started using it.</li>
+<li><strong>16 feature-gating columns 100% NULL with no write path</strong> — <code>salesperson_id</code>, <code>cost_price</code>, vendor MSME fields, <code>contact_id</code> on expenses, <code>reporting_to</code>, <code>state_code</code>, <code>photo_key</code>, <code>billing_profile_id</code> and more.</li>
+<li><strong>Four models built twice</strong> — <code>sales_commissions*</code> (dead, uuid) vs live <code>manav_commission*</code>; an empty <code>hr_*/pay_*</code> stack beside live <code>manav_*/vetana_*</code>; two doc-number allocators; two report schedulers.</li>
+<li><strong>The dated-law store isn't wired to the engines that need dates.</strong> <code>statute_calendar</code> (45 rows) is read by skills only; <code>vetana.py</code> hardcodes the ESI ceiling, PT, PF and both TDS ladders.</li>
+<li><strong>Nobody wrote a test that executes the SQL.</strong> 992 lines of billing router shipped with two fatal INSERTs and a tenancy hole and zero tests touching the file.</li>
+</ol>
+</div>
+
+<h2><span class="n">5</span>Owner-blocked ledger</h2>
+<p class="sub">Not engineering — facts, credentials and decisions only you can supply. Engineering cannot move on these.</p>
+<div class="card card--blue">
+<p style="margin-top:0"><strong>Legal (81):</strong> 9 facts block the draft banner — CIN, registered office, DPA jurisdiction city, a named Grievance Officer + monitored mailbox, a monitored security mailbox, and three deployment regions (Railway, R2, SES — two are one-minute dashboard reads). Plus: engage an Indian DP lawyer; decide the cert order (ISO 27001 → SOC 2 → 27701); deploy the legal pages to production.</p>
+<p><strong>Product decisions:</strong> billing anchor (1st vs anniversary), dunning severity at +14 days, module-settings scope, true-up frequency, proration day-count (three conventions ship today), Prachar pricing (₹39 vs bundle-at-₹0), Kray budget strictness, vendor CRUD ownership, dock telemetry.</p>
+<p style="margin-bottom:0"><strong>Data / credentials:</strong> employee↔login scope (96 of 98 unlinked, most impossible), PT slabs for ~20 states, state codes on 38 holidays, a Meta WhatsApp Business Account (0 rows → the whole channel untested), Meta's INR rate card, a written ICAI answer on the prospect line, cold-restart APK 2.0.4 verification, and permission to drop three restore schemas.</p>
+</div>
+
+<h2><span class="n">6</span>The plan — recommended order</h2>
+
+<div class="card card--accent">
+<p style="margin-top:0"><span class="onum">1</span><strong>Open the six write paths. Highest fan-out item in the entire arc.</strong> <code>salesperson_id</code> on invoice/order; vendor MSME fields; <code>cost_price</code> onto the line; expense <code>contact_id</code>; employee <code>state</code>; holiday <code>state_code</code>. This single week turns on ~18 features already built, tested and inert — per-person turnover, commission, the leaderboard, gross profit, margin, consultant P&amp;L, the MSME clock, the Kray Overdue KPI, ageing, client profitability, PT-by-state. <strong>1 week.</strong></p>
+<p><span class="onum">2</span><strong>Fix the six things the product gets wrong today</strong> (§2). Different files, run in parallel with #1. The only items where a customer is harmed by using the product as built — one writes payslips for people who have left. <strong>3 days.</strong></p>
+<p><span class="onum">3</span><strong>Start the owner ledger today — none of it is engineering.</strong> The 9 legal strings; correct the MFA paragraph and add the 3 sub-processors before any production deploy. Counsel has the longest lead time and gates the first CA sale — start it now.</p>
+<p><span class="onum">4</span><strong>Make the billing engine executable, then arm it.</strong> Fix the two INSERTs → fix the proration sign → make recurring recur → <em>then</em> arm <code>/cron/billing</code>. Arming first would fire the broken sweep. <strong>2 days after decisions land.</strong></p>
+<p><span class="onum">5</span><strong>Give the eight invisible features a screen.</strong> Compliance settings, Pahchan consent, skill ack, storage browser, the Due tab, billing-anchor, pause, quota-proration. Each is a table + route + tests already paid for — a screen is the cheapest remaining unit of value. <strong>1 week.</strong></p>
+<p><span class="onum">6</span><strong>Connect the statute calendar to payroll &amp; invoicing.</strong> Until then "dated law" is a feature of the AI shelf, not the product. <strong>1 week.</strong></p>
+<p style="margin-bottom:0"><span class="onum">7</span><strong>Freeze new modules; retire the duplicates; add one rule:</strong> no proposal may call a table/column missing without a live query in the document, and no router ships without one test that executes its SQL. Both failure modes here are cheap to close and neither has been.</p>
+</div>
+
+<div class="footer">
+Proposal 90 · gap analysis 50–88 · verified live against Supabase <code>toacecaewujfxjfrjwco</code> and the running code · supersedes proposal 82's status column · companions: 88 (glass record), 89 (glass rescope). The full 802-claim audit and per-proposal evidence are in the session scratchpad.
+</div>
+
+</div>
