@@ -63,7 +63,7 @@ import MobileDrawer from './MobileDrawer';
 import MobileNav from './MobileNav';
 import { ICONS } from './navIcons';
 import { resolveRouteMeta } from './navConfig';
-import { useCustomize } from '../CustomizePanel';
+import { useCustomize, useLiquidGlass } from '../CustomizePanel';
 import GlassLensEasterEgg from '../ui/GlassLensEasterEgg';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
@@ -138,6 +138,11 @@ function fireBrowserNotif(title, body) {
  * which has no Devanagari coverage, so a span whose script varies per row must
  * declare which script it actually holds.
  */
+function GlassLensMount() {
+  const { prefs } = useCustomize();
+  return prefs.glassLens ? <GlassLensEasterEgg /> : null;
+}
+
 function MobileCrumb() {
   const location = useLocation();
   const meta = resolveRouteMeta(location.pathname);
@@ -515,7 +520,7 @@ export default function AppShell() {
         <SkillDock />
 
         {/* Draggable refraction lens Easter egg */}
-        {prefs.glassLens && <GlassLensEasterEgg />}
+        <GlassLensMount />
 
         {/* In-app toast stack */}
         <NotifToastContainer toasts={toasts} onDismiss={dropToast} />
