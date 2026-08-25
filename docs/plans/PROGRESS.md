@@ -151,4 +151,10 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   Dristi call site for double-carding (a `Section` already sitting inside
   another bordered container would now show a card-in-a-card).
 
+  Verified live post-deploy: Vetana → Payroll → Dashboard screenshotted —
+  "Year to date"/"Payroll coverage"/"Department split" now read as proper
+  bordered cards, matching the KPI tiles above them. Pahchan → Attendance →
+  Corrections (a confirmed `Section` call site) screenshotted too — single
+  clean card boundary, no double-carding. **STATUS: ✅ shipped.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
