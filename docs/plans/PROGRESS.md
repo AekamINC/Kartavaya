@@ -238,4 +238,15 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   (was `3px`), and a 3x-DPI zoom of the corner shows a clean curve, no step.
   **STATUS: ✅ shipped.**
 
+- `design/glass` fix 7 · Owner pointed at `.ix-panel` directly from devtools
+  and asked to remove ITS depth, not the child cards'. `.ix-panel` is the
+  `role="tabpanel"` wrapper for every module's tab content (Ganit, Vikray,
+  Graha, Prachar, Manav, Dristi, Vetana, Hub, Kray, Sahayak) — a layout
+  container, not a card — and it was in `liquid-glass.css`'s depth-shadow
+  list, putting a floating-card shadow around the ENTIRE content area on
+  every module page, in addition to (and separate from) the correct shadows
+  its children already carry individually. Removed `.ix-panel` from the list
+  · `liquid-glass.css`. Verified live post-deploy: computed `box-shadow` on
+  `.ix-panel` is now `none`. **STATUS: ✅ shipped.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
