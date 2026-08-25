@@ -255,7 +255,7 @@ export default function TabBilling() {
         </div>
       </section>
 
-      <section className="st__group">
+      <section className="st__group st__group--flush">
         <CreditUsage />
       </section>
 
@@ -360,7 +360,7 @@ export default function TabBilling() {
           all until now. Same component Aekam runs over every org at
           `/admin/usage` — one implementation, so the figure a client reads and
           the figure Aekam reads about that client cannot diverge. */}
-      <section className="st__group">
+      <section className="st__group st__group--flush">
         <h2 className="st__gt">Usage &amp; spend</h2>
         <BillingUsageSection basePath="/v1/billing/me" upiOnInvoices={upiOnInvoices} />
       </section>

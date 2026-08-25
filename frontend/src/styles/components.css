@@ -1646,7 +1646,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    Naming it here rather than in module.css keeps the answer to "who draws the
    frame" in one place — which is the entire reason this section exists. */
 .card__body .tbl__wrap,
-.dcard__b .tbl__wrap {
+.dcard__b .tbl__wrap,
+/* `.st__group` joined this list once ITS frame stopped being optional too
+   (settings.css) — `org/TabBilling`'s Invoices table sits directly inside
+   one, no `<Card>` between them, so it's the same box-in-a-box this
+   selector already exists to name. */
+.st__group .tbl__wrap {
   background: none;
   border: 0;
   border-radius: 0;
