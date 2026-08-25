@@ -314,6 +314,7 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   accounts the backend treats as platform staff, so a real number was
   showing for those sessions. `price_monthly` is now never read here at all;
   every card unconditionally shows "On quote" · `PlanComparison.jsx`. Build
-  clean.
+  clean. Verified live post-deploy: `price_monthly` no longer appears
+  anywhere in the deployed JS bundle at all. **STATUS: ✅ shipped.**
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
