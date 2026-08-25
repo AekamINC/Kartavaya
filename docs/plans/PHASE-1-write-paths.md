@@ -111,4 +111,19 @@ commission/leaderboard surface (needs 1.1), and the Kray tiles in Phase 2/4
 
 ## Progress
 
-_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._
+- **1.1 `salesperson_id` — ✅ code landed 2026-08-25.** Wired on both write
+  paths, create + update, plus the display name:
+  - Invoice: `InvoiceCreate.salesperson_id`, the create INSERT ($26), the
+    `update_invoice` dynamic SET, and `get_invoice` now returns
+    `salesperson_name` (joined, name never id). `ganit.py`.
+  - Order: `OrderCreate`/`OrderUpdate.salesperson_id`, the create INSERT ($19),
+    the `update_order` SET loop. `vikray.py`.
+  - Forms: a local `Picker` fed by `/v1/org/members` (403-tolerant for
+    non-admins) on `InvoiceForm.jsx` and `OrderForm.jsx`; name only, id never
+    rendered.
+  - Verified: `salesperson_id` is `text` on both tables (live); backend 1023
+    tests green (1 pre-existing vendor-bill failure, unrelated); `npm run build`
+    + `npm run check` green. **Acceptance still owed:** a real create through the
+    UI on the test org, to see the row move off 0 and a name appear on the
+    leaderboard — cannot write-probe the shared DB from here.
+- 1.2–1.6 — not started.

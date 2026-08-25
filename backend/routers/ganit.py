@@ -128,6 +128,15 @@ class InvoiceCreate(BaseModel):
     #: NOT a link to a purchase-order record. It is a string they supplied.
     customer_ref: str = ""
     doc_status: str = ""
+    #: The LOGIN credited with the sale — `users.user_id` (TEXT), attributed to
+    #: an account rather than an employee because commission and the sales
+    #: leaderboard both read `ganit_invoices.salesperson_id`. Like `client_id`
+    #: above, this column has existed since the table did and NOTHING wrote it:
+    #: 0 of 789 live invoices carry it, so per-person turnover, the leaderboard
+    #: and consultant commission all read zero. Optional; blank -> NULL. The
+    #: form offers the org's own members, so a picked value is already in-org;
+    #: a foreign id simply fails to match on the read side and credits nobody.
+    salesperson_id: str = ""
 
 
 class PaymentRecord(BaseModel):
@@ -608,14 +617,16 @@ async def create_invoice(
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
                 " balance_due, notes, terms, created_by, doc_status, client_id, "
-                " customer_ref, compliance_snapshot) "
+                " customer_ref, compliance_snapshot, salesperson_id) "
                 # `client_id` is appended as $23 rather than slotted in beside
                 # `contact_id`: $18 is deliberately bound twice (total and
                 # balance_due), so renumbering to keep the columns tidy is a
                 # chance to break the one placeholder that is not 1:1.
+                # `salesperson_id` follows the same rule as $26 — appended, not
+                # slotted in — for exactly that reason.
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
                 " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22, "
-                " NULLIF($23,'')::uuid, NULLIF(btrim($24),''), $25::jsonb) "
+                " NULLIF($23,'')::uuid, NULLIF(btrim($24),''), $25::jsonb, NULLIF($26,'')) "
                 "RETURNING *",
                 org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
                 inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
@@ -630,6 +641,9 @@ async def create_invoice(
                 # Blank -> NULL at the placeholder, so the CHECK never sees ''.
                 body.customer_ref or "",
                 json.dumps(compliance_snapshot) if compliance_snapshot else None,
+                # $26. Never None (untyped NULL through PgBouncer = instant 500);
+                # empty string is "no salesperson", NULLIF turns it to NULL.
+                body.salesperson_id or "",
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -766,13 +780,23 @@ async def update_invoice(
     _by_idx = 20 if client_id is not None else 19
     _by_set = f", updated_by=${_by_idx}"
 
+    # WHO the sale is credited to. Same append-together rule as the two clauses
+    # above, and it takes the slot AFTER updated_by. Gated on `model_fields_set`
+    # so an edit that does not mention the salesperson leaves the existing one
+    # alone, while an edit that sends it blank clears it (NULLIF -> NULL).
+    _sp_set = ""
+    _sp_params = []
+    if "salesperson_id" in _named:
+        _sp_set = f", salesperson_id=NULLIF(${_by_idx + 1},'')"
+        _sp_params = [body.salesperson_id or ""]
+
     row = await pool.fetchrow(
         "UPDATE staging.ganit_invoices SET "
         " contact_id=NULLIF($1,'')::uuid, invoice_date=$2::date, due_date=$3::date,"
         " place_of_supply=$4, is_igst=$5, is_export=$6, currency=$7,"
         " line_items=$8, subtotal=$9, cgst=$10, sgst=$11, igst=$12,"
         " discount=$13, total=$14, balance_due=$14, notes=$15, terms=$16,"
-        " updated_at=NOW()" + _client_set + _by_set + " "
+        " updated_at=NOW()" + _client_set + _by_set + _sp_set + " "
         "WHERE id=$17::uuid AND org_id=$18::uuid "
         "RETURNING id, invoice_number, total, doc_status",
         body.contact_id, inv_date, due, body.place_of_supply, body.is_igst,
@@ -781,7 +805,7 @@ async def update_invoice(
         computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
         computed["discount"], computed["total"],
         body.notes, body.terms, str(invoice_id), org_id,
-        *_client_params, user["user_id"],
+        *_client_params, user["user_id"], *_sp_params,
     )
     return {"status": "updated", **dict(row)}
 
@@ -801,9 +825,15 @@ async def get_invoice(
         "SELECT i.*, c.name as contact_name, c.email as contact_email, "
         "c.phone as contact_phone, "
         "c.company as contact_company, c.gstin as contact_gstin, "
-        "c.billing_address as contact_billing_address "
+        "c.billing_address as contact_billing_address, "
+        # The salesperson's NAME, never their id, for the detail header. The
+        # id stays in i.salesperson_id for the form's picker to pre-select; the
+        # name is what a human reads (check-rendered-ids forbids the id on
+        # screen). Same COALESCE ladder crm_report uses, stopping before email.
+        "COALESCE(sp.full_name, sp.name) as salesperson_name "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "LEFT JOIN users sp ON sp.user_id = i.salesperson_id "
         "WHERE i.id=$1::uuid AND i.org_id=$2::uuid",
         str(invoice_id), org_id,
     )

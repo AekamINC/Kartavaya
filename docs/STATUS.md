@@ -33,7 +33,7 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 | Phase | What | State |
 |---|---|---|
 | 0 | Owner unblocks (31 items) | ⬜ awaiting owner |
-| 1 | Six write-paths (turns ~18 features on) | ⬜ |
+| 1 | Six write-paths (turns ~18 features on) | 🟡 1.1 salesperson_id code done; 1.2–1.6 to do |
 | 2 | Six correctness fixes (the blockers above) | ⬜ |
 | 3 | Billing executable + arm cron | ⬜ (blocks on 0.17) |
 | 4 | Eight invisible-feature screens | ⬜ |

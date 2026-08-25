@@ -15,6 +15,7 @@ import DateInput from '../../components/ui/DateInput';
 // Written here on 2026-08-20, lifted into `components/ui` on 2026-08-21 when
 // Vikray's order form needed the same control. One copy, two callers.
 import ServerPicker from '../../components/ui/ServerPicker';
+import { Picker } from '../../components/ui/Picker';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 
@@ -28,6 +29,11 @@ const BLANK = {
   // 2026-08-20 this form carried only the person, and `client_id` was never
   // written by any invoice path in the product.
   client_id: '',
+  // The LOGIN credited with the sale — a `users.user_id`. Feeds the sales
+  // leaderboard, per-person turnover and consultant commission, all of which
+  // read `ganit_invoices.salesperson_id`. Like `client_id`, it was never
+  // written by any invoice path, so those three surfaces read zero.
+  salesperson_id: '',
   contact_id: '', invoice_type: 'tax_invoice', invoice_date: '', due_date: '',
   place_of_supply: '', is_igst: false, is_export: false, currency: 'INR',
   notes: '', terms: 'Payment due within 30 days.', discount: 0,
@@ -72,6 +78,7 @@ function fromInvoice(inv) {
   return {
     ...BLANK,
     client_id: inv.client_id || '',
+    salesperson_id: inv.salesperson_id || '',
     contact_id: inv.contact_id || '',
     invoice_type: inv.invoice_type || 'tax_invoice',
     invoice_date: (inv.invoice_date || '').slice(0, 10),
@@ -132,6 +139,12 @@ export default function InvoiceForm({
   const [contacts, setContacts] = useState([]);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
+  // The org's own members, for the salesperson picker. `/v1/org/members` is the
+  // only user directory in the API and it is org_admin+ only (PipelineTab and
+  // TargetsTab say the same), so a plain member gets a 403 and an empty list —
+  // the picker then just shows the current value read back on an edit, which is
+  // enough. A bare array, not `{data:[…]}`.
+  const [members, setMembers] = useState([]);
   const [orgGstin, setOrgGstin] = useState(null);
   const [saving, setSaving] = useState(false);
   // The two inline create panels. Null when closed; `{ name, gstin }` and
@@ -163,7 +176,7 @@ export default function InvoiceForm({
     // decides inter-state versus intra-state. A failure there costs the derived
     // note and nothing else, so it stays silent.
     (async () => {
-      const [c, p, o, cl] = await Promise.allSettled([
+      const [c, p, o, cl, m] = await Promise.allSettled([
         api.get('/v1/graha/contacts'),
         api.get('/v1/ganit/products'),
         api.get('/v1/org/profile'),
@@ -171,12 +184,18 @@ export default function InvoiceForm({
         // points at, and it is the record receivables ageing, Client 360 and
         // every Niyam rule keyed on the customer actually read.
         api.get('/v1/graha/clients'),
+        // The org's members, for the salesperson picker. 403 for a plain member
+        // is expected and silent — the picker degrades to showing only whatever
+        // was already saved (read back on an edit).
+        api.get('/v1/org/members'),
       ]);
       if (c.status === 'fulfilled') setContacts(rows(c.value));
       else pushToast({ title: 'Could not load customers', message: 'You can still create the invoice — pick the customer later.', type: 'error' });
       if (p.status === 'fulfilled') setProducts(rows(p.value));
       if (o.status === 'fulfilled') setOrgGstin(o.value?.data?.gstin || null);
       if (cl.status === 'fulfilled') setClients(rows(cl.value));
+      // `/v1/org/members` answers a BARE array, not `{data:[…]}`.
+      if (m.status === 'fulfilled') setMembers(rows(m.value));
     })();
   }, [pushToast]);
 
@@ -248,6 +267,27 @@ export default function InvoiceForm({
       meta: c.client_name || c.company || c.designation || '',
     }));
   }, [contacts, form.client_id]);
+
+  /**
+   * The people who can be credited with the sale — the org's own members.
+   * NAMES only; the id lives in `form.salesperson_id` and never on screen. The
+   * fallback is "Unnamed member" (the house label), never the email or the id.
+   * If `/v1/org/members` 403'd (a plain member) `members` is empty, so on an
+   * edit we still list the saved salesperson from the row read back — otherwise
+   * the trigger would go blank for a non-admin editing an attributed invoice.
+   */
+  const memberItems = useMemo(() => {
+    const list = members.map(m => ({
+      id: String(m.user_id),
+      name: m.full_name || 'Unnamed member',
+      meta: m.role_code || '',
+    }));
+    if (form.salesperson_id && !list.some(x => x.id === String(form.salesperson_id))) {
+      list.unshift({ id: String(form.salesperson_id),
+        name: editing?.salesperson_name || 'Salesperson', meta: '' });
+    }
+    return list;
+  }, [members, form.salesperson_id, editing]);
 
   /**
    * Place of supply and the CGST/SGST-versus-IGST split, read off the two
@@ -613,6 +653,23 @@ export default function InvoiceForm({
           {gaps && customerMissing && (
             <span className="fld__err">Rule 46(e) — the document must name the recipient.</span>
           )}
+        </div>
+        {/* Who made the sale. Optional and never a blocker — but the only place
+            the salesperson gets onto the invoice, and the sales leaderboard,
+            per-person turnover and commission all read it. */}
+        <div className="fld">
+          <span className="fld__l">Salesperson</span>
+          {/* A plain Picker, not ServerPicker: the members list is small and
+              local, and Picker filters `items` itself — there is no server page
+              to fetch, so wiring a server search would only add a way to crash
+              on an undefined onSearch. */}
+          <Picker
+            mode="option" field ariaLabel="Salesperson"
+            items={memberItems}
+            value={form.salesperson_id}
+            placeholder="Unassigned"
+            onChange={(id) => setForm(f => ({ ...f, salesperson_id: id || '' }))}
+          />
         </div>
         <label className="fld">
           <span className="fld__l">Invoice date</span>

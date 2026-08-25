@@ -10,6 +10,13 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
 
 ## 2026-08-25
 
+- `phase-1.1` · `salesperson_id` wired on invoice + order, create + update, with
+  a name-only members picker (`/v1/org/members`, 403-tolerant) · `ganit.py`
+  (InvoiceCreate $26, update SET, get_invoice name join), `vikray.py` (OrderCreate
+  $19, OrderUpdate SET), `InvoiceForm.jsx`, `OrderForm.jsx` · column is `text`
+  on both tables (live), backend 1023 green (1 unrelated pre-existing fail),
+  build+check green. Acceptance (row moves off 0 via UI create) still owed —
+  no write-probe on the shared DB.
 - `design/glass` · Liquid-glass enriched: static `:root` defaults (fixes
   shadowless first paint), four-sided Apple rim on `--lg-inset`, hover-lift +
   press-squish motion tokens, dark-shadow arms, reduced-motion as token flips,

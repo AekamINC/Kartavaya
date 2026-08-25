@@ -16,6 +16,7 @@ import DateInput from '../../components/ui/DateInput';
 // shared `Picker`. See its own file for why the array cannot be handed over
 // whole.
 import ServerPicker from '../../components/ui/ServerPicker';
+import { Picker } from '../../components/ui/Picker';
 
 export default function OrderForm({ onCreated, onCancel }) {
   // F32 — the module is read from the route, never named here.
@@ -40,8 +41,15 @@ export default function OrderForm({ onCreated, onCancel }) {
   const [coDraft, setCoDraft] = useState(null);
   const [personDraft, setPersonDraft] = useState(null);
   const [creating, setCreating] = useState(false);
+  // The org's members, for the salesperson picker. `/v1/org/members` is
+  // org_admin+ only, so a plain member gets a 403 and an empty list — the field
+  // then just reads "Unassigned", which is the right default anyway.
+  const [members, setMembers] = useState([]);
   const [form, setForm] = useState({
     contact_id: '', client_id: '', deal_id: '', order_date: '', expected_delivery: '', is_igst: false,
+    // The login credited with the sale. `vikray_orders.salesperson_id` feeds the
+    // leaderboard and commission; no create path wrote it before this.
+    salesperson_id: '',
     discount: 0, shipping_address: {}, notes: '', line_items: [emptyLine()],
   });
 
@@ -51,6 +59,11 @@ export default function OrderForm({ onCreated, onCancel }) {
     api.get('/v1/graha/clients')
       .then(r => { if (!dead) setClients(rows(r)); })
       .catch(() => { missing.push('the company list'); });
+    // 403 for a plain member is expected and silent — the picker degrades to
+    // "Unassigned". A bare array, not `{data:[…]}`.
+    api.get('/v1/org/members')
+      .then(r => { if (!dead) setMembers(rows(r)); })
+      .catch(() => { /* non-admin: no directory, field stays Unassigned */ });
     api.get('/v1/graha/contacts')
       .then(r => { if (!dead) setContacts(rows(r)); })
       .catch(() => { missing.push('the contact list (CRM)'); })
@@ -111,6 +124,18 @@ export default function OrderForm({ onCreated, onCancel }) {
       meta: c.ref_no || '',
     })),
     [clients],
+  );
+
+  // Org members for the salesperson picker. NAMES only; the id lives in
+  // form.salesperson_id and never renders. "Unnamed member" is the house
+  // fallback, never the email or the id.
+  const memberItems = useMemo(
+    () => members.map(m => ({
+      id: String(m.user_id),
+      name: m.full_name || 'Unnamed member',
+      meta: m.role_code || '',
+    })),
+    [members],
   );
 
   /**
@@ -298,6 +323,19 @@ export default function OrderForm({ onCreated, onCancel }) {
             onSearch={searchContacts}
             onCreate={(q) => { setPersonDraft({ name: q || '', email: '' }); setCoDraft(null); }}
             createLabel="Create contact"
+          />
+        </div>
+        {/* Who made the sale. Optional, never a blocker; the only place the
+            salesperson lands on the order, and the leaderboard/commission read
+            it. A plain Picker (local list), not ServerPicker — see InvoiceForm. */}
+        <div className="fld">
+          <span className="fld__l">Salesperson</span>
+          <Picker
+            mode="option" field ariaLabel="Salesperson"
+            items={memberItems}
+            value={form.salesperson_id}
+            placeholder="Unassigned"
+            onChange={(id) => setForm(f => ({ ...f, salesperson_id: id || '' }))}
           />
         </div>
         <label className="fld">

@@ -83,6 +83,10 @@ class OrderCreate(BaseModel):
     discount: float = 0
     shipping_address: dict = {}
     notes: str = ""
+    #: The LOGIN credited with the sale — `users.user_id`. `vikray_orders`
+    #: carries this column but no create path wrote it, so the leaderboard and
+    #: commission read zero. Optional; blank -> NULL. The form offers org members.
+    salesperson_id: str = ""
 
 
 class OrderStatusUpdate(BaseModel):
@@ -99,6 +103,7 @@ class OrderUpdate(BaseModel):
     discount: Optional[float] = None
     shipping_address: Optional[dict] = None
     notes: Optional[str] = None
+    salesperson_id: Optional[str] = None
 
 
 class TargetCreate(BaseModel):
@@ -298,16 +303,20 @@ async def create_order(
                 "INSERT INTO staging.vikray_orders "
                 "(org_id, contact_id, client_id, deal_id, order_number, order_date, expected_delivery, "
                 "line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
-                "shipping_address, notes, created_by) "
+                "shipping_address, notes, created_by, salesperson_id) "
+                # $18 (client_id) and $19 (salesperson_id) are appended, not
+                # slotted in — the same rule the invoice INSERT documents.
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($18,'')::uuid, NULLIF($3,'')::uuid, $4, "
                 "COALESCE(NULLIF($5,'')::date, CURRENT_DATE), NULLIF($6,'')::date, "
-                "$7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17) "
+                "$7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, NULLIF($19,'')) "
                 "RETURNING *",
                 org_id, body.contact_id, body.deal_id, order_number,
                 body.order_date, body.expected_delivery,
                 json.dumps(items), subtotal, cgst, sgst, igst, body.discount, total, body.is_igst,
                 json.dumps(body.shipping_address), body.notes, user["user_id"],
                 client_id,
+                # $19. Never None (untyped NULL through PgBouncer = 500).
+                body.salesperson_id or "",
             )
             # The owner's "tick", set where it is EARNED rather than by a sync job: this
             # company has now placed an order. Never cleared — a firm that ordered once
@@ -545,6 +554,11 @@ async def update_order(
         elif k == "shipping_address":
             sets.append(f"{k}=${idx}::jsonb")
             params.append(json.dumps(v) if v else "{}")
+        elif k == "salesperson_id":
+            # Text column; "" -> NULL so "clear the salesperson" and "never set"
+            # store the same absence, and the leaderboard's join matches neither.
+            sets.append(f"{k}=NULLIF(${idx},'')")
+            params.append(v or "")
         else:
             sets.append(f"{k}=${idx}")
             params.append(v)
