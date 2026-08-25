@@ -79,16 +79,6 @@
   box-shadow: 0 2px 2px rgba(0,0,0,.06),
               0 8px 20px -6px color-mix(in srgb, var(--primary) 55%, transparent);
 }
-/* A static top sheen, distinct from `.btn::after`'s hover sweep above — that
-   pseudo-element travels across the face on hover; this one is a fixed glass
-   highlight always present on the filled variant only, per §"THE SHEEN" but a
-   second layer since ::after is taken. `::before` sits behind ::after in
-   document/paint order at the same z-index, so the sweep still travels over it. */
-.btn--fill::before {
-  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 58%);
-}
 .btn--tonal { background: var(--primary-container); color: var(--on-primary-container); }
 .btn--tonal:hover { background: color-mix(in srgb, var(--primary-container) 78%, var(--primary)); }
 .btn--out   { border: 1px solid var(--outline); color: var(--on-surface-2); }

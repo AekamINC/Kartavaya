@@ -350,4 +350,16 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   not yet actioned, owner has not chosen a direction (leave as-is / simplify
   / defer) at time of writing.
 
+- `design/glass` fix 11 · Owner: "all this buttons are way shiny this is not
+  how apple ui works." `.btn--fill` carried a static `::before` overlay — a
+  fixed `linear-gradient(180deg, rgba(255,255,255,.28), transparent 58%)`
+  glass highlight always present on every filled button, independent of the
+  existing `::after` hover sweep ("THE SHEEN," a travelling light band that
+  only appears on hover — transient, not what a static screenshot would
+  show, so not the thing being flagged). The permanent top-highlight is the
+  skeuomorphic "glossy button" look Apple's actual UI doesn't use; removed
+  the `::before` rule and its block comment entirely, leaving `.btn--fill`
+  with only its box-shadow depth · `components.css`. Build clean. Not yet
+  verified live.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
