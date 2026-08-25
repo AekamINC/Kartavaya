@@ -1,0 +1,288 @@
+<title>Liquid Glass — Rescope</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --bg: #faf9f6;
+  --surface: #ffffff;
+  --surface-alt: #f3f2ee;
+  --border: #e2e0d8;
+  --text: #1a1917;
+  --text-2: #5c5a52;
+  --text-3: #8a877d;
+  --accent: #2d6a4f;
+  --accent-light: #e8f0eb;
+  --red: #b5362a;
+  --red-light: #fceeed;
+  --amber: #9a6a10;
+  --amber-light: #fbf3e2;
+  --blue: #1d5fa6;
+  --blue-light: #eef4fb;
+  --code-bg: #f0efe9;
+  --code-fg: #2a2822;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412;
+    --surface: #1e1d1a;
+    --surface-alt: #262520;
+    --border: #3a3832;
+    --text: #e8e6e0;
+    --text-2: #a9a69c;
+    --text-3: #706d64;
+    --accent: #5aab7e;
+    --accent-light: #16261d;
+    --red: #e08478;
+    --red-light: #2c1917;
+    --amber: #d3a44f;
+    --amber-light: #2a2213;
+    --blue: #7bacde;
+    --blue-light: #16222f;
+    --code-bg: #12110f;
+    --code-fg: #d6d3c9;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+  --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+  --accent: #5aab7e; --accent-light: #16261d;
+  --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+  --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 400 16px/1.65 'DM Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 940px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+
+.kicker { font-size: .8rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: 0 0 .6rem; }
+h1 { font-size: 2.4rem; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .8rem; }
+.lede { font-size: 1.15rem; color: var(--text-2); margin: 0 0 .5rem; max-width: 62ch; }
+.meta { font-size: .85rem; color: var(--text-3); margin: 1rem 0 0; font-family: 'JetBrains Mono', monospace; }
+
+h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; margin: 3.2rem 0 .4rem; padding-top: 1.6rem; border-top: 1px solid var(--border); }
+h2 .n { color: var(--text-3); font-variant-numeric: tabular-nums; margin-right: .5rem; }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 2rem 0 .5rem; }
+p { margin: .7rem 0; }
+.sub { color: var(--text-2); margin: .2rem 0 1.2rem; }
+
+strong { font-weight: 600; }
+code { font-family: 'JetBrains Mono', monospace; font-size: .85em; background: var(--code-bg); color: var(--code-fg); padding: .1em .38em; border-radius: 4px; }
+pre { background: var(--code-bg); color: var(--code-fg); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.2rem; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: .8rem; line-height: 1.6; }
+pre code { background: none; padding: 0; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.3rem 1.5rem; margin: 1.2rem 0; }
+.card--accent { border-left: 3px solid var(--accent); }
+.card--red { border-left: 3px solid var(--red); background: var(--red-light); }
+.card--amber { border-left: 3px solid var(--amber); background: var(--amber-light); }
+
+table { width: 100%; border-collapse: collapse; margin: 1.2rem 0; font-size: .92rem; }
+th, td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
+tbody tr:last-child td { border-bottom: none; }
+.tbl-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin: 1.2rem 0; }
+.tbl-scroll table { margin: 0; }
+.tbl-scroll th, .tbl-scroll td { padding: .6rem .9rem; }
+.tbl-scroll th:first-child, .tbl-scroll td:first-child { padding-left: 1.1rem; }
+
+.tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em; border-radius: 5px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+.t-del  { background: var(--red-light); color: var(--red); }
+.t-fix  { background: var(--amber-light); color: var(--amber); }
+.t-add  { background: var(--accent-light); color: var(--accent); }
+.t-opt  { background: var(--blue-light); color: var(--blue); }
+.t-none { background: var(--surface-alt); color: var(--text-3); }
+
+ul, ol { margin: .7rem 0; padding-left: 1.3rem; }
+li { margin: .35rem 0; }
+.tight li { margin: .15rem 0; }
+
+.pill { display: inline-flex; gap: .4rem; align-items: baseline; }
+.big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1; }
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; margin: 1.4rem 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
+.stat .l { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+.stat .v { font-size: 1.6rem; font-weight: 700; margin-top: .25rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.stat .v.red { color: var(--red); }
+.stat .v.amber { color: var(--amber); }
+.stat .s { font-size: .8rem; color: var(--text-2); margin-top: .15rem; }
+
+.pnum { display: inline-block; min-width: 1.9rem; font-weight: 700; color: var(--red); font-family: 'JetBrains Mono', monospace; }
+.footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: .85rem; color: var(--text-3); }
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Proposal 89 · Design system</p>
+<h1>Liquid Glass — the rescope</h1>
+<p class="lede">Where the glass layer applies today, where Apple's own rule says it belongs, and the free techniques worth borrowing. The verdict is mostly subtraction: the architecture is right, it is aimed at the wrong 22 surfaces, and its first paint is worse than the effect turned off.</p>
+<p class="meta">2026-08-25 · verified against staging @ 7a2f7397 · every line number read live · one file, ~1 day of work</p>
+
+<div class="card card--accent">
+<strong>The one-paragraph version.</strong> <code>liquid-glass.css</code> is 194 lines, 2.2&nbsp;kB gzipped, zero JavaScript, and token-driven — the engineering is sound. But it names <strong>39 targets and 9 of them are not surfaces</strong> (they have no background, so the layer draws a shadow around a transparent box); <strong>6 of its 8 <code>backdrop-filter</code> rules render nothing or make the surface <em>less</em> glassy</strong>; and because the preset tokens live only under <code>[data-liquid-glass="…"]</code> — an attribute nothing sets before React mounts — <strong>the entire first paint renders shadowless</strong>. Apple's guidance is that the material belongs to the floating layer, not content cards; this layer puts it on 22 content cards. Fixing it is a day inside one file, and items&nbsp;1–9 touch no component at all.</p>
+</div>
+
+<h2><span class="n">1</span>Where it is now</h2>
+
+<div class="statgrid">
+  <div class="stat"><div class="l">Layer size</div><div class="v">2.2<span style="font-size:1rem">kB</span></div><div class="s">194 lines, zero JS</div></div>
+  <div class="stat"><div class="l">Targets named</div><div class="v">39</div><div class="s">26 cards · 13 shell/overlay</div></div>
+  <div class="stat"><div class="l">Not actually surfaces</div><div class="v red">9</div><div class="s">no background declared</div></div>
+  <div class="stat"><div class="l">backdrop-filters</div><div class="v red">6 / 8</div><div class="s">no-op or downgrade</div></div>
+  <div class="stat"><div class="l">Preset tokens at first paint</div><div class="v red">0 / 7</div><div class="s">shadowless until mount</div></div>
+  <div class="stat"><div class="l">Reduced-motion misses</div><div class="v amber">6</div><div class="s">still move when asked not to</div></div>
+</div>
+
+<p>Dead selectors: <strong>0</strong> — all 39 resolve to live JSX, and the three reference names that were dead (<code>.gr__stat</code>, <code>.cmdk__panel</code>, <code>.k-drawer__panel</code>) are already removed and documented. The problem is not stale selectors. It is <em>what</em> is targeted.</p>
+
+<h3>The 9 non-surfaces</h3>
+<p class="sub">Each is in the card list but declares no background, border or radius anywhere — so the effect paints a full drop-shadow and inset shine around empty space.</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th>Target</th><th>Its only paint</th><th>Where</th></tr></thead>
+<tbody>
+<tr><td><code>.ix-panel</code></td><td><code>animation:</code> and nothing else — the tab-panel wrapper on <strong>13 module pages</strong></td><td>animations.css:288</td></tr>
+<tr><td><code>.k-quickacts</code></td><td><code>display:flex; gap</code></td><td>editorial.css:4739</td></tr>
+<tr><td><code>.dr__ap-panel</code></td><td>flex layout only — glass-inside-glass, 4× per drawer</td><td>drawer.css:550</td></tr>
+<tr><td><code>.vgw</code></td><td>flex + <code>overflow:hidden</code> — which <em>clips</em> the lift it wraps</td><td>analytics.css:279</td></tr>
+<tr><td><code>.vgw-kpi</code></td><td><code>padding: 2px 0 4px</code></td><td>analytics.css:364</td></tr>
+<tr><td><code>.sk-card</code></td><td>flex layout only</td><td>hub.css:708</td></tr>
+<tr><td><code>.vk-card</code></td><td><code>min-width: 0</code></td><td>module.css:902</td></tr>
+<tr><td><code>.niyam-panel</code></td><td><strong>no rule exists</strong> — only a layout pairing</td><td>—</td></tr>
+<tr><td><code>.sr</code></td><td>a settings row — paints a shadow onto the row below it in a flush stack</td><td>settings.css:14</td></tr>
+</tbody>
+</table></div>
+
+<h3>The backdrop-filter problem</h3>
+<p>Sixteen <code>backdrop-filter</code> declarations across 8 rules. <strong>Six can never render</strong> because the element behind them is opaque hex in both themes — <code>.tbl&nbsp;th</code> (<code>var(--s-low)</code>), <code>.tst</code> (<code>var(--s-lowest)</code>), <code>.k-dock</code> (<code>var(--surface)</code>). A <code>backdrop-filter</code> forms a compositing layer <em>per element</em> and re-samples on every scroll frame, so <code>.tbl&nbsp;th</code> on the invoices register is ≈14 blurred sticky layers producing <strong>zero pixels of output</strong>. Five more are <em>downgrades</em>: at the default mix the layer's flat blur is <em>below</em> what <code>.modal__panel</code>, <code>.pop</code>, <code>.pk__pop</code>, <code>.menu--float</code> and <code>.mnav</code> already set for themselves — so turning glass <em>on</em> makes the modal <em>less</em> glassy. Only <code>.top</code> and <code>.k-cmdk</code> get a real increase.</p>
+
+<h2><span class="n">2</span>What is wrong — ranked</h2>
+<p class="sub">Performance first, for the 1366×768 integrated-graphics laptop this product is used on.</p>
+
+<div class="card card--red">
+<p style="margin-top:0"><span class="pnum">P1</span><strong>Six backdrop-filters that render nothing, one compositing layer per table column.</strong> <code>.tbl th</code> is sticky + opaque; ≈14 blurred layers re-sample while 25 rows scroll under them, for zero output. <code>.tst</code> and <code>.k-dock</code> are the same defect at one element each. The repo already states the rule being broken. <em>Fix: delete 6 declarations.</em></p>
+<p><span class="pnum">P2</span><strong>The invoice table scales on hover.</strong> <code>.tv-card</code> is not a tile — it wraps the toolbar and the whole scrolling table. A fractional <code>scale()</code> over ~400 cells plus every sticky header re-rasterises tabular text on ordinary mouse travel, and widens exactly the overflow <code>viewport-fit.css</code> exists to fight. <em>Fix: remove one identifier.</em></p>
+<p><span class="pnum">P3</span><strong>Every glass rule fires at first paint with all 7 tokens undefined.</strong> The tokens live only under <code>[data-liquid-glass="subtle|medium|full"]</code>; <code>index.html</code>'s bootstrap sets <code>data-theme</code>, <code>data-conv-*</code> and <code>data-platform</code> but not this one, and <code>applyPrefs</code> runs in a mount effect <em>after</em> paint. So the first frame renders <code>box-shadow:none</code> on every card, modal, drawer, toast and sidebar — <strong>strictly worse than glass off.</strong> <em>Fix: one bare <code>:root{}</code> block.</em></p>
+<p style="margin-bottom:0"><span class="pnum">P4</span><strong>No dark arm on either shadow token.</strong> The dark blocks redefine only the highlights; <code>--lg-shadow</code> stays <code>rgba(0,0,0,.03–.05)</code> in dark, where the house tokens move to <code>.5–.9</code> precisely because black-on-near-black is invisible. Cards lose their depth in dark mode. <strong>This is the "legible in both themes" failure.</strong></p>
+</div>
+
+<div class="card card--amber">
+<p style="margin-top:0"><span class="pnum" style="color:var(--amber)">P5</span><strong>Reduced-transparency is defeated on 4 overlays.</strong> The codebase's opt-out (<code>components.css:1374</code>) is out-specificity'd by the glass layer, so an OS request to reduce transparency loses. And <code>--lg-shine:none</code> never applies in dark.</p>
+<p><span class="pnum" style="color:var(--amber)">P6</span><strong>Glass destroys the <code>.hcl-card</code> focus ring.</strong> The base rule sets <code>box-shadow</code> unconditionally at higher specificity, so <code>:focus-visible</code>'s halo never paints — the exact regression <code>workflow.css</code> already recorded fixing once.</p>
+<p><span class="pnum" style="color:var(--amber)">P7</span><strong>Reduced-motion misses 6 movers</strong> — <code>.k-hero-kpi__card</code> (three on the first screen), <code>.vk-card</code>, <code>.vk-pl__st</code>, <code>.vgw-kpi</code>, <code>.gr__card</code>, and <code>.sr</code> (which snaps 1px instead of easing).</p>
+<p><span class="pnum" style="color:var(--amber)">P8</span><strong>Glass on 9 non-surfaces</strong> (table above) — shadows and shine around transparent boxes, one of them the tab wrapper on 13 pages.</p>
+<p style="margin-bottom:0"><span class="pnum" style="color:var(--amber)">P9–P10</span><strong>Silent replacement of designed states</strong> — <code>.niyam-card</code>'s family-tinted glow and <code>.mkt-card</code>'s lift are overridden with no note, mouse and keyboard now disagree on the same card, and <code>.side</code> loses its hand-built specular edge.</p>
+</div>
+
+<h2><span class="n">3</span>Where it should be</h2>
+
+<div class="card card--accent">
+<p style="margin:0"><strong>Apple's rule, and the layer breaks it.</strong> HIG Materials: <em>"Don't use Liquid Glass in the content layer… use standard materials for elements in the content layer."</em> The material belongs to the floating navigation and control layer. <strong>22 of the 26 classes in the base list are content layer.</strong> So the answer to "757 surfaces are uncovered" is: <em>that is correct.</em> Content cards already carry <code>--shadow-1</code>; the layer's job on them is to <em>scale</em> that, not replace it. The repo has already written this argument down, for the Kanban card the scan called the biggest gap — <code>.bc</code> is deliberately flat. Do not glass it.</p>
+</div>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>Role</th><th>Members (examples)</th><th>Treatment</th></tr></thead>
+<tbody>
+<tr><td><strong>Shell</strong></td><td><code>.top</code>, <code>.mnav</code> (translucent)</td><td><span class="tag t-add">Full material</span> depth + rim + blur</td></tr>
+<tr><td></td><td><code>.side</code>, <code>.cl-head</code>, <code>.cl-nav</code></td><td><span class="tag t-add">Depth only</span> composed with own specular edge</td></tr>
+<tr><td><strong>Overlay</strong></td><td><code>.modal__panel</code> <code>.sheet</code> <code>.bsh</code> <code>.pop</code> <code>.pk__pop</code> <code>.menu--float</code> <code>.k-cmdk</code> <code>.k-dock</code> <code>.tst</code> <code>.dr</code> …</td><td><span class="tag t-add">Full material</span> blur only where translucent; shadow composed, not replaced</td></tr>
+<tr><td><strong>Card — content</strong></td><td><code>.k-card</code> <code>.k-stat</code> <code>.gn-panel</code> <code>.mn-card</code> <code>.gr__card</code> …</td><td><span class="tag t-add">Depth only</span> preset-scaled rim, no blur (all opaque)</td></tr>
+<tr><td><strong>Card — interactive</strong></td><td><code>.hcl-card</code> (a real button) <code>.mkt-card</code> <code>.k-tmpl-card</code> <code>.niyam-card</code></td><td><span class="tag t-add">Hover + press</span> via tokens; keep <code>:focus-within</code> parity</td></tr>
+<tr><td><strong>Card — inset</strong></td><td><code>.k-hero-kpi__card</code> <code>.vgw-kpi</code> <code>.dr__ap-panel</code> <code>.sk-card</code> <code>.ix-panel</code></td><td><span class="tag t-none">None</span> "one card in two halves, not two floating cards"</td></tr>
+<tr><td><strong>Row / Table body</strong></td><td><code>.sr</code> <code>.bc</code> <code>.tbl__wrap</code></td><td><span class="tag t-none">None</span> delete both <code>.sr</code> rules</td></tr>
+<tr><td><strong>Table shell</strong></td><td><code>.tv-card</code> · <code>.tbl th</code></td><td><span class="tag t-add">Depth only</span> · <span class="tag t-fix">inset hairline, delete blur</span></td></tr>
+<tr><td><strong>Input / chip / meter</strong></td><td>the other ~740 painted boxes</td><td><span class="tag t-none">None</span> explicitly</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Three real inconsistencies worth closing</strong> — each one identifier, each visible in one session: <code>.sheet</code>/<code>.bsh</code> (the mobile overlay) skipped while four siblings are glassed; <code>.niyam-editor</code> flat among glassed siblings; <code>.cn__card</code> vs <code>.sa__card</code> in the same file, one glassed. Everything else the scan flagged as "missing" is content layer and stays flat.</p>
+
+<h2><span class="n">4</span>The lightweight recipe</h2>
+<p class="sub">Replaces the token blocks and the reduced-motion list. The accessibility escape stops being a duplicated selector list and becomes three token flips — so the two lists <em>cannot drift again</em>. Full drop-in is in <code>scratchpad/glass-plan.md</code>; the core is:</p>
+
+<pre><code>/* 0 · Defaults on bare :root — the first paint is the finished paint. */
+:root {
+  --lg-accent:   var(--k-mid);
+  --lg-shadow:   0 1px 4px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.035);
+  --lg-shadow-h: 0 4px 16px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06)),
+                 0 14px 44px rgba(0,0,0,.05);
+
+  /* Four-sided rim — light wraps a curved edge at falling intensity,
+     not a single top bevel. One token, ~30 consumers. */
+  --lg-rim:  inset 0  1px 0 rgba(255,255,255,.50),
+             inset 0 -1px 0 rgba(255,255,255,.18),
+             inset  1px 0 0 rgba(255,255,255,.14),
+             inset -1px 0 0 rgba(255,255,255,.14);
+
+  --lg-blur-x: 1.30;   /* a MULTIPLIER of each surface's own blur, never a flat addend */
+  --lg-lift: -1px;  --lg-scale-h: 1.005;  --lg-scale-p: .997;  --lg-dur: .3s;
+  --lg-r-inner: max(2px, calc(var(--r-lg) - var(--pad-card, 16px)));  /* concentric radius */
+}
+
+/* 1 · Dark — shadows too, not just highlights (house tokens go .07 → .5). */
+:root[data-theme="dark"] {
+  --lg-shadow:   0 1px 4px rgba(0,0,0,.34), 0 6px 20px rgba(0,0,0,.30);
+  --lg-shadow-h: 0 4px 16px color-mix(in srgb, var(--lg-accent) 10%, rgba(0,0,0,.42)),
+                 0 14px 44px rgba(0,0,0,.38);
+  --lg-rim: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -1px 0 rgba(255,255,255,.05),
+            inset 1px 0 0 rgba(255,255,255,.04), inset -1px 0 0 rgba(255,255,255,.04);
+}
+
+/* 6 · Accessibility — both are token flips, no parallel selector lists. */
+@media (prefers-reduced-motion: reduce)       { :root { --lg-lift:0px; --lg-scale-h:1; --lg-scale-p:1; --lg-dur:.001s; } }
+@media (prefers-reduced-transparency: reduce) { :root { --lg-blur-x:0; --lg-shine:none; } /* + a property-cancel rule */ }
+
+/* 5 · Squircle — progressive, Chrome/Edge 139+; everyone else keeps radius. */
+@supports (corner-shape: squircle) {
+  :root[data-liquid-glass="full"] :is(.k-card,.modal__panel,.sheet,.k-cmdk,.k-dock,.pop) { corner-shape: squircle; }
+}</code></pre>
+
+<h2><span class="n">5</span>What to take from outside</h2>
+<div class="card card--accent"><p style="margin:0"><strong>Take nothing as a dependency.</strong> Every free React glass library is Chromium-only for real refraction, or a second component system fighting <code>k-*</code>, or unmaintained. You already ship one earning nothing. The value is in three techniques and one deletion.</p></div>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>Source</th><th>Licence</th><th>Verdict</th><th>What / why</th></tr></thead>
+<tbody>
+<tr><td>Four-sided rim (webtricks, kevinbism)</td><td>MIT</td><td><span class="tag t-add">Borrow technique</span></td><td>A perimeter rim from 4 inset shadows, re-derived against cream in both themes. The one Apple ingredient that renders identically in all engines.</td></tr>
+<tr><td><code>corner-shape: squircle</code></td><td>Web platform</td><td><span class="tag t-add">Adopt</span></td><td>Progressive enhancement over existing radius tokens. Chrome/Edge 139; Safari/Firefox unchanged.</td></tr>
+<tr><td>Apple HIG Materials + WWDC25</td><td>Read only</td><td><span class="tag t-add">Adopt the rule</span></td><td>Material on the floating layer, not content. The single most valuable finding — and it is a deletion.</td></tr>
+<tr><td>Open Props <code>linear()</code> easings</td><td>MIT</td><td><span class="tag t-opt">Borrow values</span></td><td>Apple-feeling spring overshoot as one CSS value, no JS.</td></tr>
+<tr><td><code>@samasante/liquid-glass</code> <em>(installed)</em></td><td>MIT</td><td><span class="tag t-del">Remove or gate</span></td><td><strong>25.7 kB gz earning nothing</strong> — used only by <code>/glass-demo</code>, over opaque cream where refraction is a no-op. Delete with the demo, or gate on reduced-transparency.</td></tr>
+<tr><td><code>shuding/liquid-glass</code> <em>(vendored lens)</em></td><td>MIT</td><td><span class="tag t-fix">Keep confined</span></td><td>Fine as the drag Easter egg. Never a surface treatment — Chromium-only, PNG-encodes per pointer frame. Add the missing MIT notice.</td></tr>
+<tr><td>SF Pro / SF Compact / New York</td><td>Apple EULA</td><td><span class="tag t-del">Cannot ship</span></td><td>License permits mock-ups of Apple-OS software only. Imitate the ramp in Newsreader / Inter / Tiro; never ship the files.</td></tr>
+<tr><td>React Aria / Headless UI v2</td><td>Apache</td><td><span class="tag t-del">Rejected</span></td><td>Proposal 64 closed this; Headless UI v2 pulls <code>@react-aria/*</code> back in under a different name.</td></tr>
+</tbody>
+</table></div>
+<p class="sub"><strong>Also refused, by name:</strong> <code>rdev/liquid-glass-react</code> (176 kB, unmaintained, Chromium-only), <code>@specy</code> (6.8 MB Three.js for a card shadow), <code>liquidify-react</code> (drags in 61 Ark UI packages), and two implementations with <strong>no licence file at all</strong> (<code>ybouane/liquidglass</code>, <code>lucasromerodb/…</code>) — public is not permission.</p>
+
+<h2><span class="n">6</span>The work</h2>
+<p class="sub">Not a rewrite — the architecture is right. Items 1–9 are all inside <code>liquid-glass.css</code> and touch <strong>zero component files</strong>. Gate every item on <code>cd frontend &amp;&amp; npm run build</code> (<code>npm run check</code> passes on unparseable CSS).</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>#</th><th></th><th>Item</th><th>Kills</th><th>Effort</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span class="tag t-add">add</span></td><td>Static <code>:root</code> defaults — first paint gets depth. Highest value per line in the plan.</td><td>P3</td><td>15 min</td></tr>
+<tr><td>2</td><td><span class="tag t-del">del</span></td><td>Delete the 6 dead <code>backdrop-filter</code> declarations (structurally, by hand).</td><td>P1</td><td>20 min</td></tr>
+<tr><td>3</td><td><span class="tag t-del">del</span></td><td>Delete the 8 downgrading blurs; convert <code>.top</code>/<code>.k-cmdk</code> to <code>--lg-blur-x</code>.</td><td>½ P5</td><td>30 min</td></tr>
+<tr><td>4</td><td><span class="tag t-del">del</span></td><td>Remove <code>.tv-card</code> from the hover list — no more table re-raster.</td><td>P2</td><td>5 min</td></tr>
+<tr><td>5</td><td><span class="tag t-del">del</span></td><td>Remove the 9 non-surfaces; delete both <code>.sr</code> rules; point Niyam at <code>.niyam-pane</code>.</td><td>P8</td><td>45 min</td></tr>
+<tr><td>6</td><td><span class="tag t-fix">fix</span></td><td>Dark arms on both shadow tokens; drop the guard so they stop out-ranking the a11y block.</td><td>P4, ½ P5</td><td>45 min +eye</td></tr>
+<tr><td>7</td><td><span class="tag t-fix">fix</span></td><td>Reduced-motion = three token flips. Deletes 16 lines and makes drift impossible.</td><td>P7</td><td>20 min</td></tr>
+<tr><td>8</td><td><span class="tag t-fix">fix</span></td><td>Reduced-transparency: add the property-cancelling rule at matching specificity.</td><td>rest of P5</td><td>20 min</td></tr>
+<tr><td>9</td><td><span class="tag t-fix">fix</span></td><td>Restore the <code>.hcl-card</code> focus ring above the glass shadow.</td><td>P6</td><td>15 min</td></tr>
+<tr><td>10</td><td><span class="tag t-add">add</span></td><td><strong>Four-sided rim</strong> replacing the top-only inset. The highest-value visual upgrade.</td><td>—</td><td>1.5 h +eye</td></tr>
+<tr><td>11</td><td><span class="tag t-add">add</span></td><td>Close the 3 inconsistencies (<code>.sheet</code>/<code>.bsh</code>, <code>.cn__card</code>, <code>.niyam-pane</code> + focus parity).</td><td>—</td><td>1 h</td></tr>
+<tr><td>12</td><td><span class="tag t-opt">opt</span></td><td>Press illumination (Apple's motion is a press, not a hover) — opens 1 component.</td><td>—</td><td>2 h</td></tr>
+<tr><td>13</td><td><span class="tag t-opt">opt</span></td><td>Gate or remove <code>@samasante</code> (+ MIT notice on the lens) — reclaim 25.7 kB.</td><td>—</td><td>45 min</td></tr>
+<tr><td>14</td><td><span class="tag t-opt">opt</span></td><td><code>corner-shape: squircle</code> behind <code>@supports</code>, <code>full</code> preset only.</td><td>—</td><td>30 min</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Sequence:</strong> 1 → 2 → 4 → 5 (all subtractive, each independently shippable, each a measurable speed-up on the target laptop) → 3, 6, 7, 8, 9 (correctness) → 10, 11 (the visual upgrade) → 12–14 (optional). Re-check dark by eye after 6 and 10 — the dark overrides in this file are two declarations wide, so anything new defaults to its light value in dark unless explicitly paired.</p>
+
+<div class="footer">
+Proposal 89 · liquid-glass rescope · 62 findings, 262 inventory rows, verified live · companion to proposal 88 (the implementation record) · full drop-in CSS and the complete finding list are in the session scratchpad <code>glass-plan.md</code>.
+</div>
+
+</div>
