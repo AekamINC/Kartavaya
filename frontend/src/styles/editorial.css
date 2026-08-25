@@ -2489,6 +2489,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-cat-chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cat-c); flex-shrink: 0; }
 
+.k-priority-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--pri-c) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--pri-c) 28%, var(--rule));
+  font-size: 12px; font-weight: 500;
+  color: color-mix(in srgb, var(--pri-c) 70%, var(--ink));
+  white-space: nowrap;
+}
+.k-priority-pill__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pri-c); flex-shrink: 0; }
+
 /* Last updated cell */
 .k-trow__meta { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .k-trow__empty { font-size: 13px; color: var(--ink-3); }

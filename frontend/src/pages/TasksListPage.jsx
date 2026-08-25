@@ -53,6 +53,7 @@ const STATUS_ORDER   = ['todo','in_progress','in_review','done','requested'];
  */
 const TASK_COLUMNS = [
   { id: 'task',      label: 'Task',         width: 340, fixed: true, sortable: true },
+  { id: 'priority',  label: 'Priority',     width: 120, sortable: true },
   { id: 'project',   label: 'Project',      width: 180, sortable: true },
   { id: 'assignees', label: 'Assignees',    width: 200 },
   { id: 'category',  label: 'Category',     width: 140, sortable: true },
@@ -66,6 +67,7 @@ const TASK_COLUMNS = [
 function taskSortVal(t, col, teams) {
   switch (col) {
     case 'task':      return (t.title || '').toLowerCase();
+    case 'priority':  { const rank = { urgent: 0, high: 1, medium: 2, low: 3 }; return rank[t.priority] ?? 4; }
     case 'project':   { const tm = teams.find(x => x.team_id === t.team_id); return tm ? tm.name.toLowerCase() : 'zzz'; }
     case 'category':  return (t.category_id || 'zzz').toLowerCase();
     case 'due':       return t.due_at || '9999';
@@ -441,14 +443,6 @@ export default function TasksListPage() {
               popover's caller computed by hand. */}
           <ColumnsButton cols={cols} />
 
-          <label className="k-fld">
-            <span className="k-fld__lbl">Group by</span>
-            <select value={group} onChange={e => setGroup(e.target.value)} className="k-fld__sel">
-              <option value="priority">Priority</option>
-              <option value="project">Project</option>
-              <option value="status">Status</option>
-            </select>
-          </label>
           {/* Was `.k-topbar__search`, borrowed from the topbar. 01-navigation
               made that a <button> trigger for the palette, and this is a real
               text field, so it now has its own name. */}
@@ -651,6 +645,14 @@ export default function TasksListPage() {
                                   {t.comment_count}
                                 </span>
                               )}
+                            </div>
+                          ),
+                      priority: (
+                            <div key="priority" className="k-trow__cell k-c-priority">
+                              <span className="k-priority-pill" style={{ '--pri-c': PRIORITY_COLORS[t.priority] || 'var(--on-surface-3)' }}>
+                                <span className="k-priority-pill__dot" />
+                                {PRIORITY_LABELS[t.priority] || t.priority || '—'}
+                              </span>
                             </div>
                           ),
                       project: (
