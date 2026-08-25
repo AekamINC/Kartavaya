@@ -332,4 +332,22 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   `TabBilling.jsx`, `org.css`, `PlanComparison.jsx` (deleted). Build clean,
   `npm run check` clean, no new unused-class or contrast regressions.
 
+- `design/glass` investigation · Chased a false "Usage & Spend section is
+  missing from Billing" lead after two automated
+  `innerText.includes('Usage & spend')` checks both came back `false` post
+  deploy of the fix above. It was never missing — `page.innerText` reflects
+  rendered (CSS-transformed) text, and `.st__gt` applies
+  `text-transform: uppercase`, so the actual DOM text is "USAGE & SPEND", not
+  "Usage & spend" as written in the JSX; the check was case-sensitive and
+  could never match. A full-page screenshot at the same URL showed the
+  section fully rendered and populated (Balance: allowance/purchased/total
+  held/spent-this-period, "Where the credits went" beneath it). No code
+  change — the lesson is to grep rendered text case-insensitively (or match
+  a stable data attribute) when a CSS transform is in play, not to trust one
+  case-sensitive `includes()` as proof of absence. Section content/layout
+  density (several stacked stat-tile cards) is still unassessed against the
+  owner's original "billing/analytics pages feel disorganized" complaint —
+  not yet actioned, owner has not chosen a direction (leave as-is / simplify
+  / defer) at time of writing.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
