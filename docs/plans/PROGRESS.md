@@ -126,6 +126,8 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   `editorial.css`, `hub.css`, `inbox.css`, `liquid-glass.css`, `marketplace.css`,
   `module.css`, `niyam.css`, `prachar.css`, `public.css`, `sanvaad.css`. Build
   clean, `npm run check` clean (no new contrast/write-gate/rendered-id
-  failures). Not yet re-verified live post-deploy.
+  failures). Verified live post-deploy: `.side`'s computed box-shadow dropped
+  to editorial.css's bare `inset -1px 0 0, inset 0 1px 0` (the outer bleed is
+  gone), screenshotted at 2x DPI — clean edge, no band; `.sr` still `none`.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
