@@ -206,7 +206,15 @@ export const NAV_FULL = [
       // people's work: it can move a task somebody owns and send a message
       // somebody receives, so authoring one is an org-admin act even while the
       // engine is unarmed and nothing it writes can leave the building.
-      { key: 'automations', to: '/settings/automations',   icon: 'automations',   en: 'Automations',    hi: 'नियम',    gu: 'નિયમ', orgAdminOnly: true, module: 'niyam' },
+      // No `module` key, deliberately — there is no backend grant system for
+      // a "niyam" code, so `canSeeNavItem`'s module check would silently
+      // hide this row for any admin whose `moduleGrants` happens to be a
+      // real (non-null) array, since that array can never contain a code
+      // nobody can ever be granted. `orgAdminOnly` alone is the real gate,
+      // same as before this row got a module colour. Measured live: this
+      // exact bug hid the row entirely for an org_admin's real Aekam Inc
+      // account the moment `module: 'niyam'` was added.
+      { key: 'automations', to: '/settings/automations',   icon: 'automations',   en: 'Automations',    hi: 'नियम',    gu: 'નિયમ', orgAdminOnly: true },
       { key: 'categories', to: '/settings/categories',    icon: 'categories',    en: 'Categories',     hi: 'वर्ग',    gu: 'વર્ગ' },
       // The console is a different SURFACE — it replaces the sidebar and owns
       // the window — but the door to it belongs on the sidebar, which is where

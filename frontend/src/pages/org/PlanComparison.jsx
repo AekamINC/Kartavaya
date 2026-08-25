@@ -1,5 +1,5 @@
 import React from 'react';
-import { inr, grouped } from '../../lib/inr';
+import { grouped } from '../../lib/inr';
 
 /**
  * PlanComparison — the dead `plans` state, finally rendered.
@@ -10,9 +10,15 @@ import { inr, grouped } from '../../lib/inr';
  * it, and there was no plan comparison and no upgrade path anywhere in the
  * product despite the data arriving each time.
  *
- * **Credits are the headline, not a price.** Pricing is per-org negotiated and
- * `list_plans` strips `price_monthly` for anyone who is not platform staff, so
- * a rupee figure here would be either absent or invented.
+ * **Credits are the headline, never a price.** Pricing is entirely per-org
+ * negotiated — there is no fixed rupee figure "per plan" to show, ever. This
+ * used to read `p.price_monthly != null ? inr(...) : 'On quote'`, which shows
+ * a real number for whichever accounts the backend treats as platform staff
+ * (`list_plans` sends `price_monthly` only to them). Owner's call: on an
+ * org-facing page, "On quote" is the only correct answer regardless of who is
+ * viewing it — `price_monthly` is deliberately never read here, not even when
+ * the API sends it, so a future viewer with more access can't make a real
+ * number reappear by accident.
  *
  * Every number on these cards comes from the API row and none is written down
  * here — not in the JSX and not in this comment. The earlier version of this
@@ -49,11 +55,10 @@ export default function PlanComparison({ plans = [], currentPlanName, currentPla
               <span className="opl__u">Up to {p.max_users} {p.max_users === 1 ? 'user' : 'users'}</span>
             )}
 
-            <span className="opl__p">
-              {/* price_monthly is present only for platform staff. For everyone
-                  else "On quote" is the truth, not a placeholder. */}
-              {p.price_monthly != null ? `${inr(p.price_monthly)} / month` : 'On quote'}
-            </span>
+            {/* Never `p.price_monthly` — see the file header. "On quote" is the
+                truth for every viewer, not a placeholder for the ones the
+                backend hasn't recognised as staff yet. */}
+            <span className="opl__p">On quote</span>
           </div>
         );
       })}

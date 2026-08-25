@@ -288,6 +288,32 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   `module.css`, `navConfig.js`, `NiyamPage.jsx`. Build clean, `npm run check`
   clean. Verified live post-deploy: screenshotted `/settings/automations` —
   icon tile in the new rose accent, "SETTINGS · व्यवस्था" kicker, "नियम
-  AUTOMATIONS" title, matching Ganit/Vetana/etc. exactly. **STATUS: ✅ shipped.**
+  AUTOMATIONS" title, matching Ganit/Vetana/etc. exactly.
+
+  **Regression, caught by the owner within the hour:** `module: 'niyam'` on
+  the nav entry (added "for grant-gating consistency") made the row vanish
+  entirely from Settings on the owner's own real Aekam Inc account (confirmed
+  org_admin — `Roles & access`/`Organisation`, both `orgAdminOnly`, were both
+  visible to them). There is no backend grant system for a `niyam` code, so
+  for any admin whose `moduleGrants` happens to be a real array rather than
+  the documented "absent = no opinion" state, the module check silently hid
+  a row `orgAdminOnly` alone already gated correctly. My test session (a
+  different account) didn't reproduce it, which is why "verified live"
+  missed this — one account confirming a nav change is not enough when
+  visibility depends on account-specific grant state. Reverted `module` from
+  the nav entry; `ModuleHeader`'s own `module="niyam"` (drives the icon
+  colour and the write-gate) is left as-is since `canWriteModule` takes the
+  same "absent levels = true" path for a genuine org_admin/owner, a
+  different code path than the one that broke · `navConfig.js`.
+  **STATUS: ✅ shipped, fix included.**
+
+- `product` fix · Owner's call: plan pricing is entirely per-org negotiated,
+  so no rupee figure should ever render on the org-facing plan comparison
+  card, regardless of who's viewing it. Previously `p.price_monthly != null
+  ? inr(...) : 'On quote'` — `list_plans` sends `price_monthly` only to
+  accounts the backend treats as platform staff, so a real number was
+  showing for those sessions. `price_monthly` is now never read here at all;
+  every card unconditionally shows "On quote" · `PlanComparison.jsx`. Build
+  clean.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
