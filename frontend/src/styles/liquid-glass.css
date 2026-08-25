@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   LIQUID GLASS — CSS-driven depth on cards and overlays only.
+   LIQUID GLASS — CSS-driven depth, shimmer and accent-tinted effects.
    Controlled by [data-liquid-glass] on :root (set by CustomizePanel.applyPrefs).
    Presets: off | subtle | medium | full.
+   Accent vars --lg-accent / --lg-accent-deep are written by applyPrefs.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Tokens per preset ───────────────────────────────────────────────────── */
@@ -10,7 +11,9 @@
   --lg-shadow-h:  0 2px 8px color-mix(in srgb, var(--lg-accent) 6%, rgba(0,0,0,.05)),
                   0 8px 28px rgba(0,0,0,.04);
   --lg-inset:     inset 0 .5px 0 rgba(255,255,255,.12);
+  --lg-shine:     rgba(255,255,255,.04);
   --lg-blur-add:  2px;
+  --lg-scale-h:   1.003;
   --lg-dur:       .25s;
 }
 :root[data-liquid-glass="medium"] {
@@ -18,7 +21,9 @@
   --lg-shadow-h:  0 4px 16px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06)),
                   0 14px 44px rgba(0,0,0,.05);
   --lg-inset:     inset 0 .5px 0 rgba(255,255,255,.18);
+  --lg-shine:     rgba(255,255,255,.06);
   --lg-blur-add:  4px;
+  --lg-scale-h:   1.005;
   --lg-dur:       .3s;
 }
 :root[data-liquid-glass="full"] {
@@ -26,7 +31,9 @@
   --lg-shadow-h:  0 6px 24px color-mix(in srgb, var(--lg-accent) 12%, rgba(0,0,0,.08)),
                   0 18px 56px rgba(0,0,0,.06);
   --lg-inset:     inset 0 1px 0 rgba(255,255,255,.22);
+  --lg-shine:     rgba(255,255,255,.08);
   --lg-blur-add:  8px;
+  --lg-scale-h:   1.008;
   --lg-dur:       .35s;
 }
 
@@ -34,25 +41,72 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-liquid-glass="off"]) {
     --lg-inset: inset 0 .5px 0 rgba(255,255,255,.04);
+    --lg-shine: rgba(255,255,255,.02);
   }
 }
 :root[data-theme="dark"]:not([data-liquid-glass="off"]) {
   --lg-inset: inset 0 .5px 0 rgba(255,255,255,.04);
+  --lg-shine: rgba(255,255,255,.02);
 }
 
-/* ── Cards — depth shadow only, no hover lift ────────────────────────────── */
+/* ── Cards — depth shadow + specular shine + hover lift ──────────────────── */
 :root:not([data-liquid-glass="off"]) :is(
-  .k-card, .k-stat, .k-hero-kpi__card,
-  .vk-card, .hb-card, .gn-panel, .tv-card,
-  .anx-card, .vgw-kpi, .mkt-card,
-  .k-tmpl-card, .niyam-card, .niyam-panel,
+  .k-card, .k-stat, .k-hero-kpi, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw, .vgw-kpi, .mkt-card, .mkt-stat,
+  .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
   .mn-card, .sa__card, .hcl-card, .sh-card,
-  .sk-card
+  .dr__ap-panel, .sk-card, .k-quickacts
 ) {
   box-shadow: var(--lg-shadow), var(--lg-inset);
+  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
+  position: relative;
 }
 
-/* ── Overlays — deeper shadow + blur ─────────────────────────────────────── */
+/* Top specular shine */
+:root:not([data-liquid-glass="off"]) :is(
+  .k-card, .k-stat, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card, .ix-panel,
+  .k-tmpl-card, .niyam-card, .niyam-panel,
+  .mn-card, .sa__card, .hcl-card, .sh-card, .dr__ap-panel
+)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(180deg, var(--lg-shine) 0%, transparent 40%);
+}
+
+/* Hover — accent-tinted glow shadow + tiny lift */
+:root:not([data-liquid-glass="off"]) :is(
+  .k-card, .k-stat, .k-hero-kpi__card,
+  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card, .k-tmpl-card,
+  .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card
+):hover {
+  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  transform: translateY(-1px) scale(var(--lg-scale-h));
+}
+
+/* ── Shell surfaces ──────────────────────────────────────────────────────── */
+:root:not([data-liquid-glass="off"]) .side {
+  box-shadow: var(--lg-shadow), var(--lg-inset);
+}
+:root:not([data-liquid-glass="off"]) .top {
+  box-shadow: var(--lg-shadow);
+  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+}
+:root:not([data-liquid-glass="off"]) .mnav {
+  box-shadow: 0 -1px 8px rgba(0,0,0,.04), var(--lg-inset);
+  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+}
+
+/* ── Overlays ────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .modal__panel {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
@@ -64,13 +118,32 @@
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
-/* ── Drawer ────────────────────────────────────────────────────────────────── */
-:root:not([data-liquid-glass="off"]) .dr {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+/* ── Table headers ───────────────────────────────────────────────────────── */
+:root:not([data-liquid-glass="off"]) .tbl th {
+  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add)));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add)));
+  box-shadow: var(--lg-inset);
 }
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .tst {
+  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+}
+
+/* ── Settings rows ───────────────────────────────────────────────────────── */
+:root:not([data-liquid-glass="off"]) .sr {
+  box-shadow: var(--lg-shadow);
+  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
+}
+:root:not([data-liquid-glass="off"]) .sr:hover {
+  box-shadow: var(--lg-shadow-h);
+  transform: translateY(-1px);
+}
+
+/* ── Dock ─────────────────────────────────────────────────────────────────── */
+:root:not([data-liquid-glass="off"]) .k-dock {
   box-shadow: var(--lg-shadow-h), var(--lg-inset);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
@@ -83,9 +156,32 @@
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
+/* ── Drawer ────────────────────────────────────────────────────────────────── */
+:root:not([data-liquid-glass="off"]) .k-drawer__panel,
+:root:not([data-liquid-glass="off"]) .dr {
+  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+}
+
 /* ── Accessibility ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-liquid-glass="off"]) :is(
+    .k-card, .k-stat, .hb-card, .gn-panel, .tv-card, .anx-card,
+    .mkt-card, .k-tmpl-card, .niyam-card, .mn-card, .sa__card,
+    .hcl-card, .sh-card, .sr
+  ) {
+    transition: none !important;
+  }
+  :root:not([data-liquid-glass="off"]) :is(
+    .k-card, .k-stat, .hb-card, .gn-panel, .tv-card, .anx-card,
+    .mkt-card, .k-tmpl-card, .niyam-card, .mn-card, .sa__card,
+    .hcl-card, .sh-card
+  ):hover {
+    transform: none !important;
+  }
+}
 @media (prefers-reduced-transparency: reduce) {
   :root[data-liquid-glass] {
     --lg-blur-add: 0px;
+    --lg-shine: transparent;
   }
 }
