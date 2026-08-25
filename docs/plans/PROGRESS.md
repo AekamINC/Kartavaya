@@ -359,7 +359,9 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   show, so not the thing being flagged). The permanent top-highlight is the
   skeuomorphic "glossy button" look Apple's actual UI doesn't use; removed
   the `::before` rule and its block comment entirely, leaving `.btn--fill`
-  with only its box-shadow depth · `components.css`. Build clean. Not yet
-  verified live.
+  with only its box-shadow depth · `components.css`. Build clean. Verified
+  live post-deploy: computed `::before` on `.btn--fill` (e.g. Vikray's
+  "+ New order") is `content: none; background-image: none` — flat fill,
+  no highlight band. **STATUS: ✅ shipped.**
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
