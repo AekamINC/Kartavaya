@@ -186,4 +186,27 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   screenshot in this thread) all screenshotted — proper bordered cards now,
   matching every other surface on the page. **STATUS: ✅ shipped.**
 
+- `design/glass` fix 6 · Owner asked for all 13 modules + non-module pages
+  checked, not just the ones screenshotted. Audited every module by grepping
+  its JSX for toolbar/filter classNames (not guessing from CSS alone) and
+  checking each hit's CSS for the same bare-row shape: `.k-filterbar` (Tasks,
+  Activity), `.k-tfilters` (Time Report — had padding but no border/bg,
+  never actually read as the "filter card" its own comment called it),
+  `.bl__bar` (Billing period selector), `.docfilt` (E-Sign documents),
+  `.vtb__bar` (`ViewToolbar` — shared by Boards/Table/Kanban, reaches all
+  three at once), `.gr__bar` (Graha), `.pr__bar` (Prachar's own
+  `.k-section__head` equivalent, per its own code comment). All 7 given the
+  same card chrome and added to `liquid-glass.css`'s depth+rim list ·
+  `editorial.css`, `billing.css`, `documents.css`, `boards.css`, `graha.css`,
+  `prachar.css`, `liquid-glass.css`.
+
+  Coverage confirmed per module: Ganit/Vikray/Manav/Reports/Hub/Niyam (fix 5)
+  · Vetana/Pahchan/Dristi (fix 4, `Section`) · Kray (reuses `.gn-bar`) ·
+  Graha/Prachar/Billing/E-Sign/Boards (this fix). Sanvaad checked and
+  confirmed NOT affected — it's a chat interface (channels/messages/threads),
+  structurally not a tabular list view, so this pattern doesn't apply there.
+  Admin/Org/Templates/Marketplace/Connectors/Customize checked — no bar/filter
+  classNames found; they use the already-safe `TableToolbar`/`.tv` (paired
+  with `.tv-card`) or have no such row. Build clean. Not yet verified live.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

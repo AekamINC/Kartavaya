@@ -2083,9 +2083,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
 [data-density="comfy"] .k-page   { padding: var(--sp-6) var(--sp-8); }
 
 /* ── Filter bar + segment control ──────────────────────────────────────── */
+/* Card framing — same fix as Ganit's `.gn-bar` and `Section`, 2026-08-25: this
+   row had no border, background or padding of its own, flush between
+   bordered surfaces above and below it. */
 .k-filterbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--sp-4); flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 
 .k-segctrl {
@@ -4324,9 +4331,15 @@ select.k-formpanel__input { appearance: none;
 /* Whose entries these are, and out of which tenant. A full-width sentence
    under the filter card, left-aligned with everything else on the page. */
 .trp-scope { margin: 10px 0 4px; max-width: 78ch; }
+/* Card framing — same fix as Ganit's `.gn-bar` and `Section`, 2026-08-25: had
+   padding but no border/background/radius, so it never actually read as the
+   "filter card" the comment above calls it. */
 .k-tfilters {
   display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
   padding: 16px 24px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 /* Latin only. This used to read "PROJECT · योजना", "FREQUENCY · आवृत्ति" —
    both scripts in one node — and needed --font-hindi in the stack to render the

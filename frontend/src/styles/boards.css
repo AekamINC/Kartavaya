@@ -569,7 +569,11 @@
    segmented control itself is `.k-segctrl`, which already exists — this is the
    row it sits in and the trailing controls beside it. */
 .vtb { display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-3); }
-.vtb__bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+/* Card framing — same fix as Ganit's `.gn-bar` and `Section`, 2026-08-25: this
+   row had no border, background or padding of its own, flush between
+   bordered surfaces above and below it. `ViewToolbar` is shared across
+   Boards/Table/Kanban, so this reaches all of them at once. */
+.vtb__bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }
 .vtb__scroll { overflow-x: auto; max-width: 100%; }
 .vtb__end { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 .vtb__lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }

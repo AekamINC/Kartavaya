@@ -25,7 +25,10 @@
    The month is chosen once for the whole section, above everything it governs,
    because a per-card period control is how two cards end up describing
    different months under one heading. */
-.bl__bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+/* Card framing — same fix as Ganit's `.gn-bar` and `Section`, 2026-08-25: this
+   row had no border, background or padding of its own, flush between
+   bordered surfaces above and below it. */
+.bl__bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }
 .bl__bar-l {
   font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .09em;
   text-transform: uppercase; color: var(--on-surface-3);

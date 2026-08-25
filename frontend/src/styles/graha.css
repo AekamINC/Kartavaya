@@ -33,9 +33,16 @@
    a nowrap flex row holding a search box, a select, and two buttons, so under
    ~560px the buttons were pushed out of the viewport with no way to reach them.
    Every tab that has one of these was affected. */
+/* Card framing — same fix as Ganit's `.gn-bar` and `Section`, 2026-08-25: this
+   row had no border, background or padding of its own, flush between
+   bordered surfaces above and below it. */
 .gr__bar {
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 16px; flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 .gr__bar .k-input { min-width: 0; }
 .gr__grow    { flex: 1; min-width: 0; }
