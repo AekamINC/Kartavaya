@@ -5,6 +5,18 @@
    Accent var --lg-accent tints only the HOVER shadow.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* The accent the hover shadow is tinted with. `CustomizePanel.applyPrefs`
+   sets this on <html> to the chosen accent's mid stop — the same value
+   `--k-mid` already carries — but it only runs once React has mounted, and
+   `color-mix()` with an undeclared var() is invalid at computed-value time,
+   which drops the WHOLE `--lg-shadow-h` declaration. So every hover shadow in
+   the app was missing until the panel's first effect, and stayed missing for
+   anything rendered before it. Declared statically at the value the JS assigns,
+   so the two agree and the first paint is the finished one. Not a fallback:
+   `var(--lg-accent, …)` still fails check-tokens, and a fallback is how a token
+   stays undefined for weeks while looking fine. */
+:root { --lg-accent: var(--k-mid); }
+
 /* ── Tokens per preset ───────────────────────────────────────────────────── */
 :root[data-liquid-glass="subtle"] {
   --lg-shadow:    0 1px 3px rgba(0,0,0,.03), 0 4px 14px rgba(0,0,0,.025);
@@ -58,10 +70,13 @@
   .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
   .mn-card, .sa__card, .hcl-card, .sh-card,
   .dr__ap-panel, .sk-card, .k-quickacts,
-  .gr__card, .gr__stat
+  /* `.gr__card` only. `.gr__stat` was in this list and in the hover list and
+     exists nowhere in the app — Graha's `.gr__st` is a section HEADING, not a
+     surface, and glassing it would have been wrong even if the name matched. */
+  .gr__card
 ) {
   box-shadow: var(--lg-shadow), var(--lg-inset), var(--lg-shine);
-  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
+  transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
 }
 
 /* Hover — accent-tinted shadow deepens + tiny lift */
@@ -72,7 +87,7 @@
   .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card,
   .mn-card, .sa__card, .hcl-card, .sh-card,
-  .gr__card, .gr__stat
+  .gr__card
 ):hover {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
   transform: translateY(-1px) scale(var(--lg-scale-h));
@@ -122,7 +137,7 @@
 /* ── Settings rows ───────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .sr {
   box-shadow: var(--lg-shadow), var(--lg-shine);
-  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
+  transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
 }
 :root:not([data-liquid-glass="off"]) .sr:hover {
   box-shadow: var(--lg-shadow-h), var(--lg-shine);
@@ -137,14 +152,19 @@
 }
 
 /* ── Command palette ──────────────────────────────────────────────────────── */
-:root:not([data-liquid-glass="off"]) .cmdk__panel {
+/* `.k-cmdk`, not the reference's `.cmdk__panel` — that name is not in this
+   codebase, so the palette was the one shell surface the preset never reached.
+   Its own rule in editorial.css already carries a blur and a shadow; these
+   deepen with the preset and are overridden by nothing. */
+:root:not([data-liquid-glass="off"]) .k-cmdk {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
 /* ── Drawer ────────────────────────────────────────────────────────────────── */
-:root:not([data-liquid-glass="off"]) .k-drawer__panel,
+/* `.dr` alone — `.k-drawer__panel` was the reference's name for the same
+   element and selects nothing in this app. */
 :root:not([data-liquid-glass="off"]) .dr {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
 }

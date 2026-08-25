@@ -3,15 +3,16 @@
  *
  * Pagination is DOM structure, not geometry, so this suite can prove it where
  * the Playwright geometry spec cannot: jsdom computes no layout, but it renders
- * the same rows, the same group headers and the same controls.
+ * the same rows and the same controls.
  *
  * The three things worth proving are the three that are easy to get wrong:
  *
- *   1 · a page holds pageSize rows, not pageSize rows PER GROUP. Slicing each
- *       group independently is the obvious implementation and it repeats every
- *       group header on every page.
- *   2 · the group header keeps the group's TOTAL. It answers "how many are
- *       medium priority", which does not change because you turned a page.
+ *   1 · a page holds pageSize rows, and the pager reports how many pages that
+ *       makes — 25 of 60, not 60 of 60.
+ *   2 · the count beside the pager keeps the LIST's total. It answers "how many
+ *       tasks are there", which does not change because you turned a page.
+ *       (It used to be the group band's count; grouping was removed on
+ *       2026-08-25 and the question moved to the pager.)
  *   3 · changing a filter returns to page 1. Sitting on page 2 of a list that
  *       just shrank to one page renders an empty table under a live pager —
  *       reads as "my search found nothing" and is really "you are on page 2
@@ -84,15 +85,25 @@ describe('Tasks list pagination', () => {
     expect(pos()).toBe('1 / 3');
   });
 
-  it('keeps the group header showing the GROUP total, not the page count', async () => {
+  it('counts the WHOLE list, not the page, and draws no group band', async () => {
     await host.mount(<TasksListPage />);
     await ready();
 
-    const count = host.$('.k-group__count');
-    // 60, not 25. The header answers a question about the group.
-    expect(count?.textContent.trim()).toBe('60');
-    // And exactly ONE header — a group is not repeated per page.
-    expect(host.$$('.k-group__head').length).toBe(1);
+    /* This replaces a guard on `.k-group__count` — the grouped band was taken
+       out of this list on 2026-08-25 (702d315b, "render flat table"), so the
+       old assertion read `undefined` off an element that can no longer exist
+       and the suite failed on a feature that was deliberately removed.
+
+       What it was really protecting survives the removal: the count beside the
+       pager answers "how many tasks are there", which does not change because
+       you turned a page. 60, not 25. */
+    const count = host.$('.k-pager__count');
+    expect(count?.textContent.replace(/\s+/g, ' ').trim()).toBe('1–25 of 60');
+
+    // And the band is gone for good, not hidden — a stray header would mean
+    // the grouped code path came back with the CSS deleted from under it.
+    expect(host.$$('.k-group__head').length).toBe(0);
+    expect(host.$$('.k-group').length).toBe(0);
   });
 
   it('advances to the next page and shows different rows', async () => {

@@ -900,9 +900,29 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
 
 /* Completeness gaps, shown in the invoice drawer only — never on the document.
    The invoice a customer reads stays clean (owner, 2026-08-03); this is the
-   internal counterpart, so the firm knows before it sends. */
-.gnd__gaps { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
-.gnd__gaps-t { margin: 0; font-weight: 600; }
+   internal counterpart, so the firm knows before it sends.
+
+   It is a `<details>`: an advisory block is closed to its one-line summary,
+   a blocking one opens itself. NOT `display:flex` on the details element —
+   Safari drops the open/closed toggle when the details box is a flex
+   container, which turns the summary into a permanently open heading. */
+.gnd__gaps { margin: var(--sp-3) 0; }
+.gnd__gaps-t {
+  margin: 0; font-weight: 600; cursor: pointer;
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  list-style: none;
+}
+/* The default marker is a black triangle in both themes and sits outside the
+   note's padding. Replaced with a chevron drawn in the text colour. */
+.gnd__gaps-t::-webkit-details-marker { display: none; }
+.gnd__gaps-t::before {
+  content: ''; flex: none; width: 6px; height: 6px; margin-top: .35em;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--dur-fast) var(--ease-standard);
+}
+.gnd__gaps[open] > .gnd__gaps-t::before { transform: rotate(45deg); }
+.gnd__gaps-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+.gnd__gaps[open] > .gnd__gaps-l { margin-top: var(--sp-2); }
 .gnd__gaps-i { font-weight: 400; color: var(--on-surface-3); }
 .gnd__gaps-l { margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--t-body-sm); }
 
@@ -998,3 +1018,8 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
   gap: var(--sp-3);
   margin-bottom: var(--sp-3);
 }
+
+/* The record's notebook. `ui/Tabs` already paints the bar and the sliding
+   indicator; all this does is give it the drawer's horizontal padding, which
+   the sections it replaced carried themselves. */
+.gnd__tabs .tabs__bar { padding-inline: var(--sp-4); }

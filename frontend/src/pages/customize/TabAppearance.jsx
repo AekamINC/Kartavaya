@@ -162,22 +162,22 @@ export default function TabAppearance() {
         {/* Row 1 — KPI stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
           <div className="k-stat">
-            <div className="k-stat__kicker">OPEN</div>
+            <div className="k-stat__lbl">OPEN</div>
             <div className="k-stat__val">80</div>
             <div className="k-stat__sub">10 projects</div>
           </div>
           <div className="k-stat k-stat--warn">
-            <div className="k-stat__kicker">OVERDUE</div>
+            <div className="k-stat__lbl">OVERDUE</div>
             <div className="k-stat__val">35</div>
             <div className="k-stat__sub">needs review</div>
           </div>
           <div className="k-stat k-stat--ok">
-            <div className="k-stat__kicker">DONE</div>
+            <div className="k-stat__lbl">DONE</div>
             <div className="k-stat__val">7</div>
             <div className="k-stat__sub">this week</div>
           </div>
           <div className="k-stat k-stat--neutral">
-            <div className="k-stat__kicker">TODAY</div>
+            <div className="k-stat__lbl">TODAY</div>
             <div className="k-stat__val">3</div>
             <div className="k-stat__sub">1 high priority</div>
           </div>

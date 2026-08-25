@@ -22,6 +22,7 @@ import InvoiceForm from './InvoiceForm';
 import { useToast } from '../../components/ui/toast';
 import FocusTrap from '../../components/ui/FocusTrap';
 import { Modal } from '../../components/ui/modal';
+import { Tabs } from '../../components/ui/Tabs';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
@@ -293,10 +294,17 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   type="button"
                   className="btn btn--out btn--sm gnd__wa"
                   disabled={!wa}
+                  /* "You choose the chat and press send" is UNCONDITIONAL on
+                     an enabled button. It is the only sentence that says this
+                     control does not message a customer by itself, and the
+                     blocker branch used to replace it — so the one invoice
+                     state that already worries the reader (no payment link)
+                     was also the state where the button stopped saying what it
+                     would do. The blocker follows it instead. */
                   title={!wa
                     ? `${inv.contact_name || 'This customer'} has no phone number on their contact record`
                     : blocker
-                      ? `Opens WhatsApp with the message ready. ${blocker}`
+                      ? `Opens WhatsApp with the message ready — you choose the chat and press send. ${blocker}`
                       : 'Opens WhatsApp with the payment link in the message — you choose the chat and press send'}
                   onClick={() => { if (wa) window.open(wa, '_blank', 'noopener,noreferrer'); }}
                 >
@@ -432,22 +440,50 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   wrong only if you ARE registered. */}
               {(detail?.document_check?.blocking?.length > 0
                 || detail?.document_check?.advisory?.length > 0) && (
-                <div className={`note ${detail.document_check.blocking.length ? 'note--warn' : 'note--info'} gnd__gaps`}>
-                  <p className="gnd__gaps-t">
+                /* COLLAPSED BY DEFAULT WHEN IT IS ONLY ADVICE, open when it
+                   blocks. Advisory gaps are worth knowing and are not worth
+                   four lines of pink above the document every single time the
+                   drawer opens; a blocking one stops the PDF, so it stays
+                   open. `<details>` and not a hand-rolled toggle: it carries
+                   its own expanded state to the screen reader, and Enter and
+                   Space already work on the summary. */
+                <details
+                  className={`note ${detail.document_check.blocking.length ? 'note--warn' : 'note--info'} gnd__gaps`}
+                  open={detail.document_check.blocking.length > 0}
+                >
+                  <summary className="gnd__gaps-t">
                     {detail.document_check.blocking.length > 0
                       ? `This invoice cannot be issued as a PDF yet — ${detail.document_check.blocking.length} required field${detail.document_check.blocking.length > 1 ? 's are' : ' is'} missing.`
-                      : 'Worth checking before you send this — the PDF will still generate.'}
+                      : `Worth checking before you send this — ${detail.document_check.advisory.length} advisory note${detail.document_check.advisory.length > 1 ? 's' : ''}. The PDF will still generate.`}
                     <span className="gnd__gaps-i"> Shown here only; the document itself stays clean.</span>
-                  </p>
+                  </summary>
                   <ul className="gnd__gaps-l">
                     {[...detail.document_check.blocking, ...detail.document_check.advisory].map(g => (
                       <li key={g.field}><b>{g.label}</b> — {g.reason}{g.fix ? ` (${g.fix})` : ''}</li>
                     ))}
                   </ul>
-                </div>
+                </details>
               )}
 
               <div className="dr__body">
+              {/* THE RECORD IS A NOTEBOOK, NOT A SCROLL.
+                  Every section — party, lines, totals, stamps, payments — used
+                  to stack in one 560px column, so reading the total on an
+                  invoice with eight lines meant scrolling past the whole
+                  document. The task drawer solved this once already with
+                  `ui/Tabs`; this is the same control, not a second one. The
+                  key remounts the set so "Record payment" lands the reader on
+                  the tab that holds the form. */}
+              <Tabs
+                className="gnd__tabs"
+                key={showPay ? 'pay' : 'inv'}
+                defaultTab={showPay ? 'payments' : 'invoice'}
+                tabs={[
+                  {
+                    value: 'invoice',
+                    label: 'Invoice',
+                    content: (
+                      <>
                 {/* The editor replaces the record view rather than sitting
                     beside it: the fields it edits are the same ones displayed
                     below, and showing both invites the reader to trust whichever
@@ -556,7 +592,15 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                     </p>
                   </section>
                 )}
-
+                      </>
+                    ),
+                  },
+                  {
+                    value: 'payments',
+                    label: 'Payments',
+                    count: detail.payments?.length || 0,
+                    content: (
+                      <>
                 {showPay && !settled && (
                   <form className="dr__sec gn-form gn-form--accent" onSubmit={recordPayment}>
                     <h4 className="gn-form__h">Record payment</h4>
@@ -610,6 +654,11 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                 )}
 
                 <UpiPayBlock invoice={inv} />
+                      </>
+                    ),
+                  },
+                ]}
+              />
               </div>
             </>
           )}

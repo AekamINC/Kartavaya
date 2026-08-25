@@ -2175,48 +2175,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--bg-soft);
 }
 
-.k-group { display: flex; flex-direction: column; }
-.k-group + .k-group { border-top: 1px solid var(--rule); }
-.k-group__head {
-  display: grid;
-  grid-template-columns: 4px auto auto 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 16px;
-  background: var(--bg);
-  border-bottom: 1px dashed var(--rule-soft);
-}
-.k-group__bar { width: 4px; height: 18px; border-radius: 2px; background: var(--group-color); }
-/* The reference draws this as a tracked uppercase EYEBROW at 11px/700
-   (`app.css` `.tbl__group`), not as a heading. At 16px display serif the band
-   read as another row rather than as the rule between two runs of rows, which
-   is the one job a group header has.
+/* DELETED: `.k-group`, `.k-group__head`, `.k-group__bar`, `.k-group__title`,
+   `.k-group__sans`, `.k-group__count` — the grouped-task-list band.
 
-   Tracking a label that sits beside Devanagari is only safe because the
-   Devanagari carries `lang="hi"` — `[lang="hi"] { letter-spacing: 0 !important }`
-   further down this file. TasksListPage.jsx did not have that attribute until
-   this change, so `.1em` here would have split अत्यावश्यक's क्ष. The two edits
-   are one edit. */
-.k-group__title {
-  font-family: var(--font-ui);
-  font-size: 11px; font-weight: 700;
-  letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-2);
-}
-/* 12px beside an 11px Latin eyebrow — the same pairing `.k-stat__hi` uses, and
-   above the 11px floor 00 §12 sets for metadata. `text-transform: none` because
-   the sibling is uppercase and Devanagari has no case. */
-.k-group__sans {
-  font-family: var(--font-hindi);
-  font-size: 12px; font-weight: 400; text-transform: none;
-  color: var(--ink-3);
-}
-.k-group__count {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none;
-  color: var(--ink-3);
-}
+   Group-by was taken out of the Tasks list on 2026-08-25 (702d315b, "remove
+   all group-by logic from Tasks list, render flat table"), and the six rules
+   that painted the band stayed behind with nothing to paint. They also owned
+   the only reference to `--group-color`, a token declared nowhere, so this
+   block was the whole of check-tokens' hard failure as well as six of
+   check-orphan-selectors' nine. The reference markup is still in
+   `design-reference/src/screens.jsx` if grouping ever comes back. */
 
 /* 16px inline and a 14px track gap, matching `.k-table__head` above and the
    reference's `.tbl__row`. The `--row-h` fallback was 48px — the COMFY row
@@ -4828,6 +4796,15 @@ select.k-formpanel__input { appearance: none;
 .k-c-due      { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .k-c-updated  { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-3); font-size: 12px; }
 .k-c-status   { justify-content: flex-start; flex-shrink: 0; }
+/* Created is a DATE and reads beside Updated, so it takes the same figures and
+   the same no-wrap — a proportional-figure date column jitters as the day
+   rolls over from 9 to 10. Raised by and Priority were emitted by the row and
+   styled by nothing: the priority pill was squashable at narrow widths, and a
+   long member name pushed the row to two lines instead of clipping. */
+.k-c-created    { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k-c-created_by { min-width: 0; }
+.k-c-created_by .k-trow__meta { overflow: hidden; text-overflow: ellipsis; }
+.k-c-priority   { flex-shrink: 0; }
 
 /* ── Table pager ────────────────────────────────────────────────────────────
    The list is paginated rather than scrolled to ninety rows — 54px rows make a

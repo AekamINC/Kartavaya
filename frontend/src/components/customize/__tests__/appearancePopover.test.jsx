@@ -93,14 +93,18 @@ describe('appearance popover · reachable from the top bar', () => {
     expect(pop).toBeInTheDocument();
     expect(trigger()).toHaveAttribute('aria-expanded', 'true');
 
-    // The eight groups the reference popover carries, read off the section
-    // labels themselves rather than by text search: "Accent" also appears
-    // inside AccentGrid's own markup, and a search that matches two things is
-    // not evidence about either.
+    // Every group the popover carries, read off the section labels themselves
+    // rather than by text search: "Accent" also appears inside AccentGrid's own
+    // markup, and a search that matches two things is not evidence about
+    // either. The list is exact ON PURPOSE — a control added to the popover and
+    // to nothing else is how the two settings surfaces drift apart — so adding
+    // one here is part of adding one there. "Liquid glass" arrived with the
+    // glass preset work (91da93ec…9235ea39) and this was the only place that
+    // had not been told.
     const labels = [...pop.querySelectorAll('.kap__lbl')].map(el => el.textContent);
     expect(labels).toEqual([
       'Mode', 'Accent', 'Sidebar', 'Density', 'Corners', 'Motion',
-      'Typeface', 'Conversation', 'Notification sound',
+      'Typeface', 'Conversation', 'Notification sound', 'Liquid glass',
     ]);
   });
 
