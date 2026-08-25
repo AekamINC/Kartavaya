@@ -404,4 +404,37 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   reads as one flush row of independently-carded tiles rather than a card
   full of cards. **STATUS: ✅ shipped.**
 
+- `design/glass` fix 14 · Owner: "checkbilling tabs too." Fix 12 double-carded
+  three of `TabBilling.jsx`'s five `.st__group` sections, worse than
+  Modules: `CreditUsage` and the "Usage & spend" section (`BillingUsageSection`)
+  each render one or more `<Card>`s directly, and "Invoices" renders `<Table>`
+  directly — `.tbl__wrap` is already bordered whenever an ancestor
+  `.card__body`/`.dcard__b` hasn't reset it, and `.st__group` wasn't on that
+  reset list. Extended the existing reset (`components.css`) to include
+  `.st__group .tbl__wrap` — the same convention the file already documents
+  for exactly this shape of bug — and marked the two `<Card>`-wrapping
+  sections `st__group--flush` · `components.css`, `TabBilling.jsx`.
+
+  Verifying the fix surfaced a second, unrelated bug: the "Usage & spend"
+  card stack (Balance, Where the credits went, Who spent what, What was
+  sent) was rendering squeezed into a narrow centred column instead of
+  full width. Root cause: `.bl` was defined TWICE at equal specificity —
+  `components.css`'s BrandLoader spinner root (`align-items: center;
+  justify-content: center`, unrelated: the mark shown at boot and after
+  sign-in) and `billing.css`'s card-stack wrapper (`flex-direction:
+  column`) for this exact section, imported directly by
+  `BillingUsageSection.jsx` rather than through the barrel. Which one won
+  depended on final bundle order, not anything either file declared, and on
+  `org/TabBilling` it was BrandLoader's. Renamed the billing one to `.blx`
+  (only one JSX call site) rather than touch the shared spinner class ·
+  `billing.css`, `BillingUsageSection.jsx`. This also fixes `/admin/usage`,
+  the component's other mount, per its own file header.
+
+  Build clean, `npm run check` clean. Verified live post-deploy: computed
+  `border` on the Credits/Usage-&-spend sections is `0px none`; the
+  Invoices section's `.tbl__wrap` has no border of its own; `.blx` computes
+  `flex-direction: column`; full-page screenshot shows every stat/card grid
+  at full width, no narrow-centred column, no box-in-a-box anywhere on the
+  tab. **STATUS: ✅ shipped.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
