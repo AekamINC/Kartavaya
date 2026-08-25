@@ -311,26 +311,6 @@
 .omod__s { font-size: 11px; font-weight: 600; color: var(--on-surface-3); }
 .omod__s.on { color: var(--primary-text); }
 
-/* ── Plan comparison ───────────────────────────────────────────────────────
-   Credits are the headline, not a price. Pricing is per-org negotiated and is
-   stripped server-side for anyone who is not platform staff, so a rupee figure
-   here would be either absent or invented. */
-.opl { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 12px; }
-.opl__c {
-  display: flex; flex-direction: column; gap: 13px; padding: 19px;
-  border-radius: var(--r-md); border: 1px solid var(--outline-variant);
-  background: var(--surface);
-}
-.opl__c.cur { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-.opl__cur { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--primary-text); }
-.opl__n { font-size: 15px; font-weight: 600; text-transform: capitalize; color: var(--on-surface); }
-.opl__cr {
-  font-family: var(--font-display); font-size: 29px; font-weight: 400;
-  letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--on-surface);
-}
-.opl__u { font-size: 11.5px; color: var(--on-surface-3); }
-.opl__p { font-size: 12.5px; color: var(--on-surface-2); margin-top: auto; }
-
 /* ── Stat row ──────────────────────────────────────────────────────────── */
 .ostats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-4); }
 

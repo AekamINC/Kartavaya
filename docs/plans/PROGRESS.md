@@ -313,8 +313,23 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   ? inr(...) : 'On quote'` — `list_plans` sends `price_monthly` only to
   accounts the backend treats as platform staff, so a real number was
   showing for those sessions. `price_monthly` is now never read here at all;
-  every card unconditionally shows "On quote" · `PlanComparison.jsx`. Build
+  every card unconditionally shows "On quote". Build
   clean. Verified live post-deploy: `price_monthly` no longer appears
-  anywhere in the deployed JS bundle at all. **STATUS: ✅ shipped.**
+  anywhere in the deployed JS bundle at all. **STATUS: ✅ shipped, superseded
+  below.**
+
+- `product` fix 2 · Owner's follow-up: with pricing hidden and the current
+  plan already stated in the stat cards above it ("PLAN · Growth"), the
+  4-card "Plans" comparison grid on Billing added nothing — no price to
+  differentiate the tiers, no self-serve upgrade to act on ("handled by your
+  account manager"). Removed the section entirely rather than keep four
+  identical-looking "On quote" cards. `PlanComparison.jsx` had no other
+  importer — deleted, along with the now-dead `/v1/subscription/plans` fetch
+  and `plans` state in `TabBilling.jsx` (nothing read it once the section
+  was gone — the exact "fetched but never rendered" bug `PlanComparison.jsx`
+  was originally written to fix) and its CSS (`.opl*`, `org.css`), removed by
+  hand since I know exactly which classes were only ever used there ·
+  `TabBilling.jsx`, `org.css`, `PlanComparison.jsx` (deleted). Build clean,
+  `npm run check` clean, no new unused-class or contrast regressions.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -7,7 +7,6 @@ import {
 import { billingColor, billingLabel } from '../../lib/statusColors';
 import { inr, grouped } from '../../lib/inr';
 import { formatDate, formatPeriod } from '../../lib/timeFormat';
-import PlanComparison from './PlanComparison';
 import { orgSeats, pahchanSeats } from './seatFigures';
 import BillingUsageSection from '../billing/BillingUsageSection';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
@@ -166,24 +165,21 @@ export default function TabBilling() {
   const [active, setActive] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [usage, setUsage] = useState(null);
-  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     setFailed(false);
     try {
-      const [cur, inv, usg, catalog] = await Promise.all([
+      const [cur, inv, usg] = await Promise.all([
         api.get('/v1/subscription/current'),
         api.get('/v1/subscription/invoices'),
         api.get('/v1/subscription/usage'),
-        api.get('/v1/subscription/plans'),
       ]);
       setSub(cur.data.subscription);
       setActive(cur.data.active_modules || []);
       setInvoices(inv.data.data || []);
       setUsage(usg.data);
-      setPlans(catalog.data.plans || []);
     } catch {
       setFailed(true);
     } finally {
@@ -261,15 +257,6 @@ export default function TabBilling() {
 
       <section className="st__group">
         <CreditUsage />
-      </section>
-
-      <section className="st__group">
-        <h2 className="st__gt">Plans</h2>
-        <PlanComparison plans={plans} currentPlanName={sub?.plan_name} currentPlanCode={sub?.plan_code} />
-        <p className="of__h of__h--foot">
-          Changing plan is handled by your account manager at Aekam — there is no
-          self-serve upgrade, and pricing is agreed per organisation.
-        </p>
       </section>
 
       <section className="st__group">
