@@ -110,7 +110,11 @@
   /* '.gr__card' only. '.gr__stat' was in this list and in the hover list and
      exists nowhere in the app — Graha's '.gr__st' is a section HEADING, not a
      surface, and glassing it would have been wrong even if the name matched. */
-  .gr__card
+  .gr__card,
+  /* '.mh__ic' — the module-header icon tile, Apple-icon-app-tile pass. A small
+     tinted glyph, not a card, but the same rim reads correctly on its gradient
+     fill at this size. */
+  .mh__ic
 ) {
   box-shadow: var(--lg-shadow), var(--lg-inset), var(--lg-shine);
   transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
@@ -129,7 +133,7 @@
   .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card,
   .mn-card, .sa__card, .hcl-card, .sh-card,
-  .gr__card
+  .gr__card, .mh__ic
 ):is(:hover, :focus-within) {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
   transform: translateY(var(--lg-lift)) scale(var(--lg-scale-h));
@@ -140,7 +144,8 @@
    serves get their feedback here). Snappier than the release, per --lg-dur*.4. */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .vk-card, .hb-card, .anx-card, .mkt-card,
-  .k-tmpl-card, .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card, .gr__card
+  .k-tmpl-card, .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card, .gr__card,
+  .mh__ic
 ):active {
   transform: scale(var(--lg-scale-p));
   transition-duration: calc(var(--lg-dur) * .4);
@@ -166,6 +171,13 @@
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
+}
+/* Confirm sheet only (`[data-intent]` — only ConfirmDialog.jsx sets it): a
+   deeper contact shadow on top of the same rim/vibrancy every other modal
+   gets, composed here rather than overridden in components.css because this
+   file is imported last and wins the tie at equal specificity regardless. */
+:root:not([data-liquid-glass="off"]) .modal__panel[data-intent] {
+  box-shadow: 0 30px 70px -24px rgba(0,0,0,.32), var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
 }
 :root:not([data-liquid-glass="off"]) :is(.pop, .menu--float, .pk__pop) {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);

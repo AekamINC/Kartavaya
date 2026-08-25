@@ -66,10 +66,15 @@
   margin-bottom: 18px;
 }
 .mh__ic {
-  width: 38px; height: 38px; border-radius: var(--r-sm);
+  width: 38px; height: 38px; border-radius: var(--r-md);
   display: grid; place-items: center; flex-shrink: 0;
-  background: color-mix(in srgb, var(--c) 14%, transparent);
+  background: linear-gradient(165deg,
+    color-mix(in srgb, var(--c) 20%, var(--surface)) 0%,
+    color-mix(in srgb, var(--c) 10%, var(--surface)) 100%);
   color: var(--c);
+}
+@supports (corner-shape: squircle) {
+  .mh__ic { border-radius: var(--r-lg); corner-shape: squircle; }
 }
 /* Section kicker. Tracked uppercase Latin; the Devanagari half of the string is
    NOT tracked, which is why 24-bilingual-devanagari.md's rule is applied by

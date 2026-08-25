@@ -39,4 +39,24 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
 - `chore` · Restored `backend/server.py` after a stash mishap; removed 17 root
   debris files ($c + screenshots).
 
+- `design/glass` · Apple-style pass on 3 of the 4 demoed components (buttons,
+  icon tiles, confirm modal — popover/menu needed no change, already carried
+  the same rim+blur+spring via the liquid-glass architecture): `.btn` gets a
+  rounder squircle radius, a static top sheen on `--fill`, and a spring release
+  on press (`--ease-spring`, was a flat `scale(.975)`); `.mh__ic` gets a
+  diagonal tint gradient + the same 4-sided rim/hover-lift/press-squish as
+  cards (added to `liquid-glass.css`'s `:is()` lists, respects the off-toggle
+  and reduced-motion for free); ConfirmDialog gains a `--r-xl` radius, a
+  grabber bar, a deeper contact shadow, and a spring entrance — scoped to
+  `.modal__panel[data-intent]` (only ConfirmDialog sets it) so every other
+  modal's documented MOTION-SPEC choreography is untouched · `components.css`,
+  `module.css`, `liquid-glass.css`, `ConfirmDialog.jsx` · build clean; verified
+  by computed-style injection against the real loaded stylesheet (localhost
+  dev server has no authenticated route reachable without entering test
+  credentials, which is a hard no — computed `border-radius`/`box-shadow`/
+  `transition-timing-function`/gradient background confirmed correct for
+  `.btn--fill`, `.mh__ic`, and `.modal__panel[data-intent]`). Not verified: a
+  real screenshot of these in the live authenticated app — owed on next
+  session with an open Browser pane or the user's own look on staging.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

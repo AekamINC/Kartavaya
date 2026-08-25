@@ -108,6 +108,7 @@ export default function ConfirmDialog({ state, onClose }) {
           onAnimationEnd={onAnimationEnd}
         >
           <div className="modal__body">
+            <div className="cd__grabber" aria-hidden="true" />
             <p id={titleId} className="cd__t">{title}</p>
             <p id={messageId} className="cd__m">{message}</p>
 

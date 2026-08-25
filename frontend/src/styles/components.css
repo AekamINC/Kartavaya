@@ -10,15 +10,23 @@
    an input side by side had different corner radii. Both are --r-sm now. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 8px 15px; border-radius: var(--r-sm);
+  padding: 8px 15px; border-radius: var(--r-md);
   font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap;
   background: none; border: none; cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast),
-              border-color var(--dur-fast), transform var(--dur-fast);
+              border-color var(--dur-fast), transform var(--dur-base) var(--ease-spring);
 }
-/* Feedback is a scale, not a colour change — it survives every variant. Under
-   anim:none the transform collapses because --ix drives --dur-fast. */
-.btn:active   { transform: scale(.975); }
+/* Concentric corner, progressive enhancement — falls back to --r-md's circular
+   radius where `corner-shape` isn't supported (everything but Chrome/Edge). */
+@supports (corner-shape: squircle) {
+  .btn { border-radius: var(--r-lg); corner-shape: squircle; }
+}
+/* Feedback is a spring, not a linear scale — it overshoots slightly on release
+   instead of snapping back, and survives every variant. Under anim:none the
+   transform collapses because --ix drives --dur-base. The press itself stays
+   snappy (half --dur-fast); only the release runs the spring, from the base
+   rule's transition above. */
+.btn:active   { transform: scale(.94); transition-duration: calc(var(--dur-fast) * .5); }
 .btn:disabled { opacity: .42; pointer-events: none; }
 
 /* THE SHEEN — the glass pass over the buttons, 2026-08-09.
@@ -61,8 +69,26 @@
     transparent 78%);
 }
 
-.btn--fill  { background: var(--primary); color: var(--on-primary); }
-.btn--fill:hover  { background: var(--primary-hover); }
+.btn--fill  {
+  background: var(--primary); color: var(--on-primary);
+  box-shadow: 0 1px 1px rgba(0,0,0,.05),
+              0 4px 12px -4px color-mix(in srgb, var(--primary) 45%, transparent);
+}
+.btn--fill:hover  {
+  background: var(--primary-hover);
+  box-shadow: 0 2px 2px rgba(0,0,0,.06),
+              0 8px 20px -6px color-mix(in srgb, var(--primary) 55%, transparent);
+}
+/* A static top sheen, distinct from `.btn::after`'s hover sweep above — that
+   pseudo-element travels across the face on hover; this one is a fixed glass
+   highlight always present on the filled variant only, per §"THE SHEEN" but a
+   second layer since ::after is taken. `::before` sits behind ::after in
+   document/paint order at the same z-index, so the sweep still travels over it. */
+.btn--fill::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 58%);
+}
 .btn--tonal { background: var(--primary-container); color: var(--on-primary-container); }
 .btn--tonal:hover { background: color-mix(in srgb, var(--primary-container) 78%, var(--primary)); }
 .btn--out   { border: 1px solid var(--outline); color: var(--on-surface-2); }
@@ -393,6 +419,30 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .modal__panel--sm { max-width: 420px; }
 .modal__panel--md { max-width: 620px; }
 .modal__panel--lg { max-width: 900px; }
+
+/* ── Confirm sheet, Apple pass ────────────────────────────────────────────
+   Scoped to `[data-intent]` — only ConfirmDialog.jsx sets that attribute on
+   `.modal__panel`, so a plain Modal.jsx dialog is untouched and the documented
+   entrance/exit choreography above (MOTION-SPEC §3/§7.3) stays exactly as
+   settled for every other modal in the app. Only the confirm sheet gets the
+   rounder concentric radius, the grabber, and the spring entrance. */
+.modal__panel[data-intent] {
+  border-radius: var(--r-xl);
+  box-shadow: 0 30px 70px -24px rgba(0,0,0,.32), var(--shadow-3);
+  animation-timing-function: var(--ease-spring);
+}
+/* The line above is beaten on every tie by liquid-glass.css's own
+   `.modal__panel` rule (imported last in index.css, same specificity) — that
+   rule is restated for the confirm variant, composed with the deeper contact
+   shadow, in liquid-glass.css itself rather than fought here. */
+@supports (corner-shape: squircle) {
+  .modal__panel[data-intent] { corner-shape: squircle; }
+}
+.cd__grabber {
+  width: 36px; height: 4px; border-radius: 999px;
+  background: var(--outline-variant); opacity: .7;
+  margin: 2px auto 14px;
+}
 .modal__head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 20px;

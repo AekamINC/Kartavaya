@@ -57,7 +57,7 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 | Employee onboarding | 84 | ⬜ ~95% unbuilt |
 | Platform billing | 86 | 🟡 P1/P2 code; P3/P4/P6 absent, cron unarmed |
 | Org-client billing | 87 | 🔴 router 500s; recurring doesn't recur; leak |
-| Liquid glass | 88, 89 | ✅ record; rescope done; enriched 2026-08-25 |
+| Liquid glass | 88, 89 | ✅ record; rescope done; enriched 2026-08-25; Apple-pass (buttons/tiles/modal) 2026-08-25 |
 | WhatsApp channel | 38, 39 | ⬜ owner creds (Phase 0.26) |
 | RAG / KB index | 08 | 🔴 empty always; answers grounded on nothing |
 | Employee↔login join | 05 | 🔴 0 of 98 linked; gates payslips + payroll |
