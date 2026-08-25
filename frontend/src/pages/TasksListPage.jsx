@@ -215,7 +215,7 @@ export default function TasksListPage() {
      45-row list to 3 while sitting on page 2 shows an empty table over a pager
      that says there is nothing to page to — the classic "my search returned
      nothing" bug that is really "you are on page 2 of 1". */
-  useEffect(() => { setPage(1); }, [search, filter, group, showArchived]);
+  useEffect(() => { setPage(1); }, [search, filter, showArchived]);
 
   /**
    * Archive and restore both REMOVE the row from the view they were pressed in,
