@@ -55,14 +55,16 @@
   --lg-shine: inset 0 1px 8px rgba(255,255,255,.02), inset 0 -1px 4px rgba(0,0,0,.03);
 }
 
-/* ── Cards — depth shadow + inset shine + accent glow + hover lift ──────── */
+/* ── Cards & KPI tiles — depth shadow + inset shine + accent glow ────────── */
 :root:not([data-liquid-glass="off"]) :is(
-  .k-card, .k-stat, .k-hero-kpi__card,
-  .vk-card, .hb-card, .gn-panel, .tv-card,
-  .anx-card, .vgw-kpi, .mkt-card,
-  .k-tmpl-card, .niyam-card, .niyam-panel,
+  .k-card, .k-stat, .k-hero-kpi, .k-hero-kpi__card,
+  .card, .vk-card, .vk-pl__st,
+  .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw, .vgw-kpi, .mkt-card, .mkt-stat,
+  .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
   .mn-card, .sa__card, .hcl-card, .sh-card,
-  .sk-card, .k-quickacts
+  .dr__ap-panel, .sk-card, .k-quickacts,
+  .gr__card, .gr__stat
 ) {
   box-shadow: var(--lg-shadow), var(--lg-inset), var(--lg-shine), var(--lg-glow);
   transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
@@ -71,10 +73,12 @@
 /* Hover — accent glow intensifies + lift */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .k-stat, .k-hero-kpi__card,
-  .vk-card, .hb-card, .gn-panel, .tv-card,
+  .card, .vk-card, .vk-pl__st,
+  .hb-card, .gn-panel, .tv-card,
   .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card,
-  .mn-card, .sa__card, .hcl-card, .sh-card
+  .mn-card, .sa__card, .hcl-card, .sh-card,
+  .gr__card, .gr__stat
 ):hover {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow-h);
   transform: translateY(-1px) scale(var(--lg-scale-h));
