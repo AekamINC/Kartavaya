@@ -132,15 +132,7 @@
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
-/* ── Settings rows ───────────────────────────────────────────────────────── */
-:root:not([data-liquid-glass="off"]) .sr {
-  box-shadow: var(--lg-shadow);
-  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
-}
-:root:not([data-liquid-glass="off"]) .sr:hover {
-  box-shadow: var(--lg-shadow-h);
-  transform: translateY(-1px);
-}
+/* Settings rows (.sr) are flat inline items, not cards — no depth. */
 
 /* ── Dock ─────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .k-dock {
@@ -167,7 +159,7 @@
   :root:not([data-liquid-glass="off"]) :is(
     .k-card, .k-stat, .hb-card, .gn-panel, .tv-card, .anx-card,
     .mkt-card, .k-tmpl-card, .niyam-card, .mn-card, .sa__card,
-    .hcl-card, .sh-card, .sr
+    .hcl-card, .sh-card
   ) {
     transition: none !important;
   }
