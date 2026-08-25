@@ -126,7 +126,12 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [showRejectInput,  setShowRejectInput]  = useState(false);
 
   const handleBodyScroll = useCallback(() => {
-    setScrolled((bodyRef.current?.scrollTop ?? 0) > 32);
+    const top = bodyRef.current?.scrollTop ?? 0;
+    setScrolled(prev => {
+      if (!prev && top > 32) return true;
+      if (prev && top <= 2) return false;
+      return prev;
+    });
   }, []);
 
   const mentionSource = teamMembers.length > 0 ? teamMembers : members;
