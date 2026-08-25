@@ -46,6 +46,11 @@
   font-size: 11px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--primary-text); margin-bottom: 8px;
 }
+/* Exemption, not the rule: for the one section whose content is ALREADY a
+   grid of its own bordered cards (`.omod__c` on the Modules tab) — wrapping
+   already-carded tiles in another card is the double-carding bug this whole
+   pass exists to avoid, just one level up. */
+.st__group--flush { padding: 0; border: 0; background: none; }
 /* font-weight and text-transform are reset for the same reason `.k-lbl__in`
    resets them (editorial.css §"The bilingual secondary inside a tracked/uppercase
    label"): `.st__gt` above is 700/.12em/uppercase, and SoundGrid nests this span

@@ -92,7 +92,7 @@ export default function TabModules({ onCount }) {
         </p>
       </section>
 
-      <section className="st__group">
+      <section className="st__group st__group--flush">
         <div className="omod">
           {cards.map(mod => (
             <ModuleCard key={mod.code} mod={mod} active={isModuleActive(mod.code, active)} disabled />
