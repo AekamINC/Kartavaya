@@ -206,7 +206,7 @@ export const NAV_FULL = [
       // people's work: it can move a task somebody owns and send a message
       // somebody receives, so authoring one is an org-admin act even while the
       // engine is unarmed and nothing it writes can leave the building.
-      { key: 'automations', to: '/settings/automations',   icon: 'customize',     en: 'Automations',    hi: 'नियम',    gu: 'નિયમ', orgAdminOnly: true },
+      { key: 'automations', to: '/settings/automations',   icon: 'automations',   en: 'Automations',    hi: 'नियम',    gu: 'નિયમ', orgAdminOnly: true, module: 'niyam' },
       { key: 'categories', to: '/settings/categories',    icon: 'categories',    en: 'Categories',     hi: 'वर्ग',    gu: 'વર્ગ' },
       // The console is a different SURFACE — it replaces the sidebar and owns
       // the window — but the door to it belongs on the sidebar, which is where

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PageHeader, Section, Badge } from '../components/editorial';
+import { Section, Badge } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import { ICONS } from '../components/layout/navIcons';
 import { Button, Select, Input, Toggle, EmptyState, ErrorState, useToast } from '../components/ui';
 import { Secondary } from '../components/Bilingual';
 import { api } from '../lib/api';
@@ -270,9 +272,13 @@ export default function NiyamPage() {
 
   return (
     <div className="k-page niyam">
-      <PageHeader
-        title="Niyam"
-        subtitle="Rules that run themselves — नियम"
+      <ModuleHeader
+        module="niyam"
+        kick="section.settings"
+        en="Automations"
+        hi="नियम"
+        sub="Rules that run themselves."
+        icon={ICONS.automations}
         actions={
           <Button onClick={() => setEditing({ name: '', event_type: catalog?.events?.[0]?.event_type, steps: [] })}>
             New rule

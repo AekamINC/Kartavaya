@@ -34,6 +34,7 @@ export const MODULES = {
   boards:    { color: 'var(--m-boards)',    en: 'Boards',     hi: 'फ़लक',    route: '/boards' },
   approvals: { color: 'var(--m-approvals)', en: 'Approvals',  hi: 'सम्मति',  route: '/approvals' },
   reports:   { color: 'var(--m-reports)',   en: 'Reports',    hi: 'प्रतिवेदन', route: '/reports' },
+  niyam:     { color: 'var(--m-niyam)',     en: 'Automations', hi: 'नियम',   route: '/settings/automations' },
 };
 
 const FALLBACK = 'var(--primary)';

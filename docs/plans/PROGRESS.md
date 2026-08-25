@@ -259,10 +259,33 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   padding · `settings.css`, `TabSenders.jsx`, `TabUpi.jsx`. Build clean. Not
   yet verified live.
 
-  Also queued (not started): the Appearance settings' heading-font picker
-  only changes the "Kartavaya" wordmark near the sidebar logo, not headings
-  anywhere else in the app — owner-reported, needs its own investigation
-  (probably the font-family token the picker writes isn't the one the actual
-  heading rules read).
+- `design/glass` fix 9 · Font-picker investigated — not a bug. `--font-display`
+  (what the Headings picker writes) is correctly read by 27 files including
+  `.k-pageh__h1`, `.k-stat__val`, and the sidebar wordmark; verified live by
+  overriding the token and reading computed `font-family` on each. What
+  doesn't change is `.mh__en` (the small English module label, e.g. "TASKS")
+  — deliberately `--font-ui`, per ModuleHeader.jsx's own comments: the
+  Devanagari term is the actual heading and lives on `--font-indic`, a
+  separate font axis the picker was never wired to (different script, needs
+  different font files). No code change; the picker's scope is narrower than
+  "headings everywhere" implies, not broken.
+
+- `design/glass` fix 10 · Niyam promoted to a full module, as agreed. Kept its
+  existing sidebar entry (`settings/automations`, `orgAdminOnly`) rather than
+  moving it — that gate is a deliberate access decision documented in
+  navConfig.js, not something this touches. Added: `niyam` to `MODULES`
+  (`moduleColors.js`) with a new `--m-niyam` token (light `#96354A` / dark
+  `#E8A4B4`, distinct from all 16 existing module hues); wired the nav entry
+  to the `automations` icon (a lightning-bolt SVG that already existed in
+  `navIcons.jsx` unused — the row was drawing the generic `customize` gear
+  instead) and added `module: 'niyam'` for grant-gating consistency (verified
+  safe: `orgAdminOnly` already restricts visibility to org admins, who get
+  `moduleGrants: null` — "no opinion" — so the new `module` check never hides
+  the row for anyone who could already see it); switched `NiyamPage.jsx` from
+  the generic `PageHeader` to `ModuleHeader`, matching all 12 other modules
+  (icon tile, "SETTINGS · व्यवस्था" kicker via the auto-seeded
+  `section.settings` label, module-colour accent) · `moduleColors.js`,
+  `module.css`, `navConfig.js`, `NiyamPage.jsx`. Build clean, `npm run check`
+  clean. Not yet verified live.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
