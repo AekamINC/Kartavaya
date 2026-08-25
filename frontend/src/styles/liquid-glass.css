@@ -107,6 +107,11 @@
   .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
   .mn-card, .hcl-card, .sh-card,
   .dr__ap-panel, .sk-card, .k-quickacts,
+  /* '.k-section' — newly carded (was a bare heading, see the comment on the
+     rule itself in editorial.css). Static depth only, no hover list: like
+     '.gn-panel'/'.tv-card', its children can include a full-width table and a
+     hover-scale on the whole section would nudge that table's scrollbar. */
+  .k-section,
   /* '.gr__card' only. '.gr__stat' was in this list and in the hover list and
      exists nowhere in the app — Graha's '.gr__st' is a section HEADING, not a
      surface, and glassing it would have been wrong even if the name matched. */

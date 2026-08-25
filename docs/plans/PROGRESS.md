@@ -130,4 +130,25 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   to editorial.css's bare `inset -1px 0 0, inset 0 1px 0` (the outer bleed is
   gone), screenshotted at 2x DPI — clean edge, no band; `.sr` still `none`.
 
+- `design/glass` fix 4 · `Section` (`components/editorial/ModuleUI.jsx`, 35
+  call sites across 16 files — Vetana, Pahchan, Dristi) rendered as a bare
+  heading with no border, background, or padding of its own. On pages whose
+  siblings are actual cards (Ganit's `.mk__c` KPI tiles) it sat at the same
+  page inset as everything else — numerically identical, verified live — but
+  read as unbounded next to surfaces that clearly have a boundary (owner
+  screenshotted Payroll → Dashboard: "Year to date"/"Payroll coverage"/
+  "Department split" all flush against the page edge with nothing framing
+  them). Not a CSS bug (the padding numbers checked out equally on the
+  "good" and "bad" pages) — a missing design treatment, confirmed with the
+  owner before touching a 35-site shared component: **wrap in a card**.
+  `.k-section` now carries the same border/background/radius/padding every
+  other card in the system uses, `.k-section__head` gets a bottom rule
+  separating it from the body, and `.k-section` joins `liquid-glass.css`'s
+  static depth+rim list (no hover-lift — same as `.gn-panel`/`.tv-card`,
+  since a `Section` can wrap a full-width table) · `editorial.css`,
+  `liquid-glass.css`. Build clean, `npm run check` clean. Not yet verified
+  live — need to check Vetana (the reported page) AND at least one Pahchan/
+  Dristi call site for double-carding (a `Section` already sitting inside
+  another bordered container would now show a card-in-a-card).
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
