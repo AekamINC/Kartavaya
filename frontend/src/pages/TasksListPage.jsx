@@ -55,11 +55,11 @@ const TASK_COLUMNS = [
   { id: 'task',      label: 'Task',         width: 340, fixed: true },
   { id: 'project',   label: 'Project',      width: 180 },
   { id: 'assignees', label: 'Assignees',    width: 200 },
-  { id: 'category',  label: 'Category',     width: 140, defaultHidden: true },
+  { id: 'category',  label: 'Category',     width: 140 },
   { id: 'due',       label: 'Due',          width: 150 },
-  { id: 'created',   label: 'Created',      width: 130, defaultHidden: true },
-  { id: 'createdBy', label: 'Created By',   width: 140, defaultHidden: true },
-  { id: 'updated',   label: 'Last Updated', width: 130, defaultHidden: true },
+  { id: 'created',   label: 'Created',      width: 130 },
+  { id: 'createdBy', label: 'Created By',   width: 140 },
+  { id: 'updated',   label: 'Last Updated', width: 130 },
   { id: 'status',    label: 'Status',       width: 130 },
 ];
 
@@ -605,6 +605,12 @@ export default function TasksListPage() {
                                 <span className="k-trow__attach" title={`${t.attachments.length} attachment${t.attachments.length > 1 ? 's' : ''}`}>
                                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5"/></svg>
                                   {t.attachments.length}
+                                </span>
+                              )}
+                              {t.comment_count > 0 && (
+                                <span className="k-trow__attach" title={`${t.comment_count} comment${t.comment_count > 1 ? 's' : ''}`}>
+                                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 3h12v8H5l-3 3V3z"/></svg>
+                                  {t.comment_count}
                                 </span>
                               )}
                             </div>

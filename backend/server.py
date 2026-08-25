@@ -1857,6 +1857,7 @@ def row_to_task(r) -> TaskOut:
         approved_by=col("approved_by"),approval_requested_at=col("approval_requested_at"),
         approval_decided_at=col("approval_decided_at"),requires_approval=bool(col("requires_approval",False)),
         created_by_name=col("created_by_name"),archived_at=col("archived_at"),
+        comment_count=col("comment_count",0),
     )
 
 
