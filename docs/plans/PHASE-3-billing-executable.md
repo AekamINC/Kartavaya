@@ -72,3 +72,9 @@ the SQL. Do not proceed until `client_invoice_lines` can gain a row.
 - `subscription_invoices` / `client_invoice_lines` move off 0 **in staging test
   data only** — never write a probe invoice against a live customer's org.
 - A test executes each new INSERT/UPDATE against the real schema.
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

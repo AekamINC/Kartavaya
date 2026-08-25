@@ -83,3 +83,9 @@ just needs to approve the wording)
 - Add the three undisclosed AI sub-processors (OpenRouter, HuggingFace, Groq) to
   `frontend/src/pages/legal/legalFacts.js` — DPDP s.8(2) exposure on the page
   written to unblock the sale.
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

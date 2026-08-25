@@ -106,3 +106,9 @@ now accepts a value on create.
 Phase 5 (PT-by-state needs 1.5/1.6), the client report (needs 1.4), the whole
 commission/leaderboard surface (needs 1.1), and the Kray tiles in Phase 2/4
 (need 1.2).
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

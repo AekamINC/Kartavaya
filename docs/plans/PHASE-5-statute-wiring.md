@@ -59,3 +59,9 @@ renumbered on 1 Apr 2026; a hardcoded ladder does not know that.
 - A dated rate change is proven to affect only runs on/after its `as_of`.
 - `cd backend && python -m pytest -q` green, including a test that a pre-change
   run keeps the old rate.
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

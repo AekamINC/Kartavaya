@@ -96,3 +96,9 @@ Each was re-verified against the live database on 2026-08-25.
 
 2.1, 2.4, 2.5, 2.6 are independent and can ship the day they are written. 2.2
 waits for Phase 1.5. 2.3 is the prerequisite for anything in Phase 3.
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

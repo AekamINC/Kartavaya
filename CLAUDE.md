@@ -6,6 +6,24 @@ Expo React Native app (`mobile/`). Two branches only: `staging` is where work
 happens, `main` is production. Test against staging.kartavaya.com. The domain
 is **kartavaya.com** — not kartavya.com.
 
+## Keeping status current — read this before claiming anything is "done"
+
+`docs/STATUS.md` is the single source of truth for what is built, half-built,
+and broken. `docs/plans/` holds the phased plan; `docs/FINAL-VERDICT-00-90.md`
+the arc. **This structure exists because the team kept losing track of state and
+re-deriving it from scratch** — proposals 00, 07, 21, 27, 82 and 90 are all the
+same status audit, written over and over. Do not add a proposal 91.
+
+- **When a change lands, update `docs/STATUS.md` and append to
+  `docs/plans/PROGRESS.md` in the same commit.** It is part of "done".
+- **✅ means a customer can complete the flow end to end**, proven by a row
+  appearing where there were zero — not "the code shipped". Code-without-data is
+  🟡. This distinction is the entire lesson of the 84–90 era.
+- **Never call a table, column or route "missing" without a live query** in your
+  report, and **never ship a router without one test that executes its SQL**
+  against the real schema. Both failure modes are documented in `docs/plans/PHASE-6`
+  and each produced a shipped blocker.
+
 ## The one dangerous fact
 
 **Staging and production share a single Supabase database.** Only the

@@ -80,3 +80,9 @@ API that exists and a UI that does not.
 - No UUID rendered (`check-rendered-ids.mjs`).
 - 4.5's dead-state test is **deleted**, not skipped.
 - `npm run build` + `npm run check` green.
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

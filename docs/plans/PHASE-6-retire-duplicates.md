@@ -77,3 +77,9 @@ is one or the other.
   collision.
 - The stale in-code assertions removed.
 - The SQL-execution test rule is in CI and in `CLAUDE.md`.
+
+---
+
+## Progress
+
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._
