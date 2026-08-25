@@ -60,7 +60,7 @@ export default function Footer() {
               <KLogo size={56} /><KWordmark size="lg" />
             </div>
             <p className="lfoot__blurb">
-              Practice management for Indian accounting firms.
+              Run your whole firm in one place.
             </p>
           </div>
 

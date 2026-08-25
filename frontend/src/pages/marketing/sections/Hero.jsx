@@ -28,8 +28,8 @@ export default function Hero() {
             <em lang="hi">आपकी भाषा</em>
           </h1>
           <p className="lhero__sub">
-            Tasks, invoicing, payroll and client approvals for Indian accounting
-            firms — in one place, with GST built in rather than bolted on.
+            Tasks, CRM, invoicing, procurement, payroll and attendance for Indian
+            businesses — in one place, with GST built in rather than bolted on.
           </p>
 
           <div className="lhero__ctas">
