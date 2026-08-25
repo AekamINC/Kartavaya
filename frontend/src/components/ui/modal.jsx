@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { Button } from "./Button";
 import FocusTrap from "./FocusTrap";
-import LiquidGlassPanel from "./LiquidGlassPanel";
 import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 /**
@@ -77,13 +76,12 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId,
       onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }}
     >
       <FocusTrap active={open}>
-        <LiquidGlassPanel
+        <div
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
           className={`modal__panel modal__panel--${size} ${closing ? 'is-closing' : ''}`.trim()}
           onAnimationEnd={onAnimationEnd}
-          radius={20}
         >
           <div className="modal__head">
             <h2 id={titleId} data-testid={`${dataTestId}-title`} className="modal__title">
@@ -101,7 +99,7 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId,
           </div>
           <div className="modal__body">{children}</div>
           {footer ? <div className="modal__foot">{footer}</div> : null}
-        </LiquidGlassPanel>
+        </div>
       </FocusTrap>
     </div>
   );

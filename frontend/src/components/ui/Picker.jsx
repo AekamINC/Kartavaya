@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useDismiss } from '../../hooks/useDismiss';
-import LiquidGlassPanel from './LiquidGlassPanel';
 import CalendarGrid from './CalendarGrid';
 import { Avatar, AvatarStack } from './Avatar';
 
@@ -179,7 +178,7 @@ export function usePicker(open, setOpen, rootRef, listRef, opts = {}) {
 function PkPop({ closing, up, right, width, children, ...rest }) {
   const cls = ['pk__pop', closing ? 'is-closing' : '', up ? 'pk__pop--up' : '', right ? 'pk__pop--right' : '']
     .filter(Boolean).join(' ');
-  return <LiquidGlassPanel className={cls} style={width ? { minWidth: width } : undefined} role="dialog" radius={12} {...rest}>{children}</LiquidGlassPanel>;
+  return <div className={cls} style={width ? { minWidth: width } : undefined} role="dialog" {...rest}>{children}</div>;
 }
 
 function PkRow({ id, on, cursor, box, onClick, children }) {

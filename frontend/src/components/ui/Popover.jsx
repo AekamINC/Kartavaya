@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDismiss } from '../../hooks/useDismiss';
-import LiquidGlassPanel from './LiquidGlassPanel';
 
 /**
  * Popover — arbitrary content anchored to a trigger (02-common-components.md §2).
@@ -110,13 +109,12 @@ export function Popover({ trigger, children, align = 'left', label, width }) {
         {trigger}
       </span>
       {open && pos && createPortal(
-        <LiquidGlassPanel ref={panelRef} role="dialog" aria-label={label}
+        <div ref={panelRef} role="dialog" aria-label={label}
           className={`pop ${align === 'right' ? 'pop--right' : ''} ${closing ? 'is-closing' : ''}`.replace(/\s+/g, ' ').trim()}
           onAnimationEnd={onExitEnd}
-          radius={16}
           style={{ ...pos, ...(width ? { width } : null) }}>
           {typeof children === 'function' ? children({ close }) : children}
-        </LiquidGlassPanel>,
+        </div>,
         document.body,
       )}
     </span>

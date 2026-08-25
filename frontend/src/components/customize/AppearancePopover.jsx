@@ -64,7 +64,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { useCustomize, DISPLAY_FONTS, UI_FONTS } from '../CustomizePanel';
+import { useCustomize, DISPLAY_FONTS, UI_FONTS, LIQUID_GLASS_PRESETS } from '../CustomizePanel';
 import FocusTrap from '../ui/FocusTrap';
 import { Secondary } from '../Bilingual';
 import { ICONS } from '../layout/navIcons';
@@ -292,6 +292,21 @@ function AppearancePanel({ titleId, onClose }) {
         <div className="kap__sec">
           <span className="kap__lbl">Notification sound</span>
           <SoundGrid value={soundId} onChange={chooseSound} />
+        </div>
+
+        <div className="kap__sec">
+          <span className="kap__lbl">Liquid glass</span>
+          <Seg
+            value={prefs.liquidGlass || 'off'}
+            onChange={v => setPrefs({ liquidGlass: v })}
+            label="Liquid glass preset"
+            options={[
+              { value: 'off',    label: 'Off' },
+              { value: 'subtle', label: 'Subtle' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'full',   label: 'Full' },
+            ]}
+          />
         </div>
       </div>
 

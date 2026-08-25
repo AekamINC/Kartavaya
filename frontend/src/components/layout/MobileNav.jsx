@@ -18,7 +18,6 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { mobileNavFor } from './navConfig';
 import { useCustomize } from '../CustomizePanel';
-import LiquidGlassPanel from '../ui/LiquidGlassPanel';
 import { ICONS } from './navIcons';
 
 export default function MobileNav({ unread = 0, onNewTask, onOpenMore }) {
@@ -37,7 +36,7 @@ export default function MobileNav({ unread = 0, onNewTask, onOpenMore }) {
     location.pathname === to || location.pathname.startsWith(to + '/');
 
   return (
-    <LiquidGlassPanel as="nav" className="mnav" aria-label="Primary" radius={0}>
+    <nav className="mnav" aria-label="Primary">
       {items.map((it) => {
         if (it.kind === 'fab') {
           return (
@@ -73,6 +72,6 @@ export default function MobileNav({ unread = 0, onNewTask, onOpenMore }) {
           </button>
         );
       })}
-    </LiquidGlassPanel>
+    </nav>
   );
 }

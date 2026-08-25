@@ -63,7 +63,7 @@ import MobileDrawer from './MobileDrawer';
 import MobileNav from './MobileNav';
 import { ICONS } from './navIcons';
 import { resolveRouteMeta } from './navConfig';
-import { useCustomize, useLiquidGlass } from '../CustomizePanel';
+import { useCustomize } from '../CustomizePanel';
 import GlassLensEasterEgg from '../ui/GlassLensEasterEgg';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';

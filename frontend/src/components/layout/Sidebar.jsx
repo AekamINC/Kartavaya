@@ -16,7 +16,6 @@ import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
 import { navContext, navGroupsFor } from './navConfig';
 import { useCustomize } from '../CustomizePanel';
-import LiquidGlassPanel from '../ui/LiquidGlassPanel';
 import SideBrand from './SideBrand';
 import { Secondary } from '../Bilingual';
 
@@ -299,7 +298,7 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
   });
 
   return (
-    <LiquidGlassPanel as="aside" className={'side' + (rail ? ' side--rail' : '')} radius={0}>
+    <aside className={'side' + (rail ? ' side--rail' : '')}>
       <SideBrand rail={rail} />
 
       {/* The lozenge. ONE element for the whole rail, moved to whichever item
@@ -442,6 +441,6 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
           </>
         )}
       </div>
-    </LiquidGlassPanel>
+    </aside>
   );
 }

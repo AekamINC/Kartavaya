@@ -148,6 +148,65 @@ export default function TabAppearance() {
           />
         </div>
       </div>
+
+      {/* Live preview — shows how glass looks on actual component shapes */}
+      {(prefs.liquidGlass || 'off') !== 'off' && (
+        <div className="sr" style={{ flexDirection: 'column', gap: 16 }}>
+          <div className="sr__t">Live preview</div>
+          <div className="sr__d" style={{ marginBottom: 8 }}>
+            Hover over the cards below to see the depth effect. These are the same
+            styles applied across dashboards, reports, and all module surfaces.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <div className="k-stat">
+              <div className="k-stat__kicker">OPEN TASKS</div>
+              <div className="k-stat__val">80</div>
+              <div className="k-stat__sub">across 10 projects</div>
+            </div>
+            <div className="k-stat k-stat--warn">
+              <div className="k-stat__kicker">OVERDUE</div>
+              <div className="k-stat__val">35</div>
+              <div className="k-stat__sub">needs attention</div>
+            </div>
+            <div className="k-stat k-stat--ok">
+              <div className="k-stat__kicker">DONE THIS WEEK</div>
+              <div className="k-stat__val">7</div>
+              <div className="k-stat__sub">7 more than last week</div>
+            </div>
+            <div className="k-stat k-stat--neutral">
+              <div className="k-stat__kicker">DUE TODAY</div>
+              <div className="k-stat__val">3</div>
+              <div className="k-stat__sub">1 high priority</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <section className="k-card" style={{ padding: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Sample card</div>
+              <div style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
+                This is how a dashboard card, report panel, or data section looks
+                with the current glass preset. Hover to see the depth lift.
+              </div>
+            </section>
+            <section className="k-card" style={{ padding: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Another card</div>
+              <div style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
+                Every bordered surface in Kartavya — stats, KPIs, panels, tables,
+                menus, popovers — all respond to this setting.
+              </div>
+            </section>
+          </div>
+
+          <div className="gn-panel" style={{ padding: 16 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Finance panel</div>
+            <div style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
+              Ganit panels, receivables KPI, report cards — they all get the same
+              glass border glow, depth shadow, and hover lift.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

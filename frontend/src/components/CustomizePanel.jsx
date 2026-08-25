@@ -145,7 +145,7 @@ export const DEFAULTS = {
   // the firm, and the owner asked for arrangement rather than a guess.
   mobileNav:    null,         // e.g. ['/dashboard', '/graha', '/vikray']
   glassMix:     0.6,          // 0 → 1, drives --glass-mix (CSS blur + sat + alpha)
-  liquidGlass:  'off',        // off | subtle | medium | full
+  liquidGlass:  'medium',      // off | subtle | medium | full
   glassLens:    false,        // shuding draggable lens Easter egg
 };
 
