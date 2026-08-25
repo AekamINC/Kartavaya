@@ -364,4 +364,24 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   "+ New order") is `content: none; background-image: none` — flat fill,
   no highlight band. **STATUS: ✅ shipped.**
 
+- `design/glass` fix 12 · Owner: "redesign the security and members tabs too
+  and everywhere else this glossy type ui." Security and Members were bare
+  — same pattern as Senders/UPI before fix 8, just never touched — because
+  `.st__group` (the ONLY section wrapper the entire settings surface uses:
+  org Profile/Members/Billing/Modules/Security/Danger zone AND all six
+  personal Customization tabs, 14 files) was `margin-bottom: 26px` alone,
+  nothing else. Fix 8's `.oc-card` modifier only ever reached the two files
+  it was added to by hand. Rather than repeat that per-file, gave
+  `.st__group` itself the card chrome (border/background/padding/radius),
+  which fixes all 14 files from one rule, and dropped `.oc-card` — folded
+  into `.st__group`, so keeping it as a separate modifier would just be two
+  names for the same thing now — from `TabSenders.jsx`/`TabUpi.jsx`
+  · `settings.css`, `TabSenders.jsx`, `TabUpi.jsx`. Build clean, `npm run
+  check` clean (no new contrast/write-gate/row-height regressions). Verified
+  live post-deploy: screenshotted Security, Members, Senders and a
+  Customization tab (Notifications) — every section is now a bounded card;
+  Senders' per-item cards (fix 8) read correctly with no double border, the
+  intro info-banner cards nest cleanly since `.opend` is a filled tint, not
+  a bordered card. **STATUS: ✅ shipped.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
