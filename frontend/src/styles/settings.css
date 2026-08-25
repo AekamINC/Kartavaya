@@ -25,24 +25,26 @@
 .sr__c { flex-shrink: 0; }
 .sr--col { flex-direction: column; align-items: stretch; gap: 11px; }
 
-.st__group { margin-bottom: 26px; }
-/* ── Per-item settings card ───────────────────────────────────────────────
-   Combined with `.st__group` (never alone) on a REPEATING row — one sender
-   purpose, one UPI platform — so each item reads as its own bounded card
-   instead of a bare heading + two fields floating on the page background.
-   `.st__group` on its own (the intro banners, the trailing Save button) is
-   deliberately left unstyled: those aren't repeating items and don't need
-   a boundary. */
-.oc-card {
+/* ── Settings section ──────────────────────────────────────────────────────
+   Every settings screen — org Profile/Members/Billing/Modules/Security/
+   Danger zone and every personal Customization tab — stacks its content in
+   these. Used to be `margin-bottom: 26px` alone: a heading and its rows
+   floating directly on the page background with nothing marking where one
+   section ends and the next begins, the same bare-card bug fixed elsewhere
+   in the app (Section, filter bars, Senders/UPI rows) but never here, where
+   it's the ONLY wrapper the entire settings surface has. Real chrome now,
+   everywhere this class is used — a settings section reads as a card like
+   everything else does. */
+.st__group {
+  margin-bottom: 18px;
   padding: 18px 20px;
   border: 1px solid var(--outline-variant);
   border-radius: var(--r-lg);
   background: var(--surface);
 }
-.oc-card .st__gt { font-size: 11px; margin-bottom: 8px; }
 .st__gt {
-  font-size: 10px; font-weight: 700; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--primary-text); margin-bottom: 2px;
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--primary-text); margin-bottom: 8px;
 }
 /* font-weight and text-transform are reset for the same reason `.k-lbl__in`
    resets them (editorial.css §"The bilingual secondary inside a tracked/uppercase
