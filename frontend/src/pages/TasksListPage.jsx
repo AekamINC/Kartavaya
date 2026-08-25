@@ -13,20 +13,18 @@ import { PageHeader, DueChip, PriorityDot, StatusChip, ProjectTag } from '../com
 import { avatarBg } from '../components/ui/Avatar';
 import { userInitials, relTime, logger } from '../lib/utils';
 import {
-  PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUS_LABELS_HI,
+  PRIORITY_COLORS, PRIORITY_LABELS,
 } from '../lib/statusColors';
 import { SkeletonTable, SkeletonRegion } from '../components/ui/Skeleton';
 import { EmptyState, ErrorState, errorKind } from '../components/ui';
 import useColumnPrefs from '../hooks/useColumnPrefs';
 import { ColumnsButton } from '../components/ui/CustomizeColumns';
 import { ColumnResizer } from '../components/ui/Table';
-import { useLanguage } from '../components/CustomizePanel';
-import { secondaryOf } from '../lib/labels';
-import { Secondary } from '../components/Bilingual';
+
+
+
 
 const PRIORITY_ORDER = ['urgent','high','medium','low'];
-const PRIORITY_HI    = { urgent:'अत्यावश्यक', high:'उच्च', medium:'मध्यम', low:'न्यून' };
-const STATUS_ORDER   = ['todo','in_progress','in_review','done','requested'];
 
 /**
  * THE DIV GRID JOINS THE ONE ARRANGEMENT MODEL.
@@ -85,7 +83,7 @@ export default function TasksListPage() {
   // six-name list, so every group heading on the Tasks list — the product's
   // most-visited page — carried Devanagari under English. Read once because the
   // groups are mapped below.
-  const lang = useLanguage();
+
   const user     = currentUser();
   // The SAME predicate as the route guard, not a second spelling of it.
   //
@@ -107,7 +105,6 @@ export default function TasksListPage() {
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [filter,       setFilter]       = useState('all');
-  const [group,        setGroup]        = useState('status');
   const [sortCol,      setSortCol]      = useState(null);
   const [sortDir,      setSortDir]      = useState('asc');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
@@ -321,58 +318,11 @@ export default function TasksListPage() {
     });
   }
 
-  // `#94a3b8` was the old `todo` grey, hardcoded here as a catch-all after the
-  // map it came from moved to tokens; `--on-surface-3` is the token that
-  // carries "no particular state" and it flips with the theme.
-  const groups = [];
-  if (group === 'priority') {
-    PRIORITY_ORDER.forEach(p => {
-      const items = filtered.filter(t => t.priority === p);
-      if (items.length) groups.push({ key: p, title: PRIORITY_LABELS[p], sans: PRIORITY_HI[p], color: PRIORITY_COLORS[p], items });
-    });
-    const rest = filtered.filter(t => !PRIORITY_ORDER.includes(t.priority));
-    if (rest.length) groups.push({ key: 'other', title: 'Other', sans: 'अन्य', color: 'var(--on-surface-3)', items: rest });
-  } else if (group === 'project') {
-    teams.forEach(team => {
-      const items = filtered.filter(t => t.team_id === team.team_id);
-      // Was `AVATAR_COLORS[groups.length % …]` — keyed off how many groups had
-      // been pushed so far, so a project changed colour whenever a project
-      // above it emptied out. `avatarBg` hashes the name and is stable.
-      if (items.length) groups.push({ key: team.team_id, title: team.name, sans: '', color: avatarBg(team.name), items });
-    });
-    const orphans = filtered.filter(t => !teams.find(tm => tm.team_id === t.team_id));
-    if (orphans.length) groups.push({ key: 'none', title: 'No project', sans: 'अन्य', color: 'var(--on-surface-3)', items: orphans });
-  } else {
-    STATUS_ORDER.forEach(s => {
-      const items = filtered.filter(t => t.status === s);
-      if (items.length) groups.push({ key: s, title: STATUS_LABELS[s], sans: STATUS_LABELS_HI[s], color: STATUS_COLORS[s], items });
-    });
-  }
-
-  /* ── Pagination ───────────────────────────────────────────────────────────
-     Ninety rows on one screen is the crowding, not the row height — 54px rows
-     make a long list taller, not calmer. Scrolling a page is fine; scrolling
-     the whole table is what stops anyone finding anything.
-
-     Paginated over the FLAT order and then regrouped, NOT per group. Slicing
-     each group independently would show "MEDIUM 47" above three rows on page 1
-     and the same header again on pages 2 and 3 — three headers claiming the
-     same 47. Flattening first means a page is a contiguous run of the list you
-     are already looking at, and a group header appears on a page only if that
-     page actually contains some of its rows.
-
-     The header count stays the group's TOTAL. It answers "how many are
-     MEDIUM", which does not change because you turned a page. */
-  const flat = groups.flatMap(g => g.items.map(item => ({ gkey: g.key, item })));
-  const totalRows = flat.length;
+  const totalRows = filtered.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(page, pageCount);
   const pageStart = (safePage - 1) * pageSize;
-  const pageSlice = flat.slice(pageStart, pageStart + pageSize);
-
-  const pagedGroups = groups
-    .map(g => ({ ...g, total: g.items.length, items: pageSlice.filter(r => r.gkey === g.key).map(r => r.item) }))
-    .filter(g => g.items.length > 0);
+  const pagedItems = filtered.slice(pageStart, pageStart + pageSize);
 
   const filterCounts = {
     mine:    tasks.filter(t => (t.user_id === myId || t.assignee_user_ids?.includes(myId)) && t.status !== 'done').length,
@@ -514,7 +464,7 @@ export default function TasksListPage() {
               were still fetching. `.ix-fade-up` gives it the entrance every
               other arriving surface has (--dur-base --ease-enter); with no
               entrance it replaced eight rows in a single frame. */}
-          {groups.length === 0 && (
+          {pagedItems.length === 0 && (
             <div className="ix-fade-up k-table__empty">
               {narrowed ? (
                 <EmptyState
@@ -542,25 +492,7 @@ export default function TasksListPage() {
             </div>
           )}
 
-          {pagedGroups.map(g => {
-            const groupIn = secondaryOf(g.sans, lang);
-            return (
-            <div key={g.key} className="k-group">
-              <div className="k-group__head" style={{ '--group-color': g.color }}>
-                <span className="k-group__bar" />
-                <span className="k-group__title">{g.title}</span>
-                {/* lang="hi". The group header is uppercase and tracked (see
-                    editorial.css), and tracking is exactly what breaks a
-                    conjunct — अत्यावश्यक loses its क्ष. editorial.css guards
-                    that with `[lang="hi"] { letter-spacing: 0 !important }`,
-                    but the guard is keyed on the attribute and this span did
-                    not carry it. */}
-                {groupIn.secondary && (
-                  <Secondary className="k-group__sans" value={groupIn.secondary} script={groupIn.script} />
-                )}
-                <span className="k-group__count">{g.total}</span>
-              </div>
-              {g.items.map(t => {
+          {pagedItems.map(t => {
                 const team      = teams.find(tm => tm.team_id === t.team_id);
                 const cat       = categories.find(c => c.category_id === t.category_id);
                 const assignees = (t.assignee_names || []).map(name => ({ name, color: avatarBg(name) }));
@@ -776,9 +708,6 @@ export default function TasksListPage() {
                     </div>
                   </div>
                 );
-              })}
-            </div>
-            );
           })}
 
           {/* The pager. Rendered only when there is more than one page — a
