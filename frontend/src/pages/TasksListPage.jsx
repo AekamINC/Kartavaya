@@ -107,7 +107,7 @@ export default function TasksListPage() {
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [filter,       setFilter]       = useState('all');
-  const [group,        setGroup]        = useState('priority');
+  const [group,        setGroup]        = useState('status');
   const [sortCol,      setSortCol]      = useState(null);
   const [sortDir,      setSortDir]      = useState('asc');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
