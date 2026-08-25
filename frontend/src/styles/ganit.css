@@ -25,12 +25,21 @@
  * filter, status filter and "+ New" would otherwise push the primary action
  * off-screen with no way to reach it.
  */
+/* Card framing — this row used to sit with no border, background or padding
+   of its own, flush between the bordered tab strip above and the bordered
+   `.tv-card` table below. Same fix as `Section` (editorial.css, 2026-08-25):
+   give it the card chrome the rest of the page already uses instead of
+   leaving it as bare flushed content between two bounded surfaces. */
 .gn-bar {
   display: flex;
   align-items: flex-end;
   gap: var(--sp-2);
   margin-bottom: var(--sp-4);
   flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 .gn-bar__f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .gn-bar__fl {

@@ -94,7 +94,7 @@ export default function PayrollTab({ runNonce, onChanged }) {
   }
 
   return (
-    <div>
+    <div className="k-section">
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
           Payroll runs<Secondary className="k-section__title-hi" value="वेतन संसाधन" />

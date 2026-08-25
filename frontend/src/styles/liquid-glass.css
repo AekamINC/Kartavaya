@@ -107,11 +107,11 @@
   .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
   .mn-card, .hcl-card, .sh-card,
   .dr__ap-panel, .sk-card, .k-quickacts,
-  /* '.k-section' — newly carded (was a bare heading, see the comment on the
-     rule itself in editorial.css). Static depth only, no hover list: like
-     '.gn-panel'/'.tv-card', its children can include a full-width table and a
-     hover-scale on the whole section would nudge that table's scrollbar. */
-  .k-section,
+  /* '.k-section' and every module's filter-bar class — newly carded (see the
+     comments on the rules themselves). Static depth only, no hover list:
+     like '.gn-panel'/'.tv-card', they can sit directly above a full-width
+     table and a hover-scale would nudge that table's scrollbar. */
+  .k-section, .gn-bar, .mn-bar, .vk-bar, .rep-bar, .hb-filters, .niyam-filters, .bl__filter,
   /* '.gr__card' only. '.gr__stat' was in this list and in the hover list and
      exists nowhere in the app — Graha's '.gr__st' is a section HEADING, not a
      surface, and glassing it would have been wrong even if the name matched. */

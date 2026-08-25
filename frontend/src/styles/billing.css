@@ -100,9 +100,16 @@
 
 /* ── People ────────────────────────────────────────────────────────────── */
 .bl__people { min-width: 0; }
+/* Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
+   (editorial.css), 2026-08-25: this row had no border, background or padding
+   of its own, flush between bordered surfaces above and below it. */
 .bl__filter {
   display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
   margin: 0 0 var(--sp-3); font-size: var(--t-body-sm); color: var(--on-surface-2);
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 .bl__ph { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .bl__ph-n { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }

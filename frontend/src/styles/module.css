@@ -735,10 +735,17 @@
    not decoration — dropping it puts the final row under the nav. */
 .mpage { padding: 0 0 48px; }
 
-/* ── Toolbar above a tab's content ───────────────────────────────────────── */
+/* ── Toolbar above a tab's content ─────────────────────────────────────────
+   Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
+   (editorial.css), 2026-08-25: this row had no border, background or padding
+   of its own, flush between bordered surfaces above and below it. */
 .vk-bar {
   display: flex; align-items: flex-end; flex-wrap: wrap;
   gap: 12px; margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 .vk-bar__f  { display: flex; flex-direction: column; gap: 5px; min-width: 150px; }
 .vk-bar__fl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }

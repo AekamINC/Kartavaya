@@ -158,7 +158,10 @@
 .niyam-striprow .niyam-strip { margin: 0; }
 .niyam-striprow__sp { flex: 1; }
 
-.niyam-filters { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
+/* Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
+   (editorial.css), 2026-08-25: this row had no border, background or padding
+   of its own, flush between bordered surfaces above and below it. */
+.niyam-filters { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }
 
 .niyam-chip {
   appearance: none;

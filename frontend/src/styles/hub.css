@@ -263,7 +263,10 @@
   white-space: nowrap;
 }
 
-.hb-filters { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+/* Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
+   (editorial.css), 2026-08-25: this row had no border, background or padding
+   of its own, flush between bordered surfaces above and below it. */
+.hb-filters { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); padding: 14px 16px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }
 .hb-chip {
   display: inline-flex; align-items: center; gap: var(--sp-2);
   padding: 5px 13px; border-radius: var(--r-pill); cursor: pointer;

@@ -168,7 +168,7 @@ export default function StructuresTab() {
   const drift = Math.round(monthlyTotal - ctcMonthly);
 
   return (
-    <div>
+    <div className="k-section">
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
           Salary structures<Secondary className="k-section__title-hi" value="वेतन ढाँचा" />

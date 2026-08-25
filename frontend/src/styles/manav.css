@@ -37,9 +37,16 @@
    This was `display:flex; gap:8; marginBottom:16; alignItems:center` retyped
    eleven times, once per tab, with three of them forgetting `flexWrap` and so
    overflowing the moment a filter row met a narrow window. */
+/* Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
+   (editorial.css), 2026-08-25: this row had no border, background or padding
+   of its own, flush between bordered surfaces above and below it. */
 .mn-bar {
   display: flex; align-items: center; gap: 8px;
   flex-wrap: wrap; margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 /* The spacer that pushes the primary action to the trailing edge. Was
    `<div style={{ flex: 1 }} />` — a styled element standing in for alignment. */

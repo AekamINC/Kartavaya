@@ -81,7 +81,7 @@ export default function LoansTab() {
   };
 
   return (
-    <div>
+    <div className="k-section">
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
           Loans &amp; advances<Secondary className="k-section__title-hi" value="ऋण एवं अग्रिम" />

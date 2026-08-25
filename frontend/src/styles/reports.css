@@ -149,7 +149,10 @@
 
 .rep-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
 
-.rep-bar { display: flex; gap: var(--sp-4); align-items: flex-end; flex-wrap: wrap; }
+/* Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
+   (editorial.css), 2026-08-25: this row had no border, background or padding
+   of its own, flush between bordered surfaces above and below it. */
+.rep-bar { display: flex; gap: var(--sp-4); align-items: flex-end; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }
 .rep-bar__grow { flex: 1 1 200px; min-width: 0; }
 
 /* A chooser gets the pointer a chooser gets. */

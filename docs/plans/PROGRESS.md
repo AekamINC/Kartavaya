@@ -157,4 +157,28 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   Corrections (a confirmed `Section` call site) screenshotted too — single
   clean card boundary, no double-carding. **STATUS: ✅ shipped.**
 
+- `design/glass` fix 5 · Same bare-bar anti-pattern as `Section`, found on the
+  original page the owner first flagged (Ganit → Invoices' TYPE/STATUS filter
+  row) and swept across every module: `.gn-bar` (Ganit), `.mn-bar` (Manav),
+  `.vk-bar` (Vikray), `.rep-bar` (Reports), `.hb-filters` (Hub), `.niyam-filters`
+  (Niyam), `.bl__filter` (Billing) — all had no border/background/padding of
+  their own, sitting flush between bordered surfaces above and below. All 7
+  given the same card chrome as `Section` and added to `liquid-glass.css`'s
+  static depth+rim list · `ganit.css`, `manav.css`, `module.css` (`.vk-bar`),
+  `reports.css`, `hub.css`, `niyam.css`, `billing.css`, `liquid-glass.css`.
+
+  Separately: 3 Vetana tabs (`PayrollTab`, `LoansTab`, `PayslipsTab`) hand-roll
+  `.k-section__head`/`.k-section__title` directly instead of using the
+  `Section` component, and all 3 were missing the outer `.k-section` wrapper
+  entirely — so fix 4 above never reached them even though they use the exact
+  same class names. `StructuresTab` had the identical gap (caught from an
+  owner screenshot after I'd already "finished" checking this page — the
+  earlier double-carding sweep only walks `.k-section` elements that exist;
+  it can't catch a `.k-section__head` with no `.k-section` ancestor at all,
+  which is a different failure mode). Added `className="k-section"` to the
+  outer wrapper in all 4 files. `EmployeesTab`/`AttendanceTab` (Manav) already
+  wrap correctly — checked, no fix needed · `StructuresTab.jsx`,
+  `PayrollTab.jsx`, `LoansTab.jsx`, `PayslipsTab.jsx`. Build clean. Not yet
+  verified live.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
