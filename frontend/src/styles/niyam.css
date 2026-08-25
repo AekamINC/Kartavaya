@@ -331,8 +331,11 @@
 .niyam-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
 .niyam-steps > li {
   border: 1px solid var(--border);
-  border-left: 3px solid color-mix(in srgb, var(--fam, var(--primary)) 55%, var(--border));
   border-radius: var(--r-md, 8px);
+  /* Was `border-left: 3px` beside this rule's own 1px on the other sides —
+     asymmetric width breaks the rounded corner's arc. An inset shadow clips
+     to `border-radius` correctly at any width. */
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--fam, var(--primary)) 55%, var(--border));
   padding: var(--sp-3, 12px);
   display: flex; flex-direction: column; gap: var(--sp-2, 8px);
   background: color-mix(in srgb, var(--fam, var(--primary)) 3%, transparent);

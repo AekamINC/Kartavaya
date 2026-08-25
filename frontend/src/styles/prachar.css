@@ -435,8 +435,13 @@
   width: 100%;
   padding: 7px 8px;
   border: 0;
-  border-left: 3px solid var(--c);
   border-radius: var(--r-xs);
+  /* Accent as an inset shadow, not `border-left: 3px` on an otherwise
+     border-0 box — the left side still had to round off at `border-radius`
+     with nothing on the other three sides to blend into, the same seam as
+     every other card fixed this session. An inset clips to the radius
+     correctly. */
+  box-shadow: inset 3px 0 0 0 var(--c);
   background: color-mix(in srgb, var(--c) 12%, transparent);
   font-family: inherit;
   text-align: left;

@@ -105,7 +105,7 @@
   .hb-card, .gn-panel, .tv-card,
   .anx-card, .vgw, .vgw-kpi, .mkt-card, .mkt-stat,
   .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
-  .mn-card, .sa__card, .hcl-card, .sh-card,
+  .mn-card, .hcl-card, .sh-card,
   .dr__ap-panel, .sk-card, .k-quickacts,
   /* '.gr__card' only. '.gr__stat' was in this list and in the hover list and
      exists nowhere in the app — Graha's '.gr__st' is a section HEADING, not a
@@ -132,7 +132,7 @@
   .hb-card,
   .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card,
-  .mn-card, .sa__card, .hcl-card, .sh-card,
+  .mn-card, .hcl-card, .sh-card,
   .gr__card, .mh__ic
 ):is(:hover, :focus-within) {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
@@ -172,17 +172,46 @@
    serves get their feedback here). Snappier than the release, per --lg-dur*.4. */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .vk-card, .hb-card, .anx-card, .mkt-card,
-  .k-tmpl-card, .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card, .gr__card,
+  .k-tmpl-card, .niyam-card, .mn-card, .hcl-card, .sh-card, .gr__card,
   .mh__ic
 ):active {
   transform: scale(var(--lg-scale-p));
   transition-duration: calc(var(--lg-dur) * .4);
 }
 
-/* ── Shell surfaces ──────────────────────────────────────────────────────── */
-:root:not([data-liquid-glass="off"]) .side {
-  box-shadow: var(--lg-shadow), var(--lg-inset), var(--lg-shine);
+/* ── Connector cards — dedicated, not in the shared :is() lists above ────────
+   `.sa__card` carries a per-state colour accent (`--c`) as `inset 3px 0 0`,
+   same reasoning as `.vk-pl__st`/`.tst`: it's inside a rounded `border-radius`
+   next to a uniform 1px border, and the generic rim's own inset (sized for a
+   uniform border) landed inside a wider asymmetric one when this class sat in
+   the shared list. Composed here so the accent and the rim are one
+   declaration instead of two rules fighting over `box-shadow`. */
+:root:not([data-liquid-glass="off"]) .sa__card {
+  box-shadow: inset 3px 0 0 0 var(--c), var(--lg-shadow), var(--lg-inset), var(--lg-shine);
+  transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
 }
+:root:not([data-liquid-glass="off"]) .sa__card:is(:hover, :focus-within) {
+  box-shadow: inset 3px 0 0 0 var(--c), var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
+  transform: translateY(var(--lg-lift)) scale(var(--lg-scale-h));
+}
+:root:not([data-liquid-glass="off"]) .sa__card:active {
+  transform: scale(var(--lg-scale-p));
+  transition-duration: calc(var(--lg-dur) * .4);
+}
+
+/* ── Shell surfaces ─────────────────────────────────────────────────────────
+   '.side' — REMOVED, deliberately. editorial.css already gives the sidebar
+   its own contained treatment: `box-shadow: inset -1px 0 0 ..., inset 0 1px
+   0 ...` (a crisp specular edge, never bleeds) plus a real `border-right: 1px`
+   for the hairline. This rule was OVERRIDING that outright — box-shadow does
+   not merge across two rules, the later one (this file, imported last) wins
+   whole — and swapping in `var(--lg-shadow)` put an outer, 20px-blur drop
+   shadow on a full-height panel whose only free edge is the right one. With
+   nowhere else to fall, 20px of it landed directly on the content pane as a
+   soft vertical band running the sidebar's entire height (screenshotted by
+   the owner). Same root cause as the `.sr` fix above: `--lg-shadow` is a
+   floating-card shadow, and a flush chrome panel with a border on its one
+   free edge was never a floating card. */
 :root:not([data-liquid-glass="off"]) .top {
   box-shadow: var(--lg-shadow), var(--lg-shine);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
@@ -225,9 +254,14 @@
 
 /* ── Toast ────────────────────────────────────────────────────────────────────
    Depth + rim only. '.tst' is 'background: var(--s-lowest)', opaque, so the blur
-   never rendered — deleted, box-shadow kept. */
+   never rendered — deleted, box-shadow kept. Composed with the tone-accent
+   inset from components.css (same reasoning as `.vk-pl__st` below) rather
+   than replacing it outright — this file is imported last, so a plain
+   `box-shadow: var(--lg-shadow-h)...` here would otherwise silently erase
+   the accent stripe whenever glass is on. */
 :root:not([data-liquid-glass="off"]) .tst {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
+  box-shadow: inset 3px 0 0 0 var(--tst-c, var(--outline)),
+              var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
 }
 
 /* ── Settings rows — REMOVED, deliberately ───────────────────────────────────

@@ -50,14 +50,19 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   grabber bar, a deeper contact shadow, and a spring entrance — scoped to
   `.modal__panel[data-intent]` (only ConfirmDialog sets it) so every other
   modal's documented MOTION-SPEC choreography is untouched · `components.css`,
-  `module.css`, `liquid-glass.css`, `ConfirmDialog.jsx` · build clean; verified
-  by computed-style injection against the real loaded stylesheet (localhost
-  dev server has no authenticated route reachable without entering test
-  credentials, which is a hard no — computed `border-radius`/`box-shadow`/
-  `transition-timing-function`/gradient background confirmed correct for
-  `.btn--fill`, `.mh__ic`, and `.modal__panel[data-intent]`). Not verified: a
-  real screenshot of these in the live authenticated app — owed on next
-  session with an open Browser pane or the user's own look on staging.
+  `module.css`, `liquid-glass.css`, `ConfirmDialog.jsx` · build clean; first
+  verified by computed-style injection against the real loaded stylesheet
+  (couldn't log in interactively — typing test credentials into a login
+  field is a hard-blocked action regardless of context), then properly
+  verified live and authenticated on `staging.kartavaya.com` via
+  `e2e-real/mint-state.mjs` (owner token from `.env.e2e`, restores
+  `localStorage.auth_token` — a session restore, not credential entry, so it
+  doesn't trip the same block) driving real Playwright against the deployed
+  site: real button on the Products tab, the Finance module header icon tile
+  (screenshotted), and a real delete confirm dialog opened and cancelled
+  (no write). All 4 approved sections confirmed — popover/menu needed no
+  code change, already had rim+blur+spring via the existing liquid-glass
+  architecture.
 
 - `design/glass` fix · Settings rows (`.sr` in Customize → Appearance etc.) were
   getting a floating-card drop shadow (`--lg-shadow`) despite `border-radius: 0`
@@ -86,7 +91,41 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   `:is()` lists into its own dedicated, composed rule — same reason as the
   confirm-modal shadow fix earlier this session: two rules fighting over one
   `box-shadow` property always loses to source order, so it's one rule now).
-  Build clean; not yet re-verified live (local preview build talks to a stale
-  backend and can't authenticate) — verify after push+deploy.
+  Build clean; verified live post-deploy via the same Playwright+godmode-token
+  approach — a non-selected stage card's `border-left` measured `1px` (was
+  `3px`) and a 3x-DPI zoom of its corner showed a clean curve, no step.
+
+- `design/glass` fix 3 · Same anti-pattern swept across the whole frontend
+  (owner flagged it recurring — "so many places, not one" — after fix 2 above,
+  plus a third, larger-scale case: a full-height panel getting an unbounded
+  OUTER shadow with nowhere to land). Two shapes of the same bug:
+  (a) `border-left: 2–3px` beside a thinner/absent border on the other three
+  sides, inside a rounded `border-radius` — the asymmetric width breaks the
+  arc a uniform border draws, worse wherever `liquid-glass.css`'s own rim
+  inset (sized for a uniform border) layered on top. Fixed on `.tst` (toast),
+  `.sa__card` (connectors), `.cn__card`, `.mkq__row`, `.k-notifbanner`,
+  `.niyam-steps > li`, `.m2link`, `.vk-tg__unclaimed`, `.vk-mix__b`,
+  `.pr__wcard`, `.hb-cal__e`, `.k-cust__hint`, `.ap__note` — all moved from
+  `border-left` to `box-shadow: inset Npx 0 0 var(--accent)`, which clips to
+  `border-radius` correctly at any width; `.tst` and `.sa__card` (both wired
+  into liquid-glass.css) pulled out of the shared `:is()` lists into their own
+  rules that compose the accent and the rim in one declaration instead of two
+  rules fighting over `box-shadow`. (b) `.side` (the sidebar) — its own
+  `--lg-shadow` in `liquid-glass.css` was completely overriding editorial.css's
+  already-correct, contained inset-only shadow + `border-right: 1px`; the
+  outer 20px-blur shadow that replaced it had nowhere to fall but onto the
+  content pane, a soft vertical band running the sidebar's full height
+  (screenshotted by the owner). Removed `.side` from that rule entirely —
+  editorial.css's own treatment already covers it, on every preset.
+  Deliberately NOT touched: `.lgl__note`, `.cl-appr__ask`, `.cn__setup`,
+  `.sa__setup`, `.k-citation`, `.msg__sysb` all zero the border-radius on the
+  accented side (`border-radius: 0 Xpx Xpx 0`), so there's no arc for the
+  border to fight — not the same bug. `.mn-quote`, `.k-total`, `.sr-rt__q`,
+  `.msg__b blockquote`, `.m2th`, `.sk-sched__next` have no border-radius at
+  all (square corners) — also not the bug. · `components.css`, `connectors.css`,
+  `editorial.css`, `hub.css`, `inbox.css`, `liquid-glass.css`, `marketplace.css`,
+  `module.css`, `niyam.css`, `prachar.css`, `public.css`, `sanvaad.css`. Build
+  clean, `npm run check` clean (no new contrast/write-gate/rendered-id
+  failures). Not yet re-verified live post-deploy.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

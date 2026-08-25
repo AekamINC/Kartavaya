@@ -303,8 +303,11 @@
   background: var(--s-low);
   color: var(--on-surface);
   border: 1px solid var(--outline-variant);
-  border-left: 3px solid var(--k-tone);
   border-radius: var(--r-sm);
+  /* Was `border-left: 3px` beside this rule's own 1px on the other sides —
+     asymmetric width breaks the rounded corner's arc. An inset shadow clips
+     to `border-radius` correctly at any width. */
+  box-shadow: inset 3px 0 0 0 var(--k-tone);
 }
 
 .k-notifbanner__ic {

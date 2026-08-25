@@ -57,8 +57,14 @@
 }
 
 .cn__card {
+  --c: var(--border);
   border: 1px solid var(--border);
   border-radius: 14px;
+  /* State accent as an inset shadow, not `border-left: 3px` beside this rule's
+     own 1px on the other sides — that asymmetry breaks the arc a uniform
+     border draws cleanly inside a rounded corner. An inset clips to
+     `border-radius` correctly at any width. */
+  box-shadow: inset 3px 0 0 0 var(--c);
   background: var(--surface);
   padding: 14px 16px;
 }
@@ -66,9 +72,9 @@
 /* The saved state as an EDGE, so the grid can be scanned without reading every
    status word. The word is still there — the colour is the second signal, never
    the only one. */
-.cn__card--on          { border-left: 3px solid var(--ok, var(--primary)); }
-.cn__card--saved-off   { border-left: 3px solid var(--warn, var(--on-surface-3)); }
-.cn__card--not-set     { border-left: 3px solid var(--border); }
+.cn__card--on          { --c: var(--ok, var(--primary)); }
+.cn__card--saved-off   { --c: var(--warn, var(--on-surface-3)); }
+.cn__card--not-set     { --c: var(--border); }
 
 .cn__head {
   display: flex;
@@ -445,16 +451,23 @@
 }
 
 .sa__card {
+  --c: var(--border);
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
   padding: 14px 16px;
-  border-left: 3px solid var(--border);
+  /* The state accent was `border-left: 3px` beside this rule's own 1px border
+     on the other three sides, inside a rounded corner — the same asymmetric-
+     width-vs-radius seam fixed on `.vk-pl__st` and `.tst`, and `.sa__card` is
+     wired into liquid-glass.css's shared card rim, so it compounded the same
+     way. `--c` (not `--tst-c`/`border-left-color`) to match the token name
+     `.vk-pl__st` already established for "this card's own accent colour". */
+  box-shadow: inset 3px 0 0 0 var(--c);
 }
 
-.sa__card[data-state="ready"]     { border-left-color: var(--primary); }
-.sa__card[data-state="live"]      { border-left-color: var(--ok); }
-.sa__card[data-state="attention"] { border-left-color: var(--warn); }
+.sa__card[data-state="ready"]     { --c: var(--primary); }
+.sa__card[data-state="live"]      { --c: var(--ok); }
+.sa__card[data-state="attention"] { --c: var(--warn); }
 
 .sa__head {
   display: flex;

@@ -1192,8 +1192,18 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
      the two bottom corners. */
   position: relative; overflow: hidden;
   min-width: 252px; max-width: 330px; padding: 11px 12px;
-  border: 1px solid var(--outline-variant); border-left: 3px solid var(--tst-c, var(--outline));
-  border-radius: var(--r-md); background: var(--s-lowest); box-shadow: var(--shadow-3);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md); background: var(--s-lowest);
+  /* The tone accent was `border-left: 3px` beside this rule's own 1px border
+     on the other three sides — inside a rounded `border-radius`, an
+     asymmetric width breaks the arc a uniform border draws cleanly, and
+     liquid-glass.css layers its own 1px rim inset (sized for a uniform
+     border) on top when glass is on, landing inside the 3px stripe as a
+     visible seam at the top-left/bottom-left corners. An inset shadow clips
+     to `border-radius` correctly at any width; liquid-glass.css's rule for
+     `.tst` composes its rim onto this SAME box-shadow declaration instead of
+     fighting it for the property. */
+  box-shadow: inset 3px 0 0 0 var(--tst-c, var(--outline)), var(--shadow-3);
   pointer-events: all;
   /* Was `dmPop var(--dur-base) var(--ease-enter)` — the POPOVER keyframe, a
      scale-from-97% with a 4px lift. A toast is not a popover: it has no anchor

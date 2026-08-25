@@ -182,7 +182,11 @@
   padding: var(--sp-3) var(--sp-4);
   background: var(--s-container);
   border-radius: var(--r-sm);
-  border-left: 2px solid var(--primary);
+  /* Accent as an inset shadow, not `border-left` on an otherwise border-0
+     box — the left side still had to round off at `border-radius` with
+     nothing on the other three sides to blend into. An inset clips to the
+     radius correctly. */
+  box-shadow: inset 2px 0 0 0 var(--primary);
   font-size: var(--t-body-sm);
   color: var(--on-surface-2);
   line-height: var(--line-height-base);

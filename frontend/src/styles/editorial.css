@@ -3473,7 +3473,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-cust-accent__chip span { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: rgba(255,255,255,.95); text-shadow: 0 1px 2px rgba(0,0,0,.45); position: relative; z-index: 1; }
 .k-cust-accent__chip.is-active { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--surface); }
-.k-cust__hint { font-family: var(--font-display); font-size: 12.5px; font-style: italic; color: var(--ink-3); padding: 10px 12px; background: var(--bg-soft); border-radius: 8px; border-left: 2px solid var(--k-primary); line-height: 1.5; }
+/* Accent as an inset shadow, not `border-left` on an otherwise border-0 box —
+   the left side still had to round off at `border-radius` with nothing on
+   the other three sides to blend into. An inset clips to the radius correctly. */
+.k-cust__hint { font-family: var(--font-display); font-size: 12.5px; font-style: italic; color: var(--ink-3); padding: 10px 12px; background: var(--bg-soft); border-radius: 8px; box-shadow: inset 2px 0 0 0 var(--k-primary); line-height: 1.5; }
 .k-cust__hint em { color: var(--ink-2); font-style: italic; }
 
 /* ── Form input ─────────────────────────────────────────────────────────── */

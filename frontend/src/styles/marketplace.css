@@ -682,9 +682,12 @@
 .mkq__row {
   padding: 13px 15px;
   border: 1px solid var(--outline);
-  border-left: 3px solid var(--outline);
   border-radius: var(--r-md);
   background: var(--surface);
+  /* Was `border-left: 3px` beside this rule's own 1px on the other sides —
+     asymmetric width breaks the rounded corner's arc. An inset shadow of the
+     same colour clips to `border-radius` correctly at any width. */
+  box-shadow: inset 3px 0 0 0 var(--outline);
 }
 /* Not a tint over the whole row: the note has to stay as readable here as
    anywhere else, and a washed background is how a warning state quietly costs

@@ -887,10 +887,14 @@
   padding: 11px 14px; text-align: left;
   background: var(--surface);
   border: 1px solid var(--outline-variant);
-  border-left: 3px solid var(--c, var(--outline-variant));
   border-radius: var(--r-md);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-standard);
+  /* Accent is an inset shadow, not `border-left: 3px` beside this rule's own
+     1px on the other sides — asymmetric width breaks the rounded corner's
+     arc, same fix as `.vk-pl__st` (the identical stage-tile pattern on the
+     Pipeline tab). An inset clips to `border-radius` correctly at any width. */
+  box-shadow: inset 3px 0 0 0 var(--c, var(--outline-variant));
 }
 .vk-mix__b:hover { background: var(--s-low); }
 .vk-mix__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -900,7 +904,7 @@
    page when they land — a loading state that reflows on resolve is a second
    layout the user has to re-read. */
 .vk-mix--load    { pointer-events: none; }
-.vk-mix__b--load { height: 66px; background: var(--s-container); border-left-color: var(--outline-variant); cursor: default; }
+.vk-mix__b--load { height: 66px; background: var(--s-container); box-shadow: inset 3px 0 0 0 var(--outline-variant); cursor: default; }
 
 /* Two panels, the second narrower — the reference's `.two` on this screen. */
 .vk-two { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
@@ -988,7 +992,10 @@
    no assignee. Toned, not alarming — it is a housekeeping prompt, not an error,
    and it is the difference between "attainment is broken again" and "assign
    those three deals". */
-.vk-tg__unclaimed  { margin: 0 0 14px; padding: 10px 13px; border: 1px solid var(--outline-variant); border-left: 3px solid var(--warn, var(--primary)); border-radius: var(--r-sm); background: var(--s-low); }
+/* Accent is an inset shadow, not `border-left: 3px` beside this rule's own
+   1px on the other sides — asymmetric width breaks the rounded corner's arc.
+   An inset clips to `border-radius` correctly at any width. */
+.vk-tg__unclaimed  { margin: 0 0 14px; padding: 10px 13px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--s-low); box-shadow: inset 3px 0 0 0 var(--warn, var(--primary)); }
 .vk-tg__unclaimedl { margin: 0; font-size: 12px; line-height: 1.55; color: var(--on-surface-2); }
 .vk-tg__unclaimedl + .vk-tg__unclaimedl { margin-top: 6px; }
 .vk-tg__unclaimedl b { font-variant-numeric: tabular-nums; }

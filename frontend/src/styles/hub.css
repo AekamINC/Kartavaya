@@ -681,7 +681,11 @@
   padding: 2px 5px; border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--pc) 18%, transparent);
   color: var(--on-surface);
-  border-left: 2px solid var(--pc);
+  /* Accent as an inset shadow, not `border-left` on an otherwise border-0
+     box — the left side still had to round off at `border-radius` with
+     nothing on the other three sides to blend into. An inset clips to the
+     radius correctly. */
+  box-shadow: inset 2px 0 0 0 var(--pc);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* A 7-column grid of 78px cells is 40px per column on a phone, which fits a

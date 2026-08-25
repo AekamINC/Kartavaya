@@ -2884,7 +2884,10 @@
 .m2voice__d { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); flex-shrink: 0; }
 
 /* Link preview */
-.m2link { display: flex; gap: 11px; width: min(420px, 100%); margin-top: 7px; padding: 10px 12px; border: 1px solid var(--outline-variant); border-left: 3px solid var(--primary); border-radius: var(--r-sm); background: var(--s-lowest); text-align: left; }
+/* Accent is an inset shadow, not `border-left: 3px` beside this rule's own
+   1px on the other sides — asymmetric width breaks the rounded corner's arc.
+   An inset clips to `border-radius` correctly at any width. */
+.m2link { display: flex; gap: 11px; width: min(420px, 100%); margin-top: 7px; padding: 10px 12px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--s-lowest); text-align: left; box-shadow: inset 3px 0 0 0 var(--primary); }
 .m2link__b { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .m2link__h { font-size: var(--t-label-sm); font-family: var(--font-mono); color: var(--on-surface-3); }
 .m2link__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
