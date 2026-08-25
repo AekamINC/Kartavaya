@@ -895,13 +895,17 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
               </div>
             )}
 
-            <DrawerMeta
+            <div className={`dr__collapsible${scrolled ? ' dr__collapsible--hide' : ''}`}>
+              <div className="dr__collapsible-inner">
+              <DrawerMeta
               task={task} draft={draft} setDraft={setDraft} saveTask={saveTask}
               saveReminders={saveReminders}
               onColumnChange={onColumnChange}
               columns={columns} members={members} categories={categories}
               assignees={task?.assignee_user_ids || []} setAssignees={setAssignees}
             />
+              </div>
+            </div>
 
             <div className="dr__body" ref={bodyRef} onScroll={handleBodyScroll}>
               {!task && (

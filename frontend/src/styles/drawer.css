@@ -119,6 +119,14 @@
    bottom margin already clears the last section. */
 .dr__body { flex: 1; overflow-y: auto; padding: var(--pad-card); }
 
+/* Collapsible region: title + pipeline + meta collapse on scroll */
+.dr__collapsible {
+  display: grid; grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-slow) var(--ease-emph);
+}
+.dr__collapsible-inner { overflow: hidden; min-height: 0; }
+.dr__collapsible--hide { grid-template-rows: 0fr; }
+
 .dr__crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--on-surface-2); }
 .dr__crumb-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-3); }
 /* STAYS --on-surface-3, and the original reason for it has expired without
