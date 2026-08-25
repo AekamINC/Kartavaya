@@ -234,4 +234,8 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   same bug. No fix applied there; told the owner to point at a specific spot
   if one still looks wrong rather than guessing further.
 
+  `.gpipe__head` verified live post-deploy: `border-top-width` measured `0px`
+  (was `3px`), and a 3x-DPI zoom of the corner shows a clean curve, no step.
+  **STATUS: ✅ shipped.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
