@@ -126,12 +126,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [showRejectInput,  setShowRejectInput]  = useState(false);
 
   const handleBodyScroll = useCallback(() => {
-    const top = bodyRef.current?.scrollTop ?? 0;
-    setScrolled(prev => {
-      if (!prev && top > 32) return true;
-      if (prev && top <= 2) return false;
-      return prev;
-    });
+    setScrolled((bodyRef.current?.scrollTop ?? 0) > 32);
   }, []);
 
   const mentionSource = teamMembers.length > 0 ? teamMembers : members;
@@ -892,27 +887,24 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
               scrolled={scrolled}
             />
 
-            <DrawerTitle task={task} draft={draft} setDraft={setDraft} saveTask={saveTask} />
-
-            {task && stages.length > 0 && (
-              <div className="dr__pipe-wrap">
-                <StatusPipeline stages={stages} current={task.column_id} onStageClick={onColumnChange} />
-              </div>
-            )}
-
-            <div className={`dr__collapsible${scrolled ? ' dr__collapsible--hide' : ''}`}>
-              <div className="dr__collapsible-inner">
-              <DrawerMeta
-              task={task} draft={draft} setDraft={setDraft} saveTask={saveTask}
-              saveReminders={saveReminders}
-              onColumnChange={onColumnChange}
-              columns={columns} members={members} categories={categories}
-              assignees={task?.assignee_user_ids || []} setAssignees={setAssignees}
-            />
-              </div>
-            </div>
-
             <div className="dr__body" ref={bodyRef} onScroll={handleBodyScroll}>
+              <div className="dr__sticky-top">
+                <DrawerTitle task={task} draft={draft} setDraft={setDraft} saveTask={saveTask} />
+
+                {task && stages.length > 0 && (
+                  <div className="dr__pipe-wrap">
+                    <StatusPipeline stages={stages} current={task.column_id} onStageClick={onColumnChange} />
+                  </div>
+                )}
+              </div>
+
+              <DrawerMeta
+                task={task} draft={draft} setDraft={setDraft} saveTask={saveTask}
+                saveReminders={saveReminders}
+                onColumnChange={onColumnChange}
+                columns={columns} members={members} categories={categories}
+                assignees={task?.assignee_user_ids || []} setAssignees={setAssignees}
+              />
               {!task && (
                 <div className="dr__skel">
                   <i style={{ width: '65%' }} />

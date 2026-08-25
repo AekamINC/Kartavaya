@@ -119,14 +119,18 @@
    bottom margin already clears the last section. */
 .dr__body { flex: 1; overflow-y: auto; padding: var(--pad-card); }
 
-/* Collapsible region: meta fields collapse on scroll */
-.dr__collapsible {
-  display: grid; grid-template-rows: 1fr;
-  min-height: 0;
-  transition: grid-template-rows var(--dur-slow, 320ms) var(--ease-emph, ease);
+/* Sticky top: title + pipeline stick while meta scrolls away */
+.dr__sticky-top {
+  position: sticky; top: 0; z-index: 2;
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .1));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
+  margin: calc(var(--pad-card) * -1) calc(var(--pad-card) * -1) 0;
+  padding: 0;
 }
-.dr__collapsible-inner { overflow: hidden; min-height: 0; }
-.dr__collapsible--hide { grid-template-rows: 0fr; }
+@media (prefers-reduced-transparency: reduce) {
+  .dr__sticky-top { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
 
 .dr__crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--on-surface-2); }
 .dr__crumb-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-3); }
