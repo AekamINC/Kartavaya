@@ -119,10 +119,11 @@
    bottom margin already clears the last section. */
 .dr__body { flex: 1; overflow-y: auto; padding: var(--pad-card); }
 
-/* Collapsible region: title + pipeline + meta collapse on scroll */
+/* Collapsible region: meta fields collapse on scroll */
 .dr__collapsible {
   display: grid; grid-template-rows: 1fr;
-  transition: grid-template-rows var(--dur-slow) var(--ease-emph);
+  min-height: 0;
+  transition: grid-template-rows var(--dur-slow, 320ms) var(--ease-emph, ease);
 }
 .dr__collapsible-inner { overflow: hidden; min-height: 0; }
 .dr__collapsible--hide { grid-template-rows: 0fr; }
