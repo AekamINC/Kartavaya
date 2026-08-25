@@ -59,4 +59,16 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   real screenshot of these in the live authenticated app — owed on next
   session with an open Browser pane or the user's own look on staging.
 
+- `design/glass` fix · Settings rows (`.sr` in Customize → Appearance etc.) were
+  getting a floating-card drop shadow (`--lg-shadow`) despite `border-radius: 0`
+  and sitting flush against neighbours with only a `border-bottom` divider — the
+  shadow had nowhere to round off to and bled past the row's own left/right
+  edges into the panel margin, visible as a stray halo along the settings
+  panel's outer edge (reported by the owner from screenshots). `.sr`/`.sr:hover`
+  removed from `liquid-glass.css`'s glass treatment entirely — a bordered list
+  row was never a card and doesn't need `--lg-shadow`/`--lg-shine`/hover-lift on
+  any preset · `liquid-glass.css`. `.top`/`.mnav` checked and left alone: both
+  are viewport-edge-to-edge, so the same shadow's left/right components fall
+  outside the viewport and are never visible — not the same bug.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

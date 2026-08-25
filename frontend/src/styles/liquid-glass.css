@@ -202,15 +202,18 @@
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
 }
 
-/* ── Settings rows ───────────────────────────────────────────────────────── */
-:root:not([data-liquid-glass="off"]) .sr {
-  box-shadow: var(--lg-shadow), var(--lg-shine);
-  transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
-}
-:root:not([data-liquid-glass="off"]) .sr:hover {
-  box-shadow: var(--lg-shadow-h), var(--lg-shine);
-  transform: translateY(-1px);
-}
+/* ── Settings rows — REMOVED, deliberately ───────────────────────────────────
+   `.sr` is a flat list row: `border-radius: 0`, separated from its neighbours
+   by nothing but `settings.css`'s `border-bottom`, flush left and right against
+   the panel edge. `--lg-shadow` is a floating-card drop shadow (`0 1px 4px` +
+   `0 6px 20px`) — on a square-cornered row with nothing to cast it against,
+   that shadow has nowhere to round off to, so it bleeds straight past the
+   row's own left/right edges into the page margin. That's the stray halo along
+   the settings panel's outer edge, not a rendering bug — the row was never a
+   card and should never have been given one's depth. The hover rule lifted the
+   row 1px on top of that, which is a floating-card affordance on something
+   that doesn't float. Deleted rather than tuned: nothing about a bordered list
+   row calls for --lg-shadow OR --lg-shine, on any preset. */
 
 /* ── Dock ───────────────────────────────────────────────────────────────────
    Depth + rim only. '.k-dock' is 'background: var(--surface)', opaque — blur
