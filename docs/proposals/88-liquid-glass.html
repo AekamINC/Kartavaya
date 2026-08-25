@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>88 — Liquid Glass</title>
+<style>
+  :root { --bg: #faf9f6; --fg: #1a1a1a; --mute: #666; --accent: #b85c38; --code-bg: #f0ede8; --border: #e0dcd4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1a1a1a; --fg: #e8e4de; --mute: #999; --code-bg: #252220; --border: #333; } }
+  * { margin: 0; box-sizing: border-box; }
+  body { font: 16px/1.6 -apple-system, system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  h1 { font-size: 1.8rem; margin-bottom: .3rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 .6rem; border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
+  h3 { font-size: 1rem; margin: 1.2rem 0 .4rem; }
+  p, li { margin-bottom: .5rem; }
+  ul, ol { padding-left: 1.4rem; }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: .88em; background: var(--code-bg); padding: .15em .35em; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: .8rem 0; font-size: .85em; }
+  pre code { background: none; padding: 0; }
+  .meta { color: var(--mute); font-size: .9rem; margin-bottom: 1.5rem; }
+  .tag { display: inline-block; background: var(--code-bg); color: var(--mute); font-size: .75rem; padding: .15em .5em; border-radius: 4px; margin-right: .3rem; }
+  table { width: 100%; border-collapse: collapse; margin: .8rem 0; font-size: .9rem; }
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; }
+  .file { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>Liquid Glass</h1>
+<p class="meta">
+  Proposal 88 · 2026-08-25 · <span class="tag">frontend</span> <span class="tag">design-system</span> <span class="tag">customization</span>
+</p>
+
+<p>
+  Apple-style liquid glass depth effects across every bordered surface in
+  Kartavya, fully controlled from the Customization settings. The effect adds
+  layered depth shadows, inset specular shine, and accent-tinted hover glow —
+  without touching existing borders, backgrounds, or layout.
+</p>
+
+<h2>What shipped</h2>
+
+<h3>Three presets</h3>
+<table>
+  <tr><th>Preset</th><th>Shadow depth</th><th>Inset shine</th><th>Hover accent</th><th>Hover lift</th><th>Extra blur</th></tr>
+  <tr><td>Subtle</td><td>4px spread</td><td>0.04 opacity</td><td>6% accent mix</td><td>1.003× scale</td><td>+2px</td></tr>
+  <tr><td>Medium (default)</td><td>6px spread</td><td>0.06 opacity</td><td>8% accent mix</td><td>1.005× scale</td><td>+4px</td></tr>
+  <tr><td>Full</td><td>8px spread</td><td>0.08 opacity</td><td>12% accent mix</td><td>1.008× scale</td><td>+8px</td></tr>
+</table>
+
+<h3>Customization controls</h3>
+<ul>
+  <li><strong>Glass intensity</strong> — range slider (0–1) controlling <code>--glass-mix</code>, which drives blur, saturation, and alpha across all glass surfaces.</li>
+  <li><strong>Liquid glass preset</strong> — segmented control: Off / Subtle / Medium / Full. Sets <code>data-liquid-glass</code> attribute on <code>:root</code>.</li>
+  <li><strong>Glass lens</strong> — toggle for a draggable SVG displacement-map lens (Easter egg). Uses the shuding/liquid-glass engine.</li>
+</ul>
+
+<h3>Live preview</h3>
+<p>
+  The Settings → Appearance tab includes a live preview section showing KPI stat
+  cards, dashboard cards, finance panels, rule cards, a mini table, toast, and
+  quick-actions — all using real class names so they respond to live token changes.
+  Changing the accent colour immediately updates the hover glow tint.
+</p>
+
+<h2>Architecture</h2>
+
+<h3>CSS-driven, not component-wrapping</h3>
+<p>
+  Early attempts wrapped components with <code>&lt;Glass&gt;</code> from
+  <code>@samasante/liquid-glass</code>, which applies SVG <code>feDisplacementMap</code>
+  for real refraction. This failed because all Kartavya surfaces have opaque backgrounds —
+  there is nothing to refract through. The entire approach was scrapped in favour of
+  CSS-only effects driven by the <code>[data-liquid-glass]</code> attribute on <code>:root</code>.
+</p>
+
+<h3>Token flow</h3>
+<pre><code>applyPrefs()
+  → sets data-liquid-glass="medium" on :root
+  → sets --lg-accent (from acc.mid)
+  → sets --lg-accent-deep (from acc.deep)
+  → sets --glass-mix
+
+liquid-glass.css
+  → :root[data-liquid-glass="medium"] defines tokens:
+      --lg-shadow, --lg-shadow-h, --lg-inset, --lg-shine,
+      --lg-blur-add, --lg-scale-h, --lg-dur
+  → selectors apply box-shadow + transition to 25+ class families
+  → hover rule adds accent-tinted shadow + translateY(-1px) + scale</code></pre>
+
+<h3>Why no border overrides</h3>
+<p>
+  Three iterations tried adding <code>border</code> with <code>!important</code> or
+  <code>box-shadow</code> outline rings (<code>0 0 0 1px</code>). Both clashed with
+  elements that already carry coloured borders — selected sidebar-bg cards,
+  pipeline stage buttons with <code>--c</code> colour, conversation-ground cards
+  with accent borders, and <code>is-on</code> active states. The final version
+  touches only <code>box-shadow</code> (depth + inset layers) and
+  <code>transform</code> (hover lift), leaving all existing borders untouched.
+</p>
+
+<h3>Why no <code>::after</code> pseudo-element</h3>
+<p>
+  A <code>::after</code> specular-shine gradient required <code>position: relative</code>
+  on all targeted cards. This broke layouts where cards already had positioning,
+  and caused text clipping when combined with cards that use their own <code>::after</code>.
+  The shine is now an inset <code>box-shadow</code> — same visual, zero layout side effects.
+</p>
+
+<h2>Files</h2>
+
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td class="file">src/styles/liquid-glass.css</td><td>All glass tokens and selectors. Imported last in index.css.</td></tr>
+  <tr><td class="file">src/components/CustomizePanel.jsx</td><td><code>LIQUID_GLASS_PRESETS</code>, <code>DEFAULTS</code> (glassMix, liquidGlass, glassLens), <code>applyPrefs</code> writes CSS vars + data attribute, <code>useLiquidGlass()</code> hook.</td></tr>
+  <tr><td class="file">src/pages/customize/TabAppearance.jsx</td><td>Glass intensity slider, Liquid glass Seg, Glass lens toggle, live preview grid.</td></tr>
+  <tr><td class="file">src/components/customize/AppearancePopover.jsx</td><td>Condensed liquid glass Seg in the quick popover.</td></tr>
+  <tr><td class="file">src/components/ui/GlassLensEasterEgg.jsx</td><td>Draggable SVG displacement lens, portal-mounted.</td></tr>
+  <tr><td class="file">src/components/layout/AppShell.jsx</td><td><code>GlassLensMount</code> — conditionally renders the lens when <code>prefs.glassLens</code> is true.</td></tr>
+  <tr><td class="file">src/lib/liquid-glass-shuding.js</td><td>Vanilla JS displacement-map engine (from shuding/liquid-glass repo).</td></tr>
+  <tr><td class="file">src/pages/GlassDemoPage.jsx</td><td>Demo page at <code>/glass-demo</code> comparing samasante, shuding, and CSS approaches.</td></tr>
+</table>
+
+<h2>Surfaces covered</h2>
+
+<h3>Cards &amp; panels (depth + shine + hover lift)</h3>
+<p>
+  <code>k-card</code>, <code>k-stat</code>, <code>k-hero-kpi</code>,
+  <code>k-hero-kpi__card</code>, <code>vk-card</code>, <code>vk-pl__st</code>,
+  <code>hb-card</code>, <code>gn-panel</code>, <code>tv-card</code>,
+  <code>anx-card</code>, <code>vgw</code>, <code>vgw-kpi</code>,
+  <code>mkt-card</code>, <code>mkt-stat</code>, <code>ix-panel</code>,
+  <code>k-tmpl-card</code>, <code>niyam-card</code>, <code>niyam-panel</code>,
+  <code>mn-card</code>, <code>sa__card</code>, <code>hcl-card</code>,
+  <code>sh-card</code>, <code>dr__ap-panel</code>, <code>sk-card</code>,
+  <code>k-quickacts</code>, <code>gr__card</code>, <code>gr__stat</code>.
+</p>
+
+<h3>Shell (depth + enhanced blur)</h3>
+<p><code>.side</code> (sidebar), <code>.top</code> (topbar), <code>.mnav</code> (mobile nav).</p>
+
+<h3>Overlays (deep shadow + blur)</h3>
+<p>
+  <code>.modal__panel</code>, <code>.pop</code>, <code>.menu--float</code>,
+  <code>.pk__pop</code>, <code>.tst</code> (toast), <code>.k-dock</code>,
+  <code>.cmdk__panel</code>, <code>.k-drawer__panel</code>, <code>.dr</code>.
+</p>
+
+<h3>Other</h3>
+<p><code>.tbl th</code> (table headers — blur only), <code>.sr</code> (settings rows — shadow + hover lift).</p>
+
+<h2>Accessibility</h2>
+<ul>
+  <li><code>prefers-reduced-motion</code> — disables transitions and hover transforms.</li>
+  <li><code>prefers-reduced-transparency</code> — zeroes blur additions and disables shine.</li>
+  <li><code>useLiquidGlass()</code> returns <code>enabled: false</code> when either media query matches.</li>
+</ul>
+
+<h2>Libraries retained</h2>
+<table>
+  <tr><th>Package</th><th>Used for</th><th>Status</th></tr>
+  <tr><td><code>@samasante/liquid-glass</code></td><td>React <code>&lt;Glass&gt;</code> component (SVG displacement)</td><td>Installed, not actively wrapping any surface. Available for future use on transparent surfaces.</td></tr>
+  <tr><td><code>shuding/liquid-glass</code></td><td>Draggable lens Easter egg</td><td>Active — powers <code>GlassLensEasterEgg.jsx</code> when glass lens toggle is on.</td></tr>
+</table>
+
+<h2>Lessons learned</h2>
+<ol>
+  <li><strong>SVG displacement needs transparency.</strong> <code>&lt;Glass&gt;</code> refracts what's <em>behind</em> the element. On opaque backgrounds, there's nothing to see.</li>
+  <li><strong>Never override borders with <code>!important</code>.</strong> Too many elements carry semantic borders (coloured left-border on pipeline stages, accent border on selected cards). Adding another border doubles up and looks crude.</li>
+  <li><strong>No <code>position: relative</code> on card selectors.</strong> Cards use diverse positioning strategies; forcing relative breaks layouts and clips text.</li>
+  <li><strong>No <code>overflow: hidden</code> on card selectors.</strong> Cards with content that intentionally overflows (badges, tooltips) get clipped.</li>
+  <li><strong>Accent colour belongs in diffused shadows, not outline rings.</strong> A <code>0 0 0 1px</code> box-shadow acts like a border and clashes with existing borders. A diffused shadow (<code>0 4px 16px</code>) with 8% accent mix is visible on hover without competing.</li>
+  <li><strong>Generic class names are dangerous.</strong> <code>.card</code> catches too many unintended elements. Prefer the namespaced <code>k-card</code>, <code>vk-card</code>, etc.</li>
+</ol>
+
+</body>
+</html>
