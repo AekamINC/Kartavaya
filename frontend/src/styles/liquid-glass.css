@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   LIQUID GLASS — CSS-driven depth, shimmer and accent-tinted effects.
+   LIQUID GLASS — CSS-driven depth, shine, and accent-tinted hover glow.
    Controlled by [data-liquid-glass] on :root (set by CustomizePanel.applyPrefs).
    Presets: off | subtle | medium | full.
-   Accent vars --lg-accent / --lg-accent-deep are written by applyPrefs.
+   Accent var --lg-accent is written by applyPrefs.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Tokens per preset ───────────────────────────────────────────────────── */
@@ -11,7 +11,9 @@
   --lg-shadow-h:  0 2px 8px color-mix(in srgb, var(--lg-accent) 6%, rgba(0,0,0,.05)),
                   0 8px 28px rgba(0,0,0,.04);
   --lg-inset:     inset 0 .5px 0 rgba(255,255,255,.12);
-  --lg-shine:     rgba(255,255,255,.04);
+  --lg-shine:     inset 0 1px 8px rgba(255,255,255,.04), inset 0 -1px 4px rgba(0,0,0,.01);
+  --lg-glow:      0 0 0 .5px color-mix(in srgb, var(--lg-accent) 8%, transparent);
+  --lg-glow-h:    0 0 0 1px color-mix(in srgb, var(--lg-accent) 15%, transparent);
   --lg-blur-add:  2px;
   --lg-scale-h:   1.003;
   --lg-dur:       .25s;
@@ -21,7 +23,9 @@
   --lg-shadow-h:  0 4px 16px color-mix(in srgb, var(--lg-accent) 8%, rgba(0,0,0,.06)),
                   0 14px 44px rgba(0,0,0,.05);
   --lg-inset:     inset 0 .5px 0 rgba(255,255,255,.18);
-  --lg-shine:     rgba(255,255,255,.06);
+  --lg-shine:     inset 0 1px 12px rgba(255,255,255,.06), inset 0 -1px 6px rgba(0,0,0,.015);
+  --lg-glow:      0 0 0 .5px color-mix(in srgb, var(--lg-accent) 12%, transparent);
+  --lg-glow-h:    0 0 0 1px color-mix(in srgb, var(--lg-accent) 22%, transparent);
   --lg-blur-add:  4px;
   --lg-scale-h:   1.005;
   --lg-dur:       .3s;
@@ -31,7 +35,9 @@
   --lg-shadow-h:  0 6px 24px color-mix(in srgb, var(--lg-accent) 12%, rgba(0,0,0,.08)),
                   0 18px 56px rgba(0,0,0,.06);
   --lg-inset:     inset 0 1px 0 rgba(255,255,255,.22);
-  --lg-shine:     rgba(255,255,255,.08);
+  --lg-shine:     inset 0 2px 16px rgba(255,255,255,.08), inset 0 -2px 8px rgba(0,0,0,.02);
+  --lg-glow:      0 0 0 1px color-mix(in srgb, var(--lg-accent) 16%, transparent);
+  --lg-glow-h:    0 0 0 1.5px color-mix(in srgb, var(--lg-accent) 30%, transparent);
   --lg-blur-add:  8px;
   --lg-scale-h:   1.008;
   --lg-dur:       .35s;
@@ -41,79 +47,62 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-liquid-glass="off"]) {
     --lg-inset: inset 0 .5px 0 rgba(255,255,255,.04);
-    --lg-shine: rgba(255,255,255,.02);
+    --lg-shine: inset 0 1px 8px rgba(255,255,255,.02), inset 0 -1px 4px rgba(0,0,0,.03);
   }
 }
 :root[data-theme="dark"]:not([data-liquid-glass="off"]) {
   --lg-inset: inset 0 .5px 0 rgba(255,255,255,.04);
-  --lg-shine: rgba(255,255,255,.02);
+  --lg-shine: inset 0 1px 8px rgba(255,255,255,.02), inset 0 -1px 4px rgba(0,0,0,.03);
 }
 
-/* ── Cards — depth shadow + specular shine + hover lift ──────────────────── */
-:root:not([data-liquid-glass="off"]) :is(
-  .k-card, .k-stat, .k-hero-kpi, .k-hero-kpi__card,
-  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
-  .anx-card, .vgw, .vgw-kpi, .mkt-card, .mkt-stat,
-  .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
-  .mn-card, .sa__card, .hcl-card, .sh-card,
-  .dr__ap-panel, .sk-card, .k-quickacts
-) {
-  box-shadow: var(--lg-shadow), var(--lg-inset);
-  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
-  position: relative;
-}
-
-/* Top specular shine */
+/* ── Cards — depth shadow + inset shine + accent glow + hover lift ──────── */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .k-stat, .k-hero-kpi__card,
-  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
-  .anx-card, .vgw-kpi, .mkt-card, .ix-panel,
+  .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card, .niyam-panel,
-  .mn-card, .sa__card, .hcl-card, .sh-card, .dr__ap-panel
-)::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 1;
-  background: linear-gradient(180deg, var(--lg-shine) 0%, transparent 40%);
+  .mn-card, .sa__card, .hcl-card, .sh-card,
+  .sk-card, .k-quickacts
+) {
+  box-shadow: var(--lg-shadow), var(--lg-inset), var(--lg-shine), var(--lg-glow);
+  transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
 }
 
-/* Hover — accent-tinted glow shadow + tiny lift */
+/* Hover — accent glow intensifies + lift */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .k-stat, .k-hero-kpi__card,
-  .card, .vk-card, .hb-card, .gn-panel, .tv-card,
-  .anx-card, .vgw-kpi, .mkt-card, .k-tmpl-card,
-  .niyam-card, .mn-card, .sa__card, .hcl-card, .sh-card
+  .vk-card, .hb-card, .gn-panel, .tv-card,
+  .anx-card, .vgw-kpi, .mkt-card,
+  .k-tmpl-card, .niyam-card,
+  .mn-card, .sa__card, .hcl-card, .sh-card
 ):hover {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow-h);
   transform: translateY(-1px) scale(var(--lg-scale-h));
 }
 
 /* ── Shell surfaces ──────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .side {
-  box-shadow: var(--lg-shadow), var(--lg-inset);
+  box-shadow: var(--lg-shadow), var(--lg-inset), var(--lg-shine);
 }
 :root:not([data-liquid-glass="off"]) .top {
-  box-shadow: var(--lg-shadow);
+  box-shadow: var(--lg-shadow), var(--lg-shine);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 :root:not([data-liquid-glass="off"]) .mnav {
-  box-shadow: 0 -1px 8px rgba(0,0,0,.04), var(--lg-inset);
+  box-shadow: 0 -1px 8px rgba(0,0,0,.04), var(--lg-inset), var(--lg-shine);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
 /* ── Overlays ────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .modal__panel {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 :root:not([data-liquid-glass="off"]) :is(.pop, .menu--float, .pk__pop) {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
@@ -127,31 +116,31 @@
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .tst {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
 /* ── Settings rows ───────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .sr {
-  box-shadow: var(--lg-shadow);
+  box-shadow: var(--lg-shadow), var(--lg-shine);
   transition: box-shadow var(--lg-dur) ease, transform var(--lg-dur) ease;
 }
 :root:not([data-liquid-glass="off"]) .sr:hover {
-  box-shadow: var(--lg-shadow-h);
+  box-shadow: var(--lg-shadow-h), var(--lg-shine), var(--lg-glow-h);
   transform: translateY(-1px);
 }
 
 /* ── Dock ─────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .k-dock {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
 
 /* ── Command palette ──────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .cmdk__panel {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine), var(--lg-glow);
   backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + var(--lg-blur-add))) saturate(var(--glass-sat));
 }
@@ -159,7 +148,7 @@
 /* ── Drawer ────────────────────────────────────────────────────────────────── */
 :root:not([data-liquid-glass="off"]) .k-drawer__panel,
 :root:not([data-liquid-glass="off"]) .dr {
-  box-shadow: var(--lg-shadow-h), var(--lg-inset);
+  box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
 }
 
 /* ── Accessibility ───────────────────────────────────────────────────────── */
@@ -182,6 +171,6 @@
 @media (prefers-reduced-transparency: reduce) {
   :root[data-liquid-glass] {
     --lg-blur-add: 0px;
-    --lg-shine: transparent;
+    --lg-shine: none;
   }
 }
