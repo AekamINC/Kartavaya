@@ -178,7 +178,12 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   which is a different failure mode). Added `className="k-section"` to the
   outer wrapper in all 4 files. `EmployeesTab`/`AttendanceTab` (Manav) already
   wrap correctly — checked, no fix needed · `StructuresTab.jsx`,
-  `PayrollTab.jsx`, `LoansTab.jsx`, `PayslipsTab.jsx`. Build clean. Not yet
-  verified live.
+  `PayrollTab.jsx`, `LoansTab.jsx`, `PayslipsTab.jsx`. Build clean.
+
+  Verified live post-deploy: Ganit invoices' TYPE/STATUS row (the page that
+  started this whole thread), Vetana → Structures ("Salary structures"), and
+  Manav → Employees ("Department/All logins/Filter" — the very first
+  screenshot in this thread) all screenshotted — proper bordered cards now,
+  matching every other surface on the page. **STATUS: ✅ shipped.**
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
