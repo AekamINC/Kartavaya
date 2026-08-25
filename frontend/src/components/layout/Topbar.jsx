@@ -13,6 +13,7 @@ import { resolveRouteMeta } from './navConfig';
 import { ICONS } from './navIcons';
 import { NotificationsModal } from '../NotificationsModal';
 import { useCustomize } from '../CustomizePanel';
+import LiquidGlassPanel from '../ui/LiquidGlassPanel';
 import OrgSwitcher from './OrgSwitcher';
 import AppearanceMenu from '../customize/AppearancePopover';
 
@@ -70,7 +71,7 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
   const indic  = (showGu && meta.gu) ? meta.gu : meta.hi;
 
   return (
-    <header className="top">
+    <LiquidGlassPanel as="header" className="top" radius={0}>
       <div className="crumb">
         {/* The leading `/` belongs to the switcher, not to this bar: only it
             knows whether it rendered anything, and a separator alone at the
@@ -163,6 +164,6 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
           New task
         </button>
       </div>
-    </header>
+    </LiquidGlassPanel>
   );
 }

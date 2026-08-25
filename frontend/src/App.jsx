@@ -113,6 +113,7 @@ const PrivacyPolicyPage     = lazyPage(() => import('./pages/legal/PrivacyPolicy
 const SubProcessorsPage     = lazyPage(() => import('./pages/legal/SubProcessorsPage'));
 const SecurityPage          = lazyPage(() => import('./pages/legal/SecurityPage'));
 const DpaPage               = lazyPage(() => import('./pages/legal/DpaPage'));
+const GlassDemoPage         = lazyPage(() => import('./pages/GlassDemoPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -180,6 +181,7 @@ function AppRouter() {
         <Route path="/subprocessors"    element={<SubProcessorsPage />} />
         <Route path="/security"         element={<SecurityPage />} />
         <Route path="/dpa"              element={<DpaPage />} />
+        <Route path="/glass-demo"       element={<GlassDemoPage />} />
 
         {/* Public landing at `/` — see RootGate. Declared before the protected
             shell so the exact-match wins for an anonymous visitor. */}

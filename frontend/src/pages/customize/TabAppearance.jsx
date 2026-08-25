@@ -1,5 +1,5 @@
 import React from 'react';
-import { useCustomize } from '../../components/CustomizePanel';
+import { useCustomize, LIQUID_GLASS_PRESETS } from '../../components/CustomizePanel';
 import AccentGrid from '../../components/customize/AccentGrid';
 import AccentPreview from '../../components/customize/AccentPreview';
 import SidebarBgCards from '../../components/customize/SidebarBgCards';
@@ -93,6 +93,60 @@ export default function TabAppearance() {
           value={prefs.convGround || DEFAULT_CONV_GROUND}
           onChange={v => setPrefs({ convGround: v })}
         />
+      </div>
+
+      <div className="sr">
+        <div className="sr__l">
+          <div className="sr__t">Glass intensity</div>
+          <div className="sr__d">Controls blur, saturation and transparency of glass surfaces.</div>
+        </div>
+        <div className="sr__c">
+          <input
+            type="range" min="0" max="1" step="0.05"
+            value={prefs.glassMix ?? 0.6}
+            onChange={e => setPrefs({ glassMix: +e.target.value })}
+            aria-label="Glass intensity"
+            style={{ width: '100%' }}
+          />
+        </div>
+      </div>
+
+      <div className="sr">
+        <div className="sr__l">
+          <div className="sr__t">Liquid glass</div>
+          <div className="sr__d">Apple-style refraction effect on glass surfaces. Uses SVG displacement.</div>
+        </div>
+        <div className="sr__c">
+          <Seg
+            value={prefs.liquidGlass || 'off'}
+            onChange={v => setPrefs({ liquidGlass: v })}
+            label="Liquid glass preset"
+            options={[
+              { value: 'off',    label: 'Off' },
+              { value: 'subtle', label: 'Subtle' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'full',   label: 'Full' },
+            ]}
+          />
+        </div>
+      </div>
+
+      <div className="sr">
+        <div className="sr__l">
+          <div className="sr__t">Glass lens</div>
+          <div className="sr__d">A draggable refraction lens you can move around the screen.</div>
+        </div>
+        <div className="sr__c">
+          <Seg
+            value={prefs.glassLens ? 'on' : 'off'}
+            onChange={v => setPrefs({ glassLens: v === 'on' })}
+            label="Glass lens"
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'on',  label: 'On' },
+            ]}
+          />
+        </div>
       </div>
     </div>
   );

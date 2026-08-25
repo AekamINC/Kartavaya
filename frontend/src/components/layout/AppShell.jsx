@@ -64,6 +64,7 @@ import MobileNav from './MobileNav';
 import { ICONS } from './navIcons';
 import { resolveRouteMeta } from './navConfig';
 import { useCustomize } from '../CustomizePanel';
+import GlassLensEasterEgg from '../ui/GlassLensEasterEgg';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import ErrorBoundary from '../ErrorBoundary';
@@ -512,6 +513,9 @@ export default function AppShell() {
             Desktop only — the bottom bar owns this corner below 1024px and
             `dock.css` takes the whole thing out of the tree there. */}
         <SkillDock />
+
+        {/* Draggable refraction lens Easter egg */}
+        {prefs.glassLens && <GlassLensEasterEgg />}
 
         {/* In-app toast stack */}
         <NotifToastContainer toasts={toasts} onDismiss={dropToast} />

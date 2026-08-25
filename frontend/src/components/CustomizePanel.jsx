@@ -8,6 +8,13 @@ import { normalizeLanguage, DEFAULT_LANGUAGE } from '../lib/i18n';
 
 const STORAGE_KEY = 'k_prefs';
 
+export const LIQUID_GLASS_PRESETS = {
+  off:    null,
+  subtle: { strength: 0.01, dispersion: 0.01, frost: 4, brightness: 0.05 },
+  medium: { strength: 0.03, dispersion: 0.02, frost: 8, brightness: 0.08 },
+  full:   { strength: 0.06, dispersion: 0.04, frost: 14, brightness: 0.12 },
+};
+
 /* 00-tokens.md §10 — 12 presets. Only `color` is stored; mid/deep/light are
    derived, so a custom hex behaves identically to a preset. The first four
    ids are unchanged so stored preferences keep resolving. */
@@ -137,12 +144,9 @@ export const DEFAULTS = {
   // Attendance; an accountant wants Finance. Any fixed set is wrong for most of
   // the firm, and the owner asked for arrangement rather than a guess.
   mobileNav:    null,         // e.g. ['/dashboard', '/graha', '/vikray']
-  // No `dnd` / `dndFrom` / `dndTo` here, against 09 §5. Quiet hours are not a
-  // local preference: the backend already stores `quiet_start` / `quiet_end` on
-  // notification_prefs and services/push_service.py refuses delivery inside the
-  // window. Mirroring them into localStorage would be a second copy that no
-  // sender reads, so the schedule would appear set and change nothing on the
-  // devices it exists to silence. TabNotifications reads and writes the real one.
+  glassMix:     0.6,          // 0 → 1, drives --glass-mix (CSS blur + sat + alpha)
+  liquidGlass:  'off',        // off | subtle | medium | full
+  glassLens:    false,        // shuding draggable lens Easter egg
 };
 
 /* The accent maths now lives in `lib/accent.js`, moved there unchanged so a
@@ -368,6 +372,10 @@ export function applyPrefs(prefs) {
     lang === 'en+gu'
       ? "'Noto Sans Gujarati', 'Shruti', 'Tiro Devanagari Hindi', 'Nirmala UI', 'Kohinoor Devanagari', sans-serif"
       : 'var(--font-hindi)');
+
+  // ── Glass ───────────────────────────────────────────────────────────────
+  root.style.setProperty('--glass-mix', String(prefs.glassMix ?? 0.6));
+  root.setAttribute('data-liquid-glass', prefs.liquidGlass || 'off');
 }
 
 const CustomizeCtx = createContext(null);
@@ -420,6 +428,16 @@ export function useCustomize() {
  * label component that can take down a page because a provider is missing is
  * worse than one that renders the default pairing for a frame.
  */
+export function useLiquidGlass() {
+  const ctx = useContext(CustomizeCtx);
+  const preset = ctx?.prefs?.liquidGlass || 'off';
+  const optics = LIQUID_GLASS_PRESETS[preset] || null;
+  const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const reducedTransparency = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)')?.matches;
+  const enabled = !!optics && !reducedMotion && !reducedTransparency;
+  return { enabled, optics, preset, reducedMotion, reducedTransparency };
+}
+
 export function useLanguage() {
   const ctx = useContext(CustomizeCtx);
   return normalizeLanguage(ctx?.prefs?.language);

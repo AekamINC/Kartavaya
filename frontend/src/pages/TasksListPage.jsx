@@ -57,7 +57,7 @@ const TASK_COLUMNS = [
   { id: 'category',  label: 'Category',     width: 140, sortable: true },
   { id: 'due',       label: 'Due',          width: 150, sortable: true },
   { id: 'created',   label: 'Created',      width: 130, sortable: true },
-  { id: 'createdBy', label: 'Created By',   width: 140, sortable: true },
+  { id: 'created_by', label: 'Created By',   width: 140, sortable: true },
   { id: 'updated',   label: 'Last Updated', width: 130, sortable: true },
   { id: 'status',    label: 'Status',       width: 130, sortable: true },
 ];
@@ -70,7 +70,7 @@ function taskSortVal(t, col, teams) {
     case 'category':  return (t.category_id || 'zzz').toLowerCase();
     case 'due':       return t.due_at || '9999';
     case 'created':   return t.created_at || '';
-    case 'createdBy': return (t.created_by_name || 'zzz').toLowerCase();
+    case 'created_by': return (t.created_by_name || 'zzz').toLowerCase();
     case 'updated':   return t.updated_at || '';
     case 'status':    return t.status || '';
     default:          return '';
@@ -641,8 +641,8 @@ export default function TasksListPage() {
                               <span className="k-trow__meta">{t.created_at ? new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
                             </div>
                           ),
-                      createdBy: (
-                            <div key="createdBy" className="k-trow__cell k-c-createdBy">
+                      created_by: (
+                            <div key="created_by" className="k-trow__cell k-c-created_by">
                               <span className="k-trow__meta">{t.created_by_name || '—'}</span>
                             </div>
                           ),

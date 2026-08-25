@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDismiss } from '../../hooks/useDismiss';
+import LiquidGlassPanel from './LiquidGlassPanel';
 
 /**
  * Menu — trigger + portal + roving tabindex (02-common-components.md §2).
@@ -198,16 +199,15 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
       </span>
 
       {open && pos && createPortal(
-        <div
+        <LiquidGlassPanel
           ref={menuRef}
           role="menu"
           aria-label={label}
           className={`menu menu--float ${align === 'right' ? 'menu--right' : ''} ${closing ? 'is-closing' : ''}`.replace(/\s+/g, ' ').trim()}
-          // `anchorTop` is bookkeeping for the flip, not CSS — spreading the
-          // whole object would hand React an unknown style property.
           style={{ top: pos.top, left: pos.left, right: pos.right }}
           onKeyDown={onKeyDown}
           onAnimationEnd={onExitEnd}
+          radius={12}
         >
           {items.filter(Boolean).map((it, i) => it.sep
             ? <div key={`sep-${i}`} className="menu__sep" role="separator" />
@@ -226,7 +226,7 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
                 {it.hint && <span className="menu__d">{it.hint}</span>}
               </button>
             ))}
-        </div>,
+        </LiquidGlassPanel>,
         document.body,
       )}
     </span>
