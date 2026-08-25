@@ -101,7 +101,7 @@
 /* ── Cards & panels — depth shadow + inset shine ────────────────────────── */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .k-stat, .k-hero-kpi, .k-hero-kpi__card,
-  .vk-card, .vk-pl__st,
+  .vk-card,
   .hb-card, .gn-panel, .tv-card,
   .anx-card, .vgw, .vgw-kpi, .mkt-card, .mkt-stat,
   .ix-panel, .k-tmpl-card, .niyam-card, .niyam-panel,
@@ -128,7 +128,7 @@
    depth + rim from the base rule above; only genuine card components move. */
 :root:not([data-liquid-glass="off"]) :is(
   .k-card, .k-stat, .k-hero-kpi__card,
-  .vk-card, .vk-pl__st,
+  .vk-card,
   .hb-card,
   .anx-card, .vgw-kpi, .mkt-card,
   .k-tmpl-card, .niyam-card,
@@ -137,6 +137,34 @@
 ):is(:hover, :focus-within) {
   box-shadow: var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
   transform: translateY(var(--lg-lift)) scale(var(--lg-scale-h));
+}
+
+/* ── Pipeline stage cards — dedicated, not in the shared :is() lists above ───
+   `.vk-pl__st` carries a per-stage colour accent (`--c`, set inline per card)
+   as an `inset 3px 0 0` box-shadow rather than the generic rim/shadow — see
+   vikray.css for why: a `border-left: 3px` beside 1px on the other three sides
+   used to fight the rounded `border-radius`, and the shared rim's own 1px
+   inset (sized for a UNIFORM thin border) landed inside that 3px stripe,
+   producing a visible seam/step at the top-left and bottom-left corners
+   (screenshotted by the owner, on `staging.kartavaya.com/vikray` → Pipeline).
+   An inset box-shadow clips to `border-radius` cleanly at any width, so the
+   accent moved there; vikray.css's own (ungated) rule carries the same accent
+   for `liquid-glass="off"`, and this rule only ADDS the rim/shadow on top —
+   composed, not layered separately, so the two never fight over the property
+   again. */
+:root:not([data-liquid-glass="off"]) .vk-pl__st {
+  box-shadow: inset 3px 0 0 0 var(--c, var(--outline-variant)),
+              var(--lg-shadow), var(--lg-inset), var(--lg-shine);
+  transition: box-shadow var(--lg-dur) var(--ease-standard), transform var(--lg-dur) var(--ease-standard);
+}
+:root:not([data-liquid-glass="off"]) .vk-pl__st:is(:hover, :focus-within) {
+  box-shadow: inset 3px 0 0 0 var(--c, var(--outline-variant)),
+              var(--lg-shadow-h), var(--lg-inset), var(--lg-shine);
+  transform: translateY(var(--lg-lift)) scale(var(--lg-scale-h));
+}
+:root:not([data-liquid-glass="off"]) .vk-pl__st:active {
+  transform: scale(var(--lg-scale-p));
+  transition-duration: calc(var(--lg-dur) * .4);
 }
 
 /* Press — the Apple tap "squish". Overrides the hover lift while the pointer is

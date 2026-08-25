@@ -71,4 +71,22 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
   are viewport-edge-to-edge, so the same shadow's left/right components fall
   outside the viewport and are never visible — not the same bug.
 
+- `design/glass` fix 2 · Pipeline stage cards (`.vk-pl__st`, vikray → Pipeline
+  tab) had `border-left: 3px` beside a 1px border on the other three sides,
+  inside a rounded `border-radius` — an asymmetric border width breaks the arc
+  a uniform border draws cleanly, and liquid-glass.css's own 1px rim inset
+  (sized for a uniform border) landed inside that 3px stripe, producing a
+  visible seam/step at the top-left and bottom-left corners (screenshotted by
+  the owner at high zoom). Moved the stage-colour accent (`--c`, set inline
+  per card) from `border-left` to `box-shadow: inset 3px 0 0 var(--c)` — insets
+  clip to `border-radius` correctly at any width. `.is-on` now reassigns `--c`
+  itself rather than `border-color`, so both the ungated base rule (liquid
+  glass off) and liquid-glass.css's composed rule pick up the primary colour
+  · `vikray.css`, `liquid-glass.css` (`.vk-pl__st` pulled out of the shared
+  `:is()` lists into its own dedicated, composed rule — same reason as the
+  confirm-modal shadow fix earlier this session: two rules fighting over one
+  `box-shadow` property always loses to source order, so it's one rule now).
+  Build clean; not yet re-verified live (local preview build talks to a stale
+  backend and can't authenticate) — verify after push+deploy.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

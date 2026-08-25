@@ -51,19 +51,29 @@
   text-align: left;
   background: var(--surface);
   border: 1px solid var(--outline-variant);
-  /* The stage's own colour, or a neutral keyline for "All stages" which has
-     no single colour to claim. */
-  border-left: 3px solid var(--c, var(--outline-variant));
   border-radius: var(--r-md);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-standard);
+  /* The stage's own colour, or a neutral keyline for "All stages" which has
+     no single colour to claim. An INSET shadow, not `border-left: 3px` beside
+     a 1px border on the other three sides: that asymmetry used to fight
+     `border-radius` — a thicker side breaks the arc a uniform-width border
+     draws cleanly, visible as a step at the top-left/bottom-left corners once
+     liquid-glass.css's own 1px rim inset (sized for a uniform border) landed
+     inside the 3px stripe. An inset shadow clips to the radius correctly at
+     any width. liquid-glass.css composes its rim ON TOP of this — same
+     property, one rule, so they can't fight over it again. */
+  box-shadow: inset 3px 0 0 0 var(--c, var(--outline-variant));
 }
 
 .vk-pl__st:hover { background: var(--s-low); }
 .vk-pl__st:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-/* Selected is carried by fill AND by `aria-pressed`, never by colour alone. */
-.vk-pl__st.is-on { background: var(--s-container); border-color: var(--primary); }
+/* Selected is carried by fill AND by `aria-pressed`, never by colour alone.
+   Reassigns `--c` itself, not `border-color` — `--c` is what both this rule's
+   own box-shadow AND liquid-glass.css's composed rule read, so the accent
+   turns primary either way liquid-glass is toggled. */
+.vk-pl__st.is-on { background: var(--s-container); --c: var(--primary); }
 
 .vk-pl__stn {
   font-family: var(--font-display);
