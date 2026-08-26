@@ -129,7 +129,16 @@ today only because the column is empty**:
 - **`state_lgd` and `district_lgd` are ZERO-PADDED TEXT** (`'07'`, `'094'`). An
   `integer` column destroys them silently — `07` becomes `7` and stops matching
   any government table.
-- **Next migration number is 222** (221 is the highest; never re-number).
+- **DO NOT hardcode the migration number — read it at the moment you write the
+  file.** This plan originally said 222. Inside ten minutes on 2026-08-26 a
+  parallel session in **this same working tree** committed 222
+  (`billing_credit_kind`) and started 223 (`service_line_invoice_from`), so
+  the answer went 222 → 223 → 224 while the plan was being edited.
+  **`ls backend/migrations/ | grep -oE '^[0-9]+' | sort -n | tail -1`** is the
+  only check that is right, because it sees untracked files a `git ls-files`
+  misses — and an untracked migration is precisely what a peer session holds
+  mid-flight. As of 2026-08-26 the next free number is **224**. Never
+  re-number once committed.
 - **Accept:** `count(*)` → 20144 and `count(DISTINCT pincode)` → 18839, both off
   zero. **Stop and report before running the loader** — 20,144 live rows is a
   data change, and the standing migration approval does not cover it.
@@ -188,10 +197,17 @@ today only because the column is empty**:
   `mapmyindia`, `maplibregl`, `mapboxgl` to `EXTERNAL` in
   `check-orphan-selectors.mjs:89-92` and `check-classes.mjs`. Prove the gate
   still works by adding a junk selector and watching it go red.
-- **GODL attribution is a licence condition, not a nicety.** Render *"Boundaries
-  © Government of India (data.gov.in) — GODL-India · Basemap © Mappls"* as our
-  own DOM, unconditionally, asserted by a render test so it cannot be quietly
-  deleted.
+- **Attribution is a licence condition, not a nicety — and it is TWO conditions.**
+  The GODL half is a text credit: *"Boundaries © Government of India
+  (data.gov.in) — GODL-India"*. The Mappls half is **not** a text credit — their
+  published terms require the *"Powered by Mappls [logo]"* to be clearly
+  presented and say it "shall" never be removed or hidden. **A `© Mappls` string
+  does not satisfy it.** Render both as our own DOM, unconditionally, asserted by
+  a render test — but fix the criterion before writing the test, or the test
+  locks in the wrong thing. See proposal 92 §6.1.
+- **⚠ Their terms also forbid a Mappls map "with or near a non-Mappls Map in a
+  Customer Application."** That permanently closes off mixing in MapLibre/OSM/
+  Google anywhere in the app — including a mobile fallback. Proposal 92 §6.2.
 - **Accept:** falsifiable, not a screenshot of a blue rectangle — the network
   tab shows a 200 from the geometry endpoint with `features.length > 0`, and
   `features.length + unmatched.length === rules.pincodes.length`.
@@ -210,6 +226,20 @@ today only because the column is empty**:
   not transfer.** An Indian PIN averages ~82 km² against a UK postcode's ~17
   addresses — and 51 PINs do not even resolve to one state. Put a one-line lede
   under the address block saying what a PIN can and cannot fill.
+- **⚠ What we send to Mappls, we licence to Mappls.** Their published terms take a
+  perpetual, worldwide, sub-licensable licence over content submitted to their
+  servers — and an autosuggest call on a client's premises is a submission. So:
+  send the **query fragment only**, never the stored record; do not fire it for
+  already-saved addresses; **do not put autosuggest on the public inbound form**;
+  and name Mappls as a processor in the privacy notice. Their terms also forbid
+  caching "to avoid paying fees", so a results cache is not available as a cost
+  lever — if volume bites, make fewer calls. Proposal 92 §6.3.
+- **Confirm before building the proxy:** under the Geospatial Data Guidelines
+  2021, a *foreign* entity licensing finer-than-threshold Indian map data may
+  only do so through APIs that do not let the data pass through its own servers.
+  7.6 is a server-side proxy. If Aekam Inc is an Indian entity this is moot —
+  but answer it once, in writing, because the alternative is client-side and
+  that is not a late change. Proposal 92 §6.4.
 - **Watch:** Unicode's client `INC UK` has `address->>'pincode' = 'NW1 245'` and
   `Navrang Polymers` has its whole address stored as a stringified JSON exploded
   into character keys. **Both must still load, edit and save** — the validation
@@ -249,6 +279,16 @@ Rejected, with the reason:
   it for this.**
 
 ## Open questions — owner
+
+> Questions 1–3 now have an evidence-backed recommendation in **proposal 92 §8**
+> (market research, 2026-08-26). The recommendations are: **priority integer,
+> lowest wins, never blocks a save** (Q1, the Salesforce mechanism — Zoho's
+> multi-territory model costs a join table we do not need at 17 territories);
+> **territory always, rep only when unassigned** (Q2 — unanimous in the routing
+> literature, and 42 of 54 Unicode contacts already have an owner); and **yes to
+> a PIN on the public form, as an optional six-digit numeric field that echoes
+> district+state back, shipped after 7.0, never validated into a blocker** (Q3).
+> **The decisions remain the owner's.**
 
 1. **When one PIN falls in two territories, which wins?** Nothing in the schema
    prevents it (`UNIQUE(org_id, name)` is the only constraint) and zero overlaps
@@ -308,6 +348,10 @@ Rejected, with the reason:
 - `docs/STATUS.md` and `docs/plans/PROGRESS.md` updated in the same commit.
 
 ## Provenance
+
+Market research companion: `docs/proposals/92-map-integration-market-research.html`
+— the demand ranking, what every competitor ships, Indian addressing evidence,
+the Mappls licence conditions above, and the answers to the three open questions.
 
 The handover (`docs/HANDOVER-2026-08-26-territory-maps.md`, committed
 `afd64727`) supplied the vendor decisions, the credentials and the two scripts.

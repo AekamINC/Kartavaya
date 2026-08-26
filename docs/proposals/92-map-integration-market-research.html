@@ -1,0 +1,375 @@
+<title>What the market actually asks maps for</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --bg: #faf9f6; --surface: #ffffff; --surface-alt: #f3f2ee; --border: #e2e0d8;
+  --text: #1a1917; --text-2: #5c5a52; --text-3: #8a877d;
+  --accent: #2d6a4f; --accent-light: #e8f0eb;
+  --red: #b5362a; --red-light: #fceeed;
+  --amber: #9a6a10; --amber-light: #fbf3e2;
+  --blue: #1d5fa6; --blue-light: #eef4fb;
+  --code-bg: #f0efe9; --code-fg: #2a2822;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+    --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+    --accent: #5aab7e; --accent-light: #16261d;
+    --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+    --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+  --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+  --accent: #5aab7e; --accent-light: #16261d;
+  --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+  --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.65 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+
+.kicker { font-size: .8rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: 0 0 .6rem; }
+h1 { font-size: 2.4rem; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .8rem; }
+.lede { font-size: 1.15rem; color: var(--text-2); margin: 0 0 .5rem; max-width: 64ch; }
+.meta { font-size: .85rem; color: var(--text-3); margin: 1rem 0 0; font-family: 'JetBrains Mono', monospace; }
+
+h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; margin: 3.2rem 0 .4rem; padding-top: 1.6rem; border-top: 1px solid var(--border); }
+h2 .n { color: var(--text-3); font-variant-numeric: tabular-nums; margin-right: .5rem; }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 1.8rem 0 .4rem; }
+h4 { font-size: .95rem; font-weight: 600; margin: 1.2rem 0 .3rem; }
+p { margin: .7rem 0; } .sub { color: var(--text-2); margin: .2rem 0 1.1rem; }
+strong { font-weight: 600; }
+code { font-family: 'JetBrains Mono', monospace; font-size: .85em; background: var(--code-bg); color: var(--code-fg); padding: .1em .38em; border-radius: 4px; }
+blockquote { margin: .9rem 0; padding: .1rem 0 .1rem 1rem; border-left: 3px solid var(--border); color: var(--text-2); font-style: italic; }
+a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; }
+a:hover { border-bottom-color: currentColor; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.3rem 1.5rem; margin: 1.2rem 0; }
+.card--accent { border-left: 3px solid var(--accent); }
+.card--red { border-left: 3px solid var(--red); background: var(--red-light); }
+.card--amber { border-left: 3px solid var(--amber); background: var(--amber-light); }
+.card--blue { border-left: 3px solid var(--blue); background: var(--blue-light); }
+
+.tbl-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin: 1.2rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.tbl-scroll table { margin: 0; }
+th, td { text-align: left; padding: .55rem .9rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-weight: 600; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); position: sticky; top: 0; background: var(--surface-alt); }
+tbody tr:last-child td { border-bottom: none; }
+td.pct, td.num { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+td.rank { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-3); text-align: center; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 600; padding: .1em .5em; border-radius: 5px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+.t-done { background: var(--accent-light); color: var(--accent); }
+.t-half { background: var(--amber-light); color: var(--amber); }
+.t-empty{ background: var(--red-light); color: var(--red); }
+.t-rsch { background: var(--blue-light); color: var(--blue); }
+.t-na   { background: var(--surface-alt); color: var(--text-3); }
+
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; margin: 1.4rem 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
+.stat .l { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+.stat .v { font-size: 1.55rem; font-weight: 700; margin-top: .25rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.stat .v.red { color: var(--red); } .stat .v.amber { color: var(--amber); } .stat .v.green { color: var(--accent); }
+.stat .s { font-size: .78rem; color: var(--text-2); margin-top: .15rem; }
+
+ul, ol { margin: .6rem 0; padding-left: 1.3rem; } li { margin: .35rem 0; }
+.bnum { display: inline-block; min-width: 1.6rem; font-weight: 700; color: var(--red); font-family: 'JetBrains Mono', monospace; }
+.onum { display: inline-block; min-width: 1.6rem; font-weight: 700; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+.footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: .85rem; color: var(--text-3); }
+.srclist { font-size: .84rem; }
+.srclist li { margin: .3rem 0; color: var(--text-2); }
+.ev { font-size: .74rem; font-family: 'JetBrains Mono', monospace; color: var(--text-3); }
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Proposal 92 &middot; Market research &middot; Phase 7</p>
+<h1>What the market actually asks maps for</h1>
+<p class="lede">A principal engineer&rsquo;s survey of map integration in systems like ours &mdash; competitor feature boards, community threads, vendor licence terms, Indian addressing reality, and the money. Read it as input to <code>docs/plans/PHASE-7-territory-and-address.md</code>: it confirms that phase&rsquo;s spine, corrects four of its assumptions, and answers the three questions left open for the owner.</p>
+<p class="meta">2026-08-26 &middot; ~40 sources: vendor docs, idea boards, community threads, licence terms, Indian government policy &middot; numbered 92 because CLAUDE.md reserves against a proposal 91</p>
+
+<div class="card card--accent">
+<strong>The one-paragraph verdict.</strong> The most-requested map feature in systems like ours is not a map. Ranked by how often it is asked for across every idea board and community thread that could be read, it is <strong>&ldquo;plot my records, and tell me who owns which area&rdquo;</strong> &mdash; plot-the-list plus postcode-driven territory assignment &mdash; and the second half is the half people actually pay for. Every serious competitor ships the plot; territory routing is what gets sold separately (Badger charges for it four different ways; Salesforce at $75&ndash;150 per user per month). <strong>Phase 7 is aimed at the right thing, in the right order.</strong> But four of its premises need correcting, and three are licence conditions rather than opinions: Mappls requires a <em>logo</em>, not the text credit 7.5 plans to render; its terms forbid using its map &ldquo;with or near a non-Mappls Map&rdquo; and forbid caching to avoid fees; content submitted to Mappls carries a perpetual, sub-licensable licence back to them &mdash; which is what an autosuggest call on a client&rsquo;s address is; and Google&rsquo;s India pricing is now 70,000 free events per SKU per month, billable in INR, so two of the three reasons written down for rejecting Google are factually stale even though the standing no-Google-spend rule still settles it.
+</div>
+
+<div class="statgrid">
+  <div class="stat"><div class="l">Indian addresses geocoding to 500&nbsp;m</div><div class="v red">~40%</div><div class="s">worse in tier 2/3 towns</div></div>
+  <div class="stat"><div class="l">Written in a structured format</div><div class="v red">~30%</div><div class="s">the rest is landmark prose</div></div>
+  <div class="stat"><div class="l">Zoho CRM Map View basemap</div><div class="v green">Mappls</div><div class="s">all paid editions &middot; IN DC only</div></div>
+  <div class="stat"><div class="l">Google free tier, India</div><div class="v">70,000</div><div class="s">events/SKU/month, Essentials</div></div>
+  <div class="stat"><div class="l">Territory management sold as</div><div class="v amber">add-on</div><div class="s">$12&ndash;150 per user per month</div></div>
+  <div class="stat"><div class="l">India location intelligence</div><div class="v green">19.9%</div><div class="s">CAGR to 2030 &middot; $1.01B &rarr; $3.00B</div></div>
+</div>
+
+<div class="card card--blue">
+<strong>How to read the evidence.</strong> Three grades appear throughout. <span class="tag t-done">measured</span> &mdash; a published number from a primary source: vendor documentation, government policy, licence text. <span class="tag t-half">reported</span> &mdash; a figure from a credible secondary write-up, attributed where it came from. <span class="tag t-rsch">claimed</span> &mdash; a vendor marketing number, useful for direction only and never for a business case. Licence clauses in &sect;6 were read from the published terms pages as rendered on 2026-08-26; before building against them, confirm against the agreement inside the Mappls console, because that is the one that binds.
+</div>
+
+<h2><span class="n">1</span>The demand ranking</h2>
+<p class="sub">Twelve map capabilities, ordered by how often they are asked for in public &mdash; idea boards, community threads, competitor feature pages, buyers&rsquo; guides &mdash; crossed with whether our data can support them today. &ldquo;Ask rate&rdquo; is a judgement built from how many independent, separately filed requests exist across vendors. It is not a survey and should not be quoted as one.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>#</th><th>What people ask for</th><th>Ask rate</th><th>Evidence it is asked for</th><th>Fit for Kartavya today</th></tr></thead>
+<tbody>
+<tr><td class="rank">1</td><td><strong>Plot my list on a map</strong> &mdash; accounts, contacts, leads, clients as pins on an index view</td><td><span class="tag t-empty">highest</span></td><td>Filed separately at every major vendor. HubSpot carries at least three distinct live ideas (&ldquo;Interactive Map for Companies&rdquo;, &ldquo;Display contact info on a map&rdquo;) with commenters noting most competitors already have it; Salesforce&rsquo;s IdeaExchange carries &ldquo;Locate all accounts on 1 map&rdquo; and &ldquo;View lead lists on a map&rdquo;; Zoho&rsquo;s community asks &ldquo;Does Zoho offer a map that plots all CRM accounts on it?&rdquo;; the ERPNext community shipped a third-party app to add exactly this to the Customer list.</td><td><span class="tag t-half">partial</span> &mdash; <code>TerritoryMap.jsx</code> was meant to be this and draws nothing. Needs coordinates or PIN polygons first.</td></tr>
+<tr><td class="rank">2</td><td><strong>Postcode &rarr; territory &rarr; owner</strong>, applied automatically on create</td><td><span class="tag t-empty">highest</span></td><td>The one people pay for. Badger Maps sells territory management as <em>four separate add-ons</em> on top of a $58&ndash;95/user/month base; Salesforce Maps is a $75&ndash;150/user/month add-on; Zoho RouteIQ starts at $12/user/month. Zoho&rsquo;s own community carries a standing request to distribute leads by postcode &mdash; <em>&ldquo;leads to flow through to various outlets based on their Zip or Post code, how do you assign that in Zoho?&rdquo;</em></td><td><span class="tag t-done">exactly Phase 7.1</span> &mdash; and the only item here with a direct revenue argument.</td></tr>
+<tr><td class="rank">3</td><td><strong>Proof of visit</strong> &mdash; GPS, selfie and timestamp captured at a client site</td><td><span class="tag t-empty">highest (India)</span></td><td>The lead feature of every Indian field app read for this survey: Delta Sales App, dayTrack, FieldAssist, Bizom, MyFieldHeroes. The Indian framing is anti-fraud first &mdash; face match, mock-location detection, check-ins rejected before they reach the record.</td><td><span class="tag t-half">adjacent</span> &mdash; Pahchan already owns attendance; a client-visit variant is a step, not a subsystem.</td></tr>
+<tr><td class="rank">4</td><td><strong>Address autocomplete</strong> on every address field</td><td><span class="tag t-empty">very high</span></td><td>Universal, and the one with hard behavioural data behind it: Chrome&rsquo;s study of address and card forms across millions of US page loads found autofill users abandoned <em>at least 75% less often</em> than users who typed everything. <span class="ev">measured</span></td><td><span class="tag t-done">Phase 7.6</span> &mdash; but see &sect;4. In India this is autosuggest, not postcode lookup.</td></tr>
+<tr><td class="rank">5</td><td><strong>Who is near me</strong> &mdash; radius search from the rep&rsquo;s current location</td><td><span class="tag t-half">high</span></td><td>Maplytics calls proximity search &ldquo;one of the most used features&rdquo; of its Dynamics product; Zoho&rsquo;s Map View announcement leads with radius filtering and distance sort. The recurring use case in every write-up is the cancelled appointment &mdash; find someone else nearby before the slot is wasted.</td><td><span class="tag t-empty">blocked</span> &mdash; needs per-record coordinates, which we do not store and Phase 7 does not add.</td></tr>
+<tr><td class="rank">6</td><td><strong>Geofenced attendance</strong> &mdash; punch only inside an allowed area</td><td><span class="tag t-half">high (India)</span></td><td>Table stakes in Indian HR software: greytHR ships a Geofence Locator in its ESS app, Zoho People ships Geo Restrictions, Keka pairs geo-tagging with selfie recognition. Every &ldquo;best attendance app India&rdquo; list is organised around it.</td><td><span class="tag t-half">partial</span> &mdash; Pahchan&rsquo;s premise. The map is a nicety; the radius check is the product.</td></tr>
+<tr><td class="rank">7</td><td><strong>Route and beat planning</strong> &mdash; order today&rsquo;s visits to cut driving</td><td><span class="tag t-half">high</span></td><td>Zoho built a whole product for it (RouteIQ, from $12/user/month, 25 stops on the entry plan). Indian vendors quote roughly 12% distance reduction and &#8377;500&ndash;2,500 per vehicle per month. <span class="ev">claimed</span></td><td><span class="tag t-na">out of scope</span> &mdash; a product, not a Phase 7 feature. Do not start it here.</td></tr>
+<tr><td class="rank">8</td><td><strong>&ldquo;Open in Maps&rdquo; from any address</strong></td><td><span class="tag t-half">high, rarely filed</span></td><td>Too small to file as an idea, present in nearly every product. It earns its row because it is <em>free</em>: Google&rsquo;s Maps URLs scheme needs no API key, no quota, and costs nothing; the Maps Embed API is free with unlimited requests, though it does want a key and a billing account.</td><td><span class="tag t-done">buildable this week</span> &mdash; see &sect;7. No vendor dependency, no spend, works on mobile.</td></tr>
+<tr><td class="rank">9</td><td><strong>Coverage check</strong> &mdash; &ldquo;does anyone of ours cover this PIN?&rdquo;</td><td><span class="tag t-half">medium (India-native)</span></td><td>A standard Indian primitive borrowed from logistics: Delhivery, Shiprocket and half a dozen others publish a pincode-serviceability API, and Indian checkouts routinely fill City and State from a PIN as a side effect.</td><td><span class="tag t-done">nearly free</span> &mdash; Phase 7.1&rsquo;s matcher run backwards, with no map at all.</td></tr>
+<tr><td class="rank">10</td><td><strong>Heat map and coverage-gap analysis</strong> for managers</td><td><span class="tag t-na">medium</span></td><td>The standard pitch of distribution-mapping tools (Maptive, eSpatial, Lepton): show where coverage overlaps, runs thin, or leaves demand unserved.</td><td><span class="tag t-na">later</span> &mdash; meaningless at 289 contacts. Revisit at four figures.</td></tr>
+<tr><td class="rank">11</td><td><strong>Distance between two PINs</strong> for reimbursement or an e-way bill</td><td><span class="tag t-half">medium (compliance-driven)</span></td><td>The GST e-way bill portal auto-populates approximate road distance from the origin and destination PIN, and a declared distance that diverges from it draws scrutiny. Separately, conveyance-claim tools compute km from GPS specifically to stop inflated claims.</td><td><span class="tag t-na">interesting, not now</span> &mdash; we move no goods. The conveyance-claim angle is the live one.</td></tr>
+<tr><td class="rank">12</td><td><strong>Live staff tracking on a map</strong></td><td><span class="tag t-half">loudly sold, quietly resented</span></td><td>Heavily marketed in India, and the single most privacy-exposed item in this list under the DPDP Act &mdash; see &sect;6.</td><td><span class="tag t-empty">avoid</span> &mdash; high liability, poor fit for a professional-services product.</td></tr>
+</tbody>
+</table></div>
+
+<div class="card card--accent">
+<strong>The finding.</strong> Rows 1 and 2 are usually written up as one feature and they are not. Row 1 is a <em>view</em>: cheap to want, expensive to make true, and hostage to data quality nobody has. Row 2 is a <em>rule</em>: invisible, unglamorous, and the thing every vendor charges for. Phase 7 gets the ordering right by putting capture and routing (7.0, 7.1) ahead of the map (7.5). The market evidence says keep it that way, even though the map is what was asked for out loud.
+</div>
+
+<h2><span class="n">2</span>What the incumbents actually ship</h2>
+<p class="sub">Two distinctions carry all the weight: native versus paid add-on, and which geography the geocoding is good in. Both cut in our favour.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>Product</th><th>Map capability</th><th>Where it sits</th><th>The detail that matters</th></tr></thead>
+<tbody>
+<tr><td><strong>Zoho CRM</strong><br><span class="ev">Map View</span></td><td>Pins, radius filter, distance sort, clustering by address, launch navigation</td><td>Native, <strong>all paid editions</strong></td><td><strong>Powered by Mappls (MapMyIndia), and available only in the IN data centre.</strong> The Indian incumbent our customers already know picked the same vendor Phase 7 picked &mdash; and could not offer it outside India. That is at once the strongest validation of the vendor choice and the clearest statement of its ceiling.</td></tr>
+<tr><td><strong>HubSpot</strong><br><span class="ev">map index view</span></td><td>Contacts and companies as pins</td><td><strong>Enterprise only, still in beta</strong> (two betas must be enrolled)</td><td>Location comes from <strong>City, State/Region, Country/Region and Postal code</strong> &mdash; not the street line &mdash; and the map draws at most <strong>500 records for an area</strong>. The market leader geocodes at postcode granularity and caps the view. Anyone arguing we must reach rooftop precision should read this row twice.</td></tr>
+<tr><td><strong>Salesforce Maps</strong></td><td>Plot, territory design, routing, mobile check-in with GPS and timestamp</td><td>Paid add-on, <strong>$75 / $150 per user per month</strong></td><td>Ships an explicit <strong>priority</strong> value on a territory to resolve a record matching several territories &mdash; precisely the mechanism our open question 1 needs. Also ships a documented &ldquo;bad address&rdquo; concept for records that cannot be geocoded, rather than dropping them silently.</td></tr>
+<tr><td><strong>Dynamics 365</strong><br><span class="ev">Maplytics, Geopointe</span></td><td>Plot, radius, territory, routing</td><td>Third-party ISV, per user</td><td>An entire ISV economy exists because the CRM does not do this natively. Their own marketing puts radius search at the top of usage.</td></tr>
+<tr><td><strong>Badger Maps</strong></td><td>Field-rep mapping, routing, territories</td><td>Standalone, $58&ndash;95/user/month</td><td><strong>Territory management is in neither plan</strong> &mdash; it is four separate add-ons. The clearest signal in this survey of what customers will pay for on its own.</td></tr>
+<tr><td><strong>Map My Customers</strong></td><td>Plot, territories, routing</td><td>Standalone, $55&ndash;129/user/month</td><td>Mileage tracking and advanced reporting are add-ons on lower tiers &mdash; the same unbundling instinct.</td></tr>
+<tr><td><strong>Zoho RouteIQ</strong></td><td>Route optimisation, check-in/out, proof of delivery</td><td>Add-on, from $12/user/month</td><td>Metered in <strong>record credits</strong>, 1,000 per user per month included. Note the shape: even the cheapest map product in the survey still meters it.</td></tr>
+<tr><td><strong>ERPNext / Frappe</strong></td><td>A Geolocation field storing a GeoJSON FeatureCollection; a map view for customers via a community app</td><td>Open source</td><td>The open-source answer to &ldquo;we need a map on an address&rdquo; is an OSM/Nominatim-backed community app, not core. Confirms nobody gets this for free.</td></tr>
+<tr><td><strong>Indian field-force apps</strong><br><span class="ev">Delta Sales, FieldAssist, Bizom, dayTrack</span></td><td>Beat plans, GPS visit logs, selfie check-in, territory allocation</td><td>The whole product</td><td>Their maps exist to <em>prove work happened</em>. That framing &mdash; evidence, not visualisation &mdash; is the one that transfers to a firm billing client time.</td></tr>
+<tr><td><strong>Indian HRMS</strong><br><span class="ev">greytHR, Zoho People, Keka</span></td><td>Geofence locator, geo-restrictions, geo-tagged selfie punch</td><td>Native, standard tier</td><td>In India, geofenced attendance is not a premium feature. It is expected.</td></tr>
+<tr><td><strong>CA practice management</strong><br><span class="ev">Suvit, QwikCA, PracticeStacks, Jamku, Zoho Practice</span></td><td><strong>None found.</strong></td><td>&mdash;</td><td>Not one competitor in our actual category advertises any map capability at all. Their feature lists are GST/TDS/ITR compliance tracking, document management, and WhatsApp reminders. <strong>Maps are not table stakes in CA practice software. They are differentiation, and cheap differentiation, because nobody is contesting the ground.</strong></td></tr>
+</tbody>
+</table></div>
+
+<div class="card card--amber">
+<strong>The strategic read.</strong> Our category has no map incumbent, and the adjacent categories our customers also buy &mdash; HRMS, field force &mdash; treat maps as ordinary. That is the real argument for Phase 7 being worth a week and a half: not that maps are demanded in CA software, but that they are <em>expected everywhere else our customers work</em>, so their absence reads as a gap rather than a choice. Set against that, one sobering industry number: across SaaS generally, more than 60% of shipped features are rarely or never used, and roughly 30% of engineering goes to features that never reach adoption. <span class="ev">reported</span> The way not to become that statistic here is the phase&rsquo;s own rule &mdash; prove it by a row, not by a screenshot.
+</div>
+
+<h2><span class="n">3</span>The five failures every mature implementation has already had</h2>
+<p class="sub">What the write-ups, support docs and incident threads have in common. Each of these is cheap to design against now and expensive to retrofit.</p>
+
+<h3><span class="bnum">1</span>The bad-address bucket, invented too late</h3>
+<p>Salesforce publishes a support article for it; Veeva, Infor and Maplytics each publish their own. A record whose address cannot be geocoded does not appear on the map, and if the product does not <em>name</em> that state, the map silently under-reports and the user believes the number. Salesforce&rsquo;s own guidance is that clearing coordinates forces a re-geocode &mdash; which only helps if you knew the record was missing.</p>
+<p><strong>For us:</strong> Phase 7.3 already gets this right for boundaries, with <code>unmatched</code>, <code>unavailable</code> and <code>invalid</code> kept separate. The same discipline is owed one level up, on contacts: <em>routed</em>, <em>no PIN captured</em>, and <em>PIN claimed by no territory</em> are three different failures with three different fixes, and a single &ldquo;0 routed&rdquo; hides all of them.</p>
+
+<h3><span class="bnum">2</span>Metered cost discovered in production</h3>
+<p>The pattern is well documented and always the same shape: cheap to start, brutal to scale. One builder reported on r/SaaS that the Maps API was 92% of the product&rsquo;s cost and the AI 8% &mdash; the opposite of the plan. Published post-March-2025 worked examples put 2 million geocoding requests a month at roughly $5,050. <span class="ev">reported</span></p>
+<p><strong>For us:</strong> irrelevant at today&rsquo;s volume and dangerous at tomorrow&rsquo;s. The mitigation is not a debounce &mdash; a debounce is a UX affordance, not a budget. Count autosuggest calls per org per day from the first commit, and make Mappls&rsquo;s console the reconciliation source rather than the discovery source, because their terms make their own usage statistics binding.</p>
+
+<h3><span class="bnum">3</span>Storing what the licence does not let you store</h3>
+<p>Google&rsquo;s service terms allow latitude and longitude to be cached for at most <strong>30 consecutive calendar days</strong>, allow <code>place_id</code> to be stored indefinitely, and permit nothing else from Geocoding or Places to be used with any map. Mappls takes a different line and forbids caching done to avoid fees. Either way, a coordinate column with no provenance is an unenforceable promise.</p>
+<p><strong>For us:</strong> if a coordinate is ever stored, store <code>geo_source</code> and <code>geo_fetched_at</code> beside it in the same migration. Those two columns are what make a retention rule, a vendor swap, or a licence answer possible later; without them the only honest answer to &ldquo;where did this coordinate come from&rdquo; is a shrug.</p>
+
+<h3><span class="bnum">4</span>One vendor, no seam</h3>
+<p>We already have the scar. The SDK URL in <code>TerritoryMap.jsx</code> has been dead since August 2025 because the vendor changed its loader shape, and the failure was misread as a credentials problem. Independent guidance on geocoding architecture says the same thing plainly: an abstraction layer reduces lock-in and improves reliability, and the common mistake is over-trusting a single vendor without monitoring accuracy in your own markets.</p>
+<p><strong>For us:</strong> one <code>services/geo/</code> interface with a Mappls adapter behind it. Not a plugin framework &mdash; one module, one function signature, so the next dead URL is a file change rather than an archaeology exercise.</p>
+
+<h3><span class="bnum">5</span>Geocoding on read</h3>
+<p>The classic N+1: a list endpoint that geocodes each row it returns. It is fast in development with ten rows and it is a metered outage at 200. Our list endpoints already truncate at 200, which would mask it exactly long enough to reach production.</p>
+<p><strong>For us:</strong> geocode on write only, never in a list path, and never inside a request that a user is waiting on if it can be avoided.</p>
+
+<h2><span class="n">4</span>India is not a geocoding market. It is a PIN-code market</h2>
+<p class="sub">The single most important body of evidence in this survey, and the one that decides how much of 7.6 is worth building.</p>
+
+<div class="card card--red">
+<strong>The numbers that set the ceiling.</strong> Testing a leading online map provider&rsquo;s geocoding API against a large sample of Indian addresses, only about <strong>40% resolved to a geocode with 500 m precision</strong>, and performance degrades further in tier 2 and tier 3 towns. Only about <strong>30% of Indian addresses are written in a structured format</strong> at all. <span class="ev">reported &mdash; Kabir Rustogi, writing from Delhivery&rsquo;s data science work</span> Landmarks are the everyday addressing unit and are hard to resolve mechanically: roughly 10 million points of interest exist in the top 200 cities alone.
+</div>
+
+<p>Three consequences follow, and all three are already half-recognised in the plan.</p>
+
+<ul>
+<li><strong>The UK postcode flow does not transfer, and the plan is right to say so.</strong> The market&rsquo;s own behaviour confirms it: HubSpot geocodes from City / State / Country / Postal code rather than the street line, and Indian e-commerce fills City and State <em>from</em> the PIN rather than the other way round. The PIN is an input that saves typing two fields; it is not an address lookup.</li>
+<li><strong>Multi-district PINs are a known national problem, not our data being odd.</strong> A commercial address-validation vendor counts 19,959 active postal codes against 712,068 localities and warns that India Post adds, merges and retires codes as boundaries are redrawn. Our own directory finds 1,229 of 18,839 PINs spanning several districts and 51 that do not resolve to a single state. Those are the same phenomenon.</li>
+<li><strong>The industry answer to Indian addressing is not better geocoding. It is a new identifier.</strong> Two arrived in the last two years, and they point the same way.</li>
+</ul>
+
+<h3>DIGIPIN &mdash; the honest answer to &ldquo;why can&rsquo;t we have the UK experience?&rdquo;</h3>
+<p>India Post, with IIT Hyderabad and NRSC/ISRO, published <strong>DIGIPIN</strong>: a 10-character alphanumeric code for every roughly 4 m &times; 4 m cell in the country, unveiled 27 May 2025, with the final technical document released in March 2025 as the foundation layer of the national addressing DPI. It is open source under an India Post GitHub organisation, and its two APIs are pure functions &mdash; encode a latitude/longitude to a DIGIPIN, decode a DIGIPIN back to coordinates. In August 2025 the Department of Posts signed an MoU with MapmyIndia to carry it into their platforms.</p>
+<div class="card card--accent">
+<strong>Why this matters to us specifically.</strong> DIGIPIN is the precision the owner was asking for when he asked for the postcode flow &mdash; and because encoding is arithmetic rather than a lookup, <strong>it costs nothing and needs no vendor</strong>. What it cannot do today is be typed: there is no address-to-DIGIPIN directory, so it is generated from a location, not recalled from memory. <strong>Recommendation: do not build on it in Phase 7. Do reserve the decision</strong> &mdash; the moment we capture a coordinate anywhere (a mobile check-in, a map click), emitting a DIGIPIN alongside it is a few lines and no dependency, and it is the sanctioned national identifier our vendor has already signed up to.
+</div>
+
+<h3>Address Descriptors &mdash; the landmark, formalised</h3>
+<p>Google launched Address Descriptors from India in 2024 and has since expanded coverage nationally: an API that returns up to five ranked nearby landmarks with a direction, chosen by proximity, prominence and visibility, exposed through the Maps JavaScript API and a place-ID lookup. It exists because Indians navigate by landmark, and it concedes the point that a coordinate alone does not deliver a parcel.</p>
+<p><strong>For us:</strong> not a build. But it settles a design argument &mdash; if we ever add one free-text line to an Indian address block, it should be <strong>landmark</strong>, not &ldquo;address line 3&rdquo;. That is how the country writes addresses and how the largest map vendor decided to model them.</p>
+
+<h2><span class="n">5</span>Vendors and what they cost</h2>
+<p class="sub">Included for completeness and for the cost guard in &sect;3, not to reopen a settled decision. The vendor choice in Phase 7 stands; two of the reasons recorded for it do not.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>Option</th><th>Published cost</th><th>Free allowance</th><th>The catch</th></tr></thead>
+<tbody>
+<tr><td><strong>Mappls / MapmyIndia</strong><br><span class="ev">our choice</span></td><td><strong>Not published.</strong> A third-party data marketplace estimates custom pricing from around $300/month for 10,000 calls, ~$0.03/call. <span class="ev">reported &mdash; treat as an order of magnitude, nothing more</span></td><td>An unpublished console quota</td><td>Opaque pricing is itself the risk: there is no way to model spend before signing, and their console&rsquo;s usage figures are contractually definitive. Their licence conditions are in &sect;6 and they are stricter than expected.</td></tr>
+<tr><td><strong>Google Maps Platform (India)</strong></td><td>Geocoding $1.50 / 1,000; Places Autocomplete $0.85 / 1,000; Dynamic Maps $2.10 / 1,000 <span class="ev">measured</span></td><td><strong>70,000 free events per Essentials SKU per month in India</strong> (7&times; the global 10,000). Maps Embed API free and unlimited. Maps URLs free with no key at all.</td><td>Two of the three stated grounds for rejection are now stale: India-based customers are <strong>billed in INR</strong>, and at our volume every SKU we would touch sits inside the free tier indefinitely. The standing no-Google-spend rule still decides it &mdash; that is an owner call, not an engineering one. Recorded here so the record is accurate.</td></tr>
+<tr><td><strong>Ola Maps (Krutrim)</strong></td><td>Positioned at roughly half Google&rsquo;s reduced rates at volume</td><td>Vendor statements conflict across write-ups &mdash; one describes a free tier of five million calls a month, another a first 100,000 monthly events at &#8377;0 from September 2026. <span class="ev">claimed</span></td><td>India-only, and the published claims do not agree with each other, which is itself a due-diligence signal. Worth a note in the file; not worth a switch.</td></tr>
+<tr><td><strong>Mapbox</strong></td><td>From about $5 per 1,000 web map loads, stepping down at volume</td><td>Pay as you go</td><td>Includes routing, which Mappls also does. No Indian PIN boundaries.</td></tr>
+<tr><td><strong>MapTiler</strong></td><td>Free / $25 Flex / $295 Unlimited</td><td>Yes</td><td>Tiles and styling only &mdash; no routing at any tier.</td></tr>
+<tr><td><strong>Protomaps</strong> + MapLibre</td><td>Object-storage cost only</td><td>Self-hosted</td><td>Already considered and rejected on the owner&rsquo;s <em>&ldquo;i want real map&rdquo;</em> line. &sect;6 adds a second reason to keep it rejected rather than mixed in: Mappls&rsquo;s terms forbid its map being used near a non-Mappls map.</td></tr>
+<tr><td><strong>Nominatim</strong> (public)</td><td>Free</td><td>1 request per second, absolute maximum</td><td>Systematic queries &mdash; including searching for complete lists of postcodes &mdash; are prohibited outright, and applications whose primary function is geocoding must run their own instance. Not an option for a product feature.</td></tr>
+</tbody>
+</table></div>
+
+<div class="card card--amber">
+<strong>The one cost point that is actionable today.</strong> Two Google surfaces cost nothing and are not subject to metering: the <strong>Maps URLs</strong> scheme, which needs no API key or quota, and the <strong>Maps Embed API</strong>, free with unlimited requests. Demand row 8 &mdash; &ldquo;open this address in Maps&rdquo; &mdash; can therefore ship against no vendor account, no key in our CSP, and no spend, and it delivers most of the felt value of &ldquo;we have maps&rdquo; on a vendor address, a client address or a Pahchan location. It is not a substitute for 7.5. It is the thing that could have been shipped in the year 7.5 was broken.
+</div>
+
+<h2><span class="n">6</span>Licence and law &mdash; four things Phase 7 does not yet account for</h2>
+
+<div class="card card--red">
+<h4 style="margin-top:0">6.1 &nbsp;The Mappls attribution requirement is a logo, not a text credit</h4>
+<p>The published terms say the <em>&ldquo;Powered by Mappls [logo]&rdquo; shall be clearly presented by the User for end User(s) to see, and in no instance the &ldquo;Powered by Mappls [logo]&rdquo; shall be removed or hidden</em>, with removal exposing the licence to revocation and damages.</p>
+<p><strong>Phase 7.5 currently specifies:</strong> <em>&ldquo;Boundaries &copy; Government of India (data.gov.in) &mdash; GODL-India &middot; Basemap &copy; Mappls&rdquo;</em>, rendered as our own DOM and guarded by a render test. The GODL half is right and the render test is a good idea. <strong>The Mappls half does not satisfy the condition as written</strong> &mdash; it is a text credit where a logo is required. Fix the acceptance criterion before writing the test, or the test will lock in the wrong thing.</p>
+</div>
+
+<div class="card card--red">
+<h4 style="margin-top:0">6.2 &nbsp;No Mappls map &ldquo;with or near&rdquo; another map</h4>
+<p><em>&ldquo;Customer will not use the Mappls Map APIs &amp; SDKs with or near a non-Mappls Map in a Customer Application.&rdquo;</em></p>
+<p>Overlaying our GODL PIN polygons on the Mappls basemap is data on their map and is fine. What this forbids is any future screen that renders a MapLibre, OSM or Google map anywhere near the Mappls one &mdash; including a mobile screen that falls back to a different provider. It closes off &ldquo;use Protomaps for the cheap view and Mappls for the good one&rdquo; permanently. Worth writing into the plan&rsquo;s decisions table so it is not rediscovered by a future session.</p>
+</div>
+
+<div class="card card--red">
+<h4 style="margin-top:0">6.3 &nbsp;What we send to Mappls, we license to Mappls</h4>
+<p>By the published terms, submitting content to Mappls servers grants Mappls and its affiliates <em>a perpetual, worldwide, royalty-free, non-exclusive, sub-licensable licence to reproduce, translate, publicly perform, sell, publicly display, distribute, cache, overlay, process and transfer</em> that content.</p>
+<p><strong>An autosuggest call is a submission.</strong> Phase 7.6 would send a customer&rsquo;s partially typed address &mdash; a client&rsquo;s real premises &mdash; to a third party on every keystroke after the debounce. Under DPDP that is a disclosure to a processor requiring notice; under this clause it is also a broad content licence. That sits uncomfortably beside the standing platform-privacy line that Aekam must not see client emails.</p>
+<p><strong>Recommendation:</strong> keep 7.6, and constrain it. Send the <em>query fragment only</em> and never the stored record; do not send it for existing saved addresses; do not run autosuggest on the public inbound form; and add one line to the privacy notice naming Mappls as a processor for address lookup. Also: the terms forbid caching done to avoid fees, so do not design a results cache as a cost lever &mdash; if call volume becomes a problem, the answer is fewer calls, not a shadow copy.</p>
+</div>
+
+<div class="card card--amber">
+<h4 style="margin-top:0">6.4 &nbsp;Two laws worth one paragraph each</h4>
+<p><strong>Geospatial Data Guidelines, 2021.</strong> India liberalised mapping but kept edges: the threshold is 1 m horizontal and 3 m vertical; finer data must be stored and processed in India; terrestrial mobile mapping, street-view survey and survey in Indian territorial waters are for Indian entities only; and where a foreign or foreign-controlled entity licenses finer-than-threshold data from an Indian entity, access must be through APIs that <em>do not allow the data to pass through the licensee&rsquo;s servers</em>, with resale prohibited. Our design proxies Mappls server-side. If Aekam Inc is an Indian entity, this is a non-issue &mdash; but it is worth confirming once, in writing, because the answer changes 7.6&rsquo;s architecture from &ldquo;server-side proxy&rdquo; to &ldquo;must be client-side&rdquo;, and that is not a late-stage change anyone wants.</p>
+<p><strong>DPDP.</strong> Consent must be free, specific, informed, unconditional and unambiguous, and cannot be buried in an employment contract. There is an employment-purposes ground that covers a good deal of workforce processing without consent. Commentary consistently rates a GPS geofence that captures location only at the punch as more DPDP-friendly than storing biometric templates centrally &mdash; which is an argument for the Pahchan design we already have, and against demand row 12 (continuous tracking), which is the version with real exposure.</p>
+</div>
+
+<h2><span class="n">7</span>What this changes in Phase 7</h2>
+<p class="sub">Everything below is a delta against the existing plan. The plan&rsquo;s order &mdash; 7.0 &rarr; 7.1 + 7.1a &rarr; 7.2 &rarr; 7.3 &rarr; 7.4 &rarr; 7.5 &rarr; 7.6 &mdash; survives this research unchanged.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th>Step</th><th>Verdict</th><th>Change</th></tr></thead>
+<tbody>
+<tr><td><strong>7.0</strong> Capture a PIN</td><td><span class="tag t-done">confirmed</span></td><td>No change. Both the market ranking and the incumbents&rsquo; behaviour agree that postcode is the right granularity to capture, and HubSpot&rsquo;s Enterprise product does no better.</td></tr>
+<tr><td><strong>7.1</strong> PIN &rarr; territory &rarr; rep</td><td><span class="tag t-done">confirmed &mdash; and it is the commercially valuable half</span></td><td>Add a <code>routing_reason</code> alongside <code>territory_id</code>: which PIN matched, which territory claimed it, and whether the rep was set or left alone. Every competitor that does this well can explain an assignment after the fact; none of them can do it without recording why at the time.</td></tr>
+<tr><td><strong>7.1a</strong> Cross-tenant joins</td><td><span class="tag t-done">confirmed</span></td><td>No change. Welded to 7.1 for the right reason.</td></tr>
+<tr><td><strong>7.2</strong> PIN directory</td><td><span class="tag t-done">confirmed</span></td><td>The multi-district finding is a national characteristic, not a data defect &mdash; a commercial validation vendor reports the same churn. Worth one sentence in the loader&rsquo;s docstring so nobody &ldquo;fixes&rdquo; the composite key later.</td></tr>
+<tr><td><strong>7.3</strong> Boundary endpoint</td><td><span class="tag t-done">confirmed</span></td><td>The three-bucket rule is the single best decision in the plan and matches how Salesforce documents bad addresses. Extend the same three-bucket honesty to contact routing (&sect;3.1).</td></tr>
+<tr><td><strong>7.4</strong> CSP</td><td><span class="tag t-done">confirmed</span></td><td>No change.</td></tr>
+<tr><td><strong>7.5</strong> TerritoryMap rewrite</td><td><span class="tag t-half">amend</span></td><td><strong>Attribution must be the &ldquo;Powered by Mappls&rdquo; logo, not a text credit</strong> (&sect;6.1). Keep the GODL text credit beside it. Add to the decisions table: no non-Mappls map may appear in the same application (&sect;6.2).</td></tr>
+<tr><td><strong>7.6</strong> Address autosuggest</td><td><span class="tag t-half">amend</span></td><td>Constrain what is sent and add Mappls to the privacy notice as a processor (&sect;6.3). Confirm the entity question before committing to the server-side proxy (&sect;6.4). Do not design a results cache as a cost lever. The &ldquo;reset the expectation&rdquo; lede the plan already calls for is fully supported by the 40% / 30% evidence in &sect;4 &mdash; those two numbers belong in the copy deck.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Three additions worth their cost, in order</h3>
+<ol>
+<li><span class="onum">A</span><strong>&ldquo;Open in Maps&rdquo; on every stored address</strong> &mdash; vendor, client, Pahchan location. A Maps URL, no key, no quota, no CSP change beyond a link, no vendor account. It answers demand row 8 outright and is roughly an afternoon. This is the highest ratio of perceived-map-capability to engineering in the entire survey.</li>
+<li><span class="onum">B</span><strong>&ldquo;Who covers this PIN?&rdquo;</strong> &mdash; the matcher from 7.1 exposed as a read: type six digits, get the territory and its members, or an honest &ldquo;nobody&rdquo;. No map, no vendor, no new data. It is the India-native pattern from row 9, it makes 7.1 visible before 7.5 draws anything, and it is the fastest way for the owner to <em>see</em> that routing works.</li>
+<li><span class="onum">C</span><strong>An overlap report on the territory screen</strong> &mdash; PINs claimed by more than one territory, and territories carrying no PINs. This is Salesforce&rsquo;s documented recommendation (monitor unassigned and overlapping assignments) and it is the operational half of the answer to open question 1 below.</li>
+</ol>
+<p class="sub">Explicitly <em>not</em> recommended for this phase: route optimisation (row 7 &mdash; a product), heat maps (row 10 &mdash; meaningless at 289 contacts), live tracking (row 12 &mdash; liability without fit), and anything requiring a per-record coordinate, which would drag rows 5 and 11 in behind it.</p>
+
+<h2><span class="n">8</span>The three open questions, answered</h2>
+
+<h3><span class="onum">1</span>When one PIN falls in two territories, which wins?</h3>
+<p><strong>What the market does.</strong> Two different answers exist and both are shipped. <strong>Salesforce</strong> resolves with an explicit <em>priority</em> value on the territory, with the guidance that you invent your own scheme and make sure it scales as territory types are added. <strong>Zoho</strong> takes the opposite line &mdash; a record can be assigned to several territories at once if it meets the criteria for each. Practitioner guidance sits in between: overlaps are legitimate, should require a stated business reason, and must be monitored with a report for overlapping assignments.</p>
+<div class="card card--accent">
+<strong>Recommendation: priority integer, lowest wins, ties broken by oldest territory &mdash; and never block the save.</strong> Zoho&rsquo;s multi-territory model needs a join table and changes every read path; at 17 territories and zero overlaps that is a large bill for a problem we do not have. A single <code>priority int default 100</code> on <code>graha_territories</code> costs one column, is the mechanism the largest CRM in the world uses, and leaves the door open to multi-assignment later. Two conditions attached: record the losing territory in <code>routing_reason</code> so the decision is explicable months later, and ship addition C above so overlaps are visible rather than silently resolved. Per the standing GSTIN/PAN/TAN rule, an overlap must never refuse a save &mdash; it is a routing decision, not a validation.
+</div>
+
+<h3><span class="onum">2</span>Should routing set the rep, or only the territory?</h3>
+<p><strong>What the market does.</strong> This is the most unanimous finding in the survey. The documented routing hierarchy is: match an existing customer or open opportunity first, then a named account owner, then territory, then segment, and only then round robin &mdash; because <em>inbound leads from existing customers or target accounts should never be routed blindly by geography or round robin</em>, and existing account ownership takes priority over a general rotation. Specific rules must run before general ones or the broad rotation captures records meant for someone else.</p>
+<div class="card card--accent">
+<strong>Recommendation: the plan&rsquo;s own answer is correct &mdash; territory always, rep only when unassigned.</strong> The market evidence backs it without qualification, and the live denominator makes it urgent rather than theoretical: 42 of 54 Unicode contacts already have an owner, so a rep-setting router would reassign live work on its first run. Two refinements from the same guidance: extend &ldquo;already owned&rdquo; to cover the contact&rsquo;s <em>client</em> having an owner &mdash; inheriting the company&rsquo;s rep beats a fresh round robin &mdash; and write <code>routing_reason</code> either way, so a rep who receives a contact can see whether it came from a territory rule or a rotation. Territory assignment is safe because it adds a fact; rep assignment is dangerous because it overwrites one.
+</div>
+
+<h3><span class="onum">3</span>Should the public web form ask for a PIN?</h3>
+<p><strong>What the market does.</strong> The field-count evidence is unusually specific. Reported conversion falls from 23.1% at three fields to 17.0% at five, then collapses to 11.4% at seven and 6.9% at ten or more &mdash; the cliff is between five and seven, where each added field costs roughly 2.8 points against 1.5 before it. <span class="ev">reported</span> Our public form has exactly five fields today (name, email, phone, company, message), so a sixth lands precisely on the expensive step. Against that, autofill is the strongest positive signal in the whole survey: Chrome measured autofill users abandoning at least 75% less often than typists.</p>
+<div class="card card--accent">
+<strong>Recommendation: yes &mdash; but as a six-digit optional field, not a sixth text field, and not before 7.0 has landed.</strong> Three specifics. <em>Shape it as the cheapest field on the form:</em> <code>inputmode="numeric"</code>, <code>maxlength="6"</code>, <code>autocomplete="postal-code"</code>, optional, placed on the same row as Company rather than on its own line &mdash; six digits on a numeric keypad is not the same cost as a sixth prose field, and the reported curve is about fields, not characters. <em>Pay the user back immediately:</em> echo the district and state under the input once six digits are entered, from our own 7.2 directory with no vendor call &mdash; this is the pattern Indian checkouts already train people to expect, and it converts a cost into a small moment of competence. <em>Never validate it into a blocker</em> &mdash; same rule as GSTIN, PAN and TAN.</div>
+<p><strong>And the sequencing point that matters more than the field.</strong> A PIN on the inbound form routes nothing until territories carry PINs, and today <strong>zero of 17 do</strong>. Shipping the field before 7.0 collects a number that goes nowhere and produces the false impression that routing was tried. Ship it after 7.0, and measure it &mdash; it is the only claim in this entire document that we can settle with our own data rather than someone else&rsquo;s benchmark. One last observation for whoever owns the form: if conversion is the real worry, the expensive field is <em>message</em>, not the PIN.</p>
+
+<h2><span class="n">9</span>What this research could not establish</h2>
+<p class="sub">Stated plainly, because a research document that reports only what it found is not a research document.</p>
+<ul>
+<li><strong>Vote counts on the HubSpot ideas.</strong> The community pages return 403 to automated fetching. The ideas exist and their titles and framing are visible through search; their kudos totals are not, so &ldquo;most upvoted&rdquo; is not a claim made anywhere above &mdash; the ranking rests on how many <em>independent</em> requests exist, not on how many votes any one carries.</li>
+<li><strong>Mappls pricing.</strong> Not published anywhere. The single figure quoted in &sect;5 is a third-party marketplace estimate and should not be planned against. What our Railway credentials actually entitle us to is a question for the console, and it should be answered before 7.6 is written rather than after.</li>
+<li><strong>Ola Maps&rsquo; free tier.</strong> Two credible write-ups give materially different numbers. Not a candidate for us regardless; noted so nobody quotes either figure as settled.</li>
+<li><strong>Adoption data for map views.</strong> No vendor publishes what fraction of users open the map. The general SaaS numbers in &sect;2 are the closest available and are a caution, not a forecast.</li>
+<li><strong>Whether Aekam Inc is an Indian entity for the purposes of the Geospatial Guidelines.</strong> An owner fact, not a searchable one, and it changes 7.6&rsquo;s architecture. Worth answering once.</li>
+</ul>
+
+<h2><span class="n">10</span>Sources</h2>
+<p class="sub">Grouped by what they were used for. All read 2026-08-26.</p>
+
+<h4>Demand &mdash; idea boards and community threads</h4>
+<ul class="srclist">
+<li><a href="https://community.hubspot.com/t5/HubSpot-Ideas/Interactive-Map-for-Companies/idi-p/800404">HubSpot Ideas &mdash; Interactive Map for Companies</a> &middot; <a href="https://community.hubspot.com/t5/HubSpot-Ideas/Display-contact-info-on-a-map/idi-p/524890">Display contact info on a map</a></li>
+<li><a href="https://knowledge.hubspot.com/records/use-the-map-index-view">HubSpot &mdash; Use the map index view</a> (Enterprise, beta, 500-record cap, geocoded from City/State/Country/Postal code)</li>
+<li><a href="https://ideas.salesforce.com/s/idea/a0B8W00000GdiqDUAR/locate-all-accounts-on-1-map">Salesforce IdeaExchange &mdash; Locate all accounts on 1 map</a> &middot; <a href="https://ideas.salesforce.com/s/idea/a0B8W00000GdggSUAR/view-lead-lists-on-a-map">View lead lists on a map</a></li>
+<li><a href="https://help.zoho.com/portal/en/community/topic/zip-code-or-post-code-assignment-in-territory-manager-to-distribute-leads?page=1">Zoho CRM community &mdash; Zip/post code assignment in Territory manager to distribute leads</a></li>
+<li><a href="https://help.zoho.com/portal/en/community/topic/does-zoho-offer-a-map-that-plots-all-crm-accounts-on-it">Zoho CRM community &mdash; Does Zoho offer a map that plots all CRM accounts on it?</a></li>
+<li><a href="https://github.com/frappe/frappe/issues/1048">frappe/frappe #1048 &mdash; Mapping feature for ERPNext</a> &middot; <a href="https://discuss.frappe.io/t/new-app-erpnext-cis-plus/119175">ERPNext CIS Plus (community map view for the Customer list)</a></li>
+</ul>
+
+<h4>Competitors &mdash; what ships and what it costs</h4>
+<ul class="srclist">
+<li><a href="https://help.zoho.com/portal/en-gb/community/topic/crm-gets-location-smart-with-the-all-new-map-view-visualize-records-locate-records-within-any-radius-and-more">Zoho CRM &mdash; the new Map View</a> (&ldquo;powered by Mappls (MapMyIndia)&rdquo;, all paid editions, IN DC only)</li>
+<li><a href="https://www.salesforce.com/sales/mapping-software/pricing/">Salesforce Maps pricing</a> &middot; <a href="https://help.salesforce.com/s/articleView?id=000381341&amp;language=en_US&amp;type=1">How to handle bad addresses in Salesforce Maps</a></li>
+<li><a href="https://tractioncomplete.com/articles/salesforce-territory-management-best-practices/">Salesforce territory management best practices</a> (priority values, overlap monitoring)</li>
+<li><a href="https://www.badgermapping.com/pricing">Badger Maps pricing</a> &middot; <a href="https://mapmycustomers.com/pricing/">Map My Customers pricing</a> &middot; <a href="https://www.zoho.com/routeiq/pricing.html">Zoho RouteIQ pricing</a></li>
+<li><a href="https://www.maplytics.com/blog/power-nearby-records-search-map-within-dynamics-365-crm/">Maplytics &mdash; proximity/radius search for Dynamics 365</a></li>
+<li><a href="https://deltasalesapp.com/field-sales-management-app">Delta Sales App</a> &middot; <a href="https://www.daytrack.in/app/sales-employee-tracking-app.php">dayTrack</a> &middot; <a href="https://product-updates.greythr.com/en/introducing-geofence-locator-track-attendance-with-precision">greytHR Geofence Locator</a> &middot; <a href="https://help.zoho.com/portal/en/kb/people/administrator-guide/common-settings/articles/geo-restrictions">Zoho People Geo Restrictions</a></li>
+<li><a href="https://www.suvit.io/post/top-accounting-practice-management-software">Top accounting practice management software for CAs in India</a> &middot; <a href="https://www.qwikca.in/ca-practice-management-software/">QwikCA</a> &middot; <a href="https://www.practicestacks.in/ca-management-software">PracticeStacks</a> (no map capability advertised by any)</li>
+</ul>
+
+<h4>Indian addressing</h4>
+<ul class="srclist">
+<li><a href="https://medium.com/@kabirrustogi/learning-to-decode-unstructured-indian-addresses-c80ffcda2e84">Kabir Rustogi &mdash; Learning to decode unstructured Indian addresses</a> (~40% at 500 m; ~30% structured)</li>
+<li><a href="https://www.geopostcodes.com/country/india/address-validation/">GeoPostcodes &mdash; India address validation</a> (19,959 active postal codes; codes added, merged and retired)</li>
+<li><a href="https://github.com/INDIAPOST-gov/digipin">INDIAPOST-gov/digipin</a> &middot; <a href="https://www.indiapost.gov.in/digipin">India Post &mdash; DIGIPIN</a> &middot; <a href="https://www.medianama.com/2025/07/223-mapmyindias-mapplspin-india-posts-digipin/">MapmyIndia and DIGIPIN</a></li>
+<li><a href="https://mapsplatform.google.com/resources/blog/launching-address-descriptors-make-it-easier-find-addresses-using-landmarks-indian-cities/">Google &mdash; Address Descriptors for Indian cities</a> &middot; <a href="https://developers.google.com/maps/architecture/india-address-feedback">Getting feedback on Indian addresses</a></li>
+<li><a href="https://delhivery-express-api-doc.readme.io/reference/1-pincode-servicability-api">Delhivery pincode serviceability API</a> &middot; <a href="https://www.shiprocket.in/features/serviceable-pin-codes/">Shiprocket serviceable pin codes</a></li>
+</ul>
+
+<h4>Vendors, cost and licence</h4>
+<ul class="srclist">
+<li><a href="https://developers.google.com/maps/billing-and-pricing/india">Google Maps Platform &mdash; India pricing</a> (70,000 free events per Essentials SKU; INR billing) &middot; <a href="https://developers.google.com/maps/billing-and-pricing/march-2025">March 2025 changes</a></li>
+<li><a href="https://developers.google.com/maps/documentation/embed/usage-and-billing">Maps Embed API usage and billing</a> (free, unlimited) &middot; <a href="https://developers.google.com/maps/architecture/maps-url">Maps URL referral</a> (no key, no quota)</li>
+<li><a href="https://cloud.google.com/archive/maps-platform/terms/maps-service-terms-20250331">Google Maps Platform service-specific terms</a> (30-day coordinate caching; <code>place_id</code> storable; not usable with any non-Google map)</li>
+<li><a href="https://about.mappls.com/api/terms-&amp;-conditions">Mappls Maps APIs &mdash; Terms &amp; Conditions</a> (Powered-by logo; no non-Mappls map nearby; no cache to avoid fees; perpetual sub-licensable licence over submitted content; console statistics binding)</li>
+<li><a href="https://datarade.ai/data-providers/mapmyindia/profile">MapmyIndia on Datarade</a> (third-party price estimate) &middot; <a href="https://maps.olakrutrim.com/pricing">Ola Maps pricing</a> &middot; <a href="https://inc42.com/buzz/after-google-maps-cuts-prices-ola-maps-announces-new-pricing-structure-to-woo-developers/">Inc42 on Ola Maps pricing</a></li>
+<li><a href="https://operations.osmfoundation.org/policies/nominatim/">Nominatim usage policy</a> (1 req/s; systematic postcode queries prohibited; geocoding-primary apps must self-host)</li>
+<li><a href="https://radar.com/blog/geocoding-apis">Radar &mdash; the complete guide to geocoding APIs</a> (vendor abstraction, failover, accuracy monitoring)</li>
+</ul>
+
+<h4>Law</h4>
+<ul class="srclist">
+<li><a href="https://trilegal.com/knowledge_repository/geospatial-data-guidelines-2021/">Geospatial Data Guidelines, 2021</a> &middot; <a href="https://www.ikigailaw.com/article/161/mapping-the-contours-of-the-new-geospatial-guidelines-on-india">Mapping the contours of the new Geospatial Guidelines</a> (1 m / 3 m threshold; Indian-entity-only surveys; API pass-through condition)</li>
+<li><a href="https://www.consently.in/blog/employee-data-dpdp-act-hr-compliance-india">DPDP and employee data &mdash; HR compliance</a> &middot; <a href="https://saachihrms.com/blog/dpdp-act-2025-employee-data-privacy-india-hr">DPDP and employee data, 2025</a> (consent standard; employment legitimate use; geofence versus biometrics)</li>
+</ul>
+
+<h4>Conversion and adoption benchmarks</h4>
+<ul class="srclist">
+<li><a href="https://www.crazyegg.com/blog/form-statistics/">Online form statistics</a> (Chrome autofill study: autofill users abandon at least 75% less often)</li>
+<li><a href="https://www.digitalapplied.com/blog/form-conversion-rate-benchmarks-2026-data-points">Form conversion benchmarks</a> (23.1% at 3 fields &rarr; 17.0% at 5 &rarr; 11.4% at 7 &rarr; 6.9% at 10+)</li>
+<li><a href="https://www.grandviewresearch.com/horizon/outlook/location-intelligence-market/india">India location intelligence market outlook</a> ($1,010.3M in 2024 &rarr; $3,000.8M by 2030, 19.9% CAGR)</li>
+<li><a href="https://codestory.co/feature-adoption-metrics-lessons-from-saas-founders/">Feature adoption metrics</a> (&gt;60% of features rarely or never used; ~30% of engineering on features that never reach adoption)</li>
+</ul>
+
+<div class="footer">
+Proposal 92 &middot; research, not a build order &middot; companion to <code>docs/plans/PHASE-7-territory-and-address.md</code>, which remains the plan of record.<br>
+Nothing here re-opens the vendor decision. Where it corrects the plan &mdash; &sect;6.1, &sect;6.2, &sect;6.3, &sect;5 &mdash; the corrections are licence text and published pricing, not preferences.
+</div>
+
+</div>

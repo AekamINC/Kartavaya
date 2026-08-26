@@ -131,6 +131,7 @@ Full per-org detail and figures: `PROGRESS.md`, 2026-08-26.
 | **5** | [PHASE-5-statute-wiring.md](PHASE-5-statute-wiring.md) | Wire the dated-law store into payroll & invoicing | 1 week | — |
 | **6** | [PHASE-6-retire-duplicates.md](PHASE-6-retire-duplicates.md) | Retire the four duplicated models; freeze new modules; add the SQL-test rule | 3 days | owner OK to drop |
 | **7** | [PHASE-7-territory-and-address.md](PHASE-7-territory-and-address.md) | Make territories ROUTE (they route nothing today), then draw them; Indian address capture | 1 week | — |
+| **8** | [PHASE-8-maps-across-modules.md](PHASE-8-maps-across-modules.md) | Maps outside Graha — one address component for six modules (no key, no CSP), the Pahchan geofence map, PIN preview, autosuggest reuse | 1 week | — |
 
 **Session split from 2026-08-27:** Phase 7 runs as its own planning/research
 track (its plan is written but every step still needs building); Phases 3–6 run

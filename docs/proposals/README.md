@@ -66,8 +66,10 @@ Each supports light and dark.
 | 67 | `67-widget-freedom-and-tab-choice.html` | **Widget freedom and tab choice** — drag anywhere, resize from the corner, density measured from real pixels so no widget carries dead space | built |
 | 68 | `68-kartavaya-usage-analytics.html` | **The Pulse** — Aekam's own view of Kartavaya: active users, surfaces and OS, app versions; only the UA and app-version collectors were approved | built |
 | 69 | `69-an-assistant-that-compounds.html` | **An assistant that compounds** — Sahayak is slow, not expensive ($2.19 lifetime, 7.3s average); the seven cheap assets that improve it over time, and the one migration that waits | proposed |
+| 92 | `92-map-integration-market-research.html` | **What the market actually asks maps for** — the demand ranking, what every competitor ships, Indian addressing reality, Mappls’ licence conditions, and the three Phase 7 questions answered | research — input to `docs/plans/PHASE-7-territory-and-address.md` |
 
-Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
+Numbering note: 20–31 were never used, and 91 is deliberately skipped — CLAUDE.md reserves against a
+proposal 91 to stop the status audit being written a seventh time. 39 and 44 are kept because the owner rejected both and the
 reason each was rejected is the useful part.
 
 ## The settled palette
