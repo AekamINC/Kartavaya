@@ -86,6 +86,43 @@ just needs to approve the wording)
 
 ---
 
+## 0.01–0.12 — PARKED by the owner, 2026-08-26
+
+The nine legal facts and the three legal decisions are **deliberately deferred**
+and are not blocking anything. The consequence, stated so nobody treats it as a
+defect: the four legal pages keep their computed draft banner, and **no amount
+of engineering lifts it** — the banner is driven by the facts being absent, which
+is the honest behaviour. They are not in production, so nothing is misrepresented
+to anyone today.
+
+Do not chase these. Do not "fill in" a plausible CIN, address or officer name to
+make the banner go away; a fabricated fact on a legal page is worse than a
+visible draft notice.
+
+## DECISIONS — owner, 2026-08-26. These are settled; do not re-open them.
+
+| # | Decision |
+|---|---|
+| **0.13** | **Flexible anchor, default 1.** Already how the code behaves; 4 live profiles use anchors 1 and 15. No change. |
+| **0.14** | **Banner at +14 days, read-only at +30, never lockout.** Locking a firm out of its own accounting during a payment dispute loses the customer and the invoice; read-only still lets them file a return. |
+| **0.15** | **Org-wide.** Compliance settings are organisational facts, not preferences — per-user would let two people in one firm hold contradictory positions. **Unblocks billing P4/P5.** |
+| **0.16** | **Per-org, not one global cadence.** "It depends what service the org provides its client — it can be quarterly, yearly or monthly." So true-up frequency is a per-org setting with the same three options as `billing_cycle`, NOT a platform constant. |
+| **0.17** | **Calendar-minus-Sundays, everywhere.** Payroll already computes it (`vetana.py:1588`; Aug 2026 = 26 days). Billing's `weekday() < 5` (`client_billing.py:1281`) says 21 for the same month and is the one to change — payroll has money flowing through it. **Unblocks Phase 3.** |
+| **0.18** | **Prachar ₹0; delete the ₹39 row.** Pricing is BY MODULE. Any third-party connection cost — Meta, SES, a scraper — is borne by the organisation itself, not resold. |
+| **0.19** | **Warn, configurable to Stop.** Same rule as GSTIN/PAN/TAN and professional tax: it must not block. A hard stop at month-end moves procurement outside the system. |
+| **0.20** | **VENDORS LIVE IN GANIT *AND* KRAY.** ⚠ This overrides the "Kray owns it" recommendation. Not every org buys Kray, and vendors must still be reachable — so Ganit keeps a full vendor surface. **The real defect is that `ganit/PayablesTab.jsx` has a stripped 4-field form** that creates vendors carrying none of the six MSME/TDS columns. Point it at the same component Kray uses; do not fork the fields. |
+| **0.21** | **Keep the "stored nowhere" invariant.** Counters are not worth quietly breaking a privacy promise. |
+| **0.22** | **Add `tasks.client_id`.** `public.tasks` has no such column, which is exactly why client profitability reads 0%. It is a behaviour change — every task then wants a client — so ship it as a feature, not a silent migration. |
+| **0.23** | **Create dummy logins and link 10–15 employees**, so the Playwright suites can exercise DIFFERENT ROLES end to end. Live today: 110 employees, 19 seats, **2 linked**. Most links are arithmetically impossible and that is fine — a login is a tool, not a record. |
+| **0.24** | **Mechanism DONE, data NOT.** Migration 221 applied, the settings screen shipped (Vetana → Statutory → Professional tax), resolution falls back and never blocks. But the ladder still holds **3 states of ~20**. Add states as customers need them; the ₹0 fallback means an unseeded state blocks nothing. |
+| **0.25** | **Standard holidays stay national.** A NULL `state_code` means everywhere, which is right for Republic Day and Diwali. Owner is open to importing per-state holidays from a government source if one can be found. |
+| **0.26** | Owner will connect a Meta WhatsApp Business Account on Aekam Inc later. `varta_business_accounts` = 0 until then, so the whole free-entry-point strategy stays untested. |
+| **0.27** | Owner asked whether we can obtain Meta's INR rate card. **We cannot** — it is behind their Business Manager login, and entering credentials is not something this seat does. Published India pricing can be researched as an estimate; the account card must come from the owner. |
+| **0.28** | **CLOSED — out of scope.** "Kartavaya is just a platform; we do not manage how an org does its marketing." The ICAI client/prospect line is the ORGANISATION's professional-conduct risk, not the platform's. The two `basis=inferred` rules stay as guidance, and no written ESB answer is owed. |
+| **0.29** | **A fresh APK is owed after ALL phases complete** — the owner has lost every previous build. `bash mobile/scripts/build-apk.sh release`; a debug APK carries no JS bundle and is useless off the build machine. |
+| **0.30** | **DROP the three restore schemas.** `qa_cleanup_20260822` (11 tables, 1112 kB), `punch_cleanup_20260823` (2, 328 kB), `owner_actions_20260823` (6, 96 kB). **Unblocks Phase 6.** |
+| **0.31** | **Reprice every scraper to cost + margin now; defer the India runner.** Selling below cost scales the loss with usage; the runner only pays off at volume that does not exist yet. |
+
 ## Progress
 
 _Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._

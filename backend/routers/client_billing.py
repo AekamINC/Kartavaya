@@ -1275,11 +1275,24 @@ async def quota_proration(
     if period_end <= period_start:
         raise HTTPException(400, "end_date must be after start_date")
 
+    # ONE DAY-COUNT CONVENTION, AND IT IS PAYROLL'S. Owner decision 0.17,
+    # 2026-08-26: calendar minus Sundays, everywhere.
+    #
+    # This loop counted `weekday() < 5` — Monday to Friday — while
+    # `routers/vetana.py` prorates a part-month on "every calendar day that is
+    # not a Sunday". For August 2026 that is 21 days here against 26 there, so
+    # the same absence was worth a different fraction depending on which engine
+    # asked, and a quota true-up could not be reconciled against the payroll it
+    # was meant to sit beside.
+    #
+    # Payroll is the one that keeps its convention, for the obvious reason: it
+    # has money flowing through it and a six-day week is what Indian firms
+    # actually work. Saturday is a working day here now.
     working_days_total = 0
     working_days_active = 0
     d = period_start
     while d < period_end:
-        if d.weekday() < 5:
+        if d.weekday() != 6:          # 6 = Sunday
             working_days_total += 1
             if d >= joined:
                 working_days_active += 1

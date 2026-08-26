@@ -815,6 +815,46 @@ def _employed_working_days(month_start: date, month_end: date,
     return _working_days_between(start, end)
 
 
+async def _esi_ceiling(pool, as_of: date) -> float | None:
+    """The ESI wage ceiling in force on `as_of`, from the dated law store.
+
+    PHASE 5.1, AND THE FIRST PAYROLL CONSTANT TO COME OUT OF A LITERAL.
+    `staging.statute_calendar` is read by eight skill modules and by no engine,
+    so the thing proposal 79 calls the best idea in the product protects nothing
+    a customer is billed on. `services/statute.py` already resolves a key at a
+    date correctly — half-open intervals, ranked supersession, `as_of`
+    mandatory — it was simply never called from here.
+
+    IT CHANGES NOTHING TODAY, WHICH IS THE POINT. The live row is
+    `esi.wage_ceiling` = 21,000 effective 2017-01-01, verified 2026-08-20
+    against ESI (Central) Rules 1950 rule 50 — the same number the literal
+    carried. So the mechanism lands without moving a payslip, and the next
+    ceiling change becomes a dated row instead of a deploy.
+
+    RETURNS None WHEN THE STORE CANNOT ANSWER, and the caller keeps the
+    statutory literal. That asymmetry is deliberate and is NOT the choice made
+    for professional tax: an absent PT slab means "this state levies nothing",
+    a defensible zero, whereas an absent ESI ceiling would mean "no ceiling" and
+    charge ESI to people the Act exempts. A missing row must never widen a
+    deduction.
+    """
+    try:
+        from services import statute
+        row = await statute.obligation(pool, "esi.wage_ceiling", as_of=as_of)
+    except Exception:
+        # A payroll run must not stop because the law store is unreadable.
+        logging.getLogger(__name__).warning(
+            "esi.wage_ceiling could not be read for %s; keeping the statutory "
+            "literal", as_of, exc_info=True)
+        return None
+    if not row or row.get("threshold_amount") is None:
+        return None
+    try:
+        return float(row["threshold_amount"])
+    except (TypeError, ValueError):
+        return None
+
+
 async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     """This org's professional-tax ladder as it stood at `as_at`.
 
@@ -965,7 +1005,8 @@ def _pt_from_slabs(slabs, state, gross: float) -> tuple:
 
 def _compute_statutory(basic_payable: float, gross: float, structure: dict,
                        commission: float = 0.0, bonus: float = 0.0,
-                       pt_slabs=None, employee_state=None):
+                       pt_slabs=None, employee_state=None,
+                       esi_ceiling: float | None = None):
     """PF, ESI, PT and TDS — WHETHER each is computed, and on WHAT BASE.
 
     NO PF, ESI OR TDS RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED.
@@ -1039,8 +1080,15 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
     pf_emp = min(pf_base * 0.12, 1800) if pf_on else 0
     pf_emr = min(pf_base * 0.12, 1800) if pf_on else 0
 
-    esi_emp = esi_base * 0.0075 if esi_on and esi_base <= 21000 else 0
-    esi_emr = esi_base * 0.0325 if esi_on and esi_base <= 21000 else 0
+    # THE CEILING IS DATED NOW; THE RATES ARE NOT. 0.75% and 3.25% stay literal
+    # because `statute_calendar` holds no key for them — `epf.remittance` and the
+    # ESI rows carry due dates, and only `esi.wage_ceiling` carries a figure. A
+    # constant with nowhere to read it from is not improved by pretending
+    # otherwise. `_esi_ceiling` returns None when the store cannot answer, and
+    # the statutory 21,000 stands: a missing row must never widen a deduction.
+    _ceiling = 21000.0 if esi_ceiling is None else esi_ceiling
+    esi_emp = esi_base * 0.0075 if esi_on and esi_base <= _ceiling else 0
+    esi_emr = esi_base * 0.0325 if esi_on and esi_base <= _ceiling else 0
 
     # PROFESSIONAL TAX — from the state's slab where one can be read, and from
     # the pre-slab flat rule only where the slab table was never consulted.
@@ -1549,6 +1597,14 @@ async def process_payroll(
     # difference decides the arithmetic — see `_compute_statutory`.
     pt_slabs = await _pt_slabs(pool, org_id, month_end) if state_col else None
 
+    # THE DATED LAW, READ ONCE PER RUN. `month_end` is the date the obligation
+    # arises — the last day of the period being paid — not the date somebody
+    # happens to press the button, which is what `services/statute.py` means by
+    # `as_of` and why it refuses to default it. Re-running an old month
+    # therefore uses the ceiling that applied to THAT month, which is the whole
+    # acceptance criterion for Phase 5.1.
+    esi_ceiling = await _esi_ceiling(pool, month_end)
+
     seen_employees = set()
     unique_structures = []
     for s in structures:
@@ -1749,6 +1805,7 @@ async def process_payroll(
                                   commission=commission_total,
                                   bonus=bonus_total,
                                   pt_slabs=pt_slabs,
+                                  esi_ceiling=esi_ceiling,
                                   employee_state=(s["employee_state"]
                                                   if pt_slabs is not None
                                                   else None))
