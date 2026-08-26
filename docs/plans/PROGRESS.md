@@ -33,6 +33,35 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Six junk vendors removed, and a retention rule for the backup schemas
+
+**Owner, 2026-08-26: "this data just remove it thanks."** Four vendors named
+`p` and two named `probe`, created in Unicode Group in a 72-second burst on
+2026-07-28 — write probes from an earlier session, left live. Six of the org's
+fifteen, and `ganit.py:2677` filters only on `is_active`, so all six rendered in
+the vendor picker.
+
+Checked before deleting rather than after: **zero references** across every
+column in the database whose name matches a vendor id — `ganit_expenses`,
+`ganit_purchase_orders`, `ganit_vendor_bills`, `vendor_rate_cards`,
+`vendor_sla_credits`. All six were orphans. Backed up to
+`ledger_repair_20260826.junk_vendors_removed` first. Unicode's vendor master is
+now **9 rows, every one a real supplier**.
+
+**THE RETENTION RULE — the gap decision 0.30 could not have covered.** Three
+backup schemas survive, and until now only one of them said when it may go.
+
+| Schema | Holds | Drop when |
+|---|---|---|
+| `ledger_repair_20260826` | 5 tables, 23 rows, 80 kB | **Not before 2026-09-02.** It is the only reversal path for data changed today, and today is the worst possible moment to discard it. Nothing reads it; the only reason to keep it is the one that matters |
+| `dead_tables_20260822` | 2 tables, 1 row, 56 kB | Governed by `migrations/194_drop_dead_crm_products.sql`, which documents the restore recipe. Droppable once nobody wants `project_templates_before_200` |
+| `tenancy_195_backup` | 2 tables, 290 rows, 96 kB | Condition already written at `migrations/195...sql:210` — **"only once the 64 call sites have been migrated"**. Not yet verified, so it stays |
+
+The rule this establishes: **a backup schema is created with its drop condition,
+in the same commit.** 195 did this and 0.30's three did not, which is why they
+needed an owner decision at all. 176 kB across all three is not a cost worth
+optimising; an un-reversible repair is.
+
 ### The dunning cron was chasing 54 documents nobody owes money on
 
 Found by reading a live reminder rather than the code, which is the only way it
