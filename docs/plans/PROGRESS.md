@@ -33,6 +33,55 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### The ledger repaired — owner confirmed none of it is live
+
+**Owner, 2026-08-26: "no live users or legal payslip, all are seeded."** That
+resolved the seven items the brake had held as NEEDS-OWNER: its caution was
+built on reading Unicode as a real customer's ledger, and it is not one. Every
+figure below is now internally consistent.
+
+Captured first into `ledger_repair_20260826` (payments, invoice states, expense
+claims, the 2020 run) so every step reverses.
+
+**Six payments removed, and their invoices restored to unpaid:**
+
+| what it asserted | doc | amount |
+|---|---|---|
+| a receipt against a DRAFT | Unicode INV-2026-0005 | ₹2,06,500 |
+| a receipt against a DRAFT | E2E INV-2026-0012 | ₹5,000 |
+| a receipt against a DRAFT | E2E INV-2026-0016 | ₹5,000 |
+| a receipt against a DRAFT | E2E INV-2026-0147 | ₹590 |
+| a receipt against a CREDIT NOTE | E2E CN-2026-0148 | ₹2,950 |
+| ₹60,000 received on a ₹0 invoice | Unicode INV-2026-0007 | ₹60,000 |
+
+**`INV-2026-0048` born paid** — ₹53,100 total, ₹0 balance, no payment row —
+corrected to owe its full amount.
+
+**Three approved expense claims detached** from payslips that were voided and
+never disbursed (₹800 + ₹1,200 + ₹5,000, all Unicode). They promised
+reimbursement on a slip nobody was paid from.
+
+**The January 2020 payroll run deleted.** The brake had ranked this DO-NOT on
+the grounds that `org.spec.ts:197-211` asserts it — reading the spec settles it
+the other way: that test POSTs `{month:'2020-01'}` and asserts a **refusal**
+(`>= 400`), so it never depends on the run existing. The row was residue from a
+run that once succeeded with an admin token: `employee_count 0`, `total_gross 0`,
+zero payslips, sitting in a payroll list a tester scrolls.
+
+**Nothing left to delete on holidays.** The sweep's "15 duplicates" were
+DISTINCT NAMES sharing a date — Dussehra and Gandhi Jayanti both fall on
+2025-10-02, and each e2e run adds its own tagged holiday. Zero exact duplicates
+on (org, date, name) remain after the single genuine twin was removed earlier.
+
+**Verified after, both orgs:** 0 payments against a draft, credit note or
+zero-total invoice · 0 invoices where `balance_due <> total − Σpayments` · 0
+born-paid · 0 expense claims pointing at a voided payslip · 0 phantom runs.
+
+**Still owed and NOT done:** Nikhil Desai's missing July and August pay
+(~₹72,322). His last working day is 2026-08-28 — still in the future — and the
+August run is already `processed`, which `process_payroll` refuses to re-run. It
+needs a deliberate remediation, not a data edit.
+
 ### The data/code consistency sweep — and the answer it actually gave
 
 Owner: make the data go hand in hand with how the system behaves, and delete
