@@ -244,11 +244,40 @@ class TestTheEmployeeWritePath:
         self, api_client, mock_pool, as_admin, with_org_id,
     ):
         """A column the list cannot show is a column nobody can see is empty —
-        the same reason `user_id` was added to this query."""
+        the same reason `user_id` was added to this query.
+
+        THIS ASSERTION IS DELIBERATELY NARROW, because its previous form was
+        `assert "state" in sql` and that PASSED THROUGHOUT A PERIOD WHEN THE
+        ENDPOINT RETURNED NO STATE AT ALL.
+
+        `list_employees` is two SELECTs: an inner one that reads the table, and
+        an outer wrapper that joins the actor tables and projects an EXPLICIT
+        column list. The inner one said `state,`; the outer one did not re-list
+        it, so the column was selected and then dropped one layer later. A
+        substring test over the whole statement cannot tell those apart — the
+        inner query supplies the substring — so it reported green against a
+        response whose rows had no `state` key. Found 2026-08-26 when a Phase-1
+        acceptance run read back `undefined` from an employee whose row holds
+        '27' in the database.
+
+        The outer projection qualifies every column with the `e.` alias and the
+        inner one names them bare, so `e.state` is the discriminator: it can
+        only come from the projection that decides what reaches the client.
+        """
         mock_pool.fetch.return_value = []
         r = await api_client.get("/api/v1/manav/employees")
         assert r.status_code == 200
-        assert "state" in mock_pool.fetch.call_args[0][0]
+        sql = mock_pool.fetch.call_args[0][0]
+
+        # The inner read of the table: necessary, and on its own NOT sufficient.
+        assert "state, " in sql, sql
+
+        # The outer projection, which is what the client actually receives.
+        assert "e.state" in sql, (
+            "the outer wrapper of list_employees does not project e.state, so "
+            "every row reaches the client without it however well the inner "
+            "query reads the column: " + sql
+        )
 
 
 class TestTheHolidayWritePath:

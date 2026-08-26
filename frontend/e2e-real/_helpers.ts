@@ -321,3 +321,84 @@ export async function setDate(scope: any, labelText: string | RegExp, iso: strin
   await pop.locator(`.pk__d:not(.out)`, { hasText: new RegExp(`^${want.getDate()}$`) }).first().click();
   await expect(pop).toBeHidden();
 }
+
+// ══ TARGETING AN ORG, AND PROVING IT ═════════════════════════════════════════
+//
+// Added 2026-08-26 after a Phase-1 acceptance run wrote a vendor into the WRONG
+// ORGANISATION and only the read-back's 403 revealed it.
+//
+// `.env.e2e` had drifted into a hybrid: `E2E_ORG_ID` named E2E Test &
+// Associates while `E2E_ADMIN_TOKEN` belonged to an admin of Unicode Group who
+// is not a member of E2E at all. The browser therefore drove as a Unicode user
+// and the write landed in Unicode, while `api()`'s `X-Org-Id` header carried
+// E2E's id and 403'd. The write had already happened by then.
+//
+// The deeper fault was in the fence: `assertOutboundFence` hashes the org id it
+// reads from the ENVIRONMENT, so it attested that E2E was shielded — which was
+// true, and irrelevant, because the session was in Unicode. **A fence that
+// asserts about an org the session is not in is not a fence.** Everything below
+// derives the org from the SESSION.
+
+/** The org id the browser session is actually operating as. */
+export async function activeOrgId(page: Page): Promise<string | null> {
+  return await page.evaluate(() => localStorage.getItem('Kartavaya_active_org'));
+}
+
+/**
+ * Point the session at one org and PROVE it took, before anything is written.
+ *
+ * Sets the same localStorage key the switcher writes (`orgContext.js:30`) and
+ * reloads, because `setActiveOrg` treats the switch as a hard boundary. Then
+ * confirms from the server — not from the key it just wrote, which would be
+ * circular — that this user really is a member and the org resolves by name.
+ */
+export async function useOrg(page: Page, orgId: string, name: string | RegExp) {
+  await page.goto('/');
+  await page.evaluate((id) => localStorage.setItem('Kartavaya_active_org', id), orgId);
+  await page.goto('/ganit');
+  await settle(page);
+
+  const got = await activeOrgId(page);
+  expect(got, `the active-org key did not stick — wanted ${orgId.slice(0, 8)}…, got ${got}`)
+    .toBe(orgId);
+
+  // Server-side confirmation. A membership the server rejects is exactly the
+  // state that produced the wrong-org write, and it must fail HERE, loudly,
+  // before a single row is created — not on a read-back afterwards.
+  const probe = await api(page, 'get', '/api/v1/org/members?limit=1');
+  expect(probe.status(), `this account cannot act in ${String(name)} — ` +
+    `GET /org/members → ${probe.status()}: ${await probe.text()}. The token in ` +
+    '.env.e2e belongs to a different organisation; nothing may be written.')
+    .toBeLessThan(400);
+
+  // And the shell must SAY so, because that is what a person would check.
+  await expect(page.getByText(name).first(),
+    `the org switcher does not show ${String(name)} after switching to it`)
+    .toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * The outbound fence, bound to the org the SESSION is in rather than to an
+ * environment variable. Same contract as `assertOutboundFence` otherwise.
+ */
+export async function assertOutboundFenceFor(page: Page, orgId: string) {
+  const expected = createHash('sha256').update(orgId.toLowerCase()).digest('hex').slice(0, 16);
+  const res = await page.request.get(`${API}/api/health`);
+  expect(res.status(), `GET /api/health → ${res.status()} — cannot verify the outbound ` +
+    'fence, so nothing that sends may run').toBe(200);
+  const meta = await res.json();
+  const mode = String(meta.outbound_mode ?? '');
+  const digest = String(meta.suppressed_orgs_digest ?? '');
+
+  expect(mode && digest, 'the deployed backend does not report outbound_mode/' +
+    'suppressed_orgs_digest — whether THIS org is shielded is unknowable from here')
+    .toBeTruthy();
+  if (mode === 'dry') return;
+
+  expect(digest, `staging is NOT shielding the org this session is operating in ` +
+    `(${orgId.slice(0, 8)}…). The live process reports outbound_mode='${mode}' and ` +
+    `suppressed_orgs_digest='${digest}', but shielding exactly this org digests to ` +
+    `'${expected}'. Writing here could mail real people — fix ` +
+    'OUTBOUND_SUPPRESSED_ORGS and REDEPLOY, or target an org that is on the list.')
+    .toBe(expected);
+}

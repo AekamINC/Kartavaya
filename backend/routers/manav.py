@@ -1088,7 +1088,17 @@ async def list_employees(
         + actor_select("e", updated=True)
         + "e.id, e.employee_code, e.name, e.email, e.phone, e.department, "
         "e.designation, e.employment_type, e.status, e.date_of_joining, "
-        "e.shift, e.created_at, e.user_id, e._total "
+        "e.shift, e.created_at, e.user_id, "
+        # `e.state` MUST be re-listed here. The inner query selects it for the
+        # reason stated above its own SELECT — a column the list cannot show is a
+        # column nobody can see is empty — and this outer wrapper projects an
+        # EXPLICIT column list, so omitting it silently undid that. The inner
+        # SELECT and this projection are two halves of one contract; widening one
+        # without the other is invisible in code review and invisible in the
+        # response, which is how it survived. Caught 2026-08-26 by a Phase-1
+        # acceptance run whose read-back got `undefined` from a row that carries
+        # '27' in the database.
+        "e.state, e._total "
         "FROM (" + query + ") e "
         + actor_joins("e", updated=True)
         # Repeated outside: a subquery's ORDER BY orders what the LIMIT cuts,

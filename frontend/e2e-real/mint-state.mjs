@@ -67,6 +67,13 @@ fs.mkdirSync(STATE_DIR, { recursive: true });
 const ACCOUNTS = [
   { token: process.env.E2E_ADMIN_TOKEN, file: 'owner.json', label: 'owner' },
   { token: process.env.E2E_APPROVER_TOKEN, file: 'approver.json', label: 'approver' },
+  // The god-mode account, which is the only one that can reach MORE THAN ONE
+  // organisation. `.env.e2e` has been a hybrid before — E2E_ORG_ID naming one
+  // org while E2E_ADMIN_TOKEN belonged to an admin of another, who is not a
+  // member of the first — and the symptom was a write landing in the wrong
+  // org while `api()`'s X-Org-Id header 403'd. A suite that must CHOOSE its
+  // target org needs an account that can switch; this is it.
+  { token: process.env.E2E_GODMODE_TOKEN, file: 'godmode.json', label: 'godmode' },
 ];
 
 /** A JWT's exp, read without verifying — this is a convenience check, not a

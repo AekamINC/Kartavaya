@@ -27,6 +27,8 @@ if (fs.existsSync(envFile)) {
 export const STATE_DIR = path.join(os.tmpdir(), 'kartavya-e2e-auth');
 export const OWNER_STATE = path.join(STATE_DIR, 'owner.json');
 export const APPROVER_STATE = path.join(STATE_DIR, 'approver.json');
+/** The only account that can reach more than one org — see mint-state.mjs. */
+export const GODMODE_STATE = path.join(STATE_DIR, 'godmode.json');
 export const DL_DIR = path.join(os.tmpdir(), 'kartavya-e2e-downloads');
 for (const d of [STATE_DIR, DL_DIR]) fs.mkdirSync(d, { recursive: true });
 
