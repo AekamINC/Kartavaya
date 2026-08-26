@@ -9,9 +9,11 @@ import TabProfile from './org/TabProfile';
 import TabMembers from './org/TabMembers';
 import TabBilling from './org/TabBilling';
 import TabModules from './org/TabModules';
+import TabCompliance from './org/TabCompliance';
 import TabSecurity from './org/TabSecurity';
 import TabSenders from './org/TabSenders';
 import TabUpi from './org/TabUpi';
+import TabStorage from './org/TabStorage';
 import TabDanger from './org/TabDanger';
 
 import '../styles/org.css';
@@ -110,6 +112,12 @@ export default function OrgSettingsPage() {
       value: 'modules', label: <>Modules{hi('खंड')}</>, count: counts.modules,
       content: <TabModules onCount={n => report('modules', n)} />,
     },
+    // Directly after Modules, because it is the same subject one level down:
+    // Modules is which parts of the product this firm runs, Compliance is what
+    // each of those parts must ask of it. Its own tab rather than a section
+    // under Modules because the answers are decisions with a name and a date
+    // against them, and a module card is a switch.
+    { value: 'compliance', label: <>Compliance{hi('अनुपालन')}</>, content: <TabCompliance /> },
     // Between Modules and Security rather than beside Profile: this is a
     // deliverability setting, not a company detail. Its own tab rather than a
     // section under Profile because there are nine rows of it and the tab is
@@ -122,6 +130,12 @@ export default function OrgSettingsPage() {
     // what this org pays Aekam, this is what its own customers pay it.
     { value: 'upi',      label: <>UPI IDs{hi('यूपीआई')}</>,  content: <TabUpi /> },
     { value: 'security', label: <>Security{hi('सुरक्षा')}</>, content: <TabSecurity /> },
+    // Beside Security rather than under Profile: this is what the organisation
+    // is paying for and where its documents physically are, which is
+    // administration rather than a company detail. `storage_browser.py` gates
+    // on the same org_admin/org_owner pair this whole hub does, so there is no
+    // tab-level permission to thread through.
+    { value: 'storage',  label: <>Storage{hi('भंडार')}</>,   content: <TabStorage /> },
     { value: 'danger',   label: <>Danger zone{hi('संकट')}</>, content: <TabDanger orgName={orgRole?.org_name} /> },
   ]), [isOwner, user?.user_id, orgRole?.org_name, counts.members, counts.modules, report]);
 

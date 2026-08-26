@@ -1585,6 +1585,11 @@ class TaskCreate(BaseModel):
     reminder_at:Optional[str]=None; reminders:List[ReminderIn]=[]; recurrence:Recurrence=Field(default_factory=Recurrence)
     estimated_minutes:Optional[int]=None; attachments:AttachmentListIn=[]
     custom_fields:CustomFieldsIn={}; subtasks:List[Subtask]=[]
+    # Phase 0.22 — WHICH CUSTOMER this work is for. Optional, and it stays
+    # optional: an internal task has no client and refusing one would make
+    # every checklist item a billing decision. `_assert_client_in_org` is what
+    # stops it naming another organisation's customer.
+    client_id:Optional[str]=None
 class TaskUpdate(BaseModel):
     title:Optional[str]=None; description:Optional[str]=None; status:Optional[str]=None
     column_id:Optional[str]=None; priority:Optional[str]=None; category_id:Optional[str]=None
@@ -1599,6 +1604,11 @@ class TaskUpdate(BaseModel):
     # files this caller was never shown.
     attachments:Optional[List[Attachment]]=None; custom_fields:Optional[CustomFieldsIn]=None
     subtasks:Optional[List[Subtask]]=None; approval_status:Optional[str]=None
+    # Phase 0.22. `None` means "not mentioned" and leaves the stored value
+    # alone; the empty string means "unset it", which a picker needs in order to
+    # be able to take a wrong client back off a task. Both are handled in the
+    # handler, because a bare Optional cannot tell the two apart.
+    client_id:Optional[str]=None
 class TaskOut(BaseModel):
     task_id:str; user_id:Optional[str]=None; team_id:Optional[str]=None; column_id:Optional[str]=None
     created_by_user_id:str; assigned_by_user_id:Optional[str]=None; completed_by_user_id:Optional[str]=None
@@ -1612,6 +1622,11 @@ class TaskOut(BaseModel):
     approval_requested_at:Optional[datetime]=None; approval_decided_at:Optional[datetime]=None
     requires_approval:bool=False; created_by_name:Optional[str]=None
     archived_at:Optional[datetime]=None; reminders:List[ReminderOut]=[]; comment_count:int=0
+    # Phase 0.22. The id is what the picker binds to; the NAME is what any
+    # screen renders — `check-rendered-ids.mjs` is the ratchet, and a uuid on a
+    # card is the thing it exists to stop. `client_name` is filled by the reads
+    # that join it and stays None where nothing joined.
+    client_id:Optional[str]=None; client_name:Optional[str]=None
 class TaskMoveIn(BaseModel):
     column_id:str; order:int
 class CommentCreate(BaseModel):
@@ -1775,6 +1790,47 @@ async def _resolve_org_id(pool, team_id: str) -> Optional[str]:
     if org_id is not None:
         _team_org_cache[team_id] = org_id
     return org_id
+
+async def _assert_client_in_org(pool, client_id, org_id):
+    """`tasks.client_id`, checked against the org that is about to own the task.
+
+    Phase 0.22. Returns the id as a string, or None when nothing was named.
+
+    ── WHY THIS IS A QUERY AND NOT A FOREIGN KEY ───────────────────────────────
+
+    `public.tasks` carries no foreign keys at all (read from `pg_constraint`,
+    2026-08-27: three CHECKs and nothing else), and an FK would not answer the
+    question that matters anyway. `staging.graha_clients.id` is unique across
+    the WHOLE TABLE, so an FK would happily accept another organisation's
+    customer — that is the documented `graha_clients` join leak, where a join on
+    id alone surfaces a client the caller may not see. Tenancy is the constraint
+    here, so the predicate carries the org.
+
+    ── AND WHY IT REFUSES RATHER THAN DROPPING THE VALUE ───────────────────────
+
+    Silently ignoring a client_id the caller cannot use would create the task
+    with no customer on it and report success. The next thing that happens is
+    somebody looks at client profitability, sees the work missing, and puts the
+    hours somewhere else by hand. A 404 says which id was refused; it does not
+    say whether that id exists elsewhere, because that would answer "does this
+    uuid belong to some other firm" for anyone who can create a task.
+    """
+    if client_id in (None, ""):
+        return None
+    if not org_id:
+        raise HTTPException(400, "This task has no organisation, so it cannot name a client.")
+    try:
+        cid = str(uuid.UUID(str(client_id)))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(422, f"client_id: '{client_id}' is not a valid client id.")
+    found = await pool.fetchval(
+        "SELECT id FROM staging.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        cid, str(org_id),
+    )
+    if not found:
+        raise HTTPException(404, "That client is not in this organisation.")
+    return cid
+
 
 #: A key written to the platform bucket names it in its own prefix — `shared/`
 #: for an upload with no org, `org/{id}/` for an org with no bucket of its own.
@@ -4310,12 +4366,15 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     next_order=(max_row["mo"] or -1)+1; task_id=f"task_{uuid.uuid4().hex[:12]}"
     actor_name=actor_display(user)
     _org = await _resolve_org_id(pool, payload.team_id) if payload.team_id else None
+    # Phase 0.22 — checked BEFORE the INSERT, against the org this task will
+    # belong to, so a task is never born carrying another firm's customer.
+    _client = await _assert_client_in_org(pool, payload.client_id, _org)
     row=await pool.fetchrow("""
         INSERT INTO tasks (task_id,user_id,team_id,column_id,created_by_user_id,assigned_by_user_id,
            created_by_name,title,description,status,priority,category_id,tags,assignee_user_ids,assignee_emails,
-           due_at,reminder_at,recurrence_rule,recurrence_interval,estimated_minutes,attachments,custom_fields,subtasks,sort_order,org_id)
+           due_at,reminder_at,recurrence_rule,recurrence_interval,estimated_minutes,attachments,custom_fields,subtasks,sort_order,org_id,client_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[],$14::text[],$15::text[],
-                $16,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25::uuid)
+                $16,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25::uuid,$26::uuid)
         RETURNING *""",
         task_id,user_id_field,payload.team_id,column_id,user["user_id"],
         user["user_id"] if (payload.assignee_user_ids or payload.assignee_emails) else None,
@@ -4324,7 +4383,7 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
         [e.strip().lower() for e in payload.assignee_emails if e.strip()],
         due_dt,reminder_dt,payload.recurrence.rule,payload.recurrence.interval,payload.estimated_minutes,
         json.dumps([a.model_dump(mode="json") for a in payload.attachments or []]),
-        json.dumps(payload.custom_fields or {}),json.dumps([s.model_dump() for s in payload.subtasks or []]),next_order,_org)
+        json.dumps(payload.custom_fields or {}),json.dumps([s.model_dump() for s in payload.subtasks or []]),next_order,_org,_client)
     team_name=None
     if payload.team_id:
         tr=await pool.fetchrow("SELECT name FROM teams WHERE team_id=$1",payload.team_id)
@@ -4728,6 +4787,15 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
             member_role = mr["role"] if mr else None
         if not is_sys_admin and member_role not in ("owner", "admin"):
             raise HTTPException(403, "Only project admins and owners can approve or reject tasks")
+    # Phase 0.22 — the client, checked against the task's OWN org rather than
+    # the caller's active one: the row is the thing being changed, and a
+    # platform operator with a different org selected must not be able to move a
+    # task onto a customer of theirs. `""` is how a picker says "take it off";
+    # `None` never reaches here because `exclude_unset` drops what was not sent.
+    if "client_id" in data:
+        _cid = await _assert_client_in_org(pool, data["client_id"], existing["org_id"])
+        updates.append(f"client_id=${len(vals)+1}::uuid"); vals.append(_cid)
+
     for k in ["title","description","status","priority","category_id","estimated_minutes","column_id","approval_status"]:
         if k in data: updates.append(f"{k}=${len(vals)+1}"); vals.append(data[k])
     if "approval_status" in data and data["approval_status"] in ("approved","rejected"):

@@ -83,7 +83,8 @@ UNCOVERED = {
     "niyam_rules", "org_members", "org_modules", "org_profile", "org_security",
     "pahchan_attendance", "pay", "prachar", "procurement", "products", "pulse",
     "scheduler", "scrapers", "subscription", "tab_prefs", "totp", "vikray",
-    "whatsapp",
+    # `whatsapp` left this list on 2026-08-27 — the first name to, and the
+    # ratchet is what noticed. 29 remain.
 }
 
 

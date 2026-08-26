@@ -1,5 +1,7 @@
 import React from 'react';
 import Picker from '../ui/Picker';
+import ServerPicker from '../ui/ServerPicker';
+import { api } from '../../lib/api';
 import DatePicker from '../ui/DatePicker';
 import Lbl from './DrawerLabel';
 import { PRIORITY_LABELS, PRIORITY_COLORS, STATUS_LABELS } from './constants';
@@ -85,6 +87,57 @@ export default function DrawerMeta({
   // works. Defaulted so this is never a crash.
   allTasks = [],
 }) {
+  /* ── EVERY HOOK SITS ABOVE THE `!task` RETURN ──────────────────────────────
+     React counts hooks, not branches: a drawer that renders once with a task
+     and once without would run a different number of them and React throws.
+     `labelSuggestions` was already below the return when the client picker was
+     added — moved up rather than joined, because two wrongs there is an error
+     the first time a drawer closes onto an empty selection. */
+
+  /* Phase 0.22 · which CUSTOMER this work is for. `tasks.client_id`
+     (migration 226). Until it existed a firm could record every hour it worked
+     and never say who for, which is why client profitability answered 0%.
+
+     A ServerPicker, not a plain Picker, for the reason that component was
+     written: `GET /v1/graha/clients` is LIMIT 200 and orgs are already past
+     that, so filtering a truncated array hides customers SILENTLY and the user
+     creates a second copy of one. The first page is fetched when the drawer
+     mounts; typing asks the server.
+
+     NAMES, never ids — `check-rendered-ids.mjs` is the ratchet. The id is the
+     picker's value and nothing else. */
+  const [clients, setClients] = React.useState([]);
+  const searchClients = React.useCallback(async (q) => {
+    try {
+      const r = await api.get('/v1/graha/clients', { params: q ? { search: q } : {} });
+      const rows = r?.data?.data || r?.data || [];
+      setClients(prev => {
+        const seen = new Map(prev.map(c => [String(c.id), c]));
+        for (const c of (Array.isArray(rows) ? rows : [])) seen.set(String(c.id), c);
+        return [...seen.values()];
+      });
+    } catch {
+      /* The list simply does not grow. A task without a customer is a legal
+         state, so a failed lookup must not block the drawer. */
+    }
+  }, []);
+  React.useEffect(() => { searchClients(''); }, [searchClients]);
+
+  /* Labels already in use nearby, so the firm's vocabulary converges without
+     being enforced. `allTasks` is whatever list the drawer was opened from —
+     absent on surfaces that open a task alone, in which case there are simply
+     no suggestions and the free-text input still works. */
+  const labelSuggestions = React.useMemo(() => {
+    const seen = new Map();
+    for (const t of (allTasks || [])) {
+      for (const tag of (t?.tags || [])) {
+        const key = String(tag).toLowerCase();
+        if (!seen.has(key)) seen.set(key, tag);
+      }
+    }
+    return [...seen.values()].sort((a, b) => String(a).localeCompare(String(b)));
+  }, [allTasks]);
+
   if (!task) return null;
 
   // API shape (channels: string[]) <-> picker shape (channels: {in_app,push,email})
@@ -108,24 +161,14 @@ export default function DrawerMeta({
     }))
     .filter(m => m.id && m.name);
 
-  /* Labels already in use nearby, so the firm's vocabulary converges without
-     being enforced. `allTasks` is whatever list the drawer was opened from —
-     absent on surfaces that open a task alone, in which case there are simply
-     no suggestions and the free-text input still works. */
-  const labelSuggestions = React.useMemo(() => {
-    const seen = new Map();
-    for (const t of (allTasks || [])) {
-      for (const tag of (t?.tags || [])) {
-        const key = String(tag).toLowerCase();
-        if (!seen.has(key)) seen.set(key, tag);
-      }
-    }
-    return [...seen.values()].sort((a, b) => String(a).localeCompare(String(b)));
-  }, [allTasks]);
-
   const categoryItems = [
     { id: '', name: '— None —' },
     ...categories.map(c => ({ id: c.category_id, name: c.name })),
+  ];
+
+  const clientItems = [
+    { id: '', name: '— No client —' },
+    ...clients.map(c => ({ id: String(c.id), name: c.name, meta: c.ref_no || '' })),
   ];
 
   /** One write path for both halves of the due date, so the optimistic update,
@@ -246,6 +289,28 @@ export default function DrawerMeta({
             const next = v || null;
             setDraft(d => ({ ...d, category_id: next }));
             saveTask({ category_id: next });
+          }}
+        />
+      </div>
+
+      {/* 0.22. Optional, and the placeholder says so: an internal task has no
+          customer, and refusing to save without one would make every checklist
+          item a billing decision. Sending `''` is how the picker takes a wrong
+          client back OFF a task — the handler reads it as "unset", which a bare
+          null could not be told apart from "not mentioned". */}
+      <div className="dr__prop">
+        <Lbl hi="ग्राहक">Client</Lbl>
+        <ServerPicker
+          mode="option" field ariaLabel="Client"
+          search
+          items={clientItems}
+          value={draft.client_id || ''}
+          placeholder="— No client —"
+          onSearch={searchClients}
+          onChange={v => {
+            const next = v || '';
+            setDraft(d => ({ ...d, client_id: next || null }));
+            saveTask({ client_id: next });
           }}
         />
       </div>

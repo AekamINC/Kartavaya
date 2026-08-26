@@ -103,28 +103,35 @@ afterEach(async () => {
 });
 
 describe('Organisation hub tab bar', () => {
-  // Seven, not the design's six. `Senders` was added after this file was
-  // written: per-purpose From addresses are a deliverability setting rather
-  // than a company detail, so they get a tab instead of a section under
-  // Profile. The list is asserted in FULL and in order — a count alone would
-  // let a tab be renamed or reordered without anybody noticing.
-  it('renders the tabs in the design\'s order, plus Senders', async () => {
+  // TEN, and each addition is a decision rather than a drift. The design had
+  // six; `Senders` came next (per-purpose From addresses are a deliverability
+  // setting, not a company detail); `UPI IDs` after it (one id PER PLATFORM,
+  // not one VPA field); and Phase 4 added two on 2026-08-27 — `Compliance`
+  // (4.1) and `Storage` (4.4), both endpoints that had existed with no caller.
+  //
+  // The list is asserted in FULL and in order, because a count alone would let
+  // a tab be renamed or reordered without anybody noticing. This file pinned
+  // seven for long enough that it was two behind before Phase 4 touched it:
+  // when a tab lands, this is the test that has to move with it.
+  it('renders the tabs in the design\'s order, plus the four added since', async () => {
     await draw();
     expect(tabs().map(t => t.textContent.replace(/[^A-Za-z ]/g, '').trim())).toEqual([
-      'Profile', 'Members', 'Billing', 'Modules', 'Senders', 'Security', 'Danger zone',
+      'Profile', 'Members', 'Billing', 'Modules', 'Compliance', 'Senders',
+      'UPI IDs', 'Security', 'Storage', 'Danger zone',
     ]);
   });
 
   it('carries each tab\'s Devanagari from the designer\'s TAB_HI map', async () => {
     await draw();
     expect(tabs().map(t => t.querySelector('.tabs__hi')?.textContent))
-      .toEqual(['रूपरेखा', 'सदस्य', 'बीजक', 'खंड', 'प्रेषक', 'सुरक्षा', 'संकट']);
+      .toEqual(['रूपरेखा', 'सदस्य', 'बीजक', 'खंड', 'अनुपालन', 'प्रेषक',
+                'यूपीआई', 'सुरक्षा', 'भंडार', 'संकट']);
   });
 
   it('marks the Devanagari lang="hi" so it is not read as English', async () => {
     await draw();
     const marks = [...container.querySelectorAll('.tabs__hi')];
-    expect(marks.length).toBe(7);
+    expect(marks.length).toBe(10);
     for (const el of marks) expect(el.getAttribute('lang')).toBe('hi');
   });
 

@@ -1,0 +1,217 @@
+/* compliance.css — the "what applies to your firm" panel (proposal 80, PHASE-4 §4.1).
+ *
+ * Imported from pages/org/TabCompliance.jsx rather than from styles/index.css:
+ * the panel is one tab of one route, so the barrel would load it on every page
+ * that is not this one. Same reasoning as org.css, which is imported by the
+ * hub shell for the same reason.
+ *
+ * The layout vocabulary — .st, .st__group, .st__gt, .st__gh, .seg (settings.css),
+ * .opend, .of__l, .of__i, .of__h (org.css), .modal__panel, .tag
+ * (components.css) — is deliberately NOT restated here. Two definitions of a
+ * settings row is how the app ended up with two component systems
+ * (02-common-components.md).
+ *
+ * That makes org.css a PREREQUISITE, not merely a neighbour: the reason label
+ * and its box in the dialog are `.of__l` / `.of__i`, which org.css owns.
+ * `OrgSettingsPage.jsx` imports it for the whole hub and this panel is a tab of
+ * that hub, so it is always present. A future call site outside the hub has to
+ * import org.css too, or the dialog's one field loses its border and its focus
+ * ring — which is why the dependency is written down rather than left to be
+ * rediscovered from a screenshot.
+ *
+ * Every colour resolves to a token. The screen whose subject is that this
+ * product asserts nothing it cannot see is not the place to guess a hex.
+ */
+
+/* ── The panel lede ──────────────────────────────────────────────────────── */
+.cmpl__lede {
+  font-size: 13px; line-height: 1.6; color: var(--on-surface-2);
+  margin: 0 0 var(--sp-3); text-wrap: pretty; max-width: 68ch;
+}
+/* 68ch, and it is the only width limit on this panel. `.st` already caps the
+   settings column at 920px; this stops a long paragraph inside that column
+   running to a measure nobody reads to the end of. Every ROW below stays
+   fluid — the page rule is fluid and left-aligned, and a measure on prose is
+   not a fixed-width centred layout. */
+
+/* ── The three-state legend ──────────────────────────────────────────────── */
+.cmpl__legend { margin: var(--sp-4) 0 0; display: grid; gap: var(--sp-3); }
+.cmpl__leg {
+  display: grid; grid-template-columns: minmax(150px, 200px) 1fr;
+  gap: var(--sp-1) var(--sp-4); align-items: baseline;
+}
+.cmpl__leg dt {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-size: 12.5px; font-weight: 600; color: var(--on-surface);
+}
+.cmpl__leg dd {
+  margin: 0; font-size: 12.5px; line-height: 1.55;
+  color: var(--on-surface-2); text-wrap: pretty;
+}
+/* One column under ~560px: a 150px label column beside a sentence leaves the
+   sentence four words wide on a phone. No fixed breakpoint elsewhere in this
+   file — the rule rows below are flex-wrap and need none. */
+@media (max-width: 560px) {
+  .cmpl__leg { grid-template-columns: 1fr; gap: var(--sp-1); }
+}
+
+.cmpl__leghi {
+  font-family: var(--font-indic); font-size: 11.5px; font-weight: 400;
+  color: var(--on-surface-3); text-transform: none; letter-spacing: 0;
+}
+/* --font-indic, NOT --font-hindi. `Secondary` resolves the script itself and
+   may hand back `sa` or `gu` as readily as `hi` — editorial.css §"Which token,
+   where" draws exactly this line: a label that follows the language setting
+   takes the indic token, and only a label pinned to Hindi takes the Hindi one.
+   `.st__gh` in settings.css pins Hindi; this does not.
+
+   Weight and case are reset for the reason `.st__gh` gives: Tiro Devanagari
+   Hindi ships at weight 400 only, so an inherited 600 is synthesised by the
+   rasteriser — faux-bold smears the शिरोरेखा and closes the counters. And
+   `text-transform` is a no-op on unicase Devanagari, which is the problem: the
+   Latin beside it would uppercase and the pair stops matching. */
+
+/* The state's colour as a dot rather than as the label's own colour. A state
+   name printed in --warn reads as a warning about the state; a dot beside it
+   is a key into the legend, which is what it is. It also keeps every label at
+   --on-surface, so none of the three fails contrast on the group background. */
+.cmpl__dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--c, var(--on-surface-3));
+}
+
+/* ── One module's rules ──────────────────────────────────────────────────── */
+.cmpl__rules { display: grid; gap: var(--sp-2); }
+
+/* The English gloss beside a module's name — "Finance", "Payroll". `.st__gt`
+   is 700/.12em/uppercase and this inherits all three, so it is reset the same
+   way `.st__gh` is: the gloss is a quieter companion to the name, not a second
+   heading shouting beside it. */
+.cmpl__en {
+  font-size: 11px; font-weight: 400; letter-spacing: .02em;
+  text-transform: none; color: var(--on-surface-3); margin-left: 6px;
+}
+
+.cmpl__rule {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--outline-variant);
+  border-left: 3px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--s-lowest);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+/* A rule the firm has moved off the default is marked on its leading edge, not
+   by a tint. A tinted row reads as a warning — and "not applicable" is the one
+   state that must NOT read as a problem, because saying a thing does not apply
+   to you is an answer, not a gap. The edge says only "somebody decided this
+   one", which is exactly the fact worth carrying. */
+.cmpl__rule--off {
+  border-left-color: var(--primary);
+  background: var(--s-low);
+}
+
+.cmpl__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3) var(--sp-4); flex-wrap: wrap;
+}
+.cmpl__name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.cmpl__t { font-size: 13.5px; font-weight: 500; color: var(--on-surface); }
+/* `.tag` sets its own colour from --c; this only stops a tag inheriting the
+   700/uppercase of the `.st__gt` it sits inside when it is used in a heading. */
+.cmpl__tag { font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* What a gap costs. From the server's registry, never composed here. */
+.cmpl__why {
+  margin: var(--sp-2) 0 0; font-size: 12px; line-height: 1.55;
+  color: var(--on-surface-2); text-wrap: pretty; max-width: 76ch;
+}
+
+/* "Kartavaya does not read this yet." The most important sentence on the
+   screen and the quietest-looking one, which is deliberate: it is a caveat on
+   a control, not an alarm. --on-surface-3 on --s-lowest measures 4.56:1, above
+   the 4.5 floor, so it is quiet without being a contrast failure. */
+.cmpl__note {
+  margin: var(--sp-2) 0 0; font-size: 11.5px; line-height: 1.5;
+  color: var(--on-surface-3); text-wrap: pretty; max-width: 76ch;
+  padding-left: var(--sp-3);
+  border-left: 2px solid color-mix(in srgb, var(--outline-variant) 80%, transparent);
+}
+
+/* Who decided, when, and why. */
+.cmpl__meta {
+  margin: var(--sp-3) 0 0; font-size: 11.5px; line-height: 1.5;
+  color: var(--on-surface-2); text-wrap: pretty;
+}
+.cmpl__meta strong { font-weight: 600; color: var(--on-surface); }
+.cmpl__meta--none { color: var(--on-surface-3); }
+.cmpl__meta--none strong { color: var(--on-surface-2); font-weight: 500; }
+.cmpl__reason { font-style: italic; }
+/* Not styled as an error. A missing reason is permitted — the reason is
+   optional and stays optional (proposal 80) — so this is a quieter shade of
+   the same line, never --danger. */
+.cmpl__noreason { color: var(--on-surface-3); }
+
+/* ── Decision history ────────────────────────────────────────────────────────
+   One event per line, four fields. A DataTable would be the wrong instrument:
+   this is a short, read-only, unsortable sequence with a free-text quote in it,
+   and the table system's row contract (--row-h, one height for every row) fights
+   a reason that wraps to three lines. The `--row-h` rule is about TABLES; a list
+   of events is a list. */
+.cmpl__hist {
+  list-style: none; margin: var(--sp-4) 0 0; padding: 0;
+  display: grid; gap: var(--sp-1);
+}
+.cmpl__hev {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) minmax(0, 150px);
+  gap: var(--sp-1) var(--sp-4); align-items: baseline;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent);
+  font-size: 12px; line-height: 1.5;
+}
+.cmpl__hev:last-child { border-bottom: 0; }
+.cmpl__hwhen { color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+/* tabular-nums so the timestamps form a column. A date list whose digits shift
+   width reads as unstable, and this one is meant to be scanned down. */
+.cmpl__hwhat { color: var(--on-surface-2); text-wrap: pretty; }
+.cmpl__hwhat strong { color: var(--on-surface); font-weight: 600; }
+.cmpl__hwho { color: var(--on-surface-2); text-align: right; }
+/* The reason spans the full width on its own line — it is a sentence, and
+   squeezing it into the middle column would set it three words wide. */
+.cmpl__hwhy {
+  grid-column: 1 / -1; font-style: italic; color: var(--on-surface-3);
+  text-wrap: pretty;
+}
+
+/* Under ~640px the three columns become three lines, and the right-aligned
+   actor stops being right-aligned — alignment against a column that no longer
+   exists reads as a mistake. */
+@media (max-width: 640px) {
+  .cmpl__hev { grid-template-columns: 1fr; gap: 2px; }
+  .cmpl__hwho { text-align: left; }
+}
+
+/* ── The confirmation dialog ─────────────────────────────────────────────────
+   The panel itself is `.modal__panel`, which already carries the glass
+   (rgba(--glass-tint) at --glass-alpha + .08, blur x1.6 saturate 1.5), the
+   entrance and the exit from components.css. Nothing here restates any of
+   that — this is only the body's own stack. */
+.cmpl__mod { display: flex; flex-direction: column; gap: 7px; }
+.cmpl__modstate {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 var(--sp-2); padding: var(--sp-3);
+  border-radius: var(--r-sm); background: var(--s-container);
+  font-size: 12.5px; line-height: 1.55; color: var(--on-surface-2);
+  text-wrap: pretty;
+}
+.cmpl__modstate strong { color: var(--on-surface); }
+.cmpl__modstate .cmpl__dot { align-self: center; }
+
+/* Inherits `.of__i` for its border, radius, focus ring and disabled state, so
+   the box matches every other field in settings. Only the three things a
+   textarea needs beyond an input are set here. */
+.cmpl__reasonin {
+  width: 100%; resize: vertical; min-height: 68px;
+  line-height: 1.5; font-family: inherit;
+}

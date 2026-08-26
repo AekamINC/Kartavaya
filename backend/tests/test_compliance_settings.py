@@ -57,9 +57,21 @@ async def test_resolve_reflects_a_saved_row():
 
 
 async def test_resolve_states_is_the_bare_dict():
+    """Values only — no label, no consequence, no actor.
+
+    Asserted per key rather than against the whole dict. It WAS the whole
+    dict, and that made the registry growing by one rule a failure here:
+    Ganit gained four recorded-only applicability settings and this test
+    broke, in a file about the resolver, naming nothing that had gone wrong.
+    The claim is the SHAPE — one bare state per known key, the stored value
+    where there is a row and the default where there is not.
+    """
     pool = _Pool(rows=[{"rule_key": "gstin_required", "state": "not_applicable", "set_by": None, "set_at": None, "reason": None}])
     states = await svc.resolve_states(pool, "org1", "ganit")
-    assert states == {"gstin_required": "not_applicable", "hsn_required": "applicable"}
+    assert states["gstin_required"] == "not_applicable"
+    assert states["hsn_required"] == "applicable"
+    assert set(states) == set(svc.rules_for("ganit"))
+    assert all(isinstance(v, str) for v in states.values())
 
 
 async def test_set_rule_rejects_unknown_module_rule():
