@@ -132,6 +132,15 @@ Full per-org detail and figures: `PROGRESS.md`, 2026-08-26.
 | **6** | [PHASE-6-retire-duplicates.md](PHASE-6-retire-duplicates.md) | Retire the four duplicated models; freeze new modules; add the SQL-test rule | 3 days | owner OK to drop |
 | **7** | [PHASE-7-territory-and-address.md](PHASE-7-territory-and-address.md) | Make territories ROUTE (they route nothing today), then draw them; Indian address capture | 1 week | — |
 
+**Session split from 2026-08-27:** Phase 7 runs as its own planning/research
+track (its plan is written but every step still needs building); Phases 3–6 run
+as the delivery track. They share no files.
+
+**Status, 2026-08-26:** Phase 0 answered (19 decided, 12 parked) · Phase 1 ✅
+acceptance passed, all six counters live non-zero · Phase 2 ✅ 10/10 against the
+deploy · Phase 5.1 shipped (dated ESI ceiling) · Phase 7 planned, not started ·
+Phases 3, 4, 6 not started, none blocked.
+
 **Parallelism:** Phases 1 and 2 touch different files and run in parallel.
 Phase 0 runs alongside everything. Phase 3 no longer waits on anything: decision 0.17 is settled and shipped
 (`backend/routers/client_billing.py:1294`). Phases 4, 5, 6 are independent of each other.

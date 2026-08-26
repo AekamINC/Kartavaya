@@ -56,11 +56,45 @@ schema `ledger_repair_20260826`.
 invoice · 0 invoices where `balance_due <> total − Σpayments` · 0 born-paid · 0
 claims on a voided payslip · 0 phantom runs.
 
-🔴 **Still owed:** Nikhil Desai (Unicode) is missing July + August pay ≈
-**₹72,322**. His `last_working_day` is 2026-08-28 — in the future — while
-`is_active=false`, and the August run is already `processed`, which
-`process_payroll` refuses to re-run. Needs a deliberate remediation, not a data
-edit.
+**Nikhil Desai — CLOSED by removal, owner's instruction 26 Aug.** He was
+missing July and August pay (≈₹73,077 on the product's six-day basis, not the
+₹72,322 first published — every August payslip uses `working_days=26`). Rather
+than build a re-run path for a `processed` month, the owner chose to delete the
+seeded employee outright. Removed: the employee, 3 payslips, 1 salary structure,
+1 offboarding row, 4 leave balances, 1 leave request, 1 exit interview — 12 rows,
+all backed up to `ledger_repair_20260826.nikhil_*`. Unicode headcount 27 → 26.
+
+**Six junk vendors removed** — four named `p`, two named `probe`, a 72-second
+burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
+vendor picker. Verified orphaned across every vendor-referencing column *before*
+deleting. Nine real suppliers remain.
+
+## Open, found 26 Aug, NOT fixed
+
+**Unicode's payroll run headers have never matched their payslips.** Five of
+their eight runs disagree with the rows beneath them; **E2E is clean on all 17**,
+so this is not a code path everyone hits.
+
+| Run | Header says | Payslips actually |
+|---|---|---|
+| 2026-04 `disbursed` | 23 / ₹12,80,846.14 | **28** / ₹15,58,196.14 |
+| 2026-05 `disbursed` | 23 / ₹12,79,538.45 | **28** / ₹15,56,888.45 |
+| 2026-06 `disbursed` | 24 / ₹13,27,000.00 | **30** / ₹16,19,350.00 |
+| 2026-07 `approved` | 24 / ₹14,12,055.56 | **30** / ₹14,65,334.87 |
+| 2026-09 `draft` | 0 / ₹0.00 | **6** / ₹2,92,350.00 |
+
+**This predates today and was not caused by the Nikhil removal** — proven from
+the pre-deletion snapshot in `ledger_repair_20260826.nikhil_runs_before`: the
+April header already said 24 against 29 payslips. The removal decremented three
+headers by exactly his contribution, which was correct arithmetic on a number
+that was already wrong.
+
+A run header is what every payroll list, cost tile and analytics band reads —
+nobody re-sums the payslips. So five Unicode runs report a headcount and a gross
+that the payslips beneath them contradict. **Not fixed, and deliberately not
+fixed today:** the right repair is not obvious (is the header wrong, or are
+there payslips that should never have been written?) and it needs the same
+treatment the ledger repair got — a written risk report first.
 
 ## Phase progress (`docs/plans/`)
 
@@ -73,7 +107,7 @@ edit.
 | 4 | Eight invisible-feature screens | ⬜ |
 | 5 | Statute calendar → payroll/invoicing | 🟡 **5.1 shipped 26 Aug** — ESI wage ceiling now read from `statute_calendar` at the run's period end (`vetana.py:842`), so a re-run of an old month uses that month's law. Deliberately changes no payslip: the dated ceiling equals the literal it replaced. 5.2/5.2b/5.3 open — the IT ladder is one row per band |
 | 6 | Retire 4 duplicate models + SQL-test rule | ⬜ |
-| 7 | Territories ROUTE + Indian address capture | ⬜ new 26 Aug — from a parallel session's handover, reconciled against 0–6 (no phase owned it). **`rules.pincodes` has ZERO backend consumers: territories route nothing today.** 19,312/19,312 PIN polygons already in R2; credentials set. Routing needs no map and is ordered FIRST |
+| 7 | Territories ROUTE + Indian address capture | ⬜ **plan rewritten from a live audit 26 Aug** — every claim re-measured. `rules.pincodes` still has ZERO backend consumers, and `assign-next` has zero callers anywhere. **But nothing can route even with a perfect resolver: no contact form captures a PIN, `territory_id` is unreachable from every API path, and no territory edit form exists.** Live: 17 territories, **0 with a PIN, 0 with a member**, 0 of 289 contacts routed. New 7.0 (capture) precedes 7.1; 7.1a closes three cross-tenant territory joins that 7.1 would otherwise activate |
 
 ## Module / proposal state (condensed — full detail in proposal 90)
 

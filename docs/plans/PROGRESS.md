@@ -33,6 +33,49 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Nikhil Desai removed — and the payroll-header defect it exposed
+
+**Owner, 2026-08-26: delete the employee entirely.** The alternative on the
+table was building a way to re-run a `processed` payroll month; the owner chose
+removal, which is coherent given that none of this data is live.
+
+The figure had already been corrected once. It was published as ₹72,322 — a
+calendar-day number **the product cannot emit**. Every vetana payslip in both
+orgs uses `working_days = 26` for August 2026, and August has exactly 26 Mon–Sat
+days: the engine runs a six-day week. On its own basis the shortfall was
+**₹73,076.92** (July ₹38,000 + August ₹38,000 × 24/26).
+
+Removed in one transaction, children before parent — the deletion order is fatal
+reversed — with every row captured to `ledger_repair_20260826.nikhil_*` first:
+
+| Table | Rows |
+|---|---|
+| `manav_employees` | 1 |
+| `vetana_payslips` | 3 (2026-04/05/06, all `disbursed`) |
+| `vetana_salary_structures` | 1 |
+| `manav_offboarding` | 1 (`completed`, last day 2026-08-28 — a future date on an inactive employee, the contradiction that made him unpayable) |
+| `manav_leave_balances` | 4 |
+| `manav_leave_requests` | 1 |
+| `manav_exit_interviews` | 1 |
+
+Unicode headcount 27 → 26.
+
+**THE DEFECT THIS EXPOSED, and the correction to what I claimed while doing it.**
+His three payslips sat inside `disbursed` runs whose `employee_count` and
+`total_gross` included him, so the transaction decremented those three headers by
+exactly his contribution — stated at the time as "keeping the runs consistent".
+
+**They were never consistent.** The pre-deletion snapshot settles it: the
+2026-04 header already read 24 against **29** payslips. The decrement was
+correct arithmetic on a number that was already wrong, and the runs are still
+wrong now — five of Unicode's eight disagree with the rows beneath them, while
+**E2E is clean on all seventeen**.
+
+That is recorded as an open finding in `STATUS.md` and is deliberately NOT fixed
+today: it is not obvious whether the header is wrong or whether payslips exist
+that should never have been written, and it deserves the same written risk
+report the ledger repair got.
+
 ### Six junk vendors removed, and a retention rule for the backup schemas
 
 **Owner, 2026-08-26: "this data just remove it thanks."** Four vendors named
