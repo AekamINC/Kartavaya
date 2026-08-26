@@ -10,9 +10,12 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
-Last updated: **2026-08-26** — staging backend is deployed at `120d106c` (HEAD),
-SUCCESS 04:14 UTC, confirmed from Railway. Everything below marked "fixed 26 Aug"
-is therefore **running**, not pending a deploy.
+Last updated: **2026-08-26**. **BOTH deploys verified — check both, always.**
+Backend: Railway staging at `120d106c`, SUCCESS 04:14 UTC. Frontend: Vercel
+serves the current branch build, confirmed from OUTSIDE by hashing the assets
+`staging.kartavaya.com` actually returns — every Vercel deployment here has
+`target: null`, so "READY" alone never establishes what the domain serves.
+Everything below marked "fixed 26 Aug" is therefore **running**.
 
 Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wrong now
 (broken in the running product) · ⬜ not started · 🔵 research/decision · ➖ n/a
@@ -28,6 +31,7 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 | 🟡 | Two billing endpoints 500 | `client_billing.py:459,705` | **DEPLOYED 26 Aug** — `gst_rate` dropped, `invoice_number` allocated, `balance_due` bound (2nd bug found). Row on the board still owed — needs one real create |
 | 🟡 | Draft invoices dunned + counted as revenue | `documents.py:307`, `dristi.py:354` | **DEPLOYED 26 Aug** — 4 surfaces. ⚠ The statement had ALSO been 500ing on a date bind since it shipped; fixed. Still open: project report dead on `staging.time_entries` (exists only in `public`); `dristi.py` `/overview` + the pivot dashboard still count drafts and the pivot carries the same date-bind bug |
 | 🟢 | Cross-tenant leak — profile create/list not org-scoped | `client_billing.py:220` | **DEPLOYED 26 Aug** — ownership check + **7** id-alone joins (plan named 2); AST ratchet added. 0 rows had leaked |
+| 🟢 | Inline pre-paint bootstrap blocked by a stale CSP hash | `vercel.json`, `index.html` | FIXED + DEPLOYED 26 Aug (`2ef060a9`) — one inline script, one allowed sha256, no match, so `data-theme`/`data-conv-*`/`data-platform` never ran: wrong-theme flash every load, and on Windows a frame of blurred sidebar. Found in the DEPLOYED console, invisible to build and tests. `check-csp-hash.mjs` now first in `npm run check` |
 | 🔴 | `/security` page claims no MFA (TOTP shipped 23 Aug); 3 undisclosed sub-processors | `SecurityPage.jsx:161`, `legalFacts.js` | OPEN |
 
 ## Phase progress (`docs/plans/`)

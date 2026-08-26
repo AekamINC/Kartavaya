@@ -33,13 +33,60 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
-### Deploy confirmed — everything below is RUNNING
+### Both deploys confirmed — everything below is RUNNING
+
+**Check BOTH, always** (owner, 2026-08-26). Backend and frontend ship from the
+same push but deploy independently; verifying one and calling it a deploy check
+is half an answer, and Phase 1 is mostly frontend.
 
 `120d106c` (this session's HEAD) deployed to the Railway staging service at
 **04:14 UTC 2026-08-26, status SUCCESS**, read from the deployment list rather
 than inferred from git — the branch has silently tracked `main` before. So all
 six Phase-2 fixes and all six Phase-1 write-paths are live, and the earlier
 "deploy owed" wording in `STATUS.md` was stale; corrected there.
+
+**Frontend — resolved from OUTSIDE, not from the Vercel list.** Every Vercel
+deployment in this project carries `target: null`, so "READY" never establishes
+what the domain serves. Fetched `staging.kartavaya.com` and hashed what it
+actually returns: 3 entry assets + 123 lazy chunks, 3.17 MB js / 580 KB css,
+carrying `--m-niyam` (76b7c6f), `.blx` (0ef99dcb) and `st__group--flush`
+(5980a63b). The deployed frontend calls
+`https://kartavya-staging.up.railway.app` — the staging backend, confirmed from
+its own network traffic.
+
+**Phase-1 UI driven live with the godmode token** (session restore of
+`localStorage.auth_token`, never a credential typed into a form; forms opened
+and dismissed, nothing saved): 1.2 renders MSME, Udyam, TDS section, payment
+terms AND vendor kind · 1.5 renders the work-State field · 1.1 renders the
+Salesperson picker · 1.6's Add-holiday form renders "**Applies to**" with
+`Whole country` plus all 36 states/UTs, and the list has an `Applies to` column.
+Zero failing `/v1/` responses across all four screens. The org switcher offers
+Aekam Inc, Unicode Group and E2E Test & Associates; switched into Unicode and
+Manav read **26 employees**, matching the database exactly.
+
+**Two of my own checks were wrong, and neither was a product fault.** A
+`price_monthly`-absent assertion failed because the string legitimately survives
+on `AdminBillingPage.jsx:555`, the platform-staff surface where a price SHOULD
+render — `PlanComparison.jsx` is deleted and `.opl` is gone, which is what
+04d30ba2 actually promised. And a `state` assertion failed on the Holidays
+list because the product says "Applies to", not "State". **The earlier ledger
+claim that `price_monthly` "no longer appears anywhere in the deployed JS bundle
+at all" is corrected here: it does appear, correctly, via AdminBillingPage.**
+
+**One real defect, found only by reading the DEPLOYED console.** `index.html`
+carries ONE inline `<script>`; `script-src 'self'` allows it solely by a sha256
+hardcoded in `vercel.json`, and the two had drifted — one script, one allowed
+hash, no match. The browser refused it on every load, so `data-theme`,
+`data-conv-pattern`/`data-conv-ground` and `data-platform` never ran: a frame of
+the wrong theme for every dark-mode user, Sanvaad snapping from the default
+ground at mount, and on Windows a frame of blurred sidebar snapping solid —
+precisely the first-paint jumps that script exists to prevent. Invisible to the
+build, the suite and every source-level check. Fixed in `2ef060a9` and
+`scripts/check-csp-hash.mjs` added as the FIRST gate in `npm run check`, failing
+both ways (script with no hash, hash with no script) and proven to fail before
+being trusted. Verified after deploy: `data-theme` follows
+`prefers-color-scheme` in both schemes, `data-platform=win` is set, zero CSP
+refusals.
 
 **Deployed is not exercised.** No payroll run and no billing create has happened
 since 04:14, so 2.1–2.4 have executed against nothing. E2E's latest run is
