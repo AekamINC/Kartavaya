@@ -24,6 +24,80 @@ statement written down. See `README.md` for the full terms.
 
 ---
 
+## 2026-08-27
+
+Six agents, partitioned by file so no two shared one, plus a cloud session's
+branch merged in. Everything below is either a live read-only `SELECT` or a test
+run; the only writes are named as writes.
+
+### Cloud session merged — Pahchan clock in and out from a browser
+
+`e9ffd373`, merged at `07f082a6`. `POST /v1/pahchan/punch` had been complete for
+months — geofence, altitude, accuracy flags, idempotency, photo — with exactly
+ONE caller in the repo: mobile `ClockScreen.tsx`, on a platform that has no iOS
+build. So an employee on an iPhone could not clock in from anywhere, while the
+web carried every reviewer screen and no way to punch. Frontend only: no
+endpoint, no table, no migration, 28 tests, and `npm run build` green here
+(the cloud sandbox could not run it — `@samasante/liquid-glass` will not install
+there, which fails identically on an untouched tree).
+
+It ships 🟡 and says so on the screen rather than offering a button that always
+fails: `manav_employees.user_id` is NULL on every row, so `create_punch` 409s
+for every account. **Phase 0.23 is what turns it ✅**, and the same gap blocks
+mobile.
+
+Not merged, and deliberately: `claude/ios-clockin-out-no-app-dnu7o8` builds a
+SECOND attendance stack — `migrations/010_attendance.sql`, `routers/attendance.py`,
+`AttendancePage.jsx` — on top of `1aa49855`, which is production's ancient main.
+A parallel model beside Pahchan is exactly what Phase 6 exists to retire.
+
+### 0.20 — Ganit's vendor form was a stripped four fields
+
+`ganit/PayablesTab.jsx` created vendors carrying NONE of the six MSME/TDS
+columns Phase 1 turned on. The owner's call was "point it at the same component
+Kray uses; do not fork the fields" — so the form, which existed only as inline
+JSX in `kray/VendorsTab.jsx:151-233`, is now `components/VendorForm.jsx` and both
+tabs call it. `PayablesTab` 361 → 335 lines, `VendorsTab` 272 → 124, and the
+duplicate is deleted rather than copied.
+
+All six — `is_msme`, `enterprise_class`, `vendor_kind`, `udyam_number`,
+`tds_section`, `payment_terms_days` — now render on Ganit → Payables → + Vendor
+and ride the POST. 13 new tests, including **set equality of the field labels
+across both tabs**, which is the ratchet against a future fork. GSTIN/PAN/TAN
+still block nothing: the only refusal is a blank name.
+
+Live, read-only 2026-08-26: E2E `64e7bea6` **75 vendors, 12 carry all six**;
+Unicode `fae87907` **9 and 0**. No probe rows written.
+
+### 4.6, 4.7, 4.8 — three endpoints that had no caller at all
+
+- **4.6 billing anchor.** `PATCH /admin/billing-anchor` has existed since
+  proposal 86 with nothing calling it. Now a control on the Plan tab, days 1–28
+  only, saying why: an anchor of 29–31 has no day to land on in February, so the
+  period would move by itself. Owner decision 0.13 — flexible, default 1.
+- **4.7 pause / resume.** The plan said there was no endpoint; there is —
+  `POST /admin/pause` — and what was missing was the control. It is not a
+  cosmetic flag: `middleware/subscription.py:696` refuses EVERY module for a
+  paused org. So the card states that beside the button and takes a
+  confirmation, because an operator pausing the wrong org from a console that
+  lists every org takes a working firm offline.
+- **4.8 quota proration.** `GET /quota-proration` had no caller either. Surfaced
+  where targets are actually set — Vikray → Targets — as an optional "joined
+  mid-period on" date. The SERVER does the arithmetic: 0.17 is calendar days
+  minus Sundays, and re-deriving that in a browser would be the second
+  convention that 0.17 was raised to end.
+
+### The e2e suite cannot reach staging — Vercel is 403ing Playwright
+
+`phase3-acceptance.spec.ts` is written and committed, and it cannot run: every
+`page.goto` returns Vercel's own 403 page (`X-Vercel-Id: lhr1::…`) while `curl`
+against the same URL returns 200 — including with a HeadlessChrome user agent.
+Deployment protection is OFF on the project (password, SSO and trusted-IP all
+`enabled: false`, read from the API), so this is edge bot mitigation reacting to
+the automated browser, not a project setting. A real browser loads the site
+normally. **Phase 3.2's acceptance is therefore still owed**, not passed and not
+skipped.
+
 ## 2026-08-26
 
 Seven parallel agents, partitioned by file so no two shared one. Every live

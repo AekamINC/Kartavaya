@@ -114,6 +114,14 @@ function TargetForm({ onSaved, onCancel }) {
     salesperson_id: '', period_start: q.start, period_end: q.end,
     target_amount: 0, target_deals: 0, notes: '',
   });
+  /* Phase 4.8 — `GET /v1/client-billing/quota-proration` has existed since
+     proposal 87 and had NO caller anywhere. This is the place it belongs: the
+     one screen where a target is set against a period. `join_date` is not on a
+     member record, so it is asked for — blank means "here for the whole
+     period", which is the common case and costs nobody a keystroke. */
+  const [joinDate, setJoinDate] = useState('');
+  const [proration, setProration] = useState(null);
+  const [prorating, setProrating] = useState(false);
 
   useEffect(() => {
     let dead = false;
@@ -130,7 +138,37 @@ function TargetForm({ onSaved, onCancel }) {
     return () => { dead = true; };
   }, []);
 
-  const set = patch => setForm(f => ({ ...f, ...patch }));
+  /* Any change to the period, the target or the join date invalidates a figure
+     that was computed from the old ones. Clearing it is not tidiness: a stale
+     "prorated ₹4,00,000" sitting under a target somebody has since doubled is
+     a number a manager would act on. */
+  const set = patch => { setProration(null); setForm(f => ({ ...f, ...patch })); };
+
+  /* THE SERVER DOES THE ARITHMETIC. Owner decision 0.17 is calendar days minus
+     Sundays — a six-day week — and `client_billing.py` counts it that way for
+     everybody. Re-deriving it in the browser would be a second convention, and
+     a second convention is how two screens come to disagree about how long a
+     month is; that is the exact defect 0.17 was raised to settle. */
+  async function prorate() {
+    if (!joinDate || !form.period_start || !form.period_end) return;
+    setProrating(true);
+    try {
+      const r = await api.get('/v1/client-billing/quota-proration', {
+        params: {
+          target: Number(form.target_amount) || 0,
+          start_date: form.period_start,
+          end_date: form.period_end,
+          join_date: joinDate,
+        },
+      });
+      setProration(r.data);
+    } catch (err) {
+      pushToast({
+        title: err.response?.data?.detail || 'Could not work out the part-period target',
+        type: 'error',
+      });
+    } finally { setProrating(false); }
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -226,6 +264,47 @@ function TargetForm({ onSaved, onCancel }) {
           <span className="fld__l">Notes</span>
           <input className="inp" value={form.notes} onChange={e => set({ notes: e.target.value })} />
         </label>
+      </div>
+
+      {/* 4.8 · The part-period target. Optional and blank by default: most
+          targets are for somebody who was here all quarter, and a required
+          field here would be a keystroke charged to everybody to serve the
+          exception. */}
+      <div className="vk-form__grid">
+        <label className="fld">
+          <span className="fld__l">Joined mid-period on<Secondary className="fld__hi" value="प्रवेश" /></span>
+          <DateInput
+            type="date" className="inp" value={joinDate}
+            min={form.period_start} max={form.period_end}
+            onChange={e => { setProration(null); setJoinDate(e.target.value); }}
+          />
+          <span className="fld__hint">
+            Leave blank if they were here for the whole period.
+          </span>
+        </label>
+        <div className="fld">
+          <span className="fld__l">Part-period target</span>
+          <button
+            type="button" className="btn btn--out btn--sm"
+            disabled={!joinDate || !form.target_amount || prorating}
+            onClick={prorate}
+          >
+            {prorating ? 'Working it out…' : 'Work out the part-period target'}
+          </button>
+          {proration && (
+            <span className="fld__hint">
+              <b>{inr(proration.prorated_target)}</b> of {inr(proration.full_target)} —{' '}
+              {proration.working_days_active} of {proration.working_days_total} working days.
+              Sundays are not counted; Saturday is a working day.{' '}
+              <button
+                type="button" className="btn btn--text btn--sm"
+                onClick={() => setForm(f => ({ ...f, target_amount: Number(proration.prorated_target) }))}
+              >
+                Use this figure
+              </button>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="vk-form__acts">

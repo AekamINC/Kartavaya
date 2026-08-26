@@ -5,6 +5,14 @@
 // same response and dropped the array telling you HOW LATE the money is. On a
 // payables screen the ageing profile is the point — "₹4L outstanding" and "₹4L
 // outstanding, all of it 90+ days" are different businesses.
+//
+// "+ Vendor" opens `components/VendorForm.jsx`, the SAME component Kray's
+// Vendors tab renders — owner decision 0.20. This tab used to carry its own
+// four-field copy (name, GSTIN, email, phone), so a supplier recorded here was
+// born with all six MSME/TDS columns NULL while the identical action in Kray
+// captured them. The fields are not forked any more; only what happens after
+// the save differs, and here that is "select the new vendor into the bill the
+// user is halfway through typing".
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
@@ -18,6 +26,7 @@ import VendorBillDetail from './VendorBillDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import VendorForm from '../../components/VendorForm';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 const BLANK_BILL = {
@@ -48,7 +57,6 @@ export default function PayablesTab() {
   const [saving, setSaving] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [form, setForm] = useState({ ...BLANK_BILL });
-  const [vendorForm, setVendorForm] = useState({ name: '', gstin: '', email: '', phone: '' });
 
   const load = useCallback(async () => {
     setErr(null);
@@ -91,19 +99,15 @@ export default function PayablesTab() {
     });
   }
 
-  async function saveVendor(e) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const r = await api.post('/v1/ganit/vendors', vendorForm);
-      pushToast({ title: 'Vendor added', type: 'success' });
-      setShowVendorForm(false);
-      setVendorForm({ name: '', gstin: '', email: '', phone: '' });
-      await loadVendors();
-      setForm(f => ({ ...f, vendor_id: body(r).id }));
-    } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not add the vendor', type: 'error' });
-    } finally { setSaving(false); }
+  /* `VendorForm` owns the POST and the toast. What is left here is the part
+     that is genuinely this screen's: refresh the picker, then select the
+     supplier the user just described into the bill they are building. The
+     refetch is awaited BEFORE the selection so the option exists by the time
+     `vendor_id` names it. */
+  async function vendorSaved(saved) {
+    setShowVendorForm(false);
+    await loadVendors();
+    if (saved?.id) setForm(f => ({ ...f, vendor_id: saved.id }));
   }
 
   async function saveBill(e) {
@@ -181,37 +185,7 @@ export default function PayablesTab() {
       </div>
 
       {showVendorForm && canWrite && (
-        <form className="gn-form" onSubmit={saveVendor}>
-          <h4 className="gn-form__h">New vendor</h4>
-          <div className="gn-form__grid gn-form__grid--2 gn-form__grid--flush">
-            <label className="fld">
-              <span className="fld__l">Name<span className="fld__req">*</span></span>
-              <input className="inp" required value={vendorForm.name}
-                onChange={e => setVendorForm({ ...vendorForm, name: e.target.value })} />
-            </label>
-            <label className="fld">
-              <span className="fld__l">GSTIN</span>
-              <input className="inp" value={vendorForm.gstin}
-                onChange={e => setVendorForm({ ...vendorForm, gstin: e.target.value })} />
-            </label>
-            <label className="fld">
-              <span className="fld__l">Email</span>
-              <input className="inp" type="email" value={vendorForm.email}
-                onChange={e => setVendorForm({ ...vendorForm, email: e.target.value })} />
-            </label>
-            <label className="fld">
-              <span className="fld__l">Phone</span>
-              <input className="inp" value={vendorForm.phone}
-                onChange={e => setVendorForm({ ...vendorForm, phone: e.target.value })} />
-            </label>
-          </div>
-          <div className="gn-form__acts">
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowVendorForm(false)}>Cancel</button>
-            <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
-              {saving ? 'Saving…' : 'Save vendor'}
-            </button>
-          </div>
-        </form>
+        <VendorForm onSaved={vendorSaved} onCancel={() => setShowVendorForm(false)} />
       )}
 
       {showForm && canWrite && (

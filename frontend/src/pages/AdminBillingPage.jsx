@@ -57,7 +57,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import {
-  Button, Card, CardHead, CardBody, Field, Input, Select, Tag, Tabs,
+  Button, Card, CardHead, CardBody, ConfirmDialog, Field, Input, Select, Tag, Tabs,
   EmptyState, ErrorState, errorKind, SkeletonPage,
   Table, TableHead, TableBody, Row, Cell, HeadCell,
   StatTile, useToast,
@@ -133,6 +133,12 @@ export default function AdminBillingPage() {
   const [payTarget, setPayTarget] = useState(null);
   const [toppingUp, setToppingUp] = useState(false);
   const [planForm, setPlanForm] = useState({ plan_code: '', billing_cycle: 'monthly' });
+  /* Phase 4.6 and 4.7. Both endpoints have existed since proposal 86 and had no
+     caller at all — `PATCH /admin/billing-anchor` and `POST /admin/pause`. The
+     anchor comes back on `/current` beside the subscription; the pause state is
+     `subscription.status`, so there is nothing extra to load for it. */
+  const [anchorDay, setAnchorDay] = useState(1);
+  const [confirm, setConfirm] = useState(null);
 
   const org = orgs.find(o => o.id === orgId) || null;
 
@@ -175,6 +181,11 @@ export default function AdminBillingPage() {
     setInvoices(inv.data?.data || []);
     setUsage(usg.data || null);
     setPlanForm(f => ({ ...f, plan_code: cur.data?.subscription?.plan_code || '' }));
+    // `?? 1` and not `|| 1`: the server already defaults an unset anchor to 1
+    // (`subscription.py:508`), so the only way a 0 arrives is a column somebody
+    // has put a 0 in — and coercing that to 1 would hide it behind a control
+    // claiming the org bills on the 1st when the row says otherwise.
+    setAnchorDay(cur.data?.billing_anchor_day ?? 1);
   }, [mayBill]);
 
   useEffect(() => {
@@ -218,6 +229,42 @@ export default function AdminBillingPage() {
       await refresh();
     } catch (e) {
       pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not change the plan' });
+    } finally { setBusy(''); }
+  });
+
+  /* 4.6 · The billing anchor. Owner decision 0.13: flexible anchor, default 1 —
+     which is what the code already did and what four live profiles use (1 and
+     15). The screen is the part that was missing, so an operator could not see
+     or change the day a period starts on without a database. */
+  const saveAnchor = guard(async (day) => {
+    setBusy('anchor');
+    try {
+      await api.patch('/v1/subscription/admin/billing-anchor', { anchor_day: day }, scoped(orgId));
+      pushToast({ type: 'success', title: `Periods now start on day ${day}` });
+      await refresh();
+    } catch (e) {
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not change the billing anchor' });
+    } finally { setBusy(''); }
+  });
+
+  /* 4.7 · Pause and resume. NOT a cosmetic flag: `middleware/subscription.py:696`
+     refuses every module for a paused org and answers "Your subscription is
+     paused. Contact your organisation owner". So the control says that out loud
+     and takes a confirmation — an operator pausing the wrong org from a console
+     that lists every org takes a working firm offline. */
+  const setPauseState = guard(async (action) => {
+    setBusy('pause');
+    try {
+      await api.post('/v1/subscription/admin/pause', { action }, scoped(orgId));
+      pushToast({
+        type: 'success',
+        title: action === 'pause'
+          ? `${org?.name || 'Organisation'} paused — every module now refuses`
+          : `${org?.name || 'Organisation'} resumed`,
+      });
+      await refresh();
+    } catch (e) {
+      pushToast({ type: 'error', title: e?.response?.data?.detail || `Could not ${action} the subscription` });
     } finally { setBusy(''); }
   });
 
@@ -542,7 +589,88 @@ export default function AdminBillingPage() {
     </div>
   );
 
+  /* 4.6. `anchor_day` is `ge=1, le=28` on the server and `billing_anchor_day
+     BETWEEN 1 AND 28` in migration 217, for a reason worth stating on the
+     screen rather than only in a validator: an anchor of 29, 30 or 31 has no
+     day to land on in February, so the period would move on its own. */
+  const anchorCard = (
+    <Card>
+      <CardHead title="Billing anchor" sanskrit="चक्र आरंभ" />
+      <CardBody>
+        <div className="adm-form">
+          <Field label="Periods start on day" htmlFor="anchor-day">
+            {p => (
+              <Select
+                {...p}
+                value={String(anchorDay)}
+                disabled={!orgId || busy === 'anchor'}
+                onChange={e => saveAnchor(Number(e.target.value))}
+              >
+                {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        </div>
+        <p className="inb__note">
+          Every billing period for {org?.name || 'this organisation'} starts on this day
+          of the month, and the next invoice covers from it. Days 29 to 31 are not
+          offered — February has no 30th, so an anchor there would move by itself.
+          Changing this does not re-date an invoice already raised.
+        </p>
+      </CardBody>
+    </Card>
+  );
+
+  /* 4.7. The status is the subscription's own; there is no second flag. A paused
+     org is refused by `require_any_module`, so this card states the consequence
+     next to the button rather than leaving it to be discovered. */
+  const paused = sub?.status === 'paused';
+  const pauseCard = (
+    <Card>
+      <CardHead
+        title="Subscription status"
+        sanskrit="स्थिति"
+        actions={sub ? <Tag color={billingColor(sub.status)}>{billingLabel(sub.status)}</Tag> : null}
+      />
+      <CardBody>
+        <p className="inb__note">
+          {paused
+            ? 'Every module is refusing for this organisation. Its people see "Your subscription is paused. Contact your organisation owner" on every screen that needs a module.'
+            : 'Pausing stops every add-on module for this organisation at once. Nothing is deleted and nothing is invoiced differently — the modules simply refuse until it is resumed.'}
+        </p>
+        <div className="adm-actions">
+          {/* `danger` is an OUTLINE red by design — a filled red reads as the
+              primary action on the screen, and the filled confirm belongs to
+              ConfirmDialog. Resuming is not destructive, so it is a fill. */}
+          <Button
+            variant={paused ? 'fill' : 'danger'}
+            disabled={!orgId || !sub || busy === 'pause' || (!paused && sub.status !== 'active')}
+            onClick={() => setConfirm({
+              intent: paused ? 'neutral' : 'danger',
+              message: paused
+                ? `Resume ${org?.name || 'this organisation'}? Its modules start answering again immediately.`
+                : `Pause ${org?.name || 'this organisation'}? Every add-on module refuses until somebody resumes it, for everyone in the firm.`,
+              onConfirm: () => setPauseState(paused ? 'resume' : 'pause'),
+            })}
+          >
+            {busy === 'pause'
+              ? (paused ? 'Resuming…' : 'Pausing…')
+              : (paused ? 'Resume subscription' : 'Pause subscription')}
+          </Button>
+        </div>
+        {!paused && sub && sub.status !== 'active' && (
+          <p className="inb__note">
+            Only an active subscription can be paused — this one is {billingLabel(sub.status)}.
+          </p>
+        )}
+      </CardBody>
+    </Card>
+  );
+
   const planTab = (
+    <>
     <Card>
       <CardHead title="Change plan" sanskrit="योजना बदलें" />
       <CardBody>
@@ -580,6 +708,9 @@ export default function AdminBillingPage() {
         </div>
       </CardBody>
     </Card>
+    {anchorCard}
+    {pauseCard}
+    </>
   );
 
   /* The payment form is a page-level panel, NOT a card inside the Invoices tab.
@@ -620,6 +751,8 @@ export default function AdminBillingPage() {
       />
 
       {payPanel}
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
       {/* `mayBill` is BILLING_CONSOLE_ROLES, which is the same tuple as the
           endpoint's SAHAYAK_COMMERCIAL_ROLES (god mode + platform_manager +
