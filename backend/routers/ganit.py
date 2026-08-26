@@ -1214,7 +1214,11 @@ async def record_payment(
 ):
     pool = await get_pool()
     inv = await pool.fetchrow(
-        "SELECT total, amount_paid, payment_status FROM staging.ganit_invoices "
+        # `invoice_type` and `doc_status` come back so the two refusals below
+        # can be made. Neither was read before, and both were reachable: the
+        # unpaid list returns credit notes, so the pay screen offered one.
+        "SELECT total, amount_paid, payment_status, invoice_type, doc_status "
+        "  FROM staging.ganit_invoices "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(invoice_id), org_id,
     )
@@ -1222,6 +1226,31 @@ async def record_payment(
         raise HTTPException(404, "Invoice not found")
     if inv["payment_status"] in ("paid", "cancelled"):
         raise HTTPException(400, f"Cannot record payment: invoice is {inv['payment_status']}")
+
+    # A CREDIT NOTE IS MONEY OWED THE OTHER WAY. Recording a receipt against one
+    # says the customer paid you for a refund you owe them, and the arithmetic
+    # below then reports it as collected revenue. It was reachable — the unpaid
+    # list returns credit notes and the pay screen offered them — and live at
+    # the time of writing E2E holds one such payment against CN-2026-0148.
+    # Refused rather than silently absorbed, because the credit note is not the
+    # document the money belongs to.
+    if str(inv["invoice_type"] or "") == "credit_note":
+        raise HTTPException(
+            400,
+            "This is a credit note — money you owe the customer, not money they "
+            "owe you. Record the receipt against the invoice it relates to.",
+        )
+
+    # A DRAFT HAS NOT BEEN ISSUED. Nobody has been asked for this money, so a
+    # receipt against it cannot be reconciled to anything the customer saw, and
+    # it makes the document read as settled while still unsent. Live: four such
+    # payments exist across the two organisations, one of them Rs 2,06,500.
+    if str(inv["doc_status"] or "") == "draft":
+        raise HTTPException(
+            400,
+            "This invoice is still a draft and has not been issued. Finalise it "
+            "before recording a payment against it.",
+        )
 
     pay_date = date.fromisoformat(body.payment_date) if body.payment_date else date.today()
 
@@ -1328,7 +1357,15 @@ async def invoice_stats(
         "                     AND payment_status IN ('unpaid','partial')),0) as overdue_amount, "
         "  COUNT(*) as total_invoices "
         "FROM staging.ganit_invoices "
-        "WHERE org_id=$1::uuid AND is_active=TRUE AND invoice_type='tax_invoice'",
+        # DRAFTS ARE NOT RECEIVABLES. An unissued document has not been sent to
+        # anybody, so it cannot be outstanding, cannot be overdue and cannot
+        # have been collected. `routers/dristi.py:158-165` already filters this
+        # and its own comment says why; this KPI strip sat beside those figures
+        # disagreeing with them. Same nullable-safe form as every other site —
+        # `doc_status` is nullable and `NULL <> 'draft'` is NULL, which would
+        # drop every legacy row that predates the column.
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND invoice_type='tax_invoice' "
+        "  AND COALESCE(doc_status, '') <> 'draft'",
         org_id,
     )
     return dict(totals)
@@ -2720,6 +2757,14 @@ async def update_vendor(
         updates.append(f"address=${len(vals)}::jsonb")
     if not updates:
         raise HTTPException(400, "Nothing to update")
+    # WHEN, not just what. `ganit_vendors.updated_at` has no DEFAULT and no
+    # trigger, and this was the only writer that never set it — so it was NULL
+    # on all 80 live rows, and the day somebody records an MSME status or a TDS
+    # section there would be no record of when they did. That matters here more
+    # than on most tables: these are the compliance facts a 43B(h) position is
+    # argued from. Appended after the guard above so an empty update still
+    # refuses rather than silently bumping a timestamp and nothing else.
+    updates.append("updated_at=NOW()")
     vals += [str(vendor_id), org_id]
     row = await pool.fetchrow(
         f"UPDATE staging.ganit_vendors SET {', '.join(updates)} "
