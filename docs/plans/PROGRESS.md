@@ -33,6 +33,60 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Phase 3.3 acceptance — the first client auto-invoices this product has ever raised
+
+`/cron/billing` fired twice by hand against the deploy (`785d487f`, confirmed
+SUCCESS on Railway before firing — the old code would have back-billed April).
+
+| | before | after |
+|---|---|---|
+| `client_invoice_lines` | **0** | **2** |
+| `ganit_invoices WHERE billing_profile_id IS NOT NULL` | **0** | **2** |
+
+Both for Unicode Group, both for **2026-08-01 – 2026-09-01**:
+
+| Invoice | Line | Net | GST | Total |
+|---|---|---|---|---|
+| `INV-2026-0093` | Monthly accounting retainer | ₹75,000 | ₹13,500 | **₹88,500** |
+| `INV-2026-0094` | Payroll processing (up to 50 employees) | ₹15,000 | ₹2,700 | **₹17,700** |
+
+Intra-state — `place_of_supply` **24**, `is_igst` false, CGST ₹6,750 + SGST
+₹6,750 on the first and ₹1,350 each on the second, which is Gujarat supplying
+Gujarat and the tax split Phase 2 taught this file to refuse rather than guess.
+`payment_status` `unpaid` with `balance_due = total`, so neither is born paid.
+`line_items` carries description, rate, amount, `gst_rate` and `cost_basis` —
+the empty-body defect from 2.3 stays fixed. Serials drawn in sequence from
+Unicode's own series (they were at 92).
+
+**Second run, same day: `created: 0, skipped: 2`.** Both halves of the written
+acceptance in one afternoon — a period boundary produces an invoice, a second
+run inside the period produces nothing.
+
+**April, May, June and July were NOT raised.** The floor held.
+
+### The live-row write behind that — owner-approved, two rows
+
+**Owner, 2026-08-26, asked and answered before anything was armed:** the sweep
+would have back-billed Unicode's client to April — ten documents, ₹4,50,000 +
+₹81,000 GST. He chose *start the clock in August*.
+
+    UPDATE staging.client_service_lines
+       SET invoice_from = DATE '2026-08-01', updated_at = NOW()
+     WHERE id IN ('e80256b7-15d1-4398-8e61-42bf883b3366',    -- retainer ₹75,000
+                  'a674a0fe-b502-41ce-9bd7-bb668e1c584e');   -- payroll  ₹15,000
+
+Before-state: both NULL (the column was minutes old). Reversal:
+`SET invoice_from = NULL` on the same two ids — which restores the April
+backlog, so it is only to be run if those four months are wanted after all.
+`period_start` still reads 2026-04-01 on both, which is the point of doing it
+this way: the contract's start date was not rewritten to change what gets
+invoiced.
+
+**3.4 is verified but NOT SCHEDULED.** The endpoint returns 200 and behaves on a
+repeat run; `billing` still has to be added to `cron-daily`'s curl loop
+(`hr invoices crm stock marketing skills scraper-prices`), and that config edit
+needs a FRESH deploy — a redeploy reuses the old config snapshot.
+
 ### Phase 3.2 — the plan-change credit was a second charge
 
 `services/proration.py` computed the credit for the unused days at the old rate

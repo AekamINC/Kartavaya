@@ -88,15 +88,20 @@ _Update as items land — tick here, flip the row in `docs/STATUS.md`, and appen
   THIRD convention (31 days for August 2026 against payroll's 26). Acceptance —
   a real mid-cycle change through the UI netting one debit and one credit — is
   still owed.
-- **3.3 ✅ coded, tested, deployed 2026-08-26.** The period advances from the
-  last invoiced one, stepping by cadence, one period per run.
-  `sweep_client_auto_invoices` gains an optional `org_id` so the acceptance can
-  run in the test org without writing into a customer's books. Acceptance — a
-  service line created through the UI in E2E, then swept across a boundary — is
-  still owed.
-- **3.4 ⛔ NOT ARMED — owner decision first.** All four `client_service_lines`
-  belong to Unicode Group, two auto-invoice at ₹75,000 + ₹15,000/month since
-  2026-04-01, and `client_invoice_lines` is empty. The first tick raises April
-  and one more month each day after it: ten tax invoices, ₹4,50,000 + ₹81,000
-  GST, serials from Unicode's live sequence. Three options and their costs are
-  written up in `docs/STATUS.md` under "Open, found 26 Aug".
+- **3.3 ✅ ACCEPTANCE PASSED 2026-08-26, on live rows.** The period advances
+  from the last invoiced one, stepping by cadence, one period per run.
+  `/cron/billing` fired twice against the deploy: **`client_invoice_lines`
+  0 → 2, auto-invoices 0 → 2** (`INV-2026-0093` ₹88,500, `INV-2026-0094`
+  ₹17,700, both 2026-08-01 – 2026-09-01, intra-state Gujarat, unpaid, bodies
+  populated), then **`created 0, skipped 2`** on the second run. Both halves of
+  the written criterion. April–July were not raised — migration 223's
+  `invoice_from`, set on Unicode's two lines on the owner's decision, held.
+  `sweep_client_auto_invoices` also gained an optional `org_id` so a run can be
+  scoped to the test org without writing into a customer's books.
+- **3.4 🟡 VERIFIED, NOT SCHEDULED.** The endpoint has been run by hand twice
+  and behaves — the second run created nothing. What remains is one config
+  change: add `billing` to `cron-daily`'s curl loop, which today reads
+  `hr invoices crm stock marketing skills scraper-prices`. Keep `startCommand`
+  literal (Railway V2 does not shell-interpret it) and force a FRESH deploy —
+  a redeploy reuses the old config snapshot — then read the deployed output
+  back, because a dead backend looks like CORS.
