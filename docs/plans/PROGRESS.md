@@ -46,10 +46,22 @@ ladder, re-pointing those nine rows —
 
     UPDATE staging.pay_professional_tax SET org_id = NULL;   -- 9 rows
 
-— gives both orgs correct professional tax immediately, with no new data
-entered. NOT RUN: it is a write to the shared production database and an
-owner's call. Without it, and with the owner's chosen ₹0 fallback, every payslip
-in both orgs deducts nothing.
+**RUN 2026-08-26 on the owner's instruction**, scoped to the owning org id
+rather than as a bare table-wide UPDATE, with the before-state captured first.
+Verified after: both in-scope orgs resolve all 9 rows — 3 Maharashtra bands for
+E2E, 4 Gujarat for Unicode. Reversible with `SET org_id =
+'045b76ad-654b-42dd-b4b1-731700efc6c3' WHERE org_id IS NULL`.
+
+A SECOND consumer had to be aligned first, and checking for it is what stopped
+this being a regression: `services/skills/data/payroll_statutory.py:769` also
+read `WHERE org_id = $1::uuid`, so after the UPDATE the PT brief would have
+found ZERO slabs for every org and stopped naming which states it covers. It now
+reads `org_id = $1 OR org_id IS NULL`, matching `_pt_slabs`, and its limitation
+text — which asserted the table is per-organisation — was corrected.
+
+⚠ **The UPDATE alone does not make PT non-zero.** A slab is matched on the
+EMPLOYEE's state, which is still 0 of 71 and 0 of 26. The ladders are now
+VISIBLE to both orgs; entering employee work states is what makes them APPLY.
 
 **3 · Employee work state, and the two orgs need different answers.**
 `manav_employees.state` is 0 of 71 and 0 of 26.

@@ -731,9 +731,10 @@ async def brief_professional_tax(
     Catalogue #27 measured it and the live database agrees: the slab table
     covers three states of roughly twenty, has NO due-date and NO penalty
     column, and — the part the folio did not say — every row in
-    `staging.pay_professional_tax` carries an `org_id`. IT IS PER-ORG SEED DATA,
-    not a shared reference table, so an org that has never seeded it has no
-    slabs at all rather than falling back to a national set.
+    `staging.pay_professional_tax` carries a NULLABLE `org_id`. A row that names
+    an org is that org's own ladder; a row with NULL is a SHARED one, read by
+    everybody. An org with neither has no slabs at all. Read the same way as
+    `routers/vetana.py::_pt_slabs`, which computes the figure this reports.
 
     So for most orgs this prints a plain total and says, in the output, exactly
     which questions it did not answer. That is the whole design: a PT brief that
@@ -762,12 +763,19 @@ async def brief_professional_tax(
         org_id, wage_month, cap,
     )
 
-    # The org's OWN slab rows. Scoped to the org because the table is.
+    # This org's own slab rows PLUS any shared ladder. A NULL `org_id` is a
+    # ladder seeded for everybody, not a row to skip: the column is nullable and
+    # a professional-tax ladder is national reference data. Scoping strictly to
+    # `org_id = $1` — which this read did until 2026-08-26 — meant an org that
+    # had not seeded its own saw no slabs at all, and it must match
+    # `routers/vetana.py::_pt_slabs`, which decides the figure this brief
+    # reports. Two different answers to "which ladder applies" is how a brief
+    # ends up explaining a number the payroll did not compute.
     slabs = await pool.fetch(
         """
         SELECT state_code, state_name, slab_from, slab_to, monthly_tax, effective_from
         FROM staging.pay_professional_tax
-        WHERE org_id = $1::uuid
+        WHERE org_id = $1::uuid OR org_id IS NULL
         ORDER BY state_name, slab_from
         """,
         org_id,
@@ -780,9 +788,10 @@ async def brief_professional_tax(
         "the due date and the penalty differ by state and by slab, and the slab "
         "table in this product carries neither column. Printing a date from "
         "memory would be wrong in a different state every month.",
-        "The slab table is PER-ORGANISATION, not a shared reference set — every "
-        "row carries an org_id — so an organisation that has not seeded it has "
-        "no slabs at all rather than a national default.",
+        "The slab table is read as this organisation's own rows PLUS any shared "
+        "ladder (a row with no org_id). An organisation with neither has no "
+        "slabs at all rather than a national default, and covers three states "
+        "of roughly twenty either way.",
         "Nothing records which state each employee works in, so the amounts "
         "below are what the payroll run deducted and are not re-derived from any "
         "slab.",

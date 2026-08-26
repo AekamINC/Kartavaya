@@ -30,12 +30,17 @@ Both carry a `state_code`, so the billing tax-split refusal never fires for
 either. What is outstanding is the same two items for both, and one of them is
 a single UPDATE:
 
-1. **Professional tax is ₹0 for both** until slabs reach them. Neither owns a
-   `pay_professional_tax` row; all nine live rows belong to Aekam Inc and are
-   exactly the two ladders these orgs need (3 Maharashtra bands, 4 Gujarat).
-   `_pt_slabs` now reads a NULL-`org_id` row as a SHARED ladder, so
-   `UPDATE staging.pay_professional_tax SET org_id = NULL;` (9 rows) fixes both
-   at once. Not run — a production write, owner's call.
+1. **The PT ladders are now SHARED — done 2026-08-26.** All nine
+   `pay_professional_tax` rows belonged to Aekam Inc, so neither in-scope org
+   could see any. On the owner's instruction their `org_id` was set to NULL,
+   making them a shared national ladder that `_pt_slabs` reads for everybody.
+   Verified after: both orgs now resolve all 9 rows, **3 Maharashtra bands for
+   E2E and 4 Gujarat for Unicode** — exactly the two ladders they need.
+   Reversible with `UPDATE staging.pay_professional_tax SET org_id =
+   '045b76ad-654b-42dd-b4b1-731700efc6c3' WHERE org_id IS NULL;`.
+   ⚠ **This alone does not make PT non-zero.** A slab is matched on the
+   EMPLOYEE's state, and that is still 0 of 71 and 0 of 26 — see item 2. The
+   ladders are now visible; item 2 is what makes them apply.
 2. **Employee work state is 0 of 71 and 0 of 26**, and the two need different
    answers: Unicode has `address->>'state'` on 24 of 26 (backfillable, with the
    residential-vs-workplace caveat), while **E2E has nothing to derive from at
