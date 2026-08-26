@@ -88,6 +88,64 @@ function expiry(token) {
   } catch { return null; }
 }
 
+/**
+ * WHICH ACCOUNT OWNS `owner.json`, AND WHY IT MAY NOT BE `E2E_ADMIN_TOKEN`.
+ *
+ * `.env.e2e` points at E2E Test & Associates on every line EXCEPT
+ * `E2E_ADMIN_TOKEN`, which was carried over from `.env.e2e.unicode` and belongs
+ * to a **Unicode-only** admin. Verified from `staging.user_roles` 2026-08-26:
+ * that user holds one membership, Unicode Group; the god-mode account holds
+ * three — Aekam Inc, E2E Test & Associates and Unicode Group.
+ *
+ * The consequence is not a clean failure. `_helpers.api()` sends
+ * `X-Org-Id = E2E_ORG_ID`, so every API call in a spec 403s with "You do not
+ * belong to this organisation" — while the BROWSER half of the same spec is
+ * signed in as a Unicode user and its writes land in Unicode. That is how a
+ * Phase-1 acceptance vendor was created in a real customer's organisation.
+ *
+ * So: if the admin token's subject is not a member of `E2E_ORG_ID` and the
+ * god-mode account is, `owner.json` is minted from god-mode instead — LOUDLY.
+ * Fix the `E2E_ADMIN_TOKEN` line and this never fires.
+ */
+function subjectOf(token) {
+  try {
+    const [, payload] = token.split('.');
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')).sub || null;
+  } catch { return null; }
+}
+
+if (process.env.E2E_ADMIN_TOKEN && process.env.E2E_GODMODE_TOKEN && process.env.E2E_ORG_ID) {
+  const api = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+  const probe = async (token) => {
+    try {
+      const r = await fetch(`${api}/api/v1/org/members?limit=1`, {
+        headers: { Authorization: `Bearer ${token}`, 'X-Org-Id': process.env.E2E_ORG_ID },
+      });
+      return r.status;
+    } catch { return 0; }
+  };
+  const adminStatus = await probe(process.env.E2E_ADMIN_TOKEN);
+  if (adminStatus === 403) {
+    const godStatus = await probe(process.env.E2E_GODMODE_TOKEN);
+    if (godStatus < 400) {
+      console.error(
+        `
+!  E2E_ADMIN_TOKEN (${subjectOf(process.env.E2E_ADMIN_TOKEN)}) is NOT a member of
+` +
+        `   E2E_ORG_ID — the API answers 403 while the browser would still write to
+` +
+        `   whatever org that account DOES belong to. Minting owner.json from
+` +
+        `   E2E_GODMODE_TOKEN (${subjectOf(process.env.E2E_GODMODE_TOKEN)}) instead, which is a member.
+` +
+        `   Fix the E2E_ADMIN_TOKEN line in .env.e2e and this stops happening.
+`);
+      ACCOUNTS[0].token = process.env.E2E_GODMODE_TOKEN;
+      ACCOUNTS[0].label = 'owner (god-mode substituted)';
+    }
+  }
+}
+
 let wrote = 0;
 for (const { token, file, label } of ACCOUNTS) {
   if (!token) {
