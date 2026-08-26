@@ -98,6 +98,27 @@ Set to `2026-08-01` on those two lines only; reversal is
 their eight runs disagree with the rows beneath them; **E2E is clean on all 17**,
 so this is not a code path everyone hits.
 
+**🟡 Pahchan can now be clocked from a browser — and still nobody can use it.**
+`POST /v1/pahchan/punch` has been complete for months and had exactly ONE
+caller, `mobile/src/screens/pahchan/ClockScreen.tsx`. There is no iOS build of
+that app, so an employee on an iPhone could not clock in from anywhere, while
+the web carried every reviewer screen and no way to punch. The missing caller
+now exists (Pahchan → **Clock in** tab): selfie, compression to fit the 768 KB
+cap, geolocation, idempotent retry. No new endpoint, no new table, **no
+migration** — `captured_at`/`received_at` and `flags TEXT[]` already carried
+everything this needed.
+
+It is 🟡 and not ✅, and the reason is not the code. `create_punch` resolves the
+employee through `manav_employees.user_id`, and `routers/pahchan.py` and
+`History.jsx` both record that **no employee row on this database carries one**
+(`pahchan.py`: "0 of 81 employee rows carry a user_id today, so `_employee_for`
+returns None for everybody"). Every account therefore gets the 409 and the
+screen says so in words rather than offering a button that always fails. **This
+flips to ✅ when HR links one employee to one login and a punch row appears —
+that link, not this screen, is the last thing between the module and its first
+real clock-in.** It blocks the mobile app identically, so it was never a
+web-only gap.
+
 | Run | Header says | Payslips actually |
 |---|---|---|
 | 2026-04 `disbursed` | 23 / ₹12,80,846.14 | **28** / ₹15,58,196.14 |
