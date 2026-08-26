@@ -77,4 +77,26 @@ the SQL. Do not proceed until `client_invoice_lines` can gain a row.
 
 ## Progress
 
-_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence._
+
+- **3.1 ✅** — done in Phase 2.3. `gst_rate` gone, `invoice_number` allocated,
+  `tests/test_client_billing_invoices.py` executes both INSERTs' SQL live.
+- **3.2 ✅ coded, tested, deployed 2026-08-26.** The credit is `kind='credit'`
+  (migration 222, verified from `pg_constraint`), the magnitude stays positive,
+  and one rule signs it — `_signed_amount` / `_SIGNED_AMOUNT_SQL` in
+  `services/billing_lines.py`. Day-count unified on 0.17: `proration.py` was a
+  THIRD convention (31 days for August 2026 against payroll's 26). Acceptance —
+  a real mid-cycle change through the UI netting one debit and one credit — is
+  still owed.
+- **3.3 ✅ coded, tested, deployed 2026-08-26.** The period advances from the
+  last invoiced one, stepping by cadence, one period per run.
+  `sweep_client_auto_invoices` gains an optional `org_id` so the acceptance can
+  run in the test org without writing into a customer's books. Acceptance — a
+  service line created through the UI in E2E, then swept across a boundary — is
+  still owed.
+- **3.4 ⛔ NOT ARMED — owner decision first.** All four `client_service_lines`
+  belong to Unicode Group, two auto-invoice at ₹75,000 + ₹15,000/month since
+  2026-04-01, and `client_invoice_lines` is empty. The first tick raises April
+  and one more month each day after it: ten tax invoices, ₹4,50,000 + ₹81,000
+  GST, serials from Unicode's live sequence. Three options and their costs are
+  written up in `docs/STATUS.md` under "Open, found 26 Aug".

@@ -243,11 +243,18 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
       // emptied together and refilled together.
       setSuperseded(res.data?.superseded || []);
       setLoaded(month);
+      // `signed_amount`, NOT `amount`. A credit line stores its magnitude —
+      // `org_billing_lines.amount` is CHECK (amount >= 0) — and the server
+      // decides the sign from the kind in one place (`_signed_amount`). Loading
+      // the magnitude would put a ₹4,000 refund on the invoice as a ₹4,000
+      // charge, which is the two-debit bug wearing the fix's clothes. Falls back
+      // to `amount` so a server that has not deployed this yet still loads.
       setRows(due.length
         ? due.map(l => ({
           description: l.description || '', qty: '1',
-          amount: String(l.amount ?? ''), line_id: l.line_id,
-          line_amount: Number(l.amount ?? 0), line_cadence: l.cadence,
+          amount: String(l.signed_amount ?? l.amount ?? ''), line_id: l.line_id,
+          line_amount: Number(l.signed_amount ?? l.amount ?? 0), line_cadence: l.cadence,
+          line_kind: l.kind,
         }))
         : [blank()]);
       // The period the lines are due in, so the operator is not typing a date
@@ -282,8 +289,13 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
       ? 'This organisation has no GSTIN in the console payload, so the place of supply cannot be derived — choose it.'
       : 'Derived from the customer GSTIN against the supplier state. Override if the place of supply differs.';
 
-  /** A row somebody typed and finished: a description and money on it. */
-  const payable = r => Boolean(r.description.trim()) && num(r.amount) > 0;
+  /** A row somebody typed and finished: a description and money on it.
+   *
+   *  `!== 0`, not `> 0`. A credit is money on the row — it is the row that
+   *  gives money back — and requiring a positive figure made an invoice whose
+   *  only line is a ₹4,000 credit impossible to raise, which is exactly the
+   *  document a mid-cycle downgrade needs. A ₹0 row is still unfinished. */
+  const payable = r => Boolean(r.description.trim()) && num(r.amount) !== 0;
 
   /* At least one row worth sending. Deliberately NOT satisfied by loaded rows
      alone summing to zero: a ₹0 line rides along on an invoice, but it is not a
@@ -497,10 +509,17 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
               {/* `step="any"`, not a sales increment. `step="100"` with `min="0"`
                   makes any amount that is not a multiple of 100 fail HTML
                   constraint validation — a ₹4,999 line would have been rejected by
-                  the field, and no invoice amount is owed in round hundreds. */}
+                  the field, and no invoice amount is owed in round hundreds.
+
+                  AND NO `min` AT ALL, for the same class of reason: a credit
+                  loads as a negative figure, and `min="0"` would have made the
+                  browser refuse the form on a row the server had just sent. The
+                  floor that matters is on the billing line — `amount >= 0` with
+                  the sign carried by the kind — not on what a document may
+                  charge. */}
               <Input
                 aria-label={`Line ${i + 1} amount`}
-                type="number" min="0" step="any" value={r.amount}
+                type="number" step="any" value={r.amount}
                 onChange={e => setRow(i, { amount: e.target.value })}
               />
               <button

@@ -71,6 +71,37 @@ deleting. Nine real suppliers remain.
 
 ## Open, found 26 Aug, NOT fixed
 
+**Arming `/cron/billing` would back-bill a real customer's client to April.**
+Phase 3.4 is the last step of Phase 3 and it is NOT done, deliberately. Read
+live 2026-08-26: all **four** `client_service_lines` in the product belong to
+**Unicode Group** — the real customer — and **two carry `auto_invoice = TRUE`**:
+
+| Line | Amount | Cadence | Running since |
+|---|---|---|---|
+| Monthly accounting retainer | ₹75,000 | monthly | 2026-04-01 |
+| Payroll processing (up to 50 employees) | ₹15,000 | monthly | 2026-04-01 |
+
+`client_invoice_lines` is **empty**, so nothing records these as billed. With
+3.3 in place the sweep advances one period per run: the first tick raises
+**April**, the next day May, and so on — **10 tax invoices, ₹4,50,000 + ₹81,000
+GST, with serials drawn from Unicode's live sequence**, unattended. E2E Test &
+Associates has **zero** service lines, so arming proves nothing there either.
+
+The owner decides which of these it is before anything is armed:
+
+1. **Start the clock now** — only the current period is raised (₹90,000 + GST).
+   Needs a live-row write: either move the two lines' `period_start` to August,
+   or record Apr–Jul as billed. Reversal written down first, as always.
+2. **Back-bill deliberately** — five months of work genuinely delivered and
+   never invoiced, raised as ten documents his client will receive.
+3. **Leave Unicode alone** — prove the sweep in E2E only (a profile and a
+   service line created through the UI as a real user), arm later.
+
+Nothing about 3.2 or 3.3 waits on this; both are shipped. `sweep_client_auto_invoices`
+now takes an optional `org_id` so the acceptance can be run against the test org
+without writing into a customer's books — the cron still passes nothing and
+sweeps everybody.
+
 **Unicode's payroll run headers have never matched their payslips.** Five of
 their eight runs disagree with the rows beneath them; **E2E is clean on all 17**,
 so this is not a code path everyone hits.
@@ -103,7 +134,7 @@ treatment the ledger repair got — a written risk report first.
 | 0 | Owner unblocks (31 items) | 🟢 **all 31 answered 26 Aug** — 19 decided, 12 parked by the owner. Nothing here awaits him. Build halves still open: 0.20 PayablesTab vendor form · 0.22 `tasks.client_id` · 0.23 dummy role logins · 0.24 more PT states · 0.27 estimate rate card · 0.29 fresh APK |
 | 1 | Six write-paths (turns ~18 features on) | ✅ **ACCEPTANCE PASSED 26 Aug** — all six counters are live non-zero, every set row created through the UI today. Live, both orgs: invoices `salesperson_id` **5**/800 · orders **3**/380 · vendors MSME/TDS **12**/90 · expenses `contact_id` **9**/385 · employees `state` **110**/110 · holidays `state_code` **11**/48. The old "0/790, five of six still need a real create" table was written at 06:48 and never refreshed after `775b1bcc` landed at 08:36 |
 | 2 | Six correctness fixes (the blockers above) | ✅ **ACCEPTANCE PASSED 26 Aug — 10/10, driven as a real user against the deploy.** Payroll run for 2026-08: **51 paid, not 60**; the mid-month leaver credited **2 present days of 26**, not a whole month; PT **₹10,000** from the Maharashtra ladder (not ₹10,200 — pro-rating drops that leaver's gross into the ₹0 band, which is the two fixes composing correctly); Dristi overview **₹11,14,93,756.12** invoiced against ₹12,29,86,008.58 before, outstanding **₹2,71,54,767** against ₹3,86,36,429.46, with ₹54,78,968.92 of drafts on the books and excluded; cross-tenant profile create refused; pahchan metrics computing. All six are coded and deployed, and **nine further defects found by verifying them are now fixed**: payroll paid a part-month as a whole one (₹41,262 on one payslip), `/cron/hr` marked attendance for leavers, Dristi `/overview` carried a **₹1,14,92,252.46 draft phantom**, a draft could be marked *paid* (Unicode, ₹2,06,500), the 2.5 ratchet covered one module of 42 id-alone joins, two user-facing claims were false, 2.3's writer violated 1.3, and analytics banded 60 where payroll pays 51. |
-| 3 | Billing executable + arm cron | ⬜ — **no longer blocked**: 0.17 is decided AND shipped (`client_billing.py:1294`, calendar-days-minus-Sundays) |
+| 3 | Billing executable + arm cron | 🟡 **3.2 and 3.3 coded, tested and deployed 26 Aug; acceptance still owed and 3.4 is now owner-blocked.** 3.2 — a mid-cycle plan change raised **two debits**; the credit is a `kind='credit'` line (migration 222, verified from `pg_constraint`) that every total, the preview and `invoice_billing_lines` now subtract. Day-count unified on 0.17: `proration.py` counted 31 days for August 2026 where payroll counts 26, so every credit was priced against a month the payslip beside it did not recognise. 3.3 — the sweep recomputed the period from the service line's **origin** on every run, so a monthly retainer invoiced **once, for ever**, and reported it as `skipped`; it now advances from the last invoiced period, one period per run. Live-parsed against the real schema (`tests/test_billing_credit_sql_is_valid.py`, 7 green under `railway run`). **3.4 arming is NOT done and must not be armed yet** — see the open finding below: the first tick would raise 10 real invoices, ₹4,50,000 + GST, against Unicode Group's client, back to April |
 | 4 | Eight invisible-feature screens | ⬜ |
 | 5 | Statute calendar → payroll/invoicing | 🟡 **5.1 shipped 26 Aug** — ESI wage ceiling now read from `statute_calendar` at the run's period end (`vetana.py:842`), so a re-run of an old month uses that month's law. Deliberately changes no payslip: the dated ceiling equals the literal it replaced. 5.2/5.2b/5.3 open — the IT ladder is one row per band |
 | 6 | Retire 4 duplicate models + SQL-test rule | ⬜ |

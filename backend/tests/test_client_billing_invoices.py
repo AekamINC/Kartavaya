@@ -400,14 +400,95 @@ async def test_a_line_already_billed_spends_no_serial(pooled):
     sweep therefore happens before the allocator is called."""
     pool = pooled([
         ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
-        # This period is already on an invoice.
-        ("FROM staging.client_invoice_lines", 1),
+        # Never invoiced, so the period is the line's first one …
+        ("MAX(period_start) FROM staging.client_invoice_lines", None),
+        # … and that period is already on an invoice. The duplicate guard is
+        # what stops this one; it stands as the concurrency belt now that the
+        # period advances from the last invoiced one (two sweeps racing would
+        # both read the same MAX).
+        ("SELECT 1 FROM staging.client_invoice_lines", 1),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=TODAY)
     assert out == {"date": str(TODAY), "created": 0, "skipped": 1}
     assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices"), \
         "a serial was drawn for a line the sweep then skipped — permanent gap"
     assert not pool.any(INVOICE_INSERT)
+
+
+# ── 1b · A retainer has to RECUR (Phase 3.3) ─────────────────────────────────
+#
+# The period was `next_anchor(anchor, sl["period_start"])` — recomputed from the
+# line's own origin on every run, so it was a constant. The first sweep invoiced
+# it, `client_invoice_lines` held that period for ever, and every later sweep hit
+# the duplicate guard above. A monthly retainer invoiced ONCE, FOR EVER, and the
+# sweep called it `skipped` — the same word it uses for a line not yet due.
+
+
+async def test_a_retainer_invoices_the_next_period_not_the_first_one_again(pooled):
+    """August is billed; a September sweep raises SEPTEMBER."""
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
+        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 8, 1)),
+        ("SELECT 1 FROM staging.client_invoice_lines", None),
+        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=date(2026, 9, 2))
+    assert out["created"] == 1, "the retainer did not recur"
+
+    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    # (invoice_id, line_id, period_start, amount)
+    assert args[2] == date(2026, 9, 1), \
+        f"billed {args[2]} again instead of advancing a month"
+
+
+async def test_two_sweeps_inside_one_period_invoice_once(pooled):
+    """The other half of the acceptance: it recurs, and it does not double-bill.
+
+    August is billed and it is still August, so the next period starts on 1
+    September and is not due. Skipped before the serial is drawn.
+    """
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
+        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 8, 1)),
+        ("SELECT 1 FROM staging.client_invoice_lines", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=TODAY)
+    assert out == {"date": str(TODAY), "created": 0, "skipped": 1}
+    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices")
+    assert not pool.any(INVOICE_INSERT)
+
+
+async def test_a_quarterly_line_advances_a_quarter(pooled):
+    """The cadence decides the step — `period_end_for`, not `+1 month`."""
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl",
+         [{**SERVICE_LINE, "cadence": "quarterly", "billing_cycle": "quarterly"}]),
+        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 5, 1)),
+        ("SELECT 1 FROM staging.client_invoice_lines", None),
+        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 25))
+    assert out["created"] == 1
+
+    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    assert args[2] == date(2026, 8, 1)
+
+
+async def test_a_one_off_never_advances(pooled):
+    """A one-off is due in its own period and no other. Nothing about the
+    advancement may make it recur — the MAX is not even read for one."""
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl",
+         [{**SERVICE_LINE, "cadence": "one_off"}]),
+        ("SELECT 1 FROM staging.client_invoice_lines", 1),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=TODAY)
+    assert out == {"date": str(TODAY), "created": 0, "skipped": 1}
+    assert not pool.any("MAX(period_start) FROM staging.client_invoice_lines")
 
 
 async def test_the_usage_invoice_returns_the_serial(pooled):

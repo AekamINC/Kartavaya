@@ -126,19 +126,29 @@ __all__ = [
 
 # ── The vocabulary the CHECK constraints already enforce ────────────────────
 #
-# Repeated here in Python so a bad `kind` is a 400 that names the five legal
+# Repeated here in Python so a bad `kind` is a 400 that names the six legal
 # ones, rather than a CheckViolationError that reaches the operator as a 500
 # with the constraint's name in it. The DB constraint stays the authority; this
 # is the sentence.
 
-KINDS: tuple[str, ...] = ("platform", "support", "setup", "ongoing", "topup")
+KINDS: tuple[str, ...] = ("platform", "support", "setup", "ongoing", "topup", "credit")
 
 #: The kinds an operator may create through the billing block. `platform` is
 #: absent because only `sync_platform_line` may write one — see the module
 #: docstring. `topup` is absent because a top-up line is a fact about a payment
 #: that has already happened: it is created by the top-up handler, which passes
 #: `kind="topup"` explicitly and carries the granting transaction in `source_ref`.
+#:
+#: `credit` is absent for the opposite reason to `platform`: it is not dangerous,
+#: it is UNFINISHED. `services/proration.py` writes one per mid-cycle plan change
+#: and that path is closed and tested. A hand-typed credit needs a reason, an
+#: approval and a place on the invoice that says what it reverses, and none of
+#: those exist yet — a box on a form that silently forgives money is worse than
+#: no box. Phase 3.2 ships the mechanism; the operator door is a later decision.
 OPERATOR_KINDS: tuple[str, ...] = ("support", "setup", "ongoing")
+
+#: The one kind that SUBTRACTS. Everything else on an invoice adds.
+CREDIT_KIND = "credit"
 
 CADENCES: tuple[str, ...] = ("monthly", "one_off")
 
@@ -279,7 +289,7 @@ def _uuid(value: Any, *, what: str, exc: type[BillingLineError]) -> str:
                   **{f"{what}_id": str(value)})
 
 
-def _money(value: Any, *, field: str = "amount") -> Decimal:
+def _money(value: Any, *, field: str = "amount", signed: bool = False) -> Decimal:
     """A rupee figure as the column stores it: NUMERIC(12,2), never negative.
 
     Decimal throughout, and the comparison in `sync_platform_line` depends on
@@ -287,6 +297,13 @@ def _money(value: Any, *, field: str = "amount") -> Decimal:
     goes through a float on the way. Quantised HALF_UP, which is what
     NUMERIC(12,2) does to a third decimal place, so the value this module
     returns is the value the database holds and not a rounding away from it.
+
+    `signed=True` IS FOR ONE COLUMN ONLY: `invoice_billing_lines.amount`, which
+    carries no `>= 0` CHECK because it records what a document charged, and a
+    document that credits ₹4,000 charged minus four thousand rupees. It is NOT
+    a way to write a negative `org_billing_lines.amount` — that column's CHECK
+    stands, `record_billed` is the only caller that passes the flag, and the
+    magnitude limit below applies either way.
     """
     if isinstance(value, bool):        # bool is an int; `True` is not ₹1
         raise InvalidLine(f"{field} must be a number.", field=field)
@@ -297,13 +314,13 @@ def _money(value: Any, *, field: str = "amount") -> Decimal:
     if not amount.is_finite():
         raise InvalidLine(f"{field} must be a finite number.", field=field)
     amount = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
-    if amount < 0:
+    if amount < 0 and not signed:
         raise InvalidLine(
             f"{field} cannot be negative. A charge to be reversed is a credit "
             f"note, not a negative line.",
             field=field, amount=float(amount),
         )
-    if amount > _MAX_AMOUNT:
+    if abs(amount) > _MAX_AMOUNT:
         raise InvalidLine(
             f"{field} cannot exceed {_MAX_AMOUNT} — the column is NUMERIC(12,2).",
             field=field, amount=float(amount), maximum=float(_MAX_AMOUNT),
@@ -383,6 +400,27 @@ def _iso(value) -> Optional[str]:
     return str(value)
 
 
+def _signed_amount(kind: Any, amount: Any) -> Decimal:
+    """What this line does to a total: a credit subtracts, everything else adds.
+
+    THE ONE PLACE THE SIGN IS DECIDED. `amount` is a magnitude — the column is
+    `CHECK (amount >= 0)` and 096 chose that deliberately — so `kind` is what
+    says which way it points, and a second module deciding that for itself is
+    how a screen and an invoice come to disagree about what a client owes.
+
+    The SQL half of the same rule is `_SIGNED_AMOUNT_SQL` below; they are
+    written next to each other so neither can be changed alone.
+    """
+    amt = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+    return -amt if kind == CREDIT_KIND else amt
+
+
+#: `_signed_amount`, as a SQL expression over an aliased `org_billing_lines`.
+#: Every SUM in this module goes through it; a bare `SUM(l.amount)` over a table
+#: that now holds credits is a total that adds a refund to the bill.
+_SIGNED_AMOUNT_SQL = f"(CASE WHEN l.kind = '{CREDIT_KIND}' THEN -l.amount ELSE l.amount END)"
+
+
 def _row_to_line(row, *, actors: bool = True) -> Optional[dict]:
     """One `org_billing_lines` row as the JSON the screens already expect.
 
@@ -417,6 +455,12 @@ def _row_to_line(row, *, actors: bool = True) -> Optional[dict]:
         "kind": row["kind"],
         "description": row["description"],
         "amount": float(row["amount"]),
+        # THE SAME NUMBER, SIGNED — sent so no screen has to know the rule.
+        # `amount` stays the magnitude the column holds, because that is what an
+        # operator typed and what an edit form must round-trip; `signed_amount`
+        # is what a subtotal adds. A browser deriving the sign from `kind` is a
+        # second copy of the rule in a language nobody tests the arithmetic in.
+        "signed_amount": float(_signed_amount(row["kind"], row["amount"])),
         "currency": row["currency"],
         "cadence": row["cadence"],
         "period_start": _iso(row["period_start"]),
@@ -1231,10 +1275,16 @@ async def list_lines(
         org_id, max(1, int(limit)),
     )
 
+    # SIGNED, so a plan-change credit reduces the month rather than swelling it.
+    # `_SIGNED_AMOUNT_SQL` is `_signed_amount` in SQL; the two are defined
+    # together and neither is safe to change alone. `one_off_total` is the half
+    # that can now go NEGATIVE — a downgrade credit of ₹4,000 against ₹1,500 of
+    # new charges is a month where Aekam owes the client ₹2,500, and saying so
+    # is the point. The screens format it; nothing clamps it to zero.
     totals = await conn.fetchrow(
         "SELECT "
-        "  COALESCE(SUM(l.amount) FILTER (WHERE l.cadence='monthly'), 0) AS monthly_total, "
-        "  COALESCE(SUM(l.amount) FILTER (WHERE l.cadence='one_off'), 0) AS one_off_total "
+        f"  COALESCE(SUM({_SIGNED_AMOUNT_SQL}) FILTER (WHERE l.cadence='monthly'), 0) AS monthly_total, "
+        f"  COALESCE(SUM({_SIGNED_AMOUNT_SQL}) FILTER (WHERE l.cadence='one_off'), 0) AS one_off_total "
         "FROM staging.org_billing_lines l "
         f"WHERE l.org_id=$1::uuid AND {_DUE_IN_PERIOD}",
         org_id, period,
@@ -1289,9 +1339,12 @@ async def lines_due_in_period(conn, org_id: str, period: Any) -> dict:
         f"WHERE l.org_id=$1::uuid AND {_DUE_IN_PERIOD} AND {_NOT_YET_BILLED} "
         # Platform fee first, then the recurring services, then the one-offs and
         # the top-ups — the order the owner listed them, so an invoice reads the
-        # same way every month.
+        # same way every month. `credit` is LAST and is named explicitly: an
+        # unlisted kind gets NULL from `array_position` and sorts last only
+        # because that is the default, which is an ordering nobody chose. A
+        # deduction belongs under the charges it reduces.
         f"ORDER BY array_position("
-        f"  ARRAY['platform','support','ongoing','setup','topup']::text[], l.kind"
+        f"  ARRAY['platform','support','ongoing','setup','topup','credit']::text[], l.kind"
         f"), l.created_at",
         org_id, period,
     )
@@ -1340,7 +1393,11 @@ async def lines_due_in_period(conn, org_id: str, period: Any) -> dict:
         "period_start": period.isoformat(),
         "period_end": month_end.isoformat(),
         "lines": lines,
-        "total": float(sum(Decimal(str(l["amount"])) for l in lines)) if lines else 0.0,
+        # SIGNED. The preview's total is what the invoice will come to, and an
+        # invoice carrying a ₹4,000 credit against ₹1,500 of charges is ₹-2,500
+        # of net billing, not ₹5,500. Summed from `signed_amount`, which
+        # `_row_to_line` put on every row from the one rule in `_signed_amount`.
+        "total": float(sum(Decimal(str(l["signed_amount"])) for l in lines)) if lines else 0.0,
         "already_billed": [
             {
                 "line_id": str(r["line_id"]),
@@ -1512,13 +1569,52 @@ async def record_billed(
     # is authoritative about what was charged, not about what NUMERIC(12,2) can
     # hold, and a 22003 from the driver inside the caller's transaction takes
     # the invoice down with a message that names no column.
+    #
+    # SIGNED HERE, AND THE SIGN MUST AGREE WITH THE KIND.
+    # `invoice_billing_lines.amount` has no `>= 0` CHECK — deliberately, since
+    # 096 — because it records what a document charged, and a document that
+    # credits ₹4,000 charged −4,000. But a sign that contradicts the line it is
+    # booked against is the two halves disagreeing again in the other direction:
+    # a `credit` recorded as a positive charge bills the refund, and a `support`
+    # line recorded negative forgives a fee nobody approved. Neither is
+    # normalised silently — the caller is told which line and which way.
+    kinds: dict[str, str] = {}
+    if amounts:
+        kinds = {
+            str(r["id"]): r["kind"]
+            for r in await conn.fetch(
+                "SELECT id, kind FROM staging.org_billing_lines "
+                "WHERE id = ANY($1::uuid[]) AND org_id = $2::uuid",
+                ids, org_id,
+            )
+        }
+
     charged: list[Optional[Decimal]] = [None] * len(ids)
     if amounts:
         at = {line_id: i for i, line_id in enumerate(ids)}
         for key, value in amounts.items():
-            i = at.get(_uuid(key, what="line", exc=UnknownLine))
-            if i is not None:
-                charged[i] = _money(value, field="amount")
+            line_id = _uuid(key, what="line", exc=UnknownLine)
+            i = at.get(line_id)
+            if i is None:
+                continue
+            amount = _money(value, field="amount", signed=True)
+            kind = kinds.get(line_id)
+            if kind == CREDIT_KIND and amount > 0:
+                raise InvalidLine(
+                    f"line {line_id} is a credit, so the invoice must record it "
+                    f"as a deduction — {amount} is a charge. Nothing was "
+                    f"recorded and no invoice was raised.",
+                    field="amount", amount=float(amount), line_id=line_id,
+                )
+            if kind is not None and kind != CREDIT_KIND and amount < 0:
+                raise InvalidLine(
+                    f"line {line_id} is a {kind} charge and cannot be recorded "
+                    f"as {amount}. A charge to be reversed is a credit line, "
+                    f"not a negative one. Nothing was recorded and no invoice "
+                    f"was raised.",
+                    field="amount", amount=float(amount), line_id=line_id,
+                )
+            charged[i] = amount
 
     # WHAT THIS INVOICE MAY BOOK AGAINST THIS MONTH, asked before anything is
     # written and asked the same way the preview asks it. `$2` is the period, so
@@ -1589,7 +1685,13 @@ async def record_billed(
         # see `amounts` above for which is authoritative and why the fallback
         # is not the same answer. The line may be re-priced tomorrow either way;
         # this row may not change.
-        "SELECT $1::uuid, l.id, $3::date, COALESCE(v.amount, l.amount) "
+        #
+        # THE FALLBACK IS SIGNED. `l.amount` is a magnitude, so falling back to
+        # it bare would record a credit as a positive charge — the line that
+        # exists to reduce the bill recorded as having increased it, on the row
+        # that proves what was billed. `_SIGNED_AMOUNT_SQL` is the same rule the
+        # totals and the preview use.
+        f"SELECT $1::uuid, l.id, $3::date, COALESCE(v.amount, {_SIGNED_AMOUNT_SQL}) "
         "FROM staging.org_billing_lines l "
         # The two arrays are positional halves of one list: `charged[i]` is the
         # amount for `ids[i]`, NULL where the caller said nothing. LEFT, and the

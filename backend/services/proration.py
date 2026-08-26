@@ -8,18 +8,62 @@ when a service starts or ends mid-cycle.  Used by:
   - client billing (P5, already built — can call these directly)
 
 All functions are deterministic and take dates, never query the database.
+
+── ONE DAY-COUNT CONVENTION, AND IT IS PAYROLL'S ────────────────────────────
+
+Owner decision 0.17, 2026-08-26: **calendar minus Sundays, everywhere.**
+
+This module counted plain calendar days — 31 for August 2026 — while
+`routers/vetana.py` prorates a part-month over every calendar day that is not
+a Sunday (26 for the same month) and `routers/client_billing.py` counted
+Monday-to-Friday (21). Three engines, three answers, one month: a plan change
+credited a client for a fraction the payroll beside it could not reproduce.
+
+Payroll keeps its convention because it has money flowing through it and a
+six-day week is what Indian firms actually work. Saturday is a working day.
+`_working_days` below is that rule, and it is the ONLY day counter in this
+file — `prorate` and `should_waive` both go through it, so the fraction and
+the waiver can never come to disagree about how long a month is.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 _CENT = Decimal("0.01")
 
 PRORATION_WAIVE_THRESHOLD = 3
 
+#: `date.weekday()` for Sunday. The one day of the week that is not billed.
+_SUNDAY = 6
+
+
+def _working_days(start: date, end: date) -> int:
+    """Days in [start, end) that are not Sundays. Never negative.
+
+    A loop rather than arithmetic on whole weeks: the periods here are a month
+    or a quarter, so it is a few dozen iterations, and the closed form for
+    "weekdays between two dates excluding one weekday" is the kind of clever
+    that gets an off-by-one in a leap February and is never noticed because
+    nobody re-derives it by hand.
+    """
+    if end <= start:
+        return 0
+    days = 0
+    d = start
+    while d < end:
+        if d.weekday() != _SUNDAY:
+            days += 1
+        d += timedelta(days=1)
+    return days
+
 
 def days_in_period(start: date, end: date) -> int:
-    """Total calendar days in a billing period (end exclusive)."""
-    return (end - start).days
+    """Billable days in a period (end exclusive) — calendar minus Sundays.
+
+    August 2026 is 26, not 31: the same figure `vetana.py` puts on a payslip
+    as `working_days`, so a mid-cycle credit and the payroll for that month
+    divide by the same denominator. See the module docstring, decision 0.17.
+    """
+    return _working_days(start, end)
 
 
 def prorate(
@@ -42,10 +86,13 @@ def prorate(
     if total_days <= 0:
         return Decimal("0.00")
 
+    # BOTH SIDES COUNT THE SAME WAY. The numerator was calendar days while the
+    # denominator is now billable ones; mixing them would price 13 working days
+    # of a 26-day August as 16/26 and overcharge by a fifth.
     if direction == "elapsed":
-        active_days = (event_date - period_start).days
+        active_days = _working_days(period_start, event_date)
     else:
-        active_days = (period_end - event_date).days
+        active_days = _working_days(event_date, period_end)
 
     active_days = max(0, min(active_days, total_days))
 
@@ -58,8 +105,13 @@ def should_waive(
     event_date: date,
     threshold: int = PRORATION_WAIVE_THRESHOLD,
 ) -> bool:
-    """If remaining days <= threshold, waive the micro-charge."""
-    remaining = (period_end - event_date).days
+    """If the billable days left <= threshold, waive the micro-charge.
+
+    Counted the same way the fraction is (decision 0.17), so a change made on
+    the Friday before a Sunday-ended month is waived on the same arithmetic
+    that would have priced it.
+    """
+    remaining = _working_days(event_date, period_end)
     return remaining <= threshold
 
 
@@ -74,11 +126,23 @@ def plan_change_lines(
 
     Returns a list of dicts with {kind, description, amount, cadence} ready
     to be written as org_billing_lines.  May return 0–2 entries:
-      - credit for unused days at the old rate (negative conceptually, but
-        stored as a one_off with description mentioning 'credit')
-      - charge for remaining days at the new rate
+      - `kind='credit'` for the unused days at the old rate
+      - `kind='setup'`  for the remaining days at the new rate
 
-    Waives micro-charges when remaining days <= PRORATION_WAIVE_THRESHOLD.
+    ── THE CREDIT IS A CREDIT NOW (migration 222) ───────────────────────────
+
+    It used to be a `setup` line, which is a CHARGE, so a mid-cycle change
+    raised two debits and the client was billed for the plan they left as well
+    as the one they moved to. A downgrade from ₹8,000 to ₹3,000 halfway through
+    August billed ₹5,500 instead of crediting ₹4,000 against ₹1,500.
+
+    `amount` STAYS POSITIVE — it is a magnitude, `org_billing_lines.amount` is
+    `CHECK (amount >= 0)`, and this module's neighbour argues correctly that a
+    charge to be reversed is a credit note rather than a negative row. The
+    KIND is what carries the sign, and exactly one function applies it:
+    `services.billing_lines._signed_amount`. Nothing here negates anything.
+
+    Waives micro-charges when the billable days left <= PRORATION_WAIVE_THRESHOLD.
     """
     if change_date <= period_start or change_date >= period_end:
         return []
@@ -91,10 +155,15 @@ def plan_change_lines(
     old_credit = prorate(old_rate, period_start, period_end, change_date, direction="remaining")
     new_charge = prorate(new_rate, period_start, period_end, change_date, direction="remaining")
 
+    # The days the client is being credited or charged FOR — billable days, the
+    # same ones the amount was divided by. It read the calendar difference,
+    # which put "unused 16 days" next to a figure that was thirteen days' worth.
+    remaining = _working_days(change_date, period_end)
+
     if old_credit > 0 and float(old_rate) > 0:
         lines.append({
-            "kind": "setup",
-            "description": f"Plan change credit: unused {(period_end - change_date).days} days at ₹{old_rate}/mo",
+            "kind": "credit",
+            "description": f"Plan change credit: unused {remaining} days at ₹{old_rate}/mo",
             "amount": old_credit,
             "cadence": "one_off",
         })
@@ -102,7 +171,7 @@ def plan_change_lines(
     if new_charge > 0 and float(new_rate) > 0:
         lines.append({
             "kind": "setup",
-            "description": f"Plan change charge: {(period_end - change_date).days} days at ₹{new_rate}/mo",
+            "description": f"Plan change charge: {remaining} days at ₹{new_rate}/mo",
             "amount": new_charge,
             "cadence": "one_off",
         })
@@ -131,7 +200,8 @@ def module_cotermination(
     if charge <= 0:
         return None
 
-    remaining = (period_end - activation_date).days
+    # Billable days, matching the divisor in `charge` — see `plan_change_lines`.
+    remaining = _working_days(activation_date, period_end)
     return {
         "kind": "setup",
         "description": f"Module activation: prorated {remaining} days at ₹{module_rate}/mo",

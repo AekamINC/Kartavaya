@@ -492,12 +492,23 @@ async def update_service_line(
 
 # ── P5.2: Auto-Invoice Sweep ────────────────────────────────────────────
 
-async def sweep_client_auto_invoices(today: date | None = None) -> dict:
+async def sweep_client_auto_invoices(
+    today: date | None = None,
+    org_id: str | None = None,
+) -> dict:
     """Generate ganit_invoices for client_service_lines due today.
 
     Called from the billing cron.  For each auto_invoice line whose current
     period is due, creates a ganit_invoices row and a client_invoice_lines
     join row to prevent double-billing.
+
+    `org_id` SCOPES THE RUN TO ONE ORGANISATION, and the cron does not pass it —
+    a nightly sweep is for everybody, which is the whole point of it. It exists
+    because this function WRITES TAX INVOICES with serial numbers drawn from a
+    firm's live sequence, and staging shares its database with production
+    (CLAUDE.md): proving the sweep works must be possible without raising a
+    document in a real customer's books. Phase 3's own definition of done says
+    the rows may move off zero "in staging test data only". This is how.
     """
     today = today or date.today()
     pool = await get_pool()
@@ -521,8 +532,12 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE sl.auto_invoice = TRUE "
         "  AND sl.period_start <= $1::date "
-        "  AND (sl.period_end IS NULL OR sl.period_end > $1::date)",
-        today,
+        "  AND (sl.period_end IS NULL OR sl.period_end > $1::date) "
+        # `$2 IS NULL OR …` rather than two spellings of the statement: one
+        # statement is one thing to plan, one thing to test, and one thing for
+        # `test_client_billing_invoices.py` to parse against the real schema.
+        "  AND ($2::uuid IS NULL OR sl.org_id = $2::uuid)",
+        today, str(org_id) if org_id else None,
     )
 
     created = 0
@@ -541,8 +556,52 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
         if cadence == "one_off":
             period_start = sl["period_start"]
         else:
-            period_start = next_anchor(anchor, sl["period_start"])
+            # ── WHERE THE PERIOD COMES FROM, AND WHY IT IS NOT THE LINE'S OWN ──
+            #
+            # This read `next_anchor(anchor, sl["period_start"])` — the FIRST
+            # anchor on or after the line's origin — recomputed on every sweep.
+            # It is a constant: a retainer created in August answered "1 August"
+            # in August, in September, and in August next year. The first run
+            # invoiced it, `client_invoice_lines` then held that period for ever,
+            # and every run after it fell into the `already` branch below. A
+            # MONTHLY RETAINER INVOICED EXACTLY ONCE, FOR EVER. Nothing in the
+            # product said so: the sweep reported `skipped`, which is what it
+            # also says about a line that is genuinely not due yet.
+            #
+            # The period advances from THE LAST ONE INVOICED, which is the only
+            # record of where this line has got to. `client_invoice_lines` is
+            # that record — it exists to stop double-billing, and the same rows
+            # answer "how far along is this line?" — so the two questions cannot
+            # come to disagree the way a `next_billing_date` column on the line
+            # would the first time an invoice was voided.
+            #
+            # `period_end_for` rather than `next_anchor(..., last + 1 day)`:
+            # one cycle after the last invoiced start is a month, a quarter or a
+            # year depending on the cadence, and it lands back on the anchor day
+            # by construction because the last start was on it.
+            #
+            # ONE PERIOD PER LINE PER RUN, deliberately. A line dormant for a
+            # year does not mint twelve invoices on the morning somebody notices
+            # — it invoices the oldest unbilled period and catches up a period a
+            # day, on a sweep that runs daily. Twelve tax invoices appearing at
+            # once, unattended, with twelve serials drawn, is not a thing to do
+            # to a customer's books without a person deciding it.
+            last_billed = await pool.fetchval(
+                "SELECT MAX(period_start) FROM staging.client_invoice_lines "
+                "WHERE line_id = $1::uuid",
+                sl["id"],
+            )
+            period_start = (
+                period_end_for(last_billed, cadence) if last_billed
+                else next_anchor(anchor, sl["period_start"])
+            )
 
+        # NO SEPARATE "past the line's end" GUARD, and that is checked rather
+        # than assumed: the outer query already keeps only lines whose
+        # `period_end` is NULL or later than today, so a period that starts on
+        # or after the line's end necessarily starts after today and is skipped
+        # by the line above. A second check here would be a branch no run can
+        # reach, which is worse than no check — it reads as protection.
         if period_start > today:
             skipped += 1
             continue

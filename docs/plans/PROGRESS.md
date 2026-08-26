@@ -33,6 +33,87 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Phase 3.2 — the plan-change credit was a second charge
+
+`services/proration.py` computed the credit for the unused days at the old rate
+correctly and then wrote it as `kind='setup'`, which is a CHARGE, because
+`services/billing_lines.py:300` refuses a negative amount. **A mid-cycle change
+raised two debits.** ₹8,000 → ₹3,000 halfway through August billed ₹5,500 where
+it should have credited ₹4,000 against ₹1,500 of new charges — a ₹8,000 swing
+on one plan change, in Aekam's favour, every time.
+
+The column is not the thing to change. `amount NUMERIC(12,2) CHECK (amount >= 0)`
+is deliberate — 096 argues it out — and a signed column would make every `SUM`
+in the product answer a different question from the one its caller is asking. So
+the magnitude stays positive and **the KIND carries the sign**:
+
+- **Migration 222 applied and verified from `pg_constraint`** — `org_billing_lines_kind_check`
+  gains `'credit'`; new `org_billing_lines_credit_ck` refuses a monthly credit
+  (a discount that runs for ever is not a proration). Locks: ACCESS EXCLUSIVE on
+  8 rows, milliseconds. No row written, no row re-read differently. Migration
+  first, then the backend — `create_line(kind='credit')` against the old CHECK
+  is a CheckViolation the operator sees as a 500.
+- `_signed_amount` / `_SIGNED_AMOUNT_SQL` — **one rule, two languages, defined
+  next to each other.** `list_lines`' two totals, `lines_due_in_period`'s total,
+  and `record_billed`'s INSERT fallback all go through it. `one_off_total` can
+  now go negative, and saying so is the point: a month where Aekam owes the
+  client ₹2,500 is not a month it bills ₹5,500.
+- `record_billed` accepts a signed figure for `invoice_billing_lines.amount`
+  (no `>= 0` CHECK there, deliberately, since 096) **and refuses a sign that
+  contradicts the line** — a credit recorded as a charge bills the refund; a
+  support line recorded negative forgives a fee nobody approved. Neither is
+  normalised silently.
+- `_row_to_line` now sends `signed_amount` beside `amount`, so no screen derives
+  the sign for itself. `InvoiceBuilder.jsx` loads that, and its amount field
+  loses `min="0"` — the browser would otherwise have refused a form on a row the
+  server had just sent.
+
+**And the day-count, decision 0.17 — a third convention was hiding here.**
+`days_in_period` counted plain calendar days: **31 for August 2026**, where
+`vetana.py` puts **26** on every payslip and `client_billing.py` counted 21
+before Phase 2 fixed it. Every proration this module has ever computed was
+priced against a month the payroll beside it did not recognise. Now
+calendar-minus-Sundays, through one `_working_days` helper that `prorate` and
+`should_waive` both call, so the fraction and the waiver cannot disagree.
+August 2026 splits 13 + 13, which is exact.
+
+### Phase 3.3 — a monthly retainer invoiced once, for ever
+
+`sweep_client_auto_invoices` computed the period as
+`next_anchor(anchor, sl["period_start"])` — **recomputed from the service line's
+own origin on every run**, so it was a constant. The first sweep invoiced it,
+`client_invoice_lines` held that period for ever, and every later run fell into
+the duplicate guard and reported `skipped` — the same word it uses for a line
+that is not due yet. Nothing in the product said a retainer had stopped
+recurring.
+
+It now advances from **the last invoiced period** (`MAX(period_start)` over
+`client_invoice_lines`, the row that already exists to stop double-billing),
+stepping by `period_end_for` so a quarterly line moves a quarter. **One period
+per run, deliberately**: a line dormant for a year catches up a period a day on
+a daily sweep rather than minting twelve tax invoices on the morning somebody
+notices. Four new tests, including the acceptance both ways — twice across a
+period boundary is two invoices, twice inside one period is one.
+
+`sweep_client_auto_invoices` also takes an optional `org_id` now. The cron does
+not pass it. It exists because this function writes tax invoices with serials
+from a firm's live sequence, and the phase's own definition of done says the
+rows may move off zero *in staging test data only*.
+
+**Live-parsed, nothing executed.** `tests/test_billing_credit_sql_is_valid.py`
+drives `list_lines`, `lines_due_in_period` and `record_billed` through a
+recording connection and `prepare()`s every statement against the real
+catalogue — Parse and Describe, no row read, none written — and reads migration
+222 back from `pg_constraint` rather than from the file. 7 green under
+`railway run`; `tests/test_client_billing_invoices.py` 33 green the same way.
+Offline: `test_proration.py` 23, `test_billing_lines.py` 84.
+
+**3.4 is NOT armed, and the reason is a live-data decision — see `STATUS.md`.**
+All four `client_service_lines` belong to Unicode Group, two auto-invoice at
+₹75,000 + ₹15,000 a month since 2026-04-01, and nothing records them as billed.
+The first tick would raise April, and one more month each day after that: ten
+documents, ₹4,50,000 + ₹81,000 GST, in a real customer's books.
+
 ### Nikhil Desai removed — and the payroll-header defect it exposed
 
 **Owner, 2026-08-26: delete the employee entirely.** The alternative on the
