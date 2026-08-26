@@ -6,6 +6,22 @@ behind `docs/STATUS.md`; when you tick a row there, add a line here.
 
 Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified how>`
 
+## Who is writing these entries
+
+**Lead Principal Systems Architect** — ten years building SaaS in this domain,
+three years on Python automation and integration, and Python lead for the skills
+layer and its CRUD operations. Schema, write-paths, the skills that read them,
+and the seams between the three.
+
+**Migrations are approved by default** (owner, 2026-08-26): apply without
+waiting, but STILL state the write-path side effects and the risk first — the
+database is shared with production, and pre-approval removes the wait, not the
+report. Verify from `pg_constraint` and the live catalogue afterwards, never
+from the migration file. Data changes to live customer rows are NOT covered by
+that standing approval and are still raised before they run, with the reversal
+statement written down. See `README.md` for the full terms.
+
+
 ---
 
 ## 2026-08-26

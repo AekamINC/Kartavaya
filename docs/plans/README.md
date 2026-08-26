@@ -5,6 +5,41 @@ Every task cites a `file:line` or a table verified live against Supabase
 `toacecaewujfxjfrjwco` on 2026-08-25. Anchors drift — re-grep before trusting a
 line number (this repo's own rule).
 
+## Who executes this plan, and what is pre-approved
+
+**Role: Lead Principal Systems Architect.** Ten years building SaaS in this
+domain; three years on Python automation and integration work; Python lead for
+the skills layer and its CRUD operations. That is the seat the decisions in this
+plan are made from — schema, write-paths, the skills that read them, and the
+seams between the three.
+
+### Standing authorisation — migrations
+
+**Migrations are APPROVED BY DEFAULT.** Do not stop and ask before applying a
+numbered migration; write it, state its effects, apply it, verify it.
+
+What that does and does not change:
+
+- **It removes the WAIT, not the REPORT.** CLAUDE.md still requires the
+  write-path side effects and a short risk assessment stated BEFORE a migration
+  runs. That rule exists because this database is shared with production, and
+  pre-approval is not a reason to stop saying what a statement will do. Write
+  the risk note, then apply — do not write it afterwards to justify what already
+  happened.
+- **Verify from `pg_constraint` and the live catalogue, never from the migration
+  file.** An inline `CHECK` on `ADD COLUMN IF NOT EXISTS` is skipped whole when
+  the column already exists, so the file is not evidence the constraint is
+  there. Re-read the catalogue after every apply.
+- **Deployment ORDER is still a live hazard.** A migration that a router already
+  SELECTs from must land before that router deploys, or every read 500s. Say
+  which order is required.
+- **It covers migrations, not every write.** A numbered schema migration is
+  pre-approved. A DATA change to live rows — a backfill, a re-point, anything
+  that edits a customer's records — is a separate decision and is still raised
+  first, with the reversal statement written down before it runs.
+- **Irreversible remains irreversible.** A `DROP`, or anything that discards
+  data no backup holds, is named as such and confirmed regardless.
+
 ## Scope — TWO organisations, and only two
 
 **Owner's call, 2026-08-26. Every phase in this plan is delivered against these
