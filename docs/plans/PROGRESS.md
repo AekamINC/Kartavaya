@@ -33,6 +33,34 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Phase 2 acceptance — 10/10, driven as a real user
+
+`phase2-acceptance.spec.ts`, against the deployed site in E2E Test &
+Associates, month 2026-08. The outbound fence is asserted against the org the
+SESSION is in before a single write — `POST /payroll/process` emails every
+employee their payslip with a PDF attached, unconditionally.
+
+| | proved |
+|---|---|
+| 2.1 leavers | run paid **51, not 60** — the nine dated before the month are out, the tenth (last day inside it) correctly still in |
+| 2.1 pro-rating | `present_days` across the run spans **2 to 26**; the 3-August leaver got 2 |
+| 2.2 professional tax | **₹10,000** from the Maharashtra ladder across 51 payslips |
+| 2.4 drafts | overview **₹11,14,93,756.12** invoiced, **₹2,71,54,767** outstanding, with **₹54,78,968.92** of drafts on the books and excluded |
+| 2.5 tenancy | a profile for another org's client is refused |
+| 2.6 pahchan | catalogue offers the geofence metrics and cites no unapplied migration |
+| 2.2 ladder | a February band added through the settings screen, resolved, and removed — ladder left at 9 shared rows, 0 org-owned, 0 month-specific |
+
+**₹10,000, not the ₹10,200 predicted.** Pro-rating drops the leaver's gross to
+about ₹3,438, which falls in Maharashtra's lowest band at ₹0. Two fixes
+composing, and the number nobody would have predicted from either alone.
+
+**Four of the six failures on the way were the harness, not the product** — a
+wrong endpoint path (`/manav/exits` for `/manav/offboarding`), the wrong
+response envelope, a `hasText` filter that matched the statutory summary's own
+"Professional tax" heading instead of the ladder section, and a spec that
+always POSTed a payroll month the endpoint refuses to reprocess. Each is
+recorded in the spec so the next reader does not re-derive it.
+
 ### Phase 2 FINISHED — the six fixes, and the nine things verifying them found
 
 **The acceptance the plan actually wrote** is "all six re-verified with a

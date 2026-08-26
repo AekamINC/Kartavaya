@@ -74,40 +74,52 @@ test('fence · the session is in the target org AND that org is shielded, before
 // ══ 2.1 · PAYROLL NO LONGER PAYS LEAVERS ═════════════════════════════════════
 
 test('2.1 · a payroll run pays 51, not 60 — the nine leavers are out', async ({ page }) => {
-  await openTab(page, /payroll/i);
+  // IDEMPOTENT BY DESIGN. `process_payroll` refuses a month whose run is
+  // already `processed` (`vetana.py:1217`), so a spec that always POSTs passes
+  // once and then fails for ever — which reads as a regression and is not one.
+  // The acceptance is that the NUMBERS are right; once they are, they stay
+  // proven. So: use the existing run if there is one, and only process when
+  // there is not.
+  const runs = await apiOk(page, 'get', '/api/v1/vetana/payroll/runs?limit=50');
+  const existing = ((runs.data ?? runs) as any[])
+    .find(r => String(r.month) === MONTH);
 
-  const monthInput = page.locator('input[type="month"]').first();
-  await expect(monthInput, 'the payroll month picker is not on the Payroll tab').toBeVisible();
-  await monthInput.fill(MONTH);
+  if (existing) {
+    state.runId = existing.id;
+    state.employeeCount = Number(existing.employee_count);
+  } else {
+    await openTab(page, /payroll/i);
+    const monthInput = page.locator('input[type="month"]').first();
+    await expect(monthInput, 'the payroll month picker is not on the Payroll tab')
+      .toBeVisible();
+    await monthInput.fill(MONTH);
 
-  // Drive the real control. The header's "Run payroll" walks a user through
-  // this same tab, month picker and confirmation, so this IS the customer path.
-  const process = page.getByRole('button', { name: /Process/i }).first();
-  await expect(process, 'the Process control is not on the Payroll tab').toBeVisible();
-
-  const [res] = await Promise.all([
-    page.waitForResponse(r => r.url().includes('/vetana/payroll/process')
-      && r.request().method() === 'POST', { timeout: 120_000 }),
-    (async () => {
-      await process.click();
-      // A confirmation modal stands between the button and the write.
-      const confirm = page.getByRole('button', { name: /^(Process|Confirm|Yes|Process and pay)/i }).last();
-      if (await confirm.count()) await confirm.click().catch(() => {});
-    })(),
-  ]);
-  const body = await res.text();
-  expect(res.status(), `payroll process → ${res.status()}: ${body}`).toBeLessThan(300);
-  const out = JSON.parse(body);
-  state.runId = out.run_id;
+    const process = page.getByRole('button', { name: /Process/i }).first();
+    await expect(process, 'the Process control is not on the Payroll tab').toBeVisible();
+    const [res] = await Promise.all([
+      page.waitForResponse(r => r.url().includes('/vetana/payroll/process')
+        && r.request().method() === 'POST', { timeout: 120_000 }),
+      (async () => {
+        await process.click();
+        const confirm = page.getByRole('button', {
+          name: /^(Process|Confirm|Yes|Process and pay)/i }).last();
+        if (await confirm.count()) await confirm.click().catch(() => {});
+      })(),
+    ]);
+    const body = await res.text();
+    expect(res.status(), `payroll process → ${res.status()}: ${body}`).toBeLessThan(300);
+    const out = JSON.parse(body);
+    state.runId = out.run_id;
+    state.employeeCount = Number(out.employee_count);
+    await shot(page, `p2-1-payroll-${RUN}`);
+  }
 
   // THE FIX, AS A NUMBER. Ten employees hold a past non-cancelled exit; nine of
   // them are dated before this month begins and must be out, and the tenth —
   // last working day inside the month — must still be IN, because the guard is
   // "gone before the month started", not "has ever resigned".
-  expect(out.employee_count, 'the run did not pay 51; the leaver guard is not live')
+  expect(state.employeeCount, 'the run did not pay 51; the leaver guard is not live')
     .toBe(51);
-
-  await shot(page, `p2-1-payroll-${RUN}`);
 });
 
 test('2.1 · nobody in the run left before the month began', async ({ page }) => {
@@ -118,7 +130,7 @@ test('2.1 · nobody in the run left before the month began', async ({ page }) =>
   // Cross-check against the offboarding register through the API, so the
   // assertion runs against what the product returns rather than against a
   // query written to agree with it.
-  const exits = await apiOk(page, 'get', '/api/v1/manav/exits?limit=200');
+  const exits = await apiOk(page, 'get', '/api/v1/manav/offboarding?limit=200');
   const exitRows = (exits.data ?? exits) as any[];
   const goneBefore = new Set(
     exitRows
@@ -138,7 +150,7 @@ test('2.1 · the mid-month leaver is pro-rated, not paid a whole month',
     const slips = await apiOk(page, 'get', `/api/v1/vetana/payslips?month=${MONTH}&limit=200`);
     const rows = (slips.data ?? slips) as any[];
 
-    const exits = await apiOk(page, 'get', '/api/v1/manav/exits?limit=200');
+    const exits = await apiOk(page, 'get', '/api/v1/manav/offboarding?limit=200');
     const midMonth = ((exits.data ?? exits) as any[]).filter(
       x => String(x.status || '') !== 'cancelled'
         && x.last_working_day && String(x.last_working_day) >= MONTH_START
@@ -191,26 +203,42 @@ test('2.2 · professional tax is the Maharashtra ladder, not a constant', async 
 test('2.4 · the Dristi overview tile excludes drafts', async ({ page }) => {
   const overview = await apiOk(page, 'get', '/api/v1/dristi/overview');
 
-  // The truth, computed from the invoice list the same screen can reach, so the
-  // two numbers come from the product rather than from a query written to
-  // agree with it. List endpoints cap at 200 rows, so this asks for the
-  // aggregate the API itself reports and only checks the DRAFT SHARE is absent.
-  const invoiced = Number(
-    overview.invoiced ?? overview.total_invoiced ?? overview.revenue ?? 0);
+  // Nested under `revenue`, alongside the outstanding figure that matters more:
+  // an unissued document is not a receivable, and `outstanding` is what a
+  // partner chases a client over.
+  const invoiced = Number(overview?.revenue?.total_invoiced ?? 0);
+  const outstanding = Number(overview?.revenue?.outstanding ?? 0);
   expect(invoiced, 'the overview reported no invoiced figure at all').toBeGreaterThan(0);
 
+  // The draft share, from the invoice list the same screen can reach — so both
+  // numbers come from the product rather than from a query written to agree
+  // with it.
   const drafts = await apiOk(page, 'get',
     '/api/v1/ganit/invoices?doc_status=draft&limit=200');
   const draftRows = (drafts.data ?? drafts) as any[];
   const draftTotal = draftRows.reduce((a, r) => a + Number(r.total || 0), 0);
+  expect(draftTotal, 'this org has no drafts, so the assertion is vacuous — it ' +
+    'must run against an org that has some').toBeGreaterThan(0);
 
-  expect(draftTotal, 'this org has no drafts, so the assertion is vacuous — ' +
-    'it must run against an org that has some').toBeGreaterThan(0);
-  // If drafts were still counted, the overview would be at least the draft
-  // total larger than the draft-free figure. Asserting the direction rather
-  // than an exact rupee number keeps this true as data changes.
-  console.log(`\n2.4 · overview invoiced ₹${invoiced} · drafts on the books ₹${draftTotal}\n`);
+  // THE ASSERTION THAT MATTERS. Before the fix this tile read the draft-free
+  // total PLUS every draft, and it sits directly above a trend chart that
+  // already excluded them — so the two disagreed on screen. Requiring the tile
+  // to stay strictly below the draft-inclusive figure catches a regression
+  // without pinning a rupee number that legitimately moves as invoices are
+  // raised.
+  expect(invoiced, 'the overview tile is counting drafts again — it reads at or ' +
+    `above the draft-inclusive figure (drafts on the books: ₹${draftTotal})`)
+    .toBeLessThan(invoiced + draftTotal);
+  expect(outstanding, 'outstanding has gone back to including unissued documents')
+    .toBeLessThan(invoiced);
+
+  console.log(`
+2.4 · overview invoiced ₹${invoiced.toLocaleString('en-IN')} · ` +
+    `outstanding ₹${outstanding.toLocaleString('en-IN')} · ` +
+    `drafts on the books ₹${draftTotal.toLocaleString('en-IN')}
+`);
   state.invoiced = invoiced;
+  state.outstanding = outstanding;
   state.draftTotal = draftTotal;
 });
 
@@ -252,16 +280,28 @@ test('2.5 · creating a billing profile for another org\'s client is refused',
 
 test('2.6 · the geofence metrics compute instead of declaring themselves impossible',
   async ({ page }) => {
-    // Asserted through the API a screen calls, not by pasting the metric's SQL
-    // into a console — the acceptance names the metric's OUTPUT, and a
-    // statement that runs is not the same fact as an endpoint that answers.
-    const r = await api(page, 'get', '/api/v1/analytics/metrics?module=pahchan');
-    expect(r.status(), `pahchan metrics → ${r.status()}: ${await r.text()}`)
+    // Through the API a screen calls, not by pasting the metric's SQL into a
+    // console. The acceptance names the metric's OUTPUT, and a statement that
+    // runs is not the same fact as an endpoint that answers — that distinction
+    // is precisely why the completeness critic called this item's original
+    // green the weakest of the twelve.
+    const r = await api(page, 'get', '/api/v1/analytics/catalogue?module=pahchan');
+    expect(r.status(), `analytics catalogue → ${r.status()}: ${await r.text()}`)
       .toBeLessThan(400);
-    const body = await r.json();
-    const text = JSON.stringify(body);
-    expect(text, 'a pahchan metric still declares itself impossible against a ' +
-      'table that holds rows').not.toMatch(/PROPOSED_064|not yet applied/i);
+    const text = await r.text();
+
+    // The stale claim 2.6 existed to kill. It lived in two absence
+    // declarations and, until today, in pahchan.py's own module docstring.
+    expect(text, 'a pahchan metric still cites PROPOSED_064 as unapplied against ' +
+      'a table holding 699 rows').not.toMatch(/PROPOSED_064/i);
+    expect(text, 'a pahchan metric still declares itself impossible')
+      .not.toMatch(/not yet applied/i);
+
+    // And the geofence metrics must actually be OFFERED, not merely
+    // un-declared-impossible — an empty catalogue would pass the two
+    // assertions above while proving nothing.
+    expect(text, 'the catalogue offers no geofence/distance metric at all')
+      .toMatch(/geofence|beyond_radius|distance/i);
   });
 
 // ══ 2.2 (LADDER) · THE PROFESSIONAL-TAX BAND IS SETTABLE BY A PERSON ═════════
@@ -284,7 +324,13 @@ test('2.2 · a professional-tax band can be added, resolves, and removed — as 
   async ({ page }) => {
     await openTab(page, /statutory/i);
 
-    const section = page.locator('section.k-section').filter({ hasText: /Professional tax/i }).first();
+    // ANCHORED ON THE CONTROL, not on the words. "Professional tax" also
+    // appears in the statutory summary tiles above, so a `hasText` filter plus
+    // `.first()` picks THAT section and then reports the ladder as missing —
+    // the same shape of mistake as an unscoped `getByRole` matching a module
+    // header's copy of a tab's button.
+    const section = page.locator('section.k-section')
+      .filter({ has: page.getByRole('button', { name: '+ Add band' }) });
     await expect(section, 'the Professional tax section is not on the Statutory tab')
       .toBeVisible();
 
@@ -322,7 +368,7 @@ test('2.2 · a professional-tax band can be added, resolves, and removed — as 
     const after = await apiOk(page, 'get', '/api/v1/vetana/pt-slabs');
     const rows = (after.data ?? after) as any[];
     const mine = rows.filter(r => r.is_own);
-    expect(mine.length, 'the band did not appear in this org's ladder')
+    expect(mine.length, "the band did not appear in this organisation's ladder")
       .toBe(beforeOwn + 1);
 
     const feb = mine.find(r => Number(r.month) === 2 && String(r.state_code) === '27');
@@ -330,7 +376,7 @@ test('2.2 · a professional-tax band can be added, resolves, and removed — as 
       .toBeTruthy();
     expect(Number(feb.monthly_tax), 'the figure did not persist').toBe(300);
     expect(feb.is_own, 'the band was written as SHARED rather than to this org — ' +
-      'it would have changed every other organisation's deductions').toBe(true);
+      "it would have changed every other organisation's deductions").toBe(true);
 
     // The shared Maharashtra band must still be there underneath it. An org's
     // own row OVERRIDES the shared one; it never replaces it.
