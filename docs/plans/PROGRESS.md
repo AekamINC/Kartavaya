@@ -87,6 +87,52 @@ Unicode `fae87907` **9 and 0**. No probe rows written.
   minus Sundays, and re-deriving that in a browser would be the second
   convention that 0.17 was raised to end.
 
+### 4.2 Pahchan consent — and the bridge that has never written a row
+
+12 faces enrolled, **zero consents ever recorded against them**, and an employee
+who declined biometric attendance had no other way to be marked present. Both
+are real now: an employee reads what is captured, why, their own org's retention
+figure and how to withdraw, then agrees or declines; an admin sees the whole
+roster with photos-on-file beside each answer and records a declining
+employee's day straight into `manav_attendance`.
+
+`POST /consent/me` writes `method='self_acknowledged'` — a value migration 209's
+CHECK has always admitted and which `EmployeeConsentBody`'s
+`^(paper|verbal_witnessed)$` could **never** produce. No route could write it.
+And `GET /consent` lists rows that EXIST, which is zero, so it could not show
+the gap; the roster LEFT JOINs roster → enrolment → consent, so "2 photos, no
+answer" is a row somebody can look at.
+
+An opted-out caller is refused at `POST /punch/photo` **before**
+`storage.upload_file` — the face never reaches R2 — and `create_punch` drops the
+key while keeping the punch, because §2 is that nothing blocks a punch. No new
+flag, deliberately: `Punch.is_eligible` treats any flag with a NULL verdict as
+unpayable, so a flag would quietly make every opted-out day need a reviewer
+before it became pay.
+
+**🔴 THE FINDING THAT MATTERS MORE THAN THE FEATURE.**
+`attendance_bridge.MARKED_BY_BRIDGE = "pahchan"`;
+`manav_attendance_marked_by_check` admits only
+`('system','manual','biometric','geo')`. Every bridge write raises
+CheckViolation, so **biometric attendance has never reached payroll**. Live:
+**699 punches, 518 attendance rows, `marked_by='pahchan'` = 0.** Not fixed here
+— it is another file, and the fix is a choice (widen the CHECK, or change the
+constant) that has to agree with the publish upsert's `IS DISTINCT FROM` guard.
+It is why the opt-out row writes `'manual'`: the one value that guard protects.
+
+**And a correction to this ledger.** The cloud session's clock-in commit says
+`manav_employees.user_id` is NULL on every row, and the entry above repeated it.
+Live 2026-08-27: **5 of 109 carry one**. The web clock works for those accounts
+today. The gap is that almost nobody else has a login — which is 0.23 — not that
+the feature is dead.
+
+Withdrawal does not delete stored photographs (`purge_reference_photos` only
+reaches a terminated employee) and the copy says exactly that, with a test
+asserting the flattering sentence is absent. "Code-based" attendance is named in
+the enrolment refusal and does not exist; only manual does.
+
+🟡 until the first consent row exists — no write probe was run.
+
 ### 4.1 compliance settings, 4.4 storage browser — and the two faults wiring them found
 
 Both were "a table, a route and tests, and no caller". Neither turned out to be
