@@ -153,10 +153,16 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
             org_id, *wargs) or 0
         return {"tasks": tasks, "contacts": contacts, "revenue": float(revenue)}
     elif report_type == "revenue":
+        # The SAME guards as `revenue_trends` below, which is the on-screen
+        # tile this block exports to CSV and PDF. They are two renderings of
+        # one number: an export that disagrees with the chart it was taken
+        # from is worse than either being wrong alone, because the reader has
+        # no way to tell which one to believe.
         rows = await pool.fetch(
             "SELECT DATE_TRUNC('month', invoice_date) AS month, "
             "SUM(total) AS total, COUNT(*) AS count "
             "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
+            "AND COALESCE(doc_status, '') <> 'draft' "
             + ("AND invoice_date BETWEEN $2::date AND $3::date " if win else "")
             + "GROUP BY 1 ORDER BY 1 DESC LIMIT 12", org_id, *wargs)
         return {"monthly": [dict(r) for r in rows]}
@@ -330,11 +336,29 @@ async def revenue_trends(
     win = aw.parse(date_from, date_to)
     labels = aw.months_between(win) if win else _month_range(min(months, 12))
 
+    # The revenue half of this tile counted DRAFTS as revenue and the expense
+    # half four lines below did not — two figures on one chart, filtered
+    # differently, subtracted from each other to make `profit`. Measured live
+    # 2026-08-25: 102 draft invoices in the table, 87 of them inside this
+    # query's default one-year window, Rs 85,16,666.56 of revenue that nobody
+    # had been billed for.
+    #
+    # The guards are `analytics.py`'s client report VERBATIM — `is_active` plus
+    # the draft exclusion — because that report is the same money narrowed to
+    # one client, and a dashboard that disagrees with the client page about the
+    # same rows discredits both. `is_active` also matches the expense query's
+    # own shape; live there are zero soft-deleted invoices, so it is a no-op
+    # today and a guard for ever.
+    #
+    # `COALESCE(doc_status, '')` rather than a bare `<>`, the canonical form
+    # from `services/gst_period.py`: the column is nullable and NULL <> 'draft'
+    # is NULL, which would silently drop every row predating the column.
     invoiced = await pool.fetch(
         "SELECT TO_CHAR(invoice_date, 'YYYY-MM') AS month, "
         "SUM(total) AS invoiced, SUM(amount_paid) AS collected, COUNT(*) AS count "
         "FROM staging.ganit_invoices "
-        "WHERE org_id=$1::uuid AND "
+        "WHERE org_id=$1::uuid AND is_active=TRUE "
+        "AND COALESCE(doc_status, '') <> 'draft' AND "
         + ("invoice_date BETWEEN $2::date AND $3::date "
            if win else "invoice_date >= (CURRENT_DATE - INTERVAL '1 year') ")
         + "GROUP BY month ORDER BY month",

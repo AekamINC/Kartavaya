@@ -16,21 +16,32 @@ is closed). Analytics must keep that boundary, not become the side door:
 · test_metrics_pahchan.py pins both rules on the SQL the builders actually
   return.
 
-SCHEMA FACTS this file stands on — read from the applied migrations and the
-routers, NOT from a live probe (this session was forbidden live access; the
-mock-pool caveat applies, so probe these queries read-only via railway run
-before arming anything on top of them):
+SCHEMA FACTS this file stands on — re-read against the LIVE database on
+2026-08-25 (`railway run -e staging -s Kartavya`, READ ONLY transaction,
+information_schema plus SELECT … LIMIT 1 per column). The 2026-08-18 version
+of this header read the migration folder instead and got the central fact
+wrong; that is why the geofence metrics spent a release telling customers a
+number was impossible:
 
 · The applied attendance fact is **staging.manav_attendance** (migration 018):
   org_id, employee_id, date, check_in, check_out, work_hours, overtime_hours,
   marked_by ∈ system/manual/biometric/geo, and
-  status ∈ present/absent/half_day/late/on_leave/holiday/weekend.
-· The Pahchan-specific tables (pahchan_punches, pahchan_sites,
-  pahchan_policy) exist ONLY in migrations/PROSED-prefixed form —
-  migrations/PROPOSED_064_pahchan.sql — and a PROPOSED_ migration is not
-  schema. Everything that honestly needs them is declared `absent=` below
-  rather than approximated: proposal 62 §10, a stated absence over a
-  convincing zero.
+  status ∈ present/absent/half_day/late/on_leave/holiday/weekend. It carries
+  NO shift_id — confirmed absent from information_schema on 2026-08-25.
+· **The Pahchan tables ARE applied.** staging.pahchan_punches (699 rows),
+  staging.pahchan_sites (9 rows) and staging.pahchan_policy (2 rows) all
+  exist live, whatever the PROPOSED_ prefix on migrations/PROPOSED_064_pahchan.sql
+  still suggests — migration 193 ALTERs both tables, which it could not do
+  against a table that was never created. pahchan_punches carries lat, lng,
+  accuracy_m, distance_m, geofence_id, flags, source, captured_at,
+  received_at and synced_at; pahchan_sites carries lat, lng and radius_m;
+  pahchan_policy carries grace_minutes and shift_start_time. Read the schema,
+  never the migration ledger: an absence reason is a claim about the database
+  and expires the moment the database moves.
+· What stays `absent=` below stays for a reason that is NOT "the migration is
+  unapplied" — each surviving guard now names the column or the boundary that
+  actually blocks it. Proposal 62 §10 is a stated absence over a convincing
+  zero; it was never a licence to keep a stale one.
 · "Team" is **manav_employees.department** — free text, DEFAULT '' (018).
   Empty is labelled 'No department'. staging.manav_departments exists but the
   column has no FK into it, so it is never joined — the same trap as
@@ -247,11 +258,103 @@ def vetana_reconciliation(req: MetricRequest):
     )
 
 
+@metric(
+    key="pahchan.geofence_exceptions",
+    module="pahchan",
+    label="Geofence exceptions",
+    unit="count",
+    grain="flow",
+    description="Punches recorded outside their site's geofence, per bucket. "
+                "The headline counts the 'geo' flag the write path stamped at "
+                "capture — the verdict that was actually acted on, and the "
+                "only one a later edit to a site's radius cannot rewrite. "
+                "beyond_radius recomputes the same question against the "
+                "radius as it stands TODAY (distance_m > radius_m), so the "
+                "two disagreeing is itself the signal that a geofence moved "
+                "under recorded history. unresolved counts punches with no "
+                "site to measure against — judged as neither in nor out, "
+                "never folded into the exception count. A bucket with "
+                "punches and no exceptions is a true zero and is shipped; a "
+                "bucket with no punches returns no row.",
+)
+def geofence_exceptions(req: MetricRequest):
+    # captured_at, never received_at (07 §4): a punch captured 09:41 and
+    # synced 11:38 is a 09:41 punch. Truncated in IST, not the session's UTC —
+    # a 04:00 IST punch is 22:30 UTC the PREVIOUS day, so a UTC bucket would
+    # file an early shift under the wrong day, week and month. Same expression
+    # bounds the window, so the end date is whole rather than cut at midnight
+    # UTC.
+    local = "(p.captured_at AT TIME ZONE 'Asia/Kolkata')"
+    period = bucket_expr(req.bucket, local)
+    return (
+        f"SELECT {period} AS period, "
+        "COUNT(*) FILTER (WHERE 'geo' = ANY(p.flags)) AS value, "
+        "COUNT(*) AS punches, "
+        "COUNT(*) FILTER (WHERE p.distance_m > s.radius_m) AS beyond_radius, "
+        "COUNT(*) FILTER (WHERE p.geofence_id IS NULL) AS unresolved, "
+        "MAX(p.distance_m)::float AS max_distance_m "
+        "FROM staging.pahchan_punches p "
+        # LEFT, not inner: a punch whose site was deleted must still be
+        # counted and must still show in `unresolved` — an inner join would
+        # delete the exception along with the site.
+        "LEFT JOIN staging.pahchan_sites s ON s.id = p.geofence_id "
+        "WHERE p.org_id = $1::uuid "
+        f"AND {local}::date BETWEEN $2::date AND $3::date "
+        "GROUP BY 1 ORDER BY 1",
+        [req.org_id, req.window.start, req.window.end],
+    )
+
+
+@metric(
+    key="pahchan.offline_reconciliation",
+    module="pahchan",
+    label="Offline punches reconciled in buffer",
+    unit="count",
+    grain="flow",
+    description="Of the punches captured offline in each bucket, how many "
+                "reached the server inside the 72-hour buffer — measured as "
+                "received_at - captured_at, an interval between two absolute "
+                "instants and so immune to any timezone question. late_sync "
+                "is the remainder: captured, but delivered after the buffer "
+                "had closed. Only buckets that actually held an offline "
+                "punch are returned — a bucket of purely live punches has "
+                "nothing to reconcile, and '0 reconciled' there would read "
+                "as a failure rather than as an absence of the case.",
+)
+def offline_reconciliation(req: MetricRequest):
+    # 72 hours is a product constant, not a policy column: pahchan_policy
+    # carries retention and grace but no buffer field (live column list,
+    # 2026-08-25). It is written once here so a future policy column has one
+    # place to replace.
+    local = "(p.captured_at AT TIME ZONE 'Asia/Kolkata')"
+    period = bucket_expr(req.bucket, local)
+    offline = "p.source = 'offline'"
+    inside = "p.received_at - p.captured_at <= INTERVAL '72 hours'"
+    return (
+        f"SELECT {period} AS period, "
+        f"COUNT(*) FILTER (WHERE {offline} AND {inside}) AS value, "
+        f"COUNT(*) FILTER (WHERE {offline}) AS offline_punches, "
+        f"COUNT(*) FILTER (WHERE {offline} AND NOT ({inside})) AS late_sync, "
+        "MAX(EXTRACT(EPOCH FROM (p.received_at - p.captured_at)) / 3600.0)"
+        f" FILTER (WHERE {offline})::float AS max_lag_hours "
+        "FROM staging.pahchan_punches p "
+        "WHERE p.org_id = $1::uuid "
+        f"AND {local}::date BETWEEN $2::date AND $3::date "
+        "GROUP BY 1 "
+        f"HAVING COUNT(*) FILTER (WHERE {offline}) > 0 "
+        "ORDER BY 1",
+        [req.org_id, req.window.start, req.window.end],
+    )
+
+
 # ── Declared absent — the applied schema cannot answer these honestly ────────
-# Proposal 62 §10: a stated absence, never a convincing zero. Each reason
-# names the unapplied migration or missing column, verified against
-# backend/migrations on 2026-08-18. Closing them is applying PROPOSED_064
-# (an owner decision on a shared production database), not a query.
+# Proposal 62 §10: a stated absence, never a convincing zero. Both reasons
+# below were re-verified against the LIVE database on 2026-08-25 and both were
+# REWRITTEN: their previous text rested on "PROPOSED_064_pahchan.sql is not
+# applied", which is false — the tables are live. An absence reason is a claim
+# about the database, so it carries the date it was checked and it is checked
+# again before it is believed. Neither of these is closed by a migration; one
+# needs a column nothing has written, the other needs a DPDP decision.
 
 absent_metric(
     key="pahchan.attendance_by_shift",
@@ -259,14 +362,18 @@ absent_metric(
     label="Attendance % by shift",
     unit="pct",
     grain="flow",
-    absent="The attendance fact carries no shift: staging.manav_attendance "
-           "(018) has no shift_id; manav_employees.shift is free text "
-           "defaulting to 'general' with no FK into "
-           "staging.manav_shift_definitions (027); and joining a same-day "
-           "staging.manav_schedules row would silently drop every attendance "
-           "day the optional scheduler never covered — a convincing partial "
-           "answer. The Pahchan shift model lives only in "
-           "migrations/PROPOSED_064_pahchan.sql, which is not applied.",
+    absent="Nothing records which shift a day was worked on. Verified live "
+           "2026-08-25: staging.manav_attendance has no shift_id column, and "
+           "staging.pahchan_punches has no shift column either; "
+           "manav_employees.shift is free text defaulting to 'general' with "
+           "no FK into staging.manav_shift_definitions (027, 12 rows live); "
+           "and joining a same-day staging.manav_schedules row would silently "
+           "drop every attendance day the optional scheduler never covered — "
+           "a convincing partial answer. staging.pahchan_policy IS applied "
+           "and does carry shift_start_time, but it holds ONE shift per org, "
+           "so it yields a single bucket rather than a shift dimension. "
+           "Closing this needs a shift stamped on the attendance or punch "
+           "row at the time it is written, not a query.",
 )
 
 absent_metric(
@@ -275,41 +382,15 @@ absent_metric(
     label="Late arrivals vs shift policy",
     unit="count",
     grain="flow",
-    absent="'Late against the shift policy' needs a policy: grace minutes "
-           "exist only on staging.pahchan_policy in "
-           "migrations/PROPOSED_064_pahchan.sql (not applied); "
-           "staging.manav_shift_definitions (027) carries start_time but no "
-           "grace and nothing links an attendance row to a shift; and "
-           "manav_attendance.status = 'late' is the marking path's verdict, "
-           "not a measurement against any policy — counting it would answer "
-           "a different question under this metric's name.",
-)
-
-absent_metric(
-    key="pahchan.geofence_exceptions",
-    module="pahchan",
-    label="Geofence exceptions",
-    unit="count",
-    grain="flow",
-    absent="Geofence data does not exist in the applied schema: "
-           "staging.pahchan_punches (lat/lng, distance_m, geofence_id, "
-           "flags) and staging.pahchan_sites are declared only in "
-           "migrations/PROPOSED_064_pahchan.sql, which is not applied. "
-           "manav_attendance.location is an untyped JSONB defaulting to "
-           "'{}' with no site or radius to measure against.",
-)
-
-absent_metric(
-    key="pahchan.offline_reconciliation",
-    module="pahchan",
-    label="Offline punches reconciled in buffer",
-    unit="count",
-    grain="flow",
-    absent="Offline punches and the 72-hour buffer live on "
-           "staging.pahchan_punches (source = 'offline', captured_at versus "
-           "received_at, synced_at) — declared only in "
-           "migrations/PROPOSED_064_pahchan.sql, which is not applied. The "
-           "applied manav_attendance rows carry marked_by but no "
-           "capture-versus-receipt timeline, so 'reconciled inside the "
-           "buffer' cannot be measured.",
+    absent="The policy now exists — verified live 2026-08-25, "
+           "staging.pahchan_policy carries grace_minutes and shift_start_time "
+           "on every row — but an ARRIVAL does not. An arrival is the first "
+           "'in' punch of a person's day, and isolating it needs a per-person "
+           "grouping that the DPDP boundary at the top of this file forbids "
+           "outright; counting late PUNCHES instead would score somebody who "
+           "punches in three times as three late arrivals, which is a "
+           "different question under this metric's name. "
+           "manav_attendance.status = 'late' is likewise the marking path's "
+           "own verdict, not a measurement against any policy. This is an "
+           "owner decision about the DPDP boundary, not a schema gap.",
 )

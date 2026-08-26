@@ -8,6 +8,118 @@ Format: `YYYY-MM-DD · <phase/area> · <what changed> · <evidence> · <verified
 
 ---
 
+## 2026-08-26
+
+Seven parallel agents, partitioned by file so no two shared one. Every live
+figure below is a read-only `SELECT`; **no write-probe touched the shared
+database** and the vendor/holiday counters were re-read afterwards to prove it.
+
+### Phase 1 — the six write-paths
+
+- `phase-1.2` · Vendor MSME + TDS enterable. Proved live first: all six columns
+  exist on `staging.ganit_vendors`, nullable, with all three CHECKs present in
+  **`pg_constraint`** (not merely in migration 175 — an inline CHECK on
+  `ADD COLUMN IF NOT EXISTS` is skipped whole when the column exists), and
+  **0 of 80** vendors carried any. The plan lists five columns; the live schema
+  has a **sixth, `vendor_kind`**, which the 43B(h) skill explicitly tests
+  ("not traders") — wired too, or the trader exclusion could never fire.
+  Update uses `model_fields_set` (the pattern `billing.py:1187` documents) so a
+  value entered by mistake can be cleared back to NULL; blank → NULL, never `''`
+  (fails the CHECK) and never `0` (0 days is a real answer) · `ganit.py`,
+  `VendorsTab.jsx`, `ganit.css` · `test_vendor_msme_fields.py` **19 passed**.
+- `phase-1.3` · `cost_price` snapshotted onto each line at write time. Lines are
+  **JSONB array elements, not rows** — `vikray_order_items`/`ganit_invoice_items`
+  do not exist, so **no migration**. One helper `apply_line_costs`
+  (`vikray.py:278`), one org-scoped batch lookup, imported by `ganit.py`. Copy,
+  never join: `update_order`/`update_invoice` replace all lines, so an existing
+  cost is carried forward or an old order would silently re-price at today's
+  cost. Key OMITTED when unresolvable — never `0`, which reads as 100% margin.
+  `InvoiceForm.jsx` never set `product_id` at all, so the invoice half was dead
+  on arrival; fixed. Costs are internal — any client-sent value is discarded ·
+  `test_line_cost_snapshot.py` **19 passed**.
+- `phase-1.4` · Expense → client tagging. **The backend was already complete** —
+  `contact_id` was in the model, the INSERT and the PATCH loop, and the list
+  already returned `contact_name`; the entire gap was one missing key in the
+  form's `BLANK`. Labelled "Client contact", not "Client": the column stores
+  `graha_contacts.id`, a PERSON, and a heading saying "Client" would promise a
+  company link the table cannot make · `ExpensesTab.jsx` · **7 passed**, proven
+  to fail without the fix (2 of 7 red when the key is removed).
+- `phase-1.5` · Employee `state`, numeric GST code (`'27'`). The convention is
+  load-bearing: `pay_professional_tax.state_code` is numeric, so an alphabetic
+  employee state would join to nothing and **silently compute zero PT for
+  everybody**. Codelist imported from `client_register.py`, never copied.
+  **Migration 220 APPLIED 26 Aug** — catalogue-only, 98 rows, 0 backfilled;
+  column + CHECK verified live in `pg_constraint` afterwards.
+  **The department FK was deliberately left out**: an FK skips NULL but not
+  `''`, and 12 rows hold `''` plus 1 orphan `'Labour'` — 13 of 98 would violate
+  it, so passing needs UPDATEs to live personnel rows. Independently re-verified
+  (98/86/12/0-null, 30 depts, 3 inactive, 0 dup groups, 1 orphan). A unique
+  index is blocked separately: `delete_department` is a SOFT delete, so plain
+  UNIQUE turns delete-then-re-add into a 500, and a partial index cannot back an
+  FK · `manav.py`, `EmployeesTab.jsx`, `220_employee_state.sql`.
+- `phase-1.6` · Holiday `state_code` — **the column already existed** (migration
+  175, widened by 180), so no migration. `list_holidays` never SELECTed it, so
+  a written value was invisible. Also rewrote `attendance_auto_mark.py`, which
+  is what the acceptance criterion actually turns on: it marked EVERY active
+  employee org-wide. NULL holiday state = everywhere; NULL employee state =
+  still marked ("nobody has said" must never silently un-mark someone) ·
+  `HolidaysTab.jsx` · `test_employee_state_and_regional_holidays.py` **41 passed**.
+  Fixed `test_cron_column_names.py`, whose column set had been lying about
+  `state_code` since 175 landed.
+
+### Phase 2 — the six correctness fixes
+
+- `phase-2.1` · Payroll no longer pays leavers · `vetana.py:1221` `NOT EXISTS`
+  on `manav_offboarding`, mirroring `analytics/metrics/manav.py:79`. Live
+  dry-read: org `64e7bea6` 60 → 51 paid. The tenth leaver (last working day
+  2026-08-03) is **correctly still paid**, pro-rated — the guard is not
+  over-broad. `list_structures` deliberately NOT filtered: hiding a leaver's
+  structure from HR is data-hiding, not a fix.
+- `phase-2.2` · PT reads the slab table · `vetana.py:746`. ⚠ **Owner decision
+  26 Aug: fall back to ₹0, per the plan.** All 9 slab rows belong to ONE org
+  (`045b76ad`); the two orgs that actually run payroll have none, so on deploy
+  every payslip's PT goes 200 → 0 until Phase 0.24 seeds slabs into those orgs.
+- `phase-2.3` · The two billing INSERTs can execute · `client_billing.py`.
+  Verifying the whole column list rather than the one the plan named turned up a
+  **second** bug: `balance_due` is NOT NULL DEFAULT 0, so the invoice would be
+  born reading as fully paid — ₹0 on the customer's pay link. Same defect
+  `vikray.py:683` already paid for.
+- `phase-2.4` · Drafts excluded from 4 surfaces · `documents.py:307,852`,
+  `dristi.py:354,161`. **The plan's premise was wrong in a useful way:** the
+  statement was not printing ₹1.16 cr of drafts — it bound ISO date *strings*
+  into `$3::date` and 500'd, so it never rendered at all. Seven bindings fixed
+  with the repo's own `::text::date` pattern. The export twin was fixed too, or
+  the tile and its own CSV would have disagreed — which is the criterion.
+- `phase-2.5` · Cross-tenant leak closed · `client_billing.py:220`. The plan
+  named 2 id-alone joins; there were **7**. AST ratchet added. 0 rows had leaked.
+- `phase-2.6` · Pahchan absence guards deleted · `analytics/metrics/pahchan.py`.
+  All five columns proved live on `staging.pahchan_punches` and **populated**
+  (699 punches). The guards' own test *required* the stale
+  `PROPOSED_064_pahchan.sql` string — it was pinning the lie in place, and is
+  now inverted. Two other guards were left ABSENT with honest reasons:
+  `attendance_by_shift` has no `shift_id` anywhere (confirmed live), and
+  `late_arrivals` is blocked by the **DPDP pin**, not by schema.
+
+### Gate
+
+Clean-HEAD baseline in a detached worktree at `119cad66`: **27 failed, 13,853
+passed**. Three agents independently reproduced the same 27. Every failure in
+this session's runs is one of those 27 or a transient mid-write state of a file
+another agent was editing — **this work adds none**. The 27 are pre-existing:
+`test_org_settings_amendable` ×11, `test_billing_lines_wiring` ×6, and the
+`kray`-in-`SENSITIVE_MODULES` gating family (`middleware/subscription.py:66`
+declares five, its test asserts four — a module wired into gating without its
+tests). `npm run build` + all nine `npm run check` ratchets green.
+
+### Owed, and NOT faked
+
+Every Phase-1 acceptance is "a row moves off 0", which needs a real create
+through the UI on the shared database. None was done, so **every 1.x row stays
+🟡** per the ✅ rule. Also newly found and NOT fixed: the project report is dead
+on `staging.time_entries` (exists only in `public`); `dristi.py` `/overview` and
+the pivot dashboard still count drafts and the pivot has the same date-bind bug;
+`analytics/metrics/vetana.py:240` counts the same ten leavers.
+
 ## 2026-08-25
 
 - `phase-1.1` · `salesperson_id` wired on invoice + order, create + update, with

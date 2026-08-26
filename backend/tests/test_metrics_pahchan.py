@@ -124,19 +124,32 @@ def test_pahchan_passes_the_registry_walk_it_will_join():
             assert dim in dsql, (key, dim)
 
 
-def test_absent_reasons_name_the_unapplied_migration():
+def test_absent_reasons_may_not_rest_on_an_applied_migration():
+    """This test used to REQUIRE every absence reason to name
+    PROPOSED_064_pahchan.sql — and so it pinned a stale fact in place for a
+    release. The tables that migration declares are applied: a READ ONLY probe
+    of the live database on 2026-08-25 found staging.pahchan_punches (699
+    rows, with lat, lng, distance_m, geofence_id and flags all populated on
+    every row), staging.pahchan_sites (9) and staging.pahchan_policy (2).
+
+    So the assertion is inverted. Two metrics moved out of the absent set and
+    compute; the two that remain are blocked by a missing WRITE (no shift is
+    stamped on any attendance or punch row) and by the DPDP boundary at the
+    top of the module — neither of which a migration closes. No pahchan
+    absence may lean on that migration again."""
     assert ABSENT_KEYS == [
         "pahchan.attendance_by_shift",
-        "pahchan.geofence_exceptions",
         "pahchan.late_arrivals",
-        "pahchan.offline_reconciliation",
     ]
     for key in ABSENT_KEYS:
         m = REGISTRY[key]
         assert m.sql is None
         assert len(m.absent) > 60, key
-        assert "PROPOSED_064_pahchan.sql" in m.absent, (
-            f"{key}: the reason must name the unapplied migration"
+        assert "PROPOSED_064" not in m.absent, (
+            f"{key}: those tables are live — this reason is stale"
+        )
+        assert "not applied" not in m.absent, (
+            f"{key}: an absence may not be justified by an unapplied migration"
         )
 
 

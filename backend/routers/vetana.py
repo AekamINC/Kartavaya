@@ -30,6 +30,13 @@ from services.audit import emit as audit
 # multiplying a rate by a SUM here. See services/commission.py.
 from services import commission as C
 from services.niyam.subjects import payroll_published, payslip_disbursed
+# THE state codelist, not a second copy of it. '27', 27, 'MH', 'mh' and
+# 'Maharashtra' collapse onto one canonical numeric code, which is what makes
+# an employee's state comparable to a `pay_professional_tax` slab row when the
+# two were written in different conventions. `routers/manav.py:51` and
+# `services/skills/action/attendance_auto_mark.py` import the same helper for
+# the same reason — see `_state_keys`.
+from services.skills.data.client_register import _norm_state
 from services.pii import decrypt_bank, mask_bank, mask_tail
 from utils import next_doc_number
 
@@ -480,17 +487,208 @@ def _flag(structure: dict, name: str) -> tuple:
     return bool(raw), False
 
 
+# ── PROFESSIONAL TAX IS A STATE LEVY, AND THIS FILE USED TO CHARGE ONE RATE ──
+#
+# `pt = 200 if pt_on and gross > 15000 else 0` charged every employee in the
+# country the same ₹200 — including states that levy nothing at all. Measured
+# read-only on the live database 2026-08-25: 1,105 of 1,112 payslips carry
+# exactly 200.00 and the other 7 carry 0.00, which is that one line and nothing
+# else. Meanwhile `staging.pay_professional_tax` holds a real nine-row slab
+# ladder that NOTHING in the product reads.
+#
+# THE SLAB TABLE, AS IT ACTUALLY IS (measured, not guessed):
+#
+#   id              integer  NOT NULL  serial
+#   state_code      varchar  NOT NULL  the NUMERIC GST code — '24','27','29'
+#   state_name      text     NOT NULL  'Gujarat','Maharashtra','Karnataka'
+#   slab_from       numeric  NOT NULL  inclusive lower bound of the gross band
+#   slab_to         numeric  NULL      inclusive upper bound; NULL = open-ended
+#   monthly_tax     numeric  NOT NULL  what the band charges per month
+#   effective_from  date     NULL      DEFAULT '2024-04-01'
+#   org_id          uuid     NULL      IT IS PER-ORG SEED DATA, NOT A SHARED
+#                                      REFERENCE SET — all nine live rows belong
+#                                      to one org, so an org that has not seeded
+#                                      it has no slabs rather than a national
+#                                      default.
+#
+# NOTHING HERE BLOCKS A RUN, which is the same rule the statutory switches
+# above follow. No state, no slab, no match, an unreadable figure — every one
+# of those yields ZERO professional tax and the run continues. Deducting a tax
+# nobody can justify is the fault being fixed; refusing to pay somebody because
+# a slab is missing would be a worse one.
+
+#: The employee column that names a state, most-preferred first.
+#: `migrations/220_employee_state.sql` adds `manav_employees.state` (Phase 1.5)
+#: and its COMMENT settles the convention: the NUMERIC GST code, '27', the same
+#: form `pay_professional_tax.state_code` holds. `state_code` is admitted second
+#: only because `manav_holidays` took that spelling in migration 175/180 and
+#: this is not the file to lose a payroll run over which name won.
+#:
+#: ⚠ 220 IS NOT APPLIED. Confirmed read-only against the live database
+#: 2026-08-25: `manav_employees` carries neither column, only an `address`
+#: jsonb. Until it is applied, `_employee_state_column` returns None, the slab
+#: table is never read, and professional tax is exactly what it was.
+#:
+#: THIS TUPLE IS THE ALLOWLIST. The column name is interpolated into SQL, so it
+#: may only ever be one of these AND must have been confirmed by the server's
+#: own catalogue first. No runtime value reaches it.
+_PT_STATE_COLUMNS = ("state", "state_code")
+
+
+async def _employee_state_column(pool) -> str | None:
+    """Which column on `manav_employees` names the state, or None if none does.
+
+    Asked of the catalogue rather than assumed, for the reason the
+    `statutory_treatment` probe below is: code deploys here before migrations
+    are applied, and a payroll run that 500s on an unknown column would be
+    exactly the blocking the owner ruled out. While the answer is None the
+    slab table is not consulted at all and professional tax is computed exactly
+    as it was before this change — the deploy is a no-op until Phase 1.5 lands.
+    """
+    name = await pool.fetchval(
+        "SELECT column_name FROM information_schema.columns "
+        " WHERE table_schema = 'staging' AND table_name = 'manav_employees' "
+        "   AND column_name = ANY($1::text[]) "
+        " ORDER BY array_position($1::text[], column_name) "
+        " LIMIT 1",
+        list(_PT_STATE_COLUMNS))
+    # Belt and braces over the allowlist: the value is interpolated into SQL.
+    return name if name in _PT_STATE_COLUMNS else None
+
+
+async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
+    """This org's professional-tax ladder as it stood at `as_at`.
+
+    Scoped to the org because the table is — every row carries an `org_id` and
+    an unscoped read would charge one firm another firm's rates. Rows with a
+    future `effective_from` are excluded so re-running an old month uses the
+    rates that applied to it; a NULL `effective_from` is admitted because the
+    column is nullable and a slab nobody dated is still the slab they entered.
+
+    Returns a LIST, and an empty one is a real answer meaning "this org has
+    seeded no slabs". It is never None — see `_compute_statutory` for why that
+    distinction carries the whole behaviour.
+    """
+    return list(await pool.fetch(
+        "SELECT state_code, state_name, slab_from, slab_to, monthly_tax, "
+        "       effective_from "
+        "  FROM staging.pay_professional_tax "
+        " WHERE org_id = $1::uuid "
+        "   AND (effective_from IS NULL OR effective_from <= $2::date) "
+        " ORDER BY state_code, slab_from",
+        org_id, as_at))
+
+
+def _state_keys(*values) -> set:
+    """Every spelling of a state these values could match on.
+
+    THE CODELIST IS NOT RE-TYPED HERE. `_norm_state` collapses '27', 27, 'MH',
+    'mh' and 'Maharashtra' onto one canonical numeric code, and it is imported
+    for exactly the reason `routers/manav.py:51` gives for importing it: a
+    second copy is a second thing to drift.
+
+    Both sides of the match go through it because this database holds TWO
+    incompatible state conventions and migration 180's header records the
+    decision to accept both rather than pick. `pay_professional_tax.state_code`
+    is numeric ('27'), and `manav_employees_state_ck` (migration 220) still
+    admits the alphabetic form so an importer cannot be refused — so an
+    employee stored as 'MH' and a slab stored as '27' must still meet.
+    Comparing the raw strings would silently never match, and a professional-tax
+    lookup that never matches charges everybody nothing.
+
+    The raw lower-cased text is kept alongside the canonical code, so a state
+    the GST codelist has never heard of still matches a slab row spelled the
+    same way rather than matching nothing at all.
+    """
+    keys = set()
+    for value in values:
+        text = str(value if value is not None else "").strip().lower()
+        if not text:
+            continue
+        keys.add(text)
+        canonical = _norm_state(value)
+        if canonical:
+            keys.add(canonical)
+    return keys
+
+
+def _pt_from_slabs(slabs, state, gross: float) -> tuple:
+    """(monthly professional tax, the slab it came from) — or (0.0, None).
+
+    ZERO IS THE ANSWER TO EVERY QUESTION THIS CANNOT ANSWER: no state on the
+    employee, no slab for that state, a gross that falls in no band, a figure
+    that will not read as a number. None of them raises, because a payroll run
+    must not stop for a missing rate.
+
+    Where more than one band matches — two generations of the ladder both dated
+    in the past — the most recently effective wins, then the most specific
+    (highest `slab_from`).
+    """
+    keys = _state_keys(state)
+    if not keys or not slabs:
+        return 0.0, None
+
+    best = None
+    for row in slabs:
+        try:
+            if not keys & _state_keys(row["state_code"], row["state_name"]):
+                continue
+            low = float(row["slab_from"] if row["slab_from"] is not None else 0)
+            high = row["slab_to"]
+            if gross < low:
+                continue
+            if high is not None and gross > float(high):
+                continue
+            rank = (row["effective_from"] or date.min, low)
+            if best is None or rank > best[0]:
+                best = (rank, row)
+        except (KeyError, TypeError, ValueError):
+            # An unreadable slab row — or one missing a column entirely — is
+            # skipped, not fatal. See above. Reading every field the caller
+            # will later need INSIDE this block is deliberate: it means the row
+            # this function returns is known to carry all of them.
+            continue
+
+    if best is None:
+        return 0.0, None
+    row = best[1]
+    try:
+        return round(float(row["monthly_tax"]), 2), row
+    except (KeyError, TypeError, ValueError):
+        return 0.0, None
+
+
 def _compute_statutory(basic_payable: float, gross: float, structure: dict,
-                       commission: float = 0.0, bonus: float = 0.0):
+                       commission: float = 0.0, bonus: float = 0.0,
+                       pt_slabs=None, employee_state=None):
     """PF, ESI, PT and TDS — WHETHER each is computed, and on WHAT BASE.
 
-    NO RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED. PF at 12%
-    capped at ₹1,800, ESI at 0.75% and 3.25% under the ₹21,000 ceiling, PT at
-    ₹200 over ₹15,000, the ₹50,000 standard deduction and both slab tables are
+    NO PF, ESI OR TDS RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED.
+    PF at 12% capped at ₹1,800, ESI at 0.75% and 3.25% under the ₹21,000
+    ceiling, the ₹50,000 standard deduction and both income-tax slab tables are
     law and are exactly as they were. What is new is (a) TDS can be switched
     off, which it could not be before, and (b) commission and bonus can be
     included in the PF and ESI bases, per four independent flags, because a
     firm treats the two components differently and the product must not decide.
+
+    ── PROFESSIONAL TAX, AND THE ONE THING `pt_slabs` MEANS ─────────────────
+
+    `pt_slabs=None` and `pt_slabs=[]` ARE DIFFERENT ANSWERS and the difference
+    is the whole behaviour:
+
+      None  the slab table was NOT CONSULTED, because nothing on the employee
+            says which state they work in — `manav_employees` has no state
+            column until Phase 1.5 adds one. The flat ₹200-over-₹15,000 rule
+            that this file has always applied is kept, so deploying this change
+            before 1.5 alters not one payslip.
+      []    the slab table WAS consulted and this org has seeded no slabs, or
+            none that match. Professional tax is ZERO. `pay_professional_tax`
+            is per-org seed data, so "no slabs" is a real and common state and
+            the owner still owes roughly twenty states of it (Phase 0.24).
+
+    A caller that consults the table therefore gets a rate that differs by
+    state — Gujarat, Maharashtra and Karnataka all charge differently at the
+    same gross on the live ladder — and gets ZERO wherever the ladder is silent.
 
     PT AND TDS STILL COMPUTE ON THE FIXED SALARY. Widening those two bases was
     not asked for and is not done unasked; it is stated as owed in migration
@@ -539,7 +737,17 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
     esi_emp = esi_base * 0.0075 if esi_on and esi_base <= 21000 else 0
     esi_emr = esi_base * 0.0325 if esi_on and esi_base <= 21000 else 0
 
-    pt = 200 if pt_on and gross > 15000 else 0
+    # PROFESSIONAL TAX — from the state's slab where one can be read, and from
+    # the pre-slab flat rule only where the slab table was never consulted.
+    # See the `pt_slabs` paragraph above: None is "not asked", [] is "asked and
+    # there is nothing", and only the first keeps the flat rate.
+    pt_slab = None
+    if pt_slabs is None:
+        pt = 200 if pt_on and gross > 15000 else 0
+    elif pt_on:
+        pt, pt_slab = _pt_from_slabs(pt_slabs, employee_state, gross)
+    else:
+        pt = 0
 
     # Simplified TDS: estimate annual taxable, divide by 12
     annual_taxable = max(gross * 12 - 50000, 0)  # standard deduction
@@ -598,6 +806,23 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
             "esi_base": round(esi_base, 2),
             "commission": round(commission, 2),
             "bonus": round(bonus, 2),
+            # WHICH RULE PRODUCED THE PROFESSIONAL TAX, and off what state.
+            # "flat" is the pre-slab ₹200 rule and means nothing on the
+            # employee said which state they work in; "slab" means the state's
+            # own ladder was read, and `pt_state` plus the band say which row.
+            # A PT figure is disputed by an employee and audited by a state
+            # authority, and "why ₹150?" must be answerable from the payslip.
+            "pt_basis": "flat" if pt_slabs is None else "slab",
+            "pt_state": (str(employee_state) if employee_state else None),
+            "pt_slab": ({
+                "state_code": str(pt_slab["state_code"]),
+                "state_name": str(pt_slab["state_name"]),
+                "slab_from": float(pt_slab["slab_from"] or 0),
+                "slab_to": (None if pt_slab["slab_to"] is None
+                            else float(pt_slab["slab_to"])),
+                "effective_from": (None if pt_slab["effective_from"] is None
+                                   else str(pt_slab["effective_from"])),
+            } if pt_slab is not None else None),
             # Flags nobody has answered, read at the default stated in
             # _FLAG_WHEN_UNSET. Recorded rather than hidden: "nobody had said"
             # and "the firm said yes" are different facts about a deduction.
@@ -893,13 +1118,19 @@ async def process_payroll(
     # what is due, which is the owner's instruction and standard practice —
     # there is no next month to carry a balance into.
     #
-    # Nothing sets this yet. `process_payroll` selects structures joined on
-    # `e.is_active=TRUE`, so an offboarded employee is excluded from the monthly
-    # run entirely, and **no full-and-final settlement path exists anywhere in
-    # the codebase** (searched: settlement, fnf, final_settlement — no hits;
-    # `manav.py:626` only flips `is_active` and `status`). The flag is threaded
-    # through here so that feature has the recovery rule it needs already
-    # written and tested, rather than reimplementing it and diverging.
+    # Nothing sets this yet, and **no full-and-final settlement path exists
+    # anywhere in the codebase** (searched: settlement, fnf, final_settlement —
+    # no hits; `manav.py:626` only flips `is_active` and `status`). The flag is
+    # threaded through here so that feature has the recovery rule it needs
+    # already written and tested, rather than reimplementing it and diverging.
+    #
+    # THIS NOTE USED TO SAY that `e.is_active=TRUE` excluded an offboarded
+    # employee from the monthly run "entirely". IT DID NOT, and believing it is
+    # how payroll came to pay leavers: `is_active` is a flag somebody has to
+    # remember to clear, and ten live employees with a past last working day
+    # still carried it. The structures query below now excludes them on the
+    # EXIT DATE, which is a fact somebody recorded rather than a flag somebody
+    # forgot. Someone who leaves mid-month is still paid, pro-rated.
     final_settlement = bool(getattr(body, "final_settlement", False))
 
     month = body.month  # YYYY-MM
@@ -932,21 +1163,82 @@ async def process_payroll(
         )
         run_id = run_row["id"]
 
+    # WHICH COLUMN NAMES THE EMPLOYEE'S STATE — asked, not assumed, ONCE per
+    # run, and the answer decides whether professional tax is read from the
+    # slab table at all. See `_employee_state_column` and `_PT_STATE_COLUMNS`.
+    state_col = await _employee_state_column(pool)
+    if not state_col:
+        logging.warning(
+            "vetana: manav_employees carries no state column (migration 220 "
+            "not applied?) — professional tax for %s falls back to the flat "
+            "200-over-15000 rule for every employee instead of the state's "
+            "slab. staging.pay_professional_tax is not read.", month)
+
     # `e.user_id` comes along because commission attributes to a LOGIN
     # (ganit_invoices.salesperson_id) while the scheme is recorded against an
     # EMPLOYEE, and `_variable_earnings` needs both ends of that bridge. It is
     # read here rather than in a second per-employee query for the same reason
     # the structures are: one round trip per run, not one per person.
+    #
+    # ── PAYROLL DOES NOT PAY PEOPLE WHO HAVE ALREADY LEFT ────────────────────
+    #
+    # `e.is_active=TRUE` was the only guard, and it is not one. Measured
+    # read-only on the live database 2026-08-25: TEN employees hold a
+    # non-cancelled `manav_offboarding` row whose `last_working_day` is in the
+    # past AND are still `is_active` — and all ten carry an active salary
+    # structure, so every monthly run wrote them a payslip. `is_active` is a
+    # flag somebody has to remember to clear; the exit date is a fact somebody
+    # already recorded.
+    #
+    # THE SHAPE IS THE HR PATH'S, NOT A NEW ONE.
+    # `analytics/metrics/manav.py:_headcount_asat` (:65-84) reconstructs who was
+    # on the rolls at a date as
+    #
+    #     e.is_active = TRUE OR EXISTS (
+    #         SELECT 1 FROM staging.manav_offboarding x
+    #          WHERE x.org_id = e.org_id AND x.employee_id = e.id
+    #            AND x.status <> 'cancelled'
+    #            AND x.last_working_day > <date>)
+    #
+    # i.e. still here, or holding a live exit dated after the date in question.
+    # Payroll needs the same fact at the START of the month it is paying, so
+    # this is that predicate negated: keep `is_active`, and drop anyone whose
+    # live exit is dated BEFORE the month began. Same table, same org+employee
+    # scoping (there is no composite FK — that predicate is the only thing
+    # stopping another org's exit row naming this org's employee), same
+    # `status <> 'cancelled'` — which is the vocabulary migration 083's CHECK
+    # defines and the same predicate its `one_live_per_employee` unique index
+    # uses, so a mistaken exit that was cancelled and redone still gets paid.
+    #
+    # NULL `last_working_day` KEEPS SOMEBODY IN THE RUN. The column is nullable
+    # (083), `NULL < date` is NULL, and NOT EXISTS therefore admits them. An
+    # exit that has been started but not dated is not evidence that a person
+    # has gone, and payroll must not stop paying somebody on a guess.
+    #
+    # Somebody who leaves DURING the month is still paid, and pro-rated by the
+    # attendance arithmetic below exactly as they were before. Only a last
+    # working day strictly before `month_start` removes a person from the run.
     structures = await pool.fetch(
         "SELECT s.*, e.user_id AS employee_user_id, "
-        "       NULLIF(btrim(COALESCE(e.department, '')), '') AS employee_department "
-        "FROM staging.vetana_salary_structures s "
+        "       NULLIF(btrim(COALESCE(e.department, '')), '') AS employee_department"
+        + (f", NULLIF(btrim(COALESCE(e.{state_col}::text, '')), '') AS employee_state "
+           if state_col else " ")
+        + "FROM staging.vetana_salary_structures s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id AND e.is_active=TRUE "
         "WHERE s.org_id=$1::uuid AND s.is_active=TRUE "
         "AND s.effective_from <= $2 "
+        "AND NOT EXISTS ("
+        "  SELECT 1 FROM staging.manav_offboarding x "
+        "  WHERE x.org_id = e.org_id AND x.employee_id = e.id "
+        "  AND x.status <> 'cancelled' "
+        "  AND x.last_working_day < $3::date) "
         "ORDER BY s.employee_id, s.effective_from DESC",
-        org_id, month_end,
+        org_id, month_end, month_start,
     )
+
+    # THE SLAB TABLE, READ ONCE PER RUN. `None` is not `[]` here and the
+    # difference decides the arithmetic — see `_compute_statutory`.
+    pt_slabs = await _pt_slabs(pool, org_id, month_end) if state_col else None
 
     seen_employees = set()
     unique_structures = []
@@ -1096,9 +1388,18 @@ async def process_payroll(
         # combined number could not express that. With every switch unset — the
         # state of every structure in the database today — the figures below
         # are identical to what payroll produced before commission existed.
+        #
+        # `employee_state` is read off the row ONLY when the run consulted the
+        # slab table, because that is exactly when the column was selected.
+        # Tying the two to the same `pt_slabs is not None` test means the two
+        # can never disagree and a KeyError can never reach a payroll run.
         stat = _compute_statutory(basic_pay, gross_fixed, dict(s),
                                   commission=commission_total,
-                                  bonus=bonus_total)
+                                  bonus=bonus_total,
+                                  pt_slabs=pt_slabs,
+                                  employee_state=(s["employee_state"]
+                                                  if pt_slabs is not None
+                                                  else None))
         # WHICH TREATMENT THIS PAYSLIP WAS COMPUTED UNDER, frozen onto the
         # payslip below. A payslip is filed, disputed and audited years later,
         # and somebody ticking a checkbox in March must not silently restate

@@ -275,6 +275,45 @@ async def download_statement_pdf(
     if isinstance(contact.get("billing_address"), str):
         contact["billing_address"] = json.loads(contact["billing_address"] or "{}")
 
+    # ── WHY EVERY QUERY BELOW EXCLUDES DRAFTS ────────────────────────────────
+    # A draft invoice is a document that has NOT been issued to anybody. This
+    # statement is the one document in the product that goes TO the customer
+    # and asks them for money, so a draft printed here dunned a client for a
+    # sum they were never billed. Measured live 2026-08-25 across the whole
+    # table: 79 draft rows, Rs 1,16,41,312.46, all of them `tax_invoice`.
+    #
+    # `COALESCE(doc_status, '')` and not `doc_status <> 'draft'` — the canonical
+    # form from `services/gst_period.py`. The column is nullable and
+    # NULL <> 'draft' is NULL, which would drop every invoice predating the
+    # column: the same bug pointed the other way. Live today there are zero
+    # NULL rows, so the two forms agree on every existing row and the COALESCE
+    # is the guard for the ones that do not exist yet.
+    #
+    # It goes on ALL FIVE reads, not only the entry list, because a statement
+    # has to tie. Excluding a draft from the debits while its payment stayed a
+    # credit would show the client a credit balance they do not hold — live
+    # there are 2 such payments on the statement path, Rs 2,07,090. Removing
+    # the document removes its whole ledger footprint or it removes nothing.
+    _NOT_DRAFT = "AND COALESCE(doc_status, '') <> 'draft' "
+    _NOT_DRAFT_I = "AND COALESCE(i.doc_status, '') <> 'draft' "
+
+    # ── AND WHY EVERY DATE IS CAST TWICE: `$3::text::date` ───────────────────
+    # `period_start` and `period_end` arrive as ISO STRINGS off the query
+    # string. A bare `$3::date` makes Postgres infer the parameter as `date`,
+    # and asyncpg then refuses the bind outright:
+    #
+    #   DataError: invalid input for query argument $3: '2026-01-01'
+    #              ('str' object has no attribute 'toordinal')
+    #
+    # So this route raised on its FIRST query and had never rendered a
+    # statement at all — measured live 2026-08-25 against the query as it then
+    # stood. The draft leak below it was real but unreachable, which is exactly
+    # why a filter fix alone could not be demonstrated.
+    #
+    # `::text::date` makes the parameter infer as `text` and casts server-side,
+    # which is what `_tally_rows`, `_build_gstr1` and every query in
+    # `services/gst_period.py` already do. Nothing about the comparison changes.
+
     # Opening balance: invoices raised less payments received, both strictly
     # before the window. Cancelled invoices are excluded — a cancelled tax
     # document is not a receivable.
@@ -282,20 +321,24 @@ async def download_statement_pdf(
         "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
         "AND cancelled_at IS NULL AND invoice_type IN ('tax_invoice','debit_note') "
-        "AND invoice_date < $3::date",
+        + _NOT_DRAFT +
+        "AND invoice_date < $3::text::date",
         org_id, str(contact_id), period_start,
     ) or 0
     opening_credited = await pool.fetchval(
         "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
         "AND cancelled_at IS NULL AND invoice_type = 'credit_note' "
-        "AND invoice_date < $3::date",
+        + _NOT_DRAFT +
+        "AND invoice_date < $3::text::date",
         org_id, str(contact_id), period_start,
     ) or 0
     opening_paid = await pool.fetchval(
         "SELECT COALESCE(SUM(p.amount), 0) FROM staging.ganit_payments p "
         "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
-        "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid AND p.payment_date < $3::date",
+        "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid "
+        + _NOT_DRAFT_I +
+        "AND p.payment_date < $3::text::date",
         org_id, str(contact_id), period_start,
     ) or 0
     opening = float(opening_invoiced) - float(opening_credited) - float(opening_paid)
@@ -304,7 +347,9 @@ async def download_statement_pdf(
         "SELECT invoice_number, invoice_type, invoice_date, due_date, total, "
         "balance_due, notes FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
-        "AND cancelled_at IS NULL AND invoice_date BETWEEN $3::date AND $4::date "
+        "AND cancelled_at IS NULL "
+        + _NOT_DRAFT +
+        "AND invoice_date BETWEEN $3::text::date AND $4::text::date "
         "ORDER BY invoice_date, invoice_number",
         org_id, str(contact_id), period_start, period_end,
     )
@@ -313,7 +358,8 @@ async def download_statement_pdf(
         "i.invoice_number FROM staging.ganit_payments p "
         "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
         "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid "
-        "AND p.payment_date BETWEEN $3::date AND $4::date "
+        + _NOT_DRAFT_I +
+        "AND p.payment_date BETWEEN $3::text::date AND $4::text::date "
         "ORDER BY p.payment_date",
         org_id, str(contact_id), period_start, period_end,
     )
@@ -801,7 +847,7 @@ async def download_project_report_pdf(
         "SELECT COALESCE(SUM(t.minutes), 0) FROM staging.time_entries t "
         "JOIN public.tasks k ON k.task_id = t.task_id "
         "WHERE t.org_id=$1::uuid AND k.board_id=$2 "
-        "AND t.started_at >= $3::date AND t.started_at < ($4::date + 1)",
+        "AND t.started_at >= $3::text::date AND t.started_at < ($4::text::date + 1)",
         org_id, board_id, period_start, period_end,
     ) or 0
     hours = round(float(minutes) / 60, 1)
@@ -816,11 +862,17 @@ async def download_project_report_pdf(
         )
         if contact_row:
             client = dict(contact_row)
+            # Drafts excluded, and dated with the double cast, for the two
+            # reasons written out in `download_statement_pdf` above: this is a
+            # CLIENT-FACING measure ("Fee invoiced to date", printed beside the
+            # planned fee), and the same 79 rows / Rs 1,16,41,312.46 matched
+            # this predicate live on 2026-08-25.
             fee_invoiced = float(await pool.fetchval(
                 "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
                 "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
                 "AND cancelled_at IS NULL AND invoice_type='tax_invoice' "
-                "AND invoice_date <= $3::date",
+                "AND COALESCE(doc_status, '') <> 'draft' "
+                "AND invoice_date <= $3::text::date",
                 org_id, body.client_contact_id, period_end,
             ) or 0)
 

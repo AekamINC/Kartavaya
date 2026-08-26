@@ -101,4 +101,26 @@ waits for Phase 1.5. 2.3 is the prerequisite for anything in Phase 3.
 
 ## Progress
 
-_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._
+**All six coded 2026-08-26.** Detail and evidence in `PROGRESS.md`.
+
+- **2.1 ✅ code** — `vetana.py:1221`, mirrors `analytics/metrics/manav.py:79`.
+  Live dry-read 60 → 51 paid; the leaver whose last day is 2026-08-03 is
+  correctly still paid, pro-rated.
+- **2.2 ✅ mechanism** — `vetana.py:746`. ⚠ Owner chose "fall back to ₹0".
+  All 9 slabs belong to one org; the two payroll-running orgs have none, so PT
+  goes 200 → 0 on deploy until Phase 0.24 seeds them. Not a bug — a sequencing
+  requirement.
+- **2.3 ✅ code** — `gst_rate` dropped, `invoice_number` allocated, and a
+  SECOND bug the plan missed: `balance_due` unbound would have made every such
+  invoice read as fully paid (₹0 on the pay link).
+- **2.4 ✅ code, premise corrected** — the statement was not printing drafts; it
+  was 500ing on a date bind and had never rendered. Fixed both, plus the export
+  twin (or the tile would disagree with its own CSV) and the project report.
+- **2.5 ✅ done** — 7 id-alone joins, not the 2 named. AST ratchet added.
+- **2.6 ✅ done** — columns proved live AND populated (699 punches). The guard's
+  own test was pinning the stale claim; inverted.
+
+Newly found, NOT fixed: the project report is dead on `staging.time_entries`
+(exists only in `public`); `dristi.py` `/overview` and the pivot dashboard still
+count drafts, and the pivot carries the same date-bind bug;
+`analytics/metrics/vetana.py:240` counts the same ten leavers.

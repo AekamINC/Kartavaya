@@ -19,6 +19,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_any_module
 from services.billing_cycle import next_anchor, period_end_for
+from utils import next_doc_number
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,15 @@ async def list_profiles(
     q = (
         "SELECT p.*, c.name AS client_name "
         "FROM staging.client_billing_profiles p "
-        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        # `AND c.org_id = p.org_id` is not belt-and-braces. A join on the id
+        # ALONE is the documented cross-tenant leak shape in this repo: the
+        # profile row is scoped by `p.org_id = $1`, but the client NAME it
+        # carries is whatever row that uuid points at, in any organisation.
+        # Every join to graha_clients in this file now carries the org
+        # predicate; `create_profile` closes the other half by refusing to
+        # store another org's client_id in the first place.
+        "JOIN staging.graha_clients c "
+        "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE p.org_id = $1::uuid"
     )
     params: list = [org_id]
@@ -176,7 +185,8 @@ async def get_profile(
     row = await pool.fetchrow(
         "SELECT p.*, c.name AS client_name "
         "FROM staging.client_billing_profiles p "
-        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        "JOIN staging.graha_clients c "
+        "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE p.id = $1::uuid AND p.org_id = $2::uuid",
         profile_id, org_id,
     )
@@ -193,6 +203,27 @@ async def create_profile(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # THE PARENT IS CHECKED BEFORE IT IS STORED — the same shape the three
+    # sibling creators in this file already use (`create_service_line`,
+    # `create_metered_usage`, `create_rate_card`): read the parent row
+    # `WHERE id = $1 AND org_id = $2`, and 404 when it is not this org's.
+    #
+    # Without it `client_id` was written from the request body unverified, so
+    # any org could bind a profile to another org's company — and
+    # `list_profiles` then joined `graha_clients` on the id alone and rendered
+    # that company's NAME back. The duplicate check below cannot stand in for
+    # it: it is scoped `WHERE org_id = $1`, so a foreign client_id matches
+    # nothing there and falls straight through to the INSERT.
+    #
+    # It runs BEFORE the 409 deliberately: a client this org cannot see is not
+    # found, whatever else is true of it.
+    client = await pool.fetchrow(
+        "SELECT id FROM staging.graha_clients "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        body.client_id, org_id,
+    )
+    if not client:
+        raise HTTPException(404, "Client not found")
     existing = await pool.fetchval(
         "SELECT id FROM staging.client_billing_profiles "
         "WHERE org_id = $1::uuid AND client_id = $2::uuid",
@@ -259,7 +290,8 @@ async def list_service_lines(
         "SELECT sl.*, p.client_id, c.name AS client_name "
         "FROM staging.client_service_lines sl "
         "JOIN staging.client_billing_profiles p ON p.id = sl.profile_id "
-        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        "JOIN staging.graha_clients c "
+        "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE sl.org_id = $1::uuid"
     )
     params: list = [org_id]
@@ -353,7 +385,13 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
         "       c.name AS client_name "
         "FROM staging.client_service_lines sl "
         "JOIN staging.client_billing_profiles p ON p.id = sl.profile_id "
-        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        # This sweep runs for EVERY org at once (the cron has no org), so
+        # `p.org_id` is the only anchor there is — and that makes the org
+        # predicate load-bearing rather than defensive: without it the name
+        # that lands in the invoice's `notes` and in the cron's log line is
+        # whichever org's client shares that uuid.
+        "JOIN staging.graha_clients c "
+        "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE sl.auto_invoice = TRUE "
         "  AND sl.period_start <= $1::date "
         "  AND (sl.period_end IS NULL OR sl.period_end > $1::date)",
@@ -388,27 +426,54 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
 
         amount = float(sl["amount"])
         is_igst = sl["gst_treatment"] in ("overseas", "sez")
+        # A LOCAL, NOT A COLUMN. `staging.ganit_invoices` has no `gst_rate`
+        # and never has (54 columns live, checked 2026-08-25); naming it in
+        # the column list is why this INSERT raised UndefinedColumnError on
+        # every call it has ever received. The rate belongs on the LINE in
+        # this schema — `line_items[].gst_rate`, which is where ganit.py puts
+        # it and where pay.py reads it — and this sweep writes no lines yet.
         gst_rate = 18
         gst_amount = round(amount * gst_rate / 100, 2)
         total = round(amount + gst_amount, 2)
         due_date = today + __import__("datetime").timedelta(days=sl["payment_terms_days"])
+
+        # THE SERIAL IS DRAWN LAST, after every skip above has had its chance.
+        # `next_doc_number` is the only allocator (utils.py) and it burns a
+        # number the moment it returns; a refusal after this line leaves a
+        # permanent gap in the invoice sequence, which is the thing a tax
+        # auditor asks about.
+        #
+        # `str(...)`, not the raw asyncpg UUID: the allocator keys its advisory
+        # lock on `hash((org_id, table))`, and a UUID object and its string
+        # hash differently — a caller passing the other type would take a
+        # DIFFERENT lock and not be serialised against ganit.py or vikray.py,
+        # which both pass the str. Called outside the transaction below because
+        # it acquires a connection of its own.
+        invoice_number = await next_doc_number(
+            pool, str(sl["org_id"]), "ganit_invoices", "invoice_number", "INV")
 
         invoice_id = uuid4()
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     "INSERT INTO staging.ganit_invoices "
-                    "(id, org_id, client_id, billing_profile_id, "
-                    " invoice_date, due_date, subtotal, gst_rate, "
-                    " cgst, sgst, igst, total, payment_status, "
+                    "(id, org_id, client_id, billing_profile_id, invoice_number, "
+                    " invoice_date, due_date, subtotal, "
+                    " cgst, sgst, igst, total, balance_due, payment_status, "
                     " notes, created_by, is_igst) "
-                    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, "
-                    "        $5::date, $6::date, $7, $8, "
-                    "        $9, $10, $11, $12, 'unpaid', "
+                    # $12 is bound twice — `total` and `balance_due` — the same
+                    # convention ganit.py and vikray.py use. `balance_due`
+                    # DEFAULTS to 0, so omitting it mints an invoice that reads
+                    # as FULLY PAID against a non-zero total: invisible in
+                    # receivables and ageing, ₹0 on the customer's payment link,
+                    # and un-editable because editing is bounded by payment.
+                    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, "
+                    "        $6::date, $7::date, $8, "
+                    "        $9, $10, $11, $12, $12, 'unpaid', "
                     "        $13, 'system', $14)",
                     str(invoice_id), sl["org_id"], sl["client_id"],
-                    sl["profile_id"],
-                    today, due_date, amount, gst_rate,
+                    sl["profile_id"], invoice_number,
+                    today, due_date, amount,
                     0 if is_igst else round(gst_amount / 2, 2),
                     0 if is_igst else round(gst_amount / 2, 2),
                     gst_amount if is_igst else 0,
@@ -446,7 +511,8 @@ async def list_metered_usage(
         "SELECT u.*, p.client_id, c.name AS client_name "
         "FROM staging.client_metered_usage u "
         "JOIN staging.client_billing_profiles p ON p.id = u.profile_id "
-        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        "JOIN staging.graha_clients c "
+        "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE u.org_id = $1::uuid"
     )
     params: list = [org_id]
@@ -572,7 +638,8 @@ async def generate_usage_invoice(
     profile = await pool.fetchrow(
         "SELECT p.*, c.name AS client_name "
         "FROM staging.client_billing_profiles p "
-        "JOIN staging.graha_clients c ON c.id = p.client_id "
+        "JOIN staging.graha_clients c "
+        "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE p.id = $1::uuid AND p.org_id = $2::uuid",
         body.profile_id, org_id,
     )
@@ -614,11 +681,19 @@ async def generate_usage_invoice(
 
     subtotal = round(subtotal, 2)
     is_igst = profile["gst_treatment"] in ("overseas", "sez")
+    # A LOCAL, NOT A COLUMN — see the sweep above. `ganit_invoices.gst_rate`
+    # does not exist, and naming it here is why this route 500'd on every call.
     gst_rate = 18
     gst_amount = round(subtotal * gst_rate / 100, 2)
     total = round(subtotal + gst_amount, 2)
     today = date.today()
     due_date = today + __import__("datetime").timedelta(days=profile["payment_terms_days"])
+
+    # After both refusals above (unknown profile, nothing unbilled) and before
+    # the transaction: a serial spent on a call that then fails is a gap in the
+    # sequence, and `next_doc_number` acquires its own connection.
+    invoice_number = await next_doc_number(
+        pool, org_id, "ganit_invoices", "invoice_number", "INV")
 
     invoice_id = uuid4()
     usage_ids = [u["id"] for u in usage_rows]
@@ -628,17 +703,19 @@ async def generate_usage_invoice(
         async with conn.transaction():
             await conn.execute(
                 "INSERT INTO staging.ganit_invoices "
-                "(id, org_id, client_id, billing_profile_id, "
-                " invoice_date, due_date, line_items, subtotal, gst_rate, "
-                " cgst, sgst, igst, total, payment_status, "
+                "(id, org_id, client_id, billing_profile_id, invoice_number, "
+                " invoice_date, due_date, line_items, subtotal, "
+                " cgst, sgst, igst, total, balance_due, payment_status, "
                 " notes, created_by, is_igst) "
-                "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, "
-                "        $5::date, $6::date, $7::jsonb, $8, $9, "
-                "        $10, $11, $12, $13, 'unpaid', "
+                # $13 twice: total and balance_due. See the sweep's note — the
+                # column DEFAULTS to 0 and an omitted one reads as fully paid.
+                "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, "
+                "        $6::date, $7::date, $8::jsonb, $9, "
+                "        $10, $11, $12, $13, $13, 'unpaid', "
                 "        $14, $15, $16)",
                 str(invoice_id), org_id, profile["client_id"],
-                profile["id"],
-                today, due_date, json.dumps(line_items), subtotal, gst_rate,
+                profile["id"], invoice_number,
+                today, due_date, json.dumps(line_items), subtotal,
                 0 if is_igst else round(gst_amount / 2, 2),
                 0 if is_igst else round(gst_amount / 2, 2),
                 gst_amount if is_igst else 0,
@@ -659,6 +736,10 @@ async def generate_usage_invoice(
     )
     return {
         "invoice_id": str(invoice_id),
+        # Additive. The serial is the only handle a firm can quote to its
+        # customer or find the document by; every other invoice-creating route
+        # returns it, and this one had none to return.
+        "invoice_number": invoice_number,
         "entries": len(usage_rows),
         "subtotal": subtotal,
         "total": total,
@@ -906,7 +987,8 @@ async def payment_ageing(
             "SELECT i.id, i.total, i.amount_paid, i.due_date, "
             "       c.id AS party_id, c.name AS party_name "
             "FROM staging.ganit_invoices i "
-            "JOIN staging.graha_clients c ON c.id = i.client_id "
+            "JOIN staging.graha_clients c "
+            "  ON c.id = i.client_id AND c.org_id = i.org_id "
             "WHERE i.org_id = $1::uuid AND i.payment_status != 'paid'",
             org_id,
         )
