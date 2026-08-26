@@ -20,6 +20,16 @@
  *    `localStorage.setItem` while the dock opens, navigates and runs.
  *  · THE COUNT RECONCILES. Whatever the pill says, the four tab counts must
  *    add up to it — a number nobody can check is a number nobody should trust.
+ *  · A DUE DATE IS READ, NEVER COMPUTED, and an obligation with no recorded
+ *    due day is listed WITHOUT one rather than dropped or guessed. The
+ *    `authority` values are the live column's own spelling, because the one
+ *    that was tidied — `incometax` for `income_tax` — dropped 22 of the 45
+ *    rows off the Finance page and nothing errored.
+ *
+ * TWO CASES WERE DELETED FROM THIS FILE, NOT SKIPPED. Both asserted that the
+ * statute calendar was unreachable, which was true when they were written and
+ * is no longer. Each is replaced in place by the forward-facing rule it was
+ * standing in for, and the deletion is written up where it happened.
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -33,10 +43,13 @@ vi.mock('../../../lib/api', () => ({
 vi.mock('../../../lib/auth', () => ({ currentUser: () => ({ user_id: 'u1' }) }));
 
 import { api } from '../../../lib/api';
-import { pageModules, matchesPage, DUE_SOURCE } from '../../../lib/routeModules';
+import {
+  pageModules, matchesPage, DUE_SOURCE, DUE_AUTHORITIES,
+} from '../../../lib/routeModules';
 import {
   runCost, costLabel, runIntent, summariseOutput, skillsForPage,
   metricsForPage, automationsForPage, dockCount, buildLists, moduleGate,
+  dueForPage,
 } from '../dock/dockItems';
 import SkillDock from '../SkillDock';
 import { __resetDockCache } from '../dock/useDockData';
@@ -51,6 +64,45 @@ const tpl = (over = {}) => ({
   description: '', icon: 'star', estimated_credits: 0,
   steps: [dataStep('find_overdue_invoices')], ...over,
 });
+
+/* ── the statute fixtures ─────────────────────────────────────────────────
+   NOT INVENTED. Every field below is a live row of `staging.statute_calendar`
+   as `/v1/statute/due` projects it, read read-only on 2026-08-26:
+
+     income_tax  22 rows      gst  18      esic  4      epfo  1
+
+   Coupling the fixture to the real rows is the same discipline
+   `backend/tests/test_statute.py` uses when it parses migration 158 rather
+   than hand-writing a seed: a fixture written to agree with the renderer
+   passes green while the wire shape drifts underneath it. */
+const AS_OF = '2026-08-26';
+
+/** GSTR-3B: monthly, day 20 of the following month. A real deadline. */
+const GSTR3B = {
+  key: 'gst.return.gstr3b', title: 'GSTR-3B — summary return and payment',
+  authority: 'gst', cadence: 'monthly', due_on: '2026-09-20', days_away: 25,
+  as_of: AS_OF, basis: 'for August 2026 — day 20 of the following month',
+  form_number: null, notes: '', state_code: null,
+};
+
+/** PF: monthly, day 15 of the following month. Payroll's, not Finance's. */
+const EPF = {
+  key: 'epf.remittance', title: 'Provident fund contribution and ECR',
+  authority: 'epfo', cadence: 'monthly', due_on: '2026-09-15', days_away: 20,
+  as_of: AS_OF, basis: 'for August 2026 — day 15 of the following month',
+  form_number: null, notes: '', state_code: null,
+};
+
+/** One of the 22. In force, real, and with NO due day recorded — the Q4
+    statement falls on 31 May where the others fall on the 31st of the month
+    after the quarter, so migration 158 seeded `due_day` NULL rather than a
+    rule that is wrong four times a year. */
+const TDS_SALARY = {
+  key: 'tds.statement.salary', title: 'TDS statement — salary',
+  authority: 'income_tax', cadence: 'quarterly', due_on: null, days_away: null,
+  as_of: AS_OF, basis: 'the calendar records no due day for this obligation',
+  form_number: '138', notes: '', state_code: null,
+};
 
 /* ── the map ─────────────────────────────────────────────────────────────── */
 
@@ -110,12 +162,45 @@ describe('routeModules', () => {
     expect(matchesPage(pageModules('/ganit'), row)).toBe(false);
   });
 
-  it('has no statute source, and says so rather than guessing a due date', () => {
-    // `staging.statute_calendar` is read by services/statute.py and by nothing
-    // else; no router serves it. A due date computed in the browser would be
-    // a date read without its effective window, which is how you print last
-    // year's rule.
-    expect(DUE_SOURCE).toBeNull();
+  /* WHAT USED TO BE HERE, and why it is gone rather than skipped.
+
+     A case called `has no statute source, and says so rather than guessing a
+     due date` asserted `expect(DUE_SOURCE).toBeNull()`. It was true when it
+     was written — no router served `staging.statute_calendar` — but it was
+     written as an assertion about the DESIGN rather than about the state, and
+     so it survived into a test that could only ever fail on the day somebody
+     fixed the thing it was describing. Phase 4.5 calls that "a test pinning
+     the dead state shut". It is deleted, not skipped: a skipped test is the
+     same claim with the alarm switched off.
+
+     What replaces it is the same rule stated forwards — the browser still
+     computes no date; it reads one from a route that resolves the effective
+     window first. */
+  it('reads due dates from a route, and names the four authorities exactly',
+    () => {
+      expect(DUE_SOURCE).toBe('/v1/statute/due');
+      // THE ONE-TOKEN BUG, AS A CHECK. `/ganit` asked for `incometax` and the
+      // column has only ever held `income_tax`: 22 of the 45 live rows are
+      // income-tax rows and every one was dropped by the missing underscore,
+      // silently, because a filter matching nothing looks like a page with
+      // nothing on it. `routers/statute.py` allowlists the same four values
+      // and 422s anything else, so the spelling is now load-bearing twice.
+      expect(DUE_AUTHORITIES).toEqual(['gst', 'income_tax', 'epfo', 'esic']);
+      expect(pageModules('/ganit').authorities).toEqual(['gst', 'income_tax']);
+      expect(pageModules('/vetana').authorities).toEqual(['epfo', 'esic']);
+    });
+
+  it('claims no authority the live column does not hold', () => {
+    // The four values above are the live `SELECT DISTINCT authority` — read
+    // 2026-08-26: income_tax 22 rows, gst 18, esic 4, epfo 1. A page naming a
+    // fifth would be a tab that can never fill and never errors.
+    for (const path of ['/dashboard', '/tasks', '/ganit', '/graha', '/vikray',
+                        '/manav', '/vetana', '/pahchan', '/prachar', '/esign',
+                        '/sanvaad', '/dristi', '/reports', '/settings']) {
+      for (const a of pageModules(path).authorities) {
+        expect(DUE_AUTHORITIES).toContain(a);
+      }
+    }
   });
 });
 
@@ -343,6 +428,7 @@ describe('the count on the pill', () => {
               family: 'invoice', effective_mode: 'idle' }],
     ruleTemplates: [{ id: 'n1', name: 'Weekly reminder', event_type: 'invoice.overdue',
                       family: 'invoice' }],
+    due: [GSTR3B, EPF, TDS_SALARY],
   };
 
   it('is the sum of the four tabs, so the user can check it', () => {
@@ -351,10 +437,36 @@ describe('the count on the pill', () => {
     expect(lists.skills).toHaveLength(2);
     expect(lists.metrics).toHaveLength(2);
     expect(lists.automations).toHaveLength(2);
+    // Two of the three: the PF deposit is Payroll's, not Finance's. The Due
+    // tab is a real contributor to the pill now, so a page whose only
+    // applicable rows are statutory no longer shows a badge of zero.
+    expect(lists.due).toHaveLength(2);
     expect(dockCount(lists)).toBe(
       lists.skills.length + lists.metrics.length
       + lists.automations.length + lists.due.length);
-    expect(dockCount(lists)).toBe(6);
+    expect(dockCount(lists)).toBe(8);
+  });
+
+  it('gives a page that claims no authority no due rows at all', () => {
+    // `/graha` carries no `authorities`, and an unfiltered pass-through would
+    // put GST deadlines on the CRM page. `[]` is the correct answer and it is
+    // reached without reading the list.
+    expect(dueForPage(pageModules('/graha'), DATA.due)).toEqual([]);
+    expect(buildLists(pageModules('/graha'), DATA, {}).due).toEqual([]);
+  });
+
+  it('puts the payroll deposits on Payroll and the returns on Finance', () => {
+    expect(dueForPage(pageModules('/vetana'), DATA.due).map(d => d.key))
+      .toEqual(['epf.remittance']);
+    expect(dueForPage(pageModules('/ganit'), DATA.due).map(d => d.key))
+      .toEqual(['gst.return.gstr3b', 'tds.statement.salary']);
+  });
+
+  it('keeps an undated obligation in the list rather than dropping it', () => {
+    // If this ever filters on `due_on` the 22 income-tax rows vanish again,
+    // this time for a reason that reads like tidiness.
+    const out = dueForPage(pageModules('/ganit'), DATA.due);
+    expect(out.some(d => d.due_on === null)).toBe(true);
   });
 
   it('keeps a declared-absent metric, with its reason, never as a zero', () => {
@@ -384,7 +496,8 @@ function mount(path) {
 
 /** Everything the dock reads, answered. */
 function serve({ templates = [], orgSkills = [], metrics = [], rules = [],
-                 ruleTemplates = [], niyam403 = false } = {}) {
+                 ruleTemplates = [], due = [], dueAsOf = AS_OF,
+                 niyam403 = false, dueDown = false } = {}) {
   api.get.mockImplementation((path) => {
     if (path === '/v1/hub/org/skills') return Promise.resolve({ data: { data: orgSkills } });
     if (path === '/v1/hub/skills/templates') return Promise.resolve({ data: templates });
@@ -392,6 +505,13 @@ function serve({ templates = [], orgSkills = [], metrics = [], rules = [],
       return Promise.resolve({ data: { skill_functions: [], unimplemented: [] } });
     }
     if (path === '/v1/analytics/catalogue') return Promise.resolve({ data: { metrics } });
+    if (path === '/v1/statute/due') {
+      if (dueDown) return Promise.reject(new Error('502'));
+      // The envelope the router returns, not a bare list: `as_of` is what the
+      // countdowns were measured from and the pane prints it.
+      return Promise.resolve({ data: { as_of: dueAsOf, data: due,
+                                       count: due.length } });
+    }
     if (path.startsWith('/v1/niyam/')) {
       if (niyam403) return Promise.reject({ response: { status: 403 } });
       return Promise.resolve({ data: { rules, templates: ruleTemplates } });
@@ -499,16 +619,73 @@ describe('SkillDock', () => {
         .toBeTruthy();
     });
 
-  it('says the statute calendar is not served rather than inventing a due date',
+  /* WHAT USED TO BE HERE. A case called `says the statute calendar is not
+     served rather than inventing a due date` clicked to the Due tab and
+     asserted the words "statute calendar is not served". That sentence was
+     true and is now false — `routers/statute.py` serves it — so the test is
+     DELETED rather than skipped or reworded around the new behaviour, which is
+     what Phase 4.5 asks for in as many words. The four cases below are what a
+     served calendar has to prove instead. */
+
+  it('shows the dated obligation, with its date and not just a countdown',
     async () => {
-      // A date read without its effective window prints last year's rule, and
-      // no route serves `staging.statute_calendar` to the browser at all.
-      serve({});
+      serve({ due: [GSTR3B, TDS_SALARY] });
       mount('/ganit');
       fireEvent.click(screen.getByRole('button', { name: /quick actions/i }));
       fireEvent.click(await screen.findByRole('tab', { name: /Due/ }));
-      expect(await screen.findByText(/statute calendar is not served/i)).toBeTruthy();
+      expect(await screen.findByText('GSTR-3B — summary return and payment'))
+        .toBeTruthy();
+      // The ABSOLUTE date, never "in 25 days" alone. Matched loosely on the
+      // month because `en-IN` renders September as "Sept" and every other
+      // month with three letters — asserting the exact string would be
+      // testing CLDR's abbreviation table, not this pane.
+      expect(screen.getByText(/due 20 Sept? 2026/)).toBeTruthy();
+      // The countdown rides beside the date, never instead of it.
+      expect(screen.getByText('25d')).toBeTruthy();
+      // And the day it was all measured from, printed once.
+      expect(screen.getByText(/The law as it stood on 26 Aug 2026/)).toBeTruthy();
     });
+
+  it('lists an obligation with no recorded due day, and never dates it',
+    async () => {
+      // THE 22 ROWS, at the far end of the wire. Six of the income-tax rows in
+      // force carry due_day NULL, and the answer is to name the duty and admit
+      // the calendar has no day for it — not to drop it, and not to guess.
+      serve({ due: [GSTR3B, TDS_SALARY] });
+      mount('/ganit');
+      fireEvent.click(screen.getByRole('button', { name: /quick actions/i }));
+      fireEvent.click(await screen.findByRole('tab', { name: /Due/ }));
+      expect(await screen.findByText('TDS statement — salary')).toBeTruthy();
+      expect(screen.getByText(/no date recorded/)).toBeTruthy();
+      expect(screen.getByText(/records no due day/)).toBeTruthy();
+      // The column's spelling is `income_tax` and the filter matches on it
+      // exactly; the underscore is a database artefact and does not belong
+      // on a row a person reads.
+      expect(screen.getByText(/INCOME TAX/)).toBeTruthy();
+      expect(screen.queryByText(/INCOME_TAX/)).toBeNull();
+    });
+
+  it('does not put payroll deposits on the Finance page', async () => {
+    // `authorities` is what separates them: gst + income_tax for Finance,
+    // epfo + esic for Payroll. One list, filtered per page, no second fetch.
+    serve({ due: [GSTR3B, EPF, TDS_SALARY] });
+    mount('/ganit');
+    fireEvent.click(screen.getByRole('button', { name: /quick actions/i }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Due/ }));
+    await screen.findByText('GSTR-3B — summary return and payment');
+    expect(screen.queryByText('Provident fund contribution and ECR')).toBeNull();
+  });
+
+  it('says the calendar did not answer, never that nothing is due', async () => {
+    // The two sentences are opposite claims about a firm's own compliance.
+    // A read that failed must not surface as "nothing statutory falls here".
+    serve({ dueDown: true });
+    mount('/ganit');
+    fireEvent.click(screen.getByRole('button', { name: /quick actions/i }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Due/ }));
+    expect(await screen.findByText(/did not answer/i)).toBeTruthy();
+    expect(screen.queryByText(/Nothing statutory falls on this page/)).toBeNull();
+  });
 
   it('closes on Escape and hands focus back to the pill', async () => {
     serve({});

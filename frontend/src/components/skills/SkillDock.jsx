@@ -165,7 +165,7 @@ export default function SkillDock() {
   const lists = useMemo(() => buildLists(page, data, user),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [page, data.orgSkills, data.templates, data.caps, data.metrics,
-     data.rules, data.ruleTemplates]);
+     data.rules, data.ruleTemplates, data.due]);
 
   const counts = {
     skills: lists.skills.length,
@@ -358,7 +358,10 @@ export default function SkillDock() {
                   <AutomationsPane {...paneProps} automations={lists.automations}
                     restricted={data.niyamRestricted} />
                 )}
-                {tab === 'due' && <DuePane {...paneProps} due={lists.due} />}
+                {tab === 'due' && (
+                  <DuePane {...paneProps} due={lists.due}
+                    asOf={data.dueAsOf} unavailable={data.dueUnavailable} />
+                )}
               </>
             )}
           </div>

@@ -260,6 +260,11 @@
 .k-dock__dot[data-tone="auto"]    { background: var(--st-in-review); }
 .k-dock__dot[data-tone="autotpl"] { background: var(--outline); }
 .k-dock__dot[data-tone="due"]     { background: var(--danger); }
+/* An obligation the statute calendar records no day-of-month rule for. It is a
+   real duty and it is listed, but it is not a deadline and must not carry the
+   deadline's mark — the reader would take the missing date for a rendering gap
+   rather than for what it is. */
+.k-dock__dot[data-tone="undated"] { background: var(--outline); }
 
 .k-dock__rowmain { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
 .k-dock__rowname {
@@ -302,6 +307,18 @@
 }
 .k-dock__empty-t { font-size: var(--t-body-sm); color: var(--ink); font-weight: 500; }
 .k-dock__empty-b { font-size: var(--t-label); color: var(--ink-3); line-height: 1.5; }
+
+/* The date every countdown above was measured from. Printed once under the
+   list rather than on each row: the panel is 360px and a reference date
+   repeated eight times is the same fact eight times. */
+.k-dock__asof {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  border-top: 1px solid var(--rule-soft);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+}
 
 .k-dock__shim { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); }
 .k-dock__shim-row {

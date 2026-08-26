@@ -19,7 +19,11 @@
  *                                              the API already ships on every
  *                                              rule and template.
  *   due dates   `staging.statute_calendar`     keyed on `authority` (gst, epfo,
- *                                              esic, incometax …).
+ *                                              esic, income_tax). Four values,
+ *                                              spelled exactly as the column
+ *                                              holds them — see `authorities`
+ *                                              below, where a one-token
+ *                                              mis-spelling cost 22 rows.
  *
  * No two of those agree, and none of them is a route. `navConfig.ROUTE_META`
  * carries `module` for the nine gated module pages and nothing for core PM,
@@ -82,7 +86,15 @@ export const ROUTELESS_SKILL_MODULES = ['varta'];
  *   families   niyam `family` values to show here
  *   events     extra niyam `event_type` values, for the handful the family
  *              grouping puts on the wrong page (see `/pahchan`)
- *   authorities  `statute_calendar.authority` values (see DUE_SOURCE below)
+ *   authorities  `statute_calendar.authority` values (see DUE_SOURCE below).
+ *              THE COLUMN'S OWN SPELLING, never a tidied one: the four live
+ *              values are `gst`, `income_tax`, `epfo` and `esic`. This list
+ *              read `incometax` for six months, which is not a value that
+ *              table has ever held — 22 of the 45 rows are income-tax rows and
+ *              every one of them was dropped by that missing underscore.
+ *              `routers/statute.py` allowlists the same four, so the
+ *              mis-spelling would now be refused with a 422 rather than
+ *              quietly answering with a short list.
  *   note       an extra sentence for the empty state, where the page itself
  *              is the reason the tab is empty
  */
@@ -116,7 +128,7 @@ export const PAGE_MODULES = [
   // ── gated module pages ────────────────────────────────────────────────────
   { prefix: '/ganit', label: 'Finance', hi: 'गणित',
     skills: ['ganit'], metrics: ['ganit'], families: ['invoice'],
-    authorities: ['gst', 'incometax'] },
+    authorities: ['gst', 'income_tax'] },
   { prefix: '/graha', label: 'CRM', hi: 'ग्रह',
     skills: ['graha'], metrics: ['graha'], families: ['crm'] },
   { prefix: '/vikray', label: 'Sales', hi: 'विक्रय',
@@ -228,36 +240,55 @@ export function matchesPage(page, row) {
 }
 
 /**
- * WHERE DUE DATES WOULD COME FROM — and why the tab says so instead.
+ * WHERE DUE DATES COME FROM. One route, and the browser computes none of it.
  *
- * `staging.statute_calendar` (migrations 158 / 170 / 172, 45 rows) is read
- * ONLY by `backend/services/statute.py`, and that module is imported by nine
- * skill handlers and by nothing else. There is no HTTP route anywhere in
- * `backend/routers/` that serves it — verified by grep on 20 Aug 2026 — so the
- * frontend has no honest way to fill this tab today.
+ * `staging.statute_calendar` (migrations 158 / 170 / 172, 45 rows) used to be
+ * read ONLY by `backend/services/statute.py`, imported by nine skill handlers
+ * and by nothing else. No HTTP route served it, so this constant was `null`
+ * and the pane said so — for months, correctly.
  *
- * The tab is therefore built and wired to a source that is `null`, and it says
- * plainly that the calendar is not served yet. The alternative — computing
- * due dates in the browser from hard-coded due days — is the exact failure
- * proposal 72 names: "the statute table is dated law and a date read without
- * its window is how you print last year's rule". `as_of` is mandatory, the
- * `effective_from` / `effective_to` window is mandatory, and neither can be
- * honoured from a constant in a JavaScript file.
+ * `backend/routers/statute.py` now serves it, and `/v1/statute/due` is the
+ * projection this tab wants: every obligation IN FORCE on a date, with its
+ * next occurrence already computed from the row's own `due_day`,
+ * `due_month` and `due_month_offset`.
  *
- * TO WIRE IT: serve `services.statute.obligations(as_of=…)` filtered by
- * `authority`, set this to that path, and the pane below fills itself. The
- * `authorities` lists above are already written against the live values.
+ * THE ARITHMETIC IS DELIBERATELY NOT HERE. A due day looks like a constant and
+ * is not — every row carries `effective_from`/`effective_to`, and proposal 72
+ * states the failure exactly: "the statute table is dated law and a date read
+ * without its window is how you print last year's rule". The TDS forms were
+ * renumbered on 1 April 2026. A due day hard-coded in this file the week
+ * before would still be printing the old schedule, and it would have no window
+ * to check itself against. So the server resolves the version, projects the
+ * date, and this file holds a path.
+ *
+ * The server also refuses to project what it cannot: an obligation whose
+ * `due_day` is NULL arrives with `due_on: null` and the reason, and the pane
+ * renders it as an obligation without a date rather than dropping it or
+ * guessing one.
  */
-export const DUE_SOURCE = null;
+export const DUE_SOURCE = '/v1/statute/due';
 
 /**
- * The shape the Due pane renders, so the endpoint above has something to be
- * written against rather than a guess made twice.
+ * The shape the Due pane renders.
  *
  *   { key, title, authority, cadence, due_on, days_away, as_of, basis }
  *
  * `as_of` is echoed back per row deliberately: a countdown whose reference
- * date is invisible is a countdown nobody can check.
+ * date is invisible is a countdown nobody can check, and this list is read one
+ * row at a time in a 360px panel where an envelope field is off screen.
+ *
+ * `due_on` and `days_away` are NULLABLE and that is a real answer, not a gap —
+ * see `basis`, which says why. `form_number`, `notes` and `state_code` ride
+ * along on the wire as well; the pane shows the first two and the row shape
+ * above is what it is written against.
  */
 export const DUE_ROW_KEYS = ['key', 'title', 'authority', 'cadence',
                              'due_on', 'days_away', 'as_of', 'basis'];
+
+/**
+ * The four `authority` values the live table holds, for a caller that wants to
+ * ask for everything without naming them. Kept beside the page map so the two
+ * cannot drift: an entry above naming a value that is not in here is a filter
+ * that matches nothing, which is how `incometax` went unnoticed.
+ */
+export const DUE_AUTHORITIES = ['gst', 'income_tax', 'epfo', 'esic'];

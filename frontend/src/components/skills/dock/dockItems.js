@@ -312,6 +312,32 @@ export function automationsForPage(page, { rules, ruleTemplates }) {
 }
 
 /**
+ * The dated obligations that fall on this page.
+ *
+ * `/v1/statute/due` is fetched ONCE, unfiltered, and narrowed here — the same
+ * shape as the other three lists, so navigating between /ganit and /vetana
+ * costs a filter and not a request.
+ *
+ * NARROWED ON `authority`, WHICH IS THE COLUMN'S OWN SPELLING. `income_tax`,
+ * with the underscore. This filter read `incometax` until 2026-08-26 and that
+ * is not a value `staging.statute_calendar` has ever held: 22 of its 45 rows
+ * are income-tax rows and every one of them was silently dropped from the
+ * Finance page. Nothing errored, because a filter that matches nothing looks
+ * exactly like a page with nothing on it.
+ *
+ * NOTHING IS COMPUTED HERE. `due_on`, `days_away` and `basis` all arrive from
+ * the server, resolved against the row's `effective_from`/`effective_to`
+ * window. A row with `due_on: null` is an obligation the calendar records no
+ * day-of-month rule for; it is KEPT, because an obligation a firm has is worth
+ * naming even when its date is not recorded, and dropping it would be this
+ * screen deciding the firm has one fewer duty than it does.
+ */
+export function dueForPage(page, due) {
+  if (!page.authorities.length) return [];
+  return (due || []).filter(d => page.authorities.includes(d.authority));
+}
+
+/**
  * THE COUNT ON THE PILL.
  *
  * The sum of the four tabs, and nothing cleverer. That is deliberate: whatever
@@ -337,9 +363,7 @@ export function buildLists(page, data, user) {
     skills: skillsForPage(page, data, user),
     metrics: metricsForPage(page, data.metrics),
     automations: automationsForPage(page, data),
-    // The statute calendar has no HTTP surface. `routeModules.DUE_SOURCE`
-    // carries the whole explanation and the pane says it out loud.
-    due: [],
+    due: dueForPage(page, data.due),
   };
 }
 
