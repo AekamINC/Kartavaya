@@ -55,6 +55,7 @@ file.
 import logging
 from datetime import date, timedelta
 
+from services.on_the_rolls import still_on_the_rolls
 from services.statute import obligation
 from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, utc_now
@@ -281,7 +282,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
     no_pan_row = await obligation(pool, NO_PAN_KEY, as_of=as_at)
 
     rows = await pool.fetch(
-        """
+        f"""
         WITH structure AS (
             -- The structure the run would actually use: the latest active one.
             -- `updated_at DESC, id` breaks a tie on effective_from, which two
@@ -310,7 +311,14 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
                    NULLIF(btrim(e.esi_number), '') AS esi_number,
                    NULLIF(btrim(e.pan), '')        AS pan
             FROM staging.manav_employees e
+            -- STOCK. `as_at` above is TODAY and the whole handler is about a
+            -- deduction somebody is ABOUT TO MAKE on the next run, so the
+            -- population is who is on the rolls now. `is_active` alone does not
+            -- say that: a leaver keeps the flag on purpose until their exit is
+            -- settled (`services/on_the_rolls.py`), and E2E's roster read 83 on
+            -- the flag against 73 on the fact on 2026-08-26.
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
+              {still_on_the_rolls("e")}
         )
         SELECT 'pf_enabled_no_uan'::text AS check_code, e.name AS employee_name,
                e.employee_code, e.department, e.id AS employee_id,
@@ -354,7 +362,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
     # the seeded org returns zero PAN findings out of 59 employees who had tax
     # deducted, and "0 of 59" is a result while "0" alone reads as a skip.
     cov = await pool.fetchrow(
-        """
+        f"""
         WITH structure AS (
             SELECT DISTINCT ON (s.employee_id) s.employee_id, s.pf_enabled, s.esi_enabled
             FROM staging.vetana_salary_structures s
@@ -368,8 +376,13 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
             ORDER BY p.employee_id, p.month DESC, p.created_at DESC
         ),
         emp AS (
+            -- The SAME population as the findings query above, guard included.
+            -- These two numbers are printed against each other — "0 of 59" —
+            -- and a numerator drawn from one roster over a denominator drawn
+            -- from another is a worse answer than either number on its own.
             SELECT e.id FROM staging.manav_employees e
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
+              {still_on_the_rolls("e")}
         )
         SELECT (SELECT count(*) FROM emp) AS active_employees,
                (SELECT count(*) FROM emp e JOIN structure s ON s.employee_id = e.id
@@ -896,7 +909,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     # firm that has not started using attendance, and the LIMIT would then spend
     # itself entirely on one person's month.
     missing = await pool.fetch(
-        """
+        f"""
         WITH days AS (
             SELECT gs::date AS d
             FROM generate_series($2::date, $3::date, INTERVAL '1 day') gs
@@ -909,7 +922,9 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                     AND COALESCE(h.is_optional, FALSE) = FALSE)
         ),
         emp AS (
-            SELECT e.id, e.name, e.employee_code, e.email, e.phone,
+            -- `e.org_id` is carried out of the CTE only so the leaver guard
+            -- below has something to qualify; nothing selects it.
+            SELECT e.id, e.org_id, e.name, e.employee_code, e.email, e.phone,
                    COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                    e.date_of_joining
             FROM staging.manav_employees e
@@ -924,6 +939,22 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
         -- Somebody who joined mid-month is not absent for the days before they
         -- joined. A NULL joining date cannot exclude anything, so it does not.
         WHERE (e.date_of_joining IS NULL OR d.d >= e.date_of_joining)
+          -- And the same sentence backwards: somebody who left mid-month is not
+          -- absent for the days AFTER their last working day.
+          --
+          -- THE ANCHOR IS `d.d`, THE DAY UNDER TEST, AND NOT `CURRENT_DATE`.
+          -- This is a FLOW — what happened across a window — and the roster is
+          -- only how it is addressed, so a stock guard here would drop the
+          -- leaver whole and take their real exceptions with them. Measured
+          -- read-only over August 2026 in E2E Test & Associates: ten people who
+          -- had left produced 180 missing-day rows on the unguarded query. Bound
+          -- per day it is 1 — a working day one of them genuinely had no
+          -- attendance row for BEFORE they left, which is a finding. At
+          -- CURRENT_DATE it would be 0, and that surviving day is exactly the
+          -- history the module docstring warns about rewriting.
+          --
+          -- A NULL `last_working_day` still excludes nothing, on both sides.
+          {still_on_the_rolls("e", "d.d")}
           AND NOT EXISTS (
               SELECT 1 FROM staging.manav_attendance a
               WHERE a.org_id = $1::uuid AND a.employee_id = e.id AND a.date = d.d)
@@ -963,6 +994,23 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     # (d) Approved leave beyond the balance on record, for the calendar year the
     # window sits in. `manav_leave_balances` has one row per (employee, leave
     # type, year) and NO is_active column, so there is nothing to filter on.
+    #
+    # NO LEAVER GUARD HERE, DELIBERATELY, AND THIS IS THE ONE EMPLOYEE READ IN
+    # THIS FILE THAT KEEPS `is_active` ALONE. It is a FLOW: days taken in the
+    # months somebody worked, which do not un-happen on their last working day.
+    # More than that, an overdraw is money owed BACK to the employer and is
+    # recovered at full-and-final — the same class of money as the salary advance
+    # whose loss (`routers/manav.py:1958`) is the whole reason a leaver keeps the
+    # flag until settlement. Guarding this would hide the overdraw from the one
+    # person who can still act on it. Five of E2E's ten departed-but-flagged
+    # employees have exits still open ('initiated', 'in_clearance') as at
+    # 2026-08-26; nought of the ten had an overdraw, so this is a decision about
+    # the next one, not about a row on the page today.
+    #
+    # The bound that makes it safe is already in the SQL: `start_date` inside the
+    # calendar year, and no leave request in E2E extends past its owner's last
+    # working day. `tests/test_seat_and_skill_rosters_exclude_leavers.py` asserts
+    # this query stays bare, so "finishing the job" here turns the suite red.
     over_leave = await pool.fetch(
         """
         WITH taken AS (

@@ -1234,7 +1234,15 @@ async def record_payment(
     # the time of writing E2E holds one such payment against CN-2026-0148.
     # Refused rather than silently absorbed, because the credit note is not the
     # document the money belongs to.
-    if str(inv["invoice_type"] or "") == "credit_note":
+    # `dict(inv).get(...)`, not `inv[...]`. asyncpg Records raise KeyError on a
+    # column the SELECT did not return, and this handler is reached by callers
+    # (and tests) that hand it a row built elsewhere. The same defensive read
+    # `_scheme_payload` uses, and for the same reason: a KeyError on a payment
+    # path is a worse outcome than a guard that declines to fire on a row it
+    # cannot see the type of.
+    _inv_type = str(dict(inv).get("invoice_type") or "")
+    _inv_doc_status = str(dict(inv).get("doc_status") or "")
+    if _inv_type == "credit_note":
         raise HTTPException(
             400,
             "This is a credit note — money you owe the customer, not money they "
@@ -1245,7 +1253,7 @@ async def record_payment(
     # receipt against it cannot be reconciled to anything the customer saw, and
     # it makes the document read as settled while still unsent. Live: four such
     # payments exist across the two organisations, one of them Rs 2,06,500.
-    if str(inv["doc_status"] or "") == "draft":
+    if _inv_doc_status == "draft":
         raise HTTPException(
             400,
             "This invoice is still a draft and has not been issued. Finalise it "

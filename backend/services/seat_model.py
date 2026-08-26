@@ -44,6 +44,30 @@ INACTIVE EMPLOYEES ARE NOT COUNTED. `is_active`, specifically, and not
 so `is_active` is already the column that decides who can clock in. A seat count
 that used `status` would bill for people the product refuses to let punch.
 
+NEITHER ARE PEOPLE WHO HAVE LEFT — and that is a SECOND condition, not the same
+one. `is_active` is a flag somebody must remember to clear, and a leaver KEEPS it
+deliberately until settlement so an outstanding salary advance can still be
+recovered from their final payroll run (`routers/manav.py:1958`). The FACT is
+`manav_offboarding.last_working_day`, and `services/on_the_rolls.py` is the one
+place that reads it. Measured read-only on 2026-08-26: E2E Test & Associates
+returned a roster of 83 against 73 people still on the rolls — ten people whose
+last working day was up to seven weeks past. Unicode Group was 26 either way.
+
+NOBODY IS INVOICED OFF THIS, and saying otherwise would be a worse error than
+the one being fixed. `count_pahchan_seats` has exactly one consumer,
+`routers/subscription.py:1485`, a read-only usage endpoint; there is no payment
+gateway in this product at all; and `routers/manav.py:1310` records that the
+seat gate "refuses NOBODY today" because no organisation has
+`max_pahchan_seats` set and a NULL allowance is unlimited. So the ten were an
+overstated USAGE figure on a screen, not ten seats anybody paid for. The fix is
+worth making because the number is wrong and is the number a limit would one day
+be enforced against — not because money moved.
+
+The two conditions bill differently and both are needed: an employee
+hand-deactivated with no offboarding row holds no seat (the flag catches them),
+and an employee whose exit is recorded but whose flag is still set for settlement
+holds no seat either (the guard catches them).
+
 ── WHO IS EXEMPT ────────────────────────────────────────────────────────────
 
 An employee whose record is LINKED (`manav_employees.user_id`) to an account
@@ -109,6 +133,7 @@ from fastapi import HTTPException
 # `auth_router`, which imports half the app — a cycle waiting for the first
 # module that wants both.
 from middleware.role_tiers import SEAT_CONSUMING_ORG_ROLES
+from services.on_the_rolls import still_on_the_rolls
 
 #: Roles whose holder is a USER of the product, and therefore already paid for
 #: under the org-seat count. An employee linked to one of these is exempt here.
@@ -156,10 +181,11 @@ class PahchanSeatCount:
     def used(self) -> int:
         """Roster minus the people already paid for as org users.
 
-        Clamped at zero. `exempt` is counted over the same `is_active=TRUE`
-        population as `roster`, so it cannot exceed it — but a negative seat
-        count is the kind of number that reaches an invoice as a credit, and the
-        clamp costs nothing to state.
+        Clamped at zero. `exempt` is counted over the same population as
+        `roster` — `is_active=TRUE` AND still on the rolls, both conditions on
+        both subqueries — so it cannot exceed it. But a negative seat count is
+        the kind of number that reaches an invoice as a credit, and the clamp
+        costs nothing to state.
         """
         if not self.module_active:
             return 0
@@ -230,13 +256,20 @@ def pahchan_seat_detail(seats: PahchanSeatCount) -> str:
 # that a JSON round-trip hides a typo in the column name — spell it wrong and
 # this reads NULL forever and silently charges nobody, which is the failure mode
 # a seat limit is least able to notice about itself.
-_SEAT_QUERY = """
+#
+# BOTH employee subqueries carry `still_on_the_rolls`, and they have to. `used`
+# is `roster - exempt` and its docstring rests on exempt being counted over the
+# same population as roster; guarding one side only breaks that invariant, and
+# the direction it breaks in is overcharging.
+_SEAT_QUERY = f"""
 SELECT
     (to_jsonb(o) ->> 'max_pahchan_seats')::int AS seat_limit,
     (SELECT COUNT(*) FROM staging.manav_employees e
-      WHERE e.org_id = o.id AND e.is_active = TRUE) AS roster,
+      WHERE e.org_id = o.id AND e.is_active = TRUE
+        {still_on_the_rolls("e")}) AS roster,
     (SELECT COUNT(*) FROM staging.manav_employees e
       WHERE e.org_id = o.id AND e.is_active = TRUE AND e.user_id IS NOT NULL
+        {still_on_the_rolls("e")}
         AND EXISTS (SELECT 1 FROM staging.user_roles ur
                      WHERE ur.org_id = o.id AND ur.user_id = e.user_id
                        AND ur.role_code = ANY($2::text[]))) AS exempt,
@@ -278,7 +311,16 @@ async def assert_pahchan_seat_available(pool, org_id: str) -> None:
     the PATCH body (`EmployeeUpdate`) has no `is_active` field, so a terminated
     employee cannot be revived into a seat. One admission, one gate.
 
-    ── THREE PLACES THIS DELIBERATELY DOES *NOT* GUARD ─────────────────────
+    ── FOUR PLACES THIS DELIBERATELY DOES *NOT* GUARD ──────────────────────
+
+      · CANCELLING AN OFFBOARDING. Since the count reads
+        `manav_offboarding.last_working_day`, a resignation withdrawn — status
+        moved to 'cancelled' — puts somebody back on the rolls without any
+        employee row being created, so it can push an org past its cap without
+        passing this gate. It is not refused, for the same reason unlinking is
+        not: a withdrawn resignation is a person who never left, and refusing to
+        record that fact would leave the roster asserting an exit that did not
+        happen. The count is honest about the overage instead.
 
       · `DELETE /employees/{id}/link`. Unlinking removes an exemption, so it can
         genuinely push an org past its cap — and it is still not refused here.

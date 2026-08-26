@@ -44,6 +44,15 @@ from services.niyam.subjects import (
     employee_exited, employee_joined, expense_claimed, expense_decided,
     leave_decided, leave_requested,
 )
+# "Is this person still employed" — one predicate, in one place. `is_active` is
+# a flag somebody has to remember to clear and `manav_offboarding
+# .last_working_day` is a fact somebody already recorded; live in E2E they
+# disagree by ten people. The flag is NOT stale data (see the offboarding
+# section below on why a leaver keeps it until settlement), so the READS carry
+# the question and the module carries its one wording. Every STOCK read in this
+# file appends `still_on_the_rolls(alias)`; every FLOW read — what happened in a
+# period — deliberately does not.
+from services.on_the_rolls import still_on_the_rolls
 from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
 # The one canonical Indian state codelist in this backend, and the normaliser
 # that collapses the two conventions the database holds. See `_clean_state`
@@ -388,6 +397,28 @@ async def _own_employee_id(pool, user, org_id: str) -> str | None:
 
     None is a real answer and it means NO ACCESS, not unrestricted access: a
     caller with no grant and no employee row has no own-row to be scoped to.
+
+    DELIBERATELY NOT GUARDED BY `still_on_the_rolls`, and the reason is worth
+    writing down because every other stock read in this file is.
+
+    This does not answer "is this person still employed". It answers "which
+    employee row is me", and that does not stop being true the day somebody's
+    notice runs out. What hangs off it is the caller's OWN record: own
+    attendance, own leave, own schedule, own assets to hand back, own
+    commission ladder, own bonus awards. A leaver keeps `is_active` until
+    SETTLEMENT precisely so they are not cut off mid-exit — that behaviour
+    exists because dropping an offboarded employee out of payroll on day one
+    left a salary advance unrecovered (see the offboarding section below).
+    Guarding here would re-create exactly that cut-off, aimed at the person
+    instead of at payroll: the morning after their last working day, somebody
+    still in clearance would lose the record of what they are owed and what
+    they still hold. Two of E2E's ten carry advances totalling ₹1,15,000.
+
+    It cannot fire in any case: 0 of E2E's 83 employee records carry a
+    `user_id`, so no leaver holds a login to be scoped with. The close-out is
+    the flag being cleared at settlement, which is the workflow the product
+    already has. `test_manav_reads_who_is_on_the_rolls.py` pins this decision
+    so it reads as a decision and not as a site somebody missed.
     """
     return await pool.fetchval(
         "SELECT id::text FROM staging.manav_employees "
@@ -1029,8 +1060,14 @@ async def list_employees(
         "state, "
         "created_by, updated_by, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND is_active=TRUE "
+        # Aliased `e` ONLY so the shared predicate has something to qualify.
+        # Nothing else in this SELECT is qualified and nothing needs to be —
+        # one table, so every bare column still resolves to it, including the
+        # `user_id` in `_LINKED_FILTER_SQL` and the `name`/`email`/
+        # `employee_code` the search filter names. Adding an alias is what the
+        # predicate module asks for in place of inlining a variant of itself.
+        "FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
     )
     params: list = [org_id]
     idx = 2
@@ -1045,9 +1082,30 @@ async def list_employees(
             # empty for a permissions reason rather than a data one — that is
             # how a "showing N of M" strip ends up rendering "showing 0 of".
             return {"data": [], "total": 0, "limit": 500, "truncated": False}
+        # Bare `id`, like the department/status/search filters below it: one
+        # table in this subquery, so it resolves to `e` either way, and
+        # `test_manav.py::test_no_grant_sees_a_directory_one_row_long` pins
+        # this fragment by exact string. The alias was added for the predicate,
+        # not to requalify filters that were already unambiguous.
         query += f"AND id=${idx}::uuid "
         params.append(own)
         idx += 1
+    else:
+        # 83 rows in E2E, 73 of them people who still work there. A directory
+        # is the plainest STOCK in the product and it was reading the flag.
+        #
+        # ON THE `else`: at self scope the query has just been pinned to the
+        # caller's own id, and "which record is mine" does not stop being true
+        # the day somebody's notice runs out. A leaver keeps the flag until
+        # SETTLEMENT on purpose (see the offboarding section), so closing their
+        # own record to them the morning after their last working day would be
+        # the payroll cut-off this product already learnt not to do, aimed at
+        # the person instead. Same reason `_own_employee_id` is unguarded.
+        #
+        # The trailing space is load-bearing: the fragment ends on `)` and the
+        # optional filters below start on `AND`, so without it the department
+        # filter fuses onto the predicate and the statement does not parse.
+        query += still_on_the_rolls("e") + " "
 
     if department:
         query += f"AND department=${idx} "
@@ -1435,15 +1493,30 @@ async def list_employees_awaiting_link(
     account. `is_active=TRUE` on both halves: `link_refusal` will not link a
     terminated record, so offering one here would be offering an action that is
     refused on submit.
+
+    AND STILL ON THE ROLLS on both halves, which is the same argument carried
+    one step further: an enrolment queue is a STOCK, and ten E2E records the
+    flag still calls active belong to people who left up to seven weeks ago.
+    Offering to give one of them a login is offering an action nobody wants
+    taken, and it inflates the denominator of "12 of 98 done" — the one number
+    this screen exists to state. E2E: 83 waiting → 73.
+
+    NOTE THE ASYMMETRY, which is deliberate: `link_refusal` is unchanged, so
+    the POST still accepts a leaver the queue no longer offers. The queue
+    narrows what it proposes; the door stays open for the case where somebody
+    mid-settlement needs a login to read their own final payslip. Narrowing the
+    offer is the safe direction; closing the door is a separate decision and
+    not this sweep's to take.
     """
     _require(levels, ADMIN)
     pool = await get_pool()
     waiting_rows = await pool.fetch(
-        "SELECT id, employee_code, name, email, department, designation, "
-        "date_of_joining, status "
-        "FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND is_active=TRUE AND user_id IS NULL "
-        "ORDER BY name",
+        "SELECT e.id, e.employee_code, e.name, e.email, e.department, "
+        "e.designation, e.date_of_joining, e.status "
+        "FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.user_id IS NULL"
+        + still_on_the_rolls("e")
+        + " ORDER BY e.name",
         org_id,
     )
     # LEFT JOIN, not JOIN. A link whose account has since been deleted is the
@@ -1461,8 +1534,9 @@ async def list_employees_awaiting_link(
         "u.email AS account_email, COALESCE(u.full_name, u.name) AS account_name "
         "FROM staging.manav_employees e "
         "LEFT JOIN users u ON u.user_id = e.user_id "
-        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.user_id IS NOT NULL "
-        "ORDER BY e.name",
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.user_id IS NOT NULL"
+        + still_on_the_rolls("e")
+        + " ORDER BY e.name",
         org_id,
     )
 
@@ -2426,7 +2500,16 @@ async def list_departments(
     _require(levels, VIEWER)
     rows = await pool.fetch(
         "SELECT d.id, d.name, d.created_at, e.name as head_name, "
-        "(SELECT COUNT(*) FROM staging.manav_employees WHERE department=d.name AND org_id=d.org_id AND is_active=TRUE) as employee_count "
+        # A department's headcount is a STOCK. On the flag alone, E2E's
+        # Accounts and Payroll each read 8 against a true 6. The subquery is
+        # aliased `de` rather than `e` because `e` is already the department
+        # HEAD's row out in the outer query — the same alias in both scopes
+        # would silently make this count the head's org instead of the
+        # department's.
+        "(SELECT COUNT(*) FROM staging.manav_employees de "
+        " WHERE de.department=d.name AND de.org_id=d.org_id AND de.is_active=TRUE"
+        + still_on_the_rolls("de")
+        + ") as employee_count "
         "FROM staging.manav_departments d "
         "LEFT JOIN staging.manav_employees e ON e.id = d.head_employee_id "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE ORDER BY d.name",
@@ -2482,9 +2565,14 @@ async def delete_department(
     pool = await get_pool()
     _require(levels, ADMIN)
     emp_count = await pool.fetchval(
+        # The refusal has to count the same people the directory shows, or an
+        # admin is told a department holds staff they cannot find in it. A
+        # department every one of whose members has left must be closable; on
+        # the flag alone it never would be.
         "SELECT COUNT(*) FROM staging.manav_employees e "
         "JOIN staging.manav_departments d ON d.name = e.department AND d.org_id = e.org_id "
-        "WHERE d.id=$1::uuid AND d.org_id=$2::uuid AND e.is_active=TRUE",
+        "WHERE d.id=$1::uuid AND d.org_id=$2::uuid AND e.is_active=TRUE"
+        + still_on_the_rolls("e"),
         dept_id, org_id,
     )
     if emp_count and emp_count > 0:
@@ -2698,7 +2786,14 @@ async def list_leave_requests(
         "lt.name as leave_type_name, lt.code as leave_type_code, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.manav_leave_requests lr "
-        "JOIN staging.manav_employees e ON e.id = lr.employee_id "
+        # ON THE ORG AS WELL AS THE ID. `manav_employees` has no composite
+        # (id, org_id) constraint, so a join on the employee id alone can read
+        # another tenant's row and render THEIR name and code beside this
+        # org's leave request. The org predicate on the REQUEST is not enough:
+        # it scopes the request, not the person joined to it. Same shape
+        # `graha_clients` was fixed for.
+        "JOIN staging.manav_employees e "
+        "  ON e.id = lr.employee_id AND e.org_id = lr.org_id "
         "JOIN staging.manav_leave_types lt ON lt.id = lr.leave_type_id "
         "WHERE lr.org_id=$1::uuid "
     )
@@ -2996,7 +3091,11 @@ async def hrms_stats(
     # Org-wide headcount and today's attendance.
     _require(levels, VIEWER)
     emp_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees WHERE org_id=$1::uuid AND is_active=TRUE AND status='active'",
+        # The headcount tile. STOCK, and the number every other HR figure is
+        # read against — E2E showed 83 against a true 73.
+        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active'"
+        + still_on_the_rolls("e"),
         org_id,
     )
     dept_count = await pool.fetchval(
@@ -3104,10 +3203,19 @@ async def create_announcement(
         org_id, body.title, body.body, body.priority,
         body.pinned, body.expires_at, user["user_id"],
     )
-    # ── Notify all active employees ──
+    # ── Notify everybody still on the rolls ──
+    #
+    # THIS ONE SENDS MAIL, which makes it the worst read in the sweep: on the
+    # flag alone it posted every internal announcement to ten E2E employees who
+    # had already left, the earliest of them seven weeks earlier, and all ten
+    # hold an address. A recipient list is a STOCK — who is here now — so it
+    # carries the guard. Somebody serving notice is still here and still gets
+    # the announcement; that is what a FUTURE last working day means.
     employees = await pool.fetch(
-        "SELECT name, email FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND is_active=TRUE AND email IS NOT NULL AND email != ''",
+        "SELECT e.name, e.email FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
+        "AND e.email IS NOT NULL AND e.email != ''"
+        + still_on_the_rolls("e"),
         org_id,
     )
     if employees:
@@ -3213,22 +3321,46 @@ async def check_leave_conflicts(
     if not emp["department"]:
         return {"conflicts": [], "conflict_count": 0, "department_size": 0, "exceeds_threshold": False}
 
+    # The DENOMINATOR of the >30% understaffing warning below, so counting
+    # people who have left makes a department look better covered than it is.
+    # Live in E2E, Accounts and Payroll are each a quarter smaller than this
+    # read them (8 → 6). STOCK: it is asked about a window in the future.
     dept_size = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND department=$2 AND is_active=TRUE AND status='active'",
+        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.department=$2 AND e.is_active=TRUE "
+        "AND e.status='active'"
+        + still_on_the_rolls("e"),
         org_id, emp["department"],
     )
 
+    # And the NUMERATOR asks the same question, so it must ask it the same way:
+    # somebody who has left is not "away that week", they are gone, and their
+    # old approved leave is not a staffing conflict with anybody's new request.
+    #
+    # This one moves no live row TODAY — all 24 leave requests belonging to
+    # E2E's ten ended before their own last working days, so none of them
+    # overlaps a window on or after an exit. It is guarded anyway because the
+    # exposure is one approved-leave-through-notice away, and because a
+    # denominator and a numerator that disagree about who counts is how the
+    # ratio silently stops meaning anything.
     conflicts = await pool.fetch(
         "SELECT lr.id, lr.start_date, lr.end_date, lr.days, lr.status, "
         "e.name as employee_name, e.employee_code "
         "FROM staging.manav_leave_requests lr "
-        "JOIN staging.manav_employees e ON e.id = lr.employee_id "
+        # ON THE ORG AS WELL AS THE ID. `manav_employees` has no composite
+        # (id, org_id) constraint, so a join on the employee id alone can read
+        # another tenant's row and render THEIR name and code beside this
+        # org's leave request. The org predicate on the REQUEST is not enough:
+        # it scopes the request, not the person joined to it. Same shape
+        # `graha_clients` was fixed for.
+        "JOIN staging.manav_employees e "
+        "  ON e.id = lr.employee_id AND e.org_id = lr.org_id "
         "WHERE lr.org_id=$1::uuid AND lr.status IN ('approved','pending') "
         "AND e.department=$2 AND e.is_active=TRUE "
         "AND lr.employee_id != $3::uuid "
-        "AND lr.start_date <= $5 AND lr.end_date >= $4 "
-        "ORDER BY lr.start_date",
+        "AND lr.start_date <= $5 AND lr.end_date >= $4"
+        + still_on_the_rolls("e")
+        + " ORDER BY lr.start_date",
         org_id, emp["department"], employee_id, _parse_date(start_date), _parse_date(end_date),
     )
 
@@ -3520,10 +3652,13 @@ async def schedule_coverage(
         "GROUP BY s.date, sd.id, sd.name ORDER BY s.date, sd.name",
         org_id, _parse_date(date_from), _parse_date(date_to),
     )
-    # Also get employee count for gap detection
+    # The denominator every day's assigned count is read against, so an
+    # inflated one reports EVERY day as under-staffed — E2E's rota was short by
+    # a phantom ten on every date in every range. STOCK.
     total_active = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND is_active=TRUE AND status='active'",
+        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active'"
+        + still_on_the_rolls("e"),
         org_id,
     )
     return {"coverage": [dict(r) for r in rows], "total_employees": total_active}
@@ -4601,8 +4736,15 @@ async def assign_asset(
 ):
     pool = await get_pool()
     _require(levels, EDITOR)
+    # Custody of company property, so the question is whether this person is
+    # still here — not whether a flag still says so. Eight assets are already
+    # issued to E2E's ten departed-but-flagged employees, and this route is
+    # what issued them. Checked BEFORE the UPDATE: a refusal raised afterwards
+    # would leave the asset assigned and the caller told it was not.
     emp = await pool.fetchrow(
-        "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT e.id FROM staging.manav_employees e "
+        "WHERE e.id=$1::uuid AND e.org_id=$2::uuid AND e.is_active=TRUE"
+        + still_on_the_rolls("e"),
         body.employee_id, org_id,
     )
     if not emp:

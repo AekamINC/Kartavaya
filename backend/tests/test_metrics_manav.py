@@ -25,9 +25,11 @@ from datetime import date
 import pytest
 
 import analytics.metrics.manav  # noqa: F401  — registers the declarations
+from analytics.metrics.manav import _headcount_asat
 from analytics.registry import REGISTRY, MetricRequest
 from analytics.windowing import BUCKETS
 from services.analytics_window import Window
+from services.on_the_rolls import still_on_the_rolls
 
 WIN = Window(date(2026, 4, 1), date(2026, 6, 30))
 ORG = "00000000-0000-0000-0000-000000000000"
@@ -134,6 +136,102 @@ def test_the_batch_is_declared_as_specified():
     assert REGISTRY["manav.headcount"].dimensions == ("employment_type",)
     assert REGISTRY["manav.attrition"].dimensions == ("exit_class",)
     assert REGISTRY["manav.tenure"].dimensions == ("band",)
+
+
+# ── On the rolls: the one guard five stocks share ────────────────────────────
+# manav_employees.is_active is a FLAG somebody must remember to clear;
+# manav_offboarding.last_working_day is a FACT already recorded. Live in E2E on
+# 2026-08-26 the two disagreed by ten people who had left up to seven weeks
+# earlier — and the flag is KEPT until settlement on purpose (routers/manav.py
+# :1958: clearing it at exit once dropped a leaver out of payroll with an
+# unrecovered salary advance, and two of these ten carry ₹1,15,000 between
+# them). The data is right; the READS have to ask the right question — and ask
+# it the SAME way, via services/on_the_rolls, never a local retelling.
+
+GUARD = " ".join(still_on_the_rolls("e").split())
+
+#: Every manav STOCK site, with the group_by that reaches it. A stock answers
+#: "who is on the rolls NOW" and must carry the guard. The flows below must
+#: not: an ex-employee's July exit still happened in July.
+ROLLS_SITES = [
+    ("manav.headcount", None),
+    ("manav.headcount", "employment_type"),
+    ("manav.tenure", None),
+    ("manav.tenure", "band"),
+    ("manav.department_mix", None),
+    ("manav.designation_mix", None),
+    ("manav.leave_liability_days", None),
+]
+
+FLOW_SITES = [
+    ("manav.headcount_bridge", None),
+    ("manav.attrition", None),
+    ("manav.attrition", "exit_class"),
+]
+
+
+@pytest.mark.parametrize("key,group_by", ROLLS_SITES)
+def test_every_stock_site_carries_the_shared_rolls_guard(key, group_by):
+    sql, _ = build(key, group_by=group_by)
+    assert GUARD in sql, (
+        f"{key} (group_by={group_by}) trusts is_active alone — E2E's ten "
+        f"departed-but-flagged employees count as present\n{sql}"
+    )
+
+
+@pytest.mark.parametrize("key,group_by", ROLLS_SITES)
+def test_the_guard_narrows_is_active_and_never_replaces_it(key, group_by):
+    """A hand-deactivation with no offboarding row is an exit too — undated,
+    but real, and the legacy DELETE path still writes exactly that. The guard
+    removes the dated leavers the flag is still deliberately carrying; it is
+    not a substitute for the flag."""
+    sql, _ = build(key, group_by=group_by)
+    assert "is_active = TRUE" in sql, sql
+
+
+@pytest.mark.parametrize("key,group_by", ROLLS_SITES)
+def test_no_stock_site_hand_writes_its_own_exit_test(key, group_by):
+    """Twenty-five hand-written copies is the failure services/on_the_rolls.py
+    exists to prevent. A stock may reach manav_offboarding ONLY through the
+    shared fragment — so the table is named exactly as often as the guard is,
+    which is once."""
+    sql, _ = build(key, group_by=group_by)
+    assert sql.count("staging.manav_offboarding") == sql.count(GUARD) == 1, sql
+
+
+@pytest.mark.parametrize("key,group_by", ROLLS_SITES)
+def test_the_guard_correlates_to_an_alias_the_query_actually_declares(key, group_by):
+    """The fragment says e.org_id and e.id. A site that dropped it into a
+    query with no alias would not parse — and inlining an aliasless variant
+    to dodge that is the twenty-sixth copy. Declare `e`."""
+    sql, _ = build(key, group_by=group_by)
+    assert re.search(r"staging\.manav_employees e\b", sql), sql
+
+
+@pytest.mark.parametrize("key,group_by", FLOW_SITES)
+def test_flow_metrics_never_carry_the_rolls_guard(key, group_by):
+    """Guarding a flow rewrites history: the bridge would lose the very
+    leavers it exists to count, and attrition its whole numerator."""
+    sql, _ = build(key, group_by=group_by)
+    assert GUARD not in sql, sql
+
+
+def test_the_stock_guard_and_the_asat_reconstruction_stay_one_rule():
+    """attrition rebuilds headcount at a PAST date; the stocks ask about
+    today. Same question from two sides, so they must agree clause for clause
+    — the org_id+id join (manav_offboarding has no composite constraint, and
+    a join on the child id alone reaches another tenant) and the cancelled
+    exclusion (a withdrawn resignation is not a departure). Only the boundary
+    flips: the reconstruction keeps an exit still AHEAD of d, the guard drops
+    one already BEHIND today. Two spellings of one rule is the ceiling —
+    a third is the drift this whole sweep was cleaning up."""
+    asat = " ".join(_headcount_asat("$2").split())
+    for clause in ("x.org_id = e.org_id", "x.employee_id = e.id",
+                   "x.status <> 'cancelled'"):
+        assert clause in GUARD, f"guard lost {clause}"
+        assert clause in asat, f"reconstruction lost {clause}"
+    assert "x.last_working_day < CURRENT_DATE" in GUARD
+    assert "x.last_working_day > $2::date" in asat
 
 
 # ── headcount ────────────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ from services.niyam.subjects import payroll_published, payslip_disbursed
 # `services/skills/action/attendance_auto_mark.py` import the same helper for
 # the same reason — see `_state_keys`.
 from services.gst_states import norm_state as _norm_state
+from services.on_the_rolls import still_on_the_rolls
 from services.pii import decrypt_bank, mask_bank, mask_tail
 from utils import next_doc_number
 
@@ -2574,9 +2575,33 @@ async def dashboard(
         "WHERE org_id=$1::uuid ORDER BY month DESC LIMIT 1",
         org_id,
     )
+    # HEADCOUNT IS A STOCK, AND IT IS RENDERED BESIDE THE RUN THAT PAYS IT.
+    # `is_active=TRUE` alone answered 83 for E2E on 2026-08-26 while
+    # `process_payroll` above paid 73 of them — the page contradicting its own
+    # payroll run, on one screen, because ten people hold a non-cancelled
+    # `manav_offboarding` row dated in the past and still carry the flag.
+    #
+    # THE FLAG IS NOT STALE DATA. `routers/manav.py:1958` records that
+    # offboarding used to clear it, which dropped the person out of payroll the
+    # same day and left an outstanding salary advance unrecoverable — so a
+    # leaver keeps it until settlement, deliberately (two of the ten carry
+    # advances totalling 1,15,000). The read was asking the wrong question.
+    #
+    # The predicate is IMPORTED and not written out again: twenty-five
+    # hand-written copies is the failure `services/on_the_rolls.py` exists to
+    # prevent, and a copy that drifts disagrees with payroll silently. The
+    # table is aliased `e` for it — inlining a variant against no alias is how
+    # the copies started.
+    #
+    # THE TILE STILL WILL NOT EQUAL THE LATEST RUN, and that is right. This is
+    # a stock as at today, so it bounds on today; the run is paying a MONTH, so
+    # it bounds on the first of that month and still pays somebody who left on
+    # the 3rd for the three days they worked. Making the two bounds agree
+    # breaks whichever one you move.
     headcount = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
+        + still_on_the_rolls("e"),
         org_id,
     )
     ytd = await pool.fetchrow(

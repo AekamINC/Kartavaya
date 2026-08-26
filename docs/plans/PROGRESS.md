@@ -33,6 +33,67 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### The data/code consistency sweep — and the answer it actually gave
+
+Owner: make the data go hand in hand with how the system behaves, and delete
+what does not. **Six read-only sweeps plus an adversarial brake said the data is
+mostly right and the READS are wrong**, which is the opposite of what was
+expected and the reason nothing was deleted in bulk.
+
+**Only TWO data changes survived review.** Unicode's two employees with no work
+state → `'24'` (0 remain), and one duplicate "New Year" holiday of two rows 33
+seconds apart. Everything else was ranked NEEDS-OWNER (7) or DO-NOT (5).
+
+**Two proposed deletes were acceptance evidence.** The E2E January-2020 payroll
+run is asserted by `frontend/e2e-real/org.spec.ts:197-211`; two payments the
+sweep called fabricated are Playwright fixtures. Deleting them would have
+broken a test AND removed the only live proof the door was open.
+
+**THE FLAG IS NOT STALE DATA.** Ten E2E employees are `is_active=true` with past
+exits, and clearing it was the obvious "fix". `routers/manav.py:1958` records
+why it would be wrong: offboarding used to clear the flag, which dropped the
+person out of payroll and left an outstanding advance unrecoverable. Live, two
+of the ten carry advances totalling **₹1,15,000**. Unicode shows the mirror
+image — its one leaver WAS deactivated early, his last working day is
+**2026-08-28, still in the future**, and he is missing July and August pay of
+about **₹72,322**. The flag is load-bearing in both directions.
+
+**So 31 READS were guarded instead**, across 9 files, all through one new
+`services/on_the_rolls.py` — zero hand-written copies added. E2E figures:
+directory / `/stats` / Vetana dashboard / Pahchan enrolment queue / skill KPI
+all **83 → 73**; department counts 8→6 and 7→6; schedule coverage stopped
+reporting every day under-staffed by ten; **announcements 83 → 73 recipients**,
+all ten of whom hold an address and were receiving every internal announcement;
+and asset assignment, the route that issued the **8 assets still out with the
+ten**. Unicode is 26 → 26 everywhere, which is the defect's whole shape.
+
+**The brake caught a regression in that work too.** The Dristi pivot's
+`employees` source declares `date_col: date_of_joining`, so with a window it is
+a joiners cohort — a FLOW — and the guard would have erased everyone who joined
+in the period and has since left. Inverted, and the test that defended it
+inverted with it.
+
+**And it caught a claim of mine before it shipped.** I wrote that Pahchan seat
+BILLING was charging for ten departed people. Nothing invoices off that roster:
+one read-only consumer, no org has `max_pahchan_seats` set, and there is no
+payment gateway in this product. Corrected in the code and to the owner.
+
+**Four code fixes replaced the deletes** (`routers/ganit.py`): `invoice_stats`
+counted drafts as outstanding/overdue/collected beside Dristi figures that
+already excluded them; `record_payment` accepted receipts against CREDIT NOTES
+(reporting refunds as collected revenue) and against DRAFTS (four exist live,
+one ₹2,06,500); `update_vendor` never set `updated_at`, NULL on all 80 rows, on
+the facts a 43B(h) position is argued from. Plus both `manav_leave_requests` →
+`manav_employees` joins scoped on `org_id`, not the employee id alone.
+
+**Still owed, owner decisions:** three expense claims on voided payslips (arms a
+₹7,000 payout), the ₹2,06,500 and ₹60,000 draft receipts, `INV-2026-0048`'s
+balance (+₹53,100 outstanding), the 2020-01 run, 14 duplicate holidays, and
+Nikhil Desai's missing pay. Newly found and not acted on: E2E's July run paid
+nine of the ten leavers a full month; one employee holds a `disbursed` payslip
+dated a month BEFORE her joining date; `ganit_invoices.line_items` holds two
+incompatible schemas in one column.
+
 ### Territories folded into the plan as Phase 7, and the 60 rows deleted
 
 **`docs/HANDOVER-2026-08-26-territory-maps.md` is now `PHASE-7-territory-and-address.md`.**

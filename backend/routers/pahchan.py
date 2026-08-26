@@ -51,6 +51,7 @@ from middleware.roles import require_org_role
 from middleware.subscription import require_module
 from services.audit import emit as audit
 from services.niyam.subjects import enrollment_requested
+from services.on_the_rolls import still_on_the_rolls
 from services import storage
 
 router = APIRouter(prefix="/api/v1/pahchan", tags=["pahchan-attendance"])
@@ -1941,13 +1942,36 @@ async def enrollment_queue(
         org_id,
     )
     missing = await pool.fetch(
+        # EVERY NAME ON THIS LIST IS A JOB FOR SOMEBODY. It is not a count, it
+        # is HR being asked to collect two face photographs from each of these
+        # people — so counting `is_active = TRUE` alone put ten E2E employees
+        # who left between 7 July and 3 August (measured 2026-08-26: 83 names,
+        # 73 of them still employed) on a queue nobody can ever clear.
+        #
+        # THE FLAG IS NOT STALE DATA AND MUST NOT BE CLEARED TO FIX THIS.
+        # `routers/manav.py:1958`: offboarding used to set `is_active=FALSE`,
+        # which dropped the person out of payroll the same day and left an
+        # outstanding salary advance unrecoverable. A leaver keeps the flag
+        # until settlement on purpose; `manav_offboarding.last_working_day` is
+        # the fact that answers whether they are still here.
+        #
+        # Imported from `services/on_the_rolls.py` rather than written out
+        # again — one spelling of this predicate is the entire point of that
+        # module, and a second one here would drift away from payroll's without
+        # anything failing. A stock as at today, so it bounds on today.
+        #
+        # The pending-approval list above is deliberately NOT guarded: it holds
+        # photographs somebody actually captured, each awaiting a decision, and
+        # hiding one because its subject has since left leaves an unadjudicated
+        # photograph in storage that nobody sees until retention deletes it.
         "SELECT e.id AS employee_id, e.name AS employee_name, e.employee_code, "
         "       COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) AS approved_count "
         "FROM staging.manav_employees e "
         "LEFT JOIN staging.pahchan_enrollment_photos r "
         "       ON r.employee_id = e.id AND r.replaced_at IS NULL "
-        "WHERE e.org_id=$1::uuid AND e.is_active = TRUE "
-        "GROUP BY e.id, e.name, e.employee_code "
+        "WHERE e.org_id=$1::uuid AND e.is_active = TRUE"
+        + still_on_the_rolls("e") +
+        " GROUP BY e.id, e.name, e.employee_code "
         "HAVING COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) < 2 "
         "ORDER BY e.name",
         org_id,

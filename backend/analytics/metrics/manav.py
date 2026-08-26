@@ -21,6 +21,18 @@ THE SCHEMA FACTS THE WHOLE FILE STANDS ON:
   leaver metric here counts offboarding rows and says so in its description
   rather than silently undercounting in the dark.
 
+· And `is_active` alone does NOT answer "is this person still employed". It is
+  a flag somebody must remember to clear, and offboarding deliberately does not
+  clear it: routers/manav.py:1958 records that it used to, which dropped the
+  leaver out of payroll the same day and left a salary advance unrecovered. So
+  a departed employee KEEPS the flag until settlement. Live in E2E on
+  2026-08-26 the flag said 83 and the offboarding dates said 73 — ten people
+  gone up to seven weeks, two of them still owing ₹1,15,000 between them. Every
+  STOCK here therefore carries services/on_the_rolls.still_on_the_rolls on top
+  of the flag: one predicate, one spelling, used everywhere. The FLOWS below
+  (headcount_bridge, attrition) must never carry it — an exit that happened in
+  July still happened in July, and guarding a flow deletes its own subject.
+
 · Voluntary vs involuntary is manav_offboarding.exit_type. The CHECK allows
   seven values; they split three ways, not two — forcing `end_of_contract`
   and `death` into either side would be a fiction, so the split is
@@ -50,6 +62,7 @@ THE SCHEMA FACTS THE WHOLE FILE STANDS ON:
 """
 from analytics.registry import MetricRequest, absent_metric, metric
 from analytics.windowing import bucket_expr
+from services.on_the_rolls import still_on_the_rolls
 
 #: exit_type → the three-way attrition split. resignation / retirement /
 #: abandonment are employee-initiated; termination / redundancy are
@@ -70,6 +83,26 @@ def _headcount_asat(param: str) -> str:
     holding a live offboarding whose last_working_day is after d. Employees
     with no joining date, and employees deactivated with no offboarding row,
     cannot be placed in time and are excluded — stated on the metric.
+
+    THIS AND still_on_the_rolls ARE ONE RULE SEEN FROM TWO SIDES, and the test
+    file pins them clause for clause so they cannot drift into two. Both join
+    the exit on org_id AND employee_id (manav_offboarding has no composite
+    constraint, so the child id alone reaches another tenant) and both ignore
+    cancelled exits (a withdrawn resignation is not a departure). Only the
+    boundary flips, because the questions are mirror images: here we KEEP
+    somebody whose exit is still ahead of d (`> d`), there we DROP somebody
+    whose exit is already behind today (`< CURRENT_DATE`).
+
+    They are not interchangeable, though, and the difference is deliberate:
+    this reconstruction leans on `e.is_active` as evidence that a person had
+    not left *by d*, which is sound looking backwards but inherits the flag's
+    staleness at the right-hand edge. Measured read-only on 2026-08-26 in E2E,
+    it returns 60 at 2026-06-30 — identical to the guarded count — and 71 at
+    today where the guard says 61, the same ten leavers. That only bites when
+    a caller's window ENDS on or after an exit, and it moves attrition's
+    denominator, not any stock. Left alone here on purpose: attrition is a
+    flow, its numerator is correct, and re-cutting a published rate is an
+    owner's call, not a side effect of a headcount fix.
     """
     return (
         "(SELECT COUNT(*) FROM staging.manav_employees e "
@@ -91,28 +124,37 @@ def _headcount_asat(param: str) -> str:
     grain="stock",
     dimensions=("employment_type",),
     drill="manav.employees",
-    description="Employees on the rolls as at today (is_active), with how "
-                "many are serving notice riding along. Someone on notice is "
-                "still headcount — the HR dashboard's status='active' count "
-                "is a deliberately narrower question. "
-                "group_by=employment_type splits full-time / part-time / "
-                "contract / intern / consultant.",
+    description="Employees on the rolls as at today: still flagged active AND "
+                "with no offboarding whose last working day has passed — the "
+                "flag survives a departure on purpose (it is what keeps a "
+                "leaver in payroll until settlement), so it cannot be the "
+                "whole test. How many are serving notice rides along: someone "
+                "on notice has not left yet and is still headcount, while the "
+                "HR dashboard's status='active' count is a deliberately "
+                "narrower question. group_by=employment_type splits "
+                "full-time / part-time / contract / intern / consultant.",
 )
 def headcount(req: MetricRequest):
+    # The alias exists so the shared guard can correlate to this row; without
+    # `e` its e.org_id / e.id have nothing to bind to. Adding the alias is the
+    # right move here — inlining an aliasless variant is how one predicate
+    # became twenty-five.
     if req.group_by == "employment_type":
         return (
             "SELECT employment_type AS label, COUNT(*) AS value "
-            "FROM staging.manav_employees "
-            "WHERE org_id = $1::uuid AND is_active = TRUE "
-            "GROUP BY employment_type ORDER BY value DESC, label",
+            "FROM staging.manav_employees e "
+            "WHERE org_id = $1::uuid AND is_active = TRUE"
+            + still_on_the_rolls("e") +
+            " GROUP BY employment_type ORDER BY value DESC, label",
             [req.org_id],
         )
     return (
         "SELECT COUNT(*) AS value, "
         "COUNT(*) FILTER (WHERE status = 'on_notice') AS on_notice "
-        "FROM staging.manav_employees "
-        "WHERE org_id = $1::uuid AND is_active = TRUE "
-        "HAVING COUNT(*) > 0",
+        "FROM staging.manav_employees e "
+        "WHERE org_id = $1::uuid AND is_active = TRUE"
+        + still_on_the_rolls("e") +
+        " HAVING COUNT(*) > 0",
         [req.org_id],
     )
 
@@ -233,9 +275,15 @@ def attrition(req: MetricRequest):
                 "mean rides along as mean_days, labelled as what it is. "
                 "group_by=band answers the distribution instead: under 1 / "
                 "1-3 / 3-5 / 5+ years. Employees with no date_of_joining "
-                "cannot be measured and are excluded from both shapes.",
+                "cannot be measured and are excluded from both shapes, and so "
+                "are people who have already left — tenure is a fact about the "
+                "people you have, and a recent leaver sits in a band and drags "
+                "it for weeks after their last working day.",
 )
 def tenure(req: MetricRequest):
+    # A stock, and the one most distorted by trusting the flag: leavers bunch
+    # in whichever band they left from rather than spreading out, so a handful
+    # of them bends a single bar and nothing else. See the module docstring.
     if req.group_by == "band":
         return (
             "SELECT CASE "
@@ -243,10 +291,11 @@ def tenure(req: MetricRequest):
             "WHEN CURRENT_DATE - date_of_joining < 1095 THEN '1-3 yrs' "
             "WHEN CURRENT_DATE - date_of_joining < 1825 THEN '3-5 yrs' "
             "ELSE '5+ yrs' END AS band, COUNT(*) AS value "
-            "FROM staging.manav_employees "
+            "FROM staging.manav_employees e "
             "WHERE org_id = $1::uuid AND is_active = TRUE "
-            "AND date_of_joining IS NOT NULL "
-            "GROUP BY 1 ORDER BY MIN(CURRENT_DATE - date_of_joining)",
+            "AND date_of_joining IS NOT NULL"
+            + still_on_the_rolls("e") +
+            " GROUP BY 1 ORDER BY MIN(CURRENT_DATE - date_of_joining)",
             [req.org_id],
         )
     return (
@@ -254,10 +303,11 @@ def tenure(req: MetricRequest):
         "(ORDER BY CURRENT_DATE - date_of_joining)::float AS value, "
         "AVG(CURRENT_DATE - date_of_joining)::float AS mean_days, "
         "COUNT(*) AS employees "
-        "FROM staging.manav_employees "
+        "FROM staging.manav_employees e "
         "WHERE org_id = $1::uuid AND is_active = TRUE "
-        "AND date_of_joining IS NOT NULL "
-        "HAVING COUNT(*) > 0",
+        "AND date_of_joining IS NOT NULL"
+        + still_on_the_rolls("e") +
+        " HAVING COUNT(*) > 0",
         [req.org_id],
     )
 
@@ -278,9 +328,10 @@ def department_mix(req: MetricRequest):
     return (
         "SELECT COALESCE(NULLIF(department, ''), 'Unassigned') AS label, "
         "COUNT(*) AS value "
-        "FROM staging.manav_employees "
-        "WHERE org_id = $1::uuid AND is_active = TRUE "
-        "GROUP BY 1 ORDER BY value DESC, label",
+        "FROM staging.manav_employees e "
+        "WHERE org_id = $1::uuid AND is_active = TRUE"
+        + still_on_the_rolls("e") +
+        " GROUP BY 1 ORDER BY value DESC, label",
         [req.org_id],
     )
 
@@ -300,9 +351,10 @@ def designation_mix(req: MetricRequest):
     return (
         "SELECT COALESCE(NULLIF(designation, ''), 'Unassigned') AS label, "
         "COUNT(*) AS value "
-        "FROM staging.manav_employees "
-        "WHERE org_id = $1::uuid AND is_active = TRUE "
-        "GROUP BY 1 ORDER BY value DESC, label",
+        "FROM staging.manav_employees e "
+        "WHERE org_id = $1::uuid AND is_active = TRUE"
+        + still_on_the_rolls("e") +
+        " GROUP BY 1 ORDER BY value DESC, label",
         [req.org_id],
     )
 
@@ -335,7 +387,11 @@ absent_metric(
                 "carried forward − used on each current-year balance row, "
                 "floored at zero per row (an overdrawn balance is "
                 "recoverable pay, not negative liability), paid leave types "
-                "only, current employees only. Days only, deliberately — "
+                "only, people on the rolls only. A leaver's unused leave stops "
+                "being an accrued liability at their last working day — "
+                "whatever is owed becomes a settlement payable, which is a "
+                "different number in a different place. Days only, "
+                "deliberately — "
                 "the rupee value is declared absent "
                 "(manav.leave_liability_inr) because the schema stores no "
                 "encashment basis to price a day with.",
@@ -351,8 +407,9 @@ def leave_liability_days(req: MetricRequest):
         "JOIN staging.manav_leave_types t "
         "ON t.id = b.leave_type_id AND t.org_id = $1::uuid "
         "AND t.is_paid = TRUE "
-        "WHERE b.org_id = $1::uuid AND e.is_active = TRUE "
-        "AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)::int "
+        "WHERE b.org_id = $1::uuid AND e.is_active = TRUE"
+        + still_on_the_rolls("e") +
+        " AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)::int "
         "HAVING COUNT(*) > 0",
         [req.org_id],
     )

@@ -23,6 +23,7 @@ from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from middleware.module_levels import held_level
 from services.audit_actors import display_name
+from services.on_the_rolls import DEFAULT_ALIAS, still_on_the_rolls
 from services.report_schedule_window import blocked_reason, is_due
 from services import analytics_window as aw
 
@@ -184,9 +185,23 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
             "GROUP BY stage", org_id)
         return {"stages": [dict(r) for r in rows]}
     elif report_type == "hr":
+        # HEADCOUNT IS A STOCK, and this is the CSV and PDF twin of the
+        # `/overview` tile — the same question, in a file a partner mails to a
+        # client. `is_active` alone does not answer it: the flag is one
+        # somebody has to remember to clear, and a leaver deliberately KEEPS it
+        # until settlement (`routers/manav.py:1958` — clearing it on the last
+        # working day dropped the person out of payroll and stranded an
+        # unrecovered salary advance). The fact is
+        # `manav_offboarding.last_working_day`.
+        #
+        # The predicate comes from `services/on_the_rolls.py` rather than being
+        # written out here, so this and the tile cannot answer differently.
+        # Live 2026-08-26: E2E Test & Associates 83 -> 73; Unicode Group
+        # records no exits and stays at 26.
         count = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.manav_employees "
-            "WHERE org_id=$1::uuid AND is_active=TRUE AND status='active'", org_id)
+            "SELECT COUNT(*) FROM staging.manav_employees e "
+            "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active'"
+            + still_on_the_rolls("e"), org_id)
         return {"active_employees": count}
     elif report_type == "sales":
         rows = await pool.fetch(
@@ -560,10 +575,18 @@ async def hr_analytics(
         )
 
     dept_breakdown = await pool.fetch(
+        # "How many people are in Accounts" is a STOCK — who is there NOW — so
+        # it carries the same guard as the headcount tile on `/overview`, from
+        # the same module, and cannot drift away from it. Ten of E2E's people
+        # left up to seven weeks ago and were still being counted into the
+        # departments they left: live 2026-08-26, Accounts 8->6, Payroll 8->6,
+        # Taxation 8->7, Compliance 8->7, and Administration, Advisory, Audit
+        # and IT 7->6 each. Unicode Group records no exits and does not move.
         "SELECT COALESCE(NULLIF(e.department,''), 'Unassigned') AS department, COUNT(*) AS count "
         "FROM staging.manav_employees e "
-        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
-        "GROUP BY e.department ORDER BY count DESC",
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
+        + still_on_the_rolls("e")
+        + " GROUP BY e.department ORDER BY count DESC",
         org_id,
     )
 
@@ -1508,6 +1531,15 @@ async def export_report(
 # every source would turn the other seven into UndefinedColumn 500s — the flag
 # is what keeps the next source added from inheriting a predicate its table
 # cannot answer.
+#
+# `on_the_rolls` is the third of these, and it exists because `soft_delete` is
+# NOT the same question. `is_active` is a flag somebody has to remember to
+# clear, and on `manav_employees` a leaver deliberately keeps it until
+# settlement (`routers/manav.py:1958`); `manav_offboarding.last_working_day` is
+# the fact. Only `manav_employees` has an exit register, so this too is
+# declared per source: hung off `soft_delete` instead, it would correlate
+# `manav_offboarding.employee_id` against `vikray_orders.id` and turn six
+# perfectly good widgets into 500s.
 _ALLOWED_QUERY_TABLES = {
     "invoices": {
         "table": "staging.ganit_invoices",
@@ -1543,6 +1575,7 @@ _ALLOWED_QUERY_TABLES = {
         "table": "staging.manav_employees",
         "module": "manav",
         "soft_delete": True,
+        "on_the_rolls": True,
         "columns": ["department", "designation", "employment_type", "status",
                      "date_of_joining", "created_at"],
         "date_col": "date_of_joining",
@@ -1681,6 +1714,42 @@ async def run_pivot_query(
 
     where_clause = " AND ".join(where)
 
+    # The source is aliased so a correlated guard has something to correlate
+    # AGAINST, and every source takes the alias rather than only the one that
+    # needs it: one statement shape for all eight, and the next source to
+    # declare `on_the_rolls` does not also have to remember to change its FROM
+    # clause. The column references above stay unqualified — there is exactly
+    # one relation in the FROM, so they resolve to it either way.
+    source_sql = f"{table} {DEFAULT_ALIAS}"
+
+    # STOCK. `employees` holds one row per PERSON, never one per period, so
+    # even the dated pivot — `date_col` is `date_of_joining` — is a cohort cut
+    # out of the current register rather than a flow of events, and the source
+    # has ALWAYS applied `is_active=TRUE`, so a hand-deactivated employee had
+    # already dropped out of it. What the guard changes is that somebody whose
+    # last working day has passed drops out too.
+    #
+    # Live 2026-08-26 for E2E Test & Associates this widget read 83, and
+    # grouped by `status` it said `{'active': 83}` for an org where 73 people
+    # are employed. A customer builds this one and pins it to their own screen.
+    #
+    # ── AND ONLY WHEN THERE IS NO WINDOW ────────────────────────────────────
+    #
+    # `employees` declares `date_col: "date_of_joining"`, and `PivotTab.jsx`
+    # posts `date_from`/`date_to` for anything other than "All time". So with a
+    # window this source stops being "who is on the rolls" and becomes "who
+    # JOINED inside these dates, by department" — a cohort over a past period,
+    # which is a FLOW. Guarding it there would erase anybody who joined in the
+    # window and has since left, and a hiring chart that silently drops your
+    # leavers is worse than one that counts them.
+    #
+    # Unwindowed the source has no period at all, so it can only mean the
+    # present, and the present is a stock. The two readings live in one source
+    # because `date_of_joining` is the only date on the table; splitting them
+    # into two sources is the better answer and is not this change.
+    if spec.get("on_the_rolls") and not (body.date_from or body.date_to):
+        where_clause += still_on_the_rolls(DEFAULT_ALIAS)
+
     if body.group_by and body.group_by2:
         # Both names are whitelist members, never caller text. The cap is on the
         # CELL count rather than the row count: 40 clients x 12 months is 480
@@ -1689,7 +1758,7 @@ async def run_pivot_query(
         rows = await pool.fetch(
             f"SELECT {body.group_by} AS label, {body.group_by2} AS col, "
             f"{measure_sql} AS value "
-            f"FROM {table} WHERE {where_clause} "
+            f"FROM {source_sql} WHERE {where_clause} "
             f"GROUP BY {body.group_by}, {body.group_by2} "
             f"ORDER BY 1, 2 LIMIT 600",
             *params,
@@ -1705,14 +1774,14 @@ async def run_pivot_query(
     if body.group_by:
         rows = await pool.fetch(
             f"SELECT {body.group_by} AS label, {measure_sql} AS value "
-            f"FROM {table} WHERE {where_clause} "
+            f"FROM {source_sql} WHERE {where_clause} "
             f"GROUP BY {body.group_by} ORDER BY value DESC LIMIT 50",
             *params,
         )
         return {"data": [dict(r) for r in rows], "source": body.source, "measure": body.measure}
     else:
         row = await pool.fetchrow(
-            f"SELECT {measure_sql} AS value, COUNT(*) AS count FROM {table} WHERE {where_clause}",
+            f"SELECT {measure_sql} AS value, COUNT(*) AS count FROM {source_sql} WHERE {where_clause}",
             *params,
         )
         return {"data": dict(row) if row else {}, "source": body.source, "measure": body.measure}

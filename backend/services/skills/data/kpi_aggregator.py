@@ -30,6 +30,8 @@ and will need its own handler.
 import logging
 from datetime import datetime, timedelta, timezone
 
+from services.on_the_rolls import still_on_the_rolls
+
 log = logging.getLogger(__name__)
 
 _PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}
@@ -133,12 +135,26 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         org_id, since,
     )
 
+    # A STOCK, and the only one in this function: every other arm above counts
+    # what happened inside `period`, and this one counts who is on the rolls
+    # right now regardless of it. So it is the only arm that carries the leaver
+    # guard, and adding it to any of the others would rewrite history — an
+    # ex-employee's invoices were still sent and their expenses were still paid.
+    #
+    # `is_active` alone answered 83 for E2E Test & Associates on 2026-08-26
+    # against 73 people actually on the rolls; the other ten had a last working
+    # day up to seven weeks past and keep the flag on purpose until their exit is
+    # settled (`services/on_the_rolls.py`). The table is aliased `e` for no other
+    # reason than that the shared predicate needs something to qualify — an
+    # inlined variant without an alias would be the copy this module exists to
+    # stop being written.
     employees = await _one(
         "employees_active",
-        """
+        f"""
         SELECT COUNT(*) AS cnt
-        FROM staging.manav_employees
-        WHERE org_id = $1::uuid AND status = 'active' AND is_active = true
+        FROM staging.manav_employees e
+        WHERE e.org_id = $1::uuid AND e.status = 'active' AND e.is_active = true
+          {still_on_the_rolls("e")}
         """,
         org_id,
     )
