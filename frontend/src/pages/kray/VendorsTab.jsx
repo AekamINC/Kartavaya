@@ -12,7 +12,45 @@ import { SkeletonList } from '../../components/ui/Skeleton';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 
-const COLUMNS = ['Name', 'GSTIN', 'Email', 'Phone', ''];
+const COLUMNS = ['Name', 'GSTIN', 'MSME', 'Terms', 'Email', 'Phone', ''];
+
+/* The second-script run on a field label. Deliberately NOT `<Secondary>` from
+   components/Bilingual: that one returns null under EN — the node is absent,
+   by design — whereas this form has always shown both scripts unconditionally.
+   Pulled out of the four labels that repeated it inline so the ten below read
+   as fields rather than as style attributes. */
+const HI = { fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' };
+const Hi = ({ t }) => <span aria-hidden="true" lang="hi" style={HI}>{' · '}{t}</span>;
+
+/* Mirrors the LIVE CHECK constraints ganit_vendors_enterprise_class_ck and
+   ganit_vendors_kind_ck (read from pg_constraint 2026-08-25, not from the
+   migration). '' is the unrecorded state and is always offered: NULL means
+   "nobody has said", which the 43B(h) skill counts apart from a real answer. */
+const CLASSES = [['', 'Not recorded'], ['micro', 'Micro'], ['small', 'Small'], ['medium', 'Medium']];
+const KINDS = [['', 'Not recorded'], ['manufacturer', 'Manufacturer'], ['service', 'Service'], ['trader', 'Trader']];
+const MSME = [['', 'Not recorded'], ['yes', 'Yes'], ['no', 'No']];
+
+const BLANK = {
+  name: '', gstin: '', email: '', phone: '',
+  is_msme: '', enterprise_class: '', vendor_kind: '',
+  udyam_number: '', tds_section: '', payment_terms_days: '',
+};
+
+/* Every compliance key is sent on every save, including blank ones — the
+   backend reads `model_fields_set`, so a key that is present-and-blank clears
+   the column to NULL and a key that is absent leaves it alone. Sending them
+   all is what makes a value removable after it was entered by mistake. */
+function payload(f) {
+  return {
+    name: f.name, gstin: f.gstin, email: f.email, phone: f.phone,
+    is_msme: f.is_msme === '' ? null : f.is_msme === 'yes',
+    enterprise_class: f.enterprise_class,
+    vendor_kind: f.vendor_kind,
+    udyam_number: f.udyam_number,
+    tds_section: f.tds_section,
+    payment_terms_days: f.payment_terms_days === '' ? null : Number(f.payment_terms_days),
+  };
+}
 
 export default function VendorsTab() {
   const { canWrite, reason: denial } = useModuleWrite({ label: 'manage vendors' });
@@ -24,7 +62,7 @@ export default function VendorsTab() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ name: '', gstin: '', email: '', phone: '' });
+  const [form, setForm] = useState(BLANK);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -41,13 +79,28 @@ export default function VendorsTab() {
 
   function startEdit(v) {
     setEditId(v.id);
-    setForm({ name: v.name, gstin: v.gstin || '', email: v.email || '', phone: v.phone || '' });
+    setForm({
+      name: v.name,
+      gstin: v.gstin || '',
+      email: v.email || '',
+      phone: v.phone || '',
+      /* Tri-state on the way in as well: `is_msme` is boolean-or-NULL, so a
+         null must hydrate as '' (not recorded) and false as 'no'. `?? ''`
+         rather than `|| ''` for the same reason on the number — 0 days is a
+         real answer (paid on delivery), not an empty box. */
+      is_msme: v.is_msme === null || v.is_msme === undefined ? '' : v.is_msme ? 'yes' : 'no',
+      enterprise_class: v.enterprise_class || '',
+      vendor_kind: v.vendor_kind || '',
+      udyam_number: v.udyam_number || '',
+      tds_section: v.tds_section || '',
+      payment_terms_days: v.payment_terms_days ?? '',
+    });
     setShowForm(true);
   }
 
   function startNew() {
     setEditId(null);
-    setForm({ name: '', gstin: '', email: '', phone: '' });
+    setForm(BLANK);
     setShowForm(true);
   }
 
@@ -57,14 +110,14 @@ export default function VendorsTab() {
     setSaving(true);
     try {
       if (editId) {
-        await api.patch(`/v1/ganit/vendors/${editId}`, form);
+        await api.patch(`/v1/ganit/vendors/${editId}`, payload(form));
         pushToast({ title: 'Vendor updated', type: 'success' });
       } else {
-        await api.post('/v1/ganit/vendors', form);
+        await api.post('/v1/ganit/vendors', payload(form));
         pushToast({ title: 'Vendor added', type: 'success' });
       }
       setShowForm(false);
-      setForm({ name: '', gstin: '', email: '', phone: '' });
+      setForm(BLANK);
       setEditId(null);
       load();
     } catch (err2) {
@@ -98,22 +151,77 @@ export default function VendorsTab() {
         <form className="gn-form gn-form--inline" onSubmit={save} style={{ marginBottom: '1.5rem' }}>
           <div className="gn-form__row">
             <label className="gn-form__field">
-              Name <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'नाम'}</span>
+              Name <Hi t="नाम" />
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
             </label>
             <label className="gn-form__field">
-              GSTIN <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'जीएसटीआईएन'}</span>
+              GSTIN <Hi t="जीएसटीआईएन" />
               <input value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value }))} placeholder="Optional" />
             </label>
           </div>
           <div className="gn-form__row">
             <label className="gn-form__field">
-              Email <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'ईमेल'}</span>
+              Email <Hi t="ईमेल" />
               <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
             </label>
             <label className="gn-form__field">
-              Phone <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'फ़ोन'}</span>
+              Phone <Hi t="फ़ोन" />
               <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+            </label>
+          </div>
+          <div className="gn-form__row">
+            <label className="gn-form__field">
+              MSME registered <Hi t="एमएसएमई" />
+              <select value={form.is_msme} onChange={e => setForm(f => ({ ...f, is_msme: e.target.value }))}>
+                {MSME.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+            <label className="gn-form__field">
+              Enterprise class <Hi t="श्रेणी" />
+              <select value={form.enterprise_class} onChange={e => setForm(f => ({ ...f, enterprise_class: e.target.value }))}>
+                {CLASSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <small className="fld__hint">
+                Micro and small suppliers are covered by the 45-day payment rule. Medium is not.
+              </small>
+            </label>
+          </div>
+          <div className="gn-form__row">
+            <label className="gn-form__field">
+              Vendor kind <Hi t="प्रकार" />
+              <select value={form.vendor_kind} onChange={e => setForm(f => ({ ...f, vendor_kind: e.target.value }))}>
+                {KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <small className="fld__hint">Traders are outside the rule.</small>
+            </label>
+            <label className="gn-form__field">
+              Udyam number <Hi t="उद्यम संख्या" />
+              <input
+                value={form.udyam_number}
+                onChange={e => setForm(f => ({ ...f, udyam_number: e.target.value }))}
+                placeholder="Optional · UDYAM-XX-00-0000000"
+              />
+            </label>
+          </div>
+          <div className="gn-form__row">
+            <label className="gn-form__field">
+              TDS section <Hi t="टीडीएस धारा" />
+              <input
+                value={form.tds_section}
+                onChange={e => setForm(f => ({ ...f, tds_section: e.target.value }))}
+                placeholder="Optional · e.g. 194C"
+              />
+            </label>
+            <label className="gn-form__field">
+              Payment terms <Hi t="भुगतान अवधि" />
+              <input
+                type="number"
+                min="0"
+                max="365"
+                value={form.payment_terms_days}
+                onChange={e => setForm(f => ({ ...f, payment_terms_days: e.target.value }))}
+                placeholder="Days · blank means no written agreement"
+              />
             </label>
           </div>
           <div className="gn-form__actions">
@@ -141,6 +249,11 @@ export default function VendorsTab() {
             <tr key={v.id}>
               <Td bold>{v.name}</Td>
               <Td mono>{v.gstin || '—'}</Td>
+              {/* The CLASS, not the is_msme flag: a medium enterprise is
+                  Udyam-registered and still outside the 45-day rule, so the
+                  class is the fact that decides whether the clock runs. */}
+              <Td>{v.enterprise_class ? v.enterprise_class[0].toUpperCase() + v.enterprise_class.slice(1) : '—'}</Td>
+              <Td>{v.payment_terms_days === null || v.payment_terms_days === undefined ? '—' : `${v.payment_terms_days}d`}</Td>
               <Td>{v.email || '—'}</Td>
               <Td>{v.phone || '—'}</Td>
               <Td>

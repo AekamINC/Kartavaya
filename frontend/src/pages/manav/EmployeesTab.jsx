@@ -49,11 +49,37 @@ import {
   useList, useResource, ErrorNote, Shim, errText,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
+import { GST_STATES } from '../../lib/validators';
+
+// The same statutory state list the invoice form's Place of supply select is
+// built from. Not a second copy: a free-text state is a state nothing
+// downstream can join on, and the join this field exists for is professional
+// tax, which is keyed on the numeric GST code.
+//
+// The VALUE is that numeric code ('27'). The backend also accepts 'MH' and
+// 'Maharashtra' and normalises them, but a select can only send what is in the
+// list, so the list sends the canonical form.
+const STATE_OPTIONS = Object.entries(GST_STATES)
+  .sort((a, b) => a[1].localeCompare(b[1]));
+
+/** '27' → 'Maharashtra'; anything unrecognised comes back as itself rather
+ *  than as a blank, so a value written by an importer is still visible. */
+function stateLabel(code) {
+  if (!code) return '';
+  return GST_STATES[code] || GST_STATES[String(code).padStart(2, '0')] || String(code);
+}
 
 const BLANK = {
   name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
   date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
   pan: '', aadhaar: '', shift: 'general',
+  // ── Which state this person works in ───────────────────────────────────────
+  //
+  // Professional tax is a STATE levy and the PT brief carries, as a permanent
+  // limitation printed on every run, "Nothing records which state each employee
+  // works in". This is that record — 98 of 98 employees had no state the day it
+  // was added. Blank is a real answer and blocks nothing.
+  state: '',
   // ── The statutory block ────────────────────────────────────────────────────
   //
   // Payroll deducts provident fund and ESI, prints both on the payslip, and
@@ -276,6 +302,20 @@ export default function EmployeesTab({ onUpdate }) {
             <Field label="Designation">
               <input className="k-formpanel__input" value={form.designation}
                 onChange={e => setForm({ ...form, designation: e.target.value })} />
+            </Field>
+            <Field label="Work state">
+              {/* A SELECT, not a text box, for the reason the invoice form's
+                  Place of supply is one: "Maharastra", "MH" and a trailing
+                  space are three different states to a database and one state
+                  to a person. Blank is the default and stays legal — a hire
+                  never fails for want of a state. */}
+              <select className="k-formpanel__input" value={form.state}
+                onChange={e => setForm({ ...form, state: e.target.value })}>
+                <option value="">Not recorded</option>
+                {STATE_OPTIONS.map(([code, name]) => (
+                  <option key={code} value={code}>{name}</option>
+                ))}
+              </select>
             </Field>
             <Field label="Employment type">
               <select className="k-formpanel__input" value={form.employment_type}
@@ -528,6 +568,12 @@ function EmployeeDetail({ id, onBack, onChanged }) {
       name: emp.name || '', email: emp.email || '', phone: emp.phone || '',
       department: emp.department || '', designation: emp.designation || '',
       employment_type: emp.employment_type || 'full_time',
+      // THE EDIT FORM IS A SEPARATE SHAPE FROM `BLANK`, and a field added to
+      // one and not the other is a field that saves on create and is silently
+      // dropped on every edit afterwards. `''` here means "not recorded" and
+      // the PATCH sends it as `""`, which the backend reads as "clear it" —
+      // so an admin can also take a state back off a record.
+      state: emp.state || '',
       // The statutory block. This is the form the payslip advisory names when
       // it says "Manav → Employees → the employee's record", so it is the one
       // that has to be able to set these.
@@ -660,6 +706,15 @@ function EmployeeDetail({ id, onBack, onChanged }) {
                 <input className="k-formpanel__input" value={editForm.designation}
                   onChange={e => setEditForm({ ...editForm, designation: e.target.value })} />
               </Field>
+              <Field label="Work state">
+                <select className="k-formpanel__input" value={editForm.state}
+                  onChange={e => setEditForm({ ...editForm, state: e.target.value })}>
+                  <option value="">Not recorded</option>
+                  {STATE_OPTIONS.map(([code, name]) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
+              </Field>
               <Field label="Employment type">
                 <select className="k-formpanel__input" value={editForm.employment_type}
                   onChange={e => setEditForm({ ...editForm, employment_type: e.target.value })}>
@@ -739,6 +794,9 @@ function EmployeeDetail({ id, onBack, onChanged }) {
           />
           <Fact k="IFSC" v={emp.bank_details?.ifsc} mono />
           <Fact k="Shift" v={emp.shift} />
+          {/* The NAME, never the code. `Fact` prints '—' for a blank, which is
+              the honest rendering of a state nobody has recorded. */}
+          <Fact k="Work state" v={stateLabel(emp.state)} />
           <Fact k="Blood group" v={emp.blood_group} />
         </dl>
 

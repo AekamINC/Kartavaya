@@ -56,7 +56,7 @@ from routers.graha import _listed  # noqa: E402
 # ends up skipping the org check the other does. Safe at module level: vikray
 # imports THIS module lazily, inside `convert_order_to_invoice`, so there is no
 # import cycle to break.
-from routers.vikray import resolve_order_company  # noqa: E402
+from routers.vikray import apply_line_costs, resolve_order_company  # noqa: E402
 
 #: Ganit is a SEPARATED-DUTY module: administering the books and releasing money
 #: against them are different authorities, and holding `admin` does not confer
@@ -147,12 +147,40 @@ class PaymentRecord(BaseModel):
     notes: str = ""
 
 
+#: The six MSME / TDS facts migration 175 added to `ganit_vendors` and NOTHING
+#: has ever written: all six are NULL on 80 of 80 live vendors, which is why
+#: Kray's two headline differentiators — the 43B(h) 45-day clock and TDS 194Q
+#: attribution — both read an empty set. The columns, the skill, the reports and
+#: their tests were all built; the form field was the only missing piece.
+#:
+#: EVERY ONE IS OPTIONAL AND NULL IS MEANINGFUL. NULL means "nobody has said",
+#: which `vendor_compliance.py` counts SEPARATELY from false — a vendor with no
+#: recorded class stays in scope and is reported as resting on an assumption,
+#: whereas `is_msme = FALSE` excludes. Writing '' or 0 for "unset" would destroy
+#: that distinction (and '' would trip the live CHECK), so blank -> NULL.
 class VendorCreate(BaseModel):
     name: str
     gstin: str = ""
     email: str = ""
     phone: str = ""
     address: dict = {}
+    #: Udyam-registered at all. Tri-state on purpose — see above.
+    is_msme: bool | None = None
+    #: micro | small | medium. THE 45-DAY SECTION DOES NOT COVER MEDIUM: a
+    #: medium enterprise is Udyam-registered and `is_msme` is true of it, yet it
+    #: sits outside the disallowance. The skill therefore tests THIS, not the
+    #: flag, so this is the field that actually turns the clock on.
+    enterprise_class: str = ""
+    #: manufacturer | service | trader. The section does not reach traders.
+    vendor_kind: str = ""
+    udyam_number: str = ""
+    #: Free text by design — the Income-tax Act 2025 renumbered the sections and
+    #: they live in `statute_calendar`, not in a CHECK on this table.
+    tds_section: str = ""
+    #: Agreed credit period. The 15-vs-45 split is unrepresentable without it:
+    #: 15 days where there is no written agreement, 45 where there is and it
+    #: says so. NULL is the 15-day leg, so leaving it blank is a real answer.
+    payment_terms_days: int | None = None
 
 
 class VendorUpdate(BaseModel):
@@ -161,6 +189,12 @@ class VendorUpdate(BaseModel):
     email: str | None = None
     phone: str | None = None
     address: dict | None = None
+    is_msme: bool | None = None
+    enterprise_class: str | None = None
+    vendor_kind: str | None = None
+    udyam_number: str | None = None
+    tds_section: str | None = None
+    payment_terms_days: int | None = None
 
 
 class VendorBillCreate(BaseModel):
@@ -321,6 +355,34 @@ def _compute_invoice(items: list[LineItem], is_igst: bool, flat_discount: float 
         "discount": round(flat_discount, 2),
         "total": total,
     }
+
+
+async def _compute_invoice_costed(pool, org_id: str, items: list[LineItem],
+                                  is_igst: bool, flat_discount: float = 0,
+                                  prior_items=None):
+    """`_compute_invoice`, plus the cost each line carries out of the catalogue.
+
+    Every invoice path that builds its lines from a request body goes through
+    here rather than through `_compute_invoice` directly — create, update,
+    from-deal and from-timesheet — so `line_items[].cost_price` is written by
+    ONE rule for all four. `tests/test_line_cost_snapshot.py` holds that as a
+    source-level invariant, because the fifth path added next month is the one
+    that would otherwise write uncosted lines and nobody would notice until
+    gross profit was quietly wrong.
+
+    `_compute_invoice` itself stays pure and synchronous. It is a rounding
+    contract shared with `services/purchase_orders.py` — the two must round a
+    matched PO and its invoice identically or every match reports a tax
+    discrepancy — and its tests call it directly. Costing is a database read;
+    it does not belong inside an arithmetic function.
+
+    See `vikray.apply_line_costs` for what `prior_items` is for: on update it
+    is the invoice's lines AS STORED, so an edit cannot re-price a line at
+    today's cost.
+    """
+    computed = _compute_invoice(items, is_igst, flat_discount)
+    await apply_line_costs(pool, org_id, computed["line_items"], prior_items)
+    return computed
 
 
 async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_id: str | None):
@@ -574,7 +636,11 @@ async def create_invoice(
     # the same firm twice.
     client_id = await resolve_order_company(pool, org_id, body.client_id, body.contact_id)
 
-    computed = _compute_invoice(body.line_items, body.is_igst, body.discount)
+    # Costed as it is computed: each line that names a product carries that
+    # product's cost out of the catalogue and keeps it. No `prior_items` —
+    # nothing exists yet to carry.
+    computed = await _compute_invoice_costed(
+        pool, org_id, body.line_items, body.is_igst, body.discount)
 
     inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
     due = date.fromisoformat(body.due_date) if body.due_date else None
@@ -715,8 +781,12 @@ async def update_invoice(
         raise HTTPException(400, "At least one line item is required")
 
     existing = await pool.fetchrow(
+        # `line_items` joins the projection so the edit can carry the cost each
+        # line was written with. Without it, the REPLACE below would re-read
+        # the catalogue and silently re-price the whole document at today's
+        # cost — see `_compute_invoice_costed`.
         "SELECT invoice_number, doc_status, total, balance_due, is_active, "
-        "       sent_at, viewed_at "
+        "       sent_at, viewed_at, line_items "
         "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
         str(invoice_id), org_id,
     )
@@ -733,7 +803,17 @@ async def update_invoice(
             "note.",
         )
 
-    computed = _compute_invoice(body.line_items, body.is_igst, body.discount)
+    # An edit REPLACES every line, so the invoice's stored lines are handed in
+    # as `prior_items`: a product already on this document keeps the cost it
+    # was invoiced at, and only a line this edit ADDS is resolved at today's
+    # cost. Re-resolving the lot would make correcting a typo in a description
+    # silently restate last quarter's gross profit.
+    _prior_lines = existing["line_items"]
+    if isinstance(_prior_lines, str):
+        _prior_lines = json.loads(_prior_lines)
+    computed = await _compute_invoice_costed(
+        pool, org_id, body.line_items, body.is_igst, body.discount,
+        _prior_lines if isinstance(_prior_lines, list) else None)
     inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
     due = date.fromisoformat(body.due_date) if body.due_date else None
 
@@ -1546,6 +1626,13 @@ async def convert_to_invoice(
             str(inv["contact_id"]) if inv["contact_id"] else "")
     )
 
+    # The lines cross VERBATIM (`inv["line_items"]` is bound straight through),
+    # and that is what carries `cost_price` from the estimate to the invoice.
+    # `apply_line_costs` is deliberately NOT called here: the quotation already
+    # recorded what each line cost when it was quoted, and re-resolving at
+    # acceptance would price the accepted job at a catalogue the customer never
+    # saw. A quote accepted in June must report June's margin, not today's.
+    #
     # A conversion mints a new FINAL tax invoice — a raise like any other, so
     # it announces invoice.created off the row as written.
     async with pool.acquire() as _conn:
@@ -2203,6 +2290,20 @@ async def generate_recurring_invoice(
         taxable = qty * rate
         li["line_total"] = round(taxable + taxable * li_gst / 100, 2)
 
+    # Costed, and this is the ONE path where that also means sanitised.
+    # `RecurringCreate.template_items` is `list[dict]` — the only line shape in
+    # either module that is not a closed model — so a cost planted in a profile
+    # by the browser would otherwise be copied onto a real tax invoice every
+    # month, unread by any validator, and land in gross profit as though the
+    # server had recorded it. `apply_line_costs` discards whatever arrived and
+    # decides for itself.
+    #
+    # Resolved fresh each period rather than carried, deliberately: a retainer
+    # billed monthly is a NEW line written this month, and this month's cost is
+    # what it cost. The carry rule exists for EDITS to one document, not for a
+    # profile that mints a new one each period.
+    await apply_line_costs(pool, org_id, items)
+
     # The company, inherited from the person the profile bills. A retainer is
     # the LONGEST-lived billing relationship a firm has and this path wrote no
     # `client_id` at all, so every month's invoice landed under "Unlinked
@@ -2378,7 +2479,15 @@ async def create_invoice_from_deal(
             return {"status": "exists", "invoice_id": str(existing["id"])}
 
         inv_num = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
-        computed = _compute_invoice(
+        # Costed on the same terms as every other invoice write — and this one
+        # resolves NOTHING, deliberately. A deal is an amount and a title: the
+        # single line below is synthesised from `deal.value` with no
+        # `product_id`, so there is no product to read a cost from and the key
+        # is correctly omitted. The funnel stays uniform so that the day this
+        # route learns to carry the deal's products across, it is already
+        # costed — and so the source-level invariant needs no exception.
+        computed = await _compute_invoice_costed(
+            pool, org_id,
             [LineItem(description=deal["title"] or "Deal", quantity=1, rate=float(deal["value"] or 0))],
             is_igst=False,
         )
@@ -2448,6 +2557,70 @@ def _checked_gstin(raw: str | None) -> str:
         raise HTTPException(400, str(exc)) from exc
 
 
+#: The two allowlists mirror the LIVE CHECK constraints, read from pg_constraint
+#: on 2026-08-25 rather than from migration 175 — an inline CHECK on an
+#: `ADD COLUMN IF NOT EXISTS` is skipped in its entirety when the column already
+#: exists, so the migration text is not evidence that the constraint is there.
+#: `ganit_vendors_enterprise_class_ck` and `ganit_vendors_kind_ck` both confirmed
+#: present. Validating here turns a typo into a readable 400 instead of a
+#: constraint violation the caller cannot act on.
+_ENTERPRISE_CLASSES = ("micro", "small", "medium")
+_VENDOR_KINDS = ("manufacturer", "service", "trader")
+
+
+def _one_of(raw: str | None, allowed: tuple[str, ...], label: str) -> str | None:
+    """Blank -> NULL, a listed value -> itself, anything else -> 400.
+
+    BLANK MUST BECOME NULL, not ''. Two reasons, and both bite: '' fails the
+    live CHECK (which admits NULL but not the empty string), and NULL is the
+    value `vendor_compliance.py` reads as "nobody has said" — a state it counts
+    separately from a recorded answer so a reader can tell which findings rest
+    on an assumption. Unset is always legal; a compliance field never blocks a
+    save, the same house rule GSTIN/PAN/TAN live under.
+    """
+    val = (raw or "").strip().lower()
+    if not val:
+        return None
+    if val not in allowed:
+        raise HTTPException(400, f"{label} must be one of: {', '.join(allowed)}")
+    return val
+
+
+def _checked_terms(days: int | None) -> int | None:
+    """0-365 or NULL, mirroring `ganit_vendors_terms_ck` (confirmed live).
+
+    NULL is a real answer here and not a gap: per migration 175's own column
+    comment it is the 15-day leg of the 45-day clock — no written agreement
+    recorded — so an empty box is meaningful and must not be coerced to 0.
+    """
+    if days is None:
+        return None
+    if not 0 <= days <= 365:
+        raise HTTPException(400, "Payment terms must be between 0 and 365 days")
+    return days
+
+
+def _udyam(raw: str | None) -> str | None:
+    """Trimmed and upper-cased. NEVER rejected.
+
+    The registration number is formatted UDYAM-XX-00-0000000, but this only
+    normalises it. Refusing a mis-typed one would make the supplier
+    unrecordable, which is the exact failure mode the GSTIN/PAN/TAN rule exists
+    to prevent — and the skill that reads this reports what it found rather than
+    trusting the shape.
+    """
+    return (raw or "").strip().upper() or None
+
+
+def _free_text(raw: str | None) -> str | None:
+    """Trimmed, blank -> NULL. Used for `tds_section`, which is free text BY
+    DESIGN: the Income-tax Act 2025 renumbered the sections, so the numbers
+    belong in `statute_calendar` and not in a CHECK on this table (migration
+    175 says so in as many words). The skill normalises '194C' / 's.194C' /
+    'Section 194C' to one key on the read side."""
+    return (raw or "").strip() or None
+
+
 @router.get("/vendors")
 async def list_vendors(
     search: str = "",
@@ -2476,9 +2649,19 @@ async def create_vendor(
     pool = await get_pool()
     gstin = _checked_gstin(body.gstin)
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_vendors (org_id, name, gstin, email, phone, address) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb) RETURNING *",
+        "INSERT INTO staging.ganit_vendors "
+        "(org_id, name, gstin, email, phone, address, "
+        " is_msme, enterprise_class, vendor_kind, udyam_number, tds_section, "
+        " payment_terms_days) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb, "
+        " $7::boolean, $8, $9, $10, $11, $12::int) RETURNING *",
         org_id, body.name, gstin, body.email, body.phone, json.dumps(body.address),
+        body.is_msme,
+        _one_of(body.enterprise_class, _ENTERPRISE_CLASSES, "Enterprise class"),
+        _one_of(body.vendor_kind, _VENDOR_KINDS, "Vendor kind"),
+        _udyam(body.udyam_number),
+        _free_text(body.tds_section),
+        _checked_terms(body.payment_terms_days),
     )
     return dict(row)
 
@@ -2493,6 +2676,11 @@ async def update_vendor(
 ):
     pool = await get_pool()
     updates, vals = [], []
+    #: `None` means "not supplied, leave alone"; a supplied blank CLEARS the
+    #: column to NULL. That distinction is why the compliance fields cannot ride
+    #: the plain loop below — `_one_of`/`_udyam`/`_free_text` all fold '' to
+    #: None, so passing an empty string through them is how a user un-sets a
+    #: value they entered by mistake.
     for field in ("name", "gstin", "email", "phone"):
         val = getattr(body, field)
         if val is not None:
@@ -2500,6 +2688,33 @@ async def update_vendor(
                 val = _checked_gstin(val)
             vals.append(val)
             updates.append(f"{field}=${len(vals)}")
+    #: `model_fields_set` and NOT a None default, the same distinction
+    #: `billing.py:1187` documents. Every one of these six columns is a
+    #: tri-state where NULL carries meaning — "nobody has said", which
+    #: `vendor_compliance.py` counts apart from a recorded answer. If "absent"
+    #: and "explicitly cleared" both arrived as None, a value entered by mistake
+    #: could never be taken back, and the vendor would keep asserting a
+    #: compliance fact nobody stands behind. Sent-and-blank clears to NULL;
+    #: not sent at all leaves the column untouched.
+    sent = body.model_fields_set
+    if "is_msme" in sent:
+        vals.append(body.is_msme)
+        updates.append(f"is_msme=${len(vals)}::boolean")
+    if "enterprise_class" in sent:
+        vals.append(_one_of(body.enterprise_class, _ENTERPRISE_CLASSES, "Enterprise class"))
+        updates.append(f"enterprise_class=${len(vals)}")
+    if "vendor_kind" in sent:
+        vals.append(_one_of(body.vendor_kind, _VENDOR_KINDS, "Vendor kind"))
+        updates.append(f"vendor_kind=${len(vals)}")
+    if "udyam_number" in sent:
+        vals.append(_udyam(body.udyam_number))
+        updates.append(f"udyam_number=${len(vals)}")
+    if "tds_section" in sent:
+        vals.append(_free_text(body.tds_section))
+        updates.append(f"tds_section=${len(vals)}")
+    if "payment_terms_days" in sent:
+        vals.append(_checked_terms(body.payment_terms_days))
+        updates.append(f"payment_terms_days=${len(vals)}::int")
     if body.address is not None:
         vals.append(json.dumps(body.address))
         updates.append(f"address=${len(vals)}::jsonb")
@@ -3357,7 +3572,13 @@ async def create_invoice_from_time_entries(
         ))
         entry_ids.append(e["entry_id"])
 
-    computed = _compute_invoice(line_items, body.is_igst, 0)
+    # Same funnel, and this one also resolves nothing: a line here is an
+    # employee's hours, priced at their hourly rate. Time is not a catalogue
+    # item, there is no `ganit_products` row behind it, and the key is
+    # correctly omitted rather than set to the wage — which would be a
+    # different figure with a different meaning (see Phase 4's consultant P&L,
+    # which reads cost-to-serve from payroll, not from this key).
+    computed = await _compute_invoice_costed(pool, org_id, line_items, body.is_igst, 0)
     inv_number = await _next_invoice_number(pool, org_id, "INV")
     inv_date = date.today()
 

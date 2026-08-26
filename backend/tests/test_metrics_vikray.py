@@ -308,13 +308,25 @@ def test_concentration_folds_unattributed_and_groups_by_company_identity():
 
 # ── declared absent ──────────────────────────────────────────────────────────
 
-def test_margin_is_absent_for_the_snapshot_reason_not_a_missing_column():
-    """Migration 137 ADDED cost_price (2026-08-09), so 'no cost column' is no
-    longer the truth. The honest blocker moved: today's cost is not the cost
-    at order time, and line_items snapshots none. The reason must say so."""
+def test_margin_is_absent_for_coverage_not_for_a_missing_write_path():
+    """The blocker has moved TWICE and the reason has to move with it.
+
+    Migration 137 added `ganit_products.cost_price`, so "no cost column" stopped
+    being true. Phase 1.3 (2026-08-25) added the snapshot — every order and
+    invoice line written from now on carries `cost_price` per unit, copied at
+    write time — so "line_items snapshots no cost" stopped being true too, and
+    a reason still claiming it would send the next reader to build something
+    that already exists.
+
+    What is left is COVERAGE: 2 of 106 products carry a cost and every existing
+    line predates the key. So the reason must name the data, not the plumbing,
+    and must not go back to claiming nothing writes it."""
     m = REGISTRY["vikray.order_margin"]
     assert m.sql is None and m.absent
     assert "cost_price" in m.absent
-    assert "migration 137" in m.absent
-    assert "cost at order time" in m.absent
+    assert "migration 184" in m.absent, "the snapshot contract must be named"
+    assert "2 of 106" in m.absent, "the reason must carry the measured coverage"
+    # The old claim, now false. A reason that says the line snapshots no cost
+    # is a reason that outlived its own fix.
+    assert "snapshots no cost" not in m.absent
     assert len(m.absent) > 60, "a reason must be a sentence someone can act on"

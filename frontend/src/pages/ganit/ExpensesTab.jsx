@@ -11,7 +11,7 @@
 //
 // The names below are the ones the endpoint actually returns, and `by_category`
 // — real data the panel was discarding — is now shown rather than thrown away.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
@@ -38,6 +38,11 @@ import {
 } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+// The same control the invoice form names its customer with. `GET
+// /v1/graha/contacts` stops at 200 rows and this product already has an org
+// with 292 live contacts, so the list is narrowed by the SERVER as the user
+// types — filtering a truncated array in the browser hides people silently.
+import ServerPicker from '../../components/ui/ServerPicker';
 
 /**
  * The two tables on this tab, declared once each. Two keys, not one: they are
@@ -68,6 +73,17 @@ const EXPENSE_COLUMNS = [
   { id: 'title', label: 'Title', sortKey: 'title', fixed: true },
   { id: 'category', label: 'Category', sortKey: 'category' },
   { id: 'vendor_name', label: 'Vendor', sortKey: 'vendor_name' },
+  /* Vendor is who we PAID; this is who we paid it FOR. `list_expenses` has
+     resolved `contact_id` to `contact_name` since it was written
+     (`ganit.py:1604`) and no column ever showed it, so the one fact that makes
+     an expense rechargeable was on the wire and off the screen.
+
+     "Client contact" and not "Client": the column behind it is
+     `ganit_expenses.contact_id`, which points at `graha_contacts` — a PERSON.
+     A CRM client is the COMPANY, and `ganit_expenses` has no `client_id` at
+     all, so a heading that said "Client" would promise a company link this
+     table cannot make. */
+  { id: 'contact_name', label: 'Client contact', sortKey: 'contact_name' },
   { id: 'amount', label: 'Amount', sortKey: 'amount', num: true },
   { id: 'tax_amount', label: 'Tax', sortKey: 'tax_amount', num: true },
   { id: 'total', label: 'Total', sortKey: 'total', num: true },
@@ -101,10 +117,25 @@ const EXPENSE_COLUMNS = [
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
   vendor: '', reference: '', notes: '', is_billable: false,
+  /* The key that was missing, and the whole of the defect. `ExpenseCreate`
+     has carried `contact_id` since migration 019, the INSERT writes it as
+     `NULLIF($13,'')::uuid` and the PATCH has the same branch — and because
+     `BLANK` had no such key, the `{ ...form }` spread in `save()` never sent
+     one. 0 of 378 expenses carry a contact, 88 of them billable, and the
+     reason was one absent line in an object literal.
+
+     `''` and not null: the API takes a string and turns blank into NULL
+     itself, so an empty picker sends an empty string on both paths and the
+     column is set to NULL rather than left behind. */
+  contact_id: '',
 };
 
-/** Create and edit are the same eight fields. */
-function ExpenseFields({ value, onChange, categories }) {
+/**
+ * Create and edit are the same nine fields — ONE component, rendered twice
+ * (the create form and the inline edit row), which is what stops a field from
+ * existing on one and not the other.
+ */
+function ExpenseFields({ value, onChange, categories, contactItems, onSearchContacts }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
   return (
     <div className="gn-form__grid gn-form__grid--flush">
@@ -142,12 +173,59 @@ function ExpenseFields({ value, onChange, categories }) {
         <span className="fld__l">Reference</span>
         <input className="inp" value={value.reference} onChange={e => set('reference', e.target.value)} />
       </label>
+      {/* Who the money was spent FOR — `ganit_expenses.contact_id`.
+          A `<div>`, not a `<label>`: the picker's control is a real `<button>`,
+          which is not a labelable element, so `ariaLabel` names it instead.
+          `InvoiceForm.jsx:620` carries the same note for the same reason, and
+          wrapping it in a label is how the accessible name gets lost.
+
+          It sits BESIDE the billable tick and never behind it. The field is
+          most useful when the tick is on, but hiding it until then would
+          recreate exactly the bug this exists to fix — a column that can only
+          be filled in a state the user has to discover first is a column
+          nobody fills. So it is always drawn, always enabled, never required,
+          and its hint changes rather than the control. */}
+      <div className="fld">
+        <span className="fld__l">Client contact</span>
+        <ServerPicker
+          mode="option" field ariaLabel="Client contact"
+          search
+          items={contactItems}
+          value={value.contact_id}
+          placeholder="No client"
+          onChange={id => set('contact_id', id || '')}
+          onSearch={onSearchContacts}
+        />
+        {/* Prose, not a rule. The stronger sentence appears when the expense is
+            marked billable, because that is when a blank here costs something
+            — but it is a consequence, stated, and not a validation. */}
+        <span className="fld__hint">
+          {value.is_billable
+            ? 'Optional — but a billable expense with nobody named cannot be recharged or counted against a client.'
+            : 'Optional. Attributes the cost to a client; the company is shown beside each name.'}
+        </span>
+      </div>
       <label className="gn-chk">
         <input type="checkbox" checked={value.is_billable} onChange={e => set('is_billable', e.target.checked)} />
         <span>Billable to a customer</span>
       </label>
     </div>
   );
+}
+
+/**
+ * Merge server rows into the local list by id, keeping what is already there.
+ *
+ * The picker asks the server for `?search=` results, so the array grows a page
+ * at a time and the SELECTED row has to survive every one of those answers —
+ * otherwise the trigger label goes blank the moment a search returns a page the
+ * chosen person is not on. `InvoiceForm` learned this first; the rule is the
+ * same here, so the shape is deliberately identical.
+ */
+function mergeById(prev, next) {
+  const seen = new Map(prev.map(r => [String(r.id), r]));
+  for (const r of next) seen.set(String(r.id), { ...seen.get(String(r.id)), ...r });
+  return [...seen.values()];
 }
 
 export default function ExpensesTab() {
@@ -158,6 +236,7 @@ export default function ExpensesTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [catFilter, setCatFilter] = useState('');
   const [stats, setStats] = useState(null);
   const [statsFailed, setStatsFailed] = useState(false);
@@ -199,8 +278,46 @@ export default function ExpensesTab() {
     } catch { /* the picker falls back to General, which always exists */ }
   }, []);
 
+  /**
+   * The CRM's people, for the client-contact picker.
+   *
+   * Silent on failure, and deliberately: `/v1/graha/contacts` sits behind the
+   * CRM entity gate and answers 403 for an org without Graha. That org still
+   * records expenses — the field is optional — so a toast here would be an
+   * error message on every load of a tab that is working exactly as intended.
+   * The picker simply offers nothing, which is the truth.
+   */
+  const loadContacts = useCallback(async () => {
+    try {
+      const r = await api.get('/v1/graha/contacts');
+      setContacts(prev => mergeById(prev, rows(r)));
+    } catch { /* no CRM, or no permission: the field stays empty and optional */ }
+  }, []);
+
+  /** What the picker's search box asks for, debounced by `ServerPicker`. */
+  const searchContacts = useCallback(async (q) => {
+    try {
+      const r = await api.get('/v1/graha/contacts', { params: q ? { search: q } : {} });
+      setContacts(prev => mergeById(prev, rows(r)));
+    } catch { /* the list simply does not grow; the picker keeps what it has */ }
+  }, []);
+
+  /**
+   * NAMES on screen, the id only in `value`/`onChange`.
+   *
+   * `meta` is the COMPANY, which is the point: two people called Sharma at two
+   * different customers are one indistinguishable row without it, and picking
+   * the wrong one misattributes the cost silently.
+   */
+  const contactItems = useMemo(() => contacts.map(c => ({
+    id: String(c.id),
+    name: c.name,
+    meta: c.client_name || c.company || c.designation || '',
+  })), [contacts]);
+
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadStats(); loadCategories(); }, [loadStats, loadCategories]);
+  useEffect(() => { loadStats(); loadCategories(); loadContacts(); },
+    [loadStats, loadCategories, loadContacts]);
 
   async function save(e) {
     e.preventDefault();
@@ -221,10 +338,24 @@ export default function ExpensesTab() {
 
   function startEdit(ex) {
     setEditId(ex.id);
+    /* Seed the picker with the row's OWN contact before opening the form.
+       The list is a 200-row window and can be empty outright (no CRM, or a
+       403), so the person already on this expense may not be in it — and a
+       trigger that reads "No client" over an expense that HAS one is not just
+       wrong on screen. The PATCH now sends `contact_id` on every save, so a
+       blank trigger would CLEAR a real attribution the moment anything else on
+       the row was edited. Appended only when absent, so a full row already in
+       the list is never overwritten by this thinner one. */
+    if (ex.contact_id) {
+      setContacts(prev => (prev.some(c => String(c.id) === String(ex.contact_id))
+        ? prev
+        : [...prev, { id: ex.contact_id, name: ex.contact_name || 'Client contact' }]));
+    }
     setEditForm({
       title: ex.title || '', category: ex.category || 'general', amount: ex.amount ?? '',
       tax_amount: ex.tax_amount ?? 0, expense_date: ex.expense_date || '', vendor: ex.vendor || '',
       reference: ex.reference || '', notes: ex.notes || '', is_billable: !!ex.is_billable,
+      contact_id: ex.contact_id || '',
     });
   }
 
@@ -271,7 +402,9 @@ export default function ExpensesTab() {
   const byCategory = Array.isArray(stats?.by_category) ? stats.by_category : [];
 
   const view = useTableView(expenses, {
-    searchKeys: ['title', 'vendor_name', 'category'],
+    // `contact_name` is searchable for the same reason it is a column: "what
+    // did we spend on Acme" is the question a recharge starts from.
+    searchKeys: ['title', 'vendor_name', 'category', 'contact_name'],
     filters: [{ key: 'category', label: 'Category' }, { key: 'is_billable', label: 'Billable' }],
   });
   // Both hooks run unconditionally, above every branch below — the summary
@@ -384,7 +517,10 @@ export default function ExpensesTab() {
       {showForm && canWrite && (
         <form className="gn-form" onSubmit={save}>
           <h3 className="gn-form__t">Record an expense</h3>
-          <ExpenseFields value={form} onChange={setForm} categories={categories} />
+          <ExpenseFields
+            value={form} onChange={setForm} categories={categories}
+            contactItems={contactItems} onSearchContacts={searchContacts}
+          />
           <div className="gn-form__acts">
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowForm(false)}>Cancel</button>
             <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
@@ -452,6 +588,8 @@ export default function ExpensesTab() {
                       title: <td><button type="button" className="gn-link" onClick={() => startEdit(ex)}>{ex.title}</button></td>,
                       category: <td><Badge text={ex.category} color="var(--st-in-review)" /></td>,
                       vendor_name: <td>{ex.vendor || '—'}</td>,
+                      // A NAME. `contact_id` never reaches the screen.
+                      contact_name: <td>{ex.contact_name || '—'}</td>,
                       amount: <td className="tbl__num">{inr(Number(ex.amount))}</td>,
                       tax_amount: <td className="tbl__num gn-tbl__mute">{inr(Number(ex.tax_amount || 0))}</td>,
                       total: <td className="tbl__num">{inr(Number(ex.total))}</td>,
@@ -487,7 +625,10 @@ export default function ExpensesTab() {
                       <td colSpan={cols.columns.length}>
                         <form className="gn-form gn-form--accent" onSubmit={saveEdit}>
                           <h4 className="gn-form__h">Edit expense</h4>
-                          <ExpenseFields value={editForm} onChange={setEditForm} categories={categories} />
+                          <ExpenseFields
+                            value={editForm} onChange={setEditForm} categories={categories}
+                            contactItems={contactItems} onSearchContacts={searchContacts}
+                          />
                           <div className="gn-form__acts">
                             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditId(null)}>Cancel</button>
                             <button type="submit" className="btn btn--fill btn--sm" disabled={editSaving}>

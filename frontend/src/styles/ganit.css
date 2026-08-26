@@ -78,7 +78,11 @@
   gap: 4px;
   font-size: var(--t-body);
 }
-.gn-form__field input { width: 100%; }
+.gn-form__field input,
+/* `select` was never in this rule because the inline vendor/expense forms
+   had no dropdowns until the vendor MSME + TDS fields landed; without it a
+   select shrinks to its widest option and the two-column row goes ragged. */
+.gn-form__field select { width: 100%; }
 .gn-form__actions {
   display: flex;
   gap: var(--sp-2);

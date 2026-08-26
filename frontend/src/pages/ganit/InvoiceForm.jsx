@@ -17,7 +17,20 @@ import DateInput from '../../components/ui/DateInput';
 import ServerPicker from '../../components/ui/ServerPicker';
 import { Picker } from '../../components/ui/Picker';
 
-const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
+// `product_id` carries NO visible field and never will: it is here so the
+// SERVER can look up what the line cost us and stamp `cost_price` onto it at
+// write time (migration 184). Without it, a line picked from the catalogue
+// arrived at the API indistinguishable from free text, and gross profit, item
+// margin and product margin had nothing to compute from.
+//
+// This form never SENDS a cost and never SHOWS one. The stored line does come
+// back on the staff-facing detail read (`SELECT i.*`), which is the firm's own
+// figure to see; the mapper below deliberately does not carry it into form
+// state, so an edit cannot round-trip a cost the server did not decide. The
+// customer-facing surface is a different question and is answered elsewhere:
+// `routers/pay.py` allow-lists the line keys it republishes, and
+// `test_pay_public.py` holds that list.
+const EMPTY_LINE = { product_id: '', description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 
 // Mirrors `doc_validation.TAX_DOCUMENT_TYPES` — the variants that carry the
 // full Rule 46 particulars. A quotation or proforma is an offer, not a tax
@@ -479,6 +492,13 @@ export default function InvoiceForm({
     if (!p) return;
     const line = {
       ...EMPTY_LINE,
+      // WHICH product, kept on the line after the prefill. This form copied
+      // the name, the HSN, the rate and the unit and then threw away the one
+      // thing that said where they came from — so every invoice line the UI
+      // has ever produced was uncostable, and the margin reports read blank.
+      // Not rendered anywhere: it is an id, and ids are never shown
+      // (`check-rendered-ids.mjs`). The server reads it and writes the cost.
+      product_id: p.id,
       description: p.name,
       hsn_code: p.hsn_code || p.sac_code || '',
       rate: Number(p.price) || 0,

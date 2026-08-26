@@ -6,6 +6,7 @@ import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -270,6 +271,125 @@ async def resolve_order_company(pool, org_id: str, client_id: str,
     return None
 
 
+#: The one place `line_items[].cost_price` is written, for orders and invoices
+#: both. Ganit imports it from here for the same reason it imports
+#: `resolve_order_company`: two copies of a costing rule is how the order and
+#: the invoice it becomes end up disagreeing about what the sale cost.
+async def apply_line_costs(pool, org_id: str, items: list,
+                           prior_items=None) -> list:
+    """Stamp the cost onto each line AT THE MOMENT THE LINE IS WRITTEN.
+
+    Migration 184's contract, in code:
+
+        line_items[].cost_price   numeric, per ONE unit, exclusive of tax, in
+                                  the document's own currency, as at the moment
+                                  the line was written. Absent means NOT
+                                  RECORDED and must never be read as zero.
+
+    Four rules, each of which a naive implementation gets wrong:
+
+    ── COPY, NEVER JOIN ────────────────────────────────────────────────────
+    The cost is read from `staging.ganit_products.cost_price` once, here, and
+    written onto the line. Readers must never join back to the product:
+    procurement renegotiates, and a report that joins re-prices last January's
+    gross profit every time it does. The line records what it cost THEN.
+
+    ── ABSENT, NEVER ZERO ──────────────────────────────────────────────────
+    A line with no product, a product this org does not have, or a product
+    whose cost nobody has recorded, gets NO `cost_price` KEY AT ALL — not 0,
+    not null. 104 of the 106 live products carry no cost, so zero would report
+    almost the entire catalogue as pure profit. The readers guard on
+    `li ? 'cost_price' AND jsonb_typeof(li->'cost_price') = 'number'`
+    (`services/report_defs/commission_reports.py`), which is exactly the shape
+    an omitted key satisfies and a `null` does not — hence `float()`, so the
+    value lands in the document as a JSON number rather than a string.
+
+    ── SERVER-SIDE, NEVER THE BROWSER'S ────────────────────────────────────
+    What a firm pays its suppliers is not on the invoice its customer receives
+    and is not the customer's — or the customer's browser's — to set. Any
+    `cost_price` already on an incoming line is DISCARDED before this decides.
+    `OrderLineItem` and `LineItem` are closed models and drop it already, but
+    `RecurringCreate.template_items` is `list[dict]` and does not, so this is
+    the check that actually closes that door.
+
+    ── CARRIED ON UPDATE, NEVER RE-RESOLVED ────────────────────────────────
+    `update_order` and `update_invoice` REPLACE every line. Re-resolving there
+    would silently re-price a January order at August's cost — precisely the
+    join this key exists to avoid, just performed by the write path instead of
+    the report. `prior_items` is the document's lines AS STORED: any product
+    already on it keeps the cost it was written with, and only a line new to
+    the document is resolved at today's cost, which for that line is the
+    moment it was written.
+
+    One query per write, org-scoped, whatever the line count.
+    """
+    if not items:
+        return items
+
+    # What this document already recorded, keyed by product. A cost is only
+    # carried if it is genuinely a number: a `null` left by an older write is
+    # "not recorded", and must not be carried forward as though it were.
+    #
+    # Keyed by PRODUCT and not by line position, deliberately. Position is not
+    # stable across an edit — a deleted or reordered line would shift every
+    # cost after it onto the wrong product, which is worse than not carrying at
+    # all because the resulting figure looks perfectly plausible. The known
+    # limit of keying by product is two lines of the SAME product carrying
+    # different costs: the first wins for both. That is rare, bounded, and
+    # visibly conservative; mis-assigning by position is neither.
+    carried: dict[str, float] = {}
+    for li in (prior_items or []):
+        if not isinstance(li, dict):
+            continue
+        pid = str(li.get("product_id") or "")
+        cost = li.get("cost_price")
+        if pid and isinstance(cost, (int, float, Decimal)) and not isinstance(cost, bool):
+            carried.setdefault(pid, float(cost))
+
+    # Only products this document does not already have a cost for. Malformed
+    # ids are dropped rather than bound: `id = ANY($2::uuid[])` fails to encode
+    # on the first non-uuid string, and a whole order failing to save because
+    # one line carried a stale identifier is worse than that line being
+    # uncosted.
+    canon_to_raw: dict[str, list[str]] = {}
+    for li in items:
+        if not isinstance(li, dict):
+            continue
+        pid = str(li.get("product_id") or "")
+        if not pid or pid in carried:
+            continue
+        try:
+            canon_to_raw.setdefault(str(UUID(pid)), []).append(pid)
+        except (ValueError, AttributeError, TypeError):
+            continue
+
+    resolved: dict[str, float] = {}
+    if canon_to_raw:
+        rows = await pool.fetch(
+            # Org-scoped, not id alone: `ganit_products.id` is a bare primary
+            # key, so an id from another organisation's catalogue would
+            # otherwise resolve — and a cost is the one figure a competitor
+            # would most like to read out of a neighbouring tenant.
+            "SELECT id::text AS id, cost_price FROM staging.ganit_products "
+            "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
+            org_id, list(canon_to_raw),
+        )
+        for r in rows:
+            if r["cost_price"] is None:
+                continue
+            for raw in canon_to_raw.get(str(r["id"]), ()):
+                resolved[raw] = float(r["cost_price"])
+
+    for li in items:
+        # Unconditional: whatever the caller handed us is not evidence.
+        li.pop("cost_price", None)
+        pid = str(li.get("product_id") or "")
+        cost = carried.get(pid, resolved.get(pid))
+        if cost is not None:
+            li["cost_price"] = cost
+    return items
+
+
 @router.post("/orders")
 async def create_order(
     body: OrderCreate,
@@ -280,6 +400,9 @@ async def create_order(
     pool = await get_pool()
     order_number = await next_doc_number(pool, org_id, "vikray_orders", "order_number", "SO")
     items = [li.model_dump() for li in body.line_items]
+    # What each line COST us, copied off the product now and remembered by the
+    # line for ever. No `prior_items`: nothing exists yet to carry.
+    await apply_line_costs(pool, org_id, items)
     client_id = await resolve_order_company(pool, org_id, body.client_id, body.contact_id)
     subtotal, cgst, sgst, igst, total = _compute_order_totals(items, body.discount, body.is_igst)
     async with pool.acquire() as _conn:
@@ -398,6 +521,15 @@ async def create_order_from_deal(
         "gst_rate": 18.0,
         "discount_pct": 0,
     }]
+    # Costed on the same terms as every other order write — and this one
+    # resolves NOTHING, deliberately. A deal is an amount and a title, not a
+    # catalogue item: the single line above is synthesised from `deal.value`
+    # with `product_id: ""`, so there is no product to read a cost from and the
+    # key is correctly omitted. The call stays so that the day this route
+    # learns to carry the deal's products across, it is already costed — and so
+    # the source-level test that every order INSERT costs its lines can hold
+    # without an exception carved out for this path.
+    await apply_line_costs(pool, org_id, items)
     subtotal, cgst, sgst, igst, total = _compute_order_totals(items, 0, False)
     order_number = await next_doc_number(pool, org_id, "vikray_orders",
                                          "order_number", "SO")
@@ -515,6 +647,18 @@ async def update_order(
 
     if "line_items" in updates and updates["line_items"] is not None:
         items = [li.model_dump() for li in body.line_items]
+        # An edit REPLACES every line, so without the order's stored lines as
+        # `prior_items` this would re-read the catalogue and re-price a
+        # January order at today's cost — the exact join `cost_price` exists
+        # to avoid, just performed by the write path rather than the report.
+        # A product already on this order keeps what it was written with; a
+        # line added by this edit is resolved now, which for that line IS the
+        # moment it was written.
+        _prior_lines = existing["line_items"]
+        if isinstance(_prior_lines, str):
+            _prior_lines = json.loads(_prior_lines)
+        await apply_line_costs(pool, org_id, items,
+                               _prior_lines if isinstance(_prior_lines, list) else None)
         discount = updates.get("discount", existing["discount"])
         is_igst = updates.get("is_igst", existing["is_igst"])
         subtotal, cgst, sgst, igst, total = _compute_order_totals(items, discount, is_igst)
@@ -716,6 +860,13 @@ async def generate_invoice_from_order(
 
     lines = order["line_items"] if isinstance(order["line_items"], list) \
         else json.loads(order["line_items"])
+
+    # The lines cross to the invoice VERBATIM, and that is what carries
+    # `cost_price` with them. `apply_line_costs` is deliberately NOT called
+    # here: the order already recorded what each line cost when it was placed,
+    # and re-resolving at invoicing time would re-price a March order at
+    # June's catalogue — the order and the invoice for the same sale would
+    # then report two different gross profits. Nothing to do but not break it.
 
     # Rule 46 BEFORE the serial is drawn. This route minted a tax invoice with
     # no check at all, riding `ganit_invoices.doc_status` DEFAULT 'final' — so a

@@ -361,13 +361,16 @@ absent_metric(
     unit="inr",
     grain="flow",
     sensitivity="financial",
-    absent="staging.ganit_products.cost_price exists (migration 137, "
-           "2026-08-09) but holds TODAY's cost and defaults to NULL until "
-           "someone records one — and vikray_orders.line_items snapshots no "
-           "cost at order time (a line carries product_id, quantity, rate, "
-           "discount_pct; no cost key). Pricing a January order at August's "
-           "cost is not that order's margin, and silently skipping every "
-           "uncosted or uncatalogued line would let the covered fraction "
-           "read as the whole. Margin needs a cost-at-order-time key on the "
-           "line; then this becomes a query.",
+    absent="The write path now exists and the DATA does not. Order and invoice "
+           "lines written from 2026-08-25 snapshot migration 184's "
+           "cost_price — per unit, cost at order time, copied off "
+           "staging.ganit_products and never re-joined, so pricing a January "
+           "order at August's cost is no longer the risk. The remaining one "
+           "is coverage: cost_price on ganit_products (migration 137, "
+           "2026-08-09) is recorded on 2 of 106 live products, and 389 of 389 "
+           "order lines predate the snapshot, so a margin computed today would "
+           "cover a handful of lines and read as the whole. Summing only the "
+           "costed lines is the fiction this absence refuses. Re-check the "
+           "costed-line fraction before turning this into a query; the note "
+           "row in commission_reports already reports it.",
 )

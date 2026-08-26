@@ -45,6 +45,10 @@ from services.niyam.subjects import (
     leave_decided, leave_requested,
 )
 from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
+# The one canonical Indian state codelist in this backend, and the normaliser
+# that collapses the two conventions the database holds. See `_clean_state`
+# below for WHY this router reuses it rather than typing a second copy.
+from services.skills.data.client_register import _GST_STATES, _norm_state
 from utils import assert_file_url, assert_file_urls
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
@@ -130,10 +134,66 @@ _EMP_SAFE_COLS = (
     "designation, date_of_joining, date_of_birth, gender, blood_group, "
     "emergency_contact, address, uan, esi_number, employment_type, status, "
     "reporting_to, shift, created_by, is_active, created_at, updated_at, "
-    "hourly_rate"
+    "hourly_rate, state"
 )
 
 _SENSITIVE_COLS = ("aadhaar", "pan", "bank_details")
+
+
+# ── WHICH STATE SOMEBODY WORKS IN, AND WHICH SPELLING OF IT WE STORE ─────────
+#
+# THE DECISION: `manav_employees.state` and `manav_holidays.state_code` are
+# written as the NUMERIC GST state code — '27', two digits, zero-padded.
+#
+# The database holds two incompatible conventions and migration 180 says so in
+# its own header: `organisations.state_code` and `pay_professional_tax.state_code`
+# are numeric, `statute_calendar` is alphabetic ('MH'), and
+# `manav_holidays_state_ck` was widened to accept BOTH rather than pick. Picking
+# is deferred no longer for these two columns, and the tie is broken by the ONE
+# join that has to work:
+#
+#   · Professional tax is the feature this column exists for (Phase 1.5 → 5),
+#     and it is read out of `staging.pay_professional_tax`, whose live rows
+#     carry state_code '24' (Gujarat), '27' (Maharashtra), '29' (Karnataka) —
+#     measured read-only 2026-08-25. An alphabetic employee state would join to
+#     nothing there and silently compute ZERO professional tax for everybody,
+#     which is the exact failure mode `_norm_state`'s own docstring warns about.
+#   · `organisations.state_code` is numeric, so the employer and the employee
+#     end up spelled the same way.
+#   · A state derived from a GSTIN is numeric — it is the first two characters —
+#     so the cheapest source of the value needs no conversion.
+#
+# The CODELIST is not re-typed here. `_GST_STATES` in `services/skills/data/
+# client_register.py` is the single canonical table in this backend (37 live
+# codes, retired ones kept so an old GSTIN still resolves), and `_norm_state`
+# beside it already accepts '27', 27, 'MH', 'mh' and 'Maharashtra' and returns
+# '27'. A second copy here is a second thing to drift — it is imported at the
+# top of this file.
+
+
+def _clean_state(value) -> str | None:
+    """A state as this product stores it — '27' — or NULL. NEVER a refusal.
+
+    UNRECOGNISED INPUT BECOMES NULL RATHER THAN A 4xx, and that is the product
+    rule rather than laziness: GSTIN, PAN and TAN block nothing in this product
+    and a work state is weaker than any of them. A hire must not fail because
+    somebody typed a state this codelist has not heard of — the form is a
+    `<select>` off the same list, so the only way an unknown value arrives is
+    through the API, and answering it with "we did not record that" is better
+    than answering it with "you may not hire this person".
+
+    NULL means NOBODY HAS SAID, which is a real and common state — 98 of 98
+    employees are in it today — and every reader downstream must treat it as
+    unknown rather than as "not in this state".
+    """
+    return _norm_state(value)
+
+
+def _state_name(code: str | None) -> str | None:
+    """'27' → 'Maharashtra'. For readers; never for storage."""
+    entry = _GST_STATES.get(code or "")
+    return entry[1] if entry else None
+
 
 #: Columns held as ciphertext in the database.
 #:
@@ -733,6 +793,15 @@ class EmployeeCreate(BaseModel):
     shift: str = "general"
     user_id: str = ""
 
+    #: WHICH STATE THIS PERSON WORKS IN — the numeric GST code, '27'.
+    #:
+    #: Professional tax is a STATE levy and `brief_professional_tax` prints, as
+    #: its own third limitation, "Nothing records which state each employee
+    #: works in". This field is that record. It is OPTIONAL and normalised
+    #: leniently: '27', 'MH' and 'Maharashtra' all store '27', and anything
+    #: unrecognised stores NULL rather than refusing the hire. See `_clean_state`.
+    state: str = ""
+
     # ── "This person needs a login" ──────────────────────────────────────────
     #
     # DEFAULT FALSE, and the default is the important half. The owner's
@@ -791,6 +860,10 @@ class EmployeeUpdate(BaseModel):
     reporting_to: str | None = None
     shift: str | None = None
     status: str | None = None
+    #: Sending "" CLEARS the state — the same convention `bank_details` uses for
+    #: a key. `None` is dropped by the `if v is not None` filter in the handler,
+    #: so `null` cannot be used for that and "" is the only way to unset it.
+    state: str | None = None
 
 
 class DepartmentCreate(BaseModel):
@@ -834,6 +907,18 @@ class HolidayCreate(BaseModel):
     name: str
     date: str
     is_optional: bool = False
+
+    #: WHICH STATE THIS HOLIDAY CLOSES. Blank — and therefore NULL on the row —
+    #: means EVERYWHERE, which is the correct reading of all 38 rows that
+    #: predate the column (migration 175 says so in the column comment, and 0 of
+    #: 38 carry a value today, measured read-only 2026-08-25).
+    #:
+    #: Stored as the numeric GST code, '27'. `manav_holidays_state_ck` accepts
+    #: both conventions after migration 180 widened it, so this is a choice
+    #: rather than a constraint — see `_clean_state`. Optional-always: an
+    #: unrecognised value is stored as NULL, never refused, because a holiday
+    #: that fails to save is a working day nobody was told about.
+    state_code: str = ""
 
 
 class AnnouncementCreate(BaseModel):
@@ -938,6 +1023,11 @@ async def list_employees(
     query = (
         "SELECT id, employee_code, name, email, phone, department, designation, "
         "employment_type, status, date_of_joining, shift, created_at, user_id, "
+        # `state` is here as well as on the detail endpoint for the reason
+        # `user_id` is: a column the list cannot show is a column nobody can see
+        # is empty. Professional tax is computed per state and 98 of 98 records
+        # carry no state at all, so the directory has to be able to say so.
+        "state, "
         "created_by, updated_by, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.manav_employees "
@@ -1169,10 +1259,13 @@ async def create_employee(
                 "(org_id, user_id, employee_code, name, email, phone, department, designation, "
                 " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
                 " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
-                " reporting_to, shift, created_by) "
+                " reporting_to, shift, created_by, state) "
                 "VALUES ($1::uuid, NULLIF($2,''), NULLIF($3,''), $4, $5, $6, $7, $8, "
                 " NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,''), $12, $13, $14, $15, "
-                " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23) "
+                # $24 is `state`, bound already-normalised as '27' or NULL, and
+                # cast explicitly rather than left bare: PgBouncer turns an
+                # untyped parse error into an instant 500 with no useful log.
+                " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23, $24::text) "
                 "RETURNING *",
                 org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
                 body.department, body.designation, body.date_of_joining, body.date_of_birth,
@@ -1201,6 +1294,10 @@ async def create_employee(
                 encrypt_bank(ids["bank_details"]), ids["pan"], encrypt(body.aadhaar),
                 ids["uan"], ids["esi_number"],
                 body.employment_type, body.reporting_to, body.shift, user["user_id"],
+                # Normalised HERE rather than in the model, so an API caller who
+                # sends 'Maharashtra' and a form that sends '27' store the same
+                # two characters. Never raises — an unknown state is NULL.
+                _clean_state(body.state),
             )
             await employee_joined(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -1768,6 +1865,14 @@ async def update_employee(
     updates = _encrypt_cols(updates)
     if "bank_details" in updates:
         updates["bank_details"] = encrypt_bank(updates["bank_details"])
+
+    # The generic loop below would happily write whatever string arrived, and an
+    # employee stored as 'MH' while the professional-tax slabs are keyed on '27'
+    # joins to nothing and silently computes no PT at all. Normalised here, once,
+    # for the same reason the INSERT normalises: ONE spelling on the row.
+    # `_clean_state('')` is None, which is how the edit form clears a state.
+    if "state" in updates:
+        updates["state"] = _clean_state(updates["state"])
 
     sets = []
     params = [str(employee_id), org_id]
@@ -2808,11 +2913,29 @@ async def list_holidays(
     # The holiday calendar names nobody. Readable at self scope.
     y = year or date.today().year
     rows = await pool.fetch(
-        "SELECT id, name, date, is_optional FROM staging.manav_holidays "
+        # `state_code` was ADDED by migration 175 and never selected, so a value
+        # written to it was invisible to the only screen that could show it —
+        # the column existed, the CHECK existed, and the calendar still read as
+        # though every holiday closed the whole country.
+        "SELECT id, name, date, is_optional, state_code FROM staging.manav_holidays "
         "WHERE org_id=$1::uuid AND EXTRACT(YEAR FROM date)=$2 ORDER BY date",
         org_id, y,
     )
-    return {"data": [dict(r) for r in rows]}
+    # The code is what the row holds; the NAME is what a person reads. Both are
+    # returned so the calendar never has to render a bare '27' — and `state_code`
+    # may legally be alphabetic on a row written before this router existed, in
+    # which case `_state_name` returns None and the reader falls back to the code.
+    out = []
+    for r in rows:
+        # `dict(r).get`, not `r["state_code"]`. The name is DERIVED, so a row
+        # that somehow arrives without the column should cost the name and not
+        # the whole calendar — this endpoint reads at self scope and returning
+        # 500 to everybody over a decoration is the wrong trade. The SELECT
+        # above is what guarantees the column is there, and a test pins it.
+        d = dict(r)
+        d["state_name"] = _state_name(_clean_state(d.get("state_code")))
+        out.append(d)
+    return {"data": out}
 
 
 @router.post("/holidays")
@@ -2825,9 +2948,13 @@ async def create_holiday(
     pool = await get_pool()
     _require(levels, ADMIN)
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_holidays (org_id, name, date, is_optional) "
-        "VALUES ($1::uuid, $2, $3, $4) RETURNING id, name, date",
+        "INSERT INTO staging.manav_holidays (org_id, name, date, is_optional, state_code) "
+        # `$5::text` rather than a bare `$5`: an untyped parameter expression is
+        # the shape PgBouncer turns into an instant 500.
+        "VALUES ($1::uuid, $2, $3, $4, $5::text) RETURNING id, name, date, state_code",
         org_id, body.name, _parse_date(body.date), body.is_optional,
+        # NULL means everywhere. Never a refusal — see `_clean_state`.
+        _clean_state(body.state_code),
     )
     return {"status": "created", **dict(row)}
 

@@ -277,8 +277,15 @@ async def test_a_final_invoice_never_sent_is_still_editable(
     delivered to anybody, so there is no recipient copy a credit note would
     reconcile against."""
     mock_pool.fetchrow.side_effect = [
+        # `line_items` is in the row because it is in the PROJECTION: the edit
+        # reads the stored lines so it can carry each one's `cost_price`
+        # forward instead of re-pricing the invoice at today's catalogue. The
+        # access is deliberately strict (a real Record raises on a missing
+        # column too) — a fixture that omitted it would let someone drop the
+        # column from the SELECT and silently turn the carry off.
         {"invoice_number": "INV-2026-0004", "doc_status": "final", "total": 1180,
-         "balance_due": 1180, "is_active": True, "sent_at": None, "viewed_at": None},
+         "balance_due": 1180, "is_active": True, "sent_at": None,
+         "viewed_at": None, "line_items": []},
         {"id": "inv004", "invoice_number": "INV-2026-0004", "total": 1180, "doc_status": "final"},
     ]
     resp = await api_client.patch(
@@ -296,7 +303,10 @@ async def test_a_sent_but_unpaid_invoice_can_still_be_amended(
     mock_pool.fetchrow.side_effect = [
         {"invoice_number": "INV-2026-0009", "doc_status": "sent", "total": 1180,
          "balance_due": 1180, "is_active": True,
-         "sent_at": "2026-08-01T10:00:00+00:00", "viewed_at": None},
+         "sent_at": "2026-08-01T10:00:00+00:00", "viewed_at": None,
+         # In the projection so the edit can carry each line's cost forward —
+         # see the note on the test above.
+         "line_items": []},
         {"id": "inv009", "invoice_number": "INV-2026-0009", "total": 1180, "doc_status": "sent"},
     ]
     resp = await api_client.patch(

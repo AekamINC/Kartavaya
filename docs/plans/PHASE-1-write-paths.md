@@ -126,4 +126,35 @@ commission/leaderboard surface (needs 1.1), and the Kray tiles in Phase 2/4
     + `npm run check` green. **Acceptance still owed:** a real create through the
     UI on the test org, to see the row move off 0 and a name appear on the
     leaderboard — cannot write-probe the shared DB from here.
-- 1.2–1.6 — not started.
+- **1.2 `is_msme` / `enterprise_class` / `vendor_kind` / `udyam_number` /
+  `tds_section` / `payment_terms_days` — ✅ code landed 2026-08-26.** SIX
+  columns, not the five listed above: `vendor_kind` is live and the 43B(h)
+  skill tests it ("not traders"), so omitting it would leave that exclusion
+  permanently unreachable. Blank → NULL (never `''`, which fails the live
+  CHECK); update reads `model_fields_set` so a value can be cleared.
+  `ganit.py`, `VendorsTab.jsx`, `test_vendor_msme_fields.py` (19).
+- **1.3 `cost_price` on the line — ✅ code landed 2026-08-26.** No migration:
+  lines are JSONB array elements, not rows. `apply_line_costs` (`vikray.py:278`)
+  is the single writer; cost is carried forward on update so an edit cannot
+  re-price an old document at today's cost. `InvoiceForm.jsx` never set
+  `product_id`, so the invoice half was inert — fixed. (19)
+- **1.4 `contact_id` on the expense — ✅ code landed 2026-08-26.** The backend
+  was ALREADY complete; the gap was one missing key in the form. Note the column
+  points at `graha_contacts` (a person), not `graha_clients` (the company), so
+  it is labelled "Client contact". Attributing cost to the COMPANY needs a new
+  `ganit_expenses.client_id` column — owner decision, migration 221, not taken. (7)
+- **1.5 `state` on the employee — ✅ code landed, migration 220 APPLIED
+  2026-08-26.** Numeric GST code, because `pay_professional_tax.state_code` is
+  numeric and an alphabetic value would silently compute zero PT for everyone.
+  **The department FK is NOT included**: 13 of 98 rows would violate it (12 hold
+  `''`, which an FK does not skip, plus one orphan `'Labour'`), and the unique
+  index it needs conflicts with `delete_department` being a soft delete. Both
+  need an owner decision on live personnel data.
+- **1.6 `state_code` on holidays — ✅ code landed 2026-08-26.** No migration —
+  the column shipped in 175. The real work was `attendance_auto_mark.py`, which
+  marked every active employee org-wide; that is what the acceptance criterion
+  turns on, and the plan did not say so. (41)
+
+**Every acceptance above is still owed.** Each is "a row moves off 0", which
+needs a real create through the UI against the shared database. Nothing was
+write-probed, so all six stay 🟡.

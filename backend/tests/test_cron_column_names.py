@@ -34,7 +34,19 @@ PUBLIC_TASKS = {
     "task_id", "title", "status", "team_id", "due_at", "assignee_user_ids",
     "requires_approval", "approval_status", "user_id", "created_by_user_id",
 }
-STAGING_MANAV_HOLIDAYS = {"id", "org_id", "name", "date", "is_optional", "created_at"}
+# `state_code` re-measured 2026-08-25 (information_schema.columns, live). This set
+# was written 2026-08-06 and so PREDATED migration 175, which added the column on
+# 2026-08-20 — for five days this file asserted, inside an error message, that a
+# column the database had did not exist. That is the exact failure its own header
+# warns about: "a stale set is the only way this file can lie."
+STAGING_MANAV_HOLIDAYS = {
+    "id", "org_id", "name", "date", "is_optional", "created_at", "state_code",
+}
+# `state` is NOT here, and its absence is the point: it arrives in migration 220,
+# which is written but NOT APPLIED. `attendance_auto_mark` therefore probes
+# information_schema before selecting it and falls back to the org-wide behaviour
+# — the guard that keeps the code deployable ahead of the migration. Add `state`
+# to this set in the same commit that applies 220.
 STAGING_MANAV_EMPLOYEES = {
     "id", "org_id", "status", "is_active", "user_id", "employee_code", "reporting_to",
 }
@@ -118,7 +130,7 @@ def test_holiday_lookup_does_not_reference_is_active():
     src = _source("services/skills/action/attendance_auto_mark.py")
 
     holiday_sql = re.search(
-        r"SELECT id, name FROM staging\.manav_holidays.*?\"\"\"", src, re.S
+        r"SELECT id, name.*?FROM staging\.manav_holidays.*?\"\"\"", src, re.S
     )
     assert holiday_sql, "the holiday lookup has moved; update this test with it"
     body = holiday_sql.group(0)
@@ -140,7 +152,7 @@ def test_optional_holidays_are_not_auto_marked():
     """
     src = _source("services/skills/action/attendance_auto_mark.py")
     holiday_sql = re.search(
-        r"SELECT id, name FROM staging\.manav_holidays.*?\"\"\"", src, re.S
+        r"SELECT id, name.*?FROM staging\.manav_holidays.*?\"\"\"", src, re.S
     ).group(0)
 
     assert "is_optional" in holiday_sql, (
@@ -217,15 +229,59 @@ def test_employee_lookup_may_still_use_is_active():
 
     Without this, the obvious 'fix' for the 500 is to delete every is_active in
     the file, which would silently include resigned employees in the auto-mark.
+
+    EVERY employee lookup is checked, not the first one. There are two now — a
+    state-aware branch and the fallback that runs until migration 220 lands —
+    and a rule that only ever read the first would let the second one ship
+    unfiltered, which is the "fixing bugs one deploy at a time" failure this
+    file already records twice.
     """
     src = _source("services/skills/action/attendance_auto_mark.py")
-    emp_sql = re.search(
-        r"SELECT id FROM staging\.manav_employees.*?\"\"\"", src, re.S
+    emp_sqls = [
+        b for b in _sql_block_list(src)
+        if "staging.manav_employees" in b and "manav_holidays" not in b
+    ]
+    assert emp_sqls, "the employee lookup has moved; update this test with it"
+    for block in emp_sqls:
+        assert "is_active" in block, (
+            "manav_employees.is_active exists and filtering on it is correct — "
+            "removing it would auto-mark attendance for resigned staff"
+        )
+        assert "status = 'active'" in block, (
+            "a resigned or absconding employee is not on the roster; dropping "
+            "the status filter marks attendance for people who have left"
+        )
+
+
+def test_the_state_column_is_probed_before_it_is_selected():
+    """`manav_employees.state` arrives in migration 220, which is NOT applied.
+
+    Selecting a column that does not exist raises UndefinedColumnError and
+    answers 500 for every organisation — which is precisely how /cron/hr spent
+    months broken over `manav_holidays.is_active`, the bug at the top of this
+    file. Migrations here are applied by hand against a database production also
+    writes to, so "the code deployed and the column is not there yet" is a real
+    window rather than a hypothetical one.
+
+    So the module must ask the catalogue first. This pins the guard, not the
+    query: delete the probe and this test fails before the cron does.
+    """
+    src = _source("services/skills/action/attendance_auto_mark.py")
+
+    assert "information_schema.columns" in src, (
+        "the state-column probe is gone; selecting manav_employees.state before "
+        "migration 220 is applied is a 500 for every organisation"
     )
-    assert emp_sql, "the employee lookup has moved; update this test with it"
-    assert "is_active" in emp_sql.group(0), (
-        "manav_employees.is_active exists and filtering on it is correct — "
-        "removing it would auto-mark attendance for resigned staff"
+    assert "column_name = 'state'" in src, "the probe no longer asks about `state`"
+
+    # And the un-scoped fallback must still exist, or the probe guards nothing.
+    fallback = [
+        b for b in _sql_block_list(src)
+        if "staging.manav_employees" in b and "state" not in b
+    ]
+    assert fallback, (
+        "the query that does NOT select `state` was removed, so a database "
+        "without the column has nothing to fall back to"
     )
 
 
