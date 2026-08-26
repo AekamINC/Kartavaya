@@ -33,6 +33,39 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Territories folded into the plan as Phase 7, and the 60 rows deleted
+
+**`docs/HANDOVER-2026-08-26-territory-maps.md` is now `PHASE-7-territory-and-address.md`.**
+A parallel session produced it from a live conversation with the owner rather
+than from this plan, and handed it over unowned. Reconciled against Phases 0–6
+before writing: no phase owned territories or CRM address capture, and its
+findings contradict nothing marked done. Phase 4 is the nearest neighbour in
+shape — a table with no screen — but enumerates eight named screens, so this is
+an addition rather than a fit.
+
+**One thing was re-ordered on the way in.** The handover lists routing LAST of
+six while calling it "the part the owner is actually selling". Phase 7 puts it
+FIRST: `rules.pincodes` has zero backend consumers, so **territories route
+nothing today**, and fixing that is string equality on a PIN — no polygon, no
+SDK, no CSP change, no vendor. It is the cheapest item on the list and the only
+one with revenue attached. The map explains a territory; routing is what it does.
+
+**60 post-exit attendance rows deleted from E2E**, on the owner's instruction.
+All 60 `marked_by='system'`, all `holiday`/`weekend`, dated 2026-08-08 to
+2026-08-23 across 10 people whose recorded last working day had passed — written
+by the `/cron/hr` bug fixed earlier today. Proven safe before the delete rather
+than after: **0** of the 60 carried a pay-affecting status, no table in the
+schema has an `attendance_id` column, and the one August payslip among those
+people is the mid-month leaver whose 2 days come from the employment window, not
+from attendance. Every row captured in full first. Verified after: 0 post-exit
+rows remain, E2E attendance 426 → **366** (exactly −60), Unicode untouched at
+152, and the August run still reads 51 payslips / ₹10,000 PT — nothing moved.
+
+**Standing rule recorded:** seed and test data is KEPT by default. The rows a
+test creates are the acceptance evidence; deleting them re-opens the question
+the run just answered. Delete only when provably safe and there is a reason,
+proven by a live SELECT beforehand.
+
 ### Phase 2 acceptance — 10/10, driven as a real user
 
 `phase2-acceptance.spec.ts`, against the deployed site in E2E Test &

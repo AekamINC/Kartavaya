@@ -46,6 +46,7 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 | 4 | Eight invisible-feature screens | ⬜ |
 | 5 | Statute calendar → payroll/invoicing | ⬜ |
 | 6 | Retire 4 duplicate models + SQL-test rule | ⬜ |
+| 7 | Territories ROUTE + Indian address capture | ⬜ new 26 Aug — from a parallel session's handover, reconciled against 0–6 (no phase owned it). **`rules.pincodes` has ZERO backend consumers: territories route nothing today.** 19,312/19,312 PIN polygons already in R2; credentials set. Routing needs no map and is ordered FIRST |
 
 ## Module / proposal state (condensed — full detail in proposal 90)
 

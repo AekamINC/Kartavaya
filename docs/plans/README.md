@@ -130,6 +130,7 @@ Full per-org detail and figures: `PROGRESS.md`, 2026-08-26.
 | **4** | [PHASE-4-invisible-screens.md](PHASE-4-invisible-screens.md) | Give the eight table-and-API-but-no-screen features a UI | 1 week | — |
 | **5** | [PHASE-5-statute-wiring.md](PHASE-5-statute-wiring.md) | Wire the dated-law store into payroll & invoicing | 1 week | — |
 | **6** | [PHASE-6-retire-duplicates.md](PHASE-6-retire-duplicates.md) | Retire the four duplicated models; freeze new modules; add the SQL-test rule | 3 days | owner OK to drop |
+| **7** | [PHASE-7-territory-and-address.md](PHASE-7-territory-and-address.md) | Make territories ROUTE (they route nothing today), then draw them; Indian address capture | 1 week |
 
 **Parallelism:** Phases 1 and 2 touch different files and run in parallel.
 Phase 0 runs alongside everything. Phase 3 waits only on the day-count decision
