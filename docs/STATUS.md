@@ -71,16 +71,26 @@ deleting. Nine real suppliers remain.
 
 ## Open, found 26–27 Aug, NOT fixed
 
-**🔴 Biometric attendance has NEVER reached payroll — `marked_by='pahchan'`
-violates the CHECK.** `services/attendance_bridge.MARKED_BY_BRIDGE = "pahchan"`,
-and `manav_attendance_marked_by_check` admits only
-`('system','manual','biometric','geo')`. Every bridge write raises
-CheckViolation. Read live 2026-08-27: **699 punches, 518 attendance rows,
-`marked_by='pahchan'` = 0**. So a firm can enrol faces, punch in all month, and
-the payroll run sees none of it. Found while building 4.2 and NOT fixed there —
-it lives in `routers/pahchan_attendance.py` and deserves its own change, because
-the fix is a choice between widening the CHECK and changing the constant, and
-the second one has to agree with the publish upsert's `IS DISTINCT FROM` guard.
+**🟢 Biometric attendance now reaches payroll — FIXED 27 Aug.**
+`services/attendance_bridge.MARKED_BY_BRIDGE` was `'pahchan'` and
+`manav_attendance_marked_by_check` admits only
+`('system','manual','biometric','geo')`, so every row `POST /v1/pahchan/publish`
+ever tried to write raised CheckViolation. Read live 2026-08-27 before the fix:
+**699 punches, 518 attendance rows, `marked_by='pahchan'` = 0**. A firm could
+enrol faces, punch in all month, and the payroll run saw none of it.
+
+Now `'biometric'`, which the CHECK already admits — the column records HOW a day
+was marked (auto, typed, biometric, location) and `'pahchan'` is a module name,
+a different kind of fact. No migration. It stays distinct from `'manual'`, which
+is load-bearing twice over: the upsert's `IS DISTINCT FROM` guard is what stops
+the bridge overwriting a hand-typed day AND what lets it re-write its own
+earlier rows, which is how the module is meant to be used.
+`tests/test_attendance_bridge_marked_by.py` reads the CHECK **from the live
+catalogue** and pins both halves — the only assertion that would have caught it,
+since a MagicMock pool accepts a value a CHECK refuses.
+
+⚠ Still owed: **nothing has been published yet.** The fix means the next
+publish can write; it does not backfill the 699 punches already taken.
 
 **Correction to the record: `manav_employees.user_id` is NOT null on every
 row.** The cloud session's Pahchan clock-in commit says it is, and this ledger

@@ -69,7 +69,32 @@ VERDICT_CLEARED = "ok"
 STATUS_PRESENT = "present"
 STATUS_INCOMPLETE = "incomplete"
 
-MARKED_BY_BRIDGE = "pahchan"
+#: HOW the day was marked, not WHICH MODULE marked it — and that distinction is
+#: why this line was a defect for as long as it existed.
+#:
+#: This read `"pahchan"`, and `manav_attendance_marked_by_check` admits only
+#: `('system','manual','biometric','geo')`. So every row the publish upsert has
+#: ever tried to write raised CheckViolation, and **biometric attendance has
+#: never once reached payroll**. Measured live 2026-08-27: 699 punches, 518
+#: attendance rows, `marked_by='pahchan'` = ZERO. A firm could enrol faces,
+#: punch in all month, and the payroll run would see none of it.
+#:
+#: `'biometric'` rather than widening the CHECK, because the column's four
+#: values are a taxonomy of METHOD — auto-marked, typed by a person, a
+#: biometric capture, a location fix — and a face punch is the third of those.
+#: `'pahchan'` is a module name, which is a different kind of fact and does not
+#: belong in that set; adding it would have made the taxonomy answer two
+#: questions at once.
+#:
+#: IT MUST ALSO STAY DISTINCT FROM `MARKED_BY_MANUAL`. The publish upsert's
+#: `WHERE staging.manav_attendance.marked_by IS DISTINCT FROM $11` is what stops
+#: the bridge overwriting a day somebody entered by hand — and it is equally
+#: what lets the bridge overwrite its OWN earlier rows, which this module is
+#: designed for ("the only sane way to use this is to run it repeatedly as
+#: corrections land"). Setting this to `'manual'` would make the bridge skip
+#: everything it had already written. `tests/test_attendance_bridge_marked_by.py`
+#: pins both halves.
+MARKED_BY_BRIDGE = "biometric"
 MARKED_BY_MANUAL = "manual"
 
 
