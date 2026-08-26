@@ -63,17 +63,35 @@ text — which asserted the table is per-organisation — was corrected.
 EMPLOYEE's state, which is still 0 of 71 and 0 of 26. The ladders are now
 VISIBLE to both orgs; entering employee work states is what makes them APPLY.
 
-**3 · Employee work state, and the two orgs need different answers.**
-`manav_employees.state` is 0 of 71 and 0 of 26.
-- **Unicode Group** — 24 of its 26 carry `address->>'state'`, so a backfill is
-  possible. It is NOT automatic and was not run: `address` is a RESIDENTIAL
-  state and professional tax follows where a person WORKS, so a blind copy is
-  wrong for anyone who commutes across a border. Two of the 26 have nothing to
-  copy either way.
-- **E2E Test & Associates** — 0 of 71 carry an address state, so there is
-  **nothing to derive from at all**. Every one of the 71 has to be entered
-  through the form (Manav → Employees → Work state), or its payroll keeps
-  deducting ₹0 whatever happens to the slab table.
+**3 · Employee work state — Unicode BACKFILLED 2026-08-26, E2E still owed.**
+
+*Unicode Group — done.* 25 employees (24 active + 1 inactive) set to `'24'`.
+The residential-vs-workplace caveat I raised earlier turned out NOT to apply
+here, and checking before writing is what established that: every address state
+read exactly `Gujarat` — ONE distinct value across all 25 — and Gujarat is also
+the organisation's own state, so there is no commuter case to get wrong and no
+mapping to guess. Scoped to the org, to `state IS NULL`, and to an explicit
+`ILIKE 'gujarat'` match. Reversal is `SET state = NULL` for that org: nothing
+was set before, so it restores exactly.
+
+Verified after: all 25 gross ₹18,000–₹150,000, every one above Gujarat's
+₹12,000 top band, so the ladder charges **₹200 — identical to the flat rule they
+were already paying**. No payslip figure moves. What changed is that the ₹200 is
+now DERIVED from the Gujarat ladder instead of being a constant, and — the part
+that matters — **this backfill is what stops Unicode's PT dropping to ₹0 on
+deploy.** Two employees carry no address state and stay unset.
+
+*E2E Test & Associates — 0 of 71, nothing to derive from, and it is exposed.*
+No employee carries an address state, so there is no backfill to run. On the
+latest payslip run **60 employees were charged ₹12,000 of professional tax
+between them**; with no employee state that becomes **₹0** on the next run after
+deploy. Their grosses are ₹25,197–₹196,373, all above Maharashtra's ₹10,001 top
+band, so ₹200 each — the same ₹12,000 — is the correct answer. One statement
+fixes it and it is NOT RUN, because it was not asked for and it asserts where 71
+people work:
+
+    UPDATE staging.manav_employees SET state = '27'
+     WHERE org_id = '64e7bea6-6abe-490c-a2a4-27a60c6be916' AND state IS NULL;
 
 Until 2 and 3 are both done for an org, that org's professional tax is ₹0 by
 design, not by fault — see the ₹0-fallback decision recorded above.

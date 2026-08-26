@@ -41,10 +41,28 @@ a single UPDATE:
    ⚠ **This alone does not make PT non-zero.** A slab is matched on the
    EMPLOYEE's state, and that is still 0 of 71 and 0 of 26 — see item 2. The
    ladders are now visible; item 2 is what makes them apply.
-2. **Employee work state is 0 of 71 and 0 of 26**, and the two need different
-   answers: Unicode has `address->>'state'` on 24 of 26 (backfillable, with the
-   residential-vs-workplace caveat), while **E2E has nothing to derive from at
-   all** — all 71 must be entered through the form.
+2. **Employee work state — Unicode DONE, E2E still owed and it is urgent.**
+   - **Unicode Group: backfilled 2026-08-26.** 25 employees set to `'24'` from
+     `address->>'state'`. The residential-vs-workplace caveat turned out not to
+     apply: every one of them read exactly `Gujarat`, one distinct value, and
+     Gujarat is also the org's OWN state — so there is no cross-border case to
+     get wrong. Verified: all 25 gross ₹18,000–₹150,000, above Gujarat's
+     ₹12,000 top band, so the ladder charges ₹200 — **identical to what they
+     were already paying**, but now derived rather than hardcoded. Two
+     employees have no address state and remain unset.
+   - **E2E Test & Associates: 0 of 71, and nothing to derive from.** No employee
+     carries an address state. On the latest payslip run 60 employees were
+     charged **₹12,000 of professional tax in total**; with no state that
+     becomes **₹0** on the next run. Every one of them grosses ₹25,197–₹196,373,
+     all above Maharashtra's ₹10,001 top band, so the correct figure is ₹200
+     each — the same ₹12,000. Fixing it is one statement, and it is NOT run
+     because nobody has asked for it:
+
+         UPDATE staging.manav_employees SET state = '27'
+          WHERE org_id = '64e7bea6-6abe-490c-a2a4-27a60c6be916' AND state IS NULL;
+
+     Defensible for a TEST org whose own state_code is '27'; it is still a
+     production write and an assumption about where 71 people work.
 
 Full per-org detail and figures: `PROGRESS.md`, 2026-08-26.
 
