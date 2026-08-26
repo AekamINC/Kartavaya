@@ -29,6 +29,38 @@ statement written down. See `README.md` for the full terms.
 Seven parallel agents, partitioned by file so no two shared one. Every live
 figure below is a read-only `SELECT`; **no write-probe touched the shared
 database** and the vendor/holiday counters were re-read afterwards to prove it.
+The two exceptions are the PT slab re-point and the two employee-state
+backfills, each run on the owner's explicit instruction with the before-state
+captured and the reversal written down.
+
+### Deploy confirmed — everything below is RUNNING
+
+`120d106c` (this session's HEAD) deployed to the Railway staging service at
+**04:14 UTC 2026-08-26, status SUCCESS**, read from the deployment list rather
+than inferred from git — the branch has silently tracked `main` before. So all
+six Phase-2 fixes and all six Phase-1 write-paths are live, and the earlier
+"deploy owed" wording in `STATUS.md` was stale; corrected there.
+
+**Deployed is not exercised.** No payroll run and no billing create has happened
+since 04:14, so 2.1–2.4 have executed against nothing. E2E's latest run is
+2026-07 and Unicode's `2026-09` "draft" dates from **23 July** — pre-deploy, so
+it is not evidence of the new PT mechanism. The first real run is the proof.
+
+**Phase-1 acceptance counters, read live, two orgs only** — the "a row moves off
+0" test, which is what separates 🟡 from ✅:
+
+| Acceptance | rows set / total |
+|---|---|
+| 1.1 `salesperson_id`, invoices | 0 / 790 |
+| 1.1 `salesperson_id`, orders | 0 / 377 |
+| 1.2 vendor MSME/TDS (any of 5 cols) | 0 / 78 |
+| 1.4 expense → client contact | 0 / 376 |
+| 1.5 employee `state` | **96 / 98** — backfill, NOT a UI create |
+| 1.6 holiday `state_code` | 0 / 38 |
+
+Five of six are still at zero and stay 🟡. 1.5's 96 came from the two backfills
+below, which prove the column and its CHECK work but do **not** prove the write
+path a customer would use — that still needs one create through the UI.
 
 ### The only two orgs that matter — what is owed, per org
 
@@ -41,12 +73,15 @@ explicitly out of scope and nothing below is written for them.**
 | org_id | `64e7bea6-6abe-490c-a2a4-27a60c6be916` | `fae87907-2f99-4b35-a241-c94d9e1e4a17` |
 | `organisations.state_code` | **`27`** Maharashtra | **`24`** Gujarat |
 | Active employees | 71 | 26 |
-| `manav_employees.state` set | 0 | 0 |
+| `manav_employees.state` — at session start | 0 | 0 |
 | …derivable from `address->>'state'` | **0 — nothing to derive from** | **24 of 26** |
+| **`state` set now** (backfilled 26 Aug) | **71 of 71** from org `state_code` | **25 of 26** from address |
 | Own `pay_professional_tax` rows | 0 | 0 |
-| Slabs that exist for its state | 3 (Maharashtra) | 4 (Gujarat) |
+| Slabs it resolves (shared, `org_id IS NULL`) | 3 (Maharashtra `27`) | 4 (Gujarat `24`) |
 
-All figures read-only, 2026-08-26.
+All figures read-only except the two backfills, 2026-08-26. The slab table holds
+9 rows total, all now shared: MH `27`×3, GJ `24`×4, KA `29`×2 — verified live
+from the table, not from the migration.
 
 **1 · The billing tax split never blocks either of them.** `_tax_split` refuses
 to guess when the supplier's state is unknown, and BOTH of these carry a
@@ -76,8 +111,9 @@ reads `org_id = $1 OR org_id IS NULL`, matching `_pt_slabs`, and its limitation
 text — which asserted the table is per-organisation — was corrected.
 
 ⚠ **The UPDATE alone does not make PT non-zero.** A slab is matched on the
-EMPLOYEE's state, which is still 0 of 71 and 0 of 26. The ladders are now
-VISIBLE to both orgs; entering employee work states is what makes them APPLY.
+EMPLOYEE's state. The ladders are now VISIBLE to both orgs; entering employee
+work states is what makes them APPLY — and that is the second write, recorded
+below. Both halves are now done for both in-scope orgs (71 of 71 and 25 of 26).
 
 **3 · Employee work state — Unicode BACKFILLED 2026-08-26, E2E still owed.**
 
@@ -97,20 +133,30 @@ now DERIVED from the Gujarat ladder instead of being a constant, and — the par
 that matters — **this backfill is what stops Unicode's PT dropping to ₹0 on
 deploy.** Two employees carry no address state and stay unset.
 
-*E2E Test & Associates — 0 of 71, nothing to derive from, and it is exposed.*
-No employee carries an address state, so there is no backfill to run. On the
-latest payslip run **60 employees were charged ₹12,000 of professional tax
-between them**; with no employee state that becomes **₹0** on the next run after
-deploy. Their grosses are ₹25,197–₹196,373, all above Maharashtra's ₹10,001 top
-band, so ₹200 each — the same ₹12,000 — is the correct answer. One statement
-fixes it and it is NOT RUN, because it was not asked for and it asserts where 71
-people work:
+*E2E Test & Associates — RUN 2026-08-26 on the owner's instruction, 71 of 71.*
+No employee carries an address state — re-confirmed at the point of writing,
+`address->>'state'` is absent on all 71, ONE distinct value and that value is
+NULL — so unlike Unicode there was nothing to derive from and the organisation's
+own `state_code` (`27`, Maharashtra, read live) is the only defensible answer.
+Scoped to the org and to `state IS NULL`; the CHECK
+(`manav_employees_state_ck`, numeric 1–2 digits or 2–3 uppercase) accepts `'27'`.
+Reversal restores exactly, because 0 rows were set before:
+`SET state = NULL WHERE org_id = '64e7bea6-…' AND state = '27'`.
 
     UPDATE staging.manav_employees SET state = '27'
      WHERE org_id = '64e7bea6-6abe-490c-a2a4-27a60c6be916' AND state IS NULL;
 
-Until 2 and 3 are both done for an org, that org's professional tax is ₹0 by
-design, not by fault — see the ₹0-fallback decision recorded above.
+Verified after: **71 set, 0 still NULL.** Simulated against the DEPLOYED leaver
+predicate and the Maharashtra ladder, using each employee's own last payslip
+gross: of the 60 in the 2026-07 run, **51 remain payable** and all 51 sit above
+the ₹10,001 top band, so the next run charges **₹10,200** where the last charged
+₹12,000. The ₹1,800 difference is exactly the 9 leavers × ₹200 — the Phase-2.1
+guard, not a PT regression. **This is what stops E2E's PT going to ₹0**, which
+was live-exposed from 04:14 UTC when the deploy landed.
+
+Both in-scope orgs are now complete on 2 and 3, so the ₹0-fallback path no
+longer fires for either. It remains the designed behaviour for any org whose
+employees carry no state — not a fault.
 
 ### Phase 1 — the six write-paths
 
@@ -174,9 +220,13 @@ design, not by fault — see the ₹0-fallback decision recorded above.
   over-broad. `list_structures` deliberately NOT filtered: hiding a leaver's
   structure from HR is data-hiding, not a fix.
 - `phase-2.2` · PT reads the slab table · `vetana.py:746`. ⚠ **Owner decision
-  26 Aug: fall back to ₹0, per the plan.** All 9 slab rows belong to ONE org
-  (`045b76ad`); the two orgs that actually run payroll have none, so on deploy
-  every payslip's PT goes 200 → 0 until Phase 0.24 seeds slabs into those orgs.
+  26 Aug: fall back to ₹0, per the plan.** As written this line was true: all 9
+  slab rows belonged to ONE org (`045b76ad`), the two payroll orgs had none, and
+  the deploy at 04:14 UTC did briefly expose both to a ₹0 PT run. **Closed the
+  same day by two writes** — the slabs re-pointed to `org_id IS NULL` (shared)
+  and employee states backfilled for both orgs. Next E2E run: ₹10,200 across 51.
+  Unicode: ₹200/head, unchanged, now derived rather than constant. Phase 0.24
+  per-org seeding is no longer what stands between these two orgs and correct PT.
 - `phase-2.3` · The two billing INSERTs can execute · `client_billing.py`.
   Verifying the whole column list rather than the one the plan named turned up a
   **second** bug: `balance_due` is NOT NULL DEFAULT 0, so the invoice would be

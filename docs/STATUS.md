@@ -10,7 +10,9 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
-Last updated: **2026-08-25**
+Last updated: **2026-08-26** — staging backend is deployed at `120d106c` (HEAD),
+SUCCESS 04:14 UTC, confirmed from Railway. Everything below marked "fixed 26 Aug"
+is therefore **running**, not pending a deploy.
 
 Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wrong now
 (broken in the running product) · ⬜ not started · 🔵 research/decision · ➖ n/a
@@ -21,11 +23,11 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 
 | | Blocker | Where | Status |
 |---|---|---|---|
-| 🟡 | Payroll pays 10 leavers | `vetana.py:1221` | CODE FIXED 26 Aug — guard added, mirrors `metrics/manav.py:79`; live dry-read 60→51 paid. Deploy owed |
-| 🟡 | Flat ₹200 professional tax, every state | `vetana.py:746` | MECHANISM FIXED 26 Aug — slab read live. ⚠ Slabs exist for ONE org only, so PT → ₹0 for both payroll orgs on deploy (owner chose this); Phase 0.24 must seed slabs |
-| 🟡 | Two billing endpoints 500 | `client_billing.py:459,705` | CODE FIXED 26 Aug — `gst_rate` dropped, `invoice_number` allocated, `balance_due` bound (2nd bug found). Row on the board still owed |
-| 🟡 | Draft invoices dunned + counted as revenue | `documents.py:307`, `dristi.py:354` | FIXED 26 Aug — 4 surfaces. ⚠ The statement had ALSO been 500ing on a date bind since it shipped; fixed. Project report still dead on `staging.time_entries` |
-| 🟢 | Cross-tenant leak — profile create/list not org-scoped | `client_billing.py:220` | FIXED 26 Aug — ownership check + **7** id-alone joins (plan named 2); AST ratchet added. 0 rows had leaked |
+| 🟡 | Payroll pays 10 leavers | `vetana.py:1221` | **DEPLOYED 26 Aug** — guard live at `120d106c`, mirrors `metrics/manav.py:79`. Live dry-read against the deployed predicate: 60 → **51** payable. No run has executed since deploy, so the first real run is the proof |
+| 🟡 | Flat ₹200 professional tax, every state | `vetana.py:746` | **DEPLOYED 26 Aug** — slab read live. All 9 `pay_professional_tax` rows re-pointed to `org_id IS NULL` (shared): MH `27`×3, GJ `24`×4, KA `29`×2 — verified live. Employee states backfilled for BOTH payroll orgs (Unicode 25/26 → `'24'`, E2E **71/71 → `'27'`**), so PT does NOT drop to ₹0. Next E2E run: **₹10,200** across 51 (was ₹12,000 across 60; the ₹1,800 is the 9 leavers). Phase 0.24 seeding is no longer the blocker it was |
+| 🟡 | Two billing endpoints 500 | `client_billing.py:459,705` | **DEPLOYED 26 Aug** — `gst_rate` dropped, `invoice_number` allocated, `balance_due` bound (2nd bug found). Row on the board still owed — needs one real create |
+| 🟡 | Draft invoices dunned + counted as revenue | `documents.py:307`, `dristi.py:354` | **DEPLOYED 26 Aug** — 4 surfaces. ⚠ The statement had ALSO been 500ing on a date bind since it shipped; fixed. Still open: project report dead on `staging.time_entries` (exists only in `public`); `dristi.py` `/overview` + the pivot dashboard still count drafts and the pivot carries the same date-bind bug |
+| 🟢 | Cross-tenant leak — profile create/list not org-scoped | `client_billing.py:220` | **DEPLOYED 26 Aug** — ownership check + **7** id-alone joins (plan named 2); AST ratchet added. 0 rows had leaked |
 | 🔴 | `/security` page claims no MFA (TOTP shipped 23 Aug); 3 undisclosed sub-processors | `SecurityPage.jsx:161`, `legalFacts.js` | OPEN |
 
 ## Phase progress (`docs/plans/`)
@@ -33,8 +35,8 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 | Phase | What | State |
 |---|---|---|
 | 0 | Owner unblocks (31 items) | ⬜ awaiting owner |
-| 1 | Six write-paths (turns ~18 features on) | 🟡 all six coded 26 Aug (1.2–1.6 + 1.1); migration 220 APPLIED; live acceptance owed on every one — no write-probe on the shared DB |
-| 2 | Six correctness fixes (the blockers above) | 🟡 all six coded 26 Aug; 2.5 + 2.6 provable now, 2.1–2.4 need a deploy |
+| 1 | Six write-paths (turns ~18 features on) | 🟡 all six coded + deployed 26 Aug (1.2–1.6 + 1.1); migration 220 APPLIED. **Acceptance counters, live, two orgs only:** 1.1 invoices 0/790 · 1.1 orders 0/377 · 1.2 vendors 0/78 · 1.4 expenses 0/376 · 1.5 employees **96/98** (backfill, not a UI create) · 1.6 holidays 0/38. Five of six still need one real create through the UI |
+| 2 | Six correctness fixes (the blockers above) | 🟡 all six coded AND deployed 26 Aug at `120d106c`. 2.5 + 2.6 provable now; 2.1–2.4 are live but **unexercised** — no payroll run, no billing create since deploy |
 | 3 | Billing executable + arm cron | ⬜ (blocks on 0.17) |
 | 4 | Eight invisible-feature screens | ⬜ |
 | 5 | Statute calendar → payroll/invoicing | ⬜ |
