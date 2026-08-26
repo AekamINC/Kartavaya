@@ -33,6 +33,100 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Phase 7 researched, Phase 8 written — and three of the corrections are licence text
+
+`9c211b28`. **Research and plans only. No code, no migration, no row moved** —
+Phase 7 stays ⬜ and Phase 8 opens at 🔵. Recording it here because the plans it
+amends are now different documents, not because anything shipped.
+
+`docs/proposals/92-map-integration-market-research.html` — ~40 sources across
+competitor idea boards, vendor docs, licence terms, Indian government policy and
+conversion benchmarks. **The demand answer: the most-requested map feature is not
+a map.** It is "plot my records, and tell me who owns which area", and the routing
+half is the half vendors charge for — Badger sells territory management as **four
+separate add-ons** on top of a $58–95/user/mo base, Salesforce Maps is a
+$75–150/user/mo add-on, Zoho RouteIQ starts at $12. Phase 7 was already aimed
+there, in that order, so the ordering survives unchanged.
+
+**Four premises corrected. Three are Mappls licence text, read off their published
+terms — not preferences, and each one changes an acceptance criterion:**
+
+- **7.5's attribution does not satisfy the licence.** The plan specified the string
+  *"Basemap © Mappls"*. The terms require the **"Powered by Mappls [logo]"** to be
+  "clearly presented" and say it shall never be removed or hidden. Fixed in the plan
+  before the render test gets written, because a test would otherwise lock in the
+  wrong thing.
+- **No Mappls map "with or near a non-Mappls Map in a Customer Application."** That
+  permanently closes off mixing MapLibre/OSM/Google anywhere in the app, mobile
+  fallback included — and it is a second, independent reason the already-rejected
+  Protomaps option stays rejected rather than blended in.
+- **What we send to Mappls, we licence to Mappls.** Submitting content to their
+  servers grants a perpetual, worldwide, sub-licensable licence to reproduce, sell
+  and distribute it — and an autosuggest call on a client's premises is a
+  submission. 7.6 now sends the **query fragment only**, never the stored record,
+  never for an already-saved address, and **never on the public inbound form**, with
+  Mappls named as a processor in the privacy notice. Their terms also forbid caching
+  "to avoid paying fees", so a results cache is not available as a cost lever.
+- **Google's rejection reasons were stale.** The plan rejected it on "USD billing,
+  card required". India-based customers are **billed in INR**, and India gets
+  **70,000 free monthly events per Essentials SKU** — 7× the global 10,000, and far
+  beyond any volume we approach. The standing no-Google-spend rule still settles it,
+  which is the owner's call; the wrong reasons are gone. Separately: **Maps URLs take
+  no API key, no quota and no billing account**, which is what Phase 8.0 is built on.
+
+**Competitive facts worth the search on their own.** Zoho CRM's native Map View is
+**powered by Mappls**, on all paid editions, and exists **only in the IN data
+centre** — the Indian incumbent our customers already know picked the same vendor.
+HubSpot's equivalent is Enterprise-only, still in beta, caps at **500 records**, and
+geocodes from **City/State/Country/Postal code**, not the street line — the market
+leader works at postcode granularity, so nobody should argue us up to rooftop
+precision. And **no Indian CA practice-management competitor advertises a map at
+all** (Suvit, QwikCA, PracticeStacks, Jamku, Zoho Practice): maps are not table
+stakes in our category, they are uncontested differentiation.
+
+**Indian addressing, measured, not assumed:** only ~40% of Indian addresses geocode
+to 500 m precision and only ~30% are written in a structured format. That is the
+evidence behind 7.6's "reset the expectation" lede, and it belongs in the copy.
+
+`docs/plans/PHASE-8-maps-across-modules.md` — **Phase 7 is 100% Graha** (every file
+it names is `graha.py`, `graha/*.jsx` or `TerritoryMap.jsx`). Phase 8 is the other
+six modules, ordered so the free parts ship first: **8.0 `<AddressBlock>`** across
+Graha / Ganit / Kray / Manav / Vikray / Pahchan — no key, no quota, no CSP change,
+and it needs nothing from Phase 7 — then **8.1 the Pahchan geofence map**, then the
+free PIN popover (reuses 7.3, zero vendor calls), autosuggest reuse, and last a
+stored coordinate carrying `geo_source` + `geo_fetched_at`, which is what unlocks
+DIGIPIN at no vendor cost.
+
+**Altitude on attendance turned out to be already built** — the owner raised it as a
+gap and it is not one: migration 193, `routers/pahchan.py` (validation +
+`_altitude_gap_m`), `mobile/src/offline/punchQueue.ts`, `Sites.jsx` / `Rules.jsx` /
+`Register.jsx`, and `test_pahchan_altitude.py`. Ruled out in the plan: a **barometer**
+(many Android devices carry no pressure sensor, and pressure altitude drifts ±100 m
+with the weather) and **correcting the geoid offset** (India sits over a ~−105 m
+anomaly, but site and punch are measured by the same phones — correcting one side
+breaks every existing site). **One open item, and it is data not code: does any live
+site actually carry an `altitude_m`?** Migration 193 recorded 9 sites and 1,659
+punches with all four columns NULL. The real Pahchan gap is the **map** —
+`Sites.jsx:31` already names the risk of "a radius typed as 15 instead of 150".
+
+**A shared-tree hazard caught in passing.** `git worktree list` shows **one**
+worktree, so a peer session's uncommitted work is visible in the same `git status`
+— and any `git add -A` would sweep it up. This commit staged five explicit paths.
+The plan's line **"next migration number is 222"** went stale inside ten minutes:
+the peer committed 222 (`billing_credit_kind`) and started 223
+(`service_line_invoice_from`) while this was being written. The plan now teaches
+the check instead of naming a number — **`ls backend/migrations/`**, not
+`git ls-files`, because only `ls` sees the untracked migration a peer holds
+mid-flight.
+
+**Still owed from the owner before 7.1 can be built** — the three open questions,
+with recommendations in proposal 92 §8: a priority integer for a PIN claimed by two
+territories (Salesforce's mechanism; never blocks a save), **territory always / rep
+only when unassigned** (unanimous in the routing literature, and 42 of 54 Unicode
+contacts already have an owner, so a rep-setting router would reassign live work on
+its first run), and an optional six-digit PIN on the public form shipped **after**
+7.0. **STATUS: 🔵 research + plans landed; nothing built.**
+
 ### Phase 3.3 acceptance — the first client auto-invoices this product has ever raised
 
 `/cron/billing` fired twice by hand against the deploy (`785d487f`, confirmed
