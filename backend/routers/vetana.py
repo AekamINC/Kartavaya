@@ -427,6 +427,219 @@ async def delete_structure(
     return {"ok": True}
 
 
+# ── The professional-tax ladder, as something a person can set ──────────────
+#
+# Until now NOTHING in this product could write `staging.pay_professional_tax`.
+# Every reference in `backend/` was a read, and the nine rows existed because a
+# migration put them there — so a state nobody seeded, a rate change, or
+# Maharashtra's different February figure could only be fixed by shipping
+# another migration. That is the same shape as every Phase-1 defect: a column
+# with no write path.
+#
+# TWO RULES DECIDE EVERYTHING BELOW.
+#
+# 1. A SHARED ROW IS READ BY EVERYONE AND EDITABLE BY NOBODY. `org_id IS NULL`
+#    is national reference data; letting one firm PATCH it would change every
+#    other firm's deductions from inside their own settings screen. So the write
+#    endpoints are scoped `org_id = $1::uuid` with no NULL branch, and an
+#    organisation that wants a different figure ADDS ITS OWN ROW, which outranks
+#    the shared one for the same state and band (`is_own` in `_pt_from_slabs`).
+#    A 404 on somebody else's row is the same answer a row that does not exist
+#    gets, which is the only answer that does not confirm it is there.
+#
+# 2. NOTHING HERE IS REQUIRED AND NOTHING HERE BLOCKS A RUN. Owner's rule,
+#    2026-08-26: like GSTIN, PAN and TAN, this is optional. An org that sets
+#    nothing keeps the shared ladder; an org that sets a partial ladder falls
+#    back through it; an org that matches no band at all deducts zero, which is
+#    the owner's existing decision. The validation below refuses an
+#    UNINTERPRETABLE BAND at the moment somebody types it — a `slab_to` beneath
+#    its own `slab_from` can never match anything — and that is a refusal to
+#    SAVE, never a refusal to run payroll.
+
+
+class PtSlabCreate(BaseModel):
+    state_code: str
+    state_name: str = ""
+    slab_from: float = 0
+    slab_to: Optional[float] = None
+    monthly_tax: float = 0
+    effective_from: str = ""
+    #: 1-12, or None for EVERY month — which is what all nine seeded rows are.
+    #: Professional tax is not flat everywhere; Maharashtra charges a different
+    #: figure in February (migration 221).
+    month: Optional[int] = None
+
+
+class PtSlabUpdate(BaseModel):
+    state_code: Optional[str] = None
+    state_name: Optional[str] = None
+    slab_from: Optional[float] = None
+    slab_to: Optional[float] = None
+    monthly_tax: Optional[float] = None
+    effective_from: Optional[str] = None
+    month: Optional[int] = None
+
+
+def _check_band(slab_from, slab_to, month) -> None:
+    """Refuse a band that could never match anything. Save-time only."""
+    if slab_from is not None and float(slab_from) < 0:
+        raise HTTPException(400, "A band cannot start below zero.")
+    if slab_to is not None and slab_from is not None and float(slab_to) < float(slab_from):
+        raise HTTPException(
+            400,
+            "This band ends below where it starts, so no salary could ever fall "
+            "inside it. Leave the upper figure blank for 'and above'.",
+        )
+    if month is not None and not (1 <= int(month) <= 12):
+        raise HTTPException(
+            400,
+            "A month must be between 1 and 12, or left blank to mean every month.",
+        )
+
+
+@router.get("/pt-slabs")
+async def list_pt_slabs(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """The whole ladder this org resolves against — its own rows AND the shared
+    ones, each flagged, because a screen showing only the org's own rows would
+    present an empty ladder as "nothing is deducted" while nine shared bands
+    were in fact doing the work.
+
+    Not gated to ADMIN: seeing which rate applies to you is not privileged, and
+    `_gate` already scopes this to people who have Vetana at all.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, state_code, state_name, slab_from, slab_to, monthly_tax, "
+        "       effective_from, month, (org_id IS NOT NULL) AS is_own "
+        "  FROM staging.pay_professional_tax "
+        " WHERE org_id = $1::uuid OR org_id IS NULL "
+        " ORDER BY state_code, month NULLS FIRST, slab_from",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/pt-slabs")
+async def create_pt_slab(
+    body: PtSlabCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Add a band to THIS organisation's ladder. Never touches a shared row."""
+    pool = await get_pool()
+    _require(levels, ADMIN)
+    _check_band(body.slab_from, body.slab_to, body.month)
+    row = await pool.fetchrow(
+        "INSERT INTO staging.pay_professional_tax "
+        "(org_id, state_code, state_name, slab_from, slab_to, monthly_tax, "
+        " effective_from, month) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, "
+        # `::text::date`, never a bare `::date` on an ISO string — that bind is
+        # the asyncpg DataError this repo has already paid for twice.
+        "        NULLIF($7,'')::text::date, $8) "
+        "RETURNING id, state_code, state_name, slab_from, slab_to, monthly_tax, "
+        "          effective_from, month, TRUE AS is_own",
+        org_id,
+        str(body.state_code or "").strip(),
+        str(body.state_name or "").strip(),
+        body.slab_from, body.slab_to, body.monthly_tax,
+        body.effective_from or "", body.month,
+    )
+    return dict(row)
+
+
+@router.patch("/pt-slabs/{slab_id}")
+async def update_pt_slab(
+    slab_id: int,
+    body: PtSlabUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Amend one of THIS organisation's own bands.
+
+    `model_fields_set` rather than a truthiness test, so a figure entered by
+    mistake can be cleared back: `monthly_tax = 0` is a real answer — a band a
+    state levies nothing on — and must stay distinguishable from "not
+    mentioned". The pattern `billing.py:1187` documents.
+    """
+    pool = await get_pool()
+    _require(levels, ADMIN)
+    named = getattr(body, "model_fields_set", set())
+    if not named:
+        raise HTTPException(400, "Nothing to change.")
+
+    current = await pool.fetchrow(
+        "SELECT slab_from, slab_to, month FROM staging.pay_professional_tax "
+        " WHERE id=$1 AND org_id=$2::uuid",
+        slab_id, org_id,
+    )
+    # 404, not 403 — the same answer a row that does not exist gets, because a
+    # distinct refusal would confirm somebody else's row is there.
+    if not current:
+        raise HTTPException(404, "Professional-tax band not found")
+    _check_band(
+        body.slab_from if "slab_from" in named else current["slab_from"],
+        body.slab_to if "slab_to" in named else current["slab_to"],
+        body.month if "month" in named else current["month"],
+    )
+
+    sets, params = [], []
+    for col in ("state_code", "state_name", "slab_from", "slab_to",
+                "monthly_tax", "month"):
+        if col in named:
+            params.append(getattr(body, col))
+            sets.append(col + "=$" + str(len(params)))
+    if "effective_from" in named:
+        params.append(body.effective_from or "")
+        sets.append("effective_from=NULLIF($" + str(len(params)) + ",'')::text::date")
+    if not sets:
+        raise HTTPException(400, "Nothing to change.")
+
+    params.extend([slab_id, org_id])
+    row = await pool.fetchrow(
+        "UPDATE staging.pay_professional_tax SET " + ", ".join(sets) +
+        " WHERE id=$" + str(len(params) - 1) +
+        " AND org_id=$" + str(len(params)) + "::uuid "
+        "RETURNING id, state_code, state_name, slab_from, slab_to, monthly_tax, "
+        "          effective_from, month, TRUE AS is_own",
+        *params,
+    )
+    if not row:
+        raise HTTPException(404, "Professional-tax band not found")
+    return dict(row)
+
+
+@router.delete("/pt-slabs/{slab_id}")
+async def delete_pt_slab(
+    slab_id: int,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Remove one of THIS organisation's own bands.
+
+    A hard delete, because the table carries no `is_active` and a soft-deleted
+    slab that `_pt_slabs` still read would deduct money nobody could see a
+    reason for. Removing an org's band does not remove the shared one beneath
+    it — the ladder falls back, which is the whole design.
+    """
+    pool = await get_pool()
+    _require(levels, ADMIN)
+    result = await pool.execute(
+        "DELETE FROM staging.pay_professional_tax WHERE id=$1 AND org_id=$2::uuid",
+        slab_id, org_id,
+    )
+    if result == "DELETE 0":
+        raise HTTPException(404, "Professional-tax band not found")
+    return {"ok": True}
+
+
 # ── Payroll Processing ───────────────────────────────────────
 
 # ── The statutory switches, and what an UNANSWERED one means ─────────────────
@@ -621,7 +834,7 @@ async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     """
     return list(await pool.fetch(
         "SELECT state_code, state_name, slab_from, slab_to, monthly_tax, "
-        "       effective_from, (org_id IS NOT NULL) AS is_own "
+        "       effective_from, month, (org_id IS NOT NULL) AS is_own "
         "  FROM staging.pay_professional_tax "
         # A NULL `org_id` IS A SHARED LADDER, NOT A ROW TO IGNORE. The
         # column is nullable, and a professional-tax ladder is national
@@ -637,6 +850,17 @@ async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
         # outranks a shared row for the same state in `_pt_from_slabs`.
         " WHERE (org_id = $1::uuid OR org_id IS NULL) "
         "   AND (effective_from IS NULL OR effective_from <= $2::date) "
+        # A NULL `month` IS EVERY MONTH — the same reading a NULL
+        # `org_id` gets three lines above, and for the same reason:
+        # the column is nullable and the unset state must be the
+        # useful one. Professional tax is not flat everywhere;
+        # Maharashtra charges a different figure in February. A
+        # month-specific row is admitted only for the month being
+        # run, so anything this query returns with a month set IS
+        # this month, and `_pt_from_slabs` can rank on that alone.
+        # An org that has set no month rows sees exactly the ladder
+        # it saw before: nine rows, all NULL, all admitted.
+        "   AND (month IS NULL OR month = EXTRACT(MONTH FROM $2::date)) "
         " ORDER BY state_code, slab_from",
         org_id, as_at))
 
@@ -705,7 +929,20 @@ def _pt_from_slabs(slabs, state, gross: float) -> tuple:
             # band, whatever their dates: a firm that has entered its own
             # ladder has said something more specific than the national
             # default, and a later-dated shared row must not overrule it.
+            # MOST SPECIFIC WINS, AND EVERY STEP FALLS BACK RATHER THAN
+            # REFUSING:
+            #
+            #   org + this month -> org + every month
+            #                    -> shared + this month
+            #                    -> shared + every month -> 0
+            #
+            # `_pt_slabs` has already dropped any month that is not the
+            # one being run, so a row with a month set is a row FOR this
+            # month and outranks the every-month row for the same state
+            # and band. Nothing an organisation fails to configure can
+            # block a run — the last step is the owner's existing 0.
             rank = (1 if row.get("is_own") else 0,
+                    1 if row.get("month") is not None else 0,
                     row["effective_from"] or date.min, low)
             if best is None or rank > best[0]:
                 best = (rank, row)

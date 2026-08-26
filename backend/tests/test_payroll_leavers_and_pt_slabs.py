@@ -1021,3 +1021,90 @@ def _safe(obj):
         return True
     except Exception:
         return False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# A month-specific band — optional, never required, never blocking
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Migration 221. Professional tax is not a flat monthly figure everywhere:
+# Maharashtra charges a different amount in February. The column is nullable and
+# NULL means EVERY month, so the nine seeded rows keep behaving exactly as they
+# did — the owner's rule is that this, like GSTIN/PAN/TAN, is optional and must
+# block nothing.
+
+class TestTheMonthBandIsOptionalAndMoreSpecific:
+    """`_pt_slabs` admits only rows for the month being run, so anything with a
+    month set IS this month and `_pt_from_slabs` ranks on that alone."""
+
+    EVERY_MONTH = {
+        "state_code": "27", "state_name": "Maharashtra",
+        "slab_from": 10001, "slab_to": None, "monthly_tax": 200,
+        "effective_from": None, "month": None, "is_own": False,
+    }
+    FEBRUARY = {**EVERY_MONTH, "monthly_tax": 300, "month": 2}
+
+    def test_the_every_month_row_alone_is_unchanged(self):
+        """THE REGRESSION GUARD. Every live row is this shape; not a paisa of
+        anybody's deduction may move because a nullable column was added."""
+        pt, row = vetana._pt_from_slabs([self.EVERY_MONTH], "27", 44700)
+        assert pt == 200
+        assert row is not None
+
+    def test_a_month_row_outranks_the_every_month_row(self):
+        pt, _ = vetana._pt_from_slabs([self.EVERY_MONTH, self.FEBRUARY], "27", 44700)
+        assert pt == 300
+
+    def test_order_does_not_decide_it(self):
+        """Ranked, not first-wins — the rows arrive in whatever order the ORDER
+        BY leaves them, and `slab_from` is equal on both."""
+        pt, _ = vetana._pt_from_slabs([self.FEBRUARY, self.EVERY_MONTH], "27", 44700)
+        assert pt == 300
+
+    def test_an_orgs_own_every_month_row_still_beats_a_shared_month_row(self):
+        """The order the owner asked for: org + month, then org + every month,
+        THEN shared + month. A firm that has entered its own ladder has said
+        something more specific than national reference data, whatever month it
+        is."""
+        own_every_month = {**self.EVERY_MONTH, "monthly_tax": 250, "is_own": True}
+        pt, _ = vetana._pt_from_slabs([own_every_month, self.FEBRUARY], "27", 44700)
+        assert pt == 250
+
+    def test_an_orgs_own_month_row_wins_outright(self):
+        own_feb = {**self.FEBRUARY, "monthly_tax": 350, "is_own": True}
+        own_every_month = {**self.EVERY_MONTH, "monthly_tax": 250, "is_own": True}
+        pt, _ = vetana._pt_from_slabs(
+            [self.EVERY_MONTH, self.FEBRUARY, own_every_month, own_feb], "27", 44700)
+        assert pt == 350
+
+    def test_a_month_row_for_a_band_the_gross_misses_does_not_apply(self):
+        """Specificity never overrides the band. A February row for a band this
+        salary is not in must not be reached for."""
+        feb_low_band = {**self.FEBRUARY, "slab_from": 0, "slab_to": 7500}
+        pt, _ = vetana._pt_from_slabs([self.EVERY_MONTH, feb_low_band], "27", 44700)
+        assert pt == 200
+
+    def test_no_slab_at_all_is_still_zero_and_still_does_not_raise(self):
+        """The last step of the fallback, unchanged. Nothing anybody fails to
+        configure may stop a payroll run."""
+        pt, row = vetana._pt_from_slabs([], "27", 44700)
+        assert pt == 0.0 and row is None
+
+
+def test_the_slab_query_admits_every_month_rows_and_this_months_rows():
+    """The other half of the contract, read off the statement itself.
+
+    The ranking above can only prefer a month row if the QUERY lets one through
+    — and it must let the NULL-month rows through too, or an org with no month
+    rows would suddenly have no ladder at all and every payslip would deduct
+    nothing. That is the exact shape of the bug commit 9463d21f fixed for
+    `org_id`, so it is pinned here rather than trusted.
+    """
+    src = inspect.getsource(vetana._pt_slabs)
+    assert "month IS NULL OR month =" in src, (
+        "the slab query no longer admits every-month rows alongside this "
+        "month's; an org that has set no month rows would lose its ladder:\n" + src
+    )
+    assert "EXTRACT(MONTH FROM $2::date)" in src, (
+        "the month is no longer taken from the date the run is for"
+    )

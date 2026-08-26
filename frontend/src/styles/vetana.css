@@ -319,3 +319,36 @@
    toast: it has to stay on screen, because the thing it reports cannot be
    fixed by trying again. */
 .vt-dropped { margin-bottom: 16px; max-width: 82ch; }
+
+/* ── The professional-tax ladder editor (Statutory tab) ──────────────────────
+   Three classes, all introduced by `PtLadderSection.jsx`. `check-classes`
+   refuses a class with no rule — a class that renders unstyled is a class
+   somebody thought they had applied — so they are declared here rather than
+   dropped from the JSX. */
+
+/* The "this is optional" note. It carries the weight of the owner's rule that
+   professional tax, like GSTIN/PAN/TAN, blocks nothing — so it sits above the
+   table rather than beneath it, where an administrator reads it before
+   concluding they owe the form something. */
+.vt-pt__note {
+  max-width: 62ch;
+  margin: 0 0 var(--sp-3);
+  color: var(--on-surface-2);
+}
+
+/* Marks a row as national reference data rather than this org's own. Sits
+   inline after the state name, so the distinction is read where the row is
+   read and not inferred from the absence of an Edit button. */
+.vt-pt__tag {
+  margin-left: var(--sp-2);
+  vertical-align: baseline;
+}
+
+/* The form's error line. `.gn-form` is borrowed from Ganit wholesale and
+   carries no error slot of its own; this matches `.gn-denial`'s treatment
+   (ganit.css:106) so a refusal reads the same in both modules. */
+.k-formpanel__err {
+  margin: 0 0 var(--sp-3);
+  color: var(--danger);
+  font-size: var(--t-body-sm);
+}

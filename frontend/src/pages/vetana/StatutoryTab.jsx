@@ -21,6 +21,7 @@ import { complianceCalendar } from './statutoryCalendar';
 import { useLanguage } from '../../components/CustomizePanel';
 import { secondaryOf } from '../../lib/labels';
 import { Secondary } from '../../components/Bilingual';
+import PtLadderSection from './PtLadderSection';
 
 const STATUS = {
   overdue: { label: 'Overdue', color: 'var(--danger)' },
@@ -36,7 +37,12 @@ export default function StatutoryTab() {
   );
 
   return (
-    <div>
+    // `.k-section`, which this tab was missing entirely. Its four siblings
+    // (Payroll, Loans, Payslips, Structures) hand-rolled `.k-section__head`
+    // without the wrapper too, and the design pass that carded every other
+    // surface could not reach a `.k-section__head` with no `.k-section`
+    // ancestor. Same gap, same fix.
+    <div className="k-section">
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
           Statutory<Secondary className="k-section__title-hi" value="वैधानिक" />
@@ -56,6 +62,10 @@ export default function StatutoryTab() {
       {res.loading ? <Shim count={6} />
         : res.error ? <ErrorNote what="The statutory summary" error={res.error} onRetry={res.reload} />
           : <Summary data={res.data} month={month} />}
+
+      {/* The ladder those deductions come from, set here rather than by
+          shipping a migration. */}
+      <PtLadderSection />
     </div>
   );
 }
