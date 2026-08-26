@@ -6,7 +6,7 @@ Reads Manav (HRMS) for employees, attendance, leaves.
 import asyncio
 import calendar
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import traceback
@@ -554,6 +554,51 @@ async def _employee_state_column(pool) -> str | None:
         list(_PT_STATE_COLUMNS))
     # Belt and braces over the allowlist: the value is interpolated into SQL.
     return name if name in _PT_STATE_COLUMNS else None
+
+
+def _working_days_between(start: date, end: date) -> int:
+    """Working days in the inclusive range, on THIS module's definition of one.
+
+    The payroll run's `working_days` is "every calendar day of the month that is
+    not a Sunday" — a deliberate simplification, stated as such where it is
+    computed. This counts the same thing over an arbitrary range, so a partial
+    month is measured on the identical basis as the full one it is divided by.
+    Two different definitions either side of that division would quietly change
+    everybody's pay, which is why this reads Sundays out rather than reaching
+    for a holiday calendar it does not share.
+
+    Returns 0 when the range is empty or inverted — someone whose last working
+    day precedes the month is not in the run at all (the structures query drops
+    them), and an inverted window must never produce a negative day count that
+    a ratio could turn into a negative payslip.
+    """
+    if end < start:
+        return 0
+    return sum(
+        1
+        for i in range((end - start).days + 1)
+        if (start + timedelta(days=i)).weekday() != 6
+    )
+
+
+def _employed_working_days(month_start: date, month_end: date,
+                           doj, last_day) -> int:
+    """How many of this month's working days the person was actually on the rolls.
+
+    Clamps the employment window to the month and counts it on the same basis
+    the month itself is counted. A missing joining date means "already here"; a
+    missing last working day means "still here" — both are the safe reading, and
+    both match how the rest of this module treats a NULL date: an absent fact is
+    never evidence against somebody's pay.
+
+    Pulled out as a function rather than left inline SO THAT A TEST CAN CALL THE
+    THING THE RUN CALLS. The arithmetic that decides a payslip must not be
+    testable only by re-implementing it in the test — that is a check which
+    passes whatever the product does.
+    """
+    start = max(month_start, doj) if doj else month_start
+    end = min(month_end, last_day) if last_day else month_end
+    return _working_days_between(start, end)
 
 
 async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
@@ -1242,6 +1287,10 @@ async def process_payroll(
     # working day strictly before `month_start` removes a person from the run.
     structures = await pool.fetch(
         "SELECT s.*, e.user_id AS employee_user_id, "
+        "       e.date_of_joining AS employee_doj, "
+        "       (SELECT max(x.last_working_day) FROM staging.manav_offboarding x "
+        "         WHERE x.org_id = e.org_id AND x.employee_id = e.id "
+        "           AND x.status <> 'cancelled') AS employee_last_day, "
         "       NULLIF(btrim(COALESCE(e.department, '')), '') AS employee_department"
         + (f", NULLIF(btrim(COALESCE(e.{state_col}::text, '')), '') AS employee_state "
            if state_col else " ")
@@ -1316,7 +1365,45 @@ async def process_payroll(
             org_id, emp_id, month_start, month_end,
         )
         has_attendance = att["present"] + att["half_day"] + att["absent"] > 0
-        present_days = (att["present"] + att["half_day"] * 0.5) if has_attendance else working_days
+
+        # ── THE PART OF THE MONTH THIS PERSON WAS ACTUALLY EMPLOYED FOR ──────
+        #
+        # `has_attendance` is False whenever nobody has marked anyone present or
+        # absent, and then `present_days` fell back to the WHOLE month. That
+        # fallback is deliberate and stays: "nobody has said" must never
+        # silently dock somebody's pay, and it is the same rule
+        # `attendance_auto_mark.py` follows in the other direction.
+        #
+        # But it was the whole month for EVERYBODY, including someone who left
+        # on the 3rd. The comment at :1240 promises a mid-month leaver "is still
+        # paid, and pro-rated by the attendance arithmetic below" — and live, in
+        # both organisations, ZERO August rows carry a status in
+        # (present, late, half_day, absent), so that arithmetic returns a full
+        # month for every single person and the promise was never kept.
+        #
+        # The fix is not to distrust the fallback. It is that the employment
+        # window is a FACT THE SYSTEM ALREADY HOLDS — a joining date and a
+        # recorded last working day — and it does not depend on anyone
+        # remembering to mark a register. So the fallback stays, bounded by the
+        # days the person was actually on the rolls.
+        #
+        # Note what this does NOT change: somebody employed all month still has
+        # `employed_days == working_days`, so their ratio stays exactly 1 and
+        # not a paisa of their pay moves. Measured before the change, month
+        # 2026-08: of 51 payable in E2E, 0 joined mid-month and 1 left
+        # mid-month; Unicode 24, none partial. One payslip moves, and it is the
+        # one that was wrong.
+        employed_days = _employed_working_days(
+            month_start, month_end, s["employee_doj"], s["employee_last_day"],
+        )
+
+        present_days = (att["present"] + att["half_day"] * 0.5) if has_attendance else employed_days
+        # A cap as well as a fallback: a marked register can also overstate the
+        # window — `attendance_auto_mark` has been writing weekend rows for
+        # leavers three weeks past their exit — and no arithmetic should pay
+        # somebody for days they were not employed.
+        if present_days > employed_days:
+            present_days = employed_days
         ot_hours = float(att["ot"]) if att else 0
 
         # DAYS, not requests — and only the days that fall inside THIS month.
@@ -1366,8 +1453,13 @@ async def process_payroll(
         ) or 0)
 
         payable_days = present_days + paid_leaves
-        if payable_days > working_days:
-            payable_days = working_days
+        # Capped by the EMPLOYMENT window, not the calendar month. Leave cannot
+        # extend past a last working day either.
+        if payable_days > employed_days:
+            payable_days = employed_days
+        # The denominator stays the full month on purpose: somebody employed for
+        # three of twenty-six working days earns three twenty-sixths of a
+        # month's salary, not a full one.
         ratio = payable_days / working_days if working_days > 0 else 1
 
         basic_pay = float(s["basic"]) * ratio

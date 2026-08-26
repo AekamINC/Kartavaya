@@ -851,3 +851,173 @@ def test_live_the_fix_removes_exactly_the_people_who_had_already_left():
         "guard deleted. Ten employees held a past exit date on 2026-08-25; if "
         "they have since been deactivated, pick a month that still has one "
         "rather than deleting this assertion.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Pro-rating a part-month — the promise :1240 made and the arithmetic never kept
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# `routers/vetana.py` says, where it decides who is in the run: "Somebody who
+# leaves DURING the month is still paid, and pro-rated by the attendance
+# arithmetic below." That was not true.
+#
+# `present_days` fell back to the WHOLE month whenever nobody had been marked
+# present or absent — and live, in both in-scope organisations, ZERO August rows
+# carried a status in (present, late, half_day, absent). So the fallback fired
+# for every single person, and a man whose last working day was the 3rd was paid
+# for all twenty-six.
+#
+# The fallback itself is right and stays: "nobody has said" must never silently
+# dock somebody's pay. What was missing is that the employment window is a fact
+# the system ALREADY HOLDS — a joining date and a recorded last working day —
+# and it does not depend on anyone remembering to mark a register.
+
+class TestWorkingDaysBetween:
+    """The divisor and the dividend must be counted the same way.
+
+    `working_days` for the month is "every calendar day that is not a Sunday".
+    If a part-month were measured any other way — business days, a holiday
+    calendar, anything — the ratio would move for people whose pay should not.
+    """
+
+    def test_a_full_week_is_six_working_days(self):
+        # Mon 2026-08-03 .. Sun 2026-08-09
+        assert vetana._working_days_between(date(2026, 8, 3), date(2026, 8, 9)) == 6
+
+    def test_a_single_sunday_is_no_working_days(self):
+        assert vetana._working_days_between(date(2026, 8, 9), date(2026, 8, 9)) == 0
+
+    def test_a_single_weekday_is_one(self):
+        assert vetana._working_days_between(date(2026, 8, 3), date(2026, 8, 3)) == 1
+
+    def test_it_agrees_with_the_months_own_divisor(self):
+        """The whole month through this helper must equal the number the run
+        divides by, or every ratio in the system shifts."""
+        for year, mon, days in ((2026, 8, 31), (2026, 2, 28), (2024, 2, 29), (2026, 9, 30)):
+            sundays = sum(
+                1 for d in range(1, days + 1) if date(year, mon, d).weekday() == 6
+            )
+            assert vetana._working_days_between(
+                date(year, mon, 1), date(year, mon, days)
+            ) == days - sundays
+
+    def test_an_inverted_window_is_zero_and_never_negative(self):
+        """A negative day count would become a NEGATIVE PAYSLIP through the
+        ratio. Cheap to guard, catastrophic to miss."""
+        assert vetana._working_days_between(date(2026, 8, 31), date(2026, 8, 1)) == 0
+
+
+class TestAPartMonthIsPaidForThePart:
+    """The arithmetic, exercised directly on the values the run computes.
+
+    These assert the RULE rather than driving the endpoint, for the reason this
+    file's header already gives: a mocked pool proves the handler asked, never
+    that the database could answer.
+    """
+
+    MONTH_START, MONTH_END = date(2026, 8, 1), date(2026, 8, 31)
+    FULL = 26  # August 2026: 31 days less 5 Sundays (2,9,16,23,30)
+
+    def _ratio(self, doj, last_day, has_attendance=False, marked_days=0.0):
+        """Calls the PRODUCTION function for the window, then applies the run's
+        cap. `_employed_working_days` is the thing routers/vetana.py itself
+        calls, so reverting the fix turns these red — which a test that
+        re-implemented the window arithmetic could never do."""
+        employed = vetana._employed_working_days(
+            self.MONTH_START, self.MONTH_END, doj, last_day,
+        )
+        present = marked_days if has_attendance else employed
+        present = min(present, employed)
+        payable = min(present, employed)
+        return payable / self.FULL
+
+    def test_the_months_divisor_is_what_the_run_uses(self):
+        assert vetana._working_days_between(self.MONTH_START, self.MONTH_END) == self.FULL
+
+    def test_somebody_employed_all_month_is_untouched(self):
+        """THE REGRESSION GUARD. 50 of 51 payable employees in the live E2E org
+        are in this case, and not a paisa of their pay may move."""
+        assert self._ratio(doj=date(2020, 1, 1), last_day=None) == 1.0
+
+    def test_a_joining_date_inside_the_month_does_not_shorten_a_full_month(self):
+        """A joining date at or before the 1st is a full month, not a boundary
+        case to get wrong."""
+        assert self._ratio(doj=date(2026, 8, 1), last_day=None) == 1.0
+
+    def test_the_leaver_who_went_on_the_third_is_not_paid_for_the_month(self):
+        """The live case. E2E's leaver, last working day 2026-08-03, sits in the
+        run correctly — the guard keeps mid-month leavers in — and was being
+        paid a FULL month because no attendance existed to pro-rate him by.
+
+        1st Sat, 2nd Sun, 3rd Mon -> two working days of twenty-seven.
+        """
+        r = self._ratio(doj=date(2020, 1, 1), last_day=date(2026, 8, 3))
+        assert r == 2 / self.FULL
+        assert r < 0.1, "a three-day month must not pay like a whole one"
+
+    def test_a_mid_month_joiner_is_paid_from_when_they_joined(self):
+        r = self._ratio(doj=date(2026, 8, 17), last_day=None)
+        assert r == vetana._working_days_between(date(2026, 8, 17), self.MONTH_END) / self.FULL
+        assert r < 1.0
+
+    def test_a_marked_register_cannot_overstate_the_window_either(self):
+        """`attendance_auto_mark` has been writing weekend rows for leavers
+        three weeks past their exit, so the register itself can claim more days
+        than somebody was employed for. The cap is not only a fallback."""
+        r = self._ratio(
+            doj=date(2020, 1, 1), last_day=date(2026, 8, 3),
+            has_attendance=True, marked_days=20.0,
+        )
+        assert r == 2 / self.FULL
+
+    def test_the_old_behaviour_would_have_failed_these(self):
+        """States the defect as arithmetic, so the fix cannot be reverted
+        without a red test: the pre-fix fallback was the whole month for
+        everybody, whatever their employment window said."""
+        old_ratio = self.FULL / self.FULL          # present_days = working_days
+        new_ratio = self._ratio(doj=date(2020, 1, 1), last_day=date(2026, 8, 3))
+        assert old_ratio == 1.0
+        assert new_ratio != old_ratio
+
+
+def test_the_run_actually_uses_the_window_and_not_the_whole_month():
+    """The source-level pin.
+
+    Every assertion above calls `_employed_working_days` directly, which proves
+    the arithmetic and NOT that the payroll run consults it. Deleting the call
+    and restoring `present_days = ... else working_days` would leave all of them
+    green while every leaver was paid a full month again — the precise shape of
+    the bug this file now guards.
+
+    So: read the run's own source and require that the fallback and the cap are
+    both expressed in terms of the employment window.
+    """
+    src = inspect.getsource(vetana.process_payroll) if hasattr(vetana, "process_payroll") else None
+    if src is None:
+        # Find the coroutine that owns the per-employee loop by its marker.
+        cands = [
+            obj for name, obj in vars(vetana).items()
+            if callable(obj) and "employed_days" in (inspect.getsource(obj) if _safe(obj) else "")
+        ]
+        assert cands, "no function in routers.vetana mentions employed_days"
+        src = inspect.getsource(cands[0])
+
+    assert "_employed_working_days(" in src, (
+        "the payroll run no longer calls _employed_working_days — a part-month "
+        "is being paid as a whole one again"
+    )
+    assert "else employed_days" in src, (
+        "the no-attendance fallback is no longer bounded by the employment "
+        "window; it has gone back to paying the whole month for everybody"
+    )
+    assert "if payable_days > employed_days" in src, (
+        "payable days are no longer capped by the employment window"
+    )
+
+
+def _safe(obj):
+    try:
+        inspect.getsource(obj)
+        return True
+    except Exception:
+        return False
