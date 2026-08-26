@@ -48,7 +48,7 @@ from services.statutory_ids import StatutoryValueError, clean_employee_identifie
 # The one canonical Indian state codelist in this backend, and the normaliser
 # that collapses the two conventions the database holds. See `_clean_state`
 # below for WHY this router reuses it rather than typing a second copy.
-from services.skills.data.client_register import _GST_STATES, _norm_state
+from services.gst_states import GST_STATES as _GST_STATES, norm_state as _norm_state
 from utils import assert_file_url, assert_file_urls
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
@@ -163,12 +163,11 @@ _SENSITIVE_COLS = ("aadhaar", "pan", "bank_details")
 #   · A state derived from a GSTIN is numeric — it is the first two characters —
 #     so the cheapest source of the value needs no conversion.
 #
-# The CODELIST is not re-typed here. `_GST_STATES` in `services/skills/data/
-# client_register.py` is the single canonical table in this backend (37 live
-# codes, retired ones kept so an old GSTIN still resolves), and `_norm_state`
-# beside it already accepts '27', 27, 'MH', 'mh' and 'Maharashtra' and returns
-# '27'. A second copy here is a second thing to drift — it is imported at the
-# top of this file.
+# The CODELIST is not re-typed here. `services/gst_states.py` is the single
+# canonical table in this backend (37 live codes, retired ones kept so an old
+# GSTIN still resolves), and `norm_state` beside it already accepts '27', 27,
+# 'MH', 'mh' and 'Maharashtra' and returns '27'. A second copy here is a second
+# thing to drift — it is imported at the top of this file.
 
 
 def _clean_state(value) -> str | None:

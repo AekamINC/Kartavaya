@@ -36,7 +36,7 @@ from services.niyam.subjects import payroll_published, payslip_disbursed
 # two were written in different conventions. `routers/manav.py:51` and
 # `services/skills/action/attendance_auto_mark.py` import the same helper for
 # the same reason — see `_state_keys`.
-from services.skills.data.client_register import _norm_state
+from services.gst_states import norm_state as _norm_state
 from services.pii import decrypt_bank, mask_bank, mask_tail
 from utils import next_doc_number
 
@@ -559,11 +559,16 @@ async def _employee_state_column(pool) -> str | None:
 async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     """This org's professional-tax ladder as it stood at `as_at`.
 
-    Scoped to the org because the table is — every row carries an `org_id` and
-    an unscoped read would charge one firm another firm's rates. Rows with a
-    future `effective_from` are excluded so re-running an old month uses the
-    rates that applied to it; a NULL `effective_from` is admitted because the
-    column is nullable and a slab nobody dated is still the slab they entered.
+    Scoped to the org, because an unscoped read would charge one firm another
+    firm's rates — but a row with NO `org_id` is a SHARED ladder and is read
+    by everybody, since that column is nullable and national reference data
+    is the obvious thing to seed once. Where both exist for one state, the
+    org's own row wins (`is_own`, ranked first in `_pt_from_slabs`).
+
+    Rows with a future `effective_from` are excluded so re-running an old
+    month uses the rates that applied to it; a NULL `effective_from` is
+    admitted because the column is nullable and a slab nobody dated is still
+    the slab they entered.
 
     Returns a LIST, and an empty one is a real answer meaning "this org has
     seeded no slabs". It is never None — see `_compute_statutory` for why that
@@ -571,9 +576,21 @@ async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     """
     return list(await pool.fetch(
         "SELECT state_code, state_name, slab_from, slab_to, monthly_tax, "
-        "       effective_from "
+        "       effective_from, (org_id IS NOT NULL) AS is_own "
         "  FROM staging.pay_professional_tax "
-        " WHERE org_id = $1::uuid "
+        # A NULL `org_id` IS A SHARED LADDER, NOT A ROW TO IGNORE. The
+        # column is nullable, and a professional-tax ladder is national
+        # reference data — so seeding one row-set for every org, with no
+        # org_id, is the obvious reading and the one a careful person
+        # takes. Scoped strictly to `org_id = $1` it matched nothing,
+        # `_pt_from_slabs` returned 0.0, and every payslip in the product
+        # deducted NO professional tax — with no error, no log line and
+        # nothing to distinguish it from a state that levies none. That
+        # trap is live right now: the ~20-state seed is still owed, and
+        # the flat-200 fallback that used to mask it has been removed.
+        # An org that seeds its own rows still wins — see `is_own`, which
+        # outranks a shared row for the same state in `_pt_from_slabs`.
+        " WHERE (org_id = $1::uuid OR org_id IS NULL) "
         "   AND (effective_from IS NULL OR effective_from <= $2::date) "
         " ORDER BY state_code, slab_from",
         org_id, as_at))
@@ -639,7 +656,12 @@ def _pt_from_slabs(slabs, state, gross: float) -> tuple:
                 continue
             if high is not None and gross > float(high):
                 continue
-            rank = (row["effective_from"] or date.min, low)
+            # An org's OWN slab outranks a shared one for the same state and
+            # band, whatever their dates: a firm that has entered its own
+            # ladder has said something more specific than the national
+            # default, and a later-dated shared row must not overrule it.
+            rank = (1 if row.get("is_own") else 0,
+                    row["effective_from"] or date.min, low)
             if best is None or rank > best[0]:
                 best = (rank, row)
         except (KeyError, TypeError, ValueError):

@@ -5,7 +5,7 @@ from datetime import date
 #: THE codelist, not a second copy of it. `_norm_state` collapses '27', 27,
 #: 'MH', 'mh' and 'Maharashtra' onto one value, which is what makes a holiday
 #: written in one convention comparable to an employee written in the other.
-from services.skills.data.client_register import _norm_state
+from services.gst_states import norm_state as _norm_state
 
 log = logging.getLogger(__name__)
 

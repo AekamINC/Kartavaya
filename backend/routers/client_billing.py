@@ -6,6 +6,7 @@ Proposal 87, phases P5.1 + P5.2 + P5.3.  Lives in its own router rather than
 inside ganit.py (3,500 lines already).  Gate: any of ganit / graha / vikray —
 a firm that holds any of those can manage its client billing.
 """
+import json
 import logging
 from datetime import date
 from typing import Optional
@@ -19,7 +20,94 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_any_module
 from services.billing_cycle import next_anchor, period_end_for
+# THE state codelist, not a second copy. `_norm_state` collapses '27', 'MH' and
+# 'Maharashtra' onto one canonical two-digit code — the same helper
+# `routers/vetana.py`, `routers/manav.py` and `attendance_auto_mark.py` import,
+# for the same reason: a second copy is a second thing to drift.
+from services.gst_states import GST_STATES as _GST_STATES, norm_state as _norm_state
 from utils import next_doc_number
+
+
+async def _supplier_state(pool, org_id) -> str:
+    """The state THIS firm supplies FROM, canonical, or '' if nobody has said.
+
+    `staging.organisations.state_code`. BOTH in-scope organisations carry one
+    (E2E Test '27', Unicode Group '24', measured 2026-08-26), so the refusal
+    below never fires for either of them. It fires only for the three orgs the
+    owner has put out of scope, which have no state_code and do not transact —
+    and refusing there is the intended outcome, not a gap to close.
+    """
+    row = await pool.fetchrow(
+        "SELECT state_code FROM staging.organisations WHERE id = $1::uuid",
+        str(org_id))
+    return _norm_state(row["state_code"]) if row else ""
+
+
+def _tax_split(gst_treatment, supplier_state: str, place_of_supply: str):
+    """(is_igst, refusal). A refusal is a REASON, never a default.
+
+    ── WHY THIS REFUSES INSTEAD OF GUESSING ────────────────────────────────
+    `is_igst` used to be `gst_treatment in ('overseas','sez')` and nothing else,
+    so it never compared the two states — and every INTER-STATE DOMESTIC supply
+    was taxed CGST+SGST when it legally attracts IGST. A Gujarat firm invoicing
+    a Maharashtra client reported the wrong tax heads and paid the wrong
+    governments. That was invisible while these routes 500'd; they work now.
+
+    The honest split needs both ends, and either can be missing: the supplier's
+    `organisations.state_code` is set on 2 of 5 live orgs, and a customer with
+    no GSTIN and no address state has no place of supply. Defaulting a missing
+    end to "intra-state" is the guess that produced the original bug, and it
+    fails silently on a tax document somebody files. So this returns a refusal
+    and the callers stop — a service line left uninvoiced this run is
+    recoverable in a minute by filling the state in; a wrongly-taxed invoice
+    that has gone to a customer and into a GSTR-1 is not.
+
+    Overseas and SEZ are decided WITHOUT either state: the treatment settles it,
+    which is why an export never blocks on a missing state_code.
+    """
+    if gst_treatment in ("overseas", "sez"):
+        return True, None
+    if not supplier_state:
+        return None, ("this organisation has no state_code, so an invoice "
+                      "cannot be taxed as inter- or intra-state. Set the "
+                      "organisation's state in Settings -> Profile.")
+    if not place_of_supply:
+        return None, ("this customer has neither a GSTIN nor a state on their "
+                      "address, so the place of supply is unknown and the "
+                      "invoice cannot be taxed correctly.")
+    return supplier_state != place_of_supply, None
+
+
+def _place_of_supply(gstin, address) -> str:
+    """The two-digit GST state code this invoice is supplied INTO.
+
+    Both auto-invoice paths wrote nothing here and left the column at its ''
+    default, on documents whose `invoice_type` defaults to 'tax_invoice'. That
+    is the one field deciding whether a supply is inter- or intra-state, and
+    `services/gstr1_json.py` reads it (`parse_state_code(row["place_of_supply"])`)
+    to build the return — so an empty one produces a GSTR-1 row that cannot be
+    classified, silently, because '' parses to None rather than raising.
+
+    THE GSTIN FIRST, because its opening two digits ARE the state of
+    registration and that is the figure a return is built on. The address is
+    the fallback for an unregistered customer, who genuinely has no GSTIN and
+    must still be invoiceable — the same rule that keeps GSTIN non-mandatory
+    everywhere else in this product.
+
+    Returns '' when neither answers, which is exactly what was written before:
+    this can only improve the column, never blank one that was populated.
+    """
+    code = str(gstin or "").strip()[:2]
+    if code in _GST_STATES:
+        return code
+    if isinstance(address, str):
+        try:
+            address = json.loads(address)
+        except (ValueError, TypeError):
+            address = None
+    if isinstance(address, dict):
+        return _norm_state(address.get("state")) or ""
+    return ""
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +470,11 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
     lines = await pool.fetch(
         "SELECT sl.*, p.client_id, p.gst_treatment, p.anchor_day, "
         "       p.billing_cycle, p.payment_terms_days, p.currency, "
-        "       c.name AS client_name "
+        # The customer's own registration and address, for `place_of_supply`.
+        # Read on the join that is already here rather than in a second query
+        # per line: the sweep runs over every org's service lines at once.
+        "       c.name AS client_name, c.gstin AS client_gstin, "
+        "       c.address AS client_address "
         "FROM staging.client_service_lines sl "
         "JOIN staging.client_billing_profiles p ON p.id = sl.profile_id "
         # This sweep runs for EVERY org at once (the cron has no org), so
@@ -400,6 +492,13 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
 
     created = 0
     skipped = 0
+
+    # Each org's own state, read ONCE per run rather than per service line: this
+    # sweep has no org of its own (the cron runs it for everybody), so the state
+    # varies by row and a naive read would be a query per line.
+    _supplier_states: dict[str, str] = {}
+    for _oid in {str(row["org_id"]) for row in lines}:
+        _supplier_states[_oid] = await _supplier_state(pool, _oid)
 
     for sl in lines:
         anchor = sl["anchor_day"]
@@ -425,7 +524,25 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
             continue
 
         amount = float(sl["amount"])
-        is_igst = sl["gst_treatment"] in ("overseas", "sez")
+        place_of_supply = _place_of_supply(sl["client_gstin"], sl["client_address"])
+        # REFUSED, NOT DEFAULTED. See `_tax_split`: a missing state used to mean
+        # "intra-state", which taxed every inter-state supply under the wrong
+        # heads. This sweep is unattended, so it skips the line and says why —
+        # the period stays uninvoiced and is picked up on the next run once the
+        # state is filled in. `skipped` already counts lines this run passed
+        # over, and `continue` happens BEFORE the serial is drawn, so no invoice
+        # number is spent on a document that is not written.
+        is_igst, refusal = _tax_split(
+            sl["gst_treatment"],
+            _supplier_states.get(str(sl["org_id"]), ""),
+            place_of_supply)
+        if refusal:
+            skipped += 1
+            logger.warning(
+                "Auto-invoice SKIPPED for %s (%s): %s",
+                sl["client_name"], sl["description"], refusal,
+            )
+            continue
         # A LOCAL, NOT A COLUMN. `staging.ganit_invoices` has no `gst_rate`
         # and never has (54 columns live, checked 2026-08-25); naming it in
         # the column list is why this INSERT raised UndefinedColumnError on
@@ -452,15 +569,36 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
         invoice_number = await next_doc_number(
             pool, str(sl["org_id"]), "ganit_invoices", "invoice_number", "INV")
 
+        # THE LINE PARTICULARS. `ganit_invoices.line_items` is NOT NULL DEFAULT
+        # '[]'::jsonb, so omitting it did not fail — it minted a tax invoice
+        # with an EMPTY BODY. `routers/pay.py` builds the customer's payment
+        # page as `[_line(li) for li in (items or [])]`, so the client opened
+        # the link to a total with nothing explaining it; Rule 46 requires the
+        # description, rate and amount that were being dropped; and every other
+        # final-invoice path in this product passes
+        # `ganit._refuse_final_if_incomplete`, which this one does not reach.
+        #
+        # The shape is `generate_usage_invoice`'s below, deliberately — the two
+        # write to the same column and a reader cannot be asked to handle two
+        # spellings of one line. `gst_rate` rides the LINE because
+        # `ganit_invoices` has no such column, which this file's own comment
+        # says twice and is what the 500 was about.
+        line_items = [{
+            "description": f"{sl['description']} ({period_start} – {period_end})",
+            "quantity": 1,
+            "rate": amount,
+            "gst_rate": gst_rate,
+            "amount": amount,
+        }]
         invoice_id = uuid4()
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     "INSERT INTO staging.ganit_invoices "
                     "(id, org_id, client_id, billing_profile_id, invoice_number, "
-                    " invoice_date, due_date, subtotal, "
+                    " invoice_date, due_date, line_items, subtotal, "
                     " cgst, sgst, igst, total, balance_due, payment_status, "
-                    " notes, created_by, is_igst) "
+                    " notes, created_by, is_igst, place_of_supply) "
                     # $12 is bound twice — `total` and `balance_due` — the same
                     # convention ganit.py and vikray.py use. `balance_due`
                     # DEFAULTS to 0, so omitting it mints an invoice that reads
@@ -468,18 +606,18 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
                     # receivables and ageing, ₹0 on the customer's payment link,
                     # and un-editable because editing is bounded by payment.
                     "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, "
-                    "        $6::date, $7::date, $8, "
-                    "        $9, $10, $11, $12, $12, 'unpaid', "
-                    "        $13, 'system', $14)",
+                    "        $6::date, $7::date, $8::jsonb, $9, "
+                    "        $10, $11, $12, $13, $13, 'unpaid', "
+                    "        $14, 'system', $15, $16)",
                     str(invoice_id), sl["org_id"], sl["client_id"],
                     sl["profile_id"], invoice_number,
-                    today, due_date, amount,
+                    today, due_date, json.dumps(line_items), amount,
                     0 if is_igst else round(gst_amount / 2, 2),
                     0 if is_igst else round(gst_amount / 2, 2),
                     gst_amount if is_igst else 0,
                     total,
                     f"Auto-invoice: {sl['description']} ({period_start} – {period_end})",
-                    is_igst,
+                    is_igst, place_of_supply,
                 )
                 await conn.execute(
                     "INSERT INTO staging.client_invoice_lines "
@@ -632,11 +770,18 @@ async def generate_usage_invoice(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    """Roll unbilled metered-usage rows into a draft ganit_invoices row."""
+    """Roll unbilled metered-usage rows into a DRAFT ganit_invoices row.
+
+    Draft is written explicitly at the INSERT — see the note there. The
+    caller finalises through the normal invoice route once the lines have
+    been read, which is the review this button's output has always implied
+    and never had.
+    """
     pool = await get_pool()
 
     profile = await pool.fetchrow(
-        "SELECT p.*, c.name AS client_name "
+        "SELECT p.*, c.name AS client_name, c.gstin AS client_gstin, "
+        "       c.address AS client_address "
         "FROM staging.client_billing_profiles p "
         "JOIN staging.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
@@ -666,7 +811,13 @@ async def generate_usage_invoice(
     if not usage_rows:
         raise HTTPException(400, "No unbilled usage entries to invoice")
 
-    import json
+    # A LOCAL, NOT A COLUMN — see the sweep above. `ganit_invoices.gst_rate`
+    # does not exist, and naming it here is why this route 500'd on every call.
+    # Bound BEFORE the loop because each line now carries it: the rate has to
+    # live somewhere, and with no column to hold it the line is where every
+    # reader in this product looks for it.
+    gst_rate = 18
+
     line_items = []
     subtotal = 0.0
     for u in usage_rows:
@@ -675,15 +826,29 @@ async def generate_usage_invoice(
             "description": f"{u['metric']}: {u['quantity']} {u['unit']} @ {u['rate']}",
             "quantity": float(u["quantity"]),
             "rate": float(u["rate"]),
+            # `pay.py:_line` and the GST builders read the rate from the
+            # line. Without it the customer sees a taxed total with no rate
+            # behind it, and the return has to guess.
+            "gst_rate": gst_rate,
             "amount": amount,
         })
         subtotal += amount
 
     subtotal = round(subtotal, 2)
-    is_igst = profile["gst_treatment"] in ("overseas", "sez")
-    # A LOCAL, NOT A COLUMN — see the sweep above. `ganit_invoices.gst_rate`
-    # does not exist, and naming it here is why this route 500'd on every call.
-    gst_rate = 18
+
+    # REFUSED, NOT DEFAULTED — see `_tax_split`. A user pressed a button, so
+    # this one answers rather than skipping silently: a 400 naming the missing
+    # fact is actionable in a minute, and it is raised BEFORE the serial is
+    # drawn and before any usage row is marked invoiced, so nothing is spent or
+    # consumed by a call that does not write an invoice.
+    place_of_supply = _place_of_supply(profile["client_gstin"],
+                                       profile["client_address"])
+    is_igst, refusal = _tax_split(
+        profile["gst_treatment"],
+        await _supplier_state(pool, org_id),
+        place_of_supply)
+    if refusal:
+        raise HTTPException(400, f"Cannot raise this invoice: {refusal}")
     gst_amount = round(subtotal * gst_rate / 100, 2)
     total = round(subtotal + gst_amount, 2)
     today = date.today()
@@ -706,13 +871,23 @@ async def generate_usage_invoice(
                 "(id, org_id, client_id, billing_profile_id, invoice_number, "
                 " invoice_date, due_date, line_items, subtotal, "
                 " cgst, sgst, igst, total, balance_due, payment_status, "
-                " notes, created_by, is_igst) "
+                " notes, created_by, is_igst, place_of_supply, doc_status) "
                 # $13 twice: total and balance_due. See the sweep's note — the
                 # column DEFAULTS to 0 and an omitted one reads as fully paid.
                 "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, "
                 "        $6::date, $7::date, $8::jsonb, $9, "
                 "        $10, $11, $12, $13, $13, 'unpaid', "
-                "        $14, $15, $16)",
+                # DRAFT, EXPLICITLY. `doc_status` DEFAULTS to 'final', so
+                # omitting it made this route contradict its own docstring
+                # ("into a draft ganit_invoices row") and mint a finished tax
+                # invoice the moment a user pressed Generate. It matters more
+                # now than it did: the draft filter added for the statement of
+                # account and the revenue tile is what separates "counted and
+                # dunned" from "not", so a document nobody had reviewed was
+                # being sent to the customer's statement. Finalising is a real
+                # route (`ganit.py` set_doc_status), so a draft is reviewable,
+                # not stranded.
+                "        $14, $15, $16, $17, 'draft')",
                 str(invoice_id), org_id, profile["client_id"],
                 profile["id"], invoice_number,
                 today, due_date, json.dumps(line_items), subtotal,
@@ -722,6 +897,7 @@ async def generate_usage_invoice(
                 total,
                 f"Metered usage invoice for {profile['client_name']}",
                 uid, is_igst,
+                place_of_supply,
             )
             placeholders = ", ".join(f"${i+2}::uuid" for i in range(len(usage_ids)))
             await conn.execute(

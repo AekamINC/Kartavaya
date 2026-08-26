@@ -14,6 +14,58 @@ Seven parallel agents, partitioned by file so no two shared one. Every live
 figure below is a read-only `SELECT`; **no write-probe touched the shared
 database** and the vendor/holiday counters were re-read afterwards to prove it.
 
+### The only two orgs that matter — what is owed, per org
+
+**Owner's scope call, 2026-08-26: E2E Test & Associates and Unicode Group.
+The other three organisations (Aekam Inc, Demo - Kartavaya, UK AekamINC) are
+explicitly out of scope and nothing below is written for them.**
+
+|  | E2E Test & Associates | Unicode Group |
+|---|---|---|
+| org_id | `64e7bea6-6abe-490c-a2a4-27a60c6be916` | `fae87907-2f99-4b35-a241-c94d9e1e4a17` |
+| `organisations.state_code` | **`27`** Maharashtra | **`24`** Gujarat |
+| Active employees | 71 | 26 |
+| `manav_employees.state` set | 0 | 0 |
+| …derivable from `address->>'state'` | **0 — nothing to derive from** | **24 of 26** |
+| Own `pay_professional_tax` rows | 0 | 0 |
+| Slabs that exist for its state | 3 (Maharashtra) | 4 (Gujarat) |
+
+All figures read-only, 2026-08-26.
+
+**1 · The billing tax split never blocks either of them.** `_tax_split` refuses
+to guess when the supplier's state is unknown, and BOTH of these carry a
+`state_code`, so the refusal path cannot fire for either. Nothing is owed here.
+(It does fire for the three out-of-scope orgs; that is intended and left alone.)
+
+**2 · Professional tax is ₹0 for both until slabs reach them — and the cheapest
+fix is one UPDATE.** Neither org owns a single `pay_professional_tax` row. All
+nine live rows belong to Aekam Inc, and they happen to be exactly the two
+ladders these two orgs need: **Maharashtra (3 bands) for E2E, Gujarat (4 bands)
+for Unicode**. Since `_pt_slabs` now reads a NULL-`org_id` row as a SHARED
+ladder, re-pointing those nine rows —
+
+    UPDATE staging.pay_professional_tax SET org_id = NULL;   -- 9 rows
+
+— gives both orgs correct professional tax immediately, with no new data
+entered. NOT RUN: it is a write to the shared production database and an
+owner's call. Without it, and with the owner's chosen ₹0 fallback, every payslip
+in both orgs deducts nothing.
+
+**3 · Employee work state, and the two orgs need different answers.**
+`manav_employees.state` is 0 of 71 and 0 of 26.
+- **Unicode Group** — 24 of its 26 carry `address->>'state'`, so a backfill is
+  possible. It is NOT automatic and was not run: `address` is a RESIDENTIAL
+  state and professional tax follows where a person WORKS, so a blind copy is
+  wrong for anyone who commutes across a border. Two of the 26 have nothing to
+  copy either way.
+- **E2E Test & Associates** — 0 of 71 carry an address state, so there is
+  **nothing to derive from at all**. Every one of the 71 has to be entered
+  through the form (Manav → Employees → Work state), or its payroll keeps
+  deducting ₹0 whatever happens to the slab table.
+
+Until 2 and 3 are both done for an org, that org's professional tax is ₹0 by
+design, not by fault — see the ₹0-fallback decision recorded above.
+
 ### Phase 1 — the six write-paths
 
 - `phase-1.2` · Vendor MSME + TDS enterable. Proved live first: all six columns

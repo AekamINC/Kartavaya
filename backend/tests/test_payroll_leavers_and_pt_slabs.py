@@ -569,12 +569,73 @@ def test_the_column_name_can_only_ever_come_from_the_allowlist():
 
 
 def test_the_slab_read_is_scoped_to_the_org_that_seeded_it():
-    """Every one of the nine live rows carries an `org_id`. An unscoped read
-    would charge one firm another firm's rates."""
+    """An unscoped read would charge one firm another firm's rates. Every one
+    of the nine live rows carries an `org_id`, so the org predicate is what
+    keeps them apart."""
     sql = norm(inspect.getsource(vetana._pt_slabs))
     assert "FROM staging.pay_professional_tax" in sql
-    idx = sql.index("FROM staging.pay_professional_tax")
-    assert "org_id = $1::uuid" in sql[idx:idx + 200], sql
+    assert "org_id = $1::uuid" in sql, sql
+    # Exactly ONE organisation is ever named. Asserted as "there is no
+    # second org bind" rather than by counting occurrences of
+    # `org_id = $`, because `inspect.getsource` hands back the comments
+    # too and one of them quotes the predicate in prose — a count would
+    # be measuring the explanation, not the code.
+    assert "org_id = $2" not in sql, sql
+
+
+def test_a_shared_ladder_with_no_org_id_is_read_and_not_silently_ignored():
+    """`pay_professional_tax.org_id` is NULLABLE, and a professional-tax ladder
+    is national reference data — so seeding one row-set for everybody, with no
+    org_id, is the obvious reading and the one a careful person takes.
+
+    Scoped strictly to `org_id = $1` those rows matched nothing, `_pt_from_slabs`
+    returned 0.0, and every payslip in the product deducted NO professional tax
+    with no error, no log line and nothing to tell it apart from a state that
+    levies none. The trap is live: the ~20-state seed is still owed and the
+    flat-₹200 fallback that used to mask it has been removed."""
+    sql = norm(inspect.getsource(vetana._pt_slabs))
+    assert "org_id IS NULL" in sql, (
+        "a shared ladder seeded with no org_id would be invisible, and every "
+        "payslip would silently deduct zero professional tax")
+
+
+def test_an_orgs_own_slab_beats_a_shared_one_for_the_same_band():
+    """A firm that has entered its own ladder has said something more specific
+    than the national default, and a later-dated shared row must not overrule
+    it. Ranked on `is_own` FIRST, ahead of the date."""
+    shared = {"state_code": "27", "state_name": "Maharashtra",
+              "slab_from": 0, "slab_to": None, "monthly_tax": 200,
+              # Dated LATER than the org's own row, deliberately: if the rank
+              # looked at the date first, the shared row would win.
+              "effective_from": date(2026, 1, 1), "is_own": False}
+    own = {"state_code": "27", "state_name": "Maharashtra",
+           "slab_from": 0, "slab_to": None, "monthly_tax": 175,
+           "effective_from": date(2024, 4, 1), "is_own": True}
+    got, slab = vetana._pt_from_slabs([shared, own], "27", 10000)
+    assert got == 175.0, "the shared ladder overruled the org's own rates"
+    assert slab["is_own"] is True
+
+
+def test_a_shared_slab_is_used_when_the_org_has_none_of_its_own():
+    """The whole point of admitting the NULL-org rows: an org that has seeded
+    nothing still gets a real rate instead of a silent zero."""
+    shared = {"state_code": "27", "state_name": "Maharashtra",
+              "slab_from": 0, "slab_to": None, "monthly_tax": 200,
+              "effective_from": date(2024, 4, 1), "is_own": False}
+    got, _slab = vetana._pt_from_slabs([shared], "27", 10000)
+    assert got == 200.0
+
+
+def test_a_row_without_is_own_at_all_still_ranks():
+    """`_pt_from_slabs` is called with asyncpg Records in production and plain
+    dicts in tests, and an older caller may hand over neither. A missing key
+    must rank as "not the org's own" rather than raise inside the loop that
+    decides somebody's tax."""
+    row = {"state_code": "27", "state_name": "Maharashtra",
+           "slab_from": 0, "slab_to": None, "monthly_tax": 175,
+           "effective_from": date(2024, 4, 1)}
+    got, _slab = vetana._pt_from_slabs([row], "27", 10000)
+    assert got == 175.0
 
 
 def test_a_slab_dated_in_the_future_is_not_applied_to_an_older_month():

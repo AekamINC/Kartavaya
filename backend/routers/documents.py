@@ -844,7 +844,15 @@ async def download_project_report_pdf(
         board_id, team_id,
     ) or 0
     minutes = await pool.fetchval(
-        "SELECT COALESCE(SUM(t.minutes), 0) FROM staging.time_entries t "
+        # `public.time_entries`, NOT `staging.` — there is no such table in
+        # the staging schema and never has been (live catalogue: the table
+        # exists in `public` and in a QA cleanup schema only). This SELECT
+        # is call 5 of 8 in this route, unconditional and untried, so
+        # `GET /projects/{board_id}/report/pdf` raised UndefinedTableError
+        # for every caller it has ever had — the draft filter and the date
+        # casts below it were unreachable. The other seven statements all
+        # plan clean against the live catalogue; this was the only refusal.
+        "SELECT COALESCE(SUM(t.minutes), 0) FROM public.time_entries t "
         "JOIN public.tasks k ON k.task_id = t.task_id "
         "WHERE t.org_id=$1::uuid AND k.board_id=$2 "
         "AND t.started_at >= $3::text::date AND t.started_at < ($4::text::date + 1)",

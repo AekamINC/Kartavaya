@@ -78,6 +78,7 @@ tries to produce the PDF — which is the right place for it to surface, rather
 than this job guessing a State.
 """
 import calendar
+import json
 import logging
 import uuid
 from datetime import date, timedelta
@@ -244,7 +245,6 @@ async def _doc_status_for(pool, org_id: str, rec, amounts: dict,
     # silent billing outage.
     items = rec["template_items"]
     if isinstance(items, str):
-        import json
         try:
             items = json.loads(items)
         except (TypeError, ValueError):
@@ -328,6 +328,39 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
                 pool, org_id, "",
                 str(rec["contact_id"]) if rec["contact_id"] else "")
 
+            # WHAT EACH LINE COST US, stamped on at the moment of writing.
+            #
+            # This is the SECOND implementation of "mint this month's retainer
+            # invoice" — `ganit.generate_recurring_invoice` is the first, and it
+            # costs its lines. Until this call was added the two disagreed, so
+            # whether a line remembered its cost depended on nothing but which
+            # code path happened to run: the button costed it, the automation
+            # did not. `commission_reports.py` sums only the costed lines, so a
+            # client's gross profit came out understated by an amount that
+            # tracked nobody's decision. Silent, and plausible-looking, which is
+            # the failure mode `apply_line_costs` exists to prevent.
+            #
+            # Resolved fresh, not carried: a retainer billed monthly is a NEW
+            # line written this month, and this month's cost is what it cost.
+            # Imported inside the function because a service importing a router
+            # at module scope is the wrong direction and would risk a cycle —
+            # `vikray` imports `ganit` lazily for the same reason.
+            from routers.vikray import apply_line_costs
+
+            costed_items = rec["template_items"]
+            if isinstance(costed_items, str):
+                try:
+                    costed_items = json.loads(costed_items)
+                except (ValueError, TypeError):
+                    costed_items = None
+            if isinstance(costed_items, list):
+                await apply_line_costs(pool, org_id, costed_items)
+            else:
+                # Unparseable or not an array: bind exactly what was bound
+                # before rather than substituting an empty list. Costing is
+                # not a licence to change what this row records.
+                costed_items = rec["template_items"]
+
             await pool.execute(
                 """
                 INSERT INTO staging.ganit_invoices
@@ -343,7 +376,7 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
                         $16, $17, $18, $19::uuid, NULLIF($21,'')::uuid, TRUE)
                 """,
                 uuid.uuid4(), org_id, rec["contact_id"], inv_number, today,
-                today + timedelta(days=30), rec["is_igst"], rec["template_items"],
+                today + timedelta(days=30), rec["is_igst"], costed_items,
                 amounts["subtotal"],
                 amounts["cgst"], amounts["sgst"], amounts["igst"],
                 amounts["cess"], amounts["discount"], amounts["total"],

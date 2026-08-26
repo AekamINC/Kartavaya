@@ -104,6 +104,11 @@ SERVICE_LINE = {
     "currency": "INR",
     "gst_treatment": "registered",
     "client_name": "A Client Pvt Ltd",
+    # The customer's registration and address: `place_of_supply` is
+    # derived from them, and a tax invoice carrying none cannot be
+    # classified as inter- or intra-state on the GST return.
+    "client_gstin": "27AABCU9603R1ZM",
+    "client_address": {"state": "Maharashtra"},
 }
 
 BILLING_PROFILE = {
@@ -116,6 +121,11 @@ BILLING_PROFILE = {
     "currency": "INR",
     "gst_treatment": "registered",
     "client_name": "A Client Pvt Ltd",
+    # The customer's registration and address: `place_of_supply` is
+    # derived from them, and a tax invoice carrying none cannot be
+    # classified as inter- or intra-state on the GST return.
+    "client_gstin": "27AABCU9603R1ZM",
+    "client_address": {"state": "Maharashtra"},
 }
 
 USAGE_ROW = {
@@ -226,7 +236,16 @@ def pooled(monkeypatch):
 
 # ── driving the two write paths ──────────────────────────────
 
+#: The supplier's own state. Without it `_tax_split` REFUSES to guess the
+#: tax heads rather than defaulting to intra-state, so every happy-path run
+#: has to supply it — which is the point: the refusal is not an edge case
+#: bolted on, it is the default answer when either end of the supply is
+#: unknown. '24' (Gujarat) against a Maharashtra customer makes the fixture
+#: an INTER-state supply, so the happy path exercises the IGST branch.
+SUPPLIER_STATE = ("SELECT state_code FROM staging.organisations", {"state_code": "24"})
+
 SWEEP_SCRIPT = [
+    SUPPLIER_STATE,
     ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
     # Not billed for this period yet — the sweep proceeds.
     ("FROM staging.client_invoice_lines", None),
@@ -235,6 +254,7 @@ SWEEP_SCRIPT = [
 ]
 
 USAGE_SCRIPT = [
+    SUPPLIER_STATE,
     ("FROM staging.client_billing_profiles p", BILLING_PROFILE),
     ("FROM staging.client_metered_usage ", [USAGE_ROW]),
     ("SELECT invoice_number FROM staging.ganit_invoices", None),
@@ -718,3 +738,103 @@ def test_the_router_file_is_the_one_under_test(live):
         f"only {len(params)} statements described — the capture stopped "
         f"reaching the write paths")
     assert pathlib.Path(client_billing.__file__).name == "client_billing.py"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  The tax split REFUSES rather than guessing
+#
+#  `is_igst` used to be `gst_treatment in ('overseas','sez')` and nothing more,
+#  so it never compared the supplier's state with the place of supply — and
+#  every INTER-STATE DOMESTIC supply was taxed CGST+SGST when it legally
+#  attracts IGST. A Gujarat firm invoicing a Maharashtra client reported the
+#  wrong tax heads and paid the wrong governments. It was invisible while both
+#  routes 500'd; they work now.
+#
+#  The honest split needs both ends and either can be missing —
+#  `organisations.state_code` was set on 2 of 5 live orgs the day this landed.
+#  Defaulting the missing end to "intra-state" IS the original bug. So the
+#  answer is a refusal, and these hold it there.
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_an_interstate_supply_is_igst():
+    is_igst, refusal = client_billing._tax_split("registered", "24", "27")
+    assert refusal is None
+    assert is_igst is True
+
+
+def test_an_intrastate_supply_is_not_igst():
+    is_igst, refusal = client_billing._tax_split("registered", "27", "27")
+    assert refusal is None
+    assert is_igst is False
+
+
+@pytest.mark.parametrize("treatment", ["overseas", "sez"])
+def test_an_export_never_blocks_on_a_missing_state(treatment):
+    """The treatment settles it, so neither end is consulted. An exporter whose
+    organisation has no state_code must still be able to invoice."""
+    is_igst, refusal = client_billing._tax_split(treatment, "", "")
+    assert refusal is None
+    assert is_igst is True
+
+
+def test_no_supplier_state_refuses_and_says_which_field():
+    is_igst, refusal = client_billing._tax_split("registered", "", "27")
+    assert is_igst is None
+    assert refusal and "state_code" in refusal, refusal
+
+
+def test_no_place_of_supply_refuses_and_says_why():
+    is_igst, refusal = client_billing._tax_split("registered", "24", "")
+    assert is_igst is None
+    assert refusal and "place of supply" in refusal, refusal
+
+
+def test_a_refusal_is_never_a_silent_intrastate_default():
+    """The whole point. Neither refusal may come back as `False`, which is what
+    the old code returned for exactly these inputs — and False is 'tax it as
+    CGST+SGST', on a document somebody files."""
+    for supplier, pos in (("", "27"), ("24", ""), ("", "")):
+        is_igst, refusal = client_billing._tax_split("registered", supplier, pos)
+        assert refusal is not None
+        assert is_igst is not False, (
+            f"supplier={supplier!r} pos={pos!r} silently defaulted to "
+            f"intra-state instead of refusing")
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_skips_a_line_it_cannot_tax_and_spends_no_serial(pooled):
+    """Unattended, so it skips rather than raising — but it must not draw an
+    invoice number for a document it does not write. A serial spent on a
+    refused invoice is a permanent gap in the book."""
+    pool = pooled([
+        ("SELECT state_code FROM staging.organisations", {"state_code": None}),
+        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
+        ("FROM staging.client_invoice_lines", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=TODAY)
+    assert out["created"] == 0
+    assert out["skipped"] == 1
+    assert not pool.any("INSERT INTO staging.ganit_invoices")
+    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices"), (
+        "a serial was drawn for an invoice that was never written")
+
+
+@pytest.mark.asyncio
+async def test_the_usage_route_400s_rather_than_mis_taxing(pooled):
+    """A user pressed a button, so this one answers. And it must refuse BEFORE
+    marking any usage row invoiced — `invoiced = TRUE` is never reset anywhere,
+    so a row consumed by a failed call could never be billed again."""
+    pool = pooled([
+        ("SELECT state_code FROM staging.organisations", {"state_code": None}),
+        ("FROM staging.client_billing_profiles p", BILLING_PROFILE),
+        ("FROM staging.client_metered_usage ", [USAGE_ROW]),
+    ])
+    with pytest.raises(HTTPException) as exc:
+        await client_billing.generate_usage_invoice(
+            body=client_billing.GenerateUsageInvoice(profile_id=PROFILE),
+            user={"user_id": "user_admin001"}, org_id=ORG)
+    assert exc.value.status_code == 400
+    assert "state_code" in str(exc.value.detail)
+    assert not pool.any("INSERT INTO staging.ganit_invoices")
+    assert not pool.any("SET invoiced = TRUE"), (
+        "usage rows were consumed by a call that raised")
