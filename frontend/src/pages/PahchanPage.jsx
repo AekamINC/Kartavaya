@@ -33,6 +33,7 @@ import Corrections from './pahchan/Corrections';
 import PublishPayroll from './pahchan/PublishPayroll';
 import History from './pahchan/History';
 import Notice from './pahchan/Notice';
+import Consent from './pahchan/Consent';
 
 /**
  * The tab order is the order of the day, not the order the screens were built.
@@ -52,6 +53,18 @@ import Notice from './pahchan/Notice';
  * `backend/`. It sits directly after `history` because the two employee-facing
  * tabs belong together and ahead of the setup pair: what was recorded about
  * you, then what we record and why.
+ *
+ * `consent` is the eighth and reads as the third sentence of that run: what was
+ * recorded about you, what we record and why, and then whether you agreed to
+ * it. It sits AFTER `notice` and not between it and `history` on purpose —
+ * `__tests__/dpdpNotice.test.jsx` pins `notice` to the position directly after
+ * `history`, and that adjacency is the point of both tabs. Being asked to
+ * decide before being told is the order this module already refuses on the
+ * clock screen.
+ *
+ * Its table, its two endpoints and the enrolment refusal that reads them all
+ * shipped in August with no caller: 24 reference photographs against 12
+ * employees and 0 consent rows, measured read-only 2026-08-26.
  */
 /*
  * `clock` is first, and the shipped fallback is still `register`.
@@ -73,6 +86,7 @@ const TABS = [
   { id: 'payroll',     label: 'Payroll' },
   { id: 'history',     label: 'My attendance' },
   { id: 'notice',      label: 'What we record' },
+  { id: 'consent',     label: 'Consent' },
   { id: 'enrollment',  label: 'Enrollment' },
   { id: 'policy',      label: 'Policy' },
   { id: 'analytics',   label: 'Analytics' },
@@ -117,6 +131,7 @@ export default function PahchanPage() {
         {tab === 'payroll' && <PublishPayroll />}
         {tab === 'history' && <History />}
         {tab === 'notice' && <Notice />}
+        {tab === 'consent' && <Consent />}
         {tab === 'enrollment' && <EnrollQueue />}
         {tab === 'policy' && <PahchanPolicy />}
         {tab === 'analytics' && <ModuleAnalyticsTab module="pahchan" />}

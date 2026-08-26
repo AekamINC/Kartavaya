@@ -81,6 +81,16 @@ class _FakePool:
             return dict(self._policy)
         if "manav_employees" in sql:
             return self._employee
+        if "pahchan_employee_consents" in sql:
+            # `_latest_consent`, added when `/me` began carrying the employee's
+            # own consent answer beside the notice acknowledgement (Phase 4.2).
+            # None is "nobody has recorded an answer", which is the state of
+            # every employee on this database — 0 rows against 12 enrolled
+            # faces, measured 2026-08-26. It is deliberately answered rather
+            # than allowed to raise: this pool refuses unknown statements so a
+            # new read in `/me` cannot slip past unnoticed, and being noticed is
+            # what just happened.
+            return None
         raise AssertionError(f"unexpected fetchrow: {sql[:60]}")
 
     async def fetch(self, sql, *args):

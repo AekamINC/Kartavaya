@@ -737,6 +737,29 @@ async def upload_punch_photo(
     photo_kind = "reference" if kind == "reference" else "punch"
     pool = await get_pool()
     employee = await _employee_for(pool, org_id, user["user_id"])
+
+    # ── A WITHDRAWN CONSENT STOPS THE PHOTOGRAPH, NOT THE PUNCH ─────────────
+    #
+    # §2 is that nothing blocks a punch, and nothing here does: `create_punch`
+    # accepts `photo_key: null` on every call and flags a photo-less punch
+    # rather than refusing it, and both clients already handle a failed upload
+    # by punching without one. What §2 does not license is storing a
+    # photograph of somebody who has told this organisation to stop — that is
+    # not a degraded punch, it is processing with no lawful basis for it.
+    #
+    # BEFORE `upload_file`, so nothing reaches the object store. Refusing after
+    # the write would leave the face in R2 and the retention sweep as the only
+    # thing that ever removes it.
+    #
+    # 409 rather than 403: this is a state the employee themselves chose and can
+    # change from the consent screen, not a permission somebody has to grant.
+    if employee and await _employee_opted_out(pool, str(employee["id"])):
+        raise HTTPException(
+            409,
+            "You have declined biometric attendance, so no photograph is stored "
+            "for you. Your attendance is recorded by your supervisor instead.",
+        )
+
     result = await storage.upload_file(
         file_bytes=data,
         filename=file.filename or "capture.jpg",
@@ -858,7 +881,28 @@ async def create_punch(
         ),
     )
 
-    if body.photo_key:
+    # ── The same rule as the uploader, at the other end of the same path ─────
+    #
+    # `upload_punch_photo` refuses to store a face for somebody who has
+    # declined, so a key should not exist to send. This is the second half,
+    # because a client holding a key minted BEFORE the withdrawal — a queued
+    # offline punch, a retry — would otherwise attach it afterwards.
+    #
+    # It DROPS the key and records the punch. Not a 4xx: §2, and the punch
+    # itself is the thing the employee is owed. No new flag either — the bridge
+    # treats any flag with no verdict as unpayable (`Punch.is_eligible`), so
+    # flagging every punch by an opted-out employee would quietly make their
+    # days need a reviewer before they became pay. `noref` will already fire for
+    # them, which is the honest signal and is what the alternative attendance
+    # path in this module exists to answer.
+    #
+    # Only asked when there is a key to drop, so a photo-less punch costs no
+    # query at all.
+    photo_key = body.photo_key
+    if photo_key and await _employee_opted_out(pool, str(employee["id"])):
+        photo_key = None
+
+    if photo_key:
         # ── The key must be one this endpoint's own uploader minted ──────────
         #
         # Without this a punch can name ANY object in the org's bucket: an
@@ -880,7 +924,7 @@ async def create_punch(
         # grammar. The old shape stays accepted because a client may hold a key
         # minted seconds before a deploy, and refusing it would lose a punch
         # photograph to a release.
-        remainder = body.photo_key
+        remainder = photo_key
         tenant_prefix = f"org/{org_id}/"
         if remainder.startswith(tenant_prefix):
             remainder = remainder[len(tenant_prefix):]
@@ -909,7 +953,7 @@ async def create_punch(
         reused = await pool.fetchval(
             "SELECT 1 FROM staging.pahchan_punches "
             "WHERE org_id=$1::uuid AND photo_key=$2 AND client_punch_id <> $3 LIMIT 1",
-            org_id, body.photo_key, body.client_punch_id,
+            org_id, photo_key, body.client_punch_id,
         )
         if reused:
             flags.append("reuse")
@@ -929,7 +973,9 @@ async def create_punch(
             org_id, str(employee["id"]), body.direction, body.captured_at,
             # An offline punch synced now; a live one has no separate sync moment.
             datetime.now(timezone.utc) if body.source == "offline" else None,
-            body.photo_key,
+            # `photo_key`, not `body.photo_key`: an opted-out employee's punch
+            # is stored without the photograph they sent. See above.
+            photo_key,
             body.lat, body.lng, body.accuracy_m, distance_m,
             str(site["id"]) if site else None,
             body.source, body.mock_location, flags, body.client_punch_id,
@@ -1101,6 +1147,12 @@ async def my_punches(
                 "version": version,
                 "acknowledged_at": await _notice_ack(pool, org_id, user["user_id"], version),
             },
+            # NULL here is not "no answer recorded" — it is "there is nobody to
+            # record an answer against", which is a different sentence and the
+            # client says the different sentence. `notice` above is keyed on the
+            # ACCOUNT and resolves in this branch; consent is keyed on the
+            # EMPLOYEE (migration 209) and cannot.
+            "consent": None,
         }
 
     since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 120)))
@@ -1135,6 +1187,11 @@ async def my_punches(
             "version": version,
             "acknowledged_at": await _notice_ack(pool, org_id, user["user_id"], version),
         },
+        # Their own live answer, so the consent screen can state where they
+        # stand and offer to change it. Separate from `notice`: reading the
+        # notice and agreeing to biometric processing are two different acts and
+        # this module already keeps them in two tables for that reason.
+        "consent": await _latest_consent(pool, str(employee["id"])),
     }
 
 
@@ -1342,6 +1399,379 @@ async def _employee_opted_out(pool, employee_id: str) -> bool:
         employee_id,
     )
     return latest is False
+
+
+async def _latest_consent(pool, employee_id: str) -> Optional[dict]:
+    """This employee's live consent answer, for their OWN screen.
+
+    Deliberately narrower than `list_employee_consents`: no `recorded_by`,
+    because that column holds a `user_id` and the owner's rule is that no user
+    id is ever rendered anywhere. The employee-facing surface has no use for it
+    — "you told us on the 12th" is the fact, not who typed it — so the id does
+    not leave the database on this path at all rather than being dropped by a
+    client that might forget to.
+    """
+    row = await pool.fetchrow(
+        "SELECT notice_version, method, consented, recorded_at, note "
+        "FROM staging.pahchan_employee_consents "
+        "WHERE employee_id=$1::uuid ORDER BY recorded_at DESC LIMIT 1",
+        employee_id,
+    )
+    return dict(row) if row else None
+
+
+class SelfConsentBody(BaseModel):
+    #: True agrees, False withdraws. There is no third value: DPDP requires the
+    #: choice be as easy to take back as it was to give, so withdrawal is the
+    #: SAME endpoint with the other boolean rather than a second route somebody
+    #: has to find.
+    consented: bool
+    note: Optional[str] = Field(None, max_length=2000)
+    notice_version: str = Field(PAHCHAN_NOTICE_VERSION, min_length=1, max_length=_NOTICE_VERSION_MAX)
+
+
+@router.post("/consent/me")
+async def record_own_consent(
+    body: SelfConsentBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The employee's own answer, given by the employee.
+
+    ── WHY THIS EXISTS BESIDE `POST /consent` ─────────────────────────────────
+
+    `POST /consent` is an ADMIN recording what was obtained off-system, and its
+    `method` pattern is `^(paper|verbal_witnessed)$`. Migration 209's CHECK
+    admits a third value, `self_acknowledged`, and describes it as "the
+    employee's OWN login tapped the notice AND resolved to this employee_id
+    (rare today, possible once more accounts are linked)". No route could ever
+    write it: the only endpoint that inserted into the table refused that
+    string in its own validator. So the one method the schema calls the
+    strongest evidence was unreachable.
+
+    It is not hypothetical any more. Measured read-only 2026-08-26:
+    `manav_employees` holds 109 rows and **2 of them carry a `user_id`**, both
+    at Unicode Group, both with a live login and a role in that org. Two people
+    can answer for themselves today; nobody could before this.
+
+    ── AND WHY IT IS NOT ADMIN-GATED ──────────────────────────────────────────
+
+    `record_employee_consent` is gated on `_may_view_others_biometrics` because
+    recording somebody ELSE's consent is that class of action. Answering for
+    yourself is the opposite of that class of action, and putting an admin gate
+    on it would mean an employee cannot decline without asking the person whose
+    decision they are declining to accept.
+
+    `_employee_for` is the whole authorisation: it resolves the caller's own
+    employee row, in this org, and nothing else can be written from here.
+    """
+    pool = await get_pool()
+    employee = await _employee_for(pool, org_id, user["user_id"])
+    if not employee:
+        # The same sentence `create_punch` uses, for the same state. Most
+        # accounts on this database are in it (107 of 109 employee rows carry
+        # no login), and a 403 would read as "you may not", which is not true —
+        # there is simply no employee record for the answer to attach to.
+        raise HTTPException(
+            409,
+            "Your account is not linked to an employee record, so there is nothing "
+            "to record this against. Your HR admin can record your answer for you.",
+        )
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.pahchan_employee_consents "
+        "  (org_id, employee_id, notice_version, method, consented, recorded_by, note) "
+        "VALUES ($1::uuid, $2::uuid, $3, 'self_acknowledged', $4, $5, $6) "
+        "ON CONFLICT (org_id, employee_id, notice_version) DO UPDATE SET "
+        "  method='self_acknowledged', consented=EXCLUDED.consented, "
+        "  recorded_by=EXCLUDED.recorded_by, recorded_at=NOW(), note=EXCLUDED.note "
+        "RETURNING notice_version, method, consented, recorded_at, note",
+        org_id, str(employee["id"]), body.notice_version,
+        body.consented, user["user_id"], body.note,
+    )
+
+    audit(
+        "pahchan.employee_consent_self_recorded", request, org_id=org_id,
+        user_id=user["user_id"], resource_type="pahchan_employee_consent",
+        resource_id=str(employee["id"]),
+        detail={
+            "method": "self_acknowledged",
+            "consented": body.consented,
+            "notice_version": body.notice_version,
+        },
+        # A withdrawal stops an enrolment and changes what may lawfully be
+        # stored about a person. It is the loudest thing this module records.
+        severity="warn",
+    )
+    return dict(row)
+
+
+@router.get("/consent/roster")
+async def consent_roster(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Everyone on the rolls, what is enrolled about them, and their answer.
+
+    `GET /consent` lists the rows that EXIST, which on this database is nothing
+    — `pahchan_employee_consents` held 0 rows against 12 enrolled faces when
+    this was written (read-only, 2026-08-26, all twelve at Unicode Group). A
+    list of recorded consents is therefore an empty screen, and an empty screen
+    is the exact shape of the finding it is meant to show.
+
+    So this LEFT JOINs the other way: the roster first, the consent alongside,
+    and `approved_refs` beside both — because "two reference photographs are
+    stored and no consent is recorded" is the sentence that matters and it
+    cannot be built from either table alone.
+
+    On the rolls, not merely `is_active`: `still_on_the_rolls` is the same
+    predicate the enrolment queue uses. Asking a leaver for consent is a job
+    nobody can ever complete, and this is a stock rather than a flow.
+    """
+    pool = await get_pool()
+    if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
+        raise HTTPException(403, "Only an org admin can view consent records")
+    rows = await pool.fetch(
+        # `recorded_by_name`, never `recorded_by`. Same reason as
+        # `_latest_consent`: the column is a user id and ids are not rendered.
+        # LEFT JOIN, so a recorder whose account has since gone leaves a NULL
+        # the client names rather than an absent row.
+        "SELECT e.id AS employee_id, e.name AS employee_name, e.employee_code, "
+        "       COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) AS approved_refs, "
+        "       c.notice_version, c.method, c.consented, c.recorded_at, c.note, "
+        "       COALESCE(NULLIF(btrim(u.name), ''), NULLIF(btrim(u.full_name), '')) "
+        "         AS recorded_by_name "
+        "FROM staging.manav_employees e "
+        "LEFT JOIN staging.pahchan_enrollment_photos r "
+        "       ON r.employee_id = e.id AND r.replaced_at IS NULL "
+        # The LIVE answer per employee, not every answer ever given. The unique
+        # index is (org_id, employee_id, notice_version), so an employee who has
+        # been asked across two wordings has two rows and only the newest is
+        # their position today — the same rule `_employee_opted_out` applies.
+        "LEFT JOIN LATERAL ("
+        "  SELECT notice_version, method, consented, recorded_at, note, recorded_by "
+        "  FROM staging.pahchan_employee_consents "
+        "  WHERE employee_id = e.id AND org_id = e.org_id "
+        "  ORDER BY recorded_at DESC LIMIT 1"
+        ") c ON TRUE "
+        "LEFT JOIN public.users u ON u.user_id = c.recorded_by "
+        "WHERE e.org_id=$1::uuid AND e.is_active = TRUE"
+        + still_on_the_rolls("e") +
+        " GROUP BY e.id, e.name, e.employee_code, c.notice_version, c.method, "
+        "          c.consented, c.recorded_at, c.note, u.name, u.full_name "
+        "ORDER BY e.name",
+        org_id,
+    )
+    return {
+        "notice_version": PAHCHAN_NOTICE_VERSION,
+        "employees": [dict(r) for r in rows],
+    }
+
+
+# ── The alternative attendance path — what an opt-out is FOR ─────────────────
+#
+# `enroll_photo` refuses a reference photograph for anyone who has declined,
+# and its message ends "must be offered the alternative (manual or code-based)
+# attendance path instead". There was no such path. A refusal that names a
+# remedy which does not exist is worse than no refusal: it reads as an
+# instruction to go and clear the opt-out.
+#
+# THE ROW GOES WHERE PAYROLL ALREADY LOOKS. Vetana reads
+# `staging.manav_attendance`; `services/attendance_bridge.py` is what turns
+# punches into rows of it. An opted-out employee has no punches to bridge, so
+# their day is written to that table directly — the alternative to biometric
+# attendance is ordinary attendance, not a parallel ledger somebody has to
+# remember to reconcile.
+#
+# `marked_by='manual'` IS LOAD-BEARING AND IS NOT A LABEL. The publish upsert
+# in `pahchan_attendance.py:465` carries `WHERE staging.manav_attendance
+# .marked_by IS DISTINCT FROM 'manual'`, which is the ONLY thing that stops a
+# re-run overwriting a row somebody entered by hand. Any other value here — a
+# tidier-looking 'pahchan_optout', say — would leave an opted-out employee's
+# day to be silently replaced by the next publish. It is also the only value
+# besides 'system', 'biometric' and 'geo' that `manav_attendance_marked_by_check`
+# admits.
+#
+# CODE-BASED IS NOT BUILT. The refusal names two alternatives and this is the
+# first: a supervisor records the day, and their account is the attestation.
+# A shared site code would need a code to be issued, rotated and matched, which
+# is a feature and not a screen. Saying "manual" here and "manual or
+# code-based" in the refusal is a gap worth naming rather than papering over.
+
+#: `manav_attendance_status_check`, read from the live catalogue rather than
+#: copied from `routers/manav.py` — one of the two has to be the source and the
+#: database is the one that refuses.
+_ATTENDANCE_STATUSES = (
+    "present", "absent", "half_day", "late", "on_leave", "holiday", "weekend",
+)
+
+#: The bridge's guard value. Imported would be better; `attendance_bridge`
+#: already exports `MARKED_BY_MANUAL` and `pahchan_attendance.py` imports it.
+#: This module does not import that service for anything else, and a one-symbol
+#: import to spell a four-letter literal is the kind of coupling that makes the
+#: next reader look in two files. The test pins the two together instead.
+_MARKED_BY_MANUAL = "manual"
+
+
+class ManualAttendanceBody(BaseModel):
+    employee_id: UUID
+    for_date: date
+    #: Times, not a duration. Payroll's `work_hours` is derived from the pair,
+    #: and a supervisor who knows somebody worked "about eight hours" is being
+    #: asked to say when — which is the answer an audit can check.
+    check_in: Optional[datetime] = None
+    check_out: Optional[datetime] = None
+    status: str = Field("present")
+    note: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.status not in _ATTENDANCE_STATUSES:
+            raise ValueError(
+                "status must be one of: " + ", ".join(_ATTENDANCE_STATUSES))
+        if self.check_in and self.check_out and self.check_out < self.check_in:
+            raise ValueError("check_out is before check_in")
+        return self
+
+
+@router.post("/attendance/manual", status_code=201)
+async def record_manual_attendance(
+    body: ManualAttendanceBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Record a day for somebody who declined biometric attendance.
+
+    ── IT REFUSES FOR ANYONE WHO HAS NOT DECLINED, ON PURPOSE ─────────────────
+
+    `POST /api/v1/manav/attendance` already marks any employee's day by hand
+    and is the general tool; this is not a second copy of it. Restricting this
+    one to employees with a recorded opt-out is what makes it the ALTERNATIVE
+    PATH rather than a way around the face check: without the restriction, an
+    enrolled employee's day could be typed in by an admin with no photograph,
+    no location and no reviewer, and the register would never know the
+    difference.
+
+    The 409 names the general route rather than pretending the day cannot be
+    recorded at all.
+
+    ── AND IT IS NOT AVAILABLE TO THE EMPLOYEE THEMSELVES ────────────────────
+
+    An attendance record with no photograph, no location and no supervisor is
+    an assertion, not a verification, and 07 §3 is that human comparison is the
+    only verification this module has. Declining biometrics moves who does the
+    comparing; it does not remove the comparison. So the acting account is the
+    attestation, and it is written into the note.
+    """
+    pool = await get_pool()
+    if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
+        raise HTTPException(
+            403, "Only an org admin can record attendance for another person")
+
+    emp = await pool.fetchrow(
+        "SELECT id, name FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(body.employee_id), org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    if not await _employee_opted_out(pool, str(body.employee_id)):
+        raise HTTPException(
+            409,
+            "This path is for employees who have declined biometric attendance. "
+            "This employee has not — record their day through HR attendance, or "
+            "record their decline first.",
+        )
+
+    # Derived here rather than left to payroll, and only from a complete pair.
+    # An unpaired time gives NULL, never zero: `attendance_bridge` states the
+    # reason for the same rule — "someone who clocked in and never clocked out
+    # has an unknown day, not an empty one. Zero is a number payroll will
+    # happily multiply."
+    work_hours = None
+    if body.check_in and body.check_out:
+        work_hours = round(
+            (body.check_out - body.check_in).total_seconds() / 3600, 2)
+
+    # The note carries WHY this row exists, because `marked_by='manual'` cannot:
+    # it is the same value HR's own corrections use, deliberately (see the block
+    # above), so the string is the only thing that distinguishes an opt-out day
+    # from an ordinary correction on the row itself.
+    note = "Recorded without biometrics — employee declined."
+    if body.note:
+        note = f"{note} {body.note}"
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_attendance "
+        "  (org_id, employee_id, date, check_in, check_out, status, "
+        "   work_hours, notes, marked_by) "
+        "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9) "
+        "ON CONFLICT (employee_id, date) DO UPDATE SET "
+        "  check_in=EXCLUDED.check_in, check_out=EXCLUDED.check_out, "
+        "  status=EXCLUDED.status, work_hours=EXCLUDED.work_hours, "
+        "  notes=EXCLUDED.notes, marked_by=EXCLUDED.marked_by "
+        "RETURNING id, date, status, work_hours, notes",
+        org_id, str(body.employee_id), body.for_date,
+        body.check_in, body.check_out, body.status, work_hours, note,
+        _MARKED_BY_MANUAL,
+    )
+
+    audit(
+        "pahchan.manual_attendance_recorded", request, org_id=org_id,
+        user_id=user["user_id"], resource_type="manav_attendance",
+        resource_id=str(row["id"]),
+        detail={
+            "employee_id": str(body.employee_id),
+            "date": body.for_date.isoformat(),
+            "status": body.status,
+            "reason": "biometric_opt_out",
+        },
+        severity="warn",
+    )
+    return dict(row)
+
+
+@router.get("/attendance/manual")
+async def list_manual_attendance(
+    days: int = 30,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """What has been recorded on the alternative path, and for whom.
+
+    Scoped to employees who have declined, not to every hand-typed row: HR
+    corrections share `marked_by='manual'` and are somebody else's screen. The
+    window bounds on `date` because that is the indexed column
+    (`idx_manav_attendance_org`), and it is also the question — "is Monday
+    recorded" — rather than when the row was written.
+    """
+    pool = await get_pool()
+    if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
+        raise HTTPException(
+            403, "Only an org admin can view another person's attendance")
+    since = date.today() - timedelta(days=max(1, min(days, 180)))
+    rows = await pool.fetch(
+        "SELECT a.id, a.date, a.status, a.work_hours, a.check_in, a.check_out, "
+        "       a.notes, e.name AS employee_name, e.employee_code "
+        "FROM staging.manav_attendance a "
+        "JOIN staging.manav_employees e ON e.id = a.employee_id "
+        "JOIN LATERAL ("
+        "  SELECT consented FROM staging.pahchan_employee_consents "
+        "  WHERE employee_id = e.id AND org_id = e.org_id "
+        "  ORDER BY recorded_at DESC LIMIT 1"
+        ") c ON c.consented IS FALSE "
+        "WHERE a.org_id=$1::uuid AND a.marked_by=$2 AND a.date >= $3::date "
+        "ORDER BY a.date DESC, e.name",
+        org_id, _MARKED_BY_MANUAL, since,
+    )
+    return [dict(r) for r in rows]
 
 
 # ── The register ──────────────────────────────────────────────────────────────

@@ -662,3 +662,147 @@
 @media (max-width: 620px) {
   .ph__clockacts { flex-direction: column; align-items: stretch; }
 }
+
+/* ── Consent: the choice about the photograph ────────────────────────────────
+
+   Sized as a document rather than a form. The six disclosure lines, the two
+   consequence columns and the withdrawal block are what somebody is deciding
+   ON, so they get a reading measure (68ch, the same raw unit `.ph__rules` and
+   `.ph__hint-wide` already use in this file — there is no measure token) and
+   the controls sit
+   under them — not beside them, where a two-column layout would let a thumb
+   reach the button without the eye reaching the text.
+
+   `.phn__*` above is the NOTICE (six collapsed rows on a 520px card, read
+   again later); this is the DECISION and the two are deliberately not the same
+   object. Nothing here restates a `.phn__` rule.
+
+   No fixed-width centering (CLAUDE.md) — every block is left-aligned and grows
+   to its column until the measure stops it. */
+
+.ph__consent { max-width: 68ch; }
+
+.ph__consent-lede {
+  margin: 0 0 var(--sp-5);
+  font-size: var(--t-body);
+  color: var(--on-surface-2);
+  line-height: 1.65;
+}
+
+/* The six lines, open. A `<dl>` because each is a question and its answer, and
+   because that is what a screen reader should hear — the notice tab's
+   accordion is a different job on the same words. */
+.ph__consent-facts { margin: 0 0 var(--sp-5); }
+
+.ph__consent-fact {
+  display: grid;
+  grid-template-columns: minmax(9rem, 12rem) 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ph__consent-fact > dt {
+  font-size: var(--t-label);
+  font-weight: 700;
+  color: var(--on-surface-2);
+}
+
+.ph__consent-fact > dd {
+  margin: 0;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: 1.65;
+}
+
+/* Agree and decline, side by side and the same size. A decline rendered
+   smaller, or below the fold, is a choice the layout has already made. */
+.ph__consent-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-5);
+}
+
+.ph__consent-col { min-width: 0; }
+
+.ph__consent-h {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+.ph__consent-list {
+  margin: 0 0 var(--sp-4);
+  padding-left: var(--sp-5);
+}
+
+.ph__consent-list > li {
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: 1.65;
+  margin-bottom: var(--sp-2);
+}
+
+/* The decision. Separated by a rule rather than a card so it reads as the foot
+   of the document it belongs to. */
+.ph__consent-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ph__consent-now {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.ph__consent-when {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+
+.ph__consent-acts {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+/* The inline forms in an expanded roster row. On `.ph__expand`'s tinted cell,
+   which module.css already paints. */
+.ph__consent-form {
+  padding: var(--sp-4) var(--sp-1) var(--sp-5);
+  max-width: 68ch;
+}
+
+.ph__consent-formh {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+}
+
+.ph__consent-row {
+  display: flex;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+
+.ph__consent-row .fld { margin-bottom: 0; }
+
+/* One column on a phone. The consequence columns lose nothing by stacking —
+   they are two lists, not a comparison table — and the decision buttons go
+   full width for the same reason the clock's do. */
+@media (max-width: 620px) {
+  .ph__consent-fact { grid-template-columns: 1fr; gap: 2px; }
+  .ph__consent-acts { flex-direction: column; align-items: stretch; }
+  .ph__consent-row { flex-direction: column; gap: var(--sp-3); }
+}

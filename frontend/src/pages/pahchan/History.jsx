@@ -332,6 +332,24 @@ export default function History() {
           </span>
         )}
       >
+        {/* An employee who declined the photograph has no punches, so this
+            calendar is empty for them by design — and an unexplained empty
+            month reads as "your attendance is not being recorded", which is
+            exactly the fear that makes somebody withdraw a refusal they were
+            entitled to make.
+
+            `data.consent` comes from `GET /v1/pahchan/me`, which carries their
+            own live answer beside the notice acknowledgement. Their days are in
+            `staging.manav_attendance` (`POST /v1/pahchan/attendance/manual`),
+            which this screen does not read — saying where they are beats
+            drawing a register that cannot contain them. */}
+        {data?.consent?.consented === false && (
+          <Note variant="info">
+            You have declined the clock-in photograph, so there are no punches to
+            show here. Your supervisor records your hours instead, and those hours
+            reach payroll the same way. You can change your answer on the Consent tab.
+          </Note>
+        )}
         <div className="pcal">
           <div className="pcal__head">
             {WEEK.map((d, i) => (
