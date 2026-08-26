@@ -402,3 +402,61 @@ export async function assertOutboundFenceFor(page: Page, orgId: string) {
     'OUTBOUND_SUPPRESSED_ORGS and REDEPLOY, or target an org that is on the list.')
     .toBe(expected);
 }
+
+/**
+ * Choose a value from a `Picker`/`ServerPicker`, which is NOT a `<select>`.
+ *
+ * `pickOption` above drives a real `<select>` and times out here with "the
+ * picker never loaded any options" — which reads as an empty picker and is not
+ * one. The two Phase-1 fields that matter most, the invoice's Salesperson and
+ * the expense's Client contact, are both `Picker mode="option"`: a
+ * `<button aria-haspopup="listbox" aria-label=…>` trigger that opens a
+ * `role="listbox"` of `role="option"` buttons (`Picker.jsx:190,263-269,326`).
+ * `ExpensesTab.jsx:177-180` explains why they are not labelable elements — the
+ * control is a button, so `ariaLabel` names it and wrapping it in a `<label>`
+ * loses the accessible name.
+ *
+ * `ServerPicker` fetches its rows for whatever is typed, so the listbox can be
+ * empty for a moment after it opens. Polls for a real row rather than reading
+ * once, for the same reason `pickOption` does — a picker read too early
+ * reported "no contacts to invoice" against an org holding hundreds, and a
+ * false product finding is worse than a flake.
+ *
+ * Returns the chosen row's visible text, so a caller can assert on the NAME it
+ * picked without ever touching an id.
+ */
+export async function pickFromPicker(
+  scope: any, ariaLabel: string, what: string, match?: string | RegExp,
+): Promise<string> {
+  const trigger = scope.getByRole('button', { name: ariaLabel, exact: false }).first();
+  await expect(trigger, `the ${what} picker (aria-label "${ariaLabel}") is not on the form`)
+    .toBeVisible();
+  await trigger.click();
+
+  const page = scope.page ? scope.page() : scope;
+  const listbox = page.locator('[role="listbox"]').last();
+  await expect(listbox, `the ${what} picker did not open a listbox`).toBeVisible();
+
+  const rows = listbox.locator('[role="option"]');
+  await expect
+    .poll(async () => await rows.count(),
+      { message: `the ${what} picker never loaded a single option`, timeout: 20_000 })
+    .toBeGreaterThan(0);
+
+  let row = rows.first();
+  if (match != null) {
+    const texts = await rows.allTextContents();
+    const idx = texts.findIndex(t =>
+      typeof match === 'string' ? t.includes(match) : match.test(t));
+    expect(idx, `no ${what} option matching ${String(match)}; saw: ` +
+      texts.slice(0, 8).join(' | ')).toBeGreaterThanOrEqual(0);
+    row = rows.nth(idx);
+  }
+  const chosen = (await row.textContent() || '').trim();
+  await row.click();
+  // The popup animates out; a caller that submits into the closing overlay
+  // clicks the overlay instead of the button.
+  await expect(listbox, `the ${what} picker did not close after choosing`)
+    .toBeHidden({ timeout: 10_000 });
+  return chosen;
+}

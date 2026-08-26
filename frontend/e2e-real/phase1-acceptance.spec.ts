@@ -52,7 +52,7 @@ import { test, expect, Page } from '@playwright/test';
 import { GODMODE_STATE } from './real.config';
 import {
   RUN, api, apiOk, settle, openTab, pickOption, submitting, shot,
-  useOrg, activeOrgId, assertOutboundFenceFor,
+  useOrg, activeOrgId, assertOutboundFenceFor, pickFromPicker,
 } from './_helpers';
 
 /**
@@ -287,6 +287,7 @@ test('1.6 · a holiday is created that applies to one state, not the whole count
     expect(h, 'the new holiday is not in the holiday list').toBeTruthy();
     expect(String(h.state_code), 'state_code did not persist — the holiday applies ' +
       'everywhere, so attendance_auto_mark cannot scope it').toBe('27');
+    keep('holidayName', `E2E Maharashtra Day ${RUN}`);
 
     await shot(page, `p1-6-holiday-${RUN}`);
   });
@@ -301,34 +302,32 @@ test('1.4 · an expense is recorded against a client contact', async ({ page }) 
   await settle(page);
   await openTab(page, /expenses/i);
 
-  const add = page.getByRole('button', { name: /\+\s*(Expense|Record expense)/i }).first();
-  await expect(add, 'the add-expense control is not on the Expenses tab').toBeVisible();
+  const add = page.getByRole('button', { name: '+ Add expense' });
+  await expect(add, 'the "+ Add expense" control is not on the Expenses tab').toBeVisible();
   await add.click();
   await settle(page);
 
-  const f = page.locator('form').filter({ hasText: /Client contact/i }).first();
-  await expect(f, 'the expense form did not open, or it has no "Client contact" field — ' +
-    'Phase 1.4 is not reachable by a user').toBeVisible();
+  const f = page.locator('form.gn-form').filter({ hasText: 'Record an expense' });
+  await expect(f, 'the expense form did not open').toBeVisible();
+  await expect(f.getByText(/Client contact/i),
+    'the expense form has no "Client contact" field — 1.4 is not reachable by a user')
+    .toBeVisible();
 
-  const fld = (label: string | RegExp) => f.locator('label').filter({ hasText: label }).first();
+  await f.getByLabel(/^Title/).fill(`E2E client-billable travel ${RUN}`);
+  // The date is REQUIRED and the form does NOT default it, so submitting with
+  // it empty is blocked by the browser and no request is ever made — which
+  // reads as a dead button rather than a missing field.
+  await f.getByLabel(/^Date/).fill(new Date().toISOString().slice(0, 10));
+  await f.getByLabel(/^Amount/).fill('4250');
 
-  const desc = fld(/Description|Note|Purpose/i).locator('input, textarea').first();
-  if (await desc.count()) await desc.fill(`E2E client-billable travel ${RUN}`);
-  const amt = fld(/Amount/i).locator('input').first();
-  await expect(amt, 'the expense form has no Amount field').toBeVisible();
-  await amt.fill('4250');
-  // A required date that is NOT defaulted blocks submit silently — the button
-  // just looks dead. Set it explicitly.
-  const date = fld(/Date/i).locator('input').first();
-  if (await date.count()) await date.fill(new Date().toISOString().slice(0, 10));
-  const cat = fld(/Category/i).locator('select').first();
-  if (await cat.count()) await pickOption(cat, 'expense category');
-
-  const contact = fld(/Client contact/i).locator('select').first();
-  await pickOption(contact, 'client contact');
+  // The field this test exists for. `pickOption` polls, because the contacts
+  // arrive by fetch and reading the options too early reported "no contacts to
+  // invoice" against an org holding hundreds.
+  const contactName = await pickFromPicker(f, 'Client contact', 'client contact');
+  expect(contactName, 'the client-contact picker offered a blank row').toBeTruthy();
 
   const made = await submitting(page, '/ganit/expenses',
-    () => f.getByRole('button', { name: /^(Record|Save|Create|Add)/ }).last().click());
+    () => f.getByRole('button', { name: 'Record', exact: true }).click());
   const id = made?.id || made?.expense?.id;
   expect(id, 'the expense was not created').toBeTruthy();
   keep('expenseId', id);
@@ -352,24 +351,31 @@ test('1.4 · an expense is recorded against a client contact', async ({ page }) 
 // re-price at today's cost. The key must be OMITTED when unresolvable — a 0
 // would read as a 100% margin.
 
-test('1.3 · a product carries a cost, and an order line snapshots it', async ({ page }) => {
-  // A product with a known cost, so the snapshot has something to copy.
-  await page.goto('/catalogue');
+test('1.3 · a product carries a cost, and an invoice line snapshots it', async ({ page }) => {
+  // ── A product with a KNOWN cost, so the snapshot has something to copy ────
+  // Products are mounted by both Ganit and Vikray from the same
+  // `pages/catalogue/ProductsTab.jsx`; there is no /catalogue route.
+  await page.goto('/vikray');
   await settle(page);
-  const prodTab = page.getByRole('tab', { name: /products/i });
-  if (await prodTab.count()) { await prodTab.first().click(); await settle(page); }
+  await openTab(page, /products/i);
 
-  const addProd = page.getByRole('button', { name: /\+\s*(Product|New product)/i }).first();
+  const addProd = page.getByRole('button', { name: '+ Add product or service' });
   await expect(addProd, 'the add-product control is not on the Products tab').toBeVisible();
   await addProd.click();
   await settle(page);
 
-  const pf = page.locator('form').filter({ hasText: /Cost/i }).first();
-  await expect(pf, 'the product form did not open, or it has no Cost field').toBeVisible();
+  const pf = page.locator('form.gn-form').filter({ hasText: 'New product or service' });
+  await expect(pf, 'the product form did not open').toBeVisible();
   const pfld = (l: string | RegExp) => pf.locator('label').filter({ hasText: l }).first();
   await pfld(/^Name/).locator('input').first().fill(`E2E Costed Widget ${RUN}`);
-  await pfld(/^Price|Selling/i).locator('input').first().fill('1000');
-  await pfld(/^Cost/i).locator('input').first().fill('640');
+  await pfld(/Sale price/i).locator('input').first().fill('1000');
+  // The field 1.3 turns on. `costOrNull` (ProductsTab.jsx:199) sends NULL for a
+  // blank, so a cost of 0 and "no cost recorded" stay different answers — which
+  // is the same distinction `apply_line_costs` keeps by OMITTING the key rather
+  // than writing 0, since a 0 cost reads as a 100% margin.
+  await pfld(/Cost price/i).locator('input').first().fill('640');
+  const hsn = pfld(/^HSN/i).locator('input').first();
+  if (await hsn.count()) await hsn.fill('998311');
 
   const prod = await submitting(page, /product/i,
     () => pf.getByRole('button', { name: /^(Create|Save|Add)/ }).last().click());
@@ -378,54 +384,57 @@ test('1.3 · a product carries a cost, and an order line snapshots it', async ({
   keep('productId', productId);
   keep('productName', `E2E Costed Widget ${RUN}`);
 
-  // Now an order that uses it. The line must come back carrying cost_price 640.
-  await page.goto('/vikray');
+  // ── An INVOICE that uses it ──────────────────────────────────────────────
+  // `InvoiceForm.jsx:490-506` is the path that was fixed — it used to copy a
+  // product's name, HSN, rate and unit and throw away the one field that said
+  // where they came from. The order screen carries the same capability through
+  // the shared `LineItemEditor` (`components/LineItemEditor.jsx:78-80`, a
+  // per-line "From catalogue…" select bound to `li.product_id`); the order half
+  // is covered by the next test.
+  await page.goto('/ganit');
   await settle(page);
-  await openTab(page, /orders/i);
-  const addOrder = page.getByRole('button', { name: /\+\s*(New order|Order)/i }).first();
-  await expect(addOrder, 'the new-order control is not on the Orders tab').toBeVisible();
-  await addOrder.click();
+  await openTab(page, /invoices/i);
+  await page.getByRole('button', { name: '+ Invoice' }).click();
   await settle(page);
 
-  const of_ = page.locator('form').first();
-  await expect(of_, 'the order form did not open').toBeVisible();
-  await pickOption(of_.getByLabel(/Customer|Client/i).first(), 'order customer');
+  const f = page.locator('form.gn-form');
+  await expect(f, 'the invoice form did not open').toBeVisible();
+  await f.getByLabel('Type').selectOption('tax_invoice');
+  // Customer is a ServerPicker, NOT a <select> — it was converted and the
+  // comment at InvoiceForm.jsx:670 ("the red edge the <select> carried") is the
+  // trace of that change. `ganit.spec.ts:97` still calls pickOption on it and is
+  // stale against the live UI for the same reason this line was.
+  await pickFromPicker(f, 'Customer', 'customer');
+  const pos = f.getByLabel('Place of supply');
+  if (await pos.count()) await pos.selectOption('Maharashtra');
 
-  // The salesperson picker, so this order proves 1.1 as well as 1.3.
-  const sp = of_.getByLabel(/Salesperson/i).first();
-  if (await sp.count()) {
-    await pickOption(sp, 'salesperson');
-    keep('orderHasSalesperson', true);
-  }
+  // "From product" is a real <select> — it prefills a line AND keeps product_id.
+  // By ACCESSIBLE NAME. Scoping to the wrapping <label> and reaching for a
+  // `select` inside it matched nothing here — the accessibility tree renders
+  // that wrapper as a plain generic — while the control itself is named
+  // "From product" and is trivially addressable.
+  const fromProduct = f.getByRole('combobox', { name: 'From product' });
+  await expect(fromProduct, 'the invoice form offers no "From product" picker, so a ' +
+    'cost snapshot can never be taken').toBeVisible();
+  await pickOption(fromProduct, 'invoice product', `E2E Costed Widget ${RUN}`);
+  await settle(page);
 
-  const prodSel = of_.locator('select').filter({ hasText: `E2E Costed Widget ${RUN}` }).first();
-  if (await prodSel.count()) {
-    await pickOption(prodSel, 'order product', `E2E Costed Widget ${RUN}`);
-  } else {
-    // Fall back to the first line's product picker by aria-label.
-    const line1 = of_.getByLabel(/Line 1 product|product/i).first();
-    await expect(line1, 'the order form exposes no product picker, so a cost ' +
-      'snapshot can never be taken').toBeVisible();
-    await pickOption(line1, 'order product', `E2E Costed Widget ${RUN}`);
-  }
-  const qty = of_.getByLabel(/Line 1 quantity|quantity/i).first();
-  if (await qty.count()) await qty.fill('3');
+  await f.getByLabel('Line 1 quantity').fill('3');
 
-  const order = await submitting(page, '/vikray/orders',
-    () => of_.getByRole('button', { name: /^(Create order|Create|Save)/ }).last().click());
-  const orderId = order?.id || order?.order?.id;
-  expect(orderId, 'the order was not created').toBeTruthy();
-  keep('orderId', orderId);
+  const created = await submitting(page, '/ganit/invoices',
+    () => page.getByRole('button', { name: 'Create invoice' }).click());
+  expect(created?.id, 'the invoice was not created').toBeTruthy();
+  keep('costedInvoiceId', created.id);
 
-  const { order: o } = await apiOk(page, 'get', `/api/v1/vikray/orders/${orderId}`);
-  const lines = o.items || o.lines || [];
-  expect(lines.length, 'the created order has no lines').toBeGreaterThan(0);
+  const { invoice: inv } = await apiOk(page, 'get', `/api/v1/ganit/invoices/${created.id}`);
+  const lines = inv.line_items || [];
+  expect(lines.length, 'the created invoice has no lines').toBeGreaterThan(0);
   const costed = lines.find((l: any) => l.cost_price != null);
-  expect(costed, 'no order line carries cost_price — the snapshot never happened, ' +
-    `lines were: ${JSON.stringify(lines).slice(0, 300)}`).toBeTruthy();
+  expect(costed, 'no invoice line carries cost_price — the snapshot never happened. ' +
+    `lines: ${JSON.stringify(lines).slice(0, 400)}`).toBeTruthy();
   expect(Number(costed.cost_price), 'the line snapshotted the wrong cost').toBeCloseTo(640, 2);
 
-  await shot(page, `p1-3-order-cost-${RUN}`);
+  await shot(page, `p1-3-invoice-cost-${RUN}`);
 });
 
 // ══ 1.1 · SALESPERSON ON AN INVOICE ══════════════════════════════════════════
@@ -443,14 +452,18 @@ test('1.1 · an invoice is created with a salesperson', async ({ page }) => {
   await expect(f, 'the invoice form did not open').toBeVisible();
 
   await f.getByLabel('Type').selectOption('tax_invoice');
-  await pickOption(f.getByLabel('Customer'), 'customer');
+  // Customer is a ServerPicker, NOT a <select> — it was converted and the
+  // comment at InvoiceForm.jsx:670 ("the red edge the <select> carried") is the
+  // trace of that change. `ganit.spec.ts:97` still calls pickOption on it and is
+  // stale against the live UI for the same reason this line was.
+  await pickFromPicker(f, 'Customer', 'customer');
   const pos = f.getByLabel('Place of supply');
   if (await pos.count()) await pos.selectOption('Maharashtra');
 
-  const sp = f.getByLabel('Salesperson').first();
-  await expect(sp, 'the Salesperson picker is not on the invoice form — ' +
-    'Phase 1.1 is not reachable by a user').toBeVisible();
-  await pickOption(sp, 'salesperson');
+  // A Picker, not a select — see pickFromPicker's note. Names only on screen;
+  // the id lives in form state and check-rendered-ids keeps it off the DOM.
+  const spName = await pickFromPicker(f, 'Salesperson', 'salesperson');
+  expect(spName, 'the salesperson picker offered a blank row').toBeTruthy();
 
   await f.getByLabel('Line 1 description').fill(`E2E commissioned advisory ${RUN}`);
   await f.getByLabel('Line 1 HSN or SAC code').fill('998311');
@@ -472,27 +485,90 @@ test('1.1 · an invoice is created with a salesperson', async ({ page }) => {
   await shot(page, `p1-1-invoice-${RUN}`);
 });
 
-// ══ THE LEDGER LINE ══════════════════════════════════════════════════════════
-// Not decoration: the whole point of the exercise is that the counters move off
-// zero, so the run prints what it moved and by how much.
+// ══ 1.1 (ORDER HALF) + 1.3 (ORDER HALF) ═════════════════════════════════════
+// `salesperson_id` is a separate counter on `vikray_orders`, and the order
+// screen reaches products through the SHARED `LineItemEditor`, so one order
+// closes both order-side acceptances at once.
 
-test('acceptance · report what moved off zero', async ({ page }) => {
+test('1.1/1.3 · an order carries a salesperson and a costed line', async ({ page }) => {
+  await page.goto('/vikray');
+  await settle(page);
+  await openTab(page, /orders/i);
+
+  // SCOPED TO THE TABPANEL. The module header duplicates the tab's own button
+  // (two "+ New order" nodes on this page), which is Rule 6 of this suite —
+  // module headers duplicate the tab's controls, so an unscoped lookup is a
+  // strict-mode failure that reads as "the control is missing".
+  const add = page.getByRole('tabpanel').getByRole('button', { name: '+ New order' });
+  await expect(add, 'the "+ New order" control is not on the Orders tab').toBeVisible();
+  await add.click();
+  await settle(page);
+
+  const f = page.locator('form.vk-form');
+  await expect(f, 'the order form did not open').toBeVisible();
+
+  await pickFromPicker(f, 'Customer', 'order customer');
+
+  const spName = await pickFromPicker(f, 'Salesperson', 'order salesperson');
+  expect(spName, 'the order salesperson picker offered a blank row').toBeTruthy();
+
+  // The per-line catalogue select — a real <select>, unlike the header pickers.
+  const cat = f.getByRole('combobox', { name: 'Line 1 — pick from catalogue' });
+  await expect(cat, 'the order form offers no per-line catalogue picker, so an ' +
+    'order line can never name a product and its cost can never resolve').toBeVisible();
+  await pickOption(cat, 'order product', got('productName'));
+  await f.getByLabel('Line 1 quantity').fill('2');
+
+  const made = await submitting(page, '/vikray/orders',
+    () => f.getByRole('button', { name: 'Create order' }).click());
+  const orderId = made?.id || made?.order?.id;
+  expect(orderId, 'the order was not created').toBeTruthy();
+  keep('orderId', orderId);
+
+  // TOP LEVEL, not wrapped. `GET /ganit/invoices/{id}` answers `{invoice: …}`
+  // and `GET /vikray/orders/{id}` answers the order itself — two sibling detail
+  // endpoints with different envelopes. Destructuring `{order}` here silently
+  // yielded undefined and read as "salesperson_id did not persist" against a
+  // row that carries it.
+  const res = await apiOk(page, 'get', `/api/v1/vikray/orders/${orderId}`);
+  const o = res.order ?? res;
+  expect(o.salesperson_id, 'salesperson_id did not persist on the order').toBeTruthy();
+
+  const lines = o.line_items || [];
+  expect(lines.length, 'the created order has no lines').toBeGreaterThan(0);
+  const costed = lines.find((l: any) => l.cost_price != null);
+  expect(costed, 'no order line carries cost_price — the snapshot never happened. ' +
+    `lines: ${JSON.stringify(lines).slice(0, 400)}`).toBeTruthy();
+  expect(Number(costed.cost_price), 'the order line snapshotted the wrong cost')
+    .toBeCloseTo(640, 2);
+
+  await shot(page, `p1-1-3-order-${RUN}`);
+});
+
+// ══ THE LEDGER LINE ══════════════════════════════════════════════════════════
+// Not decoration. The whole point of the exercise is that the counters move off
+// zero, so the run states what it moved and names the row it made.
+
+test('acceptance · every Phase-1 counter moved off zero', async ({ page }) => {
   await page.goto('/ganit');
   await settle(page);
 
-  const lines: string[] = [];
-  const note = (item: string, ok: boolean, detail: string) =>
-    lines.push(`${ok ? 'MOVED' : 'NOT MOVED'}  ${item}  ${detail}`);
+  const rows: Array<[string, any]> = [
+    ['1.1 invoice.salesperson_id', state.invoiceId],
+    ['1.1 order.salesperson_id', state.orderId],
+    ['1.2 vendor MSME/TDS (6 cols)', state.vendorId],
+    ['1.3 line cost_price (invoice)', state.costedInvoiceId],
+    ['1.3 line cost_price (order)', state.orderId],
+    ['1.4 expense.contact_id', state.expenseId],
+    ['1.5 employee.state', state.employeeId],
+    ['1.6 holiday.state_code', state.holidayName],
+  ];
+  const missing = rows.filter(([, v]) => !v).map(([k]) => k);
+  console.log(`
+── PHASE-1 ACCEPTANCE · run ${RUN} · E2E Test & Associates ──`);
+  for (const [k, v] of rows) console.log(`${v ? 'MOVED    ' : 'NOT MOVED'}  ${k}`);
+  console.log('');
 
-  note('1.1 invoice.salesperson_id', !!state.invoiceId, `invoice ${state.invoiceId ?? '—'}`);
-  note('1.1 order.salesperson_id', !!state.orderHasSalesperson, `order ${state.orderId ?? '—'}`);
-  note('1.2 vendor MSME/TDS', !!state.vendorId, `vendor ${state.vendorId ?? '—'}`);
-  note('1.3 line cost_price', !!state.orderId, `product ${state.productId ?? '—'}`);
-  note('1.4 expense.contact_id', !!state.expenseId, `expense ${state.expenseId ?? '—'}`);
-  note('1.5 employee.state', !!state.employeeId, `employee ${state.employeeId ?? '—'}`);
-  note('1.6 holiday.state_code', true, `run tag ${RUN}`);
-
-  console.log(`\n── PHASE-1 ACCEPTANCE · run ${RUN} ──\n${lines.join('\n')}\n`);
-  expect(lines.filter(l => l.startsWith('NOT MOVED')),
-    `some Phase-1 acceptances did not move off zero:\n${lines.join('\n')}`).toEqual([]);
+  expect(missing, `these Phase-1 acceptances did not move off zero: ${missing.join(', ')}`)
+    .toEqual([]);
 });
