@@ -25,6 +25,7 @@ import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import { ICONS } from '../components/layout/navIcons';
 import { moduleMeta } from '../lib/moduleColors';
+import Clock from './pahchan/Clock';
 import Register from './pahchan/Register';
 import EnrollQueue from './pahchan/EnrollQueue';
 import PahchanPolicy from './pahchan/PahchanPolicy';
@@ -52,7 +53,21 @@ import Notice from './pahchan/Notice';
  * tabs belong together and ahead of the setup pair: what was recorded about
  * you, then what we record and why.
  */
+/*
+ * `clock` is first, and the shipped fallback is still `register`.
+ *
+ * First because it is the only tab most employees can use at all — every other
+ * screen here except `history` and `notice` needs a reviewer role — and because
+ * `POST /punch` had no web caller until now: an employee on an iPhone, which has
+ * no build of the mobile app, could not clock in from anywhere.
+ *
+ * The fallback stays `register` deliberately. §3's argument is about the SHIPPED
+ * default for the person who opens the module to review a day, and moving that
+ * out from under existing reviewers is not this change's business. Anyone who
+ * clocks in from the web stars `clock` once and it opens there.
+ */
 const TABS = [
+  { id: 'clock',       label: 'Clock in' },
   { id: 'register',    label: 'Register' },
   { id: 'corrections', label: 'Corrections' },
   { id: 'payroll',     label: 'Payroll' },
@@ -81,7 +96,7 @@ export default function PahchanPage() {
         module="pahchan"
         en={meta.en}
         hi="pahchan"
-        sub="Clock-ins are recorded on the phone and confirmed here by comparing the selfie against two reference photos."
+        sub="Clock in from this browser or the app, and confirm here by comparing the selfie against two reference photos."
         icon={ICONS.pahchan}
       />
       <ModuleTabs
@@ -96,6 +111,7 @@ export default function PahchanPage() {
         onSave={prefs.save} standard={prefs.standard}
       />
       <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        {tab === 'clock' && <Clock />}
         {tab === 'register' && <Register />}
         {tab === 'corrections' && <Corrections />}
         {tab === 'payroll' && <PublishPayroll />}

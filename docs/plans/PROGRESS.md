@@ -1378,4 +1378,44 @@ the pivot dashboard still count drafts and the pivot has the same date-bind bug;
   nested-control boundary, not a duplicate card edge). No defect found, no
   code change.
 
+- Pahchan **web clock-in** · Owner: "How can an iOS user clock in and out
+  without the app?" They cannot, and it was not an iOS gap — it was a missing
+  caller. `POST /v1/pahchan/punch` (geofence, altitude, accuracy flags,
+  idempotency, photo) had one caller in the repo: `ClockScreen.tsx`, in an app
+  with no iOS build. `frontend/src/pages/pahchan/` held seven reviewer and
+  employee screens and no way to punch.
+
+  Added `pages/pahchan/Clock.jsx` + `lib/pahchanClock.js`, first tab in
+  `PahchanPage`. **No backend change and no migration** — the three things
+  asked for were already in the schema or already true: device time is
+  `captured_at` alongside the server's `received_at` (07 §4 keeps them
+  un-derived from each other precisely so a moved device clock shows up); an
+  unclosed shift cannot block the next morning because `nextDirection` scopes
+  to today and §2 refuses nothing anyway; a new flag is `flags TEXT[]`, which
+  064 says "should not be a migration".
+
+  Selfie **mandatory** per the owner, enforced in front of the person — no skip
+  control, no send button until a frame exists — but NOT as a server refusal.
+  §2 is that nothing blocks a punch, and `ClockScreen.tsx` records what happened
+  the one time a client tried: it hid the shutter after three camera errors and
+  "three camera errors in a dark doorway locked someone out of clocking in
+  entirely". After three failures this screen offers a flagged photo-less punch
+  instead. Both halves are asserted in `pahchanClockScreen.test.jsx`; a change
+  that keeps one and drops the other turns it red.
+
+  Photo compressed before it leaves — `MAX_PHOTO_BYTES` is 768 KB and a front
+  camera gives 2–4 MB, so without the quality ladder the mandatory selfie is
+  the thing that loses the punch. Photo uploaded BEFORE the punch, the opposite
+  of mobile, because mobile has an offline queue to attach a key later and this
+  screen does not.
+
+  28 tests added, all green; `npm run check` clean (no new contrast failures);
+  full suite 2,808 pass with 6 pre-existing failures unchanged. `vite build`
+  could not be run here — `@samasante/liquid-glass` is in `package.json` and
+  will not install in this sandbox, and it fails identically on an untouched
+  tree, so CI is the first real build. **STATUS: 🟡 shipped, unusable.**
+  `manav_employees.user_id` is null for every row, so `create_punch` 409s for
+  everybody and the screen says so instead of offering a dead button. One
+  employee↔login link turns this ✅; the same gap blocks the mobile app.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

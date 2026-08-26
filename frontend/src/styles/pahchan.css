@@ -602,3 +602,63 @@
 @media (max-width: 620px) {
   .ph__flag { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ── Clock: clocking in and out from a browser ───────────────────────────────
+
+   Sized for a phone held one-handed at the start of a shift, which is the only
+   posture this screen is ever used in. The camera and the captured frame share
+   one square well so the layout does not jump between framing and review — a
+   shift of the primary button between those two states is a mis-tap on the one
+   control that matters.
+
+   No fixed-width centering (CLAUDE.md): the well grows to the column and stops
+   at a size a face does not need to exceed. */
+
+.ph__clockready,
+.ph__clockcam,
+.ph__clockdone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.ph__clocklede {
+  margin: 0;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: 1.6;
+}
+
+/* The shared well. `aspect-ratio` rather than a height so the reserved space is
+   correct before the stream arrives and the page does not reflow when it does. */
+.ph__clockvideo,
+.ph__clockshot {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: var(--radius-base);
+  background: var(--surface-dim);
+  border: 1px solid var(--outline-variant);
+}
+
+/* Mirrored, both of them. An un-mirrored front camera is the reason people
+   cannot centre their own face: every other selfie surface they have used
+   mirrors the preview. The REVIEW frame is mirrored to match, so the photo they
+   approve is the one they framed — the stored JPEG is untouched either way,
+   because the flip is a CSS transform and never reaches the canvas. */
+.ph__clockvideo,
+.ph__clockshot { transform: scaleX(-1); }
+
+.ph__clockacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+/* Full-width primary on a narrow screen: the punch is the only thing anybody
+   came here to do, and a thumb should not have to aim. */
+@media (max-width: 620px) {
+  .ph__clockacts { flex-direction: column; align-items: stretch; }
+}
