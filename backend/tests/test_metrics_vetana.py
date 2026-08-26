@@ -201,6 +201,15 @@ def test_salary_bands_count_each_employees_current_structure_once():
     assert "s.effective_from <= CURRENT_DATE" in sql
     assert "s.is_active = TRUE" in sql
     assert "e.is_active = TRUE" in sql, "a stock counts people on the payroll today"
+    # ...and `is_active` alone is not "on the payroll today". Ten live employees
+    # carry the flag while holding a recorded exit date in the past, so the exit
+    # guard is the other half of that sentence. Its shape, its bound and its
+    # behaviour on real rows are held in
+    # test_leavers_are_out_of_the_analytics_too.py; this line is here so a
+    # reader of THIS file cannot delete the guard and see only green.
+    assert "staging.manav_offboarding x" in sql, (
+        "the histogram is banding people whose last working day has passed — "
+        "see test_leavers_are_out_of_the_analytics_too.py")
     assert params == [ORG]
 
 

@@ -8,19 +8,31 @@ checked. Each condition below is read straight off what `process_payroll`
 (`routers/vetana.py`) actually does, so this is not a list of things that sound
 risky — it is a list of things that change the result:
 
-  no_salary_structure        `vetana.py:521-528` SKIPS the employee entirely.
+  no_salary_structure        `vetana.py:1268-1288` SKIPS the employee entirely.
                              They are simply not paid, and nothing says so.
-  no_attendance_recorded     `vetana.py:559-560` falls back to paying the FULL
-                             working month, unverified.
-  unapproved_leave           `vetana.py:566` counts `status='approved'` only, so
-                             a pending request is treated as neither paid nor
+  no_attendance_recorded     `vetana.py:1382` falls back to paying the whole
+                             employed window, unverified.
+  unapproved_leave           `vetana.py:1419` counts `status='approved'` only,
+                             so a pending request is treated as neither paid nor
                              unpaid leave.
-  run_already_locked         `vetana.py:500-506` refuses anything but a draft
+  run_already_locked         `vetana.py:1191-1196` refuses anything but a draft
                              run — so the month cannot be reprocessed at all.
 
 Verified live: Aekam Inc has 2 findings for the current month, and both are real
 — one employee would be silently omitted, another paid a full month against no
 attendance at all.
+
+── WHO IS IN SCOPE IS ITSELF ONE OF THE ANSWERS ─────────────────────────────
+
+Every finding above is a claim about a person the run will pay, so the roster
+this handler starts from has to be the run's roster and not a near-miss. It was
+a near-miss: `is_active = TRUE` and nothing else, while `process_payroll` also
+drops anyone whose recorded last working day predates the month. Measured
+read-only 2026-08-26, E2E Test & Associates: 10 employees are `is_active` while
+holding a non-cancelled exit dated in the past, 9 of them before 1 August. Those
+nine were being checked for bank details and attendance for a month in which
+they are not paid at all — noise on a screen whose entire value is that every
+line on it is real.
 
 ── Blockers and warnings are different things ────────────────────────────────
 
@@ -64,13 +76,35 @@ async def check_payroll_readiness(
             SELECT to_date($2 || '-01', 'YYYY-MM-DD') AS month_start,
                    (to_date($2 || '-01','YYYY-MM-DD') + INTERVAL '1 month - 1 day')::date AS month_end
         ),
+        -- The run's roster, not an approximation of it: `is_active` AND no
+        -- live exit dated before the month began, which is the whole of
+        -- routers/vetana.py:1276-1287's employee predicate. `<`, not `<=`,
+        -- so somebody whose last day is the 1st is still paid for it; a NULL
+        -- last_working_day keeps them (nullable in migration 083, `NULL <
+        -- date` is NULL, NOT EXISTS admits them) because an exit started and
+        -- never dated is not evidence anyone has gone; `status <> 'cancelled'`
+        -- is 083's own vocabulary, so a mistaken exit that was cancelled and
+        -- redone still counts as staff. `x.org_id = e.org_id` is not
+        -- decoration — manav_offboarding has no composite FK, and it is the
+        -- only thing stopping another org's exit row silencing this org's
+        -- blocker.
         emp AS (
             SELECT e.id, e.name, e.employee_code, e.bank_details,
                    e.email, e.phone
-            FROM staging.manav_employees e
+            FROM staging.manav_employees e, bounds b
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
+              AND NOT EXISTS (
+                  SELECT 1 FROM staging.manav_offboarding x
+                  WHERE x.org_id = e.org_id AND x.employee_id = e.id
+                    AND x.status <> 'cancelled'
+                    AND x.last_working_day < b.month_start)
         ),
-        -- Exactly the rows routers/vetana.py:521-528 would pick up.
+        -- Together with `emp` above, exactly the rows
+        -- routers/vetana.py:1268-1288 would pick up. That parity is the point
+        -- of this handler and it has to be kept in BOTH halves: it was true of
+        -- the structure half alone and false of the roster half for as long as
+        -- the roster was is_active-only, which is how nine leavers went on
+        -- being audited for a run that does not pay them.
         struct_in_scope AS (
             SELECT s.employee_id, s.effective_from, s.updated_at, s.basic,
                    ROW_NUMBER() OVER (PARTITION BY s.employee_id ORDER BY s.effective_from DESC) AS rn,
@@ -99,7 +133,7 @@ async def check_payroll_readiness(
           AND EXISTS (SELECT 1 FROM struct_in_scope s WHERE s.employee_id = e.id)
         UNION ALL
         SELECT 'blocker','no_attendance_recorded', e.name, e.id, e.email, e.phone,
-               'no attendance row in the month; the run pays a full working month without verification', NULL
+               'no attendance row in the month; the run pays every day they were on the rolls without verification — the whole month for anyone employed throughout', NULL
         FROM emp e, bounds b
         WHERE EXISTS (SELECT 1 FROM struct_in_scope s WHERE s.employee_id = e.id)
           AND NOT EXISTS (SELECT 1 FROM staging.manav_attendance a

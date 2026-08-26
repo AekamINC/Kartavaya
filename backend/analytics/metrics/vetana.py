@@ -49,6 +49,17 @@ The facts every query in this file stands on:
   band distribution below is a fixed CTC histogram, and compa-ratio is
   declared ABSENT rather than faked against invented midpoints.
 
+· `manav_employees.is_active` IS NOT "still employed". It is a flag somebody
+  has to remember to clear; the last working day on manav_offboarding is a
+  fact somebody already recorded. Measured read-only 2026-08-26: ten E2E
+  employees are `is_active` while holding a non-cancelled exit dated in the
+  past, and all ten carry an active salary structure. Every STOCK here — only
+  salary_bands, today — therefore carries the offboarding guard as well, the
+  same one routers/vetana.py:1276-1287 puts on the run. A FLOW does not and
+  must not: an exited employee's payslips still cost money in the months they
+  were paid, which is why payroll_cost's employee join deliberately filters
+  neither flag nor exit.
+
 · The revenue side of payroll_revenue_share is ganit.invoiced's definition
   VERBATIM — staging.ganit_invoices, is_active, doc_status <> 'draft',
   credit notes subtracting. Metric drift between modules is the programme's
@@ -216,17 +227,42 @@ def overtime(req: MetricRequest):
     grain="stock",
     sensitivity="financial",
     drill="vetana.salary_structures",
-    description="Employees per annual-CTC band, as at today — each active "
-                "employee's CURRENT structure counted once (latest "
-                "effective_from, the same selection process_payroll makes). "
-                "Fixed lakh bands: no org-configured bands exist anywhere in "
-                "the schema, which is also why compa-ratio is declared "
-                "absent rather than computed against invented midpoints.",
+    description="Employees per annual-CTC band, as at today — each employee "
+                "still on the rolls counted once at their CURRENT structure "
+                "(latest effective_from, the same selection process_payroll "
+                "makes). Someone whose recorded last working day has passed is "
+                "not on the rolls today and is not banded, whatever "
+                "is_active still says. Fixed lakh bands: no org-configured "
+                "bands exist anywhere in the schema, which is also why "
+                "compa-ratio is declared absent rather than computed against "
+                "invented midpoints.",
 )
 def salary_bands(req: MetricRequest):
     # DISTINCT ON picks each employee's latest effective structure — the same
     # dedupe process_payroll does in Python (ORDER BY employee_id,
     # effective_from DESC, first row wins). ctc_annual is NOT NULL DEFAULT 0.
+    #
+    # THE EXIT GUARD, AND WHY ITS BOUND IS TODAY AND NOT A MONTH START.
+    # routers/vetana.py:1276-1287 drops anyone whose live exit predates the
+    # MONTH BEING PAID, because a run pays for a month and somebody who left on
+    # the 3rd is owed those three days. This is a stock "as at today", so its
+    # bound is today: a person is banded if they are on the rolls now. The two
+    # answers are allowed to differ, and live on 2026-08-26 they do by one — of
+    # E2E's ten still-flagged leavers, nine left in July (out of both) and one
+    # on 3 August (out of the bands, still in the August run, pro-rated). That
+    # is two correct answers to two different questions, not drift; what was
+    # wrong was counting all ten.
+    #
+    # `<`, never `<=`: somebody whose last day IS today is still on the rolls
+    # today. NULL last_working_day keeps them too — the column is nullable
+    # (migration 083), `NULL < date` is NULL, and NOT EXISTS admits them; an
+    # exit started but never dated is not evidence anyone has gone. Both
+    # choices are the run's, kept identical so the two cannot drift on shape
+    # while differing only on the date they ask about.
+    #
+    # The org+employee scoping inside the guard is load-bearing: there is no
+    # composite FK on manav_offboarding, so `x.org_id = e.org_id` is the only
+    # thing stopping another org's exit row from unbanding this org's employee.
     return (
         "SELECT band AS label, COUNT(*) AS value FROM ("
         "  SELECT DISTINCT ON (s.employee_id) "
@@ -240,6 +276,11 @@ def salary_bands(req: MetricRequest):
         "  AND e.org_id = s.org_id AND e.is_active = TRUE "
         "  WHERE s.org_id = $1::uuid AND s.is_active = TRUE "
         "  AND s.effective_from <= CURRENT_DATE "
+        "  AND NOT EXISTS ("
+        "    SELECT 1 FROM staging.manav_offboarding x "
+        "    WHERE x.org_id = e.org_id AND x.employee_id = e.id "
+        "    AND x.status <> 'cancelled' "
+        "    AND x.last_working_day < CURRENT_DATE) "
         "  ORDER BY s.employee_id, s.effective_from DESC"
         ") bands GROUP BY band "
         "ORDER BY CASE band WHEN '<3L' THEN 1 WHEN '3-6L' THEN 2 "

@@ -28,6 +28,41 @@ from services.gst_states import GST_STATES as _GST_STATES, norm_state as _norm_s
 from utils import next_doc_number
 
 
+#: `line_items[].cost_basis` — why the lines this file writes carry no cost.
+#:
+#: Migration 184 made `line_items[].cost_price` the line's own memory of what
+#: it cost, and `vikray.apply_line_costs` the one place it is written. That
+#: helper is deliberately NOT called here, and the absence has to be stated
+#: out loud because the ratchets that would otherwise state it — the two AST
+#: checks in `tests/test_line_cost_snapshot.py` — parse ganit and vikray by
+#: name and cannot see this module.
+#:
+#: There is nothing here for it to resolve. It costs a line from
+#: `line_items[].product_id` against `staging.ganit_products`, and neither
+#: table these two paths read from has a product at all: `client_service_lines`
+#: is (kind, description, amount, cadence) and `client_metered_usage` is
+#: (metric, quantity, unit, rate) — read off the live catalogue 2026-08-26.
+#: Calling it would pop a key nobody set, skip its query and hand back the
+#: same lines, while telling the next reader that a lookup happens here and
+#: that an absent cost means the product had none recorded. There is no
+#: product, and that misreading is one step from someone joining
+#: `ganit_products` at read time — the very join `cost_price` exists to avoid.
+#:
+#: A zero is worse than silence: what a retainer or a metered GB costs this
+#: firm is staff time, which nothing in this product records, so it would
+#: report every rupee of service revenue as pure profit. That is 184's ABSENT,
+#: NEVER ZERO rule, which the margin readers already honour by guarding on
+#: `li ? 'cost_price'` rather than coalescing.
+#:
+#: So the cost stays absent and the LINE SAYS WHY — 1.3's own ratchet calls
+#: out a document nothing can compute a margin from with nothing saying so.
+#: Additive and invisible: every existing reader filters on `cost_price`, and
+#: `pay.py:_line` rebuilds the customer's line from a closed allow-list, so
+#: this never leaves the firm. `tests/test_billing_line_cost_basis.py` holds
+#: all of it, including the two INSERTs below being the only ones.
+NO_COST_BASIS = "none_service_revenue"
+
+
 async def _supplier_state(pool, org_id) -> str:
     """The state THIS firm supplies FROM, canonical, or '' if nobody has said.
 
@@ -583,12 +618,19 @@ async def sweep_client_auto_invoices(today: date | None = None) -> dict:
         # spellings of one line. `gst_rate` rides the LINE because
         # `ganit_invoices` has no such column, which this file's own comment
         # says twice and is what the 500 was about.
+        #
+        # `cost_basis` rides the line for the same reason `gst_rate` does:
+        # there is no column for it, and a line that records neither a cost
+        # nor the reason it has none is a document a margin report can only
+        # guess at. A service line has no product behind it — see
+        # NO_COST_BASIS for why that means saying so rather than snapshotting.
         line_items = [{
             "description": f"{sl['description']} ({period_start} – {period_end})",
             "quantity": 1,
             "rate": amount,
             "gst_rate": gst_rate,
             "amount": amount,
+            "cost_basis": NO_COST_BASIS,
         }]
         invoice_id = uuid4()
         async with pool.acquire() as conn:
@@ -831,6 +873,11 @@ async def generate_usage_invoice(
             # behind it, and the return has to guess.
             "gst_rate": gst_rate,
             "amount": amount,
+            # PER LINE, inside the loop — see NO_COST_BASIS. Metered usage is
+            # sold by the unit and a profile may report several metrics, so a
+            # marker set once outside this loop would leave every line after
+            # the first saying nothing.
+            "cost_basis": NO_COST_BASIS,
         })
         subtotal += amount
 

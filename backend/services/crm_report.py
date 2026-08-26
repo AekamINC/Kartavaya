@@ -223,7 +223,12 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         "  COALESCE(u.full_name, u.name, '') AS owner "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        # Scoped on `org_id` as well as `id`, as the routers now are: this is
+        # the sheet the whole report is auditable from, so a company name that
+        # belongs to another organisation would be exported to a CSV, mailed
+        # out, and re-read months later with nothing left to question it.
+        "LEFT JOIN staging.graha_clients cl "
+        "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
         "LEFT JOIN users u ON u.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE AND d.created_at > $2 "

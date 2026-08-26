@@ -22,7 +22,16 @@ here and are easy to undo by accident:
   because "a console endpoint that fetches the roster and returns a length has
   already read the roster".
 
-Schema: migrations/PROPOSED_064_pahchan.sql (not yet applied).
+Schema: migrations/PROPOSED_064_pahchan.sql — APPLIED, whatever its filename
+still says. It defines `pahchan_sites`, `pahchan_punches`,
+`pahchan_enrollment_photos`, `pahchan_regularisations` and `pahchan_policy`,
+plus the `pahchan_org_usage` view §7 aggregates through; measured read-only
+2026-08-26 all five hold rows (9 · 699 · 24 · 40 · 2) and the view exists. This
+header read "not yet applied" until then, which is the one wrong fact that makes
+a reader treat a live table as a draft — the file is left named PROPOSED_064
+because renaming an applied migration is a riskier job than saying so here.
+Later columns come from 106, 109, 113, 193 (altitude), 196 (policy scopes) and
+209.
 """
 import json
 import math

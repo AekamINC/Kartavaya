@@ -489,6 +489,127 @@ async def test_the_annual_ptec_is_named_as_out_of_scope(frozen):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 27 · the state, which the product now records
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Migration 220 added `manav_employees.state` and it is APPLIED — confirmed
+# read-only 2026-08-26, and the CHECK on it (`manav_employees_state_ck`, read
+# from pg_constraint) admits '27' AND 'MH'. So the permanent limitation this
+# brief printed, "Nothing records which state each employee works in", became a
+# false sentence on every professional-tax brief in the product. Live on the
+# same date: 60 of 60 employees on E2E's brief (2026-06) and 24 of 24 on
+# Unicode Group's (2026-07) carry a state — none lack one.
+
+def _pt_row(**kw):
+    row = {
+        "employee_id": "e1", "name": "Deepak Rane", "employee_code": "EMP-007",
+        "department": "Audit", "email": "deepak@example.com",
+        "phone": "+91 90000 00007", "professional_tax": 200.0,
+        # The numeric GST code, which is what 220's COMMENT settles on and what
+        # both live orgs hold: '27' Maharashtra, '24' Gujarat.
+        "state": "27",
+    }
+    row.update(kw)
+    return row
+
+
+def _slab(**kw):
+    row = {"state_code": "27", "state_name": "Maharashtra", "slab_from": 0.0,
+           "slab_to": 10000.0, "monthly_tax": 200.0,
+           "effective_from": date(2023, 4, 1)}
+    row.update(kw)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_the_state_limitation_is_gone_when_every_employee_has_one(frozen):
+    """The sentence is a MEASUREMENT, not a property of the product. Where every
+    briefed employee carries a state — which is both live orgs today — printing
+    it tells a firm its own data does not exist."""
+    pool = _Pool(fetch_by={"pay_professional_tax": [_slab()],
+                           "vetana_payslips p": [_pt_row(),
+                                                 _pt_row(employee_id="e2",
+                                                         name="Asha Rao")]},
+                 row_by={"vetana_payroll_runs": _run()})
+
+    out = await brief_professional_tax(pool, ORG)
+
+    assert not any("Nothing records which state" in l
+                   for l in out["limitations"])
+    assert out["counts"]["employees_without_state"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_state_limitation_counts_the_employees_who_lack_one(frozen):
+    """Where somebody genuinely has no state the brief must still say so — and
+    say HOW MANY. Unicode Group has 2 employees with a NULL state live; neither
+    drew professional tax this month, but the next hire might."""
+    pool = _Pool(fetch_by={"pay_professional_tax": [_slab()],
+                           "vetana_payslips p": [
+                               _pt_row(),
+                               _pt_row(employee_id="e2", name="Asha Rao",
+                                       state=None)]},
+                 row_by={"vetana_payroll_runs": _run()})
+
+    out = await brief_professional_tax(pool, ORG)
+
+    assert out["counts"]["employees_without_state"] == 1
+    assert any("1 of 2" in l for l in out["limitations"])
+
+
+@pytest.mark.asyncio
+async def test_the_brief_reads_the_state_and_names_it(frozen):
+    """`e.state` in the SELECT, and a NAME on the way out. A brief that printed
+    '27' at a reader would be the bare-code twin of the ids-not-names rule."""
+    src = inspect.getsource(brief_professional_tax)
+    assert "e.state" in src
+
+    pool = _Pool(fetch_by={"pay_professional_tax": [_slab()],
+                           "vetana_payslips p": [_pt_row()]},
+                 row_by={"vetana_payroll_runs": _run()})
+
+    out = await brief_professional_tax(pool, ORG)
+
+    assert out["employees"][0]["state"] == "Maharashtra"
+    assert out["employee_states"] == [
+        {"state_code": "27", "state_name": "Maharashtra", "employees": 1,
+         "professional_tax": 200.0, "slabs_recorded": True}]
+
+
+@pytest.mark.asyncio
+async def test_an_employee_spelled_MH_meets_a_slab_spelled_27(frozen):
+    """`manav_employees_state_ck` admits the alphabetic form and
+    `pay_professional_tax.state_code` is numeric, so the two ends of this join
+    can be spelled differently. Matching on the raw text would report
+    Maharashtra as a state with no ladder while payroll deducted against one —
+    the same trap `routers/vetana.py::_state_keys` exists to close."""
+    pool = _Pool(fetch_by={"pay_professional_tax": [_slab()],
+                           "vetana_payslips p": [_pt_row(state="MH")]},
+                 row_by={"vetana_payroll_runs": _run()})
+
+    out = await brief_professional_tax(pool, ORG)
+
+    assert out["employee_states"][0]["state_name"] == "Maharashtra"
+    assert out["employee_states"][0]["slabs_recorded"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_state_with_no_slab_is_named_not_quietly_covered(frozen):
+    """`pay_professional_tax` covers three states of roughly twenty. Which of
+    them the people on THIS brief work in is the question the org actually has,
+    and it is answerable now that the employee end of the join exists."""
+    pool = _Pool(fetch_by={"pay_professional_tax": [_slab()],
+                           "vetana_payslips p": [_pt_row(state="33")]},
+                 row_by={"vetana_payroll_runs": _run()})
+
+    out = await brief_professional_tax(pool, ORG)
+
+    assert out["employee_states"][0]["state_name"] == "Tamil Nadu"
+    assert out["employee_states"][0]["slabs_recorded"] is False
+    assert any("Tamil Nadu" in l for l in out["limitations"])
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # what the module promises about itself
 # ══════════════════════════════════════════════════════════════════════════
 

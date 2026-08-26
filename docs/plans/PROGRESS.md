@@ -33,6 +33,101 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### Phase 2 FINISHED — the six fixes, and the nine things verifying them found
+
+**The acceptance the plan actually wrote** is "all six re-verified with a
+read-only live query showing the wrong output is gone" — not "the code shipped".
+Four of the six had never been exercised at all. Twelve independent verifiers
+plus a completeness critic went at them; the result was 1 green, 11 amber, 0
+red, and nine defects nobody had recorded. Every one below carries a live
+figure, and every fix carries a test proven to fail without it.
+
+**Payroll paid a part-month as a whole one.** `vetana.py:1240` promised a
+mid-month leaver is "pro-rated by the attendance arithmetic below"; that
+arithmetic falls back to the WHOLE month whenever nobody has been marked present
+or absent, and live, in both orgs, ZERO August rows carry a status in
+(present, late, half_day, absent). The fallback is right and stays — "nobody has
+said" must never silently dock pay — but it is now bounded by the employment
+window, a fact the system already holds. Of 51 payable in E2E, 50 keep ratio
+exactly 1; the one that moves is a leaver with a 3 August last day and a ₹44,700
+monthly gross, employed 2 of 26 working days: **₹44,700 → ₹3,438, an overpayment
+of ₹41,262 avoided on one payslip**. An earlier report of this said "all 75 are
+affected" — that was wrong, and the correction is the point: for 74 of them a
+full month is the correct answer.
+
+**`/cron/hr` was marking attendance for people who had left.**
+`attendance_auto_mark.py` selected `is_active` with no offboarding guard; E2E's
+3 August leaver carries six system-marked August rows running to 2026-08-23,
+three weeks past his exit.
+
+**Dristi's `/overview` tile was the largest wrong number in the product.** It
+was `WHERE org_id=$1::uuid` and nothing else, printed directly above a trend
+chart that Phase 2.4 HAD fixed — so the two disagreed on screen. E2E invoiced
+read ₹12,29,86,008.58 against a draft-free ₹11,14,93,756.12: **a ₹1,14,92,252.46
+phantom over 97 drafts**, with outstanding ₹3,86,36,429.46 against
+₹2,71,54,767.00. Outstanding matters more than the headline — an unissued
+document is not a receivable, and that figure is what a partner chases a client
+over. The agent also found a case nobody had named: **a draft can be marked
+paid**, and Unicode holds one worth ₹2,06,500, so `payment_status='paid'`
+narrowed the leak without closing it.
+
+**Phase 2.5's ratchet covered one module, and the ledger said so without the
+qualifier.** Re-running its own logic across `backend/` finds 114 party joins,
+**42 still on the id alone**. Four are on `graha_clients` — the table the plan
+calls the leak — including the unpaid-invoice pay-link list a dunning letter is
+written from. Those four are fixed and still LEFT JOINs, so a row failing the
+predicate drops to a NULL name rather than falling off the collections list. The
+other 38 are carried in a named allowlist that fails if the count GROWS.
+
+**Two statements the product made to users were false.** The PT brief still
+printed "nothing records which state each employee works in" on every run, over
+96 of 98 employees who now carry one; `pahchan.py:25` still called an applied
+migration "not yet applied". Both corrected, and the second now records why the
+file keeps its PROPOSED_ name.
+
+**Phase 2.3's repaired invoice writer violated Phase 1.3** — it builds lines
+inline with no cost, and 1.3's two AST ratchets parse `ganit` and `vikray` by
+name and cannot see that file. Resolved as an explicit `cost_basis` marker
+rather than a call to `apply_line_costs`: there is no product behind a retainer
+or a metered GB, and a zero would report every rupee of service revenue as pure
+profit — 184's ABSENT, NEVER ZERO rule.
+
+**Analytics disagreed with payroll by exactly nine.** `vetana.salary_bands`
+banded 60 while the run pays 51. Fixed with the distinction that matters: a
+STOCK (who is on the rolls today) carries the offboarding guard, a FLOW
+(`payroll_cost` — money paid in months they were employed) deliberately does
+not.
+
+### Professional tax became something a person can set
+
+Owner's call: do both, and bear in mind not everything is mandatory — it must be
+optional and settable per module, never blocking.
+
+**The gap was bigger than February.** Nothing in this product could write
+`pay_professional_tax`; every backend reference was a read, and the nine rows
+existed because a migration put them there. A state nobody seeded, a rate
+change, or Maharashtra's different February figure could only be fixed by
+shipping another migration — the same shape as every Phase-1 defect, a column
+with no write path.
+
+**Migration 221 APPLIED**, verified from `pg_constraint`: `month smallint NULL`,
+CHECK 1–12, nine rows all NULL. NULL means EVERY month, so the migration is a
+no-op until somebody seeds a month row. Resolution order falls back and never
+refuses: `org + this month → org + every month → shared + this month → shared +
+every month → ₹0`.
+
+**A shared row is read by everyone and editable by nobody.** All three write
+endpoints are scoped `org_id = $1::uuid` with no NULL branch; an org that wants
+a different figure adds its own band, which outranks the shared one. Somebody
+else's row answers 404, not 403 — a distinct refusal confirms the row is there.
+The screen lists shared rows without controls, because hiding them would present
+an empty ladder as "nothing is deducted".
+
+**The February figure is NOT seeded.** `statute_calendar` holds zero
+professional-tax rows to check it against, and writing an assumed statutory
+number into 51 people's deductions is the failure mode this work exists to end.
+The acceptance run creates the band, proves the whole chain, and removes it.
+
 ### Both deploys confirmed — everything below is RUNNING
 
 **Check BOTH, always** (owner, 2026-08-26). Backend and frontend ship from the

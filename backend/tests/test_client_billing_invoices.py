@@ -59,7 +59,6 @@ message:
     railway run -e staging -s Kartavya -- python -m pytest \\
         tests/test_client_billing_invoices.py -q
 """
-import ast
 import asyncio
 import inspect
 import os
@@ -517,53 +516,21 @@ def test_the_ownership_check_is_the_siblings_pattern():
 
 
 # ── the ratchet: no join on an id alone ──────────────────────
-
-_PARTY_TABLES = ("graha_clients", "graha_contacts")
-
-_NEXT_CLAUSE = re.compile(
-    r"\b(WHERE|JOIN|LEFT|RIGHT|INNER|CROSS|ORDER\s+BY|GROUP\s+BY|LIMIT|UNION)\b",
-    re.I,
-)
-
-
-def _module_sql() -> list[str]:
-    """Every SQL string literal in the router.
-
-    Read through the AST, not with grep: adjacent string literals are folded
-    into one Constant by the parser, so a query assembled across six lines
-    arrives here whole — and a query quoted inside a comment does not arrive at
-    all.
-    """
-    tree = ast.parse(inspect.getsource(client_billing))
-    return [n.value for n in ast.walk(tree)
-            if isinstance(n, ast.Constant) and isinstance(n.value, str)
-            and "JOIN staging." in n.value]
-
-
-def test_no_party_table_is_joined_on_the_id_alone():
-    """THE DOCUMENTED LEAK SHAPE. `JOIN staging.graha_clients c ON c.id = x`
-    is scoped by nothing: the row it reaches is whichever organisation's client
-    holds that uuid, and the NAME it carries is what the page renders.
-
-    SEVEN joins in this file had it — the plan named two. Each now carries the
-    org predicate as well, so a row that should not be visible drops out of the
-    result instead of appearing under someone else's name.
-    """
-    offenders = []
-    for sql in _module_sql():
-        for table in _PARTY_TABLES:
-            for m in re.finditer(
-                    rf"JOIN\s+staging\.{table}\s+(\w+)\s+ON\b", sql, re.I):
-                alias = m.group(1)
-                rest = sql[m.end():]
-                stop = _NEXT_CLAUSE.search(rest)
-                clause = rest[:stop.start()] if stop else rest
-                if f"{alias}.org_id" not in clause:
-                    offenders.append(f"{table} AS {alias}: ON{clause}")
-    assert not offenders, (
-        "these joins are scoped by the id alone and can surface another "
-        f"organisation's row:\n  " + "\n  ".join(offenders)
-    )
+#
+# PROMOTED OUT OF THIS FILE, to `tests/test_party_join_tenancy.py`.
+#
+# The check that stood here was real and it worked, but it walked ONE module —
+# `ast.parse(inspect.getsource(client_billing))` — while the ledger reported it
+# without that qualifier, so it read as repo-wide. Re-running its exact logic
+# over all of `backend/` on 2026-08-26 found 114 party joins, 42 of them scoped
+# by the id alone, and NONE of the 42 in this file: every offender sat outside
+# the reach of the check that was supposed to be catching them.
+#
+# So the logic moved rather than being copied — one walk, one ledger, and no
+# second implementation to drift from the first. Seven joins in this file
+# carried the leak shape and all seven were fixed; that is now asserted by name
+# in `test_client_billing_still_has_none_of_its_own` over there, so the
+# promotion cannot be read as having quietly dropped this file's guarantee.
 
 
 # ══════════════════════════════════════════════════════════════════════════════

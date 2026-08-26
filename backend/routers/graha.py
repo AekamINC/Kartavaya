@@ -1029,7 +1029,12 @@ async def list_deals(
         "COUNT(*) OVER() AS _total "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        # Scoped on `org_id` as well as `id`, the same way `get_deal` below
+        # already does it: `graha_clients` has no composite (id, org_id)
+        # constraint, so the join is the only thing enforcing tenancy on the
+        # company NAME this list renders.
+        "LEFT JOIN staging.graha_clients cl "
+        "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
         # Two more LEFT JOINs and no new `$n` — every `${idx}` appended below
         # keeps the number it would have had before this line existed.
@@ -1209,7 +1214,11 @@ async def deals_kanban(
         "COALESCE(NULLIF(btrim(ow.full_name), ''), NULLIF(btrim(ow.name), ''), 'Unnamed member') AS owner_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        # Scoped on `org_id` as well as `id`, as in `list_deals` and
+        # `get_deal`: the card renders `cl.name`, and a join on the uuid alone
+        # reaches whichever organisation's company holds it.
+        "LEFT JOIN staging.graha_clients cl "
+        "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
         "LEFT JOIN users ow ON ow.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "

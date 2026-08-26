@@ -41,7 +41,7 @@
 import { test, expect } from '@playwright/test';
 import { GODMODE_STATE } from './real.config';
 import {
-  RUN, api, apiOk, settle, openTab, shot,
+  RUN, api, apiOk, settle, openTab, shot, submitting,
   useOrg, activeOrgId, assertOutboundFenceFor,
 } from './_helpers';
 
@@ -262,6 +262,95 @@ test('2.6 · the geofence metrics compute instead of declaring themselves imposs
     const text = JSON.stringify(body);
     expect(text, 'a pahchan metric still declares itself impossible against a ' +
       'table that holds rows').not.toMatch(/PROPOSED_064|not yet applied/i);
+  });
+
+// ══ 2.2 (LADDER) · THE PROFESSIONAL-TAX BAND IS SETTABLE BY A PERSON ═════════
+//
+// Migration 221 + the Statutory settings screen. Until this, nothing in the
+// product could write `pay_professional_tax` at all — the nine rows existed
+// because a migration put them there, so a state nobody seeded or Maharashtra's
+// different February figure could only be fixed by shipping another one.
+//
+// THE BAND IS CREATED AND THEN REMOVED, DELIBERATELY. What Maharashtra actually
+// charges in February is an owner fact — `statute_calendar` holds zero
+// professional-tax rows to check it against — and leaving an unconfirmed
+// statutory figure in a live ladder would change 51 people's February
+// deductions on my assumption. So this proves the whole chain end to end
+// (create, list, ownership, resolution order, remove) and leaves the ladder
+// exactly as it found it. Seeding the real number is one action once the owner
+// confirms it.
+
+test('2.2 · a professional-tax band can be added, resolves, and removed — as a user',
+  async ({ page }) => {
+    await openTab(page, /statutory/i);
+
+    const section = page.locator('section.k-section').filter({ hasText: /Professional tax/i }).first();
+    await expect(section, 'the Professional tax section is not on the Statutory tab')
+      .toBeVisible();
+
+    // The shared ladder must be VISIBLE, not hidden. A screen showing only the
+    // org's own rows presents an empty ladder as "nothing is deducted" and
+    // sends an administrator to duplicate bands that already apply.
+    await expect(section.getByText(/Shared/).first(),
+      'the shared ladder is not shown, so an administrator cannot see which ' +
+      'bands already apply to them').toBeVisible();
+
+    const before = await apiOk(page, 'get', '/api/v1/vetana/pt-slabs');
+    const beforeOwn = ((before.data ?? before) as any[]).filter(r => r.is_own).length;
+
+    const add = section.getByRole('button', { name: '+ Add band' });
+    await expect(add, 'the "+ Add band" control is not on the section').toBeVisible();
+    await add.click();
+    await settle(page);
+
+    const f = section.locator('form.gn-form');
+    await expect(f, 'the band form did not open').toBeVisible();
+    const fld = (label: string | RegExp) =>
+      f.locator('label.gn-form__field').filter({ hasText: label });
+
+    await fld(/^State/).locator('select').selectOption('27');
+    await fld(/Salary from/i).locator('input').fill('10001');
+    await fld(/Tax per month/i).locator('input').fill('300');
+    // The field migration 221 exists for. "Every month" is the default and what
+    // all nine seeded rows are; this picks a single month instead.
+    await fld(/Applies in/i).locator('select').selectOption('2');
+
+    await submitting(page, '/vetana/pt-slabs',
+      () => f.getByRole('button', { name: /^(Add band|Save band)$/ }).click());
+    await settle(page);
+
+    const after = await apiOk(page, 'get', '/api/v1/vetana/pt-slabs');
+    const rows = (after.data ?? after) as any[];
+    const mine = rows.filter(r => r.is_own);
+    expect(mine.length, 'the band did not appear in this org's ladder')
+      .toBe(beforeOwn + 1);
+
+    const feb = mine.find(r => Number(r.month) === 2 && String(r.state_code) === '27');
+    expect(feb, `no February Maharashtra band came back: ${JSON.stringify(mine).slice(0, 300)}`)
+      .toBeTruthy();
+    expect(Number(feb.monthly_tax), 'the figure did not persist').toBe(300);
+    expect(feb.is_own, 'the band was written as SHARED rather than to this org — ' +
+      'it would have changed every other organisation's deductions').toBe(true);
+
+    // The shared Maharashtra band must still be there underneath it. An org's
+    // own row OVERRIDES the shared one; it never replaces it.
+    expect(rows.some(r => !r.is_own && String(r.state_code) === '27'),
+      'adding an org band removed the shared one').toBe(true);
+
+    state.febBandId = feb.id;
+    await shot(page, `p2-2-ladder-${RUN}`);
+
+    // ── Put it back. See the note above this test. ──────────────────────────
+    const remove = section.getByRole('button', { name: 'Remove' }).last();
+    await expect(remove, 'an org-owned band has no Remove control').toBeVisible();
+    await submitting(page, '/vetana/pt-slabs',
+      () => remove.click());
+    await settle(page);
+
+    const restored = await apiOk(page, 'get', '/api/v1/vetana/pt-slabs');
+    const restoredOwn = ((restored.data ?? restored) as any[]).filter(r => r.is_own).length;
+    expect(restoredOwn, 'the test band was not removed; the ladder is not as it ' +
+      'was found').toBe(beforeOwn);
   });
 
 // ══ THE LEDGER LINE ══════════════════════════════════════════════════════════

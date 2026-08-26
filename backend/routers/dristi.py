@@ -146,9 +146,20 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
         )
         contacts = await pool.fetchval(
             "SELECT COUNT(*) FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE", org_id)
+        # The SAME guards as the `/overview` tile this block exports, for the
+        # same reason the "revenue" branch below carries them: an export that
+        # disagrees with the screen it was taken from is worse than either
+        # being wrong alone.
+        #
+        # `payment_status='paid'` narrowed the leak but did not close it — a
+        # draft CAN be marked paid. Live 2026-08-26 for Unicode Group there is
+        # exactly one, Rs 2,06,500, and this figure read Rs 27,39,830 against a
+        # true Rs 25,33,330. E2E has no paid draft at all, so probing the
+        # in-scope orgs one at a time would have certified this as clean.
         revenue = await pool.fetchval(
             "SELECT COALESCE(SUM(total),0) FROM staging.ganit_invoices "
-            "WHERE org_id=$1::uuid AND payment_status='paid'"
+            "WHERE org_id=$1::uuid AND payment_status='paid' AND is_active=TRUE "
+            "AND COALESCE(doc_status, '') <> 'draft'"
             + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),
             org_id, *wargs) or 0
         return {"tasks": tasks, "contacts": contacts, "revenue": float(revenue)}
@@ -241,11 +252,32 @@ async def overview(
 
     revenue = None
     if "ganit" in allowed:
+        # This tile is printed DIRECTLY ABOVE `revenue_trends`, and until now it
+        # was the only invoice read on the page with no guard at all —
+        # `org_id=$1::uuid` and nothing else. So the chart excluded drafts and
+        # the number above it did not, and the two disagreed on screen.
+        # Measured live 2026-08-26 for E2E Test & Associates: total_invoiced
+        # Rs 12,29,86,008.58 against Rs 11,14,93,756.12, a Rs 1,14,92,252.46
+        # phantom over 97 draft rows; outstanding Rs 3,86,36,429.46 against
+        # Rs 2,71,54,767.00. That org holds zero inactive invoices, so the whole
+        # gap is drafts.
+        #
+        # `outstanding` matters more than the headline: an unissued document is
+        # not a receivable, and this figure is what a partner chases a client
+        # over. `total_collected` moves too — Rs 10,590 sat as `amount_paid` on
+        # three partially-paid drafts.
+        #
+        # The guards are `revenue_trends`' verbatim, which are in turn
+        # `analytics.py`'s client report verbatim. `COALESCE(doc_status, '')`
+        # rather than a bare `<>`, the canonical form from
+        # `services/gst_period.py`: the column is nullable and NULL <> 'draft'
+        # is NULL, which would silently drop every row predating the column.
         revenue = await pool.fetchrow(
         "SELECT COALESCE(SUM(total),0) AS total_invoiced, "
         "COALESCE(SUM(amount_paid),0) AS total_collected, "
         "COALESCE(SUM(total - amount_paid) FILTER (WHERE payment_status NOT IN ('paid','cancelled')),0) AS outstanding "
-        "FROM staging.ganit_invoices WHERE org_id=$1::uuid"
+        "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
+        "AND COALESCE(doc_status, '') <> 'draft'"
         + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),
         *([org_id, win.start, win.end] if win else [org_id]),
     )
@@ -1448,11 +1480,18 @@ async def export_report(
 # rather than inferring it. All eight do today, which is why the broken
 # always-true check that preceded this never misfired; the next source added
 # would have been the one to break.
+#
+# `not_draft` is declared the same way and for the same reason. Only
+# `ganit_invoices` has a `doc_status` column, so a draft filter appended to
+# every source would turn the other seven into UndefinedColumn 500s — the flag
+# is what keeps the next source added from inheriting a predicate its table
+# cannot answer.
 _ALLOWED_QUERY_TABLES = {
     "invoices": {
         "table": "staging.ganit_invoices",
         "module": "ganit",
         "soft_delete": True,
+        "not_draft": True,
         "columns": ["invoice_date", "invoice_type", "total", "subtotal", "amount_paid",
                      "payment_status", "currency", "created_at"],
         "date_col": "invoice_date",
@@ -1579,13 +1618,39 @@ async def run_pivot_query(
     if spec.get("soft_delete"):
         where.append("is_active=TRUE")
 
+    # `soft_delete` was this query's ONLY predicate beyond `org_id`, so
+    # `source=invoices, measure=sum` returned the whole ledger — drafts
+    # included. Live 2026-08-26 for E2E Test & Associates that was
+    # Rs 12,29,86,008.58 against a draft-free Rs 11,14,93,756.12, the same
+    # Rs 1,14,92,252.46 phantom the `/overview` tile was carrying, in a widget a
+    # customer builds and pins to their own dashboard.
+    #
+    # `COALESCE(doc_status, '')` rather than a bare `<>` — the canonical form
+    # from `services/gst_period.py`. The column is nullable and NULL <> 'draft'
+    # is NULL, which would drop every invoice predating it.
+    if spec.get("not_draft"):
+        where.append("COALESCE(doc_status, '') <> 'draft'")
+
+    # `::text::date`, not `::date`. `date_from` and `date_to` arrive as ISO
+    # STRINGS on the request body. A bare `$2::date` makes Postgres infer the
+    # parameter as `date`, and asyncpg then refuses the bind outright:
+    #
+    #   DataError: invalid input for query argument $2: '2026-01-01'
+    #              ('str' object has no attribute 'toordinal')
+    #
+    # and this cast is built the same way for every source, so EVERY dated
+    # pivot raised before reading a row — reproduced live 2026-08-26 on
+    # `invoices` and on `deals`, which share nothing but this line. The double
+    # cast makes the parameter infer as `text` and casts server-side, which is
+    # what `documents.py`, `_tally_rows` and `services/gst_period.py` already
+    # do. Nothing about the comparison changes.
     date_col = spec.get("date_col", "created_at")
     if body.date_from:
         params.append(body.date_from)
-        where.append(f"{date_col} >= ${len(params)}::date")
+        where.append(f"{date_col} >= ${len(params)}::text::date")
     if body.date_to:
         params.append(body.date_to)
-        where.append(f"{date_col} <= ${len(params)}::date")
+        where.append(f"{date_col} <= ${len(params)}::text::date")
 
     for fk, fv in body.filters.items():
         if fk in allowed:

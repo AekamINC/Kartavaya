@@ -3683,6 +3683,19 @@ async def collections(
     pool = await get_pool()
     days = max(1, min(int(days or 90), 365))
 
+    # `AND cl.org_id = i.org_id` on the client join. The invoice itself is
+    # scoped by the WHERE clause, but the COMPANY NAME beside it was reached by
+    # uuid alone — and `ganit_invoices_client_id_fkey` points at
+    # `graha_clients(id)` with no composite (id, org_id) constraint, so the join
+    # predicate is the only thing enforcing tenancy here. This list is what a
+    # dunning letter is written from; the name on it has to be this firm's own
+    # customer. Still a LEFT JOIN: a row that fails the predicate drops to a
+    # NULL name rather than taking the invoice off the collections list, so an
+    # unpaid invoice can never go uncollected because of this check.
+    #
+    # The contact join below is NOT scoped, and that is a recorded debt rather
+    # than an oversight — `tests/test_party_join_tenancy.py` carries it with
+    # the other 37, and fails if the number ever grows.
     rows = await pool.fetch(
         """
         SELECT i.id, i.invoice_number, i.invoice_date, i.due_date,
@@ -3692,6 +3705,7 @@ async def collections(
           FROM staging.ganit_invoices i
           LEFT JOIN staging.graha_contacts c  ON c.id  = i.contact_id
           LEFT JOIN staging.graha_clients  cl ON cl.id = i.client_id
+                                             AND cl.org_id = i.org_id
           LEFT JOIN LATERAL (
               SELECT count(*) FILTER (WHERE outcome IN ('view','qr','invoice')) AS views,
                      count(*) FILTER (WHERE outcome = 'app')                    AS apps,

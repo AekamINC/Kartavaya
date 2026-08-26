@@ -13,15 +13,21 @@ the ESI ceiling has to be watched, and the state has to be paid.
 
 ── THREE OF THESE ARE ABSENCE CLAIMS, AND THAT IS THE HONEST SHAPE ──────────
 
-The product does not record a challan, does not parse a bank narration into a
-head, and does not know which state an employee works in. So #23 does not say
-"your PF was not paid" — it says WE CANNOT SEE a PF debit, which is a different
-sentence and the only one the data supports. #27 does not print a due date for
-a state whose slab table is absent. #24 does not call its output a Form.
+The product does not record a challan and does not parse a bank narration into
+a head. So #23 does not say "your PF was not paid" — it says WE CANNOT SEE a PF
+debit, which is a different sentence and the only one the data supports. #27
+does not print a due date for a state whose slab table is absent. #24 does not
+call its output a Form.
 
 An absence claim is weaker than a match and it still catches the failure it is
 for. A confident claim built on an absence is how a compliance skill loses a
 firm's trust in one run.
+
+AND AN ABSENCE CLAIM MUST BE RE-MEASURED, NOT INHERITED. The third one used to
+be "does not know which state an employee works in". Migration 220 gave it the
+column, the sentence stayed, and #27 spent a phase telling two organisations
+that data they had entered did not exist — which costs the same trust, from the
+other direction. Every absence above is now counted at read time.
 
 ── NAME THE FORM FOR THE YEAR, NEVER FROM MEMORY ────────────────────────────
 
@@ -44,10 +50,13 @@ Form 16 issued for FY 2026-27 is a form that does not exist.
   · PAN/UAN: org fae87907 has 24 of 24 employees with both. The seeded org has
     60 of 71 with a PAN and NOT ONE with a UAN.
   · `staging.pay_professional_tax` holds NINE rows covering three states —
-    Maharashtra, Gujarat, Karnataka — and every one of them carries an
-    `org_id`. IT IS PER-ORG SEED DATA, NOT A SHARED SLAB TABLE, so two of the
-    three live orgs have no PT slabs at all. There is no due-date and no
-    penalty column. #27 is built on exactly that and says so.
+    Maharashtra 3, Gujarat 4, Karnataka 2. Re-measured 2026-08-26: every one of
+    those rows now carries a NULL `org_id`, i.e. it is a SHARED ladder read by
+    every org, and NO org has seeded its own. (This bullet said the opposite —
+    "per-org seed data, so two of three live orgs have no slabs" — and the read
+    below was scoped to match, which is how it returned no slabs for anybody.)
+    There is still no due-date and no penalty column. #27 is built on that and
+    says so.
 """
 import logging
 from datetime import date, timedelta
@@ -55,6 +64,10 @@ from datetime import date, timedelta
 from services.statute import obligation, obligation_for_fy, fy_bounds
 from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, utc_now
+# The one canonical Indian state codelist in this backend. #27 joins the
+# employee's work state to a professional-tax slab, and both ends of that join
+# are spelled by different hands — see `_state_keys` below.
+from services.gst_states import norm_state, state_view
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +125,53 @@ def _quarter_of(day: date) -> tuple[int, date, date]:
     nxt = (date(end_year + 1, 1, 1) if end_month == 12
            else date(end_year, end_month + 1, 1))
     return idx + 1, start, nxt - timedelta(days=1)
+
+
+def _state_keys(*values) -> set:
+    """Every spelling of a state these values could match on.
+
+    Both ends of #27's join go through this because the database holds two
+    conventions and `manav_employees_state_ck` (migration 220, read from
+    pg_constraint) admits BOTH — `state ~ '^[0-9]{1,2}$' OR state ~
+    '^[A-Z]{2,3}$'` — while `pay_professional_tax.state_code` is numeric. So an
+    employee stored 'MH' and a slab stored '27' are one state, and comparing the
+    raw strings would silently never meet: the brief would report Maharashtra as
+    a state with no ladder while the payroll deducted against one.
+
+    The raw lower-cased text is kept alongside the canonical code so a state the
+    GST codelist has never heard of still matches a slab spelled the same way
+    rather than matching nothing.
+
+    Mirrors `routers/vetana.py::_state_keys`, which decides the figure this
+    brief explains, and is copied rather than imported for one reason: that is a
+    router and this is a service. The codelist underneath both lives in
+    `services/gst_states.py`, which is where a change to the convention belongs.
+    """
+    keys = set()
+    for value in values:
+        text = str(value if value is not None else "").strip().lower()
+        if not text:
+            continue
+        keys.add(text)
+        canonical = norm_state(value)
+        if canonical:
+            keys.add(canonical)
+    return keys
+
+
+def _state_label(value) -> tuple[str | None, str | None]:
+    """(canonical GST code or None, a name a reader can read).
+
+    A state the codelist does not know keeps its own text rather than becoming
+    "unknown": somebody typed it, and it is still the answer to "where does this
+    person work". A bare '27' never leaves this module — the same reason a UUID
+    never does.
+    """
+    text = str(value if value is not None else "").strip()
+    if not text:
+        return None, None
+    code = norm_state(text)
+    return (code, state_view(code)["state_name"]) if code else (None, text)
 
 
 def _statute_note(row: dict | None, what: str) -> str:
@@ -726,7 +786,21 @@ async def brief_professional_tax(
 ) -> dict:
     """Professional tax deducted this month, and what cannot be said about it.
 
-    ── PT IS A STATE LEVY AND THIS PRODUCT IS NOT STATE-AWARE ───────────────
+    ── PT IS A STATE LEVY, AND THE PRODUCT KNOWS THE STATE NOW ──────────────
+
+    It did not when this was written, and the limitation that said so was
+    printed unconditionally. Migration 220 added `manav_employees.state` and is
+    APPLIED, so that sentence became a false claim about the customer's own
+    data — live 2026-08-26, 60 of 60 employees on one org's brief and 24 of 24
+    on the other carry a state. The count is measured here instead, and the
+    limitation appears only for the people genuinely missing one.
+
+    What has NOT changed is that the amounts are what the run deducted. This
+    brief joins the state to a slab to say whether a ladder EXISTS where these
+    people work; it does not recompute anybody's tax. `routers/vetana.py`
+    computes it, at run time, against the ladder in force then.
+
+    ── WHAT STILL CANNOT BE SAID ────────────────────────────────────────────
 
     Catalogue #27 measured it and the live database agrees: the slab table
     covers three states of roughly twenty, has NO due-date and NO penalty
@@ -749,7 +823,13 @@ async def brief_professional_tax(
     rows = await pool.fetch(
         """
         SELECT e.id AS employee_id, e.name, e.employee_code, e.department,
-               e.email, e.phone, p.professional_tax
+               e.email, e.phone, p.professional_tax,
+               -- The state the levy is actually owed to. `manav_employees.state`
+               -- is migration 220 and it is APPLIED — read directly rather than
+               -- through a catalogue probe like `routers/vetana.py::
+               -- _employee_state_column`, because that probe exists for code
+               -- that deploys BEFORE its migration and this code deploys after.
+               NULLIF(btrim(COALESCE(e.state::text, '')), '') AS state
         FROM staging.vetana_payslips p
         JOIN staging.manav_employees e
           ON e.id = p.employee_id AND e.org_id = p.org_id
@@ -783,6 +863,39 @@ async def brief_professional_tax(
     states = sorted({s["state_name"] for s in slabs})
     total = round(sum(_f(r["professional_tax"]) for r in rows), 2)
 
+    # WHERE THE PEOPLE ON THIS BRIEF WORK, which the product records now.
+    #
+    # Until migration 220 it did not, and this function said so in a limitation
+    # printed on every brief. 220 is applied, so that sentence became a claim
+    # about the customer's own data being absent when it is not — measured
+    # read-only 2026-08-26, 60 of 60 employees on one live brief and 24 of 24 on
+    # the other carry a state. The count is therefore MEASURED here and the
+    # limitation only appears when somebody is genuinely missing one.
+    slab_keys = set()
+    for s in slabs:
+        slab_keys |= _state_keys(s["state_code"], s["state_name"])
+
+    by_state: dict = {}
+    without_state = 0
+    for r in rows:
+        code, name = _state_label(r["state"])
+        if not name:
+            without_state += 1
+            continue
+        # Keyed on the canonical code so 'MH' and '27' are one row, not two.
+        entry = by_state.setdefault(code or name.lower(), {
+            "state_code": code, "state_name": name, "employees": 0,
+            "professional_tax": 0.0,
+            "slabs_recorded": bool(slab_keys & _state_keys(code, name)),
+        })
+        entry["employees"] += 1
+        entry["professional_tax"] += _f(r["professional_tax"])
+    employee_states = sorted(by_state.values(), key=lambda e: e["state_name"])
+    for entry in employee_states:
+        entry["professional_tax"] = round(entry["professional_tax"], 2)
+    uncovered = [e["state_name"] for e in employee_states
+                 if not e["slabs_recorded"]]
+
     limitations = [
         "NO DUE DATE AND NO PENALTY ARE SHOWN. Professional tax is a STATE levy: "
         "the due date and the penalty differ by state and by slab, and the slab "
@@ -792,9 +905,26 @@ async def brief_professional_tax(
         "ladder (a row with no org_id). An organisation with neither has no "
         "slabs at all rather than a national default, and covers three states "
         "of roughly twenty either way.",
-        "Nothing records which state each employee works in, so the amounts "
-        "below are what the payroll run deducted and are not re-derived from any "
-        "slab.",
+    ]
+    if without_state:
+        limitations.append(
+            f"{without_state} of {len(rows)} employees below have NO work state "
+            "recorded, so for those the amount is only what the payroll run "
+            "deducted and cannot be attributed to any state's ladder. It is "
+            "entered on the employee, and it is what decides the rate.")
+    if uncovered:
+        stranded = sum(e["employees"] for e in employee_states
+                       if not e["slabs_recorded"])
+        limitations.append(
+            f"NO SLAB IS RECORDED FOR {', '.join(uncovered)}, where "
+            f"{stranded} of the {len(rows)} employees below are employed. The "
+            "deduction still happened and is shown; nothing here can say "
+            "whether it was the right one.")
+    limitations += [
+        "Every amount below is what the payroll run DEDUCTED, not a figure "
+        "re-derived from the slabs shown here — and it should not be. A run "
+        "computed under an earlier ladder must keep the figure it was computed "
+        "with; re-deriving it today would silently restate a settled run.",
         "The annual PTEC — the employer's own enrolment certificate — is a "
         "separate liability from the PTRC deducted here and is not tracked "
         "anywhere in this product.",
@@ -813,12 +943,15 @@ async def brief_professional_tax(
         "run_total_pt": _f(run["total_pt"]) if run else None,
         "employees_deducted": len(rows),
         "states_with_slabs_recorded": states,
+        "employee_states": employee_states,
         "due_date": None,
         "penalty": None,
         "counts": {
             "employees_with_pt": len(rows),
+            "employees_without_state": without_state,
             "slab_rows_for_this_org": len(slabs),
             "states_covered": len(states),
+            "states_on_this_brief": len(employee_states),
             "capped_at": cap,
             "was_capped": len(rows) >= cap,
         },
@@ -827,6 +960,10 @@ async def brief_professional_tax(
                 "employee": r["name"],
                 "employee_code": r["employee_code"],
                 "department": r["department"] or None,
+                # The name, never the code — a reader who is told '27' has been
+                # told nothing, and this brief is read by the person who has to
+                # answer for the deduction.
+                "state": _state_label(r["state"])[1],
                 "professional_tax": _f(r["professional_tax"]),
             }, kind="employee", entity_id=r["employee_id"],
                 email=r["email"], phone=r["phone"])

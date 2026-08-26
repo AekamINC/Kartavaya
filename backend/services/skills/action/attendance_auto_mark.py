@@ -9,6 +9,56 @@ from services.gst_states import norm_state as _norm_state
 
 log = logging.getLogger(__name__)
 
+#: ── AUTO-MARK DOES NOT WRITE A CALENDAR FOR PEOPLE WHO HAVE LEFT ────────────
+#:
+#: `status='active' AND is_active=true` was the only guard, and it is not one.
+#: `is_active` is a flag somebody has to remember to clear; the last working day
+#: is a fact somebody already recorded. Measured read-only 2026-08-26 over the
+#: two in-scope organisations: SIXTY attendance rows postdate their employee's
+#: non-cancelled exit, across TEN people, every one of them `marked_by='system'`
+#: — so every one was written here. One man's last working day was 2026-08-03
+#: and he was marked 'weekend' on the 23rd.
+#:
+#: THE SHAPE IS THE HR PATH'S, NOT A NEW ONE, for the reason `routers/vetana.py`
+#: sets out at length where Phase 2.1 added the same guard to payroll:
+#: `analytics/metrics/manav.py:_headcount_asat` (:65-84) already reconstructs
+#: who was on the rolls at a date, and three shapes for one question is how the
+#: three come to disagree. Same table, same `x.org_id = e.org_id` scoping (there
+#: is no composite FK — that predicate is the only thing stopping another org's
+#: exit row silencing this org's calendar), same `status <> 'cancelled'`, which
+#: is migration 083's vocabulary and the predicate its `one_live_per_employee`
+#: index uses, so an exit that was cancelled and redone still marks.
+#:
+#: THE BOUND IS THE DAY, NOT THE MONTH, and that is the one place this differs
+#: from payroll. Payroll pays a month and pro-rates a part-month, so it compares
+#: against the month start. This runs once per DAY and writes one row for that
+#: day, so the only question it can ask is whether the person was still on the
+#: rolls on it. The difference is measured, not aesthetic: replayed against the
+#: sixty rows above, a month-start bound blocks 54 and writes the other six —
+#: exactly the man who left on the 3rd of the month he was marked through.
+#:
+#: `<`, never `<=`: somebody whose last working day IS the day being marked was
+#: on the rolls for it, and a 'weekend' or 'holiday' row for that date is true.
+#:
+#: A NULL `last_working_day` KEEPS SOMEBODY MARKED. The column is nullable
+#: (083), `NULL < date` is NULL, and NOT EXISTS therefore admits them. An exit
+#: that has been started and not dated is not evidence anybody has gone — the
+#: same reading payroll's guard documents, and the same direction of error this
+#: module takes everywhere else: mark somebody who worked rather than silently
+#: assert somebody did not.
+#:
+#: Held as one fragment shared by both branches below because the fault this
+#: fixes is a guard that is missing from a query — a second copy is a second
+#: place for it to go missing, and the pre-migration branch is precisely the one
+#: nobody would notice.
+_STILL_ON_THE_ROLLS = """
+              AND NOT EXISTS (
+                SELECT 1 FROM staging.manav_offboarding x
+                WHERE x.org_id = e.org_id AND x.employee_id = e.id
+                  AND x.status <> 'cancelled'
+                  AND x.last_working_day < $2::date)
+"""
+
 #: Set once `staging.manav_employees.state` has been seen to exist. Only ever
 #: flipped to True, never back — a column is not dropped under a running
 #: process, so a cached True cannot go stale, while a cached False could (the
@@ -95,7 +145,11 @@ def _holiday_applies_to(holiday_state, employee_state) -> bool:
 
 
 async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) -> dict:
-    """Auto-mark attendance as 'holiday' or 'weekend' for active employees.
+    """Auto-mark attendance as 'holiday' or 'weekend' for employees still here.
+
+    "Still here" is `is_active` AND no live exit dated before this day — see
+    `_STILL_ON_THE_ROLLS`. It used to be `is_active` alone, and sixty rows in
+    the live data are the record of what that cost.
 
     A HOLIDAY IS NOT NECESSARILY THE WHOLE ORGANISATION'S. `manav_holidays`
     carries `state_code`, and a Maharashtra holiday must not assert that a
@@ -147,21 +201,24 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
     scoped = any(h["state_code"] for h in holidays)
     state_aware = scoped and await _employee_state_column_exists(pool)
 
+    # `e` is an alias the leaver guard correlates on; the projection stays
+    # unqualified so the two branches differ in exactly one column, which is
+    # what `state_aware` below is keyed on.
     if state_aware:
         employees = await pool.fetch(
             """
-            SELECT id, state FROM staging.manav_employees
-            WHERE org_id = $1::uuid AND status = 'active' AND is_active = true
-            """,
-            org_id,
+            SELECT id, state FROM staging.manav_employees e
+            WHERE e.org_id = $1::uuid AND e.status = 'active' AND e.is_active = true
+            """ + _STILL_ON_THE_ROLLS,
+            org_id, target_date,
         )
     else:
         employees = await pool.fetch(
             """
-            SELECT id FROM staging.manav_employees
-            WHERE org_id = $1::uuid AND status = 'active' AND is_active = true
-            """,
-            org_id,
+            SELECT id FROM staging.manav_employees e
+            WHERE e.org_id = $1::uuid AND e.status = 'active' AND e.is_active = true
+            """ + _STILL_ON_THE_ROLLS,
+            org_id, target_date,
         )
 
     marked = 0
