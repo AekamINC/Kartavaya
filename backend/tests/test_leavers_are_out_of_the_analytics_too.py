@@ -425,3 +425,42 @@ def test_live_readiness_stops_auditing_people_the_run_will_not_pay():
         "with the guard deleted. Nine E2E employees had an exit dated before "
         "2026-08-01 on 2026-08-26; if that is no longer true, move MONTH to a "
         "month that still has one rather than deleting this assertion.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# The headcount TILE, which is a stock and was reading a flag
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_the_dristi_headcount_tile_asks_who_is_on_the_rolls():
+    """`/api/v1/dristi/overview` reports `hr.headcount`, and its own module
+    docstring (`dristi.py:125`) calls headcount a STOCK — "who is on the rolls
+    now". `is_active` alone does not answer that.
+
+    AND THE FLAG IS NOT STALE DATA TO BE CLEANED. `routers/manav.py:1958`
+    records that offboarding used to set `is_active=FALSE`, which dropped the
+    person out of payroll the same day and left an outstanding salary advance
+    unrecoverable — so a leaver KEEPS the flag until settlement, deliberately.
+    Live 2026-08-26: two of E2E's ten still carry advances totalling 1,15,000.
+    The data is right; the READ was asking the wrong question, and the tile
+    said 83 where 73 were genuinely on the rolls.
+    """
+    import inspect
+    import routers.dristi as dristi
+
+    src = inspect.getsource(dristi)
+    i = src.index("AS headcount")
+    stmt = src[i - 400:i + 900]
+
+    assert "manav_offboarding" in stmt, (
+        "the headcount tile counts is_active alone, so everybody who has left "
+        "but is awaiting settlement is still counted as staff:\n" + stmt
+    )
+    assert "x.status <> 'cancelled'" in stmt, (
+        "a cancelled exit must not remove somebody from headcount — a mistaken "
+        "resignation that was withdrawn leaves a cancelled row behind"
+    )
+    # The org predicate on the exit row: graha_clients taught this repo that a
+    # join on the child id alone reaches another tenant's row.
+    assert "x.org_id = e.org_id" in stmt, (
+        "the offboarding lookup is not scoped to the org as well as the employee"
+    )

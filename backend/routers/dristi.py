@@ -285,9 +285,31 @@ async def overview(
     hr = None
     if "manav" in allowed:
         hr = await pool.fetchrow(
+        # HEADCOUNT IS A STOCK — this function's own docstring says so — and a
+        # stock is "who is on the rolls NOW", which `is_active` alone does not
+        # answer. `is_active` is a flag somebody has to remember to clear;
+        # `manav_offboarding.last_working_day` is a fact already recorded, and
+        # the two disagree by exactly the people who have gone.
+        #
+        # AND THE FLAG IS NOT STALE — IT IS DELIBERATE. `routers/manav.py:1958`
+        # records that offboarding used to set `is_active=FALSE`, which dropped
+        # the person out of payroll the same day and left an outstanding salary
+        # advance unrecoverable. So a leaver KEEPS the flag until settlement.
+        # Live 2026-08-26, E2E: two of the ten still carry advances totalling
+        # ₹1,15,000. Nothing about that data may be "cleaned"; the reads are
+        # what must ask the right question.
+        #
+        # The predicate is `analytics/metrics/manav.py::_headcount_asat`'s, at
+        # today rather than at a bound date — one definition of "on the rolls",
+        # not a second one that drifts. Live: 83 before, 73 after.
         "SELECT COUNT(*) AS headcount, "
         "COUNT(*) FILTER (WHERE department IS NOT NULL AND department != '') AS in_departments "
-        "FROM staging.manav_employees WHERE org_id=$1::uuid AND is_active=TRUE",
+        "FROM staging.manav_employees e WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
+        "AND NOT EXISTS ("
+        "  SELECT 1 FROM staging.manav_offboarding x "
+        "   WHERE x.org_id = e.org_id AND x.employee_id = e.id "
+        "     AND x.status <> 'cancelled' "
+        "     AND x.last_working_day < CURRENT_DATE)",
         org_id,
     )
 
