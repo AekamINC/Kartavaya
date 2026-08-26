@@ -87,6 +87,84 @@ Unicode `fae87907` **9 and 0**. No probe rows written.
   minus Sundays, and re-deriving that in a browser would be the second
   convention that 0.17 was raised to end.
 
+### 4.1 compliance settings, 4.4 storage browser — and the two faults wiring them found
+
+Both were "a table, a route and tests, and no caller". Neither turned out to be
+just a screen.
+
+**4.1.** `module_compliance_settings` held **0 rows across all five orgs** and
+`grep '/v1/org/compliance'` across `frontend/src` returned nothing. The panel now
+records not-applicable / applicable / enforced per rule, with the consequence
+stated before the confirm and the decision's author, date and reason on the row —
+name, never an id. The never-claim rule is now STRUCTURAL rather than a
+docstring: `Rule.enforced_at = None` means recorded-only, `set_rule` refuses
+`enforced` for a rule no code reads ("enforcing it would block nothing"), the
+segmented control is built from `rule.states` so the option is not offered, one
+test asserts every non-null `enforced_at` names a file on disk containing that
+symbol, and another bans claim phrases from the registry outright. Two of five
+modules registered deliberately — `manav` and `kray` are policy configuration
+that migration 210 explicitly keeps out, and `pahchan`'s four belong to 4.2,
+which is building the path that would read them.
+
+**4.4.** `storage_browser.py`: 390 lines, 19 tests, no caller — and the wiring
+found two faults it had been hiding.
+
+  · **`resolve` matched none of the 137 stored keys.** It prepended the tenant
+    root and looked up only that spelling; every stored key predates the grammar
+    and carries no root. It now tries both, with `org_id = $2::uuid` still in
+    every predicate — what is looked up widened, what can be seen did not.
+  · **The listing would have drawn ids on the first click.** The live folders are
+    `personal/user_…`, `pahchan/{uuid}`, `projects/team_…`. Filtering them out
+    would make all 95 objects unreachable, so they are resolved to names,
+    org-scoped.
+
+Counted live: 95 R2 objects and 137 stored keys across both orgs, **zero in the
+new key grammar**. The backfill is recorded as owed and was not run.
+
+It also declines to repeat a number it knows is wrong. `organisations.storage_used_bytes`
+says **20,182 bytes for Unicode against a bucket holding 89,591,092** — 85 MB —
+because `update_org_storage` is called from two upload paths while eSign,
+Pahchan, Srijan and the scrapers increment nothing. The tile reads "Recorded as
+used" and the server sends a note naming the gap. **A recount job is owed.**
+
+**And a memory was stale.** The note that 32 MB of files sit inside six
+`tasks.attachments` rows is no longer true: the column holds 93 rows, **17,923
+characters in total**, largest 1,358, and not one `data:` URI. The warning was
+written onto the screen from that note and then removed — a screen must not warn
+about a state the database has left.
+
+### 0.22 — a task can finally name its customer
+
+`public.tasks` has 41 columns and had no `client_id`, which is exactly why client
+profitability answers 0%: a firm could record every hour it worked and never say
+who for. Migration 226 adds it — nullable, no default, partial index on
+`(org_id, client_id)`.
+
+**Not `task_clients`**, which already exists and is a different fact: its columns
+are `(id, task_id, user_id, invited_by, org_id)` and `approvals_router.py:554`
+writes one when somebody is invited to approve. That is a grant of read access to
+a PERSON. A CRM client is the COMPANY — "contacts come and go; the customer
+stays" — so tying profitability to whoever was invited to a task would be the
+wrong join, changing for the wrong reasons.
+
+**No foreign key, and that is this table's own pattern** — read from
+`pg_constraint`, not assumed: `public.tasks` carries three CHECKs and no FKs at
+all. An FK would not give the integrity that matters here anyway.
+`graha_clients.id` is unique table-wide, so it would happily accept ANOTHER
+organisation's customer — the documented join leak. Tenancy is enforced where it
+can be: `_assert_client_in_org` carries the org in the predicate and **refuses**
+rather than dropping a value it cannot use, because silently creating the task
+with no customer reports success and the hours get moved by hand later.
+
+483 tasks, all NULL. No backfill: a task names a team and a column, not a
+customer, and guessing from a title puts one firm's name on another's work.
+
+7 live-parse tests. The drawer gets a `ServerPicker` — not a plain one, because
+`/v1/graha/clients` is LIMIT 200 and filtering a truncated list hides customers
+silently, which is how a duplicate company gets created. While there:
+`DrawerMeta`'s hooks moved above its `if (!task) return null` — React counts
+hooks, not branches, and `labelSuggestions` had been sitting below it.
+
 ### Phase 6 — the rule shipped, and two of the four "duplicates" were not
 
 **A planner statistic is not a row count, and this is where that mattered.**
