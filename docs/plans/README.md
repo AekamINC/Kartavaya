@@ -123,18 +123,18 @@ Full per-org detail and figures: `PROGRESS.md`, 2026-08-26.
 
 | Phase | File | What | Effort | Blocks on |
 |---|---|---|---|---|
-| **0** | [PHASE-0-owner-unblocks.md](PHASE-0-owner-unblocks.md) | Owner facts, decisions, credentials — **start today, none of it is engineering** | owner time | you |
+| **0** | [PHASE-0-owner-unblocks.md](PHASE-0-owner-unblocks.md) | Owner facts, decisions, credentials | owner time | **✅ all 31 answered 26 Aug** — 19 decided, 12 parked |
 | **1** | [PHASE-1-write-paths.md](PHASE-1-write-paths.md) | Open the six NULL write-paths — **highest fan-out in the whole arc** | 1 week | — |
 | **2** | [PHASE-2-correctness-fixes.md](PHASE-2-correctness-fixes.md) | Fix the six things the product gets **wrong today** | 3 days | — |
-| **3** | [PHASE-3-billing-executable.md](PHASE-3-billing-executable.md) | Make billing run, then arm the cron | 2 days | Phase 0 decisions |
+| **3** | [PHASE-3-billing-executable.md](PHASE-3-billing-executable.md) | Make billing run, then arm the cron | 2 days | — (0.17 decided **and shipped**) |
 | **4** | [PHASE-4-invisible-screens.md](PHASE-4-invisible-screens.md) | Give the eight table-and-API-but-no-screen features a UI | 1 week | — |
 | **5** | [PHASE-5-statute-wiring.md](PHASE-5-statute-wiring.md) | Wire the dated-law store into payroll & invoicing | 1 week | — |
 | **6** | [PHASE-6-retire-duplicates.md](PHASE-6-retire-duplicates.md) | Retire the four duplicated models; freeze new modules; add the SQL-test rule | 3 days | owner OK to drop |
-| **7** | [PHASE-7-territory-and-address.md](PHASE-7-territory-and-address.md) | Make territories ROUTE (they route nothing today), then draw them; Indian address capture | 1 week |
+| **7** | [PHASE-7-territory-and-address.md](PHASE-7-territory-and-address.md) | Make territories ROUTE (they route nothing today), then draw them; Indian address capture | 1 week | — |
 
 **Parallelism:** Phases 1 and 2 touch different files and run in parallel.
-Phase 0 runs alongside everything. Phase 3 waits only on the day-count decision
-(0.17). Phases 4, 5, 6 are independent of each other.
+Phase 0 runs alongside everything. Phase 3 no longer waits on anything: decision 0.17 is settled and shipped
+(`backend/routers/client_billing.py:1294`). Phases 4, 5, 6 are independent of each other.
 
 **Why this order:** Phase 1 is first because it is the highest-fan-out item in
 the entire arc — one week of write-paths turns ~18 already-built, already-tested,

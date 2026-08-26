@@ -106,10 +106,13 @@ waits for Phase 1.5. 2.3 is the prerequisite for anything in Phase 3.
 - **2.1 ✅ code** — `vetana.py:1221`, mirrors `analytics/metrics/manav.py:79`.
   Live dry-read 60 → 51 paid; the leaver whose last day is 2026-08-03 is
   correctly still paid, pro-rated.
-- **2.2 ✅ mechanism** — `vetana.py:746`. ⚠ Owner chose "fall back to ₹0".
-  All 9 slabs belong to one org; the two payroll-running orgs have none, so PT
-  goes 200 → 0 on deploy until Phase 0.24 seeds them. Not a bug — a sequencing
-  requirement.
+- **2.2 ✅ mechanism AND data** — `vetana.py:746`. Owner chose "fall back to ₹0".
+  ~~All 9 slabs belong to one org; the two payroll-running orgs have none, so PT
+  goes 200 → 0 on deploy until Phase 0.24 seeds them.~~ **That warning was acted
+  on and is now refuted live.** All 9 slabs were re-pointed to `org_id IS NULL`
+  (shared), so both payroll-running orgs read them, and employee states were
+  backfilled in both. The E2E 2026-08 run deducted **₹10,000** of professional
+  tax across 51 payslips. PT did not go to zero.
 - **2.3 ✅ code** — `gst_rate` dropped, `invoice_number` allocated, and a
   SECOND bug the plan missed: `balance_due` unbound would have made every such
   invoice read as fully paid (₹0 on the pay link).

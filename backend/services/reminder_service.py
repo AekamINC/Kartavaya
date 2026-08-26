@@ -88,6 +88,33 @@ INSERT INTO staging.reminders
 VALUES ($1, $2, $3, $4, NOW(), 'email', $5, $6, 'system')
 """
 
+# ── THE DUNNING SELECTOR REACHED THREE DOCUMENTS NOBODY IS OWED MONEY ON ────
+#
+# Phase 2 closed "draft invoices are dunned and counted as revenue" across four
+# surfaces. **This was not one of them, and it is the one that actually sends
+# the email.** Found on 2026-08-26 by reading a live reminder rather than the
+# code: 359 `invoice_overdue` rows had been created against documents these
+# three guards exclude — 347 in the test org, where the outbound fence
+# suppressed them, and 12 in Unicode Group, where it did not.
+#
+# The three shapes are the same family `record_payment` refuses, seen from the
+# other side. A receipt against them is wrong because the money cannot be owed;
+# a dunning letter is wrong for exactly the same reason.
+#
+#   · **draft** — nobody has been sent this document, so nobody can be late
+#     paying it. `routers/dristi.py` states the same rule for the same reason.
+#     Live: 52 overdue drafts across the two organisations, one for Rs 6,03,997.
+#   · **credit_note** — money owed the OTHER way. Dunning one asks a customer to
+#     pay you for a refund you owe them.
+#   · **balance_due <= 0** — nothing is outstanding. This one is not theoretical
+#     prose: on 2026-08-26 at 13:04 UTC the cron sent Unicode Group an email
+#     reading *"Invoice INV-2026-0007 is overdue. Balance: Rs 0.00"*, and would
+#     have repeated it every three days for ever.
+#
+# `balance_due > 0` also subsumes a case the status column misses: a row can sit
+# at `payment_status='unpaid'` with a zero balance, which is precisely how
+# INV-2026-0007 and INV-2026-0047 both read. Status is a label; the balance is
+# the fact. Guard on the fact.
 _INVOICE_SCAN = """
 SELECT i.id AS entity_id, i.org_id, i.invoice_number, i.balance_due,
        i.created_by AS recipient
@@ -95,6 +122,9 @@ FROM staging.ganit_invoices i
 WHERE i.payment_status NOT IN ('paid', 'void')
   AND i.due_date < NOW()
   AND i.is_active = TRUE
+  AND COALESCE(i.doc_status, '') <> 'draft'
+  AND COALESCE(i.invoice_type, '') <> 'credit_note'
+  AND i.balance_due > 0
   AND NOT EXISTS (
       SELECT 1 FROM staging.reminders r
       WHERE r.entity_id = i.id

@@ -11,7 +11,9 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
 Last updated: **2026-08-26**. **BOTH deploys verified — check both, always.**
-Backend: Railway staging at `120d106c`, SUCCESS 04:14 UTC. Frontend: Vercel
+Backend: Railway staging at `cc371297`, SUCCESS 12:25 UTC (thirteen deploys
+after the 04:14 `120d106c` build this line used to name; `1963c128` went live
+08:45:24 and the Phase-2 acceptance ran against it 84 seconds later). Frontend: Vercel
 serves the current branch build, confirmed from OUTSIDE by hashing the assets
 `staging.kartavaya.com` actually returns — every Vercel deployment here has
 `target: null`, so "READY" alone never establishes what the domain serves.
@@ -26,9 +28,10 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 
 | | Blocker | Where | Status |
 |---|---|---|---|
-| 🟡 | Payroll pays 10 leavers | `vetana.py:1221` | **DEPLOYED 26 Aug** — guard live at `120d106c`, mirrors `metrics/manav.py:79`. Live dry-read against the deployed predicate: 60 → **51** payable. No run has executed since deploy, so the first real run is the proof |
+| 🟢 | Dunning chased 54 documents nobody owes money on | `reminder_service.py:_INVOICE_SCAN` | **FIXED 26 Aug.** Phase 2 closed "draft invoices dunned" across four surfaces and **missed the one that sends the email**. Live before the guard: **359** `invoice_overdue` rows against drafts, credit notes and zero-balance invoices — 347 in E2E where the outbound fence suppressed them, **12 in Unicode Group where it did not**. One went out at 13:04 UTC reading *"Invoice INV-2026-0007 is overdue. Balance: ₹0.00"*. Three guards added; 228 dunnable → 174 |
+| 🟢 | Payroll pays 10 leavers | `vetana.py:1221` | **DEPLOYED 26 Aug** — guard live at `120d106c`, mirrors `metrics/manav.py:79`. **PROVEN BY A RUN, not a dry-read.** The E2E 2026-08 run executed 08:46:48 UTC against the deploy: **51 payslips, not 60**, `present_days` spanning 2 to 26 — the mid-month leaver credited 2 days, not a month |
 | 🟢 | Professional tax is now settable, not hardcoded | `vetana.py`, `PtLadderSection.jsx` | **Migration 221 APPLIED** — `month smallint NULL` (NULL = every month), verified from `pg_constraint`. Nothing could write `pay_professional_tax` before: every backend reference was a read. Now a per-org ladder with a settings screen, resolving `org+month → org+all → shared+month → shared+all → ₹0` — falls back, never refuses. A shared row is read by everyone and editable by nobody. The Maharashtra February figure is deliberately NOT seeded: `statute_calendar` has no PT rows to check it against |
-| 🟡 | Flat ₹200 professional tax, every state | `vetana.py:746` | **DEPLOYED 26 Aug** — slab read live. All 9 `pay_professional_tax` rows re-pointed to `org_id IS NULL` (shared): MH `27`×3, GJ `24`×4, KA `29`×2 — verified live. Employee states backfilled for BOTH payroll orgs (Unicode 25/26 → `'24'`, E2E **71/71 → `'27'`**), so PT does NOT drop to ₹0. Next E2E run: **₹10,200** across 51 (was ₹12,000 across 60; the ₹1,800 is the 9 leavers). Phase 0.24 seeding is no longer the blocker it was |
+| 🟢 | Flat ₹200 professional tax, every state | `vetana.py:746` | **DEPLOYED 26 Aug** — slab read live. All 9 `pay_professional_tax` rows re-pointed to `org_id IS NULL` (shared): MH `27`×3, GJ `24`×4, KA `29`×2 — verified live. Employee states backfilled for BOTH payroll orgs (Unicode 25/26 → `'24'`, E2E **71/71 → `'27'`**), so PT does NOT drop to ₹0. **The run happened.** Actual: **₹10,000** across 51 — not the ₹10,200 predicted, because pro-rating drops the leaver's gross into the ₹0 band. The two fixes composing correctly, which a prediction from either one alone could not have got right. Phase 0.24 seeding is no longer the blocker it was |
 | 🟡 | Two billing endpoints 500 | `client_billing.py:459,705` | **DEPLOYED 26 Aug** — `gst_rate` dropped, `invoice_number` allocated, `balance_due` bound (2nd bug found). Row on the board still owed — needs one real create |
 | 🟡 | Draft invoices dunned + counted as revenue | `documents.py:307`, `dristi.py:354` | **DEPLOYED 26 Aug** — 4 surfaces. ⚠ The statement had ALSO been 500ing on a date bind since it shipped; fixed. Still open: project report dead on `staging.time_entries` (exists only in `public`); `dristi.py` `/overview` + the pivot dashboard still count drafts and the pivot carries the same date-bind bug |
 | 🟢 | Cross-tenant leak — profile create/list not org-scoped | `client_billing.py:220` | **DEPLOYED 26 Aug** — ownership check + **7** id-alone joins (plan named 2); AST ratchet added. 0 rows had leaked |
@@ -63,12 +66,12 @@ edit.
 
 | Phase | What | State |
 |---|---|---|
-| 0 | Owner unblocks (31 items) | ⬜ awaiting owner |
-| 1 | Six write-paths (turns ~18 features on) | 🟡 all six coded + deployed 26 Aug (1.2–1.6 + 1.1); migration 220 APPLIED. **Acceptance counters, live, two orgs only:** 1.1 invoices 0/790 · 1.1 orders 0/377 · 1.2 vendors 0/78 · 1.4 expenses 0/376 · 1.5 employees **96/98** (backfill, not a UI create) · 1.6 holidays 0/38. Five of six still need one real create through the UI |
-| 2 | Six correctness fixes (the blockers above) | ✅ **ACCEPTANCE PASSED 26 Aug — 10/10, driven as a real user against the deploy.** Payroll run for 2026-08: **51 paid, not 60**; the mid-month leaver credited **2 present days of 26**, not a whole month; PT **₹10,000** from the Maharashtra ladder (not ₹10,200 — pro-rating drops that leaver's gross into the ₹0 band, which is the two fixes composing correctly); Dristi overview **₹11,14,93,756.12** invoiced against ₹12,29,86,008.58 before, outstanding **₹2,71,54,767** against ₹3,86,36,429.46, with ₹54,78,968.92 of drafts on the books and excluded; cross-tenant profile create refused; pahchan metrics computing. Plus nine further defects found by verifying and fixed — all six coded and deployed, and **nine further defects found by verifying them are now fixed**: payroll paid a part-month as a whole one (₹41,262 on one payslip), `/cron/hr` marked attendance for leavers, Dristi `/overview` carried a **₹1,14,92,252.46 draft phantom**, a draft could be marked *paid* (Unicode, ₹2,06,500), the 2.5 ratchet covered one module of 42 id-alone joins, two user-facing claims were false, 2.3's writer violated 1.3, and analytics banded 60 where payroll pays 51. Acceptance run owed against the deploy |
-| 3 | Billing executable + arm cron | ⬜ (blocks on 0.17) |
+| 0 | Owner unblocks (31 items) | 🟢 **all 31 answered 26 Aug** — 19 decided, 12 parked by the owner. Nothing here awaits him. Build halves still open: 0.20 PayablesTab vendor form · 0.22 `tasks.client_id` · 0.23 dummy role logins · 0.24 more PT states · 0.27 estimate rate card · 0.29 fresh APK |
+| 1 | Six write-paths (turns ~18 features on) | ✅ **ACCEPTANCE PASSED 26 Aug** — all six counters are live non-zero, every set row created through the UI today. Live, both orgs: invoices `salesperson_id` **5**/800 · orders **3**/380 · vendors MSME/TDS **12**/90 · expenses `contact_id` **9**/385 · employees `state` **110**/110 · holidays `state_code` **11**/48. The old "0/790, five of six still need a real create" table was written at 06:48 and never refreshed after `775b1bcc` landed at 08:36 |
+| 2 | Six correctness fixes (the blockers above) | ✅ **ACCEPTANCE PASSED 26 Aug — 10/10, driven as a real user against the deploy.** Payroll run for 2026-08: **51 paid, not 60**; the mid-month leaver credited **2 present days of 26**, not a whole month; PT **₹10,000** from the Maharashtra ladder (not ₹10,200 — pro-rating drops that leaver's gross into the ₹0 band, which is the two fixes composing correctly); Dristi overview **₹11,14,93,756.12** invoiced against ₹12,29,86,008.58 before, outstanding **₹2,71,54,767** against ₹3,86,36,429.46, with ₹54,78,968.92 of drafts on the books and excluded; cross-tenant profile create refused; pahchan metrics computing. All six are coded and deployed, and **nine further defects found by verifying them are now fixed**: payroll paid a part-month as a whole one (₹41,262 on one payslip), `/cron/hr` marked attendance for leavers, Dristi `/overview` carried a **₹1,14,92,252.46 draft phantom**, a draft could be marked *paid* (Unicode, ₹2,06,500), the 2.5 ratchet covered one module of 42 id-alone joins, two user-facing claims were false, 2.3's writer violated 1.3, and analytics banded 60 where payroll pays 51. |
+| 3 | Billing executable + arm cron | ⬜ — **no longer blocked**: 0.17 is decided AND shipped (`client_billing.py:1294`, calendar-days-minus-Sundays) |
 | 4 | Eight invisible-feature screens | ⬜ |
-| 5 | Statute calendar → payroll/invoicing | ⬜ |
+| 5 | Statute calendar → payroll/invoicing | 🟡 **5.1 shipped 26 Aug** — ESI wage ceiling now read from `statute_calendar` at the run's period end (`vetana.py:842`), so a re-run of an old month uses that month's law. Deliberately changes no payslip: the dated ceiling equals the literal it replaced. 5.2/5.2b/5.3 open — the IT ladder is one row per band |
 | 6 | Retire 4 duplicate models + SQL-test rule | ⬜ |
 | 7 | Territories ROUTE + Indian address capture | ⬜ new 26 Aug — from a parallel session's handover, reconciled against 0–6 (no phase owned it). **`rules.pincodes` has ZERO backend consumers: territories route nothing today.** 19,312/19,312 PIN polygons already in R2; credentials set. Routing needs no map and is ordered FIRST |
 
@@ -98,7 +101,7 @@ edit.
 
 - 48 zero-row tables · 16 NULL feature columns with no write path
 - 4 models built twice (sales_commission* / hr_*+pay_* / 2 doc allocators / 2 report schedulers)
-- `statute_calendar` read by skills only, not payroll
+- `statute_calendar` read by skills and by payroll's ESI ceiling; PF, PT and both TDS ladders still literal (5.2)
 - No router test executes its own SQL ← the rule that would catch every 🔴 above
 
 ---

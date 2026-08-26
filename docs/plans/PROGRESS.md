@@ -33,6 +33,52 @@ The two exceptions are the PT slab re-point and the two employee-state
 backfills, each run on the owner's explicit instruction with the before-state
 captured and the reversal written down.
 
+### The dunning cron was chasing 54 documents nobody owes money on
+
+Found by reading a live reminder rather than the code, which is the only way it
+could have been found: every test in the suite passed, and the four surfaces
+Phase 2 fixed all still read correctly.
+
+**Phase 2 closed "draft invoices are dunned and counted as revenue" across four
+surfaces and missed the fifth — the one that actually sends the email.**
+`services/reminder_service.py::_INVOICE_SCAN` filtered on
+`payment_status NOT IN ('paid','void')`, `due_date < NOW()` and `is_active`, and
+nothing else. The four that were fixed all *display* a number; this one puts a
+letter in front of a customer.
+
+Live before the guard, both organisations: **359** `invoice_overdue` rows aimed
+at documents that cannot owe anything — 347 in E2E Test & Associates, where the
+outbound fence held them at `suppressed`, and **12 in Unicode Group, where it
+did not, all at `status='sent'`**. Of the 228 invoices the selector matched,
+**174 survive it**.
+
+Three guards, the same family `record_payment` already refuses, seen from the
+other side:
+
+| Guard | Why |
+|---|---|
+| `doc_status <> 'draft'` | Nobody has been sent the document, so nobody can be late paying it. 52 overdue drafts across the two orgs, one for ₹6,03,997 |
+| `invoice_type <> 'credit_note'` | Money owed the other way — dunning one asks the customer to pay for a refund you owe them |
+| `balance_due > 0` | Nothing is outstanding |
+
+**The third guard is the one the status column could not have supplied**, and it
+is why this was visible at all. `payment_status='unpaid'` on a zero-total
+invoice is not a contradiction the product prevents: at 13:04 UTC today the cron
+emailed Unicode Group *"Invoice INV-2026-0007 is overdue. Balance: ₹0.00"*, and
+would have repeated it every three days indefinitely. Status is a label somebody
+set; the balance is arithmetic. Guard on the arithmetic.
+
+**One honest attribution.** This session's ledger repair flipped INV-2026-0007
+from `paid` to `unpaid`, which is what made it dunnable *with a zero balance*.
+But it was already in the dunning stream — the same invoice was emailed on 19
+and 22 August reading ₹74,340 — and INV-2026-0047 has the identical zero-balance
+shape and was never touched by the repair. The repair changed what the letter
+said; it did not create the letter.
+
+`test_dunning_refuses_documents_nobody_owes.py` — 7 tests, three of which fail
+against the pre-guard selector, verified by removing the guard and watching them
+go red.
+
 ### The ledger repaired — owner confirmed none of it is live
 
 **Owner, 2026-08-26: "no live users or legal payslip, all are seeded."** That
@@ -305,9 +351,11 @@ The acceptance run creates the band, proves the whole chain, and removes it.
 same push but deploy independently; verifying one and calling it a deploy check
 is half an answer, and Phase 1 is mostly frontend.
 
-`120d106c` (this session's HEAD) deployed to the Railway staging service at
-**04:14 UTC 2026-08-26, status SUCCESS**, read from the deployment list rather
-than inferred from git — the branch has silently tracked `main` before. So all
+`120d106c` deployed to the Railway staging service at **04:14 UTC 2026-08-26,
+status SUCCESS**, read from the deployment list rather than inferred from git.
+**Superseded thirteen deploys later:** the active deployment is now `cc371297`
+at 12:25:42 UTC, and `1963c128` — the commit the Phase-2 acceptance needed —
+went live at 08:45:24, 84 seconds before the acceptance payroll run — the branch has silently tracked `main` before. So all
 six Phase-2 fixes and all six Phase-1 write-paths are live, and the earlier
 "deploy owed" wording in `STATUS.md` was stale; corrected there.
 
@@ -357,23 +405,31 @@ refusals.
 **Deployed is not exercised.** No payroll run and no billing create has happened
 since 04:14, so 2.1–2.4 have executed against nothing. E2E's latest run is
 2026-07 and Unicode's `2026-09` "draft" dates from **23 July** — pre-deploy, so
-it is not evidence of the new PT mechanism. The first real run is the proof.
+it is not evidence of the new PT mechanism. The first real run is the proof —
+**and it has since run**: E2E 2026-08 at 08:46:48 UTC, 51 payslips, ₹10,000 of
+professional tax, `present_days` from 2 to 26.
 
 **Phase-1 acceptance counters, read live, two orgs only** — the "a row moves off
 0" test, which is what separates 🟡 from ✅:
 
-| Acceptance | rows set / total |
-|---|---|
-| 1.1 `salesperson_id`, invoices | 0 / 790 |
-| 1.1 `salesperson_id`, orders | 0 / 377 |
-| 1.2 vendor MSME/TDS (any of 5 cols) | 0 / 78 |
-| 1.4 expense → client contact | 0 / 376 |
-| 1.5 employee `state` | **96 / 98** — backfill, NOT a UI create |
-| 1.6 holiday `state_code` | 0 / 38 |
+**Re-read live 2026-08-26 after `775b1bcc`. All six have moved.** The table
+below previously recorded five zeros; it was written at 06:48 and never
+refreshed after the acceptance ran at 08:36, while five later commits edited
+this file around it. That is the exact failure this document exists to prevent.
 
-Five of six are still at zero and stay 🟡. 1.5's 96 came from the two backfills
-below, which prove the column and its CHECK work but do **not** prove the write
-path a customer would use — that still needs one create through the UI.
+| Acceptance | rows set / total | when |
+|---|---|---|
+| 1.1 `salesperson_id`, invoices | **5 / 800** | all 5 created today |
+| 1.1 `salesperson_id`, orders | **3 / 380** | all 3 created today |
+| 1.2 vendor MSME/TDS (any of 5 cols) | **12 / 90** | all 12 created today |
+| 1.4 expense → client contact | **9 / 385** | all 9 created today |
+| 1.5 employee `state` | **110 / 110** | backfill + 12 UI creates |
+| 1.6 holiday `state_code` | **11 / 48** | all 11 created today |
+
+Every set row is in E2E Test & Associates, created through the UI as a real
+user. The written criterion is per-column, not per-org (`PHASE-1-write-paths.md`),
+so all six are ✅ — but Unicode Group is still at 0 on five of the six, and a
+second org exercising the same form is worth having before Phase 3.
 
 ### The only two orgs that matter — what is owed, per org
 
@@ -574,9 +630,10 @@ tests). `npm run build` + all nine `npm run check` ratchets green.
 
 ### Owed, and NOT faked
 
-Every Phase-1 acceptance is "a row moves off 0", which needs a real create
-through the UI on the shared database. None was done, so **every 1.x row stays
-🟡** per the ✅ rule. Also newly found and NOT fixed: the project report is dead
+~~Every Phase-1 acceptance is "a row moves off 0" ... None was done, so every
+1.x row stays 🟡.~~ **SUPERSEDED the same day.** `775b1bcc` ran the acceptance
+through the UI at 08:36 and all six counters moved; see the refreshed table
+above. This paragraph stood uncorrected through five later edits to this file. Also newly found and NOT fixed: the project report is dead
 on `staging.time_entries` (exists only in `public`); `dristi.py` `/overview` and
 the pivot dashboard still count drafts and the pivot has the same date-bind bug;
 `analytics/metrics/vetana.py:240` counts the same ten leavers.
