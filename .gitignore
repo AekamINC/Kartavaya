@@ -143,3 +143,8 @@ module-facts.json
 mobile/apk-build.log
 backend/.coverage
 backend/coverage.xml
+
+# PIN code boundary shards — 18.5MB of government reference data that lives in
+# R2 (`aekaminc/shared/reference/pincode-boundaries/`), never in git. Rebuild a
+# local copy with backend/scripts/prepare_pincode_boundaries.py.
+backend/data/pincode_boundaries/
