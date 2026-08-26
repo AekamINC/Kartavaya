@@ -87,6 +87,49 @@ Unicode `fae87907` **9 and 0**. No probe rows written.
   minus Sundays, and re-deriving that in a browser would be the second
   convention that 0.17 was raised to end.
 
+### Phase 6 — the rule shipped, and two of the four "duplicates" were not
+
+**A planner statistic is not a row count, and this is where that mattered.**
+`pg_stat_user_tables.n_live_tup` reports **0** for `pay_professional_tax` and
+**0** for `dristi_scheduled_reports`. Both are wrong: exact `count(*)` says 9
+and 7. A DROP decided from the first number would have deleted the live PT
+ladder.
+
+- **6.2 is wrong in the plan, and dangerously.** "Prove the `hr_*`/`pay_*`
+  tables are empty, back up, drop" — seventeen of eighteen are empty (all ten
+  `hr_*`, plus `pay_runs`, `pay_slips`, `pay_esi_records`, `pay_pf_records`,
+  `pay_tds_records`, `pay_loans`, `pay_it_declarations`). **`pay_professional_tax`
+  is live**: 9 shared rows (`org_id IS NULL`) that `vetana.py::_pt_slabs` reads
+  on every payroll run for both in-scope orgs, extended by migration 221 six
+  days ago. Dropping the stack as written takes professional tax to ₹0 for
+  every employee. Excluded by name; the phase file now says so.
+- **6.4 has no work in it.** `staging.report_schedules` does not exist — a live
+  query returns `42P01`. One scheduler, `dristi_scheduled_reports`, 7 rows, the
+  only one that has ever sent mail.
+- **6.3 decided: keep both allocators.** `next_po_number` is a different
+  algorithm, not a copy. A purchase order is numbered at ISSUE, so drafts carry
+  NULL, so `next_doc_number`'s `ORDER BY created_at` reads a draft as newest and
+  restarts the series at 0001 against an order issued last week. The reasoning
+  was already in `services/purchase_orders.py:330`; nothing held the line.
+  `tests/test_two_serial_allocators.py` — 5 tests — now fails if a PO table
+  enters `_ALLOWED_DOC_TABLES`, if the allowlist changes without a decision, if
+  either allocator stops zero-padding to four, or if either takes its advisory
+  lock outside a transaction (asyncpg autocommit releases it before the read it
+  protects, and two callers mint the same serial).
+- **6.1 confirmed and NOT dropped.** `sales_commissions` 0,
+  `sales_commission_slabs` 0, `sales_commission_assignments` 0. A DROP is named
+  and confirmed regardless of the standing migration approval — owner OK (0.30)
+  still owed.
+- **The process rule is a ratchet now.**
+  `tests/test_every_writer_has_a_live_sql_test.py`, 4 tests. **36 routers write
+  to `staging.*`; 6 have a test that PREPAREs their statements against the real
+  schema.** The other 30 are baselined by name and the baseline only shrinks:
+  a new writing router with no live test fails immediately; a baselined one that
+  gains a test must be removed; a name that no longer writes must be deleted.
+  That last check is the one that stops it rotting the way
+  `migrations/README.md`'s status column did — still marking 002-006 "Pending"
+  against a database of 214 tables.
+
 ### The e2e suite cannot reach staging — Vercel is 403ing Playwright
 
 `phase3-acceptance.spec.ts` is written and committed, and it cannot run: every

@@ -82,4 +82,48 @@ is one or the other.
 
 ## Progress
 
-_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence. Nothing in this phase has landed yet._
+_Update as items land — tick here, flip the row in `docs/STATUS.md`, and append to `PROGRESS.md` with evidence._
+
+**Everything below is an exact `count(*)` read live on 2026-08-27. `n_live_tup`
+was tried first and is a LIE here — it reports 0 for `pay_professional_tax`
+(9 real rows) and 0 for `dristi_scheduled_reports` (7). A planner statistic is
+not a row count, and a DROP decided from one would have been catastrophic.**
+
+- **6.1 commission — CONFIRMED, awaiting the owner's OK (0.30).**
+  `sales_commissions` 0 · `sales_commission_slabs` 0 · `sales_commission_assignments`
+  0. Safe to back up and drop. Not dropped: a DROP is named and confirmed
+  regardless of the standing migration approval.
+- **6.2 employee/payroll — THE PLAN IS WRONG HERE, AND DANGEROUSLY.**
+  The instruction reads "prove the `hr_*`/`pay_*` tables are empty, back up,
+  drop". Seventeen of the eighteen are empty — all ten `hr_*`, and `pay_runs`,
+  `pay_slips`, `pay_esi_records`, `pay_pf_records`, `pay_tds_records`,
+  `pay_loans`, `pay_it_declarations`. **`pay_professional_tax` holds 9 rows and
+  is LIVE**: it is the shared national PT ladder (`org_id IS NULL`) that
+  `vetana.py::_pt_slabs` reads for every payroll run in both in-scope orgs, and
+  migration 221 added a `month` column to it last week. Dropping the `pay_*`
+  stack as written would take professional tax to **₹0 for every employee**.
+  It is not part of the dead stack and must be excluded by name from any drop.
+- **6.3 two allocators — DECIDED: KEEP BOTH, and the boundary is now a test.**
+  `next_po_number` is not a duplicate of `next_doc_number`; it is a different
+  algorithm for a different lifecycle. A purchase order is numbered at ISSUE,
+  so every draft carries NULL, so `next_doc_number`'s `ORDER BY created_at`
+  reads a draft as the newest row and **restarts the series at 0001**. The
+  reasoning was already written out in `services/purchase_orders.py:330`; what
+  was missing was anything holding the line. `tests/test_two_serial_allocators.py`
+  (5 tests) now fails if a purchase-order table enters `_ALLOWED_DOC_TABLES`,
+  if the allowlist changes without a decision, if either allocator stops
+  zero-padding to four, or if either takes its advisory lock outside a
+  transaction.
+- **6.4 two report schedulers — STALE PREMISE, nothing to do.**
+  `staging.report_schedules` **does not exist** (`42P01` on a live query).
+  There is one scheduler: `dristi_scheduled_reports`, 7 rows, the only one that
+  has ever sent mail. The `dristi.py:1058-1073` argument against merging is
+  therefore arguing with something that is already gone.
+- **The process rule — SHIPPED as a ratchet, not a sentence.**
+  `tests/test_every_writer_has_a_live_sql_test.py` (4 tests). 36 routers write
+  to `staging.*`; 6 have a test that PREPAREs their statements against the real
+  schema. The other 30 are baselined by name, and the baseline **only shrinks**
+  — a new writing router with no live test fails immediately, a baselined one
+  that gains a test must be removed, and a name that no longer writes must be
+  deleted. That third check is why this cannot rot the way
+  `migrations/README.md`'s status column did.
