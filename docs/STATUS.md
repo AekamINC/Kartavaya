@@ -35,6 +35,30 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 | 🟢 | Inline pre-paint bootstrap blocked by a stale CSP hash | `vercel.json`, `index.html` | FIXED + DEPLOYED 26 Aug (`2ef060a9`) — one inline script, one allowed sha256, no match, so `data-theme`/`data-conv-*`/`data-platform` never ran: wrong-theme flash every load, and on Windows a frame of blurred sidebar. Found in the DEPLOYED console, invisible to build and tests. `check-csp-hash.mjs` now first in `npm run check` |
 | 🔴 | `/security` page claims no MFA (TOTP shipped 23 Aug); 3 undisclosed sub-processors | `SecurityPage.jsx:161`, `legalFacts.js` | OPEN |
 
+## Seeded-data integrity — repaired 26 Aug
+
+Owner confirmed **"no live users or legal payslip, all are seeded"**, which
+released seven items the sweep's adversarial brake had held. All reversible from
+schema `ledger_repair_20260826`.
+
+| Repaired | Detail |
+|---|---|
+| ✅ 6 payments deleted | 4 receipts against DRAFT invoices (₹2,06,500 + ₹5,000 + ₹5,000 + ₹590), 1 against a CREDIT NOTE (₹2,950), 1 of ₹60,000 against a ₹0 invoice. Their invoices reset to unpaid. `record_payment` now refuses all three shapes, so none can recur |
+| ✅ 1 born-paid invoice | INV-2026-0048 — ₹53,100 total, ₹0 balance, no payment row — now owes its full amount |
+| ✅ 3 expense claims detached | Approved claims (₹800 + ₹1,200 + ₹5,000, Unicode) pointing at payslips that were voided and never disbursed |
+| ✅ 1 phantom payroll run | Jan 2020, 0 payslips, 0 employees. `org.spec.ts:197-211` asserts a **refusal** (≥400) for that month, so nothing depended on the row existing |
+| ➖ holiday "duplicates" | Not duplicates — distinct names sharing a date (Dussehra and Gandhi Jayanti both 2025-10-02). 0 exact `(org, date, name)` twins remain |
+
+**Verified after, both orgs:** 0 payments against a draft / credit note / ₹0
+invoice · 0 invoices where `balance_due <> total − Σpayments` · 0 born-paid · 0
+claims on a voided payslip · 0 phantom runs.
+
+🔴 **Still owed:** Nikhil Desai (Unicode) is missing July + August pay ≈
+**₹72,322**. His `last_working_day` is 2026-08-28 — in the future — while
+`is_active=false`, and the August run is already `processed`, which
+`process_payroll` refuses to re-run. Needs a deliberate remediation, not a data
+edit.
+
 ## Phase progress (`docs/plans/`)
 
 | Phase | What | State |
