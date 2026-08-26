@@ -95,6 +95,9 @@ SERVICE_LINE = {
     "cadence": "monthly",
     "period_start": date(2026, 8, 1),
     "period_end": None,
+    # NULL on all four live rows: no floor, so the sweep starts at the line's
+    # own `period_start` exactly as it did before migration 223.
+    "invoice_from": None,
     "billing_direction": "advance",
     "auto_invoice": True,
     "billing_cycle": "monthly",
@@ -475,6 +478,90 @@ async def test_a_quarterly_line_advances_a_quarter(pooled):
 
     _, args = pool.one("INSERT INTO staging.client_invoice_lines")
     assert args[2] == date(2026, 8, 1)
+
+
+async def test_invoice_from_is_a_floor_on_a_line_with_no_history(pooled):
+    """Migration 223, and the owner's 2026-08-26 decision in one test.
+
+    Unicode's two retainers have run since April and have never been invoiced.
+    With `invoice_from` set to 1 August the sweep raises AUGUST, not April —
+    the four months before it are not this system's to bill.
+    """
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl",
+         [{**SERVICE_LINE,
+           "period_start": date(2026, 4, 1),
+           "invoice_from": date(2026, 8, 1)}]),
+        ("MAX(period_start) FROM staging.client_invoice_lines", None),
+        ("SELECT 1 FROM staging.client_invoice_lines", None),
+        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 26))
+    assert out["created"] == 1
+
+    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    assert args[2] == date(2026, 8, 1), \
+        f"back-billed {args[2]} — the floor did not hold"
+
+
+async def test_history_beats_the_floor(pooled):
+    """A line with invoiced periods is not moved by a column edited later.
+
+    July is billed and the floor says August. The next period is August because
+    the cadence says so, not because the floor does — and a floor set to
+    September would not skip a month that has already been invoiced through.
+    """
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl",
+         [{**SERVICE_LINE,
+           "period_start": date(2026, 4, 1),
+           "invoice_from": date(2026, 8, 1)}]),
+        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 7, 1)),
+        ("SELECT 1 FROM staging.client_invoice_lines", None),
+        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 26))
+    assert out["created"] == 1
+
+    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    assert args[2] == date(2026, 8, 1)
+
+
+async def test_a_floor_in_the_future_raises_nothing_yet(pooled):
+    """Set the clock to start next month and this month raises nothing —
+    before the serial is drawn, so no gap in the sequence."""
+    pool = pooled([
+        SUPPLIER_STATE,
+        ("FROM staging.client_service_lines sl",
+         [{**SERVICE_LINE,
+           "period_start": date(2026, 4, 1),
+           "invoice_from": date(2026, 9, 1)}]),
+        ("MAX(period_start) FROM staging.client_invoice_lines", None),
+        ("SELECT 1 FROM staging.client_invoice_lines", None),
+    ])
+    out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 26))
+    assert out == {"date": "2026-08-26", "created": 0, "skipped": 1}
+    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices")
+
+
+async def test_one_org_can_be_swept_without_touching_another(pooled):
+    """The scope parameter the acceptance needs. The cron passes nothing and
+    sweeps everybody; a run scoped to the test org binds that org and cannot
+    reach a customer's books."""
+    pool = pooled(SWEEP_SCRIPT)
+    await client_billing.sweep_client_auto_invoices(
+        today=TODAY, org_id="64e7bea6-6abe-490c-a2a4-27a60c6be916")
+
+    sql, args = pool.one("FROM staging.client_service_lines sl")
+    assert "sl.org_id = $2::uuid" in sql
+    assert args[1] == "64e7bea6-6abe-490c-a2a4-27a60c6be916"
+
+    unscoped = pooled(SWEEP_SCRIPT)
+    await client_billing.sweep_client_auto_invoices(today=TODAY)
+    _, args = unscoped.one("FROM staging.client_service_lines sl")
+    assert args[1] is None, "the cron must sweep every org"
 
 
 async def test_a_one_off_never_advances(pooled):

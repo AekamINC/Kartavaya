@@ -591,9 +591,22 @@ async def sweep_client_auto_invoices(
                 "WHERE line_id = $1::uuid",
                 sl["id"],
             )
+            # AND WHERE A LINE WITH NO HISTORY STARTS. `invoice_from` (migration
+            # 223) is a floor, not a start date: `period_start` keeps saying when
+            # the service began — it is the firm's own contract term and the
+            # screen shows it — while this says the earliest period this system
+            # may raise. A service that ran for four months before anybody armed
+            # a cron needs both facts, and rewriting `period_start` to start the
+            # clock would have left the true one nowhere.
+            #
+            # HISTORY WINS. The floor applies only to the never-invoiced branch:
+            # a line with invoiced periods is not sent backwards or forwards by
+            # a column somebody edits later.
+            first = next_anchor(anchor, sl["period_start"])
+            if sl["invoice_from"]:
+                first = max(first, next_anchor(anchor, sl["invoice_from"]))
             period_start = (
-                period_end_for(last_billed, cadence) if last_billed
-                else next_anchor(anchor, sl["period_start"])
+                period_end_for(last_billed, cadence) if last_billed else first
             )
 
         # NO SEPARATE "past the line's end" GUARD, and that is checked rather
