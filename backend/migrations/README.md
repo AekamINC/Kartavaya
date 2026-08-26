@@ -19,6 +19,7 @@ schema changes must be `.sql`.
 | `005_activity_and_time.sql` | ⏳ Pending | `activity_events` + `time_entries` tables |
 | `006_mentions.sql` | ⏳ Pending | `mentions` table |
 | `007_rls_and_indexes.sql` | ✅ Applied | Row-level security policies + performance indexes |
+| `010_attendance.sql` | ⏳ Pending | `attendance_entries` table — self-service clock in/out with geolocation |
 
 > Migrations 002–006 are defined in `V2_PLAN.md §4`. The SQL is the
 > source of truth — this table is a summary.

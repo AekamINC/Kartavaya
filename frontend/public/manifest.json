@@ -13,7 +13,8 @@
   ],
   "categories": ["productivity", "business"],
   "shortcuts": [
-    { "name": "Dashboard", "url": "/dashboard", "description": "Go to Dashboard" },
-    { "name": "Projects",  "url": "/projects",  "description": "Open Projects" }
+    { "name": "Dashboard",  "url": "/dashboard",  "description": "Go to Dashboard" },
+    { "name": "Attendance", "url": "/attendance", "description": "Clock in or out" },
+    { "name": "Projects",   "url": "/projects",   "description": "Open Projects" }
   ]
 }

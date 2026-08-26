@@ -52,6 +52,7 @@ const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
 const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
 const ClientPortal          = lazy(() => import('./pages/ClientPortal'));
 const InboxPage             = lazy(() => import('./pages/InboxPage'));
+const AttendancePage        = lazy(() => import('./pages/AttendancePage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -95,6 +96,7 @@ function AppRouter() {
           <Route path="teams"                  element={<TeamsPage />} />
           <Route path="inbox"                  element={<InboxPage />} />
           <Route path="approvals"              element={<ApprovalsPage />} />
+          <Route path="attendance"             element={<AttendancePage />} />
           <Route path="templates"              element={<TemplatesPage />} />
 
           {/* Context-dependent */}
