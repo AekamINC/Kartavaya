@@ -435,3 +435,40 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
   border: 1px solid var(--border);
   background: var(--s-low);
 }
+
+.terr__mapwrap { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+
+/* Every state the map can be in that is NOT a drawn map — loading, an outage,
+   an environment with no Mappls credentials, an unsaved territory. One class,
+   because the reader's job is the same in all of them: read a sentence. */
+.terr__mapnote {
+  font-size: 12px; color: var(--ink-3); line-height: 1.6;
+  padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--bg-raised); border: 1px solid var(--rule-soft);
+}
+/* A fault, as opposed to a fact. `unavailable` PINs and a failed basemap are
+   both this; `unmatched` PINs are NEVER this — they are an ordinary answer. */
+.terr__mapnote--bad { border-color: var(--danger); color: var(--ink-2); }
+
+/* Mappls' terms require "Powered by Mappls" to be clearly presented and it may
+   in no instance be removed or hidden. So: no `display:none`, no zero opacity,
+   no collapsing container, and it is checked by
+   `check-mappls-attribution.mjs`. Do not "tidy" this rule away. */
+.terr__mapbrand {
+  align-self: flex-start;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  color: var(--ink-2); text-decoration: none;
+  padding: 3px 8px; border-radius: var(--r-xs);
+  background: var(--bg-raised); border: 1px solid var(--rule-soft);
+}
+.terr__mapbrand:hover { color: var(--k-primary); border-color: var(--k-primary); }
+
+/* The four buckets, in words. */
+.terr__cover { display: flex; flex-direction: column; gap: 4px; }
+.terr__coverline { font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+.terr__coverline--soft { color: var(--ink-3); }
+.terr__coverline--warn { color: var(--danger); }
+
+/* GODL, for the government boundary data. A different credit from the Mappls
+   one above, for a different thing, and neither substitutes for the other. */
+.terr__mapcredit { font-size: 11px; color: var(--ink-3); margin-top: 2px; }

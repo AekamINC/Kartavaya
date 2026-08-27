@@ -3110,4 +3110,101 @@ from a separate script rather than assumed — `memory/mcp_denial_may_still_exec
 is the standing rule that a failed write must be verified, and it applies just
 as much when the failure is in the reporting.
 
+---
+
+## Phase 7.5 — the territory map draws shapes, and the basemap is blocked upstream
+
+**2026-08-27.** `TerritoryMap.jsx` is rewritten on the Phase 7.3 geometry
+endpoint. What shipped is real and tested; what does NOT work is a Mappls
+account matter, and it was found by probing rather than by assuming.
+
+### The component that looked finished for eighteen days
+
+The old one built a Mappls map centred on the geometric middle of India and
+**stopped**. `pincodes` decided one thing — whether to open at zoom 6 or zoom 4
+— and no marker, line or polygon was ever added. It also rendered "The
+territory map needs a MapMyIndia key", which was **false for the whole of its
+life**: the SDK URL under it had been dead since Aug 2025, and a component that
+claims to need a credential is believed, so nobody read further. It only
+rendered inside `{showForm && …}`, so a saved territory's shape could be seen
+while creating it and never again.
+
+### What was built
+
+| | |
+|---|---|
+| `backend/services/mappls.py` | mints an access token from `MAPPLS_CLIENT_ID`/`SECRET`, cached to the token's own expiry less a 5-minute skew. **A failure is never cached**, same rule as `pin_boundaries`. Distinguishes `NOT_CONFIGURED` from `UNAVAILABLE` |
+| `backend/routers/maps.py` | `GET /api/v1/maps/token`, `require_user`, 30/min. **Always 200** — a 4xx would collapse "no map in this environment" into "the map provider is down", and those need opposite responses. Not under `/v1/graha`, because 8.1–8.3 draw maps in attendance and billing |
+| `frontend/src/lib/mapplsSdk.js` | loads the SDK once from the **server-supplied** `sdk_url`; a rejected load is not memoised, so a retry is possible without a page reload |
+| `TerritoryMap.jsx` | fetches the shapes and the basemap **independently**, draws the polygons, and renders all four buckets in words |
+| `check-mappls-attribution.mjs` | a gate, wired into `npm run check` **and CI** |
+
+### The four buckets, kept apart
+
+`unmatched` (no boundary was ever published — ordinary, 58 PINs in the
+government's own directory are like this) and `unavailable` (R2 did not answer —
+our outage) both render as "nothing drawn". Merging them tells a customer there
+is no shape for a PIN when our object store is down, and they go and edit a
+territory that was never wrong — changing the routing that decides who gets paid
+for a lead. `matched + unmatched + unavailable === claimed` is asserted **on
+screen**, not merely logged.
+
+`territoryMapBuckets.test.jsx` — 12 tests. **Proven to bite**: merging
+`unavailable` into `unmatched` in the component fails 3 of them.
+
+### 🔴 The basemap does not load, and it is not our code
+
+Probed live from the staging container. The token mints perfectly — 36 chars,
+24h expiry, cache confirmed — and then **every Mappls API refuses it**:
+
+    SDK, no referer                 401  Domain validation failed
+    SDK, staging.kartavaya.com      401  Domain validation failed
+    SDK, kartavaya.com              401  Domain validation failed
+    SDK, localhost:5173             401  Domain validation failed
+    SDK, an unrelated domain        401  Domain validation failed   <- identical
+    REST geocode, 'bearer '         401  Token was not recognised
+    REST geocode, 'Bearer '         401  Token was not recognised
+    REST geocode, raw token         401  Token was not recognised
+    REST autosuggest                401  Domain validation failed
+
+An unlisted domain and our own domain answer **identically**, so this is not a
+referrer that needs whitelisting — and `Token was not recognised` on the REST
+side says the token is not accepted by any product at all. **This contradicts
+the inference recorded on 2026-08-27 that "the backend can mint a token and hand
+it over".** The mint half of that is true; the spend half was never tested until
+now. It is an account/console matter and it is the owner's to resolve — see
+STATUS.md.
+
+**7.5 is 🟡, and deliberately useful anyway.** The shapes and the basemap are
+fetched independently precisely so that this failure costs only the tiles: the
+coverage counts, the unmatched list, the invalid list, the outage state and the
+GODL credit all render with no basemap at all, and the component says *"No map
+is configured in this environment"* rather than inventing a fault. **7.6 —
+address autosuggest — is blocked by the same wall**, since it needs the same
+token to be accepted.
+
+### Also fixed here
+
+- The map is reachable from the **list**, not just the create/edit form: each
+  saved territory has a `Map` toggle, and looking is not gated on write
+  permission because looking is not editing.
+- While pincodes are being edited the component says it is showing **saved**
+  coverage. Without that, adding a pincode and seeing nothing change reads as
+  breakage.
+- `_mint` **redacts the credential out of a non-200 body** before logging it.
+  `sentry_scrub.py` redacts by variable name and cannot see a secret echoed back
+  inside a third party's error string.
+
+### The gate was proven to fail before it was trusted
+
+Three ways, all run: removing the credit element, hiding it with
+`display:none`, and hardcoding the string each failed with the right message,
+and the restore was green. Its own first run also caught a false positive — it
+failed the component for a `"Powered by Mappls"` that appeared **only in the
+docblock explaining the obligation** — and comment-stripping was added, because
+a check that forbids documenting the rule it enforces is a check people delete.
+
+**Green:** `npm run check` 14/14 · `npm run build` · vitest 2,964 passed
+(2 held at baseline, no new) · `test_mappls_token.py` 61 passed.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -331,6 +331,14 @@ jobs:
       - name: CSP hash gate (inline bootstrap is allowed)
         run: node scripts/check-csp-hash.mjs
 
+      # Phase 7.5. "Powered by Mappls" is a licence condition on a paid
+      # dependency, and it breaks silently: the map keeps working, nothing
+      # 500s, no test goes red. Exactly the profile of a thing removed during
+      # an unrelated CSS pass — which this repo has already done once, to
+      # `.side`, with a script that string-matched selectors.
+      - name: Mappls attribution gate (the credit is present and not hidden)
+        run: node scripts/check-mappls-attribution.mjs
+
       - name: Class collision gate
         run: node scripts/check-class-collisions.mjs
 

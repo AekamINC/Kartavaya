@@ -139,6 +139,7 @@ from routers.sync          import router as sync_router
 from routers.statute       import router as statute_router
 from routers.support_sessions import router as support_sessions_router
 from routers.custody   import router as custody_router
+from routers.maps          import router as maps_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -5668,6 +5669,10 @@ app.include_router(sync_router)
 # this product exists to help firms obey, and was served by NO router at all —
 # reachable only as a side effect of running a skill. See routers/statute.py.
 app.include_router(statute_router)
+# Phase 7.5 — the one place the browser gets a Mappls token. Not under
+# `/v1/graha`, because Phase 8 draws maps in attendance and in billing too and
+# neither should ask the CRM for a basemap. See routers/maps.py.
+app.include_router(maps_router)
 # Customer-granted, time-boxed support access. Written and never registered, so
 # `/api/v1/support-sessions` 404'd while `SupportSessionsPage.jsx`,
 # `org/TabSupportAccess.jsx` and the comments at server.py:3496 and

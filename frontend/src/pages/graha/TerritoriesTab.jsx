@@ -47,6 +47,12 @@ export default function TerritoriesTab() {
      refuses ids that are not in the org. */
   const [members, setMembers] = useState([]);
   const [userInput, setUserInput] = useState('');
+  /* Which saved territory is showing its map, or null. Before 7.5 the map
+     rendered ONLY inside `{showForm && …}`, so the shape of a territory could
+     be seen while creating it and never again — a reader had to press Edit, an
+     action that implies they intend to change something, just to look. One at a
+     time: each open map is an SDK instance and a geometry fetch. */
+  const [mapOpenId, setMapOpenId] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -277,7 +283,11 @@ export default function TerritoriesTab() {
                      value={pinInput} onChange={e => setPinInput(e.target.value)} />
               <button type="button" className="k-btn k-btn--ghost" onClick={addPincodes}>Add</button>
             </div>
-            <TerritoryMap pincodes={form.rules.pincodes || []} />
+            {/* `territoryId` is what makes this draw anything: the shapes come
+                from `GET /territories/{id}/geometry`, which reads the SAVED
+                row. A territory being CREATED has no id and no saved row, and
+                the component says so rather than showing an empty map. */}
+            <TerritoryMap territoryId={editingId} pincodes={form.rules.pincodes || []} />
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={closeForm}>Cancel</button>
@@ -297,7 +307,8 @@ export default function TerritoriesTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : territories.map(t => (
-        <div key={t.id} className="gr__lrow">
+        <React.Fragment key={t.id}>
+        <div className="gr__lrow">
           <div className="gr__lmain">
             <div className="gr__lt">{t.name}</div>
             {t.description && <div className="gr__lsub">{t.description}</div>}
@@ -317,10 +328,23 @@ export default function TerritoriesTab() {
           <span className="gr__ls">
             {t.assigned_users?.length || 0} {t.assigned_users?.length === 1 ? 'person' : 'people'}
           </span>
+          {/* Looking at a territory is not editing it, and until 7.5 the only
+              way to see one was to press Edit. No write permission needed. */}
+          <button className="k-btn k-btn--ghost"
+                  aria-expanded={mapOpenId === t.id}
+                  onClick={() => setMapOpenId(mapOpenId === t.id ? null : t.id)}>
+            {mapOpenId === t.id ? 'Hide map' : 'Map'}
+          </button>
           <button className="k-btn k-btn--ghost" onClick={() => startEdit(t)}
                   disabled={!canWrite} title={denial || undefined}>Edit</button>
           <button className="k-btn k-btn--reject" onClick={() => remove(t.id)}>Delete</button>
         </div>
+        {mapOpenId === t.id && (
+          /* No `pincodes` prop: nothing is being edited here, so there is no
+             unsaved list to warn about, and the saved coverage is the answer. */
+          <TerritoryMap territoryId={t.id} height={300} />
+        )}
+        </React.Fragment>
       ))}
     </div>
   );
