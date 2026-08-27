@@ -1262,9 +1262,30 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     """, user_id)
     user = await pool.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)
 
+    # ── THE OUTBOUND FENCE HAD A HOLE EXACTLY HERE ──────────────────────────
+    #
+    # `accept-invite` is unauthenticated, so it carries no `get_org_id`
+    # dependency and nothing ever called `outbound.set_org`. The suppression
+    # check is `_org_suppressed(current_org())`, and `current_org()` was None —
+    # which is not suppressed. Measured on one run of the 0.23 spec:
+    #
+    #     purpose=invite   status=suppressed  org_id=64e7bea6…   12
+    #     purpose=welcome  status=SENT        org_id=NULL        12
+    #
+    # Twelve invitations correctly held back, and twelve welcome emails sent
+    # from the same organisation moments later. They were `@example.com` — RFC
+    # 2606, null MX per RFC 7505 — so they died at the recipient edge, but they
+    # are twelve hard bounces charged to a verified sender domain, and the same
+    # code path serves a real address.
+    #
+    # The invitation knew its org the whole time: `invite_org_id` is read above
+    # and used for the seat check. `org_scope` rather than `set_org` because it
+    # puts back what it found — see `outbound.org_scope`.
     try:
+        import outbound
         from email_service import send_welcome_email
-        send_welcome_email(invite["email"], body.name)
+        with outbound.org_scope(str(invite_org_id) if invite_org_id else None, user_id):
+            send_welcome_email(invite["email"], body.name)
     except Exception:
         pass
 

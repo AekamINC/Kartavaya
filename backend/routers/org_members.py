@@ -294,12 +294,32 @@ async def add_member(
         # `issue_invite` with unvalidated grants would make this door the weak
         # one, which is the whole reason the refusals were extracted into a
         # preflight in the first place.
-        from routers.org_invites import issue_invite, preflight_org_invite
+        from routers.org_invites import GrantIn, issue_invite, preflight_org_invite
+
+        # ── TYPED BEFORE IT CROSSES THE DOOR ────────────────────────────────
+        #
+        # `AddMemberBody.module_grants` is a bare `list` on purpose: this
+        # endpoint accepts BOTH a plain `"ganit"` and a
+        # `{"code": "ganit", "role": "editor"}`, which is what `_normalise_grant`
+        # exists for and what every existing caller sends. `preflight_org_invite`
+        # is typed the other way — `List[GrantIn]` — and its `_validate_grants`
+        # reads `g.code`. So an untyped dict arriving here raised AttributeError
+        # INSIDE the handler, which escapes CORSMiddleware: the browser reported
+        # a CORS failure and the screen said only "Failed to add member".
+        #
+        # The member form pre-populates nine default grants, so **every
+        # invitation an admin sent through Add-or-invite 500'd**, while
+        # `POST /v1/org/invites` answered a clean 400 on the identical payload.
+        #
+        # Normalised here rather than by retyping the field, because retyping it
+        # would refuse the bare-string shape this endpoint's own callers use.
+        _grants = [GrantIn(code=c, role=r)
+                   for c, r in (_normalise_grant(g) for g in body.module_grants)]
 
         pre = await preflight_org_invite(
             pool, user, org_id,
             email=body.email.lower(), org_role=body.role,
-            module_grants=body.module_grants,
+            module_grants=_grants,
         )
         invite = await issue_invite(
             pool, user, org_id, body.email.lower(), body.role,
