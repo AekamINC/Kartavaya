@@ -3318,11 +3318,11 @@ async def territory_geometry(
         matched + len(unmatched) + len(unavailable) == claimed
 
     `claimed` is what ROUTING sees — `Territory.pincodes`, normalised and
-    deduplicated — and `requested` is how many entries the customer typed. The
-    two differ by the invalid ones and by duplicates. PHASE-7 §7.3's acceptance
-    is written as `features.length + unmatched.length === rules.pincodes.length`,
+    deduplicated — so it differs from the number of entries the customer typed
+    by exactly the invalid ones and the duplicates. PHASE-7 §7.3's acceptance is
+    written as `features.length + unmatched.length === rules.pincodes.length`,
     which is the same statement only when nothing is invalid, nothing is
-    repeated and R2 is up; `claimed` holds in every case.
+    repeated and R2 is up; the form above holds in every case.
     """
     pool = await get_pool()
 
@@ -3342,7 +3342,10 @@ async def territory_geometry(
     # row changes between the two — an admin editing the territory in another
     # tab — the worst outcome is one stale bucket on one render.
     entries = await pin_boundaries.claimed_entries(pool, org_id, str(territory_id))
-    if entries is None:
+    if entries is pin_boundaries.NO_SUCH_TERRITORY:
+        # A sentinel and not `None`, because `None` is also what a territory
+        # with no `pincodes` key at all reads as — fifteen of the eighteen live
+        # ones. Those answer 200 with an empty FeatureCollection.
         raise HTTPException(404, "Territory not found")
 
     cover = await pin_boundaries.geometry_for_pins(entries)
@@ -3353,7 +3356,6 @@ async def territory_geometry(
         "type": "FeatureCollection",
         "features": cover.features,
         "territory_name": territory.name,
-        "requested": len(entries),
         "claimed": len(territory.pincodes),
         "matched": len(cover.features),
         "unmatched": cover.unmatched,

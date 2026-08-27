@@ -414,3 +414,86 @@ def test_a_deals_territory_is_bound_with_its_type_not_as_a_bare_parameter():
     assert '("client_id", "contact_id", "territory_id")' in patch, (
         "territory_id has fallen out of the typed branch of the deal SET-build"
     )
+
+
+# ── 7.3: the boundary endpoint ───────────────────────────────────────────────
+#
+# The reader itself, its four buckets and its live R2 and live-schema halves are
+# `tests/test_pin_boundaries.py`, which deliberately does not name this router:
+# `tests/test_every_writer_has_a_live_sql_test.py` marks a router covered when a
+# test file both PREPAREs a statement and names it, and the CRM router is
+# baselined there with thirty-odd write paths neither file proves anything
+# about. What is left for here is the ROUTE — its scoping, and the response
+# shape a map has to be able to trust.
+
+
+def test_the_geometry_route_is_registered_under_a_territory():
+    """`GET /territories/{id}/geometry`. Named here rather than assumed, because
+    a route that moved is indistinguishable from one that never shipped."""
+    paths = {r.path for r in graha.router.routes}
+    assert "/api/v1/graha/territories/{territory_id}/geometry" in paths
+
+
+def test_the_geometry_route_resolves_the_territory_through_the_scoped_loader():
+    """It must not grow a fresh single-row SELECT.
+
+    PHASE-7 §7.1a found THREE cross-tenant territory reads in this codebase,
+    each one a hand-written join on `tr.id` alone sitting under a correctly
+    scoped client join. `graha_territories.id` is unique table-wide and DELETE
+    is a soft delete, so every new lookup is a new chance to make the same
+    mistake. `load_territories` already carries both predicates and was reasoned
+    about in 7.1; `claimed_entries` carries them too, in one place, asserted in
+    `tests/test_pin_boundaries.py`.
+    """
+    code = _code(graha.territory_geometry)
+    assert "load_territories" in code
+    assert "claimed_entries" in code
+    assert "404" in code, "a territory in another org must not be found"
+    assert "SELECT" not in code.upper(), (
+        "the geometry route has grown its own SQL — put it beside the other "
+        "territory statements, where one test prepares every one of them"
+    )
+
+
+def test_the_geometry_response_keeps_the_three_failures_apart():
+    """THE ACCEPTANCE, and the one thing that cannot be softened.
+
+    `unmatched` (no boundary is published), `unavailable` (our object store did
+    not answer) and `invalid` (not a PIN) are three different sentences and a
+    customer acts differently on each. Merging the first two makes the map say
+    "there is no shape for 110001" during an outage of ours.
+    """
+    code = _code(graha.territory_geometry)
+    for bucket in ("unmatched", "unavailable", "invalid"):
+        assert f'"{bucket}": cover.{bucket}' in code, (
+            f"{bucket} is no longer reported on its own")
+    # `matched` is a COUNT — the matched PINs are already named inside
+    # `features[].properties.pincode`, so a list would be a second copy.
+    assert '"matched": len(cover.features)' in code
+
+
+def test_the_geometry_route_never_reads_r2_through_download_file():
+    """`storage.download_file` returns `None` on EVERY failure INCLUDING a
+    missing key (`storage.py`, and PHASE-7's trap list says so in as many
+    words). Built on it, an R2 outage renders as "this territory has no shape"
+    and the `unavailable` bucket cannot exist at all."""
+    import inspect
+    # The open paren is the point: the docstring on the route NAMES it, to say
+    # why it is not used. Only a CALL is the defect.
+    assert "download_file(" not in inspect.getsource(graha)
+
+
+def test_the_geometry_route_names_the_territory_and_not_its_id():
+    """The id is already in the caller's URL; a screen draws a name."""
+    code = _code(graha.territory_geometry)
+    assert '"territory_name": territory.name' in code
+    assert '"territory_id"' not in code
+
+
+def test_the_geometry_route_is_gated_and_authenticated():
+    """Territories are CRM-only — the widened client/contact gate deliberately
+    does not reach them."""
+    code = _code(graha.territory_geometry)
+    assert "Depends(require_user)" in code
+    assert "Depends(_gate)" in code
+    assert "get_org_id" in code

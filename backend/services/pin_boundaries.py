@@ -206,47 +206,73 @@ CLAIMED_PINS_SQL = (
 )
 
 
-def _as_entries(raw) -> list:
-    """Whatever `rules->'pincodes'` handed back, as a list of raw entries.
+#: What `claimed_entries` answers when the territory is not this organisation's,
+#: or has been soft-deleted. `None` CANNOT carry that meaning: `None` is also
+#: what `rules -> 'pincodes'` returns when the key is simply absent, which is
+#: true of fifteen of the eighteen live territories and is not an error at all.
+#: Collapsing the two would turn every territory that has never been given a PIN
+#: into a 404.
+NO_SUCH_TERRITORY = object()
 
-    Both connection kinds, because both reach this: `db.py` registers a jsonb
-    codec so a POOLED connection decodes the column to a Python list, while a
-    bare `asyncpg.connect()` — the live-schema tests, and every `railway run`
+
+def _decoded(raw):
+    """`rules->'pincodes'` as a Python value, whatever the connection handed back.
+
+    Both connection kinds reach this: `db.py` registers a jsonb codec so a
+    POOLED connection decodes the column to a Python list, while a bare
+    `asyncpg.connect()` — the live-schema tests, and every `railway run`
     script — has no codec and returns the raw JSON text.
 
-    Anything that is not a JSON array answers `[]`, which is the same answer
-    `territory_routing._pincodes_of` gives it. That equivalence is asserted in
-    `tests/test_pin_boundaries.py`: the map must claim exactly what routing
-    claims, and the only way to be sure is to check the two against each other
-    over the shapes that actually occur.
+    Text that is not JSON comes back AS ITSELF rather than as `None`, so a
+    caller can still show it to the person who typed it.
     """
     if isinstance(raw, str):
         try:
-            raw = json.loads(raw)
+            return json.loads(raw)
         except ValueError:
-            return []
-    return list(raw) if isinstance(raw, (list, tuple)) else []
+            return raw
+    return raw
 
 
-async def claimed_entries(conn, org_id: str, territory_id: str) -> list | None:
-    """The territory's PIN list **as typed**, or `None` if there is no such row.
+def _claim(raw) -> tuple:
+    """`(entries, malformed)` — the claimed PIN list, and what was there instead.
 
-    `None` is "not this organisation's territory, or soft-deleted" and the
-    caller turns it into a 404. An empty list is a real territory that claims
-    nothing — three of the four live territories carrying a `pincodes` key are
-    exactly that (`{"pincodes": []}`), and they must answer 200 with an empty
-    FeatureCollection, not an error.
+    A value that is not a JSON array gives NO entries, which is the same answer
+    `territory_routing._pincodes_of` gives it, and that is the point: the map
+    must claim exactly what routing claims. The equivalence is asserted in
+    `tests/test_pin_boundaries.py` over every shape the column actually holds,
+    rather than assumed from two functions that look alike.
 
-    RAW, not parsed, and that is the whole reason this exists beside
+    `malformed` is the second half and it is not the same information. `None`
+    there means "nothing was claimed" — no key, or a JSON null, which is fifteen
+    of the eighteen live territories and perfectly ordinary. Anything else means
+    the customer put SOMETHING under `pincodes` that cannot be a PIN list, and
+    the caller names it rather than dropping it.
+    """
+    value = _decoded(raw)
+    if isinstance(value, (list, tuple)):
+        return list(value), None
+    return [], value
+
+
+async def claimed_entries(conn, org_id: str, territory_id: str):
+    """The territory's PIN list **as typed** — or `NO_SUCH_TERRITORY`.
+
+    An empty list is a real territory that claims nothing, and it must answer
+    200 with an empty FeatureCollection rather than an error: three live
+    territories carry exactly `{"pincodes": []}` and fifteen have no `pincodes`
+    key at all.
+
+    RAW and undecoded, which is the whole reason this exists beside
     `load_territories`. `Territory.pincodes` is the set routing SEES — already
-    normalised, already deduplicated, with every unusable entry dropped. The
-    `invalid` bucket is defined as the difference between the two, so it cannot
-    be computed from the parsed set: it needs what the customer TYPED.
+    normalised, already deduplicated, every unusable entry dropped. The
+    `invalid` bucket is the difference between the two, so it cannot be
+    computed from the parsed set: it needs what the customer TYPED.
     """
     row = await conn.fetchrow(CLAIMED_PINS_SQL, str(territory_id), org_id)
     if row is None:
-        return None
-    return _as_entries(row["pincodes"])
+        return NO_SUCH_TERRITORY
+    return _decoded(row["pincodes"])
 
 
 # ── R2: the index, then the shards ───────────────────────────────────────────
@@ -445,7 +471,18 @@ async def geometry_for_pins(entries) -> Coverage:
     #: when a territory claims four hundred PINs inside it.
     wanted: dict = {}
 
-    for raw in _as_entries(entries):
+    claimed, malformed = _claim(entries)
+    if malformed is not None:
+        # `rules.pincodes` IS NOT A LIST. A bare string is what somebody types
+        # when a territory has one PIN, and the product stores it —
+        # `TerritoryCreate.rules` is an untyped `dict`, so any JSON goes in, and
+        # the live database was checked for exactly this. `_pincodes_of` ignores
+        # it, so routing claims nothing; without this line the endpoint would
+        # answer "claims nothing, nothing invalid" and the customer's own text
+        # would have vanished between the two. The one thing this must not do.
+        invalid.append(_label(malformed))
+
+    for raw in claimed:
         pin = normalise_pin(raw)
         if not pin:
             label = _label(raw)

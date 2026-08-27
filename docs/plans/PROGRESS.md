@@ -2839,4 +2839,76 @@ caching to avoid fees, and take a perpetual sub-licensable licence over every
 address submitted to them. Those are commitments about the product, not code
 decisions, and the plan already lists three open questions for the owner.
 
+## 2026-08-27 · 7.3 · The boundary endpoint, and three buckets that must not merge
+
+`services/pin_boundaries.py` — a shard reader with a cached index, deliberately
+not in the router — plus `GET /territories/{id}/geometry`.
+
+**🟡, not ✅, for exactly one reason:** the endpoint returns a real Feature for a
+real territory on live rows, and no customer can see a shape until 7.5 draws it.
+
+Live, read-only, through the real bucket:
+
+    E2E "Gujarat"                -> 1 Feature, pincode 395002, Polygon,
+                                    47 positions, claimed:1 matched:1,
+                                    all three failure lists empty
+    the same id, as Unicode      -> 404
+    a nonexistent id             -> 404
+    a territory with no PINs     -> 200, empty FeatureCollection
+    ["110001","110009"]          -> 1 Feature + unmatched:["110009"]
+
+The last is the plan's stated acceptance, exactly.
+
+**The R2 index, measured rather than assumed:** 69 objects, 19,406,922 bytes,
+**19,312 PINs with no duplicate across shards**. Shard names run 11–85 with
+**six absent** (29, 35, 54, 55, 65, 66) — which is what makes "prefix not in the
+index → `unmatched`, with no GET issued at all" a real path rather than a
+theoretical one. Largest shard is 670 KB on disk and **5.03 MB parsed**, 7.5×,
+so the shard LRU is bounded at 4.
+
+**THE THREE BUCKETS ARE SEPARATE AND EACH WAS PROVED ON ITS OWN.** Collapsing
+`unavailable` into `unmatched` tells a customer "there is no shape for 110001"
+when R2 is merely down, which is the failure this section of the plan exists to
+prevent.
+
+- `unmatched` — two distinct paths, each asserted with the other buckets empty:
+  a prefix the dataset never published (answered from the index, with
+  `client.gets == []` asserted so no GET is even issued), and a PIN absent from
+  a shard that loaded perfectly.
+- `invalid` — `'NW1 245'`, `'ahmedabad'`, `'012345'` (a leading zero: no Indian
+  PIN has one), blank → `"(blank)"`, order preserved, deduplicated, truncated at
+  32 chars. **And a `pincodes` value that is not a list at all** —
+  `{"pincodes": "400001"}`, the shape the product genuinely stores, which used
+  to vanish silently and is now named.
+- `unavailable` — five offline cases plus **two against the real bucket, both
+  read-only**: a missing vintage whose listing comes back empty, and a real GET
+  answering `NoSuchKey`/404 after the index had already listed that shard.
+
+`storage.download_file` is never called, and a route test greps for it, because
+it collapses missing-key and outage into the same `None`.
+
+**The plan's acceptance arithmetic is corrected.** §7.3 writes it as
+`features.length + unmatched.length === rules.pincodes.length`, which only holds
+when nothing is invalid, nothing is duplicated and R2 is up. The response
+carries `claimed` (what routing actually sees), so the invariant is
+`matched + unmatched + unavailable === claimed` in every case. 7.5 should assert
+that, and must render `unavailable` as its own state: an empty `features` with a
+non-empty `unavailable` is an OUTAGE; with a non-empty `unmatched` it is a
+correct answer. The GODL credit is served in `attribution` so it cannot drift
+from the vintage.
+
+39 + 6 tests, green offline and again under `railway run` against live R2 and
+the live schema. The test file deliberately never names the CRM router, so
+`graha` stays in `UNCOVERED` and no guarantee was retired by a technicality —
+the same trap 7.1 documented.
+
+⚠ **An untested snapshot of this reached `staging` early, and it was my doing.**
+`cd0d3608` — a Phase 8.0 commit — swept the in-flight `pin_boundaries.py` (514
+lines) and the router change in through `git add -A`, without the test file,
+which was untracked at that moment. Its message says nothing about them. No
+false status was published (STATUS did not claim 7.3), the backend imported and
+CI stayed green at 14,690 passed, and this commit supersedes it — but a commit
+message that omits 612 lines of another phase is a defect in the record, and
+`git add -A` while an agent is writing in the same tree is how it happened.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
