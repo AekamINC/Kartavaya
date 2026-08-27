@@ -528,14 +528,52 @@ def test_the_payslip_records_which_rule_produced_the_professional_tax():
     assert nothing["pt_basis"] == "slab" and nothing["pt_slab"] is None
 
 
-def test_no_income_tax_or_pf_or_esi_constant_moved_with_it():
-    """2.2 changes professional tax and nothing else. PF at 12% capped at
-    ₹1,800, ESI at 0.75%/3.25% under ₹21,000 and both income-tax ladders are
-    law and are untouched."""
+def test_no_income_tax_or_esi_constant_moved_with_it():
+    """2.2 changes professional tax and nothing else.
+
+    ESI at 0.75%/3.25% under ₹21,000 and both income-tax ladders are law and
+    are untouched. **PF LEFT THIS LIST ON 2026-08-27 AND ITS ABSENCE IS THE
+    POINT** — see the test below.
+    """
     src = inspect.getsource(vetana._compute_statutory)
-    for law in ("0.12", "1800", "0.0075", "0.0325", "21000", "50000",
+    for law in ("0.0075", "0.0325", "21000", "50000",
                 "300000", "700000", "250000", "112500", "140000"):
         assert law in src, f"the statutory constant {law} has gone"
+
+
+def test_pf_is_dated_law_now_and_still_computes_the_same_figure():
+    """PHASE 5.1 — `0.12` and `1800` are GONE, deliberately.
+
+    They were two statutory facts fused into one expression:
+    `min(pf_base * 0.12, 1800)` hardcodes the 12% rate AND the ₹15,000 ceiling
+    that makes 1,800 the cap. Neither could change without a deploy, and neither
+    said when it started. Migration 228 seeds all three as dated rows
+    (`epf.rate.employee`, `epf.rate.employer`, `epf.wage_ceiling`), read at the
+    run's period end.
+
+    THE ARITHMETIC IS UNCHANGED, which is what makes the change safe to ship:
+    12% of a ₹15,000 ceiling is ₹1,800. This asserts that identity rather than
+    the old literals, so a future edit that moves the number still fails here.
+    """
+    src = inspect.getsource(vetana._compute_statutory)
+    assert "0.12" not in src, (
+        "the PF rate is a literal again — it belongs in statute_calendar, "
+        "read through `_epf_terms` at the run's period end")
+
+    # The fallbacks, which are the same law expressed as a rate and a ceiling.
+    assert "12.0" in src and "15000.0" in src
+
+    # And the identity the old literal encoded, asserted rather than assumed.
+    assert round(15000.0 * 12.0 / 100, 2) == 1800.0
+
+    # The fallback is the statutory literal, NOT zero: an absent PF row means
+    # the store cannot answer, not that no provident fund is due. Answering 0%
+    # would quietly under-remit somebody's contribution.
+    # Whitespace-normalised: the sentence wraps across lines in the source, and
+    # a substring check against raw source silently depends on where the line
+    # breaks fall.
+    terms = " ".join(inspect.getsource(vetana._epf_terms).split())
+    assert "never shrink a statutory contribution" in terms
 
 
 # ══════════════════════════════════════════════════════════════════════════

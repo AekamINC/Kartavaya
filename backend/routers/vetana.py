@@ -855,6 +855,58 @@ async def _esi_ceiling(pool, as_of: date) -> float | None:
         return None
 
 
+async def _epf_terms(pool, as_of: date) -> tuple:
+    """(employee rate %, employer rate %, wage ceiling) in force on `as_of`.
+
+    PHASE 5.1, SECOND CONSTANT OUT OF A LITERAL. `_compute_statutory` carried
+    `min(pf_base * 0.12, 1800)`, which hardcodes TWO statutory facts at once —
+    the 12% rate and the ₹15,000 ceiling that makes 1,800 the cap — and neither
+    could change without a deploy or say when it started.
+
+    THE STORE COULD NOT ANSWER UNTIL TODAY, and that is why this was still a
+    literal after 5.1's first pass. `epf.remittance` exists and is a DUE-DATE
+    row: its `rate_percent` and `threshold_amount` are both NULL. Of the 45
+    rows in `statute_calendar`, exactly one carried a payroll figure —
+    `esi.wage_ceiling`. Migration 228 seeds the three that were missing, cited.
+
+    IT MOVES NO PAYSLIP. 12% of ₹15,000 is ₹1,800, the same cap the literal
+    carried, so every payslip in both in-scope orgs computes what it computed
+    yesterday. The mechanism lands without moving money.
+
+    EACH TERM FALLS BACK ON ITS OWN, and the fallback is the statutory literal
+    rather than zero — the same asymmetry `_esi_ceiling` argues for and the
+    OPPOSITE of the professional-tax choice. An absent PT slab means "this state
+    levies nothing", a defensible zero. An absent PF rate does not mean "no
+    provident fund": it means the store cannot answer, and answering 0% would
+    under-remit somebody's retirement contribution and breach s.6 quietly, on
+    the employer's behalf. A missing row must never shrink a statutory
+    contribution any more than it may widen one.
+    """
+    from services import statute
+
+    async def _one(key: str, column: str):
+        try:
+            row = await statute.obligation(pool, key, as_of=as_of)
+        except Exception:
+            # A payroll run must not stop because the law store is unreadable.
+            logging.getLogger(__name__).warning(
+                "%s could not be read for %s; keeping the statutory literal",
+                key, as_of, exc_info=True)
+            return None
+        if not row or row.get(column) is None:
+            return None
+        try:
+            return float(row[column])
+        except (TypeError, ValueError):
+            return None
+
+    return (
+        await _one("epf.rate.employee", "rate_percent"),
+        await _one("epf.rate.employer", "rate_percent"),
+        await _one("epf.wage_ceiling", "threshold_amount"),
+    )
+
+
 async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     """This org's professional-tax ladder as it stood at `as_at`.
 
@@ -1013,7 +1065,8 @@ def _pt_from_slabs(slabs, state, gross: float) -> tuple:
 def _compute_statutory(basic_payable: float, gross: float, structure: dict,
                        commission: float = 0.0, bonus: float = 0.0,
                        pt_slabs=None, employee_state=None,
-                       esi_ceiling: float | None = None):
+                       esi_ceiling: float | None = None,
+                       epf_terms: tuple | None = None):
     """PF, ESI, PT and TDS — WHETHER each is computed, and on WHAT BASE.
 
     NO PF, ESI OR TDS RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED.
@@ -1084,8 +1137,18 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
     esi_base = gross + (commission if comm_esi else 0.0) \
         + (bonus if bonus_esi else 0.0)
 
-    pf_emp = min(pf_base * 0.12, 1800) if pf_on else 0
-    pf_emr = min(pf_base * 0.12, 1800) if pf_on else 0
+    # PHASE 5.1 — the rate and the ceiling come from `statute_calendar` at the
+    # run's period end (`_epf_terms`), and each falls back to its own statutory
+    # literal when the store cannot answer. 12% of 15,000 is 1,800: the cap the
+    # literal carried, so no payslip moves. See `_epf_terms` on why the fallback
+    # is the literal and not zero.
+    _pf_emp_rate, _pf_emr_rate, _pf_ceiling = (epf_terms or (None, None, None))
+    _pf_emp_rate = 12.0 if _pf_emp_rate is None else _pf_emp_rate
+    _pf_emr_rate = 12.0 if _pf_emr_rate is None else _pf_emr_rate
+    _pf_ceiling = 15000.0 if _pf_ceiling is None else _pf_ceiling
+    _pf_wage = min(pf_base, _pf_ceiling)
+    pf_emp = round(_pf_wage * _pf_emp_rate / 100, 2) if pf_on else 0
+    pf_emr = round(_pf_wage * _pf_emr_rate / 100, 2) if pf_on else 0
 
     # THE CEILING IS DATED NOW; THE RATES ARE NOT. 0.75% and 3.25% stay literal
     # because `statute_calendar` holds no key for them — `epf.remittance` and the
@@ -1611,6 +1674,10 @@ async def process_payroll(
     # therefore uses the ceiling that applied to THAT month, which is the whole
     # acceptance criterion for Phase 5.1.
     esi_ceiling = await _esi_ceiling(pool, month_end)
+    # Same date, same reason — see `_epf_terms`. Read ONCE per run, not
+    # once per employee: the law does not change between two payslips of
+    # the same month, and a query per employee would be 83 of them.
+    epf_terms = await _epf_terms(pool, month_end)
 
     seen_employees = set()
     unique_structures = []
@@ -1813,6 +1880,7 @@ async def process_payroll(
                                   bonus=bonus_total,
                                   pt_slabs=pt_slabs,
                                   esi_ceiling=esi_ceiling,
+                                  epf_terms=epf_terms,
                                   employee_state=(s["employee_state"]
                                                   if pt_slabs is not None
                                                   else None))
