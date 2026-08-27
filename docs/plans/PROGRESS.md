@@ -2779,4 +2779,64 @@ The screenshot is what settled it. The panel showed `Phase 7.1 Round-Robin
 Acceptance` while the test named KEVAL SHAH — who is a real contact in E2E with
 an empty address, and also the name in the signed-in user's badge in the corner.
 
+## 2026-08-27 · The Mappls key is NOT owed — it has been there all along
+
+The plan, `STATUS.md` and `memory/mappls_licence_and_map_market` all treat the
+Mappls credential as something the owner still has to supply, and 7.4, 7.5, 7.6,
+8.1, 8.2 and 8.3 were all reported as blocked behind it. Checked rather than
+assumed, on Railway staging:
+
+    MAPPLS_CLIENT_ID       set, 88 chars
+    MAPPLS_CLIENT_SECRET   set, 96 chars
+
+And they WORK. A client-credentials token request to
+`outpost.mappls.com/api/security/oauth/token` returns **HTTP 200**, a bearer
+token, `expires_in 86399`, `scope READ`, project `prj1787726591i922664629`. The
+token itself was never printed — the check reports its length and the metadata
+around it and nothing else.
+
+**What was genuinely missing is a different variable.** `TerritoryMap.jsx:21`
+reads `VITE_MAPPLS_KEY` — a FRONTEND build-time variable — and renders "The
+territory map needs a MapMyIndia key" when it is absent. The backend holds an
+OAuth pair; the map component wants a browser key. Those are not the same
+credential, and the gap between them is why "no key" has been the standing
+belief while a working one sat in the environment.
+
+There is an answer available that needs nothing from anybody: the backend can
+mint a token from the pair it already holds and hand it to the browser. It is
+not implemented here.
+
+## 2026-08-27 · 7.4 · CSP — the two Mappls hosts, and worker-src
+
+Exactly what §7.4 specifies, one line changed:
+
+- `https://sdk.mappls.com` and `https://apis.mappls.com` appended to
+  `script-src`, `connect-src`, and to **both** `style-src` *and*
+  `style-src-elem` — there are two directives, not one, and adding to only the
+  first is a silent half-fix.
+- `worker-src 'self' blob:` **added**, because it was absent entirely: a worker
+  falls back through `child-src` to `script-src`, which does not admit `blob:`,
+  and the SDK spawns blob workers.
+
+⚠ **This LOOSENS the production CSP**, and `staging.kartavaya.com` and
+production serve the same file. It is narrow — two vendor hosts and a blob
+worker — inert until something calls Mappls, which nothing does, and trivially
+reversible. Landing it first is the plan's own ordering: *"7.4 must land and be
+verified on the served header before 7.5 is worth writing."*
+
+**The edit is surgical, and the first attempt was not.** Rewriting the file
+through `json.dumps(indent=2)` reformatted 21 lines to change one — on a file
+where `vercel.json` takes no comments, a `"//"` key kills the deploy before the
+build starts with no logs, and the served header is currently byte-identical to
+the file. The second attempt replaces only the CSP string inside the raw text
+and asserts afterwards that the file still parses and that no comment key crept
+in. `check-csp-hash` still passes: one inline script, allowed.
+
+**7.5 is NOT being built off the back of this.** The CSP is inert; a map is not.
+Mappls' terms require the "Powered by Mappls" LOGO rather than a text credit,
+forbid a Mappls map "with or near a non-Mappls Map" anywhere in the app, forbid
+caching to avoid fees, and take a perpetual sub-licensable licence over every
+address submitted to them. Those are commitments about the product, not code
+decisions, and the plan already lists three open questions for the owner.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
