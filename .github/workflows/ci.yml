@@ -517,10 +517,17 @@ jobs:
           # written there while every api() call 403'd. That is precisely how a
           # Phase-1 vendor landed in the wrong organisation on 2026-08-26.
           E2E_ORG_ID: ${{ secrets.E2E_ORG_ID }}
-          # E2E_GODMODE_TOKEN does not exist as a repository secret yet, so with
-          # the guard now active this step will REFUSE and this job will stay red
-          # until one is added. That is the correct outcome: a red job that
-          # explains itself beats a green one writing to a customer's books.
+          # ADDED as a repository secret on 2026-08-27, on the owner's say-so.
+          # Until then this step REFUSED and the job stayed red, which was the
+          # correct outcome — a red job that explains itself beats a green one
+          # writing to a customer's books.
+          #
+          # `E2E_ADMIN_TOKEN` belongs to Unicode Group and 403s on the E2E org,
+          # so `mint-state` substitutes this one and SAYS SO in its output. Do
+          # not read that substitution message as an error; read it as the guard
+          # working. The run step below is `--project=tonight` only, which is
+          # read-only, so this credential's reach here is a session and a set of
+          # GETs — not the write specs in `e2e-real/phase*.spec.ts`.
           E2E_GODMODE_TOKEN: ${{ secrets.E2E_GODMODE_TOKEN }}
           E2E_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
           E2E_API_URL: ${{ vars.E2E_API_URL }}
