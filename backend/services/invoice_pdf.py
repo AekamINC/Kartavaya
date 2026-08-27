@@ -118,10 +118,19 @@ def amount_in_words_inr(amount: float) -> str:
 
 
 def _fmt_addr(addr: dict) -> str:
-    if not isinstance(addr, dict):
-        return ""
-    fields = [addr.get(k, "") for k in ("line1", "line2", "city", "state", "pincode", "country")]
-    return ", ".join(f for f in fields if f)
+    """One line, comma separated, in `doc_render.ADDRESS_ORDER`.
+
+    The order was a literal here and a DIFFERENT literal in
+    `doc_render.fmt_addr` — `city, state, pincode` against `city, pincode,
+    state` — so the same client's address read one way on its tax invoice and
+    the other on the letterhead of the agreement attached to it. It is now the
+    one tuple, and `tests/test_address_order.py` fails if either renderer
+    reintroduces a literal. The reasoning for which order won is on the tuple.
+
+    The one-line join stays this renderer's own: this string lands in a `<td>`
+    in the party block, where `fmt_addr`'s `<br>` would break the row height.
+    """
+    return ", ".join(R.addr_parts(addr))
 
 
 def _fmt_amount(amount, currency: str) -> str:

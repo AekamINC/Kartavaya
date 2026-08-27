@@ -50,7 +50,14 @@ const COMPLIANCE = [
   'MSME registered', 'Enterprise class', 'Vendor kind',
   'Udyam number', 'TDS section', 'Payment terms',
 ];
-const ALL_FIELDS = ['Name', 'GSTIN', 'Email', 'Phone', ...COMPLIANCE];
+/** The six address boxes open finding 4 added, in render order. They sit
+ *  between the contact block and the compliance block: an address is part of
+ *  who the supplier IS, and the MSME/TDS answers are what is claimed about it.
+ *  Listed here rather than left out because this file's set-equality assertion
+ *  is exactly what stops one tab growing a field the other lacks — and the
+ *  address boxes are the newest candidate for that. */
+const ADDRESS = ['Address line 1', 'Address line 2', 'City', 'State', 'Pincode', 'Country'];
+const ALL_FIELDS = ['Name', 'GSTIN', 'Email', 'Phone', ...ADDRESS, ...COMPLIANCE];
 
 /** A supplier that already carries all six — the shape Kray has been writing. */
 const EXISTING = {

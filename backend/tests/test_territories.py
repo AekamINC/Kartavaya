@@ -411,9 +411,17 @@ def test_a_deals_territory_is_bound_with_its_type_not_as_a_bare_parameter():
     is the same failure on `$1 + $2`. The generic else-branch of the SET-build
     binds exactly that, so the name has to be inside the typed tuple."""
     patch = _code(graha.update_deal)
-    assert '("client_id", "contact_id", "territory_id")' in patch, (
-        "territory_id has fallen out of the typed branch of the deal SET-build"
-    )
+    # Asserted NAME BY NAME rather than against the literal tuple. The literal
+    # form pinned the exact string `("client_id", "contact_id", "territory_id")`
+    # and so went red the moment `pipeline_id` was correctly ADDED to that
+    # branch — a test failing on a fix is a test that teaches people to edit the
+    # test. The property being guarded is "this name is bound with its type",
+    # and that is what is checked.
+    for name in ("client_id", "contact_id", "territory_id", "pipeline_id"):
+        assert f'"{name}"' in patch, (
+            f"{name} has fallen out of the typed branch of the deal SET-build — "
+            "a bare $n into a uuid column is the PgBouncer untyped-parse 500"
+        )
 
 
 # ── 7.3: the boundary endpoint ───────────────────────────────────────────────

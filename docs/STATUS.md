@@ -110,6 +110,56 @@ literal, and two `ALLOWED` exemptions had already been spent covering for it.
 
 </details>
 
+## Open findings 1, 2, 4, 7, A and D — CLOSED 2026-08-27, three wider than filed
+
+Full detail in `docs/plans/PROGRESS.md`. The headline is that sweeping for the
+SHAPE rather than the reported symptom found more in three of six cases.
+
+- ✅ **`create_deal`'s unchecked ids — and FIVE more routes.** Live exposure
+  measured first and it is **0 cross-org rows on every pair** (latent, like the
+  `territory_id` control). Ten FKs reach these tables from a request body and
+  **not one is composite with `org_id`**. Beyond the filed finding: **
+  `compute_lead_score` re-read the RAW `body.contact_id` after the guard** — a
+  cross-tenant WRITE that survives a perfectly guarded INSERT — and
+  `create_activity`, `create_follow_up`, `create_document`, `update_document`
+  all carried the same hole. The follow-up one is emailed by the reminder job,
+  so it reached another firm's notifications. 27 tests, **19 mutations each
+  proved to bite**.
+- ✅ **The reason a deal was lost can now be saved.** 22 deals stand in stage
+  `Lost`; 2 carry a reason and **neither can have come through the PATCH**. A
+  drift ratchet now pins `DealUpdate.model_fields == _DEAL_COLS` both ways. ⚠ A
+  latent PgBouncer 500 was found beside it: `pipeline_id` was outside the typed
+  branch of the SET-build.
+- ✅ **The vendor form captures an address.** Unicode **6 of 9** and E2E **40 of
+  75** vendors carry one in a column no screen could write. Non-destruction is
+  two independent guards, and the 43-single-character-key fossil is the
+  mandatory test case, not an edge case.
+- ✅ **The two address renderers agree**, on `city, state, pincode, country`,
+  because **a PIN does not imply its state** — 51 of 18,839 cross a state line.
+  ⚠ Fixed in passing: `_fmt_addr` joined raw jsonb, so a pincode stored as the
+  NUMBER `395002` raised `TypeError` — a **500 on the invoice**.
+- ✅ **`TeamMemberAdd` persists what the form posts.** **0 of 212** rows carried
+  a company and **0** had the approval flag off — the toggle had never once
+  been saved, in any org. Written to `users` as well, because that is where
+  `request_task_approval` reads it.
+- ✅ **The subtasks 500 is fixed at the cause.** The guard already at HEAD was
+  the SYMPTOM, copy-pasted four times: `db.py` registers a jsonb codec, so the
+  value arrives decoded. One named helper now, and both its branches are real —
+  **54 live rows are double-encoded jsonb strings**. ⚠ The suite stayed green
+  because `tests/helpers.py` defaults every jsonb column to a STRING: the
+  fixture tested the world of a year ago while the endpoint 500'd.
+- ✅ **The picker de-duplicates again** — on `user_id`, never on email. The leak
+  fix had left `u.email` undefined, so nobody was filtered and re-adding an
+  existing member DELETEd and re-INSERTed their row.
+
+**Still open from this batch:** `doc_validation.py:152` is a THIRD address
+vocabulary and omits `country`; **54 double-encoded `tasks.subtasks` rows** need
+a data migration (a production write, recorded not done); `tests/helpers.py`'s
+jsonb fixtures mis-shape every route they feed; the pending-invitee carry-over
+at `auth_router.py:1195`; and one Sentry issue (`PYTHON-FASTAPI-G`) that is
+already fixed at HEAD by `ed8e9281` and **needs only a deploy** — its last event
+predates the fix by nine minutes.
+
 ## Live blockers — wrong in the running product (fix first: `PHASE-2`)
 
 | | Blocker | Where | Status |

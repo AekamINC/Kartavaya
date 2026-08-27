@@ -344,14 +344,81 @@ def embed_logo_file(path: str | Path) -> str:
     return f'<img src="data:{mime};base64,{b64}" alt="" />'
 
 
+#: THE ORDER AN ADDRESS IS WRITTEN IN. One tuple, imported by every renderer,
+#: because two literals is how this drifted in the first place: `fmt_addr` here
+#: printed `city, pincode, state, country` while `invoice_pdf._fmt_addr` printed
+#: `city, state, pincode, country`, so the same client read one way on the tax
+#: invoice and the other on the letterhead of the agreement attached to it.
+#:
+#: The survivor is `city, state, pincode, country`, and not because it was the
+#: majority (though it was — `_fmt_addr` and the on-screen
+#: `components/ui/AddressBlock.jsx` both use it, against this one). Three
+#: reasons, in the order they decide it:
+#:
+#:   1. It is what customers have already been sent. Every tax invoice, credit
+#:      note and debit note this product has ever raised carries it, and it is
+#:      what the screen shows beside them. Moving the OTHER two would change a
+#:      customer-visible string on the documents that matter most, to match the
+#:      module that renders the fewest.
+#:   2. A PIN does not imply its state, so the state is not an afterthought to
+#:      be appended once the number has been given. Measured live on
+#:      `staging.pin_directory` (Phase 7.2, re-checked 2026-08-27): 51 of 18,839
+#:      distinct PINs span more than one STATE and 1,229 span more than one
+#:      district. `Ahmedabad, 380009, Gujarat` reads as a correction; `Ahmedabad,
+#:      Gujarat, 380009` reads as an address.
+#:   3. It is the form an Indian address takes when a country follows it, which
+#:      is the case this tuple has to cover — `country` is the last element and
+#:      6 live `ganit_vendors.address` rows carry one.
+#:
+#: `state_code` is deliberately absent. It is the numeric GST code and it is
+#: never printed: `AddressBlock.stateOf` resolves it to a NAME for display and
+#: yields nothing for a code it does not recognise. Printing it raw gives
+#: "Ahmedabad, 24", which reads as a house number.
+#:
+#: `tests/test_address_order.py` fails if any renderer stops using this.
+ADDRESS_TOP = ("line1", "line2")
+ADDRESS_BOTTOM = ("city", "state", "pincode", "country")
+ADDRESS_ORDER = ADDRESS_TOP + ADDRESS_BOTTOM
+
+
+def addr_parts(addr) -> list[str]:
+    """The address's non-empty fields, in `ADDRESS_ORDER`, as clean strings.
+
+    `str(...)` and not a bare truth test: these come out of a `jsonb` column,
+    so a pincode may arrive as the number `395002` rather than `'395002'` — and
+    `", ".join` on an int raises `TypeError`, which on a document renderer is a
+    500 on the invoice rather than a missing line. Every renderer normalises
+    here so none of them has to remember to.
+
+    A key not in `ADDRESS_ORDER` is IGNORED, never appended. That is what makes
+    the exploded-jsonb fossil harmless on a document: Unicode Group's `Navrang
+    Polymers` carries 43 keys, "0".."41" spelling a serialised object one
+    character per key, and rendering every key we happen to find would print a
+    line of punctuation on a tax invoice.
+    """
+    if not isinstance(addr, dict):
+        return []
+    out = []
+    for k in ADDRESS_ORDER:
+        v = addr.get(k)
+        s = "" if v is None else str(v).strip()
+        if s:
+            out.append(s)
+    return out
+
+
 def fmt_addr(addr) -> str:
     """The org/contact address as brand.css prints it: two lines, `<br>` split
-    after line2, matching `.lh__legal` in every specification document."""
+    after line2, matching `.lh__legal` in every specification document.
+
+    The two-line split is this renderer's own — a letterhead has the vertical
+    room for it and an invoice's `<td>` does not — but the FIELD ORDER inside
+    the lines is `ADDRESS_ORDER` and is not this module's to choose.
+    """
     if not isinstance(addr, dict):
         return ""
-    top = ", ".join(str(addr.get(k) or "").strip() for k in ("line1", "line2") if str(addr.get(k) or "").strip())
-    bottom_parts = [str(addr.get(k) or "").strip() for k in ("city", "pincode", "state", "country")]
-    bottom = ", ".join(p for p in bottom_parts if p)
+    top = ", ".join(p for p in addr_parts({k: addr.get(k) for k in ADDRESS_TOP}))
+    bottom = ", ".join(p for p in addr_parts({k: addr.get(k) for k in ADDRESS_BOTTOM}))
     if top and bottom:
         return f"{esc(top)}<br>{esc(bottom)}"
     return esc(top or bottom)

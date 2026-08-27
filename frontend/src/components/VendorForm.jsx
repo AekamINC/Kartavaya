@@ -52,20 +52,160 @@ const CLASSES = [['', 'Not recorded'], ['micro', 'Micro'], ['small', 'Small'], [
 const KINDS = [['', 'Not recorded'], ['manufacturer', 'Manufacturer'], ['service', 'Service'], ['trader', 'Trader']];
 const MSME = [['', 'Not recorded'], ['yes', 'Yes'], ['no', 'No']];
 
+/* ── ADDRESS ────────────────────────────────────────────────────────────────
+ *
+ * The defect (open finding 4): `staging.ganit_vendors.address` is `jsonb NOT
+ * NULL DEFAULT '{}'`, `POST /v1/ganit/vendors` has always bound `body.address`
+ * into the INSERT and `PATCH` has always bound it into the SET — and this form
+ * had no `address` key at all. So the column was API-writable, already
+ * populated, and unenterable by a human. Measured live 2026-08-27 against the
+ * staging schema: of 9 active Unicode Group vendors **6** carry a non-empty
+ * address object, and of 75 in E2E Test & Associates **40** do. A supplier
+ * address that a person can neither type nor correct is the same failure shape
+ * as `graha_contacts.territory_id` before Phase 7.0.
+ *
+ * The keys are NOT a new spelling. They are the seven `AddressBlock` reads and
+ * `services/invoice_pdf.py:_fmt_addr` prints, in that order — a vendor written
+ * with any other spelling would be invisible to the bill raised against it.
+ * Confirmed against what is actually stored: the only keys present on any
+ * `ganit_vendors.address` row are `city` (46), `line1` (46), `country`,
+ * `pincode`, `state` and `state_code` (6 each). `line2` is unused today and is
+ * still offered, because it is in the vocabulary the renderers read.
+ *
+ * `state_code` is the seventh and it is deliberately NOT a box. It is the
+ * numeric GST code ('24' Gujarat, '27' Maharashtra) — reference data resolved
+ * to a NAME for display and never printed raw, which is the standing rule in
+ * `AddressBlock.stateOf` and `EmployeesTab`. It survives an edit through the
+ * carry-through below, alongside every other key we do not render.
+ */
+const ADDRESS_BOXES = [
+  ['line1', 'Address line 1', 'पता पंक्ति 1', {}],
+  ['line2', 'Address line 2', 'पता पंक्ति 2', {}],
+  ['city', 'City', 'शहर', {}],
+  ['state', 'State', 'राज्य', {}],
+  /* Six digits, and NOT enforced — the same call `graha/ContactsTab` documents.
+     GSTIN/PAN/TAN are non-mandatory by owner rule and a pincode is the same
+     kind of fact: a half-typed one must not stop somebody recording a supplier.
+     `maxLength` and `inputMode` are help, not validation; `Unicode Group`'s
+     `INC UK` already stores 'NW1 245' in a pincode and it must stay editable. */
+  ['pincode', 'Pincode', 'पिन कोड', { inputMode: 'numeric', maxLength: 6, placeholder: '395002' }],
+  /* Rendered because `_fmt_addr` PRINTS it and 6 live vendor rows carry it.
+     Leaving it out would reproduce, one field smaller, the exact defect this
+     block closes: written by the API, present on rows, unenterable. */
+  ['country', 'Country', 'देश', { placeholder: 'Optional · for an overseas supplier' }],
+];
+
+const ADDRESS_BOX_KEYS = ADDRESS_BOXES.map(([k]) => k);
+
+export const BLANK_ADDRESS = Object.freeze(
+  Object.fromEntries(ADDRESS_BOX_KEYS.map(k => [k, ''])),
+);
+
 export const BLANK_VENDOR = {
   name: '', gstin: '', email: '', phone: '',
+  address: { ...BLANK_ADDRESS },
+  /* Every key of the stored object that is NOT one of the six boxes, carried
+     verbatim from load to save. This is the whole of the non-destruction
+     guarantee — see `vendorAddress` below. */
+  address_extra: {},
+  /* Whether a person touched an address box in THIS editing session. See
+     `vendorPayload`: the `address` key is omitted entirely when false. */
+  address_dirty: false,
   is_msme: '', enterprise_class: '', vendor_kind: '',
   udyam_number: '', tds_section: '', payment_terms_days: '',
 };
 
+/** A stored value is part of an address only if it is text with something in
+ *  it. Mirrors `AddressBlock.text`, including the number leg — a pincode that
+ *  was stored as `395002` rather than `'395002'` is still a pincode. */
+function text(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
+  if (typeof v !== 'string') return '';
+  return v.trim();
+}
+
+/**
+ * Whatever the column handed back → a plain object, or null.
+ *
+ * Deliberately NARROWER than `AddressBlock.asFields`, and the difference is the
+ * point. That one is a display path and may fall back to `{ line1: <the whole
+ * string> }` for a column holding loose text; doing that HERE would put a guess
+ * into a payload and save it. So: a serialised object is decoded (one level —
+ * `backend/db.py:_json_encoder` documents the double-encode that produced those
+ * rows, and a bound depth means a hypothetical triple-encode cannot loop), and
+ * anything else — loose text, an array, a number — yields null, which leaves
+ * the boxes blank AND, because nothing then marks the form dirty, leaves the
+ * column untouched on save.
+ *
+ * No live vendor row needs the decode today: `jsonb_typeof(address)='string'`
+ * is 0 across all three orgs (measured 2026-08-27). It is here because the
+ * fossil is documented on 38 jsonb columns across 26 tables and this form is
+ * the one thing that would overwrite it.
+ */
+function asAddressObject(raw, depth = 0) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t || depth > 0) return null;
+    if (t[0] !== '{') return null;
+    let parsed;
+    try { parsed = JSON.parse(t); } catch { return null; }
+    return asAddressObject(parsed, depth + 1);
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  return raw;
+}
+
+/**
+ * The address to SAVE: every unrecognised key exactly as it was found, with the
+ * six boxes written over the top.
+ *
+ * THE ROW THIS EXISTS FOR. Unicode Group's `Navrang Polymers` stores its
+ * address as 43 keys: "0".."41" spelling `{"city": "Mumbai", "state":
+ * "Maharashtra"}` one character per key, plus a genuine `city` reading "Navi
+ * Mumbai" that contradicts the exploded copy. (It is a `graha_clients` row
+ * today, not a vendor — but the fossil that produced it is column-agnostic and
+ * `ganit_vendors.address` is one of the swept columns, so it is the shape this
+ * form must survive, not a shape it may assume away.)
+ *
+ * Read the six names, ignore everything else, and NEVER reassemble anything.
+ * Rebuilding a string from character-indexed keys is a guess, and it would lose
+ * to the real `city` sitting beside it anyway. So an edit of Navrang's phone
+ * number leaves all 43 keys where they are; an edit of its City replaces one of
+ * them and leaves 42.
+ *
+ * The six are always written, including as `''`. A blank is NOT a deletion and
+ * is not treated as one: `''` and an absent key read identically in every
+ * consumer (`AddressBlock.text` trims and drops it, `_fmt_addr` filters falsy),
+ * so writing the blank is how a value entered by mistake gets taken back —
+ * exactly the tri-state argument the compliance columns above are built on.
+ * A `delete` would be indistinguishable in effect and one branch harder to
+ * reason about.
+ */
+export function vendorAddress(f) {
+  const out = { ...(f.address_extra || {}) };
+  for (const k of ADDRESS_BOX_KEYS) out[k] = text(f.address?.[k]);
+  return out;
+}
+
 /** A live vendor row, hydrated into form state. `null` yields a blank form. */
 export function vendorFormFrom(v) {
-  if (!v) return { ...BLANK_VENDOR };
+  if (!v) return { ...BLANK_VENDOR, address: { ...BLANK_ADDRESS }, address_extra: {} };
+  const stored = asAddressObject(v.address);
+  const address = { ...BLANK_ADDRESS };
+  const address_extra = {};
+  for (const [k, val] of Object.entries(stored || {})) {
+    if (ADDRESS_BOX_KEYS.includes(k)) address[k] = text(val);
+    else address_extra[k] = val;
+  }
   return {
     name: v.name || '',
     gstin: v.gstin || '',
     email: v.email || '',
     phone: v.phone || '',
+    address,
+    address_extra,
+    address_dirty: false,
     /* Tri-state on the way in as well: `is_msme` is boolean-or-NULL, so a
        null must hydrate as '' (not recorded) and false as 'no'. `?? ''`
        rather than `|| ''` for the same reason on the number — 0 days is a
@@ -84,7 +224,7 @@ export function vendorFormFrom(v) {
    the column to NULL and a key that is absent leaves it alone. Sending them
    all is what makes a value removable after it was entered by mistake. */
 export function vendorPayload(f) {
-  return {
+  const p = {
     name: f.name, gstin: f.gstin, email: f.email, phone: f.phone,
     is_msme: f.is_msme === '' ? null : f.is_msme === 'yes',
     enterprise_class: f.enterprise_class,
@@ -93,6 +233,25 @@ export function vendorPayload(f) {
     tds_section: f.tds_section,
     payment_terms_days: f.payment_terms_days === '' ? null : Number(f.payment_terms_days),
   };
+  /* `address` is the ONE key that breaks the send-everything rule above, and
+     for the opposite reason. The compliance columns are tri-states a person
+     answers; an address is a whole object we did not necessarily author. On
+     `VendorUpdate` the field is `dict | None = None` and the router only adds
+     `address=$n::jsonb` to the SET when it is not None — so omitting the key is
+     the router's own "leave this column exactly as it is".
+
+     Somebody who opens a vendor to fix its TDS section must not rewrite the
+     address as a side effect. That matters most for a row this form cannot
+     fully represent: an address stored as a JSON string, or one carrying keys
+     no box maps to. Untouched means unsent means unchanged — a guarantee no
+     amount of careful merging can match, because merging still writes.
+
+     On create there is nothing to protect, and nothing to send either: the
+     column's DEFAULT is `'{}'::jsonb` and `VendorCreate.address` defaults to
+     `{}`, so an untouched blank address arrives at the same value by both
+     routes. */
+  if (f.address_dirty) p.address = vendorAddress(f);
+  return p;
 }
 
 /**
@@ -119,6 +278,16 @@ export default function VendorForm({ vendor = null, onSaved, onCancel }) {
   }
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  /* Typing in ANY address box marks the whole address dirty. Per-key dirtiness
+     would be wrong: the six travel to the column as one jsonb value, so once a
+     save has to write the object it writes all of it. `address_dirty` is
+     one-way within an editing session — a person who types a city and deletes
+     it again has still asked for the address to be saved as they left it. It
+     resets when the form re-seeds onto a different vendor, above. */
+  const setAddr = (k) => (e) => setForm(f => ({
+    ...f, address_dirty: true, address: { ...f.address, [k]: e.target.value },
+  }));
 
   async function submit(e) {
     e.preventDefault();
@@ -168,6 +337,30 @@ export default function VendorForm({ vendor = null, onSaved, onCancel }) {
           <input className="inp" value={form.phone} onChange={set('phone')} />
         </label>
       </div>
+      {/* Reuses `.gn-form__h`, the sub-heading already on this form, so the
+          group needs no new rule in `ganit.css`. `.gn-form__row` is an auto-fit
+          grid, so a row holding one field spans the panel and a row holding two
+          splits it — the layout stays fluid and left-aligned at every width
+          without a fixed column count. */}
+      <div className="gn-form__h">Address <Hi t="पता" /></div>
+      {[['line1'], ['line2'], ['city', 'state'], ['pincode', 'country']].map(keys => (
+        <div className="gn-form__row" key={keys.join('-')}>
+          {keys.map((key) => {
+            const [, label, hi, attrs] = ADDRESS_BOXES.find(([k]) => k === key);
+            return (
+              <label className="gn-form__field" key={key}>
+                {label} <Hi t={hi} />
+                <input
+                  className="inp"
+                  {...attrs}
+                  value={form.address[key] || ''}
+                  onChange={setAddr(key)}
+                />
+              </label>
+            );
+          })}
+        </div>
+      ))}
       <div className="gn-form__row">
         <label className="gn-form__field">
           MSME registered <Hi t="एमएसएमई" />

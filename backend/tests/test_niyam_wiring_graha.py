@@ -95,6 +95,16 @@ class _Pool:
 
     async def fetchval(self, q, *a):
         self.calls.append((q, a))
+        # An org-ownership probe (`SELECT 1 FROM staging.graha_… WHERE id = $1
+        # AND org_id = $2 AND is_active`) must answer "yes, and it is yours".
+        # Returning None unconditionally made every such probe read as "not in
+        # this org", so the moment `create_deal` grew a pipeline guard this mock
+        # started 400ing a deal it had always accepted — a MOCK gap presenting
+        # as a product regression, which is `memory/mock_pool_hides_bad_sql` in
+        # the opposite direction: a mock that answers a column name it has never
+        # seen will confirm whatever you already believe, in either polarity.
+        if isinstance(q, str) and q.lstrip().upper().startswith("SELECT 1 "):
+            return 1
         return None
 
     # The pool itself has NO transaction() — a handler that opens its

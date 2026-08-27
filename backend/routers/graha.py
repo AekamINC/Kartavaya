@@ -215,7 +215,49 @@ class DealUpdate(BaseModel):
     tags: list[str] | None = None
     won_at: str | None = None
     lost_at: str | None = None
+    #: ── THE FIELD THAT EXISTED AND WAS THROWN AWAY ─────────────────────────
+    #:
+    #: This has been on the model since the beginning and was MISSING from
+    #: `_DEAL_COLS`, which is the opposite fault to `territory_id` below and
+    #: does more damage, because it fails in the direction that looks like
+    #: success. A person moves a deal to Lost, types why, saves; the PATCH is
+    #: accepted, 200, the drawer closes, and the dict comprehension that builds
+    #: `updates` has already dropped the value on the floor. Nothing errors and
+    #: nothing is written. Live control on 27 Aug: 22 deals stand in stage
+    #: `Lost` and 2 carry a `lost_reason` — and neither of those two can have
+    #: come through this route, because no request has ever been able to set it.
+    #:
+    #: It is also the single most valuable free-text field in the module. "Why
+    #: are we losing?" is the question the CRM exists to answer, and the answer
+    #: was being discarded silently for the entire life of the product.
+    #:
+    #: `""` is a legitimate value here and clears the reason. It falls to the
+    #: generic bare-`$n` branch of the SET-build on purpose: the column is
+    #: `text`, so the parameter type is unambiguous and this is NOT the untyped-
+    #: into-`uuid` shape that PgBouncer turns into an instant 500.
     lost_reason: str | None = None
+    #: ── TWO MORE DEAD ALLOWLIST ENTRIES, BOTH GIVEN A FIELD ────────────────
+    #:
+    #: `custom_data` and `pipeline_id` were both listed in `_DEAL_COLS` with no
+    #: field behind them, so neither entry could ever match anything
+    #: `body.dict(exclude_unset=True)` produced. Same precedent as
+    #: `territory_id`, same resolution, and the reason is the same in both:
+    #:
+    #: · `custom_data` is settable at create (`DealCreate` grew the field for
+    #:   exactly this reason) and would otherwise be frozen from that moment on
+    #:   — a per-org custom field that can be filled in once, wrongly, for ever.
+    #: · `pipeline_id` is the board the deal lives on. Deals get moved between
+    #:   pipelines; that is what pipelines are for. Deleting the entry would
+    #:   make the board a deal was first filed on permanent, and "delete it and
+    #:   raise it again" is not a move — it loses the activities, the follow-ups
+    #:   and the `deal.created` history hanging off the id.
+    #:
+    #: `pipeline_id` is routed through `resolve_deal_pipeline` and bound
+    #: `NULLIF($n,'')::uuid` in the SET-build, NOT left to the generic branch,
+    #: for the `uuid`-column reason `territory_id` records below. Unlike the
+    #: other three ids it is NOT clearable — see `update_deal`.
+    custom_data: dict | None = None
+    pipeline_id: str | None = None
     #: ── THE DEAD ALLOWLIST ENTRY, RESOLVED BY ADDING THE FIELD ─────────────
     #:
     #: `_DEAL_COLS` in `update_deal` has listed `territory_id` since the
@@ -669,6 +711,140 @@ async def resolve_contact_territory(pool, org_id: str, territory_id: str) -> str
     if not ok:
         raise HTTPException(400, "That territory is not in this organisation")
     return territory_id
+
+
+async def resolve_deal_contact(pool, org_id: str, contact_id: str) -> str:
+    """Which PERSON is this deal with? — `graha_deals.contact_id`.
+
+    ── THE THIRD COLUMN WITH THE SAME HOLE ─────────────────────────────────
+    Phase 7.1a closed `graha_deals.territory_id` and recorded the shape:
+    a foreign key written as a bare `REFERENCES staging.graha_contacts(id)`
+    with no `org_id` in it, so the DATABASE ALONE cannot tell a caller in one
+    organisation from a caller in another. Read live on 27 Aug, every foreign
+    key on `graha_deals` is that shape — `client_id`, `contact_id`,
+    `pipeline_id` and `territory_id`, four constraints, not one of them
+    composite with `org_id`. Territory was the only one that got a guard.
+
+    So an attacker holding a valid session in org A, guessing a contact uuid
+    out of org B, could until now POST a deal that carries it and Postgres
+    would accept the row without a murmur. THAT IS NOT A DANGLING LABEL:
+
+      · `deal_detail` returns `c.name` and `c.email` off this join, so the
+        stolen id is READ BACK as a name and an email address — a
+        cross-tenant disclosure of exactly the field `decision_platform_privacy`
+        says must not cross an org boundary.
+      · `create_deal` fires `compute_lead_score(pool, org_id, contact_id)` on
+        the way out, which WRITES `lead_score` and `lead_score_reasons` onto a
+        row belonging to somebody else's customer. A read leak is bad; a
+        cross-tenant WRITE dressed as a score is worse, and it happens with no
+        further request.
+      · `graha_activities` and the follow-up paths hang off the same person.
+
+    `is_active=TRUE` is not decoration either. `DELETE /contacts/{id}` is a
+    SOFT delete — line ~1067 flips the flag and keeps the row — so without it a
+    contact a firm deliberately removed stays attachable to new deals for ever,
+    and reappears on the deal list under the name they asked to have taken off.
+    `add_contact_label` already validates a contact with exactly this triple
+    (`id`, `org_id`, `is_active`); this is that check, named, so the deal paths
+    stop being the ones that skip it.
+
+    Returns "" for "no person named", never None: every caller binds through
+    `NULLIF($n,'')::uuid`, and an untyped NULL through PgBouncer is the parse
+    error that reads as an instant 500.
+    """
+    if not contact_id:
+        return ""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.graha_contacts "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        contact_id, org_id)
+    if not ok:
+        raise HTTPException(400, "That contact is not in this organisation")
+    return contact_id
+
+
+async def resolve_deal_pipeline(pool, org_id: str, pipeline_id: str) -> str:
+    """Which board does this deal sit on? — `graha_deals.pipeline_id`.
+
+    ── THE ONE THAT LEAKS SIDEWAYS RATHER THAN OUTWARD ─────────────────────
+    Same non-composite foreign key as the other three, and it was the one that
+    reached SQL most directly of all: `create_deal` read `body.pipeline_id`,
+    found it truthy, and bound it. No SELECT of any kind ran against it.
+
+    The consequence is not a name on a card, it is a deal that has left its own
+    organisation's workflow. `deals_kanban` resolves the org's DEFAULT pipeline
+    and lists only deals whose `pipeline_id` matches it, so a deal filed on
+    another tenant's board is INVISIBLE on every board in its own org while
+    still counting in `list_deals` totals and in the CRM report. That is the
+    worst kind of tenancy bug: it does not error, it does not show, and the
+    numbers stop agreeing with the screens.
+
+    It also decides what the stage names MEAN. `graha_pipelines.stages` is a
+    per-org array, and `update_deal` writes whatever `stage` string it is
+    given; a deal pinned to a foreign pipeline is being validated, reported and
+    drawn against a vocabulary its own organisation never defined.
+
+    `is_active=TRUE` for the same reason as everywhere else in this file: the
+    pipeline list is filtered on it, so an inactive pipeline is one no caller
+    can legitimately have chosen from a picker.
+
+    Returns "" for "not named", never None — `create_deal` reads that "" as
+    "fall through to the default pipeline", which is the pre-existing behaviour
+    for an absent `pipeline_id` and is deliberately unchanged.
+    """
+    if not pipeline_id:
+        return ""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.graha_pipelines "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        pipeline_id, org_id)
+    if not ok:
+        raise HTTPException(400, "That pipeline is not in this organisation")
+    return pipeline_id
+
+
+async def resolve_deal_id(pool, org_id: str, deal_id: str) -> str:
+    """Which deal is this activity / follow-up / document filed against?
+
+    ── FOUND BY SWEEPING FOR THE SHAPE RATHER THAN THE SYMPTOM ─────────────
+    `graha_deals` was the table named in the finding, but the same
+    non-composite foreign key runs the other way too: `graha_activities`,
+    `graha_follow_ups` and `graha_documents` each reference `graha_deals(id)`
+    and `graha_contacts(id)` with `org_id` in NEITHER constraint — six more
+    unscoped keys, read live off `pg_constraint` on 27 Aug — and all four write
+    paths bound the request body straight into the INSERT.
+
+    The direction of the damage is the interesting part, because it inverts.
+    On a deal, a foreign id READS another tenant's data back to the attacker.
+    Here it WRITES: the attacker's note, their reminder, their uploaded file is
+    filed against a deal in an organisation they have no membership of, and
+    then it is shown to that organisation. `deal_detail` lists the activities
+    on a deal; `/follow-ups` joins them for the reminder cron, which EMAILS the
+    assignee. So the unguarded id is an injection into another firm's record
+    and, through the follow-up path, into another firm's mailbox.
+
+    The `org_id` column on the child row does not save this. It is set from the
+    caller's own session, so the child is correctly stamped org A while
+    pointing at a parent in org B — the row looks perfectly well-formed from
+    the child's side and only the join reveals it. That is exactly why a live
+    count of cross-org PAIRS, not a count of malformed rows, is the control.
+
+    `is_active=TRUE` because `DELETE /deals/{id}` is a soft delete (it flips
+    the flag and keeps the row), so a deleted deal must not keep accepting new
+    attachments.
+
+    Returns "" for "no deal named", never None — every caller binds through
+    `NULLIF($n,'')::uuid`.
+    """
+    if not deal_id:
+        return ""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.graha_deals "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        deal_id, org_id)
+    if not ok:
+        raise HTTPException(400, "That deal is not in this organisation")
+    return deal_id
 
 
 @router.post("/contacts")
@@ -1277,7 +1453,22 @@ async def create_deal(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    pipeline_id = body.pipeline_id or None
+    # ── EVERY ID IN THIS BODY IS PROVEN TO BE THIS ORG'S BEFORE IT IS BOUND ──
+    #
+    # Four foreign keys reach `graha_deals` from a request body and NOT ONE of
+    # the four constraints is composite with `org_id` (read live off
+    # `pg_constraint`, 27 Aug). Phase 7.1a guarded `territory_id` and named the
+    # other three as unfixed; this is the rest of that job. The rule the file
+    # keeps is that presence is not permission — an id that is merely a real
+    # uuid somewhere in the database has proved nothing about the caller.
+    #
+    # THE PIPELINE IS RESOLVED FIRST BECAUSE ITS FALLBACK MUST NOT SWALLOW A
+    # REFUSAL. A foreign pipeline id has to 400; it must never quietly become
+    # "no pipeline named" and drop through to the org's default, because that
+    # turns a cross-tenant attempt into a successful create and tells the
+    # caller nothing. `resolve_deal_pipeline` raises on a bad id and returns ""
+    # only for an ABSENT one, which is the case the default below is for.
+    pipeline_id = await resolve_deal_pipeline(pool, org_id, body.pipeline_id) or None
     if not pipeline_id:
         default = await pool.fetchval(
             "SELECT id FROM staging.graha_pipelines "
@@ -1307,6 +1498,22 @@ async def create_deal(
     # `""` stays "" and clears through the `NULLIF` below.
     territory_id = await resolve_contact_territory(pool, org_id, body.territory_id)
 
+    # THE COMPANY, through the same resolver the contact paths use. `strict` is
+    # left at its default TRUE and that is the correct half of the split
+    # `resolve_contact_company` documents: the lenient half exists for the two
+    # UNAUTHENTICATED lead paths, where a refusal is a lost customer and a stale
+    # org setting is not the submitter's fault. This route is behind
+    # `require_user` and `_gate`, so a bad `client_id` is a caller getting it
+    # wrong and the caller is present to be told — degrading to "no company"
+    # here would silently drop the link the whole CRM report is built on.
+    client_id = await resolve_contact_company(pool, org_id, body.client_id)
+
+    # THE PERSON. Checked before the INSERT rather than after, because
+    # `compute_lead_score` below WRITES to this contact row — an unchecked id
+    # would not just render another org's contact on the deal, it would rewrite
+    # that org's lead score from our request.
+    contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
+
     # The INSERT and its `deal.created` event share ONE transaction — the same
     # contract every emitter in this router keeps: the event exists if and only
     # if the deal committed. The pipeline bootstrap above stays on the pool on
@@ -1325,15 +1532,20 @@ async def create_deal(
                 "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
                 " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb, NULLIF($15,'')::uuid) "
                 "RETURNING *",
-                org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
+                org_id, pipeline_id, contact_id, client_id, body.title, body.value,
                 body.stage, body.probability, body.expected_close_date,
                 body.assigned_to, body.notes, body.tags, user["user_id"],
                 json.dumps(body.custom_data or {}), territory_id,
             )
             await deal_created(_conn, org_id=org_id, actor_id=user["user_id"],
                                deal_id=row["id"], row=dict(row))
-    if body.contact_id:
-        asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
+    # The RESOLVED id, not `body.contact_id`. This call WRITES `lead_score` and
+    # `lead_score_reasons` onto the contact row, so re-reading the unchecked
+    # body value here would put the cross-tenant write straight back after the
+    # guard had taken it away. A guard has to hold at every USE of the value,
+    # not only at the statement it was written for.
+    if contact_id:
+        asyncio.ensure_future(compute_lead_score(pool, org_id, contact_id))
     return {"status": "created", "id": row["id"], "title": row["title"],
             "stage": row["stage"]}
 
@@ -1468,24 +1680,68 @@ async def update_deal(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # ── THE ALLOWLIST AND THE MODEL NOW AGREE, BOTH WAYS ───────────────────
+    #
+    # This set and `DealUpdate` had drifted apart in BOTH directions and each
+    # direction fails differently. An entry here with no field behind it is
+    # dead permission — noisy but harmless, because nothing can ever match it.
+    # A field on the model that is NOT here is the dangerous one: pydantic
+    # accepts the value, the comprehension below drops it, and the route
+    # answers 200. `lost_reason` and `client_id` were both in that second
+    # state. `lost_reason` is now here, which is the entire fix for "the reason
+    # a deal was lost can never be saved"; `client_id` is here too, so the
+    # company on a deal stops being set-once-at-create.
+    #
+    # This set is also the ONLY thing standing between a request body key and
+    # an interpolated SQL identifier a few lines down (`f"{k}=..."`). It is a
+    # server-side allowlist in the sense CLAUDE.md means, and every addition to
+    # it is a new column a client can write — hence one line of reasoning per
+    # entry on the model rather than a quiet edit here.
     _DEAL_COLS = {
-        "title", "contact_id", "pipeline_id", "value", "stage", "probability",
-        "expected_close_date", "assigned_to", "notes", "tags", "custom_data",
-        "territory_id", "won_at", "lost_at",
+        "title", "contact_id", "client_id", "pipeline_id", "value", "stage",
+        "probability", "expected_close_date", "assigned_to", "notes", "tags",
+        "custom_data", "territory_id", "won_at", "lost_at", "lost_reason",
     }
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None and k in _DEAL_COLS}
     if not updates:
         raise HTTPException(400, "No fields to update")
 
-    # Named explicitly and checked explicitly, the same way `update_contact`
-    # checks it: `_DEAL_COLS` listed this column with no model field behind it
-    # until Phase 7.1a, and the field now exists. The org check is not optional
-    # — the foreign key is not composite with `org_id`, so without it a PATCH
-    # re-files a deal under another organisation's territory and the kanban
-    # then draws that organisation's name on the card.
+    # ── EVERY FOREIGN ID IN A PATCH IS PROVEN TO BE THIS ORG'S ─────────────
+    #
+    # All four of these columns carry a non-composite foreign key, so the
+    # database will happily accept another organisation's uuid in any of them.
+    # A PATCH is if anything the easier attack than a create: the deal already
+    # exists and is already the caller's, so only the ONE field being re-filed
+    # has to be guessed, and `deal_detail` reads the joined name and email
+    # straight back to the attacker in the response.
+    #
+    # `""` clears three of them — that is the deliberate "none" value the
+    # SET-build binds through `NULLIF($n,'')::uuid`, and each resolver returns
+    # "" unchanged for a falsy input rather than treating it as a bad id.
     if "territory_id" in updates:
         updates["territory_id"] = await resolve_contact_territory(
             pool, org_id, updates["territory_id"])
+    if "client_id" in updates:
+        # Strict, for the reason `create_deal` gives: this route is
+        # authenticated, so a bad company id is a caller to be told, not a
+        # public form submission to be salvaged.
+        updates["client_id"] = await resolve_contact_company(
+            pool, org_id, updates["client_id"])
+    if "contact_id" in updates:
+        updates["contact_id"] = await resolve_deal_contact(
+            pool, org_id, updates["contact_id"])
+    if "pipeline_id" in updates:
+        # THE ONE THAT CANNOT BE CLEARED, and it is refused explicitly rather
+        # than silently ignored. `create_deal` guarantees every deal is on a
+        # pipeline — it bootstraps a default one rather than write NULL — and
+        # `deals_kanban` selects on `pipeline_id`, so a deal with none has
+        # quietly left every board in the organisation while still counting in
+        # `list_deals` and in the CRM report. A 400 says so; dropping the key
+        # would let a client believe it had cleared the field.
+        if not updates["pipeline_id"]:
+            raise HTTPException(400, "A deal must stay on a pipeline")
+        updates["pipeline_id"] = await resolve_deal_pipeline(
+            pool, org_id, updates["pipeline_id"])
 
     if "stage" in updates and updates["stage"] == "Won":
         updates["won_at"] = datetime.now(timezone.utc)
@@ -1511,11 +1767,17 @@ async def update_deal(
             # mobile form tried to offer the button.
             sets.append(f"{k}=NULLIF(${idx},'')::date")
             params.append(v.isoformat() if hasattr(v, "isoformat") else (v or ""))
-        elif k in ("client_id", "contact_id", "territory_id"):
+        elif k in ("client_id", "contact_id", "territory_id", "pipeline_id"):
             # Same guard, same reason. A uuid column cast from '' is a 500, so
             # the company and the PERSON on a deal could be set once and never
             # changed or cleared. `territory_id` joined them in Phase 7.1a and
-            # belongs HERE rather than in the generic else-branch below, which
+            # `pipeline_id` joins them here, the moment it stopped being a dead
+            # allowlist entry: it is a `uuid` column and the generic branch
+            # below would have bound it a bare untyped `$n`, which is a 500 the
+            # first time anyone tried to move a deal between boards. That it
+            # was sitting in `_DEAL_COLS` for the entire life of the file
+            # without a field is the only reason nobody ever hit it.
+            # These belong HERE rather than in the generic else-branch below, which
             # binds a bare `$n`: an untyped text parameter into a `uuid` column
             # is the parse error PgBouncer turns into an instant 500 with no
             # useful log — `memory/incident_credits_untyped_sql` is the same
@@ -1711,16 +1973,26 @@ async def create_activity(
     if body.activity_type not in valid_types:
         raise HTTPException(400, f"activity_type must be one of: {', '.join(valid_types)}")
 
+    # BOTH PARENTS PROVEN TO BE THIS ORG'S. Neither foreign key on
+    # `graha_activities` is composite with `org_id`, so an id guessed out of
+    # another tenant was accepted and the note then appeared in that tenant's
+    # deal drawer. See `resolve_deal_id` for why the child row's own `org_id`
+    # does not make this safe.
+    deal_id = await resolve_deal_id(pool, org_id, body.deal_id)
+    contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
+
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_activities "
         "(org_id, deal_id, contact_id, activity_type, title, description, scheduled_at, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6, "
         " NULLIF($7,'')::timestamptz, $8) RETURNING id",
-        org_id, body.deal_id, body.contact_id, body.activity_type,
+        org_id, deal_id, contact_id, body.activity_type,
         body.title, body.description, body.scheduled_at, user["user_id"],
     )
-    if body.contact_id:
-        asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
+    # The RESOLVED id — `compute_lead_score` writes to the contact row, so the
+    # unchecked body value here would be a cross-tenant write on its own.
+    if contact_id:
+        asyncio.ensure_future(compute_lead_score(pool, org_id, contact_id))
     return {"status": "created", "id": str(row["id"])}
 
 
@@ -1938,6 +2210,13 @@ async def create_follow_up(
 ):
     pool = await get_pool()
     assigned = body.assigned_to or user["user_id"]
+    # BOTH PARENTS PROVEN TO BE THIS ORG'S, and this route is the sharpest of
+    # the three: a follow-up is not just filed against the parent, it is picked
+    # up by the reminder job and EMAILED. An unchecked `deal_id` therefore put
+    # one firm's reminder text into another firm's record and out through their
+    # notifications. Same non-composite foreign keys as everywhere else here.
+    contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
+    deal_id = await resolve_deal_id(pool, org_id, body.deal_id)
     due = datetime.fromisoformat(body.due_at) if body.due_at else None
     remind = datetime.fromisoformat(body.remind_at) if body.remind_at else None
     row = await pool.fetchrow(
@@ -1947,7 +2226,7 @@ async def create_follow_up(
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, "
         " $6::timestamptz, $7::timestamptz, $8, $9) "
         "RETURNING id, title, due_at",
-        org_id, body.contact_id, body.deal_id, body.title, body.description,
+        org_id, contact_id, deal_id, body.title, body.description,
         due, remind, assigned, user["user_id"],
     )
     return {"status": "created", **dict(row)}
@@ -4182,6 +4461,12 @@ async def create_document(
     assert_file_url(body.file_key, "file_key")
 
     pool = await get_pool()
+    # BOTH PARENTS PROVEN TO BE THIS ORG'S. The same two unscoped foreign keys
+    # again, and here the thing being filed into another tenant's record is a
+    # FILE — it lands in their documents tab under their contact, with a
+    # `file_url` this caller chose and controls.
+    contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
+    deal_id = await resolve_deal_id(pool, org_id, body.deal_id)
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_documents "
         "(org_id, name, file_url, file_key, file_size, mime_type, folder, tags, "
@@ -4203,7 +4488,7 @@ async def create_document(
         "NULLIF($9,'')::uuid, NULLIF($10,'')::uuid, $11, $12) RETURNING *",
         org_id, body.name, body.file_url, body.file_key, body.file_size, body.mime_type,
         body.folder, json.dumps(body.tags),
-        body.contact_id, body.deal_id, body.description, user["user_id"],
+        contact_id, deal_id, body.description, user["user_id"],
     )
     return dict(row)
 
@@ -4263,10 +4548,17 @@ async def update_document(
         # jsonb parameter double-encodes it, because db.py's jsonb encoder is
         # itself `json.dumps`.
         vals.append(json.dumps(body.tags)); updates.append(f"tags=${len(vals)}::text::jsonb")
+    # RE-FILING IS THE SAME WRITE AS FILING. A document created correctly inside
+    # this org can be PATCHed onto another organisation's contact or deal, which
+    # is the identical leak the create path had one route up — and easier,
+    # because the row already exists and only the parent id has to be guessed.
+    # `""` still clears, because each resolver returns "" unchanged.
     if body.contact_id is not None:
-        vals.append(body.contact_id); updates.append(f"contact_id=NULLIF(${len(vals)},'')::uuid")
+        v = await resolve_deal_contact(pool, org_id, body.contact_id)
+        vals.append(v); updates.append(f"contact_id=NULLIF(${len(vals)},'')::uuid")
     if body.deal_id is not None:
-        vals.append(body.deal_id); updates.append(f"deal_id=NULLIF(${len(vals)},'')::uuid")
+        v = await resolve_deal_id(pool, org_id, body.deal_id)
+        vals.append(v); updates.append(f"deal_id=NULLIF(${len(vals)},'')::uuid")
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")

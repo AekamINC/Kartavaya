@@ -3207,4 +3207,110 @@ a check that forbids documenting the rule it enforces is a check people delete.
 **Green:** `npm run check` 14/14 · `npm run build` · vitest 2,964 passed
 (2 held at baseline, no new) · `test_mappls_token.py` 61 passed.
 
+---
+
+## Open findings 1, 2, 4 and 7 — closed, and three of them were wider than filed
+
+**2026-08-27.** Four of the twelve findings from earlier today, fixed in
+parallel. Two of them turned out to be bigger than the report they came from,
+which is the argument for sweeping for a SHAPE rather than fixing a symptom.
+
+### Finding 1 — `create_deal` bound three ids with no org check. So did four more routes.
+
+**Live exposure measured read-only first, and it is ZERO on every pair** —
+`client_id` 100/163 set, `contact_id` 148/163, `pipeline_id` 163/163, plus the
+activity, follow-up and document ids: **0 cross-org rows anywhere**, 0 orphans,
+0 rows on an inactive parent. Latent, exactly like the `territory_id` control in
+`8ef0fe5b`. `pg_constraint` confirms the shape: **ten** foreign keys reach these
+four tables from a request body and **not one is composite with `org_id`**.
+
+Three resolvers were added beside `resolve_contact_company` /
+`resolve_contact_territory`, same triple predicate and same return contract.
+Then the sweep found what the brief had not:
+
+- **`compute_lead_score` re-read the raw `body.contact_id` AFTER the guard**, in
+  `create_deal` *and* `create_activity` — a cross-tenant **write** of
+  `lead_score` / `lead_score_reasons` that would have survived a perfectly
+  guarded INSERT. This is the one a symptom-level fix misses entirely.
+- **Four more write paths carried the identical hole**: `create_activity`,
+  `create_follow_up`, `create_document`, `update_document`. The follow-up is the
+  sharpest — those rows are read by the reminder job and **emailed**, so it was
+  an injection into another firm's record and out through their notifications.
+
+Pipeline is resolved BEFORE the default-pipeline fallback, so a foreign id 400s
+rather than silently becoming the caller's own default.
+
+### Finding 2 — the reason a deal was lost could never be saved
+
+`staging.graha_deals.lost_reason` exists (`text`, nullable). **22 deals stand in
+stage `Lost` and 2 carry a reason — and neither of those two can have come
+through the PATCH**, because no request could ever set it. `lost_reason` and
+`client_id` are now in `_DEAL_COLS`; `custom_data` and `pipeline_id` were given
+FIELDS rather than deleted from the allowlist, per the `8ef0fe5b` precedent
+(deleting makes a column settable once at create and unreachable for ever).
+
+⚠ **A latent 500 found on the way**: `pipeline_id` was absent from the typed
+branch of the SET-build, so giving it a field would have bound a bare untyped
+`$n` into a `uuid` column — the PgBouncer instant-500 of
+`memory/incident_credits_untyped_sql`. A **drift ratchet** now asserts
+`DealUpdate.model_fields == _DEAL_COLS` in both directions, so the class of bug
+cannot recur.
+
+**27 tests, and every guard proved to bite — 19 mutations, one at a time.**
+⚠ Worth recording: the first pass of two mutations came back GREEN because a
+`replace(…, 1)` had hit an identical three-line block in `update_contact`. **A
+mutation that silently mutates the wrong function is a false green in the proof
+itself**, so the proof needs unique anchors as much as the code does.
+
+### Finding 4 — the vendor form captured no address, for a populated column
+
+Live: `ganit_vendors.address` is `jsonb DEFAULT '{}'`, and **Unicode 6 of 9,
+E2E 40 of 75** carry a non-empty one. API-writable, populated, unenterable.
+Six boxes added on the shared Ganit/Kray form. `state_code` is the seventh key
+and deliberately gets NO box — it is the numeric GST code, resolved to a name
+for display and never printed raw. **Non-destruction is two independent
+guards**: `address` is omitted from the payload entirely unless a box was
+touched, and when sent, every unrecognised key is carried verbatim rather than
+the object being reassembled.
+
+⚠ **One correction to the finding as filed**: `Navrang Polymers` is a
+`graha_clients` row, not a vendor — but its 43-single-character-key address was
+used as the mandatory test case anyway, because the double-encode fossil is
+column-agnostic and is a shape the form must survive rather than assume away.
+
+### Finding 7 — the two address renderers disagreed, and one of them could 500
+
+Reconciled onto **`city, state, pincode, country`** (`invoice_pdf`'s order), in
+one shared `addr_parts()`. The reasoning is in a comment: **a PIN does not imply
+its state** — 51 of 18,839 PINs in `pin_directory` cross a state line — so
+`Ahmedabad, 380009, Gujarat` reads as a correction while `Ahmedabad, Gujarat,
+380009` reads as an address.
+
+⚠ **A real latent 500, fixed in passing**: `_fmt_addr` did `", ".join` over raw
+jsonb values, so a pincode stored as the NUMBER `395002` raised `TypeError` — a
+500 on the invoice, not a missing line.
+
+The divergence test recovers the order from each renderer's **output** via
+sentinels, so a renderer that stops importing the tuple and re-inlines a literal
+still fails. Proved: reverting both renderers gives 5 failed / 8 passed.
+
+### Still open, in files those agents did not own
+
+- **`doc_validation.py:152` is a THIRD copy of the address vocabulary and it
+  omits `country`** — an address carrying only a country is reported empty. It
+  is order-free so it was not part of finding 7; it is allowlisted in the
+  scanner with that reason rather than silently passing.
+
+**Green:** `test_graha_deal_org_binding.py` 27 · combined graha/territory/niyam/
+boundaries/mappls **162 passed, 7 skipped** · `test_address_order.py` 13 ·
+document regression 376 + 138 · frontend vendor specs 28.
+
+Two test files were repaired here rather than by the agents that broke them:
+`test_territories.py` pinned the LITERAL tuple `("client_id", "contact_id",
+"territory_id")` and so went red the moment `pipeline_id` was correctly added to
+it — **a test that fails on a fix teaches people to edit the test**, so it now
+asserts name by name. And `test_niyam_wiring_graha.py`'s `_Pool.fetchval`
+returned `None` unconditionally, making every org-ownership probe read "not
+yours" — `memory/mock_pool_hides_bad_sql` in the opposite polarity.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

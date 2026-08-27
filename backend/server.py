@@ -1322,6 +1322,35 @@ class TeamOut(BaseModel):
 
 class TeamMemberAdd(BaseModel):
     email:Optional[str]=None; role:str="member"; user_id:Optional[str]=None
+
+    #: ── THE FORM HAS BEEN POSTING THESE TWO ALL ALONG ────────────────────────
+    #:
+    #: `TeamsPage.addMember` sends `receives_approval_emails` and `company_name`
+    #: on every add where the role is `client` — it has a toggle and a text box
+    #: for them, sitting directly above the button. Pydantic's default is to
+    #: IGNORE an unknown key, so both were parsed off the body and thrown away.
+    #: The POST answered 200, the card appeared, and nothing anywhere had
+    #: changed. That is the worst shape a defect takes in this product: the save
+    #: succeeds and the value goes nowhere, so nobody reports it as broken —
+    #: they just re-enter it, and it disappears again.
+    #:
+    #: Both columns exist, and have all along. Live catalogue 2026-08-27:
+    #: `public.team_members.receives_approval_emails boolean NOT NULL DEFAULT
+    #: true` and `public.team_members.company_name text NULL`; `public.users`
+    #: carries the same pair with the same types; `public.project_assignments`
+    #: does too (migration 195 copies them across). The measure of how long this
+    #: has been dropped is that **0 of 212 `team_members` rows carry a
+    #: `company_name`, and 0 of 212 have `receives_approval_emails` FALSE** —
+    #: the toggle has never once been written by anybody, in any org.
+    #:
+    #: `Optional` with a `None` default, NOT `bool = True` / `str = ""`. The
+    #: form omits both entirely for a non-client role, and a non-None default
+    #: would make "the caller said nothing" indistinguishable from "the caller
+    #: said the default" — which is exactly how the write below would come to
+    #: blank a company name that somebody else had set. `None` means UNSAID, and
+    #: every write below is conditional on it.
+    receives_approval_emails:Optional[bool]=None
+    company_name:Optional[str]=None
 class TeamMemberUpdate(BaseModel):
     role:Optional[str]=None; status:Optional[str]=None
 class TeamMemberOut(BaseModel):
@@ -1352,6 +1381,27 @@ class TeamMemberOut(BaseModel):
     #: by address who has not registered, which is what that roster already
     #: shows them as.
     display_name:Optional[str]=None
+
+    #: ── THE OTHER TWO THE ROSTER RENDERS ─────────────────────────────────────
+    #:
+    #: Same reason as `display_name`, one layer along. TeamsPage splices this
+    #: response into the roster it has already drawn, and `NewTaskModal`'s
+    #: assignee list reads `m.company_name` and `m.receives_approval_emails` off
+    #: those same rows — the second one is what draws the "Client Approver"
+    #: badge. `get_team` supplies both on a refresh; without them here the card
+    #: the user just created is the only one on the page missing its company and
+    #: its badge, until something else forces a refetch.
+    #:
+    #: NEITHER IS A CONTACT DETAIL, which is the question that has to be asked
+    #: of anything added to this model. `company_name` is already in the
+    #: platform branch of `GET /api/users` (it selects `u.company_name` for all
+    #: 45 directory rows) and already in `get_team`'s roster, so it discloses
+    #: nothing to Aekam that Aekam cannot already read; `receives_approval_
+    #: emails` is a boolean preference that names nobody. The rule established
+    #: over `add_team_member` — no ADDRESS is returned that the caller did not
+    #: supply — is untouched: no email is involved in either field.
+    receives_approval_emails:Optional[bool]=None
+    company_name:Optional[str]=None
 
 # ── A file column holds a POINTER, never the file ────────────────────────────
 #
@@ -1916,6 +1966,56 @@ def _pj(v, d):
     """
     if isinstance(v, str): return json.loads(v)
     return v if v is not None else d
+
+
+def _subtasks_of(task) -> list:
+    """The `subtasks` list off a `tasks` row, however the driver handed it over.
+
+    ── WHY A ROW FROM A `jsonb` COLUMN IS NOT ALWAYS A `str` ────────────────
+
+    `db.py::_init_conn` registers a `jsonb` codec on every connection, so
+    asyncpg DECODES the column and hands back a Python list. The four subtask
+    routes below were written for the world before that codec and called
+    `json.loads(task["subtasks"] or "[]")` on it, which is
+    `json.loads(<list>)` — `TypeError: the JSON object must be str, bytes or
+    bytearray, not list`, on every add, toggle, rename and delete of a subtask.
+    Sentry recorded 22 of them across three issues on 2026-08-24 before the
+    first repair. `db.py`'s own docstring names this exact failure: "Several
+    routers already carry defensive `json.loads` for exactly that, which is the
+    symptom."
+
+    So the cause is not a missing type check, it is four hand-written parses of
+    a column the driver has already parsed. This function is where that
+    knowledge lives once. `_pj` above is the same idea for `row_to_task`'s
+    columns; this one exists separately only because it is the read half of a
+    read-modify-write and must guarantee a list — `_pj`'s default is returned
+    unparsed, and a caller that then `.append`s to it wants that default to be a
+    fresh list, not a shared one.
+
+    ── AND WHY THE `str` BRANCH IS STILL LOAD-BEARING ───────────────────────
+
+    Two reasons, both measured, so removing it would be wrong:
+
+      · **54 of 485 live `tasks` rows hold `subtasks` as a jsonb STRING, not an
+        array** (2026-08-27, `jsonb_typeof`: 431 array, 54 string). Every one of
+        the 54 is the text `'[]'` — double-encoded rows left over from before
+        the encoder fix `db.py::_json_encoder` describes, dumped once by a
+        caller and once more by the codec. The codec decodes those to a Python
+        `str`. They are also why `jsonb_array_length(subtasks)` cannot be run
+        over this table without a `CASE` guard, and they will not repair
+        themselves: **only a data migration can, and that is a WRITE against the
+        shared production database**, so it is recorded here rather than done.
+      · `_init_conn` WARNS rather than raises when PgBouncer kills the codec
+        handshake three times, and hands the connection out anyway. A connection
+        with no codec returns every jsonb column as text.
+
+    Neither branch is speculative, and each is reached by a different real
+    condition.
+    """
+    raw = task["subtasks"]
+    if isinstance(raw, str):
+        return json.loads(raw or "[]")
+    return list(raw) if raw is not None else []
 
 
 def row_to_task(r) -> TaskOut:
@@ -3414,7 +3514,7 @@ async def add_subtask(task_id:str,body:Subtask,pool=Depends(get_db),user=Depends
     # routes at all. `_SQL_SET_SUBTASKS` is a bare `team_id=ANY(...)` predicate
     # and a client's project is in that array.
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
+    subtasks=_subtasks_of(task)
     new_sub={"subtask_id":f"sub_{uuid.uuid4().hex[:12]}","title":body.title,"is_done":False,"order":len(subtasks)}
     subtasks.append(new_sub)
     row=await pool.fetchrow(_SQL_SET_SUBTASKS,json.dumps(subtasks),task_id,team_ids)
@@ -3432,7 +3532,7 @@ async def toggle_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
+    subtasks=_subtasks_of(task)
     for s in subtasks:
         if s["subtask_id"]==subtask_id: s["is_done"]=not s.get("is_done",False)
     row=await pool.fetchrow(_SQL_SET_SUBTASKS,json.dumps(subtasks),task_id,team_ids)
@@ -3446,7 +3546,7 @@ async def delete_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
+    subtasks=_subtasks_of(task)
     removed=[s for s in subtasks if s["subtask_id"]==subtask_id]
     subtasks=[s for s in subtasks if s["subtask_id"]!=subtask_id]
     row=await pool.fetchrow(_SQL_SET_SUBTASKS,json.dumps(subtasks),task_id,team_ids)
@@ -3469,7 +3569,7 @@ async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depen
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
-    subtasks=(task["subtasks"] if isinstance(task["subtasks"], list) else json.loads(task["subtasks"] or "[]"))
+    subtasks=_subtasks_of(task)
     for s in subtasks:
         if s["subtask_id"]==subtask_id:
             if body.assignee_user_id is not None:
@@ -3954,7 +4054,8 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
         # reason the roster in `get_team` cannot move off this table. What
         # changed is that it no longer reaches the caller.
         resolved=await pool.fetchrow(
-            "SELECT user_id,email,COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display_name "
+            "SELECT user_id,email,COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display_name,"
+            "company_name,receives_approval_emails "
             "FROM users WHERE user_id=$1",payload.user_id)
         if not resolved: raise HTTPException(404,"User not found")
         email=resolved["email"]
@@ -3963,16 +4064,78 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
         if not payload.email: raise HTTPException(422,"email or user_id required")
         email=payload.email.strip().lower()
         existing_user=await pool.fetchrow(
-            "SELECT user_id,COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display_name "
+            "SELECT user_id,COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display_name,"
+            "company_name,receives_approval_emails "
             "FROM users WHERE email=$1",email)
     uid=existing_user["user_id"] if existing_user else None
+
+    # ── THE TWO FIELDS THE FORM POSTS, RESOLVED ONCE ─────────────────────────
+    #
+    # See the block on `TeamMemberAdd`. `None` means the caller said nothing,
+    # and every write below leaves the existing value alone in that case rather
+    # than asserting a default over it.
+    #
+    # `company_name` is squeezed to None when blank because the form sends
+    # `clientCompany.trim() || selectedUser?.company_name || ''` — an EMPTY
+    # STRING when the box is empty and the picked user has no company on file.
+    # Treating that as a value would let opening and saving the add form erase a
+    # company name that somebody had typed on a previous add.
+    _existing=dict(existing_user) if existing_user else {}
+    _recv_in=payload.receives_approval_emails
+    _company_in=(payload.company_name or "").strip() or None
+    # `team_members.receives_approval_emails` is NOT NULL, so this column always
+    # needs a value: what the caller said, else what the person already has on
+    # their user row, else the column's own default.
+    _recv_row=_recv_in if _recv_in is not None else _existing.get("receives_approval_emails")
+    if _recv_row is None: _recv_row=True
+    _company_row=_company_in or _existing.get("company_name")
     await pool.execute("DELETE FROM team_members WHERE team_id=$1 AND email=$2",team_id,email)
     if uid: await pool.execute("DELETE FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,uid)
     _tm_org = await pool.fetchval("SELECT org_id::text FROM teams WHERE team_id=$1", team_id)
-    row=await pool.fetchrow("INSERT INTO team_members (member_id,team_id,email,user_id,role,status,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7::uuid) RETURNING *",
-        f"mem_{uuid.uuid4().hex[:12]}",team_id,email,uid,payload.role,"active" if uid else "invited",_tm_org)
+    row=await pool.fetchrow("INSERT INTO team_members (member_id,team_id,email,user_id,role,status,org_id,receives_approval_emails,company_name) VALUES ($1,$2,$3,$4,$5,$6,$7::uuid,$8::boolean,$9::text) RETURNING *",
+        f"mem_{uuid.uuid4().hex[:12]}",team_id,email,uid,payload.role,"active" if uid else "invited",_tm_org,_recv_row,_company_row)
     if uid: await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by,org_id) VALUES ($1,$2,$3,$4,$5,$6::uuid) ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
         f"assign_{uuid.uuid4().hex[:12]}",team_id,uid,payload.role,user["user_id"],_tm_org)
+
+    # ── AND ON THE `users` ROW, BECAUSE THAT IS WHERE THEY ARE READ ──────────
+    #
+    # Writing only the `team_members` row above would have left the defect
+    # exactly where it was: `get_team`'s roster resolves both fields through
+    # `LEFT JOIN users u`, not from `tm.*`, and the approval-email sender in
+    # `request_task_approval` reads `COALESCE(u.receives_approval_emails, TRUE)`.
+    # `project_assignments` carries a third copy of the pair that nothing reads
+    # at all. So `users` is the only one of the three that changes what anyone
+    # sees or receives, and a fix that skipped it would still be a field that
+    # saves into a column nobody looks at.
+    #
+    # `team_members` is written anyway, and it is not redundant: for somebody
+    # invited by address who has not registered there IS no `users` row, and
+    # that roster row is their only record — the same argument that keeps
+    # `team_members.email` alive two statements up.
+    #
+    # COALESCE, and the parameters are cast. An unsupplied field is NULL here
+    # and COALESCE falls back to the column, so this can only ever SET a value
+    # and never clear one — a project-level form must not be able to blank a
+    # person's company from under another project. The casts are the house rule
+    # for a bare parameter in an expression PgBouncer has to parse: an untyped
+    # `COALESCE($2, col)` is the shape that turns into an instant 500.
+    #
+    # Guarded on "did the caller say anything", so an ordinary add still issues
+    # no write here at all.
+    #
+    # NOTE FOR WHOEVER NARROWS THE `is_platform_staff` BYPASS ABOVE: this write
+    # rides on it. A platform account that may add a member to any org's project
+    # may now also set that person's company and approval-email preference. That
+    # is a smaller capability than the membership write it accompanies, and it
+    # is recorded here rather than fenced off separately, because a field that
+    # silently does nothing for one class of caller is the very defect this
+    # block exists to fix.
+    if uid and (_recv_in is not None or _company_in is not None):
+        await pool.execute(
+            "UPDATE users SET receives_approval_emails=COALESCE($2::boolean,receives_approval_emails),"
+            "company_name=COALESCE($3::text,company_name) WHERE user_id=$1",
+            uid,_recv_in,_company_in)
+
     out=dict(row)
     # `.get` through a dict() copy rather than off the Record directly: this is
     # the one field the two branches above may not both have set, and a plain

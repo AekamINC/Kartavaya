@@ -84,8 +84,23 @@ export default function TeamsPage() {
   // not know rather than "No existing user found" — which offers to send an
   // invitation to somebody who already has an account.
   const filteredUsers = allUsers === null ? null : allUsers.filter(u => {
-    const currentEmails = new Set(members.map(m => m.email));
-    if (currentEmails.has(u.email)) return false;
+    /* De-duplicated on `user_id`, NOT on email — and that is a repair, not a
+       preference. `183f1ac0` removed the address from the platform branch of
+       `GET /api/users` to close an Aekam-side leak, so for a platform caller
+       `u.email` is `undefined` on all 45 directory rows, `has(undefined)` is
+       always false, and NOBODY was filtered: the picker offered people already
+       on the project, and adding one DELETEs and re-INSERTs their membership.
+
+       Do not "fix" this by putting the address back in that SELECT — two tests
+       in `test_open_findings_20260827.py` pin its absence. `user_id` is on the
+       directory row and on the roster (212/212 and 45/45 carry one) and is not
+       a contact detail, so it cannot re-open the leak.
+
+       `.filter(Boolean)` and the `u.user_id &&` guard are load-bearing: a
+       PENDING INVITEE has no `user_id`, and collapsing them all onto `null`
+       would hide every unregistered person from the picker at once. */
+    const currentIds = new Set(members.map(m => m.user_id).filter(Boolean));
+    if (u.user_id && currentIds.has(u.user_id)) return false;
     const q = userSearch.toLowerCase();
     return !q || u.display_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
   });
