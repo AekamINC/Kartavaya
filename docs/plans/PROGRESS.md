@@ -2493,4 +2493,55 @@ and BOTH new joins are org-scoped: `graha_territories.id` is unique table-wide,
 so joining on the id alone would surface another organisation's territory name.
 That is one more of the nine joins `memory/graha_clients_join_leak` counted.
 
+## 2026-08-27 · Phase 7.0 ACCEPTED — a pincode reaches the database
+
+Driven as a real user against the deploy (`phase7-address-capture.spec.ts`,
+3 tests, all passing), then read back live. Both counts the plan names moved:
+
+    E2E Test & Associates      before     after
+      contacts                   235       236
+      with billing pincode         0         1
+      with territory_id            0         1
+      territories with a PIN       0         1   (of 17)
+
+    Unicode Group — untouched, re-verified after the run:
+      54 contacts · 38 pincodes · 0 territory_id · 0 territories
+
+The row is *Phase 7.0 Pincode Acceptance*:
+`{"city": "Surat", "line1": "Plot 44, Pandesara GIDC", "state": "Gujarat",
+"pincode": "395002"}`, routed to the **Gujarat** territory, which now holds
+`{"pincodes": ["395002"]}`.
+
+**395002 and Gujarat agree with each other on purpose.** 7.1 routes a contact by
+matching its PIN against a territory's list; seeding a PIN into a patch nobody
+would actually put it in would make 7.1's acceptance a tautology.
+
+**Idempotent, and it asserts that about itself** — exactly one contact by that
+name, and the territory half verifies instead of writing when it finds its own
+PIN already there. A seed that writes a fresh copy on every run inflates the
+count it exists to prove, and the inflation looks like progress.
+
+Four selector faults on the way, each worth recording because each looked like a
+product failure and was not:
+
+1. `getByRole('tab')` found no Territories tab. Graha has TWENTY tabs and the
+   strip shows only what fits; the rest sit behind a "More +N" popover, which is
+   what `openTab` exists for. The failure message said "Graha has no territories
+   tab" about a tab one click away.
+2. `getByRole('button', {name: /^add$/})` resolved to 2 elements — the form has
+   an Add for `assigned_users` and an Add for `rules.pincodes`. Two identical
+   button labels in one form is a real accessibility smell; scoped here rather
+   than renamed, because that is a UI change and this is a test.
+3. `getByText(PIN, {exact: true})` never matched the chip: a chip is the pincode
+   AND its remove button, so its text is `395002×`.
+4. **The instructive one.** `getByLabel(/^territory$/i)` matched nothing, and
+   `pickOption` reported "the territory picker never loaded any options" about a
+   picker that was on screen with its options in it. A Graha field is
+   `<label class="gr__f"><span class="gr__fl">…</span><control/></label>`, and
+   the accessible name is computed from the whole label subtree — which for a
+   `<select>` includes every option's text. The text inputs happened to work,
+   which is worse than if none had: it read as a data problem rather than a
+   selector problem. The spec now walks `.gr__fl`, which is what the unit tests
+   for these forms already do.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

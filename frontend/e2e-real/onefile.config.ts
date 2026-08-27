@@ -52,5 +52,15 @@ export default defineConfig({
       outputDir: path.join(DL_DIR, 'artifacts-phase4-first-rows'),
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      // Phase 7.0 — the first pincode in `graha_contacts.billing_address` and
+      // the first PIN in `graha_territories.rules`. Its own project for the
+      // `outputDir` reason recorded above: several agents work in this tree at
+      // once and a concurrent run empties a shared artefacts directory.
+      name: 'phase7-address-capture',
+      testMatch: /phase7-address-capture\.spec\.ts/,
+      outputDir: path.join(DL_DIR, 'artifacts-phase7-address-capture'),
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
 });
