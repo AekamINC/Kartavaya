@@ -86,6 +86,18 @@ function boundsOf(paths) {
 export default function TerritoryMap({ territoryId, pincodes = [], height = 240 }) {
   const holder = useRef(null);
   const mapRef = useRef(null);
+  /* The container's ID, and it is load-bearing: `mappls.Map` takes the id of a
+     DOM element as a STRING, not the element. Handed the element it answers
+     `Error: Map conatainer not defined!!` on their own console (their typo),
+     returns something that is not a map, and every polygon then fails with
+     `Please pass map object for polygon or use under load event`. Both were
+     live on staging until this was fixed — the SDK had loaded, the credit and
+     the coverage line rendered, and the map box was simply empty.
+
+     Unique per instance because the territory list mounts one of these per open
+     row, and two elements sharing an id would silently draw both territories
+     into whichever the SDK found first. */
+  const mapId = useRef(`terr-map-${Math.random().toString(36).slice(2, 10)}`);
   const [cover, setCover] = useState(null);     // the geometry response
   const [coverErr, setCoverErr] = useState(null);
   const [basemap, setBasemap] = useState(null); // { attribution, attributionHref }
@@ -133,8 +145,12 @@ export default function TerritoryMap({ territoryId, pincodes = [], height = 240 
       const allPaths = features.flatMap(f => ringsOf(f.geometry)).filter(p => p.length > 2);
       const box = boundsOf(allPaths);
 
-      map = new mappls.Map(holder.current, {
-        center: box ? [(box.n + box.s) / 2, (box.e + box.w) / 2] : [INDIA.lat, INDIA.lng],
+      // The ID string, and `center` as `{lat, lng}` — both are what the SDK
+      // documents and neither is what an array-and-element guess produces.
+      map = new mappls.Map(mapId.current, {
+        center: box
+          ? { lat: (box.n + box.s) / 2, lng: (box.e + box.w) / 2 }
+          : { lat: INDIA.lat, lng: INDIA.lng },
         zoom: box ? 9 : 4,
       });
       mapRef.current = map;
@@ -272,7 +288,8 @@ export default function TerritoryMap({ territoryId, pincodes = [], height = 240 
 
       {basemap && !drawErr && (
         <>
-          <div ref={holder} className="terr__map" style={{ '--h': `${height}px` }}
+          <div ref={holder} id={mapId.current} className="terr__map"
+               style={{ '--h': `${height}px` }}
                role="img"
                aria-label={`Map of ${matched} pincode area${matched === 1 ? '' : 's'} covered by ${cover.territory_name}`} />
           {/* Mappls' terms: "Powered by Mappls" shall be clearly presented and

@@ -1,0 +1,172 @@
+/**
+ * How every map component must CALL the Mappls SDK. Phase 7.5 / 8.1.
+ *
+ * ── The bug this exists to stop coming back ─────────────────────────────────
+ *
+ * `mappls.Map()` takes the container's **id, as a string**. Both components
+ * passed the DOM element instead, and `center` as `[lat, lng]` where the SDK
+ * wants `{lat, lng}`. On staging that produced, in Mappls' own console:
+ *
+ *     Error: Map conatainer not defined!!            (their typo, not ours)
+ *     Error: Please pass map object for polygon or use under load event
+ *
+ * And on screen: an **empty box**. Not a blank page, not an exception, not a
+ * failed request — the SDK loaded, "Powered by Mappls" rendered, "1 of 1
+ * pincode drawn" rendered, the GODL credit rendered, and the map itself was
+ * simply absent. Every signal a person or a test would look at said the feature
+ * worked.
+ *
+ * Nothing we had could catch it. The unit tests mock the SDK away and never
+ * look at HOW it is called; the gates read CSS and imports; the live probes
+ * proved the credential and the domain, which were by then correct. The defect
+ * lived in the two arguments between a working SDK and a working map.
+ *
+ * So this file asserts the CONTRACT rather than the outcome: the id is a string,
+ * an element with that id is really in the document, and the centre is a
+ * `{lat, lng}` object. A test that mocked the SDK and checked nothing about the
+ * call is what let this reach a browser.
+ */
+import React from 'react';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+const get = vi.fn();
+const mapCtor = vi.fn();
+
+vi.mock('../lib/api', () => ({
+  api: { get: (...a) => get(...a) },
+  rows: (r) => (Array.isArray(r?.data) ? r.data : r?.data?.data ?? []),
+  body: (r) => r?.data ?? {},
+}));
+
+/** A stand-in SDK that records how it was called and nothing else. */
+function fakeMappls() {
+  class Map {
+    constructor(container, opts) {
+      mapCtor(container, opts);
+      this.container = container;
+      this.opts = opts;
+    }
+    addListener(evt, fn) { if (evt === 'load') fn(); }
+    fitBounds() {}
+    remove() {}
+  }
+  const noop = function () { return {}; };
+  return { Map, Polygon: noop, Marker: noop, Circle: noop };
+}
+
+vi.mock('../lib/mapplsSdk', () => ({
+  MAP_OFF: 'not_configured',
+  MAP_DOWN: 'unavailable',
+  loadMappls: () => Promise.resolve({
+    mappls: fakeMappls(),
+    attribution: 'Powered by Mappls',
+    attributionHref: 'https://www.mappls.com/',
+  }),
+}));
+
+const { default: TerritoryMap } = await import('../components/TerritoryMap');
+const { default: PointRadiusMap } = await import('../components/PointRadiusMap');
+
+const FEATURE = {
+  type: 'Feature',
+  properties: { pincode: '395002' },
+  geometry: {
+    type: 'Polygon',
+    coordinates: [[[72.8, 21.1], [72.9, 21.1], [72.9, 21.2], [72.8, 21.2], [72.8, 21.1]]],
+  },
+};
+
+let host, root;
+
+beforeEach(() => {
+  get.mockReset();
+  mapCtor.mockReset();
+  host = document.createElement('div');
+  document.body.appendChild(host);
+  root = createRoot(host);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+});
+
+async function render(el) {
+  await act(async () => { root.render(el); });
+  // Two ticks: the geometry fetch and the SDK load both settle as microtasks,
+  // and the draw effect runs only once both have.
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => { await Promise.resolve(); });
+}
+
+/** The assertions both components owe, so neither can drift from the other. */
+function assertSdkContract(what) {
+  expect(mapCtor, `${what} never constructed a map`).toHaveBeenCalled();
+  const [container, opts] = mapCtor.mock.calls[0];
+
+  // 1. An ID STRING, not the element. This is the whole bug.
+  expect(typeof container,
+    `${what} passed a ${typeof container} to mappls.Map — it takes the container's id as a string`)
+    .toBe('string');
+  expect(container.length).toBeGreaterThan(0);
+
+  // 2. And that id must actually resolve. A string is necessary but not
+  //    sufficient: a stale or misspelled id produces the identical empty box.
+  expect(document.getElementById(container),
+    `${what} passed the id "${container}" but no element in the document has it`)
+    .toBeTruthy();
+
+  // 3. `{lat, lng}`, never an array. An array is silently accepted and centres
+  //    the map on nothing, which looks like a data problem for a day.
+  expect(Array.isArray(opts.center),
+    `${what} passed center as an array — the SDK wants {lat, lng}`).toBe(false);
+  expect(typeof opts.center.lat).toBe('number');
+  expect(typeof opts.center.lng).toBe('number');
+  expect(Number.isFinite(opts.center.lat)).toBe(true);
+  expect(Number.isFinite(opts.center.lng)).toBe(true);
+}
+
+describe('TerritoryMap · calls the Mappls SDK the way the SDK documents', () => {
+  it('passes a resolvable id string and a {lat,lng} centre', async () => {
+    get.mockResolvedValue({ data: {
+      type: 'FeatureCollection', features: [FEATURE], territory_name: 'Gujarat',
+      claimed: 1, matched: 1, unmatched: [], unavailable: [], invalid: [],
+      vintage: 'datagov-2025-05', attribution: 'Boundaries © Government of India',
+    } });
+
+    await render(<TerritoryMap territoryId="t1" />);
+    assertSdkContract('TerritoryMap');
+  });
+
+  it('gives each mounted map a DISTINCT id', async () => {
+    // The territory list mounts one per open row. Two elements sharing an id
+    // would draw both territories into whichever the SDK found first — a bug
+    // that only appears with two rows open and is near-impossible to read.
+    get.mockResolvedValue({ data: {
+      type: 'FeatureCollection', features: [FEATURE], territory_name: 'Gujarat',
+      claimed: 1, matched: 1, unmatched: [], unavailable: [], invalid: [],
+      vintage: 'datagov-2025-05', attribution: 'Boundaries © Government of India',
+    } });
+
+    await render(
+      <>
+        <TerritoryMap territoryId="t1" />
+        <TerritoryMap territoryId="t2" />
+      </>,
+    );
+    const ids = mapCtor.mock.calls.map(([c]) => c);
+    expect(ids.length).toBe(2);
+    expect(new Set(ids).size, 'two maps shared one container id').toBe(2);
+  });
+});
+
+describe('PointRadiusMap · the same contract, so the two cannot drift', () => {
+  it('passes a resolvable id string and a {lat,lng} centre', async () => {
+    await render(
+      <PointRadiusMap label="Head office" lat={19.076} lng={72.8777} radiusM={200} />,
+    );
+    assertSdkContract('PointRadiusMap');
+  });
+});

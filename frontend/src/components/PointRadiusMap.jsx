@@ -142,6 +142,17 @@ export default function PointRadiusMap({
   height = 240,
 }) {
   const holder = useRef(null);
+  /* `mappls.Map` takes the container's ID as a STRING, not the element. Handed
+     the element it logs `Error: Map conatainer not defined!!` (their typo) and
+     returns something that is not a map, after which every overlay fails with
+     `Please pass map object for polygon or use under load event`. Both were
+     live on staging in TerritoryMap before this was found — the SDK loaded, the
+     credit rendered, and the map box was simply empty, which reads as a styling
+     problem rather than a broken call.
+
+     Unique per instance: a site list can mount several of these, and a shared
+     id would draw every geofence into whichever container the SDK found first. */
+  const mapId = useRef(`ph-geomap-${Math.random().toString(36).slice(2, 10)}`);
   const overlays = useRef([]);
   const [basemap, setBasemap] = useState(null);        // { mappls, attribution, … }
   const [basemapErr, setBasemapErr] = useState(null);  // MAP_OFF | MAP_DOWN
@@ -203,7 +214,8 @@ export default function PointRadiusMap({
       const r = sized ? radius : 150;
       const zoom = r <= 50 ? 18 : r <= 150 ? 17 : r <= 500 ? 15 : r <= 2000 ? 13 : 11;
 
-      map = new mappls.Map(holder.current, { center: [lat, lng], zoom });
+      // Id string, and `{lat, lng}` — both as the SDK documents them.
+      map = new mappls.Map(mapId.current, { center: { lat, lng }, zoom });
 
       const draw = () => {
         try {
@@ -364,6 +376,7 @@ export default function PointRadiusMap({
         <>
           <div
             ref={holder}
+            id={mapId.current}
             className="ph__geomap"
             style={{ '--h': `${height}px` }}
             role="img"

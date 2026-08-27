@@ -96,7 +96,7 @@ export default defineConfig({
       // owner is a token-only account (Google), so this project restores the
       // state `mint-state.mjs` writes from E2E_ADMIN_TOKEN instead.
       name: 'tonight',
-      testMatch: /tonight\.spec\.ts/,
+      testMatch: /(tonight|phase75-territory-map)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {

@@ -3313,4 +3313,61 @@ asserts name by name. And `test_niyam_wiring_graha.py`'s `_Pool.fetchval`
 returned `None` unconditionally, making every org-ownership probe read "not
 yours" — `memory/mock_pool_hides_bad_sql` in the opposite polarity.
 
+---
+
+## 7.5 — the map was empty for two arguments, and everything else said it worked
+
+**2026-08-27, found by the owner opening the page.** Mappls was fully unblocked
+— key valid, all four origins whitelisted, SDK script executing — and the map
+box was **blank**. Their console said:
+
+    Error: Map conatainer not defined!!            (their typo, not ours)
+    Error: Please pass map object for polygon or use under load event
+
+`mappls.Map()` takes the container's **id as a string**. Both components passed
+the **DOM element**, and `center` as `[lat, lng]` where the SDK wants
+`{lat, lng}`. The constructor then returned something that is not a map, and
+every polygon and circle failed against it.
+
+**What makes this worth writing down is how much said it was fine.** The SDK
+loaded. "Powered by Mappls" rendered. "1 of 1 pincode drawn" rendered. The GODL
+credit rendered. The token endpoint answered, the domain check passed, the CSP
+allowed the host. 12 bucket tests, 21 geofence tests, 14 gates and a live
+four-origin browser probe were all green. The defect lived in the two arguments
+between a working SDK and a working map, and **nothing we had looked there**.
+
+### The regression test, and a test that had pinned the bug
+
+`mapSdkContract.test.jsx` asserts the CALL rather than the outcome, for both
+components together so they cannot drift: the container argument is a string,
+an element with that id is really in the document, and `center` is a
+`{lat, lng}` object. Proved to bite — reverting to the element gives
+*"TerritoryMap passed a object to mappls.Map — it takes the container's id as a
+string"* and the same for `PointRadiusMap`; reverting the centre gives *"passed
+center as an array"*.
+
+It also asserts each mounted map gets a **distinct** id, since the territory
+list mounts one per open row and a shared id would draw every territory into
+whichever container the SDK found first — a bug that only appears with two rows
+open.
+
+⚠ **`pointRadiusMap.test.jsx` had asserted `center` was an array.** It was
+written from the component instead of from the vendor's contract, so it agreed
+with the component about its own bug and went green over the top. Corrected,
+with the reason recorded on the line.
+
+### Acceptance
+
+`e2e-real/phase75-territory-map.spec.ts` — real Chrome against deployed staging:
+the SDK global becomes an object, the Mappls credit is visible, the GODL credit
+came from the endpoint, and a mocked outage is never rendered as "no boundary
+has been published". It is in the `tonight` project because **the local
+`E2E_GODMODE_TOKEN` answers 401** (`mint-state.mjs` refuses to mint rather than
+sign the suite into the wrong org) — CI holds a valid one, so that is where it
+runs. Said plainly rather than reported as passing: **I have not seen it green.**
+
+A redundant first test was deleted rather than repaired — it hand-rolled the
+app's auth to call the token endpoint, and `window.mappls` becoming an object
+already proves every link in that chain.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -238,7 +238,17 @@ describe('PointRadiusMap · when a basemap does arrive', () => {
 
     const text = await render(FORT);
 
-    expect(seen.map.center).toEqual([18.9333, 72.8336]);
+    /* `{lat, lng}`, not `[lat, lng]`. This line asserted the ARRAY until
+       2026-08-27, which made it a test that PINNED A DEFECT: the component
+       passed an array, the SDK silently accepted it, no map was ever centred,
+       and this test went green over the top. The array form shipped to staging
+       and produced an empty box under a correctly-rendered credit.
+
+       A test written from the component rather than from the vendor's contract
+       will agree with the component about anything, including its bugs.
+       `mapSdkContract.test.jsx` now holds the call shape for both map
+       components so the two cannot drift apart again. */
+    expect(seen.map.center).toEqual({ lat: 18.9333, lng: 72.8336 });
     expect(seen.circles).toHaveLength(1);
     expect(seen.circles[0].radius).toBe(150);
     expect(seen.circles[0].center).toEqual({ lat: 18.9333, lng: 72.8336 });
