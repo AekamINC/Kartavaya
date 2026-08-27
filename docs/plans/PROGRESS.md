@@ -1902,4 +1902,43 @@ to `""`, with two tests in `test_image_brief.py` (one executing the whole branch
 against a real one-pixel PNG, one on the signature), **both verified failing
 against the old code before the fix went in**.
 
+## 2026-08-27 · what 0.30 actually approved, and the second live `pay_*` table
+
+Two corrections found while closing 6.1, both from live reads rather than from
+the plan.
+
+**0.30's three restore schemas are already gone.** `qa_cleanup_20260822`,
+`punch_cleanup_20260823` and `owner_actions_20260823` do not exist — checked
+`information_schema.schemata` 2026-08-27, along with `pg_depend` and every view
+definition, all clean. Nothing to drop and nothing to go hunting for. That item
+is done.
+
+**But 0.30 does not approve the drop Phase 6 is waiting on.** Its answer reads
+"DROP the three restore schemas" and names those three. It names none of the
+twenty product tables in 6.1 and 6.2. Phase 6's header says it blocks on 0.30
+and 0.30's answer says "Unblocks Phase 6" — and an OK for three backup schemas
+is not an OK for twenty product tables. Written down rather than assumed,
+because the assumption is how a `pay_*` drop takes payroll with it.
+
+**`pay_income_tax_slabs` is the second live `pay_*` table.** The plan excludes
+`pay_professional_tax` by name from any `pay_*` drop and warns that including it
+would take PT to ₹0 for every employee. That warning is now half the story:
+`pay_income_tax_slabs` holds **23 rows**, did not exist when the warning was
+written — migration 230 created it during Phase 5.2b, last week — and is read by
+`services/income_tax.py::ladder_for` for every TDS figure on every payslip, with
+`routers/income_tax_slabs.py` and a screen behind it. `pay_professional_tax` has
+meanwhile grown 9 → 23 as 0.24's states were entered.
+
+A prefix is not a stack, and a `count(*)` older than the last deploy is a count
+of a different database. Exact, live, 2026-08-27:
+
+    hr_* (all ten)                    0
+    pay_esi_records     0   pay_it_declarations   0   pay_loans      0
+    pay_pf_records      0   pay_runs              0   pay_slips      0
+    pay_tds_records     0
+    pay_professional_tax             23   <-- LIVE, EXCLUDE
+    pay_income_tax_slabs             23   <-- LIVE, EXCLUDE
+    sales_commissions   0   sales_commission_slabs  0
+    sales_commission_assignments      0
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

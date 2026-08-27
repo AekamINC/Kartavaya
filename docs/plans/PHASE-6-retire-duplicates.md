@@ -126,6 +126,41 @@ not a row count, and a DROP decided from one would have been catastrophic.**
   migration 221 added a `month` column to it last week. Dropping the `pay_*`
   stack as written would take professional tax to **₹0 for every employee**.
   It is not part of the dead stack and must be excluded by name from any drop.
+
+  **RE-READ 2026-08-27, AND THERE ARE NOW TWO SUCH TABLES, NOT ONE.**
+  `pay_income_tax_slabs` holds **23 rows** and did not exist when the paragraph
+  above was written — migration 230 created it during Phase 5.2b and it is the
+  income-tax ladder that `services/income_tax.py::ladder_for` reads for every
+  TDS figure on every payslip, with a full CRUD router behind it
+  (`routers/income_tax_slabs.py`) and a screen. `pay_professional_tax` has
+  meanwhile grown from 9 rows to **23** as 0.24's states were entered.
+
+  So the exclusion list is `pay_professional_tax` AND `pay_income_tax_slabs`,
+  and the general lesson is the one this plan keeps re-learning: a prefix is
+  not a stack. Anything reading a `count(*)` older than the last deploy is
+  reading a different database. Exact counts, live, 2026-08-27:
+
+      hr_* (all ten)                    0
+      pay_esi_records                   0     pay_it_declarations       0
+      pay_loans                         0     pay_pf_records            0
+      pay_runs                          0     pay_slips                 0
+      pay_tds_records                   0
+      pay_professional_tax             23     <-- LIVE, EXCLUDE
+      pay_income_tax_slabs             23     <-- LIVE, EXCLUDE
+      sales_commissions                 0
+      sales_commission_slabs            0
+      sales_commission_assignments      0
+
+  **AND NONE OF IT IS APPROVED TO DROP.** 0.30 reads "DROP the three restore
+  schemas" and names them: `qa_cleanup_20260822`, `punch_cleanup_20260823`,
+  `owner_actions_20260823`. All three are **already gone** (checked live
+  2026-08-27 — that item is done, and a later reader should not go hunting for
+  them). What 0.30 does NOT name is a single one of the twenty tables above.
+  Phase 6's header reads "Blocks on: owner OK to drop tables (Phase 0.30)" and
+  0.30's answer says "Unblocks Phase 6", but an OK for three backup schemas is
+  not an OK for twenty product tables, and stretching one into the other is
+  exactly how a `pay_*` drop takes professional tax and income tax with it.
+  **The twenty need naming to the owner as twenty.**
 - **6.3 two allocators — DECIDED: KEEP BOTH, and the boundary is now a test.**
   `next_po_number` is not a duplicate of `next_doc_number`; it is a different
   algorithm for a different lifecycle. A purchase order is numbered at ISSUE,
