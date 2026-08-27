@@ -145,89 +145,24 @@
 
 /* ══ REPORTS ═══════════════════════════════════════════════════════════════ */
 
-.rep-page { display: flex; flex-direction: column; gap: var(--sp-4); }
-
-.rep-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
-
-/* Card framing — same fix as Ganit's `.gn-bar` (ganit.css) and `Section`
-   (editorial.css), 2026-08-25: this row had no border, background or padding
-   of its own, flush between bordered surfaces above and below it. */
-.rep-bar { display: flex; gap: var(--sp-4); align-items: flex-end; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }
-.rep-bar__grow { flex: 1 1 200px; min-width: 0; }
-
-/* A chooser gets the pointer a chooser gets. */
-.rep-sel { cursor: pointer; }
-.rep-sel--time { width: 130px; margin-top: 6px; }
-.rep-num { width: 80px; margin-top: 6px; }
-.rep-ta { margin-top: 6px; resize: vertical; }
-
-.rep-form { display: flex; flex-direction: column; gap: var(--sp-5); }
-.rep-hint { font-size: var(--t-micro); color: var(--on-surface-3); margin-top: 4px; }
-
-/* ── Segmented choices (frequency, day-of-week) ─────────────────────────────
- * Both were a row of buttons carrying seven inline declarations each, with the
- * selected state expressed by rewriting the border, background and colour in
- * the style attribute. `aria-pressed` now carries the state for assistive
- * technology — the previous version signalled selection by colour alone, which
- * 00 §12 forbids — and `.is-on` carries it visually.
+/* THE SCHEDULE-FORM RULES ARE GONE (2026-08-27), with the panel they dressed.
+ *
+ * `.rep-page`, `.rep-acts`, `.rep-bar`, `.rep-bar__grow`, `.rep-sel`,
+ * `.rep-sel--time`, `.rep-num`, `.rep-ta`, `.rep-form`, `.rep-hint`,
+ * `.rep-seg*`, `.rep-fmt*`, `.rep-sched*` and `.rep-chip--cap` existed only for
+ * the team-scoped schedule builder on ReportsPage, whose three endpoints were
+ * retired with `public.report_schedules`. Nothing else in the product renders
+ * any of them — Time Report shares this file but uses the `trp-` half.
+ *
+ * Removed by reading the rules, not by matching selector strings: a
+ * delete-by-selector script once ate an unrelated rule via a comment. Note that
+ * liquid-glass.css still names `.rep-bar` in a grouped selector; that is an
+ * orphan in a file this change does not own, harmless because no markup carries
+ * the class any more.
+ *
+ * `.rep-bar__track` / `.rep-bar__fill` / `.rep-dot` below are NOT part of this:
+ * they are the chart primitives and are left exactly as they were found.
  */
-.rep-seg { display: flex; gap: var(--sp-2); margin-top: 6px; flex-wrap: wrap; }
-
-.rep-seg__btn {
-  padding: 8px 16px;
-  border: 1.5px solid var(--outline);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--on-surface-2);
-  font: inherit;
-  font-size: var(--t-label);
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard),
-              background var(--dur-fast) var(--ease-standard);
-}
-.rep-seg__btn:hover { border-color: var(--on-surface-3); }
-.rep-seg__btn.is-on {
-  border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--primary-text);
-}
-
-.rep-seg__hi {
-  display: block;
-  margin-top: 1px;
-  font-family: var(--font-hindi);
-  font-size: var(--t-micro);
-  font-weight: 400;
-  color: var(--on-surface-3);
-}
-
-/* The day-of-week variant is a fixed square. */
-.rep-seg__btn--day {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  font-size: var(--t-micro);
-  font-weight: 700;
-  color: var(--on-surface-3);
-}
-
-/* ── Format checkboxes ──────────────────────────────────────────────────── */
-.rep-fmt { display: flex; gap: var(--sp-3); margin-top: 6px; flex-wrap: wrap; }
-
-.rep-fmt__l {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: var(--t-label);
-  font-weight: 500;
-  color: var(--on-surface-2);
-}
-
-/* accent-color, in CSS rather than inline, so it follows the chosen accent
-   instead of being pinned to the old static teal. */
-.rep-fmt__cb { accent-color: var(--primary); }
 
 /* ── Quiet inline notes ─────────────────────────────────────────────────── */
 .rep-note {
@@ -238,35 +173,6 @@
 }
 .rep-note--pad { padding: var(--sp-4); }
 .rep-note--cell { grid-column: 1/-1; text-align: center; padding: var(--sp-2) 0; font-size: var(--t-micro); }
-
-/* ── Scheduled-sends section head ───────────────────────────────────────── */
-.rep-sched {
-  margin-top: var(--sp-8);
-  padding-top: var(--sp-6);
-  border-top: 1px solid var(--outline-variant);
-}
-
-.rep-sched__head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-5);
-  flex-wrap: wrap;
-}
-
-.rep-sched__t {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--t-title-lg);
-  font-weight: 500;
-  letter-spacing: -.005em;
-  color: var(--on-surface);
-}
-
-.rep-sched__hi { font-family: var(--font-hindi); font-size: var(--t-body-sm); color: var(--on-surface-3); }
-
-/* Capitalises the schedule frequency inside a StatusChip. */
-.rep-chip--cap { text-transform: capitalize; }
 
 /* Per-person colour on the report's member chips and avatars. The `gr__*`
    classes in generate-report.css own the geometry; this only supplies the hue,

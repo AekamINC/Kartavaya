@@ -1,16 +1,33 @@
 ﻿/**
  * ReportsPage.jsx — Generate Report screen.
  * Layout matches the design: two-column builder (left) + sticky preview/export (right).
- * Schedules management toggles below the builder via "Manage schedules" in the header.
+ *
+ * THE SCHEDULES PANEL IS GONE (2026-08-27), AND IT IS A REMOVAL, NOT A REWRITE.
+ *
+ * This page carried a "Manage schedules" panel over the team-scoped
+ * `public.report_schedules` table and its three endpoints —
+ * `GET /reports/schedules/{team_id}`, `POST /reports/schedules/{team_id}` and
+ * `DELETE /reports/schedules/{id}`. The owner retired that table; the endpoints
+ * no longer exist. The list call ran on mount of the panel, so the panel could
+ * only ever render its error state, and "Create schedule" could only ever fail:
+ * a screen rendering a control that cannot work.
+ *
+ * Scheduling itself is NOT gone. It lives on the newer per-organisation
+ * scheduler (`staging.dristi_scheduled_reports`) behind Dristi's Reports tab,
+ * which has live rows and a running dispatcher. So nothing here reimplements
+ * scheduling — the page points at where it now lives instead, in the header and
+ * as the last step of the builder, because "how do I get this every Monday?" is
+ * a question people will keep bringing to this screen.
+ *
+ * `src/__tests__/reportsPageRetiredSchedules.test.js` fails if any of the three
+ * retired paths ever reappears in this file.
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, rows as asRows, body as asBody } from '../lib/api';
-import { PageHeader, DataTable, Td } from '../components/editorial';
+import { Link } from 'react-router-dom';
+import { api } from '../lib/api';
+import { PageHeader } from '../components/editorial';
 import { ErrorState, errorKind, SkeletonText } from '../components/ui';
-import { useToast } from '../components/ui/toast';
 import { PROJECT_COLORS, userInitials } from '../lib/utils';
-import { useLanguage } from '../components/CustomizePanel';
-import { secondaryOf } from '../lib/labels';
 import { Secondary } from '../components/Bilingual';
 import DateInput from '../components/ui/DateInput';
 
@@ -24,11 +41,6 @@ const fmtDate   = iso => {
   try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
   catch { return iso || '—'; }
 };
-const fmtDT = dt => {
-  try { return new Date(dt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
-  catch { return '—'; }
-};
-
 // LocalStorage export history
 function loadHistory() {
   try { return JSON.parse(localStorage.getItem('Kartavaya_report_history') || '[]'); }
@@ -43,12 +55,6 @@ function pushHistory(entry) {
 function CalIcon() {
   return <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1.5V4M11 1.5V4M2 7h12"/></svg>;
 }
-function PlusIcon() {
-  return <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v10M3 8h10"/></svg>;
-}
-function TrashIcon() {
-  return <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 5h10M5 5V3h6v2M6 8v4M10 8v4"/></svg>;
-}
 function Spinner() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" className="gr__spin">
@@ -62,298 +68,6 @@ function Arrow() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3.5 8H12.5M9 4.5l3.5 3.5L9 11.5"/>
     </svg>
-  );
-}
-
-// ── Schedules panel ───────────────────────────────────────────────
-const FREQ_OPTS = [
-  { value: 'daily',   label: 'Daily',   hi: 'दैनिक' },
-  { value: 'weekly',  label: 'Weekly',  hi: 'साप्ताहिक' },
-  { value: 'monthly', label: 'Monthly', hi: 'मासिक' },
-];
-const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-function SchedulesPanel({ teams }) {
-  const { pushToast } = useToast();
-  // ONE LABEL SHAPE — `.rep-seg__hi` is not in `[data-language="en"]`'s
-  // six-name list. Read once because FREQ_OPTS is mapped.
-  const lang = useLanguage();
-  const [teamId,    setTeamId]    = useState(teams[0]?.team_id || '');
-  const [schedules, setSchedules] = useState([]);
-  const [loading,   setLoading]   = useState(false);
-  const [err,       setErr]       = useState(null);
-  const [showForm,  setShowForm]  = useState(false);
-  const [submitting,setSubmitting]= useState(false);
-  const [form, setForm] = useState({
-    frequency: 'weekly', file_formats: ['pdf'], recipients: '',
-    day_of_week: 1, day_of_month: 1, send_hour_utc: 2,
-  });
-
-  /* Previously `.catch(() => setSchedules([]))`, so a 403 or a 500 rendered the
-     "No schedules yet" empty state and invited the user to create a schedule
-     that may already exist. Classified and rendered as a real failure state
-     now (02-common-components.md). */
-  const loadSchedules = useCallback((tid) => {
-    if (!tid) return;
-    setLoading(true);
-    setErr(null);
-    api.get(`/reports/schedules/${tid}`)
-      .then(r => setSchedules(asRows(r)))
-      .catch(e => { setErr(e); setSchedules([]); })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { loadSchedules(teamId); }, [teamId, loadSchedules]);
-
-  const toggleFmt = fmt => setForm(f => ({
-    ...f,
-    file_formats: f.file_formats.includes(fmt)
-      ? f.file_formats.filter(x => x !== fmt)
-      : [...f.file_formats, fmt],
-  }));
-
-  async function createSchedule(e) {
-    e.preventDefault();
-    const recipients = form.recipients.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-    if (!recipients.length || !form.file_formats.length) return;
-    setSubmitting(true);
-    try {
-      const r = await api.post(`/reports/schedules/${teamId}`, {
-        frequency:     form.frequency,
-        file_formats:  form.file_formats,
-        recipients,
-        send_hour_utc: Number(form.send_hour_utc),
-        day_of_week:   form.frequency === 'weekly'  ? Number(form.day_of_week)  : null,
-        day_of_month:  form.frequency === 'monthly' ? Number(form.day_of_month) : null,
-      });
-      setSchedules(s => [asBody(r), ...s]);
-      setShowForm(false);
-      setForm(f => ({ ...f, recipients: '' }));
-    } catch (e) {
-      // Was `catch (_) {}`. A rejected create closed nothing, added nothing and
-      // said nothing — the form simply sat there, so the user pressed Create
-      // again. On a schedule that DID save before erroring, that is a duplicate
-      // recurring email to a client.
-      pushToast({
-        type: 'error',
-        title: 'Could not create the schedule',
-        message: e?.response?.data?.detail || 'Try again.',
-      });
-    } finally { setSubmitting(false); }
-  }
-
-  async function del(id) {
-    try {
-      await api.delete(`/reports/schedules/${id}`);
-      setSchedules(s => s.filter(x => x.schedule_id !== id));
-    } catch (e) {
-      // Also `catch (_) {}` before: a failed delete left the row on screen with
-      // no explanation, which reads as the button being broken.
-      pushToast({
-        type: 'error',
-        title: 'Could not delete the schedule',
-        message: e?.response?.data?.detail || 'Try again.',
-      });
-    }
-  }
-
-  return (
-    <div className="rep-page">
-      {/* Project + new button */}
-      <section className="k-card">
-        <div className="rep-bar">
-          <div className="rep-bar__grow">
-            <div className="k-fld-label">PROJECT</div>
-            <select className="k-input rep-sel" value={teamId} onChange={e => setTeamId(e.target.value)}>
-              {teams.map(t => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
-            </select>
-          </div>
-          <button className="k-btn k-btn--primary k-btn--sm" onClick={() => setShowForm(s => !s)}>
-            <PlusIcon /> New schedule
-          </button>
-        </div>
-      </section>
-
-      {/* Create form */}
-      {showForm && (
-        <section className="k-card">
-          <div className="k-card__head">
-            <div className="k-card__titles">
-              <h3 className="k-card__title">New automated schedule</h3>
-              <Secondary className="k-card__sans" value="स्वचालित प्रेषण" />
-            </div>
-          </div>
-          <form onSubmit={createSchedule}>
-            <div className="k-card__body rep-form">
-              {/* Frequency */}
-              <div>
-                <div className="k-fld-label">FREQUENCY</div>
-                <div className="rep-seg">
-                  {FREQ_OPTS.map(opt => {
-                    const oi = secondaryOf(opt.hi, lang);
-                    return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      aria-pressed={form.frequency === opt.value}
-                      className={`rep-seg__btn${form.frequency === opt.value ? ' is-on' : ''}`}
-                      onClick={() => setForm(f => ({ ...f, frequency: opt.value }))}
-                    >
-                      {opt.label}
-                      {oi.secondary && (
-                        <Secondary className="rep-seg__hi" value={oi.secondary} />
-                      )}
-                    </button>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Day of week */}
-              {form.frequency === 'weekly' && (
-                <div>
-                  <div className="k-fld-label">DAY</div>
-                  <div className="rep-seg">
-                    {DAYS.map((d, i) => (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-pressed={form.day_of_week === i}
-                        className={`rep-seg__btn rep-seg__btn--day${form.day_of_week === i ? ' is-on' : ''}`}
-                        onClick={() => setForm(f => ({ ...f, day_of_week: i }))}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* Day of month */}
-              {form.frequency === 'monthly' && (
-                <div>
-                  <div className="k-fld-label">DAY OF MONTH</div>
-                  <input
-                    type="number" min="1" max="28"
-                    className="k-input rep-num"
-                    aria-label="Day of month"
-                    value={form.day_of_month}
-                    onChange={e => setForm(f => ({ ...f, day_of_month: e.target.value }))}
-                  />
-                </div>
-              )}
-              {/* Send hour */}
-              <div>
-                <div className="k-fld-label">SEND TIME (UTC)</div>
-                <select
-                  className="k-input rep-sel rep-sel--time"
-                  aria-label="Send time in UTC"
-                  value={form.send_hour_utc}
-                  onChange={e => setForm(f => ({ ...f, send_hour_utc: e.target.value }))}
-                >
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00 UTC</option>
-                  ))}
-                </select>
-              </div>
-              {/* Formats */}
-              <div>
-                <div className="k-fld-label">FORMAT</div>
-                <div className="rep-fmt">
-                  {['pdf', 'excel'].map(fmt => (
-                    <label key={fmt} className="rep-fmt__l">
-                      <input
-                        type="checkbox"
-                        className="rep-fmt__cb"
-                        checked={form.file_formats.includes(fmt)}
-                        onChange={() => toggleFmt(fmt)}
-                      />
-                      {fmt.toUpperCase()}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              {/* Recipients */}
-              <div>
-                <div className="k-fld-label">RECIPIENTS</div>
-                <textarea
-                  className="k-input rep-ta"
-                  aria-label="Recipients"
-                  placeholder="name@example.com, another@example.com"
-                  rows={3}
-                  value={form.recipients}
-                  onChange={e => setForm(f => ({ ...f, recipients: e.target.value }))}
-                />
-                <div className="rep-hint">Separate with commas or new lines.</div>
-              </div>
-              <div className="rep-acts">
-                <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Create schedule'}
-                </button>
-                <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowForm(false)}>Cancel</button>
-              </div>
-            </div>
-          </form>
-        </section>
-      )}
-
-      {/* List */}
-      {loading ? (
-        <div className="k-card" aria-busy="true" aria-label="Loading schedules"><SkeletonText width="40%" height={14} /></div>
-      ) : err ? (
-        <ErrorState
-          kind={errorKind(err)}
-          grant="owner access to this project"
-          onRetry={() => loadSchedules(teamId)}
-        />
-      ) : schedules.length === 0 ? (
-        <div className="k-empty">
-          <div className="k-empty__icon"><CalIcon /></div>
-          <div className="k-empty__title">No schedules yet</div>
-          <div className="k-empty__sub">Create one to auto-deliver reports to your inbox.</div>
-        </div>
-      ) : (
-        <section className="k-card">
-          <div className="k-card__head">
-            <div className="k-card__titles">
-              <h3 className="k-card__title">Active schedules</h3>
-              <Secondary className="k-card__sans" value="स्वचालित सूची" />
-            </div>
-          </div>
-          {/* One table component, not a tenth hand-rolled one. `DataTable`/`Td`
-              from components/editorial is the module-surface table already used
-              by Vikray, Prachar, Dristi, Vetana and Pahchan; it brings the
-              sticky header, the --ix-scaled row hover and right-align/mono
-              support that this hand-rolled copy never had.
-
-              Column headers are English only: 24-bilingual-devanagari.md puts
-              table column headers on the "No" list. */}
-          <DataTable arrange="reports.schedules" columns={['Frequency', 'Format', 'Recipients', 'Next run', 'Last sent', '']}>
-            {schedules.map(s => (
-              <tr key={s.schedule_id}>
-                <Td>
-                  <span className="k-statuschip rep-chip--cap" style={{ '--c': 'var(--primary)' }}>
-                    <span className="k-statuschip__dot" />
-                    {s.frequency}
-                  </span>
-                </Td>
-                <Td color="var(--ink-2)">{(s.file_formats || []).map(f => f.toUpperCase()).join(' + ')}</Td>
-                <Td color="var(--ink-2)" className="rp-sched__rcpt">{(s.recipients || []).join(', ')}</Td>
-                <Td color="var(--ink-3)" mono>{fmtDT(s.next_run_at)}</Td>
-                <Td color="var(--ink-3)" mono>
-                  {s.last_sent_at ? fmtDT(s.last_sent_at) : 'Never'}
-                </Td>
-                <Td align="right">
-                  <button className="k-btn k-btn--ghost k-btn--sm rp-sched__del"
-                    onClick={() => del(s.schedule_id)} title="Delete schedule"
-                    aria-label={`Delete ${s.frequency} schedule`}>
-                    <TrashIcon />
-                  </button>
-                </Td>
-              </tr>
-            ))}
-          </DataTable>
-        </section>
-      )}
-    </div>
   );
 }
 
@@ -573,7 +287,6 @@ export default function ReportsPage({ teams: propTeams }) {
   const [preview,    setPreview]    = useState(null);
   const [prevLoading,setPrevLoading]= useState(false);
   const [history,    setHistory]    = useState(() => loadHistory());
-  const [showSchedules, setShowSchedules] = useState(false);
 
   // Load teams
   useEffect(() => {
@@ -730,7 +443,7 @@ export default function ReportsPage({ teams: propTeams }) {
     return (
       <div className="k-screen">
         <PageHeader kicker="OPERATIONS" title="Reports" sanskrit="प्रतिवेदन"
-          lede="Generate and schedule project reports." />
+          lede="Generate project reports on demand." />
         <div className="k-empty">
           <div className="k-empty__icon"><CalIcon /></div>
           <div className="k-empty__title">No projects found</div>
@@ -759,16 +472,21 @@ export default function ReportsPage({ teams: propTeams }) {
                 user on a second machine. A statistic that cannot change is not
                 a statistic; it is a decoration that looks like reassurance.
 
-                The real fact lives on `public.report_schedules.last_sent_at`,
-                per schedule, and the schedules panel below shows it against
-                the schedule it belongs to — which is where somebody can
-                actually act on it. A cross-team "last send anywhere" figure
-                would need its own endpoint, and it would answer a question
-                nobody asked: what a firm wants to know is whether THEIR
-                Monday report went out. */}
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowSchedules(s => !s)}>
-              <CalIcon /> {showSchedules ? 'Hide schedules' : 'Manage schedules'}
-            </button>
+                "Manage schedules" is gone with it, and for a harder reason: the
+                panel it opened talked to three endpoints that no longer exist.
+
+                The old note here pointed at `public.report_schedules
+                .last_sent_at` as the true per-schedule fact. That column is
+                being dropped with the table, so the claim would have become a
+                lie left behind in a comment. The fact now lives on
+                `staging.dristi_scheduled_reports.last_sent_at`, which Dristi's
+                Reports tab renders per schedule — beside that schedule's
+                delivery log — and this button is a LINK to exactly there. This
+                page shows no "last sent" of its own and should not: it holds no
+                endpoint that could answer one. */}
+            <Link className="k-btn k-btn--ghost k-btn--sm" to="/dristi?tab=reports">
+              <CalIcon /> Scheduled reports
+            </Link>
           </div>
         }
       />
@@ -930,7 +648,31 @@ export default function ReportsPage({ teams: propTeams }) {
           {/* 5 · The registers — the consolidation itself. */}
           <RegistersPanel from={from} to={to} />
 
-          {/* 5 · Delivery */}
+          {/* 6 · Scheduled delivery — SAID, NOT REBUILT.
+
+              A person who came here for "email me this every Monday" used to
+              find a panel that could not save one. Saying nothing would make
+              the feature look deleted; rebuilding it here would make a second
+              scheduler. So this step states where the working one is and links
+              to it, and claims nothing about what is scheduled — this page has
+              no endpoint that could tell it. */}
+          <div className="gr__block">
+            <div className="gr__block-h">
+              <span className="gr__step">6</span>
+              <h3>Scheduled delivery</h3>
+              <Secondary className="gr__block-sans" value="स्वचालित प्रेषण" />
+            </div>
+            <p className="rep-note">
+              This page raises a report on demand. Recurring emailed reports are
+              set up per organisation in Dristi, where you choose the recipients,
+              the day and the time, and can see when each one last went out.
+            </p>
+            <p className="gr__sched-cta">
+              <Link className="k-btn k-btn--ghost k-btn--sm" to="/dristi?tab=reports">
+                <CalIcon /> Open scheduled reports
+              </Link>
+            </p>
+          </div>
         </div>
 
         {/* ── RIGHT: preview + export + history ────────────────── */}
@@ -1068,18 +810,11 @@ export default function ReportsPage({ teams: propTeams }) {
         </aside>
       </div>
 
-      {/* Schedules panel — toggled by header button */}
-      {showSchedules && (
-        <div className="rep-sched">
-          <div className="rep-sched__head">
-            <h2 className="rep-sched__t">
-              Automated schedules
-            </h2>
-            <Secondary className="rep-sched__hi" value="स्वचालित प्रेषण" />
-          </div>
-          <SchedulesPanel teams={teams} />
-        </div>
-      )}
+      {/* The schedules panel stood here. It is not replaced in place: it was
+          hidden behind a toggle that defaulted closed, so removing it leaves no
+          gap in the layout — and step 6 in the builder now says where
+          scheduling went, next to the export buttons that raise the same
+          document on demand. */}
 
       <div className="k-citation">
         <div className="k-citation__sans" lang="sa">कालः सृजति भूतानि कालः संहरते प्रजाः</div>

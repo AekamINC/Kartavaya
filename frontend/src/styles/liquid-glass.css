@@ -111,7 +111,12 @@
      comments on the rules themselves). Static depth only, no hover list:
      like '.gn-panel'/'.tv-card', they can sit directly above a full-width
      table and a hover-scale would nudge that table's scrollbar. */
-  .k-section, .gn-bar, .mn-bar, .vk-bar, .rep-bar, .hb-filters, .niyam-filters, .bl__filter,
+  /* '.rep-bar' left this list 2026-08-27 with the ReportsPage schedules panel:
+     it was the panel's project-picker row, its rule in reports.css went with
+     the retired `public.report_schedules` endpoints, and no markup carries the
+     class any more. Same reason as '.gr__stat' below — a name here that nothing
+     renders is a rule that cannot be seen to be wrong. */
+  .k-section, .gn-bar, .mn-bar, .vk-bar, .hb-filters, .niyam-filters, .bl__filter,
   .k-filterbar, .k-tfilters, .bl__bar, .docfilt, .vtb__bar,
   /* '.gr__card' only. '.gr__stat' was in this list and in the hover list and
      exists nowhere in the app — Graha's '.gr__st' is a section HEADING, not a
