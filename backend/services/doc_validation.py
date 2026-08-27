@@ -147,9 +147,38 @@ def _num(v: Any) -> float:
 
 
 def _addr_blank(addr: Any) -> bool:
+    """Is this address empty for the purposes of a Rule 46 particular?
+
+    Reads `doc_render.ADDRESS_ORDER` rather than its own tuple, and that is a
+    FIX, not tidiness. This was the THIRD copy of the address vocabulary in the
+    codebase, and it was the one that disagreed: it listed
+    `line1, line2, city, state, pincode` and **omitted `country`**, so an
+    address carrying nothing but a country was reported blank — while
+    `invoice_pdf` and `doc_render` would both have printed it. Six live
+    `ganit_vendors.address` rows carry a `country`.
+
+    The other two copies were reconciled onto one order on 2026-08-27; this one
+    was allowlisted in that scanner rather than fixed, because order is not what
+    it cares about. Membership is, and it was wrong about membership.
+
+    `state_code` stays out for the same reason it is out of `ADDRESS_ORDER`: it
+    is the numeric GST code, resolved to a name for display and never printed
+    raw, so its presence alone does not make an address usable on a document.
+
+    ── The import is LOCAL, and it has to be ───────────────────────────────────
+
+    `doc_render` imports `DocumentCheck` from this module, so a module-level
+    `from services import doc_render` is a circular import. It does not fail
+    consistently, which is what makes it dangerous: the whole document suite
+    (325 tests) stayed green because something else had already imported
+    `doc_render` first, and only a direct `from services.doc_validation import
+    _addr_blank` raised `cannot import name 'DocumentCheck' from partially
+    initialized module`. Import order is not a thing to leave to luck.
+    """
     if not isinstance(addr, dict):
         return True
-    return not any(str(addr.get(k) or "").strip() for k in ("line1", "line2", "city", "state", "pincode"))
+    from services.doc_render import ADDRESS_ORDER
+    return not any(str(addr.get(k) or "").strip() for k in ADDRESS_ORDER)
 
 
 # ── Tax invoice ──────────────────────────────────────────────────────────────

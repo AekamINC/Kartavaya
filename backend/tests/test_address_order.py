@@ -161,10 +161,6 @@ _KEY_RE = re.compile(r"""['"](line1|line2|city|state|pincode|country)['"]""")
 _ALLOWED = {
     # The definition. Everything else imports it.
     "doc_render.py": "declares ADDRESS_ORDER",
-    # An emptiness test (`not any(...)`), not a renderer: it asks whether a
-    # human typed anything, and the answer does not depend on field order. It
-    # is still a second list of the vocabulary and is noted in the finding.
-    "doc_validation.py": "order-free emptiness test",
 }
 
 
@@ -190,3 +186,35 @@ def test_addr_parts_is_the_shared_normaliser():
     assert R.addr_parts({"pincode": "  380009  ", "city": "Ahmedabad"}) == ["Ahmedabad", "380009"]
     assert R.addr_parts({"city": None, "state": "  "}) == []
     assert R.addr_parts("not a dict") == []
+
+
+def test_the_emptiness_test_covers_country_too():
+    """`doc_validation._addr_blank` must read the SAME keys the renderers print.
+
+    It was exempted from the scanner above as an "order-free emptiness test",
+    which was true and beside the point: order was not what it got wrong,
+    MEMBERSHIP was. It listed `line1, line2, city, state, pincode` and omitted
+    `country`, so an address carrying nothing but a country was reported blank
+    while both renderers would have printed it — and six live
+    `ganit_vendors.address` rows carry a `country`.
+
+    An exemption that names the wrong axis is worse than none: it invites the
+    reader to stop looking. The exemption is gone and this asserts the
+    behaviour instead of the source.
+    """
+    from services.doc_validation import _addr_blank
+    from services.doc_render import ADDRESS_ORDER
+
+    # Every printable key on its own must count as NOT blank. A key the
+    # renderers would put on the page cannot be invisible to the validator.
+    for key in ADDRESS_ORDER:
+        assert _addr_blank({key: "something"}) is False, (
+            f"_addr_blank ignores {key!r}, which the renderers print — that is "
+            "the country bug in a different key"
+        )
+
+    assert _addr_blank({}) is True
+    assert _addr_blank(None) is True
+    # `state_code` is the numeric GST code, never printed raw, so it alone does
+    # not make an address usable — it is deliberately outside ADDRESS_ORDER.
+    assert _addr_blank({"state_code": "24"}) is True
