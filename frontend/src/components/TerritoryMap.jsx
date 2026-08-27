@@ -169,7 +169,18 @@ export default function TerritoryMap({ territoryId, pincodes = [], height = 240 
             });
           });
           if (box && typeof map.fitBounds === 'function') {
-            map.fitBounds([[box.s, box.w], [box.n, box.e]], { padding: 24 });
+            /* `[[west, south], [east, north]]` — LNG FIRST, and this was wrong
+               in the opposite order until 2026-08-27. `fitBounds` is the one
+               place in this file that takes [lng, lat] pairs rather than a
+               `{lat, lng}` object, so it does not look wrong beside the
+               `center` above it.
+
+               The symptom was not a broken map, which is why it survived a
+               screenshot: for Surat (21.2 N, 72.9 E) the swapped pair reads as
+               lng 21, lat 72 — the Norwegian Sea — so the map opened correctly
+               on Gujarat and then flew to empty ocean, and the reader saw the
+               right place for an instant before it left. */
+            map.fitBounds([[box.w, box.s], [box.e, box.n]], { padding: 24 });
           }
         } catch (err) {
           // A shape that will not draw is reported, never swallowed. Silently

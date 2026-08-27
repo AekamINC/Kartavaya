@@ -41,6 +41,8 @@ vi.mock('../lib/api', () => ({
 }));
 
 /** A stand-in SDK that records how it was called and nothing else. */
+const fitCall = vi.fn();
+
 function fakeMappls() {
   class Map {
     constructor(container, opts) {
@@ -49,7 +51,7 @@ function fakeMappls() {
       this.opts = opts;
     }
     addListener(evt, fn) { if (evt === 'load') fn(); }
-    fitBounds() {}
+    fitBounds(...a) { fitCall(...a); }
     remove() {}
   }
   const noop = function () { return {}; };
@@ -83,6 +85,7 @@ let host, root;
 beforeEach(() => {
   get.mockReset();
   mapCtor.mockReset();
+  fitCall.mockReset();
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -138,6 +141,44 @@ describe('TerritoryMap · calls the Mappls SDK the way the SDK documents', () =>
 
     await render(<TerritoryMap territoryId="t1" />);
     assertSdkContract('TerritoryMap');
+  });
+
+  it('fits bounds in [lng, lat] — the one call that is not {lat, lng}', async () => {
+    /* THE SEAM WHERE EVERY BUG IN THIS FEATURE HAS LIVED. Two conventions meet
+       here and they are opposites: GeoJSON (the government boundary data) is
+       [lng, lat]; the Mappls SDK's `center` is {lat, lng}. `fitBounds` is the
+       one call in the component that takes [lng, lat] PAIRS, so a swap does not
+       look wrong sitting beside the `center` two lines above it.
+
+       And it does not fail loudly. For Surat (21.2 N, 72.9 E) the swapped pair
+       reads as lng 21, lat 72 — the Norwegian Sea. The map opened correctly on
+       Gujarat and then flew to empty ocean, so a screenshot taken at the wrong
+       moment shows a working map. That is what shipped. */
+    get.mockResolvedValue({ data: {
+      type: 'FeatureCollection', features: [FEATURE], territory_name: 'Gujarat',
+      claimed: 1, matched: 1, unmatched: [], unavailable: [], invalid: [],
+      vintage: 'datagov-2025-05', attribution: 'Boundaries © Government of India',
+    } });
+
+    await render(<TerritoryMap territoryId="t1" />);
+
+    expect(fitCall, 'the map never fitted to its shapes').toHaveBeenCalled();
+    const [bounds] = fitCall.mock.calls[0];
+    const [[west, south], [east, north]] = bounds;
+
+    // The fixture is Surat: lng ≈ 72.8–72.9, lat ≈ 21.1–21.2.
+    expect(west, 'west must be a LONGITUDE (~72 for Surat), not a latitude')
+      .toBeCloseTo(72.8, 1);
+    expect(east).toBeCloseTo(72.9, 1);
+    expect(south, 'south must be a LATITUDE (~21 for Surat), not a longitude')
+      .toBeCloseTo(21.1, 1);
+    expect(north).toBeCloseTo(21.2, 1);
+
+    // Stated as the invariant too, so the failure reads as "these are swapped"
+    // rather than as four unrelated numbers being off.
+    expect(west).toBeLessThan(east);
+    expect(south).toBeLessThan(north);
+    expect(Math.abs(south), 'a latitude cannot exceed 90').toBeLessThanOrEqual(90);
   });
 
   it('gives each mounted map a DISTINCT id', async () => {
