@@ -29,6 +29,11 @@ from services.lead_parser import parse_lead_email
 # schema, and a reader of `territory_routing.PIN_LADDER_ALL` can see at a glance
 # that the statement is defined once, over there, beside the rule it implements.
 from services import territory_routing
+# Phase 7.3. Imported as a MODULE for the same reason, and for one more: its
+# `CLAIMED_PINS_SQL` is PREPAREd against the live schema by
+# `tests/test_pin_boundaries.py`, which deliberately does not name this router —
+# see the note on that constant.
+from services import pin_boundaries
 from utils import assert_file_url
 
 log = logging.getLogger(__name__)
@@ -3264,6 +3269,99 @@ async def territory_round_robin(
     if turn["reason"] == territory_routing.NO_MEMBERS:
         raise HTTPException(400, "Territory has no assigned users")
     return {"assigned_user": turn["user"], "index": turn["index"]}
+
+
+@router.get("/territories/{territory_id}/geometry")
+async def territory_geometry(
+    territory_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The shapes of the PINs this territory claims — Phase 7.3.
+
+    ── THE RESPONSE IS FOUR BUCKETS AND THEY MUST NOT BE MERGED ─────────────
+
+        features      GeoJSON, one per PIN that has a published boundary. Each
+                      names its own PIN in `properties.pincode`.
+        matched       a COUNT, not a list — the PINs are already named above.
+        unmatched     PINs the dataset publishes no boundary for. 58 PINs in
+                      the government's own directory are in this state, so it
+                      is ordinary and not an error.
+        unavailable   PINs we could not look up because R2 did not answer. WE
+                      DO NOT KNOW whether a boundary exists.
+        invalid       entries that are not PINs at all — 'NW1 245', a blank, a
+                      city name. Named, never silently dropped, because a
+                      territory that claims five things and routes on four
+                      must be able to say which one it lost.
+
+    `unavailable` exists as its own bucket because the alternative is the map
+    telling a customer "there is no shape for 110001" when the truth is that
+    our object store is down. `storage.download_file` cannot make that
+    distinction — it answers `None` for a missing key and for an outage alike —
+    which is why `services/pin_boundaries.py` reads R2 itself.
+
+    ── WHAT IS NOT AN ERROR ─────────────────────────────────────────────────
+
+    A territory with no PINs, a territory whose PINs are all unmatched, and a
+    total R2 outage all answer **200**. A 503 would take the territory's name,
+    its `invalid` list and the count it claims down with it, and those are
+    exactly what a person needs to see when the shapes will not draw. The
+    frontend decides what to say from `unavailable` being non-empty; it must
+    not infer anything from `features` being empty.
+
+    The only 404 is a territory that is not this organisation's, or is
+    soft-deleted.
+
+    ── THE ARITHMETIC A CALLER CAN ASSERT ───────────────────────────────────
+
+        matched + len(unmatched) + len(unavailable) == claimed
+
+    `claimed` is what ROUTING sees — `Territory.pincodes`, normalised and
+    deduplicated — and `requested` is how many entries the customer typed. The
+    two differ by the invalid ones and by duplicates. PHASE-7 §7.3's acceptance
+    is written as `features.length + unmatched.length === rules.pincodes.length`,
+    which is the same statement only when nothing is invalid, nothing is
+    repeated and R2 is up; `claimed` holds in every case.
+    """
+    pool = await get_pool()
+
+    # `load_territories` rather than a fresh SELECT: its predicates are
+    # org-scoped AND is_active-scoped and were reasoned about in 7.1, and a new
+    # single-row lookup here would be new predicates in the exact place PHASE-7
+    # §7.1a found three cross-tenant leaks. It also means the name this endpoint
+    # reports and the PIN set it counts are the same ones routing uses.
+    territories = await territory_routing.load_territories(pool, org_id)
+    territory = next((t for t in territories if t.id == str(territory_id)), None)
+    if territory is None:
+        raise HTTPException(404, "Territory not found")
+
+    # And then the raw entries, which `Territory.pincodes` has already thrown
+    # away. Two reads answering two different questions: what routing SEES, and
+    # what the customer TYPED. `invalid` is the difference between them. If the
+    # row changes between the two — an admin editing the territory in another
+    # tab — the worst outcome is one stale bucket on one render.
+    entries = await pin_boundaries.claimed_entries(pool, org_id, str(territory_id))
+    if entries is None:
+        raise HTTPException(404, "Territory not found")
+
+    cover = await pin_boundaries.geometry_for_pins(entries)
+
+    # `territory_name`, never the id: the id is already in the caller's URL, and
+    # a name is what a screen draws.
+    return {
+        "type": "FeatureCollection",
+        "features": cover.features,
+        "territory_name": territory.name,
+        "requested": len(entries),
+        "claimed": len(territory.pincodes),
+        "matched": len(cover.features),
+        "unmatched": cover.unmatched,
+        "unavailable": cover.unavailable,
+        "invalid": cover.invalid,
+        "vintage": pin_boundaries.VINTAGE,
+        "attribution": pin_boundaries.ATTRIBUTION,
+    }
 
 
 # ── Phase 3: Custom Fields ────────────────────────────────

@@ -2737,4 +2737,46 @@ handover claimed); and `state_lgd` still zero-padded text, `07` not `7`.
 and the plan says to stop and report before running it — the standing migration
 approval does not cover loading data. Nothing has been loaded.
 
+## 2026-08-27 · Phase 8.0 ACCEPTED — and three tests that accused the product
+
+`phase8-address-block.spec.ts`, 3/3 against the deploy, entirely READ-ONLY: it
+opens lists, opens records, reads an `href`. A display-only phase has no
+business creating rows in a database production shares.
+
+- a CLIENT with a stored address offers *Open in Maps*, and every value stored
+  on that record appears in the query. Not "a link exists" — a link to an empty
+  `query=` also exists, and it opens Google Maps on the READER's own location,
+  presented as the customer's premises.
+- a CONTACT whose `billing_address` is `{}` offers **no link at all**.
+- the contact 7.0 gave an address to DOES offer one, `query=395002`.
+
+**The third is what makes the second mean anything.** Without it, "no link on an
+empty contact" passes when the page never mounted the component at all — which
+is exactly what had happened: `<AddressBlock>` went onto five surfaces, the
+Graha contact detail was missed, and `STATUS.md` published it in the wired list
+anyway. A live column with no screen reading it, claimed as done, is the fault
+Phase 8.0 exists to fix.
+
+**Three test faults on the way, and each accused the product of its own bug.**
+Worth all three, because the failure messages were confident and wrong:
+
+1. `GET /contacts` does not return `billing_address` — it returns a TABLE shape.
+   Filtering the list on `c.billing_address?.[k]` made every contact look empty,
+   so the "empty" fixture chosen was `Phase 7.1 Round-Robin Acceptance`, which
+   carries 395002. The message read *"…has no usable address and still offers a
+   map link"* about a contact whose address is fine. Fixed by reading each
+   candidate back from the detail endpoint, which is where the column lives.
+2. The contact search is SERVER-side and **does not fire on typing** — there is
+   a Filter button beside the box and `load()` hangs off it. Filling the input
+   left the table showing all 200 rows and the click landed on a different
+   record.
+3. **Nothing asserted which record was on screen.** That is why (1) and (2)
+   survived three runs looking like product bugs: the spec was making
+   assertions about a page whose identity it had never checked. The helper now
+   applies the filter and asserts `.gr__dname`.
+
+The screenshot is what settled it. The panel showed `Phase 7.1 Round-Robin
+Acceptance` while the test named KEVAL SHAH — who is a real contact in E2E with
+an empty address, and also the name in the signed-in user's badge in the corner.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -44,15 +44,83 @@ import { api, settle, shot, useOrg, openTab } from './_helpers';
 
 const ORG_ID = process.env.E2E_ORG_ID || '64e7bea6-6abe-490c-a2a4-27a60c6be916';
 
+/**
+ * Open a contact's detail panel BY NAME, through the search box.
+ *
+ * Not by clicking the name in the table. E2E holds 236 contacts, the table
+ * paginates, and the row this spec wants is chosen from the API's own ordering
+ * — so `getByText(name).click()` looked for a row that was very often on
+ * another page and failed with "the contact detail did not open", which reads
+ * like the panel is broken rather than like the row was never on screen.
+ *
+ * The search is SERVER-side and reaches past the 200 rows the list endpoint
+ * returns, which is the whole reason this tab has one.
+ */
+async function openContact(page: import('@playwright/test').Page, name: string) {
+  const search = page.locator('input.gr__search');
+  await expect(search, 'the contact search box is gone').toBeVisible({ timeout: 20_000 });
+  await search.fill(name);
+  // THE SEARCH IS SERVER-SIDE AND DOES NOT FIRE ON TYPING. There is a Filter
+  // button beside the box and `load()` hangs off it. Filling the input alone
+  // left the table showing all 200 rows, and the row this then clicked was
+  // whichever one happened to match first — which is how a test looking for
+  // KEVAL SHAH opened `Phase 7.1 Round-Robin Acceptance` and then reported the
+  // 7.1 contact's map link as a bug in the empty branch.
+  await page.getByRole('button', { name: /^filter$/i }).click();
+  await settle(page);
+
+  const row = page.locator('tr.gr__tr--click', { hasText: name }).first();
+  await expect(row, `no row for "${name}" after searching for it`)
+    .toBeVisible({ timeout: 20_000 });
+  await row.click();
+  await settle(page);
+
+  // AND CONFIRM WHICH RECORD OPENED. Without this the whole spec is an
+  // assertion about a page it never checked the identity of — the failure above
+  // was invisible for three runs precisely because nothing read the title.
+  await expect(page.locator('.gr__dname'),
+    `the detail that opened is not "${name}"`)
+    .toHaveText(name, { timeout: 20_000 });
+}
+
 /** The keys `services/invoice_pdf.py:123` reads, in the order it reads them. */
 const ADDRESS_KEYS = ['line1', 'line2', 'city', 'state', 'pincode', 'country'];
 
 test.use({ storageState: GODMODE_STATE });
 test.describe.configure({ mode: 'serial' });
 
+/**
+ * Graha, on the named tab.
+ *
+ * The wait for the tab strip is NOT belt-and-braces. `settle` returns when the
+ * network is quiet, and Graha's twenty tabs are measured and split between the
+ * strip and a "More +N" popover AFTER that — so `openTab` called too early sees
+ * neither an inline tab nor a More button and reports
+ * "tab /clients/i is neither inline nor behind a More menu" about a tab that
+ * renders a moment later. It passed once and failed the next run on exactly
+ * that race.
+ */
+async function openGraha(page: import('@playwright/test').Page, tab: RegExp) {
+  await useOrg(page, ORG_ID, /E2E/i);
+  await page.goto('/graha');
+  await settle(page);
+  await expect
+    .poll(async () => (await page.getByRole('tab').count())
+      + (await page.getByRole('button', { name: /^More/ }).count()), {
+      message: 'the Graha tab strip never rendered',
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(0);
+  await openTab(page, tab);
+}
+
 test.describe('Phase 8.0 · the map link is built from the record', () => {
   test('a client with a stored address offers Open in Maps, and the href is that address',
     async ({ page }) => {
+      // THE ORG FIRST, before a single read. Moving `useOrg` into `openGraha`
+      // left this `api()` call running against whatever org the session
+      // happened to be in — which is the precise hazard this file's header is
+      // about, arrived at by tidying rather than by deciding.
       await useOrg(page, ORG_ID, /E2E/i);
 
       // Find a client that HAS something to render, from the API rather than by
@@ -75,9 +143,7 @@ test.describe('Phase 8.0 · the map link is built from the record', () => {
         'to render here and this acceptance cannot be run against this org')
         .toBeTruthy();
 
-      await page.goto('/graha');
-      await settle(page);
-      await openTab(page, /clients/i);
+      await openGraha(page, /clients/i);
 
       // Open the record. The name is what a person clicks.
       await page.getByText(target!.name, { exact: true }).first().click();
@@ -141,30 +207,60 @@ test.describe('Phase 8.0 · the map link is built from the record', () => {
     // location and presents it as the customer's premises.
     await useOrg(page, ORG_ID, /E2E/i);
 
+    // ── THE LIST DOES NOT CARRY `billing_address` ──────────────────────────
+    //
+    // `GET /contacts` returns a row shape for a TABLE — name, company, email,
+    // type — and the address is not in it. The first version of this test
+    // filtered the list on `c.billing_address?.[k]`, which is `undefined` for
+    // every row, so EVERY contact looked empty and it picked the first one:
+    // `Phase 7.1 Round-Robin Acceptance`, which carries 395002. The failure
+    // message read "…has no usable address and still offers a map link" about
+    // a contact whose address is fine — a test accusing the product of its own
+    // bug, which is the most expensive kind.
+    //
+    // So each candidate is READ BACK from the detail endpoint, which is where
+    // `billing_address` actually lives, and the first genuinely empty one wins.
     const res = await api(page, 'get', '/api/v1/graha/contacts');
     const contacts = (((await res.json()).data ?? []) as Array<{
-      id: string; name: string; billing_address?: Record<string, unknown>;
+      id: string; name: string;
     }>);
-    const empty = contacts.find(c => !ADDRESS_KEYS
-      .some(k => String(c.billing_address?.[k] ?? '').trim().length > 0));
-    expect(empty,
-      'no E2E contact has an empty address any more — if the whole register '
-      + 'has been filled in, point this test at another org rather than '
-      + 'deleting it: the empty branch is the dangerous one').toBeTruthy();
+    expect(contacts.length, 'E2E has no contacts at all').toBeGreaterThan(0);
 
-    await page.goto('/graha');
-    await settle(page);
-    await openTab(page, /contact/i);
-    await page.getByText(empty!.name, { exact: true }).first().click();
-    await settle(page);
+    let empty: { id: string; name: string } | undefined;
+    for (const candidate of contacts.slice(0, 25)) {
+      const one = await api(page, 'get', `/api/v1/graha/contacts/${candidate.id}`);
+      if (one.status() >= 400) continue;
+      const payload = await one.json();
+      const record = payload.contact ?? payload;
+      const addr = (record.billing_address ?? {}) as Record<string, unknown>;
+      if (!ADDRESS_KEYS.some(k => String(addr[k] ?? '').trim().length > 0)) {
+        empty = candidate;
+        break;
+      }
+    }
+    expect(empty,
+      'none of the first 25 E2E contacts has an empty address — if the whole '
+      + 'register has been filled in, point this test at another org rather '
+      + 'than deleting it: the empty branch is the dangerous one').toBeTruthy();
+
+    await openGraha(page, /contact/i);
+    await openContact(page, empty!.name);
 
     // The panel must have RENDERED, or "no link" is trivially true because
     // nothing is on screen at all.
     await expect(page.getByText(/Lead Score:/i),
       'the contact detail did not open').toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole('link', { name: /open in maps/i }),
-      `${empty!.name} has no usable address and still offers a map link`)
-      .toHaveCount(0);
+    // Report the HREF on failure, not just the count. "still offers a map link"
+    // does not say WHICH record the link is for, and the first time this fired
+    // the answer mattered: the contact's own address is `{}`, so a link at all
+    // means something else on the page drew it.
+    const links = page.getByRole('link', { name: /open in maps/i });
+    const hrefs = await links.evaluateAll(
+      (els) => els.map(e => (e as HTMLAnchorElement).href));
+    expect(hrefs,
+      `${empty!.name} has an EMPTY billing_address and the page still offers ` +
+      `${hrefs.length} map link(s): ${hrefs.join(' | ')}`)
+      .toEqual([]);
 
     await shot(page, 'phase8-contact-no-address-no-link');
   });
@@ -184,11 +280,8 @@ test.describe('Phase 8.0 · the map link is built from the record', () => {
     const seeded = rows.find(r => r.name === 'Phase 7.0 Pincode Acceptance');
     expect(seeded, 'the Phase 7.0 acceptance contact is gone').toBeTruthy();
 
-    await page.goto('/graha');
-    await settle(page);
-    await openTab(page, /contact/i);
-    await page.getByText(seeded!.name, { exact: true }).first().click();
-    await settle(page);
+    await openGraha(page, /contact/i);
+    await openContact(page, seeded!.name);
 
     const link = page.getByRole('link', { name: /open in maps/i }).first();
     await expect(link, 'the contact detail does not mount AddressBlock at all')
