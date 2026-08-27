@@ -82,8 +82,16 @@ test('THE UTC DEFECT — requested_at_time carries the device offset, never Z', 
   const m = /([+-])(\d{2}):(\d{2})$/.exec(at);
   assert.ok(m, `requested_at_time carries no offset at all: ${at}`);
   const signed = (m![1] === '-' ? -1 : 1) * (Number(m![2]) * 60 + Number(m![3]));
+  // `+ 0` on both sides, and it is load-bearing on exactly one machine: a
+  // runner in UTC. There `getTimezoneOffset()` is `0`, so the expected value
+  // is `-0`, while `+00:00` parses to `0` — and `node:assert/strict` compares
+  // with `Object.is`, which holds those two apart. `+00:00` and `-00:00` are
+  // the same offset; `-0 + 0 === 0` normalises the sign away and changes no
+  // other value. This failed the first time the mobile suite ever ran in CI
+  // (2026-08-27). It had been green for months on a machine in IST, where
+  // the numbers are 330 and the sign of zero never comes up.
   assert.equal(
-    signed, -new Date('2026-07-06T12:00:00Z').getTimezoneOffset(),
+    signed + 0, -new Date('2026-07-06T12:00:00Z').getTimezoneOffset() + 0,
     'the offset in the string is not this device\'s offset on that day',
   );
 });

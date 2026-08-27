@@ -367,9 +367,9 @@ jobs:
       - name: Dependency security audit
         run: yarn audit --groups dependencies || true
 
-  # ── Mobile: TypeScript check ─────────────────────────────────────────────────
+  # ── Mobile: types AND the unit suite ─────────────────────────────────────────
   mobile-types:
-    name: Mobile TypeScript check
+    name: Mobile types + unit tests
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
@@ -393,12 +393,19 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
-      # The mobile UNIT SUITE, which CI has never run. 672 tests covering the
+      # The mobile UNIT SUITE, which CI had never run. 840 tests covering the
       # offline mutation queue, delta-sync cursor arithmetic, the CRM and Sales
       # write policies and the bilingual-label sweep — every one of them
       # green locally and none of them enforced here. A typecheck proves the
       # shapes line up; it cannot prove that queueing a relative stock delta
       # would silently destroy inventory, which is a real rule this suite pins.
+      #
+      # The FIRST run here, on 2026-08-27, was red: 839 of 840. The one failure
+      # was a signed zero — a Pahchan test asserting the device's UTC offset,
+      # written and run only ever on a machine in IST (+05:30, offset 330). On
+      # a runner in UTC the expected value is `-0` and the parsed one is `0`,
+      # which `node:assert/strict` holds apart. This job is now the only place
+      # the mobile suite runs outside IST, and that is worth having by itself.
       - name: Mobile unit tests
         run: npm test
 
