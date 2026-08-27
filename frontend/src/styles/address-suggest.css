@@ -1,0 +1,81 @@
+/* address-suggest.css — the Phase 7.6 autosuggest combobox.
+ *
+ * Its own file, imported by `components/ui/AddressSuggest.jsx`, following
+ * `SkipLink.jsx` -> `a11y.css` and `SkillDock.jsx` -> `dock.css`. It is NOT in
+ * graha.css: the control belongs to every address field in the product — Manav
+ * employees, Kray vendors, Vikray shipping, a Pahchan site — and putting it in
+ * the CRM's stylesheet would make payroll load the CRM's CSS to complete an
+ * address.
+ *
+ * Fluid and left-aligned, per the standing layout rule: the control takes the
+ * width its container gives it and centres nothing.
+ *
+ * ⚠ `.terr__mapbrand` is DELIBERATELY NOT REDECLARED HERE. The "Powered by
+ * Mappls" credit is drawn with the class graha.css already owns, so that
+ * `scripts/check-mappls-attribution.mjs` — which fails the build if any
+ * stylesheet hides that class — protects this credit too. A private copy under
+ * a different name would render identically and be outside the gate, which is
+ * the whole failure mode that gate exists for.
+ */
+
+.k-asug { position: relative; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+/* Sits on `.k-input` for the field styling; this adds only what the combobox
+   needs, so the box matches every other input on the form it lands in. */
+.k-asug__input { width: 100%; }
+
+/* THE EXPECTATION TO RESET, and it belongs in the product rather than only in
+   the plan (PHASE-7 §7.6). The owner asked for the UK "type a postcode, get
+   your address" flow; an Indian PIN averages ~82 km² against a UK postcode's
+   ~17 addresses, and 51 PINs do not resolve to a single state. */
+.k-asug__lede { font-size: 11px; line-height: 1.5; color: var(--ink-3); }
+
+.k-asug__list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin-top: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  list-style: none;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+}
+
+.k-asug__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+/* Keyboard and pointer highlight are ONE state, driven by `aria-selected`.
+   Two visual highlights at once — a hovered row and an arrowed row — is the
+   classic combobox bug: the user presses Enter and gets the other one. */
+.k-asug__opt[aria-selected="true"] { background: var(--bg-raised); }
+
+.k-asug__optname { font-size: 13px; font-weight: 600; color: var(--ink); }
+.k-asug__optaddr { font-size: 11.5px; line-height: 1.45; color: var(--ink-2); }
+
+/* The status line: "searching", "no matches", "autosuggest is not switched on
+   here", "we could not reach the address service". Four different sentences,
+   never merged — see `services/mappls_autosuggest.py`. */
+.k-asug__status { padding: 8px 10px; font-size: 12px; color: var(--ink-2); }
+
+/* The credit's own row, so the Mappls mark is inside the panel that shows
+   Mappls content and cannot be scrolled away from it. */
+.k-asug__foot {
+  display: flex;
+  justify-content: flex-start;
+  padding: 5px 6px 2px;
+  border-top: 1px solid var(--rule-soft);
+  margin-top: 3px;
+}

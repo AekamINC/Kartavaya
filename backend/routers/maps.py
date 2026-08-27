@@ -25,18 +25,24 @@ What makes it defensible rather than merely equivalent:
 `routers/custody.py` documents at length why `from __future__ import
 annotations` plus `@limiter.limit` answered 422 to every caller on Python 3.13:
 FastAPI could not resolve a Pydantic body model through the wrapper's globals
-and demoted the body to a query parameter. This router is one GET with no body
-at all, so it cannot reproduce that. The future import is omitted anyway —
-there is nothing here that needs it, and its absence is one less thing to
+and demoted the body to a query parameter. Both routes here are GETs with no
+body at all, so neither can reproduce that. The future import is omitted anyway
+— there is nothing here that needs it, and its absence is one less thing to
 reason about the next time somebody adds a POST to this file.
+
+⚠ If you add one: `/address/suggest` takes its fragment as an explicit
+`Query(...)` parameter, which is what a query string is SUPPOSED to be. The
+custody bug was a BODY silently demoted INTO the query string, which is a
+different thing entirely and would look identical in a 422. Read
+`routers/custody.py` before introducing a Pydantic model to this file.
 """
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from auth_router import require_user
 from limiter import limiter
-from services import mappls
+from services import mappls, mappls_autosuggest
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +109,99 @@ async def mappls_token(request: Request, user=Depends(require_user)):
         "reason": None,
         "token": key,
         "sdk_url": mappls.sdk_url(key),
+        "attribution": mappls.BASEMAP_ATTRIBUTION,
+        "attribution_href": mappls.BASEMAP_ATTRIBUTION_HREF,
+    }
+
+
+@router.get("/address/suggest")
+@limiter.limit("30/minute")
+async def address_suggest(
+    request: Request,
+    q: str = Query(default="", description="The address fragment being typed."),
+    user=Depends(require_user),
+):
+    """Address autosuggest for ONE typed fragment. Phase 7.6.
+
+    ── WHY THIS IS A PROXY AND NOT A BROWSER CALL ───────────────────────────
+
+    The Static Key does not expire and rotation is its only revocation. A
+    client-side autosuggest would publish it on every keystroke of every
+    signed-in user, and the console's domain whitelist — the sole compensating
+    control — does not restrain a key lifted out of a network tab and spent
+    from curl. The basemap SDK has no choice about this; autosuggest does, so
+    it takes the choice. `services/mappls_autosuggest.py` holds the key.
+
+    ⚠ ONE OWNER QUESTION IS STILL OPEN AND IT IS ABOUT THIS SHAPE. Under the
+    Geospatial Data Guidelines 2021, a FOREIGN entity may license
+    finer-than-threshold Indian map data only through APIs that do not let the
+    data pass through its own servers — and a server-side proxy is precisely
+    that. If Aekam Inc is an Indian entity the point is moot; the reason it is
+    not simply asserted here is that this repo also carries an org named
+    `UK AekamINC`, so "obviously Indian" is not a safe reading of the name.
+    Nobody has answered it in writing. It is written down here rather than only
+    in the plan because the alternative is client-side, and that is not a late
+    change — it is a different feature with a published key.
+    PHASE-7 §7.6 / proposal 92 §6.4.
+
+    ── WHY IT LIVES UNDER /maps AND NOT UNDER /v1/graha ─────────────────────
+
+    PHASE-7 §7.6 specifies `GET /v1/graha/address/suggest` behind `require_user`
+    + Graha's `_gate`. It is here instead, for the same reason the token
+    endpoint is: an address field is not a CRM feature. Manav employees, Kray
+    vendors, Vikray shipping addresses and a Pahchan site all take one, and
+    routing them through `/v1/graha` would make payroll ask the CRM for
+    permission to complete an address. The entitlement gate is genuinely lost
+    by that choice and it is the right trade — the resource being gated is a
+    third-party allocation, and `require_user` plus the rate limit is what
+    protects it, not a module entitlement.
+
+    ── 30/MINUTE, AND WHAT IT IS ACTUALLY FOR ───────────────────────────────
+
+    Not abuse prevention in the usual sense. The console currently shows an
+    allocation of **200 hits**, and the ceiling this limit sets is what stops a
+    single logged-in account exhausting the whole product's address lookups in
+    seven seconds — deliberately or by leaving a key repeating in a text box.
+    Paired with the client's 350 ms debounce and 3-character minimum, ordinary
+    typing costs 3-6 calls to fill one address and never approaches it. It is
+    the same number the token endpoint uses, on purpose: two limits with two
+    numbers is two things to reason about, and nothing here justifies the
+    second.
+
+    ⚠ THE LIMIT IS PER IP, NOT PER USER — `limiter.client_ip`. Everyone in one
+    office shares it. That is accepted: the allocation being protected is also
+    shared, and 30 a minute is generous for a room of people typing addresses.
+
+    ── ALWAYS 200 ───────────────────────────────────────────────────────────
+
+    `available` / `reason` / `suggestions`, never a 4xx for a state the screen
+    has to explain. `reason` is one of `null`, `too_short`, `not_configured` or
+    `unavailable`; `services/mappls_autosuggest.py` documents why the last
+    three are never merged. An empty `suggestions` with `reason: null` means
+    Mappls answered and knows no such place, which is a real and common answer
+    in a country where a PIN averages ~82 km².
+
+    ── ATTRIBUTION TRAVELS WITH THE ANSWER ──────────────────────────────────
+
+    Same rule as the token endpoint: the credit ships in the response, not as a
+    frontend constant, so a screen cannot acquire Mappls content without also
+    being handed what it owes for it. It is served on the failure answers too,
+    so a dropdown that still holds results from the previous keystroke can
+    never be in a state where it shows them uncredited.
+
+    ── AND WHAT MUST NOT BE ADDED HERE ──────────────────────────────────────
+
+    A `client_id`, an address object, or any "fill in this saved record"
+    parameter. Content submitted to Mappls carries a perpetual, worldwide,
+    sub-licensable licence back to them, and a stored client address is exactly
+    the content this product exists to hold on its customers' behalf. The
+    fragment is all that goes. Neither may this endpoint be reached from the
+    public inbound lead form — `require_user` is what enforces that, and it is
+    a licence control here as much as a security one.
+    """
+    result = await mappls_autosuggest.suggest(q)
+    return {
+        **result,
         "attribution": mappls.BASEMAP_ATTRIBUTION,
         "attribution_href": mappls.BASEMAP_ATTRIBUTION_HREF,
     }
