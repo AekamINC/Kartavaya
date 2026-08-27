@@ -46,6 +46,17 @@ import { ColumnsButton } from '../../components/ui/CustomizeColumns';
  * cannot act on, so the sheet renders both ticks disabled rather than letting
  * the arrangement produce that state.
  */
+/* The shape an Indian address is stored in, everywhere in this product:
+   `{ line1, line2, city, state, pincode }`. `services/invoice_pdf.py:123` reads
+   exactly these keys (plus `country`) off `billing_address`, `ClientsTab` writes
+   them for a company and `org/TabProfile` for the firm itself — so a contact
+   using any other spelling would be invisible to the invoice.
+
+   Held as a literal rather than typed twice, because a create form and an edit
+   panel that disagree about the keys is how one surface writes `pin` and the
+   other reads `pincode`. Spread it, never mutate it. */
+const EMPTY_ADDRESS = { line1: '', line2: '', city: '', state: '', pincode: '' };
+
 const CONTACT_COLUMNS = [
   { id: 'name', label: 'Name', sortKey: 'name', fixed: true },
   { id: 'company', label: 'Company', sortKey: 'company' },
@@ -120,11 +131,15 @@ export default function ContactsTab({ crm = true }) {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', custom_data: {} });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', territory_id: '', billing_address: { ...EMPTY_ADDRESS }, custom_data: {} });
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
   const [clientOptions, setClientOptions] = useState([]);
+  /* The sales patches, for the picker. Same enrichment contract as the
+     client dropdown below: if this fetch fails the form still works and
+     simply offers no territory. */
+  const [territoryOptions, setTerritoryOptions] = useState([]);
   const [editContact, setEditContact] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   // A failed load left `contacts` at [] and rendered the "No contacts yet"
@@ -138,6 +153,7 @@ export default function ContactsTab({ crm = true }) {
     // The client dropdown is an enrichment: it failing must not take the list
     // with it, so the form simply offers "— None —" and nothing else.
     api.get('/v1/graha/clients').then(r => setClientOptions(rows(r))).catch(() => {});
+    api.get('/v1/graha/territories').then(r => setTerritoryOptions(rows(r))).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, []);
@@ -164,18 +180,31 @@ export default function ContactsTab({ crm = true }) {
       await api.post('/v1/graha/contacts', form);
       pushToast({ title: 'Contact created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', custom_data: {} });
+      setForm({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', territory_id: '', billing_address: { ...EMPTY_ADDRESS }, custom_data: {} });
       load();
     } catch (e) { pushToast({ title: e.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
   }
 
   function startEditContact(c) {
+    /* `mobile` and `website` USED TO BE HERE, and both were fiction.
+       `graha_contacts` has 31 columns and neither is one of them — checked
+       against the live schema in both `staging` and `public` on 2026-08-27, and
+       `ContactUpdate` never listed them either, so pydantic dropped them before
+       the SQL was even built. The panel rendered two boxes, a person typed into
+       them, the toast said "Contact updated" and the value went nowhere. Twice
+       over: there was no field to carry it and no column to hold it.
+
+       They are not being ADDED, they are being removed. A phone number already
+       has `phone`, and a website belongs to the COMPANY — `graha_clients` has
+       the column, and a CRM client is the company. */
     setEditContact({
-      id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '', mobile: c.mobile || '',
+      id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '',
       client_id: c.client_id || '', designation: c.designation || '', contact_type: c.contact_type || 'lead',
-      notes: c.notes || '', source: c.source || '', lead_score: c.lead_score ?? '', website: c.website || '',
+      notes: c.notes || '', source: c.source || '', lead_score: c.lead_score ?? '',
       gstin: c.gstin || '', pan: c.pan || '', custom_data: c.custom_data || {},
+      billing_address: { ...EMPTY_ADDRESS, ...(c.billing_address || {}) },
+      territory_id: c.territory_id || '',
     });
   }
 
@@ -237,6 +266,45 @@ export default function ContactsTab({ crm = true }) {
     <label className={`gr__f${mod}`}><span className="gr__fl">{label}</span>{node}</label>
   );
 
+  /* ONE definition, used by the create form AND the edit panel.
+     `graha_contacts.billing_address` is a live jsonb column and the API models
+     have always accepted it — the create form simply had no address fields at
+     all, so 0 of E2E's 235 contacts carried a pincode. A pincode is what routes
+     a lead to the rep who covers that patch (Phase 7.1), and it is what an
+     invoice prints.
+
+     Two surfaces writing the same jsonb is exactly how a field set forks — the
+     Ganit/Kray vendor form did it and needed a set-equality test to stop it — so
+     these are written once and spread. */
+  const addressFields = (addr, onAddr) => {
+    const set = (k, v) => onAddr({ ...EMPTY_ADDRESS, ...addr, [k]: v });
+    const a = addr || EMPTY_ADDRESS;
+    return (
+      <>
+        {field('Address line 1', <input className="k-input" value={a.line1 || ''} onChange={e => set('line1', e.target.value)} />)}
+        {field('Address line 2', <input className="k-input" value={a.line2 || ''} onChange={e => set('line2', e.target.value)} />)}
+        {field('City', <input className="k-input" value={a.city || ''} onChange={e => set('city', e.target.value)} />)}
+        {field('State', <input className="k-input" value={a.state || ''} onChange={e => set('state', e.target.value)} />)}
+        {/* Six digits, and NOT enforced here. GSTIN/PAN/TAN are non-mandatory
+            by owner rule and must block nothing; a pincode is the same kind of
+            fact and a half-typed one must not stop somebody saving a contact.
+            `inputMode` gets the numeric keypad on a phone, which is the whole
+            of what this field owes the person filling it in. */}
+        {field('Pincode', <input className="k-input" inputMode="numeric" maxLength={6} placeholder="395002" value={a.pincode || ''} onChange={e => set('pincode', e.target.value)} />)}
+      </>
+    );
+  };
+
+  /* The picker renders territory NAMES. The id lives only in the option's
+     `value`, never as text — `scripts/check-rendered-ids.mjs` is positional and
+     this is the shape it admits, the same one the client dropdown uses. */
+  const territoryField = (value, onChange) => field('Territory', (
+    <select className="k-input" value={value || ''} onChange={e => onChange(e.target.value)}>
+      <option value="">— None —</option>
+      {territoryOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+    </select>
+  ));
+
   /* Sort and pagination only: this list's SEARCH is server-side already and
      reaches rows past the 200 the endpoint returns, which a client-side box
      cannot. Two search boxes on one table is worse than one in the wrong place.
@@ -279,7 +347,6 @@ export default function ContactsTab({ crm = true }) {
                 ))}
                 {field('Email', <input className="k-input" type="email" value={editContact.email} onChange={e => setEditContact({ ...editContact, email: e.target.value })} />)}
                 {field('Phone', <input className="k-input" type="tel" value={editContact.phone} onChange={e => setEditContact({ ...editContact, phone: e.target.value })} />)}
-                {field('Mobile', <input className="k-input" type="tel" value={editContact.mobile} onChange={e => setEditContact({ ...editContact, mobile: e.target.value })} />)}
                 {/* The edit panel had the free-text Company and NO client
                     dropdown, so the one field that actually links a contact to
                     a company could not be changed after creation. Swapped, not
@@ -293,9 +360,10 @@ export default function ContactsTab({ crm = true }) {
                 {field('Designation', <input className="k-input" value={editContact.designation} onChange={e => setEditContact({ ...editContact, designation: e.target.value })} />)}
                 {field('Source', <input className="k-input" value={editContact.source} onChange={e => setEditContact({ ...editContact, source: e.target.value })} />)}
                 {field('Lead Score', <input className="k-input" type="number" min="0" max="100" value={editContact.lead_score} onChange={e => setEditContact({ ...editContact, lead_score: parseInt(e.target.value, 10) || 0 })} />)}
-                {field('Website', <input className="k-input" value={editContact.website} onChange={e => setEditContact({ ...editContact, website: e.target.value })} />)}
                 {field('GSTIN', <input className="k-input" value={editContact.gstin} onChange={e => setEditContact({ ...editContact, gstin: e.target.value })} />)}
                 {field('PAN', <input className="k-input" value={editContact.pan} onChange={e => setEditContact({ ...editContact, pan: e.target.value })} />)}
+                {territoryField(editContact.territory_id, v => setEditContact({ ...editContact, territory_id: v }))}
+                {addressFields(editContact.billing_address, a => setEditContact({ ...editContact, billing_address: a }))}
                 <CustomFieldInputs
                   entity="contact"
                   value={editContact.custom_data}
@@ -505,6 +573,8 @@ export default function ContactsTab({ crm = true }) {
                 {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             ))}
+            {territoryField(form.territory_id, v => setForm({ ...form, territory_id: v }))}
+            {addressFields(form.billing_address, a => setForm({ ...form, billing_address: a }))}
             {/* The org's own fields. Defined in the Custom Fields tab, stored
                 in `custom_data`, and until now rendered nowhere at all. */}
             <CustomFieldInputs

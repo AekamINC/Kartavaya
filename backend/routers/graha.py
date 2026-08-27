@@ -103,6 +103,13 @@ class ContactCreate(BaseModel):
     contact_type: str = "lead"
     source: str = ""
     client_id: str = ""
+    #: WHICH SALES PATCH this person falls in — `graha_contacts.territory_id`.
+    #: The column has existed since migration 023 and was UNREACHABLE FROM EVERY
+    #: API PATH until 2026-08-27: not on this model, not on `ContactUpdate`, and
+    #: in neither the INSERT nor the PATCH SET-build. `graha_deals.territory_id`
+    #: was always writable, so a deal could carry a territory and the person it
+    #: belongs to could not. Live at the time: 0 of 289 contacts routed.
+    territory_id: str = ""
     #: The org's own extra fields, keyed by `graha_custom_fields.id`. The column
     #: and the definitions table have both existed since migration 023; nothing
     #: ever wrote to it, which is why a field created in the Custom Fields tab
@@ -132,6 +139,10 @@ class ContactUpdate(BaseModel):
     lead_score_reasons: list[str] | None = None
     assigned_to: str | None = None
     client_id: str | None = None
+    #: See `ContactCreate.territory_id`. `""` clears the territory, the same
+    #: deliberate "none" value `client_id` uses, and is bound through the same
+    #: `NULLIF($n,'')::uuid` in the SET-build below.
+    territory_id: str | None = None
     custom_data: dict | None = None
 
 
@@ -570,6 +581,44 @@ async def resolve_contact_company(pool, org_id: str, client_id: str,
     return client_id
 
 
+async def resolve_contact_territory(pool, org_id: str, territory_id: str) -> str:
+    """Which sales patch does this person fall in? — `graha_contacts.territory_id`.
+
+    ── VALIDATED FOR THE SAME REASON `client_id` IS ────────────────────────
+    Migration 023 wrote the foreign key as a plain
+    `REFERENCES staging.graha_territories(id)` with NO `org_id` in it, exactly
+    like `graha_contacts.client_id`. The database alone would therefore accept
+    one organisation filing its contact under ANOTHER organisation's territory,
+    and the territory carries `assigned_users` — so the leak does not stop at a
+    label. `POST /territories/{id}/assign-next` reads that array to hand a lead
+    to a rep, which means a mis-scoped territory hands one firm's customer to a
+    different firm's salesperson.
+
+    `memory/graha_clients_join_leak` records the same shape on the company
+    column and counted nine joins owed. This is the tenth, closed at the point
+    the column became writable rather than after — Phase 7.1a's rule is that the
+    leak closes in the SAME commit that makes it reachable, because until today
+    NOTHING could put a value in this column and the hole was theoretical.
+
+    `is_active=TRUE` matters as much as `org_id`: `DELETE /territories/{id}` is
+    a soft delete that only flips the flag, so a deleted territory keeps its row
+    and would otherwise stay assignable for ever.
+
+    Returns "" for "no territory named", never None — every caller binds through
+    `NULLIF($n,'')::uuid`, and an untyped NULL through PgBouncer is the parse
+    error that reads as an instant 500.
+    """
+    if not territory_id:
+        return ""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.graha_territories "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        territory_id, org_id)
+    if not ok:
+        raise HTTPException(400, "That territory is not in this organisation")
+    return territory_id
+
+
 @router.post("/contacts")
 async def create_contact(
     body: ContactCreate,
@@ -595,6 +644,8 @@ async def create_contact(
     # `resolve_contact_company`: without the check the foreign key alone would
     # let one organisation file its contact under another's company.
     client_id = await resolve_contact_company(pool, org_id, body.client_id)
+    # And the sales patch, checked the same way and for the same reason.
+    territory_id = await resolve_contact_territory(pool, org_id, body.territory_id)
 
     from services.niyam.subjects import contact_created
     try:
@@ -604,14 +655,14 @@ async def create_contact(
                     "INSERT INTO staging.graha_contacts "
                     "(org_id, name, email, phone, company, designation, gstin, pan, "
                     " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id, "
-                    " custom_data) "
+                    " custom_data, territory_id) "
                     "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16,'')::uuid, "
-                    " $17::jsonb) "
+                    " $17::jsonb, NULLIF($18,'')::uuid) "
                     "RETURNING *",
                     org_id, body.name, body.email, body.phone, body.company, body.designation,
                     body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
                     body.tags, body.notes, body.contact_type, body.source, user["user_id"], client_id,
-                    json.dumps(body.custom_data or {}),
+                    json.dumps(body.custom_data or {}), territory_id,
                 )
                 await contact_created(_conn, org_id=org_id, actor_id=user["user_id"],
                                       contact_id=row["id"], row=dict(row))
@@ -866,6 +917,14 @@ async def update_contact(
         updates["client_id"] = await resolve_contact_company(
             pool, org_id, updates["client_id"])
 
+    # Same check, same reason, same "" clears it. Named explicitly rather than
+    # falling through the generic branch below, because the generic branch binds
+    # a bare `$n` — and a bare text parameter into a `uuid` column is the
+    # untyped-parse 500 PgBouncer turns every ambiguous expression into.
+    if "territory_id" in updates:
+        updates["territory_id"] = await resolve_contact_territory(
+            pool, org_id, updates["territory_id"])
+
     sets = []
     params = [str(contact_id), org_id]
     idx = 3
@@ -876,7 +935,7 @@ async def update_contact(
         elif k == "assigned_to":
             sets.append(f"{k}=NULLIF(${idx},'')")
             params.append(v)
-        elif k == "client_id":
+        elif k in ("client_id", "territory_id"):
             sets.append(f"{k}=NULLIF(${idx},'')::uuid")
             params.append(v)
         else:

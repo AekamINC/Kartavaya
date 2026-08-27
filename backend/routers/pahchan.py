@@ -1139,10 +1139,15 @@ async def my_punches(
             # answering "no employee row, so no rules" would be a screen that
             # goes blank at the moment it is most needed.
             "rules": await _rules_for_employee(pool, org_id, policy),
-            # STILL ANSWERED, and this branch is the common one rather than the
-            # edge case: 0 of 81 employee rows carry a user_id today, so
-            # `_employee_for` returns None for everybody. The acknowledgement is
-            # keyed on the account, so it resolves here exactly as it does below.
+            # STILL ANSWERED, and this branch is still the common one — but no
+            # longer the universal one. It read "0 of 81 employee rows carry a
+            # user_id today, so `_employee_for` returns None for everybody", and
+            # that is stale on both numbers: live 2026-08-27 the database holds
+            # 109 employee rows and 14 are linked (E2E 12 of 83, Unicode 2 of
+            # 26), so `_employee_for` now resolves for those fourteen and returns
+            # None for the other 95. The acknowledgement is keyed on the ACCOUNT,
+            # not the employee, so it resolves here exactly as it does below and
+            # neither number changes this branch's behaviour.
             "notice": {
                 "version": version,
                 "acknowledged_at": await _notice_ack(pool, org_id, user["user_id"], version),

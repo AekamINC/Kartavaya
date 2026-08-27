@@ -182,7 +182,7 @@ what that sentence reached changed it, and you then chose the narrower option:
 **delete the test organisation's 960, keep Unicode Group's 699.**
 
 That was the right call and the numbers are why. "Records with no photograph" was
-every attendance record in the product — 1,659 punches, 8 June to 4 August,
+every attendance record in the product — 1,659 punches when this was written, **700 when re-counted on 2026-08-27**, 8 June to 4 August,
 because the feature had never worked for anybody. **735 of them carry a review
 verdict**: occasions on which a manager looked at a flagged punch and decided
 something. A punch without its selfie is not a blank record. It still holds its

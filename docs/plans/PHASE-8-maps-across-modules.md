@@ -38,6 +38,17 @@ level**, and 15 m is the smallest tolerance that is not mostly noise.
   punch rows, all four columns NULL at the time. **Re-verify before claiming
   ✅** — a NULL altitude means the check is off, which is the correct default
   and also indistinguishable from "nobody ever used it".
+
+  ⚠ **RE-MEASURED 2026-08-27, and the punch count is wrong: it is 700, not
+  1,659** (230 in June, 425 in July, 45 in August). The altitude finding itself
+  survives intact — **0 of 700 punches** carry `altitude_m` or
+  `altitude_accuracy_m`, and **0 of 9 sites** carry either `altitude_m` or
+  `altitude_tolerance_m`, so the answer to the open question above is "no,
+  nothing does". But an acceptance written against 1,659 would be measured
+  against a number that no longer exists. Where the ~959 rows went is NOT
+  established: the obvious candidate, `punch_cleanup_20260823`, has been dropped
+  and cannot be queried, and guessing is how a wrong fact gets published. 699 of
+  the 700 carry `lat`/`lng`, which is what 8.0's Pahchan consumer needs.
 - **Do not add a barometer.** It was considered and it is the wrong trade: a
   meaningful share of Android devices have no pressure sensor, and without a
   local reference, pressure-derived altitude drifts ±100 m with the weather.

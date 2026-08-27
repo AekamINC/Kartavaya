@@ -221,7 +221,9 @@ export default function Notice() {
       acknowledgedAt={localAck || data?.notice?.acknowledged_at || null}
       // Offered to anyone signed in. The row is keyed on the account, so an
       // employee record is not needed to write one — and today nobody has one
-      // that resolves (113: 0 of 81 rows carry a user_id).
+      // that resolves (113: 0 of 81 rows carried a user_id when this was
+      // written; 14 of 109 do as of 2026-08-27, so the branch is common
+      // rather than universal — see the note in `routers/pahchan.py`).
       onAcknowledge={acknowledge}
       saving={saving}
       saveNote={saveNote}

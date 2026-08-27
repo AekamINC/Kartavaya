@@ -2274,4 +2274,117 @@ mobile suite (840 tests, blocked by Node 20's inability to glob `**`), and this.
 each their own accident, which is the argument for reading a red build rather
 than recognising it.
 
+## 2026-08-27 · CI's first mobile run found a signed zero
+
+The mobile job moved to Node 24 and the suite ran in CI for the first time ever.
+839 of 840. The one failure was `corrections.test.ts`, and it was the TEST, not
+the product: it asserts that a Pahchan correction carries the device's own UTC
+offset rather than a `Z` instant — which matters, because
+`attendance_bridge.py` assigns `at_time` verbatim and prices the span in hours,
+so a shifted clock value is somebody's pay. It was deliberately written against
+the machine's own offset "so it holds on a runner in any zone", and it holds in
+every zone except one. In UTC `getTimezoneOffset()` returns `0`, so the expected
+value is `-0` while `+00:00` parses to `0`; the file imports
+`node:assert/strict`, whose `equal` compares with `Object.is`, which holds those
+apart. `+ 0` on both sides normalises the sign and changes nothing else.
+Verified by running the whole suite under `TZ=UTC`: 840 passed.
+
+Worth keeping: this suite had only ever run in IST, where the numbers are 330
+and the sign of zero never comes up. CI is now the only place it runs outside
+IST, which is a second zone for free.
+
+## 2026-08-27 · Phase 7.0 — a contact can carry an address and a sales patch
+
+**All three of 7.0's faults were real, all three are closed, and 7.1a is welded
+on as the plan demands.**
+
+1. **The contact create form had no address fields at all.**
+   `graha_contacts.billing_address` has been a live `jsonb` column since
+   migration 023 and `ContactCreate`/`ContactUpdate` have always accepted it —
+   nothing could ever put anything in it. Live: E2E Test & Associates **0 of 235
+   contacts and 0 of 61 clients carry a pincode**. Now line1 / line2 / city /
+   state / pincode on the create form AND the edit panel, written once and
+   shared, because two surfaces writing the same jsonb is exactly how a field
+   set forks — the Ganit/Kray vendor form did it and needed a set-equality test
+   to stop it.
+2. **`graha_contacts.territory_id` was unreachable from every API path** — not
+   on `ContactCreate`, not on `ContactUpdate`, and in neither the INSERT nor the
+   PATCH SET-build. `graha_deals.territory_id`, added in the SAME migration, was
+   always writable. So a deal could carry a territory and the person it belongs
+   to could not. Live: 0 of 289 contacts and **0 of 162 deals** routed.
+3. **`PATCH /territories/{id}` had zero callers.** It is org-scoped,
+   admin-gated and validates its members through `_validated_territory_users` —
+   and there was no Edit control, so the only way to fix a typo in a pincode
+   list was to delete the territory and lose its round-robin position.
+
+**7.1a, in the same commit.** Migration 023 wrote a bare
+`REFERENCES staging.graha_territories(id)` with no `org_id` in it — the same
+shape `graha_contacts.client_id` has, which is why `resolve_contact_company`
+exists. The moment `territory_id` became writable, the database alone would have
+accepted one organisation filing its contact under another's territory, and
+`assign-next` reads that territory's `assigned_users` to hand out a lead: the
+leak would have handed one firm's customer to a different firm's salesperson.
+`resolve_contact_territory` closes it on `org_id` **and** `is_active` — the
+DELETE is a soft delete that only flips the flag, so without the second
+predicate a deleted territory stays assignable for ever.
+
+**The `{}` trap, which changed how this is accepted.** All 235 of E2E's contacts
+have `billing_address IS NOT NULL`. Every one of them is literally `{}`. A
+null-check acceptance passes on day zero and measures nothing, so 7.0 accepts on
+a KEY carrying a value, and the tests assert the posted body down to
+`billing_address.pincode`. The key vocabulary is the one
+`services/invoice_pdf.py:123` reads — `line1, line2, city, state, pincode,
+country` — plus `state_code`, which live rows carry and the form preserves
+rather than captures.
+
+**Two findings on the way through.**
+
+- **The contact edit panel offered `Mobile` and `Website` boxes for columns that
+  have never existed.** `graha_contacts` has 31 columns — read live in BOTH
+  `staging` and `public` — and neither is one of them; `ContactUpdate` never
+  listed them either, so pydantic dropped the values before the SQL was built. A
+  person typed, the toast said "Contact updated", and the value went nowhere,
+  twice over. Both removed rather than added: `phone` already exists, and a
+  website belongs to the company, where `graha_clients.website` already holds
+  it.
+- **`staging.sales_territories` is a SECOND territory model** — `state_codes
+  varchar[]`, `city_names text[]`, `pincode_ranges jsonb`, `assigned_to uuid[]`,
+  `manager_id`, `parent_id`. **0 rows table-wide, every org.** It is a richer PIN
+  schema than the one in use, it is not on Phase 6's DROP list, and it needs
+  naming to the owner as a 24th table. Not dropped, not built on: a DROP is
+  approved by name.
+
+Still ⬜ on routing: **0 territories carry a PIN and 0 carry a member** (17 in
+E2E, 0 in Unicode; 3 hold an empty `pincodes` key). 7.0 is the capture; 7.1 is
+the resolver.
+
+## 2026-08-27 · Corrections from a live re-read
+
+Four published figures were wrong. Each is corrected where it was published
+rather than only here.
+
+- **Phase 0.23's denominator.** "0 of 73 → 12" is **12 of 83**; Unicode is 2 of
+  26. The twelve links are real and verified by name.
+- **The Pahchan web clock is not ✅, and the reason changed.** The blocker this
+  was written about — no employee carries a `user_id` — is GONE. But the single
+  E2E punch did not come through `Clock.jsx`: its `client_punch_id` is the
+  literal `e2e-phase023-first-linked-clock-in` where the screen mints a
+  `crypto.randomUUID()`, `photo_key` is NULL where that screen always uploads a
+  selfie first, and `lat`/`lng` are NULL. It is a scripted POST from a browser —
+  `audit_log.user_agent` says desktop Chrome — not a person operating the tab.
+  ⚠ **`pahchan_punches` cannot tell web from mobile at all**: `source` is
+  CHECK-constrained to `('live','offline')`, which is connectivity. The only
+  platform record anywhere is `audit_log.user_agent`, and Unicode's 699 punches
+  have no audit rows at all.
+- **The punch count is 700, not 1,659** (230 June, 425 July, 45 August). The
+  altitude finding survives — 0 of 700 carry `altitude_m`, 0 of 9 sites carry
+  `altitude_m` or `altitude_tolerance_m` — but an acceptance written against
+  1,659 measures against a number that no longer exists. Where the ~959 rows
+  went is NOT established and is not guessed at: `punch_cleanup_20260823` has
+  been dropped and cannot be queried.
+- **"0 of 81 employee rows carry a user_id today"** appeared as a present-tense
+  fact in `routers/pahchan.py`, `services/seat_model.py`, `pahchan/Notice.jsx`
+  and the premise of `dpdpNotice.test.jsx`. It is 14 of 109. The dated
+  measurements elsewhere are left alone — they are history and correct as such.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

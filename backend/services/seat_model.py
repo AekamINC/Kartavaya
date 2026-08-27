@@ -89,7 +89,9 @@ comparison is not.
     Unicode Group                        5        7        0          15
 
 THE EXEMPT COLUMN IS ZERO EVERYWHERE, and not because the rule is wrong — because
-`manav_employees.user_id` is NULL on all 81 employee rows in the database. The
+`manav_employees.user_id` was NULL on all 81 employee rows when this was
+written; live 2026-08-27 it is 109 rows with 14 linked (E2E 12 of 83, Unicode
+2 of 26), so the join now resolves for fourteen people and not for 95. The
 linking endpoints shipped, nobody has used them yet, and migration 101 records
 the same measurement from the other side. So the exemption is correct, wired, and
 currently vacuous. It stops being vacuous the first time HR links anyone, which

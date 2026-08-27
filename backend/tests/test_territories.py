@@ -122,3 +122,70 @@ def test_no_query_joins_users_on_a_uuid_shaped_column():
             assert not re.search(rf"user_id\s*=\s*{re.escape(bad)}\b", clause), (
                 f"joining users.user_id (TEXT) to {bad} (uuid) — Postgres will "
                 f"refuse the statement and the endpoint will answer 500")
+
+
+# ── The contact half, added 2026-08-27 (Phase 7.0) ───────────────────────────
+#
+# `test_a_deal_can_be_given_a_territory` above has existed since the column type
+# was fixed, and it says a DEAL can carry a territory. Nobody wrote the same
+# test for a CONTACT, and the reason is that it would have failed: migration 023
+# added `territory_id` to BOTH tables, `DealCreate` got the field and
+# `ContactCreate` never did. So a territory could be defined, drawn on a map and
+# attached to a deal, while the person the deal belongs to stayed unrouted —
+# 0 of 289 live contacts carried a territory on the day this was written.
+
+
+def test_a_contact_can_be_given_a_territory():
+    """The mirror of `test_a_deal_can_be_given_a_territory`, which is the point.
+
+    Both columns arrived in the same migration and only one was ever reachable.
+    """
+    assert "territory_id" in graha.ContactCreate.model_fields
+    assert "territory_id" in graha.ContactUpdate.model_fields
+    assert "territory_id" in _code(graha.create_contact)
+    assert "territory_id" in _code(graha.update_contact)
+
+
+def test_a_contact_cannot_be_filed_under_another_orgs_territory():
+    """Phase 7.1a's rule: the leak closes in the commit that opens the column.
+
+    Migration 023 wrote a plain `REFERENCES staging.graha_territories(id)` with
+    no `org_id` in it — the same shape as `graha_contacts.client_id`, which
+    needed `resolve_contact_company` for exactly this reason. The database alone
+    would accept one organisation's contact pointing at another's territory, and
+    `assign-next` reads that territory's `assigned_users` to hand out a lead. A
+    mis-scoped territory therefore hands one firm's customer to a different
+    firm's salesperson; it is not a labelling mistake.
+    """
+    code = _code(graha.resolve_contact_territory)
+    assert "staging.graha_territories" in code
+    assert "org_id" in code, "the org predicate is the whole point of this function"
+    assert "is_active" in code, (
+        "DELETE /territories/{id} is a SOFT delete — it flips is_active and "
+        "leaves the row. Without this predicate a deleted territory stays "
+        "assignable for ever."
+    )
+    assert "400" in code
+    for fn in (graha.create_contact, graha.update_contact):
+        assert "resolve_contact_territory" in _code(fn), (
+            f"{fn.__name__} writes territory_id without the org check"
+        )
+
+
+def test_both_uuid_columns_on_a_contact_are_bound_with_their_type():
+    """`$n` alone into a `uuid` column is the untyped-parse 500.
+
+    PgBouncer turns an ambiguous parameter expression into an instant 500 with
+    no useful log — `memory/incident_credits_untyped_sql` is the same failure on
+    `$1 + $2`. `client_id` was already bound through `NULLIF($n,'')::uuid` and
+    `territory_id` joins it, in both the INSERT and the PATCH SET-build.
+    """
+    for fn in (graha.create_contact, graha.update_contact):
+        code = _code(fn)
+        assert "NULLIF" in code and "::uuid" in code
+    # The SET-build branches on a tuple, so both names must be inside it rather
+    # than one of them falling through to the generic bare-`$n` branch.
+    patch = _code(graha.update_contact)
+    assert '("client_id", "territory_id")' in patch, (
+        "territory_id has fallen out of the typed branch of the SET-build"
+    )

@@ -20,6 +20,15 @@ export default function TerritoriesTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  /* Which territory the form is EDITING, or null to create a new one.
+     `PATCH /v1/graha/territories/{id}` has existed since migration 023 — it is
+     org-scoped, admin-gated and validates its members through
+     `_validated_territory_users` — and it had ZERO CALLERS. So a territory could
+     be created and deleted and never corrected: the only way to fix a typo in a
+     pincode list was to delete the territory and lose its round-robin position.
+     Phase 7.1 routes leads by `rules.pincodes`, and a rule nobody can edit is a
+     rule nobody will keep accurate. */
+  const [editingId, setEditingId] = useState(null);
   /* `rules` is a jsonb column that has existed since migration 023 and has
      never held anything. `rules.pincodes` is what a territory actually IS in
      India — the patch of postcodes it covers — and it is what the map draws. */
@@ -58,14 +67,41 @@ export default function TerritoriesTab() {
     return m ? (m.full_name || m.email) : null;
   }
 
-  async function create(e) {
+  function blankForm() {
+    return { name: '', description: '', assigned_users: [], rules: { pincodes: [] } };
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(blankForm());
+    setPinInput('');
+  }
+
+  function startEdit(t) {
+    /* `rules` is spread rather than replaced: it is a free-form jsonb column and
+       this form only knows about `pincodes`. Every live row holds `{}` or
+       `{"pincodes": []}` today, so there is nothing else to preserve yet — but
+       the PATCH body REPLACES the whole column, so the day a rule of another
+       kind is added, a save from this screen would silently delete it. */
+    setForm({
+      name: t.name || '',
+      description: t.description || '',
+      assigned_users: t.assigned_users || [],
+      rules: { ...(t.rules || {}), pincodes: t.rules?.pincodes || [] },
+    });
+    setEditingId(t.id);
+    setShowForm(true);
+    setPinInput('');
+  }
+
+  async function submit(e) {
     e.preventDefault();
     try {
-      await api.post('/v1/graha/territories', form);
-      pushToast({ title: 'Territory created', type: 'success' });
-      setShowForm(false);
-      setForm({ name: '', description: '', assigned_users: [], rules: { pincodes: [] } });
-      setPinInput('');
+      if (editingId) await api.patch(`/v1/graha/territories/${editingId}`, form);
+      else await api.post('/v1/graha/territories', form);
+      pushToast({ title: editingId ? 'Territory updated' : 'Territory created', type: 'success' });
+      closeForm();
       load();
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
   }
@@ -108,11 +144,16 @@ export default function TerritoriesTab() {
     <div>
       <div className="gr__shead">
         <h3 className="gr__st">Territories ({territories.length})</h3>
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)} disabled={!canWrite} title={denial || undefined}>+ New Territory</button>
+        <button className="k-btn k-btn--primary"
+                onClick={() => (showForm ? closeForm() : setShowForm(true))}
+                disabled={!canWrite} title={denial || undefined}>+ New Territory</button>
       </div>
 
       {showForm && (
-        <form onSubmit={create} className="gr__panel gr__panel--flat">
+        <form onSubmit={submit} className="gr__panel gr__panel--flat">
+          <h4 className="gr__ptitle gr__ptitle--sm">
+            {editingId ? 'Edit territory' : 'New territory'}
+          </h4>
           <div className="gr__grid">
             <label className="gr__f"><span className="gr__fl">Name</span>
               <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
@@ -166,8 +207,10 @@ export default function TerritoriesTab() {
             <TerritoryMap pincodes={form.rules.pincodes || []} />
           </div>
           <div className="gr__acts">
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Create</button>
+            <button type="button" className="k-btn k-btn--ghost" onClick={closeForm}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>
+              {editingId ? 'Save changes' : 'Create'}
+            </button>
           </div>
         </form>
       )}
@@ -201,6 +244,8 @@ export default function TerritoriesTab() {
           <span className="gr__ls">
             {t.assigned_users?.length || 0} {t.assigned_users?.length === 1 ? 'person' : 'people'}
           </span>
+          <button className="k-btn k-btn--ghost" onClick={() => startEdit(t)}
+                  disabled={!canWrite} title={denial || undefined}>Edit</button>
           <button className="k-btn k-btn--reject" onClick={() => remove(t.id)}>Delete</button>
         </div>
       ))}

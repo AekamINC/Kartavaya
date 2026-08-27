@@ -154,10 +154,13 @@ describe('the retention figures are the org’s, never a constant', () => {
  * no-employee branch in the raw `pahchan_policy` row, whose column is
  * `punch_photo_retention_days`.
  *
- * That branch is the one EVERY caller takes (0 of 81 employee rows carry a
- * `user_id`). The merge in `noticeLines` is per key, so the unknown name was
- * silently the fallback and every notice served said 90 days regardless of what
- * the org had configured. No error, no console warning, no failing test.
+ * That branch was the one EVERY caller took (0 of 81 employee rows carried a
+ * `user_id`; live 2026-08-27 it is 14 of 109, so it is now the common branch
+ * rather than the only one — which does not weaken this test, because the
+ * ninety-five unlinked accounts still take it). The merge in `noticeLines` is
+ * per key, so the unknown name was silently the fallback and every notice served
+ * said 90 days regardless of what the org had configured. No error, no console
+ * warning, no failing test.
  *
  * `RETENTION_FALLBACK` exists for the moment BEFORE the request lands. It must
  * never be what a settled screen is showing.
