@@ -3,7 +3,7 @@
 // 26 inline styles are now `gr__*` classes, and the `.catch(() => {})` that
 // rendered "Territories (0)" over a failed fetch is a real error state.
 import React, { useState, useEffect } from 'react';
-import { api, rows } from '../../lib/api';
+import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
@@ -29,6 +29,12 @@ export default function TerritoriesTab() {
      Phase 7.1 routes leads by `rules.pincodes`, and a rule nobody can edit is a
      rule nobody will keep accurate. */
   const [editingId, setEditingId] = useState(null);
+  /* The backfill report, or null. `POST /v1/graha/contacts/route-all` is the
+     7.1 backfill, and it exists as a ROUTE rather than a migration on purpose:
+     migrations are pre-approved in this project and rewriting live rows is not,
+     so it has to be something a person triggers and can read the result of. */
+  const [routing, setRouting] = useState(false);
+  const [report, setReport] = useState(null);
   /* `rules` is a jsonb column that has existed since migration 023 and has
      never held anything. `rules.pincodes` is what a territory actually IS in
      India — the patch of postcodes it covers — and it is what the map draws. */
@@ -106,6 +112,30 @@ export default function TerritoriesTab() {
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
+  async function routeAll() {
+    /* A confirm, because this REWRITES LIVE ROWS. Every other button on this
+       tab touches one territory the reader is looking at; this one walks every
+       contact in the organisation. The sentence says what will change and what
+       will not — a person's own choice of territory is never overwritten, which
+       is the fact that decides whether this is safe to press twice. */
+    if (!window.confirm(
+      'File every unrouted contact under the territory that claims its pincode?'
+      + '\n\n'
+      + 'This changes contact records across the whole organisation. '
+      + 'Contacts that already have a territory are left exactly as they are, '
+      + 'and a pincode no territory claims is skipped rather than guessed at.'
+    )) return;
+    setRouting(true);
+    try {
+      const r = await api.post('/v1/graha/contacts/route-all', {});
+      setReport(body(r));
+      pushToast({ title: `${body(r).count} contact(s) filed`, type: 'success' });
+      load();
+    } catch (e) {
+      pushToast({ title: e.response?.data?.detail || 'Could not route contacts', type: 'error' });
+    } finally { setRouting(false); }
+  }
+
   async function remove(id) {
     if (!window.confirm('Delete this territory? This cannot be undone.')) return;
     try {
@@ -144,10 +174,53 @@ export default function TerritoriesTab() {
     <div>
       <div className="gr__shead">
         <h3 className="gr__st">Territories ({territories.length})</h3>
+        <button className="k-btn k-btn--ghost" onClick={routeAll}
+                disabled={!canWrite || routing} title={denial || undefined}>
+          {routing ? 'Filing…' : 'File contacts by pincode'}
+        </button>
         <button className="k-btn k-btn--primary"
                 onClick={() => (showForm ? closeForm() : setShowForm(true))}
                 disabled={!canWrite} title={denial || undefined}>+ New Territory</button>
       </div>
+
+      {report && (
+        <div className="gr__panel gr__panel--flat">
+          <h4 className="gr__ptitle gr__ptitle--sm">Filed by pincode</h4>
+          {/* Counts and NAMES. The endpoint returns no contact ids and keys
+              `by_territory` by name, because a backfill report is read by a
+              person and a uuid identifies nobody. */}
+          <div className="gr__dpair"><strong>Newly filed:</strong> {report.count} of {report.considered} contact(s)</div>
+          <div className="gr__dpair"><strong>Already had a territory:</strong> {report.already_filed}</div>
+          <div className="gr__dpair"><strong>Had a usable pincode:</strong> {report.with_a_pin}</div>
+          {/* NOT an error, and said in words rather than left as a bare number:
+              a pincode no territory claims is the ordinary case on a database
+              where the patches have not been drawn yet. */}
+          <div className="gr__dpair"><strong>No territory claims that pincode:</strong> {report.no_territory_claims_it}</div>
+          <div className="gr__dpair"><strong>Also given a rep:</strong> {report.assigned_a_rep}</div>
+          {report.failed > 0 && (
+            <div className="gr__dpair"><strong>Could not be filed:</strong> {report.failed}</div>
+          )}
+          {Object.keys(report.by_territory || {}).length > 0 && (
+            <div className="gr__chips gr__chips--tight">
+              {Object.entries(report.by_territory).map(([name, n]) => (
+                <span key={name} className="gr__tok">{name} · {n}</span>
+              ))}
+            </div>
+          )}
+          {report.overlaps?.length > 0 && (
+            <div className="gr__lsub">
+              {/* Two territories claiming one pincode is a configuration
+                  question, not a failure — the routing picks deterministically
+                  and says so here so somebody can settle it. */}
+              {report.overlaps.length} pincode(s) claimed by more than one
+              territory: {report.overlaps.map(o => `${o.pincode} (${o.territories.join(', ')})`).join('; ')}
+            </div>
+          )}
+          <div className="gr__acts">
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setReport(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={submit} className="gr__panel gr__panel--flat">

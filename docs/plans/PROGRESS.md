@@ -2544,4 +2544,124 @@ product failure and was not:
    selector problem. The spec now walks `.gr__fl`, which is what the unit tests
    for these forms already do.
 
+## 2026-08-27 · Phase 7.1 + 7.1a — routing, and the three latent leaks
+
+`services/territory_routing.py`, a pure module. `normalise_pin` accepts
+`^[1-9][0-9]{5}$` and nothing else — an Indian PIN never starts with 0. The PIN
+source ladder is the contact's own `billing_address`, then its own
+`shipping_address`, then its client's `address`. Then matching, then the
+existing round-robin.
+
+**The hook is inside `create_contact`'s transaction, between the INSERT and
+`contact_created`, and behind a SAVEPOINT.** Not `_bg()`. The SAVEPOINT is the
+part worth keeping: a plain try/except around a DATABASE error there is a trap,
+because Postgres aborts the whole transaction and `contact_created` then dies
+with `InFailedSQLTransaction` — turning a routing bug into a lost contact *and*
+a lost event. A nested `conn.transaction()` issues a SAVEPOINT, which is what
+makes swallowing the error honest.
+
+**The backfill is a ROUTE, not a migration.** `POST /contacts/route-all`,
+org-admin gated, with a confirm and a counts-and-names report on the Territories
+tab. Migrations are pre-approved in this project; rewriting live rows is not, so
+this has to be something a person presses and can read the result of. The report
+returns no contact ids and keys `by_territory` by name.
+
+**A PIN no territory claims routes nowhere and refuses nothing** — the same rule
+as GSTIN/PAN/TAN, which has regressed before. Routing also never overwrites a
+territory a person chose (7.0 put a picker on the form; a human's explicit
+answer beats the rule) and never reassigns a contact that already has an owner.
+
+⚠ **Matching is done in Python, and that is load-bearing.** The obvious
+`jsonb_array_elements_text(rules->'pincodes')` is a trap, verified live:
+
+    {"pincodes": "400001"}  ->  InvalidParameterValueError:
+                                cannot extract elements from a scalar
+
+`TerritoryCreate.rules` is a bare `dict`. One territory saved with a string
+instead of a list would have 500'd the routing of every contact in that org.
+
+Two open owner questions were answered deterministically and reversibly, and
+both stay the owner's to settle: overlapping PINs resolve by an optional integer
+`rules.priority` (lowest wins, absent sorts last, name as final tiebreak — zero
+overlaps exist today, the point is that two runs must agree); and a rep is
+assigned only when `assigned_to` is empty, guarded in Python *and* in the SQL.
+The two guards do different jobs — Python decides whether to CONSUME a
+round-robin turn, since consulting it advances the counter and asking about a
+contact that already has an owner would skew the fairness; the SQL stops a
+concurrent edit losing the owner it just set.
+
+**7.1a — all three leaks closed, and they were latent, not active.** Live
+control: cross-org (contact, territory) and (deal, territory) pairs are 0 and 0.
+
+- `list_deals`, `deals_kanban` and `crm_report.py` each joined
+  `graha_territories` on `tr.id` alone, each sitting directly under a correctly
+  scoped client join. All three now carry `AND tr.org_id = d.org_id`, held by a
+  scanner that fails on any future `JOIN staging.graha_territories` whose ON
+  clause lacks the predicate.
+- `create_deal` wrote `body.territory_id` with no org check and a non-composite
+  FK. It goes through `resolve_contact_territory` now.
+- `_DEAL_COLS` listed `territory_id` with no field behind it. **The dead entry
+  got a field rather than a deletion.** Deleting it would make a deal's
+  territory settable exactly once at create and then unchangeable from every
+  client for ever — the identical writable-and-unreachable shape `contact_id`
+  had, which this model already grew a field to fix. Territories get redrawn;
+  correcting a deal filed under the old one by deleting the deal is not a
+  correction.
+
+⚠ **Two plan figures corrected from live counts.** The ladder takes Unicode
+Group to **41** routable contacts, not 42, and the split is 38 own + **3**
+inherited, not 4 (Dhawal Patel/Bluvian 380058, Bhumi/Sanchay Finserv 380058,
+S K Joshi/Fishfa Biogenics 360003). Exactly one client pincode in the database
+is not a PIN — `INC UK`'s `NW1 245` — which is why the ladder lets a rung fall
+through when it is PRESENT BUT NOT A PIN rather than only when absent.
+
+**Two adjacent findings NOT fixed, flagged rather than swept in:**
+`create_deal` binds `client_id`, `contact_id` and `pipeline_id` with no org
+check at all — the same non-composite-FK shape as the territory leak — and
+`DealUpdate` and `_DEAL_COLS` disagree in both directions: `lost_reason` and
+`client_id` are in the model but filtered out, so **the reason a deal was lost
+can never be saved through the PATCH**, while `custom_data` and `pipeline_id`
+are allowlisted with no field behind them.
+
+## 2026-08-27 · A comment that ended early, and the gate that now reads CSS
+
+`npm run check` exits 0 on unparseable CSS. That is written down in `CLAUDE.md`
+as a standing trap — "run `npm run build` before pushing style changes" — and a
+trap you have to remember is one that gets forgotten. Twelve gates ran on every
+push and not one of them read a stylesheet as CSS.
+
+The build turned up what the hole was hiding, in `components.css`:
+
+    `pages/(star)/_shared.jsx` reach for this. */
+
+A path glob inside a comment. The star-slash spells a comment TERMINATOR, so the
+comment ended four words early and the rest of the sentence was parsed as CSS.
+esbuild recovered by discarding tokens until it found something readable, and
+`.tbl__b` below it survived — verified in the built bundle, so nothing was
+actually lost. But `incident_side_rule_deleted` records this project losing a
+real rule to a comment once already, and the difference between "recovered" and
+"ate the next rule" is only which characters happen to follow.
+
+`scripts/check-css-parses.mjs` parses all 56 stylesheets with esbuild's own API
+— the same parser the production build uses. **Two earlier versions of this gate
+reported "56 stylesheets parse" having read NOTHING**, and each failed
+differently: `execFileSync` returns only stdout while esbuild writes warnings to
+stderr and exits 0; and `spawnSync('npx.cmd', …)` without a shell fails with
+EINVAL on Windows, so esbuild never ran and `stderr` was null. Both printed a
+green tick over an unread file — the exact shape of the three checks found armed
+in name only earlier the same day. The API version has no subprocess, no
+platform-specific null device, and throws if esbuild is missing.
+
+Proved before it was wired: the bug was reintroduced and the gate failed naming
+`components.css:1779`, then removed and the gate passed.
+
+Two warnings are held at baseline WITH REASONS. `index.css` imports after the
+`@tailwind` directives, which Tailwind expands before any CSS parser sees the
+file — moving it is what would break it. `brand.css` imports Nunito after an
+`@font-face` block, which per spec is invalid and dropped, so **Nunito has never
+loaded**; it does not matter because `--font-ui` is declared twice and
+`kartavaya-design.css:61` says Inter, which `lib/tokens.css` states in writing is
+the owner of that token. Deleting the dead import or the duplicate token is a
+design decision, not a gate's call.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -84,7 +84,14 @@ The handover did not know this and the first draft of this plan did not either.
 - **The PIN source ladder:** the contact's own `billing_address->>'pincode'`,
   else `shipping_address->>'pincode'`, else its client's `address->>'pincode'`.
   That ladder is worth building — it takes Unicode from 38 routable contacts
-  to **42**.
+  to ~~42~~ **41**. ⚠ **CORRECTED 2026-08-27 from a live count**: the split is
+  38 own + **3** inherited, not 4. The three are Dhawal Patel (Bluvian Group,
+  380058), Bhumi (Sanchay Finserv, 380058) and S K Joshi (Fishfa Biogenics,
+  360003). The ladder is still worth building for those three; the figure it was
+  sold on was one too many. Related: exactly one client pincode in the whole
+  database is not a PIN — `INC UK`'s `NW1 245` — which is why the ladder
+  normalises in Python and lets a rung fall through when it is PRESENT BUT NOT A
+  PIN, rather than only when it is absent.
 - **Hook:** inside `create_contact`'s existing transaction, after the INSERT
   (`graha.py:605-616`) and before `contact_created(...)`. **Not `_bg()`** — see
   the traps.

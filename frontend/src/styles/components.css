@@ -1776,7 +1776,15 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    `__tests__/tableSystem.test.jsx` fails if it appears. `<Td bold>` in
    `editorial/ModuleUI.jsx` writes `style={{ fontWeight: 600 }}` into the markup
    at 20 Prachar and Dristi call sites instead; the adapters in
-   `pages/*/_shared.jsx` reach for this. */
+   each module's own `_shared.jsx` reach for this.
+
+   (That path was written as a glob with a star-slash in it, which CLOSED THIS
+   COMMENT four words early — everything after it was parsed as CSS, and
+   esbuild recovered by discarding tokens until it found something it could
+   read. `.tbl__b` below survived, checked in the built bundle, so nothing was
+   lost; but this project has already lost a rule to a comment once, and a
+   glob that happens to spell a comment terminator is not a thing to leave in
+   place. Never write a star-slash inside a CSS comment.) */
 .tbl__b { font-weight: 600; }
 .tbl__bulk {
   display: flex; align-items: center; gap: var(--sp-3);

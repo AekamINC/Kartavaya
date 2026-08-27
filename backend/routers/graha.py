@@ -24,6 +24,11 @@ from middleware.subscription import require_any_module, require_module
 from services.audit_actors import actor_joins, actor_select
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
+# Imported as a MODULE, not as loose names: three of its statements are SQL
+# constants that `tests/test_territory_routing.py` PREPAREs against the live
+# schema, and a reader of `territory_routing.PIN_LADDER_ALL` can see at a glance
+# that the statement is defined once, over there, beside the rule it implements.
+from services import territory_routing
 from utils import assert_file_url
 
 log = logging.getLogger(__name__)
@@ -206,6 +211,27 @@ class DealUpdate(BaseModel):
     won_at: str | None = None
     lost_at: str | None = None
     lost_reason: str | None = None
+    #: ── THE DEAD ALLOWLIST ENTRY, RESOLVED BY ADDING THE FIELD ─────────────
+    #:
+    #: `_DEAL_COLS` in `update_deal` has listed `territory_id` since the
+    #: beginning and this model had no such field, so the entry could never
+    #: match anything `body.dict(exclude_unset=True)` produced — a permission
+    #: to write a column that no request could ask for.
+    #:
+    #: Two ways to end that, and this is the one chosen. Deleting the entry
+    #: would have made a deal's territory settable exactly once, at create, and
+    #: then unchangeable from every client in the product for ever — the same
+    #: "writable and unreachable" shape as `contact_id` four lines up, which
+    #: this very model had to grow a field to fix. A territory is a rule that
+    #: gets redrawn: patches get split, a region is handed to a new rep, and a
+    #: deal filed under the old one has to be able to move. Correcting it by
+    #: deleting the deal is not a correction.
+    #:
+    #: `""` clears it, and it is routed through `resolve_contact_territory` and
+    #: bound `NULLIF($n,'')::uuid` in the SET-build — NOT left to fall to the
+    #: generic bare-`$n` branch, which is an untyped parameter into a `uuid`
+    #: column and the instant PgBouncer 500.
+    territory_id: str | None = None
 
 
 class PipelineCreate(BaseModel):
@@ -685,13 +711,41 @@ async def create_contact(
                     body.tags, body.notes, body.contact_type, body.source, user["user_id"], client_id,
                     json.dumps(body.custom_data or {}), territory_id,
                 )
+                # ── PIN -> TERRITORY -> REP, Phase 7.1 ────────────────────
+                #
+                # HERE, and the position is the whole design. After the INSERT,
+                # because routing reads the address that was just written and
+                # the client it was just attached to. Before `contact_created`,
+                # so the event the automation engine sees carries the territory
+                # rather than announcing a contact that acquires one a moment
+                # later — a rule on "a contact is created in Gujarat" has to be
+                # able to read Gujarat off the event.
+                #
+                # NOT `_bg()`. `create_deal` below fires `compute_lead_score`
+                # that way and `server.py:187-191` records the cost: a Railway
+                # restart drops every pending background task, silently. A
+                # stale lead score is a wrong number; an unrouted contact is a
+                # lead nobody is working and nothing anywhere says so.
+                #
+                # It cannot fail this handler — `route_contact` runs its own
+                # SAVEPOINT and swallows its own bugs, for the standing reason
+                # that this blocks nothing. If it routed, it returns the row it
+                # rewrote, and that is the row the event should carry.
+                routed = await territory_routing.route_contact(_conn, org_id, str(row["id"]))
+                if routed["row"] is not None:
+                    row = routed["row"]
                 await contact_created(_conn, org_id=org_id, actor_id=user["user_id"],
                                       contact_id=row["id"], row=dict(row))
     except Exception as e:
         log.error("create_contact failed: %s", e, exc_info=True)
         raise
+    # `territory_name`, not `territory_id`: the screen that draws this needs to
+    # say "filed under Gujarat", and a uuid identifies nobody. Additive — every
+    # existing caller reads id/name/contact_type and is untouched. Empty string
+    # when nothing routed, which is the ordinary case and not an error.
     return {"status": "created", "id": row["id"], "name": row["name"],
-            "contact_type": row["contact_type"]}
+            "contact_type": row["contact_type"],
+            "territory_name": routed["territory_name"]}
 
 
 # ── Dedupe & Merge ───────────────────────────────────────────
@@ -1130,7 +1184,17 @@ async def list_deals(
         # company NAME this list renders.
         "LEFT JOIN staging.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
-        "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
+        # Org-scoped on `org_id` as well as `id`, exactly like the client
+        # join above it — and this line was NOT, until Phase 7.1a.
+        # `graha_territories.id` is unique table-wide and migration 023
+        # wrote a bare `REFERENCES staging.graha_territories(id)` with no
+        # org in it, so `ON tr.id = d.territory_id` alone renders whichever
+        # organisation owns that uuid. It was harmless only because the
+        # column was empty: 0 of 162 live deals carried a territory on
+        # 2026-08-27, and 0 cross-org pairs existed. 7.1 is what fills the
+        # column, so the leak closes in the commit that arms it.
+        "LEFT JOIN staging.graha_territories tr "
+        "       ON tr.id = d.territory_id AND tr.org_id = d.org_id "
         # Two more LEFT JOINs and no new `$n` — every `${idx}` appended below
         # keeps the number it would have had before this line existed.
         + actor_joins("d", updated=True) +
@@ -1225,6 +1289,19 @@ async def create_deal(
         )
         pipeline_id = str(p["id"])
 
+    # THE SALES PATCH, CHECKED AGAINST THIS ORG BEFORE IT IS WRITTEN.
+    #
+    # `body.territory_id` went straight into the INSERT with no check at all
+    # until Phase 7.1a, and migration 023 gave the column a plain
+    # `REFERENCES staging.graha_territories(id)` — not composite with `org_id`.
+    # So the database alone accepted one organisation filing its deal under
+    # ANOTHER organisation's territory, and it is not a labelling mistake: the
+    # kanban and the deal list both render that territory's NAME, and the CRM
+    # report exports it to a mailed CSV. `resolve_contact_territory` is the
+    # same function the contact paths use, checking `org_id` AND `is_active`.
+    # `""` stays "" and clears through the `NULLIF` below.
+    territory_id = await resolve_contact_territory(pool, org_id, body.territory_id)
+
     # The INSERT and its `deal.created` event share ONE transaction — the same
     # contract every emitter in this router keeps: the event exists if and only
     # if the deal committed. The pipeline bootstrap above stays on the pool on
@@ -1246,7 +1323,7 @@ async def create_deal(
                 org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
                 body.stage, body.probability, body.expected_close_date,
                 body.assigned_to, body.notes, body.tags, user["user_id"],
-                json.dumps(body.custom_data or {}), body.territory_id,
+                json.dumps(body.custom_data or {}), territory_id,
             )
             await deal_created(_conn, org_id=org_id, actor_id=user["user_id"],
                                deal_id=row["id"], row=dict(row))
@@ -1314,7 +1391,12 @@ async def deals_kanban(
         # reaches whichever organisation's company holds it.
         "LEFT JOIN staging.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
-        "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
+        # Org-scoped for the same reason as the client join above, and see
+        # `list_deals`: `graha_territories.id` is unique table-wide, so the
+        # id alone reaches another organisation's territory NAME. Phase
+        # 7.1a — closed in the commit that puts values in the column.
+        "LEFT JOIN staging.graha_territories tr "
+        "       ON tr.id = d.territory_id AND tr.org_id = d.org_id "
         "LEFT JOIN users ow ON ow.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
         + hide_archived +
@@ -1390,6 +1472,16 @@ async def update_deal(
     if not updates:
         raise HTTPException(400, "No fields to update")
 
+    # Named explicitly and checked explicitly, the same way `update_contact`
+    # checks it: `_DEAL_COLS` listed this column with no model field behind it
+    # until Phase 7.1a, and the field now exists. The org check is not optional
+    # — the foreign key is not composite with `org_id`, so without it a PATCH
+    # re-files a deal under another organisation's territory and the kanban
+    # then draws that organisation's name on the card.
+    if "territory_id" in updates:
+        updates["territory_id"] = await resolve_contact_territory(
+            pool, org_id, updates["territory_id"])
+
     if "stage" in updates and updates["stage"] == "Won":
         updates["won_at"] = datetime.now(timezone.utc)
         updates["probability"] = 100
@@ -1414,10 +1506,15 @@ async def update_deal(
             # mobile form tried to offer the button.
             sets.append(f"{k}=NULLIF(${idx},'')::date")
             params.append(v.isoformat() if hasattr(v, "isoformat") else (v or ""))
-        elif k in ("client_id", "contact_id"):
+        elif k in ("client_id", "contact_id", "territory_id"):
             # Same guard, same reason. A uuid column cast from '' is a 500, so
             # the company and the PERSON on a deal could be set once and never
-            # changed or cleared.
+            # changed or cleared. `territory_id` joined them in Phase 7.1a and
+            # belongs HERE rather than in the generic else-branch below, which
+            # binds a bare `$n`: an untyped text parameter into a `uuid` column
+            # is the parse error PgBouncer turns into an instant 500 with no
+            # useful log — `memory/incident_credits_untyped_sql` is the same
+            # failure on `$1 + $2`.
             sets.append(f"{k}=NULLIF(${idx},'')::uuid")
             params.append(v or "")
         elif k in ts_fields:
@@ -2596,6 +2693,101 @@ async def rescore_all_contacts(
     return {"status": "rescored", "count": count}
 
 
+@router.post("/contacts/route-all")
+async def route_all_contacts(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Backfill: route every unfiled contact through PIN -> territory -> rep.
+
+    ── A ROUTE, DELIBERATELY, AND NOT A MIGRATION ───────────────────────────
+
+    Migrations are pre-approved in this repo; rewriting live rows is NOT
+    (`memory/migrations_pre_approved`). This writes `territory_id` and possibly
+    `assigned_to` on hundreds of real contacts belonging to a real firm, and
+    staging shares one Supabase database with production — so it has to be
+    something a named person presses, in their own org, having decided that the
+    territories are right. A migration would have done it to every org on the
+    next deploy, before anyone had drawn a single PIN list.
+
+    Modelled on `rescore_all_contacts` above, down to the `is_org_admin` gate.
+
+    ── WHAT IT WILL NOT DO ──────────────────────────────────────────────────
+
+    It never overwrites a territory a person already chose — `route_contact`
+    returns `kept` for those and they are counted, not touched. It never
+    reassigns a contact that already has an owner. And a PIN no territory
+    claims routes nowhere and is not an error: on the day this shipped that was
+    ALL 41 routable contacts in Unicode Group, because no live territory
+    carried a single PIN.
+
+    The response is deliberately counts and NAMES. It does not return contact
+    ids, and `by_territory` is keyed by territory name — a backfill report is
+    read by a person, and a uuid identifies nobody.
+    """
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
+    pool = await get_pool()
+
+    report = {
+        "status": "routed",
+        "count": 0,                 # newly given a territory by this run
+        "considered": 0,            # live contacts examined
+        "already_filed": 0,         # a person had chosen a territory already
+        "with_a_pin": 0,            # the ladder found a usable PIN
+        "no_territory_claims_it": 0,
+        "assigned_a_rep": 0,
+        "failed": 0,
+        "by_territory": {},
+        "overlaps": [],
+    }
+
+    # ONE connection for the whole backfill, and one territory read for the
+    # whole backfill. `route_contact` needs a Connection rather than a Pool —
+    # it opens a transaction per contact so that a failure at contact 200 keeps
+    # the first 199 — and re-reading 18 territories 288 times is how a loop
+    # that "just works" becomes a request that times out.
+    async with pool.acquire() as conn:
+        territories = await territory_routing.load_territories(conn, org_id)
+        rows = await conn.fetch(territory_routing.PIN_LADDER_ALL, org_id)
+        report["considered"] = len(rows)
+        for r in rows:
+            if r["territory_id"]:
+                report["already_filed"] += 1
+                continue
+            # THE PRE-FILTER IS NOT REDUNDANT WITH `route_contact`, which does
+            # the same two steps again for the contact it is handed. It is what
+            # stops the route opening a transaction per contact for the ones
+            # that were never going to route — the ordinary case, and on the
+            # day this shipped the case for ALL 41 in Unicode Group. It also
+            # buys the two honest denominators in the report: how many have a
+            # PIN, and how many of those no territory claims.
+            pin, _source = territory_routing.pin_for_row(r)
+            if not pin:
+                continue
+            report["with_a_pin"] += 1
+            if not territory_routing.territories_for_pin(territories, pin):
+                report["no_territory_claims_it"] += 1
+                continue
+            out = await territory_routing.route_contact(
+                conn, org_id, r["contact_id"], territories=territories)
+            if out["error"]:
+                report["failed"] += 1
+                continue
+            if not out["routed"]:
+                continue
+            report["count"] += 1
+            name = out["territory_name"]
+            report["by_territory"][name] = report["by_territory"].get(name, 0) + 1
+            if out["assigned_to"]:
+                report["assigned_a_rep"] += 1
+            if out["overlapping"] and len(report["overlaps"]) < 20:
+                report["overlaps"].append(
+                    {"pincode": out["pin"], "territories": out["overlapping"]})
+    return report
+
+
 @router.get("/scoring-rules")
 async def list_scoring_rules(
     user=Depends(require_user),
@@ -3053,24 +3245,25 @@ async def territory_round_robin(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Whose turn is it — the manual button, over the same round-robin routing
+    uses.
+
+    THE BODY MOVED, THE CONTRACT DID NOT. `services.territory_routing.
+    assign_next_user` is now the only implementation of "whose turn is it", and
+    this route maps its two failure reasons onto the same 404 and 400 it has
+    always answered. Before 2026-08-27 this endpoint had ZERO callers in the
+    repo; Phase 7.1 made it the mechanism that hands an incoming lead to a rep,
+    and two copies of the rule — one for the button, one for the automatic
+    path — would have drifted on the first change. What they would disagree
+    about is who gets paid for a lead.
+    """
     pool = await get_pool()
-    territory = await pool.fetchrow(
-        "SELECT assigned_users, round_robin_index FROM staging.graha_territories "
-        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
-        str(territory_id), org_id,
-    )
-    if not territory:
+    turn = await territory_routing.assign_next_user(pool, org_id, str(territory_id))
+    if turn["reason"] == territory_routing.NO_TERRITORY:
         raise HTTPException(404, "Territory not found")
-    users = territory["assigned_users"] or []
-    if not users:
+    if turn["reason"] == territory_routing.NO_MEMBERS:
         raise HTTPException(400, "Territory has no assigned users")
-    idx = (territory["round_robin_index"] or 0) % len(users)
-    next_user = users[idx]
-    await pool.execute(
-        "UPDATE staging.graha_territories SET round_robin_index=$1 WHERE id=$2::uuid",
-        idx + 1, str(territory_id),
-    )
-    return {"assigned_user": next_user, "index": idx}
+    return {"assigned_user": turn["user"], "index": turn["index"]}
 
 
 # ── Phase 3: Custom Fields ────────────────────────────────

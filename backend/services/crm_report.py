@@ -229,7 +229,16 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         # out, and re-read months later with nothing left to question it.
         "LEFT JOIN staging.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
-        "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
+        # Org-scoped on `org_id` as well as `id`, like the client join
+        # directly above — and this line was not, until Phase 7.1a. The
+        # reasoning is the client join's, only worse here: this is the
+        # sheet the whole report is auditable from, so a TERRITORY name
+        # belonging to another organisation would be exported to a CSV,
+        # mailed out, and re-read months later with nothing left to
+        # question it. `graha_territories.id` is unique table-wide and
+        # migration 023 gave the column a non-composite foreign key.
+        "LEFT JOIN staging.graha_territories tr "
+        "       ON tr.id = d.territory_id AND tr.org_id = d.org_id "
         "LEFT JOIN users u ON u.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE AND d.created_at > $2 "
         "ORDER BY d.created_at DESC",

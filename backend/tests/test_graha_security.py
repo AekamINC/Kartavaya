@@ -100,8 +100,18 @@ async def test_create_contact_stores_org_id(api_client, mock_pool, as_admin, org
     })
     assert resp.status_code == 200
 
-    sql, *args = mock_pool.fetchrow.call_args[0]
-    assert "INSERT INTO staging.graha_contacts" in sql
+    # THE INSERT, FOUND BY NAME RATHER THAN BY BEING THE LAST STATEMENT.
+    #
+    # `call_args` is the MOST RECENT call, and since Phase 7.1 the create path
+    # issues more than one: the INSERT is followed by the PIN -> territory
+    # lookup, which runs inside the same transaction between the write and the
+    # `contact.created` event. This test is about the INSERT carrying the
+    # caller's org — so it names the statement it means, and cannot be moved
+    # off it again by anything appended to the handler.
+    inserts = [c for c in mock_pool.fetchrow.call_args_list
+               if "INSERT INTO staging.graha_contacts" in c[0][0]]
+    assert len(inserts) == 1, "the contact INSERT did not run exactly once"
+    sql, *args = inserts[0][0]
     assert args[0] == ORG_A
 
 

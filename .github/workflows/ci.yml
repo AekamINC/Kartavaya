@@ -267,6 +267,12 @@ jobs:
       # warning. Every one survived multiple careful reads and would have died
       # instantly to these. They run before the tests because they take under a
       # second and their failure explains the others.
+      - name: Every stylesheet parses as CSS
+        # `npm run check` exits 0 on unparseable CSS — a standing trap in
+        # CLAUDE.md, and a trap you have to remember is one that gets
+        # forgotten. A comment that ends early (a path glob spells a comment
+        # terminator) makes a parser DISCARD the rules after it, silently.
+        run: node scripts/check-css-parses.mjs
       - name: Design token gate
         run: node scripts/check-tokens.mjs
 
