@@ -1,5 +1,13 @@
+-- PROPOSED_090_statutory_document_identifiers.sql
+--
 -- PROPOSED — the statutory identifiers the print documents need and the schema
 -- cannot represent. Review before running. NOT APPLIED by whoever merges this.
+--
+-- RENUMBERED FROM 080 on 2026-08-27. Two files carried PROPOSED_080 — this one
+-- and `PROPOSED_080_team_members_retire.sql` — in a directory whose only job is
+-- to say what runs before what. This one moved because it is referenced from
+-- four places and the other from nine; neither is applied, so nothing in any
+-- database changes by moving it.
 --
 -- ═════════════════════════════════════════════════════════════════════════════
 -- WHY

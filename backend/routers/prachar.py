@@ -78,11 +78,17 @@ def client_only(filters: dict | None) -> bool:
 def _col(row, name):
     """One column off a row that may not have it.
 
-    `migrations/183` adds `compliance_class` to two tables and IS NOT APPLIED —
-    the owner applies migrations by hand, so this code runs against a database
-    without those columns first and must not care. asyncpg's Record raises
-    KeyError for an absent key rather than returning None, and a dict in a test
-    fixture behaves differently again, so the tolerance lives in one place.
+    `migrations/183` adds `compliance_class` to two tables and IS APPLIED —
+    verified live 2026-08-27: both columns exist with their CHECK constraints,
+    and 57 of 60 templates carry a class. The docstring said the opposite for
+    long enough that Phase 6 listed it as an item; the schema had moved and the
+    comment had not.
+
+    THE HELPER STAYS, for the reason that was always the second half of the
+    sentence: asyncpg's Record raises KeyError for an absent key rather than
+    returning None, and a dict in a test fixture behaves differently again.
+    `_campaign_class` is handed rows from several queries and from fixtures, so
+    the tolerance lives in one place. It is no longer tolerating a MIGRATION.
     """
     if row is None:
         return None
@@ -417,12 +423,11 @@ async def create_template(
             "variables", "created_by"]
     vals = [org_id, body.name, body.subject, body.body_html, body.body_text,
             body.category, json.dumps(body.variables), user["user_id"]]
-    # Only named when the column is there. `migrations/183` is written and NOT
-    # APPLIED; naming a column that does not exist is an UndefinedColumnError on
-    # every template save, which would be a far worse bug than the missing
-    # field. The probe caches a hit, so this costs one query per process.
-    if body.compliance_class is not None and await prachar_compliance.column_exists(
-            pool, "prachar_templates", "compliance_class"):
+    # Named outright. This was guarded by a `column_exists` probe while 183 was
+    # unapplied; 183 IS applied (live 2026-08-27) and the guard had become a
+    # per-process query protecting against a state that cannot occur — while
+    # the comment above it told every later reader the column was missing.
+    if body.compliance_class is not None:
         cols.append("compliance_class")
         vals.append(body.compliance_class)
     placeholders = ",".join(
@@ -470,9 +475,8 @@ async def update_template(
             vals.append(v); updates.append(f"{field}=${len(vals)}")
     if body.variables is not None:
         vals.append(json.dumps(body.variables)); updates.append(f"variables=${len(vals)}::jsonb")
-    # See `create_template` — named only when 183 has been applied.
-    if body.compliance_class is not None and await prachar_compliance.column_exists(
-            pool, "prachar_templates", "compliance_class"):
+    # See `create_template` — 183 is applied, so the column is simply named.
+    if body.compliance_class is not None:
         vals.append(body.compliance_class)
         updates.append(f"compliance_class=${len(vals)}")
     if not updates:
@@ -597,9 +601,9 @@ async def create_campaign(
 ):
     pool = await get_pool()
     # Two statements rather than one built string: the column list here is fixed
-    # and readable, and the optional class is a guarded second write. See
-    # `create_template` for why the column cannot simply be named — 183 is not
-    # applied yet.
+    # and readable, and the optional class is a second write. It stays two
+    # statements because that is the readable shape, NOT because the column may
+    # be absent — 183 is applied and it is always there.
     row = await pool.fetchrow(
         "INSERT INTO staging.prachar_campaigns "
         "(org_id, name, template_id, subject, body_html, channel, audience_filter, scheduled_at, created_by) "
@@ -607,8 +611,7 @@ async def create_campaign(
         org_id, body.name, body.template_id, body.subject, body.body_html,
         body.channel, json.dumps(body.audience_filter), body.scheduled_at, user["user_id"],
     )
-    if body.compliance_class is not None and await prachar_compliance.column_exists(
-            pool, "prachar_campaigns", "compliance_class"):
+    if body.compliance_class is not None:
         row = await pool.fetchrow(
             "UPDATE staging.prachar_campaigns SET compliance_class=$1 "
             "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
@@ -663,8 +666,7 @@ async def update_campaign(
         vals.append(json.dumps(body.audience_filter)); updates.append(f"audience_filter=${len(vals)}::jsonb")
     if body.scheduled_at is not None:
         vals.append(body.scheduled_at); updates.append(f"scheduled_at=${len(vals)}::timestamptz")
-    if body.compliance_class is not None and await prachar_compliance.column_exists(
-            pool, "prachar_campaigns", "compliance_class"):
+    if body.compliance_class is not None:
         vals.append(body.compliance_class)
         updates.append(f"compliance_class=${len(vals)}")
     if not updates:
@@ -876,11 +878,12 @@ async def send_campaign(
 
     # Resolve subject & body: use template if linked, else campaign's own fields
     #
-    # `SELECT *` and fetched WHENEVER a template is linked, not only when the
-    # campaign is missing content. The row now answers a second question — what
-    # compliance class governs this send — and `SELECT *` is what lets that
-    # column be read before `migrations/183` has been applied, because a named
-    # column that does not exist yet is an UndefinedColumnError on every send.
+    # Fetched WHENEVER a template is linked, not only when the campaign is
+    # missing content: the row answers a second question — what compliance class
+    # governs this send. `SELECT *` was originally what let that column be read
+    # before 183 landed; 183 has landed, so the reason now is simply that
+    # `_campaign_class` reads several fields off this row and a named list here
+    # would have to be kept in step with it.
     subject = campaign["subject"] or ""
     body_html = campaign["body_html"] or ""
     tmpl = None
@@ -956,11 +959,12 @@ async def send_campaign(
                     raise HTTPException(
                         503,
                         "This send needs an override, and the override cannot "
-                        "be recorded: migration 183 has not been applied, so "
-                        "staging.prachar_icai_overrides does not exist. An "
-                        "override that is not written down is not an override. "
-                        "Narrow the audience to existing clients, or ask an "
-                        "administrator to apply the migration.",
+                        "be recorded: staging.prachar_icai_overrides is not "
+                        "reachable. An override that is not written down is "
+                        "not an override. The table does exist on staging, so "
+                        "this is a database or connection fault rather than "
+                        "anything you can fix from here — narrow the audience "
+                        "to existing clients, and report it.",
                     )
                 logger.warning(
                     "ICAI OVERRIDE: campaign %s in org %s sent to %d non-client "

@@ -15,7 +15,7 @@ export default defineConfig({
   projects: [
     {
       name: 'one',
-      testMatch: /(client-report|module-analytics|billing-tabs|billing-crud|phase1-acceptance|phase2-acceptance|phase3-acceptance)\.spec\.ts/,
+      testMatch: /(client-report|module-analytics|billing-tabs|billing-crud|phase1-acceptance|phase2-acceptance|phase3-acceptance|commission-seed)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {

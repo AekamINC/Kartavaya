@@ -101,7 +101,7 @@ class TestESINumber:
 
     def test_seventeen_digits_is_refused_because_that_is_the_employer_code(self):
         """The repo says so in its own words:
-        `migrations/PROPOSED_080_statutory_document_identifiers.sql` comments
+        `migrations/PROPOSED_090_statutory_document_identifiers.sql` comments
         `organisations.esi_employer_code` as "ESIC employer code, 17 digits. The
         employer half of the payslip statutory block; the employee half is
         manav_employees.esi_number."

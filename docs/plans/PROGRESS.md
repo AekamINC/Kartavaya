@@ -1838,4 +1838,68 @@ the pivot dashboard still count drafts and the pivot has the same date-bind bug;
   everybody and the screen says so instead of offering a dead button. One
   employee↔login link turns this ✅; the same gap blocks the mobile app.
 
+## 2026-08-27 · Phase 6.1 answered by seeding, plus the three housekeeping items
+
+**6.1 — the owner chose seeding over dropping.** The audit framed commission as
+a model built twice and proposed retiring the dead half. Confirming that is what
+surfaced the more useful fact: the LIVE half held 2 schemes and 4 bands and
+**every one of them was Unicode Group's**. E2E Test & Associates had 83 people
+on the register and **zero arrangements between them** — a model no spec could
+drive end to end in the org every spec runs against.
+
+`frontend/e2e-real/commission-seed.spec.ts` (2 tests, green) drives the real
+screen: register → person → form → ladder editor → button. Nothing is INSERTed.
+
+  manav_commission_schemes   E2E  0 → 1
+  manav_commission_bands     E2E  0 → 3
+  (Unicode unchanged at 2 / 4 — `useOrg` proves the session's org from the
+   server before a single field is filled, which is the check that failed on
+   26 Aug and put a Phase-1 vendor in the wrong organisation.)
+
+The ladder is the owner's own, from 2026-08-21: **3% from ₹1L, 4% from ₹5L,
+7.5% from ₹10L**, marginal — ₹12,00,000 of turnover pays ₹47,000, not ₹90,000.
+The rungs are typed into the editor **7.5 / 3 / 4** and come back **3 / 4 /
+7.5**: `Scheme.__post_init__` sorts and de-duplicates once, so a payout cannot
+depend on which row was read first. The spec recognises its own ladder on a
+re-run and verifies instead of writing again — proven by the passing run, which
+took the no-write branch and left the counts at 1 / 3.
+
+The dead `sales_commission*` three are still 0/0/0 and still **not dropped** —
+a DROP is named and confirmed regardless of the standing migration approval, and
+that OK is 0.30. They were never the half worth keeping: their `user_id` is
+`uuid` where `public.users.user_id` is `text`, so there is no join to make.
+
+**Housekeeping — all three, each behind a live check.**
+
+*The `PROPOSED_080` collision.* Two unrelated proposals shared one number in a
+directory whose only job is ordering. Proposal 82 reported it; Phase 6 reported
+it again; neither moved a file. `PROPOSED_080_statutory_document_identifiers.sql`
+→ `PROPOSED_090_…` (four references against the other's nine), all four updated
+in this commit, the move recorded in the file's header. Neither file is applied,
+so no database changed. `tests/test_migration_numbers_are_unique.py` (4) fails on
+any duplicate in either series — applied and PROPOSED checked apart, because
+they have always numbered independently.
+
+*Migration 183.* Claimed "IS NOT APPLIED" in `routers/prachar.py:81` and at four
+write sites. Live 2026-08-27: `compliance_class` on both tables, both CHECK
+constraints, all three tables created, `prachar_compliance_rules` seeded with 6
+rows, **57 of 60 templates and 11 of 104 campaigns classed**. So
+`prachar_compliance.column_exists` and its four guards were a per-process query
+defending an impossible state, under comments telling every later reader the
+column was missing. Removed. `table_exists` stays — it degrades two audit writes
+rather than guarding a column — but its log lines no longer blame 183; a log
+naming the wrong cause sends the next reader to the wrong place. 261 prachar
+tests green after.
+
+*`ai_router.py`.* The plan said it "passes `user_id=user_id` into a function
+with no such param". `upload_file` takes `user_id` fine — the fault is that
+**`generate_rich_content` does not**, and its body read the name anyway.
+`NameError` on the first inline image the rich model ever returned, before the
+picture was touched. Latent only because `routers/hub.py` imports the function
+and no route calls it — the same shape as everything else Phase 6 exists to
+catch: code that reads correctly and has never run. Now a parameter defaulting
+to `""`, with two tests in `test_image_brief.py` (one executing the whole branch
+against a real one-pixel PNG, one on the signature), **both verified failing
+against the old code before the fix went in**.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

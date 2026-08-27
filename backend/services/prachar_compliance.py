@@ -633,27 +633,19 @@ async def table_exists(pool, name: str) -> bool:
     return ok
 
 
-async def column_exists(pool, table: str, column: str) -> bool:
-    """Same discipline as `table_exists`, for the two columns 183 adds to
-    tables that already exist. Named rather than inferred from the rules table:
-    a future migration could split them, and a proxy check would then be wrong
-    in the silent direction."""
-    key = f"{table}.{column}"
-    if _table_cache.get(key):
-        return True
-    try:
-        found = await pool.fetchval(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_schema='staging' AND table_name=$1 AND column_name=$2",
-            table, column,
-        )
-    except Exception:                                        # noqa: BLE001
-        logger.exception("Prachar compliance: could not probe %s", key)
-        return False
-    if found:
-        _table_cache[key] = True
-        return True
-    return False
+# `column_exists` LIVED HERE and is gone. It probed information_schema for
+# `compliance_class` on the two tables migration 183 alters, and guarded four
+# writes in `routers/prachar.py` against the column being absent. 183 is applied
+# — verified live 2026-08-27: both columns present, both CHECK constraints
+# present, 57 of 60 templates classed — so every one of those guards was a
+# per-process query defending a state that cannot occur, under comments telling
+# each new reader the column was missing.
+#
+# `table_exists` below is NOT the same thing and stays: it degrades two audit
+# writes rather than guarding a column, and the tables it names are worth
+# checking for as long as anything can run against a database that predates
+# them. Its log lines no longer blame migration 183, because 183 is not the
+# explanation any more.
 
 
 def reset_table_cache() -> None:
@@ -673,8 +665,10 @@ async def record_override(conn, *, org_id: str, campaign_id: str,
     if not await table_exists(conn, "prachar_icai_overrides"):
         logger.error(
             "ICAI OVERRIDE NOT RECORDED: staging.prachar_icai_overrides does "
-            "not exist (migration 183 not applied). Campaign %s was sent to %d "
-            "non-client recipients by %s under the basis: %s",
+            "not exist. It DOES exist on staging (checked 2026-08-27), so this "
+            "is not the old unapplied-migration case and the database this "
+            "process is connected to is not the one it should be. Campaign %s "
+            "was sent to %d non-client recipients by %s under the basis: %s",
             campaign_id, verdict.non_client_count, actor_id,
             verdict.override_basis,
         )
@@ -737,9 +731,10 @@ async def record_send_evidence(conn, *, org_id: str, campaign_id: str,
     if not await table_exists(conn, "prachar_send_evidence"):
         logger.error(
             "SEND EVIDENCE NOT RECORDED for campaign %s (%d recipients): "
-            "staging.prachar_send_evidence does not exist — migration 183 has "
-            "not been applied. The send is proceeding; the firm has no stored "
-            "proof of client linkage for it.",
+            "staging.prachar_send_evidence does not exist. It DOES exist on "
+            "staging (checked 2026-08-27), so this is a wrong-database or "
+            "wrong-search_path fault, not an unapplied migration. The send is "
+            "proceeding; the firm has no stored proof of client linkage for it.",
             campaign_id, len(contacts))
         return 0
 

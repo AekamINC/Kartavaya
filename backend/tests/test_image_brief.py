@@ -1137,3 +1137,118 @@ async def test_the_rich_fallback_briefs_the_picture_instead_of_reusing_the_copy_
     for slot in ("Subject:", "Composition:"):
         assert slot in seen["prompt"], f"no {slot} reached the image model"
     assert R._resolve_preset(seen["style"])[0] in R._IMAGE_PRESETS
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9 · THE INLINE-IMAGE BRANCH, WHICH HAD NEVER ONCE BEEN EXECUTED
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Section 8 above exercises `generate_rich_content`'s FALLBACK — the path taken
+# when the rich model returns no `choices`. The path taken when it SUCCEEDS and
+# hands back a `data:` image was covered by nothing at all, and it did not work:
+# it read `user_id`, which was not a parameter of the function, not a global,
+# and not a local. `NameError: name 'user_id' is not defined`, on the first line
+# that touched the picture it had just been given.
+#
+# It has never been seen because `routers/hub.py` imports the function and no
+# route calls it. That is a reprieve, not a defence — Phase 6's own rule is that
+# a writer ships with a test that actually executes it, and this is the same
+# failure in a different coat: code that reads correctly and has never run.
+#
+# The test below runs the branch end to end with a real one-pixel PNG. It fails
+# with the NameError against the previous signature.
+
+
+def _one_pixel_png_data_uri() -> str:
+    """A real PNG, base64'd into a data: URI the way OpenRouter returns one.
+
+    Built here rather than read from a fixture so the test owns its own input —
+    the same reason `_helpers.makePdf` exists on the frontend side.
+    """
+    import base64
+    png = bytes([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+        0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+        0x42, 0x60, 0x82,
+    ])
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+async def test_the_rich_model_can_actually_return_an_inline_image(monkeypatch):
+    """The success path stores the picture and says who it belongs to.
+
+    Three things are asserted, and the first is the one that was broken:
+
+      1 · IT RUNS. Against the old signature this raises NameError before the
+          upload is ever attempted.
+      2 · The bytes that reach storage are the DECODED png, not the data URI —
+          a base64 string written into a bucket is a file nothing can open.
+      3 · `user_id` arrives as given. Not "system", which was never true of
+          anybody, and not the org id, which is not a person.
+    """
+    seen = {}
+
+    async def _upload(**kw):
+        seen.update(kw)
+        return {"url": "https://r2.invalid/inline.png", "key": "k"}
+
+    import services.storage as storage_mod
+    monkeypatch.setattr(storage_mod, "upload_file", _upload)
+
+    payload = {
+        "choices": [{"message": {"content": [
+            {"type": "text", "text": "Here is your Diwali post."},
+            {"type": "image_url",
+             "image_url": {"url": _one_pixel_png_data_uri()}},
+        ]}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "cost": 0.01},
+    }
+    monkeypatch.setattr(R.httpx, "AsyncClient", _FakePost(payload))
+
+    async def _pool():
+        class _P:
+            async def execute(self, *a, **kw):
+                return None
+        return _P()
+    monkeypatch.setattr(R, "get_pool", _pool)
+
+    out = await R.generate_rich_content(
+        prompt="A Diwali post", org_id=ORG, user_id="user_abc123")
+
+    assert out["images"], "the inline image was dropped on the floor"
+    assert out["images"][0]["url"] == "https://r2.invalid/inline.png"
+    assert out["text"] == "Here is your Diwali post."
+
+    assert seen["file_bytes"][:8] == bytes([0x89, 0x50, 0x4E, 0x47,
+                                            0x0D, 0x0A, 0x1A, 0x0A]), (
+        "the data: URI was stored as text instead of being decoded — the bucket "
+        "would hold a base64 string with a .png name on it"
+    )
+    assert seen["user_id"] == "user_abc123", (
+        "the picture was stored without the owner the caller named"
+    )
+    assert seen["org_id"] == ORG
+
+
+def test_generate_rich_content_declares_every_name_its_body_reads():
+    """The general form of the bug above, held open.
+
+    `generate_rich_content` read `user_id` while having no such parameter for
+    long enough to ship. A signature check is cheap and catches the next one
+    before a route reaches it — which is the whole difference between this and
+    a defect that waits for a customer to find it.
+    """
+    sig = inspect.signature(R.generate_rich_content)
+    for name in ("prompt", "org_id", "user_id"):
+        assert name in sig.parameters, (
+            f"`generate_rich_content` body reads `{name}` but does not take it"
+        )
+    assert sig.parameters["user_id"].default == "", (
+        "an unowned upload must default to unset, never to a stand-in owner"
+    )

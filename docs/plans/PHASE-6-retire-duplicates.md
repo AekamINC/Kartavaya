@@ -89,10 +89,33 @@ was tried first and is a LIE here — it reports 0 for `pay_professional_tax`
 (9 real rows) and 0 for `dristi_scheduled_reports` (7). A planner statistic is
 not a row count, and a DROP decided from one would have been catastrophic.**
 
-- **6.1 commission — CONFIRMED, awaiting the owner's OK (0.30).**
-  `sales_commissions` 0 · `sales_commission_slabs` 0 · `sales_commission_assignments`
-  0. Safe to back up and drop. Not dropped: a DROP is named and confirmed
-  regardless of the standing migration approval.
+- **6.1 commission — THE OWNER CHOSE SEEDING OVER DROPPING, and he was right.**
+  The dead half is confirmed empty — `sales_commissions` 0 ·
+  `sales_commission_slabs` 0 · `sales_commission_assignments` 0 — and is still
+  not dropped: a DROP is named and confirmed regardless of the standing
+  migration approval, and 0.30 is where that OK belongs.
+
+  What the confirmation surfaced is the more useful fact. The LIVE half held
+  **2 schemes and 4 bands, every one of them Unicode Group's**. E2E Test &
+  Associates had **83 people on the register and not one arrangement between
+  them**, so the model could not be driven end to end in the org every spec
+  runs against — 🟡 by this project's own definition, however much code stands
+  behind it. Seeding was the answer to a question the audit had framed as a
+  deletion.
+
+  `frontend/e2e-real/commission-seed.spec.ts` (2 tests) drives the real screen:
+  the register, a person, the form, the ladder editor, the button. E2E now holds
+  **1 scheme / 3 bands** on the owner's own ladder of 2026-08-21 — 3% from ₹1L,
+  4% from ₹5L, 7.5% from ₹10L. The rungs are typed **7.5 / 3 / 4** and come back
+  **3 / 4 / 7.5**, which is the assertion worth having: `Scheme.__post_init__`
+  sorts and de-duplicates once, so a payout cannot depend on which row was read
+  first. The spec recognises its own ladder on a re-run and verifies instead of
+  writing again — a test that accumulated pay agreements in a live database
+  every time it ran would be a worse thing than the gap it closed.
+
+  THE DEAD THREE COULD NOT HAVE BEEN THE ONES SEEDED. Their `user_id` is `uuid`
+  where `public.users.user_id` is `text`; there is no join to make, so there was
+  never a version of 6.1 in which they were the half worth keeping.
 - **6.2 employee/payroll — THE PLAN IS WRONG HERE, AND DANGEROUSLY.**
   The instruction reads "prove the `hr_*`/`pay_*` tables are empty, back up,
   drop". Seventeen of the eighteen are empty — all ten `hr_*`, and `pay_runs`,
@@ -119,6 +142,42 @@ not a row count, and a DROP decided from one would have been catastrophic.**
   There is one scheduler: `dristi_scheduled_reports`, 7 rows, the only one that
   has ever sent mail. The `dristi.py:1058-1073` argument against merging is
   therefore arguing with something that is already gone.
+- **Housekeeping — all three items closed, each behind a live check.**
+  - **The `PROPOSED_080` collision is gone.** Two unrelated proposals shared the
+    one number in a directory whose only job is ordering; proposal 82 reported
+    it, Phase 6 reported it again, and neither report moved a file.
+    `PROPOSED_080_statutory_document_identifiers.sql` is now `PROPOSED_090_…`
+    (it had four references to the other's nine), with the four updated in the
+    same commit and the move recorded in the file's own header. Neither file is
+    applied, so no database changed. `tests/test_migration_numbers_are_unique.py`
+    (4 tests) now fails on any duplicate number in either series — the applied
+    one and the PROPOSED one are checked apart, because they have always
+    numbered independently and `063_` beside `PROPOSED_063_` is not a collision.
+  - **Migration 183 IS applied, and the code saying otherwise is removed.**
+    Live 2026-08-27: `compliance_class` on both `prachar_templates` and
+    `prachar_campaigns`, both CHECK constraints present, all three tables
+    created, `prachar_compliance_rules` seeded with 6 rows, **57 of 60 templates
+    classed**. `services/prachar_compliance.py::column_exists` and its four
+    guards in `routers/prachar.py` were therefore a per-process query defending
+    a state that cannot occur — under comments telling every later reader the
+    column was missing. Removed. `table_exists` STAYS: it degrades two audit
+    writes rather than guarding a column, but its log lines no longer blame 183,
+    because a log that names the wrong cause sends the next reader to the wrong
+    place. `_col` also stays — the schema half of its reason was false, the test
+    -fixture half was always true.
+  - **`ai_router.py`'s latent `NameError` is real, and worse than reported.**
+    The plan said it "passes `user_id=user_id` into a function with no such
+    param". `upload_file` takes `user_id` perfectly well; the fault is that
+    **`generate_rich_content` does not** — it read a name that was not a
+    parameter, not a global and not a local, so the first inline image the rich
+    model ever returned would raise `NameError` before the picture was touched.
+    Unreached only because `routers/hub.py` imports the function and no route
+    calls it. Now a parameter defaulting to `""` (unowned is honest; an upload
+    attributed to a user who did not ask for it is not), with two tests in
+    `test_image_brief.py` — one executing the whole inline-image branch against
+    a real one-pixel PNG, one checking the signature — **both verified failing
+    against the old code before the fix went in**.
+
 - **The process rule — SHIPPED as a ratchet, not a sentence.**
   `tests/test_every_writer_has_a_live_sql_test.py` (4 tests). 36 routers write
   to `staging.*`; 6 have a test that PREPAREs their statements against the real

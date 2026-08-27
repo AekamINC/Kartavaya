@@ -2443,6 +2443,17 @@ async def generate_rich_content(
     system: str = "",
     max_tokens: int = 4096,
     org_id: Optional[str] = None,
+    #: WHO the stored picture belongs to. This parameter did not exist while the
+    #: body below already read `user_id` — so the moment the rich model returned
+    #: an inline image, the very first thing this function did with it was raise
+    #: `NameError: name 'user_id' is not defined`. Nothing calls this route yet,
+    #: which is the only reason it has never been seen; `routers/hub.py` imports
+    #: the function and the day a route reaches it the failure is total.
+    #:
+    #: Defaulted to "" rather than to a "system" owner, matching the grammar
+    #: `generate_image` already uses: an unowned upload is honest, an upload
+    #: attributed to a user who did not ask for it is not.
+    user_id: str = "",
 ) -> dict:
     """Generate rich content with text + image using Gemini's native image model.
     Returns {"text": str, "images": [{"url": str, "mime": str}], ...}."""

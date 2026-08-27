@@ -7,7 +7,7 @@
 // The THIRD is deliberately absent. The reference's "Registrations" card lists a
 // PF establishment code, an ESIC employer code, a PT enrolment certificate and a
 // TAN. `staging.organisations` has a column for none of them — they arrive with
-// `PROPOSED_080_statutory_document_identifiers.sql`, which has not been applied,
+// `PROPOSED_090_statutory_document_identifiers.sql`, which has not been applied,
 // and `/v1/org/profile` does not expose them. Rendering that card would mean
 // inventing four identifiers on a compliance screen. See the header of
 // `statutoryCalendar.js` for the same argument about professional tax dates.

@@ -44,7 +44,7 @@ carried one of them wrong and the wrong one would have refused every real value.
 
     The 17-digit number is a DIFFERENT identifier — the ESIC *employer* code,
     one per establishment. This repo already says so in its own words:
-    `migrations/PROPOSED_080_statutory_document_identifiers.sql` comments
+    `migrations/PROPOSED_090_statutory_document_identifiers.sql` comments
     `organisations.esi_employer_code` as "ESIC employer code, 17 digits. The
     employer half of the payslip statutory block; the employee half is
     manav_employees.esi_number." Asserting 17 here would have rejected every

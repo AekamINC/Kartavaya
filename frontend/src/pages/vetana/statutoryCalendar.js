@@ -24,7 +24,7 @@
 //
 // The reference's "Registrations" card (PF code, ESIC code, PT EC, TAN) is
 // likewise absent: `staging.organisations` has no column for any of the four.
-// They arrive with `PROPOSED_080_statutory_document_identifiers.sql`, which has
+// They arrive with `PROPOSED_090_statutory_document_identifiers.sql`, which has
 // not been applied, and `/v1/org/profile` does not expose them. There is nothing
 // truthful to render, so nothing is rendered.
 
