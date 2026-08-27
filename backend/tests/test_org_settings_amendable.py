@@ -105,6 +105,24 @@ def wired(mock_pool):
             return state["row"] or {
                 "markup_pct": 0.3, "monthly_credits": 500, "monthly_price": 9999,
                 "max_users": 5, "is_platform_org": False,
+                # The three email-cap columns, added by `b8e1bfa1` on 2026-08-24
+                # ("per-org email caps with 80% alerts and overage billing").
+                # `update_org_settings` reads all three off the read-back row and
+                # this fixture did not follow, so eleven tests here and six in
+                # `test_billing_lines_wiring.py` died on
+                # `KeyError: 'email_cap_daily'` for three days.
+                #
+                # A fixture that has stopped matching the query it models tests
+                # nothing — `mock-pool-hides-bad-sql` in reverse. Any column this
+                # endpoint RETURNS belongs here; that is the contract, not a list
+                # to be trimmed.
+                #
+                # None on all three because they are nullable and mean "no cap
+                # set", which is what every org carries until one is chosen. A
+                # number here would make the null path — the one every live org
+                # takes — the untested one.
+                "email_cap_daily": None, "email_cap_monthly": None,
+                "email_overage_rate": None,
             }
         return None
 

@@ -355,7 +355,12 @@ async def test_account_manager_is_not_an_operational_platform_role():
     assert not is_god_mode("account_manager")
     # God mode reaches everything, under either spelling.
     assert is_god_mode("platform_admin") and is_god_mode("platform_owner")
-    assert len(modules_for("platform_owner")) == 12
+    # THIRTEEN since `7770045b` (23 Aug) made procurement its own module.
+    # A count rather than a set here on purpose — this test is about
+    # account_manager reaching NOTHING, and god mode reaching everything is
+    # the contrast. `test_platform_module_gate.py` is where the membership
+    # itself is pinned name by name.
+    assert len(modules_for("platform_owner")) == 13
 
 
 # ── require_org_role: the unconditional platform pass ─────────────

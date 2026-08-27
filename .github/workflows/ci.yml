@@ -381,7 +381,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # NODE 24, to match the frontend job above and the machine this is
+          # developed on. It was 20, and on Node 20 `node --test "src/**/*.test.ts"`
+          # does not expand `**` — glob patterns for `--test` arrived after 20 — so
+          # the step failed with `Could not find .../src/**/*.test.ts` and the
+          # mobile suite (840 tests, green locally) had NEVER RUN here.
+          node-version: "24"
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
@@ -428,7 +433,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # NODE 24, to match the frontend job above and the machine this is
+          # developed on. It was 20, and on Node 20 `node --test "src/**/*.test.ts"`
+          # does not expand `**` — glob patterns for `--test` arrived after 20 — so
+          # the step failed with `Could not find .../src/**/*.test.ts` and the
+          # mobile suite (840 tests, green locally) had NEVER RUN here.
+          node-version: "24"
 
       - name: Install Playwright
         run: |

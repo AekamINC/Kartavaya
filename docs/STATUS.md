@@ -26,6 +26,25 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 
 ---
 
+## One open privacy finding, 2026-08-27
+
+**`server.py::add_team_member` returns a customer's email address to Aekam.**
+`POST /api/teams/{team_id}/members` resolves `SELECT user_id, email FROM users`
+and answers with `TeamMemberOut`, whose `email: str` is required.
+`is_platform_staff` bypasses the project-membership check (`server.py:3865`), so
+platform staff can call it against any customer's project and read the address
+back. The standing rule is that Aekam must not see client emails.
+
+Two remedies, both needing a decision rather than a keystroke: split it behind an
+`include_contact` argument defaulting to False — what `billing.py::_balance_body`
+and `credits.py::usage_by_person` already do — or record in
+`tests/test_platform_privacy.py::ALLOWED` why Aekam may see it. The second is a
+claim, not a fix. Until one is chosen,
+`test_every_aekam_side_leak_is_either_fixed_or_named` stays **red on this one
+thing**, which is the gate working. It reported three findings until 2026-08-27;
+the other two were the scanner matching a route path and a `'email'` string
+literal, and two `ALLOWED` exemptions had already been spent covering for it.
+
 ## Live blockers — wrong in the running product (fix first: `PHASE-2`)
 
 | | Blocker | Where | Status |

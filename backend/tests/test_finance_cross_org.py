@@ -32,10 +32,19 @@ def _reset_probe_cache():
 
 @pytest.fixture
 def ganit_gate(app):
-    from routers.ganit import _gate
+    # BOTH gates. `_payables_gate` is `require_any_module("ganit", "kray")` and
+    # it is a DIFFERENT dependency object from `_gate` — procurement became its
+    # own module in `7770045b`, and every vendor-bill route moved behind it. A
+    # fixture overriding only `_gate` therefore got a 403 from a route it meant
+    # to be inside, and this file's whole subject is what a route returns when
+    # the record belongs to another org: a 403 from the wrong door reads exactly
+    # like the 404 being asserted and proves nothing about the org check.
+    from routers.ganit import _gate, _payables_gate
     app.dependency_overrides[_gate] = lambda: None
+    app.dependency_overrides[_payables_gate] = lambda: None
     yield
     app.dependency_overrides.pop(_gate, None)
+    app.dependency_overrides.pop(_payables_gate, None)
 
 
 @pytest.fixture

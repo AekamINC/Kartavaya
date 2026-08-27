@@ -61,13 +61,21 @@ from routers._pref_ladder import fold_ladder, removed
 # /org/tab-prefs the default underneath it. One prefix, one registration.
 router = APIRouter(prefix="/api/v1", tags=["tab-prefs"])
 
-#: The nine module pages that render <ModuleTabs> as their strip — the keys a
+#: The TEN module pages that render <ModuleTabs> as their strip — the keys a
 #: preference may be saved under. Derived from frontend/src/pages, not from
 #: role_tiers.ALL_MODULES: sanvaad/sahayak/varta are modules without a strip
 #: on this contract, and a key here without a strip would store arrangements
 #: nothing ever reads.
+#:
+#: `kray` was MISSING until 2026-08-27 and it was a live defect, not a tidiness
+#: one. `KrayPage.jsx` renders a strip and saves under `kray` like every other
+#: module page, and this router refused the key — so a Kray user could
+#: rearrange their tabs, see it work, and find the arrangement gone on the next
+#: load, with nothing said. Added by `7770045b` (23 Aug, "kray module phase 1:
+#: procurement as its own module with 7 tabs"); this allowlist did not follow,
+#: and `test_tab_prefs.py` had been naming it for four days.
 MODULE_TABS: frozenset[str] = frozenset({
-    "dristi", "esign", "ganit", "graha", "manav",
+    "dristi", "esign", "ganit", "graha", "kray", "manav",
     "pahchan", "prachar", "vetana", "vikray",
 })
 

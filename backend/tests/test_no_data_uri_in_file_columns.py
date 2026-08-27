@@ -241,10 +241,17 @@ async def test_graha_document_still_files_an_ordinary_link(
 
 @pytest.fixture
 def ganit_gate(app):
-    from routers.ganit import _gate
+    # `_payables_gate` too — see `test_finance_cross_org.py`. Vendor bills moved
+    # behind `require_any_module("ganit", "kray")` when procurement became its
+    # own module (`7770045b`), and a fixture that opens only `_gate` gets a 403
+    # from the door instead of the 422 this file asserts. A refusal for the
+    # wrong reason is not evidence that the data-uri guard fired.
+    from routers.ganit import _gate, _payables_gate
     app.dependency_overrides[_gate] = lambda: None
+    app.dependency_overrides[_payables_gate] = lambda: None
     yield
     app.dependency_overrides.pop(_gate, None)
+    app.dependency_overrides.pop(_payables_gate, None)
 
 
 async def test_ganit_expense_refuses_a_data_uri_anywhere_in_the_list(

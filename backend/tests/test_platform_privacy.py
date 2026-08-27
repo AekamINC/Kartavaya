@@ -280,8 +280,16 @@ def _has_platform_gate(fn: ast.AST) -> bool:
 #:                       user of this product: a client's contact person, an
 #:                       employee's mobile, an outbound log's recipient.
 LEAK_PATTERNS: dict[str, re.Pattern] = {
+    # QUOTE-AWARE since 2026-08-27. `AND channel = 'email'` is a VALUE, not a
+    # column, and `services/email_caps.py::email_usage` — a query that selects
+    # two COUNT(*)s and no person at all — was reported as a leak because of it.
+    # A finding that is a string literal teaches the reader to distrust the
+    # findings, which is how a privacy ratchet dies.
+    #
+    # The quote guard is on BOTH sides so `'email'` and `"email"` are excluded
+    # while `u.email`, `AS email` and a bare `email` in a projection still match.
     "email-column": re.compile(
-        r"(?<![a-z0-9_])(?:[a-z_][a-z0-9_]*\.)?email(?![a-z0-9_])"),
+        r"(?<![a-z0-9_'\"])(?:[a-z_][a-z0-9_]*\.)?email(?![a-z0-9_'\"])"),
     "coalesce-to-email": re.compile(r"coalesce\([^)]*email\s*\)"),
     "contact-column": re.compile(
         r"(?<![a-z0-9_])(?:contact_email|contact_phone|contact_name"
@@ -327,6 +335,11 @@ def _module_docstring_ids(tree: ast.AST) -> set[int]:
     return out
 
 
+#: A single unqualified word — `email`, `sent`, a dict key. NOT `u.email`, which
+#: carries a dot and is a column name.
+_BARE_WORD = re.compile(r"[A-Za-z0-9_-]+")
+
+
 def _function_sql(fn: ast.AST) -> str:
     """Every executable string literal in one function, joined, lowercased.
 
@@ -334,11 +347,54 @@ def _function_sql(fn: ast.AST) -> str:
     the old ratchet could not have caught `credits.usage_by_person`: that query
     is eleven adjacent f-string fragments, only the first of which contains the
     word SELECT and only the third of which contains the leak.
+
+    ── TWO KINDS OF LITERAL THAT ARE NOT SQL, DROPPED 2026-08-27 ─────────────
+
+    The scanner reported three findings against the email-caps feature and NONE
+    of them was a column:
+
+        admin_orgs.get_email_usage   the route path "/{org_id}/email-usage",
+                                     and the docstring "Current email usage…"
+        email_caps.email_usage       `AND channel = 'email'` — a VALUE
+        server.add_team_member       "…a member to a project by email." — prose
+
+    Only `add_team_member` reads an email column at all, and it was buried under
+    two artifacts and a docstring. THAT IS THE FAILURE MODE THAT MATTERS HERE: a
+    privacy ratchet whose findings are mostly noise gets its `ALLOWED` list
+    padded to make the red go away, and the one real entry goes in with the
+    three false ones. So:
+
+      · the function's OWN DOCSTRING is skipped, as the module's already was.
+        Every endpoint here documents what it must not return, in prose that
+        necessarily contains the word — the same reason `_literals` gives for
+        ignoring `#` comments.
+      · a literal with NO WHITESPACE that is a bare word or a URL path is
+        dropped. `'email'`, `"/{org_id}/email-usage"`, a dict key. Real SQL
+        always carries a space: a projection has a comma and a FROM, a predicate
+        has an operator. `"u.email"` is deliberately KEPT — it has a dot, so it
+        is a qualified column name and not a word.
+
+    Neither filter can hide a leak that is spelled as SQL, which is the only way
+    a leak reaches a database.
     """
-    skip = _module_docstring_ids(fn)
+    skip = set(_module_docstring_ids(fn))
+    own_doc = ast.get_docstring(fn, clean=False) if isinstance(
+        fn, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)) else None
+    if own_doc is not None:
+        body = getattr(fn, "body", None)
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+            skip.add(id(body[0].value))
+
+    def _is_sql(v: str) -> bool:
+        if any(c.isspace() for c in v):
+            return True
+        if v.startswith("/"):            # a route path
+            return False
+        return not _BARE_WORD.fullmatch(v)
+
     parts = [n.value for n in ast.walk(fn)
              if isinstance(n, ast.Constant) and isinstance(n.value, str)
-             and id(n) not in skip]
+             and id(n) not in skip and _is_sql(n.value)]
     return " ".join(" ".join(parts).split()).lower()
 
 
@@ -567,10 +623,12 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("routers/hub.py", "_account_contacts"):
         "Resolves the AEKAM staff addresses a skill request is announced to. "
         "Aekam's own inbox, never a customer's.",
-    ("routers/hub.py", "_announce_skill_request"):
-        "Mails those same Aekam accounts. It reads the requester's address to "
-        "put it in the mail; the SCREEN that made it durable and searchable no "
-        "longer carries it — see list_skill_requests.",
+    # `routers/hub.py::_announce_skill_request` HAD an entry here and no longer
+    # needs one. Its only SQL is `SELECT name FROM staging.organisations`; the
+    # address it mails comes from `user.get("email")` — the caller's own session
+    # dict, not a query — and a dict key is not a column. It tripped on the
+    # string literal `"email"` inside that `.get()`, and the exemption was
+    # written to make the red go away.
     ("routers/org_invites.py", "issue_invite"):
         "Reached from Aekam's side only since `create_org` stopped refusing an "
         "owner who has no account — it now creates the organisation and INVITES "
@@ -585,10 +643,16 @@ ALLOWED: dict[tuple[str, str], str] = {
         "COUNT, which is the one thing the owner's rule says billing gets.",
 
     # ── Not a person: a channel name, a company, a domain ───────────────────
-    ("routers/billing.py", "_outbound_body"):
-        "The only `email` in it is the literal `channel = 'email'` — a channel "
-        "name in a GROUP BY. This query returns counts and message units and "
-        "has no recipient column at all.",
+    # `routers/billing.py::_outbound_body` HAD an entry here that read, in full:
+    # "The only `email` in it is the literal `channel = 'email'` — a channel
+    # name in a GROUP BY. This query returns counts and message units and has no
+    # recipient column at all." That is not a reason Aekam may see something; it
+    # is a description of a SCANNER BUG, written down and then lived with. The
+    # pattern is quote-aware now and the exemption is gone with it.
+    #
+    # Two exemptions had already been spent papering over the same false
+    # positive when it produced its third. That is the cost of a noisy ratchet
+    # and the reason the fix belonged in the pattern.
     ("routers/hub.py", "create_client"):
         "INSERTs the contact person an org's own admin typed into its own CRM-"
         "adjacent record. A write of supplied data, not a cross-tenant read.",

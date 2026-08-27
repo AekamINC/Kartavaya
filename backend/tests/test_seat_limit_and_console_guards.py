@@ -70,11 +70,17 @@ def _console(mock_pool, caller_role, *, limit=None, seats_used=0, already_in=Fal
 
     async def fetchrow(query, *args):
         if "markup_pct" in query and "FROM staging.organisations" in query:
-            # The read-back at the end of update_org_settings. It returns the
-            # five commercial terms now, not three: `max_users` and
-            # `is_platform_org` were writable by nothing and readable by nothing.
+            # The read-back at the end of update_org_settings. It returns
+            # EIGHT terms now: the original three, then `max_users` and
+            # `is_platform_org` (writable by nothing and readable by nothing
+            # before), and since `b8e1bfa1` on 2026-08-24 the three email-cap
+            # columns. A fixture missing any column the endpoint RETURNS fails
+            # on a KeyError from production code that is correct — which is what
+            # happened here, and in two other files, for three days.
             return {"markup_pct": 0.25, "monthly_credits": 0, "monthly_price": 0,
-                    "max_users": 5, "is_platform_org": False}
+                    "max_users": 5, "is_platform_org": False,
+                    "email_cap_daily": None, "email_cap_monthly": None,
+                    "email_overage_rate": None}
         if "FROM staging.organisations" in query:
             return {"id": ORG, "team_id": "team_001"}
         if "FROM users" in query:

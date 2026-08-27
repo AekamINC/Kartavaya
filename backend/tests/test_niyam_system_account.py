@@ -136,7 +136,13 @@ def test_org_add_member_refuses_a_system_target():
     import routers.org_members as om
     code = _code(om.add_member)
     assert 'target.get("is_system")' in code
-    refusal = code.split('if target and target.get("is_system"):')[1]
+    # Split on the READ, not on the whole `if` line. This test's sibling below
+    # pinned `if target.get("is_system"):` exactly and died on an IndexError the
+    # day somebody made the condition null-safe — `if target and
+    # target.get(...)` — while the guard itself was correct and in place. A
+    # source test that breaks when the code it approves of is IMPROVED teaches
+    # people to delete source tests.
+    refusal = code.split('target.get("is_system")')[1]
     assert "HTTPException" in refusal.split("if not target:")[0],         "the refusal does not precede the invite fallback"
     assert "system account" in refusal.split("if not target:")[0]
 
@@ -147,7 +153,15 @@ def test_admin_console_add_member_refuses_a_system_target():
     import routers.admin_orgs as ao
     code = _code(ao.add_member)
     assert 'target.get("is_system")' in code
-    refusal = code.split('if target.get("is_system"):')[1]
+    # The same semantic anchor as above, and for the same reason: this line read
+    # `if target.get("is_system"):` and `af74d321` made the condition null-safe,
+    # so the split found nothing and the test failed with `IndexError: list
+    # index out of range` — a message that says nothing about system accounts.
+    # The guard was intact the whole time: `admin_orgs.py:1984` reads
+    # `if target and target.get("is_system"): raise HTTPException(400, ...)`,
+    # above every write. What is asserted below — refusal before the INSERT — is
+    # the rule, and it does not depend on how the condition is spelled.
+    refusal = code.split('target.get("is_system")')[1]
     write = refusal.find("INSERT INTO staging.user_roles")
     raised = refusal.find("HTTPException")
     assert raised != -1 and (write == -1 or raised < write), \

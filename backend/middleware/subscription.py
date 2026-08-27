@@ -63,6 +63,16 @@ BUNDLED_MODULES = {"sahayak", "esign"}
 # `pahchan` is here because its rows are face-match scores and selfies against a
 # named employee — biometric-adjacent data that is at least as sensitive as the
 # HR file it attaches to, and the standing constraints already single it out.
+#
+# `kray` joined on 2026-08-23 with `7770045b` and the membership went unrecorded
+# for four days while three test files still pinned the old four. It belongs
+# under the rule as written: procurement holds vendor bills, payment records and
+# supplier bank details — financial records, the same category as Ganit's — and
+# a module reachable without a grant is a module any org member can read. Named
+# here rather than left to be inferred from the set, because
+# `test_module_grant_enforcement` asks for exactly that: "confirm the new
+# membership is what the owner decided", and a set with no sentence beside it
+# cannot answer.
 SENSITIVE_MODULES = {"vetana", "ganit", "manav", "pahchan", "kray"}
 
 # Which modules each platform role may reach now lives in ONE file. It used to be

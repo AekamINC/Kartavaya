@@ -90,6 +90,18 @@ SERVICE_LINE = {
     "id": LINE, "org_id": ORG, "profile_id": PROFILE, "client_id": CLIENT,
     "kind": "retainer", "description": "Monthly retainer", "amount": 25000,
     "cadence": "monthly", "period_start": date(2026, 8, 1), "period_end": None,
+    # `invoice_from` — migration 223, and the fixture has to carry it because
+    # the sweep's SELECT names it. It went in during Phase 3.3 and this row did
+    # not follow, so three tests here died on `KeyError: 'invoice_from'` while
+    # the production query was correct: a fixture that models a query it has
+    # stopped matching tests nothing, which is `mock-pool-hides-bad-sql` in
+    # reverse.
+    #
+    # None means "no floor stated", the value every existing row carries: the
+    # column is nullable and nothing backfilled it. `period_start` is when the
+    # SERVICE began and `invoice_from` is when the CLOCK starts, which is why
+    # 3.3 added a column instead of rewriting the one that was there.
+    "invoice_from": None,
     "billing_direction": "advance", "auto_invoice": True,
     "billing_cycle": "monthly", "anchor_day": 1, "payment_terms_days": 30,
     "currency": "INR", "gst_treatment": "registered",

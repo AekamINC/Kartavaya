@@ -100,13 +100,24 @@ def _pref_row(module, order, default=None, user_id=None):
 
 # ── the allowlist is a declaration worth pinning ─────────────────────────────
 
-def test_module_tabs_is_exactly_the_nine_module_strips():
-    """The nine pages that render <ModuleTabs> as a customer module's strip.
+def test_module_tabs_is_exactly_the_ten_module_strips():
+    """The ten pages that render <ModuleTabs> as a customer module's strip.
     Hub* is the internal agency console; OrgSahayak's ids carry spaces and
     join when they meet the grammar. A key added here without a strip stores
-    arrangements nothing reads — change both sides or neither."""
+    arrangements nothing reads — change both sides or neither.
+
+    NINE UNTIL 2026-08-27, and the missing tenth was a live defect rather than
+    a stale number: `KrayPage.jsx` shipped on 23 Aug (`7770045b`) rendering a
+    strip and saving under `kray`, the router refused the key, and a Kray user
+    could rearrange their tabs, watch it work, and find the arrangement gone on
+    the next load with nothing said. Its sibling test —
+    `test_the_page_module_keys_are_exactly_module_tabs`, which discovers the
+    keys from the PAGES rather than from a list written here — had been naming
+    `kray` for four days. That is the one that found it; this one only records
+    the answer, which is why both are kept.
+    """
     assert tp.MODULE_TABS == frozenset({
-        "dristi", "esign", "ganit", "graha", "manav",
+        "dristi", "esign", "ganit", "graha", "kray", "manav",
         "pahchan", "prachar", "vetana", "vikray",
     })
 

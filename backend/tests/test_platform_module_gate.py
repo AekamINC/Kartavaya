@@ -50,11 +50,22 @@ ORG = "00000000-0000-0000-0000-000000000001"
 EVERY_MODULE = (
     "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
     "ganit", "esign", "varta", "pahchan", "manav", "vetana",
+    #: `kray` — procurement, its own module since `7770045b` (23 Aug). The
+    #: assertion that caught its absence says exactly what to do about it:
+    #: "add the module to EVERY_MODULE and decide whether it is sensitive — do
+    #: not let it default into silence." It is sensitive; see below.
+    "kray",
 )
 
-#: The four that hold payroll, the books, HR files or biometric attendance.
+#: The five that hold payroll, the books, procurement, HR files or biometric
+#: attendance.
 #: Written out so that quietly dropping one from `SENSITIVE_MODULES` fails here.
-EVERY_SENSITIVE_MODULE = ("vetana", "ganit", "manav", "pahchan")
+#: `kray` added 2026-08-27, four days after `7770045b` put it in
+#: `SENSITIVE_MODULES`. Procurement holds vendor bills, payments and
+#: supplier bank details; the reason lives beside the set in
+#: `middleware/subscription.py`. A module that is sensitive in the product
+#: and absent here is a module whose gate nothing exercises.
+EVERY_SENSITIVE_MODULE = ("vetana", "ganit", "manav", "pahchan", "kray")
 
 #: What each platform role may reach, BY HAND. See the module docstring for why
 #: this is not `modules_for(role)`.
@@ -62,14 +73,21 @@ REACH = {
     # God mode, under both spellings. Everything.
     "platform_owner": set(EVERY_MODULE),
     "platform_admin": set(EVERY_MODULE),
-    # Everything except HR and Payroll. Note that this STILL CONTAINS `ganit`
-    # and `pahchan`, which are sensitive — so reach is not the last word and the
-    # sensitive rule refuses it there. That interaction is why the earlier claim
-    # that platform_manager could silently write everywhere was overstated: its
-    # real silent-write set was eight modules, not ten.
+    # Everything except HR and Payroll. Note that this STILL CONTAINS `ganit`,
+    # `pahchan` and now `kray`, all sensitive — so reach is not the last word and
+    # the sensitive rule refuses it there. That interaction is why the earlier
+    # claim that platform_manager could silently write everywhere was overstated:
+    # its real silent-write set was eight modules, not ten.
+    #
+    # `kray` follows the rule this line states rather than being an exception to
+    # it: procurement is not HR and not payroll, so platform_manager reaches it —
+    # and is then refused by sensitivity, exactly as it is for the other two. The
+    # code already said so; this table had not caught up since `7770045b`, and
+    # the assertion's own words are the standard here: "the table in this file is
+    # the decision that was made; update it deliberately or fix the code."
     "platform_manager": {
         "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
-        "ganit", "esign", "varta", "pahchan",
+        "ganit", "esign", "varta", "pahchan", "kray",
     },
     # The operating set: CRM, sales, marketing, Sahayak, analytics, messaging.
     "platform_staff": {

@@ -858,9 +858,17 @@ def settings(mock_pool, table):
 
     async def _fetchrow(sql, *args):
         if "SELECT markup_pct" in sql:
+            # Every column `update_org_settings` returns, including the three
+            # email-cap ones added by `b8e1bfa1` on 2026-08-24. Same drift as in
+            # `test_org_settings_amendable.py`: the endpoint reads all three off
+            # the read-back row, both fixtures modelled the row as it was BEFORE
+            # that commit, and six tests here failed on
+            # `KeyError: 'email_cap_daily'` while the production query was right.
             return {"markup_pct": 0.30, "monthly_credits": 0,
                     "monthly_price": 0, "max_users": None,
-                    "is_platform_org": False}
+                    "is_platform_org": False,
+                    "email_cap_daily": None, "email_cap_monthly": None,
+                    "email_overage_rate": None}
         return None
 
     mock_pool.fetchval.side_effect = _fetchval

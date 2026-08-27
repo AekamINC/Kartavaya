@@ -2111,4 +2111,82 @@ carries income-tax bands. It does not — the bands are in `pay_income_tax_slabs
 and `statute_calendar` carries only the advance-tax instalment percentages. The
 STATUS row was already right about that.
 
+## 2026-08-27 · the backend suite: 30 red → 1, and the one that is left is real
+
+CI had been red on `staging` and I had been calling it "the known baseline". It
+was not. Reading each failure rather than the count took it from **30 failed /
+14,474 passed** to **1 failed / 14,520 passed**, and not one of the thirty was a
+product defect in the code under test. Every one was a pinned set, a fixture or
+a source-string test that a *correct* change had moved past.
+
+**Nineteen were one bug: a fixture that stopped matching its query.**
+`b8e1bfa1` (24 Aug) added three email-cap columns to `organisations`;
+`update_org_settings` returns all three off its read-back row; three separate
+fixtures modelled the row as it was before. Eleven tests in
+`test_org_settings_amendable.py`, six in `test_billing_lines_wiring.py` and one
+in `test_seat_limit_and_console_guards.py` died on `KeyError: 'email_cap_daily'`
+while the production query was correct. Three more in
+`test_billing_line_cost_basis.py` were MINE — Phase 3.3 added
+`client_service_lines.invoice_from` to the sweep's SELECT and I did not carry it
+into the fixture. A fixture that models a query it has stopped matching tests
+nothing; `mock-pool-hides-bad-sql` in reverse.
+
+**Seven were `kray`.** Procurement became its own module in `7770045b` on
+23 Aug and five pinned sets did not follow. One of them was a **live defect**:
+`MODULE_TABS` did not list `kray`, so `KrayPage.jsx` saved tab preferences the
+router refused — a Kray user could rearrange their tabs, watch it work, and find
+the arrangement gone on the next load, with nothing said.
+`test_the_page_module_keys_are_exactly_module_tabs` had been naming it for four
+days. The rest were the pins doing their job: `SENSITIVE_MODULES` gained `kray`
+(procurement holds vendor bills, payments and supplier bank details — financial
+records, the same category as Ganit's) and the reason is now written beside the
+set, because `test_module_grant_enforcement` asks for exactly that. Two more
+were fixtures overriding `_gate` and not `_payables_gate`
+(`require_any_module("ganit", "kray")`), so a 403 from the wrong door was
+standing in for the 404 the test meant to prove.
+
+**One was a source test breaking on an improvement.**
+`test_admin_console_add_member_refuses_a_system_target` split on the literal
+`if target.get("is_system"):`, somebody made the condition null-safe, and it
+died on `IndexError: list index out of range` — a message that says nothing
+about system accounts. The guard was intact throughout
+(`admin_orgs.py:1984`, refusing above every write). Both this test and its
+sibling now anchor on the READ, not the whole `if` line. A source test that
+breaks when the code it approves of is improved teaches people to delete source
+tests.
+
+**One was an endpoint count**: 18 cron handlers, pinned at 17 since
+`run_analytics_sync` landed unarmed on 24 Aug.
+
+── AND ONE IS A REAL FINDING, LEFT RED DELIBERATELY ─────────────────────────
+
+`test_platform_privacy::test_every_aekam_side_leak_is_either_fixed_or_named`
+reported three leaks. **Two were the scanner, not the code**: the `email-column`
+pattern matched a route path (`"/{org_id}/email-usage"`), a docstring, and
+`AND channel = 'email'` — a VALUE in a query that returns two `COUNT(*)`s and
+names nobody. The pattern is quote-aware now and drops the function's own
+docstring and bare single-word literals, keeping `u.email`. Two `ALLOWED`
+exemptions had already been spent papering over that same false positive, one of
+which said so in as many words — "the only `email` in it is the literal
+`channel = 'email'`". That is not a reason Aekam may see something; it is a
+scanner bug written down and lived with. Both retired.
+
+What remains is true, and it is not mine to sign off:
+
+> **`server.py::add_team_member` returns a customer's email address to Aekam.**
+> `POST /api/teams/{team_id}/members` resolves `SELECT user_id, email FROM users`
+> and answers with `TeamMemberOut`, whose `email: str` is required.
+> `is_platform_staff` bypasses the project-membership check at `server.py:3865`,
+> so platform staff can call it against any customer's project and read the
+> address back.
+
+The standing rule is that Aekam must not see client emails. The remedy the test
+itself proposes is the one `routers/billing.py::_balance_body` and
+`services/credits.py::usage_by_person` already use — split it behind an
+`include_contact` argument defaulting to False — but that changes a response
+shape the frontend consumes, and an `ALLOWED` entry would be a claim that Aekam
+MAY see it. Neither is a call to take unasked, so the gate stays red on exactly
+one true thing. **It was already red before this session**; it now names one
+finding instead of three, two of which were noise.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

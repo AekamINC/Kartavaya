@@ -375,4 +375,10 @@ def test_the_sensitive_modules_are_the_ones_holding_money_and_identity():
     """The set that triggers audited platform access. Vetana and Ganit are the
     separated-duty modules; Manav holds the identity documents this file is
     about; Pahchan holds biometric attendance."""
-    assert SENSITIVE_MODULES == {"vetana", "ganit", "manav", "pahchan"}
+    # `kray` joined on 2026-08-23 (`7770045b`). It belongs under the rule
+    # this set states: procurement holds vendor bills, payment records and
+    # supplier bank details — financial records, the same category as
+    # Ganit's. The reason is written beside the set itself in
+    # `middleware/subscription.py`, which is what this assertion demands
+    # when it says "confirm the new membership is what the owner decided".
+    assert SENSITIVE_MODULES == {"vetana", "ganit", "manav", "pahchan", "kray"}
