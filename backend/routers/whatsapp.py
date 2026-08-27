@@ -602,6 +602,186 @@ async def delete_template(
     return {"ok": True}
 
 
+# ── Rate card — what META charges the ORG, and it is an ESTIMATE ─────────────
+#
+# Phase 0.27. `staging.varta_rate_card` (migration 227) holds published India
+# per-message pricing seeded from public secondary sources, because Meta's own
+# INR card sits behind a Business Manager login. Every seeded row carries
+# `rate_basis='estimate'`.
+#
+# THE CONTRACT THIS ENDPOINT ENFORCES, and the reason it is not a two-line
+# `SELECT *`: **a rate leaves this process only alongside its stamp.** Three
+# mechanisms, in increasing order of paranoia:
+#
+#   1. `is_estimate` is on every row, always, never omitted and never NULL.
+#   2. `rate_display` is a PRE-FORMATTED string with the word "estimate" in it.
+#      A surface that renders `rate_display` cannot accidentally drop the
+#      caveat, because the caveat is inside the string. `rate_per_message` is
+#      still there for arithmetic.
+#   3. If a row somehow reaches here as an estimate with no note — which
+#      `varta_rate_card_estimate_note_ck` makes impossible in the database, so
+#      this fires only if that constraint is ever dropped — the NUMBER IS
+#      WITHHELD and `withheld_reason` is returned in its place. An unlabelled
+#      guess about what a customer will be charged is worse than no number, so
+#      the failure mode is "no number", not "unlabelled number".
+#
+# WHOSE MONEY. Meta bills the org's own WABA directly (decision 0.18; P7's
+# "sell the automation, never the messages"). This is therefore the customer's
+# cost to Meta, not a Kartavaya price and not a line anyone invoices. There is
+# no margin field here and there must not be one — `billed_by`/`billed_to` come
+# off the row rather than being written into this file, so the day the model
+# changes it changes in one place.
+#
+# NOT A CREDIT PRICE. `staging.credit_prices` holds `whatsapp_send = 1 credit`,
+# which meters Kartavaya's own automation. The two are different money and are
+# deliberately in different tables.
+
+#: Display order — most expensive concern first, free last. Not alphabetical:
+#: a firm reading this wants to know what marketing costs before it reads that
+#: service is free.
+_RATE_ORDER: tuple[str, ...] = (
+    "marketing", "utility", "authentication",
+    "authentication_international", "service",
+)
+
+#: Human labels. The raw column values are snake_case enum values and one of
+#: them (`authentication_international`) is unreadable rendered verbatim.
+_RATE_LABEL = {
+    "marketing": "Marketing",
+    "utility": "Utility",
+    "authentication": "Authentication",
+    "authentication_international": "Authentication · international",
+    "service": "Service",
+}
+
+#: Resolution: the org's own contracted row wins over the shared national row,
+#: and the latest `effective_from` still in force wins within each scope. A
+#: seeded row is always shared (org_id NULL), so today this always resolves to
+#: the estimate — which is the point of `org_specific` being on the response.
+_RATE_CARD_SQL = """
+    SELECT DISTINCT ON (category)
+           category, rate_per_message, currency, country_code, pricing_model,
+           free_in_service_window, free_in_entry_point_window,
+           rate_basis, estimate_note, source_url, source_read_on,
+           billed_by, billed_to, effective_from, effective_to, notes,
+           (org_id IS NOT NULL) AS org_specific
+      FROM staging.varta_rate_card
+     WHERE country_code = $1
+       AND (org_id IS NULL OR org_id = $2::uuid)
+       AND effective_from <= COALESCE($3::date, CURRENT_DATE)
+       AND (effective_to IS NULL OR effective_to > COALESCE($3::date, CURRENT_DATE))
+     ORDER BY category, (org_id IS NOT NULL) DESC, effective_from DESC
+"""
+
+
+def _rate_row(r) -> dict:
+    """One rate, with its stamp welded on. See mechanism 3 above."""
+    is_estimate = r["rate_basis"] == "estimate"
+    note = (r["estimate_note"] or "").strip()
+    # The only path on which a number is withheld.
+    withheld = is_estimate and not note
+
+    rate = None if withheld else float(r["rate_per_message"])
+    currency = r["currency"]
+    symbol = "₹" if currency == "INR" else f"{currency} "
+
+    if withheld:
+        display = "Withheld"
+    elif rate == 0:
+        display = "Free" + (" (estimate)" if is_estimate else "")
+    else:
+        # Four decimals because Meta publishes four (0.8631) and rounding to
+        # two turns ₹0.115 into ₹0.12, a 4% error repeated per message.
+        display = f"{symbol}{rate:.4f}" + (" (estimate)" if is_estimate else "")
+
+    return {
+        "category": r["category"],
+        "label": _RATE_LABEL.get(r["category"], r["category"]),
+        "rate_per_message": rate,
+        "rate_display": display,
+        "currency": currency,
+        "country_code": r["country_code"],
+        "pricing_model": r["pricing_model"],
+        "free_in_service_window": r["free_in_service_window"],
+        "free_in_entry_point_window": r["free_in_entry_point_window"],
+        # ── the stamp ──
+        "is_estimate": is_estimate,
+        "rate_basis": r["rate_basis"],
+        "estimate_note": note,
+        "source_url": r["source_url"],
+        "source_read_on": r["source_read_on"],
+        "withheld_reason": (
+            "This row is marked an estimate but carries no explanation, so the "
+            "figure is not shown. An unlabelled guess about what you will be "
+            "charged is worse than no number."
+        ) if withheld else None,
+        # ── whose money ──
+        "billed_by": r["billed_by"],
+        "billed_to": r["billed_to"],
+        "effective_from": r["effective_from"],
+        "effective_to": r["effective_to"],
+        "notes": r["notes"],
+        # True only when this org has its own negotiated row. Never the id.
+        "org_specific": r["org_specific"],
+    }
+
+
+@router.get("/rate-card")
+async def rate_card(
+    country: str = Query("IN", min_length=2, max_length=2),
+    on: Optional[str] = Query(
+        None, description="As-at date (YYYY-MM-DD). Defaults to today."
+    ),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """What Meta charges this organisation per WhatsApp message.
+
+    Read-only. Returns an envelope rather than a bare list, because the two
+    facts that matter most about this table are properties of the SET, not of
+    any row: how many of these figures are guesses, and who is billed.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(_RATE_CARD_SQL, country.upper(), org_id, on)
+    rates = [_rate_row(r) for r in rows]
+    rates.sort(key=lambda x: (
+        _RATE_ORDER.index(x["category"]) if x["category"] in _RATE_ORDER else 99,
+        x["category"],
+    ))
+
+    estimates = [x for x in rates if x["is_estimate"]]
+    # The oldest read-date in the set, which is the honest age of the card —
+    # a card is only as fresh as its stalest row.
+    read_on = min((x["source_read_on"] for x in rates), default=None)
+
+    return {
+        "country_code": country.upper(),
+        "currency": rates[0]["currency"] if rates else None,
+        "as_at": on,
+        "rates": rates,
+        # ── set-level facts a surface must be able to render without looping ──
+        "estimate_count": len(estimates),
+        "all_estimates": bool(rates) and len(estimates) == len(rates),
+        "any_estimates": bool(estimates),
+        "source_read_on": read_on,
+        "billed_by": "meta",
+        "billed_to": "organisation",
+        "billing_note": (
+            "Meta bills your own WhatsApp Business Account directly for these "
+            "messages. Kartavaya does not resell WhatsApp messages and adds no "
+            "margin to them — these are your costs with Meta, not a Kartavaya "
+            "charge. GST is not included."
+        ),
+        "estimate_note": (
+            "These figures are ESTIMATES read from public sources, not from "
+            "Meta's own rate card — that card is only visible inside your Meta "
+            "Business Manager. Use them to plan, never to quote. Connect your "
+            "WhatsApp Business Account to replace them."
+        ) if estimates else None,
+    }
+
+
 # ── Auto-replies ─────────────────────────────────────────────
 
 # ── Webhook (public — Meta Cloud API sends events here) ──────

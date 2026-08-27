@@ -38,6 +38,23 @@
  * silence where a limitation should be reads as an all-clear, and on
  * `propose_payment_run` that silence is in front of money leaving the firm.
  *
+ * ── AND THE ONE THING A READER CAN DO ABOUT IT ───────────────────────────────
+ *
+ * A skill reports the world as it is and has no idea what anyone has done about
+ * it: `propose_payment_run` returns the same overdue bills every run until
+ * somebody pays a vendor, and it cannot record a payment. Without a way to say
+ * "yes, I know, it is handled", the list only grows — read in week one, skimmed
+ * in month two, wallpaper by month three, and wallpaper that still looks like
+ * coverage is worse than no list at all.
+ *
+ * The whole mechanism for closing a finding has existed on the server since
+ * proposal 70 and `staging.skill_finding_ack` still held ZERO rows on
+ * 2026-08-27, because nothing here called it. `FindingTable` now carries a
+ * Dismiss control on every row whose finding arrived with an `_ack_key`, and
+ * `Acknowledged` says what a later run is therefore NOT showing. See
+ * `useFindingAck.js` for why the row is marked rather than removed, and
+ * `backend/routers/hub.py` for why the key is never the client's to invent.
+ *
  * ── Degrading ────────────────────────────────────────────────────────────────
  *
  * Three states that look alike and are not, and this file keeps them apart:
@@ -59,8 +76,11 @@
  *                              is rendered as a finding, not as a blank.
  */
 import React from 'react';
-import { words } from '../../../pages/hub/_shared';
-import { splitFinding, dataOutputs, cellText, label as humanise } from './shape';
+import { words, stamp } from '../../../pages/hub/_shared';
+import {
+  splitFinding, dataOutputs, cellText, ackHandle, label as humanise,
+} from './shape';
+import useFindingAck from './useFindingAck';
 
 /** Does the run response carry per-step data at all? */
 export function hasStepData(outputs) {
@@ -124,9 +144,18 @@ function Caveats({ caveats, skillFunction }) {
  * their own caveat when they hit it); a second silent cap here would drop rows
  * a firm is being told exist, which is the same failure as hiding the caveat.
  */
-function FindingTable({ table }) {
+function FindingTable({ table, skillFunction, ack }) {
   const { label: title, rows, columns } = table;
   if (!columns.length) return null;
+
+  /* The column appears only where it works. 32 of the 93 skill functions are
+     wired for acknowledgement; a row from one of the other 61 carries no
+     handle, and the honest treatment of that is no control — not a disabled
+     one, which reads as "you are not allowed to" and is a different, untrue
+     sentence. */
+  const handles = ack ? rows.map(ackHandle) : rows.map(() => null);
+  const dismissible = handles.some(Boolean);
+
   return (
     <div className="sk-fx__sec">
       <h5 className="sk-fx__h">
@@ -136,18 +165,36 @@ function FindingTable({ table }) {
       <div className="tbl__wrap sk-fx__wrap">
         <table className="tbl sk-fx__tbl">
           <thead>
-            <tr>{columns.map(c => <th key={c} scope="col">{humanise(c)}</th>)}</tr>
+            <tr>
+              {columns.map(c => <th key={c} scope="col">{humanise(c)}</th>)}
+              {dismissible && (
+                <th scope="col" className="sk-fx__ack-h">
+                  <span className="k-sr-only">Acknowledge</span>
+                </th>
+              )}
+            </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
-              <tr key={i}>
-                {columns.map(c => (
-                  <td key={c} className={typeof row[c] === 'number' ? 'sk-fx__num' : undefined}>
-                    {cellText(row[c], c)}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {rows.map((row, i) => {
+              const handle = handles[i];
+              const gone = !!handle && ack.isDismissed(skillFunction, handle.key);
+              return (
+                <tr key={i} className={gone ? 'sk-fx__row--ack' : undefined}>
+                  {columns.map(c => (
+                    <td key={c} className={typeof row[c] === 'number' ? 'sk-fx__num' : undefined}>
+                      {cellText(row[c], c)}
+                    </td>
+                  ))}
+                  {dismissible && (
+                    <td className="sk-fx__ack-c">
+                      {handle && (
+                        <AckControl ack={ack} handle={handle} skillFunction={skillFunction} />
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -155,8 +202,117 @@ function FindingTable({ table }) {
   );
 }
 
-/** One handler's dict. */
-export function Finding({ data, skillFunction }) {
+/**
+ * Dismiss one finding, and take it back.
+ *
+ * The wording is the whole design of this control. "Dismiss" does not delete
+ * anything and does not mean the underlying bill is paid — it says *I know
+ * about this one*, and the row it hides comes straight back if the amount
+ * moves, which is what makes the mechanism trustworthy rather than a way of
+ * permanently hiding bad news. So neither state is left to be inferred: both
+ * carry the CONDITION out loud ("until it changes"), because a control the
+ * reader believes is permanent is one they will not use on anything that
+ * matters — or worse, will use on something that does.
+ *
+ * The row is struck, not removed: the totals beside it were computed by the
+ * handler over the whole list and only the next run rebuilds them. See
+ * `useFindingAck.js`.
+ */
+function AckControl({ ack, handle, skillFunction }) {
+  const gone = ack.isDismissed(skillFunction, handle.key);
+  const busy = ack.isBusy(skillFunction, handle.key);
+  const error = ack.errorFor(skillFunction, handle.key);
+
+  return (
+    <div className="sk-fx__ack">
+      {gone ? (
+        <>
+          <span
+            className="sk-fx__ack-said"
+            title="It will not be listed again until this figure changes"
+          >
+            Acknowledged
+          </span>
+          <button
+            type="button" className="k-btn k-btn--ghost k-btn--sm"
+            disabled={busy}
+            onClick={() => ack.restore(skillFunction, handle)}
+          >
+            {busy ? 'Undoing…' : 'Undo'}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button" className="k-btn k-btn--ghost k-btn--sm"
+          disabled={busy}
+          onClick={() => ack.dismiss(skillFunction, handle)}
+          title="Stop listing this one until the figure behind it changes"
+        >
+          {busy ? 'Saving…' : 'Dismiss'}
+        </button>
+      )}
+      {/* THE CONSEQUENCE IS STATED, NOT INFERRED. `errText` answers with what
+          went wrong — "No response from the server" — which leaves the reader
+          to work out whether the acknowledgement landed. Believing a finding is
+          closed when it is not is the one failure this whole module is written
+          against, so the outcome is said in the product's own words first and
+          the server's reason follows it. */}
+      {error && (
+        <span className="sk-fx__ack-err" role="alert">
+          {gone ? 'Still acknowledged — it has not been brought back. ' : 'Not acknowledged. '}
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What this run is NOT showing, because somebody said they knew about it.
+ *
+ * A list that silently shrinks is indistinguishable from a query that broke, so
+ * the count is stated and every hidden finding is named. `by` is on the payload
+ * and is not drawn: it is a `user_id`, and no user handle is ever rendered.
+ */
+function Acknowledged({ block }) {
+  return (
+    <div className="sk-fx__sec sk-fx__ackd">
+      <h5 className="sk-fx__h">
+        Acknowledged, and not listed above
+        <span className="sk-fx__n">{block.count}</span>
+      </h5>
+      <p className="sk-fx__note">
+        {block.count === 1
+          ? 'This finding was acknowledged in your organisation, so it is left out of the '
+            + 'list above and out of the totals. It comes back on its own if the underlying '
+            + 'figure changes.'
+          : 'These findings were acknowledged in your organisation, so they are left out of '
+            + 'the list above and out of the totals. Each comes back on its own if the '
+            + 'underlying figure changes.'}
+      </p>
+      {block.items.length > 0 && (
+        <ul className="sk-fx__list">
+          {block.items.map((it, i) => (
+            <li key={i}>
+              {it.label}
+              {it.at && <span className="sk-fx__ack-when"> · {stamp(it.at)}</span>}
+              {it.note && <span className="sk-fx__ack-when"> · {it.note}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One handler's dict.
+ *
+ * `ack` is OPTIONAL and absent means presentational: no dismiss control is
+ * drawn. `Findings` below supplies one; a caller rendering a single finding on
+ * its own gets the finding and nothing that writes.
+ */
+export function Finding({ data, skillFunction, ack }) {
   const f = splitFinding(data);
 
   return (
@@ -198,7 +354,9 @@ export function Finding({ data, skillFunction }) {
         </dl>
       )}
 
-      {f.tables.map(t => <FindingTable table={t} key={t.key} />)}
+      {f.tables.map(t => (
+        <FindingTable table={t} key={t.key} skillFunction={skillFunction} ack={ack} />
+      ))}
 
       {f.lists.map(l => (
         <div className="sk-fx__sec" key={l.key}>
@@ -228,6 +386,12 @@ export function Finding({ data, skillFunction }) {
           <p className="sk-fx__note">{n.text}</p>
         </div>
       ))}
+
+      {/* LAST, and that is the order it belongs in: everything above is what
+          the firm has to deal with, and this is the part somebody has already
+          dealt with. It is present at all because a list that silently shrinks
+          is indistinguishable from a query that broke. */}
+      {f.acknowledged && <Acknowledged block={f.acknowledged} />}
     </div>
   );
 }
@@ -240,6 +404,9 @@ export function Finding({ data, skillFunction }) {
  * renders, under the function's own name.
  */
 export default function Findings({ outputs, steps }) {
+  // Hooks run before any early return — one controller for the whole run, so a
+  // skill that reports the same fact in two steps marks both.
+  const ack = useFindingAck();
   const found = dataOutputs(outputs);
   if (!found.length) return null;
 
@@ -311,7 +478,7 @@ export default function Findings({ outputs, steps }) {
                 show. That is not a statement about your records.
               </p>
             ) : (
-              <Finding data={o.data} skillFunction={o.skill_function} />
+              <Finding data={o.data} skillFunction={o.skill_function} ack={ack} />
             )}
           </section>
         );

@@ -1398,3 +1398,45 @@
   font-family: var(--font-mono); font-size: var(--t-body-sm);
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+/* ── Acknowledging a finding ───────────────────────────────────────────────
+   The control that stops a skill repeating the same list for ever. See
+   components/skills/findings/useFindingAck.js.
+
+   The dismiss column is the LAST one and it is narrow: it is machinery beside
+   the firm's own records, and widening it would push a client name or an amount
+   out of view on a phone. `width: 1%` plus `white-space: nowrap` is the
+   standard table trick for "as narrow as the content allows" — the column takes
+   the button and no more, and every other column keeps its share. */
+.sk-fx__ack-h, .sk-fx__ack-c { width: 1%; white-space: nowrap; text-align: end; }
+.sk-fx__ack {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  justify-content: flex-end; flex-wrap: wrap;
+}
+/* A dismissed row STAYS, struck. The totals beside it were computed over the
+   whole list and only the next run rebuilds them, so removing the row here
+   would leave nine rows under a total for ten. */
+.sk-fx__row--ack > td { color: var(--on-surface-3); text-decoration: line-through; }
+/* The row settles rather than snapping — the acknowledgement lands after the
+   server has answered, and a value that changes with no transition at all reads
+   as a re-render rather than as a result. Tokens only; `--ix` carries
+   prefers-reduced-motion through `--dur-fast`. */
+.sk-fx__tbl tbody tr > td { transition: color var(--dur-fast) var(--ease-standard); }
+.sk-fx__row--ack > .sk-fx__ack-c { text-decoration: none; }
+.sk-fx__ack-said {
+  font-size: var(--t-body-sm); font-weight: 700; color: var(--ok);
+  text-decoration: none;
+}
+/* An acknowledgement that did NOT record. Said on the row it failed on, in the
+   danger colour, because the alternative is a user who believes a finding is
+   closed and meets it again next month. */
+.sk-fx__ack-err {
+  font-size: var(--t-body-sm); color: var(--danger); white-space: normal;
+  max-width: 32ch; text-decoration: none;
+}
+/* What this run is not showing. Set apart from the findings above it — it is
+   the part somebody has already dealt with. */
+.sk-fx__ackd {
+  padding-top: var(--sp-3); border-top: 1px dashed var(--outline-variant);
+}
+.sk-fx__ack-when { color: var(--on-surface-3); }

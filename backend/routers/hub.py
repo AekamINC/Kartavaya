@@ -9,7 +9,7 @@ import json
 import logging
 import uuid as _uuid
 from datetime import datetime, time, timezone
-from typing import Optional
+from typing import Any, Mapping, Optional
 from uuid import UUID
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,18 @@ from services.ai_router import (
 from services import credits
 from services import skill_ack
 from services.skill_ack_wiring import ACK_WIRING
+# THE PRIVATE THREE, IMPORTED ON PURPOSE. `_with_ack_keys` below has to compute
+# the SAME `finding_key` that `apply_wiring` computes, byte for byte, or the
+# acknowledgement is filed under a key the filter never looks up — an ack that
+# appears to work and suppresses nothing, for ever (services/skill_ack.py says
+# this at length). Re-deriving the bucket walk and the `_list` fold here would
+# be a second copy of that judgement, drifting from the first the day a wiring
+# changes shape. Calling the originals cannot drift.
+from services.skill_ack_wiring import (
+    _buckets_of as _ack_buckets_of,
+    _identity_for as _ack_identity_for,
+    _read_bucket as _ack_read_bucket,
+)
 from services.credits import CreditError
 from services.image_brief import build_brief as build_image_brief
 from services.skills.prompt import fill_prompt
@@ -98,6 +110,116 @@ from services.rag import search_hybrid
 #: instead of quietly showing a short list. A silent truncation on a compliance
 #: finding is the failure this whole shelf exists to avoid.
 _MAX_FINDING_CHARS = 20_000
+
+
+# ── The handle a finding needs before anybody can dismiss it ────────────────
+#
+# THE CHICKEN AND THE EGG, AND WHY `skill_finding_ack` HELD ZERO ROWS.
+#
+# `skill_ack_wiring.apply_wiring` annotates each surviving finding with
+# `_ack_key` and `_ack_state` — the handle the client hands straight back to
+# `POST /org/skills/findings/ack`. But it returns the handler's output UNTOUCHED
+# when the org holds no acknowledgements, and `skill_dispatcher` short-circuits
+# on the same condition. Both are right about what they were guarding: an
+# `acknowledged: {count: 0}` block on a list nobody has ever acknowledged
+# anything in would have every screen render "0 acknowledged" for ever.
+#
+# The cost was the rest of it. No org has ever held an acknowledgement, so no
+# finding has ever carried a key, so no client could ever ask for the first
+# one. All 32 wired skills repeated the same list every run, and the feature
+# could not be started at all: the only door in was locked from the inside.
+#
+# So the KEY is separated from the FILTER. This adds the handle to every
+# finding of a wired skill on the way into `outputs`, whether or not anything
+# has been acknowledged; `apply_wiring` keeps sole charge of hiding rows and of
+# the `acknowledged` block, and still no-ops when there is nothing to hide.
+#
+# THREE PROPERTIES IT MUST HAVE, in the order they can hurt:
+#
+#   1. IT RETURNS A COPY. `data` also becomes `prior_facts`, the text a later
+#      AI step is grounded on. Annotating in place would put two 32-character
+#      digests on every row of a 4,000-character prompt window — a third of the
+#      grounding on `check_chase_ladder`'s nineteen rows spent on hashes no
+#      model can use.
+#   2. IT NEVER RAISES. A skill that ran and found something must not be turned
+#      into a failed step because a wiring's `label_of` tripped over a row. The
+#      unannotated finding is the safe direction: the reader loses the dismiss
+#      control, not the finding.
+#   3. IT FAILS OPEN ON SHAPE. A handler that moved its rows since the wiring
+#      was written gets its output back untouched, exactly as `apply_wiring`
+#      does — and for the same reason: showing a finding twice is a nuisance,
+#      losing one is a missed payment.
+#
+# `_ack_label` is computed here rather than by the client for the reason the
+# endpoint's own comment gives about the key: what the acknowledgement is CALLED
+# when a human reads the table back is the wiring's `label_of`, and a
+# client-side guess at it would put a different sentence in the audit row than
+# the one the ack list renders.
+def _ack_put(root: dict, path: str, value: list) -> None:
+    """Write *value* at a dotted *path*, copying every dict on the way down.
+
+    `check_wip_ageing` keeps its rows at `escalated.rows`, beside the threshold
+    they are a sample of. A shallow copy of the top level shares that inner dict
+    with the original, so writing through it would annotate `data` after all and
+    defeat property 1 above.
+    """
+    steps = path.split(".")
+    node: Any = root
+    for step in steps[:-1]:
+        child = node.get(step)
+        if not isinstance(child, dict):
+            return
+        child = dict(child)
+        node[step] = child
+        node = child
+    node[steps[-1]] = value
+
+
+def _with_ack_keys(skill_function: str, data: Any) -> Any:
+    """A copy of *data* whose findings carry the handle needed to dismiss them.
+
+    Returns *data* itself — the same object, so the caller can skip a second
+    serialisation — when the skill is not wired, when the shape does not match
+    the wiring, or when anything at all goes wrong.
+    """
+    wiring = ACK_WIRING.get(skill_function)
+    if wiring is None or not isinstance(data, dict):
+        return data
+    try:
+        buckets = _ack_buckets_of(wiring)
+        lists = {key: _ack_read_bucket(data, key) for key in buckets}
+        if not all(isinstance(found, list) for found in lists.values()):
+            return data
+
+        out = dict(data)
+        for key in buckets:
+            identity_of = _ack_identity_for(wiring, key)
+            annotated = []
+            for finding in lists[key]:
+                if not isinstance(finding, Mapping):
+                    # A list of strings under a key the wiring names. Carried
+                    # through rather than dropped — see property 3.
+                    annotated.append(finding)
+                    continue
+                row = dict(finding)
+                row["_ack_key"] = skill_ack.finding_key(identity_of(finding))
+                row["_ack_state"] = (
+                    skill_ack.state_hash(wiring.material_of(finding))
+                    if wiring.material_of else None
+                )
+                row["_ack_label"] = skill_ack.sanitise_label(
+                    wiring.label_of(finding)
+                )
+                annotated.append(row)
+            _ack_put(out, key, annotated)
+        return out
+    except Exception:
+        log.exception(
+            "skill_ack: could not key the findings of '%s' — returning them "
+            "with no dismiss handle", skill_function,
+        )
+        return data
+
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -2350,7 +2472,25 @@ async def run_skill(
             # 5,000-row ageing report would be written to the database on every
             # run and returned in every response. `truncated` tells the
             # renderer to SAY the list is short rather than quietly showing one.
-            _payload = json.dumps(data, default=str, ensure_ascii=False)
+            # The GROUNDING text and the STORED finding are dumped separately
+            # and that is deliberate: `_with_ack_keys` returns a COPY carrying
+            # the dismiss handle for the screen, and `prior_facts` below must
+            # stay the handler's own words — a later AI step grounded on two
+            # 32-character digests per row is grounded on less of the finding.
+            # When the skill is not wired the copy IS the original and the
+            # second dump is skipped.
+            _ground = json.dumps(data, default=str, ensure_ascii=False)
+            _annotated = _with_ack_keys(step["skill_function"], data)
+            _payload = _ground if _annotated is data else json.dumps(
+                _annotated, default=str, ensure_ascii=False)
+            # THE HANDLE MUST NOT COST THE ROWS. Three extra fields is roughly
+            # 150 bytes per finding, so a two-hundred-row list that fitted
+            # under `_MAX_FINDING_CHARS` unannotated can cross it annotated —
+            # and a clipped finding loses `data` entirely, so it renders as a
+            # wall of text with no table AND no dismiss control. Strictly
+            # worse than before. When the keys are what tips it over, they go.
+            if len(_payload) > _MAX_FINDING_CHARS >= len(_ground):
+                _payload = _ground
             _clipped = len(_payload) > _MAX_FINDING_CHARS
             outputs.append({
                 "step": step.get("order"),
@@ -2376,7 +2516,7 @@ async def run_skill(
             })
             prior_facts.append(
                 f"## {step.get('label') or step['skill_function']}\n"
-                + _payload[:4000]
+                + _ground[:4000]
             )
             await pool.execute(
                 "UPDATE staging.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
@@ -3264,7 +3404,25 @@ async def execute_org_skill(
             # 5,000-row ageing report would be written to the database on every
             # run and returned in every response. `truncated` tells the
             # renderer to SAY the list is short rather than quietly showing one.
-            _payload = json.dumps(data, default=str, ensure_ascii=False)
+            # The GROUNDING text and the STORED finding are dumped separately
+            # and that is deliberate: `_with_ack_keys` returns a COPY carrying
+            # the dismiss handle for the screen, and `prior_facts` below must
+            # stay the handler's own words — a later AI step grounded on two
+            # 32-character digests per row is grounded on less of the finding.
+            # When the skill is not wired the copy IS the original and the
+            # second dump is skipped.
+            _ground = json.dumps(data, default=str, ensure_ascii=False)
+            _annotated = _with_ack_keys(step["skill_function"], data)
+            _payload = _ground if _annotated is data else json.dumps(
+                _annotated, default=str, ensure_ascii=False)
+            # THE HANDLE MUST NOT COST THE ROWS. Three extra fields is roughly
+            # 150 bytes per finding, so a two-hundred-row list that fitted
+            # under `_MAX_FINDING_CHARS` unannotated can cross it annotated —
+            # and a clipped finding loses `data` entirely, so it renders as a
+            # wall of text with no table AND no dismiss control. Strictly
+            # worse than before. When the keys are what tips it over, they go.
+            if len(_payload) > _MAX_FINDING_CHARS >= len(_ground):
+                _payload = _ground
             _clipped = len(_payload) > _MAX_FINDING_CHARS
             outputs.append({
                 "step": step.get("order"),
@@ -3290,7 +3448,7 @@ async def execute_org_skill(
             })
             prior_facts.append(
                 f"## {step.get('label') or step['skill_function']}\n"
-                + _payload[:4000]
+                + _ground[:4000]
             )
             await pool.execute(
                 "UPDATE staging.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",

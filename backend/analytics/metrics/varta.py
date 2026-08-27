@@ -33,9 +33,25 @@ Facts read from routers/whatsapp.py and migrations 058/123/147, 2026-08-18:
   would be a convincing zero — plus one seeded demo row.
 
 · **cost_per_conversation is absent**: no cost column exists on any varta
-  table, and that is a decision, not a gap — Meta bills the org's own WABA
-  directly and routers/whatsapp.py records no per-message charge ("we sell
-  the automation, never the messages").
+  MESSAGE table, and that is a decision, not a gap — Meta bills the org's own
+  WABA directly and routers/whatsapp.py records no per-message charge ("we
+  sell the automation, never the messages").
+
+  ⚠ **Half of that reason went stale on 2026-08-27 and was corrected rather
+  than left standing.** `staging.varta_rate_card` now exists (migration 227,
+  Phase 0.27) and holds five India rows, so "no pricing exists anywhere" is no
+  longer true and must not be repeated. What is still true is the part that
+  matters, and it was re-measured live the same day rather than inferred:
+  **of 250 outbound messages, 0 carry a `template_name` and 0 join to
+  `varta_templates`** — so not one message can be placed in a billing category,
+  and Meta prices per category. Multiplying 250 by any rate would produce a
+  confident number attributing marketing prices to free service replies. The
+  rates are also stamped `estimate`. See the absence text at the foot of this
+  file for what would have to be built.
+
+  This is the failure mode `stale_absence_reasons` records: an absence whose
+  stated reason has quietly stopped being the real one. Re-measure before
+  trusting any absent_metric here.
 """
 from analytics.registry import MetricRequest, absent_metric, metric
 from analytics.windowing import bucket_expr
@@ -209,12 +225,27 @@ absent_metric(
     unit="inr",
     grain="flow",
     sensitivity="financial",
-    absent="No cost or pricing column exists on varta_messages, "
-           "varta_conversations or varta_business_accounts (migrations "
-           "058/123/147), and that is a decision, not an oversight: Meta "
-           "bills the org's own WABA directly, and routers/whatsapp.py "
-           "deliberately records no per-message charge — 'we sell the "
-           "automation, never the messages'. Computing this needs ingestion "
-           "of Meta's conversation-pricing webhooks or billing API, which is "
-           "not built.",
+    absent="No cost column exists on varta_messages, varta_conversations or "
+           "varta_business_accounts (migrations 058/123/147), and that is a "
+           "decision, not an oversight: Meta bills the org's own WABA "
+           "directly, and routers/whatsapp.py deliberately records no "
+           "per-message charge — 'we sell the automation, never the "
+           "messages'. "
+           "A RATE CARD DOES NOW EXIST — staging.varta_rate_card, migration "
+           "227 — so the old reason 'there is no pricing anywhere' is stale "
+           "and is not repeated here. It still cannot answer this metric, for "
+           "two reasons measured live on 2026-08-27 rather than assumed. "
+           "First, Meta prices PER CATEGORY (marketing / utility / "
+           "authentication / service) and no message carries one: of 250 "
+           "outbound rows, 0 have a template_name and 0 join to "
+           "varta_templates, so every message would have to be assigned a "
+           "category by guess. Second, all five seeded rates are stamped "
+           "rate_basis='estimate' — figures read from public sources, not "
+           "Meta's own INR card, which is behind a Business Manager login "
+           "(decision 0.27). A cost computed from a guessed rate and a "
+           "guessed category is two inventions multiplied together. "
+           "Answering it needs Meta's conversation-pricing webhooks or its "
+           "billing API ingested, plus a category recorded on each send — "
+           "neither is built. Until then the rate card is a PLANNING surface "
+           "(Varta -> Pricing), never a charge.",
 )

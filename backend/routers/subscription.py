@@ -564,6 +564,11 @@ async def admin_set_plan(
                 today,
             )
 
+    # `users.id`, not `users.user_id` — see `_user_row_id`. Resolved OUTSIDE the
+    # transaction below: it is a read, it cannot fail the write, and holding a
+    # transaction open across it buys nothing.
+    actor = await _user_row_id(pool, user["user_id"])
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -578,7 +583,7 @@ async def admin_set_plan(
                 "current_period_end=EXCLUDED.current_period_end, "
                 "next_billing_date=EXCLUDED.next_billing_date, updated_at=EXCLUDED.updated_at",
                 org_id, plan["id"], body.billing_cycle,
-                user["user_id"], body.notes,
+                actor, body.notes,
                 period_start, period_end, now,
             )
 
@@ -610,6 +615,50 @@ async def admin_set_plan(
         "plan": body.plan_code,
         "proration_lines": len(proration_lines),
     }
+
+
+async def _user_row_id(pool, user_id: str):
+    """`public.users.id` for a caller identified by `public.users.user_id`.
+
+    ── NOT `_actor_uuid`, AND THE DIFFERENCE IS THE POINT ──────────────────────
+
+    `_actor_uuid` (line 91) handles the OTHER shape: `subscription_invoices`
+    `.approved_by` / `.collected_by` are uuid columns with **no foreign key**,
+    so when the caller's id is not a uuid there is nothing to look up and NULL
+    is the honest answer — its docstring says the real repair is an
+    ALTER COLUMN TYPE, which a router may not do.
+    `subscriptions.activated_by` is different: it carries a real FK to
+    `users(id)`, and that row EXISTS. There is something to look up, so it is
+    looked up rather than nulled.
+
+    ── WHY THIS EXISTS: /admin/set-plan HAS NEVER ONCE SUCCEEDED ───────────────
+
+    `staging.subscriptions.activated_by` is `uuid` and carries
+    `subscriptions_activated_by_fkey → users(id)`. The handler bound
+    `user["user_id"]` into it, which is the OTHER column: `public.users` has
+    both an `id` (uuid) and a `user_id` (text, `user_f798947b8a2e`). Every call
+    died in asyncpg before it reached Postgres:
+
+        DataError: invalid input for query argument $4: 'user_f798947b8a2e'
+        (invalid UUID: length must be between 32..36 characters, got 17)
+
+    So changing a plan 500'd for every operator, always — which is also why the
+    proration path had never run and `subscription_invoices` is still 0 rows.
+    Confirmed live 2026-08-27: 5 subscriptions, **0 with `activated_by` set**.
+
+    The FK is kept rather than swapped for the TEXT convention `org_billing_lines`
+    uses, because it is real referential integrity that already exists and works;
+    what was wrong was the value, not the column.
+
+    RETURNS None WHEN THE ACTOR CANNOT BE RESOLVED, and the column is nullable
+    for exactly that: a plan change must not fail because the row recording WHO
+    made it cannot be found. An unrecorded actor is a gap in the audit trail; a
+    refused plan change is a customer who cannot be moved to the plan they are
+    paying for.
+    """
+    if not user_id:
+        return None
+    return await pool.fetchval("SELECT id FROM users WHERE user_id=$1", user_id)
 
 
 class BillingAnchor(BaseModel):

@@ -18,6 +18,7 @@ import useModuleWrite from '../../../hooks/useModuleWrite';
 import { ChatArt, SvIcons } from '../icons';
 import WAChat from './WAChat';
 import WAConnectAccount from './WAConnectAccount';
+import WARateCard from './WARateCard';
 import { Secondary } from '../../../components/Bilingual';
 
 const SUB_TABS = [
@@ -25,8 +26,21 @@ const SUB_TABS = [
   { value: 'templates', label: 'Templates' },
   { value: 'auto-replies', label: 'Auto-replies' },
   { value: 'accounts', label: 'Accounts' },
+  { value: 'pricing', label: 'Pricing' },
 ];
 
+/**
+ * `pricing` is deliberately ABSENT from this map, and that is the whole reason
+ * `WARateCard` fetches for itself instead of being handed `rows`.
+ *
+ * The four sub-tabs above all return a bare array from one endpoint, so the tab
+ * shares one `useEffect` and one `rows` state. The rate card does not: its
+ * response is an ENVELOPE, and the two facts that matter most about it —
+ * how many of these prices are guesses, and who Meta bills — are properties of
+ * the set, not of any row. Flattening it into `rows` would drop exactly the
+ * fields that carry the caveat, which is the failure this feature exists to
+ * prevent. A `pricing` entry here would make that flattening the default.
+ */
 const ENDPOINT = {
   conversations: '/v1/whatsapp/conversations',
   templates: '/v1/whatsapp/templates',
@@ -197,6 +211,11 @@ export default function WhatsAppTab() {
 
   useEffect(() => {
     let dead = false;
+    // `pricing` owns its own fetch (see ENDPOINT above). Without this guard the
+    // shared effect would call `api.get(undefined)` on every visit to the tab —
+    // a request to the app's own origin that resolves, so the failure would be
+    // a silent one.
+    if (!ENDPOINT[sub]) { setRows([]); setError(null); setLoading(false); return undefined; }
     setLoading(true);
     setRows([]);
     setError(null);
@@ -514,6 +533,10 @@ export default function WhatsAppTab() {
           ))}
         </div>
       )}
+
+      {/* Pricing renders no `rows` and takes no props: it fetches an envelope,
+          not a list, and the envelope is what carries the estimate caveat. */}
+      {sub === 'pricing' && <WARateCard />}
 
       {connecting && (
         <WAConnectAccount

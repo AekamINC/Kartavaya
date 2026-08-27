@@ -94,6 +94,81 @@ export const CAVEAT_TONE = {
  */
 const OUR_ID = /(^|_)(id|ids|uid|uuid|guid)$/i;
 
+/**
+ * The three fields the server attaches so a finding can be dismissed.
+ *
+ * They are MACHINERY, not content: `_ack_key` and `_ack_state` are hex digests
+ * computed by `services/skill_ack_wiring.py` and `_ack_label` is the wording
+ * the acknowledgement is filed under. Every one of them would otherwise become
+ * a column — `columnsOf` takes whatever keys a row has — and a defect list with
+ * an "Ack key" column of 32-character hashes beside the client's name is the
+ * same noise `OUR_ID` exists to keep out.
+ *
+ * THE CLIENT NEVER COMPUTES THESE. `backend/routers/hub.py` says why at length:
+ * a client-side copy of the identity/material split would drift from the
+ * server's and file the acknowledgement under a key the filter never looks up —
+ * an ack that appears to work and suppresses nothing, for ever. They arrive on
+ * the finding and are handed straight back.
+ */
+export const ACK_FIELDS = ['_ack_key', '_ack_state', '_ack_label'];
+const IS_ACK_FIELD = k => ACK_FIELDS.includes(k);
+
+/**
+ * The handle for dismissing one row, or `null` when there is none.
+ *
+ * `null` is the ordinary answer today: 32 of the 93 skill functions in the
+ * registry are wired for acknowledgement and a row from one of the other 61
+ * carries no handle at all. The control simply does not appear — it is not
+ * drawn disabled, because a disabled Dismiss reads as "you are not allowed to",
+ * which is a different and untrue statement.
+ *
+ * `state` may legitimately be `null`: a wiring with no material fields records
+ * an unconditional acknowledgement. That is why the check is on `_ack_key`
+ * alone and the state is passed through as it arrived, `null` included.
+ */
+export function ackHandle(row) {
+  if (!isPlainObject(row)) return null;
+  const key = row._ack_key;
+  if (typeof key !== 'string' || !key) return null;
+  return {
+    key,
+    state: row._ack_state ?? null,
+    label: typeof row._ack_label === 'string' && row._ack_label.trim()
+      ? row._ack_label.trim()
+      : '(no description)',
+  };
+}
+
+/**
+ * The `acknowledged` block a run carries once something in it has been hidden.
+ *
+ * Named rather than shape-classified, for the same reason the caveat keys are:
+ * left to `splitFinding` it is an object of a number and a list, which lands in
+ * `notes` and renders as one run-on line of `cellText`. It is also the one
+ * block that says a list SHRANK, and a list that silently shrinks is
+ * indistinguishable from a query that broke.
+ *
+ * `items[].by` is deliberately not surfaced. It is a `user_id`, and the owner's
+ * rule is that no user handle is ever drawn; the acknowledgement is identified
+ * by what was acknowledged and when, which is what a reader is checking.
+ */
+export function acknowledgedOf(data) {
+  if (!isPlainObject(data)) return null;
+  const block = data.acknowledged;
+  if (!isPlainObject(block)) return null;
+  const items = Array.isArray(block.items) ? block.items : [];
+  const count = Number.isFinite(block.count) ? block.count : items.length;
+  if (!count && !items.length) return null;
+  return {
+    count,
+    items: items.filter(isPlainObject).map(it => ({
+      label: typeof it.label === 'string' && it.label.trim() ? it.label.trim() : '(no description)',
+      at: it.at ?? null,
+      note: typeof it.note === 'string' ? it.note.trim() : '',
+    })),
+  };
+}
+
 /** Keys whose numbers are not quantities and must not be grouped. */
 const NOT_A_QUANTITY = /(year|period|month|day|days|pin|code|gstin|pan|tan|hsn|sac|percent|pct|rate)/i;
 
@@ -131,7 +206,7 @@ export function cellText(value, key = '') {
   }
   if (isPlainObject(value)) {
     const parts = Object.entries(value)
-      .filter(([k]) => !OUR_ID.test(k))
+      .filter(([k]) => !OUR_ID.test(k) && !IS_ACK_FIELD(k))
       .map(([k, v]) => `${label(k)}: ${cellText(v, k)}`);
     return parts.length ? parts.join(' · ') : '—';
   }
@@ -179,6 +254,7 @@ export function columnsOf(rows) {
     if (!isPlainObject(row)) continue;
     for (const k of Object.keys(row)) {
       if (OUR_ID.test(k)) continue;
+      if (IS_ACK_FIELD(k)) continue;             // machinery, not a column
       if (!seen.includes(k)) seen.push(k);
     }
   }
@@ -195,7 +271,8 @@ export function columnsOf(rows) {
  */
 export function splitFinding(data) {
   const empty = {
-    error: '', caveats: [], counts: [], tables: [], lists: [], notes: [], facts: [], emptyLists: [],
+    error: '', caveats: [], counts: [], tables: [], lists: [], notes: [], facts: [],
+    emptyLists: [], acknowledged: null,
   };
   if (!isPlainObject(data)) {
     // A handler that returned a bare list or a string is not the shape anything
@@ -210,11 +287,13 @@ export function splitFinding(data) {
     return empty;
   }
 
-  const out = { ...empty, caveats: caveatsOf(data) };
+  const out = { ...empty, caveats: caveatsOf(data), acknowledged: acknowledgedOf(data) };
 
   for (const [key, value] of Object.entries(data)) {
     if (CAVEAT_KEYS.includes(key)) continue;          // lifted out above
+    if (key === 'acknowledged') continue;             // lifted out above, too
     if (OUR_ID.test(key)) continue;                   // names, not ids
+    if (IS_ACK_FIELD(key)) continue;                  // machinery, not content
 
     // `error` is NOT a caveat and the backend test names that distinction
     // explicitly: it means the step could not run, which is a different

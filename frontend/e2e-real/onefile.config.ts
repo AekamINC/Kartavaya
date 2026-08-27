@@ -7,14 +7,36 @@
  *   npx playwright test --config e2e-real/onefile.config.ts client-report
  */
 import { defineConfig, devices } from '@playwright/test';
-import base from './real.config';
+import * as path from 'path';
+import base, { DL_DIR } from './real.config';
 
 export default defineConfig({
   ...base,
   projects: [
     {
       name: 'one',
-      testMatch: /(client-report|module-analytics|billing-tabs|billing-crud|phase1-acceptance|phase2-acceptance|phase3-acceptance|manav-dummy-logins)\.spec\.ts/,
+      testMatch: /(client-report|module-analytics|billing-tabs|billing-crud|phase1-acceptance|phase2-acceptance|phase3-acceptance)\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // ── ITS OWN PROJECT, FOR ITS OWN `outputDir` ───────────────────────────
+      //
+      // Not a preference. Playwright EMPTIES `outputDir` when a run starts and
+      // records live traces into `<outputDir>/.playwright-artifacts-N` while it
+      // runs, so two `playwright test` processes sharing one directory delete
+      // each other's in-flight files. Measured 2026-08-26: a concurrent
+      // `phase3-acceptance` run wiped this one's artifacts mid-journey and
+      // EMP-010 failed on `ENOENT … recording16.trace` inside `context.close()`
+      // — after its account had already been created. A green journey reported
+      // as a red one, and a re-run needed to finish the row.
+      //
+      // Several agents work in this tree at once, so that collision is a
+      // standing condition rather than an accident. A separate directory is the
+      // whole fix; the run command is unchanged because Playwright filters by
+      // filename across every project.
+      name: 'dummy-logins',
+      testMatch: /manav-dummy-logins\.spec\.ts/,
+      outputDir: path.join(DL_DIR, 'artifacts-dummy-logins'),
       use: { ...devices['Desktop Chrome'] },
     },
   ],
