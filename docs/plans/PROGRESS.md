@@ -3436,4 +3436,62 @@ silence it. The map draws without it, so the block costs nothing we use — and
 `'unsafe-eval'` is the one directive that materially reduces what the policy
 protects against, on production as well as staging. Leave it refused.
 
+---
+
+## Migration 235 — the sales territory stack, and a dependency `DROP` cannot see
+
+**2026-08-27, on the owner's "approved" for all THREE tables.**
+`sales_territories`, `sales_targets` and `sales_routing_rules` are gone. All
+three were `staging`-only and **0 rows** by `count(*)` in both schemas; the only
+code reference anywhere was a comment.
+
+### The finding, and it is the reason this was not routine
+
+    staging.crm_deals → trg_stg_deal_close_target (AFTER UPDATE, ENABLED)
+                      → staging.sales_update_target_on_deal_close()
+                      → UPDATE staging.sales_targets SET revenue_actual = …
+
+**A PL/pgSQL body is parsed when it RUNS, so PostgreSQL records no dependency
+for it.** `DROP TABLE staging.sales_targets` would have **succeeded**, reported
+success, and left a trigger that raises 42P01 on the next update of
+`crm_deals`. The house no-CASCADE rule — which exists so an unfound dependency
+FAILS the drop rather than being silently discarded — **does not reach this
+class at all**, because the statement never fails. It was found by reading
+`pg_proc.prosrc`, not the constraint graph.
+
+So the migration drops the trigger and the function by name, first.
+`staging.touch_updated_at()` — shared by 27 triggers — is explicitly left alone.
+
+⚠ **The schema was NOT recoverable from git.** Unlike migration 234, no
+migration in this repo ever created these three, so "the schema stays
+recoverable from the migrations that made it" would have been a false sentence.
+The full DDL was read out of `pg_catalog` before dropping and written verbatim
+into the migration header as the reversal — three `CREATE TABLE`s, 4 indexes,
+3 RLS policies, both triggers, the function body and the column comment.
+
+**Guards, all inside the transaction, all `RAISE EXCEPTION`:** re-count each
+table with `count(*)`; refuse a partial stack; refuse any `public` twin; refuse
+an FK from outside the set; and refuse any *other* function body naming the
+three. No CASCADE.
+
+**Verified after, from a connection opened post-commit and then a third
+independent probe** (this file's author's own, not the migration's): all six
+names absent in both schemas, trigger 0, function 0, `touch_updated_at()` still
+1, `crm_deals` still 0 rows, and **0** function bodies anywhere still naming the
+three.
+
+`test_sales_territory_stack_dropped.py` — 10 passed live. Each ratchet was
+proved to FAIL rather than merely to pass: a planted migration file and a
+planted service module both tripped it, and adding `CASCADE` to 235 tripped the
+shape check. All plants removed.
+
+⚠ **Found, not caused, and now open:**
+`tests/test_leavers_are_out_of_the_analytics_too.py` has **2 live failures** —
+`PostgresSyntaxError: syntax error at end of input` at PREPARE. It is unrelated
+to 235 (a dropped table gives 42P01 naming the relation, never a syntax error)
+and `vetana.py` has not been touched since `e9a700cb`. **It never runs in CI**:
+the file skips without a live database, so it has been failing unseen. That
+matters because what it guards is the Phase 2 blocker "payroll pays 10 leavers"
+— the guard is currently unverified against the real catalogue.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

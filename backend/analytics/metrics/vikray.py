@@ -5,7 +5,10 @@ established each fact named inline).
 
 Naming first, because the catalogue's word is not the table's: the "stored
 targets" live in **staging.vikray_targets** (migration 020) — there is no
-sales_targets table — and `salesperson_id` is TEXT since migration 092,
+`sales_targets` table, which was FALSE when written and is TRUE now: one existed
+and held 0 rows table-wide until migration **235** dropped it with
+`sales_territories` and `sales_routing_rules` on 2026-08-27 — and
+`salesperson_id` is TEXT since migration 092,
 matching `public.users.user_id`. That join takes NO cast: the broken version
 needed `owner_id::text` precisely because it was reaching for the wrong uuid
 column, and a cast on this join is the fingerprint of that mistake.
