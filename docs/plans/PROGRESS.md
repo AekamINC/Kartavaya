@@ -3037,4 +3037,77 @@ is "~5,200 green" (it is 14,632) and that only `staging` and `public` exist
 (there are also `dead_tables_20260822`, `ledger_repair_20260826`,
 `tenancy_195_backup` and Supabase's own).
 
+## 2026-08-27 · The DROP — 20 of 24, and the four that stayed
+
+The owner answered "the 24-table DROP list" with "Go ahead" on 2026-08-27.
+Migration **234** dropped twenty: ten `hr_*`, seven `pay_*`, three
+`sales_commission*`. Every one verified at exactly **0 rows** with `count(*)` —
+never `n_live_tup`, which today reported 23 and 14 for two tables that both held
+23.
+
+**Four were excluded, and each for a different reason. This is the part that
+mattered.**
+
+- `staging.pay_professional_tax` — **23 rows**. The shared PT ladder every
+  payroll run reads.
+- `staging.pay_income_tax_slabs` — **23 rows**. Created by migration 230 during
+  Phase 5.2b; `income_tax.ladder_for` reads it for every TDS figure on every
+  payslip.
+
+  These two were on the list only to be VISIBLY EXCLUDED. They share a prefix
+  with the dead stack and nothing else. Dropping them takes professional tax AND
+  income tax to ₹0 for every employee in the product.
+
+- `public.report_schedules` — **0 rows, and still not safe.** Empty is not the
+  same as unused: `routers/reports.py` holds EIGHT live statements against it,
+  and `POST /api/reports/dispatch` is on an ARMED hourly cron. Dropping it
+  42P01s the CRUD and fails the cron every hour. Retiring the second report
+  scheduler is Phase 6.4's DECISION, and executing it means removing a router
+  and disarming a cron — not dropping a table.
+- `staging.sales_territories` — 0 rows, but `staging.sales_targets` and
+  `staging.sales_routing_rules` both carry a foreign key INTO it, and **neither
+  was on the owner's list.** Dropping it necessarily alters two tables he did
+  not name, either by failing or by discarding their constraints under CASCADE.
+  A DROP approved by name does not reach tables that were not named. It needs
+  putting to him as three tables.
+
+**What was checked before the migration was written**, all read-only:
+
+- every inbound foreign key to the twenty came from a table INSIDE the twenty —
+  and `sales_territories` is excluded above precisely because that was not true
+  of it;
+- no view or materialised view depended on any of them;
+- no router, service or `server.py` path names any of them in SQL. Three appear
+  in PROSE — `hr_employees` in `report_defs/people_reports.py`, `hr_holidays` in
+  `skills/data/people_checks.py`, `pay_tds_records` in `tds_challan_pdf.py` —
+  and all three are comments.
+
+**One statement, no CASCADE.** One `DROP TABLE` naming all twenty, because they
+reference each other — `hr_employees` alone had twelve inbound keys from its own
+stack — and a single statement resolves the ordering rather than requiring
+anyone to get it right (`memory/architecture_table_systems` records deletion
+order being fatal when reversed). No CASCADE deliberately: if a dependency
+existed that the checks missed, the statement must FAIL and leave the database
+as it was. CASCADE would drop it silently and the report would read "it worked".
+
+**Re-counted a second time inside the transaction**, so anything that had gained
+a row since the audit would abort the drop.
+
+After: 20 of 20 gone; all four exclusions present with their rows; payroll's own
+tables untouched (`vetana_payslips` 1,160, `manav_employees` 109,
+`graha_contacts` 296). 535 tests green across everything that could notice —
+people reports, the employee-user link, commission, territories, routing,
+boundaries, and the four ratchets.
+
+No data to restore: all twenty were empty, which is the whole reason they could
+go. The schema stays recoverable from the migrations that created it.
+
+⚠ **A note on the verification script, not the migration.** The apply script's
+post-commit check had an `await` inside a generator expression and raised
+`TypeError` AFTER the transaction had committed. The DROP was already done and
+correct; the failure was in the code reporting on it. State was then re-read
+from a separate script rather than assumed — `memory/mcp_denial_may_still_execute`
+is the standing rule that a failed write must be verified, and it applies just
+as much when the failure is in the reporting.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
