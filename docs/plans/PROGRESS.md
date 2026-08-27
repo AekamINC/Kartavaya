@@ -2705,4 +2705,36 @@ itself. The last one also checks that the server sends NAMES beside the ids —
 for the territory's members — because a chain that can only be described by
 three uuids is not one a person can check.
 
+## 2026-08-27 · The PIN directory CSV is no longer one-of-a-kind
+
+`PHASE-7` §7.2 opened with a warning rather than a task: the 20,144-row
+data.gov.in PIN directory *"exists in exactly one place on Earth: a temp
+scratchpad belonging to a dead session. Step one is to put it in R2 before
+anything else touches it."*
+
+It was still there — `%TEMP%` had not been cleared — and it is now in R2:
+
+    bucket  aekaminc
+    key     shared/reference/pin-directory/datagov-2025-05/pin-directory.csv
+    1,269,336 bytes
+    sha256  f5de1b50855c29b863fd1a71dc9cb81a9aef0ea1a674602263ac2c5ba811cd28
+
+Read back after writing; the checksum matches. Platform bucket under `shared/`,
+never per-org, matching where the boundary shards already live.
+
+**The upload refuses to overwrite.** It `head_object`s first and stops if
+anything is at that key, and it distinguishes "absent" from "the head failed for
+some other reason" — a 403 read as a 404 would have silently replaced whatever
+was there, which is the whole hazard of a write-if-missing script.
+
+Verified against every fact §7.2 states, before copying rather than after:
+header `pincode,state,district,blocks,state_lgd,district_lgd`; 20,144 data rows;
+18,839 distinct PINs; `110003` present three times (NEW DELHI/094, SOUTH EAST/677,
+SOUTH/098 — the plan is right that it spans three districts, not the two the
+handover claimed); and `state_lgd` still zero-padded text, `07` not `7`.
+
+**This is preservation, not the loader.** §7.2's loader writes 20,144 live rows
+and the plan says to stop and report before running it — the standing migration
+approval does not cover loading data. Nothing has been loaded.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -122,9 +122,25 @@ today only because the column is empty**:
 
 - **Have:** the CSV — 20,144 data rows, 18,839 distinct PINs, header
   `pincode,state,district,blocks,state_lgd,district_lgd`, MIT licensed.
-- **⚠ IT EXISTS IN EXACTLY ONE PLACE ON EARTH:** a temp scratchpad belonging to
-  a dead session. **Step one is to put it in R2 before anything else touches
-  it.** One `%TEMP%` clear and the download starts over.
+- ~~**⚠ IT EXISTS IN EXACTLY ONE PLACE ON EARTH:** a temp scratchpad belonging
+  to a dead session. **Step one is to put it in R2 before anything else touches
+  it.** One `%TEMP%` clear and the download starts over.~~
+  **DONE 2026-08-27.** It was still there, and it is now in R2:
+
+      bucket  aekaminc
+      key     shared/reference/pin-directory/datagov-2025-05/pin-directory.csv
+      1,269,336 bytes
+      sha256  f5de1b50855c29b863fd1a71dc9cb81a9aef0ea1a674602263ac2c5ba811cd28
+
+  Read back after writing and the checksum matches. The upload refuses to
+  overwrite — it `head_object`s first and stops if anything is already at that
+  key — and it distinguishes "absent" from "the head failed for another reason",
+  because a 403 read as a 404 would have silently replaced whatever was there.
+  Platform bucket under `shared/`, never per-org, matching where the boundaries
+  already live. Verified against every fact this section states before it was
+  copied: header `pincode,state,district,blocks,state_lgd,district_lgd`, 20,144
+  data rows, 18,839 distinct PINs, `110003` present three times, `state_lgd`
+  still zero-padded (`07`).
 - **THE TRAP, and it is worse than the handover says.** The handover says
   110003 spans two districts. The CSV gives it **three** (NEW DELHI/094,
   SOUTH/098, SOUTH EAST/677). **1,229 of 18,839 PINs are multi-district**, and
