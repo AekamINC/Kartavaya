@@ -1,0 +1,92 @@
+/* clientmap.css — the "where these companies are" panel on Graha › Clients.
+ *
+ * Imported from `components/ClientLocations.jsx`, which is the only consumer.
+ * Its own sheet rather than a block in `graha.css` because the component is
+ * written to be lifted into Ganit vendors and Manav employees unchanged once
+ * those surfaces want the same summary — the same reason `PointRadiusMap` is
+ * not called `SiteGeofenceMap`.
+ *
+ * ── No `.terr__mapbrand` here, and that is correct ──────────────────────────
+ *
+ * This panel loads no Mappls basemap: there is nothing to draw on one until
+ * PHASE-8 §8.4 stores a coordinate, and the component's header says why at
+ * length. No basemap, no Mappls credit owed — `check-mappls-attribution.mjs`
+ * scopes the obligation to files importing `mapplsSdk`, which this is not. If a
+ * basemap is ever added here, the credit is added in the same commit.
+ *
+ * ── Tokens only, and fluid ─────────────────────────────────────────────────
+ *
+ * Every colour is a token; no literal appears below. The panel has no max-width
+ * and no auto margin: pages in this product are fluid and left-aligned at every
+ * width, and a centred column here would be the one block on the tab that is
+ * not. The group rows wrap rather than scroll, because their content is a list
+ * of company names of unbounded length and a horizontal scrollbar hides them.
+ */
+
+.clm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+}
+
+/* The count and its denominator. Deliberately the largest text in the panel:
+   the number that is missing matters as much as the number that is shown. */
+.clm__lead { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+
+/* The ~82 km² expectation reset. Quieter than the lead, never hidden — a
+   pincode grouping with no caption reads as a list of addresses. */
+.clm__caveat { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+
+.clm__groups { display: flex; flex-direction: column; gap: 4px; }
+
+.clm__sub {
+  margin: 8px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.clm__grp {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.clm__grp:last-child { border-bottom: none; }
+
+/* The town-only rows sit under a heading that already says they are the weaker
+   answer, so they are toned rather than badged. */
+.clm__grp--soft { color: var(--ink-3); }
+
+.clm__pin {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 68px;
+}
+
+.clm__place { font-size: 13px; font-weight: 600; min-width: 68px; }
+
+.clm__count { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.clm__where { color: var(--ink-3); }
+
+/* The company NAMES, which are the whole value of a row: a count with no names
+   cannot be checked by the person who typed the addresses. */
+.clm__names { flex: 1 1 240px; min-width: 0; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+
+.clm__go { font-size: 12px; white-space: nowrap; }
+
+/* What is NOT placed. Same weight as what is — this is the half a map would
+   have silently dropped. */
+.clm__gaps { display: flex; flex-direction: column; gap: 6px; }
+.clm__gap { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); overflow-wrap: anywhere; }

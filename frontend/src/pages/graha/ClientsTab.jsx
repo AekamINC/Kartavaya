@@ -6,13 +6,14 @@
 // slightly different height, radius and background from every other form in
 // the product. They are `.k-input` now, which is also why they pick up focus
 // rings and the dark theme for free.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import AddressBlock from '../../components/ui/AddressBlock';
+import ClientLocations, { placeOf } from '../../components/ClientLocations';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
@@ -81,6 +82,11 @@ export default function ClientsTab() {
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
+  /* 8.3 — the locations panel, closed by default.
+     Closed because it is a second reading of a table the user came here to
+     read, not because it is unimportant; the toggle carries the headline count
+     so the tab says something true about coverage without being opened. */
+  const [showWhere, setShowWhere] = useState(false);
   // Without this a failed load left `clients` at [] and the list painted its
   // "No clients yet" empty state — a confident wrong answer behind a toast that
   // is gone in four seconds.
@@ -99,6 +105,17 @@ export default function ClientsTab() {
      ContactsTab records: a branch that renders fewer hooks than the list did
      is "Rendered fewer hooks than expected" and the screen does not open. */
   const cols = useColumnPrefs('graha.clients', CLIENT_COLUMNS);
+
+  /* How many distinct pincode areas these companies fall in — the one number
+     the closed toggle can honestly show. Zero is a real answer and is said as
+     one: all 61 companies in E2E Test & Associates carry an address and not one
+     of them carries a pincode, so "0 areas" is the state of the data rather
+     than a panel that failed to load. Above the early returns, with the other
+     hooks, for the reason the block above records. */
+  const pinAreas = useMemo(
+    () => new Set(clients.map(c => placeOf(c?.address).pin).filter(Boolean)).size,
+    [clients],
+  );
 
   const load = useCallback(() => {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -249,7 +266,22 @@ export default function ClientsTab() {
           onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }} disabled={!canWrite} title={denial || undefined}>
           + Add Client
         </button>
+        {/* 8.3. Not gated on `canWrite`: it reads the rows already on screen
+            and writes nothing. Hidden entirely when there are no companies —
+            the empty state below already says the whole story. */}
+        {clients.length > 0 && (
+          <button
+            type="button"
+            className="k-btn k-btn--ghost"
+            aria-expanded={showWhere}
+            onClick={() => setShowWhere(v => !v)}
+          >
+            {showWhere ? 'Hide locations' : `Locations · ${pinAreas} pincode ${pinAreas === 1 ? 'area' : 'areas'}`}
+          </button>
+        )}
       </div>
+
+      {showWhere && clients.length > 0 && <ClientLocations clients={clients} />}
 
       {showForm && (
         <div className="gr__panel">
