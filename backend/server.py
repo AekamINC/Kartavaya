@@ -1964,9 +1964,52 @@ def _pj(v, d):
     Module level because two attachment endpoints already called it as `pj`
     from module scope, where it did not exist — it was nested inside
     row_to_task. Both of those raised NameError on every request.
+
+    ── A BLANK STRING IS THE DEFAULT, NOT A CRASH ───────────────────────────
+
+    `json.loads("")` raises `JSONDecodeError: Expecting value`, which reaches
+    the caller as a 500 on a task list rather than as anything a person could
+    act on. `_subtasks_of` below has always guarded this with `or "[]"`; this
+    function did not, and the two disagreeing about the same column is worse
+    than either rule on its own.
+
+    Whether an empty string is REACHABLE is not settled — a valid jsonb value
+    never renders as `''`, and NULL arrives as `None`. But the string branch
+    exists precisely because a connection whose codec handshake PgBouncer
+    killed hands back raw text (`_init_conn` warns and returns it anyway), and
+    that is not a path anybody has characterised. The default costs one
+    comparison and removes the difference between the two functions.
+
+    ── AND WHY IT RETURNS A COPY ────────────────────────────────────────────
+
+    `add_task_attachment` does `current = _pj(row["attachments"], [])` and then
+    `current.append(...)`. When the driver hands back a decoded list, that
+    appends INTO the row's own value — the caller mutates something it was only
+    given to read.
+
+    In production that is harmless: every fetch decodes afresh, so the mutated
+    object dies with the request. It is not harmless in general, and it was
+    invisible for as long as `tests/helpers.py` seeded these columns as STRINGS
+    — the `json.loads` branch happens to produce a fresh object every time, so
+    every read-modify-write path in the suite was quietly getting a copy that
+    the real decoded path does not give. Fixing the fixture to match the driver
+    is what surfaced it.
+
+    `_subtasks_of` below already states this rule for its default ("a caller
+    that then `.append`s to it wants that default to be a fresh list, not a
+    shared one"). The same reasoning applies to the VALUE, so the copy is made
+    here once rather than left to each caller to remember.
+
+    Shallow, deliberately: it defends against `append`/`pop`/`update` on the
+    container, which is what callers here actually do, and a deep copy of every
+    jsonb column on every row of a task list would be a real cost for a hazard
+    nobody has.
     """
-    if isinstance(v, str): return json.loads(v)
-    return v if v is not None else d
+    if isinstance(v, str): return json.loads(v) if v.strip() else d
+    if v is None: return d
+    if isinstance(v, list): return list(v)
+    if isinstance(v, dict): return dict(v)
+    return v
 
 
 def _subtasks_of(task) -> list:

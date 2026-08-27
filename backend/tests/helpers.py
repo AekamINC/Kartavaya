@@ -52,9 +52,25 @@ def make_task_row(**overrides) -> dict:
         "recurrence_rule": "none",
         "recurrence_interval": 1,
         "estimated_minutes": None,
-        "attachments": "[]",
-        "custom_fields": "{}",
-        "subtasks": "[]",
+        # ── DECODED, because that is what the driver actually hands back ──────
+        #
+        # These three are `jsonb`, and `db.py` registers codecs, so a pooled
+        # connection returns a Python `list`/`dict` — NOT a string. This fixture
+        # used to say `"[]"` and `"{}"`, which meant every test built on it
+        # exercised the `isinstance(raw, str)` branch of `_pj` and NONE of them
+        # exercised the branch the product actually takes.
+        #
+        # Measured 2026-08-27: of 485 live `tasks` rows, **431 hold `subtasks`
+        # as a jsonb array and 54 as a jsonb string**. So the fixture was
+        # modelling the 11% and calling it the default.
+        #
+        # The string shape is still REAL and still reached — those 54 rows, plus
+        # any connection whose codec handshake PgBouncer killed (`_init_conn`
+        # warns and hands the connection out anyway). It is covered explicitly by
+        # `test_task_row_shapes.py` rather than by being everybody's default.
+        "attachments": [],
+        "custom_fields": {},
+        "subtasks": [],
         "sort_order": 0,
         "created_at": now,
         "updated_at": now,
