@@ -255,30 +255,42 @@ treatment the ledger repair got — a written risk report first.
 
 ## Module / proposal state (condensed — full detail in proposal 90)
 
+⚠ **Eight of these rows were reviewed on 2026-08-27 and SEVEN were stale**, most
+of them contradicted by the phase table immediately above in this same file —
+including one flatly false (`0 of 98 linked`, when it is 14 of 109). This is the
+table a reader skims, so a stale row here outranks a correct one further up.
+
+The rows NOT touched were left alone deliberately, because correcting a number
+without measuring it is how the stale ones got here: Niyam's 20/35 event types,
+Reports' ~23 of 34 missing definitions, R2's 0 objects, the KB index, employee
+onboarding and Legal/MFA all carry figures nobody re-counted today. Treat every
+figure in this table as "last measured when its row says", not as current.
+
 | Area | Proposals | State |
 |---|---|---|
 | Core PM (tasks, boards, board-arrange, pulse) | 67, 68 | ✅ |
 | Niyam automation | 55–59, 66 | 🟡 armed; 20/35 event types |
 | Analytics suite | 60–65 | ✅ through S6 (mobile S7 deferred) |
-| Skills / dock / Sahayak | 69–72 | 🟡 dock built, Due tab dead; ack 32/78, 0 rows, no UI |
+| Skills / dock / Sahayak | 69–72 | 🟡 **stale — corrected 27 Aug.** The Due tab is NOT dead: Phase 4.5 fixed it (the `income_tax` typo was worth 22 rows; Finance 7 → 13). `skill_finding_ack` is NOT 0 rows: Phase 4.3 took it **0 → 1** through the deployed endpoint and re-running the skill then returned 2 findings instead of 3. Unmeasured today: the 32/78 wiring figure |
 | Reports | 70, 73, 75 | 🟡 15 registers; ~23 of 34 defs missing |
-| Commission & P&L | 76 | 🟡 built; rate uneditable, `salesperson_id` NULL |
-| Procurement / Kray | 77, 85 | 🟡 built; can't send a PO; vendor MSME now enterable (26 Aug, 0 rows yet) |
-| Compliance settings | 80 | 🟡 table+API, no screen, 0 rows |
+| Commission & P&L | 76 | 🟡 **stale — corrected 27 Aug.** `salesperson_id` is NOT NULL: Phase 1 shows **5**/800 invoices carrying one, all created through the UI. And E2E holds **1 scheme / 3 bands** on the owner's own ladder since Phase 6.1. Unmeasured today: whether the rate is still uneditable |
+| Procurement / Kray | 77, 85 | 🟡 **"0 rows yet" is stale — corrected 27 Aug.** Phase 0.20 live: E2E **75 vendors, 12 carrying all six** MSME/TDS columns; Unicode 9 and 0. Ganit and Kray now share ONE `VendorForm.jsx`, with a set-equality test so the field set cannot fork. ⚠ **And that shared form captures NO address field at all** (`BLANK_VENDOR` has no `address` key) while `POST /v1/ganit/vendors` has always written `body.address` and 6 of 9 Unicode vendors carry one — found 27 Aug during 8.0. Still true: a PO cannot be sent |
+| Compliance settings | 80 | ✅ **corrected 27 Aug** — Phase 4.1 shipped the screen and `module_compliance_settings` went **0 → 1**, written 27 Aug 00:45:52 through the real screen and verified live. "No screen, 0 rows" was true when written and is not now |
 | Legal / MFA docs | 81 | 🟡 4 pages, not in prod, 9 owner facts |
 | R2 storage | 83 | 🟡 grammar+verifier; no tab, 0 objects |
 | Employee onboarding | 84 | ⬜ ~95% unbuilt |
-| Platform billing | 86 | 🟡 P1/P2 code; P3/P4/P6 absent, cron unarmed |
-| Org-client billing | 87 | 🔴 router 500s; recurring doesn't recur; leak |
+| Platform billing | 86 | 🟢 **corrected 27 Aug** — Phase 3: 3.1 ✅, 3.2 ✅ (a mid-cycle downgrade wrote credit ₹3,200 and charge ₹2,400, net −₹800), 3.3 ✅ (`client_invoice_lines` **0 → 2**, auto-invoices **0 → 2** — INV-2026-0093 ₹88,500 and INV-2026-0094 ₹17,700). **The cron is still unarmed** and that half of this row stands: 3.4 needs `billing` added to `cron-daily`'s loop, which is the owner's |
+| Org-client billing | 87 | 🟡 **no longer 🔴 — corrected 27 Aug.** Both 500s were DEPLOYED-fixed 26 Aug (`gst_rate` dropped, `invoice_number` allocated, `balance_due` bound — a second bug found while fixing the first). It is 🟡 and not ✅ because **no row has been created through the board yet**; recurring-doesn't-recur is unmeasured since |
 | Liquid glass | 88, 89 | ✅ record; rescope done; enriched 2026-08-25; Apple-pass (buttons/tiles/modal) 2026-08-25 |
 | WhatsApp channel | 38, 39 | ⬜ owner creds (Phase 0.26) |
 | RAG / KB index | 08 | 🔴 empty always; answers grounded on nothing |
-| Employee↔login join | 05 | 🔴 0 of 98 linked; gates payslips + payroll |
+| Employee↔login join | 05 | 🟡 **"0 of 98" is FALSE — corrected 27 Aug from a live read.** It is **14 of 109**: E2E **12 of 83** (one-to-one, 12 distinct logins, 11 department/designation shapes, all linked through the real screens in Phase 0.23) and Unicode **2 of 26**. It still gates payslips and payroll **for the other 95**, and most of those links are impossible — the largest org has far more employees than logins |
 
 ## Structural debt (`PHASE-6`)
 
 - 48 zero-row tables · 16 NULL feature columns with no write path
-- 4 models built twice (sales_commission* / hr_*+pay_* / 2 doc allocators / 2 report schedulers)
+- ~~4 models built twice (sales_commission* / hr_*+pay_* / 2 doc allocators / 2 report schedulers)~~
+  **Corrected 27 Aug and the count moved in both directions.** Two of those four are NOT duplicates: 6.3 decided to KEEP BOTH doc allocators (a PO is numbered at ISSUE, and `next_doc_number`'s `ORDER BY created_at` would restart the series at 0001 on the next draft), and the `pay_*` stack contains **two LIVE tables** — `pay_professional_tax` (23 rows) and `pay_income_tax_slabs` (23 rows) — that every payslip reads. The two report schedulers ARE real and 6.4 is OPEN. **And a fifth turned up**: `staging.sales_territories`, a second territory model with `state_codes`, `city_names`, `pincode_ranges`, `assigned_to`, `manager_id`, `parent_id` — 0 rows table-wide, richer than the model in use, and on nobody's DROP list
 - `statute_calendar` read by skills and by payroll's ESI ceiling; PF, PT and both TDS ladders still literal (5.2)
 - No router test executes its own SQL ← the rule that would catch every 🔴 above
 
