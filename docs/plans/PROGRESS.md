@@ -2967,4 +2967,74 @@ picker's de-duplication silently stopped working for platform staff (same root
 cause), and `TeamMemberAdd` drops the `receives_approval_emails` and
 `company_name` the form posts, though both columns exist.
 
+## 2026-08-27 · 7.2 · The PIN directory is loaded — 20,144 live rows
+
+On the owner's approval ("go ahead with your recommendation") to the load §7.2
+says to stop and report before running. Migration **233** creates
+`staging.pin_directory`; the loader put 20,144 rows in it.
+
+Read back twice — once through the loader's own summary and once through
+independent SQL, so it is not one piece of code agreeing with itself:
+
+    count(*)                    20144
+    count(DISTINCT pincode)     18839
+    rows for 110003             3      (NEW DELHI/094, SOUTH/098, SOUTH EAST/677)
+    distinct states for 110025  2      (DELHI and UTTAR PRADESH)
+    110001 state_lgd            '07'   as TEXT, not 7
+    110001 district_lgd         '094'  as TEXT, not 94
+    395002                      GUJARAT / SURAT
+    foreign keys touching it    0
+    public.pin_directory        does not exist — no shadow twin
+
+`395002` is the one PIN any live territory claims, so the directory and the
+routing agree with each other on the only row where it can currently matter.
+
+**`pincode` is NOT the primary key, and could not be.** 1,229 of 18,839 PINs
+span more than one district and **51 span more than one STATE**. Both
+`(pincode, district_lgd)` and `(pincode, state, district)` are enforced unique:
+the first is the upsert target because LGD codes survive a district rename, the
+second because it is what any human-written join will reach for, and one PIN
+reaching the same named district twice would double it.
+
+**The loader is a script, not a route, and the reasoning is worth keeping.**
+7.1's `POST /contacts/route-all` is a route because it rewrites the calling
+org's OWN rows, which is exactly what `is_org_admin` gates. `pin_directory` has
+no `org_id` — an org-admin route would let one customer's admin reload
+platform-wide reference data underneath every other tenant. The same words with
+the tenancy inverted. What the plan actually wants is that a person triggers it
+and reads the result, and `railway run` gives that.
+
+**Idempotent, and observably so.** A second run reported
+`inserted 0 | updated 0 | unchanged 20,144` with `updated_at` still NULL on
+every row — not merely "does not duplicate", but a no-op you can use to CHECK
+the table. All 20,144 rows go in ONE transaction and the file is refused whole
+on any parse problem or key collision, so there is no halfway: a unique
+violation two-thirds through cannot happen. The CSV's sha256 is checked against
+a known digest before the write, so "the file at that key" and "the file whose
+rows were audited" are the same sentence.
+
+Risk, shown rather than claimed: 0 FKs declared or referencing, no existing
+table altered, nothing updated or deleted, `graha_contacts` 296 and
+`graha_territories` 18 before and after. Reversal is
+`DROP TABLE IF EXISTS staging.pin_directory;` — exact today, and flagged in the
+file as ceasing to be exact the moment a customer can add a row.
+
+⚠ **Two facts §7.2 does not state, both now in the schema comments.**
+
+- **`blocks` is not clean data.** 2,435 rows carry the literal string `'NA'` as
+  a block name and 402 are exactly `["NA"]`. Stored as published, with the
+  warning on the column, but it must never be presented as authoritative.
+- **The multi-PIN spread is worse than "two or three".** `192124` resolves to
+  **four** districts in J&K, and only **17,610 of 18,839 — 93.5%** — resolve to
+  exactly one `(state, district)`. That sharpens §7.6: "a PIN fills district and
+  state" is false for **1,229** PINs, not just the 51 that cross a state line.
+
+29 tests; the writer-coverage ratchet is intact (the test file PREPAREs and
+names no router, so nothing left `UNCOVERED` on a technicality).
+
+Two doc drifts noticed in passing and NOT acted on: `CLAUDE.md` says the suite
+is "~5,200 green" (it is 14,632) and that only `staging` and `public` exist
+(there are also `dead_tables_20260822`, `ledger_repair_20260826`,
+`tenancy_195_backup` and Supabase's own).
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
