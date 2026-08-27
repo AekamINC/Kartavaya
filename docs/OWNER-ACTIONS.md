@@ -32,6 +32,16 @@ and the MCP refuses every write with *"Unauthorized. Please run `railway login`
 again"* while reads still work. Rather than delete the service and leave you to
 recreate it from scratch, I left it in place so this is an edit, not a rebuild.
 
+**Re-tested 2026-08-28 after you granted permission explicitly — it is NOT a
+permission problem.** `get_service_config` returns the service fine (reads
+work), and `update_service` with the exact start command and schedule below
+still fails with **`Unauthorized. Please run railway login again`**. So the
+Railway MCP connector's own credentials lack write scope; approving me changes
+nothing until that connector is re-authenticated. **If you would rather I did
+this than you: re-auth the Railway connector and say so, and I will apply both
+fields in one call.** Recorded here so nobody re-tries it assuming permission
+was the blocker.
+
 **Service: `cron-report-dispatch`** (id `22249f3d-aec4-42b7-9f8c-921eb69b336f`),
 staging. Change exactly two things:
 
@@ -166,6 +176,69 @@ check found 0 and exited clean, the new one finds 4 and fails.
 **Nothing for you to decide.** No path existed where one org saw another's
 address, and the address rung never fired at all. The ids that were rendered
 were visible only to people who could already open those screens.
+
+---
+
+### 12. `aekaminc.com` has no DKIM — your fallback sender is going out unsigned
+
+**Status:** OPEN · live issue today, independent of any test programme.
+
+Read off the SES console (ap-south-1) on 2026-08-27:
+
+    unicodegroup.com          Domain    Verified
+    aekaminc.com              Domain    UNVERIFIED     <--
+    no-reply@unicodegroup.com Address   Verified
+    no-reply@aekaminc.com     Address   Verified
+
+`FROM_EMAIL` defaults to `Kartavaya <no-reply@aekaminc.com>`
+(`backend/email_service.py:13`), and it sends **only because the single address
+is verified**. The domain is not, so **those messages carry no DKIM signature**
+and authenticate weakly — every email from any org that has no sender rows of
+its own, which today is Aekam Inc, E2E, UK AekamINC and Demo.
+
+**What you do:** in SES, open the existing `aekaminc.com` domain identity and
+publish its three DKIM CNAMEs on aekaminc.com's DNS. The identity is already
+created; it just never completed. ⚠ The Cloudflare migration does **not** reach
+this — aekaminc.com's mail DNS is on IONOS, on separate nameservers.
+
+**What I finish once done:** nothing is blocked on it, but it also unlocks
+`e2e-invoice@aekaminc.com`-style senders as an alternative to the
+`unicodegroup.com` prefixes now planned, and it improves deliverability on every
+fallback send from today onward.
+
+---
+
+### 13. There is no bounce feedback path — a decision, not a bug
+
+**Status:** OPEN · needs a scoping decision from you before I build anything.
+
+**The product cannot learn that an email bounced.** Verified 2026-08-27:
+
+- **no SNS or SES notification endpoint exists** in any router;
+- **`outbound_log` has no `bounced` status** — the vocabulary is
+  `queued · sent · suppressed · failed`;
+- the code *anticipates* the gap and never closed it —
+  `routers/billing.py:1745` refers to "the place nobody would think to update
+  **when a webhook adds `bounced`**".
+
+A bounce is asynchronous: SES accepts the message, the row is written `sent`,
+and the bounce arrives minutes later **to nobody**. That is precisely how 960
+payslips were "sent" and hard-bounced.
+
+**Why it is raised now:** proposal 93 seeds 45% of recipients on AWS's mailbox
+simulator, which will generate real bounces and complaints safely. Those will
+prove the *send* path — and prove nothing about *handling*, because there is no
+handling. I do not want to report that as covered.
+
+**What you do:** tell me whether to scope it. It is **code, not SES
+configuration** — a webhook router, SNS subscription confirmation and signature
+verification, a `bounced` status, and the suppression logic that acts on it.
+Roughly 2–3 days. Adding an SES configuration set today would publish into
+nothing, so that is deliberately not done yet.
+
+**What I finish once decided:** if yes, it lands before the reseed so the
+simulator traffic actually tests something. If no, the mail suites assert
+acceptance only and the report says so in those words.
 
 ---
 
