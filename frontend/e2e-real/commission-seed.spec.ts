@@ -107,23 +107,55 @@ test.describe('Phase 6.1 · the commission model gets its first rows in E2E', ()
     async ({ page }) => {
       await openCommission(page);
 
-      // ── FIND SOMEBODY WITH NOTHING RECORDED ────────────────────────────────
+      // ── SOMEBODY WHO COULD ACTUALLY BE PAID ────────────────────────────────
       //
+      // The first version of this spec took the first row on the register and
+      // seeded that. It worked, and it seeded **Aadhya Nair, who holds no
+      // login** — and an `own`-scope scheme resolves through
+      // `manav_employees.user_id` and nothing else (`vetana.py::_FIGURES_SQL`
+      // requires it non-empty). So the arrangement was real, correct, stored,
+      // and unable to produce a figure for anybody, ever. The product says
+      // "not attributable" rather than ₹0, which is the honest answer and
+      // exactly why the module was rebuilt — but a seed that can never compute
+      // proves half of what it looks like it proves.
+      //
+      // `employees/awaiting-link` reports who HAS an account (by name, no id on
+      // the wire), so the ladder goes on somebody for whom the only remaining
+      // gap is attribution rather than attribution AND linkage.
+      let preferred: string[] = [];
+      try {
+        const link = await api(page, 'get', '/api/v1/manav/employees/awaiting-link');
+        if (link.status() < 400) {
+          preferred = (((await link.json()).linked ?? []) as Array<{ name?: string }>)
+            .map(e => String(e.name || '')).filter(Boolean);
+        }
+      } catch { /* the roster order is the fallback, not a failure */ }
+
       // Opening a person is how a user checks — the roster deliberately does
       // NOT survey 83 people on tab open, because each answer costs an audit
-      // row. Walking a few rows is the same thing a person does, and it makes
-      // the spec re-runnable: on a second run the first few people already hold
-      // an arrangement and it moves on rather than failing.
+      // row. Walking rows is the same thing a person does, and it makes the
+      // spec re-runnable: on a second run the seeded person is met first and
+      // verified rather than written again.
       const rows = page.locator('table tbody tr');
       await expect.poll(async () => await rows.count(), {
         message: 'the commission register never listed anybody',
         timeout: 30_000,
       }).toBeGreaterThan(0);
 
+      // Linked people first, then everybody else. Duplicate names are real on
+      // this register — three "Aadhya Nair" rows in different departments — so
+      // this orders ROW INDICES and never filters by name.
       const total = await rows.count();
+      const order: number[] = [];
+      for (let i = 0; i < total; i++) {
+        const t = (await rows.nth(i).innerText()).trim();
+        if (preferred.some(p => t.includes(p))) order.push(i);
+      }
+      for (let i = 0; i < total; i++) if (!order.includes(i)) order.push(i);
+
       let name = '';
       let already = false;
-      for (let i = 0; i < Math.min(total, 8); i++) {
+      for (const i of order.slice(0, 8)) {
         await rows.nth(i).getByRole('button', { name: 'Open' }).click();
         await settle(page);
         const title = page.locator('.k-detail__title');

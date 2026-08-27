@@ -314,6 +314,30 @@ jobs:
       - name: Rendered-ids gate (names, not IDs)
         run: node scripts/check-rendered-ids.mjs
 
+      # THREE GATES THAT RAN LOCALLY AND NOWHERE ELSE, armed 2026-08-27.
+      #
+      # `check-csp-hash` is the expensive omission. It exists because the
+      # sha256 in vercel.json drifted from the inline bootstrap in index.html,
+      # so the browser silently refused to run it — every load, for every user,
+      # green build, nothing in the logs — and the theme flashed on staging for
+      # days before anybody read the deployed console. The gate written to catch
+      # that had never run here.
+      - name: CSP hash gate (inline bootstrap is allowed)
+        run: node scripts/check-csp-hash.mjs
+
+      - name: Class collision gate
+        run: node scripts/check-class-collisions.mjs
+
+      - name: One index.html gate (nothing shadows the Vite entry)
+        run: node scripts/check-one-index-html.mjs
+
+      # And the one that stops this list drifting again: it fails if any gate in
+      # `npm run check` has no step in this file. Enumerating gates one per step
+      # is deliberate — a red build should name the gate — but a hand-maintained
+      # list is how the three above fell off it.
+      - name: Every local gate also runs here
+        run: node scripts/check-ci-runs-every-gate.mjs
+
       # `npm run check` exits 0 on unparseable CSS — the production build is
       # the one gate that catches it (see CLAUDE.md). ~10 s locally; the dist/
       # output is discarded, only the exit code matters.
