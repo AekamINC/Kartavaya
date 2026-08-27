@@ -6,6 +6,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
+import PointRadiusMap from '../../components/PointRadiusMap';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
@@ -56,6 +57,22 @@ import useModuleWrite from '../../hooks/useModuleWrite';
  * The pair rule is enforced here as well as at the server, so that a tolerance
  * typed without an altitude comes back as a sentence instead of a 422 whose
  * `detail` is a Pydantic validation array.
+ *
+ * ── SEEING THE FENCE · Phase 8.1 ────────────────────────────────────────────
+ *
+ * The header above says a radius typed as 15 instead of 150, or a pin on the
+ * wrong side of a building, flags every punch at that site every morning. That
+ * sentence has been in this file since the amend path was added and until now
+ * the screen offered no way to notice either mistake: three number inputs and a
+ * save button. `components/PointRadiusMap.jsx` is mounted twice below — under
+ * the form, following what is being typed, and under a saved row on request —
+ * so the figures can be checked BEFORE they start flagging people.
+ *
+ * It is mounted, not depended on. The Mappls basemap 401s on every domain at
+ * the moment, so what it renders today is the figures in words: the
+ * hemispheres, what the radius covers on the ground, and whether the two
+ * numbers look transposed. Those are the checks that catch the typos this file
+ * already knew about, and they need no tiles.
  */
 
 /** Blank means blank. `''` is not `0`, and `Number('') === 0` is how an
@@ -64,6 +81,19 @@ const blankOr = (v, cast = Number) => {
   const s = String(v ?? '').trim();
   return s === '' ? null : cast(s);
 };
+
+/**
+ * What the circle MEANS for attendance, in this module's own terms.
+ *
+ * Passed to the map rather than living inside it: `PointRadiusMap` draws a
+ * point and a radius and knows nothing about punches, which is what lets 8.2
+ * and 8.4 mount the same component for a PIN area and a dropped pin. The
+ * wording matters — a punch outside the fence is FLAGGED, never refused, and an
+ * operator who believes it is refused sets the radius far too wide.
+ */
+const FENCE_NOTE = 'A punch inside this circle is recorded as at the site. '
+  + 'Outside it the punch is still recorded and still counts — it carries a '
+  + 'flag for a reviewer to look at.';
 
 const EMPTY_FORM = {
   name: '', lat: '', lng: '', radius_m: 150,
@@ -116,6 +146,10 @@ export default function Sites() {
   const [fixAlt, setFixAlt] = useState(null);
   /** Which site is mid-deactivate, so only its own button says "Saving…". */
   const [toggling, setToggling] = useState(null);
+  /** Which saved site is showing its fence. One at a time — two maps on one
+   *  screen is two SDK map instances, and the comparison they invite is better
+   *  served by the coordinates already on every row. */
+  const [showing, setShowing] = useState(null);
 
   const open = adding || editing != null;
 
@@ -409,6 +443,23 @@ export default function Sites() {
             </p>
           )}
 
+          {/* ── The fence, as it is being typed ─────────────────────────────
+              Directly under the three fields it reads, so a transposed pair or
+              a missing digit is visible in the same glance as the input that
+              caused it. `form.name` is a name the operator typed, never an id.
+              Phase 8.1 keeps the altitude pair OFF this picture deliberately: a
+              circle is horizontal, and drawing a vertical window would claim a
+              precision consumer GNSS does not have. */}
+          <PointRadiusMap
+            subject="site"
+            label={form.name.trim() || undefined}
+            lat={form.lat}
+            lng={form.lng}
+            radiusM={form.radius_m}
+            radiusNote={FENCE_NOTE}
+            height={220}
+          />
+
           {/* ── The vertical pair ───────────────────────────────────────────
               Its own row and its own explanation, because it is the one part of
               this form where leaving the fields BLANK is the recommendation
@@ -497,8 +548,10 @@ export default function Sites() {
           {sites.map(s => {
             const checksAltitude = s.altitude_m != null && s.altitude_tolerance_m != null;
             const active = s.is_active !== false;
+            const mapOpen = showing === s.id;
             return (
-              <tr key={s.id}>
+              <React.Fragment key={s.id}>
+              <tr>
                 <Td><strong className="ph__name">{s.name}</strong></Td>
                 <Td mono>{Number(s.lat).toFixed(4)}, {Number(s.lng).toFixed(4)}</Td>
                 <Td mono>{s.radius_m} m</Td>
@@ -520,6 +573,21 @@ export default function Sites() {
                 </Td>
                 <Td>
                   <span className="ph__rowacts">
+                    {/* Available to a reader with no write access. Checking
+                        where a fence is, is not a change to it, and the person
+                        who spots that a fence is in the wrong place is usually
+                        the reviewer looking at the flags it produced — who may
+                        not be allowed to edit anything. */}
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => setShowing(mapOpen ? null : s.id)}
+                      aria-expanded={mapOpen}
+                      title={mapOpen
+                        ? undefined
+                        : 'See where this site is and how far its fence reaches.'}
+                    >
+                      {mapOpen ? 'Hide fence' : 'Show fence'}
+                    </button>
                     <button
                       className="btn btn--ghost btn--sm"
                       onClick={() => startEdit(s)}
@@ -541,6 +609,26 @@ export default function Sites() {
                   </span>
                 </Td>
               </tr>
+
+              {/* The saved fence. Six cells wide — the same count as the header
+                  above, which is what keeps the row on the `--row-h` contract
+                  the rest of the table sits on. */}
+              {mapOpen && (
+                <tr className="ph__expand">
+                  <td colSpan={6}>
+                    <PointRadiusMap
+                      subject="site"
+                      label={s.name}
+                      lat={s.lat}
+                      lng={s.lng}
+                      radiusM={s.radius_m}
+                      radiusNote={FENCE_NOTE}
+                      height={240}
+                    />
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             );
           })}
         </DataTable>

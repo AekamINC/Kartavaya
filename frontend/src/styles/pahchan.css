@@ -806,3 +806,97 @@
   .ph__consent-acts { flex-direction: column; align-items: stretch; }
   .ph__consent-row { flex-direction: column; gap: var(--sp-3); }
 }
+
+/* ══ The geofence picture · `components/PointRadiusMap.jsx` ════════════════
+   Phase 8.1. A site centre and its radius, drawn on a Mappls basemap when there
+   is one and stated in words when there is not — which is every environment
+   today, because the basemap 401s pending a Mappls console fix.
+
+   These rules live in pahchan.css because Pahchan is the only module that
+   mounts the component so far. The component itself is deliberately generic
+   (8.2's PIN preview and 8.4's dropped pin want the same picture); when the
+   SECOND module mounts it, move this block to `components.css` rather than
+   copying it — a duplicated block is how two surfaces that should look
+   identical stop looking identical.
+
+   Fluid and left-aligned, like every page in this product: `--h` is the only
+   fixed dimension and it is a height, set per instance from JSX because a form
+   preview wants a shorter map than a review panel would. */
+.ph__geo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+  max-width: 68ch;
+}
+
+/* The map canvas itself. A background is set so that a container which has been
+   created but has not yet painted tiles reads as a surface rather than a hole. */
+.ph__geomap {
+  height: var(--h, 240px);
+  width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background: var(--s-low);
+}
+
+/* Every state that is NOT a drawn map: no coordinates yet, an environment with
+   no Mappls credentials, a basemap that refused. One class, because the
+   reader's job is the same in all of them — read a sentence. */
+.ph__geonote {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  line-height: 1.65;
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--s-low);
+  border: 1px solid var(--outline-variant);
+}
+
+/* A fault, as opposed to a fact. `MAP_DOWN` is this; `MAP_OFF` is NEVER this —
+   an environment with no map credentials is not broken, and dressing it up as a
+   fault sends somebody hunting a bug that does not exist. */
+.ph__geonote--bad { border-color: var(--danger); color: var(--on-surface-2); }
+
+/* The figures. These are the part that works with no basemap at all, so they
+   are laid out to be read as a small record rather than as a caption. */
+.ph__geofacts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ph__geoline {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: var(--sp-3);
+  align-items: baseline;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: 1.65;
+}
+
+.ph__geok {
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+.ph__geov { min-width: 0; }
+
+.ph__geoline--warn { color: var(--danger); }
+.ph__geoline--warn .ph__geok { color: var(--danger); }
+.ph__geoline--soft { color: var(--on-surface-3); }
+
+/* `.ph__mono` is a block elsewhere in this module (a second line under a row).
+   Inside a sentence it has to sit on the line, so this is a scoped override and
+   not a new primitive. */
+.ph__geo .ph__mono { display: inline; font-size: inherit; }
+
+/* One column on a phone. The key/value pairs lose nothing by stacking — they
+   are a record, not a comparison — and the labels stay above their values. */
+@media (max-width: 620px) {
+  .ph__geoline { grid-template-columns: 1fr; gap: 2px; }
+}

@@ -67,8 +67,22 @@ const errors = [];
 //
 // `lib/mapplsSdk.js` is the loader itself and is exempt: it has no DOM. Every
 // OTHER importer is a screen, and a screen with a basemap owes the mark.
+//
+// TESTS ARE EXEMPT, and this cost a red build to learn. A spec that MOCKS the
+// SDK — `vi.mock('../lib/mapplsSdk', …)` — names the module and mounts no
+// basemap, so it owes no credit; but the string is there and the first version
+// of this gate failed `territoryMapBuckets.test.jsx` for it. That failure
+// reached `staging`, because the spec was written AFTER the run of
+// `npm run check` that had been green. A gate is only as green as its last run,
+// and "I ran it earlier" is not the same sentence.
+//
+// The exemption is by PATH, not by content: a test that satisfied the gate by
+// happening to mention the class in an assertion would be passing by accident,
+// and an accident is not a licence compliance argument.
+const isTest = (f) => /[\\/]__tests__[\\/]|\.(test|spec)\.[jt]sx?$/.test(f);
+
 const consumers = files.filter(f =>
-  /\.(jsx|tsx)$/.test(f) && readFileSync(f, 'utf8').includes(SDK_MODULE));
+  /\.(jsx|tsx)$/.test(f) && !isTest(f) && readFileSync(f, 'utf8').includes(SDK_MODULE));
 
 if (consumers.length === 0) {
   // Not a pass. If the SDK stops being imported anywhere this check has
