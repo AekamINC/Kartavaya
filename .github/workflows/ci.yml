@@ -439,6 +439,12 @@ jobs:
           # the step failed with `Could not find .../src/**/*.test.ts` and the
           # mobile suite (840 tests, green locally) had NEVER RUN here.
           node-version: "24"
+          # The same yarn cache the frontend job uses, keyed on the same
+          # lockfile. Without it this job re-downloads the whole tree every
+          # run — it never installed at all before, so there was nothing to
+          # cache and nothing to notice.
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
 
       # THE FRONTEND'S OWN DEPENDENCIES FIRST. This step installed `playwright`
       # GLOBALLY and never ran `npm ci` at all, so `frontend/node_modules` did
