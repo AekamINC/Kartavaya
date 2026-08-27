@@ -37,6 +37,18 @@ Found by reading CI instead of recognising it. Held by
 `test_postponed_annotations_and_wrappers.py` (2), which fails on the combination
 rather than the runtime symptom.
 
+**The live counts are the proof, and they are stark:**
+
+    staging.manav_offboarding            10 rows   (all E2E)
+    staging.manav_offboarding_custody     0 rows
+
+Ten people have been offboarded and **not one custody line has ever been
+recorded against any of them** — laptops, DSC tokens, keys, none of it. That is
+what a 422 on the only write path looks like from the data side, and it is why
+`docs/plans/PHASE-6` insists a router ships with a test that executes its SQL.
+There is one now (`test_custody_router.py`) and it was passing throughout: it
+runs on 3.14, where the bug does not exist.
+
 ## One open privacy finding, 2026-08-27
 
 **`server.py::add_team_member` returns a customer's email address to Aekam.**

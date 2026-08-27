@@ -2218,6 +2218,20 @@ is not fully defined`. `memory/backend_suite_27_failures_at_head` already record
 the general form — *a green suite hid a live 422* — and this is the same
 sentence with a different 422 under it.
 
+**The live counts settle it.** Read after the fix, before any new write:
+
+    staging.manav_offboarding            10 rows   (all E2E)
+    staging.manav_offboarding_custody     0 rows
+
+Ten people offboarded, and not one custody line recorded against any of them —
+no laptop, no DSC token, no keys. The register shipped in migrations 160–164 and
+its only write path has never once succeeded. A 422, seen from the data side.
+
+And the uncomfortable part: `tests/test_custody_router.py` EXISTS and was passing
+the whole time. It is a live-SQL test of the kind Phase 6's rule demands, and it
+runs on 3.14 where the bug does not exist. The rule is right and it was followed;
+what it does not say is *on which interpreter*.
+
 `custody.py` was the ONLY router combining postponed annotations with
 `@limiter.limit` and Pydantic body models; the other five `__future__` routers
 carry no limiter at all. The import is gone.
