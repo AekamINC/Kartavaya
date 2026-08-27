@@ -87,6 +87,105 @@ Unicode `fae87907` **9 and 0**. No probe rows written.
   minus Sundays, and re-deriving that in a browser would be the second
   convention that 0.17 was raised to end.
 
+### 🔴 Changing a plan has ALWAYS 500'd — found by Phase 3.2's own acceptance
+
+`POST /v1/subscription/admin/set-plan` bound `user["user_id"]` into
+`staging.subscriptions.activated_by`, which is `uuid` and carries a real FK to
+`users(id)`. **`public.users` has BOTH** — `id` (uuid) and `user_id` (text,
+`user_f798947b8a2e`). asyncpg refused it before Postgres ever saw the statement:
+
+    DataError: invalid input for query argument $4: 'user_f798947b8a2e'
+    (invalid UUID: length must be between 32..36 characters, got 17)
+
+So an operator has never been able to move an organisation to another plan —
+and that is also why the proration path had never run and `subscription_invoices`
+is still 0 rows. Confirmed live: **5 subscriptions, 0 with `activated_by` set.**
+
+**This is what writing the acceptance was for.** Phase 3.2's credit arithmetic
+was correct and tested; the screen that reaches it could not complete a single
+call. A row count would never have shown it — there was nothing to count.
+
+The FK stays: it is real integrity, it works, and the row it points at exists.
+What was wrong was the value. `_user_row_id` resolves `users.user_id` →
+`users.id`, and is deliberately NOT the existing `_actor_uuid` — that one serves
+`subscription_invoices`, whose uuid columns have **no** foreign key, so when the
+caller's id is not a uuid there is nothing to look up and NULL is the honest
+answer. Here there is something to look up. It returns None if it cannot
+resolve, because a plan change must not fail over the row recording who made it.
+
+### 4.3 — the acknowledgement table was locked from the inside
+
+`skill_finding_ack` **0 → 1**, written by the DEPLOYED endpoint against E2E, not
+by a script touching the table. Re-running the skill afterwards returned **2
+products instead of 3**, with `counts.products_short` recomputed 3 → 2.
+
+The reason it held zero could not have been fixed from the frontend.
+`apply_wiring` attaches the key/state to a finding **but returns the output
+untouched when the org holds no acknowledgements**, and the dispatcher
+short-circuits on the same condition. Both guards are individually right — they
+stop a "0 acknowledged" line appearing on a list nobody has touched — but
+together they meant no finding ever carried a key, so no client could ever ask
+for the FIRST ack. A door locked from the inside. The key is now attached
+separately from the filter, in `hub.py`, without touching the wiring module.
+
+Three things it found on the way:
+
+  · **`_MAX_FINDING_CHARS` is the real ceiling on this feature.** Of 18 wired
+    data-only skills run against E2E, **8 came back truncated** (`data: null`),
+    and a truncated finding renders as clipped text — so no dismiss control can
+    ever appear on it. The handle costs +3% to +19% of the character budget;
+    one skill already sits at 19,353 of 20,000. The control is dropped rather
+    than tipping a finding into truncation: big lists lose the button, never the
+    rows. The durable fix is raising the bound or storing findings outside the
+    run row.
+  · **Neither ack endpoint has a role check** — any user who can reach Sahayak
+    for the org can hide a finding for everyone. The control is left ungated to
+    match, rather than adding frontend theatre over an open endpoint.
+  · **"78 skills" is the template count.** Live: 111 templates, 93 skill
+    functions, 32 wired, 61 unwired — of which only **17** are list-shaped
+    read-only skills that would actually benefit. None were wired here: one per
+    commit, as the standing rule says.
+
+### 0.27 — the rate card, seeded as an estimate that cannot be read as fact
+
+There was **no WhatsApp rate card table anywhere** — checked before building:
+`%rate_card%|%pricing%|%price%` returned only `vendor_rate_cards` (Ganit
+supplier rates, an unrelated thing sharing a noun) and `credit_prices` (Aekam's
+own meter). Different money, correctly separate.
+
+Migration 227 (renumbered from 224 when a peer's untracked migration appeared —
+225 left as a hole so a peer mid-write could not collide). Five rows, and the
+owner's "must be visibly an estimate" is carried four different ways, each
+failing differently:
+
+  · `rate_basis` **defaults to `'estimate'`** — the safe value is the default
+    and the unsafe one has to be typed;
+  · a CHECK makes an estimate row **without a note uninsertable**;
+  · another allows the `meta_rate_card` claim **only while citing a Meta-owned
+    host**, so 0.27's guess cannot be laundered into 0.26's real card by an
+    UPDATE to one column;
+  · `source_url` and `source_read_on` are NOT NULL with no default — an
+    uncited, undated figure cannot exist.
+
+On the API the caveat is **inside the number string** (`"₹0.8631 (estimate)"`)
+so a future template cannot drop it by forgetting a sibling field, and a row
+that somehow arrives as an estimate with no note has its **number withheld**:
+the failure mode is "no number", never "bare number".
+
+**Meta moved from per-conversation to per-message billing on 1 July 2025**, so
+the per-conversation pricing the task named no longer exists to seed;
+`pricing_model` records which model each row describes. India moved to INR
+billing on 1 Jan 2026. Three sources agree on the marketing and utility figures;
+one dissents (~26% higher, probably a BSP list price) and the disagreement is
+written into the affected rows' `notes`. No margin column, and there must not be
+one — that would be a schema contradicting decision 0.18.
+
+`varta.cost_per_conversation` stays ABSENT, with its reason corrected rather
+than left false: of **250 outbound messages, 0 carry a `template_name`** and 0
+join to `varta_templates`, so no message can be placed in a billing category —
+and Meta prices per category. A cost from a guessed rate × a guessed category is
+two inventions multiplied.
+
 ### 0.24 — the PT ladder goes 3 states to 7, and nobody's pay moves
 
 Migration 224, applied and verified from `information_schema` / `pg_constraint`

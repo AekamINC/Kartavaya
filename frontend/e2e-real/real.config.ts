@@ -50,6 +50,29 @@ export default defineConfig({
   outputDir: path.join(DL_DIR, 'artifacts'),
   use: {
     baseURL: process.env.E2E_BASE_URL || 'https://staging.kartavaya.com',
+    // ── REAL CHROME, NOT THE BUNDLED HEADLESS SHELL ──────────────────────────
+    //
+    // Measured 2026-08-26: EVERY spec in this directory was failing on its first
+    // navigation with a Vercel page reading "403: Forbidden", and the response
+    // carried `x-vercel-mitigated: deny`. That is Vercel's bot mitigation on
+    // staging.kartavaya.com refusing the request outright.
+    //
+    // It is not the user agent — curl sending the identical HeadlessChrome UA
+    // gets 200. It is the client fingerprint: Playwright's default download for
+    // `chromium` is `chromium-headless-shell`, which mitigation classifies as a
+    // bot. Launching the SAME url with `channel: 'chrome'` — the real Chrome on
+    // this machine, still headless — answers 200 with no mitigation header.
+    //
+    // So this is one line, and without it the whole suite reports a product
+    // failure for an infrastructure reason: the page under test never loads and
+    // every assertion fails on an element that was never served. `channel:
+    // 'chromium'` is NOT the alternative — it needs a separate download this
+    // environment cannot spawn ("spawn UNKNOWN", the same fault that keeps these
+    // runs headless).
+    //
+    // The remedy on the Vercel side is an allow rule for the suite; until there
+    // is one, this is what makes the specs able to see the app at all.
+    channel: 'chrome',
     trace: 'on',
     screenshot: 'on',
     video: 'on',
