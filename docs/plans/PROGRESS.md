@@ -24,6 +24,135 @@ statement written down. See `README.md` for the full terms.
 
 ---
 
+## 2026-08-28
+
+Three agents on 7.6, 8.2 and 8.3, partitioned by file. Every number below is a
+live read-only `SELECT` or a test run.
+
+### The finding that reshaped 8.2 and 8.3 — and the route it produced
+
+Two agents hit the same wall independently, in the same words: the only
+boundary route is per-**TERRITORY**, and the live orgs are arranged so walking
+territories finds nothing.
+
+    E2E Test & Associates    17 territories    0 client pincodes
+    Unicode Group             0 territories   21 client pincodes
+
+Every client pincode in the product belongs to the org with NO territory. The
+PIN popover drew nothing for all 21 of Unicode's addresses, and the failure
+would have read as "this pincode has no area" rather than as an architecture
+that could not reach the answer.
+
+`GET /v1/pincodes/{pin}` · `backend/routers/pincodes.py` · commit `114a8f98` ·
+**21 tests passing under `railway run -e staging`**, including the statement
+PREPAREd against the real catalogue (Parse + Describe, nothing written) and
+`110020` read back as two districts out of the live table.
+
+- Its own router. Not `graha.py`: Manav employees, Kray vendors, Vikray
+  shipping and Pahchan sites all carry a PIN and none should ask the CRM for
+  permission to name a district. Not `maps.py` either, though the prefix fits —
+  nothing here touches Mappls. No key, no allocation, no quota, no licence over
+  anything submitted, because nothing is submitted.
+- ⚠ **The two datasets disagree in both directions**: 58 PINs in the directory
+  have no published boundary; **531 PINs WITH a boundary are absent from the
+  directory**. `directory` and `boundary_status` are independent fields and
+  neither is derived from the other.
+- ⚠ **A PIN is not one district.** 1,229 span 2+ districts, 51 span 2+ STATES.
+  `LOOKUP_SQL` has no `LIMIT 1` and never will.
+- Bite-proof, both run LIVE and reverted: `LIMIT 1` → `assert 1 >= 2`;
+  `unavailable` folded into `unmatched` → `assert 'unmatched' == 'unavailable'`.
+- ⚠ The registration test first failed for the WRONG reason. `app.routes` is
+  vacuously false for every router in this FastAPI — included routers are
+  wrappers with no `.path` — so it reads the OpenAPI schema instead.
+
+### 8.2 ✅ · the PIN preview · `0aae7f40` + `114a8f98`
+
+`PinAreaPopover.jsx`. Names the district from 7.2, lists **every** district for
+a PIN that spans two, and computes the area in km² **locally from the same
+coordinates it would draw** — which is what makes the mandatory caption ("an
+Indian PIN averages ~82 km². This shows the postal area, not the building.") a
+number the reader can check rather than a slogan. ONE request, ours: §8.2's
+"zero vendor calls" is asserted as an exact URL list. 20 tests.
+
+The pincode in `<AddressBlock>` is clickable on client detail via a **render
+prop, not an import** — `AddressBlock` is a `ui/` component on six pages that
+fetches nothing, and importing the popover would put a network-calling
+component into all six. Block layout only. `addressLines` now derives from a
+new `addressParts`; the parts are rendered rather than the joined string,
+because splitting it back on `', '` is wrong for a city called "Navi Mumbai,
+Thane" — and wrong invisibly. 34 tests on `AddressBlock`, all consumers green.
+
+### 8.3 ✅ · the clients panel, not a drawn map · `8a80aa5c`
+
+Two blockers, either fatal alone: no client carries a coordinate (8.4), and
+every client pincode belongs to the org with no territory. Honest coverage of a
+PIN-area map today: **21 of 89 companies, 0 of 61 in one org**.
+
+Live, read-only:
+
+    E2E     61 active clients · line1 48 · city 43 · pincode 0
+    Unicode 28 active clients · 5 with address == {} · pincode 22,
+            of which 21 six-digit, 19 distinct, all 19 in staging.pin_directory
+
+So `ClientLocations` leads with the denominator and names four distinct gaps
+rather than one number. ⚠ The `{}` case is why emptiness is `addressLines(…)
+.length` and never a null check — the column is `jsonb NOT NULL`, so `!= null`
+counts all five of Unicode's empty addresses as populated. *Open in Maps*
+carries the PIN and state only, never a company name or street line, so no join
+key reaches Google. No basemap and therefore no `.terr__mapbrand`: the file
+does not import `mapplsSdk` and no credit is owed. 18 tests, 8 mutations.
+
+### 7.6 🟡 · address autosuggest · `5b98df7e`
+
+Code, no row — no page wires the component up yet, so it is not ✅. Three
+deviations from the plan, each recorded so it is not re-litigated: a new service
+module (`test_mappls_token.py` guards `mappls.py` against importing httpx), the
+Static Key rather than the OAuth pair (the plan predates 27 Aug), and
+`/api/v1/maps/…` rather than `/v1/graha/…`.
+
+⚠ Content submitted to Mappls carries a perpetual, sub-licensable licence back
+to them, so two constraints are structural, not intentional: `suggest(q: str)`
+has exactly one parameter and a test asserts the signature; the outgoing params
+are asserted positively AND negatively, because the realistic breakage is
+sending the record **as well** as the fragment, in a `near=` built from the
+saved city. The component has **no `useEffect` on `value`** — the obvious
+implementation fires on mount, so every form opening a saved client would
+submit that client's premises to a third party. No cache, asserted by counting
+calls on the wire. The query is never logged: httpx puts the request URL in
+several exception reprs, which would publish the fragment and the non-expiring
+key together. 57 backend + 18 frontend tests.
+
+⚠ **Two owner items**: the privacy notice must name Mappls as a processor, and
+the Geospatial Data Guidelines 2021 question is unanswered — a foreign entity
+may license finer-than-threshold Indian map data only through APIs that do not
+let the data pass through its own servers, and this is a server-side proxy. If
+Aekam Inc is Indian it is moot; the reason that is not asserted is that this
+repo carries an org named `UK AekamINC`.
+
+### Two findings closed while the agents ran
+
+- `87303bd9` · **test runs were reporting into the production Sentry project.**
+  `server.py` calls `sentry_sdk.init` at import time when `SENTRY_DSN` is set,
+  and `railway run` injects the real service environment — verified live,
+  `SENTRY_DSN injected: True`. Three PIN-boundary issues (`PYTHON-FASTAPI-13`,
+  `-11`, `-12`) were raised that way by 7.3's own tests; nobody was affected by
+  any of them. Guarded at the top of `tests/conftest.py` before the first app
+  import, with a test asserting the ORDER by source offset. Proved to bite under
+  `railway run`, the only place the DSN exists: 3 failed, restored 3 passed.
+- `b5121aa4` · `doc_validation._addr_blank` omitted `country`, so a
+  country-only address read as blank while both renderers print it (6 live
+  `ganit_vendors.address` rows carry one). It had been **allowlisted** in the
+  address-order scanner as an "order-free emptiness test" — true, and beside
+  the point: order was never what it got wrong, **membership** was. ⚠ Fixing it
+  exposed a circular import (`doc_render` imports `DocumentCheck` from
+  `doc_validation`) that the 325-test suite had been surviving by import luck.
+
+### Measured but NOT applied
+
+All **54** double-encoded `tasks.subtasks` rows are Aekam Inc and every one is
+the string `"[]"` — an empty list. There is no subtask data to lose, so the
+repair is trivial; no live row has been written.
+
 ## 2026-08-27
 
 Six agents, partitioned by file so no two shared one, plus a cloud session's
