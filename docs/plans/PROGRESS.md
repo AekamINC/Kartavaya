@@ -3370,4 +3370,70 @@ A redundant first test was deleted rather than repaired — it hand-rolled the
 app's auth to call the token endpoint, and `window.mappls` becoming an object
 already proves every link in that chain.
 
+---
+
+## Phase 5 ✅ CLOSED — the statute ladder has priced a real payslip
+
+**2026-08-27, on the owner's "remove old data an run one smal payroll".** Phase
+5 had been 🟡 for one reason: **0 of 1,160 payslips had been computed since the
+ladder landed**, so `income_tax.ladder_for` had never priced anything and the
+newest figures still came from the year-stale literal that *over-deducts*.
+
+### The run
+
+`POST /api/v1/vetana/payroll/process`, month **2026-09**, driven as an
+`org_admin` against the deployed service — not computed in a script, because a
+number this file calculated itself would prove nothing about the product.
+
+    run 2026-09   status processed   3 employees
+    gross  578,041.00
+    TDS     85,370.56      <- the first TDS this product has ever taken from the ladder
+    PT         600.00
+    PF      10,800.00
+    net    486,670.44
+
+**`statutory_treatment` is the acceptance, not the totals.** Each payslip
+records how it was priced, and it shows both halves working:
+
+- **PT from the slab table**: `"pt_basis": "slab"`, `"pt_slab": {"state_code":
+  "27", "state_name": "Maharashtra", "slab_from": 10001, "effective_from":
+  "2024-04-01"}` — a resolved row, not a literal.
+- **TDS per REGIME**, on one run: one employee `"tds_regime": "old"` →
+  **₹42,036.90**, two on `"new"` → **₹22,144.83** and **₹21,188.83**. Two
+  ladders producing three different numbers is something a hardcoded rate cannot
+  do, which is why this is the evidence rather than the total.
+
+### Nothing was destroyed to get it, and that was not luck
+
+**2026-09 was chosen because every month from 2025-04 to 2026-08 already holds a
+non-draft run** — `process_payroll` refuses anything that is not `draft`, so
+Phase 2's acceptance evidence (2026-08: 51 payslips, gross ₹54,03,192.69, TDS
+**₹6,88,924.66** on the stale ladder, PT ₹10,000, net ₹45,67,170.25,
+present_days 2..26) was never at risk. That is now the *before* half of a real
+before/after on the same product.
+
+⚠ **The "small" came from the right lever, and the obvious one was wrong.** The
+run population is `vetana_salary_structures.is_active` — **not** employee rows.
+`process_payroll` excludes people by **EXIT DATE**, deliberately, because
+`is_active` "is a flag somebody has to remember to clear" and ten leavers had
+been paid through it. So deactivating employees would **not have shrunk the run
+at all**, and would have misstated who works there. 60 structure ids were
+snapshotted to `payroll_smallrun_20260827.structures_before`, the 3 highest-paid
+kept, and all 60 restored afterwards — verified twice: 60 of 60 back, and **0**
+structures active that were not in the snapshot.
+
+## 7.5 ✅ — the outline draws
+
+Confirmed by the owner on the deployed site. The full chain that had to be true:
+Static Key → four whitelisted origins → `mappls.Map` called with an id string
+and a `{lat, lng}` centre → `tile.mappls.com` admitted by the CSP → `fitBounds`
+in `[lng, lat]`. Five links, four of them broken at some point today, each fixed
+with a test that fails on the old code.
+
+⚠ **`'unsafe-eval'` was NOT added and must not be.** The console reports the
+Mappls SDK evaluating a string, and the temptation is to widen `script-src` to
+silence it. The map draws without it, so the block costs nothing we use — and
+`'unsafe-eval'` is the one directive that materially reduces what the policy
+protects against, on production as well as staging. Leave it refused.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
