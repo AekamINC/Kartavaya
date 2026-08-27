@@ -26,6 +26,17 @@ Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wron
 
 ---
 
+## Fixed 2026-08-27 — the custody register's write path had never worked
+
+`POST /offboarding/{employee_id}/lines` answered **422 to every caller** since the
+router shipped: `from __future__ import annotations` plus `@limiter.limit` meant
+FastAPI could not resolve `CustodyLine` from the wrapper's globals and treated the
+body as a **query** parameter. Invisible locally — Python 3.14 resolves it, the
+container's **3.13** does not — so a green 14,521-test suite sat on top of it.
+Found by reading CI instead of recognising it. Held by
+`test_postponed_annotations_and_wrappers.py` (2), which fails on the combination
+rather than the runtime symptom.
+
 ## One open privacy finding, 2026-08-27
 
 **`server.py::add_team_member` returns a customer's email address to Aekam.**

@@ -2189,4 +2189,75 @@ MAY see it. Neither is a call to take unasked, so the gate stays red on exactly
 one true thing. **It was already red before this session**; it now names one
 finding instead of three, two of which were noise.
 
+## 2026-08-27 · CI reproduces what this machine cannot — a live 422, found by reading it
+
+Arming the gates paid for itself the same afternoon. With CI finally running the
+things it claimed to run, it failed on eleven tests that pass here, and the cause
+was a shipped defect rather than an environment quirk.
+
+**`POST /offboarding/{employee_id}/lines` has answered 422 to every caller for as
+long as the router has existed.**
+
+    {"type":"missing","loc":["query","body"],"msg":"Field required"}
+
+`routers/custody.py` carried `from __future__ import annotations`, which makes
+every parameter annotation a STRING that FastAPI resolves against the handler's
+`__globals__` — and its three handlers are wrapped by `@limiter.limit`, whose
+`functools.wraps` wrapper carries **slowapi's** globals, not this module's.
+`CustodyLine` is unresolvable from there, so FastAPI gave up on the body
+parameter and treated it as a **query** parameter. Nobody could record a custody
+line. The register shipped in migrations 160–164 and its write path has never
+worked.
+
+**It does not reproduce here, and that is the durable part.** Python 3.14
+resolves these through PEP 649's `__annotate__` closure and gets the right
+answer; the container pins **3.13**, which goes through `__globals__` and does
+not. The local suite was green at 14,521 passing while CI failed eleven tests on
+`PydanticUserError: TypeAdapter[Annotated[ForwardRef('CustodyLine'), Query(...)]]
+is not fully defined`. `memory/backend_suite_27_failures_at_head` already records
+the general form — *a green suite hid a live 422* — and this is the same
+sentence with a different 422 under it.
+
+`custody.py` was the ONLY router combining postponed annotations with
+`@limiter.limit` and Pydantic body models; the other five `__future__` routers
+carry no limiter at all. The import is gone.
+`tests/test_postponed_annotations_and_wrappers.py` (2) fails on the COMBINATION
+rather than the runtime symptom, because the symptom appears only under 3.13 and
+a runtime test would be useless on the machine where the code is written.
+Verified by putting the import back and watching it name
+`custody.py::record_custody_line`.
+
+── THE E2E SMOKE JOB, WHICH HAS NEVER RUN A SPEC ────────────────────────────
+
+Its own comment records one earlier version of this: *"`--project=chromium` NAMED
+NOTHING … the job was green for years without running a single spec."* That was
+fixed. Three more faults were standing behind it, each hiding the next:
+
+1. `mint-state.mjs` exited 1 whenever `.env.e2e` was absent, and CI has no file —
+   it passes tokens as secrets. The job died on its FIRST step, every run.
+2. Past that, `Cannot find package '@playwright/test'`. The job ran
+   `npm install -g playwright` and **never `npm ci` at all**, so
+   `frontend/node_modules` did not exist. The global `playwright` package is not
+   `@playwright/test`. It also installed only chromium, while `real.config.ts`
+   sets `channel: 'chrome'` — load-bearing, because Vercel's bot mitigation
+   fingerprints the bundled `chromium-headless-shell` and 403s every navigation.
+3. **The dangerous one.** The mint step was never given `E2E_ORG_ID`, which
+   disabled the wrong-org guard: `mint-state` can only ask "is this token a
+   member of that org?" if it is told which org. Without it the guard was skipped
+   and `owner.json` was minted from `E2E_ADMIN_TOKEN` — a **Unicode Group**
+   account that 403s on E2E. The browser would have signed in and written into a
+   real customer's books while every `api()` call 403'd. That is exactly how a
+   Phase-1 vendor landed in the wrong organisation on 26 Aug.
+
+All three fixed. `E2E_GODMODE_TOKEN` does not exist as a repository secret, so
+with the guard active the job now **refuses and stays red until one is added** —
+written into the workflow beside the variable. A red job that explains itself
+beats a green one writing to a customer's books.
+
+That is three gates in one day found armed in name only: `check-csp-hash`, the
+mobile suite (840 tests, blocked by Node 20's inability to glob `**`), and this.
+`check-ci-runs-every-gate.mjs` stops the first kind recurring; the other two were
+each their own accident, which is the argument for reading a red build rather
+than recognising it.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
