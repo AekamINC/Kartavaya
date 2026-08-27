@@ -416,6 +416,46 @@ SELECT count(*)                                        AS row_count,
   FROM staging.pin_directory
 """
 
+#: ── The read. `routers/pincodes.py`, and PREPAREd by the same test ──────────
+#:
+#: EVERY ROW FOR THE PIN, NOT ONE. This statement has no `LIMIT 1` and it never
+#: will: measured over all 20,144 rows, 1,229 PINs span more than one DISTRICT
+#: and 51 span more than one STATE. `110020` really is both SOUTH DELHI and
+#: SOUTH EAST DELHI, and a `LIMIT 1` here would make the endpoint answer one of
+#: them, correctly, for ever — with no way for a reader to know the other
+#: existed. The caller is handed the list and has to decide what to show.
+#:
+#: `$1::text` and not a bare `$1`: PgBouncer in transaction mode turns an
+#: untyped parse error into an instant 500, and this one IS on a request path.
+#:
+#: The ORDER BY is `state, district` and not the surrogate `id`, because `id` is
+#: insertion order — a re-load from a new vintage would silently reorder what a
+#: customer sees. Alphabetical is arbitrary too, but it is arbitrary in a way
+#: that does not change under our feet.
+LOOKUP_SQL = """
+SELECT pincode, state, district, blocks, state_lgd, district_lgd,
+       source_vintage
+  FROM staging.pin_directory
+ WHERE pincode = $1::text
+ ORDER BY state, district
+"""
+
+
+async def lookup(conn, pin: str) -> list:
+    """Every directory row for one PIN, as plain dicts. `[]` if unknown.
+
+    `[]` MEANS "NOT IN THIS DIRECTORY", AND THAT IS NOT THE SAME AS "NOT A
+    REAL PIN". 531 PINs that have a published BOUNDARY are absent from this
+    directory — the two government datasets disagree, in both directions, and
+    the endpoint over this function reports the two independently for exactly
+    that reason. Nothing here infers a district from a prefix.
+
+    Takes a connection or a pool: both answer `fetch`. It is a single indexed
+    read of at most a handful of rows, so it needs no transaction.
+    """
+    rows = await conn.fetch(LOOKUP_SQL, pin)
+    return [dict(r) for r in rows]
+
 
 # ── The load ─────────────────────────────────────────────────────────────────
 

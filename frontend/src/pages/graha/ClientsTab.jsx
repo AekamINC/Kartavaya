@@ -14,6 +14,7 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import AddressBlock from '../../components/ui/AddressBlock';
 import ClientLocations, { placeOf } from '../../components/ClientLocations';
+import PinAreaPopover from '../../components/PinAreaPopover';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
@@ -225,7 +226,16 @@ export default function ClientsTab() {
                   Both are right now, and neither needed a special case: the
                   component reads the seven keys by name and resolves the GST
                   code to a state NAME. */}
-              <AddressBlock address={detail.address} />
+              {/* 8.2 — and the pincode opens its postal area. Passed as a
+                  render prop rather than imported by `AddressBlock`, so the
+                  five other pages that show an address do not acquire a
+                  component that makes a network call. `PinAreaPopover` returns
+                  plain inert text for a value that is not a PIN, so `INC UK`'s
+                  `NW1 245` renders exactly as stored and opens nothing. */}
+              <AddressBlock
+                address={detail.address}
+                renderPincode={pin => <PinAreaPopover pincode={pin} />}
+              />
               {detail.notes && <div className="gr__dnotes">{detail.notes}</div>}
             </div>
 

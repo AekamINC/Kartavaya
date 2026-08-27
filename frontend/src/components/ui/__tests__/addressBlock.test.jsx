@@ -300,3 +300,61 @@ describe('layouts', () => {
     expect(link.textContent).toBe('Open in Maps ↗');
   });
 });
+
+describe('renderPincode · §8.2, without dragging a fetcher into six pages', () => {
+  /* A RENDER PROP AND NOT AN IMPORT, and this block is what keeps it that way.
+     `AddressBlock` is a `ui/` component on six pages that fetches nothing.
+     Importing `PinAreaPopover` here would put a component that makes a network
+     call into all six, so a screen could acquire a request it never asked for
+     by rendering an address. */
+
+  it('is byte-for-byte unchanged when no caller passes one', () => {
+    // The whole safety of the refactor: `addressLines` now derives from
+    // `addressParts`, and every existing call site must be untouched by that.
+    const { text } = render({ address: INC_UK });
+    expect(text.textContent).toBe('London, Bopal CircleUganda, New York, NW1 245');
+  });
+
+  it('replaces ONLY the pincode part, keeping the separators', () => {
+    const { text } = render({
+      address: { city: 'Surat', state: 'Gujarat', pincode: '395002' },
+      renderPincode: pin => <b data-pin={pin}>{pin}</b>,
+    });
+    expect(text.textContent).toBe('Surat, Gujarat, 395002');
+    const marked = text.querySelector('b');
+    expect(marked, 'the pincode was not handed to renderPincode').toBeTruthy();
+    expect(marked.getAttribute('data-pin')).toBe('395002');
+    // And nothing else was: a city is not a pincode.
+    expect(text.querySelectorAll('b').length).toBe(1);
+  });
+
+  it('does not split a city that contains a comma', () => {
+    /* THE REASON THE PARTS ARE RENDERED AND NOT THE JOINED STRING. Splitting
+       "Navi Mumbai, Thane, Maharashtra, 400706" back on ', ' puts the pincode
+       in the right place by luck and the city in two — and gets it wrong
+       invisibly, because the text still reads correctly. */
+    const { text } = render({
+      address: { city: 'Navi Mumbai, Thane', state: 'Maharashtra', pincode: '400706' },
+      renderPincode: pin => <b>{pin}</b>,
+    });
+    expect(text.textContent).toBe('Navi Mumbai, Thane, Maharashtra, 400706');
+    expect(text.querySelector('b').textContent).toBe('400706');
+  });
+
+  it('is BLOCK layout only — an inline cell grows no popover trigger', () => {
+    // `inline` goes into table cells and `rv-meta__v` rows, where a trigger in
+    // a dense grid is a click target nobody aimed at.
+    const { text } = render({
+      address: INC_UK, inline: true, renderPincode: () => <b>x</b>,
+    });
+    expect(text.querySelector('b')).toBe(null);
+    expect(text.textContent).toBe('London, Bopal Circle, Uganda, New York, NW1 245');
+  });
+
+  it('renders the stored text when renderPincode declines the value', () => {
+    // `PinAreaPopover` returns plain inert text for a non-PIN, but a caller may
+    // return null outright. The address must not lose a field either way.
+    const { text } = render({ address: INC_UK, renderPincode: () => null });
+    expect(text.textContent).toContain('NW1 245');
+  });
+});

@@ -220,24 +220,18 @@ describe('PinAreaPopover · the third map, on the same contract', () => {
      bounds. That is precisely why it is pinned here from the same fixture: a
      copy that drifts fails on the identical four numbers. */
   async function openAt(pin) {
-    get.mockImplementation((url) => {
-      if (url === '/v1/graha/territories') {
-        return Promise.resolve({ data: [{
-          id: 't-1', name: 'Surat West', rules: { pincodes: ['395002'] },
-        }] });
-      }
-      return Promise.resolve({ data: {
-        type: 'FeatureCollection', features: [FEATURE], territory_name: 'Surat West',
-        claimed: 1, matched: 1, unmatched: [], unavailable: [], invalid: [],
-        vintage: 'datagov-2025-05', attribution: 'Boundaries © Government of India',
-      } });
-    });
+    get.mockResolvedValue({ data: {
+      pincode: pin, valid: true,
+      directory: [{ state: 'GUJARAT', district: 'SURAT' }],
+      boundary: FEATURE, boundary_status: 'drawn',
+      vintage: 'datagov-2025-05', attribution: 'Boundaries © Government of India',
+    } });
     await render(<PinAreaPopover pincode={pin} />);
     const trigger = document.querySelector('[aria-haspopup="dialog"]');
     await act(async () => {
       trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    // The territory list, the geometry, and the SDK all settle as microtasks.
+    // The lookup and the SDK load both settle as microtasks.
     for (let i = 0; i < 4; i += 1) {
       // eslint-disable-next-line no-await-in-loop
       await act(async () => { await Promise.resolve(); });

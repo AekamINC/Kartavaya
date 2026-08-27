@@ -9,34 +9,40 @@
  * and the only vendor request on the whole path is the Mappls basemap the
  * loader already fetches for every other map in the product.
  *
- * ── THE ENDPOINT IS PER-TERRITORY. THERE IS NO PER-PIN LOOKUP. ───────────────
+ * ── ONE CALL, AND WHY IT IS NOT THE TERRITORY ROUTE ─────────────────────────
  *
- * This is the single fact that shapes the whole component, and it is worth
- * stating plainly because the plan's wording ("draw that PIN's polygon from the
- * geometry endpoint") reads as though a per-PIN route exists. It does not.
- * Checked 2026-08-27 against the live tree: `backend/routers/graha.py` exposes
- * `/territories/{territory_id}/geometry` and nothing else that reads
- * `services/pin_boundaries.py`; `staging.pin_directory` (Phase 7.2, 20,144
- * rows) has NO http surface at all — `services/pin_directory.py` is a loader
- * with a CLI over it and no router imports it.
+ * `GET /v1/pincodes/{pin}` — `backend/routers/pincodes.py`. It answers with
+ * BOTH government datasets: the 7.2 directory rows (which districts and states
+ * the PIN covers) and the 7.3 boundary out of our own R2 bucket.
  *
- * Two consequences, and neither is hidden from the reader:
+ * This component was first written against the only route that existed, which
+ * is per-TERRITORY: list the org's territories, find one whose `rules.pincodes`
+ * claims this PIN, ask THAT territory for its shapes. It worked, and it was
+ * useless where it mattered. Measured live 2026-08-27:
  *
- *   1. A PIN can only be drawn when one of THIS organisation's territories
- *      claims it. The path is: list the territories (they carry
- *      `rules.pincodes`), find the ones claiming this PIN, ask that territory
- *      for its geometry, and pick out the one Feature whose
- *      `properties.pincode` matches. A PIN no territory claims gets a sentence
- *      saying exactly that — never a blank, and never an implied "this PIN does
- *      not exist".
- *   2. THE DISTRICT AND STATE ARE NOT SHOWN. §8.2's acceptance asks the popover
- *      to name "Surat, Gujarat" from the 7.2 directory, and there is no way to
- *      read that directory from a browser today. The honest options were to
- *      omit it or to invent a backend route, and inventing one is not this
- *      change's to make. So it is omitted, and it is owed: one thin
- *      `GET /v1/graha/pincodes/{pin}` over `staging.pin_directory` closes it,
- *      and it would also make the whole component work for a PIN outside every
- *      territory. Nothing here guesses a district from a prefix.
+ *     E2E Test & Associates    17 territories    0 client pincodes
+ *     Unicode Group             0 territories   21 client pincodes
+ *
+ * Every client pincode in the product belongs to the organisation with no
+ * territory, so the territory path drew nothing for the only org that had
+ * addresses in it — and the failure would have read as "this pincode has no
+ * area" rather than as an architecture that could not reach the answer.
+ *
+ * ── THE TWO DATASETS DISAGREE, AND THIS SCREEN MUST NOT RECONCILE THEM ──────
+ *
+ *     58 PINs in the directory have NO published boundary.
+ *     531 PINs WITH a boundary are absent from the directory.
+ *
+ * So the place-name line and the shape are rendered from independent fields and
+ * neither is inferred from the other. A PIN can be named SURAT, GUJARAT with
+ * nothing to draw, and a PIN can draw perfectly while we cannot say which
+ * district it is in. Both are ordinary and both are said plainly.
+ *
+ * ── A PIN IS NOT ONE DISTRICT ───────────────────────────────────────────────
+ *
+ * 1,229 PINs span more than one district and 51 span more than one STATE.
+ * `110020` is genuinely both SOUTH DELHI and SOUTH EAST DELHI. Every row is
+ * listed; nothing here picks one and calls it the answer.
  *
  * ── THE THREE BUCKETS ARE HONOURED, BECAUSE MERGING THEM LIES ───────────────
  *
@@ -82,7 +88,7 @@
  * one fixture.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api, rows } from '../lib/api';
+import { api, body } from '../lib/api';
 import { loadMappls, MAP_OFF } from '../lib/mapplsSdk';
 import Popover from './ui/Popover';
 
@@ -195,19 +201,20 @@ function areaKm2(paths) {
 }
 
 /**
- * Which of this organisation's territories claim a PIN, BY NAME.
+ * The directory rows as one readable line: `SURAT, GUJARAT`.
  *
- * `rules.pincodes` is a free-form jsonb value and the product stores whatever
- * goes in. `pin_boundaries._claim` treats a non-list as claiming nothing (and
- * reports the whole value as invalid), so a non-list claims nothing here
- * either: a screen that were more generous than routing would offer to draw a
- * PIN that no lead will ever be routed by.
+ * EVERY ROW, joined with " · ". A PIN that spans two districts gets both, in
+ * the order the server sent them, because there is no "the" district for such
+ * a PIN and picking the first would answer a two-answer question with one — for
+ * ever, and invisibly. The government's own spellings are printed as published
+ * (upper case, unreconciled): the moment they are tidied they stop being
+ * quotable as the source's values.
  */
-function claimantsOf(territories, pin) {
-  return territories.filter((t) => {
-    const list = t?.rules?.pincodes;
-    return Array.isArray(list) && list.some(entry => normalisePin(entry) === pin);
-  });
+function placesOf(directory) {
+  if (!Array.isArray(directory)) return [];
+  return directory
+    .map(d => [d?.district, d?.state].filter(Boolean).join(', '))
+    .filter(Boolean);
 }
 
 /** The load-bearing caption. §8.2: the same expectation reset 7.6 owes. */
@@ -237,48 +244,36 @@ function PinArea({ pin, height = 220 }) {
   const [drawErr, setDrawErr] = useState(null);
 
   /**
-   * Two of our own calls and no vendor call: the territory list, then the
-   * geometry of the first territory claiming this PIN.
+   * ONE call, ours, and no vendor call at all.
    *
-   * Only the FIRST claimant is asked. A second would read the same R2 shard
-   * through the same server-side cache and answer identically — the buckets are
-   * a property of the dataset, not of the territory — so it would be a second
-   * request for a guaranteed-identical answer. Every claimant is still NAMED,
-   * because two territories claiming one PIN is a configuration question the
-   * reader may want to settle.
+   * `boundary_status` is the server's own bucket and it is used as given — not
+   * re-derived from `boundary` being null, which is what would quietly merge
+   * `unavailable` into `unmatched` the first time somebody simplified this.
    */
   const lookup = useCallback(async () => {
     setFetchErr(null);
     setFound(null);
     try {
-      const list = rows(await api.get('/v1/graha/territories'));
-      const claimants = claimantsOf(list, pin);
-      if (!claimants.length) {
-        setFound({ kind: 'unclaimed' });
-        return;
-      }
-      const names = claimants.map(t => t.name).filter(Boolean);
-      // The id goes into the URL and nowhere else: `check-rendered-ids.mjs`,
-      // and the owner's rule behind it — a person or a record is identified on
-      // screen by its NAME.
-      const r = await api.get(`/v1/graha/territories/${claimants[0].id}/geometry`);
-      const d = r.data || {};
-      const feature = (d.features || [])
-        .find(f => f?.properties?.pincode === pin);
-      const common = { names, attribution: d.attribution, vintage: d.vintage };
+      const d = body(await api.get(`/v1/pincodes/${pin}`));
+      const common = {
+        places: placesOf(d.directory),
+        attribution: d.attribution,
+        vintage: d.vintage,
+      };
+      const status = d.boundary_status;
 
-      if (feature) {
-        setFound({ kind: 'drawn', feature, ...common });
-      } else if ((d.unavailable || []).includes(pin)) {
+      if (status === 'drawn' && d.boundary) {
+        setFound({ kind: 'drawn', feature: d.boundary, ...common });
+      } else if (status === 'unavailable') {
         setFound({ kind: 'unavailable', ...common });
-      } else if ((d.unmatched || []).includes(pin)) {
+      } else if (status === 'unmatched') {
         setFound({ kind: 'unmatched', ...common });
       } else {
-        /* Unreachable if the endpoint holds its documented arithmetic
-           (`matched + unmatched + unavailable === claimed`). Rendered anyway:
-           a PIN that falls out of every bucket between the server and this
-           screen is exactly the silent loss that arithmetic exists to catch,
-           and treating it as "no boundary" would hide it for ever. */
+        /* `invalid` cannot reach here — the trigger only renders for a value
+           that already passed `normalisePin` — and any other value is a status
+           this build does not know. Reported rather than folded into
+           "no boundary", which is the one thing this component must not say
+           when it is not known to be true. */
         setFound({ kind: 'dropped', ...common });
       }
     } catch (e) {
@@ -365,10 +360,7 @@ function PinArea({ pin, height = 220 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap, found]);
 
-  const covered = found?.names?.length
-    ? `Covered by ${found.names.join(', ')}.`
-    : null;
-
+  const places = found?.places || [];
   const km2 = paths.length ? areaKm2(paths) : 0;
 
   return (
@@ -386,17 +378,6 @@ function PinArea({ pin, height = 220 }) {
 
       {!fetchErr && !found && (
         <div className="terr__mapnote" role="status">Looking up this pincode…</div>
-      )}
-
-      {/* No territory claims it, so there is no shape we can ask for. Said in
-          full, because "we cannot draw this" and "this PIN has no area" are
-          different statements and only the first one is true. */}
-      {found?.kind === 'unclaimed' && (
-        <div className="terr__mapnote" role="status">
-          No territory covers this pincode, and the boundary data can only be
-          read one territory at a time — so there is no shape to draw here yet.
-          Add it to a territory and its area is drawn.
-        </div>
       )}
 
       {found?.kind === 'unmatched' && (
@@ -470,7 +451,29 @@ function PinArea({ pin, height = 220 }) {
             {km2 >= 1 ? '.' : ' or less.'}
           </div>
         )}
-        {covered && <div className="terr__coverline terr__coverline--soft">{covered}</div>}
+        {/* The place, from the 7.2 directory. Independent of the shape above:
+            531 PINs that draw are absent from this release, and 58 PINs listed
+            in it have no shape. Neither is evidence about the other. */}
+        {places.length > 0 && (
+          <div className="terr__coverline terr__coverline--soft">
+            {places.join(' · ')}
+            {places.length > 1 && (
+              // 1,229 PINs span two or more districts and 51 span two or more
+              // STATES. Said out loud, because a reader seeing two names would
+              // otherwise reasonably assume one of them is wrong.
+              <span className="terr__pincap">
+                {' '}— this pincode spans {places.length} districts.
+              </span>
+            )}
+          </div>
+        )}
+        {found && places.length === 0 && (
+          <div className="terr__coverline terr__coverline--soft">
+            This release does not list a district for {pin}. That is not a
+            statement that the pincode is unknown — 531 pincodes with a
+            published boundary are absent from it.
+          </div>
+        )}
         <div className="terr__pincap">{CAPTION}</div>
         {/* GODL, for the government boundary data, from the response that
             supplied it. A different credit from the Mappls one, for a different

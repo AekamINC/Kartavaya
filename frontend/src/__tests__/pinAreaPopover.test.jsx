@@ -10,13 +10,14 @@
  *    rather than using `storage.download_file` precisely to keep the two apart;
  *    a frontend that merges them throws that away silently.
  *
- * 2. THE LIMIT IS SAID, NOT HIDDEN. The geometry endpoint is per-TERRITORY.
- *    A pincode no territory claims cannot be drawn, and the popover has to say
- *    that in a way that cannot be read as "this pincode has no area".
+ * 2. THE TWO DATASETS ARE INDEPENDENT. 58 PINs in the 7.2 directory have no
+ *    published boundary and 531 PINs WITH a boundary are absent from the
+ *    directory. The place-name line and the shape must therefore never be
+ *    derived from each other, in either direction.
  *
  * 3. NO VENDOR CALL. §8.2's acceptance is "zero calls to any vendor endpoint in
  *    the network tab". Asserted here as: every URL this component requests is
- *    one of ours, and there are exactly two of them.
+ *    one of ours, and there is exactly one of them.
  *
  * 4. THE CAPTION IS LOAD-BEARING. "an Indian PIN averages ~82 km²" is the
  *    expectation reset that stops a polygon reading as a building.
@@ -59,45 +60,35 @@ const SURAT = {
   },
 };
 
-/** A geometry response with the four buckets defaulted to empty. */
-function cover(over = {}) {
+/** `GET /v1/pincodes/{pin}`, with a `SURAT, GUJARAT` directory row by default. */
+function answer(over = {}) {
   return {
-    type: 'FeatureCollection',
-    features: [],
-    territory_name: 'Surat West',
-    claimed: 1,
-    matched: 0,
-    unmatched: [],
-    unavailable: [],
-    invalid: [],
+    pincode: '395002',
+    valid: true,
+    directory: [{
+      state: 'GUJARAT', district: 'SURAT', blocks: ['SURAT CITY'],
+      state_lgd: '24', district_lgd: '492', source_vintage: 'datagov-2025-05',
+    }],
+    boundary: null,
+    boundary_status: 'unmatched',
     vintage: 'datagov-2025-05',
     attribution: 'Boundaries © Government of India (data.gov.in) — GODL-India',
     ...over,
   };
 }
 
-/** The territory list, in the shape `GET /v1/graha/territories` answers. */
-function territories(pincodes, name = 'Surat West') {
-  return [{
-    id: '11111111-2222-3333-4444-555555555555',
-    name,
-    rules: { pincodes },
-    assigned_users: [],
-    assigned: [],
-  }];
-}
-
 /**
- * Wire the two calls this component makes, in order, and record every URL.
- * Anything it asks for that is not one of these two fails loudly rather than
- * resolving to undefined and producing a confusing render.
+ * Wire the one call this component makes and record every URL. Anything else
+ * it asks for fails loudly rather than resolving to undefined and producing a
+ * confusing render.
  */
-function serve({ list, geometry }) {
+function serve(payload) {
   const seen = [];
   get.mockImplementation((url) => {
     seen.push(url);
-    if (url === '/v1/graha/territories') return Promise.resolve({ data: list });
-    if (/\/geometry$/.test(url)) return Promise.resolve({ data: geometry });
+    if (/^\/v1\/pincodes\/[0-9]{6}$/.test(url)) {
+      return Promise.resolve({ data: payload });
+    }
     return Promise.reject(new Error(`unexpected request: ${url}`));
   });
   return seen;
@@ -125,7 +116,7 @@ async function render(el) {
   await settle();
 }
 
-/** Two ticks: the territory list and the geometry resolve one after the other. */
+/** The lookup and the SDK load both settle as microtasks. */
 async function settle() {
   await act(async () => { await Promise.resolve(); });
   await act(async () => { await Promise.resolve(); });
@@ -198,18 +189,15 @@ describe('PinAreaPopover · what it renders before anything is clicked', () => {
   });
 
   it('fetches nothing until the popover is opened', async () => {
-    serve({ list: territories(['395002']), geometry: cover() });
+    serve(answer());
     await render(<PinAreaPopover pincode="395002" />);
     expect(get).not.toHaveBeenCalled();
   });
 });
 
 describe('PinAreaPopover · the four outcomes, kept apart', () => {
-  it('draws the area, names the territory, and calls no vendor', async () => {
-    const urls = serve({
-      list: territories(['395002']),
-      geometry: cover({ features: [SURAT], matched: 1 }),
-    });
+  it('draws the area, names the district, and calls no vendor', async () => {
+    const urls = serve(answer({ boundary: SURAT, boundary_status: 'drawn' }));
     await render(<PinAreaPopover pincode="395002" />);
     await open();
 
@@ -218,25 +206,55 @@ describe('PinAreaPopover · the four outcomes, kept apart', () => {
     // The fixture is 0.1° x 0.1° at 21° N ≈ 11.13 km x 10.39 km ≈ 116 km².
     expect(text).toMatch(/covers about/);
     expect(text).toMatch(/11[0-9] km²/);
-    expect(text).toContain('Surat West');
+    // §8.2's acceptance, in full: the PIN is NAMED, from the 7.2 directory.
+    expect(text).toContain('SURAT, GUJARAT');
     // The caption is the expectation reset and it is not optional.
     expect(text).toContain('an Indian PIN averages ~82 km²');
     expect(text).toContain('not the building');
     // The GODL credit for the boundary data, from the response that supplied it.
     expect(text).toContain('GODL-India');
 
-    // §8.2: "zero calls to any vendor endpoint". Exactly two requests, both ours.
-    expect(urls.length).toBe(2);
-    expect(urls[0]).toBe('/v1/graha/territories');
-    expect(urls[1]).toMatch(/^\/v1\/graha\/territories\/[^/]+\/geometry$/);
-    urls.forEach(u => expect(u.startsWith('/v1/')).toBe(true));
+    // §8.2: "zero calls to any vendor endpoint". ONE request, ours.
+    expect(urls).toEqual(['/v1/pincodes/395002']);
+  });
+
+  it('lists EVERY district for a PIN that spans two, and says so', async () => {
+    // 1,229 PINs span more than one district and 51 more than one state.
+    // Showing the first would answer a two-answer question with one, for ever.
+    serve(answer({
+      boundary: SURAT, boundary_status: 'drawn',
+      directory: [
+        { state: 'DELHI', district: 'SOUTH DELHI' },
+        { state: 'DELHI', district: 'SOUTH EAST DELHI' },
+      ],
+    }));
+    await render(<PinAreaPopover pincode="110020" />);
+    await open();
+
+    const text = seen();
+    expect(text).toContain('SOUTH DELHI, DELHI');
+    expect(text).toContain('SOUTH EAST DELHI, DELHI');
+    expect(text).toMatch(/spans 2 districts/);
+  });
+
+  it('draws a PIN the directory does not list, without implying it is unknown', async () => {
+    // 531 PINs WITH a boundary are absent from the directory. The shape must
+    // survive the missing name, and the missing name must not read as doubt
+    // about the pincode.
+    serve(answer({
+      boundary: SURAT, boundary_status: 'drawn', directory: [],
+    }));
+    await render(<PinAreaPopover pincode="395002" />);
+    await open();
+
+    const text = seen();
+    expect(text).toMatch(/covers about/);
+    expect(text).toMatch(/does not list a district for 395002/);
+    expect(text).toMatch(/531 pincodes/);
   });
 
   it('says "no boundary published" for an unmatched PIN — and does NOT call it an outage', async () => {
-    serve({
-      list: territories(['400097']),
-      geometry: cover({ unmatched: ['400097'] }),
-    });
+    serve(answer({ boundary_status: 'unmatched' }));
     await render(<PinAreaPopover pincode="400097" />);
     await open();
 
@@ -249,10 +267,7 @@ describe('PinAreaPopover · the four outcomes, kept apart', () => {
   });
 
   it('says we do not know for an unavailable PIN — and never "it has no area"', async () => {
-    serve({
-      list: territories(['110001']),
-      geometry: cover({ unavailable: ['110001'] }),
-    });
+    serve(answer({ boundary_status: 'unavailable' }));
     await render(<PinAreaPopover pincode="110001" />);
     await open();
 
@@ -267,28 +282,32 @@ describe('PinAreaPopover · the four outcomes, kept apart', () => {
       'an outage is a fault and must be announced as one').toBeTruthy();
   });
 
-  it('explains the per-territory limit when no territory claims the PIN', async () => {
-    const urls = serve({ list: territories(['395002']), geometry: cover() });
-    await render(<PinAreaPopover pincode="560001" />);
+  it('works for an org with NO territories at all', async () => {
+    /* THE REASON THIS COMPONENT WAS REWIRED. Built against the per-territory
+       route it needed one of the org's territories to claim the PIN — and
+       Unicode Group, the only org in the product with client pincodes, has
+       ZERO territories. The popover drew nothing for every one of its 21
+       addresses, and would have read as "this pincode has no area". The
+       pincode route knows nothing about territories, which is the point. */
+    const urls = serve(answer({ boundary: SURAT, boundary_status: 'drawn' }));
+    await render(<PinAreaPopover pincode="395002" />);
     await open();
 
-    const text = seen();
-    expect(text).toContain('No territory covers this pincode');
-    expect(text).toMatch(/one territory at a time/);
-    // It must not be dressed as a property of the pincode.
-    expect(text).not.toContain('No boundary published');
-    // And it must not ask the server for a geometry it cannot use.
-    expect(urls.length, 'the geometry endpoint was called with no claimant').toBe(1);
+    expect(seen()).toMatch(/covers about/);
+    expect(urls).toEqual(['/v1/pincodes/395002']);
+    expect(urls.some(u => u.includes('territor')),
+      'the popover still walks territories to find a shape').toBe(false);
   });
 
-  it('reports a PIN that falls out of every bucket rather than guessing', async () => {
-    // Unreachable if the endpoint holds `matched + unmatched + unavailable ===
-    // claimed`. Rendered anyway: a silently lost PIN is exactly what that
-    // arithmetic exists to catch, and calling it "no boundary" hides it.
-    serve({ list: territories(['395002']), geometry: cover() });
+  it('reports an unknown status rather than guessing "no boundary"', async () => {
+    // A status this build does not know is a server it does not understand.
+    // Folding that into `unmatched` would print a confident sentence about a
+    // customer's pincode on the strength of a string nobody recognised.
+    serve(answer({ boundary_status: 'something_new' }));
     await render(<PinAreaPopover pincode="395002" />);
     await open();
     expect(seen()).toMatch(/none of the boundary buckets/);
+    expect(seen()).not.toContain('No boundary published');
   });
 
   it('offers a retry when our own lookup fails', async () => {
@@ -305,10 +324,7 @@ describe('PinAreaPopover · the basemap is an enhancement, never a gate', () => 
     // MAP_OFF is a fact about the environment; MAP_DOWN is a fault somebody must
     // go and fix. The loader is mocked to the first, so the words must be the
     // calm ones — and the area, the territory and the caption must all survive.
-    serve({
-      list: territories(['395002']),
-      geometry: cover({ features: [SURAT], matched: 1 }),
-    });
+    serve(answer({ boundary: SURAT, boundary_status: 'drawn' }));
     await render(<PinAreaPopover pincode="395002" />);
     await open();
 

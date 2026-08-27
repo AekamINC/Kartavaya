@@ -188,12 +188,34 @@ function asFields(raw, depth = 0) {
  * will read the same columns and must read them the same way.
  */
 export function addressLines(raw) {
+  return addressParts(raw).map(line => line.map(p => p.text).join(', '));
+}
+
+/**
+ * The same two lines, but as `[{key, text}]` per line rather than joined.
+ *
+ * Exists so that ONE part of a line can be rendered as something other than
+ * text — §8.2 makes the pincode open its postal area — without a caller
+ * splitting the joined string back apart on ', '. A city called "Navi Mumbai,
+ * Thane" would make that split wrong, and it would be wrong invisibly.
+ *
+ * `addressLines` is derived from this rather than the other way round, so
+ * there is exactly one statement of which keys appear, in which order, and
+ * what counts as present. The emptiness test every caller uses is that
+ * statement's `.length`.
+ */
+export function addressParts(raw) {
   const f = asFields(raw);
   if (!f) return [];
-  const top = TOP.map(k => text(f[k])).filter(Boolean).join(', ');
-  const bottom = [text(f.city), stateOf(f), text(f.pincode), text(f.country)]
-    .filter(Boolean).join(', ');
-  return [top, bottom].filter(Boolean);
+  const part = (key, value) => (value ? { key, text: value } : null);
+  const top = TOP.map(k => part(k, text(f[k]))).filter(Boolean);
+  const bottom = [
+    part('city', text(f.city)),
+    part('state', stateOf(f)),
+    part('pincode', text(f.pincode)),
+    part('country', text(f.country)),
+  ].filter(Boolean);
+  return [top, bottom].filter(line => line.length);
 }
 
 /**
@@ -263,8 +285,10 @@ export default function AddressBlock({
   label = 'Address',
   inline = false,
   linkLabel = 'Open in Maps',
+  renderPincode = null,
 }) {
-  const lines = addressLines(address);
+  const parts = addressParts(address);
+  const lines = parts.map(line => line.map(p => p.text).join(', '));
   const coord = coordinate(lat, lng);
 
   // PHASE-8 §8.0's acceptance, first clause: a record with no address renders
@@ -304,11 +328,42 @@ export default function AddressBlock({
     );
   }
 
+  /* §8.2: the pincode opens its postal area.
+
+     A RENDER PROP, not an import. This is a `ui/` component that fetches
+     nothing and is on six pages; importing the popover here would pull a
+     component that makes a network call into every one of them, so that a
+     screen could acquire a request it never asked for by rendering an address.
+     The caller passes what it wants drawn, and callers that pass nothing are
+     byte-for-byte unchanged.
+
+     Block layout only. `inline` goes into table cells and `rv-meta__v` rows,
+     where a popover trigger in a dense grid is a click target nobody aimed at.
+
+     The parts are rendered rather than the joined string because splitting it
+     back on ', ' is wrong for a city called "Navi Mumbai, Thane" — and wrong
+     invisibly. */
+  const renderLine = (line) => {
+    if (!renderPincode) return line.map(p => p.text).join(', ');
+    const nodes = [];
+    line.forEach((p, i) => {
+      if (i) nodes.push(<span key={`s${i}`}>, </span>);
+      const custom = p.key === 'pincode' ? renderPincode(p.text) : null;
+      nodes.push(<span key={p.key}>{custom || p.text}</span>);
+    });
+    return nodes;
+  };
+
   return (
     <div className="k-addr">
       {label && <div className="k-addr__lbl">{label}</div>}
       <div className="k-addr__text">
-        {shown.map(line => <div className="k-addr__line" key={line}>{line}</div>)}
+        {lines.length
+          ? parts.map((line, i) => (
+            <div className="k-addr__line" key={line.map(p => p.text).join()}>
+              {renderLine(line)}
+            </div>))
+          : shown.map(line => <div className="k-addr__line" key={line}>{line}</div>)}
       </div>
       {link}
     </div>

@@ -140,6 +140,7 @@ from routers.statute       import router as statute_router
 from routers.support_sessions import router as support_sessions_router
 from routers.custody   import router as custody_router
 from routers.maps          import router as maps_router
+from routers.pincodes      import router as pincodes_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -5852,6 +5853,12 @@ app.include_router(statute_router)
 # `/v1/graha`, because Phase 8 draws maps in attendance and in billing too and
 # neither should ask the CRM for a basemap. See routers/maps.py.
 app.include_router(maps_router)
+# Phase 8.2 — one PIN: its districts (7.2's table) and its postal boundary
+# (7.3's R2 shards). Its own router because it is neither a CRM feature nor a
+# Mappls one: nothing here reaches a vendor. See routers/pincodes.py. Written
+# and NOT registered is how `/api/v1/support-sessions` 404'd for a release
+# below, so this line is the point of the change, not an afterthought.
+app.include_router(pincodes_router)
 # Customer-granted, time-boxed support access. Written and never registered, so
 # `/api/v1/support-sessions` 404'd while `SupportSessionsPage.jsx`,
 # `org/TabSupportAccess.jsx` and the comments at server.py:3496 and
