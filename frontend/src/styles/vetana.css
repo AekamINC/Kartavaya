@@ -344,6 +344,54 @@
   vertical-align: baseline;
 }
 
+/* ── The income-tax ladder editor (Statutory tab) ────────────────────────────
+   Four classes, all introduced by `ItLadderSection.jsx`. They are declared
+   separately from the `.vt-pt__*` three above rather than shared, because the
+   two ladders behave differently in one way a reader has to see: professional
+   tax overrides a shared band ONE AT A TIME, income tax replaces a regime's
+   ladder WHOLESALE. A class that means "shared row" in both places would
+   invite the two notes to be edited into agreement, and they must not agree. */
+
+/* One regime's ladder — new or old — as its own stack under the section. The
+   two are separated by rule rather than by a heading alone, because the bands
+   in them are numerically similar and a reader scrolling past the boundary
+   would otherwise carry the wrong ladder in their head. */
+.vt-it__reg {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* The "this is optional" note and the "which generation is in force" line.
+   Both sit ABOVE their table, where an administrator reads them before
+   concluding the ladder owes them something. */
+.vt-it__note {
+  max-width: 68ch;
+  margin: 0 0 var(--sp-3);
+  color: var(--on-surface-2);
+}
+
+/* Marks a band as national reference data rather than this org's own. Inline
+   after the band, so the distinction is read where the row is read. */
+.vt-it__tag {
+  margin-left: var(--sp-2);
+  vertical-align: baseline;
+}
+
+/* A gap or an overlap in the ladder. Deliberately NOT `.k-formpanel__err`:
+   this is not a refusal and the run is not blocked — it is a thing worth
+   fixing, shown to the one person who can fix it. Warn, not danger. */
+.vt-it__adv {
+  max-width: 68ch;
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--warn);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface-2);
+  color: var(--on-surface-2);
+  font-size: var(--t-body-sm);
+}
+
 /* The form's error line. `.gn-form` is borrowed from Ganit wholesale and
    carries no error slot of its own; this matches `.gn-denial`'s treatment
    (ganit.css:106) so a refusal reads the same in both modules. */

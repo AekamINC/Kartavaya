@@ -528,17 +528,48 @@ def test_the_payslip_records_which_rule_produced_the_professional_tax():
     assert nothing["pt_basis"] == "slab" and nothing["pt_slab"] is None
 
 
-def test_no_income_tax_or_esi_constant_moved_with_it():
+def test_no_esi_constant_moved_with_it():
     """2.2 changes professional tax and nothing else.
 
-    ESI at 0.75%/3.25% under ₹21,000 and both income-tax ladders are law and
-    are untouched. **PF LEFT THIS LIST ON 2026-08-27 AND ITS ABSENCE IS THE
-    POINT** — see the test below.
+    ESI at 0.75%/3.25% under ₹21,000 and the ₹50,000 standard deduction are law
+    and are untouched.
+
+    **TWO GROUPS LEFT THIS LIST ON 2026-08-27 AND THEIR ABSENCE IS THE POINT.**
+    PF's `0.12`/`1800` went to `statute_calendar` (5.1) and the income-tax
+    ladders' `300000`/`700000`/`250000`/`112500`/`140000` went to
+    `staging.pay_income_tax_slabs` (5.2b). Each has its own test below saying so;
+    a constant that is still here is one nothing has moved yet.
     """
     src = inspect.getsource(vetana._compute_statutory)
-    for law in ("0.0075", "0.0325", "21000", "50000",
-                "300000", "700000", "250000", "112500", "140000"):
+    for law in ("0.0075", "0.0325", "21000", "50000"):
         assert law in src, f"the statutory constant {law} has gone"
+
+
+def test_the_income_tax_ladders_are_data_and_never_a_literal():
+    """PHASE 5.2b — and this is the assertion the phase exists for.
+
+    Two ladders lived in this function as `if/elif` chains, and the new-regime
+    one was **A YEAR OUT OF DATE**: 0/3L/7L/10L/12L/15L is AY 2025-26, while
+    FY 2026-27 runs on 0/4L/8L/12L/16L/20L/24L. The product was deducting under
+    last year's narrower bands — over-deducting — with no deploy-free way to
+    correct it.
+
+    The plan's guardrail is stricter than the ESI one and deliberately so: an
+    absent ladder deducts ₹0 and MUST NEVER fall back to a compiled-in one. A
+    missing PF rate would under-remit a contribution the employer owes, so the
+    literal is the safe answer there. A missing tax ladder means the law is not
+    recorded — and quietly applying the wrong year's ladder while looking
+    correct on the payslip is the exact failure the table exists to end. ₹0 is
+    visible; a stale ladder is not.
+    """
+    src = inspect.getsource(vetana._compute_statutory)
+    for gone in ("300000", "700000", "250000", "112500", "140000"):
+        assert gone not in src, (
+            f"{gone} is back in the statutory function — an income-tax band "
+            f"belongs in staging.pay_income_tax_slabs, read at the run's period "
+            f"end. A literal here silently applies one year's law for ever.")
+    assert "income_tax.ladder_for" in src and "income_tax.annual_tax" in src, (
+        "the ladder is no longer read from the table")
 
 
 def test_pf_is_dated_law_now_and_still_computes_the_same_figure():

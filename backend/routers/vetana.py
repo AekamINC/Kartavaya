@@ -12,6 +12,8 @@ from typing import Optional
 import traceback
 import logging
 
+from services import income_tax
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -1134,7 +1136,8 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
                        commission: float = 0.0, bonus: float = 0.0,
                        pt_slabs=None, employee_state=None,
                        esi_ceiling: float | None = None,
-                       epf_terms: tuple | None = None):
+                       epf_terms: tuple | None = None,
+                       it_bands: dict | None = None):
     """PF, ESI, PT and TDS — WHETHER each is computed, and on WHAT BASE.
 
     NO PF, ESI OR TDS RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED.
@@ -1247,29 +1250,32 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
         # ran for everybody, so a firm that does not operate TDS on salary had
         # tax deducted from every payslip and no way to say otherwise.
         tax = 0
-    elif structure.get("tds_regime") == "new":
-        # New regime 2026 slabs (simplified)
-        if annual_taxable <= 300000:
-            tax = 0
-        elif annual_taxable <= 700000:
-            tax = (annual_taxable - 300000) * 0.05
-        elif annual_taxable <= 1000000:
-            tax = 20000 + (annual_taxable - 700000) * 0.10
-        elif annual_taxable <= 1200000:
-            tax = 50000 + (annual_taxable - 1000000) * 0.15
-        elif annual_taxable <= 1500000:
-            tax = 80000 + (annual_taxable - 1200000) * 0.20
-        else:
-            tax = 140000 + (annual_taxable - 1500000) * 0.30
     else:
-        if annual_taxable <= 250000:
-            tax = 0
-        elif annual_taxable <= 500000:
-            tax = (annual_taxable - 250000) * 0.05
-        elif annual_taxable <= 1000000:
-            tax = 12500 + (annual_taxable - 500000) * 0.20
-        else:
-            tax = 112500 + (annual_taxable - 1000000) * 0.30
+        # ── PHASE 5.2b · THE LADDER IS DATA NOW, AND THE LITERALS ARE GONE ──
+        #
+        # Two ladders lived here as `if/elif` chains, and the new-regime one was
+        # **a year out of date**: it carried 0/3L/7L/10L/12L/15L, which is
+        # AY 2025-26. The ladder in force for FY 2026-27 is
+        # 0/4L/8L/12L/16L/20L/24L (Finance Act 2025). So the product has been
+        # deducting under last year's slabs — over-deducting, since every band
+        # widened — and no deploy-free way existed to correct it.
+        #
+        # `staging.pay_income_tax_slabs` (migration 230) holds both regimes as
+        # ONE ROW PER BAND, the owner's shape decision of 2026-08-26, and the
+        # same shape professional tax already proves end to end. Resolution and
+        # the marginal arithmetic live in `services/income_tax.py`.
+        #
+        # AN ABSENT LADDER DEDUCTS ₹0 AND NEVER FALLS BACK TO A LITERAL. That
+        # is the plan's guardrail and it is the opposite of the PF choice
+        # deliberately: a missing PF rate would under-remit a contribution the
+        # employer owes, whereas a missing tax ladder means the law is not
+        # recorded — and quietly applying the WRONG YEAR'S ladder while looking
+        # correct is exactly the failure this table exists to end. ₹0 is
+        # visible; a stale ladder is not.
+        bands = income_tax.ladder_for(
+            it_bands, str(structure.get("tds_regime") or "new"))
+        tax = income_tax.annual_tax(bands, annual_taxable)[0]
+
     tds = round(tax / 12, 2)
 
     return {
@@ -1746,6 +1752,10 @@ async def process_payroll(
     # once per employee: the law does not change between two payslips of
     # the same month, and a query per employee would be 83 of them.
     epf_terms = await _epf_terms(pool, month_end)
+    # The income-tax ladder for THIS period, both regimes, resolved once.
+    # Same `as_of` discipline as the two above: a May re-run of a March
+    # payslip must get March's law, not today's.
+    it_bands = await income_tax.ladders(pool, org_id, month_end)
 
     seen_employees = set()
     unique_structures = []
@@ -1949,6 +1959,7 @@ async def process_payroll(
                                   pt_slabs=pt_slabs,
                                   esi_ceiling=esi_ceiling,
                                   epf_terms=epf_terms,
+                                  it_bands=it_bands,
                                   employee_state=(s["employee_state"]
                                                   if pt_slabs is not None
                                                   else None))

@@ -97,6 +97,11 @@ from routers.storage_browser import router as storage_browser_router
 from routers.manav          import router as manav_router
 from routers.vikray         import router as vikray_router
 from routers.vetana         import router as vetana_router
+# The income-tax slab ladder's settings routes (Phase 5.2b). Its own file, and
+# the same `/api/v1/vetana` prefix — split from `routers/vetana.py` so that the
+# 5.1 rewiring of `_compute_statutory` and this screen were not two authors in
+# one 2,700-line module. `it-slabs` sits beside `pt-slabs` on the wire.
+from routers.income_tax_slabs import router as it_slabs_router
 from routers.analytics      import router as analytics_router
 from routers.pulse          import router as pulse_router
 from routers.dristi         import router as dristi_router
@@ -5493,6 +5498,7 @@ app.include_router(storage_browser_router)
 app.include_router(manav_router)
 app.include_router(vikray_router)
 app.include_router(vetana_router)
+app.include_router(it_slabs_router)
 app.include_router(analytics_router)
 # Aekam-only product-usage analytics (proposal 68) — platform-console gated
 # inside the router itself; no tenant ever resolves for it.

@@ -689,9 +689,37 @@ def structure(**over) -> dict:
     return s
 
 
+#: The AY 2026-27 new-regime ladder, as `income_tax.ladders()` returns it.
+#:
+#: PASSED EXPLICITLY BECAUSE AN ABSENT LADDER IS ₹0 (Phase 5.2b), and these
+#: tests are about the tds_applicable SWITCH, not about whether the law is
+#: recorded. Before 5.2b the ladder was compiled into `_compute_statutory`, so
+#: a direct call got one for free and `tds > 0` held without anybody saying
+#: where the bands came from — which is the coupling 5.2b exists to break.
+#: These bands are the seeded shared ones; `test_income_tax_ladder.py` checks
+#: them against the Department's own cumulative figures.
+IT_BANDS = {"new": [
+    {"regime": "new", "slab_from": 0, "slab_to": 400000, "rate_percent": 0,
+     "effective_from": None, "is_own": False},
+    {"regime": "new", "slab_from": 400000, "slab_to": 800000, "rate_percent": 5,
+     "effective_from": None, "is_own": False},
+    {"regime": "new", "slab_from": 800000, "slab_to": 1200000, "rate_percent": 10,
+     "effective_from": None, "is_own": False},
+    {"regime": "new", "slab_from": 1200000, "slab_to": 1600000, "rate_percent": 15,
+     "effective_from": None, "is_own": False},
+    {"regime": "new", "slab_from": 1600000, "slab_to": 2000000, "rate_percent": 20,
+     "effective_from": None, "is_own": False},
+    {"regime": "new", "slab_from": 2000000, "slab_to": 2400000, "rate_percent": 25,
+     "effective_from": None, "is_own": False},
+    {"regime": "new", "slab_from": 2400000, "slab_to": None, "rate_percent": 30,
+     "effective_from": None, "is_own": False},
+]}
+
+
 def stat(basic=50000.0, gross=100000.0, commission=0.0, bonus=0.0, **flags):
     return vetana()._compute_statutory(basic, gross, structure(**flags),
-                                       commission=commission, bonus=bonus)
+                                       commission=commission, bonus=bonus,
+                                       it_bands=IT_BANDS)
 
 
 def test_an_unset_flag_reads_at_its_columns_own_default_not_as_false():
@@ -714,12 +742,22 @@ def test_an_unset_flag_reads_at_its_columns_own_default_not_as_false():
 def test_an_unanswered_flag_never_blocks_a_run():
     """The owner: "we dont know how company operates so we dont block". A
     structure with every switch unset must compute a payslip, not raise."""
-    out = vetana()._compute_statutory(50000.0, 100000.0, {})
+    out = vetana()._compute_statutory(50000.0, 100000.0, {}, it_bands=IT_BANDS)
     assert out["pf_employee"] == 1800
     assert out["professional_tax"] == 200
     assert out["tds"] > 0
     assert set(out["treatment"]["unanswered"]) == set(
         vetana()._FLAG_WHEN_UNSET)
+
+    # AND WITH NO LADDER AT ALL IT STILL DOES NOT BLOCK — it deducts ₹0.
+    # That is Phase 5.2b's guardrail sitting exactly where this test's own
+    # sentence points: "we don't know how the company operates so we don't
+    # block". An unrecorded tax ladder is one more thing nobody has answered,
+    # and the answer is zero rather than a refusal — or, worse, last year's
+    # bands applied silently.
+    bare = vetana()._compute_statutory(50000.0, 100000.0, {})
+    assert bare["tds"] == 0
+    assert bare["pf_employee"] == 1800
 
 
 def test_tds_can_now_be_switched_off_and_could_not_be_before():
@@ -777,13 +815,25 @@ def test_the_esi_ceiling_is_tested_against_the_base_it_charges():
 
 
 def test_no_rate_ceiling_or_threshold_inside_the_statutory_function_moved():
-    """PF 12% capped at ₹1,800, ESI 0.75% and 3.25% under ₹21,000, PT ₹200 over
-    ₹15,000, the ₹50,000 standard deduction and both slab tables are LAW. This
-    change alters WHETHER a component is computed and WHAT BASE it uses. Never
-    the arithmetic."""
+    """ESI 0.75% and 3.25% under ₹21,000, PT ₹200 over ₹15,000 and the ₹50,000
+    standard deduction are LAW. The commission/bonus change alters WHETHER a
+    component is computed and WHAT BASE it uses. Never the arithmetic.
+
+    ── WHAT LEFT THIS LIST ON 2026-08-27, AND WHY THAT IS NOT A REGRESSION ────
+
+    PF's `0.12` and `1800`, and the income-tax ladders' `300000` / `700000` /
+    `250000` / `112500` / `140000`, are no longer in this function — Phase 5
+    moved them into `statute_calendar` and `staging.pay_income_tax_slabs`
+    respectively, read at the run's period end.
+
+    They were removed BECAUSE they were law, not in spite of it: a literal
+    cannot say when it came into force, and the income-tax one was a year stale
+    — it carried AY 2025-26's ladder while FY 2026-27 runs on wider bands, so
+    the product was over-deducting. `test_payroll_leavers_and_pt_slabs.py` now
+    asserts their ABSENCE, which is the guard that replaces this one for them.
+    """
     src = inspect.getsource(vetana()._compute_statutory)
-    for law in ("0.12", "1800", "0.0075", "0.0325", "21000", "200", "15000",
-                "50000", "300000", "700000", "250000", "112500", "140000"):
+    for law in ("0.0075", "0.0325", "21000", "200", "15000", "50000"):
         assert law in src, f"the statutory constant {law} has gone"
     # PT and TDS still compute on the FIXED gross — widening those two bases
     # was not asked for and is owed, not done unasked.

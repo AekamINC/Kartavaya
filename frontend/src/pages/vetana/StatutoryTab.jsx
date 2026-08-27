@@ -22,6 +22,7 @@ import { useLanguage } from '../../components/CustomizePanel';
 import { secondaryOf } from '../../lib/labels';
 import { Secondary } from '../../components/Bilingual';
 import PtLadderSection from './PtLadderSection';
+import ItLadderSection from './ItLadderSection';
 
 const STATUS = {
   overdue: { label: 'Overdue', color: 'var(--danger)' },
@@ -63,9 +64,13 @@ export default function StatutoryTab() {
         : res.error ? <ErrorNote what="The statutory summary" error={res.error} onRetry={res.reload} />
           : <Summary data={res.data} month={month} />}
 
-      {/* The ladder those deductions come from, set here rather than by
-          shipping a migration. */}
+      {/* The ladders those deductions come from, set here rather than by
+          shipping a migration. Professional tax first because it is the
+          smaller and older of the two, and because the income-tax section
+          leans on its "shared rows, your rows override" idea being already
+          understood by the time it is read. */}
       <PtLadderSection />
+      <ItLadderSection />
     </div>
   );
 }
