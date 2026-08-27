@@ -72,11 +72,93 @@ log = logging.getLogger(__name__)
 #: is reported invoice-wise (B2CL) rather than in the B2CS aggregate.
 #:
 #: A RULE, not a fact about the data — and a rule that has moved before and can
-#: move again on a GSTN advisory. It is a named constant with this comment
-#: precisely so that the day it changes, the change is one line and is obvious.
-#: Kartavaya does not track GSTN advisories; the firm's own software is the
-#: authority on the threshold in force for the period being filed.
+#: move again on a GSTN advisory. Kartavaya does not track GSTN advisories; the
+#: firm's own software is the authority on the threshold in force for the period
+#: being filed.
+#:
+#: THIS IS NOW THE FALLBACK, NOT THE SOURCE. Phase 5.3 moved the figure into
+#: `staging.statute_calendar` under `B2CL_THRESHOLD_KEY`, where it carries an
+#: effective window and can be superseded by a dated successor without a code
+#: change. This constant is what `build_gstr1` uses when the calendar records no
+#: row — see `resolve_b2cl_threshold` for why that direction is deliberate.
 B2CL_THRESHOLD = Decimal("250000.00")
+
+#: The `statute_calendar` key that supersedes the constant above. Seeded by
+#: migration 229 with exactly the value of that constant, so the move changed no
+#: figure — only where the figure is allowed to change next.
+B2CL_THRESHOLD_KEY = "gst.b2cl.threshold"
+
+
+def period_last_day(period: str) -> date:
+    """`2026-07` → 2026-07-31. The date a statutory fact is read AS OF.
+
+    THE ANCHOR IS THE PERIOD THE DOCUMENT COVERS, NEVER THE DATE YOU ARE FILING
+    ON — `services/statute.py` says so in its own docstring and gives the reason:
+    a July return prepared in September must be built on July's law. Using
+    `date.today()` here would mean a threshold that changed on 1 August silently
+    re-bucketed every July invoice the next time somebody re-exported the month.
+
+    Raises nothing on a malformed period. `_period_bounds` in the router has
+    already refused those with a 400 by the time this is reached, and a second
+    refusal here would be a second place for that 400 to drift.
+    """
+    year, month = int(period[:4]), int(period[5:7])
+    first_of_next = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return date.fromordinal(first_of_next.toordinal() - 1)
+
+
+async def resolve_b2cl_threshold(pool, as_of: date) -> tuple[Decimal, str]:
+    """The B2CL threshold in force on `as_of`, and a sentence saying where it
+    came from.
+
+    ── WHICH WAY THIS FAILS, AND WHY THAT DIRECTION ─────────────────────────
+
+    An absent row DEGRADES to `B2CL_THRESHOLD` and says so. It does not refuse,
+    and it does not return zero.
+
+    That is the opposite of the choice Phase 5.2b made for the income-tax ladder,
+    where an absent ladder must deduct ₹0 rather than fall back to a literal —
+    and the two are not inconsistent, because the failures are not alike. A
+    missing payroll ladder that fell back to a literal would deduct MONEY under
+    last year's law and look correct. A missing B2CL row changes no tax at all:
+    it decides only whether a supply is listed invoice-wise in Table 5 or
+    aggregated into Table 7 of the same return. The totals tie out either way.
+
+    So the worst case here is a file bucketed on a stale-but-correct-yesterday
+    rule, against the alternative of an export that refuses and leaves a preparer
+    with no file at all on the 10th of the month. An export that stops because a
+    reference row is missing is worse than one that carries on with the behaviour
+    it has always had, so it carries on — and the manifest names which of the two
+    it used, so nobody has to guess.
+
+    A database error is caught for the same reason: `statute_calendar` is
+    reference data on the read path of a filing export, and a transient failure
+    reading it must not take the export down.
+    """
+    try:
+        from services.statute import obligation
+
+        row = await obligation(pool, B2CL_THRESHOLD_KEY, as_of=as_of)
+    except Exception:                                    # noqa: BLE001
+        log.warning("B2CL threshold lookup failed; using the built-in default",
+                    exc_info=True)
+        row = None
+
+    if row and row.get("threshold_amount") is not None:
+        cite = " · ".join(
+            str(bit) for bit in (row.get("statute"), row.get("section_ref")) if bit
+        )
+        return (
+            Decimal(str(row["threshold_amount"])),
+            f"statute_calendar · {B2CL_THRESHOLD_KEY} as of {as_of.isoformat()}"
+            + (f" · {cite}" if cite else ""),
+        )
+
+    return (
+        B2CL_THRESHOLD,
+        f"built-in default — the statute calendar records no "
+        f"{B2CL_THRESHOLD_KEY} as of {as_of.isoformat()}",
+    )
 
 #: Per-invoice tolerance between the tax the LINES add up to and the tax the
 #: invoice HEADER records. Half-paisa GST rounding on a dozen lines legitimately
@@ -414,7 +496,14 @@ def _rate_buckets(row: dict) -> tuple[list[dict], str | None]:
 # The build
 # ══════════════════════════════════════════════════════════════════════════════
 
-def build_gstr1(rows: list[dict], org: dict, period: str) -> tuple[dict, dict]:
+def build_gstr1(
+    rows: list[dict],
+    org: dict,
+    period: str,
+    *,
+    b2cl_threshold: Decimal | None = None,
+    b2cl_threshold_source: str | None = None,
+) -> tuple[dict, dict]:
     """Return `(payload, manifest)` for one tax period.
 
     `rows` are invoices the ROUTER has already scoped to the org, the period and
@@ -426,9 +515,22 @@ def build_gstr1(rows: list[dict], org: dict, period: str) -> tuple[dict, dict]:
     counts, the reconciliation totals, everything held back with its reason, and
     the omitted-section list — so a caller can state what is in the file and
     what is missing from it without re-deriving either.
+
+    `b2cl_threshold` is the dated statutory figure, resolved by the CALLER
+    through `resolve_b2cl_threshold` at the period end. It is a parameter rather
+    than a lookup inside this function for the reason the module docstring gives
+    about `load_line_items`: this builder stays pure and synchronous, so the
+    suite can drive it with no database and the tenancy-scoped fetch stays in
+    exactly one place. Omitted, it falls back to `B2CL_THRESHOLD` — which is what
+    every existing caller and test gets, unchanged.
     """
     org = org or {}
     rows = list(rows or [])
+
+    if b2cl_threshold is None:
+        b2cl_threshold = B2CL_THRESHOLD
+        b2cl_threshold_source = b2cl_threshold_source or (
+            "built-in default — no dated threshold was supplied by the caller")
 
     supplier_gstin = gstin_normalise(str(org.get("gstin") or ""))
     home_state = supplier_state_code(org)
@@ -558,7 +660,7 @@ def build_gstr1(rows: list[dict], org: dict, period: str) -> tuple[dict, dict]:
                 "itms": items,
             })
         # ── b2cl: inter-state, unregistered, above the threshold ─────────────
-        elif is_igst and total > B2CL_THRESHOLD:
+        elif is_igst and total > b2cl_threshold:
             b2cl_by_pos.setdefault(pos, []).append({
                 "inum": inum, "idt": idt, "val": _num(total), "itms": items,
             })
@@ -639,6 +741,13 @@ def build_gstr1(rows: list[dict], org: dict, period: str) -> tuple[dict, dict]:
         "invoice_count": included_invoices,
         "b2b_count": sum(len(v) for v in b2b_by_ctin.values()),
         "b2cl_count": sum(len(v) for v in b2cl_by_pos.values()),
+        # The rule that decided the b2cl/b2cs split, and where it was read from.
+        # Stated because the two sections tie out to the same totals either way:
+        # a preparer comparing this month's file with last month's needs to be
+        # able to see that the BUCKETING rule moved, and there is no other
+        # figure in the manifest from which that could be inferred.
+        "b2cl_threshold": _num(b2cl_threshold),
+        "b2cl_threshold_source": b2cl_threshold_source,
         "b2cs_rows": len(b2cs_agg),
         "hsn_rows": len(hsn_agg),
         "held_back": held_back,

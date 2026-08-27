@@ -165,6 +165,14 @@ const LEGACY = {
   'pages/sanvaad/varta/WAConnectAccount.jsx': [
     'wa-conn', 'wa-conn__act', 'wa-conn__err', 'wa-conn__lede',
   ],
+  // Varta → Pricing (Phase 0.27). The tiles themselves are `.k-card` and its
+  // parts, which is why they are not in here — the only names below are the
+  // estimate scaffolding, and `messaging.css` draws no pricing screen at all.
+  'pages/sanvaad/varta/WARateCard.jsx': [
+    'wa__estbar', 'wa__estbar-tag', 'wa__estbar-txt', 'wa__estbill',
+    'wa__estfree', 'wa__estnote', 'wa__estnote--stop', 'wa__estrate',
+    'wa__estsrc', 'wa__grid', 'wa__row-s',
+  ],
   'pages/sanvaad/varta/WhatsAppTab.jsx': [
     'sv__blank', 'sv__none', 'wa__acthdr', 'wa__asg', 'wa__asg--none', 'wa__grid',
     'wa__row', 'wa__row-m', 'wa__row-s', 'wa__row-t', 'wa__tpl-prev',
@@ -189,6 +197,12 @@ const REASON = {
     'wa-conn', 'wa-conn__act', 'wa-conn__err', 'wa-conn__lede',
     'wa__acthdr', 'wa__asg', 'wa__asg--none', 'wa__grid', 'wa__row', 'wa__row-m',
     'wa__row-s', 'wa__row-t', 'wa__tpl-prev', 'wa__err',
+    // Varta → Pricing. `messaging.css` designs no rate card — the prototype
+    // predates the WhatsApp channel having a price at all — so every name on
+    // that screen is necessarily outside the v2 vocabulary. They are NOT
+    // REPLACEABLE: there is no `.m2*` counterpart to port to.
+    'wa__estbar', 'wa__estbar-tag', 'wa__estbar-txt', 'wa__estbill',
+    'wa__estfree', 'wa__estnote', 'wa__estnote--stop', 'wa__estrate', 'wa__estsrc',
     // Controls and states the prototype has no element for.
     'sv__lnew', 'sv__lnew-row', 'sv__mnb', 'sv__mnb-t', 'sv__banner', 'sv__blank',
     'sv__none', 'sv__hi', 'sv__hd-mem', 'ch__ic', 'ch',

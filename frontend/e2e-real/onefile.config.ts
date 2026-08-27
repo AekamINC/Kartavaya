@@ -39,5 +39,18 @@ export default defineConfig({
       outputDir: path.join(DL_DIR, 'artifacts-dummy-logins'),
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      // Phase 4.1 + 4.2 — the first row in `module_compliance_settings` and the
+      // first in `pahchan_employee_consents`, both written through the real
+      // screens. Its own project for the same `outputDir` reason recorded
+      // above: it opens a SECOND browser context (the employee signs in with
+      // her own password to answer for herself), so a concurrent run emptying
+      // the shared artefacts directory would tear a live recording out from
+      // under a journey that had already succeeded.
+      name: 'phase4-first-rows',
+      testMatch: /phase4-first-rows\.spec\.ts/,
+      outputDir: path.join(DL_DIR, 'artifacts-phase4-first-rows'),
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
 });

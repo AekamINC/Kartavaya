@@ -93,6 +93,7 @@ from services.purchase_orders import (
     po_prefix,
     po_status_after_receipts,
     receipt_allowed,
+    resolve_194q,
     sanitise_settings,
     tds_194q_row,
     three_way_match,
@@ -1767,18 +1768,30 @@ async def tds_194q(
         WHERE v.org_id = $1::uuid AND v.is_active
     """, org_id, start, list(OPEN_STATUSES))
 
-    warn_at = TDS_194Q_THRESHOLD * TDS_194Q_WARN_AT
+    # The threshold and the rate, read from `staging.statute_calendar` AS OF THE
+    # FIRST DAY OF THE FINANCIAL YEAR these totals accumulate in. 194Q restarts
+    # every 1 April, so the law that governs a year's accumulation is the law at
+    # the start of that year — not the law on the day somebody opens the report.
+    # An absent row degrades to the built-in figure and says so in `statute`;
+    # this report never refuses and never scores against a zero threshold.
+    law = await resolve_194q(pool, start)
+    warn_at = law["threshold"] * TDS_194Q_WARN_AT
     out = []
     for r in rows:
         entry = tds_194q_row(r["name"], float(r["purchased_ytd"] or 0),
-                             float(r["on_order"] or 0))
+                             float(r["on_order"] or 0),
+                             threshold=law["threshold"], rate=law["rate"])
         if entry["projected"] >= warn_at:
             out.append(entry)
     out.sort(key=lambda e: e["projected"], reverse=True)
     return {
         "data": out, "total": len(out),
         "fy_start": start.isoformat(),
-        "threshold": float(TDS_194Q_THRESHOLD),
+        "threshold": law["threshold"],
+        "rate": law["rate"],
+        "statute": law["source"],
+        "statute_as_of": law["as_of"],
+        "buyer_turnover_test": law["buyer_turnover_test"],
         "warn_from": round(warn_at, 2),
         "note": (
             "Whether your firm deducts under 194Q at all depends on your own "

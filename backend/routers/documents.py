@@ -1133,7 +1133,9 @@ async def _build_gstr1(pool, org_id: str, period: str):
     their own exclusions inside `build_gstr1`, which is also what produces the
     named list of what was left out.
     """
-    from services.gstr1_json import build_gstr1
+    from services.gstr1_json import (
+        build_gstr1, period_last_day, resolve_b2cl_threshold,
+    )
 
     start, end = _period_bounds(period)
     rows = await pool.fetch(
@@ -1161,7 +1163,20 @@ async def _build_gstr1(pool, org_id: str, period: str):
             fix="Settings → Organisation → Company Profile",
         )
 
-    return build_gstr1([dict(r) for r in rows], org, period)
+    # The B2CL threshold, read AS OF THE LAST DAY OF THE PERIOD BEING FILED and
+    # never as of today. A July return prepared in September is built on July's
+    # law; anchoring on the run date would silently re-bucket a re-exported month
+    # the day a threshold moved. `resolve_b2cl_threshold` degrades to the
+    # built-in figure when the calendar records no row, so a missing row cannot
+    # stop an export — see its docstring for why that direction is the right one
+    # here and the opposite one is right for the payroll ladder.
+    threshold, threshold_source = await resolve_b2cl_threshold(
+        pool, period_last_day(period))
+
+    return build_gstr1(
+        [dict(r) for r in rows], org, period,
+        b2cl_threshold=threshold, b2cl_threshold_source=threshold_source,
+    )
 
 
 @router.get("/gst/gstr1/{period}/preview")

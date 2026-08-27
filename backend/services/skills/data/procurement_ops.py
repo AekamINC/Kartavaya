@@ -37,6 +37,7 @@ from services.purchase_orders import (
     TDS_194Q_RATE,
     TDS_194Q_THRESHOLD,
     TDS_194Q_WARN_AT,
+    resolve_194q,
     tds_194q_row,
 )
 from services.skills.reachable import reachable
@@ -383,10 +384,16 @@ async def check_194q_approaching(pool, org_id: str, fy_start: str | None = None,
         org_id, start, list(OPEN_STATUSES), cap,
     )
 
-    warn_at = TDS_194Q_THRESHOLD * TDS_194Q_WARN_AT
+    # The threshold and the rate, read from the dated calendar AS OF THE FIRST
+    # DAY OF THE FINANCIAL YEAR this running total accumulates in — not today.
+    # `resolve_194q` degrades to the module constants when no row is recorded,
+    # so a missing row leaves this watch behaving exactly as it always has.
+    law = await resolve_194q(pool, start)
+    warn_at = law["threshold"] * TDS_194Q_WARN_AT
     approaching, crossed = [], []
     for r in rows:
-        entry = tds_194q_row(r["name"], _f(r["purchased_ytd"]), _f(r["on_order"]))
+        entry = tds_194q_row(r["name"], _f(r["purchased_ytd"]), _f(r["on_order"]),
+                             threshold=law["threshold"], rate=law["rate"])
         if entry["projected"] < warn_at:
             continue
         # The two fields `services/skill_ack_wiring.py` files an acknowledgement
@@ -421,9 +428,15 @@ async def check_194q_approaching(pool, org_id: str, fy_start: str | None = None,
         # firm's own turnover, which this product does not hold, so the honest
         # verdict on applicability is permanently that it could not be checked.
         "verdict": "could_not_check",
-        "threshold": float(TDS_194Q_THRESHOLD),
-        "rate": TDS_194Q_RATE,
+        "threshold": law["threshold"],
+        "rate": law["rate"],
         "basis": TDS_194Q_BASIS,
+        # Where the two figures above came from, and the date they were read as
+        # of. A statutory figure printed with no date attached is the defect
+        # `services/statute.py` exists to remove, and this handler prints two.
+        "statute": law["source"],
+        "statute_as_of": law["as_of"],
+        "buyer_turnover_test": law["buyer_turnover_test"],
         "warn_from": round(warn_at, 2),
         "counts": {
             "vendors_total": len(rows),

@@ -106,12 +106,116 @@ DEFAULT_CLOSE_REASONS: tuple[str, ...] = (
 # NOTHING HERE DEDUCTS ANYTHING. This is a warning surface. The deduction is a
 # decision for the firm's accountant against their own turnover, which this
 # product does not hold.
+#
+# ── THESE TWO ARE NOW FALLBACKS, NOT SOURCES (Phase 5.3) ─────────────────────
+#
+# Both moved into `staging.statute_calendar` under the keys below, seeded by
+# migration 229 with EXACTLY these values — so the move changed no figure, only
+# where the figure is allowed to change next. `resolve_194q` reads them as of a
+# date; these constants are what it returns when the calendar records no row.
+#
+# A statutory threshold expressed as a Python int cannot say WHEN it applied,
+# and s.194Q's own numbering is due to move: migration 158 renumbered the TDS
+# statement, certificate and higher-rate provisions on 1 April 2026 and s.194Q's
+# successor was not among them because it was not verified. A literal here could
+# not have expressed that even once it is.
 TDS_194Q_THRESHOLD: int = 5_000_000       # ₹50 lakh, per vendor, per FY
 TDS_194Q_RATE: float = 0.001              # 0.1%
 TDS_194Q_BASIS: str = "purchase value INCLUDING GST"
 #: Warn from this fraction of the threshold, so the firm hears about it while
 #: there is still something to decide.
+#:
+#: NOT statutory and deliberately NOT in the calendar. 80% is a product decision
+#: about when to start warning, not a fact about the Income-tax Act, and putting
+#: it in a table of dated law would make it look like one.
 TDS_194Q_WARN_AT: float = 0.80
+
+#: The `statute_calendar` keys that supersede the two constants above.
+TDS_194Q_THRESHOLD_KEY = "tds.194q.threshold"
+TDS_194Q_RATE_KEY = "tds.194q.rate"
+#: Recorded, never applied — see `resolve_194q`.
+TDS_194Q_BUYER_TEST_KEY = "tds.194q.buyer_turnover_test"
+
+
+async def resolve_194q(pool, as_of: date) -> dict[str, Any]:
+    """The s.194Q threshold and rate in force on `as_of`, and their provenance.
+
+    `as_of` is THE FIRST DAY OF THE FINANCIAL YEAR the running total is measured
+    over, not today. s.194Q is a per-seller, per-FY threshold: every vendor's
+    total restarts on 1 April, so the law that governs this year's accumulation
+    is the law at the start of the year it accumulates in. Anchoring on today
+    would mean a threshold that moved in December re-scored eleven months of
+    purchases made under the old one.
+
+    ── WHICH WAY THIS FAILS ─────────────────────────────────────────────────
+
+    An absent row DEGRADES to the constant and says so in `source`. It never
+    refuses and never returns zero.
+
+    Zero would be actively dangerous here in a way it is not in payroll. A
+    ₹0 threshold makes EVERY vendor "past the threshold", so a firm opening the
+    194Q watch would see all 75 of its vendors flagged and learn nothing — and
+    the one vendor that genuinely crossed would be invisible in the noise. A
+    refusal is no better: this is a warning surface whose entire value is being
+    early, and a watch that goes dark because a reference row is missing fails
+    exactly when it is most needed. So it carries on with the figure it has
+    always used and names it.
+
+    `rate_percent` is a PERCENT in the calendar (0.1) and a FRACTION in this
+    module (0.001). The conversion happens here, once, rather than at each call
+    site — a factor of 100 applied in two places is a factor of 100 applied
+    twice somewhere.
+
+    The buyer turnover test is read but NEVER applied. Kartavaya does not hold
+    the firm's own turnover, so the applicability verdict stays
+    `could_not_check` permanently; the figure is returned so a screen can STATE
+    the test it cannot run, and its base excludes GST while the threshold's
+    includes it.
+    """
+    threshold: float = float(TDS_194Q_THRESHOLD)
+    rate: float = TDS_194Q_RATE
+    buyer_test: float | None = None
+    from_calendar: list[str] = []
+
+    try:
+        from services.statute import obligation
+
+        thr = await obligation(pool, TDS_194Q_THRESHOLD_KEY, as_of=as_of)
+        rt = await obligation(pool, TDS_194Q_RATE_KEY, as_of=as_of)
+        buyer = await obligation(pool, TDS_194Q_BUYER_TEST_KEY, as_of=as_of)
+    except Exception:                                    # noqa: BLE001
+        thr = rt = buyer = None
+
+    if thr and thr.get("threshold_amount") is not None:
+        threshold = _num(thr["threshold_amount"], threshold)
+        from_calendar.append(TDS_194Q_THRESHOLD_KEY)
+    if rt and rt.get("rate_percent") is not None:
+        rate = _num(rt["rate_percent"], rate * 100) / 100.0
+        from_calendar.append(TDS_194Q_RATE_KEY)
+    if buyer and buyer.get("threshold_amount") is not None:
+        buyer_test = _num(buyer["threshold_amount"])
+
+    if len(from_calendar) == 2:
+        source = (f"statute_calendar · {', '.join(from_calendar)} "
+                  f"as of {as_of.isoformat()}")
+    elif from_calendar:
+        missing = sorted({TDS_194Q_THRESHOLD_KEY, TDS_194Q_RATE_KEY}
+                         - set(from_calendar))
+        source = (f"statute_calendar · {', '.join(from_calendar)} as of "
+                  f"{as_of.isoformat()}; built-in default for "
+                  f"{', '.join(missing)}")
+    else:
+        source = (f"built-in defaults — the statute calendar records no "
+                  f"{TDS_194Q_THRESHOLD_KEY} or {TDS_194Q_RATE_KEY} as of "
+                  f"{as_of.isoformat()}")
+
+    return {
+        "threshold": threshold,
+        "rate": rate,
+        "buyer_turnover_test": buyer_test,
+        "as_of": as_of.isoformat(),
+        "source": source,
+    }
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────
@@ -1003,8 +1107,14 @@ def budget_state(settings: dict[str, Any],
 # ── 194Q ──────────────────────────────────────────────────────────────────────
 
 def tds_194q_row(vendor_name: str, purchased_ytd: float,
-                 on_order: float) -> dict[str, Any]:
+                 on_order: float, threshold: float | None = None,
+                 rate: float | None = None) -> dict[str, Any]:
     """One vendor's position against the ₹50 lakh 194Q threshold.
+
+    `threshold` and `rate` come from `resolve_194q`, which reads them from the
+    dated calendar as of the financial year's start. Both default to the
+    module constants, so every existing caller and test is unchanged — and a
+    caller that cannot reach the calendar still gets the behaviour it had.
 
     `on_order` — the value of purchase orders ISSUED and not yet billed — is
     what makes this a warning rather than a post-mortem. 194Q bites at payment
@@ -1020,18 +1130,25 @@ def tds_194q_row(vendor_name: str, purchased_ytd: float,
     """
     purchased_ytd = _num(purchased_ytd)
     on_order = _num(on_order)
+    # A threshold of zero or less is not a threshold — every vendor would read
+    # as "crossed" and `pct_of_threshold` would divide by zero. A calendar row
+    # seeded at 0 is a data defect, and the honest response to one is the figure
+    # that has always worked rather than a screen of false positives.
+    limit = _num(threshold, float(TDS_194Q_THRESHOLD))
+    if limit <= 0:
+        limit = float(TDS_194Q_THRESHOLD)
+    pct = _num(rate, TDS_194Q_RATE)
     projected = purchased_ytd + on_order
-    over = max(0.0, projected - TDS_194Q_THRESHOLD)
+    over = max(0.0, projected - limit)
     return {
         "vendor": vendor_name,
         "purchased_ytd": round(purchased_ytd, 2),
         "on_order": round(on_order, 2),
         "projected": round(projected, 2),
-        "threshold": float(TDS_194Q_THRESHOLD),
-        "pct_of_threshold": round(projected / TDS_194Q_THRESHOLD * 100, 1),
-        "crossed": purchased_ytd > TDS_194Q_THRESHOLD,
-        "will_cross_on_current_orders": (
-            purchased_ytd <= TDS_194Q_THRESHOLD < projected),
-        "indicative_tds": round(over * TDS_194Q_RATE, 2),
+        "threshold": limit,
+        "pct_of_threshold": round(projected / limit * 100, 1),
+        "crossed": purchased_ytd > limit,
+        "will_cross_on_current_orders": (purchased_ytd <= limit < projected),
+        "indicative_tds": round(over * pct, 2),
         "basis": TDS_194Q_BASIS,
     }
