@@ -89,7 +89,30 @@ There is none in this file, on purpose. Every statement is in a service module,
 schema-qualified, bound and cast. Adding one here would put a second
 implementation of a window or a tenancy predicate somewhere no test looks.
 """
-from __future__ import annotations
+# ── NO `from __future__ import annotations` IN THIS FILE, DELIBERATELY ───────
+#
+# It was here until 2026-08-27 and it broke `POST /offboarding/{id}/lines` in
+# production. Postponed annotations make every parameter annotation a STRING,
+# which FastAPI must resolve against the handler's `__globals__` — and the three
+# handlers here are wrapped by `@limiter.limit`, whose wrapper carries slowapi's
+# globals, not this module's. `CustodyLine` is not resolvable from there, so
+# FastAPI gave up on the body parameter and treated it as a QUERY parameter:
+#
+#     {"type":"missing","loc":["query","body"],"msg":"Field required"}
+#
+# A 422 on every call to record a custody line, for as long as the router has
+# existed.
+#
+# IT DID NOT REPRODUCE LOCALLY, and that is the part worth remembering. Python
+# 3.14 resolves these through PEP 649's `__annotate__` closure and gets the
+# right answer; the container pins **3.13**, which goes through `__globals__`
+# and does not. A green local suite hid a live 422 — the exact failure
+# `backend-suite-baseline-is-LOCAL-ONLY` records, reproduced.
+#
+# `custody.py` was the ONLY router combining postponed annotations with
+# `@limiter.limit` and Pydantic body models; the other five `from __future__`
+# routers carry no limiter at all. Without the import the annotations are real
+# objects and nothing has to be resolved from anywhere.
 
 import dataclasses
 import logging

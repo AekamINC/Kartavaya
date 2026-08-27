@@ -440,10 +440,28 @@ jobs:
           # mobile suite (840 tests, green locally) had NEVER RUN here.
           node-version: "24"
 
-      - name: Install Playwright
-        run: |
-          npm install -g playwright
-          npx playwright install --with-deps chromium
+      # THE FRONTEND'S OWN DEPENDENCIES FIRST. This step installed `playwright`
+      # GLOBALLY and never ran `npm ci` at all, so `frontend/node_modules` did
+      # not exist and `real.config.ts`'s very first line — `import ... from
+      # "@playwright/test"` — threw `Cannot find package`. The global `playwright`
+      # package is not `@playwright/test`; they are different packages.
+      #
+      # So this job has never run a spec. The comment below already records one
+      # earlier version of the same thing ("green for years without running a
+      # single spec"); that one was fixed and this one took its place.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # CHROME AS WELL AS CHROMIUM, because `real.config.ts` sets
+      # `channel: 'chrome'` and that is load-bearing: Vercel's bot mitigation
+      # fingerprints Playwright's bundled `chromium-headless-shell` and answers
+      # 403 to every navigation, which made every spec in this directory report a
+      # product failure for an infrastructure reason. Installing only chromium
+      # leaves the channel unresolvable and the browser fails to launch.
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium chrome
 
       # `--project=chromium` NAMED NOTHING. `e2e-real/real.config.ts` defines
       # `setup`, `real-user`, `send` and `tonight`; there has never been a
@@ -464,6 +482,20 @@ jobs:
         run: node e2e-real/mint-state.mjs
         env:
           E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
+          # E2E_ORG_ID IS REQUIRED HERE, not only in the run step below. It was
+          # absent, and its absence disabled the wrong-org guard: `mint-state`
+          # can only ask "is this token a member of that org?" if it is told
+          # which org. Without it the guard was skipped and owner.json was minted
+          # from E2E_ADMIN_TOKEN — an account that 403s on E2E and belongs to
+          # Unicode Group, a real customer. The browser would have signed in and
+          # written there while every api() call 403'd. That is precisely how a
+          # Phase-1 vendor landed in the wrong organisation on 2026-08-26.
+          E2E_ORG_ID: ${{ secrets.E2E_ORG_ID }}
+          # E2E_GODMODE_TOKEN does not exist as a repository secret yet, so with
+          # the guard now active this step will REFUSE and this job will stay red
+          # until one is added. That is the correct outcome: a red job that
+          # explains itself beats a green one writing to a customer's books.
+          E2E_GODMODE_TOKEN: ${{ secrets.E2E_GODMODE_TOKEN }}
           E2E_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
           E2E_API_URL: ${{ vars.E2E_API_URL }}
 
