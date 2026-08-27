@@ -2911,4 +2911,60 @@ CI stayed green at 14,690 passed, and this commit supersedes it — but a commit
 message that omits 612 lines of another phase is a defect in the record, and
 `git add -A` while an agent is writing in the same tree is how it happened.
 
+## 2026-08-27 · The deliberately-red privacy test, closed as a FIX not an exemption
+
+`test_every_aekam_side_leak_is_either_fixed_or_named` had been red for days on
+`server.py::add_team_member`, flagged rather than fixed. The finding was real,
+and its cause was **a repair to an earlier repair**:
+
+1. `GET /api/users` was fixed so its platform branch returns a name and no
+   email — 50 addresses removed from one response.
+2. That killed TeamsPage's add button for platform staff, which sends
+   `selectedUser.email` and no longer had one.
+3. `79079e14 "fix: team add button dead for platform staff"` repaired the
+   button by accepting a `user_id` and resolving the address server-side —
+   **then returning it**. A user_id-to-email oracle covering all 50 live user
+   rows, one call at a time.
+4. `af74d321` added the `is_platform_staff` bypass, opening it across orgs.
+
+Measured live, read-only, before any change: **212 team-member rows over 45
+projects in 5 organisations, every one carrying an address**, 24 distinct;
+**10 platform accounts** (4 platform_admin, 4 platform_staff, 2
+platform_manager); and all 50 user rows resolvable through the oracle.
+
+**FIX first, then ALLOWED — in that order, and the order is the point.**
+An exemption alone would have been a false sentence, and a pure fix was
+impossible: `public.team_members.email` is `NOT NULL` (verified live) and
+`project_assignments` has none of `email`, `status` or `member_id`, so the
+`INSERT`/`DELETE` literals can never leave the file and the scanner will always
+trip `email-column` there. So the disclosure was closed first, which made the
+exemption true, and then it was written — covering only the WRITE.
+
+The rule chosen is the one `org_invites.issue_invite` already states: **no
+address is returned that the caller did not supply.** Deliberately NOT keyed on
+`god` — `is_platform_staff` is unscoped while `may_act_in_org` beside it is not,
+and a response that re-opens when somebody edits a role tuple is not closed.
+
+**Two things fell out that were not in the brief.** `TeamMemberOut` returned no
+NAME at all, and TeamsPage splices the response straight into the roster, so
+`m.display_name || m.full_name || m.email` fell through to the ADDRESS — on
+every add and on every role change, until refresh. Withdrawing the email without
+adding `display_name` would have left every fresh card reading `'?'`. And
+`update_team_member` carried the same leak **invisibly**: its disclosure is
+`RETURNING *` plus a model field, and a scanner that reads SQL literals can
+never see it. Fixed alongside.
+
+Suite: **14,613 passed, 0 failed** — the first fully green backend run in days.
+The three new pins in `test_teams.py` were proved by reverting the guards and
+watching them fail on real Unicode Group addresses, then restoring.
+
+🟡 **Left open deliberately, as the owner's call:** the bypass itself.
+`is_platform_staff` is unscoped, so those 10 accounts can write membership rows
+into all 5 orgs — including the one org none of them belongs to. Narrowing it
+would re-break the 403 that `af74d321` fixed, so it is a product decision about
+what platform support may do, not a keystroke. Also flagged, not fixed: the
+picker's de-duplication silently stopped working for platform staff (same root
+cause), and `TeamMemberAdd` drops the `receives_approval_emails` and
+`company_name` the form posts, though both columns exist.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

@@ -1324,7 +1324,33 @@ class TeamMemberAdd(BaseModel):
 class TeamMemberUpdate(BaseModel):
     role:Optional[str]=None; status:Optional[str]=None
 class TeamMemberOut(BaseModel):
-    member_id:str; team_id:str; email:str; user_id:Optional[str]=None; role:str; status:str; created_at:datetime; updated_at:datetime
+    member_id:str; team_id:str; user_id:Optional[str]=None; role:str; status:str; created_at:datetime; updated_at:datetime
+
+    #: OPTIONAL SINCE 2026-08-27, AND THE OPTIONALITY IS THE POINT.
+    #:
+    #: It was `email:str` — required — so the two handlers that answer with this
+    #: model had no way to withhold an address short of a model change, and both
+    #: of them build the row from `RETURNING *` on `team_members`, whose `email`
+    #: column is NOT NULL in practice (212 of 212 live rows carry one). The
+    #: response therefore disclosed an address unconditionally, to whoever had
+    #: got past the gate.
+    #:
+    #: Now it carries an address ONLY when the caller supplied that address in
+    #: the same request. See the block over `add_team_member`.
+    email:Optional[str]=None
+
+    #: WHAT REPLACED IT. `TeamMemberOut` returned no name at all, so TeamsPage —
+    #: which splices this row straight into the roster it has already drawn —
+    #: fell through `m.display_name || m.full_name || m.email` to the address on
+    #: every add and every role change. Withdrawing the email without supplying
+    #: a name would have left that expression on `'?'`.
+    #:
+    #: Resolved with the same COALESCE `get_team` and `list_team_members` use,
+    #: so the optimistically-spliced row is character-for-character the row the
+    #: next refresh fetches — including `'Unnamed member'` for somebody invited
+    #: by address who has not registered, which is what that roster already
+    #: shows them as.
+    display_name:Optional[str]=None
 
 # ── A file column holds a POINTER, never the file ────────────────────────────
 #
@@ -3860,21 +3886,84 @@ async def list_team_members(team_id:str,pool=Depends(get_db),user=Depends(requir
 
 @api_router.post("/teams/{team_id}/members",response_model=TeamMemberOut)
 async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db),user=Depends(require_user)):
-    """Add or re-invite a member to a project by email."""
+    """Add or re-invite a member to a project by email.
+
+    ── THE RESPONSE ECHOES AN ADDRESS, IT NEVER DISCLOSES ONE ─────────────────
+
+    The owner's standing rule is that Aekam must not see a customer's member
+    addresses, and `GET /api/users` was fixed for it: its platform branch
+    selects a name and no email, pinned by the four tests at the top of
+    `tests/test_platform_privacy.py`. THIS ROUTE WAS THE WAY ROUND THAT FIX, and
+    the commit that opened it says so in its own subject line.
+
+    `79079e14 fix: team add button dead for platform staff` — the button was
+    dead BECAUSE of the privacy fix. TeamsPage sends `selectedUser.email`, the
+    platform directory had stopped supplying one, so the POST arrived with no
+    address and 422'd. The repair was to let the caller send a `user_id`
+    instead and have the server resolve the address. It then returned that
+    address in `TeamMemberOut.email`.
+
+    Which is a user_id-to-email oracle, gated by `is_platform_staff` — see the
+    bypass below — and measured against the live database on 2026-08-27 it
+    covers all 50 user rows, every one of which has an address. The directory
+    fix removed 50 addresses from one response and this route handed them back
+    one call at a time.
+
+    So the rule here is the one `routers/org_invites.py::issue_invite` already
+    states: NO ADDRESS IS RETURNED TO THE CALLER THAT THE CALLER DID NOT
+    SUPPLY. Deliberately NOT keyed on `god`. A role check answers "who is
+    asking", which is a question whose answer has been re-scoped twice in this
+    codebase — `is_platform_staff` is still unscoped today while `may_act_in_org`
+    next to it is not — and a response that re-opens when somebody adjusts a
+    role tuple is not closed. "Did this request carry the address?" cannot drift
+    and cannot be widened by a change anywhere else.
+
+    In practice it costs the org side nothing: an org admin's directory still
+    carries emails, so TeamsPage sends `email` for them and gets it back. It is
+    the platform caller — whose directory has no addresses to send — that falls
+    through to the `user_id` branch, and that branch now answers with a name.
+
+    ── WHAT IS *NOT* CLOSED HERE, AND IS THE OWNER'S CALL ─────────────────────
+
+    The `is_platform_staff` bypass itself. It is unscoped — one row in
+    `staging.user_roles` with `org_id IS NULL` — so all 10 live platform
+    accounts may write a membership row into any of the 45 projects across all
+    5 organisations, including the one organisation no platform account belongs
+    to. That contradicts `may_act_in_org` ("God mode can only switch between
+    orgs if they are part of it") and it is a WRITE to a customer's access
+    control, not the "seeing the project structure" that `is_platform_staff`'s
+    own docstring says its call sites are for. Narrowing it would re-break the
+    403 that `af74d321` was raised to fix, so it is a product decision and not
+    a privacy fix. Recorded here so the next reader does not mistake this
+    function for fully settled.
+    """
     from middleware.roles import is_platform_staff
     god = await is_platform_staff(user["user_id"])
     if not god:
         mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
         if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
+    # Captured BEFORE the branch below, which overwrites `email` and would make
+    # "the caller sent it" and "the server resolved it" indistinguishable.
+    caller_supplied_email=bool(payload.email)
     if payload.user_id and not payload.email:
-        resolved=await pool.fetchrow("SELECT user_id,email FROM users WHERE user_id=$1",payload.user_id)
+        # `email` is still selected and MUST be: it is written into
+        # `team_members.email` two statements down, and for somebody invited by
+        # address who has not registered that column is the row's only
+        # identifier — `project_assignments` has no `email`, which is the whole
+        # reason the roster in `get_team` cannot move off this table. What
+        # changed is that it no longer reaches the caller.
+        resolved=await pool.fetchrow(
+            "SELECT user_id,email,COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display_name "
+            "FROM users WHERE user_id=$1",payload.user_id)
         if not resolved: raise HTTPException(404,"User not found")
         email=resolved["email"]
         existing_user=resolved
     else:
         if not payload.email: raise HTTPException(422,"email or user_id required")
         email=payload.email.strip().lower()
-        existing_user=await pool.fetchrow("SELECT user_id FROM users WHERE email=$1",email)
+        existing_user=await pool.fetchrow(
+            "SELECT user_id,COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display_name "
+            "FROM users WHERE email=$1",email)
     uid=existing_user["user_id"] if existing_user else None
     await pool.execute("DELETE FROM team_members WHERE team_id=$1 AND email=$2",team_id,email)
     if uid: await pool.execute("DELETE FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,uid)
@@ -3883,11 +3972,32 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
         f"mem_{uuid.uuid4().hex[:12]}",team_id,email,uid,payload.role,"active" if uid else "invited",_tm_org)
     if uid: await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by,org_id) VALUES ($1,$2,$3,$4,$5,$6::uuid) ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
         f"assign_{uuid.uuid4().hex[:12]}",team_id,uid,payload.role,user["user_id"],_tm_org)
-    return TeamMemberOut(**dict(row))
+    out=dict(row)
+    # `.get` through a dict() copy rather than off the Record directly: this is
+    # the one field the two branches above may not both have set, and a plain
+    # dict from a test fixture would raise where a Record returns None.
+    out["display_name"]=(dict(existing_user).get("display_name") if existing_user else None) or "Unnamed member"
+    if not caller_supplied_email: out["email"]=None
+    return TeamMemberOut(**out)
 
 @api_router.put("/teams/{team_id}/members/{member_id}",response_model=TeamMemberOut)
 async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,pool=Depends(get_db),user=Depends(require_user)):
-    """Update a team member's role or status within a project."""
+    """Update a team member's role or status within a project.
+
+    THE SAME DISCLOSURE AS `add_team_member`, AND THE RATCHET CANNOT SEE IT.
+    `tests/test_platform_privacy.py` reads the SQL literals of a function, and
+    every literal here is a role or a status — the address arrives through
+    `UPDATE … RETURNING *` and leaves through a response model, neither of which
+    is a column name in this file. A PATCH carries no address at all, so by the
+    rule stated over `add_team_member` there is nothing to echo: this response
+    never carries one. Fixed alongside its neighbour rather than left for the
+    scanner, which by construction was never going to report it.
+
+    It also removes a defect visible on the page. TeamsPage replaces the whole
+    member card with this response, and the response had no name in it, so
+    changing somebody's role flipped their card from their name to their email
+    address until the next refresh.
+    """
     from middleware.roles import is_platform_staff
     god = await is_platform_staff(user["user_id"])
     if not god:
@@ -3948,7 +4058,18 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
                 "ON CONFLICT (team_id,user_id) DO UPDATE SET role=EXCLUDED.role",
                 f"assign_{uuid.uuid4().hex[:12]}", team_id, row["user_id"],
                 _pa_role, user["user_id"], _pa_org)
-    return TeamMemberOut(**dict(row))
+    out=dict(row)
+    out["email"]=None
+    out["display_name"]="Unnamed member"
+    if row["user_id"]:
+        # One extra round trip on a role change, and it buys the card its name
+        # back. Same COALESCE as `get_team`, so the replaced card matches the
+        # one the next refresh draws. `or` covers a NULL from a member row
+        # pointing at a user that no longer exists.
+        out["display_name"]=await pool.fetchval(
+            "SELECT COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') "
+            "FROM users WHERE user_id=$1",row["user_id"]) or "Unnamed member"
+    return TeamMemberOut(**out)
 
 @api_router.delete("/teams/{team_id}")
 async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):

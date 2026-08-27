@@ -592,6 +592,20 @@ ALLOWED: dict[tuple[str, str], str] = {
         "Aekam invites ONE org admin by an address it was given; the owner's "
         "rule names this capability explicitly. It looks the address up to "
         "check the account exists and to count the seat, and returns no roster.",
+    ("server.py", "add_team_member"):
+        "The three remaining `email` literals are the WRITE, not a read: "
+        "`team_members.email` is the column, and for somebody invited by "
+        "address who has not registered it is the row's ONLY identifier — "
+        "`project_assignments` has no `email`, which is why `get_team`'s roster "
+        "cannot move off that table either. The disclosure this entry used to "
+        "cover is gone: the response now carries an address only when the same "
+        "request supplied it, so the `user_id`-to-email oracle that `79079e14` "
+        "opened round the `list_users` fix is closed, and a name goes back "
+        "instead. NOT an exemption for the `is_platform_staff` bypass above it, "
+        "which is unscoped and is the owner's call — see the docstring. Pinned "
+        "in test_teams.py, because the half this scanner cannot check is the "
+        "RESPONSE: the leak was a model field, and there is no SQL literal for "
+        "it to read.",
     ("routers/admin_orgs.py", "assign_role"):
         "Reads the target's email ONLY to reconcile a pending invite against "
         "the seat count — it would otherwise refuse somebody their own "

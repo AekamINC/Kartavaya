@@ -301,6 +301,117 @@ async def test_add_member_to_team(api_client, mock_pool, as_admin):
     assert resp.status_code == 200
 
 
+# ── The response never carries an address the caller did not supply ──────────
+#
+# THESE PIN THE `("server.py", "add_team_member")` ENTRY IN `ALLOWED`, in
+# `tests/test_platform_privacy.py`. That entry says the remaining `email`
+# literals are the write and that nothing reaches the caller — and the ratchet
+# itself cannot check the second half, because it reads SQL literals and the
+# disclosure was a response model. Without these, the exemption is a sentence
+# with nothing behind it, which is the failure mode that file spends forty lines
+# warning about.
+#
+# The story they close: `GET /api/users` stopped returning addresses to platform
+# staff, TeamsPage's add button went dead for want of one, and `79079e14`
+# repaired it by accepting a `user_id` and resolving the address server-side —
+# then returning it. Fifty live user rows, every one with an address, one call
+# each.
+
+async def test_a_user_id_add_answers_with_a_name_and_no_address(api_client, mock_pool, as_admin):
+    """The platform-staff path. The INSERT's returned row DOES carry the
+    address — that is the point of stubbing it here — and the response must
+    not."""
+    async def fetchval_side(query, *args):
+        if "staging.user_roles" in query:
+            return 1          # a platform row: the bypass admits this caller
+        return None           # teams.org_id
+
+    async def fetchrow_side(query, *args):
+        if "FROM users WHERE user_id" in query:
+            return {"user_id": "user_p1", "email": "priya@unicodegroup.com",
+                    "display_name": "Priya Sharma"}
+        if "INSERT INTO team_members" in query:
+            return {"member_id": "mem_aaa", "team_id": "team_001",
+                    "email": "priya@unicodegroup.com", "user_id": "user_p1",
+                    "role": "member", "status": "active",
+                    "created_at": NOW, "updated_at": NOW}
+        return None
+
+    mock_pool.fetchval.side_effect = fetchval_side
+    mock_pool.fetchrow.side_effect = fetchrow_side
+    mock_pool.execute.return_value = "DELETE 0"
+    resp = await api_client.post(
+        "/api/teams/team_001/members", json={"user_id": "user_p1", "role": "member"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["email"] is None, (
+        "POST /teams/{id}/members turned a user_id into an email address — the "
+        "oracle that routed around the GET /api/users fix"
+    )
+    # And a name in its place, or the roster card falls back to '?'.
+    assert body["display_name"] == "Priya Sharma"
+
+
+async def test_an_address_the_caller_typed_comes_back(api_client, mock_pool, as_admin):
+    """The other half, and why this is not keyed on the caller's role: an org
+    admin invites BY the address, holds it already, and TeamsPage needs it back
+    to keep the just-added person out of the picker."""
+    async def fetchrow_side(query, *args):
+        if "SELECT role FROM project_assignments" in query:
+            return {"role": "admin"}
+        if "FROM users WHERE email" in query:
+            return None       # not registered — a pending invitation
+        if "INSERT INTO team_members" in query:
+            return {"member_id": "mem_bbb", "team_id": "team_001",
+                    "email": "newmember@test.com", "user_id": None,
+                    "role": "member", "status": "invited",
+                    "created_at": NOW, "updated_at": NOW}
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side
+    mock_pool.execute.return_value = "DELETE 0"
+    resp = await api_client.post(
+        "/api/teams/team_001/members",
+        json={"email": "newmember@test.com", "role": "member"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["email"] == "newmember@test.com"
+    # `get_team`'s roster LEFT JOINs and calls this person 'Unnamed member'.
+    # The optimistically-spliced row has to agree with it or the card changes
+    # under the user on the next refresh.
+    assert body["display_name"] == "Unnamed member"
+
+
+async def test_a_role_change_answers_with_a_name_and_no_address(api_client, mock_pool, as_admin):
+    """PUT carries no address, so there is nothing to echo — even though
+    `UPDATE … RETURNING *` hands the handler one. The privacy ratchet cannot
+    see this route at all: every SQL literal in it is a role or a status."""
+    async def fetchval_side(query, *args):
+        if "staging.user_roles" in query:
+            return 1
+        if "FROM users WHERE user_id" in query:
+            return "Ravi Kumar"
+        return None
+
+    async def fetchrow_side(query, *args):
+        if "UPDATE team_members" in query:
+            return {"member_id": "mem_ccc", "team_id": "team_001",
+                    "email": "ravi@unicodegroup.com", "user_id": "user_r1",
+                    "role": "admin", "status": "active",
+                    "created_at": NOW, "updated_at": NOW}
+        return None
+
+    mock_pool.fetchval.side_effect = fetchval_side
+    mock_pool.fetchrow.side_effect = fetchrow_side
+    mock_pool.execute.return_value = "INSERT 0 1"
+    resp = await api_client.put(
+        "/api/teams/team_001/members/mem_ccc", json={"role": "admin"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["email"] is None
+    assert body["display_name"] == "Ravi Kumar"
+
+
 async def test_add_member_non_admin_blocked(api_client, mock_pool, as_member):
     async def fetchrow_side(query, *args):
         if "project_assignments" in query:

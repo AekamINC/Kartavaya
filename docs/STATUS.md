@@ -49,7 +49,47 @@ what a 422 on the only write path looks like from the data side, and it is why
 There is one now (`test_custody_router.py`) and it was passing throughout: it
 runs on 3.14, where the bug does not exist.
 
-## One open privacy finding, 2026-08-27
+## The Aekam-side member-email leak — CLOSED 2026-08-27
+
+✅ **Fixed, not exempted.** `POST/PUT /api/teams/{id}/members` returned a project
+member's email address to any of the **10 platform accounts**, in any of **5
+organisations**. And the cause was a repair to an earlier repair: the
+`GET /api/users` privacy fix removed 50 addresses from one response, which broke
+TeamsPage's add button for platform staff, and `79079e14` fixed the button by
+resolving `user_id → email` server-side and returning it — **a user_id-to-email
+oracle covering all 50 live user rows**, one call at a time. `af74d321` then
+added the `is_platform_staff` bypass, opening it across orgs.
+
+Both routes now return an address **only when the same request supplied one**,
+and return `display_name` in its place. Two things fell out that were not the
+brief: `TeamMemberOut` returned no name at all, so TeamsPage's
+`m.display_name || m.full_name || m.email` fell through to the ADDRESS on every
+add and every role change — withdrawing the email without adding a name would
+have left every fresh card reading `'?'`. And `update_team_member` carried the
+same leak **invisibly**: its disclosure is `RETURNING *` plus a model field, so
+the SQL-literal scanner can never see it. Fixed alongside.
+
+`test_every_aekam_side_leak_is_either_fixed_or_named` is **green for the first
+time in days** — the whole backend suite is now 0 failed. The one `ALLOWED`
+entry covers only the WRITE, and was written *after* the fix so it is a true
+sentence: `public.team_members.email` is `NOT NULL` and is a pending invitee's
+sole identifier (`project_assignments` has no `email`, `status` or `member_id`
+at all), so the `INSERT`/`DELETE` literals can never leave. Three cases in
+`test_teams.py` pin it, and the guards were reverted to prove they bite.
+
+Live before the fix, read-only: 212 team-member rows over 45 projects in 5 orgs,
+**every one carrying an address**, 24 distinct; 10 platform accounts (4 admin,
+4 staff, 2 manager).
+
+🟡 **Still open and the owner's call: the bypass itself.** `is_platform_staff`
+is unscoped, so those 10 accounts can write membership rows into all 5 orgs —
+including the one org none of them belongs to. That contradicts `may_act_in_org`
+beside it, but narrowing it would re-break the 403 that `af74d321` fixed. Also
+flagged: the picker's de-duplication silently stopped working for platform staff
+(same root cause), and `TeamMemberAdd` drops the `receives_approval_emails` and
+`company_name` the form posts, though both columns exist.
+
+<details><summary>The finding as originally written, kept for the record</summary>
 
 **`server.py::add_team_member` returns a customer's email address to Aekam.**
 `POST /api/teams/{team_id}/members` resolves `SELECT user_id, email FROM users`
@@ -67,6 +107,8 @@ claim, not a fix. Until one is chosen,
 thing**, which is the gate working. It reported three findings until 2026-08-27;
 the other two were the scanner matching a route path and a `'email'` string
 literal, and two `ALLOWED` exemptions had already been spent covering for it.
+
+</details>
 
 ## Live blockers — wrong in the running product (fix first: `PHASE-2`)
 
