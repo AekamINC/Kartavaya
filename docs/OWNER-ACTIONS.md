@@ -270,3 +270,47 @@ new service is deliberately named `cron-report-dispatch` rather than
 
 ---
 
+
+## 2026-08-27 · Mappls: the token mints, and every Mappls product refuses it
+
+**Blocks:** 7.5's basemap (the rest of 7.5 shipped and works without it), **7.6
+entirely** (address autosuggest needs the same token accepted), and the map half
+of 8.1 / 8.2 / 8.3.
+**Action:** open the Mappls console for project `prj1787726591i922664629` and
+confirm (a) the account has an **active plan / API entitlements**, and (b) the
+**domains are registered** — `kartavaya.com`, `staging.kartavaya.com`,
+`www.kartavaya.com`, and `localhost` for development.
+
+### Why this is on your desk and not mine
+
+`MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET` are on Railway and they **work** —
+`outpost.mappls.com` returns a 36-character bearer token with `expires_in 86399`
+and `scope READ`, every time. On 2026-08-27 that was recorded as meaning the
+credential question was closed and "the backend can mint a token and hand it
+over". **The mint half was tested. The spend half was not.** It is now:
+
+    SDK, no referer                 401  Domain validation failed
+    SDK, staging.kartavaya.com      401  Domain validation failed
+    SDK, kartavaya.com              401  Domain validation failed
+    SDK, localhost:5173             401  Domain validation failed
+    SDK, an UNRELATED domain        401  Domain validation failed   <- identical
+    REST geocode, 'bearer <tok>'    401  Token was not recognised
+    REST geocode, 'Bearer <tok>'    401  Token was not recognised
+    REST geocode, raw token         401  Token was not recognised
+    REST autosuggest                401  Domain validation failed
+
+Our own domains and a domain we do not own are refused **identically**, so this
+is not a referrer waiting to be whitelisted — and `Token was not recognised` on
+the REST side says the token is not accepted by any product at all. Both halves
+point at the account, not at our code, and neither is something an engineer can
+change from here.
+
+### What shipped anyway
+
+7.5 was built so this failure costs only the tiles. The shapes and the basemap
+are fetched independently, so a territory's coverage counts, its unmatched and
+invalid pincode lists, the outage state and the GODL credit all render with no
+basemap at all. The screen says *"No map is configured in this environment"* —
+a fact, not an invented fault. **Nothing needs rewriting when you unblock it**;
+the tiles simply start drawing.
+
