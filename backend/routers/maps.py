@@ -83,22 +83,26 @@ async def mappls_token(request: Request, user=Depends(require_user)):
     for it. The GODL boundary credit is a DIFFERENT credit, for a different
     dataset, and comes from the geometry endpoint. Neither covers the other.
     """
-    tok = await mappls.access_token()
+    key = mappls.static_key()
 
-    if not tok.ok:
+    if key is None:
         return {
             "available": False,
-            "reason": tok.reason,
+            "reason": mappls.NOT_CONFIGURED,
             "attribution": mappls.BASEMAP_ATTRIBUTION,
             "attribution_href": mappls.BASEMAP_ATTRIBUTION_HREF,
         }
 
+    # No `expires_at`: a Static Key does not expire. That is a downgrade in
+    # security from the 24h token and the domain whitelist is what compensates
+    # for it — see `services/mappls.py::static_key`. The field is omitted rather
+    # than set to null so that a caller cannot read a null as "never expires"
+    # when it might equally mean "we forgot to say".
     return {
         "available": True,
         "reason": None,
-        "token": tok.token,
-        "sdk_url": mappls.sdk_url(tok.token),
-        "expires_at": tok.expires_at,
+        "token": key,
+        "sdk_url": mappls.sdk_url(key),
         "attribution": mappls.BASEMAP_ATTRIBUTION,
         "attribution_href": mappls.BASEMAP_ATTRIBUTION_HREF,
     }

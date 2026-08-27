@@ -93,17 +93,28 @@ no error anywhere. Fixed by `SIMPLIFY_FLOOR = 12` — rings that small are round
 but not simplified. **Any future re-tuning of the tolerance must re-check the
 written count equals 19,312.**
 
-**Credentials — all set by the owner, nothing outstanding.**
+> ⚠ **CORRECTED 2026-08-27. The table below was wrong in both directions and it
+> cost a day.** There is no `VITE_MAPPLS_KEY` and there must not be one; the
+> OAuth pair is real, works, and is **not the credential the SDK takes**.
+> **Mappls replaced its auth mechanism in August 2025** — their
+> `mappls-web-maps-js` README documents the new one on `main` and pushed OAuth
+> 2.0 to an `auth-legacy` branch. The SDK takes the console's **Static Key** as
+> a query parameter. See `docs/OWNER-ACTIONS.md` and `backend/services/mappls.py`.
+
+**Credentials — corrected.**
 
 | Value | Where | Powers |
 |---|---|---|
-| `VITE_MAPPLS_KEY` | Vercel, Production + Preview | the map SDK |
-| `MAPPLS_CLIENT_ID` | Railway staging | REST OAuth |
-| `MAPPLS_CLIENT_SECRET` | Railway staging | REST OAuth |
+| `MAPPLS_STATIC_KEY` | **Railway**, served by `GET /api/v1/maps/token` | the map SDK — THE credential |
+| `MAPPLS_CLIENT_ID` | Railway staging | nothing. Legacy OAuth, refused by every product |
+| `MAPPLS_CLIENT_SECRET` | Railway staging | nothing. As above |
 
-Vercel rejects `VITE_MAPPLS_KEY` as a "Secret" because the `VITE_` prefix makes
-it public by definition — it is stored as **Config**. That is correct, not a
-workaround. Domain whitelist is set on the Mappls console to `kartavaya.com`,
+The static key goes on **Railway, not Vercel**. A `VITE_` variable is baked into
+the public bundle at build time and cannot be rotated without a frontend
+redeploy; served from the backend, rotation is one variable and a restart. The
+browser still ends up holding it — that is unavoidable for a client-side SDK —
+which is why the console **domain whitelist is the security control** here: the
+static key does not expire. Domain whitelist is set on the Mappls console to `kartavaya.com`,
 `app.kartavaya.com`, `staging.kartavaya.com` (+ `www.` and `localhost:5173`
 advised). **Leave "Whitelisted Ips" empty** — Railway egress IPs are not static
 and filling it will break REST intermittently.

@@ -314,7 +314,11 @@ no-ambush update flow (background check, tap-to-apply) and the crash recorder
       `users.user_id` is TEXT, so **nobody could ever be assigned to a territory**.
       Migration 134 **applied 2026-08-09**. Member dropdown, names not ids on two
       screens, pincodes, territory on the deal form and both deal surfaces. MapMyIndia component
-      is in — **it still needs a `VITE_MAPPLS_KEY` from you.**
+      is in — and was rewritten on the real SDK in Phase 7.5 (2026-08-27).
+      ⚠ **It does NOT need a `VITE_MAPPLS_KEY`** — that sentence stood here for
+      eighteen days and named the wrong credential. Mappls changed its auth in
+      Aug 2025; the SDK takes the console's **Static Key**, which goes on
+      **Railway** as `MAPPLS_STATIC_KEY`. See `docs/OWNER-ACTIONS.md`.
 - [x] Activities must show the user the activity belongs to. CRM admin and org admin see all,
       a CRM user sees only their own. `024bce34` (batch 1).
 - [x] CRM reports need download — plan first. `1f9bec4c` · plan:

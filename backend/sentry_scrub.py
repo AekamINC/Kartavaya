@@ -70,7 +70,20 @@ _ENV_SECRET_KEYS = (
     "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
     "R2_ACCESS_KEY_ID", "DATABASE_URL", "SUPABASE_SERVICE_KEY",
     "SUPABASE_ANON_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-    "WHATSAPP_TOKEN", "MAPPLS_KEY", "OPENROUTER_API_KEY",
+    "WHATSAPP_TOKEN", "OPENROUTER_API_KEY",
+    # Mappls, all three, replacing a `"MAPPLS_KEY"` entry that guarded a
+    # variable name **this repo has never had**. Grepped 2026-08-27: the bare
+    # name appeared only here and in the PHASE-7 plan asking for it to be
+    # deleted; every other occurrence is the frontend's `VITE_MAPPLS_KEY`. So
+    # the scrubber has been protecting a spelling nobody uses while the two
+    # credentials that DO exist went through unredacted.
+    #
+    # `MAPPLS_STATIC_KEY` is the one that matters now and it is the worst of the
+    # three to leak: it does not expire, so unlike a 24h token a single Sentry
+    # event carrying it is a permanent disclosure until somebody rotates it in
+    # the console. Added BEFORE the variable is set, deliberately — a scrubber
+    # added after the first leak is a scrubber that ran too late.
+    "MAPPLS_STATIC_KEY", "MAPPLS_CLIENT_ID", "MAPPLS_CLIENT_SECRET",
 )
 _SECRETS = sorted(
     {v for k in _ENV_SECRET_KEYS if (v := os.environ.get(k)) and len(v) >= 12},

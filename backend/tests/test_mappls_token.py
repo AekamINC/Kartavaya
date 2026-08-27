@@ -1,66 +1,59 @@
-"""Phase 7.5 — the Mappls token, and the two ways of having none.
+"""Phase 7.5 — the Mappls Static Key, and the credential it is NOT.
 
-`TerritoryMap.jsx` said "the territory map needs a MapMyIndia key" from
-2026-08-09 to 2026-08-27 and the sentence was false the whole time: the OAuth
-pair has been on Railway minting tokens, and the component was reading a
-frontend build-time variable nobody ever bought (memory
-`mappls_credentials_exist`). Two credentials were confused, and a URL that died
-in Aug 2025 was read as a credential fault for months.
+This file used to hold 61 tests about minting an OAuth token, caching it, and
+skewing its expiry. Every one of them tested a mechanism Mappls retired in
+August 2025, and they all passed, for months, while the map stayed blank. That
+is the fact this rewrite is written against: **a green suite over the wrong
+credential is not evidence of anything.**
 
-That is the history this file is written against, so the assertions are aimed
-at the mistakes that actually happened rather than at the code's shape:
+What actually happened, proved live on 2026-08-27 rather than inferred: the
+post-2025 SDK host answers our real minted token and a randomly generated fake
+string byte-identically (`Token was not recognised`). The credential for the Web
+Map SDK is the console's **Static Key**, passed as the `access_token` QUERY
+parameter to `sdk.mappls.com/map/sdk/web`. The OAuth pair still sits on Railway
+minting perfectly useless tokens.
 
-  1. NOT_CONFIGURED IS NOT AN OUTAGE. Same discipline as
-     `services/pin_boundaries.py`'s `unmatched` vs `unavailable`: collapsing the
-     two tells a customer the map is broken when the feature was simply never
-     switched on, and they go and file a fault against working software. Every
-     failure test below asserts on the reason it got AND on the one it did not.
+So the assertions here aim at the mistakes that actually happened:
 
-  2. A BLANK IS ABSENT. `os.getenv` returning `''` is what a Railway variable
-     set to nothing looks like. An empty client_id would be POSTed to Mappls,
-     answered 401, and reported as UNAVAILABLE — i.e. as their outage. It is
-     ours.
+  1. THE KEY IS IN THE QUERY, NOT THE PATH. Asserted with `urlparse`/`parse_qs`,
+     never as a substring — `"key" in url` passes identically on the working
+     form and on the dead `apis.mappls.com/advancedmaps/api/{KEY}/map_sdk` one,
+     which is precisely the check that would have caught nothing.
 
-  3. A FAILURE IS NEVER CACHED. `pin_boundaries` carries the same rule for the
-     same reason: a cached outage outlives the outage, and the next request is
-     the one that would have worked.
+  2. NOT_CONFIGURED IS NOT AN OUTAGE. Same discipline as `pin_boundaries`'
+     `unmatched` vs `unavailable`: collapsing them tells a customer the map is
+     broken when the feature was simply never switched on, and they file a fault
+     against working software.
 
-  4. THE SDK URL EMBEDS THE TOKEN IN THE PATH. The dead form —
-     `apis.mappls.com/advancedmaps/api/{KEY}/map_sdk` — is the single most
-     expensive fact in this feature's history. It is asserted here as a URL
-     rather than trusted as a constant.
+  3. A BLANK IS ABSENT. A Railway variable set to nothing reads back as `''`. An
+     empty key would go into the SDK URL, be refused by Mappls, and be reported
+     in the browser as the provider's failure. It is ours.
 
-── WHY THE HTTP IS SCRIPTED AND COUNTED, NOT MOCKED ─────────────────────────
+  4. THE KEY IS A CREDENTIAL WITH NO EXPIRY, SERVED TO A BROWSER. So the route
+     must keep requiring a signed-in user, and must never carry the OAuth
+     secret. Both are asserted through HTTP.
 
-`httpx.MockTransport` in front of the REAL `httpx.AsyncClient`, so the request
-the service builds is a real request that a real client serialises — a
-MagicMock would answer happily to a form body Mappls would reject, which is the
-same failure mode as a mock pool answering happily to a column that is not
-there (memory `mock_pool_hides_bad_sql`). Every answer is scripted and every
-request is recorded, because half of what matters here is a round trip that did
-NOT happen: the cache is a correctness property and "one request, not two" is
-the only way to state it.
+── NOTHING HERE TOUCHES THE NETWORK, AND NOW IT CANNOT ──────────────────────
 
-── WHAT THIS FILE DELIBERATELY DOES NOT DO ──────────────────────────────────
-
-It never mints against the live Mappls endpoint. Mappls' console counts calls
-and its usage statistics are contractually binding (memory
-`mappls_licence_and_map_market`), so a suite that mints on every run is a bill
-that grows with CI, not a test.
+The old file ran a scripted `httpx.MockTransport` in front of the real client so
+that a request the service built was a request a real client serialised. There
+is no request left to build: `services/mappls.py` no longer imports `httpx`. The
+absence of any transport fixture in this file is therefore a statement about the
+module, not an omission — and it is why the suite can never mint against a live
+endpoint whose call counts are contractually billable (memory
+`mappls_licence_and_map_market`).
 """
 from __future__ import annotations
 
 import inspect
-import logging
-import time
+from urllib.parse import parse_qs, urlparse
 
-import httpx
 import pytest
 
 from services import mappls
 
-CLIENT_ID = "test-client-id"
-CLIENT_SECRET = "test-client-secret-never-logged"
+KEY = "static-key-abcdef123456"
+CLIENT_SECRET = "test-client-secret-never-served"
 
 CALLER = {
     "user_id": "user_admin001",
@@ -71,547 +64,164 @@ CALLER = {
 }
 
 
-# ── the scripted outpost ─────────────────────────────────────────────────────
-#
-# Answers are FACTORIES, not `httpx.Response` objects: a Response's body may be
-# read once, and half the tests here send the same answer twice on purpose.
-
-def ok(token: str = "tok-live-1", expires_in=86399):
-    """A mint that succeeded, shaped like the live one.
-
-    `expires_in` 86399 and `scope` READ are what the real endpoint returned on
-    2026-08-27. Pass `expires_in=...` to say something else; pass the sentinel
-    `_ABSENT` to leave the field out altogether.
-    """
-    payload = {"access_token": token, "scope": "READ", "token_type": "bearer"}
-    if expires_in is not _ABSENT:
-        payload["expires_in"] = expires_in
-    return lambda: httpx.Response(200, json=payload)
-
-
-def status(code: int, text: str = "invalid_client"):
-    return lambda: httpx.Response(code, text=text)
-
-
-def body(text: str):
-    """HTTP 200 with something that is not JSON — a proxy's error page."""
-    return lambda: httpx.Response(200, text=text)
-
-
-def payload(**fields):
-    """HTTP 200, valid JSON, and whatever fields the test wants it to hold."""
-    return lambda: httpx.Response(200, json=fields)
-
-
-_ABSENT = object()
-
-
-class _Outpost:
-    """A stand-in for Mappls' OAuth endpoint. Scripted answers, counted calls.
-
-    The script's LAST entry repeats for ever, so a test that wants "and then it
-    keeps working" writes one answer and a test that wants "it failed, then it
-    worked" writes two.
-    """
-
-    def __init__(self):
-        self.requests: list[httpx.Request] = []
-        self.script = [ok()]
-
-    def answer(self, *responses):
-        assert responses, "an outpost with no answers cannot be scripted"
-        self.script = list(responses)
-
-    @property
-    def calls(self) -> int:
-        return len(self.requests)
-
-    def forms(self) -> list[dict]:
-        """Each request's form body, parsed back out of the wire bytes."""
-        from urllib.parse import parse_qs
-        return [{k: v[0] for k, v in
-                 parse_qs(r.content.decode()).items()} for r in self.requests]
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        answer = self.script.pop(0) if len(self.script) > 1 else self.script[0]
-        return answer()
-
-
-@pytest.fixture
-def outpost(monkeypatch):
-    """Installs the scripted endpoint and clears the module-level cache.
-
-    Cleared on BOTH sides: `_cached` outlives any one test, and a token another
-    test minted would answer a question this one never asked — the same hazard
-    `pin_boundaries`' shard cache carries, and the reason `reset_cache()` is
-    part of the service's public surface.
-
-    `transport` is a `setdefault` rather than an override because patching
-    `mappls.httpx` patches the ONE httpx module object every import shares:
-    without it, the ASGI client the router tests build would be handed two
-    transports and die on a duplicate keyword instead of a defect.
-    """
-    mappls.reset_cache()
-    scripted = _Outpost()
-    real_client = httpx.AsyncClient
-
-    def _client(*args, **kwargs):
-        kwargs.setdefault("transport", httpx.MockTransport(scripted))
-        return real_client(*args, **kwargs)
-
-    monkeypatch.setattr(mappls.httpx, "AsyncClient", _client)
-    yield scripted
-    mappls.reset_cache()
-
-
 @pytest.fixture
 def configured(monkeypatch):
-    """The credential pair present, as it is on Railway."""
-    monkeypatch.setenv("MAPPLS_CLIENT_ID", CLIENT_ID)
+    """A Static Key present, as it is on Railway once the owner sets it."""
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", KEY)
+    # The OAuth pair is STILL SET alongside it, exactly as on Railway. Every
+    # "configured" test therefore also proves the pair is inert: if anything
+    # were still reading it, these tests would be the ones to say so.
+    monkeypatch.setenv("MAPPLS_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("MAPPLS_CLIENT_SECRET", CLIENT_SECRET)
 
 
 @pytest.fixture
 def unconfigured(monkeypatch):
-    """No pair at all — a local checkout, or a preview deploy."""
-    monkeypatch.delenv("MAPPLS_CLIENT_ID", raising=False)
-    monkeypatch.delenv("MAPPLS_CLIENT_SECRET", raising=False)
+    """No Static Key — a local checkout, or a preview deploy.
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  1 · not_configured — an environment that was never given the pair
-# ══════════════════════════════════════════════════════════════════════════════
-
-def test_no_credentials_at_all_is_not_configured(unconfigured):
-    assert mappls.is_configured() is False
-
-
-@pytest.mark.parametrize("present, missing", [
-    ("MAPPLS_CLIENT_ID", "MAPPLS_CLIENT_SECRET"),
-    ("MAPPLS_CLIENT_SECRET", "MAPPLS_CLIENT_ID"),
-])
-def test_half_a_pair_is_not_a_pair(present, missing, monkeypatch, unconfigured):
-    """Either half alone mints nothing, so either half alone is NOT_CONFIGURED.
-
-    Both directions, because a half-set environment is what a Railway variable
-    added under the wrong name looks like, and the two names differ by five
-    characters.
+    The OAuth pair is left SET on purpose. This is the state Railway was in all
+    along, and it is the state that produced the whole misdiagnosis: credentials
+    present, map dead. `not_configured` must be the answer, because with respect
+    to the credential that matters this environment is not configured.
     """
-    monkeypatch.setenv(present, "something")
-    assert mappls.is_configured() is False
-
-
-@pytest.mark.parametrize("blank", ["", "   ", "\t", "\n"])
-def test_a_blank_credential_is_absent_not_a_credential(blank, monkeypatch):
-    """THE CASE THAT WOULD HAVE BEEN BLAMED ON MAPPLS.
-
-    A Railway variable set to nothing reads back as `''`, and a bare truthiness
-    check on `os.getenv` would call that configured. The pair would then be
-    POSTed — an empty client_id — Mappls would answer 401, and the service would
-    report UNAVAILABLE: their outage. It is ours, and `unavailable` is the one
-    reason that says "go and look at the provider".
-    """
-    monkeypatch.setenv("MAPPLS_CLIENT_ID", blank)
+    monkeypatch.delenv("MAPPLS_STATIC_KEY", raising=False)
+    monkeypatch.setenv("MAPPLS_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("MAPPLS_CLIENT_SECRET", CLIENT_SECRET)
-    assert mappls.is_configured() is False
-
-    monkeypatch.setenv("MAPPLS_CLIENT_ID", CLIENT_ID)
-    monkeypatch.setenv("MAPPLS_CLIENT_SECRET", blank)
-    assert mappls.is_configured() is False
 
 
-def test_a_real_pair_is_configured(configured):
+# ══════════════════════════════════════════════════════════════════════════════
+#  1 · static_key — present, absent, and the blank that is absent
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_a_real_key_is_returned_and_the_environment_is_configured(configured):
+    assert mappls.static_key() == KEY
     assert mappls.is_configured() is True
 
 
-async def test_not_configured_never_reaches_the_network(outpost, unconfigured):
-    """No pair, no request. Asserted on the CALL COUNT, not just the reason:
-    an environment with no credentials that still opens a socket to Mappls on
-    every page load is a timeout budget spent on a foregone conclusion.
+def test_no_key_at_all_is_none_and_not_configured(unconfigured):
+    """The OAuth pair is set in this fixture and it changes nothing. A holder of
+    `MAPPLS_CLIENT_ID`/`SECRET` and no Static Key has no basemap."""
+    assert mappls.static_key() is None
+    assert mappls.is_configured() is False
+
+
+@pytest.mark.parametrize("blank", ["", " ", "   ", "\t", "\n", " \t\n "])
+def test_a_blank_key_is_absent_not_a_credential(blank, monkeypatch):
+    """THE CASE THAT WOULD HAVE BEEN BLAMED ON MAPPLS.
+
+    A Railway variable set to nothing reads back as `''`, and a whitespace one
+    is what a paste out of a console leaves behind. A bare truthiness check
+    calls both configured; the key then goes into the SDK URL, Mappls refuses
+    it, and the browser reports a provider fault for our missing configuration.
+    `not_configured` is the reason that sends a person to Railway — where the
+    fix actually is — and it only fires if a blank counts as absent.
     """
-    tok = await mappls.access_token()
-
-    assert tok.ok is False
-    assert tok.reason == mappls.NOT_CONFIGURED
-    assert tok.reason != mappls.UNAVAILABLE, "an unset environment is not an outage"
-    assert tok.token is None and tok.expires_at is None
-    assert outpost.calls == 0
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", blank)
+    assert mappls.static_key() is None
+    assert mappls.is_configured() is False
 
 
-@pytest.mark.parametrize("blank", ["", "  "])
-async def test_a_blank_pair_is_not_configured_end_to_end(blank, outpost, monkeypatch):
-    """The same rule as `is_configured`, through the path that would spend the
-    money: nothing is POSTed, so nothing can be 401'd and misreported."""
-    monkeypatch.setenv("MAPPLS_CLIENT_ID", blank)
-    monkeypatch.setenv("MAPPLS_CLIENT_SECRET", blank)
-
-    tok = await mappls.access_token()
-    assert (tok.reason, outpost.calls) == (mappls.NOT_CONFIGURED, 0)
+def test_surrounding_whitespace_is_stripped_from_a_real_key(monkeypatch):
+    """A trailing newline out of a copy-paste is invisible in the console and
+    fatal in a URL: it would be percent-encoded into the query and the key would
+    not match. Stripping is not cosmetic here."""
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", f"  {KEY}\n")
+    assert mappls.static_key() == KEY
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  2 · a mint that works, and the cache that is a correctness rule
+#  2 · the SDK URL — the fact that cost months, asserted as a parsed URL
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def test_a_successful_mint_returns_a_token_and_an_absolute_expiry(
-        outpost, configured):
-    outpost.answer(ok("tok-abc", expires_in=86399))
-    tok = await mappls.access_token()
+def test_the_key_goes_in_the_access_token_query_parameter():
+    """The post-August-2025 form, from Mappls' own `mappls-web-maps-js` README:
 
-    assert tok.ok is True
-    assert tok.token == "tok-abc"
-    assert tok.reason is None, "an ok Token carries no reason — never both"
-    # `expires_at` is EPOCH SECONDS, not a duration: the browser is handed it
-    # and has to compare it against its own clock.
-    assert tok.expires_at == pytest.approx(time.time() + 86399, abs=5)
+        <script src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=KEY">
 
-
-async def test_the_mint_posts_the_client_credentials_grant(outpost, configured):
-    """The form Mappls actually answers, checked on the wire rather than in the
-    source. A grant type it does not recognise is a 400 that reads exactly like
-    a revoked credential."""
-    await mappls.access_token()
-
-    assert outpost.calls == 1
-    request = outpost.requests[0]
-    assert str(request.url) == mappls.TOKEN_URL
-    assert request.method == "POST"
-    assert outpost.forms()[0] == {
-        "grant_type": "client_credentials",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-    }
-
-
-async def test_two_calls_mint_one_token(outpost, configured):
-    """THE CACHE, STATED AS A REQUEST COUNT.
-
-    Asserting only that both calls returned the same string would pass against a
-    service that re-minted every time and happened to be handed the same fixture
-    token twice. The property is the round trip that did not happen: `expires_in`
-    is ~24h, and a mint per page load is a person waiting on a network hop for a
-    credential we already hold.
+    Parsed, not substring-matched. Every component of it is asserted because
+    each one changed: the host (`apis.` -> `sdk.`), the path
+    (`/advancedmaps/api/{KEY}/map_sdk` -> `/map/sdk/web`), and the place the
+    credential sits (path segment -> query parameter).
     """
-    outpost.answer(ok("tok-first"), ok("tok-second"))
-
-    first = await mappls.access_token()
-    second = await mappls.access_token()
-
-    assert outpost.calls == 1, "the second call re-minted a token it already had"
-    assert first.token == second.token == "tok-first"
-    assert second.expires_at == first.expires_at
-
-
-async def test_a_failure_is_never_cached(outpost, configured):
-    """Same rule as `pin_boundaries`: an outage clears on the next request, not
-    on the next deploy.
-
-    A cached `None` would keep the map dark for as long as the worker lives —
-    and the worker outlives the outage. The second call MUST issue a second
-    request, which is why the count is asserted and not only the outcome.
-    """
-    outpost.answer(status(503, "upstream unavailable"), ok("tok-after-outage"))
-
-    failed = await mappls.access_token()
-    assert failed.reason == mappls.UNAVAILABLE
-    assert mappls._cached is None, "the failure was written into the cache"
-
-    recovered = await mappls.access_token()
-    assert recovered.ok is True
-    assert recovered.token == "tok-after-outage"
-    assert outpost.calls == 2, "the outage was cached and the retry never happened"
-
-
-async def test_a_recovered_token_is_then_cached_like_any_other(outpost, configured):
-    """The recovery is not a special case that bypasses the cache on the way
-    back in — otherwise every request after an outage keeps minting."""
-    outpost.answer(status(500), ok("tok-recovered"))
-
-    await mappls.access_token()
-    await mappls.access_token()
-    await mappls.access_token()
-
-    assert outpost.calls == 2
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  3 · unavailable — we hold credentials and Mappls did not give us a token
-# ══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.parametrize("answer, why", [
-    (status(401, "invalid_client"), "a revoked or wrong credential"),
-    (status(403, "forbidden"), "a scope withdrawn"),
-    (status(429, "rate limited"), "their throttle, which is transient"),
-    (status(500, "internal error"), "their outage"),
-    (status(502, "<html>bad gateway</html>"), "a proxy in front of them"),
-])
-async def test_a_non_200_is_unavailable_and_never_a_token(answer, why, outpost,
-                                                          configured):
-    """Every failure is one reason on purpose: the caller's only decision is
-    "is there a token", and a taxonomy of statuses here is a taxonomy nothing
-    reads. What must never happen is a Token that is neither ok nor honest.
-    """
-    outpost.answer(answer)
-    tok = await mappls.access_token()
-
-    assert tok.ok is False, f"{why} produced a token"
-    assert tok.reason == mappls.UNAVAILABLE
-    assert tok.reason != mappls.NOT_CONFIGURED, (
-        "a provider failure was reported as 'this environment has no map' — the "
-        "sentence that sends a customer to change settings that are correct")
-    assert tok.token is None and tok.expires_at is None
-
-
-@pytest.mark.parametrize("text", [
-    "<html><body>504 Gateway Time-out</body></html>",   # a proxy, not Mappls
-    "",                                                 # 200 and nothing at all
-    "access_token=abc",                                 # form-encoded, not JSON
-])
-async def test_a_200_that_is_not_json_is_unavailable_not_a_crash(text, outpost,
-                                                                 configured):
-    """A captive portal, a WAF and a misconfigured gateway all answer 200 with
-    HTML. `resp.json()` raises on each, and an exception here is a 500 on a page
-    whose map is one panel."""
-    outpost.answer(body(text))
-    tok = await mappls.access_token()
-    assert (tok.ok, tok.reason) == (False, mappls.UNAVAILABLE)
-
-
-@pytest.mark.parametrize("fields", [
-    {},                                          # 200, JSON, empty object
-    {"scope": "READ", "expires_in": 86399},      # everything but the token
-    {"access_token": None},
-    {"access_token": ""},                        # present and empty
-    {"access_token": 12345},                     # present and not a string
-    {"access_token": {"value": "x"}},
-    {"error": "invalid_client"},                 # their 200-with-an-error shape
-])
-async def test_a_200_with_no_usable_access_token_is_unavailable(fields, outpost,
-                                                               configured):
-    """`""` and `12345` are the two that a bare `if "access_token" in payload`
-    would let through, and both reach the browser as an SDK URL with rubbish in
-    the path — which renders as a blank panel and no error anywhere we can see.
-    """
-    outpost.answer(payload(**fields))
-    tok = await mappls.access_token()
-
-    assert tok.ok is False
-    assert tok.token is None, "a bogus token was handed out as if it were real"
-    assert tok.reason == mappls.UNAVAILABLE
-
-
-async def test_a_network_failure_is_unavailable_rather_than_an_exception(
-        outpost, configured, monkeypatch):
-    """DNS, a reset, or the 8-second timeout expiring. The map is one panel on a
-    page; it may not take the page down with it."""
-    def _raises(request):
-        raise httpx.ConnectError("[Errno -2] Name or service not known")
-
-    monkeypatch.setattr(
-        mappls.httpx, "AsyncClient",
-        lambda *a, **kw: httpx.AsyncClient(
-            *a, **{**kw, "transport": httpx.MockTransport(_raises)}))
-
-    tok = await mappls.access_token()
-    assert (tok.ok, tok.reason) == (False, mappls.UNAVAILABLE)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  4 · expires_in — honoured when sane, an hour when not, never forever
-# ══════════════════════════════════════════════════════════════════════════════
-
-async def test_a_sane_expires_in_is_honoured(outpost, configured):
-    outpost.answer(ok(expires_in=7200))
-    tok = await mappls.access_token()
-    assert tok.expires_at == pytest.approx(time.time() + 7200, abs=5)
-
-
-async def test_a_numeric_string_is_still_a_number(outpost, configured):
-    """JSON says numbers; a provider that quotes them is common enough that
-    refusing the value would throw away a perfectly good 24-hour token."""
-    outpost.answer(ok(expires_in="7200"))
-    tok = await mappls.access_token()
-    assert tok.expires_at == pytest.approx(time.time() + 7200, abs=5)
-
-
-@pytest.mark.parametrize("value, what", [
-    (_ABSENT, "the field is not there at all"),
-    (None, "present and null"),
-    (0, "zero — a token that is already dead"),
-    (-1, "negative"),
-    ("soon", "a word, which float() refuses"),
-    ("", "an empty string"),
-    ([86399], "a list, which float() refuses with TypeError not ValueError"),
-    (86400 * 8, "over a week — longer than the credential we minted it with"),
-])
-async def test_an_unusable_expires_in_falls_back_to_an_hour_not_to_forever(
-        value, what, outpost, configured):
-    """THE FALLBACK IS DOWNWARD, AND THAT IS THE WHOLE POINT.
-
-    The cost of re-minting an hour early is one request. The cost of trusting a
-    bad number upward is a browser holding a dead token with no way to tell us —
-    the SDK fails inside somebody else's page and we never see it.
-    """
-    outpost.answer(ok(expires_in=value))
-    tok = await mappls.access_token()
-
-    assert tok.ok is True, f"{what} was treated as a failed mint"
-    assert tok.expires_at == pytest.approx(time.time() + 3600, abs=5), (
-        f"{what} did not fall back to an hour")
-
-
-async def test_infinity_is_an_hour_and_not_forever(outpost, configured):
-    """`Infinity` is not legal JSON, and it is exactly what a lenient encoder
-    emits for a value nothing bounded — so it arrives as a raw body rather than
-    through the fixture's `json=`, whose encoder refuses to write it.
-
-    Python's `json.loads` accepts it, `float()` accepts it, and `0 < inf <=
-    86400*7` is False. It is the literal form of "this token never expires",
-    which is the one thing a cached credential must never be told.
-    """
-    outpost.answer(body('{"access_token": "tok-forever", "expires_in": Infinity}'))
-    tok = await mappls.access_token()
-
-    assert tok.ok is True
-    assert tok.expires_at == pytest.approx(time.time() + 3600, abs=5)
-
-
-async def test_a_token_inside_the_skew_window_is_re_minted_not_handed_out(
-        outpost, configured):
-    """A token that expires while the SDK is still loading fails in the browser,
-    where we cannot see it. So the cache hands back only tokens with real life
-    left in them — `_SKEW_SECONDS` of it.
-
-    The cached entry is planted directly rather than aged, because the
-    alternative is a test that sleeps for five minutes.
-    """
-    mappls._cached = ("tok-nearly-dead", time.time() + mappls._SKEW_SECONDS - 1)
-    outpost.answer(ok("tok-fresh"))
-
-    tok = await mappls.access_token()
-    assert tok.token == "tok-fresh", "a token inside the skew window was served"
-    assert outpost.calls == 1
-
-
-async def test_a_token_just_outside_the_skew_window_is_still_served(
-        outpost, configured):
-    """The other side of the same boundary. Without this, a skew of "always
-    re-mint" would pass the test above and mint on every single request."""
-    alive_until = time.time() + mappls._SKEW_SECONDS + 60
-    mappls._cached = ("tok-still-good", alive_until)
-
-    tok = await mappls.access_token()
-    assert tok.token == "tok-still-good"
-    assert tok.expires_at == alive_until
-    assert outpost.calls == 0
-
-
-async def test_an_expired_cache_with_no_credentials_is_not_configured(
-        outpost, unconfigured):
-    """The order of the two checks, pinned: a stale cache must not turn an
-    unconfigured environment into an outage on its way past."""
-    mappls._cached = ("tok-long-dead", time.time() - 10_000)
-    tok = await mappls.access_token()
-    assert (tok.reason, outpost.calls) == (mappls.NOT_CONFIGURED, 0)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  5 · the SDK URL — the fact that cost months
-# ══════════════════════════════════════════════════════════════════════════════
-
-def test_the_token_goes_in_the_path_and_not_in_a_query_parameter():
-    """`apis.mappls.com/advancedmaps/api/{KEY}/map_sdk` HAS BEEN DEAD SINCE
-    AUG 2025 and the component that used it kept saying it needed a key, so a
-    URL fault was read as a credential fault for months (memory
-    `territory_maps_stack`).
-
-    Asserted as a parsed URL rather than as a substring of the template: the
-    difference between the working form and the dead one is where the token
-    sits, and `?access_token=` would match a naive "the token is in there
-    somewhere" check perfectly.
-    """
-    from urllib.parse import urlparse, parse_qs
-
-    url = mappls.sdk_url("tok-xyz")
-    parts = urlparse(url)
+    parts = urlparse(mappls.sdk_url(KEY))
+    query = parse_qs(parts.query)
 
     assert parts.scheme == "https"
-    assert parts.netloc == "apis.mappls.com"
-    assert parts.path == "/advancedmaps/api/tok-xyz/map_sdk", (
-        "the token left the path — this is the shape of the dead URL")
-    for values in parse_qs(parts.query).values():
-        assert "tok-xyz" not in values, "the token is being passed as a query arg"
+    assert parts.netloc == "sdk.mappls.com"
+    assert parts.path == "/map/sdk/web"
+    assert query["access_token"] == [KEY]
+    assert query["v"] == ["3.0"], "v3 is the vector SDK the frontend expects"
 
 
-def test_the_sdk_url_asks_for_the_vector_layer():
-    """`layer=vector&v=3.0` is the Web Map SDK v3 the frontend loads. A raster
-    default renders, so this cannot be caught by looking at a screenshot."""
-    from urllib.parse import urlparse, parse_qs
+def test_the_key_never_appears_in_the_url_path():
+    """The complement of the test above, and the one that bites.
 
-    query = parse_qs(urlparse(mappls.sdk_url("t")).query)
-    assert query["layer"] == ["vector"]
-    assert query["v"] == ["3.0"]
+    A substring check for the key passes on BOTH forms — that is exactly why the
+    dead URL survived review. The difference between working and dead is
+    structural: in the new form the path is constant and the credential is a
+    query argument, so a key found anywhere in the path means the old shape has
+    come back.
+    """
+    parts = urlparse(mappls.sdk_url(KEY))
+
+    assert KEY not in parts.path, "the key is in the path — this is the dead form"
+    assert KEY not in parts.netloc
+    assert "advancedmaps" not in parts.path
+    assert "map_sdk" not in parts.path
+
+
+def test_the_sdk_url_is_not_the_legacy_form():
+    """REGRESSION GUARD, NAMED FOR THE REASON.
+
+    `LEGACY_SDK_URL_TEMPLATE` is kept in the module as documentation so nobody
+    reinvents it after finding the OAuth pair. Documentation that something can
+    accidentally be wired back to is a trap, so this states the relationship
+    between the two constants: they must never converge.
+
+    The legacy pair (path URL + minted OAuth token) is not "an older way that
+    still works". Its host cannot distinguish our real token from a random
+    string, proved live 2026-08-27.
+    """
+    live = mappls.sdk_url(KEY)
+    legacy = mappls.LEGACY_SDK_URL_TEMPLATE.format(token=KEY)
+
+    assert live != legacy
+    assert urlparse(live).netloc != urlparse(legacy).netloc
+    assert urlparse(legacy).path.endswith("/map_sdk"), (
+        "the legacy constant no longer documents the legacy form")
+    assert "layer=vector" not in live, (
+        "the new SDK form takes no layer parameter; v3 is vector")
 
 
 def test_the_sdk_url_is_defined_once():
     """Served to the browser rather than composed there, so that when Mappls
-    next changes it there is ONE place that is wrong instead of one per screen.
+    next changes it — and it has changed once already — there is ONE place that
+    is wrong instead of one per screen."""
+    assert "{key}" in mappls.SDK_URL_TEMPLATE
+    assert mappls.sdk_url("abc") == mappls.SDK_URL_TEMPLATE.format(key="abc")
+
+
+def test_the_oauth_endpoint_is_documented_and_unreachable_from_here():
+    """`TOKEN_URL` stays as evidence; the code that used it does not.
+
+    The minting path (`access_token`, `_mint`, the token cache, the skew) was
+    removed once the Static Key landed, because this codebase has a documented
+    history of dead code surviving on "it might be useful" — twenty dead tables,
+    dropped in migration 234. If one of these names is being re-added, note that
+    the credential behind it was proved non-functional against every allocated
+    Mappls product on 2026-08-27, and read the module docstring first.
     """
-    assert "{token}" in mappls.SDK_URL_TEMPLATE
-    assert mappls.sdk_url("abc") == mappls.SDK_URL_TEMPLATE.format(token="abc")
+    assert mappls.TOKEN_URL.startswith("https://outpost.mappls.com/")
+
+    src = inspect.getsource(mappls)
+    assert "import httpx" not in src, "the module reached the network again"
+    for gone in ("async def access_token", "def _mint(", "def reset_cache",
+                 "_SKEW_SECONDS", "_mint_lock"):
+        assert gone not in src, f"the retired OAuth minting is back: {gone}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  6 · the secret must never reach a log
-# ══════════════════════════════════════════════════════════════════════════════
-
-async def test_a_failed_mint_logs_the_status_and_not_the_secret(
-        outpost, configured, caplog):
-    """A leaked token dies in a day; a leaked client secret does not.
-
-    `sentry_scrub.py` redacts the credential NAMES, which does nothing for a
-    value pasted into a log line by hand. So the value is asserted absent from
-    everything the module emitted — and the status IS asserted present, because
-    a log that says nothing is not the safe option either: `unavailable` is the
-    reason that means "go and look", and there has to be something to look at.
-    """
-    caplog.set_level(logging.DEBUG)
-    outpost.answer(status(401, "invalid_client"))
-
-    tok = await mappls.access_token()
-    assert tok.reason == mappls.UNAVAILABLE
-
-    assert CLIENT_SECRET not in caplog.text, "the client secret reached the log"
-    assert "401" in caplog.text, "a mint failure left no trace at all"
-
-
-async def test_nothing_about_a_successful_mint_names_the_secret_or_the_token(
-        outpost, configured, caplog):
-    """A response body logged whole would carry the minted token past the
-    scrubber. The success path is silent; this is what keeps it that way."""
-    caplog.set_level(logging.DEBUG)
-    outpost.answer(ok("tok-secret-value"))
-
-    tok = await mappls.access_token()
-    assert tok.ok is True
-    assert CLIENT_SECRET not in caplog.text
-    assert "tok-secret-value" not in caplog.text, "the minted token was logged"
-
-
-async def test_a_not_configured_answer_logs_no_error(outpost, unconfigured, caplog):
-    """An environment without the pair is NOT an error and nothing should be
-    logged at error level for it — otherwise every local checkout and every
-    preview deploy generates alerts for a feature that was never switched on.
-    """
-    caplog.set_level(logging.DEBUG)
-    await mappls.access_token()
-
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  7 · the router — always 200, and the reason says which
+#  3 · the router — always 200, and the reason says which
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # A LOCAL app rather than `server.app`, so this file owns the whole dependency
@@ -619,36 +229,47 @@ async def test_a_not_configured_answer_logs_no_error(outpost, unconfigured, capl
 # same limiter singleton, so the 30/minute on this route is the real one and the
 # autouse `reset_rate_limits` fixture in conftest still empties it between
 # tests. `app.state.limiter` is not optional: slowapi reads the limiter off the
-# app state inside the decorator's wrapper and raises without it.
+# app state inside the decorator's wrapper and raises without it. Same shape as
+# `tests/test_custody_router.py`.
 
-@pytest.fixture
-def maps_app():
+def _build_app(*, authenticated: bool):
     from fastapi import FastAPI
     from slowapi import _rate_limit_exceeded_handler
     from slowapi.errors import RateLimitExceeded
 
     from auth_router import require_user
+    from limiter import limiter
     from routers import maps as maps_mod
 
     app = FastAPI()
-    app.state.limiter = limiter_singleton()
+    app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(maps_mod.router)
-    app.dependency_overrides[require_user] = lambda: CALLER
+    if authenticated:
+        app.dependency_overrides[require_user] = lambda: CALLER
     return app
 
 
-def limiter_singleton():
-    from limiter import limiter
-    return limiter
+@pytest.fixture
+async def mc():
+    """A signed-in caller."""
+    from httpx import ASGITransport, AsyncClient
+    async with AsyncClient(transport=ASGITransport(app=_build_app(authenticated=True)),
+                           base_url="http://test") as client:
+        yield client
 
 
 @pytest.fixture
-async def mc(maps_app):
+async def anon():
+    """No override, so the REAL `require_user` runs and finds no bearer token.
+
+    It raises 401 before it asks for a pool, so this fixture reaches no database
+    — which matters, because staging and production share one (memory
+    `feedback_shared_db_risk`).
+    """
     from httpx import ASGITransport, AsyncClient
-    async with AsyncClient(
-        transport=ASGITransport(app=maps_app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=_build_app(authenticated=False)),
+                           base_url="http://test") as client:
         yield client
 
 
@@ -661,22 +282,21 @@ async def test_the_route_is_registered_on_the_real_app():
     assert "app.include_router(maps_router)" in inspect.getsource(server)
 
 
-async def test_configured_answers_a_token_a_url_and_an_expiry(mc, outpost,
-                                                              configured):
-    outpost.answer(ok("tok-router"))
+async def test_configured_answers_a_key_and_the_sdk_url(mc, configured):
     resp = await mc.get("/api/v1/maps/token")
 
     assert resp.status_code == 200
     data = resp.json()
     assert data["available"] is True
     assert data["reason"] is None
-    assert data["token"] == "tok-router"
-    assert data["sdk_url"] == mappls.sdk_url("tok-router")
-    assert data["expires_at"] == pytest.approx(time.time() + 86399, abs=5)
+    assert data["token"] == KEY
+    assert data["sdk_url"] == mappls.sdk_url(KEY)
+    # Restated through HTTP, because this is the byte the browser puts in a
+    # <script src>: the key must arrive as a query argument, not a path segment.
+    assert parse_qs(urlparse(data["sdk_url"]).query)["access_token"] == [KEY]
 
 
-async def test_not_configured_is_200_with_a_reason_not_a_4xx(mc, outpost,
-                                                             unconfigured):
+async def test_not_configured_is_200_with_a_reason_not_a_4xx(mc, unconfigured):
     """ALWAYS 200 — the same choice as `GET /territories/{id}/geometry` in
     Phase 7.3.
 
@@ -690,48 +310,39 @@ async def test_not_configured_is_200_with_a_reason_not_a_4xx(mc, outpost,
     assert resp.status_code == 200
     data = resp.json()
     assert data["available"] is False
-    assert data["reason"] == "not_configured"
+    assert data["reason"] == mappls.NOT_CONFIGURED == "not_configured"
     assert "token" not in data and "sdk_url" not in data, (
         "a null token field invites a frontend to build an SDK URL out of it")
 
 
-async def test_unavailable_is_200_and_is_a_different_reason(mc, outpost,
-                                                            configured):
-    """The distinction the whole endpoint exists for, asserted through HTTP.
+@pytest.mark.parametrize("blank", ["", "   "])
+async def test_a_blank_key_reaches_the_endpoint_as_not_configured(blank, mc,
+                                                                  monkeypatch):
+    """The blank rule through the surface a customer touches. Without it the
+    endpoint hands the browser `access_token=` and the resulting failure is
+    reported from inside Mappls' SDK, where we cannot see it."""
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", blank)
 
-    `not_configured` sends a person to Railway; `unavailable` sends them to
-    Mappls' status page. One response shape with one boolean would send them to
-    the wrong one half the time.
-    """
-    outpost.answer(status(503, "upstream unavailable"))
-    resp = await mc.get("/api/v1/maps/token")
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["available"] is False
-    assert data["reason"] == "unavailable"
-    assert data["reason"] != "not_configured"
+    data = (await mc.get("/api/v1/maps/token")).json()
+    assert (data["available"], data["reason"]) == (False, mappls.NOT_CONFIGURED)
 
 
-@pytest.mark.parametrize("case", ["configured", "not_configured", "unavailable"])
-async def test_attribution_travels_with_every_answer_including_the_failures(
-        case, mc, outpost, monkeypatch):
+@pytest.mark.parametrize("state", ["configured", "not_configured"])
+async def test_attribution_travels_with_every_answer_including_the_failure(
+        state, mc, monkeypatch):
     """"Powered by Mappls" must be "clearly presented" and may "in no instance"
     be removed — and it is a LOGO, not a text credit, which is why the frontend
     draws the mark and this response carries its accessible name and its link.
 
-    It ships on the failures too, on purpose: a screen that keeps a stale token
-    or a cached basemap must never be able to reach a state where it has a map
-    and no attribution because the refresh failed.
+    It ships on the not-configured answer too, on purpose: a screen holding a
+    cached basemap must never be able to reach a state where it has a map and no
+    attribution because the refresh came back empty. The GODL boundary credit is
+    a DIFFERENT credit for a different dataset; neither covers the other.
     """
-    if case == "not_configured":
-        monkeypatch.delenv("MAPPLS_CLIENT_ID", raising=False)
-        monkeypatch.delenv("MAPPLS_CLIENT_SECRET", raising=False)
+    if state == "configured":
+        monkeypatch.setenv("MAPPLS_STATIC_KEY", KEY)
     else:
-        monkeypatch.setenv("MAPPLS_CLIENT_ID", CLIENT_ID)
-        monkeypatch.setenv("MAPPLS_CLIENT_SECRET", CLIENT_SECRET)
-        if case == "unavailable":
-            outpost.answer(status(500))
+        monkeypatch.delenv("MAPPLS_STATIC_KEY", raising=False)
 
     data = (await mc.get("/api/v1/maps/token")).json()
 
@@ -740,30 +351,88 @@ async def test_attribution_travels_with_every_answer_including_the_failures(
     assert data["attribution_href"].startswith("https://")
 
 
-async def test_the_response_never_carries_the_client_secret(mc, outpost,
-                                                            configured):
-    """The token is billable and visible in the network tab — that is accepted
-    and is exactly what a bundled `VITE_MAPPLS_KEY` would have been. The PAIR is
-    what must never leave Railway: a leaked token dies in a day, a leaked secret
-    does not."""
-    outpost.answer(ok("tok-router"))
+async def test_the_response_carries_no_expires_at(mc, configured):
+    """A STATIC KEY DOES NOT EXPIRE, AND THE RESPONSE MAY NOT IMPLY OTHERWISE.
+
+    The field is omitted rather than set to null: a frontend reading `null` can
+    equally decide "never expires" or "we forgot to say", and one of those two
+    readings caches a credential for ever. Absent is unambiguous.
+
+    A leftover `expires_at` would also be a lie of the most expensive kind here
+    — it would describe the OAuth token, which is the credential this whole
+    feature just proved does not work.
+    """
+    data = (await mc.get("/api/v1/maps/token")).json()
+
+    assert "expires_at" not in data
+    assert "expires_in" not in data
+    assert not any("expir" in k for k in data), sorted(data)
+
+
+@pytest.mark.parametrize("state", ["configured", "not_configured"])
+async def test_the_endpoint_never_reports_unavailable(state, mc, monkeypatch):
+    """With the minting gone there is no round trip left to fail, so this
+    endpoint answers a key or `not_configured` and nothing else.
+
+    `UNAVAILABLE` survives in the module because the browser still needs the
+    word — `frontend/src/lib/mapplsSdk.js` exports `MAP_DOWN = 'unavailable'`
+    and falls back to it when the FETCH of this endpoint fails or the SDK script
+    will not load. What must not happen is the backend emitting it: that would
+    send a person to Mappls' status page for a variable that is missing on
+    Railway, which is the wrong half of the country.
+    """
+    if state == "configured":
+        monkeypatch.setenv("MAPPLS_STATIC_KEY", KEY)
+    else:
+        monkeypatch.delenv("MAPPLS_STATIC_KEY", raising=False)
+
+    data = (await mc.get("/api/v1/maps/token")).json()
+    assert data["reason"] in (None, mappls.NOT_CONFIGURED)
+    assert data["reason"] != mappls.UNAVAILABLE
+
+
+async def test_the_response_never_carries_the_oauth_secret(mc, configured):
+    """The Static Key is billable and visible in the network tab — accepted, and
+    unavoidable for a client-side SDK. The OAuth PAIR is a different matter: it
+    is useless to Mappls today, but it is still a live secret on Railway, and
+    "the credential that does not work" is not a reason to let it leak."""
     text = (await mc.get("/api/v1/maps/token")).text
 
     assert CLIENT_SECRET not in text
-    assert CLIENT_ID not in text
+    assert "test-client-id" not in text
 
 
-async def test_the_endpoint_serves_a_cached_token_without_re_minting(
-        mc, outpost, configured):
-    """Two page loads, one mint. The endpoint is the only consumer of the cache
-    that a customer can reach, so the property is worth restating through HTTP:
-    Mappls' console counts calls and its usage statistics are contractually
-    binding, which makes a mint per page load a bill rather than mere waste.
+# ══════════════════════════════════════════════════════════════════════════════
+#  4 · the two controls we own over a credential that cannot expire
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def test_an_anonymous_caller_gets_no_key(anon, configured):
+    """THE KEY NEVER EXPIRES AND THE BROWSER CAN READ IT.
+
+    Rotation is the only revocation, so the controls that remain are the
+    console's domain whitelist (theirs) and these two (ours): a signed-in user,
+    and a rate limit. An unauthenticated endpoint here is a permanent credential
+    published on the open internet — worse than the `VITE_MAPPLS_KEY` this
+    design replaced, not better, since a bundled key at least ships only to
+    people who load our app.
     """
-    outpost.answer(ok("tok-router"))
+    resp = await anon.get("/api/v1/maps/token")
 
-    first = (await mc.get("/api/v1/maps/token")).json()
-    second = (await mc.get("/api/v1/maps/token")).json()
+    assert resp.status_code == 401
+    assert KEY not in resp.text
 
-    assert first["token"] == second["token"]
-    assert outpost.calls == 1
+
+async def test_the_route_is_rate_limited(mc):
+    """One account may not scrape the endpoint at speed. Asserted on the
+    decorator rather than by spending 30 requests: the budget is shared through
+    the limiter singleton, and a test that exhausts it deliberately makes an
+    unrelated test in another file fail (see conftest's `reset_rate_limits`).
+
+    `request: Request` is asserted too — slowapi reads the client address off
+    it, and a handler that drops the parameter silently loses its limit.
+    """
+    from routers import maps as maps_mod
+
+    src = inspect.getsource(maps_mod)
+    assert "@limiter.limit(" in src
+    assert "request" in inspect.signature(maps_mod.mappls_token).parameters

@@ -1,27 +1,40 @@
 /**
  * mapplsSdk.js — load the Mappls Web Map SDK once, with a token from our backend.
  *
- * ── THERE IS NO `VITE_MAPPLS_KEY`, AND THERE NEVER WAS ──────────────────────
+ * ── A KEY *IS* NEEDED. IT JUST IS NOT A `VITE_` ONE ─────────────────────────
  *
- * `TerritoryMap.jsx` read one from 2026-08-09 to 2026-08-27 and told every
- * reader "the territory map needs a MapMyIndia key". That sentence was false
- * for the whole of its life. Two different credentials were being confused: a
- * frontend build-time key nobody ever bought, and the OAuth pair
- * `MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET` that has been on Railway minting
- * tokens successfully the entire time.
+ * `TerritoryMap.jsx` read `VITE_MAPPLS_KEY` from 2026-08-09 to 2026-08-27 and
+ * told every reader "the territory map needs a MapMyIndia key". On 2026-08-27
+ * that was declared false, on the grounds that the OAuth pair on Railway mints
+ * tokens successfully. **The mint was tested; the SPEND was not.** Probed
+ * against Mappls the same day, the minted token is refused by every one of
+ * their products, and the post-2025 SDK host cannot distinguish it from a
+ * randomly generated string.
  *
- * So the browser asks `GET /api/v1/maps/token` and the credential pair stays on
- * the server. A build-time key would sit in a public bundle, never expire, and
- * need a frontend redeploy to rotate; this token lives ~24h and is handed only
- * to a signed-in user.
+ * Mappls **replaced the mechanism in August 2025** (their `mappls-web-maps-js`
+ * README; the OAuth flow now lives on an `auth-legacy` branch). The SDK takes
+ * the console's **Static Key**, a different credential from the Client ID and
+ * Secret. So the original message was right that a key was missing — it was
+ * only wrong about which one.
+ *
+ * What survives of that decision is the part worth keeping: the key lives on
+ * Railway as `MAPPLS_STATIC_KEY` and is served by `GET /api/v1/maps/token`,
+ * NOT baked into the bundle as a `VITE_` variable. A build-time key cannot be
+ * rotated without a frontend redeploy.
+ *
+ * ⚠ A Static Key **does not expire**, and this hands it to the browser, so it
+ * is readable in any network tab. The console's DOMAIN WHITELIST is the only
+ * thing stopping it being lifted and spent elsewhere — it is the security
+ * control, not a formality.
  *
  * ── THE SDK URL IS SERVED, NOT BUILT HERE ───────────────────────────────────
  *
- * The old component composed `apis.mappls.com/advancedmaps/api/{KEY}/map_sdk`,
- * a URL that has been **dead since Aug 2025**. Because the component also
- * claimed to need a key, a URL fault read as a credential fault for months and
- * nobody looked further. `sdk_url` now comes from the backend beside the token
- * it embeds, so there is exactly one place that can be wrong about it.
+ * `sdk_url` comes from the backend beside the key it embeds, so there is
+ * exactly one place that can be wrong about it. That mattered: the legacy URL
+ * form and the legacy credential were consistent with each other, and a comment
+ * here previously called that URL "dead since Aug 2025" — which was backwards,
+ * and is the kind of confident wrong note that sends the next reader down the
+ * same path. It was the auth MECHANISM that changed, not the URL alone.
  *
  * ── TWO FAILURES, NEVER MERGED ──────────────────────────────────────────────
  *

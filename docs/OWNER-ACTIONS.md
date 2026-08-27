@@ -271,23 +271,60 @@ new service is deliberately named `cron-report-dispatch` rather than
 ---
 
 
-## 2026-08-27 · Mappls: the token mints, and every Mappls product refuses it
+## 2026-08-27 · Mappls: ONE VALUE OWED — the Static Key
 
 **Blocks:** 7.5's basemap (the rest of 7.5 shipped and works without it), **7.6
-entirely** (address autosuggest needs the same token accepted), and the map half
-of 8.1 / 8.2 / 8.3.
-**Action:** open the Mappls console for project `prj1787726591i922664629` and
-confirm (a) the account has an **active plan / API entitlements**, and (b) the
-**domains are registered** — `kartavaya.com`, `staging.kartavaya.com`,
-`www.kartavaya.com`, and `localhost` for development.
+entirely**, and the map half of 8.1 / 8.2 / 8.3.
 
-### Why this is on your desk and not mine
+> ### THE ACTION, in full
+>
+> Mappls console → project **Kartavaya** → **Credentials** → copy the **Static
+> Key** (the section separate from the *Key Pair* / Client ID + Secret) → send
+> it privately → it goes on Railway as **`MAPPLS_STATIC_KEY`**.
+>
+> That is the whole remaining task. **Nothing else is owed and no support ticket
+> is needed** — the code is written, tested and committed, and starts drawing
+> tiles the moment the variable exists.
+
+**Resolved while investigating, so do not re-raise these:**
+
+- ✅ **Allocations are fine.** Read off the console 2026-08-27: *Vector Map JS
+  SDK Initialization* 10,000 · *Interactive JS SDK Initialization* 10,000 ·
+  *Vector Tiles SDK* 100,000 · *Raster Tiles SDK* 100,000 · *Geocode* 250 ·
+  *Autosuggest* 200 · *Vector KeyGen* 2,073,600,000. Every one reads `< 1%`
+  used. The project has everything the map needs.
+- ✅ **Domains are whitelisted** — `kartavaya.com`, `www`, `app`, `staging`.
+  ⚠ Worth tidying: several entries carry a **trailing slash**
+  (`https://staging.kartavaya.com/`) while a browser sends the origin without
+  one. Not today's blocker; an exact-match whitelist is a classic trap.
+- ✅ **CORS enabled** on the credential, 2026-08-27, at my request.
+
+⚠ **And a security consequence to keep in view.** A Static Key **does not
+expire** and is served to the browser, so it is readable in any network tab.
+The domain whitelist above stops being a formality and becomes the only control
+preventing the key being lifted and spent against your allocation. Keep it
+populated; never enable a Mappls credential for browser use without one.
+
+### Why a key is owed, when this morning's note said one was not
 
 `MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET` are on Railway and they **work** —
 `outpost.mappls.com` returns a 36-character bearer token with `expires_in 86399`
 and `scope READ`, every time. On 2026-08-27 that was recorded as meaning the
 credential question was closed and "the backend can mint a token and hand it
-over". **The mint half was tested. The spend half was not.** It is now:
+over". **The mint half was tested. The spend half was not.**
+
+**Mappls replaced its authentication mechanism in August 2025.** Their own
+`mappls-web-maps-js` README says the `main` branch documents "the updated
+Authorization & Authentication mechanism introduced in August 2025", and the
+OAuth 2.0 flow now lives on an `auth-legacy` branch. The SDK takes the
+console's **Static Key** as a query parameter:
+
+    <script src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=<Static Key>">
+    "Copy and paste the key from your credentials section from your API keys
+     into the access_token query parameter."
+
+So the component that spent eighteen days saying it needed a key was **right
+that one was missing, and wrong about which one**. The evidence, probed live:
 
     SDK, no referer                 401  Domain validation failed
     SDK, staging.kartavaya.com      401  Domain validation failed
@@ -300,10 +337,11 @@ over". **The mint half was tested. The spend half was not.** It is now:
     REST autosuggest                401  Domain validation failed
 
 Our own domains and a domain we do not own are refused **identically**, so this
-is not a referrer waiting to be whitelisted — and `Token was not recognised` on
-the REST side says the token is not accepted by any product at all. Both halves
-point at the account, not at our code, and neither is something an engineer can
-change from here.
+was never a referrer waiting to be whitelisted. And the decisive one: the
+post-2025 SDK host answers our real token and a **randomly generated fake
+string** byte-identically, while the legacy host distinguishes them. A
+credential the new host cannot tell from garbage is not a credential for the new
+host.
 
 ### What shipped anyway
 

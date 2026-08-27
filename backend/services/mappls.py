@@ -1,239 +1,149 @@
-"""mappls.py — one Mappls access token, minted server-side and cached.
+"""mappls.py — the one Mappls credential, and the WRONG one, kept named.
 
-── WHY THE BROWSER DOES NOT HOLD A KEY ──────────────────────────────────────
+There is no minting here any more. The Web Map SDK takes a **Static Key** as a
+query parameter and that key is served straight through. What is left in this
+file besides three lines of code is the evidence for why the OTHER credential —
+the one that is on Railway, works perfectly, and is not the answer — is not the
+answer. Delete that and the next person re-derives it over a day, as we did.
 
-`TerritoryMap.jsx` read `VITE_MAPPLS_KEY` from 2026-08-09 to 2026-08-27 and
-rendered "the territory map needs a MapMyIndia key" because it was never set.
-That sentence was **false the whole time**. Two different credentials were being
-confused: a frontend build-time key that nobody ever bought, and the OAuth pair
-`MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET` that has been sitting on Railway
-minting tokens successfully. See the memory `mappls_credentials_exist`.
+── THE CREDENTIAL REVERSAL, AUGUST 2025 ─────────────────────────────────────
 
-So there is no `VITE_MAPPLS_KEY` and there will not be one. The browser asks
-this backend for a token, and that is better than a build-time key for reasons
-beyond the accident:
+We hold `MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET`, they mint an OAuth token
+against `TOKEN_URL` with HTTP 200 and `expires_in` 86399, and **that token is
+refused by every Mappls product we are entitled to.** Mappls replaced the auth
+mechanism in August 2025: their `mappls-web-maps-js` README documents the new
+one on `main` and pushed the OAuth 2.0 flow to an `auth-legacy` branch.
 
-  * a build-time key is baked into a public JS bundle and cannot be rotated
-    without a redeploy of the frontend;
-  * `expires_in` is ~24h, so a leaked token dies on its own;
-  * the credential pair never leaves Railway, where `sentry_scrub.py` already
-    redacts it.
+Proved live on 2026-08-27 rather than inferred: the post-2025 SDK host answers
+our real minted token and a randomly generated fake string **byte-identically**
+(`Token was not recognised`), while the legacy host distinguishes them. A
+credential the new host cannot tell apart from garbage is not a credential for
+the new host. The owner's console shows Vector Map JS SDK, Vector Tiles, Geocode
+and Autosuggest all allocated, so this was never an entitlement problem — it was
+the wrong credential, held with total confidence, for months.
+
+So: the minting code is gone (nothing called it), the Railway variables stay
+(not ours to remove), and `TOKEN_URL` and `LEGACY_SDK_URL_TEMPLATE` stay HERE,
+documented, so that finding the pair does not start the same investigation.
 
 ── NOT CONFIGURED IS NOT AN OUTAGE ──────────────────────────────────────────
 
-This module answers with a `Token` whose `reason` distinguishes the two, the
-same discipline `services/pin_boundaries.py` applies to `unmatched` vs
-`unavailable`, and for the same reason: collapsing them tells a customer the
-map is broken when in truth the feature was never switched on for their
-environment, and they will go and file a fault against working software.
+`static_key()` returns None or a key; the router turns None into
+`reason: not_configured`. Same discipline as `services/pin_boundaries.py`'s
+`unmatched` vs `unavailable`, for the same reason: collapsing "this environment
+was never given the key" into "the map is broken" tells a customer to file a
+fault against working software.
 
-    ok            a token, valid until `expires_at`
-    NOT_CONFIGURED  no credential pair in this environment. Local dev, and any
-                    deploy that has not been given the pair. NOT an error, and
-                    nothing should be logged at error level for it.
-    UNAVAILABLE     the pair exists and Mappls did not give us a token. Their
-                    outage, our network, or a revoked credential.
+── THE STATIC KEY DOES NOT EXPIRE, AND THE BROWSER GETS IT ──────────────────
 
-── THE CACHE IS A CORRECTNESS RULE, NOT A SPEED ONE ─────────────────────────
+This is a real downgrade from the 24-hour token and it is stated plainly rather
+than buried. A client-side map SDK cannot load without a credential the browser
+can read, so the key is in every network tab of every signed-in user, for ever,
+until somebody rotates it in the console.
 
-Mappls' terms forbid caching *to avoid paying fees* (memory
-`mappls_licence_and_map_market`), which is about map and geocode RESULTS. A
-token is not a result — re-minting one per page load would be a bug, since the
-same token is valid for a day and every mint is a round trip a person waits on.
-
-`_SKEW_SECONDS` exists because a token that expires while the SDK is still
-loading fails in the browser, where we cannot see it. We hand back only tokens
-with real life left in them.
-
-**A failure is never cached.** Same rule as `pin_boundaries`: an outage must
-clear on the next request rather than on the next deploy.
+**The console's domain whitelist is the compensating control.** It is the only
+thing standing between a lifted key and somebody else's map bill, since the key
+itself carries no expiry, no per-user identity and no revocation short of
+rotation. Do not enable a Mappls credential for browser use with an empty
+whitelist. `routers/maps.py` adds the two controls we own: `require_user`, so an
+anonymous visitor gets nothing, and a rate limit, so one account cannot scrape
+the endpoint at speed.
 """
 from __future__ import annotations
 
-import asyncio
-import logging
 import os
-import time
-from typing import NamedTuple
-
-import httpx
-
-log = logging.getLogger(__name__)
 
 #: Mappls' OAuth 2.0 client-credentials endpoint. Verified live 2026-08-27:
 #: HTTP 200, `expires_in` 86399, `scope` READ, project `prj1787726591i922664629`.
+#:
+#: ── AND THE TOKEN IT RETURNS IS NOT ACCEPTED BY ANYTHING ────────────────────
+#:
+#: NOTHING CALLS THIS. It is a documented dead end, kept because the pair is
+#: still on Railway and the next person WILL find it and assume it is the
+#: credential. See the module docstring for the live proof. If you are here
+#: because the map is blank, the variable you want is `MAPPLS_STATIC_KEY`.
 TOKEN_URL = "https://outpost.mappls.com/api/security/oauth/token"
 
-#: The Web Map SDK. **The `{token}` goes in the PATH, not a query parameter** —
-#: this is Mappls' own form and it is easy to get wrong: the previous component
-#: used `apis.mappls.com/advancedmaps/api/{KEY}/map_sdk`, a URL that has been
-#: dead since Aug 2025, and it was mistaken for a missing-credential problem for
-#: months. Served to the browser from here rather than hardcoded there, so that
-#: when it next changes there is ONE place that is wrong.
-SDK_URL_TEMPLATE = "https://apis.mappls.com/advancedmaps/api/{token}/map_sdk?layer=vector&v=3.0"
+#: The Web Map SDK, post-August-2025. Quoted from Mappls' own README:
+#:
+#:     <script src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=<Static Key>">
+#:     "Copy and paste the key from your `credentials` section from your API
+#:      keys into the `access_token` query parameter."
+#:
+#: So `access_token` is a QUERY parameter and its value is the console's
+#: **Static Key** — a different credential from the Client ID / Client Secret
+#: pair, issued in the same Credentials tab. There is no `layer=vector`
+#: parameter in the new form; v3 is vector.
+SDK_URL_TEMPLATE = "https://sdk.mappls.com/map/sdk/web?v=3.0&access_token={key}"
+
+#: The legacy form: token in the PATH, on `apis.mappls.com`. NOTHING CALLS THIS
+#: EITHER. It is retained for the same reason as `TOKEN_URL` — it is the shape
+#: somebody who finds the OAuth pair will reinvent, and the whole point is that
+#: it belongs to the credential we are no longer using. `sdk_url()` returning
+#: anything of this shape is a regression, and a test says so by name.
+LEGACY_SDK_URL_TEMPLATE = (
+    "https://apis.mappls.com/advancedmaps/api/{token}/map_sdk?layer=vector&v=3.0"
+)
 
 #: Mappls' terms: `"Powered by Mappls"` must be "clearly presented" and "in no
 #: instance" removed or hidden, and it is a LOGO, not a text credit — PHASE-7
 #: §7.5 originally specified `Basemap © Mappls` as a string, which does not
 #: satisfy it. The frontend draws the mark; this is the accessible name and the
-#: link that must accompany it, served from the same place as the token so a
+#: link that must accompany it, served from the same place as the key so a
 #: screen cannot end up with a basemap and no attribution.
 BASEMAP_ATTRIBUTION = "Powered by Mappls"
 BASEMAP_ATTRIBUTION_HREF = "https://www.mappls.com/"
 
-#: Refuse to hand out a token with less than this left. Five minutes is far
-#: longer than an SDK load, and `expires_in` is ~24h, so this costs one extra
-#: mint per day and removes a class of failure we could never observe.
-_SKEW_SECONDS = 300.0
-
-#: Mappls answering slowly must not hold a request open. The map is one panel on
-#: a page; a caller that waits ten seconds for it has already failed the reader.
-_TIMEOUT_SECONDS = 8.0
-
+#: The environment was never given a key. NOT an error: a local checkout and any
+#: preview deploy are in this state, and nothing should log at error level for
+#: it.
 NOT_CONFIGURED = "not_configured"
+
+#: We have a key and the map still did not come up.
+#:
+#: **This module can no longer produce it** — with the minting gone there is no
+#: round trip left to fail, so the endpoint answers `not_configured` or a key
+#: and nothing else. It is kept because the reason vocabulary is shared with the
+#: browser, which still needs it: `frontend/src/lib/mapplsSdk.js` exports
+#: `MAP_DOWN = 'unavailable'` and both map components fall back to it when the
+#: FETCH of this endpoint fails or the SDK script will not load. Removing the
+#: name here would not remove the state; it would only remove the definition of
+#: it from the place the backend documents its own contract.
 UNAVAILABLE = "unavailable"
 
 
-class Token(NamedTuple):
-    """A minted token, or the reason there is none. Never both."""
+def static_key() -> str | None:
+    """The console-issued Static Key, or None. THE credential for the Web SDK.
 
-    token: str | None
-    expires_at: float | None       # epoch seconds, absolute
-    reason: str | None             # NOT_CONFIGURED | UNAVAILABLE | None when ok
+    Blank is treated as absent, and that is deliberate rather than tidy: a
+    Railway variable set to nothing reads back as `''`, a bare truthiness check
+    would call that configured, and the empty key would be put in the SDK URL
+    and refused by Mappls. The browser would then report a provider failure for
+    what is our missing configuration — the exact misattribution that
+    `NOT_CONFIGURED` exists to prevent.
 
-    @property
-    def ok(self) -> bool:
-        return self.token is not None
+    It lives on Railway rather than in the frontend build as `VITE_MAPPLS_KEY`.
+    A build-time key is baked into a public bundle and cannot be rotated without
+    a frontend redeploy; served from here, rotation is one Railway variable and
+    a restart. That much of the 2026-08-27 decision survives — what does NOT
+    survive is its premise, which was that no key was owed at all.
 
-
-#: `(token, expires_at)` or None. SUCCESS ONLY — see the module docstring.
-_cached: tuple[str, float] | None = None
-
-#: Two page loads land together on a cold worker. Without this they mint two
-#: tokens; Mappls' console counts calls and its usage statistics are
-#: contractually binding, so a duplicate mint is a small bill, not just waste.
-_mint_lock = asyncio.Lock()
-
-
-def reset_cache() -> None:
-    """Drop the cached token. For tests, and for a REPL."""
-    global _cached
-    _cached = None
-
-
-def _credentials() -> tuple[str | None, str | None]:
-    """The OAuth pair from the environment, blank treated as absent.
-
-    `os.getenv(...)` returning `''` is what a Railway variable set to nothing
-    looks like, and an empty client_id would be sent to Mappls and answered with
-    a 401 — reported as UNAVAILABLE, i.e. as their fault. It is ours.
+    ⚠ This key does not expire and it is handed to the browser. See the module
+    docstring: the console's domain whitelist is the compensating control.
     """
-    client_id = (os.getenv("MAPPLS_CLIENT_ID") or "").strip()
-    client_secret = (os.getenv("MAPPLS_CLIENT_SECRET") or "").strip()
-    return (client_id or None, client_secret or None)
+    return (os.getenv("MAPPLS_STATIC_KEY") or "").strip() or None
 
 
 def is_configured() -> bool:
-    """Whether this environment holds a credential pair at all."""
-    client_id, client_secret = _credentials()
-    return bool(client_id and client_secret)
+    """Whether this environment can serve a basemap at all."""
+    return static_key() is not None
 
 
-async def access_token() -> Token:
-    """A Mappls access token, from cache when one is still comfortably alive."""
-    global _cached
+def sdk_url(key: str) -> str:
+    """The Web Map SDK URL for a Static Key. See `SDK_URL_TEMPLATE`.
 
-    now = time.time()
-    if _cached and _cached[1] - now > _SKEW_SECONDS:
-        return Token(_cached[0], _cached[1], None)
-
-    client_id, client_secret = _credentials()
-    if not client_id or not client_secret:
-        return Token(None, None, NOT_CONFIGURED)
-
-    async with _mint_lock:
-        # Re-read inside the lock: the request that was waiting on the mint
-        # should use its token, not start a second one.
-        now = time.time()
-        if _cached and _cached[1] - now > _SKEW_SECONDS:
-            return Token(_cached[0], _cached[1], None)
-
-        minted = await _mint(client_id, client_secret)
-        if minted is None:
-            return Token(None, None, UNAVAILABLE)
-
-        _cached = minted
-        return Token(minted[0], minted[1], None)
-
-
-async def _mint(client_id: str, client_secret: str) -> tuple[str, float] | None:
-    """`(token, expires_at)` from Mappls, or None on any failure.
-
-    Every failure is one return value on purpose. The caller's only decision is
-    "is there a token", and a taxonomy of HTTP statuses here would be a taxonomy
-    nothing reads. The detail goes to the log, where a person looks.
-
-    **Nothing in here logs the token or the secret.** `sentry_scrub.py` redacts
-    the credential names, but a response body logged whole would carry the
-    minted token past it.
+    Composed here and served to the browser, not built in the frontend, so that
+    when Mappls next changes the form there is ONE place that is wrong instead
+    of one per screen. It changed once already and cost months.
     """
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            resp = await client.post(
-                TOKEN_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-    except Exception as exc:  # network, DNS, timeout
-        log.warning("mappls: token mint failed to reach %s: %s", TOKEN_URL, exc)
-        return None
-
-    if resp.status_code != 200:
-        # The body may name the reason (`invalid_client`) and cannot contain a
-        # token, since there isn't one. Truncated: it is a third party's text.
-        #
-        # And the secret is REDACTED OUT OF IT rather than trusted not to be
-        # there. Some OAuth gateways echo the posted form back on a 400, and
-        # `sentry_scrub.py` redacts by variable NAME — it cannot see a secret
-        # that arrives inside somebody else's error string. We can prove our own
-        # code never formats the credential in; we cannot prove theirs doesn't.
-        detail = resp.text[:200].replace(client_secret, "***").replace(client_id, "***")
-        log.warning("mappls: token mint answered HTTP %s — %s",
-                    resp.status_code, detail)
-        return None
-
-    try:
-        payload = resp.json()
-    except ValueError:
-        log.warning("mappls: token mint answered 200 with a non-JSON body")
-        return None
-
-    token = payload.get("access_token")
-    if not isinstance(token, str) or not token:
-        log.warning("mappls: token mint answered 200 with no access_token")
-        return None
-
-    # `expires_in` is seconds and has been 86399 every time it has been read.
-    # A missing or absurd value falls back to an hour rather than to forever:
-    # the cost of re-minting is one request, the cost of trusting a bad number
-    # is a browser holding a dead token.
-    try:
-        expires_in = float(payload.get("expires_in") or 0)
-    except (TypeError, ValueError):
-        expires_in = 0.0
-    # `not (0 < x <= ...)` also rejects NaN, since every comparison against NaN
-    # is False — stated here because that is luck rather than intent, and the
-    # next person to rewrite this as `if x <= 0 or x > MAX` would lose it.
-    if not (0 < expires_in <= 86400 * 7):
-        expires_in = 3600.0
-
-    return token, time.time() + expires_in
-
-
-def sdk_url(token: str) -> str:
-    """The Web Map SDK URL for a token. See `SDK_URL_TEMPLATE`."""
-    return SDK_URL_TEMPLATE.format(token=token)
+    return SDK_URL_TEMPLATE.format(key=key)
