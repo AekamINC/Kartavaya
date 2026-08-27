@@ -21,6 +21,51 @@ behind it.
 
 ## OPEN
 
+### 11. Repoint the report cron — two fields in the Railway dashboard
+
+**Status:** OPEN · everything else in 6.4 is done. This is the last step, and it
+is two text fields.
+
+I could not do it myself: the Railway **CLI cannot set a start command or a cron
+schedule** (only `list/delete/link/source/status/logs/redeploy/restart/scale`),
+and the MCP refuses every write with *"Unauthorized. Please run `railway login`
+again"* while reads still work. Rather than delete the service and leave you to
+recreate it from scratch, I left it in place so this is an edit, not a rebuild.
+
+**Service: `cron-report-dispatch`** (id `22249f3d-aec4-42b7-9f8c-921eb69b336f`),
+staging. Change exactly two things:
+
+**1. Start command** — currently calls `/api/reports/dispatch`, which I deleted
+today, so it is failing hourly right now. Replace with:
+
+    sh -c 'c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavya-staging.up.railway.app/api/v1/dristi/scheduled-reports/dispatch"); echo "dristi-sweep -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || exit 1'
+
+Note it now uses **`CRON_SECRET`**, not `REPORT_DISPATCH_SECRET`. This is the
+shape `cron-niyam` already uses, copied rather than invented.
+
+**2. Cron schedule:** `7 * * * *` → **`*/15 * * * *`**.
+
+Not hourly, and the reason is specific: `time_utc` has minute granularity and
+six of the seven schedules are set to `03:30`, so an hourly tick delivers up to
+59 minutes late. `is_due` is idempotent per slot, so a 15-minute tick cannot
+double-send.
+
+**Worth renaming** while you are there — `cron-report-dispatch` now describes
+the thing it no longer calls. `cron-dristi-reports` matches what it does.
+
+**Optional cleanup, nothing depends on it:** `REPORT_DISPATCH_SECRET` is now
+read by nothing. It is also set in `.github/workflows/ci.yml` (3 places) and
+`nightly.yml` — harmless, but tidy.
+
+**What is already done and needs nothing from you:** `DRISTI_REPORT_SWEEP_ARMED`
+is set to `true` and **confirmed live** — the running container reports
+`armed: true`. Migration 236 is applied and `public.report_schedules` is gone
+from both schemas. Until you make the two edits above the sweep simply never
+ticks; **nothing is due until 31 Aug**, so there is no urgency and no risk of a
+missed send in the meantime.
+
+---
+
 ### 9. Mappls — add `www.kartavaya.com` to the whitelist
 
 **Status:** OPEN · two minutes, and it is the last thing between the map and
