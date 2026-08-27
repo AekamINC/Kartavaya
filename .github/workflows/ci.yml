@@ -449,9 +449,16 @@ jobs:
       # So this job has never run a spec. The comment below already records one
       # earlier version of the same thing ("green for years without running a
       # single spec"); that one was fixed and this one took its place.
+      # YARN, matching the frontend job above. Both lockfiles are present in
+      # `frontend/`, and `yarn.lock` is the one the project actually installs
+      # from — `yarn install --frozen-lockfile` is what the frontend job runs.
+      # `npm ci` would resolve from a `package-lock.json` nothing else uses and
+      # could hand this job a different dependency tree than the one every other
+      # check ran against, which is a worse failure than the one being fixed:
+      # it would be green on a tree nobody ships.
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       # CHROME AS WELL AS CHROMIUM, because `real.config.ts` sets
       # `channel: 'chrome'` and that is load-bearing: Vercel's bot mitigation
