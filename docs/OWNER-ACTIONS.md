@@ -21,6 +21,31 @@ behind it.
 
 ## OPEN
 
+### 9. Mappls — add `www.kartavaya.com` to the whitelist
+
+**Status:** OPEN · two minutes, and it is the last thing between the map and
+every domain you serve.
+
+The basemap **works** on `staging.kartavaya.com` and on the apex
+`kartavaya.com` — verified from a real browser on each. `www.kartavaya.com` is
+still refused. It was on the whitelist earlier in the session and came off it.
+
+**What you do:** Mappls console → app **kv2** → Whitelisting → add BOTH forms:
+
+    https://www.kartavaya.com
+    www.kartavaya.com
+
+**What I finish once done:** nothing is blocked behind it — this is the last
+origin, not the last feature. The map already draws on staging.
+
+⚠ **The wildcard does not work and must not be relied on.**
+`https://*.kartavaya.com` and `*.kartavaya.com` are BOTH on the list, and `www`
+is refused anyway while `staging` — listed by name — passes. **Mappls'
+whitelist is exact-match only.** Every subdomain you ever add must be listed
+individually, or the map fails on that subdomain and nowhere else.
+
+---
+
 ### 8. M · APK 2.0.4 built — cold-restart reproduction still owed
 
 **Status:** OPEN · only the live device test remains.
@@ -100,6 +125,48 @@ were visible only to people who could already open those screens.
 ---
 
 ## DONE
+
+### 10. Mappls — the basemap LOADS, 2026-08-27 · your key, carried out
+
+**`MAPPLS_STATIC_KEY` is set and the map works.** Verified from a real Chromium
+page on each origin:
+
+    https://staging.kartavaya.com   HTTP 200, javascript, window.mappls = object   ✅
+    https://kartavaya.com           HTTP 200, javascript, window.mappls = object   ✅
+    https://www.kartavaya.com       401 IP/Domain validation failed                ❌ see item 9
+
+**A key was owed after all, and I told you it was not.** That came from a note
+written earlier the same day which had tested the OAuth pair's *minting* and
+never its *spending*. Mappls replaced their auth mechanism in **August 2025**
+— their own `mappls-web-maps-js` README documents the new one on `main` and
+pushed OAuth 2.0 to an `auth-legacy` branch — so the pair on Railway mints
+perfectly and is refused by every product. The component that spent eighteen
+days saying it needed a key was right that one was missing and wrong about which.
+
+**Three things I got wrong on the way, recorded so nobody repeats them:**
+
+1. **A server-side probe cannot test a browser SDK's domain check, and it lies
+   convincingly.** Every `railway run` probe returned `IP/Domain validation
+   failed` for our own domains *and* for a control domain we do not own —
+   identical answers, which read as "the whitelist is broken" when the whitelist
+   was fine and the probe was invalid. Only a real browser page on the real
+   origin settles it.
+2. **In Chrome a failed SDK load appears as `net::ERR_BLOCKED_BY_ORB` with no
+   response at all**, because the 401 arrives as JSON where a script was
+   expected. That is indistinguishable from a Content-Security-Policy block and
+   will send the next person to `vercel.json` for an hour. It is not one.
+3. I flagged our own `SDK_URL_TEMPLATE` as broken while reading the file
+   mid-edit. It was not. Verify, then report.
+
+⚠ **A security consequence that outlives this.** A Static Key **does not
+expire** and the browser holds it, so it is readable in any network tab, for
+ever, until you rotate it in the console. The domain whitelist is therefore not
+housekeeping — it is the only control preventing the key being lifted and spent
+against your allocation. `sentry_scrub.py` now redacts all three Mappls
+variables; it previously guarded a variable name this repo has never had, while
+the real credentials went to Sentry unredacted.
+
+---
 
 ### 5. The 10 org-less projects — DELETED, 2026-08-23 · your call, carried out
 
@@ -269,86 +336,3 @@ new service is deliberately named `cron-report-dispatch` rather than
 `cron-reports` so the two are not one word apart in a dashboard.
 
 ---
-
-
-## 2026-08-27 · Mappls: ONE VALUE OWED — the Static Key
-
-**Blocks:** 7.5's basemap (the rest of 7.5 shipped and works without it), **7.6
-entirely**, and the map half of 8.1 / 8.2 / 8.3.
-
-> ### THE ACTION, in full
->
-> Mappls console → project **Kartavaya** → **Credentials** → copy the **Static
-> Key** (the section separate from the *Key Pair* / Client ID + Secret) → send
-> it privately → it goes on Railway as **`MAPPLS_STATIC_KEY`**.
->
-> That is the whole remaining task. **Nothing else is owed and no support ticket
-> is needed** — the code is written, tested and committed, and starts drawing
-> tiles the moment the variable exists.
-
-**Resolved while investigating, so do not re-raise these:**
-
-- ✅ **Allocations are fine.** Read off the console 2026-08-27: *Vector Map JS
-  SDK Initialization* 10,000 · *Interactive JS SDK Initialization* 10,000 ·
-  *Vector Tiles SDK* 100,000 · *Raster Tiles SDK* 100,000 · *Geocode* 250 ·
-  *Autosuggest* 200 · *Vector KeyGen* 2,073,600,000. Every one reads `< 1%`
-  used. The project has everything the map needs.
-- ✅ **Domains are whitelisted** — `kartavaya.com`, `www`, `app`, `staging`.
-  ⚠ Worth tidying: several entries carry a **trailing slash**
-  (`https://staging.kartavaya.com/`) while a browser sends the origin without
-  one. Not today's blocker; an exact-match whitelist is a classic trap.
-- ✅ **CORS enabled** on the credential, 2026-08-27, at my request.
-
-⚠ **And a security consequence to keep in view.** A Static Key **does not
-expire** and is served to the browser, so it is readable in any network tab.
-The domain whitelist above stops being a formality and becomes the only control
-preventing the key being lifted and spent against your allocation. Keep it
-populated; never enable a Mappls credential for browser use without one.
-
-### Why a key is owed, when this morning's note said one was not
-
-`MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET` are on Railway and they **work** —
-`outpost.mappls.com` returns a 36-character bearer token with `expires_in 86399`
-and `scope READ`, every time. On 2026-08-27 that was recorded as meaning the
-credential question was closed and "the backend can mint a token and hand it
-over". **The mint half was tested. The spend half was not.**
-
-**Mappls replaced its authentication mechanism in August 2025.** Their own
-`mappls-web-maps-js` README says the `main` branch documents "the updated
-Authorization & Authentication mechanism introduced in August 2025", and the
-OAuth 2.0 flow now lives on an `auth-legacy` branch. The SDK takes the
-console's **Static Key** as a query parameter:
-
-    <script src="https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=<Static Key>">
-    "Copy and paste the key from your credentials section from your API keys
-     into the access_token query parameter."
-
-So the component that spent eighteen days saying it needed a key was **right
-that one was missing, and wrong about which one**. The evidence, probed live:
-
-    SDK, no referer                 401  Domain validation failed
-    SDK, staging.kartavaya.com      401  Domain validation failed
-    SDK, kartavaya.com              401  Domain validation failed
-    SDK, localhost:5173             401  Domain validation failed
-    SDK, an UNRELATED domain        401  Domain validation failed   <- identical
-    REST geocode, 'bearer <tok>'    401  Token was not recognised
-    REST geocode, 'Bearer <tok>'    401  Token was not recognised
-    REST geocode, raw token         401  Token was not recognised
-    REST autosuggest                401  Domain validation failed
-
-Our own domains and a domain we do not own are refused **identically**, so this
-was never a referrer waiting to be whitelisted. And the decisive one: the
-post-2025 SDK host answers our real token and a **randomly generated fake
-string** byte-identically, while the legacy host distinguishes them. A
-credential the new host cannot tell from garbage is not a credential for the new
-host.
-
-### What shipped anyway
-
-7.5 was built so this failure costs only the tiles. The shapes and the basemap
-are fetched independently, so a territory's coverage counts, its unmatched and
-invalid pincode lists, the outage state and the GODL credit all render with no
-basemap at all. The screen says *"No map is configured in this environment"* —
-a fact, not an invented fault. **Nothing needs rewriting when you unblock it**;
-the tiles simply start drawing.
-
