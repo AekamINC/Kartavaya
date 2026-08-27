@@ -2664,4 +2664,45 @@ loaded**; it does not matter because `--font-ui` is declared twice and
 the owner of that token. Deleting the dead import or the duplicate token is a
 design decision, not a gate's call.
 
+## 2026-08-27 · Phase 7.1 ACCEPTED — the whole chain, on live rows
+
+The phase is called *PIN → territory → rep*, and all three links are now a row.
+Read back live after the run:
+
+    Phase 7.0 Pincode Acceptance       pin=395002 -> Gujarat -> (no rep)
+    Phase 7.1 Routing Acceptance       pin=395002 -> Gujarat -> (no rep)
+    Phase 7.1 Round-Robin Acceptance   pin=395002 -> Gujarat -> E2E Test Approver
+
+    E2E territories 17 | with a PIN 1 | with a member 1
+
+Three contacts, deliberately, because each proves something the previous one
+could not:
+
+1. **7.0's row had its territory picked by hand.** That proves the column is
+   writable and says nothing whatever about routing.
+2. **7.1's row was created with the Territory picker left alone.** The only
+   thing that could have filled `territory_id` is `territory_routing` matching
+   395002 against Gujarat's list. The absence of a click is the test.
+3. **7.1's third row was created after a member was put on the territory** —
+   through the Edit form that 7.0 built, which is the only way to do it — with
+   neither a territory nor an owner chosen. Both were filled by the rule.
+
+**The first two reading `(no rep)` is correct, not a gap.** They were created
+before the territory had anybody on it, and routing never retro-assigns; that
+is what `route-all` is for, and it is a button somebody presses. Until this run
+not one of E2E's 17 territories had a single member, so `assign_next_user`
+returned NO_MEMBERS for every match — routing was working and invisible, which
+looks identical to a rep step that does not work.
+
+Live counts, E2E: contacts 238; carrying a pincode **0 → 3**; carrying a
+`territory_id` **0 → 3**; territories with a PIN **0 → 1**, with a member
+**0 → 1**. Unicode Group untouched throughout and re-verified: 54 contacts, 38
+pincodes, 0 routed, 0 territories.
+
+Five acceptance tests in one spec, every one idempotent and asserting that about
+itself. The last one also checks that the server sends NAMES beside the ids —
+`territory_name` on the contact, `assigned_to_name` for the owner, `assigned`
+for the territory's members — because a chain that can only be described by
+three uuids is not one a person can check.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

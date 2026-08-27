@@ -91,6 +91,24 @@ const TERRITORY = /gujarat/i;
  */
 const CONTACT_NAME = 'Phase 7.0 Pincode Acceptance';
 
+/**
+ * 7.1's row, and it must be a DIFFERENT contact from 7.0's.
+ *
+ * 7.0's row had its territory chosen by hand from the picker, which proves the
+ * column is writable and proves nothing at all about routing. This one is
+ * created with the same pincode and the Territory picker LEFT ALONE, so the
+ * only thing that can have filled `territory_id` is the rule.
+ */
+const ROUTED_NAME = 'Phase 7.1 Routing Acceptance';
+
+/**
+ * The third and last link. The phase is called "PIN -> territory -> rep" and
+ * the first two links are proved above; this one needs a territory that HAS a
+ * member, and on the day this was written not one of the 17 E2E territories had
+ * a single person on it — `assigned_users` was `{}` everywhere.
+ */
+const REP_NAME = 'Phase 7.1 Round-Robin Acceptance';
+
 test.use({ storageState: GODMODE_STATE });
 test.describe.configure({ mode: 'serial' });
 
@@ -138,6 +156,7 @@ async function territories(page: Page) {
   expect(res.status(), 'the territories endpoint refused').toBeLessThan(400);
   return (((await res.json()).data ?? []) as Array<{
     id: string; name: string; rules?: { pincodes?: string[] };
+    assigned_users?: string[]; assigned?: Array<{ name?: string }>;
   }>);
 }
 
@@ -288,6 +307,150 @@ test.describe('Phase 7.0 · a pincode reaches the database through the product',
       await shot(page, 'phase7-contact-has-a-pincode');
     });
 
+  test('7.1 — a contact with a pincode and NO territory chosen is routed by the rule',
+    async ({ page }) => {
+      // ── WHY THIS IS A SECOND CONTACT ───────────────────────────────────────
+      //
+      // 7.0's row above was filed by hand from the picker. That proves the
+      // column is writable and says nothing about routing. Here the Territory
+      // picker is deliberately NOT touched, so the only thing that can fill
+      // `territory_id` is `services/territory_routing.py` matching 395002
+      // against the Gujarat territory's list — which the first test in this
+      // file is what put there.
+      await openGraha(page, /contact/i);
+
+      const existing = await api(page, 'get',
+        `/api/v1/graha/contacts?search=${encodeURIComponent(ROUTED_NAME)}`);
+      const found = (((await existing.json()).data ?? []) as Array<{ id: string; name: string }>)
+        .find(c => c.name === ROUTED_NAME);
+
+      let id = found?.id;
+      let namedOnCreate: string | undefined;
+
+      if (!id) {
+        await page.getByRole('button', { name: /add contact/i }).click();
+        await settle(page);
+        const form = page.locator('form').first();
+
+        await underLabel(form, /^name/i).fill(ROUTED_NAME);
+        await underLabel(form, /^pincode$/i).fill(PIN);
+        await underLabel(form, /^city$/i).fill(CITY);
+        // AND NOTHING ELSE. No territory. That absence is the test.
+
+        const created = await submitting(page, '/graha/contacts', async () => {
+          await form.getByRole('button', { name: /create contact/i }).click();
+        });
+        id = created.id;
+        // The create response carries `territory_name`, additively, so the
+        // screen can say "filed under Gujarat" without ever holding an id.
+        namedOnCreate = created.territory_name;
+        await settle(page);
+      }
+
+      const res = await api(page, 'get', `/api/v1/graha/contacts/${id}`);
+      const bodyJson = await res.json();
+      const c = bodyJson.contact ?? bodyJson;
+
+      expect(c.billing_address?.pincode).toBe(PIN);
+      expect(c.territory_id,
+        'nothing routed this contact — 395002 is on the Gujarat territory and ' +
+        'no human chose one here, so `territory_routing` did not fire')
+        .toBeTruthy();
+      expect(c.territory_name).toMatch(TERRITORY);
+
+      // Only meaningful on the run that actually created the row; on a re-run
+      // there is no create response to read.
+      if (namedOnCreate !== undefined) {
+        expect(namedOnCreate,
+          'POST /contacts did not report the territory it filed the contact under')
+          .toMatch(TERRITORY);
+      }
+
+      await shot(page, 'phase7-contact-routed-by-rule');
+    });
+
+  test('7.1 — the last link: a territory with a member hands the contact to a rep',
+    async ({ page }) => {
+      // ── PUT A PERSON ON THE PATCH, THROUGH THE SAME EDIT FORM ──────────────
+      //
+      // Not one of E2E's 17 territories had a member when this was written, so
+      // `assign_next_user` had nobody to hand a lead to and returned NO_MEMBERS
+      // for every match. Routing was correct and invisible: it filed contacts
+      // under a territory and stopped there, which looks identical to a rep
+      // step that does not work.
+      await openGraha(page, /territor/i);
+      const before = await territories(page);
+      const target = before.find(t => TERRITORY.test(t.name))!;
+
+      if (!(target.assigned_users ?? []).length) {
+        const row = page.locator('.gr__lrow', { hasText: target.name }).first();
+        await row.getByRole('button', { name: /^edit$/i }).click();
+        await settle(page);
+
+        const form = page.locator('form').first();
+        const people = form.locator('.gr__group', { hasText: /assigned users/i });
+        // The FIRST real person in the dropdown. `pickOption` skips index 0,
+        // which is the "— Choose a person —" placeholder.
+        await pickOption(people.locator('select'), 'member');
+        await people.getByRole('button', { name: /^add$/i }).click();
+
+        await submitting(page, '/graha/territories/', async () => {
+          await form.getByRole('button', { name: /save changes/i }).click();
+        });
+        await settle(page);
+      }
+
+      const after = await territories(page);
+      const saved = after.find(t => t.id === target.id)!;
+      expect(saved.assigned_users?.length,
+        'the territory still has nobody on it — the server refused the member')
+        .toBeGreaterThan(0);
+      // The list carries NAMES alongside the id array, which is what the screen
+      // draws. A territory that can route but can only be described by a uuid
+      // is not something a person can check.
+      expect((saved.assigned ?? []).length,
+        'the territory has members but the server sent no names for them')
+        .toBeGreaterThan(0);
+
+      // ── AND NOW A CONTACT THROUGH THAT PATCH ───────────────────────────────
+      await openGraha(page, /contact/i);
+      const existing = await api(page, 'get',
+        `/api/v1/graha/contacts?search=${encodeURIComponent(REP_NAME)}`);
+      const found = (((await existing.json()).data ?? []) as Array<{ id: string; name: string }>)
+        .find(c => c.name === REP_NAME);
+
+      let id = found?.id;
+      if (!id) {
+        await page.getByRole('button', { name: /add contact/i }).click();
+        await settle(page);
+        const form = page.locator('form').first();
+        await underLabel(form, /^name/i).fill(REP_NAME);
+        await underLabel(form, /^pincode$/i).fill(PIN);
+        // No territory chosen and no owner chosen. Both are the rule's job.
+        const created = await submitting(page, '/graha/contacts', async () => {
+          await form.getByRole('button', { name: /create contact/i }).click();
+        });
+        id = created.id;
+        await settle(page);
+      }
+
+      const res = await api(page, 'get', `/api/v1/graha/contacts/${id}`);
+      const bodyJson = await res.json();
+      const c = bodyJson.contact ?? bodyJson;
+      expect(c.territory_name, 'the contact was not filed').toMatch(TERRITORY);
+      expect(c.assigned_to,
+        'the contact was filed under a territory that HAS a member and still ' +
+        'has no owner — the round-robin did not hand it to anybody')
+        .toBeTruthy();
+      // The whole chain, in one row: a pincode a person typed, the patch that
+      // claims it, and the rep whose turn it was.
+      expect(c.assigned_to_name,
+        'the contact has an owner the screen can only render as a uuid')
+        .toBeTruthy();
+
+      await shot(page, 'phase7-contact-routed-to-a-rep');
+    });
+
   test('the org-wide counts have moved off zero', async ({ page }) => {
     // Stated separately and read from the API, because the two tests above
     // prove their OWN row and this project's definition of ✅ is a count that
@@ -311,5 +474,11 @@ test.describe('Phase 7.0 · a pincode reaches the database through the product',
     // count it exists to prove, and the inflation looks like progress.
     expect(rows.filter(r => r.name === CONTACT_NAME).length,
       'this spec has seeded more than one contact — it is not idempotent').toBe(1);
+
+    const routed = await api(page, 'get',
+      `/api/v1/graha/contacts?search=${encodeURIComponent(ROUTED_NAME)}`);
+    const routedRows = ((await routed.json()).data ?? []) as Array<{ name: string }>;
+    expect(routedRows.filter(r => r.name === ROUTED_NAME).length,
+      'the 7.1 routing row is not idempotent either').toBe(1);
   });
 });
