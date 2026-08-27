@@ -907,6 +907,74 @@ async def _epf_terms(pool, as_of: date) -> tuple:
     )
 
 
+async def _terminal_benefit_terms(pool, as_of: date) -> dict:
+    """Gratuity and statutory-bonus terms in force on `as_of`, from dated law.
+
+    PHASE 5.2. Migration 229 seeds seven keys that did not exist in any form —
+    `grep gratuity backend/` found ONE file before it, `services/compliance_settings.py`,
+    where gratuity is a rule a firm can tick rather than a rate anything computes.
+
+    ── WHAT READS THIS TODAY, STATED PLAINLY ───────────────────────────────────
+
+    **Nothing in payroll does, because there is no full-and-final settlement
+    path.** `process_payroll` says so in its own words a few hundred lines below
+    — "no full-and-final settlement path exists anywhere in the codebase
+    (searched: settlement, fnf, final_settlement — no hits)" — and threads a
+    `final_settlement` flag through for a feature that has not been built.
+
+    So this is a reader placed AHEAD of its caller, on purpose and against this
+    repo's usual instinct, for one reason: when F&F is built it must inherit
+    dated law rather than invent constants, and the way to guarantee that is for
+    the constants to have nowhere to be invented from. The keys are also live to
+    the skill shelf the moment they land — `statute_calendar` is read by eight
+    skill modules — so they are not inert either.
+
+    ── THE TWO TRAPS IN THE VALUES IT RETURNS ──────────────────────────────────
+
+    · `gratuity_qualifying_years` is YEARS. `threshold_amount` is an unqualified
+      NUMERIC that every other row in the table uses for rupees. A caller that
+      assumes rupees reads five rupees.
+    · `bonus_calculation_ceiling` is a FLOOR, not the answer. s.12 says ₹7,000
+      **or the minimum wage for the scheduled employment, whichever is higher**,
+      and the second limb is a state-by-state figure this product does not hold.
+
+    Both are repeated in the rows' own `notes`, because a caller reading the
+    database directly will not have this docstring in front of them.
+
+    Returns a dict with None for anything the store cannot answer. It never
+    raises: a payroll run must not stop because the law store is unreadable.
+    """
+    from services import statute
+
+    async def _one(key: str, column: str):
+        try:
+            row = await statute.obligation(pool, key, as_of=as_of)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "%s could not be read for %s", key, as_of, exc_info=True)
+            return None
+        if not row or row.get(column) is None:
+            return None
+        try:
+            return float(row[column])
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "gratuity_ceiling": await _one("gratuity.ceiling", "threshold_amount"),
+        "gratuity_rate_per_completed_year":
+            await _one("gratuity.rate.per_completed_year", "rate_percent"),
+        "gratuity_qualifying_years":
+            await _one("gratuity.qualifying_years", "threshold_amount"),
+        "bonus_rate_minimum": await _one("bonus.rate.minimum", "rate_percent"),
+        "bonus_rate_maximum": await _one("bonus.rate.maximum", "rate_percent"),
+        "bonus_eligibility_ceiling":
+            await _one("bonus.eligibility_ceiling", "threshold_amount"),
+        "bonus_calculation_ceiling":
+            await _one("bonus.calculation_ceiling", "threshold_amount"),
+    }
+
+
 async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     """This org's professional-tax ladder as it stood at `as_at`.
 

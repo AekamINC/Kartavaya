@@ -478,28 +478,47 @@ def test_every_statement_binds_as_many_arguments_as_it_declares(live):
 
 
 def test_the_live_column_holds_income_tax_and_has_never_held_incometax(live):
-    """THE 22 ROWS, COUNTED ON THE LIVE TABLE.
+    """THE TWO SPELLINGS, COUNTED ON THE LIVE TABLE.
 
     Read-only on 2026-08-26: income_tax 22, gst 18, esic 4, epfo 1 — 45 rows,
     and `incometax` is not among them and never was. The frontend's page map
     asked for the second spelling, so every income-tax obligation was dropped
     from the Finance page's Due tab with no error anywhere.
 
-    Asserted against the CATALOGUE rather than against the migration files:
-    migrations are applied by hand on this database and the ledger has been
-    wrong before.
+    ── WHY THIS NO LONGER PINS 22 ─────────────────────────────────────────────
+
+    It did, and it was right to on the day it was written — a count is the
+    sharpest way to state a defect whose symptom is rows going missing. But the
+    number is not the invariant: `statute_calendar` is a law store that GROWS as
+    the law is written down. Within a day of that test landing, 5.1 seeded three
+    EPF rows, 5.2 seeded seven terminal-benefit rows and 5.2b began seeding the
+    income-tax ladder — and a pinned count turns each of those into a red test
+    for an authority they are not about.
+
+    So the assertions are the ones that cannot drift with honest seeding: the
+    typo spelling holds ZERO rows and always has, the correct spelling holds
+    rows and never fewer than the 22 the defect was measured against, and both
+    counts come from the endpoint's own statement rather than a hand-written
+    copy of it.
+
+    Asserted against the CATALOGUE rather than the migration files: migrations
+    are applied by hand on this database and the ledger has been wrong before.
     """
     _, _, by_authority, correct, typo = live
     assert by_authority.get("incometax") is None, (
         "the premise changed: the live table now holds rows spelled "
         "`incometax`, and both spellings are in play")
-    assert by_authority.get("income_tax", 0) == 22, (
-        f"expected 22 income_tax rows, the live table holds "
-        f"{by_authority.get('income_tax')}")
+    assert by_authority.get("income_tax", 0) >= 22, (
+        f"income_tax rows have GONE — the live table holds "
+        f"{by_authority.get('income_tax')} against the 22 this defect was "
+        f"measured with. Rows may be added; they may not vanish.")
     assert set(by_authority) == set(statute_router._AUTHORITIES), (
         f"the allowlist and the live column disagree: allowlist "
         f"{sorted(statute_router._AUTHORITIES)}, live {sorted(by_authority)}")
 
-    # The endpoint's own statement, run both ways. This is the defect, live.
-    assert correct == 22
+    # The endpoint's own statement, run both ways. This is the defect, live:
+    # every income-tax obligation reachable under one spelling and none under
+    # the other.
+    assert correct >= 22
+    assert correct == by_authority.get("income_tax", 0)
     assert typo == 0
