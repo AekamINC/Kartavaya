@@ -57,6 +57,12 @@ export default defineConfig({
       // the first PIN in `graha_territories.rules`. Its own project for the
       // `outputDir` reason recorded above: several agents work in this tree at
       // once and a concurrent run empties a shared artefacts directory.
+      name: 'phase8-address-block',
+      testMatch: /phase8-address-block\.spec\.ts/,
+      outputDir: path.join(DL_DIR, 'artifacts-phase8-address-block'),
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'phase7-address-capture',
       testMatch: /phase7-address-capture\.spec\.ts/,
       outputDir: path.join(DL_DIR, 'artifacts-phase7-address-capture'),

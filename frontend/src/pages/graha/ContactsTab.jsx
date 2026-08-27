@@ -22,6 +22,7 @@ import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import CustomFieldInputs from './CustomFieldInputs';
+import AddressBlock from '../../components/ui/AddressBlock';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
@@ -418,6 +419,17 @@ export default function ContactsTab({ crm = true }) {
                 <div className="gr__dpair"><strong>Last Contacted:</strong> {c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-IN') : '—'}</div>
                 <div className="gr__dpair"><strong>Converted:</strong> {c.converted_at ? new Date(c.converted_at).toLocaleDateString('en-IN') : '—'}</div>
               </div>
+              {/* 8.0 — the address 7.0 made capturable, and the way out to a
+                  map. Below the grid rather than inside it: an address is three
+                  or four lines and a link, not a key/value pair.
+
+                  NO GUARD HERE, deliberately. `AddressBlock` owns the decision
+                  about whether there is an address at all, and a call site
+                  cannot make that decision correctly: `billing_address` is
+                  NOT NULL on all 235 E2E contacts and every one of them is an
+                  empty object, so a truthiness check would render an empty
+                  block on every contact in the organisation. */}
+              <AddressBlock address={c.billing_address} label="Address" />
               {c.lead_score_reasons?.length > 0 && (
                 <div className="gr__dscore">
                   <strong>Score reasons:</strong> {(typeof c.lead_score_reasons === 'string' ? JSON.parse(c.lead_score_reasons) : c.lead_score_reasons).join(', ')}
