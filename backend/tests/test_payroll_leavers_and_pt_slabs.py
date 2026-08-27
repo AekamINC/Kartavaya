@@ -541,8 +541,12 @@ def test_no_esi_constant_moved_with_it():
     a constant that is still here is one nothing has moved yet.
     """
     src = inspect.getsource(vetana._compute_statutory)
-    for law in ("0.0075", "0.0325", "21000", "50000"):
+    for law in ("21000", "50000"):
         assert law in src, f"the statutory constant {law} has gone"
+    # And the ESI rates left too, on 2026-08-27 — migration 232 gave them a
+    # dated home (G.S.R. 423(E) of 2019, which cut them from 1.75% and 4.75%).
+    # The fallbacks are the same figures expressed as percentages.
+    assert "0.75" in src and "3.25" in src
 
 
 def test_the_income_tax_ladders_are_data_and_never_a_literal():

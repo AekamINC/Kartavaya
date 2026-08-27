@@ -857,6 +857,43 @@ async def _esi_ceiling(pool, as_of: date) -> float | None:
         return None
 
 
+async def _esi_rates(pool, as_of: date) -> tuple:
+    """(employee rate %, employer rate %) in force on `as_of`.
+
+    PHASE 5.1, THE LAST TWO LITERALS. When the ESI ceiling came out of the code
+    the rates stayed, and the comment beside them said why: "`statute_calendar`
+    holds no key for them ... a constant with nowhere to read it from is not
+    improved by pretending otherwise." That was true and is no longer — migration
+    232 seeds `esi.rate.employee` and `esi.rate.employer`, cited to G.S.R. 423(E)
+    of 13 June 2019, which cut them from 1.75% and 4.75%.
+
+    IT MOVES NO PAYSLIP: 0.75 and 3.25 are the literals they replace.
+
+    Falls back to those literals when the store cannot answer, for the reason
+    `_epf_terms` gives — a missing row must never shrink a statutory
+    contribution — and the ceiling keeps its own separate fallback, because a
+    missing ceiling would WIDEN one.
+    """
+    from services import statute
+
+    async def _one(key: str):
+        try:
+            row = await statute.obligation(pool, key, as_of=as_of)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "%s could not be read for %s; keeping the statutory literal",
+                key, as_of, exc_info=True)
+            return None
+        if not row or row.get("rate_percent") is None:
+            return None
+        try:
+            return float(row["rate_percent"])
+        except (TypeError, ValueError):
+            return None
+
+    return await _one("esi.rate.employee"), await _one("esi.rate.employer")
+
+
 async def _epf_terms(pool, as_of: date) -> tuple:
     """(employee rate %, employer rate %, wage ceiling) in force on `as_of`.
 
@@ -1137,7 +1174,8 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
                        pt_slabs=None, employee_state=None,
                        esi_ceiling: float | None = None,
                        epf_terms: tuple | None = None,
-                       it_bands: dict | None = None):
+                       it_bands: dict | None = None,
+                       esi_rates: tuple | None = None):
     """PF, ESI, PT and TDS — WHETHER each is computed, and on WHAT BASE.
 
     NO PF, ESI OR TDS RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED.
@@ -1228,8 +1266,11 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
     # otherwise. `_esi_ceiling` returns None when the store cannot answer, and
     # the statutory 21,000 stands: a missing row must never widen a deduction.
     _ceiling = 21000.0 if esi_ceiling is None else esi_ceiling
-    esi_emp = esi_base * 0.0075 if esi_on and esi_base <= _ceiling else 0
-    esi_emr = esi_base * 0.0325 if esi_on and esi_base <= _ceiling else 0
+    _esi_emp_rate, _esi_emr_rate = (esi_rates or (None, None))
+    _esi_emp_rate = 0.75 if _esi_emp_rate is None else _esi_emp_rate
+    _esi_emr_rate = 3.25 if _esi_emr_rate is None else _esi_emr_rate
+    esi_emp = esi_base * _esi_emp_rate / 100 if esi_on and esi_base <= _ceiling else 0
+    esi_emr = esi_base * _esi_emr_rate / 100 if esi_on and esi_base <= _ceiling else 0
 
     # PROFESSIONAL TAX — from the state's slab where one can be read, and from
     # the pre-slab flat rule only where the slab table was never consulted.
@@ -1752,6 +1793,7 @@ async def process_payroll(
     # once per employee: the law does not change between two payslips of
     # the same month, and a query per employee would be 83 of them.
     epf_terms = await _epf_terms(pool, month_end)
+    esi_rates = await _esi_rates(pool, month_end)
     # The income-tax ladder for THIS period, both regimes, resolved once.
     # Same `as_of` discipline as the two above: a May re-run of a March
     # payslip must get March's law, not today's.
@@ -1960,6 +2002,7 @@ async def process_payroll(
                                   esi_ceiling=esi_ceiling,
                                   epf_terms=epf_terms,
                                   it_bands=it_bands,
+                                  esi_rates=esi_rates,
                                   employee_state=(s["employee_state"]
                                                   if pt_slabs is not None
                                                   else None))

@@ -833,8 +833,11 @@ def test_no_rate_ceiling_or_threshold_inside_the_statutory_function_moved():
     asserts their ABSENCE, which is the guard that replaces this one for them.
     """
     src = inspect.getsource(vetana()._compute_statutory)
-    for law in ("0.0075", "0.0325", "21000", "200", "15000", "50000"):
+    for law in ("21000", "200", "15000", "50000"):
         assert law in src, f"the statutory constant {law} has gone"
+    # The ESI RATES moved to statute_calendar on 2026-08-27 (migration 232);
+    # the fallbacks below are the same law as percentages.
+    assert "0.75" in src and "3.25" in src
     # PT and TDS still compute on the FIXED gross — widening those two bases
     # was not asked for and is owed, not done unasked.
     assert "if pt_on and gross > 15000" in src
