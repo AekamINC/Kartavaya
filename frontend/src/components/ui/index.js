@@ -30,6 +30,11 @@ export { default as FocusTrap } from './FocusTrap';
 
 /* Data display */
 export { default as Tag } from './Tag';
+/* One stored address and its Open-in-Maps link, for all six modules that hold
+   one. The pure readers come out beside it: `addressLines` is what 8.2's PIN
+   popover will read the same columns with, and `mapsHref` is the ONE place the
+   map URL is built — see the licence note in the component. */
+export { default as AddressBlock, addressLines, coordinate, mapsHref } from './AddressBlock';
 export { Chip, ChipRow } from './Chip';
 export { default as StatusChip } from './StatusChip';
 export { default as DueChip, relDue } from './DueChip';

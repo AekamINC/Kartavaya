@@ -269,7 +269,20 @@ const KNOWN_VIOLATIONS = new Set([
  * table state and are rendered as column labels. The API speaks snake_case;
  * paying for a camel form nobody sends was not worth the noise.
  */
-const ID_PATH = /\b[\w.?\[\]]*(?:_ids?|_by|Id|Ids|uid|uuid|Uuid|UUID)\b/;
+/*
+ * `assigned_to` is named EXPLICITLY, not bought with a generic `_to` suffix.
+ * The suffix would drag in `due_to`, `sent_to`, `replied_to` and every other
+ * preposition-shaped field in the product, and a vocabulary that fires on
+ * prose is a vocabulary people add exemptions to.
+ *
+ * It is here because the SAME class of miss shipped twice. Note 1 above
+ * records `requested_by` being invisible for want of a `_by`; on 2026-08-27
+ * two live renders of `assigned_to` were found for want of this — a truncated
+ * `substring(0, 8)` on the Graha contact detail, and a `slice(0, 12)` on the
+ * rep-performance report, which is the one report whose whole point is that
+ * the figures sit against a person. Both were drawing a `users.user_id`.
+ */
+const ID_PATH = /\b[\w.?\[\]]*(?:_ids?|_by|assigned_to|Id|Ids|uid|uuid|Uuid|UUID)\b/;
 
 /**
  * Things that make an interpolation control flow rather than a render. If any
@@ -374,8 +387,63 @@ function skip(line, from) {
 // here: those are METHODS, so the id path is the callee and is already read.
 const TRANSPARENT = /^(?:String|Number)\(/;
 
+/**
+ * A ternary is a RENDER whose CONDITION is not drawn.
+ *
+ * `{c.assigned_to ? `${c.assigned_to.substring(0, 8)}…` : '—'}` shipped past
+ * this check on 2026-08-27 and drew eight characters of a `users.user_id` on
+ * the Graha contact detail. Three separate coats hid it: the column name was
+ * not in `ID_PATH`, the truncation sat inside a template literal, and the `?`
+ * put the whole expression in `NOT_A_RENDER`.
+ *
+ * The third is the interesting one, because both obvious fixes are wrong.
+ * Leaving `?` in `NOT_A_RENDER` means every ternary is invisible. Taking it
+ * out means 15 findings across the app, and MEASURED — every one of them a
+ * false positive of one shape: `{editId ? 'Edit' : 'New'}`, where the id is
+ * the CONDITION and both arms are string literals. `check-rendered-ids` fires
+ * on names rather than values, so a vocabulary that cannot tell a condition
+ * from an arm is a vocabulary people write exemptions against.
+ *
+ * So: split, and judge the two ARMS. `?.` is skipped — it is optional
+ * chaining, not a ternary — and so is a `?` inside a string, a template, or
+ * any bracket, which is what the depth counter is for. Nested ternaries fall
+ * out of the recursion in `offends`.
+ *
+ * Returns `[consequent, alternate]`, or `null` when there is no top-level
+ * ternary to split.
+ */
+function splitTernary(expr) {
+  let depth = 0, quote = null, q = -1;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') { depth++; continue; }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; continue; }
+    if (depth !== 0) continue;
+    if (ch === '?') {
+      if (expr[i + 1] === '.' || expr[i + 1] === '?') { i++; continue; }
+      if (q === -1) q = i;
+      continue;
+    }
+    // The first top-level `:` after the `?` closes it. Any `:` BEFORE the `?`
+    // belongs to something else — an object literal or a label — and this
+    // expression is not a ternary we can read.
+    if (ch === ':' && q !== -1) {
+      return [expr.slice(q + 1, i).trim(), expr.slice(i + 1).trim()];
+    }
+  }
+  return null;
+}
+
 function offends(expr) {
   if (!expr) return false;
+  const arms = splitTernary(expr);
+  if (arms) return offends(arms[0]) || offends(arms[1]);
   // Optional chaining first, and on the ID test too: `r.requested_by?.slice`
   // only reads as an id path once the `?.` is gone.
   expr = expr.replace(OPTIONAL_CHAIN, '.');

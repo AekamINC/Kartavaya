@@ -86,6 +86,27 @@ def _listed(rows, limit: int) -> dict:
     return {"data": out, "total": total, "limit": limit, "truncated": total > limit}
 
 
+#: The display name of a person, as SQL, aliased `u`.
+#:
+#: It stops at `name` and NEVER reaches `u.email`. The owner ruled on
+#: 2026-08-23 that a display ladder must not end at an email address — it is a
+#: contact detail rendered as a label, and it inverts the rule that Aekam must
+#: not see a customer's member emails. `tests/test_audit_actors.py` walks the
+#: whole backend refusing any ladder that does.
+#:
+#: `'Unnamed member'` rather than NULL, so a LEFT JOIN that finds nothing still
+#: prints something a person can read. Measured before the email rung came off:
+#: 0 of 35 live accounts have neither `full_name` nor `name`, so the fallback
+#: has never fired on real data.
+#:
+#: Held here because the same expression is written out in six places in this
+#: file and a seventh would be the one that drifts.
+_USER_NAME_SQL = (
+    "COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), "
+    "'Unnamed member')"
+)
+
+
 # ── Pydantic Models ──────────────────────────────────────────
 
 class ContactCreate(BaseModel):
@@ -847,9 +868,24 @@ async def get_contact(
         # too: the contact's employer is now the client dropdown alone — the
         # free-text `company` box is gone from both forms — so the detail
         # screen has nothing to print without the join.
-        "SELECT c.*, cl.name AS client_name FROM staging.graha_contacts c "
+        # `assigned_to_name` for the same reason as rep-performance above: the
+        # detail panel drew `assigned_to.substring(0, 8)`. `territory_name` so
+        # the panel can show which patch the contact routes to without the
+        # screen holding a second lookup — 7.0 made that column writable.
+        "SELECT c.*, cl.name AS client_name, "
+        f"       {_USER_NAME_SQL} AS assigned_to_name, "
+        "       tr.name AS territory_name "
+        "FROM staging.graha_contacts c "
         # Org-scoped join — see the note on the list route.
         "LEFT JOIN staging.graha_clients cl ON cl.id = c.client_id AND cl.org_id = c.org_id "
+        # And the territory join is org-scoped for the SAME reason the client
+        # one is: `graha_territories.id` is unique table-wide, so joining on the
+        # id alone would surface another organisation's territory name against
+        # this contact. `memory/graha_clients_join_leak` counted nine of these
+        # owed; this is one of them, closed at the point it was written rather
+        # than after.
+        "LEFT JOIN staging.graha_territories tr ON tr.id = c.territory_id AND tr.org_id = c.org_id "
+        "LEFT JOIN users u ON u.user_id = c.assigned_to "
         "WHERE c.id=$1::uuid AND c.org_id=$2::uuid AND c.is_active=TRUE",
         str(contact_id), org_id,
     )
@@ -2727,7 +2763,20 @@ async def report_rep_performance(
     # CLOSED in it. Under a single `created_at` window a rep who closed a long
     # deal opened before the window showed zero beside their own name.
     rows = await pool.fetch(
+        # THE NAME, not the id. This endpoint's own comment two lines up says
+        # "these figures sit against a person" — and the screen was drawing
+        # `assigned_to?.slice(0, 12)`, twelve characters of a `users.user_id`,
+        # which identifies nobody. `services/crm_report.py` has joined `users`
+        # for the DOWNLOADABLE version of this same report since it was written,
+        # so the file a customer sends to their partner carried names while the
+        # screen they read it off did not.
+        #
+        # The ladder stops at `name` and never reaches `.email`: the owner ruled
+        # on 2026-08-23 that a display ladder must never end at an email address,
+        # and `tests/test_audit_actors.py` walks the whole backend refusing one
+        # that does.
         "SELECT d.assigned_to, "
+        f"{_USER_NAME_SQL} AS assigned_to_name, "
         "COUNT(*) FILTER (WHERE d.created_at > $2) as total_deals, "
         "COUNT(*) FILTER (WHERE d.stage='Won'  AND d.won_at  > $2) as won, "
         "COUNT(*) FILTER (WHERE d.stage='Lost' AND d.lost_at > $2) as lost, "
@@ -2737,8 +2786,12 @@ async def report_rep_performance(
         # it is the allocation figure sitting beside the outcome figures.
         "COALESCE(AVG(d.value) FILTER (WHERE d.created_at > $2), 0) as avg_deal_value "
         "FROM staging.graha_deals d "
+        # LEFT, so a rep whose account has been removed still shows their
+        # numbers under 'Unnamed member' rather than dropping out of the report
+        # and quietly changing the totals.
+        "LEFT JOIN users u ON u.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.assigned_to IS NOT NULL "
-        "GROUP BY d.assigned_to "
+        f"GROUP BY d.assigned_to, {_USER_NAME_SQL} "
         # The query now spans the table, so a rep with nothing at all in the
         # window would otherwise print as a line of noughts against their name.
         "HAVING COUNT(*) FILTER (WHERE d.created_at > $2) > 0 "

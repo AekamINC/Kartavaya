@@ -73,6 +73,46 @@ describe('check-rendered-ids', () => {
     expect(out).toContain('${r.updated_by}');
   });
 
+  // ── The `assigned_to` pair, added 2026-08-27 ──────────────────────────────
+  //
+  // Both were LIVE when these were written, and both are the second outing of
+  // the same class of miss: the vocabulary knew `_id`/`_by`/`uid`/`uuid`, and
+  // this product's assignee column is a `_to`. `requested_by` above taught that
+  // exact lesson once already.
+
+  it('catches a truncated assigned_to on the rep-performance report', () => {
+    // Identical in shape to `requested_by` at the top of this file. It was
+    // missed for ONE reason: the name. `graha/ReportsTab.jsx` drew twelve
+    // characters of a `users.user_id` on the one report whose own endpoint
+    // comment says "these figures sit against a person".
+    expect(out).toContain("renders `r.assigned_to?.slice(0, 12) || '—'`");
+  });
+
+  it('catches an id drawn from the ARM of a ternary, not its condition', () => {
+    // `graha/ContactsTab.jsx` wore three coats: an unknown column name, a
+    // truncation hidden in a template literal, and a `?` that put the whole
+    // expression into `NOT_A_RENDER`.
+    //
+    // The fix is `splitTernary`, and the reason it is a split rather than
+    // simply deleting `?` from `NOT_A_RENDER` is measured: deleting it produced
+    // 15 findings across the app and EVERY ONE was a false positive of the
+    // shape `{editId ? 'Edit' : 'New'}`, where the id is the condition and both
+    // arms are string literals. The condition is not drawn. The arms are.
+    expect(out).toContain('${c.assigned_to.substring(0, 8)}');
+  });
+
+  it('does NOT fire on an id used as a ternary CONDITION', () => {
+    // The other half of the same change, and the half that keeps the check
+    // usable. `{editId ? 'Edit territory' : 'New territory'}` reads an id to
+    // choose between two literals; nothing about the id reaches the screen.
+    // Asserted against the real tree rather than a fixture, because that is
+    // where the fifteen were found.
+    const app = run(resolve(process.cwd(), 'src'));
+    expect(app.code).toBe(0);
+    expect(app.out).not.toContain('TerritoriesTab.jsx');
+    expect(app.out).not.toContain('ItLadderSection.jsx');
+  });
+
   it('reports nothing from the legitimate uses', () => {
     expect(out).not.toContain('Innocents.jsx');
   });

@@ -7,6 +7,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind, OfflineBanner } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import DateInput from '../../components/ui/DateInput';
+import AddressBlock, { coordinate } from '../../components/ui/AddressBlock';
 
 /**
  * The attendance register — 07-pahchan.md §3, "the surface that decides whether
@@ -387,8 +388,24 @@ function Detail({ row, photoRetentionDays }) {
       <div>
         <AccuracyScale distanceM={row.distance_m} accuracyM={acc} siteName={row.site_name} />
         <div className="rv-meta">
-          {row.lat != null && row.lng != null && (
-            <MetaRow k="Coordinates" v={`${Number(row.lat).toFixed(4)}, ${Number(row.lng).toFixed(4)}`} />
+          {/* 8.0 · the coordinate is now openable. This is the one consumer of
+              `AddressBlock` that has no address at all — a punch is a `lat` and
+              a `lng`, which is the accurate half of §8.0's rule that a stored
+              coordinate beats an Indian address string, and 699 of the 700
+              punches on file carry both (measured 2026-08-27).
+
+              The four decimals are unchanged: the component prints exactly what
+              this row printed before, and puts the FULL precision in the href.
+              What a reviewer gains is the ability to see where a flagged punch
+              actually was, which until 8.1 draws the site circle is the only
+              way to answer that question at all.
+
+              `coordinate()` for the guard rather than `!= null`, because
+              `Number(null)` and `Number('')` are both 0 and 0,0 is a place in
+              the Gulf of Guinea. It is the same reader the component uses, so
+              the row and its contents cannot disagree. */}
+          {coordinate(row.lat, row.lng) && (
+            <MetaRow k="Coordinates" v={<AddressBlock lat={row.lat} lng={row.lng} inline />} />
           )}
           <MetaRow
             k="Accuracy"

@@ -314,7 +314,15 @@ export default function ReportsTab() {
                   {reps.data.map(r => (
                     <tr key={r.assigned_to}>
                       {repCols.cells({
-                        assigned_to: <td className="gr__td--id">{r.assigned_to?.slice(0, 12) || '—'}</td>,
+                        /* Twelve characters of a `users.user_id` until
+                           2026-08-27, on the one report whose whole point is
+                           that "these figures sit against a person" — the
+                           endpoint's own words. `services/crm_report.py` had
+                           joined `users` for the DOWNLOADABLE version of this
+                           same report since it was written, so the file a
+                           customer sends to their partner carried names while
+                           the screen they read it off did not. */
+                        assigned_to: <td>{r.assigned_to_name || '—'}</td>,
                         total_deals: <td>{r.total_deals}</td>,
                         won: <td className="gr__td--ok">{r.won}</td>,
                         lost: <td className="gr__td--bad">{r.lost}</td>,

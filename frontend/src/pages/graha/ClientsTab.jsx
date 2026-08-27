@@ -12,6 +12,7 @@ import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
+import AddressBlock from '../../components/ui/AddressBlock';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
@@ -188,11 +189,26 @@ export default function ClientsTab() {
               {detail.ref_no && <div className="gr__dline">Ref: {detail.ref_no}</div>}
               {detail.gstin && <div className="gr__dline">GSTIN: {detail.gstin}</div>}
               {detail.website && <div className="gr__dline">Web: {detail.website}</div>}
-              {detail.address?.line1 && (
-                <div className="gr__dline">
-                  Address: {[detail.address.line1, detail.address.line2, detail.address.city, detail.address.state, detail.address.pincode].filter(Boolean).join(', ')}
-                </div>
-              )}
+              {/* 8.0 — the address, and the way out to a map. No guard here on
+                  purpose: `AddressBlock` owns the decision about whether there
+                  is an address at all, and it is not a decision a call site can
+                  make correctly.
+
+                  The line this replaced gated on `detail.address?.line1` and
+                  joined `line1, line2, city, state, pincode`. Both halves were
+                  wrong against the live rows, in opposite directions:
+
+                    · Unicode's `Navrang Polymers` has no `line1`. It has 43
+                      keys, 42 of them a character each, and one genuine `city`
+                      of "Navi Mumbai" — so the gate hid an address we hold.
+                    · E2E Test & Associates' 61 clients carry `state_code` and
+                      never `state`, so every one of them rendered its state as
+                      nothing while the code sat in the row.
+
+                  Both are right now, and neither needed a special case: the
+                  component reads the seven keys by name and resolves the GST
+                  code to a state NAME. */}
+              <AddressBlock address={detail.address} />
               {detail.notes && <div className="gr__dnotes">{detail.notes}</div>}
             </div>
 

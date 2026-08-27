@@ -402,7 +402,19 @@ export default function ContactsTab({ crm = true }) {
                 <div className="gr__dpair"><strong>PAN:</strong> {c.pan || '—'}</div>
                 <div className="gr__dpair"><strong>Source:</strong> {c.source || '—'}</div>
                 <div className="gr__dpair"><strong>Lead Score:</strong> {c.lead_score ?? '—'}/100</div>
-                <div className="gr__dpair"><strong>Assigned To:</strong> {c.assigned_to ? `${c.assigned_to.substring(0, 8)}…` : '—'}</div>
+                {/* THE NAME. This drew `c.assigned_to.substring(0, 8)` —
+                    eight characters of a `users.user_id`, which identifies
+                    nobody and breaks the owner's rule that no user, member or
+                    org id is ever displayed. `check-rendered-ids` walked past
+                    it twice over: `assigned_to` was not in `ID_PATH`'s
+                    vocabulary (only `_id`/`_by`/`uid`/`uuid` were, and this
+                    column is a `_to`), and the ternary put a `?` in the
+                    expression, which `NOT_A_RENDER` reads as control flow. The
+                    server sends `assigned_to_name` now. */}
+                <div className="gr__dpair"><strong>Assigned To:</strong> {c.assigned_to_name || '—'}</div>
+                {/* Which sales patch this contact routes to — the column 7.0
+                    made writable. The NAME, never the id. */}
+                <div className="gr__dpair"><strong>Territory:</strong> {c.territory_name || '—'}</div>
                 <div className="gr__dpair"><strong>Last Contacted:</strong> {c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-IN') : '—'}</div>
                 <div className="gr__dpair"><strong>Converted:</strong> {c.converted_at ? new Date(c.converted_at).toLocaleDateString('en-IN') : '—'}</div>
               </div>

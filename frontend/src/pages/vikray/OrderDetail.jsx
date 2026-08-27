@@ -37,6 +37,7 @@ import {
   previewTotals, useGanitAccess, loadProducts, isRecordId, notFound,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
+import AddressBlock, { addressLines } from '../../components/ui/AddressBlock';
 
 export default function OrderDetail({ orderId, onClose, onChanged }) {
   // F32 — the module is read from the route, never named here.
@@ -289,6 +290,33 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                       {(o.contact_email || o.contact_phone) && (
                         <p className="vkd__contact">{[o.contact_email, o.contact_phone].filter(Boolean).join(' · ')}</p>
                       )}
+                    </section>
+                  )}
+
+                  {/* 8.0 — where the goods go. `vikray_orders.shipping_address`
+                      has been captured by `OrderForm` since the module shipped
+                      and was rendered NOWHERE: the detail drawer showed who
+                      bought and what, and never where to send it.
+
+                      The guard is `addressLines`, the same reader the component
+                      uses, so the heading and the body agree by construction. A
+                      `<section>` around an `AddressBlock` that renders nothing
+                      would leave a "Ship to" heading standing over an empty
+                      space, which is the one thing worse than no heading.
+
+                      It is not `!o.shipping_address` and it is not
+                      `Object.keys(...).length`, and both would be wrong on live
+                      rows: all 322 orders in E2E Test & Associates carry a
+                      NOT NULL `shipping_address` that is `{}`, and Navrang
+                      Polymers' address in Graha has 43 keys of which 42 are one
+                      character each. Only "can we read a line out of it" is the
+                      same question the component answers. */}
+                  {addressLines(o.shipping_address).length > 0 && (
+                    <section className="dr__sec">
+                      <h3 className="dr__lbl">Ship to<Secondary className="dr__lbl-hi" value="पता" /></h3>
+                      {/* The heading above IS the label, so the component's own
+                          is suppressed rather than printed under it. */}
+                      <AddressBlock address={o.shipping_address} label="" />
                     </section>
                   )}
 

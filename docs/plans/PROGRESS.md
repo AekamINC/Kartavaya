@@ -2387,4 +2387,110 @@ rather than only here.
   and the premise of `dpdpNotice.test.jsx`. It is 14 of 109. The dated
   measurements elsewhere are left alone — they are history and correct as such.
 
+## 2026-08-27 · Phase 8.0 — `<AddressBlock>`, and a second id on screen
+
+One component, five surfaces, no vendor. The link is an ANCHOR to the Google
+Maps URLs scheme: no API key, no quota, no billing account, and an anchor is not
+a fetch, so `vercel.json` is untouched by the whole component. The URL is built
+in exactly one place, which is what makes the Mappls fallback a one-function
+change if the "a link out is navigation, not a map" reading is ever contested.
+
+Wired: Graha client detail, Graha contact detail, Kray vendor list, Manav
+employee detail, Vikray order *Ship to*, Pahchan punch. The punch passes a
+coordinate rather than an address, and a coordinate always beats address text —
+an Indian PIN averages ~82 km², and 699 of the 700 live punches carry lat/lng.
+
+**Written against what is STORED, not against the DDL.** All six address columns
+are `jsonb` in `staging` only, and the contents are not uniform:
+
+- The empty branch tests EMPTINESS, never null. All 235 E2E contacts, all 83
+  `manav_employees.address` and all 322 `vikray_orders.shipping_address` are
+  `IS NOT NULL` and every one is `{}`. A plain falsy check on the address would
+  be wrong on the majority of live rows.
+- A record with nothing usable renders NOTHING. A link to an empty `query=`
+  opens Google Maps on the reader's own location, which looks exactly like the
+  product having found the client's premises — confidently wrong is the worst
+  failure available here.
+- `Navrang Polymers` stores its address as a JSON string exploded into
+  single-character keys `"0"`–`"41"` — **plus a genuine 43rd `city` key reading
+  "Navi Mumbai" which contradicts the exploded copy's "Mumbai"**. The plan did
+  not mention the 43rd. Reading the seven known keys BY NAME renders "Navi
+  Mumbai" and ignores the noise; joining values in key order renders a line of
+  punctuation. The test asserts the output contains no brace, no quote, and not
+  "Maharashtra" — which exists only spelled across keys 26–37, so if it ever
+  appears, something has started guessing.
+- `INC UK` (`pincode = 'NW1 245'`, city Uganda, line1 London, state New York)
+  renders without throwing. No Indian-PIN validation blanks the record.
+
+29 tests. `npm run check` (12 gates), `npm run build` and the baselined vitest
+run all clean, no new failures.
+
+**Three findings the plan did not have.**
+
+1. **There is no vendor DETAIL surface**, so the address went on the list — and
+   `VendorForm.jsx` captures **no address field at all** (`BLANK_VENDOR` has no
+   `address` key) while `POST /v1/ganit/vendors` has always written
+   `body.address` and 6 of 9 Unicode vendors carry one. API-writable, populated,
+   and unenterable through the UI. Its own change.
+2. **The plan's Ganit invoice consumer is a backend PDF surface.**
+   `invoice_pdf.py` renders the address server-side; `ganit/InvoiceDetail.jsx`
+   renders none at all. That row needs a new screen, not a swap.
+3. **The two backend address renderers disagree on field order** —
+   `invoice_pdf.py:_fmt_addr` is `city, state, pincode, country`,
+   `doc_render.py:fmt_addr` is `city, pincode, state, country`. The component
+   follows `invoice_pdf.py`; the two need reconciling.
+
+**Mobile deferred, with the reason.** `GET /v1/vikray/orders/{id}` is
+`SELECT o.*`, so `shipping_address` already reaches the phone — only the TS
+types omit it. But no module is shared between `frontend/` and `mobile/`, so
+wiring `OrderDetailSheet.tsx` means forking the reader **and** the 40-row
+statutory `GST_STATES` table into TypeScript, which destroys the single-place
+property the licence fallback rests on.
+
+## 2026-08-27 · A user id on screen, twice, and the ratchet that walked past it
+
+Found while wiring the contact detail. `graha/ContactsTab.jsx` drew a truncated
+`assigned_to` through `substring(0, 8)` inside a template literal inside a
+ternary — eight characters of a `users.user_id`, which identifies nobody — and
+`graha/ReportsTab.jsx` drew `assigned_to` through `slice(0, 12)` on the
+rep-performance table, the one report whose own endpoint comment says *"these
+figures sit against a person"*. `services/crm_report.py` has joined `users` for
+the DOWNLOADABLE version of that same report since it was written, so the file a
+customer sends to their partner carried names while the screen they read it off
+did not.
+
+**`check-rendered-ids` missed both, for two independent reasons**, and the first
+is a repeat:
+
+1. `assigned_to` was not in `ID_PATH`. The vocabulary knew `_id`, `_by`, `uid`
+   and `uuid` — and this product's assignee column is a `_to`. Note 1 in that
+   script already records `requested_by` being invisible for want of a `_by`.
+   Same class of miss, second outing. `assigned_to` is now named EXPLICITLY
+   rather than bought with a generic `_to` suffix, which would drag in `due_to`,
+   `sent_to` and every other preposition-shaped field: a vocabulary that fires
+   on prose is one people write exemptions against.
+2. The ternary. A `?` in the expression put the whole thing in `NOT_A_RENDER`,
+   so **every ternary in the product was invisible to this check**. Both obvious
+   fixes are wrong, and this was MEASURED rather than reasoned: removing `?`
+   from `NOT_A_RENDER` produced 15 findings across the app and every single one
+   was a false positive of one shape — an id used as the CONDITION with two
+   string literals as the arms. The condition is not drawn. The arms are. So
+   `splitTernary` judges the two arms and ignores the condition.
+
+Proved before it was fixed, per the house rule: both shapes went into
+`fixtures/rendered-ids/Offenders.jsx` first and the check found 4 of 6. After
+the vocabulary widening it found 5; after `splitTernary`, 6. Against the real
+tree it is now clean at 589 components with a strictly stronger check — the 15
+false positives never appear, because the condition is no longer read.
+
+Fixed at the source, not on the screen: `report_rep_performance` and the contact
+detail both carry a name from the server now, through a new module-level
+`_USER_NAME_SQL` — one definition where the same ladder had been written out in
+six places, and it stops at `name` and never reaches `u.email`, which
+`test_audit_actors.py` enforces backend-wide. The contact detail also gained
+`territory_name`, so 7.0's capture is visible on the record it was written to,
+and BOTH new joins are org-scoped: `graha_territories.id` is unique table-wide,
+so joining on the id alone would surface another organisation's territory name.
+That is one more of the nine joins `memory/graha_clients_join_leak` counted.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

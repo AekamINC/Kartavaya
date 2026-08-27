@@ -49,6 +49,7 @@ import {
   useList, useResource, ErrorNote, Shim, errText,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
+import AddressBlock from '../../components/ui/AddressBlock';
 import { GST_STATES } from '../../lib/validators';
 
 // The same statutory state list the invoice form's Place of supply select is
@@ -799,6 +800,25 @@ function EmployeeDetail({ id, onBack, onChanged }) {
           <Fact k="Work state" v={stateLabel(emp.state)} />
           <Fact k="Blood group" v={emp.blood_group} />
         </dl>
+
+        {/* 8.0 — the home address, outside the facts grid rather than in it.
+            Two reasons, and neither is taste. `mn-facts` is
+            `minmax(180px, 1fr)`, which is sized for "Maharashtra" and not for
+            two lines of street; and `Fact` prints '—' for a blank, which is the
+            right rendering of an unrecorded blood group and the wrong one for
+            an address — an em-dash beside a heading reading "Address" invites
+            the reader to conclude we hold nothing, when what we may hold is a
+            row we cannot safely read. `AddressBlock` renders nothing in both
+            cases and claims nothing in either.
+
+            Worth knowing before trusting what this shows: `routers/manav.py`
+            (see the comment on the employee INSERT) records that `address` and
+            `bank_details` were measured coming back from this table as JSON
+            *strings* while `emergency_contact` beside them came back an object.
+            That is the double-encode `backend/db.py` fixes at the codec; rows
+            written before the fix still hold it, and AddressBlock decodes them
+            rather than showing a blank. */}
+        <AddressBlock address={emp.address} />
 
         {(emp.pan || emp.aadhaar || emp.bank_details?.account_number) && (
           <div className="mn-pii">

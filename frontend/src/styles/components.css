@@ -2150,3 +2150,65 @@ thead tr:hover .tbl__grip,
    borrowing Reset's. */
 .kcols__forget { color: var(--on-surface-3); }
 .kcols__forget:hover:not(:disabled) { color: var(--danger); }
+
+/* ── AddressBlock — one stored address, and the way out to a map ────────────
+   `ui/AddressBlock.jsx`, PHASE-8 §8.0. Six modules render this and none of
+   them owns it, so it is styled here beside the other shared primitives
+   rather than in any one module's sheet.
+
+   TWO LAYOUTS, and the difference is structural rather than cosmetic.
+
+   The BLOCK carries its own heading and stacks its two lines — street above,
+   locality below, the same split `invoice_pdf.py:_fmt_addr` prints. It OWNS
+   its typography, because it is placed as a section rather than inside a row:
+   `--t-body-sm` and `--on-surface-2` put it level with `.gr__dnotes` and
+   `.mn-fact__v`, the two things it sits nearest.
+
+   The INLINE INHERITS EVERYTHING and this is the load-bearing half. It is
+   dropped into rows that set their own scale — `.rv-meta__v` in the Pahchan
+   register is `--font-mono` at `--t-label`, and a colour that arrives as
+   `--c` and turns red when a punch is out of range. An inline layout that
+   declared its own size and colour would print "Open in Maps" LARGER than the
+   coordinate beside it and would repaint a flagged punch's coordinate back to
+   ordinary ink, which is the one thing that row exists to say. So the inline
+   rules set spacing and wrapping and nothing else.
+
+   The link borrows `.k-link` for its colour — the accent's text-safe value,
+   already contrast-checked in both themes — and adds nothing but the space in
+   front of it. A second link colour here would be a second thing to keep at
+   4.5:1.
+   ───────────────────────────────────────────────────────────────────────── */
+.k-addr { display: block; }
+.k-addr--inline { display: inline; }
+.k-addr__lbl {
+  display: block; color: var(--on-surface-3);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px;
+}
+/* `overflow-wrap: anywhere` for the same reason `.mn-fact__v` has it: an
+   address is user-typed and a long unbroken token — a building name run
+   together, a URL somebody pasted into line2 — must wrap inside the column
+   instead of widening it. Every page here is fluid, so a cell that refuses to
+   wrap pushes the whole grid. */
+.k-addr__text { overflow-wrap: anywhere; }
+.k-addr__line { display: block; }
+/* Inline, the link follows the text on the same line. `margin-inline-start`
+   rather than `margin-left` — the shell already runs logical properties and an
+   address is the one field most likely to be read in a right-to-left script
+   one day. */
+.k-addr__link { margin-inline-start: var(--sp-2); }
+
+/* The block layout carries its own top margin because EVERY consumer places it
+   after something — the fact lines in Graha, the `mn-facts` grid in Manav, a
+   section heading in Vikray — and none of them wants to own the gap. It has to
+   live here rather than in a wrapper at each call site: a wrapper renders its
+   margin even when the component inside it renders nothing, which is a 12px
+   hole under every record that has no address. */
+.k-addr:not(.k-addr--inline) { margin-top: var(--sp-3); }
+.k-addr:not(.k-addr--inline) .k-addr__text {
+  font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+.k-addr:not(.k-addr--inline) .k-addr__link {
+  display: inline-block; font-size: var(--t-body-sm);
+  margin-inline-start: 0; margin-top: var(--sp-1);
+}
