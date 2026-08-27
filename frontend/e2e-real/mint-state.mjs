@@ -54,9 +54,26 @@ if (fs.existsSync(envFile)) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
   }
-} else {
-  console.error(`No .env.e2e at ${envFile}`);
+} else if (!process.env.E2E_ADMIN_TOKEN && !process.env.E2E_GODMODE_TOKEN) {
+  // ── THE FILE IS ONE WAY TO BE CONFIGURED, NOT THE ONLY ONE ────────────────
+  //
+  // This used to exit 1 whenever the file was absent, and CI has no file: the
+  // workflow passes the tokens as env vars from repository secrets. So the
+  // "E2E smoke (Playwright, deployed)" job failed on its FIRST step, every run,
+  // on the line `No .env.e2e at /home/runner/work/…`, and had done for as long
+  // as that job existed. A deployed smoke test that has never once reached the
+  // deployment is a gate in name only — the same shape as `check-csp-hash`
+  // sitting outside CI while the bootstrap was dead on staging.
+  //
+  // The refusal is still here, and it is the one that matters: no file AND no
+  // token means nothing can be minted. A token in the environment is a
+  // perfectly good way to be configured and is now treated as one.
+  console.error(
+    `No .env.e2e at ${envFile}, and neither E2E_ADMIN_TOKEN nor ` +
+    'E2E_GODMODE_TOKEN is set in the environment. One of the two is required.');
   process.exit(1);
+} else {
+  console.log(`No .env.e2e at ${envFile} — using the tokens already in the environment.`);
 }
 
 const BASE = process.env.E2E_BASE_URL || 'https://staging.kartavaya.com';
@@ -114,7 +131,20 @@ function subjectOf(token) {
   } catch { return null; }
 }
 
-if (process.env.E2E_ADMIN_TOKEN && process.env.E2E_GODMODE_TOKEN && process.env.E2E_ORG_ID) {
+// ── THE PROBE RUNS WHENEVER IT CAN, NOT ONLY WHEN A SUBSTITUTE EXISTS ────────
+//
+// This condition required E2E_GODMODE_TOKEN as well, so CI — which has an
+// E2E_ADMIN_TOKEN secret and no godmode secret — SKIPPED THE CHECK ENTIRELY and
+// minted owner.json from a token that 403s on E2E_ORG_ID. That is the exact
+// state that put a Phase-1 vendor into the wrong organisation on 2026-08-26:
+// `api()` sends X-Org-Id and gets 403, while the BROWSER writes happily to
+// whatever org the account really belongs to. The read-back's 403 was the only
+// thing that revealed it, after the row existed.
+//
+// The membership check needs an admin token and an org id. A substitute is what
+// happens NEXT, and its absence is a reason to refuse — never a reason to skip
+// the question.
+if (process.env.E2E_ADMIN_TOKEN && process.env.E2E_ORG_ID) {
   const api = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
   const probe = async (token) => {
     try {
@@ -126,8 +156,46 @@ if (process.env.E2E_ADMIN_TOKEN && process.env.E2E_GODMODE_TOKEN && process.env.
   };
   const adminStatus = await probe(process.env.E2E_ADMIN_TOKEN);
   if (adminStatus === 403) {
-    const godStatus = await probe(process.env.E2E_GODMODE_TOKEN);
-    if (godStatus < 400) {
+    const god = process.env.E2E_GODMODE_TOKEN;
+    const godStatus = god ? await probe(god) : 403;
+    if (!god || godStatus >= 400) {
+      // NOTHING IS MINTED. Every other refusal in this file is about a token
+      // that cannot work; this one is about a token that works too well — it
+      // would sign in, and it would write, into an organisation nobody named.
+      // On a database staging shares with production, a run that writes to the
+      // wrong org is worse than a run that does not happen.
+      console.error(
+        `
+✗ E2E_ADMIN_TOKEN (${subjectOf(process.env.E2E_ADMIN_TOKEN)}) is NOT a ` +
+        `member of E2E_ORG_ID
+` +
+        `   (${process.env.E2E_ORG_ID}) — the API answers 403.
+
+` +
+        (god
+          ? `   E2E_GODMODE_TOKEN was tried and answers ${godStatus}, so it is not a
+` +
+            `   member either.
+
+`
+          : `   E2E_GODMODE_TOKEN is not set, so there is nothing to substitute.
+` +
+            `   In CI that means adding it as a repository secret beside
+` +
+            `   E2E_ADMIN_TOKEN and E2E_ORG_ID.
+
+`) +
+        `   NOTHING HAS BEEN MINTED. Minting anyway would sign the suite in as an
+` +
+        `   account that belongs to a DIFFERENT organisation: the browser would
+` +
+        `   write there happily while every api() call 403s, which is how a
+` +
+        `   Phase-1 vendor landed in the wrong org on 2026-08-26.
+`);
+      process.exit(1);
+    }
+    {
       console.error(
         `
 !  E2E_ADMIN_TOKEN (${subjectOf(process.env.E2E_ADMIN_TOKEN)}) is NOT a member of

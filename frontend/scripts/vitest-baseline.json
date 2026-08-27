@@ -3,9 +3,6 @@
   "generated": "2026-08-17",
   "failures": [
     "src/__tests__/labelShape.test.jsx :: the label sites, discovered from source pins the leaking remainder so it can only shrink",
-    "src/__tests__/orgSettingsTabs.test.jsx :: Organisation hub tab bar carries each tab's Devanagari from the designer's TAB_HI map",
-    "src/__tests__/orgSettingsTabs.test.jsx :: Organisation hub tab bar marks the Devanagari lang=\"hi\" so it is not read as English",
-    "src/__tests__/orgSettingsTabs.test.jsx :: Organisation hub tab bar renders the tabs in the design's order, plus Senders",
     "src/__tests__/sanvaadLegacyVocabulary.test.jsx :: sanvaad v2 · what is still on the old vocabulary is an inventory pages/sanvaad/varta/WAChat.jsx renders exactly its listed pre-v2 classes"
   ]
 }

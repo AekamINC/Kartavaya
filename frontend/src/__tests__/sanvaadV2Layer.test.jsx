@@ -129,6 +129,15 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
    *     content and the scroll container never engages — the whole pane scrolls
    *     instead of the log. One declaration, and without it the message list
    *     does not scroll at all.
+   *   · `.m2link` states the 3px accent as `box-shadow: inset 3px 0 0 0
+   *     var(--primary)` where the prototype writes `border-left: 3px solid`.
+   *     Deliberate, and the owner's own call: a 3px border on one side beside a
+   *     1px border on the other three breaks the arc a uniform border draws
+   *     inside `border-radius`, and `liquid-glass.css`'s rim inset — sized for a
+   *     uniform border — layers on top of the seam and makes it worse. `a7bd4df7`
+   *     swept the same fix across fourteen selectors. An inset shadow clips to
+   *     the radius correctly at any width. The accent is the same colour, the
+   *     same 3px and on the same edge; only the property differs.
    *   · `.m2pin` adds `flex-wrap: wrap`. The pinned bar is a horizontal row of
    *     an unbounded number of pins; without wrapping the last ones leave the
    *     viewport with no way to reach them. The prototype only ever drew two.
@@ -157,6 +166,7 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
     '.m2c__banner--warn',
     '[data-platform="win"] .m2c__hd',
     '.m2q__t',
+    '.m2link',
     '.m2link__d',
     '.m2rec',
     '.m2log',
