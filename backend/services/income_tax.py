@@ -5,7 +5,9 @@ Phase 5.2b. `routers/vetana.py` carried two literal ladders, and
 thirteen `tds.*` keys in `staging.statute_calendar`, every one is a statement,
 a certificate or a deposit DATE. **The slab ladder was not in that table at
 all**, so there was nowhere to read it from. This module and
-`migrations/228_income_tax_slabs.sql` are that somewhere.
+`migrations/230_income_tax_slabs.sql` are that somewhere. (Cited as 228 until
+2026-08-27 — 228 is `228_epf_rates_are_dated_law.sql`; this file was renumbered
+on the way in and the docstring did not follow.)
 
 ── ONE ROW PER BAND, WHICH IS THE OWNER'S DECISION AND NOT A SHORTCUT ───────
 
@@ -68,7 +70,7 @@ section 87A rebate, the 4% health-and-education cess, surcharge, the standard
 deduction, and the senior/super-senior exemption limits are NOT bands, are not
 in the table, and are not applied here. None of them was in the literal ladder
 either, so nothing regresses — but a band ladder alone is not the tax, and
-`migrations/228_income_tax_slabs.sql` records each of them as owed with its
+`migrations/230_income_tax_slabs.sql` records each of them as owed with its
 figure and source. Do not quietly add one of them to this file: a rebate
 expressed as a band is a rebate no auditor can find.
 

@@ -85,9 +85,19 @@ _Update as items land — tick here, flip the row in `docs/STATUS.md`, and appen
   (migration 222, verified from `pg_constraint`), the magnitude stays positive,
   and one rule signs it — `_signed_amount` / `_SIGNED_AMOUNT_SQL` in
   `services/billing_lines.py`. Day-count unified on 0.17: `proration.py` was a
-  THIRD convention (31 days for August 2026 against payroll's 26). Acceptance —
-  a real mid-cycle change through the UI netting one debit and one credit — is
-  still owed.
+  THIRD convention (31 days for August 2026 against payroll's 26).
+  **ACCEPTANCE PASSED 2026-08-27 00:24:12, on live rows**, once `real.config.ts`
+  gained `channel: 'chrome'` — Vercel's bot mitigation had been fingerprinting
+  Playwright's bundled `chromium-headless-shell` and 403ing every navigation,
+  which is what "still owed" had meant. A real mid-cycle change through the UI
+  produced exactly one debit and one credit in E2E Test & Associates:
+  `credit` **₹3,200** ("unused 4 days at ₹20,000/mo") against `setup` **₹2,400**
+  ("4 days at ₹15,000/mo"), both `cadence='one_off'`, both stamped the same
+  microsecond, netting **−₹800**. `kind='credit'` is the only credit row in the
+  table and `_SIGNED_AMOUNT_SQL` negates exactly that kind. The `set-plan` fix
+  is in the same evidence: the subscription carries an `activated_by` and a
+  `next_billing_date` of 2026-10-01, written 16 seconds later — that endpoint
+  had 500'd on every call it had ever received.
 - **3.3 ✅ ACCEPTANCE PASSED 2026-08-26, on live rows.** The period advances
   from the last invoiced one, stepping by cadence, one period per run.
   `/cron/billing` fired twice against the deploy: **`client_invoice_lines`

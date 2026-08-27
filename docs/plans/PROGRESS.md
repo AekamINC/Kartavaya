@@ -406,9 +406,14 @@ ladder.
   on every payroll run for both in-scope orgs, extended by migration 221 six
   days ago. Dropping the stack as written takes professional tax to ₹0 for
   every employee. Excluded by name; the phase file now says so.
-- **6.4 has no work in it.** `staging.report_schedules` does not exist — a live
-  query returns `42P01`. One scheduler, `dristi_scheduled_reports`, 7 rows, the
-  only one that has ever sent mail.
+- ~~**6.4 has no work in it.** `staging.report_schedules` does not exist — a live
+  query returns `42P01`.~~ **WRONG — corrected 2026-08-27, see below.** The 42P01
+  is a fact about `staging` and I read it as one about the database:
+  `public.report_schedules` exists, and it is a second live scheduler with an
+  armed hourly cron. Left standing rather than rewritten, because a log that
+  edits out what it got wrong is worth less than one that shows it.
+  `dristi_scheduled_reports`, 7 rows, is still the only one that has ever sent
+  mail — that half was right.
 - **6.3 decided: keep both allocators.** `next_po_number` is a different
   algorithm, not a copy. A purchase order is numbered at ISSUE, so drafts carry
   NULL, so `next_doc_number`'s `ORDER BY created_at` reads a draft as newest and
@@ -441,8 +446,15 @@ against the same URL returns 200 — including with a HeadlessChrome user agent.
 Deployment protection is OFF on the project (password, SSO and trusted-IP all
 `enabled: false`, read from the API), so this is edge bot mitigation reacting to
 the automated browser, not a project setting. A real browser loads the site
-normally. **Phase 3.2's acceptance is therefore still owed**, not passed and not
-skipped.
+normally. ~~**Phase 3.2's acceptance is therefore still owed**, not passed and
+not skipped.~~ **SUPERSEDED — it passed at 00:24:12 on 27 Aug**, once
+`real.config.ts` gained `channel: 'chrome'`: mitigation was fingerprinting
+Playwright's bundled `chromium-headless-shell`, and the real Chrome on the
+machine — still headless — answers 200. The two lines are live and read back:
+`credit` ₹3,200 against `setup` ₹2,400, both `one_off`, same timestamp, netting
+−₹800 through `_SIGNED_AMOUNT_SQL`, in E2E. Left standing with a line through it
+because the diagnosis above is correct and worth keeping; only the verdict
+moved.
 
 ## 2026-08-26
 
@@ -1915,9 +1927,11 @@ is done.
 
 **But 0.30 does not approve the drop Phase 6 is waiting on.** Its answer reads
 "DROP the three restore schemas" and names those three. It names none of the
-twenty product tables in 6.1 and 6.2. Phase 6's header says it blocks on 0.30
+twenty product tables in 6.1 and 6.2 (~~twenty~~ **22**, corrected 27 Aug —
+see below; **23** once 6.4's `public.report_schedules` joins them). Phase 6's
+header says it blocks on 0.30
 and 0.30's answer says "Unblocks Phase 6" — and an OK for three backup schemas
-is not an OK for twenty product tables. Written down rather than assumed,
+is not an OK for 23 product tables. Written down rather than assumed,
 because the assumption is how a `pay_*` drop takes payroll with it.
 
 **`pay_income_tax_slabs` is the second live `pay_*` table.** The plan excludes
@@ -2007,5 +2021,94 @@ table cannot express** (women exempt to ₹25,000 since 2023). The first two are
 live-row edits and the third needs a column — none of them is a migration, which
 is why the standing migration approval does not reach them. They are the only
 part of 0.24 still owed, and they are owed to a decision rather than to work.
+
+## 2026-08-27 · an adversarial audit of my own claims, and the one that was FALSE
+
+I asked a subagent to try to break every numeric and state claim I had published
+for phases 3, 4, 5, 6 and 0.24, read-only, against the live database. Everything
+material reproduced — every count, sign, total and invoice number. The failures
+were of SCOPE and CURRENCY, and one of them closed a phase item on nothing.
+
+**6.4 — `report_schedules` "does not exist" is FALSE, and it is the worst place
+this project could have made that mistake.**
+
+    public.report_schedules            EXISTS · 15 columns · 0 rows
+    staging.dristi_scheduled_reports   EXISTS ·             · 7 rows
+    staging.report_schedules           42P01  — and only this was checked
+
+I ran a live query, got `42P01`, and read "not in that schema" as "nowhere".
+`public.report_schedules` carries an `org_id` from migration 212, three indexes,
+RLS policies from migration 008, a complete CRUD in `routers/reports.py`
+(`:454`/`:480`/`:506`/`:619`/`:684`), writes from `invite_router.py:519-520`,
+and `POST /api/reports/dispatch` on an **armed hourly Railway cron**
+(`cron-report-dispatch`, `7 * * * *`). An empty table is not an idle one: that
+endpoint runs 24 times a day and finds nothing to do, which is why nobody
+noticed. There are two schedulers. 6.4 is OPEN and Phase 6's own "one report
+scheduler" is not met.
+
+Phase 6 exists to install: *no proposal may assert a table, route or column is
+missing without a live query in the document.* **There was a live query in the
+document.** The rule does not say which schema, so it was followed and the wrong
+answer was published into three files. Its missing half, now written down:
+
+> A negative result from a schema-qualified query is a fact about THAT SCHEMA.
+> Reading it as a fact about the database is how a phase item gets closed on
+> nothing.
+
+`backend/tests/test_two_report_schedulers.py` (4) pins the second scheduler and
+fails if any ledger republishes the claim — verified by appending the sentence
+to STATUS.md and watching it go red. `~~struck~~` lines are exempt on purpose:
+PROGRESS is append-only, and a log that edits out what it got wrong is worth
+less than one that shows it.
+
+**The same blindness was inside the ratchet Phase 6 shipped.**
+`test_every_writer_has_a_live_sql_test.py`'s `_WRITES` matched `staging.` only,
+so `reports`, `org_invites` and `templates` — all writing to `public.` — were
+invisible to a rule whose entire job is finding untested writers. Widened to
+both schemas. The published figures were wrong too: **40 writing routers, 8
+covered, 32 baselined**, not 36/6/30. The baseline grew by exactly those three,
+once, because the LENS widened and not because a standard slipped — the
+distinction is the file's whole value, so it is recorded beside them.
+
+**Phase 5 was marked 🟢 COMPLETE with zero rows behind its money-moving half.**
+The ladder was seeded 03:43:57 UTC; **0 of 1,160 payslips have been computed
+since**. Every TDS figure in the database still comes from the year-stale
+literal ladder 5.2b exists to replace — the latest E2E run, 26 Aug 08:46:53,
+`total_tds ₹6,88,924.66`. `income_tax.ladder_for` has never priced a real
+payslip. That is code-without-data, which this project's own rule calls 🟡, and
+I published 🟢. Corrected. One action closes it — re-run payroll for E2E 2026-08
+through the screen — and it is not taken unasked, because `process_payroll`
+deletes and re-inserts a month's payslips and would overwrite the rows that ARE
+Phase 2's acceptance evidence. That is a live-row change to name, not to take.
+
+**Numbers and comments corrected, each verified rather than accepted:**
+
+- "the twenty product tables" is **22** (10 `hr_*` + 7 empty `pay_*` + 2 live
+  `pay_*` + 3 `sales_commission*`), and `public.report_schedules` now joins the
+  list. A DROP list put to the owner that is short by two is a list with two
+  tables nobody named.
+- "`n_live_tup` reports 0 for both live tables" now reads 23 and **14** against
+  two tables that both hold 23. The lesson survives; the figures rotted.
+- `vetana.py:1262` said "0.75% and 3.25% stay literal because
+  `statute_calendar` holds no key for them" **three lines above the code that
+  reads them from the store**. Migration 232 seeded both the same week. A
+  comment contradicting the code beneath it is worse than none — it sends the
+  next reader to seed a key that exists.
+- `services/income_tax.py` cited `migrations/228_income_tax_slabs.sql` in two
+  places; 228 is `228_epf_rates_are_dated_law.sql` and the slabs are **230**.
+  The migration's own first line said 228 too.
+- The STATUS deploy header named `cc371297` — **33 commits behind** what Railway
+  was running. A deploy line nobody re-reads is worse than none, because it
+  reads as verification. Now `43961e25`, with the domain's asset hash checked
+  from outside.
+- STATUS still said `module_compliance_settings` and `pahchan_employee_consents`
+  were "still 0" hours after both rows were written, and both the Phase 3 plan
+  and PROGRESS still said 3.2's acceptance was "still owed" after it passed at
+  00:24:12. The dashboard and the log disagreed in both directions.
+
+**What I did NOT accept from the audit**: its Phase 5 framing said the store now
+carries income-tax bands. It does not — the bands are in `pay_income_tax_slabs`
+and `statute_calendar` carries only the advance-tax instalment percentages. The
+STATUS row was already right about that.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->

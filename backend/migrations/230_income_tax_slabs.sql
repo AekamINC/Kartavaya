@@ -1,4 +1,5 @@
--- 228_income_tax_slabs.sql
+-- 230_income_tax_slabs.sql   (renumbered from 228 on the way in — 228 is
+--                             228_epf_rates_are_dated_law.sql)
 --
 -- Phase 5.2b — THE INCOME-TAX SLAB LADDER, AS DATA. ONE ROW PER BAND.
 --

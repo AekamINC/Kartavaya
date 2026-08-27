@@ -62,10 +62,27 @@ _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _ROUTERS = _ROOT / "routers"
 _TESTS = _ROOT / "tests"
 
-#: A statement that changes a row. `staging.` qualified, because that is this
-#: repo's rule for every write (see `shadow-tables-and-search-path`) and an
-#: unqualified one is its own defect.
-_WRITES = re.compile(r"(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+staging\.", re.I)
+#: A statement that changes a row, in EITHER schema this database has.
+#:
+#: THIS READ `staging\.` ALONE UNTIL 2026-08-27, and the blind spot was not
+#: theoretical. Three routers write to `public.` and were therefore invisible to
+#: the rule — `reports` (public.report_schedules), `org_invites` (public.invites)
+#: and `templates` (public.project_templates). `reports` is the expensive one:
+#: it is a complete second report scheduler with CRUD and a `POST /dispatch`
+#: that runs on an ARMED hourly Railway cron, and Phase 6.4 was closed as a
+#: "stale premise" on a `SELECT ... FROM staging.report_schedules` that raised
+#: 42P01 — read as "the table does not exist" when it meant "not in that
+#: schema". The table is `public.report_schedules` and it is real.
+#:
+#: A `staging.`-only lens is exactly how that mistake is made, and this rule
+#: existing to catch untested writers while being unable to SEE a third of them
+#: is the same failure in its own tooling. Both schemas now.
+#:
+#: Still qualified, and deliberately: an unqualified write is its own defect
+#: (see `shadow-tables-and-search-path`) and is not laundered into coverage by
+#: being matched here.
+_WRITES = re.compile(
+    r"(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(staging|public)\.", re.I)
 
 #: The Parse-and-Describe call. Nothing else in this repo prepares a statement.
 _PREPARES = "prepare("
@@ -84,7 +101,23 @@ UNCOVERED = {
     "pahchan_attendance", "pay", "prachar", "procurement", "products", "pulse",
     "scheduler", "scrapers", "subscription", "tab_prefs", "totp", "vikray",
     # `whatsapp` left this list on 2026-08-27 — the first name to, and the
-    # ratchet is what noticed. 29 remain.
+    # ratchet is what noticed.
+    #
+    # ── THE ONE TIME THIS SET GREW, AND WHY IT IS NOT THE RULE SLIPPING ──────
+    #
+    # `org_invites`, `reports` and `templates` were added on 2026-08-27. Not
+    # because they lost a test — they never had one — but because `_WRITES` had
+    # only ever looked at `staging.` and all three write to `public.`. They were
+    # writing, untested and INVISIBLE, and the number below said 29 while the
+    # truth was 32.
+    #
+    # A baseline may grow when the LENS widens; it may never grow because a
+    # standard slipped. The distinction is the whole value of the file, so it is
+    # recorded here rather than absorbed. If a fourth name ever appears without
+    # a paragraph like this one beside it, that is the rot this ratchet exists
+    # to prevent.
+    "org_invites", "reports", "templates",
+    # 32 remain.
 }
 
 

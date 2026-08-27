@@ -155,12 +155,19 @@ not a row count, and a DROP decided from one would have been catastrophic.**
   schemas" and names them: `qa_cleanup_20260822`, `punch_cleanup_20260823`,
   `owner_actions_20260823`. All three are **already gone** (checked live
   2026-08-27 — that item is done, and a later reader should not go hunting for
-  them). What 0.30 does NOT name is a single one of the twenty tables above.
+  them). What 0.30 does NOT name is a single one of the **22** tables above —
+  written "twenty" until 2026-08-27, and a DROP list that is short by two is a
+  list with two tables nobody named. Count them: 10 `hr_*` + 7 empty `pay_*` +
+  2 LIVE `pay_*` + 3 `sales_commission*` = 22. **`public.report_schedules`
+  makes 23**, added by 6.4's correction above.
+
   Phase 6's header reads "Blocks on: owner OK to drop tables (Phase 0.30)" and
   0.30's answer says "Unblocks Phase 6", but an OK for three backup schemas is
-  not an OK for twenty product tables, and stretching one into the other is
-  exactly how a `pay_*` drop takes professional tax and income tax with it.
-  **The twenty need naming to the owner as twenty.**
+  not an OK for 23 product tables, and stretching one into the other is exactly
+  how a `pay_*` drop takes professional tax and income tax with it.
+  **The 23 need naming to the owner as 23** — two of them, `pay_professional_tax`
+  and `pay_income_tax_slabs`, are LIVE and belong on the list only so they can be
+  visibly excluded from it.
 - **6.3 two allocators — DECIDED: KEEP BOTH, and the boundary is now a test.**
   `next_po_number` is not a duplicate of `next_doc_number`; it is a different
   algorithm for a different lifecycle. A purchase order is numbered at ISSUE,
@@ -173,10 +180,51 @@ not a row count, and a DROP decided from one would have been catastrophic.**
   zero-padding to four, or if either takes its advisory lock outside a
   transaction.
 - **6.4 two report schedulers — STALE PREMISE, nothing to do.**
-  `staging.report_schedules` **does not exist** (`42P01` on a live query).
-  There is one scheduler: `dristi_scheduled_reports`, 7 rows, the only one that
-  has ever sent mail. The `dristi.py:1058-1073` argument against merging is
-  therefore arguing with something that is already gone.
+  ~~`staging.report_schedules` **does not exist** (`42P01` on a live query).
+  There is one scheduler.~~ **THAT WAS WRONG, and it is the most instructive
+  mistake in this phase. Corrected 2026-08-27.**
+
+  The query was real and its output was real; the reading was not. `42P01` from
+  `SELECT ... FROM staging.report_schedules` means **not in that schema** — not
+  "nowhere". Live, both schemas, 2026-08-27:
+
+      public.report_schedules            EXISTS · 15 columns · 0 rows
+      staging.dristi_scheduled_reports   EXISTS ·             · 7 rows
+      staging.report_schedules           42P01  — and only this was checked
+
+  **6.4 IS OPEN.** `public.report_schedules` is not a leftover model: it has an
+  `org_id` from migration 212, three indexes, RLS policies from migration 008,
+  and a complete CRUD in `routers/reports.py` (`:454` list, `:480` INSERT,
+  `:506` DELETE, `:619`/`:684` UPDATE). `invite_router.py:519-520` writes it
+  unqualified on user deletion. And `POST /api/reports/dispatch` (`:510`) runs
+  on an **armed hourly Railway cron** — staging `cron-report-dispatch`,
+  `7 * * * *`. An empty table is not an idle one: that endpoint runs 24 times a
+  day and finds nothing to do, which is exactly why nobody noticed.
+
+  So `dristi.py:1058-1073` is not arguing with something already gone. It is
+  arguing with a live second scheduler, and the decision this phase asked for —
+  merge onto the working one, or delete the empty one — has not been made.
+
+  **THIS IS THE WORST PLACE THE MISTAKE COULD HAVE BEEN MADE.** Phase 6 exists
+  to install one rule: *no proposal may assert a table, route or column is
+  missing without a live query in the document*. There **was** a live query in
+  the document. It looked in one of the two schemas this database has, and the
+  rule does not say which — so the rule was followed and the wrong answer was
+  published into three documents anyway. The rule needs its other half:
+
+  > A negative result from a schema-qualified query is a fact about **that
+  > schema**. Reading it as a fact about the database is how a phase item gets
+  > closed on nothing.
+
+  Held open by `backend/tests/test_two_report_schedulers.py` (4 tests), which
+  pins the second scheduler into existence and fails if any ledger goes back to
+  claiming the table is missing. The same blindness is fixed in
+  `test_every_writer_has_a_live_sql_test.py`, whose `_WRITES` pattern matched
+  `staging.` alone and could not see `reports`, `org_invites` or `templates`
+  writing to `public.` at all.
+
+  **NOT DECIDED HERE.** Retiring `public.report_schedules` means dropping a
+  table, and a DROP is named and confirmed by the owner. It joins the list.
 - **Housekeeping — all three items closed, each behind a live check.**
   - **The `PROPOSED_080` collision is gone.** Two unrelated proposals shared the
     one number in a directory whose only job is ordering; proposal 82 reported

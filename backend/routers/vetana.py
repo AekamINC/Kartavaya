@@ -1259,12 +1259,22 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
     pf_emp = round(_pf_wage * _pf_emp_rate / 100, 2) if pf_on else 0
     pf_emr = round(_pf_wage * _pf_emr_rate / 100, 2) if pf_on else 0
 
-    # THE CEILING IS DATED NOW; THE RATES ARE NOT. 0.75% and 3.25% stay literal
-    # because `statute_calendar` holds no key for them — `epf.remittance` and the
-    # ESI rows carry due dates, and only `esi.wage_ceiling` carries a figure. A
-    # constant with nowhere to read it from is not improved by pretending
-    # otherwise. `_esi_ceiling` returns None when the store cannot answer, and
-    # the statutory 21,000 stands: a missing row must never widen a deduction.
+    # CEILING AND BOTH RATES ARE DATED NOW. This comment said the opposite for
+    # a day: "0.75% and 3.25% stay literal because `statute_calendar` holds no
+    # key for them". That was true when it was written and migration 232 made it
+    # false the same week — `esi.rate.employee` and `esi.rate.employer` are
+    # seeded and cited, `_esi_rates` reads them, and the two lines below consume
+    # what it returns. A comment three lines above code that contradicts it is
+    # worse than no comment: it sends the next reader to seed a key that exists.
+    #
+    # THE LITERALS BELOW ARE FALLBACKS, NOT THE SOURCE, and they are not the
+    # same thing. Each is the statutory figure its own key holds, standing only
+    # when the store cannot answer. That asymmetry is deliberate and is the
+    # OPPOSITE of professional tax: an absent PT slab means "this state levies
+    # nothing", a defensible zero, while an absent ESI rate does not mean "no
+    # insurance" — answering 0% would quietly under-remit somebody's cover. A
+    # missing row must never widen a deduction, and never shrink a statutory
+    # contribution either.
     _ceiling = 21000.0 if esi_ceiling is None else esi_ceiling
     _esi_emp_rate, _esi_emr_rate = (esi_rates or (None, None))
     _esi_emp_rate = 0.75 if _esi_emp_rate is None else _esi_emp_rate
