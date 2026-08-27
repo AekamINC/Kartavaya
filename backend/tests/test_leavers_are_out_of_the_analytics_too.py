@@ -104,8 +104,46 @@ _GUARD = re.compile(
 )
 
 
+def strip_line_comments(sql: str) -> str:
+    """Remove `--` comments, quote-aware, KEEPING the newline that ends each.
+
+    `payroll_readiness` carries its reasoning inside the SQL string as `--`
+    comments, and `--` runs to the end of the LINE. Collapsing whitespace
+    first therefore joins the comment to everything after it and the server is
+    handed `WITH bounds AS (...),` and nothing else — which it reports as
+    `syntax error at end of input`, at PREPARE, naming no relation. That is
+    exactly how this file failed for as long as nobody ran the live half: the
+    product's SQL was never malformed, the extraction was.
+
+    Quote-aware in both directions. A `'` inside a comment (`the run's roster`)
+    must not open a string, and a `--` inside a literal must not open a
+    comment; toggling on `'` handles the doubled-quote escape by opening and
+    immediately closing an empty string, which lands on the same parity.
+    """
+    out: list[str] = []
+    in_str = False
+    i, n = 0, len(sql)
+    while i < n:
+        c = sql[i]
+        if in_str:
+            out.append(c)
+            in_str = c != "'"
+            i += 1
+        elif c == "'":
+            out.append(c)
+            in_str = True
+            i += 1
+        elif c == "-" and sql.startswith("--", i):
+            while i < n and sql[i] != "\n":
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def norm(sql: str) -> str:
-    return " ".join(sql.split())
+    return " ".join(strip_line_comments(sql).split())
 
 
 def live_dsn() -> str | None:
@@ -159,6 +197,10 @@ def emp_cte(sql: str) -> str:
     substring assertion. That is the exact shape of the `assert "state" in sql`
     test this repo already shipped.
     """
+    # `norm` strips the `--` comments that used to sit between the two CTEs, so
+    # `struct_in_scope AS` now follows the comma directly. The comment
+    # alternative is kept only so a reader of a stack trace is not left
+    # wondering; it can no longer match.
     m = re.search(r"emp AS \((?P<body>.*?)\), (?:--|struct_in_scope AS)", sql)
     assert m, "no `emp AS (...)` CTE in payroll_readiness' statement: %s" % sql[:400]
     return m.group("body")
@@ -261,6 +303,106 @@ def test_the_two_bounds_are_deliberately_different_and_this_is_the_note():
     assert bands == "CURRENT_DATE" and readiness == "b.month_start", (
         "the two bounds are %r and %r; they are not interchangeable — read the "
         "module docstring before making them agree" % (bands, readiness))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Offline — the extraction itself, because the live half cannot run in CI
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The live half below skips without a database, so it skips in CI, so between
+# 2026-08-26 and 2026-08-27 it was red on staging and nobody saw it. The cause
+# was not the product: `norm()` joined every line of `payroll_readiness`' SQL
+# into one, and `--` runs to the end of a LINE, so the first comment swallowed
+# the remaining ~6.8kB of statement. Postgres saw `WITH bounds AS (...),` and
+# said `syntax error at end of input` — a message that names nothing, which is
+# why it read like a schema problem after a table drop.
+#
+# These four run WITHOUT a database and fail if that happens again. They are
+# not a substitute for the live parse — only a real PREPARE resolves relations
+# and column types, and no offline check can do that — but they catch the
+# whole class of extraction drift that made the live half unrunnable.
+
+def test_the_extraction_does_not_comment_out_the_statement_it_extracts():
+    """The exact bug. Red if `norm` ever goes back to `" ".join(sql.split())`.
+
+    Both halves of the assertion matter: the handler must still be carrying
+    `--` comments (otherwise this passes vacuously against SQL that has none),
+    and the extracted form must have none left.
+    """
+    import inspect
+
+    from services.skills.data import payroll_readiness
+
+    raw = inspect.getsource(payroll_readiness.check_payroll_readiness)
+    assert "\n" in raw and "        --" in raw, (
+        "payroll_readiness' SQL no longer carries line comments, so this guard "
+        "is vacuous — either it moved, or the comments did")
+
+    for name, sql in (("salary_bands", bands_sql()),
+                      ("payroll_readiness", readiness_sql())):
+        assert "--" not in sql, (
+            "%s' extracted SQL still contains a line comment after "
+            "normalisation. Every character after it is commented out on one "
+            "line, and PREPARE fails with `syntax error at end of input`: %s"
+            % (name, sql[sql.index("--"):sql.index("--") + 200]))
+
+
+def test_the_extracted_statements_are_whole():
+    """A truncated statement passes every substring assertion above it.
+
+    Cheap structural proof that nothing was eaten: the last clause is still
+    there, and the parentheses balance outside string literals.
+    """
+    def depth(sql: str) -> int:
+        d, in_str = 0, False
+        for c in sql:
+            if in_str:
+                in_str = c != "'"
+            elif c == "'":
+                in_str = True
+            elif c == "(":
+                d += 1
+            elif c == ")":
+                d -= 1
+            assert d >= 0, "unbalanced ')' in %s" % sql[:200]
+        return d
+
+    bands, readiness = bands_sql(), readiness_sql()
+    assert bands.endswith("ELSE 5 END"), bands[-120:]
+    assert readiness.endswith("LIMIT $3"), (
+        "payroll_readiness' statement does not end in its LIMIT — it was "
+        "truncated during extraction: %s" % readiness[-200:])
+    assert depth(bands) == 0 and depth(readiness) == 0
+
+
+def test_the_pre_fix_reconstructions_are_whole_too():
+    """`strip_exit_guard` is what the live comparison runs as "before".
+
+    If it removed a paren too many the live tests would skip as a connection
+    problem, not fail — the same silence that hid the bug above.
+    """
+    for name, sql in (("salary_bands", bands_sql()),
+                      ("payroll_readiness", readiness_sql())):
+        before = strip_exit_guard(sql)
+        assert "manav_offboarding" not in before, (
+            "%s' pre-fix form still mentions the offboarding table, so the "
+            "live comparison compares the fixed query with itself" % name)
+        assert before.count("(") == before.count(")"), name
+        assert len(sql) - len(before) < 260, (
+            "%s: stripping the guard removed %d characters, far more than the "
+            "guard is long — the regex is eating the query around it"
+            % (name, len(sql) - len(before)))
+
+
+def test_line_comments_are_stripped_but_string_literals_are_not():
+    """The normaliser's own two edge cases, both present in the real SQL.
+
+    An apostrophe inside a comment ("the run's roster") must not open a string
+    literal, and a `--` inside a literal must not open a comment.
+    """
+    assert norm("SELECT 1 -- the run's roster\n, 2") == "SELECT 1 , 2"
+    assert norm("SELECT '--x' -- gone\n, 2") == "SELECT '--x' , 2"
+    assert norm("SELECT '''a''' -- gone\n, 2") == "SELECT '''a''' , 2"
 
 
 # ══════════════════════════════════════════════════════════════════════════

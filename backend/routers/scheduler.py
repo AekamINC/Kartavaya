@@ -779,38 +779,54 @@ async def run_marketing(x_cron_secret: str = Header("")):
 async def run_reports(x_cron_secret: str = Header("")):
     """NOT IMPLEMENTED — 501, and the job you want is at a different URL.
 
-    `report_skills.execute_scheduled_reports` was never written. The equivalent
-    for the older team-scoped schedules DOES exist and is complete:
-    `POST /api/reports/dispatch` (`routers/reports.py:dispatch_reports`) reads
-    `public.report_schedules WHERE next_run_at <= now`, renders the PDF and
-    Excel, mails every recipient inside an `org_scope`, and advances
-    `next_run_at`. It has its own secret, REPORT_DISPATCH_SECRET, and its own
-    docstring says "called hourly by Railway cron" — and no Railway cron calls
-    it. That is the report cron this product needs and it needs scheduling, not
-    rewriting.
+    `report_skills.execute_scheduled_reports` was never written.
 
-    The newer per-org `staging.dristi_scheduled_reports` (7 rows live) NOW HAS
-    ITS OWN SWEEP — `POST /api/v1/dristi/scheduled-reports/dispatch`, with the
-    due-rule in `services/report_schedule_window.py`, its own arming variable
-    (`DRISTI_REPORT_SWEEP_ARMED`) and a per-tick entitlement re-check. It is
-    also unscheduled. So: two scheduled-report systems, two dispatchers, no
-    timer on either.
+    ── WHAT THIS DOCSTRING USED TO SAY, AND WHY IT WAS WRONG ─────────────────
 
-    Reimplementing dispatch here would make a THIRD, over a table that already
-    has one, and two dispatchers walking one table is worse than none — they
-    would each mark the other's send as not-yet-sent for the length of a race.
-    It refuses instead and names where to look.
+    It described TWO scheduled-report systems and claimed neither was
+    scheduled. Both halves of that were false, in opposite directions, and the
+    measurement on 2026-08-27 is the reason this whole note was rewritten:
+
+        public.report_schedules            0 rows   CRON ARMED HOURLY
+        staging.dristi_scheduled_reports   7 rows   never ran
+
+    An hourly Railway cron WAS calling `POST /api/reports/dispatch` over an
+    EMPTY table, while seven schedules real people had configured sat unsent.
+    Recommending that somebody schedule the first one — as this docstring did —
+    would have added a second timer to the job that was already running and
+    left the one that mattered untouched.
+
+    ── WHAT IS TRUE NOW ──────────────────────────────────────────────────────
+
+    `public.report_schedules` is RETIRED (owner, 2026-08-27). Its CRUD and its
+    `POST /api/reports/dispatch` dispatcher are deleted from
+    `routers/reports.py`, its bootstrap DDL is deleted from `server.py`, and the
+    table is being dropped. `REPORT_DISPATCH_SECRET` now authenticates nothing.
+
+    ONE scheduled-report system remains, and it is per-org:
+    `POST /api/v1/dristi/scheduled-reports/dispatch` over
+    `staging.dristi_scheduled_reports` — due-rule in
+    `services/report_schedule_window.py`, `CRON_SECRET` in the `X-Cron-Secret`
+    header, armed by `DRISTI_REPORT_SWEEP_ARMED`, with a per-tick entitlement
+    re-check against the schedule's owner. That is the report cron this product
+    needs and it needs scheduling, not rewriting.
+
+    Reimplementing dispatch here would make a SECOND dispatcher over that one
+    table, which is worse than none — two sweeps walking one table each treat
+    the other's in-flight send as not-yet-sent for the length of the race, and
+    the customer gets the report twice. It refuses instead and names where to
+    look.
     """
     await _verify_cron(x_cron_secret)
     raise _not_built(
         "reports",
         "services.skills.report_skills.execute_scheduled_reports was never written",
-        "Do not rebuild it here. POST /api/reports/dispatch already dispatches "
-        "public.report_schedules in full and needs only a Railway cron and its "
-        "own REPORT_DISPATCH_SECRET. Separately, staging.dristi_scheduled_reports "
-        "has its own sweep at POST /api/v1/dristi/scheduled-reports/dispatch, "
-        "which also needs only a cron and its DRISTI_REPORT_SWEEP_ARMED flag. "
-        "Both tables are dispatched; neither is scheduled. Do not write a third.",
+        "Do not rebuild it here, and do not resurrect POST /api/reports/dispatch "
+        "— public.report_schedules is retired and that dispatcher is deleted. "
+        "The one scheduled-report job is POST /api/v1/dristi/scheduled-reports/"
+        "dispatch over staging.dristi_scheduled_reports, which needs only a "
+        "Railway cron and DRISTI_REPORT_SWEEP_ARMED. One table, one dispatcher, "
+        "one timer. Do not write a second.",
     )
 
 

@@ -26,9 +26,20 @@ same status audit, written over and over. Do not add a proposal 91.
 
 ## The one dangerous fact
 
-**Staging and production share a single Supabase database.** Only the
-`staging` and `public` schemas exist, and production writes to `staging` too —
-so every migration and every write-path probe touches production data.
+**Staging and production share a single Supabase database.** Production writes
+to `staging` too — so every migration and every write-path probe touches
+production data.
+
+⚠ **"Only `staging` and `public` exist" was wrong** and cost a day: a `42P01`
+from a schema-qualified query is a fact about **that schema only**, and closing
+Phase 6.4 on one is exactly how `public.report_schedules` was declared missing
+while it had a CRUD and an armed hourly cron. Measured 2026-08-27, there are
+**fourteen**: `staging` and `public` are the product's two; `auth`,
+`extensions`, `graphql`, `graphql_public`, `realtime`, `storage`,
+`supabase_migrations` and `vault` are Supabase's own; and
+`dead_tables_20260822`, `ledger_repair_20260826`, `tenancy_195_backup` and
+`payroll_smallrun_20260827` are restore points from approved changes. **Check
+both product schemas before calling anything missing.**
 
 - Never test validation by writing to the live DB.
 - Before trusting any live probe, confirm which SHA the service is actually
@@ -39,8 +50,11 @@ so every migration and every write-path probe touches production data.
 ## Commands
 
 - **Backend tests: run from `backend/`, never the repo root.** The root
-  invocation reports ~58 spurious failures; from `backend/` the suite is
-  ~5,200 green. `cd backend && python -m pytest -q`.
+  invocation reports ~58 spurious failures. From `backend/` the suite collects
+  **15,127** tests (measured 2026-08-27 — this line said "~5,200 green" until
+  then, which was roughly a third of the real number). `cd backend && python -m
+  pytest -q`. ⚠ **The full local run HANGS after a heavy session** — no output,
+  40+ minutes. Run targeted files and let CI be the full check.
 - **Frontend:** `npm run check` for the gate suite — but it exits 0 on
   unparseable CSS, so run `npm run build` before pushing style changes.
   Playwright e2e lives in `frontend/e2e-real` (creds in `.env.e2e`).

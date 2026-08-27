@@ -515,9 +515,28 @@ async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depe
         await run("UPDATE approvals SET requested_by=NULL WHERE requested_by=$1", user_id)
         await run("UPDATE approvals SET approved_by=NULL   WHERE approved_by=$1",  user_id)
 
-    # ── Report schedules ──────────────────────────────────────────────────────
-    if r: await run("UPDATE report_schedules SET created_by=$1 WHERE created_by=$2", r, user_id)
-    else: await run("DELETE FROM report_schedules              WHERE created_by=$1",    user_id)
+    # ── Report schedules — REMOVED, the table is retired ──────────────────────
+    #
+    # These two ran `UPDATE report_schedules` / `DELETE FROM report_schedules`
+    # UNQUALIFIED, resolving through `search_path` ("$user", public, extensions
+    # — read live 2026-08-27) to `public.report_schedules`. That table is retired
+    # (owner, 2026-08-27) and is being dropped, so both statements would raise
+    # 42P01 undefined_table on every user deletion from the moment the DROP
+    # lands.
+    #
+    # They would not have BROKEN deletion — `run()` above swallows every
+    # exception on purpose, so the failure would have been invisible rather than
+    # loud, which is worse: a permanent, silent 42P01 on the user-deletion path
+    # that nobody would find until they went looking for something else.
+    #
+    # Nothing replaces them. The surviving scheduled-report table,
+    # `staging.dristi_scheduled_reports`, is org-scoped and its `created_by` is
+    # deliberately NOT reassigned on user deletion: the sweep re-checks the
+    # OWNER'S module entitlements on every tick
+    # (`services/report_schedule_window.py:blocked_reason`), so moving ownership
+    # to whoever inherits the leaver's work would silently re-authorise a
+    # schedule the leaver could no longer run. A dangling `created_by` makes the
+    # sweep skip the row and say why, which is the correct outcome.
 
     # ── Automations ───────────────────────────────────────────────────────────
     if r: await run("UPDATE automations SET created_by=$1 WHERE created_by=$2", r, user_id)

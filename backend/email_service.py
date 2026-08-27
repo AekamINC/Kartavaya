@@ -1235,10 +1235,26 @@ def send_report_email(
 
     `org_id` IS FOR THE OUTBOUND RECORD AND CHANGES NOTHING ABOUT WHAT IS SENT.
 
-    This is the scheduled-report path: `routers/reports.py:dispatch_reports`
-    loops over `report_schedules` from an hourly Railway cron. There is no
-    request underneath it, so the ContextVar `outbound.begin()` normally reads
-    the org from is unset, and every report row lands with `org_id = NULL` —
+    NO CRON CALLS THIS ANY MORE, AND THAT IS DELIBERATE. This was the
+    scheduled-report path: `routers/reports.py:dispatch_reports` looped over
+    `public.report_schedules` from an hourly Railway cron. That table is retired
+    (owner, 2026-08-27), the dispatcher is deleted, and the cron is being
+    unpointed — it was sweeping an EMPTY table every hour while the seven live
+    schedules in `staging.dristi_scheduled_reports` had never dispatched once.
+    The surviving sweep is `routers/dristi.py:dispatch_scheduled_reports`, which
+    renders through `services/module_report` and mails via `send_email`, not
+    through this function.
+
+    So this sender is now reached only by `scripts/preview_emails.py`. It is
+    kept, not deleted, because it is the only renderer in the product that mails
+    a PDF+XLSX report as SES raw MIME, and the team-scoped report itself was not
+    retired — only its scheduler was. Deleting it would mean rewriting it if
+    team reports are ever mailed again. Anything wiring it back up must supply
+    `org_id` explicitly; see below.
+
+    THE ORG PROBLEM THIS PARAMETER EXISTS FOR. Run from a timer there is no
+    request underneath, so the ContextVar `outbound.begin()` normally reads the
+    org from is unset, and every report row lands with `org_id = NULL` —
     invisible to `WHERE org_id = $1::uuid`, which is how every org-scoped read
     of `staging.outbound_log` is written (routers/billing.py).
 
@@ -1249,13 +1265,11 @@ def send_report_email(
     NULL, exactly as `services/expo_push_service.send_expo_push` and
     `services/web_push_service.send_web_push` handle theirs.
 
-    THE CALLER STILL HAS TO SAY. `dispatch_reports` already holds the schedule's
-    `team_id` and `teams.org_id` has existed since migration 028, so it is one
-    join and one argument away — either `org_id=` here, or the whole loop body
-    inside `with outbound.org_scope(org_id):`, which also covers anything else
-    that iteration sends. Until that lands, this path is honestly NULL rather
-    than quietly wrong. That file belongs to another change; this parameter is
-    the half that lives here.
+    THE CALLER STILL HAS TO SAY. Nothing is derived here, and a future caller
+    must pass `org_id=` or wrap the send in `with outbound.org_scope(org_id):`.
+    `dispatch_reports` did the latter, per schedule; it is gone, but the
+    requirement is not — a send from this function with neither is an outbound
+    row no org can ever see.
 
     There is deliberately no `user_id`. 098: "NULL for a system send: the cron
     that mails a report". Nobody clicked this.

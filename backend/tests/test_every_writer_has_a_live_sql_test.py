@@ -116,8 +116,23 @@ UNCOVERED = {
     # recorded here rather than absorbed. If a fourth name ever appears without
     # a paragraph like this one beside it, that is the rot this ratchet exists
     # to prevent.
-    "org_invites", "reports", "templates",
-    # 32 remain.
+    "org_invites", "templates",
+    #
+    # ── AND THE ONE THAT LEFT BY BEING DELETED, 2026-08-27 ───────────────────
+    #
+    # `reports` came off the SAME DAY it went on. It was baselined because the
+    # widened lens finally saw its writes to `public.report_schedules`; hours
+    # later the owner retired that table, and the CRUD and the `POST /dispatch`
+    # that made those writes were deleted from `routers/reports.py`. The router
+    # now only reads, so it is not an untested writer — it is not a writer.
+    #
+    # This is the ratchet doing its job in the cheapest possible direction, and
+    # it is worth naming: the reason `reports` was visible to be deleted at all
+    # is that widening the lens put it on this list. A name may only leave here
+    # by gaining a live-SQL test or by ceasing to write. This one did the
+    # second. See `tests/test_report_retirement.py`.
+    #
+    # 31 remain.
 }
 
 

@@ -459,13 +459,38 @@ async def test_armed_sweep_is_still_gated_on_the_arming_variable(monkeypatch):
     pool.fetch = AsyncMock(side_effect=_fetch)
     pool.fetchrow = AsyncMock(return_value=_row())
     pool.execute = AsyncMock()
-    pool.fetchval = AsyncMock(return_value=0)
+
+    # ORDER OF OPERATIONS, RECORDED. `fetchval` cannot be a blanket value any
+    # more: the sweep CLAIMS the row with one before it mails, and the metric
+    # widgets read scalars with the same method. A blanket 0 answered the claim
+    # with "somebody else took this row" and the sweep correctly sent nothing —
+    # a fake pool making a correct dispatcher look broken, which is the same
+    # class of mistake as one making a broken query look fine.
+    #
+    # So the claim is answered by query, and the fact that it happened is
+    # recorded in `order` alongside the send. The assertion below is the
+    # behavioural half of `tests/test_report_retirement.py`: that file reads the
+    # source, this one watches the calls.
+    order = []
+
+    async def _fetchval(q, *a):
+        if "UPDATE staging.dristi_scheduled_reports" in q:
+            order.append("claim")
+            return "11111111-1111-1111-1111-111111111111"
+        return 0
+
+    pool.fetchval = AsyncMock(side_effect=_fetchval)
 
     sent_mail = []
+
+    def _send(**kw):
+        order.append("send")
+        sent_mail.append(kw)
+
     with patch.object(d, "get_pool", AsyncMock(return_value=pool)), \
          patch.object(d, "reachable_modules", AsyncMock(return_value={"graha"})), \
          patch.object(d, "_fetch_report_data", AsyncMock(return_value={"stages": []})), \
-         patch("email_service.send_email", side_effect=lambda **kw: sent_mail.append(kw)):
+         patch("email_service.send_email", side_effect=_send):
         out = await d.dispatch_scheduled_reports(
             x_cron_secret="unit-test-cron-secret-0123456789")
 
@@ -476,6 +501,44 @@ async def test_armed_sweep_is_still_gated_on_the_arming_variable(monkeypatch):
     assert "<pre>" not in sent_mail[0]["html_content"]
     # last_sent_at advanced, so the next tick is a no-op for this slot.
     assert any("last_sent_at" in str(c) for c in pool.execute.await_args_list)
+    # The row was CLAIMED before a single address was mailed. Reversed, a
+    # failure on the second of three recipients re-mails the first next tick,
+    # and OUTBOUND_MODE has been live since 2026-08-18.
+    assert order == ["claim", "send"], order
+
+
+@pytest.mark.asyncio
+async def test_a_row_another_tick_already_claimed_is_not_mailed(monkeypatch):
+    """The other half of the claim: when the conditional UPDATE matches nothing,
+    this tick must skip the schedule entirely rather than mail it anyway.
+
+    Two ticks can overlap — the sweep renders and mails every org's reports and
+    can outlive its own interval — and both read the same due row from the
+    listing query. Exactly one may send it.
+    """
+    monkeypatch.setenv("CRON_SECRET", "unit-test-cron-secret-0123456789")
+    monkeypatch.setenv("DRISTI_REPORT_SWEEP_ARMED", "true")
+
+    from routers import dristi as d
+
+    pool = MagicMock()
+    pool.fetch = AsyncMock(return_value=[_row()])
+    pool.fetchrow = AsyncMock(return_value=_row())
+    pool.execute = AsyncMock()
+    # The claim matched no row: another tick moved `last_sent_at` first.
+    pool.fetchval = AsyncMock(return_value=None)
+
+    sent_mail = []
+    with patch.object(d, "get_pool", AsyncMock(return_value=pool)), \
+         patch.object(d, "reachable_modules", AsyncMock(return_value={"graha"})), \
+         patch("email_service.send_email", side_effect=lambda **kw: sent_mail.append(kw)):
+        out = await d.dispatch_scheduled_reports(
+            x_cron_secret="unit-test-cron-secret-0123456789")
+
+    assert out["armed"] is True
+    assert out["sent"] == 0
+    assert sent_mail == [], "a schedule another tick claimed was mailed anyway"
+    assert out["due"] == 1, "it was due — it was skipped at the claim, not at is_due"
 
 
 @pytest.mark.asyncio

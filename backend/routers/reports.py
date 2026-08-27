@@ -3,130 +3,60 @@
 Endpoints:
   GET  /api/reports/data/{team_id}           — fetch report data (time + tasks)
   GET  /api/reports/download/{team_id}       — stream PDF or Excel on-demand
-  GET  /api/reports/schedules/{team_id}      — list schedules for a project
-  POST /api/reports/schedules/{team_id}      — create schedule
-  DELETE /api/reports/schedules/{schedule_id} — delete schedule
-  POST /api/reports/dispatch                 — cron endpoint (Railway cron calls this hourly)
+
+── `public.report_schedules` IS RETIRED (owner's decision, 2026-08-27) ────────
+
+This router used to carry a second, TEAM-scoped scheduled-report system: a
+CRUD at `/schedules/...` and an hourly `POST /dispatch` that walked
+`public.report_schedules`. All of it is gone, and the table is being dropped.
+
+WHY, measured live on 2026-08-27:
+
+    public.report_schedules            0 rows   dispatcher complete   CRON ARMED HOURLY
+    staging.dristi_scheduled_reports   7 rows   dispatcher complete   never scheduled
+
+An empty table was being swept every hour while seven schedules real people
+configured had never dispatched once. Two scheduled-report systems is one more
+than this product can keep correct — `services/report_schedule_window.py`
+already records that `_next_run` here compared a JavaScript `getDay()` integer
+(0 = Sunday) against Python's `weekday()` (0 = Monday), so every weekly
+schedule this system ever ran would have fired a day late. That defect was
+invisible only because the table was empty.
+
+The surviving system is the per-org one:
+`POST /api/v1/dristi/scheduled-reports/dispatch` over
+`staging.dristi_scheduled_reports`, due-rule in
+`services/report_schedule_window.py`, armed by `DRISTI_REPORT_SWEEP_ARMED`.
+Do not rebuild a team-scoped scheduler here. If team-level scheduling is wanted
+again it belongs in that table, behind that one dispatcher.
+
+DELETED WITH IT: `ScheduleCreate`, `_next_run`, `_assert_project_owner` (its
+only callers were the three schedule endpoints) and `REPORT_DISPATCH_SECRET`,
+which now authenticates nothing and should be removed from Railway.
 """
 import io
-import json
 import logging
-import os
 import re
-import uuid
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, field_validator, EmailStr
-from typing import Optional as _Optional
 
 from auth_router import (
     require_user,
     _decode_token as _auth_decode,  # noqa: F401 — kept for callers/tests
-    resolve_token_user_id as _auth_resolve,
 )
 from db import get_pool
 from services.audit_actors import display_name
 from utils import log_safe as _log_safe
-
-_dispatch_bearer = HTTPBearer(auto_error=False)
 
 _DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
-DISPATCH_SECRET = os.environ.get("REPORT_DISPATCH_SECRET", "")
-if not DISPATCH_SECRET:
-    logger.warning(
-        "REPORT_DISPATCH_SECRET is not set — dispatch endpoint is protected by admin auth only. "
-        "Set this env var in production to add a second layer of protection."
-    )
-elif len(DISPATCH_SECRET) < 32:
-    logger.warning(
-        "REPORT_DISPATCH_SECRET is too short (%d chars) — use a random secret of at least 32 "
-        "characters in production (e.g. openssl rand -hex 32).",
-        len(DISPATCH_SECRET),
-    )
-
-
-# ── Models ─────────────────────────────────────────────────────────────────────
-
-_VALID_FREQUENCIES   = {"daily", "weekly", "monthly"}
-_VALID_FILE_FORMATS  = {"pdf", "excel"}
-
-
-class ScheduleCreate(BaseModel):
-    frequency:     str           # daily | weekly | monthly
-    file_formats:  List[str]     # ["pdf"] | ["excel"] | ["pdf","excel"]
-    recipients:    List[EmailStr]  # validated email addresses
-    day_of_week:   Optional[int] = None   # 0–6 (weekly)
-    day_of_month:  Optional[int] = None   # 1–28 (monthly)
-    send_hour_utc: int = 2
-
-    @field_validator("frequency")
-    @classmethod
-    def validate_frequency(cls, v: str) -> str:
-        if v not in _VALID_FREQUENCIES:
-            raise ValueError(f"frequency must be one of {sorted(_VALID_FREQUENCIES)}")
-        return v
-
-    @field_validator("file_formats")
-    @classmethod
-    def validate_file_formats(cls, v: List[str]) -> List[str]:
-        if not v:
-            raise ValueError("file_formats must not be empty")
-        for fmt in v:
-            if fmt not in _VALID_FILE_FORMATS:
-                raise ValueError(f"file format '{fmt}' must be one of {sorted(_VALID_FILE_FORMATS)}")
-        return v
-
-    @field_validator("recipients")
-    @classmethod
-    def validate_recipients(cls, v: list) -> list:
-        if not v:
-            raise ValueError("recipients must not be empty")
-        return v
-
-    @field_validator("send_hour_utc")
-    @classmethod
-    def validate_send_hour(cls, v: int) -> int:
-        if not 0 <= v <= 23:
-            raise ValueError("send_hour_utc must be between 0 and 23")
-        return v
-
-    @field_validator("day_of_week")
-    @classmethod
-    def validate_day_of_week(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and not 0 <= v <= 6:
-            raise ValueError("day_of_week must be between 0 and 6")
-        return v
-
-    @field_validator("day_of_month")
-    @classmethod
-    def validate_day_of_month(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and not 1 <= v <= 28:
-            raise ValueError("day_of_month must be between 1 and 28")
-        return v
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-
-async def _assert_project_owner(pool, team_id: str, user: dict):
-    """Raise 403 unless the user is platform staff or project owner/admin."""
-    from middleware.roles import is_platform_staff
-    if await is_platform_staff(user["user_id"]):
-        return
-    mem = await pool.fetchrow(
-        "SELECT role FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",
-        team_id, user["user_id"]
-    )
-    if not mem or mem["role"] not in ("owner", "admin"):
-        raise HTTPException(403, "Owner or admin required")
-
 
 async def _assert_project_member(pool, team_id: str, user: dict):
     """Raise 403 unless the user is platform staff or any member of the project."""
@@ -139,37 +69,6 @@ async def _assert_project_member(pool, team_id: str, user: dict):
     )
     if not mem:
         raise HTTPException(403, "Project membership required")
-
-
-def _next_run(frequency: str, day_of_week: int, day_of_month: int, send_hour_utc: int) -> datetime:
-    """Calculate the next UTC run time for a report schedule given its frequency settings."""
-    now = datetime.now(timezone.utc)
-    base = now.replace(minute=0, second=0, microsecond=0)
-
-    if frequency == "daily":
-        candidate = base.replace(hour=send_hour_utc)
-        if candidate <= now:
-            candidate += timedelta(days=1)
-        return candidate
-
-    if frequency == "weekly":
-        dow = day_of_week if day_of_week is not None else 1  # Monday default
-        days_ahead = (dow - now.weekday()) % 7
-        if days_ahead == 0 and now.hour >= send_hour_utc:
-            days_ahead = 7
-        candidate = (base + timedelta(days=days_ahead)).replace(hour=send_hour_utc)
-        return candidate
-
-    # monthly
-    dom = day_of_month if day_of_month else 1
-    candidate = base.replace(day=min(dom, 28), hour=send_hour_utc)
-    if candidate <= now:
-        # advance one month
-        if candidate.month == 12:
-            candidate = candidate.replace(year=candidate.year + 1, month=1)
-        else:
-            candidate = candidate.replace(month=candidate.month + 1)
-    return candidate
 
 
 async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -> dict:
@@ -440,255 +339,3 @@ async def download_report(
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
-
-
-@router.get("/schedules/{team_id}")
-async def list_schedules(
-    team_id: str,
-    pool=Depends(get_pool),
-    user=Depends(require_user),
-):
-    """Return all report schedules for the given project."""
-    await _assert_project_owner(pool, team_id, user)
-    rows = await pool.fetch(
-        "SELECT * FROM public.report_schedules WHERE team_id=$1 ORDER BY created_at DESC",
-        team_id,
-    )
-    return [dict(r) for r in rows]
-
-
-@router.post("/schedules/{team_id}")
-async def create_schedule(
-    team_id: str,
-    payload: ScheduleCreate,
-    pool=Depends(get_pool),
-    user=Depends(require_user),
-):
-    """Create a new report schedule for a project."""
-    await _assert_project_owner(pool, team_id, user)
-
-    # Validation is now handled by ScheduleCreate field validators; no manual checks needed.
-
-    next_run = _next_run(
-        payload.frequency, payload.day_of_week,
-        payload.day_of_month, payload.send_hour_utc
-    )
-    schedule_id = f"sched_{uuid.uuid4().hex[:12]}"
-    _org = await pool.fetchval(
-        "SELECT org_id::text FROM public.teams WHERE team_id=$1", team_id)
-    row = await pool.fetchrow("""
-        INSERT INTO public.report_schedules
-          (schedule_id, team_id, created_by, frequency, file_formats, recipients,
-           day_of_week, day_of_month, send_hour_utc, next_run_at, org_id)
-        VALUES ($1,$2,$3,$4,$5::text[],$6::text[],$7,$8,$9,$10,$11::uuid)
-        RETURNING *
-    """,
-        schedule_id, team_id, user["user_id"],
-        payload.frequency, payload.file_formats, payload.recipients,
-        payload.day_of_week, payload.day_of_month, payload.send_hour_utc, next_run, _org,
-    )
-    return dict(row)
-
-
-@router.delete("/schedules/{schedule_id}")
-async def delete_schedule(
-    schedule_id: str,
-    pool=Depends(get_pool),
-    user=Depends(require_user),
-):
-    """Delete a report schedule by ID."""
-    row = await pool.fetchrow(
-        "SELECT team_id FROM public.report_schedules WHERE schedule_id=$1", schedule_id
-    )
-    if not row:
-        raise HTTPException(404)
-    await _assert_project_owner(pool, row["team_id"], user)
-    await pool.execute("DELETE FROM public.report_schedules WHERE schedule_id=$1", schedule_id)
-    return {"ok": True}
-
-
-@router.post("/dispatch")
-async def dispatch_reports(
-    request: Request,
-    request_secret: str = Query(""),
-    x_dispatch_secret: str = Header(""),
-    pool = Depends(get_pool),
-    credentials: _Optional[HTTPAuthorizationCredentials] = Depends(_dispatch_bearer),
-):
-    """Called hourly by Railway cron. Accepts REPORT_DISPATCH_SECRET OR an admin JWT.
-
-    Cron callers (no session): send the secret in the `X-Dispatch-Secret` HEADER.
-    Manual callers (browser/admin): supply a valid admin Bearer token.
-
-    `?request_secret=` still works so an already-configured cron keeps running,
-    but it is deprecated: a secret in a query string is written to every access
-    log, proxy log and platform request log the request passes through, and
-    those outlive and out-scope the secret itself.
-    """
-    from utils import secret_matches
-
-    authorized = False
-    # Constant-time, header preferred. `==` leaked how many leading bytes of the
-    # secret were correct via response timing.
-    if (secret_matches(x_dispatch_secret, DISPATCH_SECRET)
-            or secret_matches(request_secret, DISPATCH_SECRET)):
-        authorized = True
-    else:
-        # Fall back to admin JWT check
-        token = credentials.credentials if credentials else request.cookies.get("session_token")
-        if token:
-            # `resolve_token_user_id`, not `_auth_decode`: this is the ONE
-            # authenticated path in the product that does not run through
-            # `require_user`, so a plain signature-and-expiry decode here would
-            # be the single hole in password-reset session revocation. It reads
-            # the same cutoff `require_user` reads.
-            user_id = await _auth_resolve(token)
-            if user_id:
-                # Platform staff, not org admin: this dispatches scheduled
-                # reports across every team, so it is a system operation.
-                from middleware.roles import is_platform_staff
-                if await is_platform_staff(user_id):
-                    authorized = True
-    if not authorized:
-        raise HTTPException(403, "Provide REPORT_DISPATCH_SECRET or an admin JWT")
-
-    now = datetime.now(timezone.utc)
-    # `t.org_id` comes along so each report can be filed against the org that
-    # asked for it. This runs on a timer with no request behind it, so the
-    # ContextVar `outbound.begin()` normally reads is unset and every scheduled
-    # report would otherwise land in the log under NULL — invisible on
-    # `/me/outbound` and `/orgs/{id}/outbound` for every org, forever.
-    #
-    # From `teams.org_id`, deliberately, not from `organisations.team_id`: an
-    # org has MANY teams and names one primary, so the backlink answers a
-    # different question and is NULL for every other team. Verified against the
-    # live catalogue — all 34 teams resolve, none disagrees.
-    #
-    # NULL stays NULL. Eight teams have no org, and an unattributed row is the
-    # honest answer there; a guessed org on a table support reads is worse.
-    due = await pool.fetch("""
-        SELECT rs.*, t.name AS team_name, t.org_id AS team_org_id
-        FROM public.report_schedules rs
-        JOIN public.teams t ON t.team_id = rs.team_id
-        WHERE rs.is_active = TRUE AND rs.next_run_at <= $1
-    """, now)
-
-    sent = 0
-    errors = []
-
-    for sched in due:
-        try:
-            # ── CLAIM IT BEFORE SENDING, NOT AFTER ──────────────────────────
-            #
-            # `next_run_at` used to move only AFTER every recipient had been
-            # mailed, inside the same `try`. Two ways that sends a customer's
-            # client the same report twice:
-            #
-            #   · A schedule with three recipients where the second address
-            #     bounces at the SMTP layer. The exception skips the UPDATE, the
-            #     row is still due, and the next hour mails all three again —
-            #     including the one that already received it.
-            #   · The container dying between the send and the UPDATE. Railway
-            #     restarts it; the row is still due.
-            #
-            # And a third that arrives with scale rather than with failure: this
-            # runs every hour on a schedule that can take minutes, so two
-            # invocations can overlap, and both would read the same due row.
-            #
-            # `OUTBOUND_MODE=live` since 2026-08-18, so all three send real mail
-            # to a customer's clients.
-            #
-            # So the row is CLAIMED first: `next_run_at` moves forward in a
-            # conditional UPDATE that only takes if the row is still due. A
-            # second worker's UPDATE matches nothing and it skips. This is the
-            # ordinary claim pattern and it is why the predicate repeats
-            # `next_run_at <= $3` rather than trusting the SELECT above.
-            #
-            # THE TRADE, STATED: a send that fails is now SKIPPED rather than
-            # retried — the schedule has already moved on. That is deliberate
-            # for outbound mail. A missed report is visible and recoverable: the
-            # next one covers a longer window, and the schedules panel shows
-            # `last_sent_at` standing still. A duplicate is neither — it is
-            # already in somebody's client's inbox, and no amount of retrying
-            # takes it back.
-            next_run = _next_run(
-                sched["frequency"], sched["day_of_week"],
-                sched["day_of_month"], sched["send_hour_utc"],
-            )
-            claimed = await pool.fetchval("""
-                UPDATE public.report_schedules
-                   SET next_run_at=$2, updated_at=NOW()
-                 WHERE schedule_id=$1 AND next_run_at <= $3
-             RETURNING schedule_id
-            """, sched["schedule_id"], next_run, now)
-            if not claimed:
-                # Another invocation took it between our SELECT and here.
-                logger.info(
-                    "Report schedule %s was already claimed; skipping",
-                    _log_safe(sched["schedule_id"]),
-                )
-                continue
-
-            # Determine period for this report
-            freq = sched["frequency"]
-            if freq == "daily":
-                from_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-                to_date   = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-            elif freq == "weekly":
-                from_date = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-                to_date   = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-            else:  # monthly
-                from_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-                to_date   = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-
-            data      = await _fetch_report_data(pool, sched["team_id"], from_date, to_date)
-            team_name = sched["team_name"]
-            fmts      = sched["file_formats"] or ["pdf"]
-
-            pdf_bytes   = None
-            excel_bytes = None
-            if "pdf" in fmts:
-                from services.report_generator import generate_pdf
-                pdf_bytes = generate_pdf(data, team_name, from_date, to_date)
-            if "excel" in fmts:
-                from services.report_generator import generate_excel
-                excel_bytes = generate_excel(data, team_name, from_date, to_date)
-
-            from email_service import send_report_email
-            # Scoped per schedule, not once around the loop: this cron walks
-            # every team in the product, so a scope set once would file every
-            # report after the first under the previous org — which is worse
-            # than the NULL it replaces, because it reads as a fact.
-            from outbound import org_scope
-            with org_scope(sched["team_org_id"]):
-                for recipient in (sched["recipients"] or []):
-                    send_report_email(
-                        to_email=recipient,
-                        team_name=team_name,
-                        frequency=freq,
-                        period_from=from_date,
-                        period_to=to_date,
-                        data_summary=data.get("tasks", {}),
-                        total_minutes=data.get("total_minutes", 0),
-                        pdf_bytes=pdf_bytes,
-                        excel_bytes=excel_bytes,
-                        by_member_tasks=data.get("by_member_tasks", []),
-                        daily_throughput=data.get("daily_throughput", []),
-                    )
-
-            # `next_run_at` already moved, at the claim. This records only that
-            # the send SUCCEEDED — which is what the schedules panel shows, and
-            # what tells an operator the difference between "sent" and "was due
-            # and did not go".
-            await pool.execute("""
-                UPDATE public.report_schedules
-                SET last_sent_at=$1, updated_at=NOW()
-                WHERE schedule_id=$2
-            """, now, sched["schedule_id"])
-            sent += 1
-            logger.info("Report dispatched: %s", _log_safe(sched['schedule_id']))
-        except Exception as exc:
-            logger.error("Report dispatch failed for %s: %s", _log_safe(sched['schedule_id']), _log_safe(exc), exc_info=True)
-            errors.append(str(sched["schedule_id"]))
-
-    return {"ok": True, "dispatched": sent, "errors": errors}

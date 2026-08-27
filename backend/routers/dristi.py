@@ -1158,19 +1158,20 @@ async def dispatch_scheduled_reports(
 ):
     """Cron sweep over `staging.dristi_scheduled_reports`. Every org, one tick.
 
-    NOT the same job as `POST /api/reports/dispatch`, and not a duplicate of it.
-    That one walks `public.report_schedules`, which is keyed on `team_id`,
-    carries `next_run_at`, and renders a TEAM TIME-TRACKING report — time
-    entries, per-member task counts, daily throughput — into a purpose-built
-    PDF/Excel mail. This one walks a table keyed on `org_id` whose reports are
-    cross-module business figures (invoices, deals, headcount, orders), which
-    are gated per source module and have no PDF renderer at all. They share the
-    word "report" and nothing else: different tenancy key, different source
-    tables, different renderer, different authorisation rule, different
-    scheduling state. Folding either into the other would mean carrying both
-    sets of behaviour behind one `if`, which is two systems wearing one name.
-    What they SHOULD share is one timer and one due-rule, and the due-rule now
-    lives in `services/report_schedule_window.py` for whoever schedules that one.
+    THE ONLY SCHEDULED-REPORT JOB IN THE PRODUCT, since 2026-08-27.
+
+    There used to be a second, `POST /api/reports/dispatch` over
+    `public.report_schedules` — team-scoped, `next_run_at`-driven, rendering a
+    time-tracking PDF. The owner retired it, and the measurement that settled it
+    is worth keeping: that table held 0 rows and had an ARMED HOURLY Railway
+    cron, while this one held 7 rows and had no timer at all. An empty table was
+    swept 24 times a day for weeks while the schedules people actually
+    configured never went out.
+
+    So do not restore it, and do not add a second sweep over THIS table. Two
+    dispatchers walking one table is worse than none — each treats the other's
+    in-flight send as not-yet-sent for the length of the race, and the customer
+    gets the report twice.
 
     Authenticated by CRON_SECRET in the `X-Cron-Secret` header, matching
     `routers/scheduler.py`. Not by a query parameter: a secret in a query string
@@ -1273,6 +1274,64 @@ async def dispatch_scheduled_reports(
             if not full:
                 # Deleted between the two queries. Not an error.
                 continue
+
+            # ── CLAIM THE ROW BEFORE MAILING, NOT AFTER ────────────────────
+            #
+            # `_deliver_scheduled_report` stamps `last_sent_at` only AFTER every
+            # recipient has been mailed, inside the same `try` as the send. That
+            # is correct for `run-now`, where a person is watching and a failure
+            # should leave the schedule untouched. Under a TIMER it is the
+            # duplicate-send bug that `public.report_schedules` already shipped
+            # once and had to be fixed for, in exactly this shape:
+            #
+            #   · A schedule with three recipients where the second address
+            #     fails. The exception skips the stamp, `is_due` still says yes,
+            #     and the next tick mails all three again — including the one
+            #     that already received it.
+            #   · The container dying between the send and the stamp. Railway
+            #     restarts it; the row is still due.
+            #   · Two ticks overlapping. A sweep that renders and mails every
+            #     org's reports can outlive its own interval, and both ticks
+            #     read the same due row.
+            #
+            # `OUTBOUND_MODE` has been `live` since 2026-08-18, so all three
+            # send real mail.
+            #
+            # So the row is CLAIMED here: `last_sent_at` moves in a conditional
+            # UPDATE that takes only if the row still carries the value this
+            # tick read. A second worker's UPDATE matches nothing and it skips.
+            # `IS NOT DISTINCT FROM`, not `=`: six of the seven live rows have
+            # `last_sent_at` NULL, and `NULL = NULL` is NULL, so `=` would claim
+            # nothing on precisely the rows that have never been sent.
+            #
+            # THE TRADE, STATED: a send that fails is now SKIPPED rather than
+            # retried on the next tick. That is deliberate for outbound mail. A
+            # missed report is visible and recoverable — the 'failed' row in
+            # `dristi_report_logs` says so, and the next slot covers a longer
+            # window. A duplicate is neither; it is already in an inbox.
+            #
+            # The helper's own post-send stamp stays. It re-writes
+            # `last_sent_at` a few seconds later on success only, which is what
+            # distinguishes "sent" from "was claimed and did not go" in the log.
+            #
+            # `full` still carries the PRE-claim `last_sent_at`, and the helper
+            # computes its reporting window from that value
+            # (`schedule_window(frequency, last_sent_at)`). Claiming after the
+            # fetch rather than before it is what keeps the window honest —
+            # reversed, every report would cover a zero-length period.
+            claimed = await pool.fetchval(
+                "UPDATE staging.dristi_scheduled_reports "
+                "   SET last_sent_at = NOW() "
+                " WHERE id = $1::uuid "
+                "   AND last_sent_at IS NOT DISTINCT FROM $2::timestamptz "
+                " RETURNING id",
+                str(r["id"]), full["last_sent_at"],
+            )
+            if not claimed:
+                # Another tick took it between our SELECT and here.
+                log.info("Dristi report sweep: %s already claimed, skipping", r["id"])
+                continue
+
             sent += await _deliver_scheduled_report(pool, full)
         except Exception as e:
             # One schedule's failure must not stop the other orgs' reports.

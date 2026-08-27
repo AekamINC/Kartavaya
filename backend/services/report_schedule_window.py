@@ -7,10 +7,13 @@ WHY THIS IS A SEPARATE, PURE MODULE
 `day_of_month` and `time_utc`, and it stores NO `next_run_at`. That is the
 whole reason this file exists.
 
-`public.report_schedules` — the other scheduled-report table in this product —
-DOES have `next_run_at`, so its dispatcher (`routers/reports.py:dispatch_reports`)
-answers "is this due?" with a `WHERE next_run_at <= now` and advances the column
-afterwards. Dristi cannot do that: the column is not there, and adding it means
+`public.report_schedules` — the OTHER scheduled-report table this product used
+to have, retired by the owner on 2026-08-27 — DID have `next_run_at`, so its
+dispatcher answered "is this due?" with a `WHERE next_run_at <= now` and
+advanced the column afterwards. That table, that dispatcher and its hourly cron
+are gone; this module is now the product's ONLY due-rule for a scheduled
+report. Dristi cannot use the `next_run_at` approach: the column is not there,
+and adding it means
 a migration, and a migration that has not been applied yet is a dispatcher that
 crashes on its first tick. So due-ness here is COMPUTED from what the row
 already holds, and the computation lives in a pure function because the pool is
@@ -38,15 +41,17 @@ So the stored integer is JavaScript `Date.getDay()`: 0 = Sunday … 6 = Saturday
 `datetime.weekday()` is 0 = MONDAY … 6 = Sunday. They are not the same scale and
 they disagree about every single day of the week.
 
-This matters beyond bookkeeping. `routers/reports.py:_next_run` compares the
-stored integer directly against `now.weekday()`, and its own comment calls
+This matters beyond bookkeeping, and it is why the retired system is worth
+describing here rather than forgetting. `routers/reports.py:_next_run` compared
+the stored integer directly against `now.weekday()`, and its own comment called
 `day_of_week = 1` the "Monday default" — under `weekday()`, 1 is Tuesday. A
-schedule the user set to Monday would fire on Tuesday, and one set to Sunday
-would fire on Monday. That defect is currently invisible because
-`public.report_schedules` holds ZERO rows and no cron calls its dispatcher, but
-it is the concrete reason the Dristi sweep does not simply import `_next_run`
-and reuse it: "reuse the battle-tested one" would have shipped every Dristi
-weekly report exactly one day late.
+schedule the user set to Monday would have fired on Tuesday, and one set to
+Sunday on Monday. That defect was invisible only because
+`public.report_schedules` held ZERO rows for its entire life, even while an
+hourly Railway cron swept it. It is the concrete reason the Dristi sweep did
+not simply import `_next_run` and reuse it: "reuse the battle-tested one" would
+have shipped every Dristi weekly report exactly one day late, and "battle-
+tested" meant "ran 24 times a day and found nothing".
 
 Conversion, in one place, so there is one place to be wrong:
     js_dow = (dt.weekday() + 1) % 7        # Mon(0)->1 … Sun(6)->0

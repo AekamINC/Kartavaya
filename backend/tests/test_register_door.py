@@ -114,74 +114,28 @@ def test_the_new_department_register_is_in_the_catalogue():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# the dispatch cron, before it is armed
+# the report cron, after the retirement
 # ══════════════════════════════════════════════════════════════════════════
 #
-# `POST /api/reports/dispatch` is finished code that nothing calls. Arming it
-# is safe — `public.report_schedules` holds 0 rows, verified live 2026-08-22,
-# so the first run sends nothing — but a job that only starts working when
-# somebody creates the first schedule is a trap, so these pin the two things
-# that must be true BEFORE a Railway cron points at it.
-
-DISPATCH_SRC = inspect.getsource(reports.dispatch_reports)
-
-#: The same source with comments and the docstring stripped. Several assertions
-#: below are about what the CODE does, and this function's comments quote the
-#: very strings being ruled out ("not from `organisations.team_id`", "`==`
-#: leaked how many leading bytes") — a house style that explains the rejected
-#: alternative by name. Matching against the raw source tests the prose.
-DISPATCH_CODE = chr(10).join(
-    line for line in DISPATCH_SRC.splitlines()
-    if not line.lstrip().startswith("#")
-)
+# This block used to pin the behaviour of `POST /api/reports/dispatch` before
+# somebody armed it. It was armed — hourly, over `public.report_schedules`,
+# which held 0 rows the whole time, while the seven schedules in
+# `staging.dristi_scheduled_reports` never dispatched once. The owner retired
+# that table on 2026-08-27, so the endpoint, its `REPORT_DISPATCH_SECRET`, its
+# `_next_run` and its `server.py` bootstrap DDL are all gone.
+#
+# The assertions did not die with it. Every one of them — claim before send,
+# org scope inside the loop, one failure not stopping the run — was a lesson
+# about dispatching mail from a timer, and the timer moved rather than
+# disappeared. They now live against the surviving sweep in
+# `tests/test_report_retirement.py`.
 
 
-def test_every_dispatched_report_carries_the_org_it_was_sent_for():
-    """A report mailed with no org attached is mail nobody can bill and
-    nobody can trace.
-
-    `outbound.begin()` reads a ContextVar that `middleware/org_resolver` sets
-    from a REQUEST. This runs on a timer with no request behind it, so without
-    an explicit scope every scheduled report lands in the outbound log under
-    NULL — invisible on `/me/outbound` and on `/orgs/{id}/outbound`, for every
-    org, for ever.
-
-    The scope is opened INSIDE the per-schedule loop, not once around it: this
-    cron walks every team in the product, and a scope set once would file every
-    report after the first under the previous org — which is worse than the
-    NULL it replaces, because it reads as a fact.
-    """
-    assert "org_scope(sched[\"team_org_id\"])" in DISPATCH_SRC
-    loop_at = DISPATCH_SRC.index("for sched in due:")
-    scope_at = DISPATCH_SRC.index("with org_scope(")
-    send_at = DISPATCH_SRC.index("send_report_email(")
-    assert loop_at < scope_at < send_at, (
-        "the org scope must open inside the per-schedule loop and before the "
-        "send, or one org's scope is applied to another org's report")
-
-
-def test_the_org_comes_from_the_team_not_from_the_org_backlink():
-    """An org has MANY teams and names one primary, so
-    `organisations.team_id` answers a different question and is NULL for every
-    other team. `teams.org_id` is the direction that resolves."""
-    assert "t.org_id AS team_org_id" in DISPATCH_CODE
-    assert "organisations" not in DISPATCH_CODE
-
-
-def test_the_secret_is_compared_in_constant_time_and_preferred_in_the_header():
-    """A secret in a query string is written to every access log, proxy log and
-    platform request log the request passes through, and those outlive and
-    out-scope the secret. The header is the documented cron form; the query
-    parameter is kept working and deprecated."""
-    assert "secret_matches(x_dispatch_secret, DISPATCH_SECRET)" in DISPATCH_CODE
-    assert "==" not in DISPATCH_CODE.split("authorized = False")[1].split("else:")[0]
-
-
-def test_a_failing_schedule_does_not_stop_the_rest_of_the_run():
-    """An hourly job that aborts on the first bad schedule silently stops
-    delivering everybody else's reports."""
-    assert "errors.append" in DISPATCH_SRC
-    assert "except Exception as exc:" in DISPATCH_SRC
+def test_the_retired_dispatcher_has_not_come_back():
+    """A resurrected `dispatch_reports` means a second scheduled-report system
+    again, over a table that no longer exists."""
+    assert not hasattr(reports, "dispatch_reports")
+    assert not hasattr(reports, "_next_run")
 
 
 @pytest.mark.parametrize("stub", ["/cron/reports", "/cron/esign"])

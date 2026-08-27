@@ -4033,13 +4033,24 @@ async def add_team_member(team_id:str,payload:TeamMemberAdd,pool=Depends(get_db)
     to. That contradicts `may_act_in_org` ("God mode can only switch between
     orgs if they are part of it") and it is a WRITE to a customer's access
     control, not the "seeing the project structure" that `is_platform_staff`'s
-    own docstring says its call sites are for. Narrowing it would re-break the
-    403 that `af74d321` was raised to fix, so it is a product decision and not
-    a privacy fix. Recorded here so the next reader does not mistake this
-    function for fully settled.
+    own docstring says its call sites are for.
+
+    NARROWED 2026-08-27 on the owner's decision — "platform account having role
+    account manager can probably do". This route now uses
+    `may_manage_project_membership`, which reads GOD_MODE_ROLES + MANAGER_ROLES
+    only, so the write went from ten platform accounts to six and the four
+    `platform_staff` accounts lost it. It does NOT re-break the 403 that
+    `af74d321` fixed: that fix was real and platform staff genuinely could not
+    use TeamsPage: the bypass is kept for the tier with a business reason to
+    manage a customer's account and removed from the tier without one.
     """
-    from middleware.roles import is_platform_staff
-    god = await is_platform_staff(user["user_id"])
+    from middleware.roles import may_manage_project_membership
+    # NARROWED 2026-08-27, owner's decision. Was `is_platform_staff` — all eight
+    # platform codes, so all TEN live platform accounts could write membership
+    # rows into all FIVE organisations, including the one none of them belongs
+    # to. Adding somebody to a project is an access-control write, not the
+    # "seeing the project structure" that `is_platform_staff` exists for.
+    god = await may_manage_project_membership(user["user_id"])
     if not god:
         mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
         if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
@@ -4162,8 +4173,13 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
     changing somebody's role flipped their card from their name to their email
     address until the next refresh.
     """
-    from middleware.roles import is_platform_staff
-    god = await is_platform_staff(user["user_id"])
+    from middleware.roles import may_manage_project_membership
+    # NARROWED 2026-08-27, owner's decision. Was `is_platform_staff` — all eight
+    # platform codes, so all TEN live platform accounts could write membership
+    # rows into all FIVE organisations, including the one none of them belongs
+    # to. Adding somebody to a project is an access-control write, not the
+    # "seeing the project structure" that `is_platform_staff` exists for.
+    god = await may_manage_project_membership(user["user_id"])
     if not god:
         mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
         if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
@@ -6015,27 +6031,20 @@ async def _run_startup_migrations():
         # Tasks extra columns
         await pool.execute("ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ")
         await pool.execute("ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_by_user_id TEXT")
-        # Report schedules
-        await pool.execute("""
-            CREATE TABLE IF NOT EXISTS public.report_schedules (
-                schedule_id   TEXT PRIMARY KEY,
-                team_id       TEXT NOT NULL,
-                created_by    TEXT,
-                frequency     TEXT NOT NULL DEFAULT 'weekly',
-                file_formats  TEXT[] NOT NULL DEFAULT ARRAY['pdf'],
-                recipients    TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-                day_of_week   INTEGER,
-                day_of_month  INTEGER,
-                send_hour_utc INTEGER NOT NULL DEFAULT 2,
-                is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-                next_run_at   TIMESTAMPTZ,
-                last_sent_at  TIMESTAMPTZ,
-                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-        """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_report_sched_team ON public.report_schedules(team_id)")
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_report_sched_next ON public.report_schedules(next_run_at) WHERE is_active=TRUE")
+        # Report schedules — DELETED, AND THIS DELETION IS LOAD-BEARING.
+        #
+        # `public.report_schedules` is retired (owner, 2026-08-27) and the table
+        # is being dropped. This bootstrap ran `CREATE TABLE IF NOT EXISTS` on
+        # EVERY startup, so leaving it here would rebuild the table on the very
+        # next deploy — the DROP would appear to succeed, the table would come
+        # back empty a few minutes later, and nobody would notice because an
+        # empty table looks exactly like a dropped one from the product side.
+        # That is how a retirement silently undoes itself.
+        #
+        # The surviving scheduled-report system is per-org:
+        # `staging.dristi_scheduled_reports`, dispatched by
+        # `POST /api/v1/dristi/scheduled-reports/dispatch`. Its table comes from
+        # a migration, not from here. Do not add a bootstrap DDL for it.
         # Task reminders (multi-offset, multi-channel)
         await pool.execute("""
             CREATE TABLE IF NOT EXISTS public.task_reminders (

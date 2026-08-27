@@ -311,38 +311,41 @@ def platform_staff(monkeypatch):
     )
 
 
-async def test_report_dispatch_accepts_a_live_token(
-    api_client, mock_pool, admin_user, platform_staff,
-):
-    """The control. Platform staff with a valid token get through."""
-    cutoff = datetime.now(timezone.utc).replace(microsecond=0)
-    fresh = _token(admin_user["user_id"])
-    mock_pool.fetchrow.return_value = {**admin_user, "sessions_valid_from": cutoff}
+def test_the_one_authenticated_path_outside_require_user_is_gone():
+    """`POST /api/reports/dispatch` WAS the single hole in session revocation.
 
-    resp = await api_client.post("/api/reports/dispatch", headers=_hdr(fresh))
-    assert resp.status_code != 403, resp.text
+    It was the one authenticated path in the product that did not run through
+    `require_user`: it decoded the token itself for a platform-staff fallback,
+    and a plain signature-and-expiry decode there would have accepted a token
+    revoked by a password reset. That was closed by routing it through
+    `resolve_token_user_id`, which reads the same cutoff `require_user` reads,
+    and two tests here — a control and a revoked token — pinned it.
 
+    The endpoint is DELETED. `public.report_schedules` was retired by the owner
+    on 2026-08-27, so the fallback, its `REPORT_DISPATCH_SECRET` and the
+    revocation hazard all went with it. The bypass is now closed by absence,
+    which is stronger than closing it by correctness.
 
-async def test_report_dispatch_rejects_a_revoked_token(
-    api_client, mock_pool, admin_user, platform_staff,
-):
-    """`POST /api/reports/dispatch` is the ONE authenticated path that does not
-    run through `require_user` — it decodes the token itself for its
-    platform-staff fallback. A signature-and-expiry decode there is the single
-    hole in the revocation, and a hole is worse than no feature: the promise
-    becomes true only sometimes, which is untestable and unfixable later.
+    THE OLD TESTS COULD NOT HAVE TOLD YOU THAT. The control asserted
+    `status_code != 403` — a deleted route answers 404, so it kept passing
+    against a route that no longer existed, describing a guarantee about
+    nothing. This asserts the absence directly instead.
 
-    Paired with the control above, so a 403 here means REVOKED and not merely
-    "the mocks refuse everything".
+    If a second token-decoding path is ever added anywhere, it needs its own
+    pair of tests like the ones this replaces; `require_user` is the only
+    door that gets revocation for free.
     """
-    cutoff = datetime.now(timezone.utc).replace(microsecond=0)
-    stale = _token(admin_user["user_id"], iat=cutoff - timedelta(minutes=5))
-    mock_pool.fetchrow.return_value = {**admin_user, "sessions_valid_from": cutoff}
+    from routers import reports
 
-    resp = await api_client.post("/api/reports/dispatch", headers=_hdr(stale))
-    assert resp.status_code == 403, (
-        "a revoked token was accepted by the report dispatch fallback"
-    )
+    assert not hasattr(reports, "dispatch_reports")
+    # The import itself, not just the endpoint: `resolve_token_user_id` in a
+    # router is the signature of a hand-rolled auth path.
+    assert not hasattr(reports, "_auth_resolve"), (
+        "routers/reports.py resolves tokens itself again — that is a second "
+        "authentication path outside require_user and it needs its own "
+        "revocation tests before it ships")
+    paths = {r.path for r in reports.router.routes}
+    assert "/api/reports/dispatch" not in paths
 
 
 # ── code deployed ahead of the migration ─────────────────────────────────────

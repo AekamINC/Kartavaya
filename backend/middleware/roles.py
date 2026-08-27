@@ -25,6 +25,7 @@ from middleware.role_tiers import (
     ALL_PLATFORM_ROLES,
     HR_ADMIN_ROLES,
     GOD_MODE_ROLES,
+    MANAGER_ROLES,
     ORG_MANAGEMENT_ROLES,
     ORG_ROLES,
     SUPPORT_ROLES,
@@ -256,6 +257,61 @@ async def is_platform_staff(user_id: str) -> bool:
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[])",
         user_id, list(ALL_PLATFORM_ROLES),
+    ))
+
+
+#: Who may write a project's MEMBERSHIP rows in an organisation they are not a
+#: member of. God mode plus the manager tier — deliberately NOT `platform_staff`.
+#:
+#: Owner's decision, 2026-08-27: "platform account having role account manager
+#: can probably do." `account_manager` is superseded by `platform_manager`
+#: (`role_tiers.py:29`), so that is the role named, and god mode is included
+#: because it is defined as "every module, every org" and excluding it would be
+#: incoherent rather than safer.
+MEMBERSHIP_WRITE_ROLES: tuple[str, ...] = GOD_MODE_ROLES + MANAGER_ROLES
+
+
+async def may_manage_project_membership(user_id: str) -> bool:
+    """May this platform account add or re-role a project member in ANY org?
+
+    ── WHY THIS IS NOT `is_platform_staff` ─────────────────────────────────────
+
+    `is_platform_staff` answers "is this person Aekam staff" and reads ALL EIGHT
+    platform codes. Its own docstring says its call sites are Kartavya project
+    surfaces "where seeing the project structure is what support means" — and
+    adding somebody to a project, or changing their role on it, is not seeing.
+    It is an ACCESS-CONTROL WRITE in a customer's organisation.
+
+    Used as the bypass on `add_team_member` / `update_team_member` it let **all
+    ten** live platform accounts write membership rows into **all five**
+    organisations, including the one org none of them belongs to — a bypass that
+    directly contradicted `may_act_in_org` sitting beside it. Live role counts
+    when this was narrowed, 2026-08-27: `platform_admin` 4, `platform_staff` 4,
+    `platform_manager` 2.
+
+    So this narrows the write to **6 of the 10**, and specifically takes it away
+    from the four `platform_staff` accounts, whose tier is defined as the
+    operating set — CRM, sales, marketing, analytics, messaging — and not
+    permissions.
+
+    ── WHAT THIS DELIBERATELY DOES NOT DO ──────────────────────────────────────
+
+    It does not restore the 403 that `af74d321` was raised to fix. That fix was
+    real: platform staff genuinely could not use TeamsPage at all. This keeps the
+    bypass for the tier that has a business reason to manage a customer's
+    account and removes it from the tier that does not, which is the shape the
+    owner asked for rather than a revert.
+
+    It is also NOT a privacy control and must not be read as one. The email
+    disclosure these two routes carried was fixed separately in `183f1ac0`; both
+    now return an address only when the same request supplied one.
+    """
+    pool = await get_pool()
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL "
+        "AND role_code = ANY($2::text[])",
+        user_id, list(MEMBERSHIP_WRITE_ROLES),
     ))
 
 
