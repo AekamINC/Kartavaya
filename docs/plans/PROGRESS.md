@@ -87,6 +87,86 @@ Unicode `fae87907` **9 and 0**. No probe rows written.
   minus Sundays, and re-deriving that in a browser would be the second
   convention that 0.17 was raised to end.
 
+### 0.24 — the PT ladder goes 3 states to 7, and nobody's pay moves
+
+Migration 224, applied and verified from `information_schema` / `pg_constraint`
+/ `pg_indexes`. **9 rows → 23**, states 3 → 7, all shared (`org_id IS NULL`,
+`month IS NULL`), every band checked against the ₹2,500/year ceiling in Article
+276(2) and every state carrying its source in the file:
+
+| State | Source |
+|---|---|
+| **Assam '18'** | Govt of Assam notification 2 Apr 2025, substituting Entry 1 of the 1947 Act's Schedule |
+| **West Bengal '19'** | The state's own Directorate of Commercial Taxes PDF, Schedule to the 1979 Act, w.e.f. 1 Apr 2014 |
+| **Telangana '36'** | First Schedule of the 1987 Act, carried over from undivided AP on the 2014 appointed day |
+| **Andhra Pradesh '37'** | G.O.Ms.No. 82 of 4 Feb 2013, in force 6 Feb 2013 |
+
+**Nobody moved.** E2E's 60 latest payslips still total **₹11,800** and Unicode's
+24 still total **₹4,800** — 84 of 84 agree, 0 differ, because no employee row
+carries any of the four new states. Re-running the file inserts 0 (guarded per
+state). No deploy needed: no DDL, so the running backend reads the new rows.
+
+**The boundaries carry paise on purpose.** `_pt_from_slabs` matches inclusively
+at both ends, and the existing whole-rupee ladders leave a **99-paise dead zone
+at every band top** — a gross of ₹10,000.50 matches neither Maharashtra
+neighbour and silently returns ₹0. One live payslip already carries a fractional
+gross (₹3,657.69). The four new ladders are contiguous to the paise.
+
+**Fifteen states deliberately left out**, each with its reason: seven set bands
+on ANNUAL income (dividing by twelve is an inference the statute does not make),
+three are half-yearly and set by the local body (Tamil Nadu is the most valuable
+one still owed — it needs a period/local-body schema conversation, not a guess),
+Punjab is a flat levy rather than a gross band, and four fit the model but rest
+on a single stale aggregator. Assam is the proof that matters: the same
+aggregator tables were still showing its pre-April-2025 slabs.
+
+**One disagreement recorded rather than smoothed** — one source puts Assam's
+middle band ceiling at ₹24,999 where two others put the break after ₹25,000,
+which matches the standard drafting. Seeded two-to-one; the whole dispute is
+worth ₹28/month to somebody grossing exactly ₹25,000.
+
+**And a defect the work found, fixed here.** `_pt_from_slabs` read
+`monthly_tax` AFTER choosing the winner, while its own comment claimed every
+field was read inside the guarded loop "because it means the row this function
+returns is known to carry all of them". So a row whose rate would not parse WON
+the ranking, failed to convert, and returned ₹0 — with a good row for the same
+state and band underneath it, never consulted. Never-blocking was never
+violated; the difference is whether the fallback is the right ladder or nothing.
+The rate is now parsed in the loop, and the test that pinned the old behaviour
+asserts the new one.
+
+**Also fixed: a test that had been failing on every live run since 220.**
+`test_live_the_state_column_shape_parses_once_the_column_exists` built its
+statement inside the live connection's coroutine, and `capture().find()` drives
+the handler through its own `asyncio.run`. That branch was unreachable until
+`manav_employees.state` existed — so the day the column landed, the test about
+that column started raising `asyncio.run() cannot be called from a running event
+loop`. Three steps now: ask the catalogue, build the SQL on its own loop, plan
+it.
+
+**Three findings left for the owner, all with zero live exposure today:**
+
+1. **Gujarat's shared ladder is four years stale.** Two rows (₹80 and ₹150) were
+   superseded by notification GHN-35-PFT-2022 w.e.f. 1 Apr 2022, which replaced
+   the ladder with "up to ₹12,000 nil, above ₹12,000 ₹200". No Unicode payslip
+   has ever fallen in ₹6,000–₹11,999.99 — but any future low-paid Gujarat hire
+   is over-deducted ₹80–₹150 a month that Gujarat does not levy. Correcting it
+   is an UPDATE/DELETE of live shared rows, which is a decision, not a migration.
+2. **Karnataka's is stale too** — exemption raised ₹15,000 → ₹25,000 w.e.f.
+   1 Apr 2023. 0 employees in KA. Same class of fix. Note a new row cannot repair
+   either one: the stale rows are dated 2024-04-01 and outrank an honest earlier
+   date.
+3. **Maharashtra has a gender dimension this table cannot express.** Since
+   1 Apr 2023 women are exempt to ₹25,000/month while men are exempt to ₹7,500.
+   The seeded '27' ladder is the male one. `manav_employees.gender` exists and is
+   populated; `pay_professional_tax` has no gender column. 0 of E2E's 30
+   Maharashtra women gross under ₹25,000 — one salary revision away from
+   mattering. That needs a column, not a row.
+
+Reversal for the whole migration:
+`DELETE FROM staging.pay_professional_tax WHERE org_id IS NULL AND state_code IN ('18','19','36','37');`
+— exact and complete; no FK references this table.
+
 ### 4.2 Pahchan consent — and the bridge that has never written a row
 
 12 faces enrolled, **zero consents ever recorded against them**, and an employee

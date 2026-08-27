@@ -723,27 +723,42 @@ def test_live_the_state_column_shape_parses_once_the_column_exists():
     Phase 1.5 lands, the state shape is planned too and this stops being a
     half-check. Which half ran is asserted, so it cannot silently check
     nothing."""
-    async def work(conn):
-        column = await conn.fetchval(
+    # ── WHY THIS IS THREE STEPS AND NOT ONE ────────────────────────────────
+    #
+    # It used to build the statement INSIDE `work(conn)`, and `capture().find()`
+    # drives the handler through `asyncio.run(vetana.process_payroll(...))`.
+    # Once migration 220 made the column exist, that branch became reachable
+    # for the first time — and a nested `asyncio.run` inside a running loop is
+    # a RuntimeError, not a slow path. So this failed on every live run from
+    # the day the column landed, which is the wrong day for a test about that
+    # column to start failing.
+    #
+    # Ask the catalogue, build the SQL on its own loop, then plan it.
+    async def find_column(conn):
+        return await conn.fetchval(
             "SELECT column_name FROM information_schema.columns "
             " WHERE table_schema='staging' AND table_name='manav_employees' "
             "   AND column_name = ANY($1::text[]) LIMIT 1",
             list(vetana._PT_STATE_COLUMNS))
-        if column is None:
-            return None
-        sql, _args = capture(state_col=column).find(
-            "staging.vetana_salary_structures s")
-        assert "employee_state" in sql
-        await conn.prepare(sql)
-        return column
 
-    if live(work) is None:
+    column = live(find_column)
+    if column is None:
         sql, _args = capture().find("staging.vetana_salary_structures s")
         assert "employee_state" not in sql, (
             "payroll is selecting a state column that does not exist live")
-        pytest.skip("Phase 1.5 has not landed: manav_employees carries no "
-                    "state column, so the slab read is inert and only the "
-                    "no-state shape can be planned")
+        pytest.skip("manav_employees carries no state column, so the slab read "
+                    "is inert and only the no-state shape can be planned")
+
+    # OUTSIDE any loop: `capture().find()` runs the handler under its own
+    # `asyncio.run`, and nothing is running here.
+    sql, _args = capture(state_col=column).find("staging.vetana_salary_structures s")
+    assert "employee_state" in sql
+
+    async def plan(conn):
+        await conn.prepare(sql)
+        return True
+
+    assert live(plan) is True
 
 
 def test_live_the_slab_table_has_the_columns_this_code_names():

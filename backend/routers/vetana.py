@@ -982,11 +982,19 @@ def _pt_from_slabs(slabs, state, gross: float) -> tuple:
             # month and outranks the every-month row for the same state
             # and band. Nothing an organisation fails to configure can
             # block a run — the last step is the owner's existing 0.
+            # READ INSIDE THE BLOCK, which is what the comment below has always
+            # claimed and what this line makes true. `monthly_tax` used to be
+            # read after the loop, so a row whose rate will not parse could WIN
+            # the ranking and then return 0.00 — shadowing a perfectly good row
+            # for the same state and band that would otherwise have matched.
+            # Never-blocking is satisfied either way; the difference is whether
+            # the fallback is the right ladder or nothing at all.
+            tax = round(float(row["monthly_tax"]), 2)
             rank = (1 if row.get("is_own") else 0,
                     1 if row.get("month") is not None else 0,
                     row["effective_from"] or date.min, low)
             if best is None or rank > best[0]:
-                best = (rank, row)
+                best = (rank, row, tax)
         except (KeyError, TypeError, ValueError):
             # An unreadable slab row — or one missing a column entirely — is
             # skipped, not fatal. See above. Reading every field the caller
@@ -996,11 +1004,10 @@ def _pt_from_slabs(slabs, state, gross: float) -> tuple:
 
     if best is None:
         return 0.0, None
-    row = best[1]
-    try:
-        return round(float(row["monthly_tax"]), 2), row
-    except (KeyError, TypeError, ValueError):
-        return 0.0, None
+    # No second `try` here: the rate was parsed in the loop, on the same row,
+    # under the same guard. A row that reaches this line is known to carry every
+    # field the caller needs.
+    return best[2], best[1]
 
 
 def _compute_statutory(basic_payable: float, gross: float, structure: dict,
