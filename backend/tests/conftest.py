@@ -25,6 +25,27 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 # ── env vars before any app import ───────────────────────────────────────────
+#
+# SENTRY_DSN IS REMOVED, NOT DEFAULTED, AND IT MUST BE FIRST.
+#
+# `server.py` calls `sentry_sdk.init(...)` at import time whenever SENTRY_DSN is
+# present. Locally it is absent and nothing happens — but the live-schema tests
+# are run as `railway run -e staging -s Kartavya python -m pytest`, and
+# `railway run` INJECTS THE REAL SERVICE ENVIRONMENT, DSN included. So every
+# such run reported its failures into the production Sentry project as though
+# users had hit them.
+#
+# That is not hypothetical: three PIN-boundary issues (`PYTHON-FASTAPI-13`,
+# `-11`, `-12`) in the aekaminc org were raised by Phase 7.3's own tests on
+# 2026-08-27, not by anybody using the product. Test runs in the error stream
+# make real errors harder to see, which is the whole value of the error stream.
+#
+# `pop`, not `setdefault`: a fake DSN would still initialise the SDK and merely
+# fail to deliver, and "the transport is failing" is a different and noisier
+# state than "Sentry is off". Removed before the first app import, because the
+# init happens at import time and a later fixture is already too late.
+os.environ.pop("SENTRY_DSN", None)
+
 os.environ.setdefault("JWT_SECRET", "test-secret-minimum-32-chars-long-xxxx")
 os.environ.setdefault("REPORT_DISPATCH_SECRET", "test-dispatch-secret-min-32-xxxx")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
