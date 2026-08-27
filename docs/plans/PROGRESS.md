@@ -1941,4 +1941,71 @@ of a different database. Exact, live, 2026-08-27:
     sales_commissions   0   sales_commission_slabs  0
     sales_commission_assignments      0
 
+## 2026-08-27 · the online repo, checked — and the one thing the cloud branch was right about
+
+`git fetch --all` against `origin`. Local `staging` and `origin/staging` are the
+same commit, so nothing of mine is unpushed and nothing of anyone's is unpulled.
+Four `claude/*` branches exist; three carry **nothing** staging does not already
+have (`kartavaya-folio-2-wire`, `pahchan-web-clock`, `staging-last-update` — all
+0 ahead). One does:
+
+    origin/claude/ios-clockin-out-no-app-dnu7o8
+      4df1bbc9  Add self-service clock in/out with geolocation capture
+      0 commits of staging in it — it is 1,747 BEHIND
+
+**Do not merge it.** It is a second, independent implementation of a feature
+staging already has: `e9ffd373 Pahchan: clock in and out from a browser` is in
+this branch, and `ClockScreen.jsx` with its 28 tests is the version that was
+reviewed. Merging a 1,747-commit-behind branch to gain a duplicate would cost
+more than it could possibly return.
+
+Its three *independent* findings were worth reading, and two are already closed
+on staging: `index.html` does link `manifest.json`, and the
+`apple-mobile-web-app-*` tags are present, so Add to Home Screen opens
+standalone. Checked, not assumed.
+
+**The third was live, and is now fixed.** `frontend/public/index.html` was a
+Create-React-App leftover — a whole HTML document with `<div id="root">`, **no
+script tag**, the old brand colour `#0082c6`, no `viewport-fit=cover`, no
+manifest link and none of the pre-paint theme bootstrap. Everything in
+`publicDir` is copied to the output root, so this file lands beside the built
+entry and survives only because Vite writes the real one afterwards. Built and
+read `dist/index.html` to confirm the root file wins today: module script
+present, bootstrap present, `#04837A`. It does.
+
+That is the whole protection, and it is build-step ordering. This project has
+twice shipped a deploy that failed with a green build and no logs — the
+`vercel.json` `"//"` key, and the CSP hash drift that left the bootstrap dead on
+staging for days. A blank page one Vite upgrade away belongs in the same family,
+so the file is deleted and `scripts/check-one-index-html.mjs` is wired into
+`npm run check`, **verified failing** by restoring the file and passing again
+once removed. Capacitor is unaffected: `android/app/src/main/assets/public/
+index.html` is a copy of the BUILT entry (`#04837A`, bundle present), not of the
+leftover.
+
+The check is deliberately narrow. Its first draft walked the tree and reported
+five files, none of which was the bug — two Capacitor entries, a Gradle
+intermediate and two scratch directories. A check needing five exemptions to say
+one true thing is a check that gets silenced.
+
+Also tidied while here: `scripts/orphan-selectors-baseline.json` claimed
+`.k-cust__hint` was orphaned and it is not. 546 → 545. A baseline that only
+shrinks is the same discipline as `test_every_writer_has_a_live_sql_test.py`.
+
+**0.24 re-verified, and it is still ✅ — but three findings under it are open.**
+Migration 224 already took the shared ladder 9 rows → 23 and 3 states → 7, and
+STATUS.md records it. Re-read live 2026-08-27 to be sure the count had not moved
+under Phase 6's `pay_*` work: still 23 rows across state codes 18, 19, 24, 27,
+29, 36, 37, all `org_id IS NULL`. `manav_employees.state` across both in-scope
+orgs is **27 (83 people) and 24 (26 people)** and nothing else, so every employee
+this product pays sits in a covered state.
+
+What has NOT moved is the three findings 0.24 raised for the owner, all still
+open and all still zero live exposure: **Gujarat's shared ladder is four years
+stale**, **Karnataka's is stale**, and **Maharashtra has a gender dimension the
+table cannot express** (women exempt to ₹25,000 since 2023). The first two are
+live-row edits and the third needs a column — none of them is a migration, which
+is why the standing migration approval does not reach them. They are the only
+part of 0.24 still owed, and they are owed to a decision rather than to work.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
