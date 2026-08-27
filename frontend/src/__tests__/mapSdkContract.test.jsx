@@ -70,6 +70,7 @@ vi.mock('../lib/mapplsSdk', () => ({
 
 const { default: TerritoryMap } = await import('../components/TerritoryMap');
 const { default: PointRadiusMap } = await import('../components/PointRadiusMap');
+const { default: PinAreaPopover } = await import('../components/PinAreaPopover');
 
 const FEATURE = {
   type: 'Feature',
@@ -209,5 +210,57 @@ describe('PointRadiusMap · the same contract, so the two cannot drift', () => {
       <PointRadiusMap label="Head office" lat={19.076} lng={72.8777} radiusM={200} />,
     );
     assertSdkContract('PointRadiusMap');
+  });
+});
+
+describe('PinAreaPopover · the third map, on the same contract', () => {
+  /* Phase 8.2. It is the one component here that COPIES `ringsOf` and
+     `boundsOf` rather than importing them — they are private to
+     `TerritoryMap.jsx` — so it is the one with a live route back to the swapped
+     bounds. That is precisely why it is pinned here from the same fixture: a
+     copy that drifts fails on the identical four numbers. */
+  async function openAt(pin) {
+    get.mockImplementation((url) => {
+      if (url === '/v1/graha/territories') {
+        return Promise.resolve({ data: [{
+          id: 't-1', name: 'Surat West', rules: { pincodes: ['395002'] },
+        }] });
+      }
+      return Promise.resolve({ data: {
+        type: 'FeatureCollection', features: [FEATURE], territory_name: 'Surat West',
+        claimed: 1, matched: 1, unmatched: [], unavailable: [], invalid: [],
+        vintage: 'datagov-2025-05', attribution: 'Boundaries © Government of India',
+      } });
+    });
+    await render(<PinAreaPopover pincode={pin} />);
+    const trigger = document.querySelector('[aria-haspopup="dialog"]');
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    // The territory list, the geometry, and the SDK all settle as microtasks.
+    for (let i = 0; i < 4; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { await Promise.resolve(); });
+    }
+  }
+
+  it('passes a resolvable id string and a {lat,lng} centre', async () => {
+    await openAt('395002');
+    assertSdkContract('PinAreaPopover');
+  });
+
+  it('fits bounds in [lng, lat] — the copied helper must not drift', async () => {
+    await openAt('395002');
+    expect(fitCall, 'the popover never fitted to the PIN outline').toHaveBeenCalled();
+    const [bounds] = fitCall.mock.calls[0];
+    const [[west, south], [east, north]] = bounds;
+    expect(west, 'west must be a LONGITUDE (~72 for Surat), not a latitude')
+      .toBeCloseTo(72.8, 1);
+    expect(east).toBeCloseTo(72.9, 1);
+    expect(south, 'south must be a LATITUDE (~21 for Surat), not a longitude')
+      .toBeCloseTo(21.1, 1);
+    expect(north).toBeCloseTo(21.2, 1);
+    expect(west).toBeLessThan(east);
+    expect(south).toBeLessThan(north);
   });
 });

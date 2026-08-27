@@ -11,6 +11,10 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import TerritoryMap from '../../components/TerritoryMap';
+import PinAreaPopover from '../../components/PinAreaPopover';
+
+/** How many pincodes a list row names before it stops and counts the rest. */
+const PIN_CHIPS = 12;
 
 export default function TerritoriesTab() {
   // F32 — the module is read from the route, never named here.
@@ -313,7 +317,27 @@ export default function TerritoriesTab() {
             <div className="gr__lt">{t.name}</div>
             {t.description && <div className="gr__lsub">{t.description}</div>}
             {t.rules?.pincodes?.length > 0 && (
-              <div className="gr__lsub">{t.rules.pincodes.length} pincode(s)</div>
+              /* The count, and then the pincodes themselves — each one opens
+                 its own area preview (Phase 8.2). It was a bare number, so the
+                 only way to see WHICH pincodes a territory claimed was to press
+                 Edit, an action that implies an intent to change something.
+
+                 Capped, and the cap is not cosmetic: `rules.pincodes` is an
+                 unbounded list and each rendered entry is a popover trigger.
+                 A territory claiming a whole postal circle would otherwise put
+                 hundreds of them in a list row. The map button beside it shows
+                 all of them at once, which is the right surface for that. */
+              <div className="gr__lsub">
+                {t.rules.pincodes.length} pincode(s):{' '}
+                {t.rules.pincodes.slice(0, PIN_CHIPS).map((pc, i) => (
+                  <React.Fragment key={pc}>
+                    {i > 0 && ', '}
+                    <PinAreaPopover pincode={pc} />
+                  </React.Fragment>
+                ))}
+                {t.rules.pincodes.length > PIN_CHIPS
+                  && ` and ${t.rules.pincodes.length - PIN_CHIPS} more`}
+              </div>
             )}
             {t.assigned?.length > 0 && (
               <div className="gr__chips gr__chips--tight">

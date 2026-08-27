@@ -472,3 +472,38 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
 /* GODL, for the government boundary data. A different credit from the Mappls
    one above, for a different thing, and neither substitutes for the other. */
 .terr__mapcredit { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+/* ── The PIN preview popover (Phase 8.2) ────────────────────────────────────
+   Deliberately on the `terr__` prefix rather than a new one: it renders the
+   same map, the same four buckets and the same two credits as the territory
+   map above, and a second prefix over one set of rules is how two stylesheets
+   end up disagreeing about what a note looks like. Only the five things that
+   are genuinely new to the popover are declared here. */
+
+.terr__pinarea { display: flex; flex-direction: column; gap: 8px; }
+
+/* The pincode, repeated inside the panel: the popover is portalled to
+   document.body and can be read a long way from the row it was opened on. */
+.terr__pinhead {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px; font-weight: 700; letter-spacing: .04em; color: var(--ink-1);
+}
+
+/* The expectation reset, and it is load-bearing rather than decorative: an
+   Indian PIN averages ~82 km², so a polygon on a map reads as far more
+   precision than it carries. Never hide this. */
+.terr__pincap { font-size: 11px; color: var(--ink-3); line-height: 1.6; }
+
+/* The trigger. A dotted underline rather than a link colour: it opens a panel
+   in place, it does not navigate. */
+.terr__pinlink {
+  font-variant-numeric: tabular-nums;
+  color: var(--k-primary); cursor: pointer;
+  border-bottom: 1px dashed currentColor;
+}
+.terr__pinlink:hover { border-bottom-style: solid; }
+
+/* A value in a pincode column that is not a pincode — `NW1 245` is live in
+   Unicode Group. Rendered exactly as stored, and inert: there is nothing to
+   preview, and it is not this component's business to correct it. */
+.terr__pinplain { color: inherit; }
