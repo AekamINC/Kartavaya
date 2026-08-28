@@ -349,6 +349,24 @@ async def get_profile(
     if d.get("logo_key"):
         from services.storage import sign_key
         d["logo_url"] = await sign_key(org_id, d["logo_key"]) or d.get("logo_url", "")
+    # WHICH organisation this request actually resolved to, echoed back.
+    #
+    # It is here because on 2026-08-28 an E2E suite renamed Aekam Inc while
+    # believing it was editing Unicode Group: the credential held
+    # `platform_admin`, every request resolved to Aekam via `platform_bypass`,
+    # and the save succeeded — so the suite went green. Nothing on this screen,
+    # and nothing in this response, could have told it otherwise.
+    #
+    # `org_id` is the resolver's own answer — the same value the UPDATE below
+    # writes against — so a caller can assert the target BEFORE it writes
+    # instead of discovering it in someone else's audit log. That is what
+    # `frontend/e2e-real/_lanes.ts::assertOrg` reads.
+    #
+    # It does not breach the names-not-IDs rule: that rule is about what a
+    # screen RENDERS, and this is a field no component displays. TabProfile
+    # merges the response over a fixed EMPTY object and diffs the two on save,
+    # so an unchanged key is never sent back on PATCH.
+    d["id"] = org_id
     return d
 
 

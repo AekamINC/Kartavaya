@@ -78,6 +78,30 @@ export default function OrgSettingsPage() {
     setCounts(c => (c[key] === n ? c : { ...c, [key]: n }));
   }, []);
 
+  // WHICH COMPANY THIS PAGE IS EDITING — the server's answer, not the token's.
+  //
+  // On 2026-08-28 an automated run renamed **Aekam Inc** while believing it was
+  // editing Unicode Group, and the save succeeded. The screen was not silent —
+  // it was WRONG, which is worse. The lede below used to read `org_name` off
+  // `user.org_roles.find(...)`, i.e. the FIRST org role on the user object, and
+  // that is not the org a write lands in:
+  //
+  //   · a member of several orgs (three, in the case that found this) gets
+  //     whichever role happens to sort first, not the one being edited;
+  //   · the org switcher's `X-Org-Id` changes the server's answer and does not
+  //     touch `org_roles` at all;
+  //   · platform staff resolve through `platform_bypass` to somebody else's
+  //     organisation entirely.
+  //
+  // `GET /v1/org/profile` is resolved by `middleware/org_resolver.get_org_id`
+  // and the PATCH on this same page is resolved by the identical dependency, so
+  // this name and the write target cannot disagree. That is the whole point:
+  // the heading is now read from the same place the save is aimed at.
+  //
+  // The NAME is displayed and the id is not — `check-rendered-ids.mjs`, and a
+  // UUID is not what tells a person they are in the wrong company anyway.
+  const [resolvedOrgName, setResolvedOrgName] = useState(null);
+
   // Counts only. A failure is silent and leaves the chip absent, because a tab
   // bar is not the place to report that a list could not be counted — the panel
   // itself does that properly when you open it.
@@ -98,6 +122,12 @@ export default function OrgSettingsPage() {
       .catch(() => {});
     api.get('/v1/subscription/current')
       .then(r => report('modules', (r.data?.active_modules || []).length))
+      .catch(() => {});
+    // Failure leaves it null and the lede falls back to the role's name — the
+    // behaviour that existed before. A heading is not the place to report that
+    // a fetch failed; TabProfile reports it properly against the form.
+    api.get('/v1/org/profile')
+      .then(r => setResolvedOrgName(r.data?.name || null))
       .catch(() => {});
   }, [canReadOrg, report]);
 
@@ -161,8 +191,11 @@ export default function OrgSettingsPage() {
         // संस्था is the design's word for this destination (Chrome.jsx:36).
         // संगठन reads as "organising" rather than as the institution itself.
         sanskrit="संस्था"
-        lede={orgRole.org_name
-          ? `${orgRole.org_name} — company details, members, billing and access.`
+        // `resolvedOrgName` first — see the comment on its declaration. The
+        // role's own name is the fallback for the one render before the
+        // profile lands, and for the case where that request fails.
+        lede={(resolvedOrgName || orgRole.org_name)
+          ? `${resolvedOrgName || orgRole.org_name} — company details, members, billing and access.`
           : 'Company details, members, billing and access.'}
       />
 

@@ -21,6 +21,43 @@ behind it.
 
 ## OPEN
 
+### 16. Two product defects found on 2026-08-28, deferred by decision — your call on when
+
+Neither is blocked on you in the usual sense: I can fix both. They are here
+because §7 of proposal 93 says a fix that is a change of shape rather than a bug
+gets raised with its evidence and an estimate instead of being folded silently
+into a suite's time. **The reseed run continues past both.**
+
+**(a) Renaming an organisation does not bump `updated_at`.**
+Evidence: after the 2026-08-28 repair, `staging.organisations.updated_at` still
+read **12 July** for Aekam Inc and **20 August** for E2E — both renamed that day.
+Consequence: `updated_at` cannot be used to detect that a company record was
+touched, which is exactly what it would be reached for during an incident. It is
+also the column a delta-sync `?since=` would key on.
+Estimate: **under an hour** — the UPDATE needs `updated_at = now()` and one test
+that fails without it. Say the word and it goes in with the next backend change.
+
+**(b) An inactive module tells the customer the wrong thing, on four screens.**
+Evidence, measured on day one against an unconfigured org: `/graha` says *"You do
+not have access to CRM reports"* — a permission framing, which sends a person to
+their administrator to ask for a grant they already have — while the API for the
+same condition says *"Module not active, contact your administrator"*, which is
+the actionable sentence. Four screens are right (`/manav`, `/vetana`,
+`/sanvaad`, `/hub/org`) and four are wrong (`/dashboard`, `/graha`, `/ganit`,
+`/dristi`). So the product **knows** the difference and loses it in half the
+places it says it.
+Why it is not a one-line fix: the copy and the routing are decided per module,
+so it is a change across several modules plus the shared empty-state component,
+and it needs one agreed sentence rather than four new ones.
+Estimate: **half a day**, and it is the single most visible thing a brand-new
+customer meets in their first ten minutes — every module they have not bought
+yet greets them with it.
+
+⚠ Recorded here rather than fixed on the spot because my own checks accused this
+product **four times in one session** and were wrong every time. Both of the
+above were confirmed by reading what the screen actually said, not by a regex
+over it.
+
 ### 15. ✅ CLOSED 2026-08-28 — plus-addressing does NOT work on unicodegroup.com
 
 **Answered by the mailbox.** The owner showed the `control` message sitting in

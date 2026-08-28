@@ -4195,6 +4195,61 @@ filing. That is the entire discipline, and the count is recorded because it is
 the strongest evidence in this programme for why the stop-and-fix rule demands
 proof of *which* before anything is changed.
 
+## 2026-08-28 · Proposal 93 Stage 3 · the org guard, which had never run
+
+Before writing another write-suite, the countermeasure from the morning's
+incident was checked rather than trusted. Both halves of it were broken.
+
+**1. No spec imported `assertOrg`.** It was written, committed and never called.
+
+**2. It could not have passed if it had been.** It compares against `id` from
+`GET /api/v1/org/profile`, and that response carried no `id` — verified live
+against both lanes, not read off the router. `actual` was always `undefined`.
+
+So the guard that exists because Suite 02 renamed **Aekam Inc** was decoration.
+"A gate nobody has seen fail" — proposal 93 §0, and this was one.
+
+### What changed
+
+- `backend/routers/org_profile.py` — `GET` now echoes `d["id"] = org_id`, the
+  resolver's own answer. The `PATCH` on the same router resolves through the
+  identical dependency, so the value a caller asserts on and the row the save
+  writes to cannot disagree.
+- `frontend/src/pages/OrgSettingsPage.jsx` — **and this one is a customer-facing
+  bug, not a harness one.** The heading named an org taken from
+  `user.org_roles.find(...)`: the FIRST role on the user object, which is not the
+  org a write lands in. A person with seats in several orgs gets whichever sorts
+  first (the account that found this holds `org_admin` in three); the org
+  switcher sends `X-Org-Id` and never touches `org_roles`; and platform staff
+  resolve through `platform_bypass` into somebody else's organisation entirely.
+  The screen was therefore not silent about which company was being edited — it
+  was **wrong**, which is worse, because a wrong label is trusted. It now reads
+  the name the server resolved.
+
+### Proved, not asserted
+
+Both checks were mutated and watched go red before being trusted — remove the
+line, 3 failed / 2 failed; restore it, 3 passed / 2 passed. `check-rendered-ids`
+still passes at 595 components (the NAME is displayed, the id is not) and
+`check-e2e-no-bypass` is unchanged at its baseline.
+
+### Also corrected
+
+The claim that "both stored tokens expired 2026-08-27" is **stale**. Both were
+probed live today and answer `200` on the right orgs — Unicode configured, UK
+cleared exactly as R4 left it. That stale note is why the last session ran Wave 1
+on an E2E fallback lane instead of the reference lane §14 requires.
+
+### Not fixed here, logged with evidence and an estimate
+
+`docs/OWNER-ACTIONS.md` item 16: renaming an org does not bump `updated_at`
+(under an hour), and an inactive module tells the customer the wrong thing on
+four of eight screens — a permission framing where the API has the actionable one
+(half a day). Both confirmed by reading what the screen actually says, after four
+of this programme's own checks accused the product and were wrong every time.
+
+The plan for everything that follows is `docs/plans/93-STAGE3-EXECUTION-PLAN.md`.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
 
 
