@@ -546,3 +546,9 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
 .k-coord__f > span { color: var(--ink-3); }
 
 .k-coord__err { font-size: 12px; color: var(--danger, #b42318); line-height: 1.5; }
+
+/* The pincode lede sits above whatever the lookup said, so every branch is
+   two stacked lines rather than one. §7.6 requires the lede to be present in
+   the product, including on the branch where the lookup found nothing — which
+   is precisely the branch where a person concludes the feature is broken. */
+.k-pinfill__wrap { display: flex; flex-direction: column; gap: 2px; }

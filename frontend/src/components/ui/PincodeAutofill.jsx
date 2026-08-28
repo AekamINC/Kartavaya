@@ -102,17 +102,46 @@ export default function PincodeAutofill({ pincode, state = '', onFill }) {
     onFill?.({ state: found[0].state });
   }, [found, onFill]);
 
-  // Nothing to say. Renders nothing rather than an empty region: a value that
-  // is not a PIN is not corrected and not complained about, which is §8.0's
-  // rule in the other direction (`INC UK` really stores 'NW1 245').
+  /* ── THE EXPECTATION RESET. §7.6 REQUIRES IT IN THE PRODUCT ───────────────
+     The owner asked for the UK "type a postcode, get your address" flow, and
+     the plan is blunt that IT DOES NOT TRANSFER: a UK postcode resolves to
+     about 17 addresses, an Indian PIN averages ~82 km², and 51 PINs do not
+     resolve to a single STATE. Without this line the feature reads as broken
+     when it is working exactly as the data allows — somebody types a pincode,
+     gets a state and no street, and concludes the lookup failed.
+
+     It is rendered ABOVE every other branch and outside all of them, so it is
+     present whether the PIN is found, unlisted, ambiguous or unreadable. That
+     placement is the point: the branch where a person is most likely to think
+     the product is broken is the branch where the lookup returned nothing. */
+  const lede = (
+    <span className="k-pinfill k-pinfill--soft">
+      A pincode names a postal area — an Indian one averages ~82 km² — so it can
+      fill the state, not the street.
+    </span>
+  );
+
+  // A value that is not a PIN is not corrected and not complained about, which
+  // is §8.0's rule in the other direction (`INC UK` really stores 'NW1 245').
+  // No lede either: there is nothing being looked up to set an expectation for.
   if (!valid) return null;
-  if (busy) return <span className="k-pinfill k-pinfill--soft">Looking up {pin}…</span>;
+  if (busy) {
+    return (
+      <span className="k-pinfill__wrap">
+        {lede}
+        <span className="k-pinfill k-pinfill--soft">Looking up {pin}…</span>
+      </span>
+    );
+  }
 
   if (err) {
     return (
+      <span className="k-pinfill__wrap">
+      {lede}
       <span className="k-pinfill k-pinfill--soft" role="status">
         The pincode directory could not be read just now. This does not stop you
         typing the address.
+      </span>
       </span>
     );
   }
@@ -123,9 +152,12 @@ export default function PincodeAutofill({ pincode, state = '', onFill }) {
        pincode", and it must not block anything — GSTIN/PAN/TAN are
        non-mandatory by owner rule and a pincode is the same. */
     return (
+      <span className="k-pinfill__wrap">
+      {lede}
       <span className="k-pinfill k-pinfill--soft" role="status">
         This release does not list a district for {pin}. That is not a problem —
         the address saves either way.
+      </span>
       </span>
     );
   }
@@ -135,10 +167,13 @@ export default function PincodeAutofill({ pincode, state = '', onFill }) {
        `110020` is genuinely both SOUTH DELHI and SOUTH EAST DELHI. Nothing is
        filled, and both are named. */
     return (
+      <span className="k-pinfill__wrap">
+      {lede}
       <span className="k-pinfill" role="status">
         {pin} covers{' '}
         {found.map(d => `${d.district}, ${d.state}`).join(' · ')} — it spans{' '}
         {found.length} districts, so nothing has been filled in for you.
+      </span>
       </span>
     );
   }
@@ -150,6 +185,8 @@ export default function PincodeAutofill({ pincode, state = '', onFill }) {
     === String(only.state || '').trim().toLowerCase();
 
   return (
+    <span className="k-pinfill__wrap">
+    {lede}
     <span className="k-pinfill" role="status">
       {pin} is in <strong>{only.district}</strong>, {only.state}.{' '}
       {already ? (
@@ -164,6 +201,7 @@ export default function PincodeAutofill({ pincode, state = '', onFill }) {
           basemap responses carry: the data and what is owed for it travel
           together. */}
       <span className="k-pinfill--soft"> Government of India directory.</span>
+    </span>
     </span>
   );
 }

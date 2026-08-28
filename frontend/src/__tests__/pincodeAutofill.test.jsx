@@ -183,3 +183,62 @@ describe('the credit rides along', () => {
     expect(text()).toMatch(/Government of India/);
   });
 });
+
+describe('§7.6 · the expectation reset is IN THE PRODUCT, on every branch', () => {
+  /* The owner asked for the UK "type a postcode, get your address" flow, and
+     PHASE-7 §7.6 is blunt that it does not transfer: a UK postcode resolves to
+     about 17 addresses, an Indian PIN averages ~82 km², and 51 PINs do not
+     resolve to a single STATE. The plan requires the lede in the product and
+     not only in the plan — "put a one-line lede under the address block saying
+     what a PIN can and cannot fill".
+
+     Asserted on EVERY branch, because the branch where somebody is most likely
+     to decide the feature is broken is the one where the lookup returned
+     nothing at all — and that is exactly the branch a happy-path test misses. */
+
+  const LEDE = /averages ~82 km²/;
+  const FILLS = /fill the state, not the street/i;
+
+  it('shows it when one district is found', async () => {
+    get.mockResolvedValue({ data: { valid: true, directory: [
+      { state: 'GUJARAT', district: 'SURAT' }] } });
+    await render({ pincode: '395002', onFill: () => {} });
+    expect(text()).toMatch(LEDE);
+    expect(text()).toMatch(FILLS);
+    expect(text()).toContain('SURAT');
+  });
+
+  it('shows it when the release lists NO district — the broken-looking branch', async () => {
+    // 531 PINs with a published boundary are absent from this release. The
+    // lookup worked; it simply has nothing to say.
+    get.mockResolvedValue({ data: { valid: true, directory: [] } });
+    await render({ pincode: '395002', onFill: () => {} });
+    expect(text(), 'the lede is missing exactly where it is needed most')
+      .toMatch(LEDE);
+    expect(text()).toMatch(/does not list a district/i);
+  });
+
+  it('shows it when the PIN spans two districts', async () => {
+    get.mockResolvedValue({ data: { valid: true, directory: [
+      { state: 'DELHI', district: 'SOUTH' },
+      { state: 'DELHI', district: 'SOUTH EAST' }] } });
+    await render({ pincode: '110020', onFill: () => {} });
+    expect(text()).toMatch(LEDE);
+    expect(text()).toMatch(/spans 2 districts/);
+  });
+
+  it('shows it when the directory cannot be read', async () => {
+    get.mockRejectedValue(new Error('down'));
+    await render({ pincode: '395002', onFill: () => {} });
+    expect(text()).toMatch(LEDE);
+    expect(text()).toMatch(/could not be read just now/i);
+  });
+
+  it('shows NOTHING at all for a value that is not a PIN', async () => {
+    // `INC UK` really stores 'NW1 245'. Nothing is looked up, so there is no
+    // expectation to set — and §8.0's rule is that it is not corrected either.
+    await render({ pincode: 'NW1 245', onFill: () => {} });
+    expect(host.textContent).toBe('');
+    expect(get).not.toHaveBeenCalled();
+  });
+});
