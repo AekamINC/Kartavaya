@@ -455,54 +455,76 @@ new service is deliberately named `cron-report-dispatch` rather than
 
 ---
 
-### 13. Mappls Autosuggest refuses the Static Key — one console entitlement
+### 14. Mappls REST: "Domain validation failed" on server-side calls
 
-**Status:** OPEN · blocks Phase 7.6 from ✅. The code is built, wired and
-tested; nothing further can be done in the repo.
+**Status:** OPEN · blocks Phase 7.6 from ✅. Everything on our side is now
+correct and proved; what remains is one console/support change only you can
+make.
 
-Measured live on 2026-08-28, one call against the deployed staging backend:
+⚠ **This item replaces an earlier version that blamed the Autosuggest
+entitlement. That was wrong.** Two live probes since then narrowed it, and the
+correction matters because the two point at different settings.
+
+**What was actually wrong on our side, and is now fixed** (`3914b68c`):
+`atlas.mappls.com` follows OAuth 2.0 and takes a **bearer token in the
+Authorization header**. We were sending the **Static Key** as an
+`?access_token=` query parameter, on the reasoning that the Web Map SDK takes
+the console key in a parameter of that name. It does not transfer. The two
+credentials are for different products:
 
 ```
-GET /api/v1/maps/address/suggest?q=Bopal Circle
-  available   False
-  reason      unavailable        <- we HOLD a credential and Mappls refused it
-  suggestions 0
+Web Map SDK (browser)   MAPPLS_STATIC_KEY   ?access_token= query parameter
+REST APIs   (server)    the OAuth pair  ->  bearer token in a header
 ```
 
-and, from the container's own log, at ERROR:
+This is the **second** time this codebase has been right that a Mappls
+credential was missing and wrong about which one - §7.5 lost months to the
+mirror image. PHASE-7 §7.6 specified the OAuth pair from the start and was
+right.
+
+**What is left, measured directly from the Railway environment on 2026-08-28:**
 
 ```
-mappls autosuggest refused the static key (HTTP 401) — check the Autosuggest
-allocation and the domain whitelist in the console
+MINT    https://outpost.mappls.com/...  -> HTTP 200
+        token_type bearer | scope READ | expires_in 67178
+SEARCH  https://atlas.mappls.com/api/places/search/json
+        -> HTTP 401
+        {"error":"Api Access Denied",
+         "error_description":"Domain validation failed. If you see this often
+          please contact MapmyIndia support at apisupport@mapmyindia.com"}
 ```
 
-**This is NOT the same wall as before, and the difference is the whole
-diagnosis.** `reason` is `unavailable`, not `not_configured` — the two are kept
-apart precisely so this question can be answered — and **the very same Static
-Key works for the Web Map SDK**: the Gujarat territory outline draws on the
-deployed site, which you confirmed. So the key is real, live and accepted by
-one Mappls product and refused by another.
+**The credential is fine.** The pair mints, the token is real, the scope is
+READ. The refusal is **domain validation** - the same words the Web Map SDK
+gave during 7.5, when the fix was whitelisting.
 
-That makes it a **per-product entitlement**, not a bad credential and not a
-whitelist problem in general:
+**And it cannot be satisfied from our side.** A server-side call sends no
+`Origin` or `Referer`, so I tested sending each explicitly, from our own
+already-whitelisted domain:
 
-- open the Mappls console for project `prj1787726591i922664629`;
-- check the **Autosuggest** product is enabled on the credential (the console
-  showed an allocation of **200 hits** — an allocation is not the same thing as
-  an entitlement, and the read on 27 Aug did not distinguish them);
-- confirm the REST host is covered by the whitelist. The Web SDK is called from
-  the browser and sends an Origin; **autosuggest is called from our SERVER and
-  sends none**, so a whitelist that admits browser origins may refuse a
-  server-side call for a reason that never applied to the map.
+```
+Referer: https://staging.kartavaya.com/   -> 401 Domain validation failed
+Origin:  https://staging.kartavaya.com    -> 401 Domain validation failed
+```
 
-**Only one call was spent proving this**, against a generic public place and
-never a customer record: the allocation is 200 hits and every call is both
-billable and a submission under Mappls' perpetual, sub-licensable content
-licence. The fragment used was `Bopal Circle`.
+Both refused. So the whitelist that admits the browser SDK does not admit a
+server-to-server call, and no header we can set changes that.
 
-⚠ **Item 2 of §7.6 is still open and it may make this moot.** If Aekam Inc is a
+**What to ask for.** On the console for project `prj1787726591i922664629`, this
+credential needs to be permitted for **server-side / no-referer** use of the
+REST APIs - or Mappls support (`apisupport@mapmyindia.com`, named in their own
+error) needs to enable it. Their message asks you to contact them directly, so
+that is likely the route. Quote the error verbatim and say it is a
+server-to-server call with no referer.
+
+**Cost so far: four live calls**, all against the same generic public place
+(`Bopal Circle`) and never a customer record - the allocation is 200 hits and
+every call is both billable and a submission under Mappls' perpetual,
+sub-licensable content licence.
+
+⚠ **Settle item 2 before paying for or enabling anything.** If Aekam Inc is a
 *foreign* entity, the Geospatial Data Guidelines 2021 forbid this shape
-entirely — a server-side proxy is exactly what a foreign licensee may not use
-for finer-than-threshold Indian map data. Settle that before paying for or
-enabling anything, because the answer decides whether the fix is a console
-toggle or a different feature with a published browser key.
+outright - a foreign licensee may not route finer-than-threshold Indian map
+data through its own servers - and the answer decides whether this is a console
+toggle or a different feature with a published browser key. The repo carries an
+org named `UK AekamINC`, so the name is not proof either way.

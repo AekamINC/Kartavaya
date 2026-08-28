@@ -46,21 +46,46 @@ not happen, because the component searches from `onChange` and a seeded box
 would put every existing customer's premises one keystroke from a third party
 under a perpetual licence, while looking like the feature working.
 
-🔴 **ONE LIVE CALL SPENT, AND IT WAS REFUSED.** Generic public place, never a
-customer record — the allocation is 200 hits and each is billable AND a
-submission under Mappls' content licence.
+🔴 **REFUSED LIVE — and the diagnosis was corrected TWICE. The second
+correction is the one that matters, because the first blamed the owner for
+our own bug.**
 
-    available   False
-    reason      unavailable          <- NOT not_configured
-    log         mappls autosuggest refused the static key (HTTP 401)
+Round 1, against the deploy: `available:false`, `reason:unavailable`, log
+`refused the static key (HTTP 401)`. I recorded that as an owner-blocked
+Autosuggest **entitlement**. Wrong.
 
-The two reasons are kept apart precisely so this is answerable: we hold a
-credential and Mappls refused it. **The same Static Key works for the Web Map
-SDK** — the Gujarat outline draws on the deployed site — so it is a per-product
-entitlement, not a bad key. An *allocation* of 200 is not an entitlement. And
-the SDK is called from the browser with an Origin while autosuggest is called
-from our server with none, so a browser-origin whitelist may refuse it for a
-reason that never applied to the map. OWNER-ACTIONS item 13.
+⚠ **The bug was OURS.** `atlas.mappls.com` follows OAuth 2.0 and takes a
+**bearer token in the Authorization header**. This file was sending the Static
+Key as `?access_token=`, reasoning that the Web Map SDK takes the console key
+in a parameter of that name. It does not transfer:
+
+    Web Map SDK (browser)   MAPPLS_STATIC_KEY   ?access_token= query param
+    REST APIs   (server)    the OAuth pair  ->  bearer token in a header
+
+Fixed in `3914b68c`. **Second time this codebase has been right that a Mappls
+credential was missing and wrong about which one** — §7.5 lost months to the
+mirror image. PHASE-7 §7.6 specified the OAuth pair from the start and was
+right; the deviation was mine. `services/mappls.py`'s note calling the OAuth
+token "not accepted by ANYTHING" over-generalised one true measurement about
+the SDK host into a claim about every product; corrected there by name.
+
+Round 2, probed straight from the Railway environment — mint and search
+separated, so the answer is not a guess:
+
+    MINT    outpost.mappls.com   -> HTTP 200
+            bearer | scope READ | expires_in 67178
+    SEARCH  atlas.mappls.com     -> HTTP 401
+            "Api Access Denied" / "Domain validation failed"
+
+**The credential is fine; the refusal is the WHITELIST** — the same words the
+SDK gave during 7.5. ⚠ **And we cannot satisfy it**: a server-side call sends
+no `Origin`/`Referer`, and sending each explicitly from our own
+already-whitelisted domain was refused identically. The credential needs
+server-side / no-referer REST use permitted on the console or by Mappls
+support, whose address their own error names. OWNER-ACTIONS item 14.
+
+Four live calls total, all on the same generic public place, never a customer
+record.
 
 ### 8.4 ✅ · the phase is closed · `a942fb9d` `a2189ad1`
 
