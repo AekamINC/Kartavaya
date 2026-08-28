@@ -510,6 +510,29 @@ Origin:  https://staging.kartavaya.com    -> 401 Domain validation failed
 Both refused. So the whitelist that admits the browser SDK does not admit a
 server-to-server call, and no header we can set changes that.
 
+**Six routes tried, all refused. Do not re-try these** — each cost a call and
+each is written down so the next reader does not spend another:
+
+```
+1  static key, server, no referer      401 invalid_token
+2  OAuth token, server, no referer     401 Domain validation failed
+3  OAuth token, server, + Referer      401 Domain validation failed
+4  OAuth token, server, + Origin       401 Domain validation failed
+5  static key, server, + Referer       401 invalid_token
+6  browser fetch from staging.kartavaya.com, real origin
+                                       CORS preflight blocked - no
+                                       Access-Control-Allow-Origin on atlas
+```
+
+Rows 1 and 5 say the **Static Key is not a credential for `atlas` at all** —
+`invalid_token`, a different refusal from the others. Rows 2-4 say the **OAuth
+token IS valid** and is stopped one stage later, at the domain check. Row 6
+rules out moving the call into the browser, which would otherwise have been the
+clean answer: it needs no whitelist entry for a server, and it would moot the
+Geospatial Guidelines question below because the data would never pass through
+our servers. Mappls does not send CORS headers on that host, so it cannot be
+called from a page.
+
 **What to ask for.** On the console for project `prj1787726591i922664629`, this
 credential needs to be permitted for **server-side / no-referer** use of the
 REST APIs - or Mappls support (`apisupport@mapmyindia.com`, named in their own
@@ -517,7 +540,7 @@ error) needs to enable it. Their message asks you to contact them directly, so
 that is likely the route. Quote the error verbatim and say it is a
 server-to-server call with no referer.
 
-**Cost so far: four live calls**, all against the same generic public place
+**Cost so far: six live calls**, all against the same generic public place
 (`Bopal Circle`) and never a customer record - the allocation is 200 hits and
 every call is both billable and a submission under Mappls' perpetual,
 sub-licensable content licence.
