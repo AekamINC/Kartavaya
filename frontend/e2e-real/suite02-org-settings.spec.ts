@@ -4,14 +4,45 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * CREDENTIALS
  * ═══════════════════════════════════════════════════════════════════════════
- * Same blocker as Suite 01, recorded in full in `suite01-auth.spec.ts`: no
- * password exists for any of the five Unicode Group seats, and both stored
- * tokens expired 2026-08-27 (verified live — `GET /api/v1/org/members` with
- * `E2E_ADMIN_TOKEN` answers `401 Invalid or expired token`). Put
- * `E2E_UNICODE_EMAIL` / `E2E_UNICODE_PASSWORD` in `.env.e2e` to unblock.
+ * ⚠ This header used to say both stored tokens expired 2026-08-27. **That was
+ * stale, and it cost a whole session**: reading it as true is why Wave 1 first
+ * ran on an E2E fallback lane instead of the reference lane §14 requires.
+ * Re-measured 2026-08-28: `E2E_UNICODE_TOKEN` and `E2E_UK_OWNER_TOKEN` both
+ * answer `200` on `GET /api/v1/org/profile` and resolve to their own orgs.
+ * Tokens expire ~2026-09-04 — to mint longer ones the owner signs in with
+ * **"Keep me signed in"** ticked (`JWT_REMEMBERED_DAYS=365` against
+ * `JWT_TTL_DAYS=7`). Do NOT change that constant; it is a product security
+ * setting.
  *
  * ⚠ Several tests here additionally need **org_owner**, not org_admin — see
  * 02.3. Of the five Unicode seats only `kevalvshah03@gmail.com` is the owner.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE LANE GUARD — and why it is in this file rather than trusted elsewhere
+ * ═══════════════════════════════════════════════════════════════════════════
+ * On 2026-08-28 THIS SUITE renamed **Aekam Inc** — the one org proposal 93
+ * guarantees is untouched — to "Unicode Group" and wrote a UPI row into it. The
+ * credential held `platform_admin`, so every request resolved to Aekam via
+ * `platform_bypass`, the save genuinely succeeded, and the suite went GREEN.
+ *
+ * `_lanes.ts::assertOrg()` was written that day as the countermeasure. It has
+ * been found not running **twice since**: once on 2026-08-28 (commit ae7f0510,
+ * "the org guard had never run"), which repaired the backend echo it compares
+ * against but left its own first finding — *no spec imported it* — standing;
+ * and again today, where a grep for `assertOrg` across every spec still
+ * returned only the file that defines it.
+ *
+ * *A gate nobody has seen fail is decoration* — 93 §0. So it is now imported
+ * here and called inside `signInAs()`, which is the ONLY way into this suite —
+ * a test cannot reach a form without passing it. It is **proved to bite by
+ * mutation**: pointing the lane at another org id turns the suite red with the
+ * WRONG ORG message, and restoring it turns it green.
+ *
+ * The `E2E_GODMODE_TOKEN` fallback that used to sit in `resolveLane()` is gone
+ * with it. That was the same credential class that caused the incident, one
+ * expired token away from silently driving Aekam Inc while printing
+ * "LANE: Unicode Group (reference lane)". Rule 1 of `_lanes.ts` is absolute:
+ * **write suites never use a platform credential.** God mode is Suite 19.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * THE PRODUCT RULES THIS SUITE IS GUARDING
@@ -30,43 +61,58 @@
  *   npx playwright test --config e2e-real/wave1.config.ts --grep "Suite 02"
  */
 import { test, expect, Page } from '@playwright/test';
+import { ORG as ORG_IDS, assertOrg, type Lane as OrgLane } from './_lanes';
 
 const BLOCKED =
-  'BLOCKED — no Unicode Group credential. See suite01-auth.spec.ts for the ' +
-  'measurement. ENVIRONMENT blocker, not a product or test defect.';
+  'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +
+  'E2E_UNICODE_EMAIL/_PASSWORD) in .env.e2e at the repo root. ⚠ It must be an ' +
+  'ORG-SCOPED account: a platform_admin token resolves to Aekam Inc via ' +
+  'platform_bypass and will write there. ENVIRONMENT blocker, not a product ' +
+  'or test defect.';
 
 type Creds = { email: string; password: string };
 
 /**
  * THE LANE — announced, never assumed. Mirrors suite01-auth.spec.ts.
  *
- * §14 makes Unicode the reference lane. There is no Unicode credential on this
- * machine, and waiting for one stops the programme, so this falls back to E2E
- * Test & Associates — also wiped, also empty, and the org the dummy logins
- * actually hold seats in.
+ * §14 makes Unicode the reference lane, and `E2E_UNICODE_TOKEN` reaches it
+ * (re-measured 2026-08-28), so branch 2 is what runs today. Branch 3 exists
+ * only so that a missing credential does not stop the programme dead.
  *
  * ⚠ An E2E run is NOT a Unicode run. §14 compares the Unicode pass against the
  * UK replay, and a silent third org in the middle corrupts that comparison — so
- * the lane is printed on every run.
+ * the lane is printed on every run, and `assertOrg()` proves it against the org
+ * id the SERVER resolved rather than against the label printed here.
  */
-type Lane = { creds: Creds; org: string; reference: boolean; token?: string };
+type Lane = { creds: Creds; org: string; orgId: string; reference: boolean; token?: string };
 
 function resolveLane(): Lane {
   // 1. Unicode with a password — the ideal: reference lane, real form login.
   const uniEmail = process.env.E2E_UNICODE_EMAIL;
   const uniPassword = process.env.E2E_UNICODE_PASSWORD;
   if (uniEmail && uniPassword) {
-    return { creds: { email: uniEmail, password: uniPassword }, org: 'Unicode Group', reference: true };
+    return {
+      creds: { email: uniEmail, password: uniPassword },
+      org: 'Unicode Group', orgId: ORG_IDS.UNICODE, reference: true,
+    };
   }
 
   // 2. Unicode by TOKEN — what the owner supplied on 2026-08-28. Still the
   //    reference lane, and every row is still typed; only the door is opened
   //    differently. See signIn() for exactly where that line sits.
-  const uniToken = process.env.E2E_UNICODE_TOKEN || process.env.E2E_GODMODE_TOKEN;
+  //
+  // ⚠ THERE IS NO `E2E_GODMODE_TOKEN` FALLBACK HERE, and its absence is the
+  // point. It used to be the second half of this `||`, which meant one expired
+  // Unicode token stood between this suite and driving **Aekam Inc** — the
+  // thing that actually happened on 2026-08-28 — while still printing
+  // "LANE: Unicode Group (reference lane)" to the run log. A write suite that
+  // can silently fall back to a platform credential has no lane at all.
+  const uniToken = process.env.E2E_UNICODE_TOKEN;
   if (uniToken) {
     return {
-      creds: { email: 'kevalvshah03@gmail.com', password: '' },
+      creds: { email: 'kevalvshah03+1@gmail.com', password: '' },
       org: 'Unicode Group',
+      orgId: ORG_IDS.UNICODE,
       reference: true,
       token: uniToken,
     };
@@ -76,7 +122,10 @@ function resolveLane(): Lane {
   const email = process.env.E2E_APPROVER_EMAIL;
   const password = process.env.E2E_APPROVER_PASSWORD;
   if (!email || !password) throw new Error(BLOCKED);
-  return { creds: { email, password }, org: 'E2E Test & Associates', reference: false };
+  return {
+    creds: { email, password },
+    org: 'E2E Test & Associates', orgId: ORG_IDS.E2E, reference: false,
+  };
 }
 
 const LANE = resolveLane();
@@ -136,6 +185,31 @@ async function signIn(page: Page, creds: Creds) {
   await page.evaluate((t) => localStorage.setItem('auth_token', t), LANE.token);
   await page.goto('/dashboard');
   await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 45_000 });
+}
+
+/**
+ * Sign in, then REFUSE TO CONTINUE unless the session resolved to this lane's
+ * organisation.
+ *
+ * ⚠ The guard lives inside the sign-in helper deliberately, rather than being
+ * a line each test remembers to write. `assertOrg()` has now been found not
+ * running twice — it was written on 2026-08-28 and no spec had ever imported
+ * it, on that day or since. A countermeasure that depends on being remembered
+ * is a countermeasure that will be forgotten; one that a test cannot get past
+ * the door without is not.
+ *
+ * It asserts the org **ID**, never the name on screen — the name is precisely
+ * what got corrupted in the incident, so a name check would have passed while
+ * Aekam Inc was called "Unicode Group".
+ */
+async function signInAs(page: Page, creds: Creds) {
+  await signIn(page, creds);
+  await assertOrg(page.request, page, {
+    key: LANE.reference ? 'unicode' : 'e2e',
+    org: LANE.org,
+    orgId: LANE.orgId,
+    reference: LANE.reference,
+  } as OrgLane);
 }
 
 /**
@@ -211,7 +285,7 @@ const RUN = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 
 test.describe('Suite 02 — org settings · Unicode Group', () => {
   test('02.1 the company profile saves name, address and state', async ({ page }) => {
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
     await openTab(page, 'profile');
 
     // ⚠ WHAT THIS DOES *NOT* ASSERT, and why.
@@ -258,7 +332,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // THE regression this product keeps re-growing. Asserted on its own so a
     // failure here names itself instead of being one line inside 02.1.
     const wire = watchWire(page);
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
     await openTab(page, 'profile');
 
     await expect(page.locator('#org-gstin')).toBeVisible({ timeout: 30_000 });
@@ -396,7 +470,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // where the statute is enforced.
     // ═══════════════════════════════════════════════════════════════════════
     const wire = watchWire(page);
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
     await openTab(page, 'profile');
 
     const name = page.locator('#org-name');
@@ -466,7 +540,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   });
 
   test('02.3 modules — what an org can actually switch on', async ({ page }) => {
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
     await openTab(page, 'modules');
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -528,7 +602,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
 
   test('02.4 email sender addresses save', async ({ page }) => {
     const wire = watchWire(page);
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
     await openTab(page, 'senders');
 
     // `staging.org_email_senders` EXISTS (verified live, 2026-08-28), so the
@@ -561,7 +635,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
 
   test('02.5 UPI is one ID PER PLATFORM, not one VPA field', async ({ page }) => {
     const wire = watchWire(page);
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
     await openTab(page, 'upi');
 
     // The decision on record: a firm holds a Paytm, a PhonePe and a Google Pay
@@ -591,7 +665,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
 
   test('02.6 document number series', async ({ page }) => {
     const wire = watchWire(page);
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
 
     // ⚠ NOT under /settings/organisation. `TabDocNumbers` is imported by
     // `GanitPage.jsx` and registered as `['settings', TabDocNumbers]` — it is a
@@ -698,7 +772,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   });
 
   test('02.7 no UUID is rendered, and no native date input exists', async ({ page }) => {
-    await signIn(page, requireUnicode());
+    await signInAs(page, requireUnicode());
 
     // The static ratchet is `frontend/scripts/check-rendered-ids.mjs`. This is
     // the runtime half: what the browser actually painted, on every tab of the
@@ -723,5 +797,475 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     }
 
     expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * MEMBERS — §10's first missing screen, and the one every later wave needs.
+   *
+   * §10 lists 18 screens for Suite 02 and eight had tests. This is the first of
+   * the ten that did not, and it goes first on purpose: waves 2-8 need PEOPLE —
+   * somebody to put on payroll, assign a task to, approve leave for, route a
+   * territory to. Those accounts are produced here, by invitation, or they are
+   * not produced at all.
+   *
+   * ── The 409 that made this urgent ──────────────────────────────────────────
+   * `org_invites.py:455` refuses an address that already has an account:
+   *   409 "Someone with this email already has an account. Add them from the
+   *        Members tab instead of inviting them."
+   * R4 removed the member SEATS and left 25 accounts standing in the global
+   * `public.users`, so every seeded address answered 409 and this lane could
+   * not run at all. R4b deleted those 25 — see
+   * `docs/plans/93-R4B-ACCOUNT-PURGE-RISK-REPORT.md`. 02.9 below is the live
+   * proof that the addresses came back.
+   *
+   * ── How the invitation is carried, and why this is still rule 1 ────────────
+   * `TabMembers.jsx` deliberately does NOT print the invite link on screen —
+   * "it carries a working token, and a token on a settings page is a credential
+   * anyone behind the operator can read". It offers a **Copy invite link**
+   * button instead. So this suite does what the admin does: clicks that button
+   * and reads the clipboard. Nothing is fabricated and no API is short-cut; the
+   * link is the one the product minted and handed over.
+   *
+   * ── Idempotence (§6), which is proved by running twice, never claimed ──────
+   * Every test here recognises its own output. 02.8 holds a fixed roster of
+   * member SLOTS with deterministic addresses: a slot already seated is
+   * verified and left alone, a slot with an invitation pending is re-issued,
+   * and only a slot that is neither is invited afresh. A second run therefore
+   * adds nobody and still asserts everything.
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * The persistent roster. Addresses are gmail plus-tags on the owner's own
+   * mailbox — §3's scheme, and the half of the seeded population that is
+   * genuinely checkable, because a person can open it and look.
+   *
+   * ⚠ Not `test+<tag>@unicodegroup.com`. That was measured on 2026-08-28 and it
+   * BOUNCES: IONOS rejects the plus-tag, exactly as was doubted on 18 Aug.
+   * `test@unicodegroup.com` with no tag delivers, but `public.users_email_key`
+   * is UNIQUE table-wide, so that address can back exactly ONE login.
+   */
+  const SLOTS = [
+    { tag: 'ops', name: 'Priya Nair', role: 'org_member' },
+    { tag: 'adm', name: 'Rohan Desai', role: 'org_admin' },
+  ];
+  const slotEmail = (tag: string) => `kevalvshah03+u${tag}@gmail.com`;
+
+  const API_BASE = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+
+  /** The member rows the SERVER holds, read fresh. The screen is the claim; this is the fact. */
+  async function members(page: Page) {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}/api/v1/org/members`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    expect(res.ok(), `GET /org/members -> ${res.status()}: ${await res.text()}`).toBeTruthy();
+    const body = await res.json();
+    return (Array.isArray(body) ? body : body.data ?? []) as any[];
+  }
+
+  /** The invitations still pending, same treatment. */
+  async function pendingInvites(page: Page) {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}/api/v1/org/invites`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok()) return [] as any[];
+    const body = await res.json();
+    return (Array.isArray(body) ? body : body.data ?? []) as any[];
+  }
+
+  const lower = (s: unknown) => String(s ?? '').toLowerCase();
+
+  /**
+   * Type an address into the real form, pick the role from the real select and
+   * click the real button. Returns what the PRODUCT said happened — 'invited'
+   * for a person with no account, 'added' for one who already had one.
+   *
+   * The two are told apart by the response's own `status` field, because that
+   * is what `addMember()` itself branches on. Reading the toast would be
+   * reading the client's opinion of the server's answer.
+   */
+  async function addOrInvite(page: Page, email: string, role: string) {
+    await openTab(page, 'members');
+    const box = page.locator('#add-email');
+    await expect(box).toBeVisible({ timeout: 30_000 });
+
+    // Real keystrokes, never fill(). `fill()` sets a value without firing key
+    // events, and a controlled input can miss it — the fault behind 02.2's
+    // false accusation that "a firm cannot remove its GSTIN".
+    await box.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('Delete');
+    await box.pressSequentially(email, { delay: 12 });
+    await page.locator('#add-role').selectOption(role);
+
+    const [res] = await Promise.all([
+      page.waitForResponse(
+        (r) => /\/org\/members$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+        { timeout: 30_000 },
+      ),
+      page.getByRole('button', { name: /Add or invite/ }).click(),
+    ]);
+    const body = await res.json().catch(() => ({}) as any);
+    expect(
+      res.status(),
+      `POST /org/members -> ${res.status()}: ${JSON.stringify(body).slice(0, 300)}`,
+    ).toBeLessThan(400);
+    return { outcome: body?.status === 'invited' ? 'invited' : 'added', body, status: res.status() };
+  }
+
+  /** Take the link the way the admin takes it: click Copy, read the clipboard. */
+  async function copyInviteLink(page: Page) {
+    await page.getByRole('button', { name: /Copy invite link/ }).click();
+    await expect(page.getByRole('button', { name: /^Copied$/ })).toBeVisible({ timeout: 10_000 });
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    expect(link, 'the Copy invite link button put nothing on the clipboard').toMatch(
+      /accept-invite\?token=/,
+    );
+    return link;
+  }
+
+  /**
+   * Accept an invitation the way the invited person does: in a CLEAN browser
+   * context with no session, at the link the product minted.
+   *
+   * The fresh context is not fastidiousness. Accepting while the admin's token
+   * is still in `localStorage` would prove only that the ADMIN's browser can
+   * open the page — and the invited person's browser has never seen this site.
+   */
+  async function acceptInvite(browser: any, link: string, name: string, password: string) {
+    const ctx = await browser.newContext();
+    const p = await ctx.newPage();
+    try {
+      await p.goto(link);
+      await expect(p.locator('#inv-name')).toBeVisible({ timeout: 30_000 });
+      await p.locator('#inv-name').pressSequentially(name, { delay: 10 });
+      await p.locator('#inv-password').pressSequentially(password, { delay: 10 });
+      await p.locator('#inv-confirm').pressSequentially(password, { delay: 10 });
+      await p.getByRole('button', { name: /Accept & create account/ }).click();
+      // The account is live when the app lets them off /accept-invite.
+      await p.waitForURL((u) => !/accept-invite/.test(u.pathname), { timeout: 45_000 });
+      return p.url();
+    } finally {
+      await ctx.close();
+    }
+  }
+
+  test('02.8 members — invite, accept in a clean browser, and the person is seated', async ({
+    page,
+    browser,
+  }) => {
+    const wire = watchWire(page);
+    await signInAs(page, requireUnicode());
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    const report: string[] = [];
+
+    for (const slot of SLOTS) {
+      const email = slotEmail(slot.tag);
+      const seated = (await members(page)).find((m) => lower(m.email) === email);
+
+      // ── Idempotent branch: already seated. Verify, never duplicate. ───────
+      //
+      // ⚠ AND DO NOT ASSERT THE NAME HERE. These addresses are the owner's real
+      // gmail plus-tags, so the invitation genuinely lands in a real inbox — and
+      // on 2026-08-28 the owner opened one **on their phone and accepted it**
+      // (`audit_log` 5707: `auth.invite_accepted`, iPhone Safari, a different
+      // IP) while this suite was still running. The seat is correct; the person
+      // simply typed their own name rather than the roster's. That is not a
+      // defect in either the product or the test — it is what §3 signed up for
+      // by choosing deliverable addresses over fake ones, and a suite that
+      // asserts the name would go red because a human answered their own mail.
+      if (seated) {
+        report.push(`${email}: already seated as ${seated.role_code} — verified, not re-created`);
+        await openTab(page, 'members');
+        await expect(page.locator('.omt__e').filter({ hasText: email })).toBeVisible({
+          timeout: 30_000,
+        });
+        continue;
+      }
+
+      // ── A pending invitation cannot have its link re-read: the product
+      //    shows it once, to the operator who made it. Revoking and re-issuing
+      //    is what an admin does when the link is lost, so that is what
+      //    happens here.
+      const pending = (await pendingInvites(page)).find((i) => lower(i.email) === email);
+      if (pending) {
+        await openTab(page, 'members');
+        await page
+          .locator('.of__f--row')
+          .filter({ hasText: email })
+          .getByRole('button', { name: /Revoke/ })
+          .click();
+        await expect(page.locator('.tst__t').getByText(/revoked/i)).toBeVisible({ timeout: 20_000 });
+        report.push(`${email}: a stale invitation was revoked before re-inviting`);
+      }
+
+      const { outcome } = await addOrInvite(page, email, slot.role);
+      expect(
+        outcome,
+        `${email} has no account, so the product must INVITE rather than add`,
+      ).toBe('invited');
+
+      // The product says so on screen, in the toast TITLE — `.tst__t` carries
+      // the verb, `.tst__s` the message. 02.2b was a test bug for reading the
+      // pair the wrong way round, so the distinction is named here too.
+      //
+      // ⚠ A PLAIN STRING, not a RegExp, and that is this test's own first
+      // near-miss. It was written as ``new RegExp(`Invitation sent to ${email}`)``
+      // — and `+` is a quantifier, so `kevalvshah03+uadm@…` compiled to
+      // "kevalvshah03 then one-or-more u then adm@…" and could never match a
+      // literal address. It failed reading exactly like a product defect: *the
+      // product does not confirm an invitation was sent*. The captured page
+      // context showed it confirming in two places at once — this toast and the
+      // "Invited ·" section below. **Never build a matcher out of data that can
+      // contain regex metacharacters**; Playwright substring-matches a string.
+      await expect(page.locator('.tst__t').getByText(`Invitation sent to ${email}`)).toBeVisible({
+        timeout: 20_000,
+      });
+
+      // ⚠ It must also appear under "Invited · N". That section exists because
+      // a pending invitation OCCUPIES A SEAT, and an admin at the seat limit
+      // has to be able to see what is holding the places.
+      await expect(page.locator('.oinv__e').filter({ hasText: email })).toBeVisible({
+        timeout: 20_000,
+      });
+
+      const link = await copyInviteLink(page);
+      const landed = await acceptInvite(browser, link, slot.name, `Kt-${slot.tag}-93-Aug!`);
+      report.push(`${email}: invited -> accepted -> landed on ${new URL(landed).pathname}`);
+
+      // ── The consequence, asserted where the customer sees it ─────────────
+      await openTab(page, 'members');
+      await expect(page.locator('.omt__n').filter({ hasText: slot.name })).toBeVisible({
+        timeout: 30_000,
+      });
+      // A NAME on screen, never an id — the standing rule.
+      await expect(page.locator('.omt__e').filter({ hasText: email })).toBeVisible();
+      // ...and the invitation has stopped holding a seat.
+      await expect(page.locator('.oinv__e').filter({ hasText: email })).toHaveCount(0);
+    }
+
+    // ── The roster declares the intended state, so this CONVERGES on it ────
+    //
+    // The first draft simply asserted the role, and that was wrong in a way
+    // worth recording: a slot the run did not create is a slot whose role this
+    // run never set, so asserting it accuses the product of somebody else's
+    // choice. `+uops` was seated `org_admin` by an earlier broken revision of
+    // 02.10 that failed AFTER its PUT landed and so never restored it — and the
+    // assertion then reported that as "seated with the wrong role".
+    //
+    // Declaring the intended state and steering to it is both idempotent and
+    // self-healing, and it drives the real control to get there rather than
+    // asserting from the outside.
+    await openTab(page, 'members');
+    for (const slot of SLOTS) {
+      const email = slotEmail(slot.tag);
+      const m = (await members(page)).find((x) => lower(x.email) === email);
+      expect(m, `${email} is not in GET /org/members${dump(wire)}`).toBeTruthy();
+
+      if (m.role_code === slot.role) continue;
+
+      report.push(`${email}: role drifted to ${m.role_code} — steering back to ${slot.role}`);
+      const row = page.locator('.omt tbody tr').filter({ hasText: email });
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      await row.getByRole('button', { name: /Actions for/ }).click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible({ timeout: 10_000 });
+      const [res] = await Promise.all([
+        page.waitForResponse(
+          (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
+          { timeout: 30_000 },
+        ),
+        menu
+          .getByRole('menuitem', {
+            name: slot.role === 'org_admin' ? /Make org admin/ : /Make org member/,
+          })
+          .click(),
+      ]);
+      expect(res.status(), `PUT role -> ${res.status()}`).toBeLessThan(400);
+
+      // The row is the evidence, not the screen's opinion of it.
+      expect(
+        (await members(page)).find((x) => lower(x.email) === email)?.role_code,
+        `${email} would not move to ${slot.role}`,
+      ).toBe(slot.role);
+    }
+    console.log('\n[02.8] ' + report.join('\n[02.8] ') + '\n');
+  });
+
+  test('02.9 members — an address whose account was purged can be invited again', async ({
+    page,
+  }) => {
+    await signInAs(page, requireUnicode());
+
+    // ⚠ A REGRESSION TEST FOR A DATA STATE, NOT FOR CODE — and it is here
+    // because the failure it guards was invisible from the product side. R4
+    // left 25 accounts standing in the global `public.users` after removing
+    // their seats, so `org_invites.py:455` answered 409 for every seeded
+    // address and the entire members lane was unreachable. R4b removed them.
+    //
+    // The assertion is deliberately written as "the product does not say the
+    // address is taken", because that sentence IS the symptom.
+    const freed = 'kevalvshah03+qaadmin@gmail.com'; // one of the 25 purged
+    const { outcome, body } = await addOrInvite(page, freed, 'org_member');
+
+    expect(
+      JSON.stringify(body),
+      'the product still believes this address has an account — the R4b purge ' +
+        'did not free it, and the members lane is blocked again',
+    ).not.toMatch(/already has an account/i);
+    expect(outcome, 'a purged address must take the INVITE path, not the add path').toBe('invited');
+
+    // Leave nothing behind: this test only needed to learn that the door opens.
+    await expect(page.locator('.oinv__e').filter({ hasText: freed })).toBeVisible({
+      timeout: 20_000,
+    });
+    await page
+      .locator('.of__f--row')
+      .filter({ hasText: freed })
+      .getByRole('button', { name: /Revoke/ })
+      .click();
+    await expect(page.locator('.tst__t').getByText(/revoked/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.oinv__e').filter({ hasText: freed })).toHaveCount(0);
+  });
+
+  test('02.10 members — the role changes, and the badge and the row agree', async ({ page }) => {
+    const wire = watchWire(page);
+    await signInAs(page, requireUnicode());
+
+    const email = slotEmail('ops');
+    const before = (await members(page)).find((m) => lower(m.email) === email);
+    expect(before, `02.8 must run first — ${email} is not a member${dump(wire)}`).toBeTruthy();
+
+    // ⚠ THIS TEST READS THE STARTING ROLE RATHER THAN ASSUMING ONE, and the
+    // first draft did assume, which broke it twice over. The row's menu offers
+    // only the transition that applies — `admin ? 'Make org member' : 'Make org
+    // admin'` (MemberTable.jsx) — so a test that always looks for "Make org
+    // admin" cannot run against a member who is already one. And because the
+    // first draft failed AFTER its PUT landed, it left this person promoted,
+    // which is the state the next run then met. A toggle that reads first is
+    // idempotent from any starting point; one that assumes is idempotent from
+    // exactly one.
+    const START = before.role_code === 'org_admin' ? 'org_admin' : 'org_member';
+    const OTHER = START === 'org_admin' ? 'org_member' : 'org_admin';
+
+    // ⚠ The BADGE and the SELECT do not use the same words. `ROLE_OPTIONS` in
+    // the add form says "Org admin"; the row badge (`ROLE_META`,
+    // MemberTable.jsx:55) says plain "Admin". The first draft asserted the
+    // form's wording against the badge, and it read exactly like a product
+    // defect: *the role changed and the badge did not follow*. It had followed
+    // — the server showed `org_admin` at the same second — and the label being
+    // looked for was one the product never renders anywhere.
+    const badge = (role: string) => (role === 'org_admin' ? 'Admin' : 'Member');
+
+    await openTab(page, 'members');
+    const row = page.locator('.omt tbody tr').filter({ hasText: email });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+
+    // Suite rule 6: scope to the OPEN MENU. An unscoped name match resolves in
+    // DOM order and will happily hit the sidebar instead of the row's action.
+    const setRole = async (to: 'org_admin' | 'org_member') => {
+      await row.getByRole('button', { name: /Actions for/ }).click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible({ timeout: 10_000 });
+      const [res] = await Promise.all([
+        page.waitForResponse(
+          (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
+          { timeout: 30_000 },
+        ),
+        menu
+          .getByRole('menuitem', { name: to === 'org_admin' ? /Make org admin/ : /Make org member/ })
+          .click(),
+      ]);
+      expect(res.status(), `PUT role -> ${res.status()}`).toBeLessThan(400);
+      // The screen is the claim; the row is the fact. Both are asserted, and
+      // the failure message says which of the two disagreed.
+      await expect(row.locator('.rb').getByText(badge(to), { exact: false })).toBeVisible({
+        timeout: 20_000,
+      });
+      expect(
+        (await members(page)).find((m) => lower(m.email) === email)?.role_code,
+        `the badge reads "${badge(to)}" — the server must agree`,
+      ).toBe(to);
+    };
+
+    await setRole(OTHER);
+    // Put it back, so a second run starts exactly where the first one did (§6).
+    await setRole(START);
+    console.log(`\n[02.10] ${email}: ${START} -> ${OTHER} -> ${START}, badge and row agreed at each step\n`);
+  });
+
+  test('02.11 members — remove takes the seat, and warns what it does not take', async ({
+    page,
+    browser,
+  }) => {
+    const wire = watchWire(page);
+    await signInAs(page, requireUnicode());
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    // A member of this test's own making, so it never removes one another test
+    // depends on.
+    //
+    // ⚠ Removing a member takes the SEAT and leaves the ACCOUNT, so on a second
+    // run the product legitimately takes the "added straight away" path instead
+    // of the invite path. BOTH are correct, so the outcome is REPORTED rather
+    // than asserted — asserting either one would make this test fail on its
+    // second run, and a test that fails on correct behaviour is a defect in the
+    // test (93 §0).
+    const email = 'kevalvshah03+utemp@gmail.com';
+    let seated = (await members(page)).find((m) => lower(m.email) === email);
+
+    if (!seated) {
+      const { outcome } = await addOrInvite(page, email, 'org_member');
+      console.log(`\n[02.11] ${email} entered by the "${outcome}" path\n`);
+      if (outcome === 'invited') {
+        const link = await copyInviteLink(page);
+        await acceptInvite(browser, link, 'Temp Removable', 'Kt-temp-93-Aug!');
+      }
+      seated = (await members(page)).find((m) => lower(m.email) === email);
+      expect(seated, `${email} did not become a member${dump(wire)}`).toBeTruthy();
+    }
+
+    // ⚠ OUTSIDE the branch, and that is this test's own third near-miss. The
+    // `openTab` used to sit INSIDE `if (!seated)`, so on the run where the
+    // member already existed the branch was skipped and the row locator ran
+    // against **the dashboard** — `signInAs` lands on /dashboard. It failed
+    // reading like a product defect: *a member the API returns is not shown on
+    // the members screen*. The captured page snapshot showed Today, Approvals
+    // and Team pulse: the members table was not missing, it was never opened.
+    await openTab(page, 'members');
+    const row = page.locator('.omt tbody tr').filter({ hasText: email });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.getByRole('button', { name: /Actions for/ }).click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible({ timeout: 10_000 });
+    await menu.getByRole('menuitem', { name: /Remove from organisation/ }).click();
+
+    // ⚠ A destructive confirmation must SAY WHAT SURVIVES. "Their work stays;
+    // only their access is removed" is the sentence that stops an admin
+    // believing a removal deletes the person's tasks. Its absence would be the
+    // defect — not its wording.
+    await expect(page.getByText(/Remove from organisation\?/)).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByText(/Their work stays; only their access is removed/i),
+    ).toBeVisible();
+
+    const [res] = await Promise.all([
+      page.waitForResponse(
+        (r) => /\/org\/members\//.test(r.url()) && r.request().method() === 'DELETE',
+        { timeout: 30_000 },
+      ),
+      page.getByRole('button', { name: /^Remove$/ }).click(),
+    ]);
+    expect(res.status(), `DELETE member -> ${res.status()}`).toBeLessThan(400);
+
+    await expect(page.locator('.omt__e').filter({ hasText: email })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    expect(
+      (await members(page)).find((m) => lower(m.email) === email),
+      `${email} is gone from the screen but still in GET /org/members${dump(wire)}`,
+    ).toBeFalsy();
   });
 });

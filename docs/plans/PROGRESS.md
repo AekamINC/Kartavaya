@@ -4376,6 +4376,100 @@ the ROUTER does; that the COLUMN accepts it is proved separately, by
 symmetry here means none of the three blocks anything. Neither PROPOSED file is
 applied or renumbered; only their TAN blocks are commented out.
 
+## 2026-08-28 - Suite 02 members: the lane that produces the people
+
+S10 asks for 18 screens and eight had tests. This is the first of the ten that
+did not, and it went first for a structural reason rather than an arbitrary one:
+waves 2-8 need PEOPLE. Somebody to put on payroll, assign a task to, approve
+leave for, route a territory to. Those accounts are produced here, by
+invitation, or they are not produced at all.
+
+**Suite 02 is 12/12, green on two consecutive full runs.** S6 idempotence is
+proved by running twice, never by claiming it - and the two Suite 02 defects
+found earlier on 2026-08-28 were both visible only on a second run.
+
+Added: 02.8 invite -> accept in a clean browser context -> seated; 02.9 an
+address whose account R4b purged can be invited again; 02.10 role change with
+badge and row agreeing at each step; 02.11 remove takes the seat and warns what
+it does not take.
+
+### THE ORG GUARD HAD STILL NEVER RUN - the third finding of the same thing
+
+`assertOrg()` was written on 2026-08-28, the day this suite renamed Aekam Inc.
+Commit ae7f0510 is titled "the org guard had never run" and it repaired the
+SECOND of the two faults it names - the `id` that `GET /org/profile` did not
+return - while leaving the FIRST exactly as found: no spec imported it. A grep
+for `assertOrg` across every spec today still returned only the file defining
+it. A gate nobody has seen fail is decoration (93 S0), and this one had been
+written, repaired and documented without ever once executing.
+
+It now runs inside `signInAs()`, which is the only way into the suite, so a test
+cannot reach a form without passing it - rather than being a line each test is
+trusted to remember. A countermeasure that depends on being remembered is one
+that will be forgotten.
+
+PROVED TO BITE BY MUTATION: pointing the lane at another org id fails with
+
+    WRONG ORG - refusing to write.
+       lane expects : Unicode Group (045b76ad-...)
+       session is on: fae87907-...
+
+and it fails inside sign-in, BEFORE the test reaches a form. Restored, green.
+
+The `E2E_GODMODE_TOKEN` fallback is gone from the lane resolver with it. It was
+the second half of `E2E_UNICODE_TOKEN || E2E_GODMODE_TOKEN`, which left exactly
+one expired token between this suite and driving Aekam Inc a second time - while
+printing "LANE: Unicode Group (reference lane)" to the run log. Rule 1 of
+_lanes.ts is absolute: write suites never use a platform credential.
+
+### THREE FAILURES, THREE TEST BUGS, NO FALSE ACCUSATION FILED
+
+Rule 2 says prove product-bug vs test-bug FIRST. Three times it was the test,
+and each would have read as a product defect if the wire or the captured page
+had not been read first:
+
+  1. The invite toast was asserted with a RegExp built from the email address -
+     and `+` is a QUANTIFIER, so `kevalvshah03+uadm@` compiled to "kevalvshah03,
+     one-or-more u, adm@" and could never match. Read cold: "the product does
+     not confirm an invitation was sent." The captured page showed it confirming
+     in TWO places at once - the toast and the "Invited" section. Never build a
+     matcher out of data that can carry regex metacharacters.
+  2. The role badge was asserted as "Org admin". ROLE_OPTIONS in the add form
+     says that; the row badge (ROLE_META, MemberTable.jsx:55) says plain
+     "Admin". Read cold: "the role changed and the badge did not follow." The
+     server showed org_admin written at the same second.
+  3. `openTab(page,'members')` sat INSIDE an `if (!seated)` branch, so on the run
+     where the member already existed the row locator ran against the DASHBOARD.
+     Read cold: "a member the API returns is not shown." The snapshot showed
+     Today, Approvals and Team pulse - the table was never opened.
+
+That is eight near-misses across this programme and eight stops, every one from
+the same habit: read the wire, the page context or the Railway log before
+writing the words "product bug".
+
+### A HUMAN ANSWERED THE TEST'S OWN MAIL, MID-RUN
+
+`audit_log` 5707: `auth.invite_accepted` for `kevalvshah03+uops@gmail.com` from
+IPHONE SAFARI, IP 104.28.86.108 - not this machine and not Playwright. The owner
+opened one of these invitations on their phone and accepted it while the suite
+was still running, typing their own name.
+
+Nothing is broken. S3 chose deliverable addresses over fake ones precisely so
+that a person can open the mail and look, and this is the other edge of that
+decision. The consequence for the suite is concrete: 02.8 must not assert the
+NAME of a slot it did not itself create, and its final pass now CONVERGES the
+roster's declared role through the real control rather than asserting a role it
+never set.
+
+### The rows
+
+Unicode Group: 6 seats -> 8. Two people invited, accepted and seated entirely
+through the real forms - the link taken from the product's own "Copy invite
+link" button and the clipboard, because TabMembers deliberately never prints it
+("a token on a settings page is a credential anyone behind the operator can
+read"). No SQL, no API shortcut. `check-e2e-no-bypass.mjs` passes at 58 spec
+files with the 5 baselined violations unchanged.
+
 ## 2026-08-28 · R4b — the accounts go, and UK gets its state code
 
 **§2 said "remove means remove"; R4 kept the logins and said so.** The narrowing

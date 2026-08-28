@@ -238,6 +238,54 @@ with a different blast radius), and no `staging.organisations` row was deleted �
 
 **↑ The first of those two was reversed on 2026-08-28 — see R4b below.**
 
+## Proposal 93 · Suite 02 members — 12/12, green twice · 28 Aug
+
+**§10 asks for 18 screens and eight had tests.** The members lane is the first
+of the ten that did not, and it went first because it produces the accounts
+every later wave needs — somebody to put on payroll, assign a task to, approve
+leave for. Suite 02 is now **12/12, green on two consecutive full runs**, which
+is how §6 idempotence is proved rather than claimed.
+
+New: **02.8** invite -> accept in a clean browser context -> seated ·
+**02.9** an address whose account R4b purged can be invited again ·
+**02.10** role change, badge and row agreed at each step ·
+**02.11** remove takes the seat and warns what it does not take.
+
+**⚠ THE ORG GUARD HAD STILL NEVER RUN — the third time it has been found so.**
+`assertOrg()` was written on 2026-08-28 after this suite renamed Aekam Inc.
+Commit `ae7f0510`, titled *"the org guard had never run"*, fixed its second half
+(the backend echo it compares against) and left its FIRST finding standing: no
+spec imported it. A grep today still returned only the file that defines it.
+It is now called inside `signInAs()` — the only way into the suite, so a test
+cannot reach a form without passing it — and **proved to bite by mutation**:
+pointed at another org id it fails with `⚠ WRONG ORG — refusing to write`,
+before the test reaches any form. Restored, and green.
+
+**The `E2E_GODMODE_TOKEN` fallback is gone from the lane resolver.** It sat as
+the second half of `E2E_UNICODE_TOKEN || E2E_GODMODE_TOKEN`, which put one
+expired token between this suite and driving Aekam Inc again — while still
+printing `LANE: Unicode Group (reference lane)`. Rule 1 of `_lanes.ts` is
+absolute: write suites never use a platform credential.
+
+**Three failures, three TEST bugs, no false accusation filed.** Each was read
+off the wire or the captured page before anything was written about the product:
+a `RegExp` built from an email, where `+` is a quantifier (the toast was
+present, in two places at once); a badge asserted as "Org admin" when
+`ROLE_META` renders plain **"Admin"** (the role had changed, at the same
+second); and an `openTab` left inside an `if` branch, so a row locator ran
+against the dashboard (the snapshot showed Today, not org settings).
+
+⚠ **The suite sends real invitations to a real mailbox, and a human may answer
+them.** `audit_log` 5707 records `auth.invite_accepted` from **iPhone Safari on
+a different IP** — the owner opened one of these invitations on their phone and
+accepted it mid-run. The seat is correct; only the name differs from the
+roster's. That is what §3 signed up for by choosing deliverable addresses over
+fake ones, so 02.8 no longer asserts the name of a slot it did not create.
+
+**Unicode Group now holds 8 seats**, up from 6 — two people created by
+invitation through the real form, no SQL and no API shortcut. The rule-1
+ratchet passes at 58 spec files with no new violations.
+
 ## Proposal 93 · R4b EXECUTED 28 Aug — the accounts go, and UK gets its state
 
 **§2 said "remove means remove" and R4 kept the logins.** That narrowing was
