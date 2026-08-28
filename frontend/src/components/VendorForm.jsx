@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api, body } from '../lib/api';
+import AddressSuggest from './ui/AddressSuggest';
 import { useToast } from './ui/toast';
 
 /**
@@ -343,6 +344,37 @@ export default function VendorForm({ vendor = null, onSaved, onCancel }) {
           splits it — the layout stays fluid and left-aligned at every width
           without a fixed column count. */}
       <div className="gn-form__h">Address <Hi t="पता" /></div>
+      {/* 7.6 — look it up, then correct it by hand. The six boxes below stay
+          the record: autosuggest FILLS them and never replaces them, because a
+          supplier's premises is exactly the field a vendor's database is most
+          likely to be wrong about, and the person entering it is the one who
+          knows. Choosing a suggestion marks the address dirty for the same
+          reason typing does — `vendorPayload` omits the whole `address` key
+          otherwise and the fill would be silently discarded on save.
+
+          ⚠ Content submitted to Mappls carries a perpetual, sub-licensable
+          licence back to them. Only the FRAGMENT being typed goes; the stored
+          record never does, and `AddressSuggest` has no `useEffect` on its
+          value precisely so that opening an existing vendor submits nothing. */}
+      <AddressSuggest
+        label="Find an address"
+        value={form.address_query || ''}
+        onChange={q => setForm(f => ({ ...f, address_query: q }))}
+        onSelect={(s) => setForm(f => ({
+          ...f,
+          address_dirty: true,
+          address_query: s.label || '',
+          address: {
+            ...f.address,
+            // Only keys the suggestion actually carried. A blank from the
+            // vendor must not erase something a person already typed.
+            ...(s.line1 ? { line1: s.line1 } : {}),
+            ...(s.city ? { city: s.city } : {}),
+            ...(s.state ? { state: s.state } : {}),
+            ...(s.pincode ? { pincode: s.pincode } : {}),
+          },
+        }))}
+      />
       {[['line1'], ['line2'], ['city', 'state'], ['pincode', 'country']].map(keys => (
         <div className="gn-form__row" key={keys.join('-')}>
           {keys.map((key) => {

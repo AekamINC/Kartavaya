@@ -49,6 +49,7 @@ import {
   useList, useResource, ErrorNote, Shim, errText,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
+import AddressSuggest from '../../components/ui/AddressSuggest';
 import AddressBlock from '../../components/ui/AddressBlock';
 import { GST_STATES } from '../../lib/validators';
 
@@ -74,6 +75,15 @@ const BLANK = {
   name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
   date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
   pan: '', aadhaar: '', shift: 'general',
+  /* ── The home address ────────────────────────────────────────────────────
+     `manav_employees.address` is `jsonb`, `EmployeeCreate.address` accepts it
+     and the INSERT binds it — and there has never been an input for it, so all
+     83 live rows are `{}`. The same shape as the vendor defect 8.0 found:
+     API-writable, displayable (`AddressBlock` renders it on the detail panel)
+     and unenterable. `address_query` is the autosuggest box's own text and is
+     NOT part of the record — it never reaches the payload. */
+  address: {},
+  address_query: '',
   // ── Which state this person works in ───────────────────────────────────────
   //
   // Professional tax is a STATE levy and the PT brief carries, as a permanent
@@ -184,7 +194,15 @@ export default function EmployeesTab({ onUpdate }) {
     }
     setSaving(true);
     try {
-      const res = await api.post('/v1/manav/employees', form);
+      /* `address_query` is the autosuggest box's own text and is NOT part of
+         the personnel file — it is the fragment a person typed while looking,
+         which is a different thing from the address they settled on. Stripped
+         here rather than kept out of `form`, because the box needs somewhere to
+         live while the panel is open. `EmployeeCreate` would drop an unknown
+         key anyway; sending it would still put a search fragment in a request
+         body that this product has no reason to carry. */
+      const { address_query: _q, ...payload } = form;
+      const res = await api.post('/v1/manav/employees', payload);
       // The employee is created even when the invitation could not be sent —
       // the backend commits the personnel file first and treats a failed
       // invitation as costing the invitation, not the hire. Saying only
@@ -318,6 +336,48 @@ export default function EmployeesTab({ onUpdate }) {
                 ))}
               </select>
             </Field>
+            {/* 7.6 — look it up, then correct it by hand. The suggestion
+                FILLS the fields below and never replaces them: a person's home
+                address is the field HR is most likely to need to correct, and
+                a box that overwrote what somebody typed would be worse than no
+                box. Only keys the suggestion actually carried are applied, so
+                a blank from the vendor cannot erase a typed value.
+
+                ⚠ Only the FRAGMENT being typed is submitted. Content sent to
+                Mappls carries a perpetual, sub-licensable licence back to them,
+                and a person's home address is the last thing that should travel
+                under one — `AddressSuggest` has no `useEffect` on its value, so
+                opening an existing employee submits nothing at all. */}
+            <Field label="Find an address">
+              <AddressSuggest
+                label=""
+                value={form.address_query}
+                onChange={q => setForm(f => ({ ...f, address_query: q }))}
+                onSelect={sug => setForm(f => ({
+                  ...f,
+                  address_query: sug.label || '',
+                  address: {
+                    ...f.address,
+                    ...(sug.line1 ? { line1: sug.line1 } : {}),
+                    ...(sug.city ? { city: sug.city } : {}),
+                    ...(sug.state ? { state: sug.state } : {}),
+                    ...(sug.pincode ? { pincode: sug.pincode } : {}),
+                  },
+                }))}
+              />
+            </Field>
+            {[['line1', 'Address line 1'], ['city', 'City'],
+              ['state', 'State'], ['pincode', 'Pincode']].map(([k, label]) => (
+              <Field label={label} key={k}>
+                {/* The record, and the autosuggest above only fills it. A
+                    pincode blocks nothing — `INC UK` stores 'NW1 245' and must
+                    stay editable, the same rule GSTIN/PAN/TAN carry. */}
+                <input className="k-formpanel__input" value={form.address[k] || ''}
+                  onChange={e => setForm(f => ({
+                    ...f, address: { ...f.address, [k]: e.target.value },
+                  }))} />
+              </Field>
+            ))}
             <Field label="Employment type">
               <select className="k-formpanel__input" value={form.employment_type}
                 onChange={e => setForm({ ...form, employment_type: e.target.value })}>
