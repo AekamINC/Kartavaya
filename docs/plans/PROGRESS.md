@@ -3933,5 +3933,72 @@ tooling succeed. Nothing was routed around. The preparation that does not
 require a write is complete and durable in the three `93-R*` documents, so
 whoever runs Stage 2 does not have to re-derive it.
 
+---
+
+## 2026-08-28 · Proposal 93 · Suite 00 run early, because it needed no wipe
+
+§1 says to run the cold-start journey **first**, "because whatever it finds will
+need fixing before the other 22 suites are worth writing". Stage 2 is blocked by
+this session's permission layer, but Suite 00's navigation half needs neither the
+wipe nor the reseed — so it was written and run against the live product now.
+
+`frontend/e2e-real/coldstart-nav-audit.spec.ts`, driven as a signed-in user
+through the real login form. Read-only by construction: it navigates and
+observes, fills no form and clicks no control that writes, which is what makes it
+safe to run before the R1 freeze on a database production shares.
+
+**Result: 31 of 31 routes render. Zero console errors. Zero uncaught page
+errors. Zero error states.** Every module in the nav — dashboard, boards,
+projects, tasks, teams, inbox, approvals, templates, activity, time, reports,
+graha, ganit, kray, manav, vetana, pahchan, vikray, prachar, dristi, sanvaad,
+esign, hub ×3 and six settings screens.
+
+### ⚠ It reported two defects first, and BOTH were the test
+
+This is the fault class the programme exists to catch, and it happened twice in
+one afternoon — so it is written down rather than quietly corrected.
+
+1. **`/hub/org` flagged `ERROR-TEXT`.** The check matched the free text
+   `/…|try again/i`. Probed before touching anything: `.hb-err` count **0**, no
+   failing request, no console error. "Try again" is the **regenerate** button on
+   a *successful* Sahayak answer (`hub/ChatTab.jsx:160`) — the page was working.
+   Fixing the product to satisfy that string would have changed a working
+   feature to please a broken test.
+2. **`/manav` and `/vetana` flagged `ERROR-STATE`** by the structural
+   replacement, which counted `.hb-err, .note--warn`. Reading what the notes
+   actually said settled it — both are correct advisory banners:
+   - manav: *"61 of the 73 employees shown have no login linked. They cannot
+     clock in, open their own payslip, apply for leave or see their own
+     attendance."*
+   - vetana: *"13 of 73 active employees have no salary structure. A payroll run
+     prices salary structures, not people — anyone without one is skipped
+     silently."*
+
+   `.note--warn` is the shared warning skin; `ErrorNote` is
+   `note note--warn hb-err`. **`.hb-err` alone is the precise marker**, and a
+   bare `.note--warn` is the product working *well*.
+
+**The check was then proved to bite** rather than assumed: a planted
+`errNotes = 1` on `/tasks` turned the run red, and removing the plant turned it
+green. A gate nobody has seen fail is decoration.
+
+### Two product-state facts worth carrying, read off those banners
+
+- **12 of 73 E2E employees now have a login linked**, not 0 — the
+  employee↔login gap has moved since it was last recorded, and the product
+  surfaces the remaining 61 itself, in words, on the screen where it matters.
+- **13 of 73 active employees have no salary structure**, and the banner states
+  the consequence exactly: they are skipped *silently* from the run, the payslips
+  and the statutory register. That is the Phase 5 hazard, self-reported by the UI.
+
+### Also found: the stored e2e tokens expired on 27 Aug
+
+`node e2e-real/mint-state.mjs` refuses: owner token expired
+`2026-08-27T21:38:06Z`, godmode `2026-08-27T14:51:20Z`. Not blocking — the
+approver and the twelve dummy accounts carry **passwords**, so they sign in
+through the real form, which is what "driven as a user" requires anyway. Worth
+knowing before someone reads the token path as the only way in.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
+
 
