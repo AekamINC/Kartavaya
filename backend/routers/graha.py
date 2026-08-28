@@ -6,8 +6,10 @@ import asyncio
 import io
 import json
 import logging
+import math
 import re
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
@@ -1246,6 +1248,268 @@ async def delete_contact(
         str(contact_id), org_id, user["user_id"],
     )
     return {"status": "deleted"}
+
+
+# ── The coordinate, written on purpose ───────────────────────
+#
+# Phase 8.4, and migration 237 is the other half of it. Read that file's header
+# before changing anything below: the rules this code enforces are the SAME
+# rules the CHECK constraints enforce, and the two must not drift.
+#
+# ── WHY A SEPARATE ROUTE AND NOT A FIELD ON `ClientUpdate` ───────────────────
+#
+# It would have been three lines to add `lat`/`lng` to the two PATCH models and
+# let the generic SET-build carry them. That is the wrong shape, for reasons
+# that are all the same reason:
+#
+#   * `geo_fetched_at` MUST be server-side. On a PATCH model it would be a
+#     field, and a field is something a caller can send — which would let the
+#     30-day Google retention clock be reset by the thing it constrains. There
+#     is no `geo_fetched_at` on `CoordinateWrite` at all, so there is no code
+#     path that can accept one. `tests/test_client_coordinates.py` asserts the
+#     absence, because "we just don't set it" is a convention and an absent
+#     field is a fact.
+#   * The four columns MOVE TOGETHER. `update_contact` builds its SET list from
+#     whatever keys the request happened to send; a request naming `lat` and
+#     not `geo_source` would build a statement that writes a bare pair, and the
+#     only thing standing between that and a stored coordinate with no
+#     provenance would be a 23514 the user reads as "Internal Server Error".
+#   * CLEARING is a different verb. `update_contact` drops `None` values on the
+#     floor — `{k: v for ... if v is not None}` — so `{"lat": null}` there is
+#     not "clear it", it is "do nothing". A DELETE says what it means.
+#
+# ── WHAT THIS ROUTE IS NOT ──────────────────────────────────────────────────
+#
+# It is not a geocoder and it never calls one. It takes a coordinate the
+# CALLER already holds — from a pin the user dragged, from the device's own
+# Geolocation API, or typed — and stores it with a label saying which. A
+# server-side geocode here would be a metered vendor call on a write path and
+# would send a client's premises to Mappls, which is precisely what §8.4 exists
+# to avoid.
+
+#: The five lawful provenances, mirrored EXACTLY from `237_*.sql`'s
+#: `*_geo_source_ck`. There is deliberately no Mappls value — Mappls forbids
+#: caching a geocode result, so a Mappls coordinate has no lawful home in this
+#: database, and the database will refuse one even if this tuple is widened by
+#: mistake. `tests/test_client_coordinates.py` reads the migration file and
+#: fails if these two lists ever disagree.
+GEO_SOURCES = ("user_pin", "device_gps", "manual_entry", "google_places", "import")
+
+#: The ONLY two tables this route may write, by name, as literals. The table
+#: name is interpolated into SQL below, so it can never come from a request
+#: value: it is looked up here or the request is refused. This is the
+#: server-side allowlist the SQL convention requires for any dynamic
+#: identifier.
+_COORD_TABLES = {
+    "clients": "staging.graha_clients",
+    "contacts": "staging.graha_contacts",
+}
+
+
+def _coordinate_sql(table: str) -> str:
+    """Set all four, plus the audit pair, in ONE statement.
+
+    `geo_fetched_at=NOW()` is written here and nowhere else — it takes no
+    parameter, so there is no bind position a caller could ever reach.
+
+    `updated_by` rides in the same statement as `updated_at` for the reason
+    `update_client` gives: two statements would let the stamp and the actor
+    disagree, and a confident wrong answer is worse than none.
+
+    `RETURNING` rather than a command tag, so a row that matched no org is a
+    `None` and becomes a 404 instead of the lying `{"status": "updated"}`
+    `delete_client`'s comment describes.
+    """
+    return (
+        f"UPDATE {table} SET lat=$3::numeric, lng=$4::numeric, geo_source=$5, "
+        "geo_fetched_at=NOW(), updated_at=NOW(), updated_by=$6 "
+        "WHERE id=$1::uuid AND org_id=$2::uuid "
+        "RETURNING lat, lng, geo_source, geo_fetched_at"
+    )
+
+
+def _coordinate_clear_sql(table: str) -> str:
+    """All four to NULL, together, or not at all.
+
+    Nulling the pair and leaving `geo_source` behind would raise 23514 against
+    `*_geo_complete_ck` — the constraint is what makes this statement's shape
+    non-negotiable rather than a habit. Written out in full here so a reader
+    can see all four names in one place.
+    """
+    return (
+        f"UPDATE {table} SET lat=NULL, lng=NULL, geo_source=NULL, "
+        "geo_fetched_at=NULL, updated_at=NOW(), updated_by=$3 "
+        "WHERE id=$1::uuid AND org_id=$2::uuid "
+        "RETURNING id"
+    )
+
+
+#: Every statement this route can issue, keyed by table, so the live-schema
+#: test can PREPARE all four against the real catalogue without importing the
+#: handlers. `tests/test_pincode_lookup.py` does the same with
+#: `pin_directory.LOOKUP_SQL`, and for the same reason: a statement is not
+#: trusted until the server has planned it.
+COORDINATE_SQL = {
+    table: {"set": _coordinate_sql(table), "clear": _coordinate_clear_sql(table)}
+    for table in _COORD_TABLES.values()
+}
+
+
+class CoordinateWrite(BaseModel):
+    """One coordinate and where it came from. NOTHING ELSE.
+
+    ⚠ THERE IS NO `geo_fetched_at` FIELD AND THERE MUST NEVER BE ONE. It is
+      stamped `NOW()` by the database. See the block comment above.
+    """
+    lat: float
+    lng: float
+    geo_source: str
+
+
+def _checked_coordinate(body: CoordinateWrite) -> tuple[Decimal, Decimal, str]:
+    """Refuse before the database has to, and say why in words a person reads.
+
+    Every refusal here is also refused by a CHECK in migration 237 — this is
+    the layer that turns a 23514 into a 400 with a sentence. The one exception
+    is `(0, 0)`, and it is deliberate: see below.
+    """
+    if body.geo_source not in GEO_SOURCES:
+        # Named values in the message, because the caller cannot guess them and
+        # because a Mappls value arriving here is a licence problem somebody
+        # needs to read about rather than a silent 400.
+        raise HTTPException(
+            400, "geo_source must be one of: " + ", ".join(GEO_SOURCES))
+
+    for name, value in (("lat", body.lat), ("lng", body.lng)):
+        # `json.loads` accepts the literals `NaN` and `Infinity`, so pydantic
+        # will hand us a float that is neither of those things a coordinate can
+        # be — and `NaN >= -90` is FALSE, so the range test below would refuse
+        # it with a message about a range rather than about a number. Checked
+        # first so the message is true.
+        if not math.isfinite(value):
+            raise HTTPException(400, f"{name} must be a finite number")
+
+    if not -90 <= body.lat <= 90:
+        raise HTTPException(400, "lat must be between -90 and 90")
+    if not -180 <= body.lng <= 180:
+        raise HTTPException(400, "lng must be between -180 and 180")
+
+    # NULL ISLAND. (0, 0) is a real point in the Gulf of Guinea and it is the
+    # value a failed geocode, an uninitialised form and a dropped decimal all
+    # produce. No customer of an Indian PM SaaS is there. The DATABASE allows
+    # it — a CHECK is about what is representable — and this route does not,
+    # because the alternative is a coordinate stamped `user_pin` that no human
+    # ever pointed at, which is the one thing the provenance columns exist to
+    # make impossible.
+    if body.lat == 0 and body.lng == 0:
+        raise HTTPException(
+            400, "0, 0 is not a location — it is what a failed lookup returns")
+
+    # `Decimal(str(...))` and not `Decimal(float)`: the latter carries the
+    # float's binary error into an exact type and stores 21.170199999999998.
+    # Through `str()` the value that arrives is the value that lands, and
+    # `numeric(10,7)` rounds the tail. See 237's note on the type.
+    return Decimal(str(body.lat)), Decimal(str(body.lng)), body.geo_source
+
+
+async def _set_coordinate(table: str, record_id: UUID, body: CoordinateWrite,
+                          user, org_id: str) -> dict:
+    # Belt and braces: the table is already a literal from `_COORD_TABLES` at
+    # every call site, and this refuses to interpolate anything else even if a
+    # future caller passes a string through. An f-string into SQL is only ever
+    # safe because of a line like this one.
+    if table not in COORDINATE_SQL:
+        raise HTTPException(500, "unknown coordinate table")
+
+    lat, lng, source = _checked_coordinate(body)
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        COORDINATE_SQL[table]["set"],
+        str(record_id), org_id, lat, lng, source, user["user_id"],
+    )
+    if not row:
+        # 404 and not 403: a record in another org must be indistinguishable
+        # from one that does not exist, or this route becomes a way to ask
+        # whether a given id belongs to somebody.
+        raise HTTPException(404, "Record not found")
+    # `numeric` arrives as `Decimal`. Cast explicitly rather than leaning on
+    # the JSON encoder, so the response shape is decided here and does not
+    # change if that encoder's Decimal handling ever does.
+    return {
+        "status": "updated",
+        "lat": float(row["lat"]),
+        "lng": float(row["lng"]),
+        "geo_source": row["geo_source"],
+        "geo_fetched_at": row["geo_fetched_at"],
+    }
+
+
+async def _clear_coordinate(table: str, record_id: UUID, user,
+                            org_id: str) -> dict:
+    if table not in COORDINATE_SQL:
+        raise HTTPException(500, "unknown coordinate table")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        COORDINATE_SQL[table]["clear"],
+        str(record_id), org_id, user["user_id"],
+    )
+    if not row:
+        raise HTTPException(404, "Record not found")
+    return {"status": "cleared"}
+
+
+@router.put("/clients/{client_id}/coordinate")
+async def set_client_coordinate(
+    client_id: UUID,
+    body: CoordinateWrite,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Drop a pin on a company. §8.4."""
+    return await _set_coordinate(
+        _COORD_TABLES["clients"], client_id, body, user, org_id)
+
+
+@router.delete("/clients/{client_id}/coordinate")
+async def clear_client_coordinate(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Remove a company's coordinate AND its provenance, together."""
+    return await _clear_coordinate(
+        _COORD_TABLES["clients"], client_id, user, org_id)
+
+
+@router.put("/contacts/{contact_id}/coordinate")
+async def set_contact_coordinate(
+    contact_id: UUID,
+    body: CoordinateWrite,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Drop a pin on a person's business address. §8.4's acceptance case."""
+    return await _set_coordinate(
+        _COORD_TABLES["contacts"], contact_id, body, user, org_id)
+
+
+@router.delete("/contacts/{contact_id}/coordinate")
+async def clear_contact_coordinate(
+    contact_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Remove a contact's coordinate AND its provenance, together.
+
+    This is also the shape a DPDP erasure request takes for this field: one
+    statement, all four columns.
+    """
+    return await _clear_coordinate(
+        _COORD_TABLES["contacts"], contact_id, user, org_id)
 
 
 # ── Pipelines ────────────────────────────────────────────────
