@@ -82,6 +82,24 @@ export default defineConfig({
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
     {
+      // Phase 7.6 · does Mappls answer a BROWSER on a whitelisted origin?
+      //
+      // Its own project because it is a PROBE, not a journey: it asserts only
+      // that it ran and prints what each call returned, so a decision about
+      // moving autosuggest client-side is made on a measurement. It costs a
+      // handful of calls against an allocation of 200, so it is deliberately
+      // not part of the `real-user` sweep.
+      name: 'mappls-probe',
+      testMatch: /mappls-browser-probe\.spec\.ts/,
+      // NO `setup` dependency. `auth.setup.ts` signs BOTH users in and the
+      // owner is a token-only Google account, so that project always fails on
+      // the owner and would take this probe down with it. The approver state it
+      // writes is all this needs, and it is written before that failure.
+      // Same reasoning the `tonight` project below records.
+      dependencies: [],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'real-user',
       // `campaign-send` is deliberately absent here. It is the one suite that
       // mails real inboxes, so it lives in its own project below and never runs
