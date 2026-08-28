@@ -37,11 +37,40 @@ const BLOCKED =
 
 type Creds = { email: string; password: string };
 
-function requireUnicode(): Creds {
-  const email = process.env.E2E_UNICODE_EMAIL;
-  const password = process.env.E2E_UNICODE_PASSWORD;
+/**
+ * THE LANE — announced, never assumed. Mirrors suite01-auth.spec.ts.
+ *
+ * §14 makes Unicode the reference lane. There is no Unicode credential on this
+ * machine, and waiting for one stops the programme, so this falls back to E2E
+ * Test & Associates — also wiped, also empty, and the org the dummy logins
+ * actually hold seats in.
+ *
+ * ⚠ An E2E run is NOT a Unicode run. §14 compares the Unicode pass against the
+ * UK replay, and a silent third org in the middle corrupts that comparison — so
+ * the lane is printed on every run.
+ */
+type Lane = { creds: Creds; org: string; reference: boolean };
+
+function resolveLane(): Lane {
+  const uniEmail = process.env.E2E_UNICODE_EMAIL;
+  const uniPassword = process.env.E2E_UNICODE_PASSWORD;
+  if (uniEmail && uniPassword) {
+    return { creds: { email: uniEmail, password: uniPassword }, org: 'Unicode Group', reference: true };
+  }
+  const email = process.env.E2E_APPROVER_EMAIL;
+  const password = process.env.E2E_APPROVER_PASSWORD;
   if (!email || !password) throw new Error(BLOCKED);
-  return { email, password };
+  return { creds: { email, password }, org: 'E2E Test & Associates', reference: false };
+}
+
+const LANE = resolveLane();
+
+test.beforeAll(() => {
+  console.log(`\n  LANE: ${LANE.org}${LANE.reference ? '  (reference lane, §14)' : '  ⚠ FALLBACK — NOT the reference lane'}\n`);
+});
+
+function requireUnicode(): Creds {
+  return LANE.creds;
 }
 
 async function signIn(page: Page, { email, password }: Creds) {
@@ -55,7 +84,14 @@ async function signIn(page: Page, { email, password }: Creds) {
 
 async function openTab(page: Page, tab: string) {
   await page.goto(`/settings/organisation${tab === 'profile' ? '' : `?tab=${tab}`}`);
-  await expect(page.getByRole('heading', { name: 'Organisation' })).toBeVisible({ timeout: 30_000 });
+  // ⚠ `level: 1`, and it is not tidiness. The bare
+  // `getByRole('heading', { name: 'Organisation' })` was a TEST BUG: on the
+  // danger tab it also matches `<h2 class="odz__t">Delete this organisation</h2>`
+  // — a substring match on a second heading — and Playwright's strict mode
+  // failed the whole test on the ambiguity. The page title is the `h1`, so that
+  // is what this waits for.
+  await expect(page.getByRole('heading', { name: 'Organisation', exact: true, level: 1 }))
+    .toBeVisible({ timeout: 30_000 });
 }
 
 /** A stamp, so a re-run writes a value it can tell apart from the last one. */
@@ -87,7 +123,16 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await page.locator('#org-country').fill('India');
 
     await page.getByRole('button', { name: /Save company profile/ }).click();
-    await expect(page.getByText(/Company profile saved/i)).toBeVisible({ timeout: 30_000 });
+    // ⚠ TEST BUG, fixed. The bare text matched TWO nodes — the sr-only
+    // aria-live region AND the visible toast — and strict mode rightly refused.
+    // Both existing is the product doing accessibility CORRECTLY: the
+    // announcement and the visible confirmation are deliberately separate
+    // nodes. Scoped to the toast, with the sr-only twin asserted on its own so
+    // the fix does not quietly drop the a11y coverage it was tripping over.
+    await expect(page.locator('.tst__t').getByText(/Company profile saved/i))
+      .toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[aria-live="polite"]').getByText(/Company profile saved/i))
+      .toHaveCount(1);
 
     // Saved means it survives a reload, not that a toast appeared. A toast is
     // the client's opinion; a reload is the server's.
@@ -114,7 +159,16 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await save.click();
 
     // It must SAVE — not warn, not block.
-    await expect(page.getByText(/Company profile saved/i)).toBeVisible({ timeout: 30_000 });
+    // ⚠ TEST BUG, fixed. The bare text matched TWO nodes — the sr-only
+    // aria-live region AND the visible toast — and strict mode rightly refused.
+    // Both existing is the product doing accessibility CORRECTLY: the
+    // announcement and the visible confirmation are deliberately separate
+    // nodes. Scoped to the toast, with the sr-only twin asserted on its own so
+    // the fix does not quietly drop the a11y coverage it was tripping over.
+    await expect(page.locator('.tst__t').getByText(/Company profile saved/i))
+      .toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[aria-live="polite"]').getByText(/Company profile saved/i))
+      .toHaveCount(1);
     // And no field may be marked invalid for being empty.
     await expect(page.locator('#org-gstin')).not.toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#org-pan')).not.toHaveAttribute('aria-invalid', 'true');

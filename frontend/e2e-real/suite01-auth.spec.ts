@@ -120,11 +120,62 @@ const BLOCKED =
   'GET /api/v1/org/members returned 401 "Invalid or expired token"). This is an ' +
   'ENVIRONMENT blocker, not a product defect and not a test defect.';
 
-/** Fail loudly and identically wherever a Unicode login is required. */
+/**
+ * THE LANE — and it is announced, never assumed.
+ *
+ * §14 makes Unicode Group the reference lane: every suite is authored there,
+ * against screens that begin genuinely blank. There is currently no Unicode
+ * credential on this machine (see BLOCKED above), and waiting for one stops the
+ * programme dead.
+ *
+ * So the suite falls back to E2E Test & Associates — also wiped, also empty, and
+ * the org the twelve dummy logins actually hold seats in.
+ *
+ * ⚠ THE FALLBACK IS LOUD ON PURPOSE. An E2E run is NOT a Unicode run, and a
+ * result filed under the wrong lane is worse than no result: §14's whole point
+ * is that the Unicode pass and the UK replay are compared, and a silent third
+ * org in the middle would corrupt that comparison. Every run prints its lane.
+ *
+ * ⚠ AND E2E IS OUTBOUND-SUPPRESSED. `OUTBOUND_SUPPRESSED_ORGS` holds E2E's org
+ * id and the deployed process really enforces it, so `send_email` returns True
+ * while nothing leaves the building — the 1,562-row trap in §0 exactly. Any
+ * assertion about mail ARRIVING must skip on this lane rather than pass.
+ */
+type Lane = { creds: Creds; org: string; reference: boolean; outboundSuppressed: boolean };
+
+function resolveLane(): Lane {
+  const uni = unicodeCreds();
+  if (uni) {
+    return { creds: uni, org: 'Unicode Group', reference: true, outboundSuppressed: false };
+  }
+  const email = process.env.E2E_APPROVER_EMAIL;
+  const password = process.env.E2E_APPROVER_PASSWORD;
+  if (!email || !password) throw new Error(BLOCKED);
+  return {
+    creds: { email, password },
+    org: 'E2E Test & Associates',
+    reference: false,
+    outboundSuppressed: true,
+  };
+}
+
+const LANE = resolveLane();
+
+test.beforeAll(() => {
+  console.log(`\n  LANE: ${LANE.org}${LANE.reference ? '  (reference lane, §14)' : '  ⚠ FALLBACK — NOT the reference lane'}`);
+  if (!LANE.reference) {
+    console.log('  ⚠ Unicode has no credential on this machine, so these results are');
+    console.log('    E2E results and must not be filed as the Unicode reference pass.');
+  }
+  if (LANE.outboundSuppressed) {
+    console.log('  ⚠ This org is in OUTBOUND_SUPPRESSED_ORGS — send_email returns True while');
+    console.log('    nothing leaves. Mail-ARRIVAL assertions skip here rather than pass.\n');
+  }
+});
+
+/** The credential for whichever lane resolved. */
 function requireUnicode(): Creds {
-  const c = unicodeCreds();
-  if (!c) throw new Error(BLOCKED);
-  return c;
+  return LANE.creds;
 }
 
 // ── The real login form ───────────────────────────────────────────────────────
