@@ -139,7 +139,49 @@ individually, or the map fails on that subdomain and nowhere else.
 
 ---
 
-### 8. M · APK 2.0.4 built — cold-restart reproduction still owed
+### 8. M · APK 2.0.4 REBUILT 2026-08-28 — cold-restart reproduction still owed
+
+**Status:** OPEN · the file exists again; only the live device test remains.
+
+**Phase 0.29 is satisfied on the build side.** 0.29 says a fresh APK is owed
+"after ALL phases complete" because you had lost every previous build — and all
+phases are now complete, so it was built:
+
+    build/Kartavaya-2.0.4-release.apk     66,301,446 bytes
+    signature      v2 scheme, VERIFIED
+    JS bundle      assets/index.android.bundle, 3,224,296 bytes  <- checked
+    ABIs           arm64-v8a, armeabi-v7a
+    backend        https://kartavya-staging.up.railway.app  (STAGING)
+
+⚠ **The JS bundle was verified INSIDE the archive, not assumed.** A debug APK
+carries none and is useless off the build machine — it launches and then cannot
+find its JavaScript. Reading the zip is the only thing that tells the two apart,
+and the file name does not.
+
+⚠ **STILL 2.0.4, and deliberately so.** Nothing in `mobile/` has changed since
+that version: phases 5-8 were backend and web, and the app talks to the same
+API. Bumping the number to mark "a fresh build" would claim a change the app did
+not undergo. This is the same software, rebuilt because the file was lost.
+840 mobile tests pass.
+
+⚠ **It points at STAGING.** `src/config.js` compiles
+`EXPO_PUBLIC_API_URL ?? https://kartavya-staging.up.railway.app`, and there is a
+runtime override at `config.apiBaseUrl`. That is right for a verification
+build — the inbox-9 reproduction queues and clears a real punch, and it must not
+do that against production.
+
+**What you do:** install it, then reproduce inbox 9 — put the device in
+airplane mode, capture a punch with a photo so the upload fails, restore
+connectivity, KILL the app and reopen it. The punch should clear.
+⚠ Cold restart, not a hot reload: a hot reload keeps the old JS module graph
+alive and will tell you the retry works when it does not.
+
+**What I finish once done:** nothing — M is code-complete and this is
+verification only.
+
+*(the original note)*
+
+
 
 **Status:** OPEN · only the live device test remains.
 
