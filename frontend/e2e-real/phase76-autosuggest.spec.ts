@@ -38,10 +38,28 @@ test('typing in the vendor address field returns Mappls suggestions', async ({ p
   await box.fill('Bopal Ahmedabad');
 
   // The debounce is 350ms and the SDK then makes a real round trip.
-  const options = page.getByRole('option');
+  await page.waitForTimeout(6000);
+  // What the field itself says BEFORE asserting — the component distinguishes
+  // "not switched on", "could not reach" and "no matches", and each sends a
+  // reader somewhere different. A bare toBeVisible failure hides all three.
+  const panel = await page.locator('.k-asug').first().innerText().catch(() => '(no .k-asug)');
+  console.log('=== what the field says ===');
+  console.log(panel);
+  console.log('=== mappls console lines ===');
+  refusals.filter(r => /mappls|search/i.test(r)).forEach(r =>
+    console.log('  ' + r.replace(/(access_token=)[a-z0-9]{20,}/gi, '$1<REDACTED>').slice(0, 300)));
+
+  /* `.k-asug__opt`, not `getByRole('option')`. The listbox is portalled and
+     Playwright's role engine did not resolve the options inside it, while the
+     panel's own text plainly showed them — a spec that fails on its query
+     rather than on the product is worse than no spec. The class is the one the
+     component actually renders and the `role="option"` attribute is asserted
+     separately below, so accessibility is still pinned. */
+  const options = page.locator('.k-asug__opt');
   await expect(options.first(),
-    'no suggestion appeared — read the console refusals printed below')
+    'no suggestion appeared — read the panel text printed above')
     .toBeVisible({ timeout: 25_000 });
+  await expect(options.first()).toHaveAttribute('role', 'option');
 
   const count = await options.count();
   const first = (await options.first().innerText()).slice(0, 120);
