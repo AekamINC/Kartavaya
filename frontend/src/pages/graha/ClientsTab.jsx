@@ -15,6 +15,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import AddressBlock from '../../components/ui/AddressBlock';
 import ClientLocations, { placeOf } from '../../components/ClientLocations';
 import PinAreaPopover from '../../components/PinAreaPopover';
+import CoordinateCapture from '../../components/CoordinateCapture';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
@@ -235,6 +236,21 @@ export default function ClientsTab() {
               <AddressBlock
                 address={detail.address}
                 renderPincode={pin => <PinAreaPopover pincode={pin} />}
+              />
+              {/* 8.4 — the exact location, written only when someone presses
+                  the button. Nothing here geocodes the address on open: a
+                  view-time lookup is metered and sends a client's premises to
+                  a vendor every time the record is read. The DIGIPIN comes
+                  back on the response and is never computed in the browser. */}
+              <CoordinateCapture
+                kind="clients"
+                recordId={detail.id}
+                name={detail.name}
+                lat={detail.lat}
+                lng={detail.lng}
+                geoSource={detail.geo_source}
+                digipin={detail.digipin}
+                onChange={geo => setDetail(d => ({ ...d, ...geo }))}
               />
               {detail.notes && <div className="gr__dnotes">{detail.notes}</div>}
             </div>

@@ -657,3 +657,60 @@ def test_no_coordinate_exists_yet_and_that_is_the_expected_state(live):
     for t, n in counts.items():
         assert n >= 0
     print(f"\ncoordinates written: {counts}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  The DIGIPIN rides on the response, and is NOT re-implemented in the browser
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_the_response_carries_a_digipin_derived_server_side():
+    """§8.4's reward: a ~4 m grid code, no vendor, no API call.
+
+    Served rather than computed in the browser. A JS copy would WORK — it is
+    pure arithmetic — and that is the trap: two implementations of a ten-level
+    grid traversal drift at the last symbol or two while agreeing at level 6,
+    so the divergence shows up as two systems naming neighbouring 4 m cells
+    rather than as anything that looks like a bug.
+    """
+    import inspect
+    from routers import graha
+    src = inspect.getsource(graha._set_coordinate)
+    assert '"digipin"' in src, "the coordinate response no longer carries a DIGIPIN"
+    assert "encode_or_none" in src, (
+        "the route uses `encode`, which RAISES outside the grid — a coordinate "
+        "outside lat 2.5-38.5 / lng 63.5-99.5 has no DIGIPIN, and null is that "
+        "answer rather than a 500")
+
+
+def test_a_coordinate_outside_the_grid_has_no_digipin_rather_than_a_wrong_one():
+    """The grid is not the world. India Post's box covers lat 2.5-38.5,
+    lng 63.5-99.5; a code emitted for anything outside it would name a ~4 m
+    cell somewhere it has no business naming."""
+    from services.digipin import encode_or_none
+    assert encode_or_none(21.1702, 72.8311) == "3LKPCM5PPT"   # Surat
+    assert encode_or_none(51.5074, -0.1278) is None           # London
+    assert encode_or_none(0.0, 0.0) is None                   # Null Island
+
+
+def test_the_browser_does_not_carry_a_second_implementation():
+    """The guard on the decision above, checked against the frontend tree.
+
+    If a `digipin` module ever appears under `frontend/src`, this fails and the
+    reader is sent here to find out why one implementation was the point.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2] / "frontend" / "src"
+    if not root.exists():
+        import pytest
+        pytest.skip("frontend/src not present in this checkout")
+    offenders = [
+        p.relative_to(root).as_posix()
+        for p in root.rglob("*.js*")
+        if "digipin" in p.name.lower()
+    ]
+    assert not offenders, (
+        f"a DIGIPIN implementation appeared in the browser: {offenders}. "
+        "It is served by the coordinate endpoint from services/digipin.py, "
+        "which is verified against India Post's reference over 20,000 "
+        "coordinates. Two copies of a ten-level grid traversal drift at the "
+        "last symbol and agree everywhere a casual test would look.")

@@ -36,6 +36,7 @@ from services import territory_routing
 # `tests/test_pin_boundaries.py`, which deliberately does not name this router —
 # see the note on that constant.
 from services import pin_boundaries
+from services import digipin
 from utils import assert_file_url
 
 log = logging.getLogger(__name__)
@@ -451,7 +452,22 @@ async def get_client(
         "WHERE client_id=$1::uuid AND is_active=TRUE ORDER BY created_at DESC LIMIT 50",
         str(client_id),
     )
-    return {**dict(row), "contacts": [dict(c) for c in contacts], "deals": [dict(d) for d in deals]}
+    # `digipin` is DERIVED, not a column — there is deliberately no
+    # `graha_clients.digipin`. Storing it would be a second copy of the same
+    # fact that can fall out of step with the coordinate it came from, and the
+    # code is pure arithmetic over `lat`/`lng` with no vendor and no API call,
+    # so re-deriving it costs nothing. `encode_or_none` because the grid covers
+    # lat 2.5-38.5 / lng 63.5-99.5 and a coordinate outside it HAS no DIGIPIN;
+    # `null` is that answer, not a failure. Computed here rather than in the
+    # browser so `services/digipin.py` — checked against India Post's own
+    # reference over 20,000 coordinates — stays the only implementation.
+    return {
+        **dict(row),
+        "digipin": digipin.encode_or_none(float(row["lat"]), float(row["lng"]))
+                   if row["lat"] is not None and row["lng"] is not None else None,
+        "contacts": [dict(c) for c in contacts],
+        "deals": [dict(d) for d in deals],
+    }
 
 
 @router.patch("/clients/{client_id}")
@@ -1441,6 +1457,24 @@ async def _set_coordinate(table: str, record_id: UUID, body: CoordinateWrite,
         "lng": float(row["lng"]),
         "geo_source": row["geo_source"],
         "geo_fetched_at": row["geo_fetched_at"],
+        # ── THE DIGIPIN IS DERIVED HERE AND NOT IN THE BROWSER ───────────────
+        #
+        # It is pure arithmetic with no vendor and no API call, so a JS copy
+        # would work — and that is exactly the trap. Two implementations of a
+        # ten-level grid traversal drift at the LAST symbol or two and stay
+        # agreeing at level 6, so the divergence appears as two systems naming
+        # neighbouring 4 m cells rather than as anything that looks like a bug.
+        #
+        # `services/digipin.py` is checked symbol-for-symbol against India
+        # Post's own reference implementation over 20,000 coordinates. Serving
+        # the result keeps that the only implementation in the product.
+        #
+        # `encode_or_none`, not `encode`: the grid covers lat 2.5-38.5 and lng
+        # 63.5-99.5, and a coordinate outside it HAS no DIGIPIN. `null` is that
+        # answer. This route already refuses (0, 0) and anything off Earth, so
+        # the reachable case is a genuine coordinate outside India's grid — and
+        # inventing a code for it would be a confident lie about a ~4 m cell.
+        "digipin": digipin.encode_or_none(float(row["lat"]), float(row["lng"])),
     }
 
 

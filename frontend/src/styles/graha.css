@@ -507,3 +507,42 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
    Unicode Group. Rendered exactly as stored, and inert: there is nothing to
    preview, and it is not this component's business to correct it. */
 .terr__pinplain { color: inherit; }
+
+/* ── The pin-drop affordance (Phase 8.4) ────────────────────────────────────
+   Fluid and left-aligned like every other block here; no fixed-width
+   centring. The `k-coord__*` names sit on the `k-*` design-system prefix
+   rather than `terr__`, because this is not a territory surface — it is a
+   control that appears wherever a record can carry a coordinate. */
+
+.k-coord { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+.k-coord__meta {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
+  font-size: 12px; color: var(--ink-2);
+}
+
+/* The provenance. Shown wherever the pair is shown, because it is the reason
+   the pair is allowed to exist — see migration 237. */
+.k-coord__src { color: var(--ink-3); }
+
+.k-coord__pin { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.k-coord__pin strong { font-family: var(--font-mono, monospace); }
+/* The grid is not the world: a coordinate outside lat 2.5-38.5 / lng
+   63.5-99.5 has no DIGIPIN, and that is an answer rather than a gap. */
+.k-coord__pin--none { color: var(--ink-3); font-style: italic; }
+
+/* The expectation reset, again: an address names a postal area averaging
+   ~82 km², which is why a pin is worth dropping at all. */
+.k-coord__none { font-size: 12px; color: var(--ink-3); line-height: 1.6; }
+
+.k-coord__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.k-coord__edit {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border: 1px solid var(--rule-soft); border-radius: 8px;
+}
+
+.k-coord__f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.k-coord__f > span { color: var(--ink-3); }
+
+.k-coord__err { font-size: 12px; color: var(--danger, #b42318); line-height: 1.5; }
