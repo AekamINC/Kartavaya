@@ -1,0 +1,1372 @@
+<title>Reseed and Re-verify — the volume plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --bg: #faf9f6; --surface: #ffffff; --surface-alt: #f3f2ee; --border: #e2e0d8;
+  --text: #1a1917; --text-2: #5c5a52; --text-3: #8a877d;
+  --accent: #2d6a4f; --accent-light: #e8f0eb;
+  --red: #b5362a; --red-light: #fceeed;
+  --amber: #9a6a10; --amber-light: #fbf3e2;
+  --blue: #1d5fa6; --blue-light: #eef4fb;
+  --code-bg: #f0efe9; --code-fg: #2a2822;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+    --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+    --accent: #5aab7e; --accent-light: #16261d;
+    --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+    --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412; --surface: #1e1d1a; --surface-alt: #262520; --border: #3a3832;
+  --text: #e8e6e0; --text-2: #a9a69c; --text-3: #706d64;
+  --accent: #5aab7e; --accent-light: #16261d;
+  --red: #e08478; --red-light: #2c1917; --amber: #d3a44f; --amber-light: #2a2213;
+  --blue: #7bacde; --blue-light: #16222f; --code-bg: #12110f; --code-fg: #d6d3c9;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.65 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+
+.kicker { font-size: .8rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: 0 0 .6rem; }
+h1 { font-size: 2.4rem; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .8rem; }
+.lede { font-size: 1.15rem; color: var(--text-2); margin: 0 0 .5rem; max-width: 64ch; }
+.meta { font-size: .85rem; color: var(--text-3); margin: 1rem 0 0; font-family: 'JetBrains Mono', monospace; }
+
+h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; margin: 3.2rem 0 .4rem; padding-top: 1.6rem; border-top: 1px solid var(--border); }
+h2 .n { color: var(--text-3); font-variant-numeric: tabular-nums; margin-right: .5rem; }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 1.8rem 0 .4rem; }
+h4 { font-size: .95rem; font-weight: 600; margin: 1.4rem 0 .3rem; color: var(--accent); }
+p { margin: .7rem 0; } .sub { color: var(--text-2); margin: .2rem 0 1.1rem; }
+strong { font-weight: 600; }
+code { font-family: 'JetBrains Mono', monospace; font-size: .85em; background: var(--code-bg); color: var(--code-fg); padding: .1em .38em; border-radius: 4px; }
+pre { background: var(--code-bg); color: var(--code-fg); border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1.1rem; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: .82rem; line-height: 1.55; }
+pre code { background: none; padding: 0; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.3rem 1.5rem; margin: 1.2rem 0; }
+.card--accent { border-left: 3px solid var(--accent); }
+.card--red { border-left: 3px solid var(--red); background: var(--red-light); }
+.card--amber { border-left: 3px solid var(--amber); background: var(--amber-light); }
+.card--blue { border-left: 3px solid var(--blue); background: var(--blue-light); }
+.card h3:first-child, .card h4:first-child { margin-top: 0; }
+
+.tbl-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin: 1.2rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.tbl-scroll table { margin: 0; }
+th, td { text-align: left; padding: .5rem .8rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); position: sticky; top: 0; background: var(--surface-alt); }
+tbody tr:last-child td { border-bottom: none; }
+td.pct, th.pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+td.id { font-family: 'JetBrains Mono', monospace; font-size: .8rem; white-space: nowrap; color: var(--text-2); }
+tr.total td { border-top: 2px solid var(--border); font-weight: 700; background: var(--surface-alt); }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 600; padding: .1em .5em; border-radius: 5px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+.t-done { background: var(--accent-light); color: var(--accent); }
+.t-half { background: var(--amber-light); color: var(--amber); }
+.t-empty{ background: var(--red-light); color: var(--red); }
+.t-rsch { background: var(--blue-light); color: var(--blue); }
+.t-na   { background: var(--surface-alt); color: var(--text-3); }
+
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; margin: 1.4rem 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
+.stat .l { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+.stat .v { font-size: 1.55rem; font-weight: 700; margin-top: .25rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.stat .v.red { color: var(--red); } .stat .v.amber { color: var(--amber); } .stat .v.green { color: var(--accent); }
+.stat .s { font-size: .78rem; color: var(--text-2); margin-top: .15rem; }
+
+ul, ol { margin: .6rem 0; padding-left: 1.3rem; } li { margin: .3rem 0; }
+.footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: .85rem; color: var(--text-3); }
+.gate { background: var(--surface-alt); border: 1px dashed var(--border); border-radius: 10px; padding: .8rem 1.1rem; margin: 1rem 0; font-size: .9rem; }
+.gate strong { color: var(--red); }
+.suite { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: var(--text-3); font-weight: 600; }
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Proposal 93 · Reseed programme · v3</p>
+<h1>The volume plan</h1>
+<p class="lede">Every record this programme creates, counted before it is created — and every one
+of them typed into the product by Playwright driving a browser as a real user. No SQL seeding,
+no API shortcut, no bypass.</p>
+<p class="meta">2026-08-27 · counts read live from Supabase <code>toacecaewujfxjfrjwco</code>, read-only · supersedes v2</p>
+
+<div class="card card--accent">
+<h3>What changed on your instruction</h3>
+<ul>
+<li><strong>Remove means remove.</strong> v2 kept all 50 user accounts; it now deletes them and
+rebuilds each one through the invite flow, so every user is created by a person and then
+actually <em>used</em> — put on payroll, clocked in and out, given tasks. One constraint is
+physical and is set out in §2.</li>
+<li><strong>The protected set stands exactly as written</strong> — <code>team_ae1d58543b21</code>,
+20 tasks, closed over comments, reminders, mentions and time entries.</li>
+<li><strong>AWS SES, not Resend.</strong> You are right and I was wrong:
+<code>email_service.py:41-54</code> builds a <code>boto3</code> SES client and every sender calls
+<code>ses_client.send_raw_email</code>. The Resend package in <code>.venv</code> is vendored and
+unused. This changes what §3 asks you for.</li>
+<li><strong>Volumes are now stated up front</strong> — the whole of §4.</li>
+</ul>
+</div>
+
+<h2><span class="n">0</span>Role and standing authorisation</h2>
+<p class="sub">Set by the owner, 2026-08-27. This is the seat every decision in this document is made from.</p>
+
+<div class="card card--accent">
+<h4>The seat</h4>
+<p><strong>Lead QA &amp; Test Architect · Lead Systems Architect · Integrations and Multi-Tenant
+SaaS Engineer · Data &amp; Migration Engineer · Application Security and Privacy Reviewer ·
+Release Engineer · Indian Statutory-Domain Analyst.</strong></p>
+<p>One seat, and the breadth is not decoration — it is the minimum to close a finding rather than
+file one. This programme fails the moment the person writing a suite cannot read the schema
+underneath it, judge whether a red test is the product or the test, or ship the fix. A tester who
+cannot change the system files defects; an architect who never runs the product ships plausible
+ones; an engineer with no statutory grounding writes a payroll assertion that is green and wrong.
+<strong>Every agent launched carries this identical seat</strong> — no reduced variant, because a
+narrower agent produces exactly the confident-but-wrong output this programme exists to catch.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:26%">Discipline</th><th>What it is here to prevent — each one already shipped</th></tr></thead>
+<tbody>
+<tr><td><strong>Test architecture</strong></td><td>Tests that cannot fail. Every check is <strong>proved to bite</strong> — mutate the code, watch it go red, restore. A gate nobody has seen fail is decoration</td></tr>
+<tr><td><strong>Systems architecture</strong></td><td>Fixing a symptom and leaving the shape. <code>create_deal</code> was filed as one unchecked id; the sweep found <strong>five more routes and a post-guard re-read</strong> a symptom fix would have missed entirely</td></tr>
+<tr><td><strong>Multi-tenancy</strong></td><td>Cross-tenant reads and writes. Ten foreign keys reach four tables from request bodies and <strong>not one is composite with <code>org_id</code></strong></td></tr>
+<tr><td><strong>Data &amp; migrations</strong></td><td>Deletion order, FK cascades, and the untyped <code>$n</code> that PgBouncer turns into an instant 500. Verify from <code>pg_constraint</code>, never from the migration file</td></tr>
+<tr><td><strong>Integrations</strong></td><td>Believing a vendor. The Mappls token minted perfectly and was refused by every API for eighteen days; SES accepts a message and bounces it seconds later</td></tr>
+<tr><td><strong>Security &amp; privacy</strong></td><td>A repair that opens a hole — the email fix that became a user_id-to-email oracle. Plus DPDP: biometric punches, and why the face fixtures are synthetic</td></tr>
+<tr><td><strong>Release engineering</strong></td><td>Verifying the wrong thing. A deploy line 33 commits stale reads as verification; a Railway config change is not a deployment</td></tr>
+<tr><td><strong>Frontend / interaction</strong></td><td>Defects invisible to the database — a map that drew nothing, a drag that animates without saving, a control reachable only by mouse</td></tr>
+<tr><td><strong>Deliverability</strong></td><td>DKIM, bounce rates and reputation. <code>aekaminc.com</code> is sending unsigned <em>today</em>, and a 45% bounce rate would have paused production email</td></tr>
+<tr><td><strong>Indian statutory domain</strong></td><td>Assertions that are green and wrong. PT varies by state and gender; GST splits on state pairs; GSTIN/PAN/TAN must block nothing</td></tr>
+</tbody></table></div>
+
+<h4>Operating standards — non-negotiable, and each one is a scar</h4>
+<ul>
+<li><strong>Never call anything missing without a live query</strong> — and a schema-qualified
+negative is a fact about <em>that schema</em>, not the database. That exact mistake closed
+Phase 6.4 on nothing.</li>
+<li><strong>Prove the check fails before trusting it.</strong> Mutations must use unique anchors:
+a <code>replace(…, 1)</code> that hits an identical block in the wrong function produces a
+<em>false green in the proof itself</em>.</li>
+<li><strong>Measure live exposure before fixing.</strong> Latent and active need different
+urgency and different reports.</li>
+<li><strong>Never infer an outcome from a return value.</strong> <code>send_email</code> returns
+True when the gate suppresses — 1,562 rows read <code>sent</code> against 1,562 suppressed.
+The row is the evidence.</li>
+<li><strong>Code shipped is 🟡. A customer completing the flow is ✅.</strong></li>
+<li><strong>A test that fails on a correct fix is a defect in the test</strong> — it teaches
+people to edit tests, which is how a real bug gets buried.</li>
+<li><strong>Report faithfully</strong>, including blocked, skipped and partial. A silent cap
+reads as full coverage.</li>
+</ul>
+
+<h4>The four judgements this seat owns, and may not delegate</h4>
+<ol>
+<li><strong>Product bug or test bug?</strong> — the axis stop-and-fix stands on.</li>
+<li><strong>Latent or active?</strong> — whether a hole has been walked through yet.</li>
+<li><strong>Reversible or not?</strong> — which decides whether it needs confirming first.</li>
+<li><strong>Broken, blocked, or excluded by decision?</strong> — three different sentences in the
+report, and collapsing them is how a plan looks finished when it is not.</li>
+</ol>
+
+<h4>Standing authorisations</h4>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:26%">Granted</th><th>Scope, and the limits that survive it</th></tr></thead>
+<tbody>
+<tr><td><strong>Migrations</strong></td><td>Write, apply and verify numbered migrations without stopping to ask. <strong>It removes the wait, not the report</strong> — the write-path side effects and a short risk assessment are still written <em>before</em> the statement runs, never afterwards to justify it. Verify from <code>pg_constraint</code> and the live catalogue, never from the migration file</td></tr>
+<tr><td><strong>Launching agents</strong></td><td>Spawn agents carrying this same role and briefing, <strong>on Opus 5</strong>. Each inherits the same limits — a delegated agent has no authority the seat does not have</td></tr>
+</tbody></table></div>
+
+<h4>Model — Opus 5 throughout</h4>
+<p><strong>Owner's decision, 2026-08-28: Opus 5 for this seat and for every agent it launches.</strong>
+No tiering down for the mechanical stages.</p>
+<p><strong>What makes that affordable:</strong> the overnight run is deterministic code. Playwright
+clicking ~31,600 times consumes no model at all. Token cost here is bounded by the
+<strong>defect count</strong> — writing the suites, triaging failures, fixing what is found —
+not by the interaction count. So uniform Opus 5 is a smaller bill than the interaction figure
+suggests.</p>
+<p><strong>And it removes the weakest link.</strong> The two places a cheaper model would have
+cost the most are both unavoidable under the stop-and-fix rule:</p>
+<ul>
+<li><strong>Triage — is this a product bug or a test bug?</strong> In Phase 8.0 three test faults
+each <em>accused the product of their own bug</em> and survived three runs. Get that wrong under
+stop-and-fix and you either edit a test green — burying a real defect — or stop and fix
+something that was never broken, then build on it.</li>
+<li><strong>Backend SQL fixes.</strong> This repo's signature failure is an untyped
+<code>$n</code> through PgBouncer becoming an instant 500 — fine in review, broken in production.</li>
+</ul>
+<p class="sub" style="margin-bottom:0">Noted for completeness: the dead-control sweep (~4,500
+clicks recording three booleans each) is the one stage that needs no judgement, and is therefore
+the only place the uniform choice spends more than it must. Consistency was preferred, which is a
+reasonable trade at this bill size.</p>
+
+<h4>What the grant does not cover</h4>
+<ul>
+<li><strong>A <code>DROP</code> is named and confirmed regardless.</strong> A prefix is not a stack — the 24-table list of 2026-08-27 excluded four tables for four different reasons, and two of them would have taken professional tax and income tax to ₹0 for every employee.</li>
+<li><strong>Data changes to live rows are a separate decision</strong> — a backfill, a re-point, anything editing customer records — raised first, with the reversal statement written down before it runs.</li>
+<li><strong>Deletion order and deploy order remain live hazards.</strong> A migration a router already SELECTs from must land before that router deploys, or every read 500s.</li>
+<li><strong>Anything irreversible is named as such</strong>, and this programme's deletes are the largest such action in it — which is why R2 proves a restore before R4 deletes anything.</li>
+</ul>
+</div>
+
+<h2><span class="n">1</span>The rule this plan is built on</h2>
+
+<div class="card card--blue">
+<p><strong>Every row is typed by a user.</strong> Playwright opens the page, fills the form,
+picks from the real picker, uploads the real file and clicks the real button. Nothing is
+inserted by SQL and nothing is posted straight to an API — because a row created by SQL proves
+the table exists, and only a row created by a click proves the product works. That is the whole
+point of the exercise and there is no exception anywhere in §4.</p>
+<p>It has a cost worth naming: this is slow. ~22,000 browser interactions is an overnight run,
+not a five-minute one. §6 sets out the runtime and how it is sharded.</p>
+</div>
+
+<div class="card card--red">
+<h4>The goal, restated by the owner 2026-08-28 — and it is not "does the product work"</h4>
+<p><em>"Imagine giving a client a completely new org, and then they start using it and things
+break and they are not happy. Start from thinking that you are the client who will be using
+this."</em></p>
+<p><strong>That is a harder and more useful target than the one this plan was built around.</strong>
+"Every function works" and "a new customer's first week works" are different questions, and the
+second is the one that loses customers. Three consequences follow, and they change the plan:</p>
+<ol>
+<li><strong>Delete first is right</strong> — settled below, on the owner's reasoning rather than mine.</li>
+<li><strong>An emptied org is not the same as a new org.</strong> After the wipe, Unicode still
+has its profile, GSTIN, state code, R2, senders, document series, compliance settings and module
+subscriptions. A real new customer has <em>none</em> of that. So <strong>UK AekamINC becomes the
+brand-new-org lane</strong>: its product configuration is cleared too, and wave 1 builds it from
+nothing through the real screens. Unicode stays the configured-org lane. Two fidelities, both
+worth having, no sixth organisation needed.</li>
+<li><strong>A new customer does not work in dependency order.</strong> Our waves are
+efficiency-ordered — people before payroll, clients before invoices. A real person wanders: they
+try payroll on day one with no employees, open Reports before anything exists, click Invoices
+before adding a client. <strong>That disorder is where the ugly failures live</strong>, and it is
+tested by Suite 00 below.</li>
+</ol>
+</div>
+
+<h3><span class="suite">SUITE 00</span> · The cold-start journey — a new customer, in the wrong order</h3>
+<p class="sub">Added 2026-08-28. Runs <strong>first</strong>, on the brand-new org, before any dependency-ordered wave.</p>
+<p>One agent plays a customer who has just been handed a login and has read nothing. It works in
+the order a person actually explores — <strong>which is the wrong order</strong> — and the
+assertion is not that things succeed. It is that <strong>nothing breaks ugly</strong>:</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:34%">What the new customer tries</th><th>What must happen — and what must not</th></tr></thead>
+<tbody>
+<tr><td>Logs in for the first time; lands somewhere</td><td>A dashboard that says what to do next, not a wall of zeroes with no explanation</td></tr>
+<tr><td>Opens every module in the nav, in menu order, with nothing configured</td><td><strong>Every screen renders an empty state in words.</strong> No spinner that never resolves, no error toast, <strong>no blank page that is indistinguishable from a broken one</strong></td></tr>
+<tr><td><strong>Runs payroll with zero employees</strong></td><td>A clear "add employees first", <strong>not a 500, not a run that produces an empty payslip set and reports success</strong></td></tr>
+<tr><td><strong>Raises an invoice with no client, no product, no GSTIN</strong></td><td>Blocks on what is genuinely required and <strong>says which field</strong>. ⚠ GSTIN/PAN/TAN must <strong>not</strong> block — that rule has regressed more than once</td></tr>
+<tr><td>Opens Reports and Dristi before any data exists</td><td>Zeroes labelled as zeroes, not ₹NaN, not a crash, not last-org's numbers</td></tr>
+<tr><td>Tries to invite a colleague before configuring anything</td><td>The invite sends and the link works from a clean browser</td></tr>
+<tr><td>Uploads a file before storage is set up; clicks a map before Mappls exists</td><td>Degrades with a sentence, never a silent no-op</td></tr>
+<tr><td>Abandons a half-filled form and navigates away, then returns</td><td>Either the draft is kept or the loss is warned about — <strong>not silently discarded</strong></td></tr>
+<tr><td>Uses the browser Back button everywhere</td><td>State survives. Back is the most-used control in any product and the least tested</td></tr>
+</tbody></table></div>
+<div class="card card--amber">
+<p><strong>Why this suite is the one that answers your actual fear.</strong> Every other suite in
+this programme drives the product along its happy path with prerequisites already in place — and
+a customer's first week is precisely the period when <em>nothing</em> is in place. The failures
+that make someone regret buying are not "the commission ladder mis-sorted"; they are "I clicked
+Payroll on my first morning and got a red error I did not understand". <strong>Suite 00 is the
+only one that looks for those.</strong></p>
+<p class="sub" style="margin-bottom:0">It is also the cheapest suite here — a few hundred
+interactions, no data to create — and I would run it <strong>first</strong>, because whatever it
+finds will need fixing before the other 22 suites are worth writing.</p>
+</div>
+
+<h3>What "driven as a user" means — the interaction model</h3>
+<p class="sub">Owner, 2026-08-28: it is not enough to check that a row appeared. <em>Click, motion, and every other event</em> are what the customer actually experiences, so those are what get checked.</p>
+
+<p>A row landing in a table proves the write path. It says <strong>nothing</strong> about whether
+the drawer opened, whether the drag persisted, whether the tooltip appeared, or whether the
+button was reachable by keyboard. Those are the product to the person using it. So every screen
+is exercised across the full interaction vocabulary, and <strong>each interaction asserts its own
+observable consequence</strong> — never merely that it did not throw.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:16%">Event</th><th style="width:34%">Driven</th><th>What must be observably true afterwards</th></tr></thead>
+<tbody>
+<tr><td><strong>Click</strong></td><td>Buttons, links, tabs, menu items, table rows, chips, toggles, pagination</td><td>A request fired, <em>or</em> the DOM changed, <em>or</em> navigation happened. <strong>None of the three = a dead control</strong> (Suite 22)</td></tr>
+<tr><td><strong>Type</strong></td><td>Inputs, textareas, rich text, the mention autocomplete, search boxes</td><td>The value is committed and survives a reload. ⚠ <strong>Contact search is SERVER-side and does not fire on typing</strong> — a Phase 8.0 fault where an unfiltered table was clicked and the wrong record opened. Typing is not searching</td></tr>
+<tr><td><strong>Select</strong></td><td>Dropdowns, comboboxes, server-backed pickers, date fields</td><td>The chosen value binds to the row. <strong>Dates go through <code>DateInput</code> with <code>setDate()</code></strong> — never a native date input, which this product does not use anywhere</td></tr>
+<tr><td><strong>Motion — drag &amp; drop</strong></td><td>Kanban cards between columns, column reorder, task sort order, drag-to-upload</td><td><strong>The card is in the new column AND the row persisted it</strong> — <code>column_id</code> or <code>sort_order</code> actually changed. A drag that animates and does not save is the exact defect a screenshot cannot distinguish from success</td></tr>
+<tr><td><strong>Hover</strong></td><td>Tooltips, row hover states, reveal-on-hover actions, truncated-text titles</td><td>The tooltip or hidden action becomes visible. An action that only exists on hover and never appears is unreachable</td></tr>
+<tr><td><strong>Keyboard</strong></td><td>Tab through every control; Enter and Space to activate; Escape to dismiss; arrows inside pickers</td><td>Focus order is sane, activation works without a mouse, <strong>Escape closes every modal and drawer</strong>. Fixed by hand once already — React Aria was rejected — so it regresses silently</td></tr>
+<tr><td><strong>Transition</strong></td><td>Modals, drawers, toasts, expanding rows, the corner dock</td><td>It opens, it is readable, <strong>and it closes</strong>. A toast that never dismisses and a drawer that traps focus are both live bugs no row-count would show</td></tr>
+<tr><td><strong>Scroll</strong></td><td>Long tables, sticky headers, wide tables, pagination past the 200-row cut</td><td>Sticky headers stay put; wide tables scroll <em>inside</em> their container rather than the page; <strong>seed past 200 on one list and page through it</strong></td></tr>
+<tr><td><strong>Resize</strong></td><td>Desktop, tablet and mobile breakpoints; dark and light</td><td>No horizontal page scroll, nothing clipped, nothing overlapping. Run on the two AVDs too (§11)</td></tr>
+<tr><td><strong>Upload / download</strong></td><td>File pickers, drag-to-upload, PDF and CSV exports</td><td>The object reaches R2 and the download actually produces a file — not a 200 with an empty body</td></tr>
+<tr><td><strong>Load &amp; error</strong></td><td>Throttled network, then cut it, on each module's main list</td><td>A skeleton or spinner appears, and a <strong>failure states what failed</strong> rather than rendering an empty table that reads as "no data"</td></tr>
+<tr><td><strong>Empty state</strong></td><td>Every screen visited once before its data exists</td><td>It says there is nothing yet, in words. <strong>This is what a new customer sees on day one</strong> and it is the state nobody has looked at since the data arrived</td></tr>
+</tbody></table></div>
+
+<div class="card card--amber">
+<p><strong>Why this is the part that matters most for the user, and the part most likely to be
+wrong.</strong> Every defect this product has shipped in the classes above was invisible to the
+database: a component that rendered a map and drew nothing for eighteen days; a territory map
+reachable only while creating a territory and never afterwards; a button whose only write path
+answered 422 for its entire life; a screen that displayed six wrong numbers. <strong>Not one of
+those would fail a row-count check.</strong> They fail an interaction check, which is why the
+interaction check is the deliverable.</p>
+<p class="sub" style="margin-bottom:0">⚠ The console is watched throughout: <strong>zero uncaught
+errors</strong> across the whole run, collected per screen. An exception that does not visibly
+break anything today is a defect that will.</p>
+</div>
+
+<h3>The five organisations</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:18%">Org</th><th class="pct" style="width:9%">Rows</th><th style="width:7%">R2</th><th>Disposition</th></tr></thead>
+<tbody>
+<tr><td><strong>Unicode Group</strong><br><span class="tag t-done">the CONFIGURED-ORG lane</span></td><td class="pct">5,357</td><td><span class="tag t-done">yes</span></td><td><strong>Data wiped, configuration kept</strong> — profile, state code, senders, R2, document series stay. This is the "established customer whose data resets" case, and the reference lane every suite is authored against. Except the Aekam Inc team + 20 tasks. Full sweep, all suites</td></tr>
+<tr><td><strong>UK AekamINC</strong><br><span class="tag t-done">the BRAND-NEW-ORG lane</span></td><td class="pct">331</td><td><span class="tag t-done">yes</span></td><td><strong>Data wiped AND product configuration cleared</strong> — profile, GSTIN, document series, compliance settings, module subscriptions, departments, holidays, leave types. All 9 members kept. It then gets built from nothing through the real screens, so it is the closest thing to <strong>what a new customer actually receives</strong>. Runs Suite 00 first. R2 credentials and SES stay, since neither is recreatable from the product UI</td></tr>
+<tr><td>E2E Test &amp; Associates</td><td class="pct">19,929</td><td><span class="tag t-na">no</span></td><td>Wiped and rebuilt as the <strong>regression org</strong>, ~40% volume. No R2, so file suites are skipped here by design</td></tr>
+<tr><td><strong>Aekam Inc</strong></td><td class="pct">4,519</td><td><span class="tag t-na">no</span></td><td><span class="tag t-na">NO TOUCH</span> god-mode users, teams, 220 tasks, 164 memberships — all stay exactly as they are. <strong>But the admin MODULE is fully tested, with a test org as its subject.</strong> See §12, where "untouched" becomes a before/after fixture rather than a promise</td></tr>
+<tr><td>Demo - Kartavaya</td><td class="pct">55</td><td><span class="tag t-na">no</span></td><td><span class="tag t-na">untouched</span> out of scope unless you say otherwise</td></tr>
+</tbody></table></div>
+
+<h2><span class="n">2</span>Deleting the users — and the one account that cannot go</h2>
+
+<p>All 50 accounts carry credentials, so "delete the non-login ones" has no target. Taking
+<em>remove means remove</em> literally: <strong>every user in the three test orgs is deleted and
+recreated through the UI.</strong> One constraint is physical rather than a preference —</p>
+
+<div class="card card--red">
+<h3>Playwright has to log in as somebody</h3>
+<p>If every account in an org is deleted, nothing can sign in to create the first replacement.
+Account creation is not self-service: an org member exists because someone invited them. So a
+minimum of one live account per org must survive the delete, and it must already hold admin
+rights. This is not a bypass of the "driven as a user" rule — it is the precondition for it.</p>
+</div>
+
+<p><strong>And the accounts that satisfy it are already the ones you told me to keep.</strong>
+Kasti's two accounts are <code>org_admin</code> across every test org:</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:24%">Account</th><th style="width:34%">Admin on</th><th>Role in this plan</th></tr></thead>
+<tbody>
+<tr><td><strong>Kasti Pranami</strong><br><span class="id">user_3339c020f0c0</span></td><td>Unicode Group, UK AekamINC, Aekam Inc</td><td>Bootstrap admin for both main test orgs; owns 7 of the protected tasks</td></tr>
+<tr><td><strong>Kasti ORG</strong><br><span class="id">user_91601f25f601</span></td><td>Unicode Group, E2E Test &amp; Associates</td><td>Bootstrap admin for E2E; owns 12 of the protected tasks</td></tr>
+<tr><td><strong>KEVAL SHAH</strong></td><td>Unicode Group <span class="tag t-done">org_owner</span></td><td>Your own account. Kept — deleting the owner of an org is not something I will do without you saying it in those words</td></tr>
+<tr><td><strong>UK Aek Keval</strong></td><td>UK AekamINC <span class="tag t-done">org_owner</span></td><td>Owner seat, kept for the same reason. Has never logged in</td></tr>
+<tr><td><strong>E2E Test Owner</strong></td><td>E2E <span class="tag t-done">org_owner</span></td><td>Owner seat, kept</td></tr>
+<tr><td><strong>Kartavya App Admin</strong></td><td>Aekam Inc <span class="tag t-done">platform</span></td><td>Untouched org; drives Suite 19</td></tr>
+</tbody></table></div>
+
+<h3>The resolved sets — 20 kept, 30 deleted</h3>
+<p class="sub">Owner's instruction 2026-08-27: <strong>UK AekamINC keeps all its members; only its data goes.</strong> Because accounts are global and seats are per-org, that rule reaches further than it looks, and three things fell out of computing it properly.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:32%">Disposition</th><th class="pct" style="width:8%">n</th><th>Who, and why</th></tr></thead>
+<tbody>
+<tr><td><span class="tag t-done">KEEP</span> seat in UK / Aekam / Demo</td><td class="pct">11</td><td><strong>All 9 UK AekamINC members</strong> — Bansi Prajapati, Bhumi Shrimali, Manthan Varaliya, Om Chauhan, Parth Chavda, Sneha Kshtriya, Demo-Keval, UK Aek Keval, Kasti Pranami — plus Bhoomi Shah and Kartavya App Admin on the untouched Aekam Inc. <strong>Seven of the nine also hold Aekam Inc seats</strong>, so they were doubly protected</td></tr>
+<tr><td><span class="tag t-done">KEEP</span> system accounts</td><td class="pct">5</td><td><strong>The five <code>niyam_&lt;org&gt;</code> accounts</strong> — one per organisation, <code>is_system</code>. These are the automation engine's actor identity. <strong>A blanket "delete all users" would have removed them and broken Niyam attribution in every org, including the two that are not being touched</strong></td></tr>
+<tr><td><span class="tag t-done">KEEP</span> Kasti / protected</td><td class="pct">2</td><td>Kasti Pranami, Kasti ORG — bootstrap admins and owners of 19 of the 20 protected tasks</td></tr>
+<tr><td><span class="tag t-done">KEEP</span> org owners</td><td class="pct">1</td><td>E2E Test Owner (KEVAL SHAH and UK Aek Keval are already counted above)</td></tr>
+<tr><td><span class="tag t-done">KEEP</span> protected-task creator</td><td class="pct">1</td><td><strong>Keval UK.</strong> Found by checking who created the protected 20: <strong>12 by Kasti ORG, 7 by Kasti Pranami and one by Keval UK</strong>. That account holds only a Unicode seat, so it was in the delete list — and deleting it strands the creator attribution on a task you told me to keep exactly as it is</td></tr>
+<tr><td><span class="tag t-empty">DELETE</span> Unicode / E2E only</td><td class="pct">24</td><td>Seats exist solely in the two orgs being rebuilt</td></tr>
+<tr><td><span class="tag t-empty">DELETE</span> no seat anywhere</td><td class="pct">6</td><td>Meera Nair, Neha Chauhan, Ritu Agarwal, QA Ganit Viewer, QA Org Admin, QA Org Member. ⚠ <strong>The first three created 32 Unicode tasks between them while holding no seat at all</strong> — orphaned authorship that predates this plan. None of it touches the protected team</td></tr>
+<tr class="total"><td>Keep / delete</td><td class="pct">20 / 30</td><td>—</td></tr>
+</tbody></table></div>
+
+<p>The deleted accounts are <strong>not restored</strong>. Replacements are <strong>invited from
+the Members screen, accept by email link, set their own password, then log in and do work</strong> —
+each one put on payroll, enrolled for attendance, given tasks and made to approve something.
+That is the "every user gets payroll and Pahchan tested" you asked for. The QA and
+duplicate-invite placeholders are simply not recreated, and that is the cleanup.</p>
+
+<div class="card card--amber">
+<p>⚠ <strong>One display defect noticed while resolving this.</strong> A Unicode member's
+<code>full_name</code> is literally <code>aekaminc1+org@gmail.com</code> — an email address
+stored and rendered as a person's name. It is not a UUID so the names-not-IDs ratchet does not
+catch it, but it is the same failure: a screen showing a machine string where a human name
+belongs. Logged, not fixed here.</p>
+</div>
+
+<h2><span class="n">3</span>Email — AWS SES</h2>
+
+<p>Correcting v2: there is no Resend in the send path. <code>email_service.py</code> builds
+<code>boto3.client("ses", region_name=AWS_REGION)</code>, default <code>us-east-1</code>, and
+every send goes through <code>send_raw_email</code>. What that changes:</p>
+
+<h3>Senders — <code>unicodegroup.com</code> now, <code>kartavaya.com</code> at the migration</h3>
+<p><strong>Owner's decision, 2026-08-27.</strong> All 27 sender rows use the already-verified
+<code>unicodegroup.com</code> domain, with an org prefix. <code>from_name</code> carries the real
+org name, so a recipient sees <em>E2E Test &amp; Associates</em> rather than <em>Unicode Group</em>.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:16%">Purpose</th><th style="width:28%">Unicode <span class="tag t-done">exists</span></th><th style="width:28%">E2E <span class="tag t-rsch">create</span></th><th>UK AekamINC <span class="tag t-rsch">create</span></th></tr></thead>
+<tbody>
+<tr><td><code>attendance</code></td><td class="id">attendance@</td><td class="id">e2e-attendance@</td><td class="id">uk-attendance@</td></tr>
+<tr><td><code>crm</code></td><td class="id">crm@</td><td class="id">e2e-crm@</td><td class="id">uk-crm@</td></tr>
+<tr><td><code>hr</code></td><td class="id">hr@</td><td class="id">e2e-hr@</td><td class="id">uk-hr@</td></tr>
+<tr><td><code>invoice</code></td><td class="id">invoice@</td><td class="id">e2e-invoice@</td><td class="id">uk-invoice@</td></tr>
+<tr><td><code>marketing</code></td><td class="id">marketing@</td><td class="id">e2e-marketing@</td><td class="id">uk-marketing@</td></tr>
+<tr><td><code>no-reply</code></td><td class="id">no-reply@</td><td class="id">e2e-no-reply@</td><td class="id">uk-no-reply@</td></tr>
+<tr><td><code>notifications</code></td><td class="id">notifications@</td><td class="id">e2e-notifications@</td><td class="id">uk-notifications@</td></tr>
+<tr><td><code>payroll</code></td><td class="id">payroll@</td><td class="id">e2e-payroll@</td><td class="id">uk-payroll@</td></tr>
+<tr><td><code>sales</code></td><td class="id">sales@</td><td class="id">e2e-sales@</td><td class="id">uk-sales@</td></tr>
+<tr class="total"><td>27 rows</td><td class="pct">9</td><td class="pct">9</td><td class="pct">9 — all <code>@unicodegroup.com</code></td></tr>
+</tbody></table></div>
+
+<div class="card card--blue">
+<p><strong>Zero setup, because the domain identity is already verified.</strong> Every one of the
+27 can send today — nothing to create, no DNS, no waiting.</p>
+<p><strong>I argued against exactly this earlier, and that objection is now void — both of its
+premises changed.</strong> It rested on borrowing a <em>customer's</em> domain and spending its
+reputation on ~1,600 hard-bouncing <code>@example.com</code> recipients. Since then Unicode
+turned out to be a test org rather than a customer, and the 45% moved to the AWS simulator,
+which is reputation-exempt. <strong>There is no mass-bounce scenario left to damage anything</strong>
+— the recipients are two real Gmail mailboxes and the simulator. The risk that justified the
+objection has been designed out, so the objection goes with it.</p>
+<p><strong>Deferred by decision:</strong> <code>kartavaya.com</code> senders land with the
+<strong>Cloudflare migration this weekend</strong>, when that domain's DNS is somewhere
+convenient to add DKIM records. Worth knowing when you do it: <strong>verifying
+<code>kartavaya.com</code> once as a domain identity covers every subdomain under it</strong> —
+SES treats a verified parent as covering its children — so one set of DKIM records serves
+<code>e2e.</code>, <code>uk.</code> and anything later, with no further DNS per org.
+⚠ <code>aekaminc.com</code>'s missing DKIM is a <em>separate</em> live issue the migration does
+not touch — that domain's mail DNS is on IONOS, on its own nameservers.</p>
+<p class="sub" style="margin-bottom:0">One cosmetic consequence, not a blocker: replies and
+bounces to the <code>e2e-*</code> and <code>uk-*</code> addresses go to mailboxes that may not
+exist. Nothing reads replies today and there is no bounce webhook, so nothing depends on it — a
+catch-all on the domain would tidy it up if one is available.</p>
+</div>
+
+<div class="card card--accent">
+<h4>Region — resolved, and the data already proved it</h4>
+<p><strong>ap-south-1 (Mumbai)</strong>, confirmed from the console. SES identities are
+per-region and <strong>287 messages have been accepted</strong> (180 Unicode, 107 E2E) — which
+would be impossible if the app were sending from the code's <code>us-east-1</code> default,
+where these identities do not exist. Railway's <code>AWS_REGION</code> is therefore already
+correct. Sandbox was cleared long ago: 50,000/day, 14/sec against this plan's ~460 sends.</p>
+</div>
+
+<h3>Recipients — <code>test+…@unicodegroup.com</code></h3>
+<p>Owner's instruction 2026-08-27: seeded people get plus-addressed real mailboxes rather than
+fake domains. <strong>This is the single biggest upgrade to the plan's evidence.</strong> Today
+every mail assertion can only reach <code>outbound_log</code> — "SES accepted it" — which is
+explicitly <em>not</em> the same as arrival: SES accepted 960 payslips and bounced them seconds
+later. With deliverable recipients the suites can assert the thing that actually matters.</p>
+
+<p><strong>Owner's mix, 2026-08-27, applied to every email-bearing population</strong> — members,
+employees, contacts, clients, vendors, candidates, signers and event registrations alike:</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:34%">Address pattern</th><th class="pct" style="width:8%">Share</th><th class="pct" style="width:10%">Per org</th><th class="pct" style="width:10%">Both</th><th>Deliverable?</th></tr></thead>
+<tbody>
+<tr><td class="id">test+&lt;tag&gt;@unicodegroup.com</td><td class="pct">5%</td><td class="pct">10</td><td class="pct">20</td><td><span class="tag t-half">unproven</span> IONOS plus-tags — see the probe below</td></tr>
+<tr><td class="id">kevalvshah03+&lt;tag&gt;@gmail.com</td><td class="pct">20%</td><td class="pct">39</td><td class="pct">78</td><td><span class="tag t-done">yes</span> Gmail plus-addressing is reliable; already proven on 18 Aug</td></tr>
+<tr><td class="id">kelisweet+&lt;tag&gt;@gmail.com</td><td class="pct">30%</td><td class="pct">58</td><td class="pct">117</td><td><span class="tag t-done">yes</span></td></tr>
+<tr><td class="id">&lt;behaviour&gt;+&lt;tag&gt;@simulator.amazonses.com</td><td class="pct">45%</td><td class="pct">88</td><td class="pct">176</td><td><span class="tag t-done">yes</span> AWS's own mailbox simulator — <strong>fully mailable, and exempt from reputation metrics</strong></td></tr>
+<tr class="total"><td>Addressable rows</td><td class="pct">100%</td><td class="pct">195</td><td class="pct">390</td><td>—</td></tr>
+</tbody></table></div>
+
+<p>The tag makes the mailbox self-sorting: every message traces to the exact seeded row that
+caused it, which is what turns a full inbox into evidence rather than noise. Two live gmail
+mailboxes at 50% combined also means <strong>half the population is genuinely checkable</strong>,
+which is the coverage that matters.</p>
+
+<div class="card card--accent">
+<h4>The simulator replaces <code>example.com</code> entirely — and it removes the only real hazard in this plan</h4>
+<p><strong>Owner's decision, 2026-08-27.</strong> It is the right one, and it is worth being
+explicit about what it buys, because the two domains behave nothing alike:</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:26%"></th><th style="width:32%"><code>@example.com</code> <span class="tag t-empty">dropped</span></th><th><code>@simulator.amazonses.com</code> <span class="tag t-done">adopted</span></th></tr></thead>
+<tbody>
+<tr><td>Accepts mail?</td><td>No — IANA-reserved, hard-bounces by definition</td><td>Yes, and returns a chosen outcome on demand</td></tr>
+<tr><td>Counts against reputation?</td><td><strong>Yes</strong> — 176 rows mailed would be a <strong>45% bounce rate</strong> against AWS's 5% review line and 10% suspension line</td><td><strong>No.</strong> Simulator bounces and complaints are excluded from your account's metrics</td></tr>
+<tr><td>Can the 45% be mailed?</td><td>No — they had to be held off the send path, so 176 rows never exercised a send at all</td><td><strong>Yes, all 176.</strong> The full send path runs for every one of them</td></tr>
+<tr><td>Bounce-path coverage</td><td>Only via a hard-capped handful, at real reputational cost</td><td>Unlimited, free, and <em>deterministic</em></td></tr>
+</tbody></table></div>
+<p><strong>The consequence is that a whole class of risk leaves this plan.</strong> The capped
+counter, the suppression-path carve-out and the 207-bounce scenario are all gone — not
+mitigated, but structurally absent. Nothing in the programme can now pause your production
+sending.</p>
+</div>
+
+<h3>Mobile numbers — dummy, and the dummy range matters more than the ratio</h3>
+<p class="sub">Owner's instruction 2026-08-28: numbers must be dummy, not real; where a real one is needed use <code>+44 7405 282925</code> for 40%.</p>
+
+<div class="card card--accent">
+<h4>First finding: nothing in this product can send to a phone number</h4>
+<p>Checked before sizing anything. <code>services/outbound_log.py:263</code> defines the legal
+channels as <strong><code>email · push · whatsapp · social</code></strong> — <strong>there is no
+<code>sms</code> channel at all</strong>. And <code>campaign_sender.py:87</code> states it
+outright: <em>"there is no SMS provider in this codebase."</em> The
+<code>prachar_campaigns.channel</code> CHECK does allow <code>'sms'</code>, and the live table
+holds 12 SMS campaigns — but <strong>none of them can send</strong>, because nothing is wired
+behind it. WhatsApp is the other phone channel, and it is both credential-blocked (no Meta
+business account) and <strong>excluded by decision</strong> (§13).</p>
+<p><strong>So a real number in the seed buys zero coverage.</strong> No code path will dial or
+text it. It cannot be asserted on, because there is nothing to assert.</p>
+</div>
+
+<div class="card card--amber">
+<h4>Second finding, and this is the one that matters: an invented Indian mobile number is a real person's number</h4>
+<p>Both main orgs are Indian-statute, so the natural instinct is to seed
+<code>+91 9xxxxxxxxx</code> numbers. <strong>India has no reserved test range.</strong> Every
+well-formed Indian mobile number you invent is either allocated today or will be — so a
+"dummy" +91 number is somebody's phone, and the moment a WhatsApp account is connected those
+rows become live targets.</p>
+<p><strong>The UK does reserve one.</strong> Ofcom holds <code>07700 900000–900999</code>
+permanently for drama and fiction; the numbers are unassignable and can never reach a person.
+<strong>So every dummy number is drawn from <code>+44 7700 900xxx</code></strong>, uniquely
+per seeded row. They are valid-format, obviously synthetic, and safe for ever. The only cost is
+that they read as foreign in an Indian product — and since nothing sends to them, display is the
+entire consequence.</p>
+</div>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:34%">Pattern</th><th class="pct" style="width:10%">Share</th><th class="pct" style="width:10%">Rows</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td class="id">+44 7700 900xxx <span class="tag t-done">Ofcom reserved</span></td><td class="pct">60%</td><td class="pct">~234</td><td>Unassignable by definition — cannot reach anyone, ever</td></tr>
+<tr><td class="id">+44 7405 282925 <span class="tag t-half">real</span></td><td class="pct">40%</td><td class="pct">~156</td><td>The owner's number, as instructed</td></tr>
+</tbody></table></div>
+
+<div class="card card--red">
+<p><strong>My recommendation is 0% real, and it costs you nothing to take.</strong> Since no
+channel can reach a phone number, the 40% proves nothing that the reserved range would not — but
+it does put <strong>~156 rows carrying a personal mobile</strong> into a database production
+shares, in a repo that is public. The day a Meta business account is connected (decision 0.26),
+those 156 rows stop being inert and become 156 deliverable WhatsApp targets, and nobody
+re-reading this seed later will know why that number is in it.</p>
+<p><strong>Seeded at 40% as instructed unless you say otherwise</strong> — this is recorded so
+the choice is visible, not to re-open it. If you want the number present purely so a human can
+recognise a row as reachable, <strong>2–3 rows achieve that as well as 156 do</strong>.</p>
+</div>
+
+<h4>The 45% is split across the simulator's behaviours, so each path is actually tested</h4>
+<p>The simulator accepts a label, so every seeded row still gets a unique address — which
+matters, because several of these tables carry a unique index on email and one shared address
+would collapse them.</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Address</th><th class="pct" style="width:10%">Both orgs</th><th>What it proves</th></tr></thead>
+<tbody>
+<tr><td class="id">success+&lt;tag&gt;@simulator.amazonses.com</td><td class="pct">~124</td><td>The normal delivered path, at volume</td></tr>
+<tr><td class="id">bounce+&lt;tag&gt;@simulator.amazonses.com</td><td class="pct">~24</td><td>Generates a real hard bounce <strong>at zero reputational cost</strong> — see the correction below for what the product can and cannot do with it</td></tr>
+<tr><td class="id">complaint+&lt;tag&gt;@simulator.amazonses.com</td><td class="pct">~14</td><td>Generates a spam complaint, same exemption</td></tr>
+<tr><td class="id">ooto+&lt;tag&gt;@simulator.amazonses.com</td><td class="pct">~8</td><td>Out-of-office auto-reply</td></tr>
+<tr><td class="id">suppressionlist+&lt;tag&gt;@simulator.amazonses.com</td><td class="pct">~6</td><td>Suppression-list rejection</td></tr>
+<tr class="total"><td>Total</td><td class="pct">176</td><td>45% of the addressable population</td></tr>
+</tbody></table></div>
+<div class="card card--red">
+<h4>⚠ Correction to the row above: without a webhook, the product cannot <em>learn</em> a bounce happened</h4>
+<p>I wrote that the bounce and complaint addresses prove "does the product mark the address and
+stop re-sending". <strong>Checked, and it cannot — there is no bounce feedback path at all.</strong></p>
+<ul>
+<li><strong>No SNS or SES notification endpoint exists.</strong> No router accepts one.</li>
+<li><strong><code>outbound_log</code> has no <code>bounced</code> status.</strong> The vocabulary is
+<code>queued · sent · suppressed · failed</code>. The code even anticipates the gap —
+<code>billing.py:1745</code> talks about "the place nobody would think to update <em>when a
+webhook adds <code>bounced</code></em>" — but that webhook was never built.</li>
+<li>A bounce is asynchronous. SES accepts the message, the row is written <code>sent</code>, and
+the bounce arrives minutes later <strong>to nobody</strong>. This is exactly how 960 payslips
+were "sent" and hard-bounced.</li>
+</ul>
+<p><strong>So what the 45% actually proves, stated honestly:</strong> the full send path runs for
+176 addresses — composition, sender resolution, per-purpose routing, SES acceptance and the
+<code>outbound_log</code> row. That is real and worth having. <strong>What it does not prove is
+bounce handling, because there is none to test.</strong> The simulator makes those bounces free
+and harmless rather than reputation-damaging, which is why it is still the right choice — but it
+does not by itself create the feature.</p>
+<p>Building it is <strong>code, not SES configuration</strong>: a webhook router, SNS subscription
+confirmation and signature verification, a <code>bounced</code> status, and the suppression logic
+that acts on it. That is a piece of work in its own right and I have <strong>not</strong> folded
+it into this programme's estimate. Say if you want it scoped separately.</p>
+</div>
+
+<div class="card card--red">
+<h4>Verify plus-addressing with ONE send before seeding 1,600 of them</h4>
+<p><strong>There is a recorded doubt about exactly this.</strong> When the fake-domain login
+addresses were rewritten on 2026-08-18, plus-tags on <code>unicodegroup.com</code> were
+considered and rejected in favour of gmail tags, because <strong>IONOS was thought likely to
+reject them</strong> — and the note says the doubt was never resolved: port 25 is blocked here
+and <code>railway run</code> executes locally, so it could not be tested from this machine.</p>
+<p>If IONOS does reject them, roughly <strong>550 seeded emails hard-bounce</strong>. That is not
+merely a failed test — a bounce-rate spike is how an <strong>SES account gets its sending
+paused</strong>, and this one sends your real invoices. The cost of being wrong is far higher
+than the cost of checking.</p>
+<p><strong>So R0 sends exactly one message to <code>test+probe@unicodegroup.com</code> and
+confirms arrival in the mailbox before a single seeded address is written.</strong> If it
+arrives, the whole scheme goes ahead as you have asked. If it does not, I come back with the
+result rather than seeding 1,600 addresses on an assumption — the fallback being either a
+catch-all mailbox or the gmail-tag scheme already proven to work.</p>
+</div>
+
+<h3>What you actually need to add in AWS SES</h3>
+<p class="sub">Short answer: possibly nothing, and certainly not much. Three of the five items are checks rather than changes.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:5%">#</th><th style="width:26%">Item</th><th style="width:12%">Type</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td class="pct">1</td><td><strong>Sending region</strong></td><td><span class="tag t-done">resolved</span></td><td><strong>ap-south-1 (Mumbai)</strong>, confirmed by the owner 2026-08-27 — <em>and corroborated by the data</em>: 287 messages have been accepted by SES (180 Unicode, 107 E2E). Identities are per-region, so a wrong <code>AWS_REGION</code> would have made every one of those a <code>MessageRejected</code>. Railway's value must therefore already be <code>ap-south-1</code>, whatever the code's <code>us-east-1</code> default says. R0 confirms it cheaply from one send's response rather than assuming</td></tr>
+<tr><td class="pct">2</td><td><strong>Nothing for the simulator</strong></td><td><span class="tag t-done">no action</span></td><td><code>@simulator.amazonses.com</code> needs <strong>no verification, no configuration and no region setup</strong>. It works out of the box in every region. The 45% costs you nothing to enable</td></tr>
+<tr><td class="pct">3</td><td><strong>What is verified today</strong></td><td><span class="tag t-done">answered</span></td><td>Read off the console 2026-08-27 — four identities in ap-south-1:<br>
+<code>unicodegroup.com</code> · Domain · <strong>Verified</strong><br>
+<code>aekaminc.com</code> · Domain · <strong style="color:var(--red)">UNVERIFIED</strong><br>
+<code>no-reply@unicodegroup.com</code> · Address · Verified<br>
+<code>no-reply@aekaminc.com</code> · Address · Verified<br>
+So Unicode's nine senders work, and the <code>FROM_EMAIL</code> fallback works — but <strong>only that one aekaminc address can send</strong>. <code>kartavaya.com</code> is not present at all</td></tr>
+<tr><td class="pct">4</td><td><strong>Senders for E2E and UK</strong></td><td><span class="tag t-half">choose</span></td><td>Three ways to get there — see the box below. The cheapest costs nothing at all</td></tr>
+<tr><td class="pct">5</td><td><strong>Sending quota</strong></td><td><span class="tag t-done">already fine</span></td><td>~460 emails against 50,000/day and 14/sec. Not a constraint. Sandbox already cleared</td></tr>
+</tbody></table></div>
+
+<div class="card card--blue">
+<h4>Item 4 — <code>aekaminc.com</code> is Unverified, so the zero-setup route is closed</h4>
+<p>The domain identity <strong>already exists but has not completed verification</strong>, which
+means only <code>no-reply@aekaminc.com</code> — the separately-verified <em>address</em> — can
+send. Arbitrary addresses like <code>e2e-invoice@aekaminc.com</code> would be rejected today.
+That turns the previous "route A costs nothing" into a DNS job. But it is <strong>the
+cheapest DNS job available, and it is worth doing on its own merits.</strong></p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:8%"></th><th style="width:26%">Route</th><th style="width:16%">Setup</th><th>Assessment</th></tr></thead>
+<tbody>
+<tr><td><strong>A′</strong><br><span class="tag t-done">recommended</span></td><td><strong>Finish verifying <code>aekaminc.com</code></strong>, then use <code>e2e-invoice@aekaminc.com</code>, <code>uk-payroll@aekaminc.com</code> …</td><td><strong>ONE</strong> domain, and the identity is already created — just publish its DKIM records</td><td><strong>Half the DNS work of B and it fixes something real.</strong> Your production fallback sender is <code>no-reply@aekaminc.com</code> and it is sending today from a domain with <strong>no DKIM</strong> — which weakens authentication on every message that falls back to it. Verifying the domain improves live deliverability whether or not this programme ever runs</td></tr>
+<tr><td><strong>B</strong></td><td>Verify <code>e2e.kartavaya.com</code> + <code>uk.kartavaya.com</code></td><td><strong>TWO</strong> new identities, DKIM records for each</td><td>Tidiest naming, and what you approved earlier. But twice the DNS work of A′, on a domain that has no SES presence at all yet, and it does nothing for the fallback sender</td></tr>
+<tr><td><strong>C</strong></td><td>Seed the senders <code>is_verified = false</code></td><td><span class="tag t-done">none</span></td><td>Sends fall back to <code>FROM_EMAIL</code>. Honest, and tests the fallback — but <strong>per-org sender routing never runs</strong>, and that is one of the things Suite 02 exists to prove</td></tr>
+</tbody></table></div>
+<p><strong>Recommendation: A′.</strong> One domain to verify instead of two, the identity is
+already half-created, and it repairs DKIM on the address your production email actually falls
+back to. If <code>aekaminc.com</code>'s DNS is somewhere you would rather not touch, B is the
+clean alternative and C is the no-DNS floor.</p>
+</div>
+
+<div class="card card--amber">
+<p><strong>What is deliberately NOT on this list: a configuration set with an SNS event
+destination.</strong> That is what would let the product hear about bounces and complaints — but
+as the correction above sets out, there is no endpoint to receive it and no <code>bounced</code>
+status to record it. <strong>Adding SES event publishing today would publish into nothing.</strong>
+It only becomes worth configuring alongside the webhook work, which is a separate piece.</p>
+</div>
+
+<h2><span class="n">4</span>The volume plan</h2>
+<p class="sub">Per main test org. <strong>Unicode Group and UK AekamINC each get the full set below</strong> — identical shape so the two orgs are comparable and a difference is a finding. E2E gets ~40% of it as the regression org.</p>
+
+<h3><span class="suite">01–02</span> Foundations — org, users, access</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Users invited → accepted → password set</td><td class="pct">18</td><td>1 owner (kept) + 17 created; all four role tiers; 2 client-portal roles that consume no seat</td></tr>
+<tr><td>Logins performed</td><td class="pct">18</td><td>every account signs in at least once — <code>pulse_logins</code> goes from 1 to 18 on UK</td></tr>
+<tr><td>2FA enrolled / recovery code used</td><td class="pct">3</td><td>enable, log out, log in by code, spend a recovery code, disable</td></tr>
+<tr><td>Departments · designations</td><td class="pct">6 · 10</td><td>—</td></tr>
+<tr><td>Module enable/disable cycles</td><td class="pct">28</td><td>14 modules, off and on</td></tr>
+<tr><td>Per-member module grants</td><td class="pct">24</td><td>grant and revoke</td></tr>
+<tr><td>Email senders</td><td class="pct">9</td><td>the purpose matrix in §3</td></tr>
+<tr><td>UPI IDs</td><td class="pct">3</td><td>Paytm, PhonePe, GPay — one per platform, not one field</td></tr>
+<tr><td>Doc number series configured</td><td class="pct">6</td><td>invoice, order, PO, quote, credit note, payslip</td></tr>
+<tr><td>Compliance toggles set</td><td class="pct">12</td><td>—</td></tr>
+<tr><td>Logo / storage uploads</td><td class="pct">4</td><td>R2 round trip incl. delete</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">141</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">03</span> Core PM</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Teams</td><td class="pct">5</td><td>plus the protected Aekam Inc team, untouched</td></tr>
+<tr><td>Projects · milestones · risks · baselines</td><td class="pct">8 · 16 · 8 · 4</td><td>—</td></tr>
+<tr><td>Boards · columns</td><td class="pct">4 · 16</td><td>drag between columns 12 times</td></tr>
+<tr><td><strong>Tasks</strong></td><td class="pct">80</td><td>12 of them exercise <em>every</em> field: assignees, due via <code>DateInput</code>, priority, tags, recurrence, estimate, attachment, client link</td></tr>
+<tr><td>Subtasks · comments · @mentions</td><td class="pct">50 · 40 · 20</td><td><strong>mentions have never had a single row</strong></td></tr>
+<tr><td>Time entries</td><td class="pct">35</td><td>some billable, reaching an invoice</td></tr>
+<tr><td>Approvals requested / decided</td><td class="pct">14</td><td>8 approved, 4 rejected, 2 by email link</td></tr>
+<tr><td>Templates created · applied</td><td class="pct">5 · 3</td><td>task and project</td></tr>
+<tr><td>Categories · saved views · column prefs</td><td class="pct">8 · 5 · 6</td><td>—</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">337</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">04</span> Graha — CRM</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Clients · contacts</td><td class="pct">25 · 50</td><td>every one with a full Indian address and a PIN</td></tr>
+<tr><td>Pipelines · deals</td><td class="pct">2 · 30</td><td>8 won, 6 <strong>Lost with a reason</strong>, 16 open; 40 stage moves on the kanban</td></tr>
+<tr><td>Activities · follow-ups</td><td class="pct">45 · 18</td><td>follow-ups fire reminders</td></tr>
+<tr><td><strong>Territories</strong> · routing runs</td><td class="pct">6 · 2</td><td>PIN sets, member assignment, priority; route-all over 50 contacts</td></tr>
+<tr><td>Web forms · public submissions</td><td class="pct">2 · 12</td><td>submitted from a logged-out context, then routed</td></tr>
+<tr><td>Documents uploaded</td><td class="pct">12</td><td>R2 objects</td></tr>
+<tr><td>Labels · custom fields · scoring rules · approval rules</td><td class="pct">8 · 6 · 4 · 3</td><td>one custom field per input type</td></tr>
+<tr><td>Contact merges · dedupe runs</td><td class="pct">3 · 2</td><td>—</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">228</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">05–06</span> Ganit and Kray — books and procurement</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Products · vendors</td><td class="pct">18 · 14</td><td>vendors with all six MSME/TDS fields <em>and</em> the address block</td></tr>
+<tr><td><strong>Invoices</strong></td><td class="pct">45</td><td>32 final, 13 draft; intra- and inter-state GST; cost price on 12; salesperson on 12</td></tr>
+<tr><td>Invoice PDFs downloaded · emailed</td><td class="pct">20 · 15</td><td>—</td></tr>
+<tr><td>Payments recorded</td><td class="pct">32</td><td>12 partial, then completed</td></tr>
+<tr><td>Expenses · categories</td><td class="pct">28 · 8</td><td>with contact, vendor, attachment; 6 rejected</td></tr>
+<tr><td>Vendor bills · vendor payments</td><td class="pct">14 · 10</td><td>—</td></tr>
+<tr><td><strong>Bank statements uploaded</strong></td><td class="pct">3 files</td><td>~70 lines total; 24 reconciled to invoices, 6 deliberately left unmatched. <strong>The only path to "paid"</strong></td></tr>
+<tr><td>Recurring invoice profiles · cycles run</td><td class="pct">4 · 2</td><td>proves the period advances, not duplicates</td></tr>
+<tr><td>Contracts · signers</td><td class="pct">5 · 9</td><td>—</td></tr>
+<tr><td>Service lines · billing profiles · rate cards · metered usage · SLA credits</td><td class="pct">6 · 4 · 3 · 12 · 3</td><td>—</td></tr>
+<tr><td>TDS challans</td><td class="pct">2</td><td>PDF generated</td></tr>
+<tr><td>Purchase orders · lines · revisions · receipts · approvals</td><td class="pct">12 · 34 · 4 · 10 · 6</td><td>one above and one below the approval threshold</td></tr>
+<tr><td>Budgets set · breached</td><td class="pct">4 · 1</td><td>must warn, <strong>never block</strong></td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">424</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">07</span> Manav — HR</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td><strong>Employees</strong></td><td class="pct">30</td><td>full record incl. <strong>work state</strong> at create — PT depends on it. <strong>18 linked to the logins from Suite 01</strong></td></tr>
+<tr><td>Leave types · balances · requests</td><td class="pct">6 · 30 · 24</td><td>14 approved, 6 rejected, 4 cancelled; balances must move</td></tr>
+<tr><td>Holidays</td><td class="pct">14</td><td>12 national, <strong>2 state-specific</strong></td></tr>
+<tr><td>Shift definitions · roster cells · bids · swaps</td><td class="pct">5 · 150 · 6 · 4</td><td>one week rostered across 30 people</td></tr>
+<tr><td>Job openings · candidates · hired</td><td class="pct">5 · 18 · 2</td><td>hire converts a candidate into an employee</td></tr>
+<tr><td>Assets issued · returned</td><td class="pct">24 · 8</td><td>—</td></tr>
+<tr><td>Offboardings · <strong>custody lines</strong> · exit interviews</td><td class="pct">4 · 12 · 4</td><td><strong>custody has 0 rows in its entire life</strong> — the 422 is fixed and still unproven</td></tr>
+<tr><td>Expense claims · bonuses</td><td class="pct">12 · 6</td><td>—</td></tr>
+<tr><td>Commission schemes · bands · assignments</td><td class="pct">2 · 6 · 8</td><td>bands typed out of order to prove the sort</td></tr>
+<tr><td>Announcements · performance reviews</td><td class="pct">6 · 8</td><td>—</td></tr>
+<tr><td><strong>UDIN · notices · DSC</strong></td><td class="pct">6 · 5 · 4</td><td><strong>all three registers are at 0 rows on both orgs today</strong></td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">400</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">08</span> Vetana — payroll</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Salary structures</td><td class="pct">30</td><td>basic, HRA, allowances, deductions — one per employee</td></tr>
+<tr><td><strong>Payroll runs</strong></td><td class="pct">3</td><td>three consecutive months, so month-on-month is not a single day</td></tr>
+<tr><td><strong>Payslips generated</strong></td><td class="pct">~88</td><td>30 + 30 + 28 — the third month is short because of the offboardings, which is the point</td></tr>
+<tr><td>Payslip PDFs downloaded · emailed</td><td class="pct">20 · 30</td><td>—</td></tr>
+<tr><td>Loans issued · EMIs deducted</td><td class="pct">6 · 18</td><td>balance must fall each month</td></tr>
+<tr><td>PT / IT ladder bands added · re-runs</td><td class="pct">4 · 1</td><td><strong>closes Phase 5</strong> — TDS must come from <code>pay_income_tax_slabs</code>, and the figure must visibly move</td></tr>
+<tr><td>Mid-month joiner · leaver pro-rations</td><td class="pct">2 · 4</td><td>a leaver must be paid part-month, not whole</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">~200</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">09</span> Pahchan — attendance, photos and the clock</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Sites</td><td class="pct">4</td><td>2 typed, <strong>1 by dropping a pin on the map</strong>, 1 with altitude set</td></tr>
+<tr><td>Policy · department overrides</td><td class="pct">1 · 4</td><td>—</td></tr>
+<tr><td>Notices published · consents · acknowledgements</td><td class="pct">2 · 30 · 30</td><td>DPDP consent captured per employee</td></tr>
+<tr><td><strong>Enrollment photos uploaded</strong></td><td class="pct">30</td><td>one dummy face image per employee → R2 objects</td></tr>
+<tr><td><strong>Clock in / out punches, each with a photo</strong></td><td class="pct">240</td><td>12 employees × 5 working days × 2 punches × 2 months</td></tr>
+<tr><td>Punches refused outside the geofence</td><td class="pct">4</td><td>the refusal path is the one that protects the register</td></tr>
+<tr><td>Regularisation requests · decided</td><td class="pct">10 · 10</td><td>6 approved, 4 rejected</td></tr>
+<tr><td>Publish-to-payroll runs</td><td class="pct">2</td><td>payslip day-count must equal register day-count</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">~355</td><td>of which <strong>270 carry an uploaded image</strong></td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">10–11</span> Vikray and Prachar — sales and marketing</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Orders</td><td class="pct">35</td><td>cost price, salesperson, ship-to address; 6 cancelled; 10 converted to invoices</td></tr>
+<tr><td>Stock items · moves</td><td class="pct">18 · 45</td><td>one driven negative to see the warning</td></tr>
+<tr><td>Sales targets · commission payout runs</td><td class="pct">10 · 2</td><td>payout must match the band ladder from Suite 07</td></tr>
+<tr><td>Marketing templates · segments</td><td class="pct">12 · 6</td><td>each compliance class represented</td></tr>
+<tr><td><strong>Campaigns sent</strong> · recipients</td><td class="pct">7 · ~150</td><td>every send asserted in <code>outbound_log</code></td></tr>
+<tr><td>Sequences · steps · enrolments</td><td class="pct">3 · 12 · 24</td><td>advance, and exit on reply</td></tr>
+<tr><td>Events · registrations</td><td class="pct">3 · 30</td><td>—</td></tr>
+<tr><td>Unsubscribes</td><td class="pct">6</td><td>next campaign must exclude them — proven, not assumed</td></tr>
+<tr><td>Landing pages · form submissions · tracked links · clicks · referrals</td><td class="pct">2 · 12 · 6 · 24 · 4</td><td>—</td></tr>
+<tr><td>Marketing automations fired</td><td class="pct">5</td><td>—</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">~400</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">12</span> Dristi — reports and analytics runs</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Executed by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td><strong>Report types run</strong></td><td class="pct">18</td><td>every report in the catalogue, run at least once against real seeded data</td></tr>
+<tr><td>Report runs incl. window changes</td><td class="pct">40</td><td>each report run again over a different period</td></tr>
+<tr><td>Exports downloaded</td><td class="pct">36</td><td>CSV and PDF per report</td></tr>
+<tr><td>Dashboards · widgets · saved views · pivots</td><td class="pct">4 · 18 · 6 · 5</td><td>—</td></tr>
+<tr><td>Client reports generated</td><td class="pct">6</td><td>—</td></tr>
+<tr><td>Alerts set · breached</td><td class="pct">4 · 2</td><td>—</td></tr>
+<tr><td>Scheduled reports · dispatches</td><td class="pct">2 · 2</td><td><span class="tag t-done">unblocked</span> 6.4 is resolved — migration 236 dropped <code>public.report_schedules</code> from both schemas and <code>DRISTI_REPORT_SWEEP_ARMED</code> is live. Only the Railway cron repoint remains (OWNER-ACTIONS item 11)</td></tr>
+<tr><td><strong>Figures reconciled to source</strong></td><td class="pct">~60</td><td>every headline number tied back to its module. <strong>This page has printed six wrong figures before</strong></td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">~135 runs</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="suite">13–17</span> Chat, skills, eSign, automations, billing</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:38%">Created by hand</th><th class="pct" style="width:12%">Per org</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Channels · messages · threads · reactions · mentions · attachments</td><td class="pct">9 · 140 · 24 · 35 · 18 · 12</td><td>public and private; a locked channel must visibly refuse</td></tr>
+<tr><td><strong>Skills run</strong> · findings acknowledged</td><td class="pct">24 · 12</td><td>re-run must return fewer findings. <strong>The ack table has exactly 1 row ever</strong></td></tr>
+<tr><td>Sahayak chat sessions · messages</td><td class="pct">6 · 45</td><td>answers must ground in this org's own rows</td></tr>
+<tr><td>KB documents uploaded · questions asked</td><td class="pct">8 · 12</td><td><strong>the KB has never returned a result</strong> — this is where that gets settled</td></tr>
+<tr><td>Content generated · with inline image · approved · scheduled</td><td class="pct">18 · 4 · 12 · 6</td><td>the inline-image path used to raise <code>NameError</code>. Generation and approval are tested; <strong>publishing to a network is not</strong> — §13</td></tr>
+<tr><td>Credit top-ups · member ceilings · scraper runs</td><td class="pct">3 · 4 · 3</td><td>spend past a ceiling and be refused</td></tr>
+<tr><td>eSign documents · fields placed · signers · signed · voided</td><td class="pct">6 · 24 · 10 · 4 · 1</td><td>counterparty signs in a second browser context</td></tr>
+<tr><td><strong>Automation rules created · armed · fired</strong></td><td class="pct">14 · 14 · 14</td><td>one per trigger family. <strong>40 events are wired and exactly one rule has ever been armed</strong></td></tr>
+<tr><td>Automation runs · run steps observed</td><td class="pct">14 · ~42</td><td>plus one fired inside quiet hours, which must defer and then deliver</td></tr>
+<tr><td>Subscription changes · billing cycles · pay links opened</td><td class="pct">5 · 2 · 2</td><td>pause, resume, upgrade, mid-cycle downgrade</td></tr>
+<tr class="total"><td>Subtotal</td><td class="pct">~510</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3>Totals</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:34%">Measure</th><th class="pct">Unicode</th><th class="pct">UK AekamINC</th><th class="pct">E2E (40%)</th><th class="pct">Total</th></tr></thead>
+<tbody>
+<tr><td>Records created by hand</td><td class="pct">~3,130</td><td class="pct">~3,130</td><td class="pct">~1,250</td><td class="pct">~7,510</td></tr>
+<tr><td>Files uploaded (photos, PDFs, statements)</td><td class="pct">~320</td><td class="pct">~320</td><td class="pct">0 <span class="tag t-na">no R2</span></td><td class="pct">~640</td></tr>
+<tr><td>Report / analytics runs</td><td class="pct">~135</td><td class="pct">~135</td><td class="pct">~54</td><td class="pct">~324</td></tr>
+<tr><td>Automations fired</td><td class="pct">14</td><td class="pct">14</td><td class="pct">6</td><td class="pct">34</td></tr>
+<tr><td>Skill runs</td><td class="pct">24</td><td class="pct">24</td><td class="pct">10</td><td class="pct">58</td></tr>
+<tr><td>Payslips</td><td class="pct">~88</td><td class="pct">~88</td><td class="pct">~35</td><td class="pct">~211</td></tr>
+<tr><td>Attendance punches with photo</td><td class="pct">240</td><td class="pct">240</td><td class="pct">0</td><td class="pct">480</td></tr>
+<tr><td>Emails triggered</td><td class="pct">~230</td><td class="pct">~230</td><td class="pct">~90</td><td class="pct">~550</td></tr>
+<tr class="total"><td><strong>Browser interactions</strong></td><td class="pct">~9,400</td><td class="pct">~9,400</td><td class="pct">~3,800</td><td class="pct">~22,600</td></tr>
+<tr class="total"><td><strong>+ dead-control sweep clicks</strong></td><td class="pct">~2,250</td><td class="pct">~2,250</td><td class="pct">—</td><td class="pct">~4,500</td></tr>
+<tr class="total"><td><strong>+ non-click events</strong> — drag, hover, keyboard, scroll, resize, transition (§1)</td><td class="pct">~1,900</td><td class="pct">~1,900</td><td class="pct">~700</td><td class="pct">~4,500</td></tr>
+</tbody></table></div>
+
+<div class="card card--blue">
+<p>These numbers are a <strong>proposal, not a constraint</strong>. They are sized to be the
+smallest set that still proves each path — enough employees that a payroll run has shape,
+enough months that a trend is not a single point, enough invoices that ageing buckets fill.
+Say "double it" or "half it" and the specs take a volume constant; the shape is what matters.</p>
+</div>
+
+<h2><span class="n">5</span>The fixtures — what gets uploaded</h2>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:26%">Fixture</th><th class="pct" style="width:10%">Count</th><th>What it must be</th></tr></thead>
+<tbody>
+<tr><td><strong>Dummy face photos</strong></td><td class="pct">30</td><td>Synthetic, generated. <strong>Face matching is parked to v2</strong> (<code>routers/pahchan.py:6</code>) — nothing compares the image to anything, so a placeholder exercises the identical path: upload → R2 → consent gate → access control → retention sweep. A real face therefore buys <strong>zero</strong> extra coverage while creating genuine biometric records under DPDP, attributed to people who do not exist, in a database production shares. <strong>Exception:</strong> the owner's own photo on the owner's own employee record is consented and realistic — one row, not thirty</td></tr>
+<tr><td><strong>Punch selfies</strong></td><td class="pct">240</td><td>The same synthetic set re-used per punch. On the emulator this depends on the camera question in §11</td></tr>
+<tr><td><strong>Bank statements</strong></td><td class="pct">3</td><td>CSV/XLS in the real bank formats the parser expects. <strong>Parsing is positional</strong> — a hand-written file with the right headers and wrong column order proves nothing</td></tr>
+<tr><td>PDFs for eSign</td><td class="pct">6</td><td>Multi-page, so field placement on page 2+ is exercised</td></tr>
+<tr><td>KB documents</td><td class="pct">8</td><td>Real prose with answerable facts, or the KB test is unfalsifiable</td></tr>
+<tr><td>Attachments — tasks, expenses, documents</td><td class="pct">~40</td><td>Mixed types and one oversized file to prove the limit</td></tr>
+<tr><td>Org logos</td><td class="pct">2</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3>The R2 sweep — approved, and it cannot be done the obvious way</h3>
+<p class="sub">Owner's decision 2026-08-27: sweep the objects, but nothing belonging to the excluded records may be deleted. Checking how keys are actually formed turned up a trap that would have made a prefix-based sweep catastrophic.</p>
+
+<div class="card card--amber">
+<h4>⚠ Correction, 2026-08-28 — I asserted a shared bucket on a name match, and it was wrong</h4>
+<p>This section previously said Unicode and UK AekamINC share one bucket, so their objects are
+intermingled and a prefix sweep would be catastrophic. <strong>That was inferred from the bucket
+<em>name</em> being identical on both org rows, without checking the account.</strong> Checked
+properly against the live rows:</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:24%">Org</th><th style="width:22%">Bucket name</th><th style="width:20%">R2 account</th><th>Key shape</th></tr></thead>
+<tbody>
+<tr><td><strong>Unicode Group</strong></td><td class="id">kartavya-storage</td><td class="id">7a0e9e…59fd</td><td><strong>no prefix</strong> — bucket root</td></tr>
+<tr><td><strong>UK AekamINC</strong></td><td class="id">kartavya-storage</td><td class="id">35cc16…0fa3</td><td><strong>no prefix</strong> — bucket root</td></tr>
+<tr><td>E2E · Aekam Inc · Demo</td><td>platform bucket</td><td>platform</td><td><code>org/&lt;org_id&gt;/…</code></td></tr>
+</tbody></table></div>
+<p><strong>Two different Cloudflare accounts.</strong> R2 bucket names are scoped per account, so
+these are <strong>two separate buckets that happen to share a name</strong> — not one shared
+bucket. Nothing is intermingled, and each main org's objects sit alone in its own bucket.</p>
+<p><strong>That is better news than the hazard I described, and it is also the standard this seat
+is supposed to hold:</strong> <em>never call anything true without a live query.</em> I had the
+bucket name from a query and the conclusion from an assumption. The Cloudflare account now
+connected holds exactly one bucket — <code>aekaminc</code>, APAC, created 2026-05-06 — and
+<strong><code>kartavya-storage</code> is not in it</strong>, which is what surfaced the error.</p>
+</div>
+
+<div class="card card--accent">
+<h4>What still holds — and why the sweep is still key-list driven</h4>
+<p>The mechanism does not change, only the reasoning behind it. Per-org buckets remove the
+cross-org hazard, but two reasons to enumerate from the database survive both intact:</p>
+<ul>
+<li><strong>The protected set.</strong> Attachments on the 20 Aekam Inc team tasks live in
+Unicode's bucket and must not be deleted. A bucket-level wipe cannot express that exclusion; a
+key list can, by set arithmetic.</li>
+<li><strong>Nothing proves the bucket holds only what we think.</strong> Deleting by enumeration
+removes exactly the objects the database references and leaves anything else untouched — which
+is the right default for a store nobody has audited.</li>
+</ul>
+<p><strong>Aekam Inc is now positively isolated:</strong> its files are in the platform bucket,
+which is a different bucket from either org being wiped. That strengthens the §12 no-touch
+guarantee from a procedure into a physical separation.</p>
+<p class="sub" style="margin-bottom:0">⚠ Still to confirm in R0: whether the platform bucket
+(<code>R2_BUCKET_NAME</code>) is the <code>aekaminc</code> bucket in the connected account. The
+value is hidden from tooling on Railway. It changes nothing about the method — the key list is
+correct either way — but it is the difference between believing Aekam is isolated and knowing it.</p>
+</div>
+
+<div class="card card--accent">
+<h4>So the sweep is driven from the database, not from the bucket</h4>
+<ol>
+<li><strong>Enumerate every key the target orgs reference</strong>, from the tables that hold
+them — <code>graha_documents</code>, <code>manav_assets</code>,
+<code>pahchan_enrollment_photos</code>, punch photos, generated invoice and payslip PDFs,
+<code>samvada_message_attachments</code>, <code>hub_kb_documents</code>, expense and task
+attachments, org logos.</li>
+<li><strong>Subtract the protected set's keys</strong> — any object referenced by the 20 Aekam
+Inc team tasks or their comments. That is the "excluded files must not be deleted" guarantee,
+and it is enforced by set arithmetic rather than by care.</li>
+<li><strong>Subtract anything not under an org</strong> — <code>personal/&lt;user_id&gt;/</code>
+and <code>shared/</code> keys belong to people and to no org, including the users being kept.</li>
+<li><strong>Delete exactly that list</strong>, key by key, with the count reported. No prefix
+deletes, no bucket-level operations, ever.</li>
+</ol>
+<div class="gate"><strong>Sequencing gate:</strong> the inventory must be captured in <strong>R2, before the rows are deleted in R4</strong>. After R4 the references are gone and the objects become unfindable orphans — paid for, unreachable, and impossible to attribute. Capturing it late is the one ordering mistake that cannot be undone.</div>
+<p style="margin-bottom:0">⚠ <strong>One thing to confirm before the sweep runs:</strong> whether
+<code>R2_BUCKET_NAME</code> (the platform bucket) is also <code>kartavya-storage</code>. If it
+is, the shared-bucket hazard above is real rather than theoretical, and the key-list approach is
+the only safe method. R0 reads it.</p>
+</div>
+
+<h2><span class="n">6</span>Runtime</h2>
+<p>~31,600 interactions — 22,600 data-entry, ~4,500 sweep clicks and ~4,500 non-click events —
+at 1.2–2.0 s each is <strong>11–16 hours of wall clock</strong> single-threaded.
+Sharded by module across 6 workers, with the dependency order respected (foundations → people →
+money → everything else), that is <strong>a 3–4 hour run</strong>. It is designed to run overnight
+and to be re-runnable from empty, because a seed you can only build once is not a test.</p>
+<div class="gate"><strong>Gate:</strong> the run is idempotent — a second execution recognises its own output and verifies rather than duplicating. A suite that creates a second copy of everything on re-run is a defect in the suite.</div>
+
+<h2><span class="n">7</span>Effort</h2>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:10%">Stage</th><th style="width:44%">What</th><th class="pct" style="width:12%">Days</th><th>Gate</th></tr></thead>
+<tbody>
+<tr><td>R0</td><td>Preconditions: resolve the <code>AWS_REGION</code> mismatch from a live send; <strong>probe plus-addressing with one message</strong>; establish the emulator camera question; verify both deploys</td><td class="pct">0.5</td><td>Three unknowns answered before anything is written, not discovered at hour nine</td></tr>
+<tr><td>R1</td><td>Freeze: disarm 5 crons, <code>OUTBOUND_MODE</code>, read the job list back</td><td class="pct">0.5</td><td>Proven by one suppressed send</td></tr>
+<tr><td>R2</td><td>Back up all three orgs; verify per-table counts; <strong>perform one restore and diff it</strong>. <strong>Capture the R2 key inventory here</strong>, minus the protected set's keys</td><td class="pct">1</td><td>No DELETE until a restore has worked. The key list must be taken <em>before</em> R4 or the objects become unfindable orphans</td></tr>
+<tr><td>R3</td><td>Pin the protected set by id; ratchet proved to bite</td><td class="pct">0.5</td><td>20 tasks by id, before and after</td></tr>
+<tr><td>R4</td><td>Delete, per module, FK order from <code>pg_constraint</code>, no CASCADE; delete 30 accounts</td><td class="pct">1</td><td>A missed dependency must fail, not cascade</td></tr>
+<tr><td>R5</td><td>Build the fixtures of §5</td><td class="pct">1</td><td>Bank formats verified against the real parser</td></tr>
+<tr><td>R6</td><td>Write and run the suites — ~11 exist, ~11 new, all re-pointed at the volume constants</td><td class="pct">9–11</td><td>Each suite produces its asserted row</td></tr>
+<tr><td>R7</td><td>Dead-control sweep; triage; fix; re-sweep</td><td class="pct">2–3</td><td>The dead count is published even if not zero</td></tr>
+<tr><td>R8</td><td>Mobile: establish the camera question first, then extend <code>android_e2e.py</code> from ~10 checks to ~60 across both AVDs; fresh APK on a real device</td><td class="pct">2–3</td><td>The camera answer is reported either way; APK owed by 0.29 regardless</td></tr>
+<tr><td>R9</td><td>Re-arm, restore outbound, update STATUS.md + PROGRESS.md, drop the backup by name</td><td class="pct">0.5</td><td>Verified by observation</td></tr>
+<tr class="total"><td>Total</td><td>—</td><td class="pct">17–20</td><td>one working stream</td></tr>
+</tbody></table></div>
+
+<div class="card card--blue">
+<h4>DECIDED 2026-08-28 — delete first, then build from zero</h4>
+<p>I proposed writing the suites first, against the still-populated orgs, on the practical
+grounds that blank screens are harder to write selectors against. <strong>The owner chose delete
+first, and the reasoning is better than mine was.</strong></p>
+<p><strong>A suite written against a populated org can silently depend on rows it did not
+create.</strong> It passes, and nobody knows whether it passed because the code works or because
+a client happened to already exist. Building from zero makes that impossible — every suite must
+create what it needs or fail immediately, which is the self-sufficiency the whole programme
+depends on. It also means the build agent <em>sees</em> the day-one empty states rather than
+inferring them, and those are the screens no one has looked at since the data arrived.</p>
+<p><strong>The order stands as tabled: R0 → R1 freeze → R2 backup → R3 protected → R4 delete →
+then build and run from empty.</strong> What makes it safe is R2: the restore is proven by
+performing one <em>before</em> R4 deletes anything, so an empty org is recoverable if the suites
+turn out harder than expected.</p>
+<p><strong>What it costs, stated plainly: parallelism.</strong> Build and run are no longer
+separable — a payroll suite cannot be written until an employee suite has run and left employees
+behind. So the 12-way build fan-out collapses into the dependency waves of §14, and the calendar
+stretches accordingly. <strong>Revised total: 20–25 days</strong> rather than 17–20.</p>
+</div>
+
+<h3>The stop-and-fix rule</h3>
+<p class="sub">Owner's instruction, 2026-08-28: <em>if anything errors or does not do what it is supposed to, fix it — and only then move ahead.</em></p>
+
+<div class="card card--accent">
+<p><strong>Adopted, and it is the correct rule for this programme.</strong> A run that collects
+200 failures and carries on produces a list nobody acts on; the whole point here is that a
+finding is closed, not catalogued. It is also the repo's own doctrine restated — ✅ means a
+customer can complete the flow end to end, and code-without-data is 🟡.</p>
+
+<h4>How it is applied, so it does not deadlock</h4>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:24%">Situation</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><strong>A step fails, or produces the wrong result</strong></td><td><strong>Stop. Fix the product. Re-run the step green. Then continue.</strong> No suite is reported complete with a known failure inside it, and no later suite starts on top of an unfixed earlier one</td></tr>
+<tr><td><strong>The failure is in the test, not the product</strong></td><td>Fix the test — but <strong>prove which it was first</strong>. Three test faults during Phase 8.0 each accused the product of their own bug, and a test edited to go green is how a real defect gets buried</td></tr>
+<tr><td><strong>The cause is an owner-blocked item</strong> — a credential, a DNS record, a device</td><td><strong>Appended to <code>docs/OWNER-ACTIONS.md</code> in that file's own format</strong> — what is blocked, exactly what you do, what I finish once you have — and then <strong>the run continues past it</strong>. That file's standing contract is <em>"I never stop; if a piece of work needs you it lands here and I carry on with everything that does not."</em> A skip that is only in a run log is a skip nobody actions</td></tr>
+<tr><td><strong>The cause is excluded by decision</strong> — WhatsApp, social connectors (§13)</td><td>Not a failure at all. Not run</td></tr>
+<tr><td><strong>The fix is large</strong> — a missing feature rather than a bug</td><td><strong>Appended to <code>docs/OWNER-ACTIONS.md</code> with the evidence and a scoping estimate, then the run continues.</strong> I do not silently spend this programme's time building a feature it was not scoped to build, and I do not stall the run waiting for the decision either. The bounce-webhook gap in §3 is exactly this shape</td></tr>
+</tbody></table></div>
+
+<div class="card card--amber" style="margin:1.1rem 0 0">
+<p><strong>What this does to the estimate, said plainly.</strong> The 17–20 days costed the
+<em>writing and running</em> of the suites. It did <strong>not</strong> cost fixing what they
+find, because the number of defects is the thing the programme exists to discover — and the two
+orgs have never been driven end to end before.</p>
+<p><strong>So the calendar is now bounded by how broken the product turns out to be, not by how
+long the suites take.</strong> That is the right trade and it is what you are asking for, but it
+means I cannot honestly give you a finish date until the first few suites report. What I can do
+is tell you the defect count and the fix rate as they come in, so the estimate firms up with
+evidence instead of being guessed now.</p>
+</div>
+</div>
+
+<h2><span class="n">8</span>Still blocked, and not by this plan</h2>
+<ul>
+<li><strong>Mappls — NO LONGER BLOCKED.</strong> <code>MAPPLS_STATIC_KEY</code> is set and the basemap <strong>loads</strong>, verified from real browser pages on <code>staging.kartavaya.com</code> and <code>kartavaya.com</code> (OWNER-ACTIONS item 10, 2026-08-27). So the territory map, PIN preview and address autosuggest are all fully testable. <em>One residual:</em> <code>www.kartavaya.com</code> still returns 401 domain-validation — whitelist entry owed (item 9) — so suites assert on the apex and staging origins, not <code>www</code>.</li>
+<li><strong>Varta / WhatsApp and the social connectors</strong> — <strong>excluded by decision, not blocked</strong>. See §13; the distinction matters for how the final report reads.</li>
+<li><strong>Inbound webhooks</strong> — no honest way to simulate the caller.</li>
+<li><strong>Deliverability is no longer blocked</strong> — with <code>test+…@unicodegroup.com</code> the mail suites assert arrival rather than acceptance, subject to the one-message plus-addressing probe in §3.</li>
+<li><strong>Inbound email</strong> is still out — a mailbox that receives is not the same as Graha parsing what lands in it.</li>
+<li><strong>Real elapsed time</strong> — three payroll months are seeded on one day, so anything reading <code>created_at</code> for a trend still sees one day. Payroll periods are dated properly; audit trails cannot be.</li>
+</ul>
+
+<h2><span class="n">9</span>Decisions</h2>
+
+<h3>Settled — do not re-open</h3>
+<div class="card card--accent">
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:32%">Question</th><th>Owner's answer, 2026-08-27</th></tr></thead>
+<tbody>
+<tr><td>Is Unicode a customer?</td><td><strong>No — it is a test org.</strong> Its invoices, payslips and punches are Playwright output and go</td></tr>
+<tr><td>Which orgs get the full sweep?</td><td><strong>Unicode Group and UK AekamINC</strong> — the two with R2 configured. E2E is the regression org</td></tr>
+<tr><td>What is protected?</td><td><strong><code>team_ae1d58543b21</code> — the Aekam Inc team in Unicode, 20 tasks</strong>, exactly as it stands. Contains all 19 of Kasti's</td></tr>
+<tr><td>UK AekamINC members?</td><td><strong>All 9 stay.</strong> Only its data goes</td></tr>
+<tr><td>Aekam Inc org?</td><td><strong>No touch</strong> — god-mode users, teams, everything. <strong>But the admin module is fully tested</strong> (§12)</td></tr>
+<tr><td>A probe org for create-with-R2?</td><td><strong>No.</strong> UK AekamINC is four days old and already evidences that path (§12)</td></tr>
+<tr><td>Email provider?</td><td><strong>AWS SES.</strong> There is no Resend in the send path</td></tr>
+<tr><td>Sender domains for E2E / UK?</td><td><strong><code>unicodegroup.com</code> with <code>e2e-</code> / <code>uk-</code> prefixes</strong> — already verified, zero setup. <code>kartavaya.com</code> deferred to the Cloudflare migration weekend</td></tr>
+<tr><td>Recipient addressing?</td><td><strong>5% unicodegroup · 20% kevalvshah03+ · 30% kelisweet+ · 45% AWS mailbox simulator</strong>, across every email-bearing population. <code>@example.com</code> is <strong>not used at all</strong></td></tr>
+<tr><td>Mobile numbers?</td><td><strong>60% <code>+44 7700 900xxx</code></strong> (Ofcom's reserved drama range — unassignable) · <strong>40% the owner's real number</strong>, as instructed. ⚠ Nothing in the product can send to a phone at all, so the 40% buys no coverage — see §3</td></tr>
+<tr><td>How is anything created?</td><td><strong>Playwright, driven as a user. No SQL seeding, no API shortcut, no bypass</strong></td></tr>
+<tr><td>What counts as tested?</td><td><strong>The interaction, not the row</strong> (§1) — click, type, select, drag, hover, keyboard, transition, scroll, resize, empty and error states, each asserting its own observable consequence. A row-count check would have missed every UI defect this product has shipped</td></tr>
+<tr><td>Mobile?</td><td><strong>Both AVDs</strong> — <code>Pixel_9_Pro</code> and <code>Tab_A11_Plus</code> — extending the existing adb harness (§11)</td></tr>
+<tr><td>Face photos?</td><td><strong>Synthetic.</strong> Face matching is parked to v2, so a real face adds no coverage and creates real biometric records</td></tr>
+<tr><td>UK AekamINC's state?</td><td><strong><code>27</code> Maharashtra</strong> — my call, delegated. Differs from Unicode's Gujarat <code>24</code>, which is what unlocks inter-state GST and proves the PT ladder is read</td></tr>
+<tr><td>R2 objects?</td><td><strong>Sweep</strong> — from a database-derived key list, with the protected set's keys subtracted. Each main org has <strong>its own bucket in its own Cloudflare account</strong> (§5), so Aekam Inc is physically isolated from the wipe</td></tr>
+<tr><td>The window?</td><td><strong>Not the same weekend as the Cloudflare migration.</strong> Migration first, confirm mail flows, then the reseed overnight</td></tr>
+<tr><td>On failure?</td><td><strong>Stop, fix, re-run green, then continue</strong> (§7). Nothing is reported done with a known failure inside it. Owner-blocked causes are skipped and named rather than fixed</td></tr>
+<tr><td>Sahayak and Sanvaad?</td><td><strong>Both in.</strong> Suite 13 Sanvaad (17 screens) and Suite 14 Sahayak/Hub (17) — chat, skills with acknowledgement, the KB, content generation, credits, scrapers</td></tr>
+<tr><td>WhatsApp and social connectors?</td><td><strong>Excluded by decision</strong> (§13) — recorded as a choice, not as a blocker</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="card card--red" style="margin-top:1.4rem">
+<h4>Execution is held until you say start</h4>
+<p><strong>Nothing in this document has been run, and nothing will be, until you ask.</strong>
+No row has been deleted, no account touched, no cron disarmed. Everything to date is
+read-only measurement against the live database and a reading of the code and screens.</p>
+<p>When you do say start, the first thing that happens is <strong>R0 and R1</strong> — resolve
+the three unknowns, freeze the crons, take the backup and <em>prove the restore works</em> —
+and I will come back with that result before a single row is deleted.</p>
+</div>
+
+<h3>My calls, where you handed me the decision</h3>
+<div class="card card--accent">
+<h4>UK AekamINC gets <code>state_code = '27'</code> — Maharashtra</h4>
+<p><strong>Why not treat it as a genuine UK entity:</strong> the product has no non-Indian tax
+model at all. GST state codes, GSTIN, professional-tax ladders, TDS slabs — every money path is
+Indian statute. A UK entity would exercise <em>nothing</em>, and Suites 05 and 08 would fill with
+red that means "unsupported", not "broken". That is the worst kind of test output: failures
+nobody can act on.</p>
+<p><strong>Why Maharashtra specifically, rather than copying Gujarat:</strong> making the two main
+orgs differ is what buys the coverage.</p>
+<ul>
+<li><strong>It unlocks inter-state GST</strong>, which is otherwise untestable. Unicode is
+<code>24</code> Gujarat; with UK at <code>27</code>, invoices between the two orgs exercise
+<strong>IGST</strong>, while invoices within each exercise <strong>CGST/SGST</strong>. One org
+cannot prove that split at all.</li>
+<li><strong>It proves the PT ladder is read rather than hardcoded.</strong> Maharashtra has
+<strong>3 bands</strong>, Gujarat <strong>4</strong>. Two orgs on identical salaries must produce
+<em>different</em> professional tax — and if they do not, the ladder is not being consulted,
+which is exactly the defect Phase 2.2 existed to fix and which has regressed before.</li>
+<li>Maharashtra also carries the <strong>known gender-exemption gap</strong> (women exempt to
+₹25,000 since 2023, which the table cannot express). Running payroll there surfaces it against
+real rows instead of leaving it as a note.</li>
+</ul>
+<p><strong>The caveat, recorded:</strong> if UK AekamINC is ever meant to be a real UK trading
+entity, this decision is revisited — and the product would need a VAT/foreign-tax model before
+that is even testable. Today it is a UK-named org in an Indian-statute product, so it is treated
+as an Indian test org. <strong>One <code>UPDATE</code> on a test org's own row, reversible.</strong></p>
+
+<h4>The window — <em>not</em> this weekend</h4>
+<p><strong>The Cloudflare migration is this weekend, and these two must not share it.</strong>
+Both touch email: the migration moves DNS, and this programme sends ~460 messages and rewrites
+27 sender rows. Run them together and a delivery failure has two candidate causes and no clean
+attribution — which is how a day disappears.</p>
+<p><strong>Proposed order:</strong> Cloudflare migration this weekend → confirm mail still flows
+and both deploys are healthy → <strong>then</strong> the reseed, as an overnight run on a
+weeknight or the following weekend. R0–R2 (the unknowns, the freeze, the backup and its proven
+restore) can run in daylight beforehand, since none of them delete anything; only R4 onward needs
+the quiet window.</p>
+</div>
+
+<h3>Still open — two, and R0 answers both without you</h3>
+<div class="card card--amber">
+<ol>
+<li><strong>Volumes</strong> (§4): accept as sized, or tell me to scale. <em>Proceeding as sized unless you say otherwise.</em></li>
+<li><strong>Not blocking, and not part of this programme — <code>aekaminc.com</code> has no DKIM.</strong> Your production fallback sender <code>no-reply@aekaminc.com</code> works only as an <em>address</em> identity; the domain is Unverified, so every message that falls back to it goes out unsigned, today. Worth fixing on its own merits. The Cloudflare migration does not reach it — that domain's mail DNS is on IONOS, on separate nameservers.</li>
+</ol>
+<p style="margin-bottom:0"><strong>R0 answers three things on its own</strong>, before anything
+is written: whether IONOS accepts plus-tags, whether the emulator camera can be driven, and
+whether <code>R2_BUCKET_NAME</code> is also <code>kartavya-storage</code>. Each is reported
+either way rather than assumed. <em>The <code>AWS_REGION</code> question is closed —
+ap-south-1, corroborated by 287 accepted sends.</em></p>
+</div>
+
+<h2><span class="n">10</span>Appendix — the 22 suites</h2>
+<p class="sub">The screen-by-screen action list. §4 says how many; this says what is clicked. Every suite runs against Unicode <strong>and</strong> UK AekamINC.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:6%">#</th><th style="width:20%">Suite</th><th style="width:8%">Screens</th><th>Driven as a user — and the row that must appear</th></tr></thead>
+<tbody>
+<tr><td class="pct">01</td><td><strong>Auth &amp; account</strong></td><td class="pct">6</td><td>Login; 6 bad passwords to trip the 5/min limit; logout; forgot/reset password by token; invite → accept; TOTP enable, login by code, recovery code, disable; onboarding flow. → <code>pulse_logins</code>, <code>invites</code>, <code>user_totp</code></td></tr>
+<tr><td class="pct">02</td><td><strong>Org settings</strong></td><td class="pct">18</td><td>Profile + logo; members invite/role/remove; module enable/disable + per-member grants; role matrix across 4 tiers; senders; UPI ×3 platforms; storage browse/upload/download/delete; compliance toggles; doc-number series; support access grant/revoke; Danger opened and cancelled. → <strong>GSTIN blank must save</strong>; cards show names, never UUIDs</td></tr>
+<tr><td class="pct">03</td><td><strong>Core PM</strong></td><td class="pct">14</td><td>Teams; projects, milestones, risks, baselines; tasks with every field, subtasks, comments, @mentions, time, attachments, client link, complete/reopen/archive; boards + column drag; approvals incl. by-email; templates create/apply; categories, saved views, column prefs; today's 10 cards. → <strong>Aekam Inc team untouched</strong>; <code>mentions</code> gets its first row</td></tr>
+<tr><td class="pct">04</td><td><strong>Graha — CRM</strong></td><td class="pct">22</td><td>Clients + contacts with PIN; deals through the kanban, won and <strong>Lost with a reason</strong>; pipelines; activities; follow-ups firing reminders; territories with PINs, member and priority; route-all; web form submitted logged-out then routed; documents; labels; custom fields per type; scoring + approval rules; merge and dedupe. → <code>lost_reason</code> persists, which it never could</td></tr>
+<tr><td class="pct">05</td><td><strong>Ganit — books</strong></td><td class="pct">22</td><td>Invoice with lines, cost price, salesperson, HSN, intra/inter-state GST; save draft, <strong>edit the draft</strong>, finalise, PDF, email, part then full payment; recurring cycle; expenses; vendors with all six MSME/TDS fields + address; vendor bills and payments; <strong>bank statement upload, column mapping, reconcile</strong>; ageing; dunning excluding drafts and ₹0; contracts + signers; service lines, billing profiles, rate cards, metered usage, SLA credits; timesheets; TDS challan</td></tr>
+<tr><td class="pct">06</td><td><strong>Kray + procurement</strong></td><td class="pct">9</td><td>Vendor form from the Kray side (field set identical to Ganit's); PO raise, revise, approve, part then full receipt, close; approval threshold above and below; budget set and breached. → budget <strong>warns, never blocks</strong></td></tr>
+<tr><td class="pct">07</td><td><strong>Manav — HR</strong></td><td class="pct">24</td><td>Employees with <strong>work state</strong>; departments; link to logins; attendance mark/bulk/correct; leave types, balances, apply/approve/reject/cancel; national + state holidays; shifts, roster, bids, swaps; recruitment through to hire; assets; <strong>offboarding with custody lines</strong>; exit interviews; claims, bonus, commission schemes + bands; announcements; <strong>UDIN, notice, DSC registers</strong></td></tr>
+<tr><td class="pct">08</td><td><strong>Vetana — payroll</strong></td><td class="pct">9</td><td>Salary structures; 3 monthly runs; review, publish, re-run without duplicating; payslip PDF + email; joiner and leaver pro-ration; PT and IT ladders read, band added, <strong>re-run and the figure moves</strong>; loans with EMI. → <strong>closes Phase 5</strong></td></tr>
+<tr><td class="pct">09</td><td><strong>Pahchan</strong></td><td class="pct">11</td><td>Sites typed and <strong>by dropping a pin</strong>; radius + altitude; policy + overrides; notices, consent, acknowledgement; <strong>face enrollment upload</strong>; <strong>clock in/out with a photo</strong>, inside and outside the geofence; regularisations; publish to payroll and reconcile the day count</td></tr>
+<tr><td class="pct">10</td><td><strong>Vikray — sales</strong></td><td class="pct">12</td><td>Orders with cost price, salesperson, ship-to; edit, confirm, fulfil, cancel, convert to invoice; stock add/adjust/transfer/negative; customers derived from clients + orders; targets and attainment; commission payout against the Suite 07 ladder</td></tr>
+<tr><td class="pct">11</td><td><strong>Prachar</strong></td><td class="pct">10</td><td>Templates per compliance class; segment; campaign preview and send; sequences enrol/advance/exit; events + registrations; <strong>unsubscribe then prove exclusion</strong>; landing pages, forms, tracked links, clicks, referrals; automations</td></tr>
+<tr><td class="pct">12</td><td><strong>Dristi</strong></td><td class="pct">14</td><td>Every report run and re-run over a second window; CSV + PDF export; dashboards, widgets, saved views, pivots; client reports; alerts breached; scheduled dispatch. → <strong>every headline figure reconciled to its module</strong></td></tr>
+<tr><td class="pct">13</td><td><strong>Sanvaad</strong></td><td class="pct">17</td><td>Public and private channels; members; messages, @mentions, emoji, attachments, edit, delete; threads, reactions, pins; search; mentions panel; read receipts; locked channel visibly refuses</td></tr>
+<tr><td class="pct">14</td><td><strong>Sahayak / Hub</strong></td><td class="pct">17</td><td>Grounded questions citing real rows; skills run, <strong>acknowledge a finding, re-run and see the count drop</strong>; KB upload then answer; content generate incl. inline image, approve, schedule; credits, top-up, member ceiling, refusal past it; scraper run with cost and margin; brand profile; hub clients. <span class="tag t-na">publish / destinations / social accounts excluded — §13</span></td></tr>
+<tr><td class="pct">15</td><td><strong>eSign</strong></td><td class="pct">4</td><td>Upload PDF, place fields across pages, two ordered signers, send, remind, void; <strong>counterparty signs in a second browser context</strong>; signed PDF downloaded. Web only — never a mobile destination</td></tr>
+<tr><td class="pct">16</td><td><strong>Niyam</strong></td><td class="pct">2</td><td>A rule per trigger family, armed, triggered from its own module, run and steps read, disarmed; one fired in quiet hours must <strong>defer then deliver</strong>. → 40 events wired, one rule ever armed</td></tr>
+<tr><td class="pct">17</td><td><strong>Client billing</strong></td><td class="pct">9</td><td>Anchor day; pause; resume; mid-cycle downgrade quoting credit and charge over the same days; billing cycle run twice; outbound log, spend by person, usage by source; pay link opened as the customer. → <strong>no gateway; "paid" comes only from reconciliation</strong></td></tr>
+<tr><td class="pct">18</td><td><strong>Client portal</strong></td><td class="pct">4</td><td>Log in as an org client; projects, boards, comments, approvals, files; attempt another org's project by id and be refused. → <strong>no seat consumed</strong></td></tr>
+<tr><td class="pct">19</td><td><strong>Admin console</strong></td><td class="pct">12</td><td>Set a plan; grant a role; build a platform invoice, lines, payment, margin; support session request → grant → act → expire — <strong>all with a TEST org as the subject</strong>. Pulse, usage, costs and the privacy probe read-only. Global config by disposable row, never by editing a live one. <strong>See §12 — Aekam Inc is untouched and the guarantee is a fixture</strong></td></tr>
+<tr><td class="pct">20</td><td><strong>Cross-cutting</strong></td><td class="pct">all</td><td>No UUID rendered anywhere; every date input is <code>DateInput</code>; every table on <code>--row-h</code>; full keyboard traversal, Enter/Space/Escape; empty states seen before data exists; loading and error states under a throttled and cut network; pagination past 200; the nine <code>?since=</code> delta lists; <strong>zero uncaught console errors</strong></td></tr>
+<tr><td class="pct">21</td><td><strong>Mobile — emulator</strong> <span class="tag t-done">tooling exists</span></td><td class="pct">2 AVDs</td><td>See §11 — the harness is already written and the machine already has the emulators</td></tr>
+<tr><td class="pct">22</td><td><strong>Dead-control sweep</strong></td><td class="pct">~150</td><td>On the fully seeded org: enumerate every visible enabled button, link, tab, toggle and menu item; click each in isolation; record request fired / DOM changed / console clean. <strong>Fires nothing and changes nothing = dead.</strong> 4xx or 5xx = broken, reported separately. Destructive controls are excluded by a <em>reviewed</em> allowlist and driven inside their own suite instead</td></tr>
+</tbody></table></div>
+
+<h2><span class="n">11</span>Mobile — on the emulators already on this machine</h2>
+<p class="sub">You said you did not know how. It is better set up than you think, and two of the hardest things to test on a real phone are <em>easier</em> on an emulator.</p>
+
+<div class="card card--accent">
+<h4>What is already here</h4>
+<ul>
+<li><strong>Android SDK</strong> at <code>~/AppData/Local/Android/Sdk</code> — <code>emulator</code>, <code>platform-tools</code> (adb), system images, build-tools.</li>
+<li><strong>Two AVDs</strong>: <code>Pixel_9_Pro</code> (phone) and <code>Tab_A11_Plus</code> (tablet). The tablet matters — the product has a separate tablet layout and nothing has ever exercised it.</li>
+<li><strong>A working harness</strong>: <code>mobile/e2e/android_e2e.py</code>, 219 lines, driving the app over <code>adb</code> + <code>uiautomator</code>. It exists because Maestro needs a JVM and there is no Java on this machine; what Maestro does underneath is dump the view hierarchy, find a node and tap it, which is exactly what this does with no new dependency.</li>
+</ul>
+<p>It already encodes three environment facts that each cost a round trip to learn: Git Bash
+rewrites device paths so every one is doubled (<code>//sdcard/...</code>), the hierarchy is
+bilingual so every subprocess decodes UTF-8 explicitly, and the password field cannot be found
+by placeholder because it renders as bullets — fields are located by <code>EditText</code> in
+screen order.</p>
+</div>
+
+<div class="card card--amber">
+<h4>What it actually covers today — and it is a smoke test</h4>
+<p>Launch · cold vs warm session · sign in · the bottom tab bar renders · the app is bilingual
+on device · four tabs open something. <strong>Roughly ten assertions.</strong> Nothing about
+punching, photos, the offline queue, tasks, invoices, push or the tablet. Calling mobile
+"tested" on the strength of it would be the same overclaim this whole programme exists to stop.</p>
+</div>
+
+<h3>The two things the emulator does better than a real phone</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:26%">Capability</th><th style="width:30%">How</th><th>Why it matters</th></tr></thead>
+<tbody>
+<tr><td><strong>Standing in two places</strong></td><td><code>adb emu geo fix &lt;lon&gt; &lt;lat&gt;</code></td><td>The geofence can be tested honestly: put the device <em>at</em> the Pahchan site and punch, then move it 500 m away and punch again. On a real phone this means walking down the road</td></tr>
+<tr><td><strong>Losing the network on cue</strong></td><td><code>adb shell svc data disable</code> / airplane mode</td><td>The offline punch queue and the release-only auth race become reproducible instead of anecdotal</td></tr>
+<tr><td>Cold restart</td><td><code>am force-stop</code> then relaunch</td><td>Already in the harness. <strong>Hot reload lies</strong> — only a cold start proves the fix</td></tr>
+<tr><td>Two form factors</td><td>Both AVDs, same suite</td><td>Phone and tablet layouts from one run</td></tr>
+</tbody></table></div>
+
+<h3>Suite 21, extended — what gets added</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:30%">Flow</th><th class="pct" style="width:10%">Checks</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Existing smoke</td><td class="pct">10</td><td>Kept as-is; it is the launch gate for everything below</td></tr>
+<tr><td><strong>Attendance punch</strong></td><td class="pct">12</td><td>In and out, <strong>at the site and outside the geofence</strong> via <code>geo fix</code>; the refusal path; history reflects it</td></tr>
+<tr><td><strong>Offline queue</strong></td><td class="pct">8</td><td>Punch with the network down, restore it, <strong>cold restart</strong>, queue drains — the exact reproduction still owed on OWNER-ACTIONS item 8</td></tr>
+<tr><td>Tasks</td><td class="pct">10</td><td>List, open, create, complete, comment; delta sync after a web-side change</td></tr>
+<tr><td>Invoices</td><td class="pct">4</td><td><strong>Read-only must be read-only</strong> — no edit control anywhere</td></tr>
+<tr><td>eSign absence</td><td class="pct">2</td><td>It is web-only; it must not appear as a destination</td></tr>
+<tr><td>Push</td><td class="pct">4</td><td>Token registered, notification received and opened into the right screen</td></tr>
+<tr><td>Tablet layout</td><td class="pct">10</td><td>The whole suite re-run on <code>Tab_A11_Plus</code></td></tr>
+<tr class="total"><td>Total</td><td class="pct">~60</td><td>from ~10 today</td></tr>
+</tbody></table></div>
+
+<div class="card card--red">
+<h4>The one genuine unknown: the camera</h4>
+<p>A punch carries a selfie, and an emulator has no camera. The AVD can present a virtual
+scene or a host webcam, and an image can be pushed to <code>/sdcard</code> — but whether this
+app's capture path can be fed from any of those <strong>has not been tested and I will not
+assume it</strong>. It is the first thing R8 establishes, before the punch flows are written.</p>
+<p>If it cannot be driven, I will say so plainly rather than quietly dropping the photo
+assertion: the punch flows would then run photo-less on the emulator, and <strong>the
+photo-carrying punch stays a real-device check</strong> on the APK you install. Either way it
+is stated in the report, not left for you to discover in a screenshot.</p>
+</div>
+
+<h2><span class="n">12</span>Aekam Inc — untouched, while its admin module is tested</h2>
+<p class="sub">Owner's instruction: nothing on the Aekam org is touched — god-mode users, teams, all of it — but the admin module itself must be tested. Those two things pull against each other, because the admin console's entire job is acting <em>on</em> organisations. Here is how they are separated.</p>
+
+<h3>What is being protected</h3>
+<p>Aekam Inc holds <strong>4,519 rows across 63 tables</strong> — and it is not a shell org.
+It carries real working data: <strong>220 tasks, 30 teams, 164 team members, 164 project
+assignments, 78 org skills, 47 member module grants, 13 module subscriptions</strong>. Plus the
+10 platform accounts and the god-mode seats. None of it is created, edited or deleted.</p>
+
+<h3>The three tiers the admin suite is split into</h3>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:16%">Tier</th><th style="width:32%">Admin action</th><th>Where the write lands</th></tr></thead>
+<tbody>
+<tr><td><span class="tag t-done">SAFE</span><br>subject is a test org</td><td>Set plan · build a platform invoice + lines · record a payment · grant and revoke an org role · top up credits · set a member ceiling · request → grant → act → expire a support session</td><td><strong>On Unicode, UK AekamINC or E2E</strong>, never on Aekam Inc. The rows land in the target org's <code>org_billing_lines</code>, <code>subscriptions</code>, <code>platform_support_sessions</code>. The console is fully exercised and Aekam is only the seat you sit in</td></tr>
+<tr><td><span class="tag t-rsch">READ-ONLY</span><br>Aekam is the subject</td><td>Pulse · usage · cost dashboard · the org table · <strong>the privacy probe</strong></td><td>Nothing written. The privacy probe is <em>inherently</em> read-only — its whole assertion is that no customer email address appears on any platform screen</td></tr>
+<tr><td><span class="tag t-empty">GLOBAL</span><br>affects every org</td><td>Plans (7) · credit prices (23) · hub tiers (3) · add-on modules (10) · scraper catalog (21)</td><td>⚠ <strong>These have no <code>org_id</code>.</strong> Editing a plan price changes billing for <em>every</em> org, Aekam included. So: <strong>create a new disposable row rather than editing a live one</strong> — a plan nobody is subscribed to affects nobody — and delete it after. Where a form can only be tested by editing, the before-value is captured, the edit made, then reverted, and the restored value re-read to prove it</td></tr>
+</tbody></table></div>
+
+<div class="card card--amber">
+<h4>"Nothing gets touched" — stated precisely, because the loose version is not deliverable</h4>
+<p>Signing in as platform staff and using the console <strong>necessarily</strong> appends
+telemetry: <code>audit_log</code>, <code>activity_events</code>, <code>notifications</code>,
+<code>outbound_log</code> and <code>pulse_logins</code> gain rows, and some carry Aekam's
+<code>org_id</code>. That is the console working correctly — an admin action that left no audit
+trail would be the defect. Promising "zero new Aekam rows" would be promising something the
+product is designed not to do.</p>
+<p><strong>So the guarantee is made testable instead.</strong> Before and after the admin suite,
+every Aekam-scoped table is counted <em>except</em> those five append-only telemetry tables, and
+the counts must be <strong>identical</strong> — with the business tables above checked row by
+row, not just in total, so an edit that keeps the count constant is still caught. That check
+runs as a fixture, and the suite fails if a single Aekam business row moved.</p>
+</div>
+
+<div class="card card--blue">
+<h4>DECIDED 2026-08-27 — no probe org. Skip the create, test everything around it</h4>
+<p>Owner's call, and the reasoning holds up against the record: <strong>UK AekamINC was created
+on 2026-08-23 and already has its R2 bucket configured</strong> (<code>kartavya-storage</code>,
+account, key and secret all present). It is itself the artifact of a successful
+create-org-with-R2, so the path is evidenced without a sixth organisation being spun up. No org
+is created, and none is deleted.</p>
+<p><strong>What is therefore NOT proven, said plainly rather than left to read as covered:</strong>
+the create-org form's own validation, and bucket provisioning at the moment of creation, go
+untested. The evidence for them is an org created four days ago, not a run today. Everything
+downstream of creation — plan, roles, billing, R2 usage, storage quota — <em>is</em> tested,
+against both main orgs. If the create path later matters, the honest way to cover it is a
+throwaway org created and removed deliberately, not folded into this programme.</p>
+</div>
+
+<h2><span class="n">13</span>Out of scope by decision — WhatsApp and the social connectors</h2>
+<p class="sub">Owner's call, 2026-08-27. Recorded separately from §8 because <em>"we chose not to test this"</em> and <em>"we could not test this"</em> must not blur together in the final report.</p>
+
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:26%">Excluded</th><th style="width:26%">Screens dropped</th><th>What is <em>not</em> dropped</th></tr></thead>
+<tbody>
+<tr><td><strong>Varta — WhatsApp Business</strong></td><td>The whole module. <code>varta_business_accounts</code>, contacts, conversations, templates, auto-replies, rate card</td><td>Nothing else depends on it. It was already untestable — no Meta business account is connected (0.26) — so this decision costs no coverage that was available</td></tr>
+<tr><td><strong>Social connectors</strong></td><td><code>PublishTab</code>, <code>DestinationPicker</code>, <code>AccountsPanel</code>, <code>NetworkCard</code>, <code>AppPanel</code>, <code>/settings/social-accounts</code>, <code>/settings/connectors</code>, Prachar <code>AdsTab</code></td><td><strong>Content generation, approval and scheduling stay in</strong> — Suite 14 still generates 18 items, 4 with inline images, and approves 12. Only the step that hands a post to an external network is removed</td></tr>
+</tbody></table></div>
+
+<div class="card card--blue">
+<p><strong>Where the line falls, and why it is a clean one.</strong> Everything up to the network
+boundary is exercised: the AI generates, a person approves, the item is scheduled, credits are
+spent and the ledger moves. What is skipped is the publish itself and the OAuth account
+plumbing behind it. That means <code>hub_publish_queue</code> and <code>hub_social_accounts</code>
+end the run empty, and <strong>the report will say so</strong> rather than leaving two silent
+zeroes for someone to misread as a defect in six weeks' time.</p>
+<p>Prachar's <strong>email</strong> side is entirely unaffected — campaigns, sequences, segments,
+events, unsubscribes and the ~150 recipients all remain in Suite 11. Only paid ads leave.</p>
+</div>
+
+<h2><span class="n">14</span>Execution — what I do, what agents do</h2>
+<p class="sub">So that on "go" there is no negotiating. Every agent runs Opus 5 and carries the §0 briefing; none inherits authority the seat does not have.</p>
+
+<h3>The dividing line</h3>
+<div class="card card--red">
+<p><strong>I keep everything irreversible, and everything that decides.</strong> No agent deletes
+a row, drops anything, applies a migration, or rules on whether a red test is a product bug or a
+test bug. Those four are the places this programme can do real damage or quietly lie, and they
+stay in one pair of hands.</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:34%">Mine, never delegated</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><strong>R1 freeze · R2 backup + restore proof</strong></td><td>The safety net itself. An agent that reports "backup done" is not evidence</td></tr>
+<tr><td><strong>R3 protected set · R4 the deletes</strong></td><td>20 tasks, 30 accounts, an R2 key list. Irreversible, and a mistake here is the whole customer conversation</td></tr>
+<tr><td><strong>Migrations</strong> (the <code>state_code</code> UPDATE, any schema change)</td><td>Pre-approved to me, not sub-delegable</td></tr>
+<tr><td><strong>Triage — product bug or test bug?</strong></td><td>The judgement that stop-and-fix stands on. Three Phase 8.0 test faults each accused the product of their own bug</td></tr>
+<tr><td><strong>Every go/no-go gate</strong></td><td>An agent reports; the gate is called here</td></tr>
+</tbody></table></div>
+</div>
+
+<h3>Stage 1 — R0, mine, ~half a day</h3>
+<p>Three probes and a deploy check. Small, sequential, and it gates everything: the plus-tag
+probe, the emulator camera, and whether <code>R2_BUCKET_NAME</code> is
+<code>kartavya-storage</code>. <strong>Reported to you before stage 2 starts.</strong></p>
+
+<h3>Stage 2 — Freeze, backup, delete. Mine alone, no agents running</h3>
+<p>R1 → R2 → R3 → R4, with the restore proven by <em>performing</em> one before anything is
+deleted, and the R2 key inventory captured first. <strong>No agents are running</strong>: one
+still driving a screen mid-delete would write rows into a half-emptied org and corrupt the very
+evidence the programme exists to produce.</p>
+<div class="gate"><strong>Gate:</strong> both orgs empty, the protected 20 present by id, and a restore already demonstrated. <strong>Reported to you before stage 3 begins.</strong></div>
+
+<h3>Stage 3 — Build and run as one forward pass, on Unicode</h3>
+<p>Because the orgs start empty, writing and running are the same act: a suite is written, run,
+and the data it leaves behind is what makes the next suite writable. <strong>Unicode is the
+reference lane</strong> — every suite is authored here, against screens that begin genuinely
+blank.</p>
+<p>Parallelism is now set by the dependency graph rather than by agent count. Within a wave the
+suites are independent and their agents run concurrently; each wave boundary is a barrier.</p>
+<div class="tbl-scroll"><table>
+<thead><tr><th style="width:9%">Wave</th><th style="width:12%">Agents</th><th style="width:26%">Suites</th><th>What it leaves behind for the next wave</th></tr></thead>
+<tbody>
+<tr><td><strong>0</strong></td><td class="pct">1</td><td><strong>00 cold-start journey</strong></td><td>Nothing. It creates no data — it establishes that an unconfigured org is <em>survivable</em>, and whatever it finds is fixed before the rest is written</td></tr>
+<tr><td><strong>1</strong></td><td class="pct">1</td><td>01 auth · 02 org settings</td><td>18 users, departments, senders, modules — <strong>nothing else can be created until this exists</strong></td></tr>
+<tr><td><strong>2</strong></td><td class="pct">2</td><td>07 Manav · 04 Graha</td><td>30 employees, 25 clients, 50 contacts</td></tr>
+<tr><td><strong>3</strong></td><td class="pct">3</td><td>08 Vetana · 09 Pahchan · 05 Ganit</td><td>Payslips, punches, invoices, vendors</td></tr>
+<tr><td><strong>4</strong></td><td class="pct">4</td><td>06 Kray · 10 Vikray · 11 Prachar · 17 billing</td><td>POs, orders, campaigns, subscriptions</td></tr>
+<tr><td><strong>5</strong></td><td class="pct">4</td><td>03 core PM · 13 Sanvaad · 14 Sahayak · 15 eSign</td><td>Tasks, channels, skills runs, signed documents</td></tr>
+<tr><td><strong>6</strong></td><td class="pct">3</td><td>16 Niyam · 18 portal · 19 admin</td><td>Rules fired against the events waves 2–5 generated</td></tr>
+<tr><td><strong>7</strong></td><td class="pct">2</td><td>12 Dristi · 20 cross-cutting</td><td><strong>Reports can only be reconciled once every source module has data</strong></td></tr>
+<tr><td><strong>8</strong></td><td class="pct">1</td><td>22 dead-control sweep</td><td>A control on an empty table is legitimately disabled — the sweep is meaningless until the org is full</td></tr>
+</tbody></table></div>
+<p><strong>Peak concurrency is 4</strong>, which is also the product's own ceiling: login is
+rate-limited to 5/min, and a lane that trips its own limiter produces failures indistinguishable
+from defects.</p>
+
+<h3>Stage 4 — Replay on UK AekamINC, unchanged</h3>
+<div class="card card--accent">
+<p>The suites proven on Unicode are then run against UK AekamINC <strong>without
+modification</strong>, in the same wave order. This is not a repeat — <strong>it is the test that
+the suites are honest.</strong></p>
+<p>A suite that passes on Unicode and fails on UK has revealed one of two things, and both are
+worth having: either the suite carried a hidden dependency on Unicode's state, or <strong>the
+product behaves differently for a second organisation</strong> — which is the cross-tenant class
+of defect this repo has shipped more than once. <strong>Any divergence is a finding, not a
+retry.</strong></p>
+<p>It is also where the <code>state_code</code> decision pays: Unicode is Gujarat <code>24</code>,
+UK is Maharashtra <code>27</code>, so identical suites must produce <em>different</em>
+professional tax and a different GST split. Identical figures would mean the ladders are not
+being read at all.</p>
+</div>
+
+<h3>Stage 5 — Mobile, and the sweep on both orgs</h3>
+<p>Suite 21 on both AVDs against the rebuilt data, and the dead-control sweep re-run on UK once
+its replay completes. Mobile is last because it needs a full org behind it and a fresh APK
+(0.29), and because the emulator camera answer from R0 decides whether the photo-punch is an
+emulator check or a real-device one.</p>
+
+<h3>How stop-and-fix works with agents</h3>
+<div class="card card--amber">
+<p>An agent that hits a failure <strong>stops, reports, and waits</strong> — it does not diagnose
+and it does not fix. I triage; who fixes is chosen by what broke. Sibling suites <em>within the
+same wave</em> continue, since they are independent by construction; <strong>the next wave does
+not start</strong>, because building on unfixed foundations is exactly what stop-and-fix exists
+to prevent.</p>
+<p>⚠ <strong>Building from zero raises the cost of a wave-1 failure.</strong> With no data behind
+it, a defect in auth or org settings blocks all eight waves rather than one branch. That is the
+price of the from-zero decision and it is worth knowing in advance: <strong>the earliest waves
+are the ones to watch.</strong></p>
+<p><strong>Why agents do not self-fix:</strong> an agent that both writes the test and rules on
+whether the test or the product is wrong will, under time pressure, edit the test. That is the
+one failure mode that makes this entire programme worthless — a green run over a broken product.
+<strong>The judgement is deliberately held outside the hands that wrote the code.</strong></p>
+</div>
+
+<h3>Stage 6 — Close out, mine</h3>
+<p>R9: re-arm the five crons, restore <code>OUTBOUND_MODE</code>, both verified by observation
+rather than by having set them; <code>STATUS.md</code> and <code>PROGRESS.md</code> updated in the
+same commit with before/after counts; the backup schema dropped by name once you say so.</p>
+
+<p class="footer">
+Proposal 93 v3 · 2026-08-27 · supersedes v2, whose suite list is preserved as §10 above. Org
+counts, sender rows, role codes, login history and the task exclusions read live from Supabase
+<code>toacecaewujfxjfrjwco</code>, read-only, on that date. Email provider confirmed from
+<code>backend/email_service.py:41-54</code> and the <code>send_raw_email</code> call sites — SES,
+not Resend. Screen inventory from <code>frontend/src/pages</code> and <code>App.jsx</code> at
+HEAD. Counts drift; re-read before acting on any number here. Nothing has been executed.
+</p>
+
+</div>
