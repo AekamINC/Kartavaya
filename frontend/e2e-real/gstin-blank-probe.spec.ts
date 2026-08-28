@@ -52,9 +52,41 @@ test('clearing a stored GSTIN registers as a change and reaches the server', asy
 
   const gstin = page.locator('#org-gstin');
   await expect(gstin).toBeVisible({ timeout: 30_000 });
-  const before = await gstin.inputValue();
+
+  // ── THIS PROBE NOW CREATES ITS OWN PRECONDITION ────────────────────────────
+  //
+  // It used to assert `before` was truthy and stop if it was not. That made it
+  // depend on a GSTIN some OTHER test happened to leave behind — and 02.2's
+  // whole job is proving a BLANK save succeeds, so it legitimately leaves the
+  // field empty. Run in file order the probe passed; run after 02.2 it failed
+  // on its own precondition, which reads like a defect and is not one.
+  //
+  // §7: "A suite written against a populated org can silently depend on rows it
+  // did not create ... Building from zero makes that impossible — every suite
+  // must create what it needs or fail immediately." A precondition that is
+  // ASSERTED rather than ESTABLISHED is the same borrowed-state problem wearing
+  // a check.
+  const GSTIN_FIXTURE = '24AAACU9603R1ZP'; // Gujarat 24, matching Unicode's state
+  let before = await gstin.inputValue();
+  if (!before) {
+    await gstin.click();
+    await gstin.press('ControlOrMeta+a');
+    await gstin.press('Delete');
+    await gstin.pressSequentially(GSTIN_FIXTURE, { delay: 12 });
+    const [seed] = await Promise.all([
+      page.waitForResponse(
+        (r) => /\/org\/profile/.test(r.url()) && ['PUT', 'PATCH'].includes(r.request().method()),
+        { timeout: 30_000 },
+      ),
+      page.getByRole('button', { name: /Save company profile/ }).click(),
+    ]);
+    expect(seed.status(), `seeding a GSTIN to clear -> ${seed.status()}`).toBeLessThan(400);
+    await page.reload();
+    await expect(gstin).toBeVisible({ timeout: 30_000 });
+    before = await gstin.inputValue();
+  }
   console.log(`\n  GSTIN before: ${JSON.stringify(before)}`);
-  expect(before, 'precondition: a GSTIN must be stored for this probe to mean anything').toBeTruthy();
+  expect(before, 'the probe could not establish a stored GSTIN to clear').toBeTruthy();
 
   // Clear it the way a person does — select all, delete — rather than with a
   // programmatic fill(''), so a controlled input cannot be blamed for the

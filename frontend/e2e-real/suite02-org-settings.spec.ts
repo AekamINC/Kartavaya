@@ -539,65 +539,86 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await expect(tan).toHaveValue('');
   });
 
-  test('02.3 modules — what an org can actually switch on', async ({ page }) => {
+  test('02.3 modules — the grid reflects the subscription, and stays read-only', async ({ page }) => {
     await signInAs(page, requireUnicode());
     await openTab(page, 'modules');
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ⚠ THIS TEST DOES NOT ENABLE ANYTHING, AND THAT IS THE FINDING.
+    // ⚠ THIS TEST USED TO ASSERT THE OPPOSITE, AND THE CHANGE IS DELIBERATE.
     //
-    // §3 says "enable modules (the org currently has NONE active)". Read
-    // against the code, there is no user-driven path that can do it:
+    // Until 2026-08-28 it asserted `active: 0` and "every card says Not on your
+    // plan", because Unicode genuinely held ZERO `module_subscriptions` rows —
+    // the true day-one state of a brand-new customer. Suite 19 has since
+    // provisioned 12 modules from the platform console, so that state is gone
+    // and cannot be recreated without wiping the subscription again.
     //
-    //  1. `TabModules.jsx` renders EVERY card as `<ModuleCard … disabled />`
-    //     with no `onToggle` at all. The grid reads and never writes. Its own
-    //     comment says why: "`GET/PATCH /v1/org/modules` … has not been built".
+    // The day-one evidence is NOT lost by rewriting this: it was captured while
+    // it existed, by `dayone-module-403.spec.ts` and `dayone-capture.spec.ts`,
+    // and the finding it produced is recorded in STATUS.md — with no module
+    // active, `/graha` says "You do not have access to CRM reports" (a
+    // PERMISSION framing) while the API says "Module not active, contact your
+    // administrator" (the ACTIONABLE one). 4 screens right, 4 wrong. That
+    // remains open and is not closed by this rewrite.
     //
-    //  2. That comment is now STALE. `backend/routers/org_modules.py` defines
-    //     `@router.patch("")` and `server.py:5860` mounts it. The endpoint
-    //     exists; the UI still says it does not and stays disabled. That gap is
-    //     a product defect in its own right — the customer-facing screen tells
-    //     them a capability is absent that has since shipped behind it.
-    //
-    //  3. Even with the UI wired, it would not help Unicode. `patch_modules`
-    //     only ever UPDATEs: a code with no `module_subscriptions` row gets
-    //     403 "not part of this organisation's subscription. Ask your account
-    //     manager at Aekam to add it." Measured 2026-08-28, Unicode has ZERO
-    //     rows in that table. Provisioning is Aekam platform staff's, through
-    //     `POST /v1/subscription/modules/activate` or `admin_orgs.py`.
-    //
-    //  4. And the toggle is `org_owner` ONLY, never org_admin — deliberately,
-    //     because `middleware/subscription.py:120-126` lets any org_admin reach
-    //     every ACTIVE module with no grant row, so an org_admin who could also
-    //     activate could hand themselves payroll in one request.
-    //
-    // So this test asserts the HONEST state — the grid is read-only and says so
-    // — and the report carries the finding. Driving activation through the
-    // platform console is a different actor in a different seat; it is not
-    // Suite 02 and it must not be smuggled in here as an API call.
+    // What this test asserts now is the thing worth guarding going forward:
+    // the customer-facing grid TELLS THE TRUTH about the subscription, and is
+    // still not a control the customer can operate.
     // ═══════════════════════════════════════════════════════════════════════
 
     const cards = page.locator('.omod__c');
     await expect(cards.first()).toBeVisible({ timeout: 30_000 });
+    const total = await cards.count();
 
-    // The screen must TELL the customer why they cannot switch anything on.
-    await expect(
-      page.getByText(/switched on by your\s+account manager at Aekam/i)
-    ).toBeVisible();
-
-    // Day-one truth, captured before anything is provisioned: nothing is on.
-    await expect(page.locator('.omod__s.on')).toHaveCount(0);
-    const n = await cards.count();
+    // `ModuleCard` renders `.omod__s.on` with the word "Active", and a bare
+    // `.omod__s` reading "Not on your plan". Asserting on the STATE CLASS the
+    // component sets, not on the styling around it.
+    const active = await page.locator('.omod__s.on').count();
     const notOnPlan = await page.locator('.omod__s', { hasText: 'Not on your plan' }).count();
-    console.log(`\n[suite02] module cards: ${n}, "Not on your plan": ${notOnPlan}, active: 0\n`);
-    expect(notOnPlan).toBe(n);
+    console.log(`\n[suite02] module cards: ${total}, active: ${active}, "Not on your plan": ${notOnPlan}\n`);
 
-    // Every toggle is genuinely inert — not merely styled as such.
+    // Every card is in exactly one of the two states — no card is blank, which
+    // is what a missing `is_active` would look like.
+    expect(active + notOnPlan, 'a module card rendered neither state').toBe(total);
+
+    // The grid must agree with the server rather than with itself.
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}/api/v1/subscription/current`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    expect(res.ok(), `GET /subscription/current -> ${res.status()}`).toBeTruthy();
+    const body = await res.json();
+    const serverActive: string[] = body?.active_modules ?? body?.data?.active_modules ?? [];
+    expect(
+      active,
+      `the grid shows ${active} active module(s); the server reports ` +
+        `${serverActive.length} (${serverActive.join(', ')})`,
+    ).toBe(serverActive.length);
+
+    // ⚠ Varta is EXCLUDED BY DECISION (§13), not blocked. It must be off, and
+    // the report must be able to say that it is off by choice — two silent
+    // zeroes in `hub_publish_queue` read as a defect in six weeks' time.
+    expect(serverActive, 'varta is excluded by decision (§13) and must not be active')
+      .not.toContain('varta');
+
+    // ── AND IT IS STILL NOT THE CUSTOMER'S CONTROL ─────────────────────────
+    // `TabModules.jsx` passes `disabled` to every card and offers no `onToggle`
+    // at all. That is deliberate: `middleware/subscription.py:120-126` lets any
+    // org_admin reach every ACTIVE module without a grant row, so an org_admin
+    // who could also ACTIVATE could hand themselves payroll in one request.
+    // Activation is a term of the subscription and belongs to Aekam — 19.1
+    // proves the API refuses an org-scoped credential; this proves the screen
+    // does not offer it either.
     const toggles = page.locator('.omod__c input[type="checkbox"]');
     const t = await toggles.count();
     for (let i = 0; i < t; i += 1) {
       await expect(toggles.nth(i)).toBeDisabled();
     }
+
+    // And it says WHO can, rather than leaving the customer to guess why an
+    // inert control is inert.
+    await expect(
+      page.getByText(/switched on by your\s+account manager at Aekam/i),
+    ).toBeVisible();
   });
 
   test('02.4 email sender addresses save', async ({ page }) => {
