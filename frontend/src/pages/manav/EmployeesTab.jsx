@@ -50,6 +50,7 @@ import {
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
 import AddressSuggest from '../../components/ui/AddressSuggest';
+import PincodeAutofill from '../../components/ui/PincodeAutofill';
 import AddressBlock from '../../components/ui/AddressBlock';
 import { GST_STATES } from '../../lib/validators';
 
@@ -378,6 +379,17 @@ export default function EmployeesTab({ onUpdate }) {
                   }))} />
               </Field>
             ))}
+            <Field label="">
+              {/* Our own directory, not a vendor. Fills STATE only — a
+                  district is not a city. */}
+              <PincodeAutofill
+                pincode={form.address.pincode}
+                state={form.address.state}
+                onFill={patch => setForm(f => ({
+                  ...f, address: { ...f.address, ...patch },
+                }))}
+              />
+            </Field>
             <Field label="Employment type">
               <select className="k-formpanel__input" value={form.employment_type}
                 onChange={e => setForm({ ...form, employment_type: e.target.value })}>

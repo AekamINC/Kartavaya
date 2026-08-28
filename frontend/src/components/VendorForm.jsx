@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api, body } from '../lib/api';
 import AddressSuggest from './ui/AddressSuggest';
+import PincodeAutofill from './ui/PincodeAutofill';
 import { useToast } from './ui/toast';
 
 /**
@@ -373,6 +374,19 @@ export default function VendorForm({ vendor = null, onSaved, onCancel }) {
             ...(s.state ? { state: s.state } : {}),
             ...(s.pincode ? { pincode: s.pincode } : {}),
           },
+        }))}
+      />
+      {/* 7.6's other half, and the half that needs nobody's permission: our
+          OWN pincode directory (20,144 government rows, already in the
+          database) names the district and offers the state. No key, no quota,
+          no vendor call and no licence — nothing is submitted, so nothing is
+          licensed. It fills STATE only: a district is not a city, and 400706
+          is THANE district with Navi Mumbai as its city. */}
+      <PincodeAutofill
+        pincode={form.address.pincode}
+        state={form.address.state}
+        onFill={patch => setForm(f => ({
+          ...f, address_dirty: true, address: { ...f.address, ...patch },
         }))}
       />
       {[['line1'], ['line2'], ['city', 'state'], ['pincode', 'country']].map(keys => (

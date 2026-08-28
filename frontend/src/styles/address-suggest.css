@@ -79,3 +79,26 @@
   border-top: 1px solid var(--rule-soft);
   margin-top: 3px;
 }
+
+/* ── The pincode directory hint (Phase 7.6, the vendor-free half) ───────────
+   Sits on the same stylesheet as the autosuggest box because it occupies the
+   same place in the form and answers the same question — where is this? — by
+   a different route: our own 20,144-row government directory rather than a
+   metered third party. */
+
+.k-pinfill {
+  display: block;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  margin-top: 4px;
+}
+
+/* The district, which is shown and never written into a city box. */
+.k-pinfill strong { color: var(--ink-1); }
+
+/* "Looking up…", "already set", the GODL credit, and the two ordinary
+   not-found answers. Quieter than the fill offer, because none of them is
+   something the reader has to act on — a pincode blocks nothing, by the same
+   owner rule that makes GSTIN/PAN/TAN non-mandatory. */
+.k-pinfill--soft { color: var(--ink-3); }
