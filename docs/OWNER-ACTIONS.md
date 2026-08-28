@@ -21,10 +21,48 @@ behind it.
 
 ## OPEN
 
-### 11. Repoint the report cron — two fields in the Railway dashboard
+### 11. Repoint the report cron — DONE 2026-08-28 · nothing needed from you
 
-**Status:** OPEN · everything else in 6.4 is done. This is the last step, and it
-is two text fields.
+**Status:** ✅ CLOSED. The MCP connector's write scope came back and I applied
+both fields plus the missing variable. 6.4 is now complete end to end.
+
+**IT WAS CRASHING, AND HAD BEEN SINCE 6.4 LANDED.** `railway status` showed
+`cron-report-dispatch` **● Crashed**, and the deploy log was one line:
+
+    dispatch -> 404 {"detail":"Not Found"}
+
+It was still POSTing to `/api/reports/dispatch` — the endpoint retired with
+`public.report_schedules` in migration 236 — with the header
+`X-Dispatch-Secret`. So every hourly tick since the retirement 404'd and exited
+non-zero. Nothing was lost (that table held 0 rows), but the service had been
+red for a day and the failure was invisible from inside the product.
+
+**What was actually wrong: three things, not two.**
+
+1. the URL — now `POST /api/v1/dristi/scheduled-reports/dispatch`;
+2. the header — now `X-Cron-Secret`, per CLAUDE.md's rule that cron endpoints
+   authenticate via `CRON_SECRET`;
+3. ⚠ **the secret was not on the service at all.** It held only
+   `REPORT_DISPATCH_SECRET`. Fixing the URL and header alone would have turned
+   a 404 into a 401 — a different red, not a green. `CRON_SECRET` is now set as
+   a REFERENCE, `${{Kartavya.CRON_SECRET}}`, so it tracks the backend's value
+   and there is no second copy of a secret to rotate.
+
+Schedule moved `7 * * * *` -> `*/15 * * * *`.
+
+**Verified by running the exact command the cron runs, with the cron service's
+own environment:** the reference resolved (64 chars) and the endpoint answered
+**200** with `armed: true, sent: 0, due: 0, failed: [], skipped: []`. Nothing is
+due until 31 Aug, which is what the dry preview said before arming.
+
+⚠ A plain redeploy would have reused the OLD config snapshot, so the deploy was
+forced with a `DEPLOY_NUDGE` variable. Deployment `232e7a28` is SUCCESS.
+
+⚠ `REPORT_DISPATCH_SECRET` is now unused on that service. Left in place rather
+than deleted — it is inert, and deleting a secret nobody asked me to delete is
+not mine to do. Remove it whenever you like.
+
+*(the original note, kept because the CLI limitation is still true)*
 
 I could not do it myself: the Railway **CLI cannot set a start command or a cron
 schedule** (only `list/delete/link/source/status/logs/redeploy/restart/scale`),
