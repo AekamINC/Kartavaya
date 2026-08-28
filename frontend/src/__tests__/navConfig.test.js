@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { navGroupsFor, navContext, canSeeNavItem, ROUTE_META, resolveRouteMeta } from '../components/layout/navConfig';
-import { ADMIN_SURFACE_ROLES } from '../components/admin/adminNav';
+import { ADMIN_SURFACE_ROLES, ADMIN_NAV } from '../components/admin/adminNav';
 
 /**
  * The Settings section, against `Chrome.jsx:36` — the NAV the runnable design
@@ -81,11 +81,46 @@ describe('the Aekam admin row is gated exactly as /admin is', () => {
     }
   });
 
-  // The whole reason `consoleOnly` exists rather than reusing `adminOnly`.
-  // Both of these hold A platform role, and `/admin` bounces both.
-  it('hides for sahayak_admin and platform_support, who hold a platform role and reach nothing', () => {
+  /**
+   * THE RATCHET, and it is the general form of the bug above.
+   *
+   * `ADMIN_SURFACE_ROLES` is what `Protected.jsx` bounces `/admin/*` on, and
+   * `ADMIN_NAV[].roles` is what `AdminShell` draws rows from. When those two
+   * disagree, a role holds a console row it can never reach — which is exactly
+   * what happened to `platform_support` for the whole life of its row, because
+   * the union was re-typed by hand from three of the four role sets.
+   *
+   * Asserting equality BOTH WAYS rather than containment one way: a surface
+   * role that no row names is a key to a console with nothing in it, and that
+   * is the same disagreement pointing the other direction.
+   */
+  it('is exactly the union of the nav rows — neither wider nor narrower', () => {
+    const fromRows = [...new Set(ADMIN_NAV.flatMap(it => it.roles || []))].sort();
+    expect([...ADMIN_SURFACE_ROLES].sort()).toEqual(fromRows);
+  });
+
+  // The whole reason `consoleOnly` exists rather than reusing `adminOnly`:
+  // holding A platform role is not holding a console row.
+  it('hides for sahayak_admin, who holds a platform role and no row under /admin', () => {
+    // Its surface is the Sahayak hub at `/hub`, which is not under `/admin`.
     expect(labels({ ...orgAdmin, platform_roles: ['sahayak_admin'] })).not.toContain('Aekam admin');
-    expect(labels({ ...orgAdmin, platform_roles: ['platform_support'] })).not.toContain('Aekam admin');
+  });
+
+  /**
+   * This assertion USED to sit beside the one above, on the stated grounds that
+   * `platform_support` "reaches nothing". Measured on deployed staging
+   * 2026-08-29, that was not a narrow gate — it was the whole support-session
+   * feature being unreachable: the server admits ONLY `platform_support` to
+   * raise a request, and the browser admitted every role EXCEPT it. Driving it
+   * as a user, `/admin/support` redirected to `/dashboard` without a single
+   * request to `/v1/support-sessions/*`, and both tables hold zero rows in
+   * their entire life.
+   *
+   * So the grounds are gone and the assertion is inverted rather than deleted —
+   * a deleted test leaves no record that the opposite was once believed.
+   */
+  it('SHOWS for platform_support, which holds exactly one console row', () => {
+    expect(labels({ ...orgAdmin, platform_roles: ['platform_support'] })).toContain('Aekam admin');
   });
 
   it('hides for a tenant with no platform role at all', () => {

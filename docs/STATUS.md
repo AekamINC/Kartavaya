@@ -10,10 +10,12 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
-Last updated: **2026-08-28**. Proposal 93 Wave 1: **26 of 28 green**, Suite 02
+Last updated: **2026-08-29**. Proposal 93 Wave 1: **26 of 28 green**, Suite 02
 at **16 of the 18 screens §10 asks for**. The two that are not green are named
 in the section below and neither is a flake — 02.12 is a confirmed missing
-feature now approved for build, 02.17 is sequencing waiting on Suite 19.3.
+feature now approved for build, and **02.17 was NOT sequencing after all: the
+support-session feature was unreachable end to end by anybody** (§ 2026-08-29
+below, fixed and deployed).
 Migration 238 applied; `platform_support` exists on exactly one account for the
 first time (§11). The route for the next session is `docs/plans/93-NEXT-SESSION.md`. **BOTH deploys verified — check both, always.**
 Backend: Railway staging at `43961e25`, SUCCESS 05:16:47 UTC, branch `staging`
@@ -210,6 +212,83 @@ burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
 vendor picker. Verified orphaned across every vendor-referencing column *before*
 deleting. Nine real suppliers remain.
 
+## Proposal 93 · A.1 — the support-session feature was unreachable by anybody (29 Aug)
+
+**02.17 was filed as sequencing. It was a product bug, and the two halves sat in
+different layers, which is why neither side looked broken on its own.**
+
+`platform_support` was created on 28 Aug as the precondition for Suite 19.3. The
+plan was: the support account raises a request from `/admin/support`, then 02.17
+approves it as the customer. Driving that as a user is what found this.
+
+**MEASURED, not read — deployed staging, real credential, 2026-08-29:**
+
+| Layer | What it does | Evidence |
+|---|---|---|
+| Server | Admits **only** `platform_support` to raise a request | `GET /v1/support-sessions/organisations` with the support token → **200**, five orgs |
+| Server | Refuses every OTHER platform role | `_may_request` gates on `SUPPORT_ROLES`; `_NOT_A_SUPPORT_ROLE` is the 403 |
+| Browser | Admitted every role **except** `platform_support` | `/admin/support` → redirected to `/dashboard` |
+
+So every operator who could open the screen was refused by the API, and the one
+the API admits never reached the screen.
+
+⚠ **The bounce is the client-side role gate, and that is proved rather than
+inferred: not one request to `/v1/support-sessions/*` was made.** The redirect
+happens in `Protected.jsx:304` before the page mounts. The legacy
+`users.role === 'admin'` hatch does not open it either — that column reads
+`'member'` on `user_40223c0afab1`, whose only roles are `platform_support
+@PLATFORM` and `org_member @Aekam Inc`.
+
+**`platform_support_sessions` and `platform_support_requests` holding 0 rows in
+their entire life is the consequence of this, not a coincidence beside it.**
+
+### The cause was a comment and its code disagreeing
+
+`ADMIN_SURFACE_ROLES` — what `Protected.jsx` bounces `/admin/*` on — said it was
+*"the union of the rows above"* and computed the union of **three** hand-listed
+role sets. There were **four**. `SUPPORT_CONSOLE_ROLES` was the fourth, so a
+role could hold a console row and still be refused by the predicate that means
+"may open the console". `adminNav.js` had the gap written down, with the fix, and
+left it on the grounds that the test pinning it "belongs to another change in
+flight".
+
+### Fixed as a shape, not as an instance
+
+- `SUPPORT_CONSOLE_ROLES` gains `platform_support`.
+- **`ADMIN_SURFACE_ROLES` is now DERIVED from `ADMIN_NAV`** rather than re-typed.
+  The two agree by construction, so the fifth row and the sixth cannot repeat
+  this — there is no second place left to forget. Fixing only the one role would
+  have left the shape intact, which is the failure §0 names under systems
+  architecture.
+- `sahayak_admin` stays out, and now by *having no row* rather than by being
+  named — the same exclusion said once instead of twice.
+
+**No landing problem, checked rather than assumed:** `AdminShell` already moves
+an operator whose URL resolves to a row they do not hold to `items[0].to`. So
+`platform_support` opening `/admin` lands on `/admin/support`, its one and only
+row — exactly as `account_finance` already lands on Billing instead of an
+Overview where every request 403s.
+
+### Both checks proved to bite by mutation, on unique anchors
+
+| Mutation | Result |
+|---|---|
+| Drop `platform_support` from the row's role set | **2 red** — the nav row test and "is the ONLY row platform_support sees" |
+| Revert `ADMIN_SURFACE_ROLES` to the hand-typed union | **3 red**, including `supportSessions.test.jsx:704` |
+| Restored | **61 green** |
+
+That third failure is the important one: **the invariant was already written** —
+*"A row whose role set is wider than ADMIN_SURFACE_ROLES gives AdminShell a row
+for a user Protected bounces at the door. The two must agree."* It passed for
+the row's whole life only because the role was missing from BOTH sides. It had
+nothing to catch until now, which is precisely what §0 means by a gate nobody
+has seen fail.
+
+`navConfig.test.js`'s assertion that the console row *"hides for sahayak_admin
+and platform_support, who hold a platform role and reach nothing"* is **inverted
+rather than deleted** — a deleted test leaves no record that the opposite was
+once believed.
+
 ## Proposal 93 · Wave 1 closes at 26/28 — and the two failures are both real (28 Aug)
 
 **Every remaining failure in Wave 1 was triaged to product-bug or test-bug with
@@ -263,6 +342,13 @@ action rather than a test. Aekam's §12 baseline moves **10 → 11 seats, 1471 �
 console and `_lanes.ts` rule 1 forbids the customer lane from borrowing a
 platform credential to manufacture its own precondition. Suite **19.3** raises
 it through the real form at `/admin/support`, exactly as 19.0 unblocked modules.
+
+> ⚠ **SUPERSEDED 2026-08-29.** The paragraph above is right that 19.3 is the
+> piece that raises the request, and wrong that sequencing was all that stood in
+> the way. Driving `/admin/support` with the real `platform_support` credential
+> showed the account is **bounced to `/dashboard`** before the page mounts. The
+> feature was unreachable end to end by any account in the system. See the
+> 2026-08-29 section at the top of this file.
 
 **02.12 — MISSING FEATURE, confirmed, and it is bigger than the storage tab.**
 §10 asks for an R2 round trip including delete. Browse and identify work.

@@ -4621,3 +4621,58 @@ Storage tab stays read-only — `TabStorage.jsx:40-45`'s reasoning survives.
 
 Not yet built: Suite 19.3 (raise the support request from `/admin/support`, the
 only thing still blocking 02.17) and the recycle bin itself.
+
+
+---
+
+## 2026-08-29 · Proposal 93 · A.1 — 02.17 was not sequencing
+
+**The support-session feature could not be used by any account in the system,
+and the two halves of the reason were in different layers.**
+
+Found by doing exactly what 93 §1 asks — driving `/admin/support` as the real
+`platform_support` user rather than reading the guard. The page redirected to
+`/dashboard`.
+
+- The server admits **only** `platform_support` to raise a request
+  (`support_sessions._may_request`), and answers every other platform role
+  `_NOT_A_SUPPORT_ROLE`. Verified live: the support token gets **200** on
+  `GET /v1/support-sessions/organisations`.
+- The browser admitted every role **except** `platform_support`.
+  `Protected.jsx:304` bounces `/admin/*` on `ADMIN_SURFACE_ROLES`.
+
+⚠ **Proved to be the client gate and not an API refusal: not one request to
+`/v1/support-sessions/*` was made.** `users.role` is `'member'` on that account,
+so the legacy `role === 'admin'` hatch does not open it. Both support tables
+holding **0 rows since they were created** is the consequence, not a coincidence.
+
+**THE CAUSE WAS A COMMENT AND ITS CODE DISAGREEING.** `ADMIN_SURFACE_ROLES` said
+"the union of the rows above" and computed the union of three hand-listed role
+sets when there were four. `adminNav.js` had the whole gap written down, with
+the fix, deferred because the test pinning it "belongs to another change in
+flight". It was not a tidy-up owed to someone else; it was an outage.
+
+**Fixed as a shape.** `ADMIN_SURFACE_ROLES` is now derived from `ADMIN_NAV`, so
+a row cannot be added with a role set the surface guard does not admit — the
+fifth row and the sixth cannot repeat this. Fixing only `platform_support` would
+have closed the instance and left the shape, which is the systems-architecture
+failure §0 names. `sahayak_admin` stays excluded by holding no row rather than
+by being named.
+
+**No landing problem**, checked rather than assumed: `AdminShell` already moves
+an operator to `items[0].to` when the URL resolves to a row they do not hold, so
+`platform_support` lands on `/admin/support` — its only row — exactly as
+`account_finance` already lands on Billing.
+
+**Both checks proved to bite by mutation**, unique anchors, restore in a
+`finally`: dropping the role → 2 red; reverting the union → 3 red; restored →
+61 green. The third red was **`supportSessions.test.jsx:704`, an invariant that
+already existed** and had passed for the row's whole life only because the role
+was absent from both sides of it. `navConfig.test.js`'s "hides for
+sahayak_admin and platform_support" is inverted rather than deleted, so the
+record of what was once believed survives.
+
+⚠ **A scratchpad mutation script crashed between mutate and restore and left the
+mutation on disk.** Caught by re-reading the file, not by the tests. Rewritten
+with the restore in a `finally` and UTF-8 forced on both the subprocess decode
+and stdout — Windows `cp1252` breaks both directions.

@@ -710,4 +710,22 @@ describe('the console row', () => {
     expect(labels(['account_finance'])).toContain('Support sessions');
     expect(labels(['platform_owner'])).toContain('Support sessions');
   });
+
+  /**
+   * AND IT IS OFFERED TO THE ONE ROLE THE SERVER LETS RAISE A REQUEST.
+   *
+   * `support_sessions._may_request` admits `platform_support` and refuses every
+   * other platform role. Until 2026-08-29 the browser did the exact opposite,
+   * so the feature could not be used by anybody: measured on deployed staging,
+   * `/admin/support` with a real `platform_support` credential redirected to
+   * `/dashboard` with no request to `/v1/support-sessions/*` at all.
+   *
+   * `toEqual` on the whole list rather than `toContain` on one entry: the point
+   * is that admitting this role to the `/admin` prefix gives it ONE row and not
+   * a console of screens that each 403. `AdminShell` lands it there because a
+   * URL whose row it does not hold sends it to `items[0].to`.
+   */
+  it('is the ONLY row platform_support sees — the role the server admits', () => {
+    expect(adminNavFor(['platform_support']).map((it) => it.en)).toEqual(['Support sessions']);
+  });
 });

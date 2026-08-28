@@ -54,23 +54,48 @@ export const FINANCE_CONSOLE_ROLES = [...GOD, 'account_finance'];
  * admin approves it — so admitting a role to the request screen admits it to
  * no data at all.
  *
- * Narrower than it should be, and this is the gap: `platform_support` — the
- * role this entire feature exists for — is NOT here, and `sahayak_admin` is
- * not either. Not because they should be refused, but because `canOpenAdmin`
- * in `navConfig.js` and `Protected.jsx` both read `ADMIN_SURFACE_ROLES`, which
- * is the union of the three sets above, and `navConfig.test.js` pins those two
- * roles OUT of it. Adding them here without widening that union would give
- * AdminShell a row for a user Protected bounces at the door — the exact
- * disagreement the header of this file warns about.
+ * ── `platform_support` IS HERE NOW, AND THE FEATURE WAS UNREACHABLE WITHOUT IT
  *
- * The change that closes it is one line: add `...SUPPORT_CONSOLE_ROLES` to
- * `ADMIN_SURFACE_ROLES` below, and update `navConfig.test.js:47` — which
- * asserts the console row is hidden for both roles on the grounds that they
- * "reach nothing". That grounds stops being true the moment this row exists.
- * It is left alone here because that test belongs to another change in flight.
+ * This block used to say `platform_support` — "the role this entire feature
+ * exists for" — was deliberately left out, with the fix written down and not
+ * taken because "that test belongs to another change in flight". Measured on
+ * 2026-08-29 against deployed staging, that omission was not a tidy-up owed to
+ * someone else. It was a **closed loop that made the whole feature unreachable
+ * end to end**, and the two halves are in different layers, which is why
+ * neither side looked broken on its own:
+ *
+ *   · THE SERVER ADMITS ONLY `platform_support`. `support_sessions._may_request`
+ *     gates both `GET /organisations` and `POST ""` on `SUPPORT_ROLES`, and
+ *     answers every other platform role `_NOT_A_SUPPORT_ROLE` — because the
+ *     other four already reach customer modules BY ROLE, so a session in their
+ *     hands could only add authority, never cap it.
+ *   · THE BROWSER ADMITTED EVERY ROLE EXCEPT `platform_support`. `Protected.jsx`
+ *     bounces `/admin/*` on `ADMIN_SURFACE_ROLES`, which this role was not in.
+ *
+ * So every operator who could open the screen was refused by the API, and the
+ * one the API admits never reached the screen. Driven as a user with the real
+ * `platform_support` credential: `/admin/support` redirected to `/dashboard`
+ * and **not one request to `/v1/support-sessions/*` was made** — the bounce is
+ * this gate, not a refusal. `users.role` is `'member'` on that account, so the
+ * legacy `role === 'admin'` hatch does not open it either.
+ *
+ * `staging.platform_support_sessions` and `staging.platform_support_requests`
+ * both resolve and both hold ZERO rows in their entire life. That is the
+ * consequence of this line, not a coincidence beside it.
+ *
+ * ⚠ Admitting the role to the `/admin` PREFIX does not admit it to the console.
+ * `AdminShell` resolves the row for the URL and moves an operator who does not
+ * hold it to `items[0].to` — so `platform_support` opening `/admin` lands on
+ * `/admin/support`, its one row, exactly as `account_finance` already lands on
+ * Billing rather than on an Overview where every request 403s. Every other
+ * console route stays server-gated on its own role set.
  */
 export const SUPPORT_CONSOLE_ROLES = [
   ...GOD, 'platform_manager', 'platform_staff', 'account_manager', 'account_finance',
+  // Zero access anywhere until a customer approves a time-boxed session
+  // (RBAC-SPEC:19) — which is precisely what makes it the only role the server
+  // lets raise the request, and what made locking it out a total outage.
+  'platform_support',
 ];
 
 // ── The rows, against the design's seven ─────────────────────────────────────
@@ -128,12 +153,31 @@ export const ADMIN_NAV = [
 /**
  * Who may open the console at all — the union of the rows above.
  *
- * Excludes `sahayak_admin`, whose surface is the Sahayak hub at `/hub` and not
- * anything under `/admin`, and `platform_support`, which reaches nothing until
- * `platform_support_sessions` exists and a session has been approved.
+ * ── DERIVED FROM `ADMIN_NAV`, NOT RE-TYPED, AND THAT IS THE FIX ─────────────
+ *
+ * This said "the union of the rows above" and computed the union of THREE
+ * hand-listed role sets. There were four. `SUPPORT_CONSOLE_ROLES` was the
+ * fourth, and the comment and the code had disagreed for as long as the support
+ * row existed — so a role could hold a console row and still be bounced at the
+ * door by the very predicate that is supposed to mean "may open the console".
+ *
+ * Fixing only `platform_support` would leave that shape intact for the fifth
+ * row and the sixth. Computing the union FROM the rows makes the two agree by
+ * construction: a row cannot be added with a role set the surface guard does
+ * not admit, because there is no longer a second place to forget.
+ *
+ * The header of this file already warns about exactly this class — "a route
+ * without its nav row is a page `resolveAdminMeta` cannot name". This is its
+ * mirror: a nav row whose roles are outside the surface union is a row
+ * `Protected` bounces before `AdminShell` ever renders it.
+ *
+ * ⚠ `sahayak_admin` is still absent, and correctly — it holds NO row here. Its
+ * surface is the Sahayak hub at `/hub`, which is not under `/admin` at all. It
+ * is excluded by having no row rather than by being named, which is the same
+ * thing said once instead of twice.
  */
 export const ADMIN_SURFACE_ROLES = [
-  ...new Set([...CONSOLE_ROLES, ...BILLING_CONSOLE_ROLES, ...FINANCE_CONSOLE_ROLES]),
+  ...new Set(ADMIN_NAV.flatMap(it => it.roles || [])),
 ];
 
 /** Whether a platform-role holder may see one console row. */
