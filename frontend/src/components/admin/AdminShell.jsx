@@ -76,8 +76,30 @@ export default function AdminShell() {
   // just navigated to.
   React.useEffect(() => { setNavOpen(false); }, [location.pathname]);
 
+  /**
+   * The badge belongs to the Organisations row, so it is fetched only by
+   * operators who HOLD that row.
+   *
+   * ⚠ This used to fire for anyone `isPlatform` admitted. `/v1/admin/orgs` is
+   * gated on `CONSOLE_ROLES`, so for `platform_support` — the one role whose
+   * entire console is the Support sessions row — it 403'd on every single page
+   * load, permanently, for a number that is never drawn on their only screen.
+   * Measured on staging 2026-08-29 while verifying that role could reach its
+   * console at all: it was one of exactly two console errors there.
+   *
+   * A caught 403 breaks nothing, which is why it survived. But a screen that
+   * cannot be opened without logging a failed request can never be asserted
+   * clean, and 93 §1 asks for zero console errors across the whole run — so a
+   * permanent one is a permanent hole in that assertion.
+   *
+   * The predicate is the row itself rather than a re-listed role set: one more
+   * hand-copied set is what made `ADMIN_SURFACE_ROLES` disagree with its own
+   * comment for the whole life of the support row.
+   */
+  const showsOrgCount = items.some(it => it.to === '/admin/orgs');
+
   React.useEffect(() => {
-    if (!isPlatform) return undefined;
+    if (!isPlatform || !showsOrgCount) return undefined;
     let live = true;
     // count_only, so the badge does not pull every org row on every admin page.
     api.get('/v1/admin/orgs', { params: { count_only: 1 } })
@@ -88,7 +110,7 @@ export default function AdminShell() {
       })
       .catch(() => {});
     return () => { live = false; };
-  }, [isPlatform]);
+  }, [isPlatform, showsOrgCount]);
 
   // Not a platform operator: send them back rather than render an empty
   // console. The route is still <Protected>; this is the surface-level guard.

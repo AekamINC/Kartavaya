@@ -49,7 +49,13 @@ export default defineConfig({
   projects: [
     {
       name: 'admin',
-      testMatch: /suite19-admin-modules\.spec\.ts/,
+      // Every Suite 19 slice, because a spec no config matches is a spec that
+      // never runs. `suite19-support-session` is 19.3 and it runs as
+      // `platform_support` — NOT god mode: that role holds `frozenset()` until
+      // a customer approves, which is exactly why it is the only role the
+      // server lets raise a request. It is here because this is where the
+      // platform-side credentials live, not because it is a second god mode.
+      testMatch: /suite19-(admin-modules|support-session)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
