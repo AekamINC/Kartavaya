@@ -24,6 +24,38 @@ statement written down. See `README.md` for the full terms.
 
 ---
 
+## 2026-08-28 — SESSION CLOSE · every phase 0-8 built and deployed
+
+Handover for the proposal 93 session. **Nothing is left that can be built**;
+what remains is verification against rows, which is 93's whole point.
+
+    0   ✅  (0.29 closed — APK rebuilt, bundle verified inside the archive)
+    1-4 ✅
+    5   ✅  payroll re-run
+    6   ✅  24/24 — end to end only after the cron fix below
+    7   ✅  7.6 accepted LIVE on the SDK route
+    8   ✅  8.0-8.4; migration 237 applied and verified from the catalogue
+
+**What 93 should NOT take on trust from this session**, because each was
+asserted before it was measured and the measurement reversed it:
+
+  * "the Mappls half is owner-blocked" — it was, server-side, and is now
+    solved client-side on the SDK plugins bundle;
+  * "no page wires the autosuggest component up" — already false when written;
+  * "the report cron is fine" — it had been CRASHING for a day, 404ing against
+    an endpoint retired in migration 236, invisibly from inside the product;
+  * "tests do not touch production" — they were reporting into the production
+    Sentry project, because `railway run` injects the real environment.
+
+**Two known-red things, both pre-existing and neither today's:** the frontend
+suite holds 2 baseline failures (`labelShape`, `sanvaadLegacyVocabulary`) in
+files nothing touched today, and CI has no database so every `live(...)` test
+skips there — the live-schema tests written today only run under `railway run`.
+
+⚠ **7.6 WORKS AND IS NOT YET GOOD.** `mappls.search` is a POI/keyword search:
+"Bopal Ahmedabad" returns a Mumbai business first. That is Mappls' relevance,
+reproduced in the raw SDK probe, not our wiring. Do not re-diagnose it as a bug.
+
 ## 2026-08-28
 
 Three agents on 7.6, 8.2 and 8.3, partitioned by file. Every number below is a
