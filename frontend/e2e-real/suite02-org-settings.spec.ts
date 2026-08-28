@@ -49,14 +49,30 @@ type Creds = { email: string; password: string };
  * UK replay, and a silent third org in the middle corrupts that comparison — so
  * the lane is printed on every run.
  */
-type Lane = { creds: Creds; org: string; reference: boolean };
+type Lane = { creds: Creds; org: string; reference: boolean; token?: string };
 
 function resolveLane(): Lane {
+  // 1. Unicode with a password — the ideal: reference lane, real form login.
   const uniEmail = process.env.E2E_UNICODE_EMAIL;
   const uniPassword = process.env.E2E_UNICODE_PASSWORD;
   if (uniEmail && uniPassword) {
     return { creds: { email: uniEmail, password: uniPassword }, org: 'Unicode Group', reference: true };
   }
+
+  // 2. Unicode by TOKEN — what the owner supplied on 2026-08-28. Still the
+  //    reference lane, and every row is still typed; only the door is opened
+  //    differently. See signIn() for exactly where that line sits.
+  const uniToken = process.env.E2E_UNICODE_TOKEN || process.env.E2E_GODMODE_TOKEN;
+  if (uniToken) {
+    return {
+      creds: { email: 'kevalvshah03@gmail.com', password: '' },
+      org: 'Unicode Group',
+      reference: true,
+      token: uniToken,
+    };
+  }
+
+  // 3. E2E by password — a fallback lane, and it announces itself as one.
   const email = process.env.E2E_APPROVER_EMAIL;
   const password = process.env.E2E_APPROVER_PASSWORD;
   if (!email || !password) throw new Error(BLOCKED);
@@ -66,19 +82,59 @@ function resolveLane(): Lane {
 const LANE = resolveLane();
 
 test.beforeAll(() => {
-  console.log(`\n  LANE: ${LANE.org}${LANE.reference ? '  (reference lane, §14)' : '  ⚠ FALLBACK — NOT the reference lane'}\n`);
+  console.log(
+    `\n  LANE: ${LANE.org}` +
+    `${LANE.reference ? '  (reference lane, §14)' : '  ⚠ FALLBACK — NOT the reference lane'}` +
+    `${LANE.token ? '  · door opened by TOKEN, rows still typed' : '  · real form login'}\n`,
+  );
 });
 
 function requireUnicode(): Creds {
   return LANE.creds;
 }
 
-async function signIn(page: Page, { email, password }: Creds) {
+/**
+ * Sign in — by the real form when there is a password, by the minted token when
+ * there is not.
+ *
+ * ⚠ WHERE THE LINE IS, because this is the one place rule 1 can be eroded
+ * without anyone noticing.
+ *
+ * Rule 1 governs how ROWS ARE CREATED: every row in this programme is typed by a
+ * person into a real form. It does not govern how the browser is authenticated
+ * in the first place — §2 says so directly of the bootstrap admin it insists on
+ * keeping: "This is not a bypass of the 'driven as a user' rule — it is the
+ * precondition for it." `mint-state.mjs` exists for exactly this, and the
+ * repository's own bypass gate exempts it on the same reasoning.
+ *
+ * So: the token gets the browser through the door on the reference lane, where
+ * the owner supplied a token and no password. EVERY ROW THIS SUITE CREATES IS
+ * STILL TYPED AND CLICKED.
+ *
+ * ⚠ What the token must NEVER be used for is a test whose SUBJECT is the login
+ * form. Suite 01's 01.1 and 01.3 assert the form and the rate limiter, and
+ * proving those with an injected token would be circular — it would assert the
+ * thing it bypassed. Those stay on a password account and say so.
+ */
+async function signIn(page: Page, creds: Creds) {
+  if (creds.password) {
+    await page.goto('/login');
+    await expect(page.locator('#au-email')).toBeVisible({ timeout: 30_000 });
+    await page.locator('#au-email').fill(creds.email);
+    await page.locator('#au-password').fill(creds.password);
+    await page.locator('form button[type="submit"]').first().click();
+    await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 45_000 });
+    return;
+  }
+
+  // Token bootstrap. `api.js` reads `localStorage.auth_token` as the bearer on
+  // every request, so seeding it before the app boots is what a restored
+  // storage state does — done inline here so the suite needs no setup project
+  // (the setup project always fails on this owner: a token-only Google account).
+  if (!LANE.token) throw new Error(BLOCKED);
   await page.goto('/login');
-  await expect(page.locator('#au-email')).toBeVisible({ timeout: 30_000 });
-  await page.locator('#au-email').fill(email);
-  await page.locator('#au-password').fill(password);
-  await page.locator('form button[type="submit"]').first().click();
+  await page.evaluate((t) => localStorage.setItem('auth_token', t), LANE.token);
+  await page.goto('/dashboard');
   await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 45_000 });
 }
 

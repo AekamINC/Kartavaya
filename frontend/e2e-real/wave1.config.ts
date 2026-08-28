@@ -52,7 +52,7 @@ export default defineConfig({
   projects: [
     {
       name: 'wave1',
-      testMatch: /(suite01-auth|suite02-org-settings|dayone-module-403)\.spec\.ts/,
+      testMatch: /(suite01-auth|suite02-org-settings|dayone-module-403|save-probe)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
