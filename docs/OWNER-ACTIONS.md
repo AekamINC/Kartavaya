@@ -454,3 +454,55 @@ new service is deliberately named `cron-report-dispatch` rather than
 `cron-reports` so the two are not one word apart in a dashboard.
 
 ---
+
+### 13. Mappls Autosuggest refuses the Static Key — one console entitlement
+
+**Status:** OPEN · blocks Phase 7.6 from ✅. The code is built, wired and
+tested; nothing further can be done in the repo.
+
+Measured live on 2026-08-28, one call against the deployed staging backend:
+
+```
+GET /api/v1/maps/address/suggest?q=Bopal Circle
+  available   False
+  reason      unavailable        <- we HOLD a credential and Mappls refused it
+  suggestions 0
+```
+
+and, from the container's own log, at ERROR:
+
+```
+mappls autosuggest refused the static key (HTTP 401) — check the Autosuggest
+allocation and the domain whitelist in the console
+```
+
+**This is NOT the same wall as before, and the difference is the whole
+diagnosis.** `reason` is `unavailable`, not `not_configured` — the two are kept
+apart precisely so this question can be answered — and **the very same Static
+Key works for the Web Map SDK**: the Gujarat territory outline draws on the
+deployed site, which you confirmed. So the key is real, live and accepted by
+one Mappls product and refused by another.
+
+That makes it a **per-product entitlement**, not a bad credential and not a
+whitelist problem in general:
+
+- open the Mappls console for project `prj1787726591i922664629`;
+- check the **Autosuggest** product is enabled on the credential (the console
+  showed an allocation of **200 hits** — an allocation is not the same thing as
+  an entitlement, and the read on 27 Aug did not distinguish them);
+- confirm the REST host is covered by the whitelist. The Web SDK is called from
+  the browser and sends an Origin; **autosuggest is called from our SERVER and
+  sends none**, so a whitelist that admits browser origins may refuse a
+  server-side call for a reason that never applied to the map.
+
+**Only one call was spent proving this**, against a generic public place and
+never a customer record: the allocation is 200 hits and every call is both
+billable and a submission under Mappls' perpetual, sub-licensable content
+licence. The fragment used was `Bopal Circle`.
+
+⚠ **Item 2 of §7.6 is still open and it may make this moot.** If Aekam Inc is a
+*foreign* entity, the Geospatial Data Guidelines 2021 forbid this shape
+entirely — a server-side proxy is exactly what a foreign licensee may not use
+for finer-than-threshold Indian map data. Settle that before paying for or
+enabling anything, because the answer decides whether the fix is a console
+toggle or a different feature with a published browser key.

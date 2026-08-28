@@ -29,6 +29,39 @@ statement written down. See `README.md` for the full terms.
 Three agents on 7.6, 8.2 and 8.3, partitioned by file. Every number below is a
 live read-only `SELECT` or a test run.
 
+### 7.6 wired to two screens — and refused by Mappls · `1772bd51`
+
+`AddressSuggest` is live on vendors and employees, the two screens §7.6 names.
+
+⚠ **The employee form had no address input at all** — `manav_employees.address`
+is jsonb, `EmployeeCreate.address` accepts it, the INSERT binds it, and there
+was nowhere to type it. All 83 live rows are `{}`. Same shape as the vendor
+defect 8.0 found.
+
+The suggestion FILLS and never replaces: a key the vendor did not return is not
+written, so a blank cannot erase a typed value. The search fragment is not part
+of the record and is stripped from the payload. ⚠ **Neither form seeds the box
+from the stored address** — that looks helpful and is the one thing that must
+not happen, because the component searches from `onChange` and a seeded box
+would put every existing customer's premises one keystroke from a third party
+under a perpetual licence, while looking like the feature working.
+
+🔴 **ONE LIVE CALL SPENT, AND IT WAS REFUSED.** Generic public place, never a
+customer record — the allocation is 200 hits and each is billable AND a
+submission under Mappls' content licence.
+
+    available   False
+    reason      unavailable          <- NOT not_configured
+    log         mappls autosuggest refused the static key (HTTP 401)
+
+The two reasons are kept apart precisely so this is answerable: we hold a
+credential and Mappls refused it. **The same Static Key works for the Web Map
+SDK** — the Gujarat outline draws on the deployed site — so it is a per-product
+entitlement, not a bad key. An *allocation* of 200 is not an entitlement. And
+the SDK is called from the browser with an Origin while autosuggest is called
+from our server with none, so a browser-origin whitelist may refuse it for a
+reason that never applied to the map. OWNER-ACTIONS item 13.
+
 ### 8.4 ✅ · the phase is closed · `a942fb9d` `a2189ad1`
 
 §8.4's acceptance on a live row, over HTTP against the deploy. Contact *Phase
