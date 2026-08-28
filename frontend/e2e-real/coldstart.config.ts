@@ -30,7 +30,7 @@ export default defineConfig({
   projects: [
     {
       name: 'coldstart',
-      testMatch: /(coldstart-nav-audit|hub-org-probe|note-probe)\.spec\.ts/,
+      testMatch: /(coldstart-nav-audit|hub-org-probe|note-probe|empty-console-probe)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

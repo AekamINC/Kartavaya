@@ -4082,7 +4082,62 @@ undeliverable** — the exact risk the probe existed to find, on the first attem
 §3's ~550 `test+<tag>@unicodegroup.com` recipients **must not be seeded** until
 the mailbox says which. OWNER-ACTIONS 15.
 
+---
+
+## 2026-08-28 · Suite 00 re-run on the EMPTIED orgs — the finding the wipe bought
+
+Before R4 the cold-start audit was clean: 31 routes, **0 console errors**.
+Re-run immediately after, on genuinely empty orgs: **31 of 31 routes now log
+console errors**, 3–7 each. The screens still render — nothing is BLANK, nothing
+is SPINNER-STUCK — but every one of them fires failed requests.
+
+This is exactly the state §1 describes as the one nobody has looked at: *"the
+empty state … is what a new customer sees on day one and it is the state nobody
+has looked at since the data arrived."* An hour earlier this test could not have
+found it, because there was data.
+
+**The cause, read off the wire rather than guessed** — every failure is a 403
+with the same shape:
+
+    GET /api/v1/ganit/stats          403 "Module 'ganit' is not active…"
+    GET /api/v1/graha/deals/kanban   403 "Module 'graha' is not active…"
+    GET /api/v1/messaging/channels   403 "Module 'sanvaad' is not active…"
+    GET /api/v1/hub/org/skills       403 "Module 'sahayak' is not active…"
+
+R4 deleted `module_subscriptions` and `org_member_modules`, so the orgs now hold
+**no active modules** — which is precisely what a brand-new customer has. The
+frontend goes on calling every module's API regardless and lets each 403 reach
+the console.
+
+**Product or test?** Product, and a mild one — but real against §1's standard of
+*"zero uncaught console errors across the whole run"* and *"degrades with a
+sentence, never a silent no-op"*. The pages do not break; they just each make
+several requests that cannot succeed and say so only in the console. The
+question Suite 00 still owes is whether the **screen** tells the customer to
+activate the module, or whether that sentence exists only in a 403 body nobody
+reads.
+
+Not fixed here. Recorded with its evidence so the rebuild's Suite 01–02 (which
+enables all 14 modules) does not simply paper over it — because once modules are
+enabled the symptom vanishes and the day-one experience stays unexamined.
+
+## 2026-08-28 · Plus-addressing: ANSWERED, and §3's 5% share changes
+
+The owner's mailbox settled it: `test@unicodegroup.com` **delivers**;
+`test+<tag>@unicodegroup.com` **bounces**. IONOS rejects the plus tag — the doubt
+recorded on 2026-08-18 was right. One probe cost one bounce; the assumption would
+have cost ~550 on the account that sends real invoices.
+
+Owner's instruction: use `test@unicodegroup.com` everywhere §3 said `test+<tag>@`.
+Adopted, with one exception the schema forces and which was checked against
+`pg_index` rather than assumed: **`public.users_email_key` is UNIQUE table-wide**,
+so that address can be exactly **one login**. The Prachar indexes are scoped
+(`event_id`, `campaign_id`, `org_id`), and contacts/employees/vendors/candidates
+carry no unique email index at all — so the shared address is fine everywhere
+except a second login, where the proven gmail tags are used instead.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
+
 
 
 

@@ -21,7 +21,44 @@ behind it.
 
 ## OPEN
 
-### 15. The plus-addressing probe — SENT, AND IT BOUNCED
+### 15. ✅ CLOSED 2026-08-28 — plus-addressing does NOT work on unicodegroup.com
+
+**Answered by the mailbox.** The owner showed the `control` message sitting in
+`test@unicodegroup.com`; the plus-tagged one never arrived and is the bounce SES
+recorded. So:
+
+    test@unicodegroup.com          DELIVERS  ✅ (seen in the mailbox)
+    test+<tag>@unicodegroup.com    BOUNCES   ❌ IONOS rejects the plus tag
+
+The doubt recorded on 2026-08-18 was correct, and §3's 5% share cannot be seeded
+as written. One probe cost one bounce; the assumption would have cost ~550.
+
+**Owner's instruction:** use `test@unicodegroup.com` everywhere §3 said
+`test+<tag>@`.
+
+⚠ **Adopted with ONE exception, which the schema forces.** §3 chose per-row tags
+because a shared address collides on a unique index. Checked against
+`pg_index` rather than assumed — the real picture is narrower than §3 implies:
+
+| Index | Scope | Can `test@` repeat? |
+|---|---|---|
+| `public.users_email_key` | **table-wide UNIQUE on email** | ❌ **exactly one login** |
+| `prachar_event_registrations (event_id, email)` | per event | ✅ one per event |
+| `prachar_send_evidence (campaign_id, recipient_email)` | per campaign | ✅ one per campaign |
+| `prachar_unsubscribes (org_id, email)` | per org | ✅ one per org |
+| `graha_contacts`, `manav_employees`, vendors, candidates | **no unique email index** | ✅ freely |
+
+**So the rule applied is:** `test@unicodegroup.com` for the 5% share everywhere —
+contacts, employees, vendors, candidates, registrations, signers — and for
+**one** login. The remaining logins keep the `kevalvshah03+` / `kelisweet+` gmail
+tags, which are proven deliverable (18 Aug) and which gmail *does* honour.
+
+Nothing else in §3 moves: the 45% simulator share and the 50% gmail share are
+unaffected.
+
+---
+
+### 15b. (history) The probe — SENT, AND IT BOUNCED
 
 **Status:** OPEN · ⚠ **the answer is bad, and it changes §3.** You allowed the
 send on 2026-08-28 and it went immediately. Three messages, all ACCEPTED by SES:
