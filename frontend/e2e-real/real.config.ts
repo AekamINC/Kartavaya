@@ -90,7 +90,7 @@ export default defineConfig({
       // handful of calls against an allocation of 200, so it is deliberately
       // not part of the `real-user` sweep.
       name: 'mappls-probe',
-      testMatch: /mappls-browser-probe\.spec\.ts/,
+      testMatch: /(mappls-browser-probe|phase76-autosuggest)\.spec\.ts/,
       // NO `setup` dependency. `auth.setup.ts` signs BOTH users in and the
       // owner is a token-only Google account, so that project always fails on
       // the owner and would take this probe down with it. The approver state it

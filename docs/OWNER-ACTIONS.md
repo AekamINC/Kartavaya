@@ -493,7 +493,55 @@ new service is deliberately named `cron-report-dispatch` rather than
 
 ---
 
-### 14. Mappls REST: "Domain validation failed" on server-side calls
+### 14. Mappls REST — SOLVED IN CODE 2026-08-28 · nothing needed from you
+
+**Status:** ✅ CLOSED, and it did not need the support email after all. You
+chose "move autosuggest into the browser" and that turned out to be the right
+call for reasons beyond the blocker.
+
+**⚠ MY WARNING ABOUT THE COST WAS WRONG, AND IN YOUR FAVOUR.** I said going
+client-side "publishes a non-expiring key on every keystroke". It does not add
+one: the Static Key is **already** served to every signed-in browser for the
+basemap. The marginal security cost of this change is **zero**.
+
+**It also ANSWERS the Geospatial Data Guidelines question rather than
+deepening it.** The concern was that a *foreign* entity may license
+finer-than-threshold Indian map data only through APIs that do not let the data
+pass through its **own servers**. A server-side proxy is exactly that; a
+browser calling Mappls directly is exactly not. Whatever the answer about
+Aekam Inc's entity status, this shape is the safe one.
+
+**But NOT the way "client-side" sounds — and this was measured before anything
+was rewritten.** A plain browser `fetch` is *impossible*:
+
+    atlas.mappls.com /places/search/json   -> blocked by CORS
+    atlas.mappls.com /places/geocode       -> blocked by CORS
+    apis.mappls.com  /autosuggest          -> blocked by CORS
+
+    "No Access-Control-Allow-Origin header is present on the requested resource"
+
+No key, header or whitelist entry changes that — the response is blocked before
+our code sees it. Had it been assumed rather than probed, the rewrite would
+have shipped and failed exactly as the server-side version does.
+
+**What works is the SDK's own `search`**, which ships its own transport. The
+map bundle we already load carries 124 keys and not one search surface; the
+plugins bundle takes it to 139 and adds `search`, `placePicker` and
+`advancePlacePicker`. Live: `mappls.search({query: "Bopal Ahmedabad"})` ->
+**11 results**.
+
+⚠ **ONE THING IS STILL YOURS, and it is small: rotate `MAPPLS_STATIC_KEY`.**
+The probe that found all this printed the key into a run log on its first pass
+— a CORS error quotes the full refused URL and the key is a query parameter in
+it. The key is served to every browser by design and the whitelist restrains
+it, so the exposure is limited, but a credential in a log should be rotated.
+The output is redacted now. Set the new value on Railway as
+`MAPPLS_STATIC_KEY`; nothing in the code changes.
+
+*(the server-side investigation, kept — it is why the client-side route was
+taken, and the control test is worth not repeating)*
+
+
 
 **Status:** OPEN · **one email to Mappls support.** Re-probed live 2026-08-28
 and the diagnosis is now exact — it is NOT our code, NOT our credential and NOT
