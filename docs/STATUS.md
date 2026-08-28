@@ -10,9 +10,12 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
-Last updated: **2026-08-28**. Proposal 93 Wave 1: Suite 02 **8/8** (of the 7
-screens written — §10 requires 18, so ten tests do not exist yet), migration 238
-applied. The route for the next session is `docs/plans/93-NEXT-SESSION.md`. **BOTH deploys verified — check both, always.**
+Last updated: **2026-08-28**. Proposal 93 Wave 1: **26 of 28 green**, Suite 02
+at **16 of the 18 screens §10 asks for**. The two that are not green are named
+in the section below and neither is a flake — 02.12 is a confirmed missing
+feature now approved for build, 02.17 is sequencing waiting on Suite 19.3.
+Migration 238 applied; `platform_support` exists on exactly one account for the
+first time (§11). The route for the next session is `docs/plans/93-NEXT-SESSION.md`. **BOTH deploys verified — check both, always.**
 Backend: Railway staging at `43961e25`, SUCCESS 05:16:47 UTC, branch `staging`
 (this line named `cc371297` until 2026-08-27, by which point it was **33 commits
 behind** — a deploy line that is not re-read every time is worse than none,
@@ -206,6 +209,99 @@ all backed up to `ledger_repair_20260826.nikhil_*`. Unicode headcount 27 → 26.
 burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
 vendor picker. Verified orphaned across every vendor-referencing column *before*
 deleting. Nine real suppliers remain.
+
+## Proposal 93 · Wave 1 closes at 26/28 — and the two failures are both real (28 Aug)
+
+**Every remaining failure in Wave 1 was triaged to product-bug or test-bug with
+evidence before a word was written about it**, which is rule 2. Three were test
+bugs and are fixed; two were product findings and are recorded as such.
+
+**02.14 and 02.10 — TEST BUGS, fixed, and the second one uncovered a real hole.**
+02.14 failed with `element was detached from the DOM` on the row-actions menu:
+the members list refetches after `openTab`, and the refetch replaces `.omt
+tbody` while the menu opened over it is still animating. Nothing about the
+product is wrong — a human clicking a settled screen never meets it, which is
+precisely why the test met it and the customer does not. `rowMenuItem` now
+awaits the in-flight `/org/members` GET first (the actual fix) and re-resolves
+at most three times, **only** on the detach signature; any other failure is
+rethrown on the first attempt, because a blind retry would paper over a
+genuinely missing control, which is the one thing this suite exists to catch.
+The retry logs when it fires, so the race stays visible.
+
+⚠ 02.10 failed at **6.0s** in the full run and passed alone — the precondition
+read, not the assertion. Two causes, and the second matters far more than the
+test: the roster was read before the members tab was opened, *and* `members()`
+and `pendingInvites()` sent **no `X-Org-Id` header at all**. `src/lib/api.js:39`
+puts the active org on every request the product makes; these helpers did not,
+so the server fell back to resolving the org itself — and that fallback is
+**oldest membership**, not "the org this lane is testing". A read helper that
+can silently answer for a different organisation than the screen beside it is
+the same class of fault as the 2026-08-28 cross-org incident, and it was sitting
+inside the suite written to catch that. Now pinned to `LANE.orgId`.
+
+Green after the fix: `02.10 org_member -> org_admin -> org_member, badge and row
+agreed at each step` · `02.14 revoked → /graha/pipelines 403, nav row absent;
+granted → 200, nav row present; revoked → 403, nav row absent`.
+
+**02.17 — the role row is applied, and `platform_support` now exists.**
+`kevalvshah03+support@gmail.com` (`user_40223c0afab1`) held `org_member @ Aekam
+Inc` and no platform role whatever, so `_may_request` — which admits
+`platform_support` alone (`support_sessions.py:137`) — refused it. One row,
+owner-approved, applied 19:52:57 UTC: `user_roles(user_id, org_id=NULL,
+role_code='platform_support')` = `ff85dac6…`. Reversal is that row deleted.
+**Nobody in the system held this role before today.** Measured live at the same
+time: `staging.platform_support_sessions` and `platform_support_requests` both
+RESOLVE and both hold **0 rows** — support access has never been used once.
+
+The Aekam Inc seat is deliberately LEFT (owner's call). It arrived because the
+account was created through a god-mode session, which resolves to Aekam Inc with
+nothing on screen saying so — the same defect as the harness one, on a real
+action rather than a test. Aekam's §12 baseline moves **10 → 11 seats, 1471 →
+1482 rows**; that is now the number to compare against, not the old one.
+
+02.17 still blocks, correctly: the *request* must be raised from the support
+console and `_lanes.ts` rule 1 forbids the customer lane from borrowing a
+platform credential to manufacture its own precondition. Suite **19.3** raises
+it through the real form at `/admin/support`, exactly as 19.0 unblocked modules.
+
+**02.12 — MISSING FEATURE, confirmed, and it is bigger than the storage tab.**
+§10 asks for an R2 round trip including delete. Browse and identify work.
+Download and delete do not exist, and the measurement went well past the tab:
+
+- `routers/uploads.py` mounts exactly one route, `POST /upload`. No delete.
+- `services/storage.py:832` has `delete_file` — **zero callers.** Written,
+  never wired to a route or a screen.
+- `routers/storage_browser.py` mounts three routes, all reads.
+- `TaskDrawer.jsx:621` `removeAttachment` filters the array and saves the task.
+  **It drops the pointer and orphans the object.** The R2 file stays forever,
+  and because the `key` is gone from the row nobody can find it again —
+  including Aekam. No confirmation, no undo. A customer who removes the wrong
+  attachment has destroyed it, and is still paying to store it.
+- The one surface that does this correctly is `graha.py:4917`: `UPDATE ... SET
+  is_active=FALSE`, recording who did it, keeping the object.
+
+**Owner decided 28 Aug — build it on Graha's shape**, and the three questions
+that were put alongside it are settled: (1) hidden from the customer at **14
+days**, R2 object hard-deleted at **90**, so there is a real recovery window and
+a real floor on cost; (2) binned files **do** count against the org's storage
+quota, or an org sits permanently over its limit by deleting things; (3) delete
+is wired to **task attachments and CRM documents only** — Ganit invoices and
+eSign documents get no delete control at all, because books of account carry an
+8-year retention under the Income Tax Act and GST records 72 months, and a
+customer who deletes a signed invoice discovers it at assessment.
+
+⚠ **The Storage tab itself stays read-only and that is not the same decision.**
+`TabStorage.jsx:40-45` argues a delete there removes an object without its row,
+producing the exact breakage the tab exists to diagnose. That reasoning survives
+the build: delete belongs on the surfaces that own the row.
+
+**A third stale "this table does not exist" header** —
+`admin/SupportSessionsPage.jsx:75-79`, matching the two corrected in `a375e03c`.
+It reads on a `to_regclass` NULL from 6 August. `isDormant` is computed from the
+error response rather than hardcoded, so the page recovers on its own now the
+routes answer; the comment is what misleads a reader, and it is corrected in
+place with the measurement rather than deleted.
+
 
 ## Proposal 93 · Stage 2 EXECUTED 28 Aug — the three test orgs are wiped
 

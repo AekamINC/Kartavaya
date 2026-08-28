@@ -71,16 +71,32 @@ const ALL_SESSION_COLUMNS = [
  * rule that outranks everything else. It is placed where the operator reads it
  * at the moment they use it, which is the only placement that does any work.
  *
- * ── Dormant, and it will be for weeks ───────────────────────────────────────
- * `staging.platform_support_sessions` does not exist on the live database —
- * `to_regclass` returned NULL on 6 August 2026 — and migration 111 is
- * deliberately unapplied because there is ONE `staging` schema and production
- * writes to it. So `/v1/support-sessions` 404s today.
+ * ── NOT dormant any more — re-measured 2026-08-28 ───────────────────────────
+ * This header said `staging.platform_support_sessions` "does not exist on the
+ * live database", on a `to_regclass` NULL from **6 August 2026**. That is the
+ * third copy of one stale claim: `org/TabSupportAccess.jsx` and
+ * `admin/supportSessions.js` carried it too and were corrected in `a375e03c`.
  *
- * That is NOT an error state here. It is "no support sessions exist", which is
- * the true answer. The page renders its header and one calm empty state, the
- * request form is not offered, and nothing is logged. What it must never do is
- * throw a 500-shaped error at an operator because a migration has not run.
+ * Measured live 2026-08-28: `staging.platform_support_sessions` RESOLVES with
+ * 20 columns and `staging.platform_support_requests` with 9. Both hold ZERO
+ * rows — the feature has never been used, which is a different fact from the
+ * table being absent, and reading the second off the first is exactly how
+ * `public.report_schedules` was declared missing while it had a CRUD and an
+ * armed hourly cron. Only the `public` copy is absent; a schema-qualified
+ * negative is a fact about THAT SCHEMA alone.
+ *
+ * A header of this kind is load-bearing rather than decorative: a reader who
+ * believes the table is missing reads every empty panel as "not built yet" and
+ * stops looking. Corrected in place, with the measurement, rather than deleted.
+ *
+ * ── The dormant PATH stays, and is still right ──────────────────────────────
+ * `isDormant` is computed from the error response (`supportSessions.js:218`),
+ * never hardcoded, so this page recovered on its own the moment the routes
+ * began answering — nothing here had to change for that. It remains correct on
+ * its own terms: an endpoint can answer 404 for reasons unrelated to a missing
+ * table, and an empty result is "no support sessions exist", which is the true
+ * answer and not an error state. The page renders its header and one calm empty
+ * state, and what it must never do is throw a 500-shaped error at an operator.
  *
  * A genuine failure — a 500, a dropped connection — is shown, loudly, because
  * "nobody is in your data" is the one thing this feature may never say on the

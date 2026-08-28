@@ -60,7 +60,9 @@
  *   cd frontend
  *   npx playwright test --config e2e-real/wave1.config.ts --grep "Suite 02"
  */
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Locator } from '@playwright/test';
+import { readFileSync } from 'fs';
+import * as path from 'path';
 import { ORG as ORG_IDS, assertOrg, type Lane as OrgLane } from './_lanes';
 
 const BLOCKED =
@@ -608,8 +610,19 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // Activation is a term of the subscription and belongs to Aekam — 19.1
     // proves the API refuses an org-scoped credential; this proves the screen
     // does not offer it either.
-    const toggles = page.locator('.omod__c input[type="checkbox"]');
+    // ⚠ `role="switch"`, NOT `input[type="checkbox"]`. `ui/Toggle.jsx:22-26`
+    // renders a real `<button role="switch" aria-checked>` — its header says
+    // why: "A real button that applies immediately, as distinct from a checkbox
+    // committed by a Save."
+    //
+    // This assertion was VACUOUS from the day it was written. The old locator
+    // matched nothing, so `t` was 0, the loop ran zero times, and the test
+    // passed while proving nothing at all — a gate nobody has seen fail is
+    // decoration (93 §0). Found on 2026-08-28 only because Suite 19 made the
+    // same claim WITH a count assertion and went red. The count is the fix.
+    const toggles = page.locator('.omod__c [role="switch"]');
     const t = await toggles.count();
+    expect(t, 'the modules grid rendered no toggles at all').toBe(total);
     for (let i = 0; i < t; i += 1) {
       await expect(toggles.nth(i)).toBeDisabled();
     }
@@ -874,10 +887,27 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   const API_BASE = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
 
   /** The member rows the SERVER holds, read fresh. The screen is the claim; this is the fact. */
+  /**
+   * ⚠ `X-Org-Id` IS NOT OPTIONAL HERE, and its absence was a real hole.
+   *
+   * `src/lib/api.js:39-40` puts the active org on EVERY request the product
+   * makes. These helpers did not, so the server fell back to resolving the org
+   * itself — and that fallback is *oldest membership*, not "the org this lane
+   * is testing". A read helper that can silently answer for a different
+   * organisation than the screen beside it is the same class of fault as the
+   * 2026-08-28 cross-org incident, and it sat inside the suite written to catch
+   * that. Sending the header is not a workaround: it is doing what the client
+   * does, which is the only thing a test of the client may do.
+   */
+  const orgHeaders = (token: string | null) => ({
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    'X-Org-Id': LANE.orgId,
+  });
+
   async function members(page: Page) {
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));
     const res = await page.request.get(`${API_BASE}/api/v1/org/members`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: orgHeaders(token),
     });
     expect(res.ok(), `GET /org/members -> ${res.status()}: ${await res.text()}`).toBeTruthy();
     const body = await res.json();
@@ -888,7 +918,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   async function pendingInvites(page: Page) {
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));
     const res = await page.request.get(`${API_BASE}/api/v1/org/invites`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: orgHeaders(token),
     });
     if (!res.ok()) return [] as any[];
     const body = await res.json();
@@ -1156,6 +1186,15 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await signInAs(page, requireUnicode());
 
     const email = slotEmail('ops');
+
+    // ⚠ THE TAB IS OPENED BEFORE THE ROSTER IS READ, and the order is the fix.
+    // This read used to happen straight after `signInAs`, while the app was
+    // still bootstrapping — which is how 02.10 failed at 6.0s in the wave1 run
+    // of 2026-08-28 saying "02.8 must run first" about a member 02.8 had just
+    // seated, and then passed when run alone. Opening the members screen first
+    // puts the session in the same state a customer's would be in before any
+    // assertion is made about what it holds.
+    await openTab(page, 'members');
     const before = (await members(page)).find((m) => lower(m.email) === email);
     expect(before, `02.8 must run first — ${email} is not a member${dump(wire)}`).toBeTruthy();
 
@@ -1180,25 +1219,27 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // looked for was one the product never renders anywhere.
     const badge = (role: string) => (role === 'org_admin' ? 'Admin' : 'Member');
 
-    await openTab(page, 'members');
     const row = page.locator('.omt tbody tr').filter({ hasText: email });
     await expect(row).toBeVisible({ timeout: 30_000 });
 
     // Suite rule 6: scope to the OPEN MENU. An unscoped name match resolves in
     // DOM order and will happily hit the sidebar instead of the row's action.
     const setRole = async (to: 'org_admin' | 'org_member') => {
-      await row.getByRole('button', { name: /Actions for/ }).click();
-      const menu = page.getByRole('menu');
-      await expect(menu).toBeVisible({ timeout: 10_000 });
-      const [res] = await Promise.all([
-        page.waitForResponse(
-          (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
-          { timeout: 30_000 },
-        ),
-        menu
-          .getByRole('menuitem', { name: to === 'org_admin' ? /Make org admin/ : /Make org member/ })
-          .click(),
-      ]);
+      // The response is armed BEFORE the click so nothing is missed, and the
+      // click goes through `rowMenuItem` so a refetch landing under the open
+      // menu is retried rather than reported as a missing control.
+      const pending = page.waitForResponse(
+        (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
+        { timeout: 30_000 },
+      );
+      await rowMenuItem(
+        page,
+        row,
+        to === 'org_admin' ? /Make org admin/ : /Make org member/,
+        `the row offers no "${to === 'org_admin' ? 'Make org admin' : 'Make org member'}" ` +
+        'action — MemberTable.jsx offers exactly the transition that applies',
+      );
+      const res = await pending;
       expect(res.status(), `PUT role -> ${res.status()}`).toBeLessThan(400);
       // The screen is the claim; the row is the fact. Both are asserted, and
       // the failure message says which of the two disagreed.
@@ -1258,10 +1299,12 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await openTab(page, 'members');
     const row = page.locator('.omt tbody tr').filter({ hasText: email });
     await expect(row).toBeVisible({ timeout: 30_000 });
-    await row.getByRole('button', { name: /Actions for/ }).click();
-    const menu = page.getByRole('menu');
-    await expect(menu).toBeVisible({ timeout: 10_000 });
-    await menu.getByRole('menuitem', { name: /Remove from organisation/ }).click();
+    await rowMenuItem(
+      page,
+      row,
+      /Remove from organisation/,
+      'the row offers no "Remove from organisation" action',
+    );
 
     // ⚠ A destructive confirmation must SAY WHAT SURVIVES. "Their work stays;
     // only their access is removed" is the sentence that stops an admin
@@ -1288,5 +1331,1720 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
       (await members(page)).find((m) => lower(m.email) === email),
       `${email} is gone from the screen but still in GET /org/members${dump(wire)}`,
     ).toBeFalsy();
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * STORAGE AND THE LOGO — §10's last two org-settings screens, and the only
+   * place in Suite 02 where the thing written is an OBJECT rather than a row.
+   *
+   * §4 budgets four "Logo / storage uploads" per org and annotates them
+   * "R2 round trip incl. delete"; §10 spells the screen out as
+   * "storage browse/upload/download/delete". Two tests cover it: 02.12 drives
+   * the Storage tab, 02.13 drives the logo.
+   *
+   * ── WHAT A ROUND TRIP HAS TO PROVE HERE, AND WHY IT IS NOT "IT DID NOT
+   *    THROW" ────────────────────────────────────────────────────────────────
+   * An upload that answers 200 proves the request was accepted, not that an
+   * object exists. This product has already shipped both halves of that gap:
+   * five executed e-sign PDFs whose rows pointed at objects the bucket did not
+   * have (`storage_browser.py:519-522`), and a logo column that held a presigned
+   * URL and nothing to re-sign it from, so the letterhead was a broken image by
+   * the evening (`org_profile.py:180-186`). A 200 with an empty body is the same
+   * class of lie one layer down.
+   *
+   * So every upload below is followed by a GET of the bytes, and the bytes are
+   * compared to the fixture on disk. Equal buffers is the only evidence that
+   * survives all three failure modes.
+   *
+   * ── READING BY API IS VERIFICATION, NOT A BYPASS ───────────────────────────
+   * `check-e2e-no-bypass.mjs` bans `page.request.post/put/patch/delete` and
+   * permits `page.request.get`, in those words: "reading, and the login
+   * bootstrap" are allowed because "asserting the row appeared IS the required
+   * evidence". Everything created below is created by `setInputFiles` on the
+   * product's own file input and by clicking the product's own Save button.
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  /** GET the org profile the server holds. The screen is the claim; this is the fact. */
+  async function orgProfile(page: Page) {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}/api/v1/org/profile`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    expect(res.ok(), `GET /org/profile -> ${res.status()}: ${await res.text()}`).toBeTruthy();
+    return (await res.json()) as any;
+  }
+
+  /** Any GET under the API, with this session's bearer. Reads only — see the header. */
+  async function apiGet(page: Page, pathAndQuery: string) {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}${pathAndQuery}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    expect(res.ok(), `GET ${pathAndQuery} -> ${res.status()}: ${await res.text()}`).toBeTruthy();
+    return (await res.json()) as any;
+  }
+
+  /**
+   * The logo fixture, as bytes.
+   *
+   * `test.info().file` is the absolute path of THIS spec, so the fixture is
+   * found however the run was launched. `process.cwd()` would not be: the
+   * documented invocation is `cd frontend && npx playwright test --config
+   * e2e-real/wave1.config.ts`, but the config sets `testDir` from its own
+   * location and nothing pins the working directory, and `import.meta.url` is
+   * the other option only while the loader stays ESM.
+   *
+   * ⚠ AN SVG, ON PURPOSE, AND IT IS NOT ONLY ABOUT KEEPING A BINARY OUT OF THE
+   * REPOSITORY. It is TEXT, so "the bytes that came back are the bytes that went
+   * up" is a byte-for-byte buffer comparison rather than a size check — and it
+   * takes the upload through `uploads.py:_svg_is_safe` (`:109`), the one content
+   * gate on this path. That gate refuses `<script`, `javascript:`,
+   * `<foreignobject`, `<!entity`, `<iframe`, `<embed`, `<object` and any
+   * `on…=` handler, because an SVG opened at its own storage URL is a document
+   * the browser will run. This fixture carries none of them — checked against
+   * the constants in `uploads.py:98-122` when it was written — and if somebody
+   * later edits it into something with a handler on it, the upload will answer
+   * 415 and this test will say so rather than going quietly green.
+   */
+  const logoFixturePath = () =>
+    path.join(path.dirname(test.info().file), 'fixtures', 'logo-unicode-e2e.svg');
+
+  test('02.12 storage — the R2 round trip: browse, upload, download, delete', async ({ page }) => {
+    // ═════════════════════════════════════════════════════════════════════════
+    // READ `TabStorage.jsx` BEFORE READING THIS TEST'S RESULT.
+    //
+    // Its docstring, at `frontend/src/pages/org/TabStorage.jsx:40-45`, says in
+    // the product's own words: "WHAT IS DELIBERATELY ABSENT — There is no delete
+    // and no upload. A file in this product is a POINTER held in a column …
+    // deleting the object without the row produces exactly the failure this tab
+    // exists to diagnose. Both belong to the module that owns the row."
+    //
+    // The router agrees. `backend/routers/storage_browser.py` mounts exactly
+    // three routes under `/api/v1/org/storage` — `GET ""` (`:319`),
+    // `GET /browse` (`:390`) and `POST /resolve` (`:501`). There is no PUT, no
+    // DELETE and no download. `services/storage.py` does carry `delete_file`
+    // (`:832`), so the capability exists one layer down; nothing on this screen
+    // reaches it.
+    //
+    // §10 nevertheless lists this screen as "storage browse/upload/download/
+    // delete" and §4 budgets four uploads "R2 round trip incl. delete". Those
+    // two statements cannot both be satisfied today, and THE SUITE DOES NOT GET
+    // TO PICK. Suite rule: a missing control is a FAILURE, never a `test.skip` —
+    // a skip is how a gap becomes invisible, and "excluded by decision" versus
+    // "not built" is the owner's judgement to make, not this file's.
+    //
+    // So the test does three things, in this order:
+    //   A. drives BROWSE for real and asserts it against the server;
+    //   B. drives IDENTIFY for real — which is the one control on this screen
+    //      that asks R2 whether an object is actually there, and is therefore
+    //      the closest thing the tab has to proving a round trip;
+    //   C. MEASURES the page for an upload control, a download control and a
+    //      delete control, and fails naming precisely which are absent.
+    //
+    // C is measured, not assumed. If somebody adds the controls, this test goes
+    // green by itself; it does not encode my reading of the JSX as a constant.
+    //
+    // ── Idempotence (§6) ─────────────────────────────────────────────────────
+    // This test writes NOTHING. Browse and identify are both reads, so a second
+    // execution starts in exactly the state the first one did, and part C's
+    // verdict is a function of the code alone.
+    // ═════════════════════════════════════════════════════════════════════════
+    await signInAs(page, requireUnicode());
+    await openTab(page, 'storage');
+
+    const panel = page.getByRole('tabpanel');
+    const notes: string[] = [];
+
+    // ── A1. WHERE THE FILES LIVE ─────────────────────────────────────────────
+    // The overview must have loaded. `TabStorage` renders "Storage could not be
+    // read just now." instead of the tiles when `GET /v1/org/storage` fails
+    // (`TabStorage.jsx:140-142`), and three tiles over a failed read would be a
+    // screen that looks fine and says nothing.
+    await expect(panel.getByText('Storage could not be read just now.')).toHaveCount(0);
+
+    const overview = await apiGet(page, '/api/v1/org/storage');
+
+    // Asserting the LITERAL strings the component renders, read off the JSX
+    // rather than guessed: `StatTile` puts the label in `.k-stat__lbl` and the
+    // value in `.k-stat__val` (`components/ui/StatTile.jsx:58-69`), and
+    // TabStorage's three labels are "Account", "Recorded as used" and
+    // "Allowance" (`TabStorage.jsx:146-160`).
+    const tile = (label: string) =>
+      panel.locator('.k-stat').filter({ hasText: label }).locator('.k-stat__val');
+
+    // "Recorded as used", never "Used" — the figure is a running total that two
+    // upload paths keep and four do not, and the server says so in `used_note`.
+    // The tab is asserted to keep that wording because a tile labelled "Used"
+    // over a number known to be short is a confident wrong answer, and it is the
+    // sort of honesty that gets "tidied" away.
+    await expect(tile('Recorded as used')).toHaveText(String(overview.used_label), {
+      timeout: 30_000,
+    });
+    await expect(tile('Account')).toHaveText(
+      overview.own_account ? 'Your own Cloudflare' : "Aekam's storage",
+    );
+    await expect(tile('Allowance')).toHaveText(overview.limit_label || 'No limit set');
+    notes.push(
+      `overview: own_account=${overview.own_account}, recorded ${overview.used_label}` +
+        ` of ${overview.limit_label || 'no limit'}`,
+    );
+
+    // ── A2. THE BROWSER LISTS THE ROOT, AND AGREES WITH THE BUCKET ───────────
+    const root = await apiGet(page, '/api/v1/org/storage/browse?prefix=');
+    expect(
+      root.configured,
+      'GET /v1/org/storage/browse reports configured=false — this organisation has ' +
+        'no R2 credentials and no platform fallback, so nothing below can be ' +
+        'exercised. ENVIRONMENT blocker, not a defect in the screen.',
+    ).toBe(true);
+    await expect(panel.getByText('No storage is set up for this organisation')).toHaveCount(0);
+
+    // One `.sto__nm` per entry: folders render it as a `<button>`, files as a
+    // `<span>` (`TabStorage.jsx:240` and `:264`). Counting the class rather than
+    // `tbody tr` keeps this an assertion about what the component draws instead
+    // of about DataTable's internals.
+    const rows = panel.locator('.sto__nm');
+    const rootCount = root.folders.length + root.files.length;
+    if (rootCount === 0) {
+      // A legitimate state, not a failure — the bucket is empty. Say so loudly:
+      // a silent zero here would read as full coverage of a control that was
+      // never exercised.
+      await expect(panel.getByText('Nothing here')).toBeVisible({ timeout: 30_000 });
+      notes.push(
+        '⚠ PARTIAL — the bucket root is EMPTY, so folder navigation could not be ' +
+          'exercised. The empty state was asserted instead. This is a data ' +
+          'precondition, not a product fault.',
+      );
+    } else {
+      await expect(rows).toHaveCount(rootCount, { timeout: 30_000 });
+    }
+
+    // ── A3. WALK INTO A FOLDER, AND WALK BACK OUT ────────────────────────────
+    if (root.folders.length) {
+      const folder = root.folders[0];
+      // What the crumb will say, from `TabStorage.jsx:243-246`:
+      // `nameOf(folder) || folder.kind || 'Folder'`, where `nameOf` is
+      // `label ?? (is_id ? null : name)`. The raw `name` is never drawn for an
+      // id segment — that is this screen's whole reason for existing, because
+      // the live folder names are `personal/user_…`, `pahchan/{employee uuid}`
+      // and `projects/team_…`.
+      const crumbLabel: string = folder.label || folder.kind || 'Folder';
+      const crumbs = panel.locator('nav[aria-label="Storage folders"] .sto__crumb');
+      await expect(crumbs).toHaveCount(1);
+      await expect(crumbs.first()).toHaveText('All files');
+
+      const inner = await apiGet(
+        page,
+        `/api/v1/org/storage/browse?prefix=${encodeURIComponent(folder.prefix)}`,
+      );
+
+      await panel.locator('.sto__nm').filter({ hasText: crumbLabel }).first().click();
+
+      // THE OBSERVABLE CONSEQUENCE, and all three halves of it: the trail grew,
+      // the new crumb is the current one, and the LISTING followed. A crumb that
+      // moves over an unchanged table is the failure this asserts against.
+      await expect(crumbs).toHaveCount(2, { timeout: 30_000 });
+      await expect(crumbs.nth(1)).toHaveText(crumbLabel);
+      await expect(crumbs.nth(1)).toHaveAttribute('aria-current', 'page');
+      await expect(panel.locator('.sto__nm')).toHaveCount(
+        inner.folders.length + inner.files.length,
+        { timeout: 30_000 },
+      );
+
+      // And back. `setTrail(t => t.slice(0, i + 1))` (`TabStorage.jsx:202`) means
+      // the root crumb truncates the trail; the listing must return with it.
+      await crumbs.first().click();
+      await expect(crumbs).toHaveCount(1, { timeout: 30_000 });
+      await expect(panel.locator('.sto__nm')).toHaveCount(rootCount, { timeout: 30_000 });
+      notes.push(
+        `browse: root (${rootCount} entries) -> "${crumbLabel}" ` +
+          `(${inner.folders.length + inner.files.length} entries) -> root, ` +
+          'crumbs and listing agreed at every step',
+      );
+    } else {
+      notes.push(
+        '⚠ PARTIAL — the bucket root holds no FOLDERS, so the crumb trail could ' +
+          'not be walked. Only the root listing was asserted.',
+      );
+    }
+
+    // ── B. IDENTIFY — the only control here that asks R2 for an object ───────
+    //
+    // Typed into the real form and submitted with the real button. This is the
+    // nearest thing the tab has to the round trip §4 asks for: `resolve_key`
+    // does a `head_object` against the bucket the KEY selects
+    // (`storage_browser.py:600-616`), so `object_present` is the bucket's own
+    // answer rather than a row's opinion of it.
+    //
+    // The key it is given is the organisation's OWN logo key, when there is one.
+    // That is deliberate and it is not a shortcut: 02.13 puts that object in R2
+    // through the product's upload control, and this proves — from a different
+    // screen, through a different endpoint — that the object is really there.
+    // Where no logo has ever been uploaded there is nothing to point at, so a
+    // key that certainly does not exist is used instead and the OTHER answer is
+    // asserted. Both are real sentences the product must produce correctly; the
+    // one that must never be wrong is "nothing at this key".
+    const profile = await orgProfile(page);
+    const logoKey: string = profile.logo_key || '';
+    const probeKey = logoKey || `personal/e2e-no-such-object-${Date.now()}.bin`;
+    const expectPresent = Boolean(logoKey);
+
+    const keyBox = panel.getByLabel('File key');
+    await expect(keyBox).toBeVisible({ timeout: 30_000 });
+    await keyBox.click();
+    await keyBox.press('ControlOrMeta+a');
+    await keyBox.pressSequentially(probeKey);
+    await expect(keyBox).toHaveValue(probeKey);
+
+    // Enabled only once there is something to look up (`disabled={asking ||
+    // !paste.trim()}`, `TabStorage.jsx:326`) — so an enabled button is itself
+    // the evidence the keystrokes registered, which `fill()` would not give.
+    const identify = panel.getByRole('button', { name: /^Identify$/ });
+    await expect(identify).toBeEnabled();
+    const [resolved] = await Promise.all([
+      page.waitForResponse(
+        (r) => /\/org\/storage\/resolve$/.test(new URL(r.url()).pathname), { timeout: 30_000 },
+      ),
+      identify.click(),
+    ]);
+    expect(
+      resolved.status(),
+      `POST /v1/org/storage/resolve -> ${resolved.status()}: ${(await resolved.text()).slice(0, 300)}`,
+    ).toBeLessThan(400);
+
+    // `Sheet` gives the panel `role="dialog"` with `aria-label` taken from the
+    // title (`components/ui/Sheet.jsx:84`), and TabStorage's title is literally
+    // "What this file is" (`TabStorage.jsx:335`).
+    const sheet = page.getByRole('dialog', { name: 'What this file is' });
+    await expect(sheet).toBeVisible({ timeout: 20_000 });
+
+    if (expectPresent) {
+      // No table in `_KEY_COLUMNS` (`storage_browser.py:492-498`) holds
+      // `organisations.logo_key`, so the logo is correctly an object that no
+      // RECORD in this org names — `_summarise` (`:682`) says exactly that.
+      await expect(sheet.locator('.sto__sum')).toHaveText(
+        /An object is present at this key, but no record in this organisation names it/i,
+      );
+      // The bucket's answer, drawn as "Yes — <size>" (`TabStorage.jsx:348-350`).
+      // THIS is the assertion that the object reached R2: it is a `head_object`
+      // against the live bucket, not a row and not a return value.
+      await expect(sheet.locator('.sto__v').first()).toHaveText(/^Yes — /);
+    } else {
+      await expect(sheet.locator('.sto__sum')).toHaveText(
+        /Nothing at this key, and no record in this organisation names it/i,
+      );
+      await expect(sheet.locator('.sto__v').first()).toHaveText('No');
+      notes.push(
+        '⚠ PARTIAL — this organisation holds no logo_key, so identify was ' +
+          'exercised against a deliberately absent key. Run 02.13 first for the ' +
+          'present-object branch.',
+      );
+    }
+
+    // The parsed path is drawn as `.sto__path`, and `_display_path`
+    // (`storage_browser.py:278`) exists precisely because the grammar puts a
+    // member's user id and an employee's uuid INSIDE the key. 02.7 scans every
+    // tab in its resting state and can never reach this sheet, so the runtime
+    // half of the no-ids ratchet is extended to it here.
+    const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+    const sheetText = (await sheet.innerText()) || '';
+    expect(
+      sheetText.match(UUID_RE)?.[0],
+      `the "What this file is" sheet rendered a UUID: ${sheetText.slice(0, 400)}`,
+    ).toBeUndefined();
+    notes.push(`identify: key resolved, object_present=${expectPresent}, no UUID drawn`);
+
+    // Close it before part C. This is an assertion in its own right — a sheet
+    // that opens and will not close is a screen a customer is stuck on, and it
+    // sets `document.body.style.overflow = 'hidden'` while open
+    // (`components/ui/Sheet.jsx:69`), so a sheet that never finishes closing
+    // leaves the page unscrollable.
+    //
+    // ⚠ It is NOT closed to keep it out of part C's locators, which was this
+    // comment's first (wrong) reason: `Sheet` renders through `createPortal` to
+    // `document.body` (`Sheet.jsx:77`), so it has never been inside the tab
+    // panel and part C's counts were never affected by it. Recorded because
+    // "scope to the surface you opened" only works if you know where the
+    // surface actually is.
+    await sheet.getByRole('button', { name: 'Close' }).click();
+    await expect(sheet).toHaveCount(0, { timeout: 10_000 });
+
+    // ── C. UPLOAD, DOWNLOAD, DELETE — MEASURED, NOT ASSUMED ─────────────────
+    //
+    // Every locator below is a question about the rendered tab. `.sto__ask`
+    // ("What is this?") is deliberately NOT counted as any of the three: it
+    // opens the identify sheet, it moves no bytes, and counting it would let a
+    // support control stand in for a missing file operation.
+    const uploadControls =
+      (await panel.locator('input[type="file"]').count()) +
+      (await panel.getByRole('button', { name: /upload|add file|choose file|attach/i }).count());
+    const downloadControls =
+      (await panel.getByRole('button', { name: /download|open file|get a link|save a copy/i }).count()) +
+      (await panel.locator('a[download], a[href^="http"]').count());
+    const deleteControls = await panel
+      .getByRole('button', { name: /delete|remove|discard/i })
+      .count();
+
+    const missing: string[] = [];
+    if (!uploadControls) missing.push('UPLOAD — no file input and no upload button on the Storage tab');
+    if (!downloadControls) missing.push('DOWNLOAD — no download control and no link to an object');
+    if (!deleteControls) missing.push('DELETE — no delete control');
+
+    console.log('\n[02.12] ' + notes.join('\n[02.12] ') + '\n');
+
+    expect(
+      missing,
+      '\n  §10 lists this screen as "storage browse/upload/download/delete" and §4\n' +
+        '  budgets four uploads, "R2 round trip incl. delete". BROWSE and IDENTIFY\n' +
+        '  are present and were driven successfully (see the [02.12] log above).\n' +
+        '  These are not:\n' +
+        missing.map((m) => `     · ${m}`).join('\n') +
+        '\n\n' +
+        '  WHAT THE CODE SAYS, so this is not read as a selector problem:\n' +
+        '     · frontend/src/pages/org/TabStorage.jsx:40-45 — "WHAT IS DELIBERATELY\n' +
+        '       ABSENT … There is no delete and no upload", on the grounds that a\n' +
+        '       file is a pointer held in a column and deleting the object without\n' +
+        '       the row produces the exact failure this tab exists to diagnose.\n' +
+        '     · backend/routers/storage_browser.py mounts three routes and no more:\n' +
+        '       GET "" (:319), GET /browse (:390), POST /resolve (:501).\n' +
+        '     · backend/services/storage.py:832 has delete_file — the capability\n' +
+        '       exists; no route and no screen reaches it.\n\n' +
+        '  THIS IS NOT A JUDGEMENT, IT IS A MEASUREMENT. Whether §10 is owed three\n' +
+        '  controls or whether the screen is right and §10 is stale — "not built"\n' +
+        '  against "excluded by decision" — is the owner\'s call. A `test.skip`\n' +
+        '  here would make the question disappear, which is why there is not one.\n',
+    ).toEqual([]);
+  });
+
+  test('02.13 the company logo uploads to R2, downloads back byte-for-byte, and survives a reload', async ({
+    page,
+  }) => {
+    // ═════════════════════════════════════════════════════════════════════════
+    // THE ONE R2 ROUND TRIP A CUSTOMER CAN ACTUALLY DRIVE TODAY.
+    //
+    // 02.12 measures the Storage tab and finds no upload on it. The logo is the
+    // other half of §10's "Profile + logo" and §4's "Logo / storage uploads",
+    // and it is a genuine round trip: `LogoUpload` picks the file,
+    // `TabProfile.uploadLogo` posts it to `/api/upload` (`TabProfile.jsx:147`),
+    // the bytes go to Cloudflare R2, and a presigned URL comes back.
+    //
+    // ── THE THREE THINGS THIS ASSERTS, AND THE BUG BEHIND EACH ───────────────
+    //
+    // 1. THE BYTES ARRIVED. Downloaded from the presigned URL and compared to
+    //    the fixture with `Buffer.equals`. "200" is not evidence: this file's
+    //    own brief names an empty 200 as a known failure mode here, and
+    //    `verify_r2_credentials` carries a distinct verdict for exactly that
+    //    state — "Credentials are valid and can write to {bucket}, but the test
+    //    object did not read back" (`services/storage.py:516-521`).
+    //
+    // 2. `logo_key` WAS STORED, not just `logo_url`. This is the difference
+    //    between a letterhead that works and one that works until this evening.
+    //    `org_profile.py:180-186`: nothing had ever written `logo_key` since
+    //    migration 057 backfilled it, so an org stored only the presigned URL,
+    //    that URL expires in 32,400 seconds — nine hours, `storage.py:642` —
+    //    and by the evening `GET` and `pay.py:_logo_url` had nothing to re-sign
+    //    from. `_logo_key_from_url` (`:177`) recovers the key from the URL and
+    //    verifies it by RE-SIGNING and comparing paths, because a wrong key is
+    //    worse than none: `GET` prefers `logo_key`, so it would swap a URL that
+    //    works for nine hours for one that never works at all.
+    //
+    // 3. THE COLUMN HOLDS A URL, NOT THE IMAGE. `logo_url` carried no validator
+    //    at all while the three fields beside it each had one, so a PATCH could
+    //    put `data:image/png;base64,…` — the whole file — into
+    //    `staging.organisations` (`org_profile.py:124-131`). Files live in R2,
+    //    never in the database.
+    //
+    // ── IDEMPOTENCE (§6), STATED PLAINLY INCLUDING WHAT IT DOES NOT DO ───────
+    // A second run uploads the same fixture again, stores a new key, and ends
+    // with the same logo on screen: the ORG'S STATE CONVERGES and every
+    // assertion holds on both runs. What it does not do is clean up — each run
+    // leaves one ~449-byte object behind in R2, because `LogoUpload.jsx` offers
+    // NO control to remove a logo (the backend supports it: PATCH `logo_url:""`
+    // clears both halves, `org_profile.py:526-529`). Deleting it any other way
+    // would be a direct API write, which rule 1 bans. Recorded here rather than
+    // hidden, and carried into the report.
+    // ═════════════════════════════════════════════════════════════════════════
+    //
+    // The 11 MB buffer below plus a real upload plus two downloads is more wall
+    // clock than a form test. `test.slow()` rather than a bare number so it
+    // tracks the config's own timeout.
+    test.slow();
+
+    const wire = watchWire(page);
+    await signInAs(page, requireUnicode());
+    await openTab(page, 'profile');
+
+    // `LogoUpload` renders the input inside its `<label className="olg__z">`
+    // and hides it with `k-sr-only` (`LogoUpload.jsx:71-84`) so the label keeps
+    // the file input's own keyboard behaviour and accessible name. That is the
+    // correct construction and it is why the input is addressed directly:
+    // `setInputFiles` does not require visibility, and clicking the label would
+    // open a native picker Playwright cannot drive.
+    const input = page.locator('.olg__z input[type="file"]');
+    await expect(input).toHaveCount(1, { timeout: 30_000 });
+
+    // The picker offers exactly what the server accepts. A format advertised and
+    // then refused is a real bug this product has already had once: the accept
+    // list offered `image/svg+xml` while `uploads.py` answered 415, until SVG
+    // was allowed on 2026-08-08 (`uploads.py:32-37`).
+    await expect(input).toHaveAttribute('accept', /image\/svg\+xml/);
+
+    // ── 1. THE SIZE GUARD, FIRST, BECAUSE IT WRITES NOTHING ──────────────────
+    //
+    // 10 MB is the product's own constant twice over: `MAX_MB` in
+    // `frontend/src/lib/uploadLimits.js:30`, which is `MAX_BYTES` in
+    // `backend/routers/uploads.py:25`. The number is not repeated here — the
+    // assertion reads it out of the message the product composes, so a change to
+    // the constant that forgets the message fails this test.
+    //
+    // The buffer is built in memory rather than committed: an 11 MB file in the
+    // repository to prove a 10 MB limit is a poor trade, and `setInputFiles`
+    // takes a buffer with a name and a MIME type just as happily as a path.
+    await input.setInputFiles({
+      name: 'oversize-logo.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(11 * 1024 * 1024, 0x7a),
+    });
+    // `.tst__t` is the TITLE, `.tst__s` is the MESSAGE — 02.2b was a test bug for
+    // reading that pair the wrong way round, and `TabProfile.jsx:140` puts the
+    // verdict in the title and the arithmetic in the message.
+    await expect(page.locator('.tst__t').getByText('That logo is too large')).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.locator('.tst__s').getByText('the limit is 10 MB')).toBeVisible();
+
+    // THE CONSEQUENCE THAT MATTERS: nothing was sent. The point of a client-side
+    // check is that the user does not pay for the whole transfer to be told no —
+    // `uploadLimits.js` says so in those words — so a toast beside a request
+    // that went anyway would be the guard failing while looking like it worked.
+    expect(
+      wire.filter((w) => /\/api\/upload/.test(w.line)).map((w) => w.line),
+      'an oversized logo was still sent to the server — the client-side cap did ' +
+        'not stop it, so the user pays the whole transfer to be refused',
+    ).toEqual([]);
+
+    // ── 2. THE REAL UPLOAD ───────────────────────────────────────────────────
+    const fixture = readFileSync(logoFixturePath());
+    expect(fixture.length, 'the logo fixture is missing or empty').toBeGreaterThan(0);
+
+    const [uploaded] = await Promise.all([
+      page.waitForResponse(
+        (r) => /\/api\/upload$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+        { timeout: 60_000 },
+      ),
+      input.setInputFiles(logoFixturePath()),
+    ]);
+    expect(
+      uploaded.status(),
+      `POST /api/upload -> ${uploaded.status()}: ${(await uploaded.text()).slice(0, 300)}` +
+        dump(wire),
+    ).toBeLessThan(400);
+
+    const up = await uploaded.json();
+    const uploadedKey: string = up.key || '';
+    const uploadedUrl: string = up.url || '';
+
+    // `upload_file` returns `{url, name, key, size, bucket}` (`storage.py:645`).
+    // The KEY is the durable half and the client stores it beside the url
+    // (`TabProfile.jsx:152`); an upload that answered 200 with no key is the
+    // state note 2 above describes, and it must not pass silently.
+    expect(uploadedKey, `POST /api/upload returned no key: ${JSON.stringify(up).slice(0, 300)}`)
+      .toBeTruthy();
+    expect(up.size, 'the server counted a different number of bytes than were sent')
+      .toBe(fixture.length);
+
+    // The key is in the ONE grammar (`services/storage_keys.py`): module / what
+    // it belongs to / who did it / year / month / a time-sortable id and the
+    // original filename. `personal` is the one module where the user segment
+    // appears once, because there the user IS what the file belongs to. The
+    // original filename surviving is the whole point of the `--` half — before
+    // the grammar the key was a bare uuid, so "I uploaded Invoice-Mar.pdf" could
+    // not be answered from storage at all.
+    //
+    // ⚠ IF THIS FAILS, CHECK THE ESCAPE HATCH BEFORE THE CODE.
+    // `KARTAVYA_LEGACY_STORAGE_KEYS=1` (`services/storage_keys.py:213`) mints
+    // the OLD shape — `personal/{user_id}/{uuid}{ext}`, with no date and no
+    // original filename — and would fail this assertion for a reason that is a
+    // deployment setting rather than a defect. It exists so the grammar can be
+    // turned off in ninety seconds; it is not meant to be left on.
+    expect(uploadedKey, `the key is not in the storage grammar: ${uploadedKey}`).toMatch(
+      /(^|\/)personal\/[^/]+\/\d{4}\/\d{2}\/[^/]+--logo-unicode-e2e\.svg$/,
+    );
+
+    // ⚠ A FACT WORTH RECORDING RATHER THAN ASSERTING, and it is logged with the
+    // user segment cut out because a key carries an id and a log is read by
+    // people. `POST /api/upload` only resolves an org when a `team_id` is passed
+    // (`uploads.py:213-226`), and the logo upload passes none — so `org_id` is
+    // None, `_resolve_r2(None)` falls to the platform bucket, and the key is
+    // prefixed `shared/` (`storage.py:143-147`). The read path agrees, because
+    // `_client_for_key` routes `shared/` back to the platform bucket
+    // (`storage.py:672`), which is why the round trip below works. Two knock-on
+    // effects belong in the report, not in an assertion: the org's own Storage
+    // tab is rooted at its own bucket and will never list this object, and
+    // `update_org_storage` is skipped, so the logo never counts against the
+    // allowance.
+    console.log(
+      `\n[02.13] key prefix: ${uploadedKey.split('/personal/')[0]}/personal/…` +
+        `  (bucket: ${up.bucket})\n`,
+    );
+
+    // The screen says what happened, and says the truth: attached, NOT yet
+    // applied. `TabProfile.jsx:153` — the object is in R2, the column is not
+    // written until Save, and a toast claiming "saved" here would be a lie the
+    // next reload exposes.
+    await expect(page.locator('.tst__t').getByText('Logo attached')).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // The preview is `<img alt="Company logo">` (`LogoUpload.jsx:86`), and it
+    // replaces the "Drop a logo here" prompt.
+    const preview = page.locator('.olg__z img[alt="Company logo"]');
+    await expect(preview).toBeVisible({ timeout: 20_000 });
+    await expect(preview).toHaveAttribute('src', uploadedUrl);
+
+    // ── 3. THE DOWNLOAD — the assertion this test exists for ─────────────────
+    //
+    // Fetched from the presigned URL, unauthenticated as far as our API is
+    // concerned: the signature is in the query string, so this is R2 answering,
+    // not Kartavya. A GET, which the bypass ratchet allows by name because
+    // "asserting the row appeared IS the required evidence".
+    const first = await page.request.get(uploadedUrl);
+    expect(first.status(), `GET the presigned logo URL -> ${first.status()}`).toBe(200);
+    const firstBytes = await first.body();
+    expect(
+      firstBytes.length,
+      'the presigned URL answered 200 with an EMPTY body — the object was not ' +
+        'written, or was written to a bucket the signature does not address',
+    ).toBeGreaterThan(0);
+    expect(
+      firstBytes.equals(fixture),
+      `the bytes that came back are not the bytes that went up ` +
+        `(${firstBytes.length} received, ${fixture.length} sent)`,
+    ).toBe(true);
+
+    // ── 4. SAVE, AND THE DURABLE HALF ────────────────────────────────────────
+    const saved = await saveAndWait(page, /Save company profile/, /\/org\/profile/);
+    expect(saved.status(), `saving the logo answered ${saved.status()}.${dump(wire)}`)
+      .toBeLessThan(400);
+    await expect(page.locator('.tst__t').getByText(/Company profile saved/i).last())
+      .toBeVisible({ timeout: 30_000 });
+
+    // `logo_key` is NOT declared on `ProfileUpdate` (`org_profile.py:218-229`)
+    // — deliberately, so an org admin cannot aim the profile at an arbitrary
+    // object and have the API sign it for them. The server derives it from the
+    // url instead. So this reads the server's own copy: if the derivation
+    // failed, `logo_key` is empty, the column holds a URL that dies in nine
+    // hours, and every invoice printed tomorrow has a broken letterhead.
+    const stored = await orgProfile(page);
+    expect(
+      stored.logo_key,
+      'the profile saved a logo_url but NO logo_key — `_logo_key_from_url` did ' +
+        'not recover the key, so the letterhead will break when the signature ' +
+        'expires nine hours from now (services/storage.py:642)',
+    ).toBe(uploadedKey);
+    expect(
+      String(stored.logo_url || '').startsWith('data:'),
+      'the logo was stored as a data: URI — the image is in the database column, ' +
+        'not in R2 (files live in R2, never in the database)',
+    ).toBe(false);
+
+    // ── 5. THE RELOAD — a FRESH signature, over the SAME object ──────────────
+    //
+    // `GET /v1/org/profile` re-signs from `logo_key` and overwrites `logo_url`
+    // in the response (`org_profile.py:349-351`). That is the whole mechanism
+    // note 2 describes, so it is asserted end to end: the reloaded `src` must
+    // address the key just stored, and must still download to the same bytes.
+    //
+    // The URL is NOT compared to the upload's URL for equality or inequality.
+    // A presigned URL's `X-Amz-Date` has one-second granularity, so two
+    // signatures made in the same second are identical and an inequality
+    // assertion would be flaky for a reason that has nothing to do with the
+    // product. The key and the bytes are the facts; the signature is not.
+    await page.reload();
+    await expect(preview).toBeVisible({ timeout: 30_000 });
+    const reloadedUrl = (await preview.getAttribute('src')) || '';
+    expect(reloadedUrl.startsWith('data:'), 'the logo rendered as a data: URI').toBe(false);
+    expect(
+      decodeURIComponent(new URL(reloadedUrl).pathname).endsWith(uploadedKey),
+      `after a reload the logo points at a different object.\n` +
+        `     stored key : ${uploadedKey}\n` +
+        `     signed path: ${decodeURIComponent(new URL(reloadedUrl).pathname)}`,
+    ).toBe(true);
+
+    const second = await page.request.get(reloadedUrl);
+    expect(second.status(), `GET the RE-SIGNED logo URL -> ${second.status()}`).toBe(200);
+    const secondBytes = await second.body();
+    expect(
+      secondBytes.equals(fixture),
+      'the re-signed URL did not return the logo. The object is in one bucket ' +
+        'and the signature addresses another — which is exactly what ' +
+        '`_client_for_key` (services/storage.py:670) exists to prevent, and what ' +
+        'made every object in the platform bucket write-only before it did.',
+    ).toBe(true);
+
+    console.log(
+      `\n[02.13] round trip OK: ${fixture.length} bytes up, ${firstBytes.length} back ` +
+        `from the upload URL, ${secondBytes.length} back from the re-signed URL; ` +
+        `logo_key stored.\n` +
+        `[02.13] ⚠ NOT CLEANED UP — this run left one object in R2. LogoUpload.jsx ` +
+        `offers no control to remove a logo, and removing it any other way would ` +
+        `be a direct API write (rule 1).\n`,
+    );
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * MODULE GRANTS AND THE ACCESS MATRIX — §10's last two members screens, and
+   * the two that COULD NOT HAVE EXISTED BEFORE TODAY.
+   *
+   * ── Why not before ────────────────────────────────────────────────────────
+   * Until 2026-08-28 Unicode Group held ZERO `module_subscriptions` rows —
+   * `dayone-module-403.spec.ts` is the capture of that state, and 02.3's own
+   * rewrite note records it. A grant NAMES a module, and `_validate_grants`
+   * REJECTS a grant naming a module the org does not subscribe to (it does not
+   * drop the module and keep the rest), so on a zero-subscription org there was
+   * nothing a grant could legally say. Suite 19 provisioned twelve from the
+   * platform console today, so these two tests became writable this afternoon
+   * and not before.
+   *
+   * The twelve, asserted below through `GET /v1/subscription/current` rather
+   * than trusted from this comment: graha, vikray, prachar, sahayak, dristi,
+   * sanvaad, esign, pahchan, ganit, manav, vetana, kray. **`varta` is EXCLUDED
+   * BY DECISION (§13), not blocked** — it must stay off, and both tests say so
+   * out loud so a future reader finding that column dark does not file it as a
+   * provisioning miss.
+   *
+   * ── THE ONE FACT THAT DECIDES WHO THESE TESTS MAY USE ─────────────────────
+   * `middleware/subscription.py` gate 2 SHORT-CIRCUITS FOR BOTH ORG ROLES:
+   *
+   *     :636   any(r in ORG_MANAGEMENT_ROLES for r in org_roles)   # owner|admin
+   *     :642   if not org_role:
+   *     :643       # org_member needs explicit grant.
+   *     :663       "You don't have access to the {module_code} module. "
+   *     :664       "Ask your org admin to grant it."          (stage="no_grant")
+   *
+   * `ORG_MANAGEMENT_ROLES` is `("org_owner", "org_admin")` —
+   * `middleware/role_tiers.py:108` — and `auth_router._module_grants` mirrors
+   * the same gate, returning `None` ("no opinion") for owner and admin, which is
+   * why `navConfig.js:296` leaves every module in their sidebar.
+   *
+   * So **a grants test driven against an org_admin proves nothing**: the module
+   * is reachable with the grant, without the grant, and with the grant row
+   * deleted. 02.14 therefore drives an `org_member`, asserts through the
+   * member's OWN `/api/auth/me` that they really are one at the moment of the
+   * probe, and steers the role back if a previous run left it drifted.
+   *
+   * ── The member these two tests own ────────────────────────────────────────
+   * `SLOTS` above is 02.8's roster, and 02.10 deliberately toggles `+uops`'s
+   * role back and forth; a grants test that also drove `+uops` would be two
+   * tests steering one row. So these two seat their OWN slot through the SAME
+   * mechanism — `addOrInvite` → `Copy invite link` → `acceptInvite` in a clean
+   * browser — rather than inventing a parallel one. Nothing here is created by
+   * SQL or by an API write; `page.request.get` is verification, which is what
+   * `frontend/scripts/check-e2e-no-bypass.mjs` permits in those words.
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * The slot 02.14 and 02.15 own. Same address scheme as `SLOTS` (`slotEmail`),
+   * same password scheme as 02.8's `acceptInvite` call — `Kt-<tag>-93-Aug!` —
+   * because 02.14 has to sign in AS this person, and the only run that can set a
+   * password is the run that accepts the invitation.
+   *
+   * ⚠ THE STANDING HAZARD, recorded rather than papered over: these are the
+   * owner's real gmail plus-tags and the invitation genuinely lands in a real
+   * inbox. On 2026-08-28 the owner opened one on their phone and accepted it
+   * themselves (02.8's note: `audit_log` 5707, iPhone Safari). If that happens
+   * to THIS address the password below is not the account's password and the
+   * member login fails. That is an ENVIRONMENT condition, not a product or test
+   * defect, and the throw in 02.14 says so in those words rather than letting a
+   * 45-second `waitForURL` timeout read like a broken login form.
+   */
+  const GRANT_SLOT = { tag: 'grn', name: 'Anaya Iyer', role: 'org_member' as const };
+  const GRANT_SLOT_PASSWORD = `Kt-${GRANT_SLOT.tag}-93-Aug!`;
+
+  /**
+   * The module 02.14 grants and revokes — PINNED, not picked from whatever the
+   * subscription happens to hold, because the reachability probe has to be an
+   * endpoint gated by THIS module and nothing else.
+   *
+   * · `graha` is active on Unicode — asserted, not assumed.
+   * · It is NOT in `catalogue.js`'s `sensitive` set (vetana, ganit, manav), so
+   *   `sensitiveGrantRaises` finds no raise and `saveGrants` commits without the
+   *   ConfirmDialog (`TabMembers.jsx:414-439`). A sensitive module at approver
+   *   would additionally hit `role_tiers.refuse_grant`'s owner-only rule, and
+   *   this lane is an org_admin.
+   * · `GET /api/v1/graha/pipelines` hangs on the BARE `_gate`
+   *   (`routers/graha.py:1586-1591`; `_gate = require_module("graha")` at :46).
+   *   `/graha/clients` is NOT usable here — it hangs on `_crm_entity_gate`,
+   *   which is `require_any_module("graha", "ganit", "vikray")` (:69), so a
+   *   member holding Ganit would pass it without holding Graha at all. That
+   *   distinction is the difference between a probe and a coincidence.
+   * · `viewer` is what the picker sends: `defaultLevelFor('graha')` falls to
+   *   `DEFAULT_GRANT_LEVEL` (`levels.js`). A GET is not a write, so
+   *   `level_satisfies(viewer, EDITOR, …)` is never consulted on this probe.
+   * · The sidebar row is `en: 'CRM'` (`navConfig.js:75`) — the ENGLISH label,
+   *   not the module's own name. It is what the customer actually reads.
+   */
+  const GRANT_MODULE = {
+    code: 'graha',
+    label: 'Graha',
+    levelLabel: 'Viewer',
+    navEn: 'CRM',
+    probe: '/api/v1/graha/pipelines',
+  };
+
+  /**
+   * Level code → the word the product paints. Transcribed from
+   * `frontend/src/pages/org/levels.js` (`LEVEL_LABELS`) rather than imported:
+   * `catalogue.js` pulls in `lib/moduleColors`, and a spec that imports the
+   * app's module graph starts caring about the bundler. Four literals a failure
+   * message will name is the cheaper coupling.
+   */
+  const LEVEL_LABEL: Record<string, string> = {
+    viewer: 'Viewer', editor: 'Editor', approver: 'Approver', admin: 'Admin',
+  };
+
+  /**
+   * The catalogue, in `catalogue.js`'s own order — THIRTEEN, not twelve.
+   * `AccessMatrix` draws a column for every entry whether or not the org
+   * subscribes to it ("the column still paints, because a grant that outlived
+   * its subscription is exactly the row worth finding"), so thirteen columns
+   * with exactly one marked `· off` is the shape 02.15 asserts.
+   *
+   * Codes and labels are kept as two parallel lists rather than one object so
+   * the column-order assertion can compare labels directly against what the
+   * header row rendered. `kartavya` is deliberately in NEITHER: core PM is
+   * reached by org membership and a grant naming it is a 400 (`catalogue.js:20`).
+   */
+  const CATALOGUE_LABELS = [
+    'Graha', 'Vikray', 'Ganit', 'Kray', 'Vetana', 'Manav', 'Prachar',
+    'Dristi', 'Sahayak', 'Sanvaad', 'E-Sign', 'Varta', 'Pahchan',
+  ];
+  const CATALOGUE_CODES = [
+    'graha', 'vikray', 'ganit', 'kray', 'vetana', 'manav', 'prachar',
+    'dristi', 'sahayak', 'sanvaad', 'esign', 'varta', 'pahchan',
+  ];
+
+  /** The org's ACTIVE module codes, from the server. The same read 02.3 makes. */
+  async function activeModuleCodes(page: Page): Promise<string[]> {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}/api/v1/subscription/current`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    expect(res.ok(), `GET /subscription/current -> ${res.status()}`).toBeTruthy();
+    const body = await res.json();
+    return (body?.active_modules ?? body?.data?.active_modules ?? []) as string[];
+  }
+
+  /**
+   * This session's Tier-2 role IN THIS LANE'S ORG.
+   *
+   * Read, never assumed. `_lanes.ts` records the Unicode credential as an
+   * `org_admin`, and `MemberTable.jsx:117` makes the grants control a function
+   * of exactly that — `canEditGrants = !owner && (isOwner || !admin)` — so
+   * whether "Edit module grants" is offered on an ADMIN row depends on who is
+   * looking. 02.15 asserts the rule the caller is actually subject to rather
+   * than the one a lane file says they should be.
+   *
+   * Matched on `org_id`, which `/api/auth/me` returns as text (`auth_router.py`
+   * selects `ur.org_id::text`), against `LANE.orgId` — the id `assertOrg`
+   * already proved this session resolves to.
+   */
+  async function callerOrgRole(page: Page): Promise<string | null> {
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const res = await page.request.get(`${API_BASE}/api/auth/me`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    expect(res.ok(), `GET /api/auth/me -> ${res.status()}`).toBeTruthy();
+    const body = await res.json();
+    const rows = Array.isArray(body?.org_roles) ? body.org_roles : [];
+    return rows.find((r: any) => String(r.org_id) === LANE.orgId)?.role_code ?? null;
+  }
+
+  /** One member row as the SERVER holds it, by address. */
+  async function memberByEmail(page: Page, email: string) {
+    return (await members(page)).find((m) => lower(m.email) === email);
+  }
+
+  /**
+   * The grants on a member row, as `{code, level}`.
+   *
+   * `GET /v1/org/members` returns BOTH shapes — `modules` (bare codes, kept for
+   * clients that predate levels) and `module_grants` (`[{code, role}]`) — from
+   * the same rows (`org_members.py:225-234`). `module_grants` is read first,
+   * because a grant without its level is half the fact; the bare list is the
+   * fallback, and a bare code reads as `viewer` for the reason `GrantChips.jsx`
+   * gives: `org_member_modules.role` is `NOT NULL DEFAULT 'viewer'`.
+   */
+  function grantsOf(m: any): { code: string; level: string }[] {
+    const raw = (m?.module_grants ?? m?.modules ?? []) as any[];
+    return raw.map((g) => (typeof g === 'string'
+      ? { code: g, level: 'viewer' }
+      : { code: g.code || g.module_code, level: g.role || g.level || 'viewer' }));
+  }
+
+  /**
+   * Seat this test's own member, idempotently — 02.8's mechanism, not a second
+   * one. A slot already seated is verified and left alone; a stale invitation is
+   * revoked and re-issued, because the product shows an invite link ONCE and an
+   * admin who lost it revokes and re-invites.
+   *
+   * The password is only ever set on the run that ACCEPTS. Later runs meet an
+   * account that already exists, so `addOrInvite` legitimately takes the "added
+   * straight away" path — which is why the outcome is NOT asserted here. 02.11
+   * records the same reasoning: both paths are correct, and a test that fails on
+   * correct behaviour is a defect in the test (93 §0).
+   */
+  async function seatOwnMember(page: Page, browser: any) {
+    const email = slotEmail(GRANT_SLOT.tag);
+    let seated = await memberByEmail(page, email);
+    if (seated) return seated;
+
+    const pending = (await pendingInvites(page)).find((i) => lower(i.email) === email);
+    if (pending) {
+      await openTab(page, 'members');
+      await page
+        .locator('.of__f--row')
+        .filter({ hasText: email })
+        .getByRole('button', { name: /Revoke/ })
+        .click();
+      await expect(page.locator('.tst__t').getByText(/revoked/i)).toBeVisible({ timeout: 20_000 });
+    }
+
+    const { outcome } = await addOrInvite(page, email, GRANT_SLOT.role);
+    if (outcome === 'invited') {
+      const link = await copyInviteLink(page);
+      await acceptInvite(browser, link, GRANT_SLOT.name, GRANT_SLOT_PASSWORD);
+    }
+    seated = await memberByEmail(page, email);
+    expect(seated, `${email} did not become a member of ${LANE.org}`).toBeTruthy();
+    return seated;
+  }
+
+  /**
+   * The two halves of the Members tab. `TabMembers.jsx:454` renders them as a
+   * `role="group"` labelled "Member view" with `aria-pressed` on each button —
+   * so the switch is asserted through the same contract a keyboard user gets,
+   * and the lookup is scoped to the group because "List" is a common word.
+   */
+  async function memberView(page: Page, which: 'List' | 'Access matrix') {
+    const seg = page.getByRole('group', { name: 'Member view' });
+    await expect(
+      seg,
+      'the List / Access matrix switch is the only route to the matrix from ' +
+      'Organisation ▸ Members; without it the grid is unreachable here',
+    ).toBeVisible({ timeout: 30_000 });
+    const btn = seg.getByRole('button', { name: which, exact: true });
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+  }
+
+  /**
+   * Steer a member's Tier-2 role to `want` through the real row menu, and do
+   * nothing if it is already there.
+   *
+   * 02.8's converge pattern, for 02.8's reason: a run that fails AFTER its PUT
+   * lands leaves the row drifted, and the next run has to start from wherever it
+   * was left rather than from one assumed state. The menu offers only the
+   * transition that applies — `admin ? 'Make org member' : 'Make org admin'`,
+   * `MemberTable.jsx:123` — so reading first is also the only way this lookup
+   * can be written once instead of twice.
+   */
+  async function steerOrgRole(page: Page, email: string, want: 'org_admin' | 'org_member') {
+    const m = await memberByEmail(page, email);
+    expect(m, `${email} is not in GET /org/members`).toBeTruthy();
+    if (m.role_code === want) return m;
+
+    await openTab(page, 'members');
+    await memberView(page, 'List');
+    const row = page.locator('.omt tbody tr').filter({ hasText: email });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.getByRole('button', { name: /Actions for/ }).click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible({ timeout: 10_000 });
+    const [res] = await Promise.all([
+      page.waitForResponse(
+        (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
+        { timeout: 30_000 },
+      ),
+      menu
+        .getByRole('menuitem', {
+          name: want === 'org_admin' ? /Make org admin/ : /Make org member/,
+        })
+        .click(),
+    ]);
+    expect(res.status(), `PUT role -> ${res.status()}`).toBeLessThan(400);
+
+    const after = await memberByEmail(page, email);
+    expect(after?.role_code, `${email} would not move to ${want}`).toBe(want);
+    return after;
+  }
+
+  /**
+   * Open a member row's Actions menu and click one item, surviving the list
+   * refetch that lands underneath it.
+   *
+   * ⚠ THIS IS A TEST BUG'S FIX, AND IT IS WRITTEN DOWN SO IT IS NOT LATER READ
+   * AS A PRODUCT ONE. 02.14 failed in the wave1 run of 2026-08-28 with:
+   *
+   *     locator.click: waiting for menuitem "Edit module grants"
+   *       - element is not stable ... element was detached from the DOM
+   *
+   * The members table refetches after `openTab`/`memberView`, and the refetch
+   * replaces `.omt tbody` while the menu opened over it is still animating. The
+   * item the click had already resolved is then a node in a discarded tree.
+   * Nothing about the product is wrong: a human clicking a settled screen never
+   * meets it, which is exactly why the test met it and the customer does not.
+   *
+   * TWO MEASURES, and the order matters:
+   *   1. SETTLE FIRST. Any `/org/members` GET already in flight is awaited, so
+   *      the common case never races at all. This is the real fix.
+   *   2. RE-RESOLVE, at most three times, and ONLY on the detach/instability
+   *      signature. A blind retry would paper over a genuinely missing or
+   *      genuinely disabled control, which is the one thing this suite exists
+   *      to catch — so any other failure is rethrown on the first attempt, and
+   *      the last detach failure is rethrown too rather than swallowed.
+   */
+  async function rowMenuItem(
+    page: Page,
+    row: Locator,
+    name: RegExp,
+    why: string,
+  ): Promise<void> {
+    // (1) Let the list settle. `waitForResponse` with a short timeout that is
+    //     allowed to lapse: "no members request was in flight" is a perfectly
+    //     good outcome and must not fail the test.
+    await page
+      .waitForResponse(
+        (r) => r.url().includes('/org/members') && r.request().method() === 'GET',
+        { timeout: 2_000 },
+      )
+      .catch(() => {});
+
+    let last: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await row.getByRole('button', { name: /Actions for/ }).click();
+        const menu = page.getByRole('menu');
+        await expect(menu).toBeVisible({ timeout: 10_000 });
+        const item = menu.getByRole('menuitem', { name });
+        await expect(item, why).toBeVisible({ timeout: 10_000 });
+        await item.click({ timeout: 10_000 });
+        return;
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        const isRace = /detached from the DOM|not stable|element is not attached/i.test(msg);
+        if (!isRace || attempt === 3) throw e;
+        last = e;
+        console.log(`
+[rowMenuItem] the list moved under the menu — retry ${attempt}
+`);
+        // Close whatever survived, then let the tree settle before re-resolving.
+        await page.keyboard.press('Escape').catch(() => {});
+        await expect(page.getByRole('menu')).toHaveCount(0, { timeout: 5_000 }).catch(() => {});
+      }
+    }
+    throw last;
+  }
+
+  /**
+   * Open the grant sheet on a member's row and return the dialog.
+   *
+   * ⚠ The menu row is "Edit module grants" (`MemberTable.jsx:120`) and it is
+   * CONDITIONAL: `canEditGrants = !owner && (isOwner || !admin)` (:117). An
+   * owner's grants are editable by nobody in the org — the owner reaches
+   * everything by role, and an admin editing them would be privilege escalation
+   * by way of a settings screen — and an admin's grants belong to the OWNER. So
+   * this helper is only ever called on a MEMBER row; 02.15 asserts the absence
+   * on an admin row rather than this helper asserting the presence everywhere.
+   *
+   * Scoped to `getByRole('menu')`, suite rule 6: an unscoped name match resolves
+   * in DOM order and will happily hit the sidebar instead of the row's action.
+   */
+  async function openGrantSheet(page: Page, email: string, display: string) {
+    await openTab(page, 'members');
+    await memberView(page, 'List');
+    const row = page.locator('.omt tbody tr').filter({ hasText: email });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await rowMenuItem(
+      page,
+      row,
+      /Edit module grants/,
+      'there is no other route to a member’s module grants — if this row is ' +
+      'gone the screen is unreachable, which is a product defect and not a ' +
+      'selector problem',
+    );
+
+    // `Sheet.jsx:84` — `role="dialog"`, `aria-modal`, and the title rendered in
+    // `.sheet__title` as well as carried on `aria-label`.
+    const sheet = page.getByRole('dialog');
+    await expect(sheet).toBeVisible({ timeout: 15_000 });
+    // Opened on the RIGHT PERSON. A sheet that opened one row up would save
+    // perfectly well, against somebody else, and nothing downstream would tell.
+    await expect(sheet.locator('.sheet__title')).toContainText(display, { timeout: 10_000 });
+    return sheet;
+  }
+
+  /**
+   * Turn one module on or off for a member, through the real control, and wait
+   * for the server's answer before going on.
+   *
+   * ⚠ The toggle is `role="checkbox"`, NOT `<input type="checkbox">`.
+   * `ui/Checkbox.jsx:14-22` renders `<button role="checkbox" aria-checked>` on
+   * purpose — "the DOM checkbox's `indeterminate` is a JS-only property with no
+   * attribute" — so `toBeChecked()` does not apply and `aria-checked` is the
+   * state to read. The accessible name is `${mod.label} access`, from the
+   * `label` prop `GrantRow` passes in `ModuleGrantEditor.jsx`.
+   *
+   * The save is `PUT /v1/org/members/{id}/modules` with REPLACE semantics, and
+   * `commitGrants` sends the member's WHOLE draft every time — so toggling one
+   * module preserves the rest. That is not incidental: the endpoint's INSERT
+   * once omitted `role`, so re-saving to change one checkbox silently demoted
+   * every other grant to viewer (`org_members.py:657-661`).
+   */
+  async function setModuleGrant(
+    page: Page, wire: Wire, email: string, display: string, label: string, on: boolean,
+  ) {
+    const sheet = await openGrantSheet(page, email, display);
+    const box = sheet.getByRole('checkbox', { name: `${label} access` });
+    await expect(
+      box,
+      `the grant editor offers no row for ${label}. For an EXISTING member the ` +
+      'sheet renders the WHOLE catalogue regardless of the subscription — ' +
+      '`TabMembers.jsx` passes `codes={null}` deliberately, so that a grant which ' +
+      'outlived its subscription can be found and turned off — so a missing row ' +
+      'here is a missing control, not a missing entitlement.',
+    ).toBeVisible({ timeout: 15_000 });
+
+    if ((await box.getAttribute('aria-checked')) !== String(on)) await box.click();
+    await expect(box).toHaveAttribute('aria-checked', String(on));
+
+    // The status is the server's answer; the toast is the client's opinion of
+    // it. Both are asserted, and the failure message says which one disagreed.
+    const res = await saveAndWait(page, /Save access/, /\/org\/members\/.*\/modules/);
+    expect(
+      res.status(),
+      `${on ? 'granting' : 'revoking'} ${label} for ${email} answered ` +
+      `${res.status()}.${dump(wire)}`,
+    ).toBeLessThan(400);
+    await expect(page.locator('.tst__t').getByText(/Module access updated/i).last())
+      .toBeVisible({ timeout: 20_000 });
+    // `commitGrants` closes the sheet and refetches the list on success. A sheet
+    // still open is a save that did not complete, whatever the status said.
+    await expect(sheet).toHaveCount(0, { timeout: 15_000 });
+  }
+
+  /**
+   * The module-rail row for one module, in the SIGNED-IN MEMBER'S browser.
+   *
+   * ⚠ COUNTED, never `toBeVisible()`, and the reason is in `Sidebar.jsx`'s own
+   * words at :202-217: "A COLLAPSED SECTION STILL HOLDS ITS ROWS… the row is not
+   * `display: none`". Every section except `workspace` starts collapsed
+   * (`CORE_SECTION`, :26) and Graha is not in `workspace`, so on a first visit
+   * the row is in the DOM and clipped. Visibility would answer the wrong
+   * question: this asks whether the nav OFFERS the module at all, which is what
+   * `navConfig.js:283-296` decides from `module_grants[]`.
+   *
+   * Two locators, because the label only renders when the rail is WIDE
+   * (`{!rail && <span className="side__label">…`, :338-350). In rail mode the
+   * button carries `title={en}` instead, and the rail is a stored user
+   * preference this test does not control.
+   */
+  const moduleNavRow = (p: Page, en: string) =>
+    p.locator('aside.side .side__item').filter({ hasText: en })
+      .or(p.locator(`aside.side .side__item[title="${en}"]`));
+
+  /**
+   * What this member can actually reach, asked of the server with the MEMBER'S
+   * own bearer — three answers in one round trip, so a failure can tell them
+   * apart:
+   *
+   *   role    their Tier-2 role. If this is not `org_member` the probe proves
+   *           nothing: gate 2 short-circuits for owner and admin.
+   *   grants  `/api/auth/me`'s `module_grants[]`, which `_module_grants`
+   *           computes by mirroring `require_module` "gate for gate", and which
+   *           is the exact feed the sidebar reads.
+   *   probe   a real module-gated GET. The nav is a promise; this is the door.
+   */
+  async function memberReach(p: Page) {
+    const token = await p.evaluate(() => localStorage.getItem('auth_token'));
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const meRes = await p.request.get(`${API_BASE}/api/auth/me`, { headers });
+    expect(meRes.ok(), `GET /api/auth/me as the member -> ${meRes.status()}`).toBeTruthy();
+    const me = await meRes.json();
+    const probe = await p.request.get(`${API_BASE}${GRANT_MODULE.probe}`, { headers });
+    return {
+      role: (Array.isArray(me?.org_roles) ? me.org_roles : [])
+        .find((r: any) => String(r.org_id) === LANE.orgId)?.role_code ?? null,
+      // `Array.isArray`, not `|| []`. ABSENT means NO OPINION (an owner or an
+      // admin, whose reach is the subscription); an EMPTY ARRAY means "nothing".
+      // navConfig.js:283-296 turns on exactly that difference and so does this.
+      grants: Array.isArray(me?.module_grants) ? (me.module_grants as string[]) : null,
+      status: probe.status(),
+      body: (await probe.text()).slice(0, 300),
+    };
+  }
+
+  test('02.14 members — a module grant is granted and revoked, and it changes what that member can reach', async ({
+    page,
+    browser,
+  }) => {
+    // Two browsers, four grant saves, a form login and three reloads.
+    test.setTimeout(8 * 60_000);
+    const wire = watchWire(page);
+    await signInAs(page, requireUnicode());
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    // ── 0 · The precondition, ASSERTED ──────────────────────────────────────
+    // Provisioned today. If it is ever rolled back this test must say so in one
+    // line, rather than failing forty lines later on an empty grant sheet.
+    const active = await activeModuleCodes(page);
+    expect(
+      active,
+      `${GRANT_MODULE.code} is not active on ${LANE.org}, so no grant may legally ` +
+      'name it — `_validate_grants` rejects the whole request over one ' +
+      'unsubscribed module. Aekam platform staff provision modules (Suite 19). ' +
+      'ENVIRONMENT precondition, not a defect in the grants screen.',
+    ).toContain(GRANT_MODULE.code);
+    expect(
+      active,
+      'varta is EXCLUDED BY DECISION (§13), not blocked, and must stay off',
+    ).not.toContain('varta');
+
+    // ── 1 · The subject, and the one thing that makes this test mean anything ─
+    const email = slotEmail(GRANT_SLOT.tag);
+    await seatOwnMember(page, browser);
+    const subject = await steerOrgRole(page, email, 'org_member');
+    const display = subject.full_name || subject.email;
+    expect(
+      subject.role_code,
+      'this test MUST drive an org_member. subscription.py:636-642 short-circuits ' +
+      'for org_owner and org_admin, so against either of those the module is ' +
+      'reachable with the grant, without it, and with the row deleted — and the ' +
+      'test would go green having proved nothing.',
+    ).toBe('org_member');
+
+    // ── 2 · The REVOKED baseline, DRIVEN rather than assumed ────────────────
+    // A member seated on the "added" path arrives holding every active
+    // non-sensitive module (`add_member`'s default branch, mirrored by
+    // `defaultGrantsFor`); one seated on the "invite" path arrives holding
+    // NOTHING, because `add_member` hands `issue_invite` an empty grant list and
+    // the add form says so on screen in as many words. Both are correct, so
+    // neither may be assumed, so the baseline is established by the control.
+    await setModuleGrant(page, wire, email, display, GRANT_MODULE.label, false);
+    expect(
+      grantsOf(await memberByEmail(page, email)).map((g) => g.code),
+      `${email} still holds ${GRANT_MODULE.code} after the revoke${dump(wire)}`,
+    ).not.toContain(GRANT_MODULE.code);
+
+    // ── 3 · The member's own browser ────────────────────────────────────────
+    // A clean context with no session. Reading this from the admin's browser
+    // would prove only that the ADMIN can reach Graha, which nobody doubts.
+    const ctx = await browser.newContext();
+    const mp = await ctx.newPage();
+    const log: string[] = [];
+    try {
+      try {
+        // The same door the rest of this suite uses, so the member's session is
+        // proved to resolve to THIS org before anything is read from it.
+        await signInAs(mp, { email, password: GRANT_SLOT_PASSWORD });
+      } catch (err) {
+        throw new Error(
+          `BLOCKED — could not sign in as ${email}. This suite sets that ` +
+          'account’s password only on the run that ACCEPTS its invitation ' +
+          '(see GRANT_SLOT_PASSWORD). These are the owner’s real gmail ' +
+          'plus-tags, so if a human accepted this invitation from their own ' +
+          'inbox they chose their own password — which is exactly what happened ' +
+          'to `+uops` on 2026-08-28 (audit_log 5707). Remove the seat and the ' +
+          'account, or reset the password, to re-open this lane. ENVIRONMENT ' +
+          `blocker, not a product or test defect.\n  underlying: ${String(err).slice(0, 300)}`,
+        );
+      }
+
+      const before = await memberReach(mp);
+      expect(
+        before.role,
+        'the member’s own session must resolve to org_member in this org, or ' +
+        'gate 2 short-circuits and the probe below proves nothing',
+      ).toBe('org_member');
+      expect(
+        before.grants,
+        'an org_member must get a LIST from `_module_grants`, never `null`. Null ' +
+        'is "no opinion" and leaves every module in their sidebar — the exact ' +
+        'three-state contract navConfig.js:283-296 depends on.',
+      ).not.toBeNull();
+      expect(before.grants, `${email} still holds ${GRANT_MODULE.code}`)
+        .not.toContain(GRANT_MODULE.code);
+
+      // THE DOOR, not the promise. `require_module` refuses at stage `no_grant`
+      // with a sentence that names the remedy; that sentence is the product
+      // being RIGHT, and asserting it keeps a refactor from replacing it with
+      // "Forbidden" — the day-one capture found four screens already framing a
+      // module refusal as a permission problem instead of an actionable one.
+      expect(
+        before.status,
+        `${GRANT_MODULE.probe} answered ${before.status} for a member with no ` +
+        `grant. Expected 403. Body: ${before.body}`,
+      ).toBe(403);
+      expect(before.body).toMatch(/have access to the graha module/i);
+      expect(before.body).toMatch(/Ask your org admin to grant it/i);
+
+      // And the rail does not advertise a door it cannot open — RBAC-SPEC denied
+      // state 1, quoted inside `auth_router._module_grants`: "No access →
+      // absent from the sidebar, never a greyed-out row that advertises what is
+      // missing."
+      await expect(mp.locator('aside.side')).toBeVisible({ timeout: 30_000 });
+      await expect(
+        moduleNavRow(mp, GRANT_MODULE.navEn),
+        `the sidebar still offers ${GRANT_MODULE.navEn} to a member the API ` +
+        'refuses — a row that advertises what is missing',
+      ).toHaveCount(0);
+      log.push(
+        `revoked → /auth/me grants=[${before.grants!.join(', ')}], ` +
+        `${GRANT_MODULE.probe} ${before.status}, nav row absent`,
+      );
+
+      // ── 4 · GRANT IT, from the admin's browser ────────────────────────────
+      await setModuleGrant(page, wire, email, display, GRANT_MODULE.label, true);
+
+      // The row is the evidence. The LEVEL matters as much as the code: the
+      // picker is supposed to SEND a level rather than let the column default
+      // decide it, and `org_member_modules.role` is `NOT NULL DEFAULT 'viewer'`,
+      // so a picker sending nothing would look identical here and differ only on
+      // Sanvaad. Asserted where the difference can still be seen.
+      const held = grantsOf(await memberByEmail(page, email))
+        .find((g) => g.code === GRANT_MODULE.code);
+      expect(
+        held,
+        `${GRANT_MODULE.code} is not in GET /org/members after the grant${dump(wire)}`,
+      ).toBeTruthy();
+      expect(
+        held!.level,
+        `the picker stored level "${held!.level}"; defaultLevelFor(` +
+        `'${GRANT_MODULE.code}') is viewer`,
+      ).toBe('viewer');
+
+      // The SCREEN agrees with the server: reopen the sheet and read it back. A
+      // 200 with a box still unticked is the same class of lie one layer up.
+      const reopened = await openGrantSheet(page, email, display);
+      await expect(reopened.getByRole('checkbox', { name: `${GRANT_MODULE.label} access` }))
+        .toHaveAttribute('aria-checked', 'true');
+      // Names, never ids — the standing rule, on a surface 02.7's tab sweep
+      // cannot reach because it only exists while a sheet is open.
+      expect(
+        ((await reopened.innerText()) || '')
+          .match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i),
+        'the module-grant sheet rendered a UUID',
+      ).toBeNull();
+      await reopened.getByRole('button', { name: /^Cancel$/ }).click();
+      await expect(reopened).toHaveCount(0, { timeout: 10_000 });
+
+      // ── 5 · THE CONSEQUENCE, in the member's browser ──────────────────────
+      // Reloaded, because `Protected.jsx:144` fetches `/auth/me` on mount and
+      // the sidebar is rendered from that record. Nothing is re-minted: grants
+      // are read per request, so the SAME session sees the change.
+      await mp.reload();
+      await expect(mp.locator('aside.side')).toBeVisible({ timeout: 30_000 });
+      const granted = await memberReach(mp);
+      expect(granted.role, 'still an org_member — the grant must be what changed')
+        .toBe('org_member');
+      expect(granted.grants, '/auth/me did not report the new grant')
+        .toContain(GRANT_MODULE.code);
+      expect(
+        granted.status,
+        `${GRANT_MODULE.probe} answered ${granted.status} for a member who HOLDS ` +
+        `${GRANT_MODULE.code} at viewer. A GET is not a write, so the level rung ` +
+        `is never consulted. Body: ${granted.body}`,
+      ).toBeLessThan(400);
+      await expect(
+        moduleNavRow(mp, GRANT_MODULE.navEn),
+        `the grant landed on the server and the sidebar still hides ` +
+        `${GRANT_MODULE.navEn}`,
+      ).not.toHaveCount(0);
+      log.push(
+        `granted → /auth/me grants=[${granted.grants!.join(', ')}], ` +
+        `${GRANT_MODULE.probe} ${granted.status}, nav row present`,
+      );
+
+      // ── 6 · REVOKE, which is also the restore (§6) ────────────────────────
+      // A grant left standing is a grant the next run cannot tell from its own
+      // baseline — and 02.15 reads this member's cells expecting to find them
+      // exactly where this test left them.
+      await setModuleGrant(page, wire, email, display, GRANT_MODULE.label, false);
+      await mp.reload();
+      await expect(mp.locator('aside.side')).toBeVisible({ timeout: 30_000 });
+      const revoked = await memberReach(mp);
+      expect(revoked.grants, 'the revoke did not reach /auth/me')
+        .not.toContain(GRANT_MODULE.code);
+      expect(
+        revoked.status,
+        `${GRANT_MODULE.probe} answered ${revoked.status} AFTER the grant was ` +
+        `revoked — a revoked module is still reachable, which is the direction ` +
+        `that costs something. Body: ${revoked.body}`,
+      ).toBe(403);
+      await expect(
+        moduleNavRow(mp, GRANT_MODULE.navEn),
+        'the revoke did not take the sidebar row away',
+      ).toHaveCount(0);
+      log.push(
+        `revoked → /auth/me grants=[${revoked.grants!.join(', ')}], ` +
+        `${GRANT_MODULE.probe} ${revoked.status}, nav row absent`,
+      );
+    } finally {
+      await ctx.close();
+      console.log(
+        `\n[02.14] ${email} · org_member · ${GRANT_MODULE.code}\n[02.14] `
+        + log.join('\n[02.14] ') + '\n',
+      );
+    }
+  });
+
+  test('02.15 members — the access matrix tells the truth about every role tier', async ({
+    page,
+    browser,
+  }) => {
+    test.setTimeout(6 * 60_000);
+    const wire = watchWire(page);
+    await signInAs(page, requireUnicode());
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // WHAT "EVERY ROLE TIER" CAN MEAN ON THIS SCREEN, MEASURED FROM SOURCE.
+    //
+    // `GET /v1/org/members` returns rows whose `role_code` is in `SEAT_ROLES`
+    // (`org_invites.py:91` → `role_tiers.SEAT_CONSUMING_ORG_ROLES` = `ORG_ROLES
+    // + HR_ADMIN_ROLES`), which is exactly FOUR codes:
+    //
+    //     org_owner   org_admin   org_member   hr_admin
+    //
+    // The two project-only codes — `org_client` and `aekam_team`
+    // (`role_tiers.py:168`) — are deliberately NOT seat roles, so they never
+    // appear in this list and cannot appear in this grid. That is the design
+    // ("a client seeing their own project… costs the customer nothing"), not a
+    // gap in the matrix, and asserting their absence here would be inventing a
+    // requirement.
+    //
+    // ⚠ AND ONLY TWO OF THE FOUR CAN BE PRODUCED BY THE PRODUCT AT ALL:
+    //   · `update_member_role` accepts `{"org_admin", "org_member"}` and nothing
+    //     else (`org_members.py:557`), and its UPDATE is additionally scoped
+    //     `AND role_code IN ('org_admin','org_member')` (:578).
+    //   · `org_invites._assert_may_grant_role` lets only an OWNER invite an
+    //     owner, and `admin_orgs.assign_role` narrows to
+    //     `INVITABLE_ORG_ROLE = "org_admin"`.
+    //   · Nothing anywhere writes an `hr_admin` row through a form.
+    // `role_tiers.py:876-884` states the consequence in its own words, measured
+    // live: "Unicode Group (fae87907) holds FOUR `org_admin` rows, one
+    // `org_member` and ZERO `org_owner` … nothing in this backend writes an
+    // `org_owner` row into an existing org."
+    //
+    // Rule 1 forbids manufacturing the missing two by SQL or by an API write. So
+    // this test does the honest thing instead: it checks the grid CELL FOR CELL
+    // against the server for every tier the org actually holds, DRIVES the one
+    // tier transition the product offers (member ⇄ admin) and proves the grid
+    // follows it, and PRINTS a census naming which tiers were exercised and
+    // which could not be. A census is evidence; a `test.skip` is a hole.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    const email = slotEmail(GRANT_SLOT.tag);
+    await seatOwnMember(page, browser);
+    await steerOrgRole(page, email, 'org_member');
+    const lanesRole = await callerOrgRole(page);
+
+    await openTab(page, 'members');
+    await memberView(page, 'Access matrix');
+
+    // `role="region"` with `tabIndex={0}` so the grid can be reached and panned
+    // from the keyboard — `AccessMatrix.jsx:70-73`. A horizontally scrolling
+    // region that answers only to a trackpad is unreachable for anyone not
+    // using one, which is why the region is asserted by ROLE and not by class.
+    const grid = page.getByRole('region', { name: 'Module access by member' });
+    await expect(grid).toBeVisible({ timeout: 30_000 });
+    // `AccessMatrix` returns `null` outright when there are no members, so a
+    // rendered row is the signal that the list has actually landed.
+    await expect(page.locator('.amx tbody tr').first()).toBeVisible({ timeout: 30_000 });
+
+    // ── The columns ─────────────────────────────────────────────────────────
+    // Waited on with a RETRYING count, because `activeModules` starts `null` —
+    // "not looked up" — and while it is null `isOn()` answers true for every
+    // column, so an eager read sees no `· off` at all and would report the
+    // opposite of what it measured.
+    await expect(
+      page.locator('.amx__off'),
+      'exactly one column must be marked off: Unicode holds twelve of the ' +
+      'thirteen catalogue modules and varta is EXCLUDED BY DECISION (§13). Zero ' +
+      'here means either the subscription read never landed or the grid is ' +
+      'painting every column at full strength — and a grid that cannot say ' +
+      'which modules the org does not have is the one thing this screen must ' +
+      `not be.${dump(wire)}`,
+    ).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator('.amx__off')).toContainText('Varta');
+    await expect(page.locator('.amx__off'))
+      .toHaveAttribute('title', 'Not active on this subscription');
+
+    // ── One read of the whole grid ──────────────────────────────────────────
+    // Members × 13 cells is ~90 locator round trips against a deployed
+    // environment. One `evaluate` reads the SAME rendered DOM in one go, and the
+    // comparison then happens where a failure message can name the member, the
+    // module, what was drawn and what the server said.
+    type Shot = {
+      headers: string[];
+      rows: { who: string; cells: { text: string; set: boolean }[] }[];
+    };
+    const readMatrix = (): Promise<Shot> => page.evaluate(() => {
+      const tidy = (s: string | null | undefined) => (s || '').replace(/\s+/g, ' ').trim();
+      const tbl = document.querySelector('.amx table');
+      if (!tbl) return { headers: [], rows: [] };
+      return {
+        headers: Array.from(tbl.querySelectorAll('thead th')).map((th) => tidy(th.textContent)),
+        rows: Array.from(tbl.querySelectorAll('tbody tr')).map((tr) => ({
+          who: tidy(tr.querySelector('th')?.textContent),
+          cells: Array.from(tr.querySelectorAll('td')).map((td) => {
+            const span = td.querySelector('.amx__cell');
+            return {
+              // The screen-reader twin is dropped here: `<span aria-hidden>—</span>`
+              // plus `<span class="k-sr-only">No access</span>` is ONE cell
+              // saying one thing twice, deliberately — an em dash announces as
+              // "em dash", which is not the information.
+              text: tidy(span?.textContent).replace(/No access/i, '').trim(),
+              set: Boolean(span?.classList.contains('set')),
+            };
+          }),
+        })),
+      };
+    });
+
+    const tidy = (s: unknown) => String(s ?? '').replace(/\s+/g, ' ').trim();
+    /** A header without its markers — `Ganit · sep`, `Varta · off` → the label. */
+    const bare = (h: string) => h.replace(/ · (sep|off)/g, '').trim();
+
+    let shot = await readMatrix();
+    expect(shot.headers[0], 'the first column names the member').toBe('Member');
+    expect(
+      shot.headers.slice(1).map(bare),
+      'the grid must draw one column per catalogue module, in catalogue order ' +
+      '(`catalogue.js` ORG_MODULES). A column that vanished is a module nobody ' +
+      'can audit; a new one means the list transcribed above is stale — fix the ' +
+      'list, do not narrow the assertion.',
+    ).toEqual(CATALOGUE_LABELS);
+
+    // `· sep` is the separated-duty marker, and it lives on the HEADER rather
+    // than only in the footnote because the qualification belongs to the cells
+    // it governs: a cell reading `Admin` in one of those two columns configures
+    // the module and CANNOT release money against it.
+    expect(
+      shot.headers.filter((h) => / · sep/.test(h)).map(bare).sort(),
+      'exactly Vetana and Ganit carry the separated-duty marker — ' +
+      '`levels.js` SEPARATED_DUTY_MODULES',
+    ).toEqual(['Ganit', 'Vetana']);
+
+    // The legends, which are the only place this grid explains its own
+    // vocabulary. Scoped to the footnote paragraph: `of__h` alone is on half the
+    // settings hub, and an unscoped text match would resolve somewhere else.
+    await expect(page.locator('.of__h--foot'))
+      .toContainText('Admin does not include Approver');
+    await expect(
+      page.getByText(/reaching a module through their\s+organisation role rather than a grant row/i),
+      'the grid must explain what "by role" means, or a cell that is not a grant ' +
+      'reads as one',
+    ).toBeVisible();
+
+    // ── Cell for cell, against the server ───────────────────────────────────
+    /**
+     * What `AccessMatrix.cellFor` must draw, restated from its source:
+     *   · a grant row wins, at its level;
+     *   · otherwise org_owner AND org_admin read "by role" — gate 2
+     *     short-circuits for BOTH, so an empty admin row is TOTAL access and
+     *     drawing it blank "would be the most misleading thing on this screen";
+     *   · otherwise an em dash.
+     */
+    const expectedCell = (m: any, label: string) => {
+      const code = CATALOGUE_CODES[CATALOGUE_LABELS.indexOf(label)];
+      const g = grantsOf(m).find((x) => x.code === code);
+      if (g) return LEVEL_LABEL[g.level] || g.level;
+      return m.role_code === 'org_owner' || m.role_code === 'org_admin' ? 'by role' : '—';
+    };
+
+    const compare = async (why: string) => {
+      // ⚠ WAIT FOR THE GRID BEFORE READING IT. `openTab` remounts `TabMembers`,
+      // which renders a `SkeletonTable` until `GET /v1/org/members` lands — so
+      // an `evaluate` fired on the next line finds no `.amx table` at all and
+      // returns zero rows. That reads as "the matrix drew 0 rows and the server
+      // returned 6", i.e. as a product defect, when nothing has rendered yet.
+      // The same shape of mistake as 02.2's `page.reload()` racing its PATCH.
+      await expect(page.locator('.amx tbody tr').first())
+        .toBeVisible({ timeout: 30_000 });
+      shot = await readMatrix();
+      const roster = await members(page);
+      expect(
+        shot.rows.length,
+        `${why}: the grid drew ${shot.rows.length} rows and the server returned ` +
+        `${roster.length} members${dump(wire)}`,
+      ).toBe(roster.length);
+
+      const wrong: string[] = [];
+      (roster as any[]).forEach((m, i) => {
+        // Row order IS the API's order — `TabMembers` keeps `r.data` as it came
+        // and `AccessMatrix` maps it straight through — so the index is the
+        // join, and the displayed name is ASSERTED rather than used as the key.
+        // Two members may share a display name; none share a position.
+        const row = shot.rows[i];
+        const who = tidy(m.full_name || m.email);
+        if (row.who !== who) {
+          wrong.push(`row ${i}: the grid says "${row.who}", the server says "${who}"`);
+        }
+        CATALOGUE_LABELS.forEach((label, c) => {
+          const want = expectedCell(m, label);
+          const got = row.cells[c]?.text;
+          if (got !== want) {
+            wrong.push(
+              `${who} × ${label}: the grid says "${got}", the server says "${want}" ` +
+              `(role_code ${m.role_code})`,
+            );
+          }
+          // `set` carries the colour and the weight; an unset cell is the
+          // "nothing here" style. It has to track the same decision the text
+          // does, or the grid reads one way and scans another.
+          if (Boolean(row.cells[c]?.set) !== (want !== '—')) {
+            wrong.push(`${who} × ${label}: text "${got}" but .set=${row.cells[c]?.set}`);
+          }
+        });
+      });
+      expect(wrong, `${why}\n  ${wrong.join('\n  ')}`).toEqual([]);
+      return roster as any[];
+    };
+
+    const roster = await compare('the matrix as found');
+
+    // ── The census, and the guard against a vacuous pass ────────────────────
+    const census: Record<string, number> = {};
+    for (const m of roster) census[m.role_code] = (census[m.role_code] || 0) + 1;
+    expect(
+      census.org_member,
+      'this test must see at least one org_member row, or the "—" and level half ' +
+      'of the vocabulary is never drawn and the comparison above is trivially ' +
+      'satisfied by a grid of "by role". 02.8 seats one; 02.14 seats another.',
+    ).toBeGreaterThan(0);
+    expect(
+      census.org_admin,
+      'and at least one org_admin row, or "by role" is never drawn at all. ' +
+      `02.8 seats ${slotEmail('adm')} as one.`,
+    ).toBeGreaterThan(0);
+
+    // ── The one tier transition the product offers, DRIVEN ──────────────────
+    // Everything above is observation, and observation can only prove the grid
+    // agrees today. This is the part that proves it FOLLOWS the tier.
+    const subject = tidy((await memberByEmail(page, email)).full_name || email);
+    const beforeRow = shot.rows.find((r) => r.who === subject);
+    expect(beforeRow, `${subject} has no row in the grid`).toBeTruthy();
+    const dashesBefore = beforeRow!.cells
+      .map((c, i) => (c.text === '—' ? CATALOGUE_LABELS[i] : null))
+      .filter(Boolean) as string[];
+    expect(
+      dashesBefore.length,
+      'an org_member with no grant on at least one module is what makes the ' +
+      'promotion visible. 02.14 leaves this member without Graha, so this is ' +
+      'never zero unless an earlier run left them holding the whole catalogue.',
+    ).toBeGreaterThan(0);
+
+    await steerOrgRole(page, email, 'org_admin');
+    await openTab(page, 'members');
+    await memberView(page, 'Access matrix');
+    await compare('after promoting the member to org_admin');
+
+    shot = await readMatrix();
+    const adminRow = shot.rows.find((r) => r.who === subject)!;
+    expect(
+      adminRow.cells
+        .map((c, i) => (c.text === '—' ? CATALOGUE_LABELS[i] : null))
+        .filter(Boolean),
+      'an org_admin reaches every ACTIVE module with NO grant row — ' +
+      'subscription.py:636 puts org_admin in the same short-circuit as ' +
+      'org_owner — so no cell on an admin row may read "no access". Drawing one ' +
+      'blank is the exact lie AccessMatrix.jsx:18-27 exists to prevent.',
+    ).toEqual([]);
+    for (const label of dashesBefore) {
+      expect(
+        adminRow.cells[CATALOGUE_LABELS.indexOf(label)].text,
+        `${subject} × ${label} read "—" as a member and must read "by role" as ` +
+        'an admin',
+      ).toBe('by role');
+    }
+
+    // The list view's badge agrees. `ROLE_META` (MemberTable.jsx:55) renders
+    // plain "Admin", NOT "Org admin" — the add form's `ROLE_OPTIONS` says the
+    // latter, and they are two vocabularies for one fact. 02.10 records the
+    // near-miss that came of asserting one against the other.
+    await memberView(page, 'List');
+    await expect(page.locator('.omt tbody tr').filter({ hasText: email }).locator('.rb'))
+      .toContainText('Admin');
+
+    // ── And the escalation guard, on the row that is now an admin ────────────
+    // `canEditGrants = !owner && (isOwner || !admin)` — MemberTable.jsx:117.
+    // What an OWNER decides alone is which modules an org_admin may reach, so an
+    // org_admin must not be offered the control on another admin's row. The
+    // caller's role is READ rather than assumed, because the rule is a function
+    // of who is looking and `_lanes.ts` is a claim about that, not a measurement.
+    {
+      const row = page.locator('.omt tbody tr').filter({ hasText: email });
+      await row.getByRole('button', { name: /Actions for/ }).click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible({ timeout: 10_000 });
+      const item = menu.getByRole('menuitem', { name: /Edit module grants/ });
+      if (lanesRole === 'org_owner') {
+        await expect(
+          item,
+          'an org_owner MAY set an admin’s grants — that is the whole of the ' +
+          '`isOwner ||` in canEditGrants',
+        ).toHaveCount(1);
+      } else {
+        await expect(
+          item,
+          `this session is ${lanesRole}. An org_admin editing another ` +
+          'org_admin’s grants is privilege escalation by way of a settings ' +
+          'screen, and MemberTable.jsx:114-117 says exactly that.',
+        ).toHaveCount(0);
+      }
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0, { timeout: 10_000 });
+    }
+
+    // ── Put it back (§6), and prove the grid followed that way too ───────────
+    await steerOrgRole(page, email, 'org_member');
+    await openTab(page, 'members');
+    await memberView(page, 'Access matrix');
+    await compare('after demoting the member back to org_member');
+
+    shot = await readMatrix();
+    const restoredRow = shot.rows.find((r) => r.who === subject)!;
+    for (const label of dashesBefore) {
+      expect(
+        restoredRow.cells[CATALOGUE_LABELS.indexOf(label)].text,
+        `${subject} × ${label} did not return to "—" after the demotion — this ` +
+        'run has left the roster changed, which is what §6 forbids',
+      ).toBe('—');
+    }
+
+    // Names, never ids — the standing rule, on a grid whose row headers are the
+    // only place a member is named outside the table 02.7 already sweeps.
+    expect(
+      ((await grid.innerText()) || '')
+        .match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i),
+      'the access matrix rendered a UUID',
+    ).toBeNull();
+
+    console.log(
+      `\n[02.15] tier census on ${LANE.org}: `
+      + Object.entries(census).map(([r, n]) => `${r}×${n}`).join(', ')
+      + `\n[02.15] this session is ${lanesRole}`
+      + '\n[02.15] EXERCISED — org_admin and org_member: both observed cell-for-cell against'
+      + `\n[02.15]   the server, and both DRIVEN (${subject}: member → admin → member).`
+      + '\n[02.15] NOT EXERCISED — org_owner and hr_admin: both are SEAT_ROLES this grid can'
+      + '\n[02.15]   render, and NEITHER can be created through any product control.'
+      + '\n[02.15]   update_member_role accepts only org_admin/org_member (org_members.py:557,'
+      + '\n[02.15]   :578); nothing writes an org_owner or hr_admin row into an existing org.'
+      + '\n[02.15]   Manufacturing one would be an API write — rule 1. Reported, not skipped.'
+      + '\n[02.15] OUT OF SCOPE BY DESIGN — org_client and aekam_team are project-only roles,'
+      + '\n[02.15]   absent from SEAT_CONSUMING_ORG_ROLES, so they never reach GET /org/members'
+      + '\n[02.15]   and cannot appear in this grid at all.\n',
+    );
   });
 });

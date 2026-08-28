@@ -4583,7 +4583,41 @@ of the 25,854 rows. **R9 must not drop it until the rebuilt members exist.**
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
 
+---
 
+## 2026-08-28 (evening) — Wave 1 closes at 26/28, and `platform_support` exists
 
+**Three test bugs fixed, two product findings recorded, one role row applied.**
 
+`rowMenuItem` — 02.14's `element was detached from the DOM` was the members list
+refetching under an open row menu. Settle first (await the in-flight
+`/org/members` GET), then re-resolve at most three times and **only** on the
+detach signature; anything else rethrows on attempt one, so a missing control
+still fails loudly. The retry prints when it fires.
 
+⚠ **`members()` and `pendingInvites()` sent no `X-Org-Id`.** Found while fixing
+02.10's 6.0s precondition failure. The product sends the active org on every
+request (`api.js:39`); these helpers did not, so the server fell back to
+**oldest membership** to choose an org. Inside the suite written to catch
+cross-org leaks. Pinned to `LANE.orgId`. 02.10 also now opens the members tab
+before it reads the roster, rather than asserting against a session still
+bootstrapping.
+
+**`platform_support` applied to `user_40223c0afab1`** (owner-approved, one row,
+`ff85dac6…`, `org_id NULL`, 19:52:57 UTC; reversal is that row deleted). It is
+the first and only holder of the role. `platform_support_sessions` and
+`platform_support_requests` both resolve live and both hold **0 rows**. The
+account's `org_member @ Aekam Inc` seat is LEFT by owner decision — it arrived
+via a god-mode session resolving to Aekam Inc silently, so **Aekam's baseline is
+now 11 seats / 1482 rows**, not 10 / 1471.
+
+**02.12 is a missing feature and the orphan is real:** `TaskDrawer.jsx:621`
+drops the attachment pointer and leaves the R2 object unreachable forever —
+`services/storage.py:832 delete_file` has zero callers, `uploads.py` has no
+delete route. Owner approved building it on `graha.py:4917`'s soft-delete shape:
+bin at 14 days, hard-delete at 90, binned files count against quota, and **no
+delete on Ganit or eSign documents** (8-year Income Tax retention, 72-month GST).
+Storage tab stays read-only — `TabStorage.jsx:40-45`'s reasoning survives.
+
+Not yet built: Suite 19.3 (raise the support request from `/admin/support`, the
+only thing still blocking 02.17) and the recycle bin itself.

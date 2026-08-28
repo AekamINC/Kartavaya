@@ -52,7 +52,16 @@ export default defineConfig({
   projects: [
     {
       name: 'wave1',
-      testMatch: /(suite01-auth|suite02-org-settings|dayone-module-403|save-probe|upi-readback-probe|gstin-blank-probe)\.spec\.ts/,
+      // `suite02c-danger` is Suite 02's danger-zone screen (test 02.18) in its
+      // own file — Suite 02 was being edited by several agents at once, and a
+      // read-only spec that opens the delete-this-organisation surface has no
+      // business sharing a file with the ones that write. It is listed here
+      // because a spec no config matches is a spec that never runs.
+      // `suite02b-compliance-support` is Suite 02's compliance tab (02.16) and
+      // the support-access lifecycle (02.17), also in its own file and for the
+      // same reason. Note 02.17's screen is NOT an org-settings tab — it is
+      // `/settings/roles` — so it is not reached by 02.7's tab sweep either.
+      testMatch: /(suite01-auth|suite02-org-settings|suite02b-compliance-support|suite02c-danger|dayone-module-403|save-probe|upi-readback-probe|gstin-blank-probe)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
