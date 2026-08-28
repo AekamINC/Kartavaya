@@ -29,6 +29,48 @@ statement written down. See `README.md` for the full terms.
 Three agents on 7.6, 8.2 and 8.3, partitioned by file. Every number below is a
 live read-only `SELECT` or a test run.
 
+### 8.4 ✅ · the phase is closed · `a942fb9d` `a2189ad1`
+
+§8.4's acceptance on a live row, over HTTP against the deploy. Contact *Phase
+7.1 Round-Robin Acceptance*: **21.1702, 72.8311**, `geo_source` `user_pin`,
+`geo_fetched_at` stamped by the database, **DIGIPIN `3LKPCM5PPT`**. E2E only;
+Unicode Group untouched.
+
+**Migration 237 applied**, verified from the catalogue and not from the file:
+8 columns `numeric(10,7)` matching `pahchan_punches`, 6 constraints all
+`convalidated=true`, `count(*) WHERE lat IS NOT NULL` = 0 and 0. Pre-checked
+live first — 0 columns present, 0 `public` copies of either table, 0 `%geo%`
+constraints, 92/297 rows, PG 17.6.
+
+- ⚠ **Never a bare pair, and that is the point.** Google permits a cached
+  coordinate for 30 days; Mappls forbids caching outright. A coordinate with no
+  provenance complies with NEITHER, because nobody can say which rule it falls
+  under. `*_geo_complete_ck` makes the bare pair unrepresentable.
+- ⚠ **No Mappls value in the allowlist, and none may be added.** A CHECK that
+  makes the write fail is the cheapest possible enforcement of a licence term.
+- DIGIPIN verified TWO ways: symbol-for-symbol against India Post's own
+  reference (`github.com/INDIAPOST-gov/digipin`) over **20,000 coordinates, 0
+  mismatches**, and against the published Dak Bhawan example.
+- ⚠ **The format was wrong.** Annexure 1 groups `XXX-XXX-XXXX`; India Post's
+  implementation was updated 2026-05-04 to emit ten continuous characters.
+  `encode` follows it, `decode` still accepts the grouped spelling,
+  `format_grouped` is for a screen and never for a column — a stored code with
+  punctuation the standard lacks fails equality silently, because both strings
+  look right.
+- Derived, never stored. Served, never computed in the browser: two ten-level
+  traversals drift at the last symbol while agreeing at level 6, so the
+  divergence reads as two systems naming neighbouring 4 m cells. A backend test
+  fails if a `digipin` module appears under `frontend/src`.
+- ⚠ **Both agents died at a spend limit MID-MUTATION**, running their own
+  bite-proofs. One left `geo_source=NULL` removed from the clear statement; its
+  own test caught it on the first run here. Every suite re-run after restoring.
+- ⚠ **`check-write-gates` caught the first frontend version and was right.**
+  `canWrite` was a prop; a control gated on a `canWrite` its own scope does not
+  declare is a ReferenceError at RENDER and the screen white-screens.
+- ⚠ **One defect the LIVE run found and no test did**: the contact detail route
+  served the pair without the code. The expression had been written at one call
+  site and not the other; both now go through `_with_digipin`.
+
 ### The finding that reshaped 8.2 and 8.3 — and the route it produced
 
 Two agents hit the same wall independently, in the same words: the only
