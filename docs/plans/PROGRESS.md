@@ -29,6 +29,37 @@ statement written down. See `README.md` for the full terms.
 Three agents on 7.6, 8.2 and 8.3, partitioned by file. Every number below is a
 live read-only `SELECT` or a test run.
 
+### 7.6 · address capture works with no vendor · `315fa309`
+
+The phase is called *Indian address capture*. Mappls was the plan's mechanism
+and Mappls refuses us, which left both forms carrying a box that could only
+apologise. This is the part of the same job that needs nobody's permission:
+
+    GET /v1/pincodes/{pin}  ->  staging.pin_directory, 20,144 government rows,
+                                already in our database
+
+No key, no quota, no allocation, no vendor call, and **no licence** — nothing
+is submitted, so nothing is licensed. ⚠ The Geospatial Data Guidelines question
+hanging over the Mappls path does not arise here at all: open government data
+we already hold under GODL-India, credited on every answer.
+
+Verified live against the deploy, all four behaviours:
+
+    395002  -> fills GUJARAT, shows SURAT
+    400706  -> fills MAHARASHTRA, shows THANE
+    110020  -> fills NOTHING, names SOUTH, DELHI and SOUTH EAST, DELHI
+    999999  -> not listed; the address still saves
+
+- ⚠ **Fills state, never city.** A district is not a city: 400706 is THANE
+  district and the city is Navi Mumbai — the live Navrang Polymers row.
+- ⚠ **A PIN is not one place.** 1,229 span 2+ districts, 51 span 2+ states.
+  A multi-row answer fills nothing and names every candidate.
+- The fill is a **button, not an effect**.
+- It blocks nothing — "the address saves either way", never "no such pincode".
+
+Proved to bite: writing the district into `city` fails 1; filling from the
+first row of an ambiguous pincode fails 1.
+
 ### 7.6 wired to two screens — and refused by Mappls · `1772bd51`
 
 `AddressSuggest` is live on vendors and employees, the two screens §7.6 names.
