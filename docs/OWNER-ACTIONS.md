@@ -495,6 +495,64 @@ new service is deliberately named `cron-report-dispatch` rather than
 
 ### 14. Mappls REST: "Domain validation failed" on server-side calls
 
+**Status:** OPEN · **one email to Mappls support.** Re-probed live 2026-08-28
+and the diagnosis is now exact — it is NOT our code, NOT our credential and NOT
+a missing header. Everything on our side works.
+
+**THE CONTROL TEST THAT SETTLES IT.** Same host, same endpoint, two tokens:
+
+    our real minted token  ->  401 "Api Access Denied / Domain validation failed"
+    a string of 36 'f's    ->  401 "invalid_token"
+
+**The host tells them apart.** A garbage token is rejected AS a bad token; ours
+is accepted as a valid one and then refused on a *different* ground. So
+authentication succeeds and authorisation by domain fails. That is the mirror
+image of the §7.5 finding, where the SDK host could not tell our token from
+garbage — and it is why that one was a wrong credential and this one is not.
+
+**What else was ruled out, each with a live call:**
+
+    OAuth mint                          200, bearer, scope READ, expires 10210
+    no Referer header                   401 Domain validation failed
+    Referer https://staging.kartavaya.com/   401 (identical)
+    Referer https://kartavaya.com/           401 (identical)
+    Referer https://www.kartavaya.com/       401 (identical)
+    Origin  https://staging.kartavaya.com    401 (identical)
+    Referer + Origin together                401 (identical)
+    /places/search/json                      401 Domain validation failed
+    /places/nearby/json                      401 Domain validation failed
+
+Six referer/origin variants and two separate Places endpoints, all refused
+byte-identically. A server-to-server call sends no Referer by design, so if
+their REST domain validation requires one, no server-side integration can ever
+satisfy it — which is a policy question about the account, not a bug.
+
+**What to send them** (their own error text names this address):
+
+> To: apisupport@mapmyindia.com
+> Project: Kartavaya, `prj1787726591i922664629`
+> Our OAuth client-credentials token mints successfully (scope READ) and is
+> recognised by `atlas.mappls.com` — a deliberately invalid token returns
+> `invalid_token`, while ours returns `Api Access Denied / Domain validation
+> failed`. We are calling **server-to-server**, so no Referer is sent; we also
+> tried Referer and Origin set to each of our whitelisted domains and the
+> response is identical. Please enable REST/Places API access for this
+> credential for server-side use, or tell us what the credential needs.
+
+⚠ **Do NOT "fix" this by moving autosuggest into the browser.** That publishes
+a non-expiring key on every keystroke of every signed-in user, and the domain
+whitelist — the only compensating control — does not restrain a key lifted from
+a network tab. It is also the shape the Geospatial Data Guidelines question is
+about. If the answer from support is "server-side is not supported", that is a
+decision for you, not a workaround for me.
+
+**Nothing else in 7.6 is waiting on this.** The pincode → state half runs on our
+own 20,144-row government directory with no key, no quota and no vendor call,
+and it is live on both the vendor and employee forms.
+
+*(the original investigation, kept)*
+
+
 **Status:** OPEN · blocks Phase 7.6 from ✅. Everything on our side is now
 correct and proved; what remains is one console/support change only you can
 make.
