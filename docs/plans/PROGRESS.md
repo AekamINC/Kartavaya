@@ -118,6 +118,57 @@ support, whose address their own error names. OWNER-ACTIONS item 14.
 Four live calls total, all on the same generic public place, never a customer
 record.
 
+### 7.6 · the expectation reset, and a stale status line corrected · `ce7e6203`
+
+⚠ **A status line in this session said "no page wires the component up yet".
+That was already wrong when written.** `AddressSuggest` and `PincodeAutofill`
+are both mounted on both surfaces §7.6 names — `components/VendorForm.jsx` and
+`pages/manav/EmployeesTab.jsx` — verified by grep across `src/`, not assumed.
+
+⚠ **What WAS actually missing: §7.6's required lede.** "Put a one-line lede
+under the address block saying what a PIN can and cannot fill" — it lived in the
+plan and in commit messages and nowhere a customer could see it.
+
+A UK postcode resolves to ~17 addresses; an Indian PIN averages ~82 km², and 51
+do not resolve to a single state. Without the line, somebody types a pincode,
+gets a state and no street, and concludes the lookup is broken.
+
+Rendered on EVERY branch, including the one where the lookup returns nothing —
+531 PINs with a published boundary are absent from the directory release, and
+that is the branch where a person decides the feature is broken, and the one a
+happy-path test misses. Not rendered for a non-PIN: nothing is looked up, so
+there is no expectation to set, and `INC UK`'s `NW1 245` is still not corrected.
+
+One definition, so the vendor form and the employee form cannot drift on what a
+pincode promises. 5 tests; proved to bite — shortening the lede fails 4 of 5.
+
+**The half that works needs nobody's permission**: `PincodeAutofill` reads our
+own 7.2 directory through `GET /v1/pincodes/{pin}` — no key, no quota, no
+vendor call, no licence, because nothing is submitted. The Mappls autosuggest
+half stays blocked on their domain validation (OWNER-ACTIONS 14); the proxy and
+its licence controls are built and green.
+
+### The report cron was CRASHING, and had been for a day · `railway status`
+
+`cron-report-dispatch` showed **● Crashed**, one line in the deploy log:
+
+    dispatch -> 404 {"detail":"Not Found"}
+
+Still POSTing to `/api/reports/dispatch`, retired with `public.report_schedules`
+in migration 236. Every hourly tick since then 404'd and exited non-zero, and
+nothing inside the product showed it.
+
+**Three things were wrong, not the two OWNER-ACTIONS 11 recorded:** the URL, the
+header (`X-Cron-Secret`), and — the one that would have turned a 404 into a 401
+rather than a green — **`CRON_SECRET` was not on the service at all**. It held
+only `REPORT_DISPATCH_SECRET`. Set as a REFERENCE, `${{Kartavya.CRON_SECRET}}`,
+so there is no second copy of a secret to rotate. Schedule `7 * * * *` ->
+`*/15 * * * *`.
+
+Verified by running the exact command the cron runs with the cron service's own
+environment: reference resolved, **200, `armed: true`, `due: 0`**. Forced with a
+`DEPLOY_NUDGE` because a plain redeploy reuses the OLD config snapshot.
+
 ### 8.4 ✅ · the phase is closed · `a942fb9d` `a2189ad1`
 
 §8.4's acceptance on a live row, over HTTP against the deploy. Contact *Phase
