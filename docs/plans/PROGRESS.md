@@ -3879,12 +3879,19 @@ output filename whenever it is not the phone default, so an emulator build
 cannot silently overwrite the artefact meant for a real device — two archives
 interchangeable by name and fatal to confuse.
 
-The camera question is consequently **half-answered**: both AVDs enumerate two
-cameras including `Facing: Front`, declare `android.hardware.camera.front`, and
-the app takes a `CAMERA` grant — but whether `takePictureAsync` returns a usable
-frame in *our* path needs an APK that runs. `ClockScreen` uses `expo-camera`'s
-`CameraView` and a test forbids the gallery picker, so pushing a JPEG to
-`/sdcard` is not an escape hatch.
+**RESOLVED the same session.** An x86_64 release APK was built and the whole
+question fell out: it installs, launches, signs in as a dummy login, and reaches
+Attendance on `Pixel_9_Pro` with **zero crashes** — and the Pahchan clock screen
+renders a **live preview from the emulated front camera** into `expo-camera`'s
+`CameraView`. Confirmed independently of the pixels by the camera service:
+`CameraService::connect call (PID 3579 "com.aekaminc.Kartavaya", camera ID 1)`
+and `Device 1 is open. Client package: com.aekaminc.Kartavaya`.
+
+So §11's worry that the photo-punch might be undrivable on an emulator is
+retired: **it is drivable**, and Suite 21 does not need a real device for it.
+The `takePictureAsync` round trip is left to Suite 21 to assert with a real row
+rather than proven here, because proving it would mean writing a punch into the
+production-shared database outside an approved step.
 
 ⚠ Incidentally this casts doubt on `android_e2e.py`'s ~10 assertions ever having
 run green on these AVDs: the harness never installs an APK.

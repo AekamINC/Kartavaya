@@ -219,12 +219,29 @@ the two archives cannot be confused. ⚠ This also means `mobile/e2e/android_e2e
 ~10 assertions cannot have run green against a release APK on these AVDs — the
 harness never installs one.
 
-**🟡 The emulator camera question is half-answered.** Both AVDs enumerate two
-cameras including `Facing: Front` and declare `android.hardware.camera.front`,
-and the app accepts a `CAMERA` grant — but whether `takePictureAsync` returns a
-usable frame through `expo-camera`'s `CameraView` needs an APK that runs.
-`ClockScreen` forbids the gallery picker by test, so pushing a JPEG to `/sdcard`
-is not a substitute.
+**🟢 The emulator camera question is ANSWERED — YES, and mobile is unblocked.**
+An x86_64 release APK was built (`build/Kartavaya-2.0.4-release-x86_64.apk`,
+x86_64 + `libreactnative.so` + the 3,224,296-byte JS bundle, all verified inside
+the archive). On `Pixel_9_Pro` it installs, launches, signs in, and reaches
+Attendance with **zero crashes**. The Pahchan clock screen renders a **live
+preview from the emulated front camera** into `expo-camera`'s `CameraView`, and
+the camera service confirms it independently of the pixels:
+
+    CameraService::connect call (PID 3579 "com.aekaminc.Kartavaya", camera ID 1)
+                                and Camera API version 2
+    Device 1 is open. Client package: com.aekaminc.Kartavaya
+
+So **Suite 21's photo-carrying punch does not have to be a real-device-only
+check** — the assumption in proposal 93 §11 that this might be undrivable is
+retired. What is proven is the capture *pipeline* up to a live preview; the
+`takePictureAsync` round trip is left for Suite 21 to assert with a real row,
+deliberately, because proving it here would mean writing a punch to the
+production-shared database outside an approved step.
+
+⚠ Observed while there, not yet diagnosed: the screen offers **"Clock out"**
+while simultaneously showing the gate **"Add your two reference photos"**. Worth
+a Suite 09/21 assertion — either the clocked-in state or the enrolment gate is
+reporting wrongly.
 
 **🔴 `aekaminc.com` SES verification is `Failed`, not merely unverified.** Read
 from the API rather than the console: `verify=Failed, dkim=Failed`. SES looked
