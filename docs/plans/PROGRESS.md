@@ -4334,6 +4334,48 @@ create. §7 chose delete-first precisely so that cannot hide.
   announcement is a separate node from the visible toast. That separation is the
   product doing accessibility correctly.
 
+## 2026-08-28 · Wave 1 — migration 238, and the second half of the TAN defect
+
+Approved by the owner on the record that it touches production data — staging
+and production share one Supabase database, and that was stated back before the
+statement ran rather than after.
+
+**Applied:** `238_tan_format_blocks_nothing.sql` — `DROP CONSTRAINT
+organisations_tan_format`, plus a column comment saying why it must not come
+back. **Rows affected: zero**, counted live before it ran: 5 organisations,
+`tan_not_null 0`, `tan_empty 0`, `tan_malformed 0`. `information_schema.tables`
+returns exactly one `organisations`, in `staging` — the both-product-schemas
+rule satisfied by measurement, not assumption. Verified after: `pg_constraint`
+returns no row for that name.
+
+**Why a schema change and not a 400.** The router warns and stores as typed;
+the column refused. The two are irreconcilable and only one of them can move
+without contradicting the standing rule *"GSTIN / PAN / TAN are non-mandatory
+and must block nothing."* Returning 400 would have kept the constraint and
+broken the rule. A wrong TAN is still refused where it costs something —
+`doc_validation.py` will not build a TDS challan against one.
+
+**One test bug, found on its own first run and recorded rather than quietly
+fixed.** 02.2b asserted the toast message inside `.tst__t`, which is the toast
+TITLE — `toast.jsx:328-329` puts the message in `.tst__s`. The locator could
+never match and the failure read as *"the product does not warn"*. The captured
+page context showed it warned in two places at once: a field-level `alert`
+beside the TAN box and the toast message. **That is the fifth time this
+programme has nearly filed a test bug as a product bug, and the fifth time
+looking at the wire or the page before writing the report stopped it.** Copying
+02.2's locator without reading what it selected is what suite rule 6 exists to
+prevent.
+
+**Evidence:** Suite 02 **8/8 on the Unicode reference lane, green twice
+consecutively**. 14 backend tests across `test_org_profile_tan_blank.py` and
+`test_org_profile_tan_malformed.py`. ⚠ Those mock the pool, so they prove what
+the ROUTER does; that the COLUMN accepts it is proved separately, by
+`pg_constraint` and by 02.2b driving the real form against staging.
+
+**Not done, deliberately:** no `gstin`/`pan` CHECK added "for symmetry" —
+symmetry here means none of the three blocks anything. Neither PROPOSED file is
+applied or renumbered; only their TAN blocks are commented out.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
 
 

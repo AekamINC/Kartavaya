@@ -368,6 +368,103 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await expect(page.locator('#org-tan')).toHaveValue('');
   });
 
+  test('02.2b a mistyped TAN is kept and warned about — it does not eat the form', async ({ page }) => {
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE SECOND HALF OF THE TAN DEFECT, and the one that only a browser finds.
+    //
+    // The router has always told the customer, in these words:
+    //   "A TAN is four letters, five digits and one letter — for example
+    //    AHMA12345B. 'AHMA123' does not look like one. It has been saved as
+    //    typed."
+    // and `organisations_tan_format` then refused the write. So it was NOT
+    // saved as typed: CheckViolationError -> a 500 that escaped before the CORS
+    // headers -> `net::ERR_FAILED` in the browser -> "Failed to save profile"
+    // on screen, naming no field.
+    //
+    // ⚠ AND THE PATCH CARRIES THE WHOLE FORM. The assertion that matters here
+    // is therefore NOT about the TAN. It is that the LEGAL NAME typed in the
+    // same sitting survives. A firm reading one character wrong off a TDS
+    // certificate lost its name, address, state, email, phone and bank details
+    // in the same click. That is invisible to every row count — the row is
+    // simply unchanged — and indistinguishable, to the person looking at it,
+    // from "the Save button does not work".
+    //
+    // Migration 238 dropped the constraint. Validation did not vanish; it moved
+    // to where a wrong TAN actually costs something — `doc_validation.py`
+    // refuses to build a TDS challan against one. The settings page records
+    // what the customer says about their own firm; the statutory document is
+    // where the statute is enforced.
+    // ═══════════════════════════════════════════════════════════════════════
+    const wire = watchWire(page);
+    await signIn(page, requireUnicode());
+    await openTab(page, 'profile');
+
+    const name = page.locator('#org-name');
+    const tan = page.locator('#org-tan');
+    await expect(tan).toBeVisible({ timeout: 30_000 });
+
+    // The name as it stands, so this test restores exactly what it found and a
+    // second run starts where the first did. §6.
+    const nameBefore = await name.inputValue();
+    expect(nameBefore, 'precondition: the org must have a legal name').toBeTruthy();
+
+    // A DIFFERENT name each direction, so "it survived" cannot be satisfied by
+    // the field simply never having changed.
+    const nameTyped = `${LANE.org} (TAN probe)`;
+    for (const [field, value] of [[name, nameTyped], [tan, 'AHMA123']] as const) {
+      await field.click();
+      await field.press('ControlOrMeta+a');
+      await field.pressSequentially(value);
+      await expect(field).toHaveValue(value);
+    }
+
+    const res = await saveAndWait(page, /Save company profile/, /\/org\/profile/);
+    expect(
+      res.status(),
+      `A MISTYPED TAN WAS REFUSED — answered ${res.status()}. GSTIN/PAN/TAN ` +
+      `must block nothing, and this save also carried the legal name.${dump(wire)}`,
+    ).toBeLessThan(400);
+
+    // Warned, because accepted is not the same as unremarked — the TAN is the
+    // one of the three a document depends on.
+    //
+    // ⚠ TEST BUG, found and fixed on this test's first run and worth recording:
+    // this asserted `.tst__t` — the toast TITLE — for the message text.
+    // `components/ui/toast.jsx:328-329` renders the title in `.tst__t` and the
+    // message in `.tst__s`, so the locator could never match and the failure
+    // read as "the product does not warn". The page context from that run shows
+    // it warned in BOTH places. Copying 02.2's locator without reading what it
+    // selected is exactly the shortcut suite rule 6 exists to stop.
+    //
+    // The field-level alert is asserted FIRST because it is the one the
+    // customer reads: it sits beside the TAN box, and it is where the promise
+    // "It has been saved as typed" is actually made.
+    await expect(page.getByRole('alert').getByText(/has been saved as typed/i))
+      .not.toHaveCount(0);
+    await expect(page.locator('.tst__s').getByText(/do not look right/i).last())
+      .toBeVisible({ timeout: 30_000 });
+
+    // THE ASSERTION THIS TEST EXISTS FOR. Read back from the server, not from
+    // the DOM the save left behind.
+    await page.reload();
+    await expect(name).toHaveValue(nameTyped, { timeout: 30_000 });
+    await expect(tan).toHaveValue('AHMA123');
+
+    // Put it back — the name to what it was, the TAN to empty, which the blank
+    // path (02.2) has already proved is legal.
+    await name.click();
+    await name.press('ControlOrMeta+a');
+    await name.pressSequentially(nameBefore);
+    await tan.click();
+    await tan.press('ControlOrMeta+a');
+    await tan.press('Delete');
+    const restored = await saveAndWait(page, /Save company profile/, /\/org\/profile/);
+    expect(restored.status(), `restore failed: ${restored.status()}${dump(wire)}`).toBeLessThan(400);
+    await page.reload();
+    await expect(name).toHaveValue(nameBefore, { timeout: 30_000 });
+    await expect(tan).toHaveValue('');
+  });
+
   test('02.3 modules — what an org can actually switch on', async ({ page }) => {
     await signIn(page, requireUnicode());
     await openTab(page, 'modules');

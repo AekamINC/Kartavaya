@@ -132,11 +132,20 @@ COMMENT ON COLUMN staging.manav_employees.pf_number IS
 -- vary by region and era, so they are length-capped only — a CHECK that rejects
 -- a customer's real, valid number is worse than no CHECK, and this is a field
 -- someone types once from a certificate they are holding.
-ALTER TABLE staging.organisations
-    DROP CONSTRAINT IF EXISTS organisations_tan_format;
-ALTER TABLE staging.organisations
-    ADD CONSTRAINT organisations_tan_format
-    CHECK (tan = '' OR tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$');
+-- ── REMOVED BY MIGRATION 238, 2026-08-28 ────────────────────────────────────
+-- This CHECK was live (applied out of band, while this file still said it was
+-- not) and it 500d the ENTIRE company-profile save whenever a customer typed a
+-- TAN that did not match the shape, or cleared one — the PATCH carries every
+-- column, so the name, address and bank details went with it. GSTIN/PAN/TAN
+-- must block nothing (CLAUDE.md, standing). Shape is warned at entry in
+-- routers/org_profile.py and ENFORCED at the point of use in
+-- services/doc_validation.py, which refuses a TDS challan on a bad TAN.
+-- DO NOT UNCOMMENT. See backend/migrations/238_tan_format_blocks_nothing.sql.
+-- ALTER TABLE staging.organisations
+--     DROP CONSTRAINT IF EXISTS organisations_tan_format;
+-- ALTER TABLE staging.organisations
+--     ADD CONSTRAINT organisations_tan_format
+--     CHECK (tan = '' OR tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$');
 
 ALTER TABLE staging.organisations
     DROP CONSTRAINT IF EXISTS organisations_pf_estab_len;

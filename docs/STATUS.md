@@ -255,6 +255,56 @@ in four places and loses it in four others. ⚠ The good half: a new org is not 
 wall of zeroes — a bilingual **Setup guide** ("0 of 4 complete") is already built
 and appears on day one.
 
+## Fixed 2026-08-28 — the TAN CHECK ate the whole company profile
+
+**✅ CLOSED, both halves, proved by driving the real form and green twice.**
+Found in proposal 93 Wave 1 by typing into `/settings/organisation`, not by
+reading code. `staging.organisations.tan` carried
+`CHECK (tan IS NULL OR tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$') NOT VALID` while
+`routers/org_profile.py` promised the customer, on screen, *"It has been saved
+as typed."* Two ways to break it, one blast radius:
+
+| | what the customer did | what happened |
+|---|---|---|
+| 🟢 | cleared a TAN they no longer need | router wrote `''`; neither arm of the CHECK accepts it |
+| 🟢 | mistyped one character off a certificate | router stored it as typed; the CHECK refused it |
+
+Both raised `asyncpg.CheckViolationError`. **The 500 escaped before the CORS
+headers**, so the browser reported `net::ERR_FAILED` and the screen said only
+"Failed to save profile", naming no field. ⚠ **And the PATCH carries every
+column** — so the firm also lost the legal name, address, state, email, phone
+and bank details typed in the same sitting. Invisible to every row count: the
+row is simply unchanged, which looks identical to "Save does not work".
+**This is the repo's signature failure — a value of the wrong shape handed to a
+constrained Postgres column — and it is the fourth of its kind.**
+
+- **The blank half** — `2317dbff`, router writes `NULL`. 5 tests.
+- **The malformed half** — **migration 238 APPLIED 28 Aug**, dropping
+  `organisations_tan_format`. Verified: `pg_constraint` returns no row.
+  **Rows affected: zero** — 5 orgs on the database, none held a TAN at all,
+  counted live before it ran. 9 tests (`test_org_profile_tan_malformed.py`).
+- **Validation was not lost, it moved to where it bites.** `doc_validation.py`
+  refuses to build a TDS challan against an absent or malformed TAN, which is
+  the only document a wrong TAN actually damages. The settings page records
+  what the customer says about their firm; the statutory document enforces the
+  statute.
+- **GSTIN and PAN never had a format CHECK.** Read live: TAN was the single
+  outlier among six CHECKs on the table. This finishes applying the standing
+  rule rather than weakening it.
+- ⚠ **The constraint was never recorded as applied.** It is defined in two
+  files, `PROPOSED_documents.sql` and `PROPOSED_090`, both headed *"NOT
+  APPLIED"*, and they disagree — one admits `NULL`, the other `''`. The live
+  form was `PROPOSED_documents.sql`'s; the router was written against
+  `PROPOSED_090`'s. That gap **is** the defect. Both blocks are now commented
+  out with a pointer to 238, so applying either cannot resurrect it.
+
+**Suite 02 is 8/8 on the Unicode reference lane, green twice consecutively**
+(§6 idempotence proved from its own output, not claimed). 02.2b types a
+mistyped TAN alongside a changed legal name and asserts **the name survives** —
+the assertion that would have caught this originally is not about the TAN.
+
+---
+
 ## Open, found 28 Aug during proposal 93 R0 — NOT fixed
 
 **🔴 The release APK cannot run on either emulator, so Suite 21 is blocked.**

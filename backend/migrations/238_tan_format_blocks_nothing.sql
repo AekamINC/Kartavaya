@@ -1,0 +1,199 @@
+-- 238_tan_format_blocks_nothing.sql
+--
+-- Proposal 93, Wave 1 — THE SECOND HALF OF THE TAN DEFECT.
+--
+-- The number was read at the moment this file was written —
+-- `ls backend/migrations/ | grep -oE '^[0-9]+' | sort -n | tail -1` answered
+-- 237 — and it is never re-numbered afterwards.
+--
+-- Commit 2317dbff fixed the BLANK case in the router: a cleared TAN now writes
+-- NULL instead of '', so a firm can remove a TAN without losing its name,
+-- address and bank details in the same click. This file fixes the other half,
+-- which the same probe exposed and which no code change can reach.
+--
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 1. WHAT THIS TOUCHES
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+--   DROP CONSTRAINT  staging.organisations.organisations_tan_format   x 1
+--   COMMENT ON COLUMN staging.organisations.tan                       x 1
+--
+--   NO ROW IS WRITTEN. No INSERT, no UPDATE, no DELETE, no backfill. No column
+--   is added, dropped or retyped. No index, no foreign key, no trigger, no
+--   grant, no RLS policy. `organisations_pf_estab_len`,
+--   `organisations_esi_employer_len` and every other CHECK on the table are
+--   left exactly as they are.
+--
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 2. WHY — THE PRODUCT RULE AND THE DATABASE DISAGREE
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+-- CLAUDE.md, standing and repeated: "GSTIN / PAN / TAN are non-mandatory and
+-- must block nothing. This has drifted back more than once; do not 'fix' it."
+--
+-- `routers/org_profile.py` implements exactly that. A TAN that does not match
+-- the shape produces a WARNING and is stored anyway:
+--
+--     "A TAN is four letters, five digits and one letter — for example
+--      AHMA12345B. 'AHMA123' does not look like one. It has been saved as
+--      typed."
+--
+-- The database then refuses the write. The two are irreconcilable: the router
+-- promises the customer their value was kept, and the column throws
+-- CheckViolationError on the same statement. The 500 escapes before the CORS
+-- headers are attached, so the browser reports `net::ERR_FAILED` and the screen
+-- says only "Failed to save profile" — naming no field.
+--
+-- AND THE PATCH CARRIES THE WHOLE FORM. So a firm typing a TAN from a
+-- certificate and getting one character wrong does not merely fail to save the
+-- TAN. It loses the name, the address, the state, the email, the phone and the
+-- bank details entered in the same sitting, and is told nothing about why.
+-- That is the identical blast radius as the blank-TAN defect, from the identical
+-- cause, on the identical column.
+--
+-- ── THE CHECK IS ALSO THE ONLY ONE OF ITS KIND ──────────────────────────────
+--
+-- Measured live on 2026-08-28, every CHECK on `staging.organisations`:
+--
+--     organisations_billing_anchor_day_check
+--     organisations_brand_accent_hex
+--     organisations_gst_filing_scheme
+--     organisations_max_pahchan_seats_non_negative
+--     organisations_max_users_positive
+--     organisations_tan_format
+--
+-- THERE IS NO gstin FORMAT CHECK AND NO pan FORMAT CHECK. GSTIN and PAN already
+-- honour the rule at the storage layer; TAN is the single outlier. This file
+-- does not weaken a policy — it finishes applying one.
+--
+-- ── VALIDATION IS NOT LOST, IT MOVES TO WHERE IT MATTERS ────────────────────
+--
+-- A malformed TAN is a real problem for exactly one thing: a TDS challan is
+-- filed AGAINST a TAN, and a wrong one misattributes the deposit. That check
+-- already exists, at the point of use rather than the point of typing:
+--
+--   · `services/doc_validation.py:762-778` — reads the stored TAN, and emits a
+--     blocking gap both when it is absent and when it fails `_TAN_RE`.
+--   · `services/tds_challan_pdf.py:238` — renders `R.unset('TAN')` rather than
+--     a number when it is not there.
+--
+-- So after this migration a wrong TAN is stored with a warning on screen, and
+-- the document that depends on it still refuses to be built and says which
+-- field is wrong. That is the correct division: the settings page records what
+-- the customer says about their own firm; the statutory document is where the
+-- statute is enforced.
+--
+-- ── AND THE CONSTRAINT WAS NEVER MEANT TO BE APPLIED ────────────────────────
+--
+-- `organisations_tan_format` is defined in TWO files in this repository, and
+-- BOTH are marked proposed-not-applied. They do not agree with each other:
+--
+--   PROPOSED_documents.sql:71
+--     CHECK (tan IS NULL OR tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$') NOT VALID
+--
+--   PROPOSED_090_statutory_document_identifiers.sql:138
+--     CHECK (tan = ''   OR tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$')
+--
+-- One admits NULL and refuses ''; the other admits '' and refuses NULL. They
+-- are mutually exclusive encodings of "this firm has no TAN".
+--
+-- The live definition, read from `pg_constraint` on 2026-08-28, was
+-- PROPOSED_documents.sql's — verbatim, NOT VALID included. So that file WAS
+-- applied, out of band, while its header still says it was not, and
+-- PROPOSED_090 was written afterwards against the opposite convention.
+--
+-- The router was written against PROPOSED_090's convention and the database was
+-- running PROPOSED_documents.sql's. That is the whole defect, in one line: a
+-- constraint nobody recorded as applied, in a form nobody could look up.
+--
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 3. RISK — AND THE SHARED DATABASE
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+-- ⚠ STAGING AND PRODUCTION SHARE THIS DATABASE. This statement runs against
+-- production data. It is approved on that understanding, stated back before it
+-- ran, and the exposure was measured rather than assumed.
+--
+-- ── ROWS AT RISK: ZERO. Counted live, 2026-08-28, before writing this ───────
+--
+--     SELECT count(*), count(tan),
+--            count(*) FILTER (WHERE tan = ''),
+--            count(*) FILTER (WHERE tan IS NOT NULL AND tan <> ''
+--                             AND tan !~ '^[A-Z]{4}[0-9]{5}[A-Z]$')
+--       FROM staging.organisations;
+--     ->  orgs 5 | tan_not_null 0 | tan_empty 0 | tan_malformed 0
+--
+-- Not one organisation on this database has a TAN at all. Dropping the check
+-- changes the legality of zero stored values. There is no rewrite, no scan and
+-- no lock beyond the instant ACCESS EXCLUSIVE that DROP CONSTRAINT takes on a
+-- five-row table.
+--
+-- `staging` is the only schema that has this table — `information_schema.tables`
+-- returns exactly one row for `organisations`, so `public` is not involved and
+-- CLAUDE.md's both-product-schemas rule is satisfied by measurement, not by
+-- assumption.
+--
+-- ── WHAT COULD STILL GO WRONG, HONESTLY ─────────────────────────────────────
+--
+--   · A garbage TAN can now be stored. It could not be stored before only in
+--     the sense that the ATTEMPT destroyed the rest of the form; nothing was
+--     protected. The warning text is unchanged and doc_validation still blocks
+--     the challan.
+--   · If the constraint is ever wanted back, note it is currently NOT VALID —
+--     existing rows were never checked by it, so it never guaranteed what its
+--     name suggests even for data already there.
+--
+-- ── WHAT IS DELIBERATELY NOT DONE ───────────────────────────────────────────
+--
+--   · No gstin/pan constraint is added "for symmetry". Symmetry here means
+--     none of the three blocks anything, and that is now the case.
+--   · Neither PROPOSED file is applied or renumbered by this commit. But the
+--     TAN CHECK is commented out in BOTH — PROPOSED_documents.sql:64 and
+--     PROPOSED_090:136 — each with a pointer here, because applying either one
+--     later would silently re-create the defect this file just removed. The
+--     columns and every other statement in those files are left untouched.
+--
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 4. VERIFY — run before and after
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+--   SELECT c.conname, pg_get_constraintdef(c.oid)
+--     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+--     JOIN pg_namespace n ON n.oid = t.relnamespace
+--    WHERE n.nspname = 'staging' AND t.relname = 'organisations'
+--      AND c.conname = 'organisations_tan_format';
+--
+--   Before: one row.  After: zero rows.
+--
+--   The behavioural check, which is the one that matters, is
+--   `backend/tests/test_org_profile_tan_malformed.py` and Suite 02.2 — a
+--   malformed TAN typed into the real form must answer < 400 and leave the
+--   name and address that were typed alongside it intact.
+--
+-- ═════════════════════════════════════════════════════════════════════════════
+-- 5. ROLLBACK
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+--   ALTER TABLE staging.organisations
+--       ADD CONSTRAINT organisations_tan_format
+--       CHECK (tan IS NULL OR tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$') NOT VALID;
+--
+--   Restores the exact definition that was live, NOT VALID included. Safe at
+--   any time while no malformed TAN has been stored; if one has, it stays
+--   (NOT VALID does not re-check existing rows) and only later writes are
+--   refused — which is the defect, returning.
+--
+-- ═════════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE staging.organisations
+    DROP CONSTRAINT IF EXISTS organisations_tan_format;
+
+COMMENT ON COLUMN staging.organisations.tan IS
+    'Tax Deduction and Collection Account Number, conventionally AAAA99999A. '
+    'DELIBERATELY UNCONSTRAINED — GSTIN, PAN and TAN are non-mandatory and must '
+    'block nothing (CLAUDE.md, standing). The shape is warned about at entry in '
+    'routers/org_profile.py and ENFORCED at the point of use in '
+    'services/doc_validation.py, which refuses to build a TDS challan against a '
+    'TAN that is absent or malformed. Do not add a CHECK here again: the last '
+    'one 500d the whole company-profile save, losing every other field typed in '
+    'the same sitting. See migration 238.';
