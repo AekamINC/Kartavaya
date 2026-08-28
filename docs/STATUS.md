@@ -236,6 +236,47 @@ the seat removes the member from the org; deleting the login is a separate act
 with a different blast radius), and no `staging.organisations` row was deleted —
 152 CASCADEs hang off that table, one crossing into `public.org_settings`.
 
+**↑ The first of those two was reversed on 2026-08-28 — see R4b below.**
+
+## Proposal 93 · R4b EXECUTED 28 Aug — the accounts go, and UK gets its state
+
+**§2 said "remove means remove" and R4 kept the logins.** That narrowing was
+declared in the paragraph above, but §2 had already weighed the same blast radius
+and ruled the other way, so it was a settled instruction reversed as a footnote
+rather than a decision raised. Owner's ruling, 2026-08-28: *"any users of aekam is
+part of any org keep it rest remove."* Risk report written before the statement
+ran: `docs/plans/93-R4B-ACCOUNT-PURGE-RISK-REPORT.md`.
+
+**It was also blocking the next piece of work.** `org_invites.py:455` answers
+`409 "Someone with this email already has an account"`, so Suite 02's members
+lane could not re-invite any address an orphan account still held.
+
+- **25 accounts deleted** — every `public.users` row holding no `user_roles` seat
+  in any org. All test personas; **none created a task, none touches the
+  protected 20**, both measured rather than assumed.
+- **Two exclusions added on top of the owner's rule:** the 5 `niyam_<org>`
+  `is_system` accounts (93 §2's named hazard — they hold no seat *by design* and a
+  blanket purge breaks Niyam attribution in the untouched orgs too), and anyone
+  touching the protected 20 (measured empty, kept in the query anyway).
+- **Collateral, 70 rows:** 46 `notifications`, 3 `pulse_logins`, 1
+  `push_web_subscription`. Found by sweeping **all 270 text user-reference columns
+  across 166 tables**, not only the 15 with a foreign key — 14 of those 15 are
+  `NO ACTION`, so an enforced reference would have failed loudly; the unenforced
+  ones would have orphaned silently.
+- ⚠ **`staging.audit_log`'s 20 rows are KEPT, deliberately.** The cross-org
+  incident was diagnosed *from* `audit_log`; deleting audit rows to tidy a purge
+  destroys the evidence. They now reference a `user_id` that no longer
+  resolves — which is what a deleted account's audit trail should look like.
+- **UK AekamINC `state_code` = `27` Maharashtra** (93 §9, owner-delegated, never
+  applied — it was `NULL`). This is what makes Stage 4 a test rather than a
+  repeat: against Unicode's Gujarat `24`, identical suites must now produce IGST
+  between the orgs and a different professional tax on identical salaries.
+
+**Verified after, by re-query:** users 50 → **25**, `is_system` still **5** ·
+Aekam Inc seats **10** and Demo **1**, unchanged · protected tasks still **20** ·
+`audit_log` **1757**, unchanged · UK reads `27` · the only seatless accounts left
+are the 5 system ones.
+
 **🔴 The plus-addressing probe BOUNCED.** SES accepted all three probe messages,
 then reported `attempts=2, bounces=1`. `success@simulator.amazonses.com` never
 bounces, so one of `test@unicodegroup.com` / `test+probe@unicodegroup.com` is

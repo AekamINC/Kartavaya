@@ -4376,6 +4376,69 @@ the ROUTER does; that the COLUMN accepts it is proved separately, by
 symmetry here means none of the three blocks anything. Neither PROPOSED file is
 applied or renumbered; only their TAN blocks are commented out.
 
+## 2026-08-28 · R4b — the accounts go, and UK gets its state code
+
+**§2 said "remove means remove"; R4 kept the logins and said so.** The narrowing
+was declared in STATUS.md, which is to its credit — but §2 had already weighed
+the same blast radius and ruled the other way, and it had already named the one
+account class that genuinely could not go. So this was a settled instruction
+reversed as a footnote rather than a decision raised. §0 does not allow that call
+to be made silently: "broken, blocked, or excluded by decision" are three
+different sentences, and this was the third written as the second.
+
+**It was also load-bearing.** `org_invites.py:455` answers `409 "Someone with
+this email already has an account. Add them from the Members tab instead"`, so
+Suite 02's members lane — the thing every later wave needs, because it produces
+the accounts — could not re-invite any address an orphan still held.
+
+Owner's ruling: *"any users of aekam is part of any org keep it rest remove."*
+Risk report written BEFORE the statement ran, per §0:
+`docs/plans/93-R4B-ACCOUNT-PURGE-RISK-REPORT.md`.
+
+**25 accounts deleted**, 50 -> 25. Every `public.users` row with no `user_roles`
+seat in any organisation. All test personas; none created a task and none touches
+the protected 20, both measured rather than assumed.
+
+**TWO EXCLUSIONS ADDED ON TOP OF THE OWNER'S RULE**, because the literal rule
+would have destroyed something 93 protects:
+
+  * the 5 `niyam_<org>` `is_system` accounts. This is the exact hazard 93 §2
+    raised: they are the automation engine's actor identity and hold no seat BY
+    DESIGN, so a blanket purge breaks Niyam attribution in every org -- including
+    the two nobody is allowed to touch.
+  * anyone who created, is assigned to or approved one of the protected 20.
+    MEASURED EMPTY, and kept in the query anyway: a guard that happens to be
+    unnecessary today is not the same as one that is absent.
+
+**The sweep was 270 columns, not 15.** Fifteen foreign keys reference
+`public.users(id)` and fourteen are `NO ACTION` -- so an enforced reference would
+have failed loudly, which is what R4's gate asks for. The danger was the
+UNENFORCED ones, which orphan silently, so all 270 text user-reference columns
+across 166 tables in both product schemas were counted (via `query_to_xml`, so no
+DDL touched this shared database). Four carried rows; 70 in total, all telemetry.
+
+⚠ **`staging.audit_log`'s 20 rows are KEPT, and that is a judgement, not an
+oversight.** The cross-org incident four hours earlier was diagnosed FROM
+`audit_log` -- it is what showed `org_id=045b76ad` reached via `platform_bypass`.
+Deleting audit rows to make a purge look tidy destroys exactly that. There is no
+FK, so they are legal; they now point at a `user_id` that no longer resolves,
+which is what a deleted account's audit trail is supposed to look like.
+
+**UK AekamINC `state_code` = `27` Maharashtra.** 93 §9, owner-delegated, never
+applied -- the column was `NULL`. It is what turns Stage 4 from a repeat into a
+test: against Unicode's Gujarat `24`, identical suites must now produce IGST
+between the orgs and CGST/SGST within them, and Maharashtra's 3 professional-tax
+bands against Gujarat's 4 must move the figure on identical salaries. Identical
+figures would mean the ladders are not read at all.
+
+**Verified by re-query, never by the statement reporting success:** users **25**,
+`is_system` still **5** · Aekam Inc seats **10**, Demo **1**, unchanged ·
+protected tasks **20** · `audit_log` **1757**, unchanged · UK reads **27** · the
+only seatless accounts remaining are the 5 system ones.
+
+⚠ `reseed_backup_20260828` is now the only copy of these 25 accounts as well as
+of the 25,854 rows. **R9 must not drop it until the rebuilt members exist.**
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
 
 
