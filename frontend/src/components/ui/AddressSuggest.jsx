@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { api } from '../../lib/api';
+import { loadMappls, MAP_OFF } from '../../lib/mapplsSdk';
 import '../../styles/address-suggest.css';
 
 /**
@@ -111,6 +111,69 @@ const MIN_CHARS = 3;
  */
 const DEBOUNCE_MS = 350;
 
+/** The SDK is callback-based and a callback that never fires would leave the
+ *  box spinning for ever. Generous, because this is a real network round trip
+ *  the SDK makes on our behalf and a slow answer is still a useful one. */
+const SEARCH_TIMEOUT_MS = 8000;
+
+/**
+ * Mappls' result list -> the shape this component's callers already read.
+ *
+ * ── WHAT MAPPLS ACTUALLY RETURNS, ENUMERATED IN A BROWSER ───────────────────
+ *
+ *     type, placeAddress, eLoc, placeName, alternateName, keywords,
+ *     orderIndex, suggester, distance
+ *
+ * There is NO city, NO state and NO pincode. Only `placeAddress`, a comma
+ * string like "Kandivali East, Mumbai, Maharashtra, 400101". The server-side
+ * proxy this replaced shaped six fields out of a similar string; that shaping
+ * was a guess, and §8.0's rule is that this product does not guess at an
+ * address it did not receive.
+ *
+ * So exactly TWO things are taken:
+ *
+ *   line1    `placeName` — what the user picked, verbatim.
+ *   pincode  the LAST comma-segment, and only when it passes the product's own
+ *            `^[1-9][0-9]{5}$`. A trailing six-digit token in an Indian address
+ *            is a PIN; anything else is left alone.
+ *
+ * City and state are then filled by `PincodeAutofill` from OUR OWN 20,144-row
+ * government directory — which is better than parsing them out of Mappls'
+ * string in every way that matters: it is authoritative, it is free, it names
+ * the district too, and it REFUSES to fill when a PIN spans two districts
+ * instead of picking one.
+ *
+ * ⚠ `eLoc` IS DELIBERATELY DROPPED. It is Mappls' own primary key for a place,
+ * and the moment it is stored in a customer's row it becomes a hard dependency
+ * on them — the first thing that joins on it cannot be undone by a vendor
+ * swap. It is not returned, not stored, and not put in a data attribute.
+ */
+export function shapeSuggestions(data) {
+  const list = Array.isArray(data) ? data
+    : (data?.suggestedLocations || data?.copResults || data?.results || []);
+  const arr = Array.isArray(list) ? list : [list];
+
+  return arr.filter(Boolean).map((r) => {
+    const address = String(r.placeAddress || '').trim();
+    const tail = address.split(',').map(t => t.trim()).filter(Boolean).pop() || '';
+    // ONE definition of "is this a PIN", the server's, mirrored — a laxer one
+    // here would write a value the rest of the product refuses to look up.
+    const pincode = /^[1-9][0-9]{5}$/.test(tail) ? tail : '';
+    const name = String(r.placeName || '').trim();
+    return {
+      label: [name, address].filter(Boolean).join(' — ') || name || address,
+      line1: name,
+      pincode,
+      // Named explicitly as absent rather than omitted, so a caller reading
+      // `s.city` gets '' and not `undefined`, and nobody is tempted to
+      // reconstruct them from `label`.
+      city: '',
+      state: '',
+      district: '',
+    };
+  }).filter(s => s.label);
+}
+
 /** The environment was never given a Mappls key. Not a fault. */
 const NOT_CONFIGURED = 'not_configured';
 
@@ -170,30 +233,59 @@ export default function AddressSuggest({
    */
   const search = useCallback(async (fragment) => {
     const mine = ++seq.current;
-    const controller = new AbortController();
-    inflight.current = controller;
     setBusy(true);
     try {
-      const { data } = await api.get('/v1/maps/address/suggest', {
-        params: { q: fragment },
-        signal: controller.signal,
-      });
+      const cfg = await loadMappls();
+      const sdk = await cfg.loadSearch();
       if (mine !== seq.current) return;
-      setItems(Array.isArray(data?.suggestions) ? data.suggestions : []);
-      setReason(data?.reason ?? null);
-      setCredit(data?.attribution
-        ? { text: data.attribution, href: data.attribution_href }
+
+      /* ONLY the fragment goes. `mappls.search` takes an options object and
+         this passes exactly one key — no `location`, no `bounds`, no `filter`
+         built from the record being edited. The realistic breakage is not
+         sending the stored address INSTEAD of the fragment; it is sending it
+         AS WELL, to sharpen results, and every field submitted is licensed to
+         Mappls in perpetuity. The test asserts the option keys, not the query.
+
+         The SDK has no AbortController: it is callback-based. `seq` is what
+         makes a slow answer to an old fragment unable to overwrite a fast
+         answer to a newer one, and it was already the real guard — an abort
+         that lands after a response is parsed still leaves the stale setState
+         queued. So dropping the controller loses nothing. */
+      const data = await new Promise((resolve) => {
+        let settled = false;
+        const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+        // A callback that never fires would leave the box spinning for ever.
+        const timer = setTimeout(() => done({ __timeout: true }), SEARCH_TIMEOUT_MS);
+        try {
+          sdk.search({ query: fragment }, (res) => { clearTimeout(timer); done(res); });
+        } catch (e) { clearTimeout(timer); done({ __threw: true }); }
+      });
+
+      if (mine !== seq.current) return;
+      if (data?.__timeout || data?.__threw) {
+        setItems([]);
+        setReason('unavailable');
+        setOpen(true);
+        return;
+      }
+
+      setItems(shapeSuggestions(data));
+      setReason(null);
+      // The credit is the SAME obligation as the basemap's and comes from the
+      // same response that carried the token — a screen cannot obtain Mappls
+      // content without also receiving what it owes for it.
+      setCredit(cfg.attribution
+        ? { text: cfg.attribution, href: cfg.attributionHref }
         : null);
       setActive(-1);
       setOpen(true);
     } catch (err) {
       if (mine !== seq.current) return;
-      // An abort is not a failure — it is us, cancelling a request the user
-      // made obsolete. Reporting it as one would flash "we could not reach the
-      // address service" on every fast typist's screen.
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
+      // `MapUnavailable.reason` distinguishes "no map is configured in this
+      // environment" from "Mappls did not answer", and the two need opposite
+      // words — the first is not a fault.
       setItems([]);
-      setReason('unavailable');
+      setReason(err?.reason === MAP_OFF ? 'not_configured' : 'unavailable');
       setOpen(true);
     } finally {
       if (mine === seq.current) setBusy(false);

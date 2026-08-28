@@ -89,8 +89,41 @@ function injectScript(src) {
   });
 }
 
+/** The plugins bundle, injected at most once per page. */
+let pluginPromise = null;
+
 /**
- * `{ mappls, attribution, attributionHref }`, or throws `MapUnavailable`.
+ * `window.mappls` with `search` attached, or throws `MapUnavailable`.
+ *
+ * The plugins script is served from the same host and takes the same
+ * `access_token`, so it is derived from the map URL rather than given a second
+ * definition — the dead-SDK-URL episode in §7.5 is what one more hand-written
+ * Mappls URL costs.
+ */
+function loadSearchPlugin(sdkUrl) {
+  if (pluginPromise) return pluginPromise;
+
+  const token = String(sdkUrl).split('access_token=')[1] || '';
+  const url = `https://sdk.mappls.com/map/sdk/plugins?v=3.0&access_token=${token}`;
+
+  pluginPromise = (async () => {
+    if (typeof window.mappls?.search === 'function') return window.mappls;
+    await injectScript(url);
+    if (typeof window.mappls?.search !== 'function') {
+      // Loaded and did not attach `search`: the same shape a wrong SDK URL
+      // takes, and it must not read as "Mappls is off".
+      throw new MapUnavailable(MAP_DOWN);
+    }
+    return window.mappls;
+  })();
+
+  pluginPromise.catch(() => { pluginPromise = null; });
+  return pluginPromise;
+}
+
+/**
+ * `{ mappls, attribution, attributionHref, loadSearch }`, or throws
+ * `MapUnavailable`.
  *
  * `attribution` is the "Powered by Mappls" credit and it is returned FROM the
  * same call that returns the token on purpose. Mappls' terms require it to be
@@ -120,6 +153,26 @@ export function loadMappls() {
       mappls,
       attribution: cfg.attribution,
       attributionHref: cfg.attribution_href,
+      /* ── The PLUGINS bundle, loaded ONLY when something asks ─────────────
+         The map bundle above carries 124 keys and NOT ONE search surface —
+         enumerated in a real browser, not read off the docs. The plugins
+         bundle takes it to 139 and adds `search`, `placePicker` and
+         `advancePlacePicker`.
+
+         It is a SEPARATE, LAZY call because most screens that draw a map never
+         search, and a second script on every map is a cost paid by all of them
+         for a feature few use. `loadSearch()` is what an address field calls.
+
+         ⚠ THIS IS THE ONLY WAY A BROWSER CAN REACH MAPPLS PLACES. Measured
+         2026-08-28 from a signed-in page on the whitelisted origin: a plain
+         `fetch` to `atlas.mappls.com/api/places/search/json`,
+         `/places/geocode` and `apis.mappls.com/.../autosuggest` is blocked by
+         CORS on all three — "No Access-Control-Allow-Origin header is present
+         on the requested resource". That is not a key, header or whitelist
+         problem and cannot be fixed from this side: the response is blocked
+         before our code sees it. The SDK ships its own transport, so it is not
+         subject to that wall. Do not "simplify" this into a fetch. */
+      loadSearch: () => loadSearchPlugin(cfg.sdk_url),
     };
   })();
 

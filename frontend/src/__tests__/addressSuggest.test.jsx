@@ -36,28 +36,56 @@ import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
-const get = vi.fn();
-vi.mock('../lib/api', () => ({ api: { get: (...a) => get(...a) } }));
+/* ── THE TRANSPORT IS THE SDK, NOT OUR BACKEND, AND THAT IS MEASURED ────────
+   This suite used to mock `lib/api`, because 7.6 was a server-side proxy.
+   It cannot be one: Mappls refuses our server-side calls with "Domain
+   validation failed" — their host recognises our token as VALID and then
+   denies it on domain grounds, while a garbage token gets `invalid_token`.
+   And a browser `fetch` cannot replace it either: `atlas.mappls.com` sends no
+   `Access-Control-Allow-Origin`, so every browser blocks the response before
+   our code sees it. Both measured in a real browser on the whitelisted origin.
+
+   What DOES work is the SDK's own `search`, which ships its own transport.
+   So this mocks `lib/mapplsSdk` and asserts the OPTIONS OBJECT handed to
+   `mappls.search` — which is where the licence rule now lives. */
+const search = vi.fn();
+const loadSearch = vi.fn(() => Promise.resolve({ search: (...a) => search(...a) }));
+let loadResult = () => Promise.resolve({
+  mappls: { search: (...a) => search(...a) },
+  attribution: 'Powered by Mappls',
+  attributionHref: 'https://www.mappls.com/',
+  loadSearch,
+});
+
+vi.mock('../lib/mapplsSdk', () => ({
+  MAP_OFF: 'not_configured',
+  MAP_DOWN: 'unavailable',
+  loadMappls: () => loadResult(),
+}));
 
 const { default: AddressSuggest } = await import('../components/ui/AddressSuggest');
 
-/** A well-formed answer from `GET /api/v1/maps/address/suggest`. */
-const ANSWER = {
-  data: {
-    available: true,
-    reason: null,
-    suggestions: [
-      { label: 'Unicode Group', line1: 'Bopal Circle, Ambli Road',
-        city: 'Ahmedabad', state: 'Gujarat', district: 'Ahmedabad',
-        pincode: '380058' },
-      { label: 'Bopal Cross Roads', line1: 'S P Ring Road',
-        city: 'Ahmedabad', state: 'Gujarat', district: 'Ahmedabad',
-        pincode: '380058' },
-    ],
-    attribution: 'Powered by Mappls',
-    attribution_href: 'https://www.mappls.com/',
-  },
-};
+/** What `mappls.search` really hands back — enumerated in a browser, not from
+ *  the docs: there is NO city, state or pincode, only `placeAddress`. */
+const RESULTS = [
+  { type: 'POI', placeName: 'Bopal Circle, Ambli Road', eLoc: 'ABC123',
+    placeAddress: 'Bopal, Ahmedabad, Gujarat, 380058', orderIndex: 1 },
+  { type: 'POI', placeName: 'Bopal Cross Roads', eLoc: 'DEF456',
+    placeAddress: 'S P Ring Road, Ahmedabad, Gujarat, 380058', orderIndex: 2 },
+];
+
+/** What `shapeSuggestions` makes of RESULTS[n] — line1 and a VALIDATED pincode
+ *  only. City and state are deliberately empty: they are not in what Mappls
+ *  returns, and `PincodeAutofill` fills them from our own government directory
+ *  rather than from a guess at Mappls' comma string. */
+const SHAPED = [
+  { label: 'Bopal Circle, Ambli Road — Bopal, Ahmedabad, Gujarat, 380058',
+    line1: 'Bopal Circle, Ambli Road', pincode: '380058',
+    city: '', state: '', district: '' },
+  { label: 'Bopal Cross Roads — S P Ring Road, Ahmedabad, Gujarat, 380058',
+    line1: 'Bopal Cross Roads', pincode: '380058',
+    city: '', state: '', district: '' },
+];
 
 /** The debounce, plus a margin. Longer than any number the component may use. */
 const PAST_THE_DEBOUNCE = 600;
@@ -77,8 +105,16 @@ async function settle(ms = PAST_THE_DEBOUNCE) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  get.mockReset();
-  get.mockResolvedValue(ANSWER);
+  search.mockReset();
+  loadSearch.mockClear();
+  loadResult = () => Promise.resolve({
+    mappls: { search: (...a) => search(...a) },
+    attribution: 'Powered by Mappls',
+    attributionHref: 'https://www.mappls.com/',
+    loadSearch,
+  });
+  // The SDK is callback-based: second argument, called with the raw list.
+  search.mockImplementation((opts, cb) => cb(RESULTS));
 });
 
 afterEach(() => {
@@ -101,7 +137,7 @@ describe('nothing is submitted that the user did not just type', () => {
     render(<AddressSuggest value="Bopal Circle, Ambli Road, Ahmedabad 380058" />);
     await settle();
 
-    expect(get).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 
   it('does not call Mappls when the saved value is replaced by a prop change', async () => {
@@ -113,7 +149,7 @@ describe('nothing is submitted that the user did not just type', () => {
     rerender(<AddressSuggest value="A different client's stored address" />);
     await settle();
 
-    expect(get).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 
   it('sends the fragment and nothing else', async () => {
@@ -124,11 +160,14 @@ describe('nothing is submitted that the user did not just type', () => {
     type('Bopal Circle');
     await settle();
 
-    expect(get).toHaveBeenCalledTimes(1);
-    const [url, config] = get.mock.calls[0];
-    expect(url).toBe('/v1/maps/address/suggest');
-    expect(Object.keys(config.params)).toEqual(['q']);
-    expect(config.params.q).toBe('Bopal Circle');
+    expect(search).toHaveBeenCalledTimes(1);
+    const [opts] = search.mock.calls[0];
+    // EXACTLY one key. `mappls.search` accepts `location`, `bounds`, `filter`
+    // and more, and every one of them would be built from the record being
+    // edited — which is the realistic breakage: not sending the stored address
+    // INSTEAD of the fragment, but sending it AS WELL, to sharpen results.
+    expect(Object.keys(opts)).toEqual(['query']);
+    expect(opts.query).toBe('Bopal Circle');
   });
 });
 
@@ -148,8 +187,8 @@ describe('a keystroke is not a request', () => {
     }
     await settle();
 
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(get.mock.calls[0][1].params.q).toBe('Bopal Circle');
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search.mock.calls[0][0].query).toBe('Bopal Circle');
   });
 
   it('sends nothing below the minimum length', async () => {
@@ -161,7 +200,7 @@ describe('a keystroke is not a request', () => {
       await settle();
     }
 
-    expect(get).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 
   it('does not cache: the same fragment twice is two calls', async () => {
@@ -176,7 +215,7 @@ describe('a keystroke is not a request', () => {
     type('Bopal Circle');
     await settle();
 
-    expect(get.mock.calls.filter(c => c[1].params.q === 'Bopal Circle')).toHaveLength(2);
+    expect(search.mock.calls.filter(c => c[0].query === 'Bopal Circle')).toHaveLength(2);
   });
 
   it('makes no request after the field unmounts', async () => {
@@ -187,7 +226,7 @@ describe('a keystroke is not a request', () => {
     unmount();
     await settle();
 
-    expect(get).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 });
 
@@ -211,11 +250,12 @@ describe('attribution', () => {
     // If the credit were hardcoded it would still read "Powered by Mappls"
     // here and the test would pass while proving nothing. Changing what the
     // server sends is the only way to tell the two apart.
-    get.mockResolvedValue({ data: {
-      ...ANSWER.data,
+    loadResult = () => Promise.resolve({
+      mappls: { search: (...a) => search(...a) },
       attribution: 'Powered by Mappls (renamed)',
-      attribution_href: 'https://example.invalid/',
-    } });
+      attributionHref: 'https://example.invalid/',
+      loadSearch,
+    });
     render(<AddressSuggest value="" />);
     type('Bopal Circle');
     await settle();
@@ -236,7 +276,12 @@ describe('the states are never merged', () => {
     await settle();
 
     expect(screen.getAllByRole('option')).toHaveLength(2);
-    expect(screen.getByText('Unicode Group')).toBeTruthy();
+    // `getAllByText`: the label appears in the option AND in the live region
+    // that announces the highlighted row to a screen reader. Two nodes is
+    // correct here; `getByText` would fail on the a11y wiring, not on the data.
+    expect(screen.getAllByText(/Bopal Circle, Ambli Road/).length)
+      .toBeGreaterThan(0);
+    expect(screen.getAllByText(/Bopal Cross Roads/).length).toBeGreaterThan(0);
     expect(screen.getByText('Bopal Circle, Ambli Road')).toBeTruthy();
   });
 
@@ -244,10 +289,10 @@ describe('the states are never merged', () => {
     // A local checkout and every preview deploy are in this state. Telling the
     // user the address service is down sends them to file a fault against
     // working software.
-    get.mockResolvedValue({ data: {
-      available: false, reason: 'not_configured', suggestions: [],
-      attribution: 'Powered by Mappls', attribution_href: 'https://www.mappls.com/',
-    } });
+    // The loader throws `MapUnavailable` with `.reason`; it no longer arrives
+    // as a field on a 200 body, because there is no proxy in the path.
+    loadResult = () => Promise.reject(
+      Object.assign(new Error('off'), { reason: 'not_configured' }));
     render(<AddressSuggest value="" />);
     type('Bopal Circle');
     await settle();
@@ -257,7 +302,8 @@ describe('the states are never merged', () => {
   });
 
   it('says the service could not be reached when it could not', async () => {
-    get.mockRejectedValue(new Error('network'));
+    loadResult = () => Promise.reject(
+      Object.assign(new Error('down'), { reason: 'unavailable' }));
     render(<AddressSuggest value="" />);
     type('Bopal Circle');
     await settle();
@@ -270,10 +316,7 @@ describe('the states are never merged', () => {
     // An Indian PIN averages ~82 km² and plenty of real premises are in no
     // gazetteer. "We looked and found nothing" is a legitimate answer and must
     // read differently from "we could not look".
-    get.mockResolvedValue({ data: {
-      available: true, reason: null, suggestions: [],
-      attribution: 'Powered by Mappls', attribution_href: 'https://www.mappls.com/',
-    } });
+    search.mockImplementation((opts, cb) => cb([]));
     render(<AddressSuggest value="" />);
     type('Nowhere In Particular');
     await settle();
@@ -297,7 +340,11 @@ describe('a suggestion is an offer, not a constraint', () => {
     await settle();
     fireEvent.mouseDown(screen.getAllByRole('option')[0]);
 
-    expect(onSelect).toHaveBeenCalledWith(ANSWER.data.suggestions[0]);
+    expect(onSelect).toHaveBeenCalledWith(SHAPED[0]);
+    // `eLoc` — Mappls' own primary key for a place — must NOT reach the parent.
+    // Stored in a customer's row it becomes a hard dependency the first thing
+    // that joins on it cannot undo.
+    expect(Object.keys(onSelect.mock.calls[0][0])).not.toContain('eLoc');
     expect(onChange).toHaveBeenLastCalledWith('Bopal Circle, Ambli Road');
   });
 
@@ -325,7 +372,7 @@ describe('a suggestion is an offer, not a constraint', () => {
     fireEvent.keyDown(box, { key: 'ArrowDown' });
     fireEvent.keyDown(box, { key: 'Enter' });
 
-    expect(onSelect).toHaveBeenCalledWith(ANSWER.data.suggestions[1]);
+    expect(onSelect).toHaveBeenCalledWith(SHAPED[1]);
   });
 
   it('lets a bare Enter through when no row is highlighted', async () => {
