@@ -428,6 +428,48 @@ async def create_client(
             "ref_no": row["ref_no"]}
 
 
+def _with_digipin(row) -> dict:
+    """A record row plus its DIGIPIN. Phase 8.4.
+
+    ── DERIVED, NEVER STORED ────────────────────────────────────────────────
+
+    There is deliberately no `digipin` COLUMN on either table. It is a pure
+    function of `lat`/`lng` with no vendor, no API call and no key, so a stored
+    copy would buy nothing and could fall out of step with the coordinate it
+    came from — and a DIGIPIN that disagrees with its own coordinate is worse
+    than none, because both look right.
+
+    ── AND NOT COMPUTED IN THE BROWSER ──────────────────────────────────────
+
+    A JS copy would WORK, which is the trap. Two implementations of a ten-level
+    grid traversal drift at the last symbol or two while agreeing perfectly at
+    level 6, so the divergence shows up as two systems naming NEIGHBOURING 4 m
+    cells rather than as anything that looks like a bug.
+    `services/digipin.py` is checked symbol-for-symbol against India Post's own
+    reference implementation over 20,000 coordinates; serving the result keeps
+    that the only implementation in the product.
+
+    ── `None` IS A REAL ANSWER ──────────────────────────────────────────────
+
+    The grid covers lat 2.5-38.5 and lng 63.5-99.5. A coordinate outside it HAS
+    no DIGIPIN, so `encode_or_none` and not `encode`: inventing a code for a
+    point the grid does not cover would be a confident lie about a ~4 m cell.
+
+    One helper rather than the expression written at each call site — this is
+    the second route to need it and there will be more, and the reason `None`
+    is returned is not something to re-derive from a one-line condition.
+    """
+    d = dict(row)
+    lat, lng = d.get("lat"), d.get("lng")
+    # `numeric` arrives as `Decimal`; `encode` takes floats. Both-or-neither is
+    # guaranteed by `*_geo_complete_ck`, but this does not lean on that — a
+    # constraint is about what the DATABASE will store, and this function is
+    # also handed rows from joins and from older code paths.
+    d["digipin"] = (digipin.encode_or_none(float(lat), float(lng))
+                    if lat is not None and lng is not None else None)
+    return d
+
+
 @router.get("/clients/{client_id}")
 async def get_client(
     client_id: UUID,
@@ -452,19 +494,8 @@ async def get_client(
         "WHERE client_id=$1::uuid AND is_active=TRUE ORDER BY created_at DESC LIMIT 50",
         str(client_id),
     )
-    # `digipin` is DERIVED, not a column — there is deliberately no
-    # `graha_clients.digipin`. Storing it would be a second copy of the same
-    # fact that can fall out of step with the coordinate it came from, and the
-    # code is pure arithmetic over `lat`/`lng` with no vendor and no API call,
-    # so re-deriving it costs nothing. `encode_or_none` because the grid covers
-    # lat 2.5-38.5 / lng 63.5-99.5 and a coordinate outside it HAS no DIGIPIN;
-    # `null` is that answer, not a failure. Computed here rather than in the
-    # browser so `services/digipin.py` — checked against India Post's own
-    # reference over 20,000 coordinates — stays the only implementation.
     return {
-        **dict(row),
-        "digipin": digipin.encode_or_none(float(row["lat"]), float(row["lng"]))
-                   if row["lat"] is not None and row["lng"] is not None else None,
+        **_with_digipin(row),
         "contacts": [dict(c) for c in contacts],
         "deals": [dict(d) for d in deals],
     }
@@ -1168,7 +1199,11 @@ async def get_contact(
         str(contact_id),
     )
     return {
-        "contact": dict(row),
+        # `_with_digipin`, not `dict(row)`: a contact carries a coordinate too
+        # (migration 237 adds the four columns to BOTH tables), and a detail
+        # screen that showed the pair without the code would send a reader
+        # looking for a DIGIPIN feature that is already here.
+        "contact": _with_digipin(row),
         "deals": [dict(d) for d in deals],
         "activities": [dict(a) for a in activities],
         "follow_ups": [dict(f) for f in follow_ups],

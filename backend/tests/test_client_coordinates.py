@@ -714,3 +714,24 @@ def test_the_browser_does_not_carry_a_second_implementation():
         "which is verified against India Post's reference over 20,000 "
         "coordinates. Two copies of a ten-level grid traversal drift at the "
         "last symbol and agree everywhere a casual test would look.")
+
+
+def test_both_detail_routes_serve_the_digipin_through_one_helper():
+    """`get_client` AND `get_contact`. Migration 237 adds the columns to both
+    tables, so a detail screen that showed the pair without the code would send
+    a reader looking for a feature that is already here.
+
+    Asserted on the HELPER rather than on two copies of an expression: this was
+    written twice first, and the second copy was the one that got missed — the
+    live acceptance run read a contact back and found `digipin` absent while
+    the client route had it.
+    """
+    import inspect
+    from routers import graha
+    assert "_with_digipin(row)" in inspect.getsource(graha.get_client)
+    assert "_with_digipin(row)" in inspect.getsource(graha.get_contact)
+    helper = inspect.getsource(graha._with_digipin)
+    assert "encode_or_none" in helper
+    assert "is not None" in helper, (
+        "the helper must not call encode() on a NULL coordinate — almost every "
+        "row has none, and that is the normal state")
