@@ -4136,7 +4136,67 @@ so that address can be exactly **one login**. The Prachar indexes are scoped
 carry no unique email index at all — so the shared address is fine everywhere
 except a second login, where the proven gmail tags are used instead.
 
+---
+
+## 2026-08-28 · DAY ONE captured — and the screen tells the customer the wrong thing
+
+Captured before Suite 02 enables the modules, because the moment it does this
+evidence is unreproducible without another wipe. `dayone-capture.spec.ts`,
+screenshots on disk.
+
+### The good news first, because it is real
+
+A new customer is **not** handed a wall of zeroes. The dashboard renders, and a
+**Setup guide** appears — *"0 of 4 complete · Create your first project · Invite
+a team member · Add your first task · Set up your organisation"*, bilingual,
+with a Skip. That is exactly the "says what to do next" that Suite 00 asks for,
+and it is already built.
+
+### ⚠ The defect: the right sentence exists, and the customer is shown a different one
+
+On `/graha` with no active module, the screen says:
+
+> **These figures did not load.** You do not have access to CRM reports.
+> You do not have access to the CRM pipeline.
+
+The API, in the very same exchange, says:
+
+    403 {"detail":"Module 'graha' is not active.
+                   Contact your administrator to activate it."}
+
+**Those are two different problems.** "You do not have access" is a *permission*
+framing — it sends the reader to their own role and their admin's user settings.
+The truth is that the **module is not subscribed for the org**, which is an
+activation, and the accurate, actionable sentence is the one in the 403 body that
+nobody sees. A new customer following the on-screen wording looks in the wrong
+place, and the first thing they conclude is that their account is broken.
+
+Affected on day one: `/dashboard` 5 failed requests, `/graha` 8, `/ganit` 7,
+`/dristi` 5 — all showing access wording rather than activation wording.
+`/manav`, `/vetana`, `/sanvaad` and `/hub/org` do surface inactivity language.
+So the product **knows** the difference in four places and loses it in four
+others. That inconsistency is the finding, not the presence of an empty state.
+
+Not fixed here — it is a copy-and-routing change across several modules, raised
+with its evidence rather than folded into a suite silently.
+
+### ⚠ And my check was wrong for the FOURTH time today
+
+The probe scored `/graha` as `screen-says-inactive=NO`. Reading the screenshot
+shows the screen *does* speak — my regex matched `no access` and the product
+says `You do not have access`. Had I trusted the probe's boolean I would have
+filed "the screen says nothing", which is false, and missed the real and sharper
+defect: it says the *wrong thing*.
+
+Four times in one session a check of mine has accused this product and been
+wrong (`/hub/org`'s "Try again", the Manav and Vetana advisory banners, and now
+this). Every one was caught by looking at what the screen actually said before
+filing. That is the entire discipline, and the count is recorded because it is
+the strongest evidence in this programme for why the stop-and-fix rule demands
+proof of *which* before anything is changed.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
+
 
 
 

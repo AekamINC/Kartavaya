@@ -241,6 +241,20 @@ undeliverable. **§3's ~550 `test+<tag>@unicodegroup.com` recipients must not be
 seeded** until the mailbox says which — on the SES account that sends real
 invoices. OWNER-ACTIONS 15.
 
+**🔴 Day one: an inactive module tells the customer the WRONG thing.** Found on
+the emptied orgs 28 Aug, and unreproducible without another wipe once modules are
+enabled. `/graha` shows *"You do not have access to CRM reports"* while the API
+in the same exchange says *"Module 'graha' is not active. Contact your
+administrator to activate it."* Those are different problems: the screen's
+wording is a **permission** framing that sends a new customer to their role and
+their admin's user settings, when the truth is an **org-level activation**. The
+accurate sentence exists and is the one nobody sees. Same on `/dashboard` (5
+failed requests), `/ganit` (7), `/dristi` (5); `/manav`, `/vetana`, `/sanvaad`
+and `/hub/org` DO use activation language — so the product knows the difference
+in four places and loses it in four others. ⚠ The good half: a new org is not a
+wall of zeroes — a bilingual **Setup guide** ("0 of 4 complete") is already built
+and appears on day one.
+
 ## Open, found 28 Aug during proposal 93 R0 — NOT fixed
 
 **🔴 The release APK cannot run on either emulator, so Suite 21 is blocked.**
