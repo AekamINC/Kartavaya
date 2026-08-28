@@ -339,6 +339,17 @@ jobs:
       - name: Mappls attribution gate (the credit is present and not hidden)
         run: node scripts/check-mappls-attribution.mjs
 
+      # Proposal 93 rule 1: "Every row is typed by a user. Nothing is inserted by
+      # SQL and nothing is posted straight to an API." It is the rule the whole
+      # reseed programme rests on and the easiest one to break quietly, because
+      # posting to the API is far faster than driving a form and the suite still
+      # goes green — reporting coverage it does not have.
+      #
+      # Landed with 5 known violations in real-user.spec.ts, listed by line in
+      # the script. New ones fail the build; the baseline may shrink, never grow.
+      - name: e2e bypass gate (no SQL or direct-API writes in specs)
+        run: node scripts/check-e2e-no-bypass.mjs
+
       - name: Class collision gate
         run: node scripts/check-class-collisions.mjs
 

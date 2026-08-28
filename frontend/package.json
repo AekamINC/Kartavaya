@@ -28,7 +28,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run src/__tests__/e2e",
-    "check": "node scripts/check-csp-hash.mjs && node scripts/check-one-index-html.mjs && node scripts/check-css-parses.mjs && node scripts/check-tokens.mjs && node scripts/check-motion.mjs && node scripts/check-classes.mjs && node scripts/check-orphan-selectors.mjs && node scripts/check-class-collisions.mjs && node scripts/check-contrast.mjs && node scripts/check-write-gates.mjs && node scripts/check-table-rows.mjs && node scripts/check-rendered-ids.mjs && node scripts/check-mappls-attribution.mjs && node scripts/check-ci-runs-every-gate.mjs",
+    "check": "node scripts/check-csp-hash.mjs && node scripts/check-one-index-html.mjs && node scripts/check-css-parses.mjs && node scripts/check-tokens.mjs && node scripts/check-motion.mjs && node scripts/check-classes.mjs && node scripts/check-orphan-selectors.mjs && node scripts/check-class-collisions.mjs && node scripts/check-contrast.mjs && node scripts/check-write-gates.mjs && node scripts/check-table-rows.mjs && node scripts/check-rendered-ids.mjs && node scripts/check-mappls-attribution.mjs && node scripts/check-e2e-no-bypass.mjs && node scripts/check-ci-runs-every-gate.mjs",
     "check:csp": "node scripts/check-csp-hash.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
