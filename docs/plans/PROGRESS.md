@@ -4250,6 +4250,64 @@ of this programme's own checks accused the product and were wrong every time.
 
 The plan for everything that follows is `docs/plans/93-STAGE3-EXECUTION-PLAN.md`.
 
+## 2026-08-28 · Suite 02 driven for real — and a 500 nobody could see
+
+Suite 02 ran against staging in real Chrome on the Unicode reference lane.
+First pass 3/7. After triage: **5/7**, one real product bug found and fixed, and
+one still open.
+
+### The bug: a firm cannot remove its TAN
+
+Clearing GSTIN, PAN and TAN and pressing Save produced `net::ERR_FAILED` in the
+browser and **"Failed to save profile"** on screen — no status, no field named.
+The Railway log had the answer:
+
+    asyncpg.exceptions.CheckViolationError: new row for relation
+    "organisations" violates check constraint "organisations_tan_format"
+
+and `pg_constraint` — read live, not from a migration file — had the rule:
+
+    CHECK ((tan IS NULL) OR (tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$'))
+
+The column models "no TAN" as **NULL**; `org_profile.py` wrote **`""`**, which
+satisfies neither arm. The 500 escaped before the CORS headers were attached,
+which is why the browser reported a network failure rather than a status.
+
+**The blast radius is the whole form.** The PATCH carries every column, so a
+firm clearing a TAN it no longer needs also lost the name, address and bank
+details it had just typed, and was told nothing about why. Owner's standing rule
+— "GSTIN / PAN / TAN are non-mandatory and must block nothing" — held on ADD and
+broke on REMOVE.
+
+Fixed: blank TAN is written as NULL. Five tests, mutation-proved (4 failed with
+the fix reverted, 5 pass restored). This is the **fourth** instance of the repo's
+signature failure — a value of the wrong shape into a constrained Postgres
+column, surfacing as an opaque 500 with nothing on screen.
+
+### ⚠ Still open, and the same constraint
+
+A MALFORMED TAN takes the identical path. The handler warns and then says "It
+has been saved as typed" — and the constraint refuses it, so typing a wrong TAN
+500s the whole save exactly as a blank one did. The product rule and the
+database disagree, and that is a decision, not a bug fix: either the constraint
+goes (honouring "block nothing") or the router answers 400. Raised with the
+owner rather than settled unilaterally — the database is shared with production.
+
+### Three test bugs, each proved before anything was changed
+
+- **02.5 UPI** — accused of not saving. Wire said `PUT 200`, `GET` said the row
+  was there, and a read-back probe showed the screen rendering it. The cause was
+  `page.reload()` on the line after the click, racing the write. Suite rule 5.
+- **02.4 senders** — the same race, the same fix. Both green.
+- **02.2 GSTIN** — cleared with `fill('')`, which did not register with the
+  controlled input, so the change-diff found nothing and correctly sent nothing.
+  Read cold that is "a firm cannot remove its GSTIN", and it would have been
+  filed as one. Real keystrokes settled it. §1 says drive real key events;
+  `fill()` is not typing.
+
+Every write suite now records the wire, so the next failure reports what the
+server actually said instead of an empty input box.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
 
 

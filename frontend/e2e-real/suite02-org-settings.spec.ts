@@ -138,6 +138,62 @@ async function signIn(page: Page, creds: Creds) {
   await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 45_000 });
 }
 
+/**
+ * THE WIRE — every write this suite makes, with the status the server answered.
+ *
+ * Memory's rule, learned from the bank-import bug: *watch the requests before
+ * blaming the UI*. That defect presented as "the button does nothing" and as a
+ * CORS error in the console; it was a 500, and only a request listener told the
+ * two apart. A failure here therefore reports what the server actually said
+ * instead of leaving the next reader to guess from an empty input box.
+ */
+type Wire = { line: string }[];
+
+function watchWire(page: Page): Wire {
+  const wire: Wire = [];
+  page.on('response', async (r) => {
+    const req = r.request();
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method())) return;
+    if (!/\/api\//.test(r.url())) return;
+    let body = '';
+    try { body = (await r.text()).slice(0, 300); } catch { /* body already consumed */ }
+    wire.push({ line: `${req.method()} ${r.status()} ${new URL(r.url()).pathname}  ${body}` });
+  });
+  return wire;
+}
+
+const dump = (wire: Wire) =>
+  wire.length
+    ? wire.map((w) => '\n     ' + w.line).join('')
+    : '\n     (no write request was made at all)';
+
+/**
+ * Click a Save button and WAIT FOR THE WRITE TO ANSWER before going on.
+ *
+ * ⚠ This is the fix for three of Suite 02's four failures on 2026-08-28.
+ * 02.2, 02.4 and 02.5 each clicked Save and then called `page.reload()` on the
+ * very next line. The reload raced the request — the browser tore down the
+ * page while the PATCH/PUT was still in flight — so the value read back empty
+ * and the suite reported "the product did not save it". It had: `save-probe`
+ * watched the same click and recorded `PUT /upi-accounts -> 200`, and
+ * `GET /upi-accounts` then returned the stored row, and a read-back probe
+ * showed the screen rendering it. The product was right and the test was wrong,
+ * which is suite rule 5 — wait for the write, and for the refetch after it.
+ *
+ * Returns the response so the caller can assert on the STATUS, not on a toast.
+ * A toast is the client's opinion; the status is the server's.
+ */
+async function saveAndWait(page: Page, button: RegExp, urlRe: RegExp) {
+  const [res] = await Promise.all([
+    page.waitForResponse(
+      (r) => urlRe.test(r.url()) && ['POST', 'PUT', 'PATCH'].includes(r.request().method()),
+      { timeout: 30_000 },
+    ),
+    page.getByRole('button', { name: button }).click(),
+  ]);
+  return res;
+}
+
 async function openTab(page: Page, tab: string) {
   await page.goto(`/settings/organisation${tab === 'profile' ? '' : `?tab=${tab}`}`);
   // ⚠ `level: 1`, and it is not tidiness. The bare
@@ -201,18 +257,54 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   test('02.2 GSTIN, PAN and TAN block nothing — a blank save succeeds', async ({ page }) => {
     // THE regression this product keeps re-growing. Asserted on its own so a
     // failure here names itself instead of being one line inside 02.1.
+    const wire = watchWire(page);
     await signIn(page, requireUnicode());
     await openTab(page, 'profile');
 
     await expect(page.locator('#org-gstin')).toBeVisible({ timeout: 30_000 });
-    await page.locator('#org-gstin').fill('');
-    await page.locator('#org-pan').fill('');
-    await page.locator('#org-tan').fill('');
+
+    // ⚠ CLEARED BY KEYSTROKE, NOT BY `fill('')` — and this was a TEST BUG that
+    // very nearly became a product bug report.
+    //
+    // On 2026-08-28 this test cleared the three fields with `fill('')`, clicked
+    // Save, and NOTHING reached the server: no request, no toast, and
+    // `GET /org/profile` still returned the original GSTIN. Read cold, that is
+    // "a firm cannot remove its GSTIN", which is the regression CLAUDE.md warns
+    // about and would have been filed as one.
+    //
+    // `gstin-blank-probe.spec.ts` cleared the SAME field on the SAME screen with
+    // a real select-all and Delete, and got `PATCH 200` with
+    // "Company profile saved". The product removes a GSTIN perfectly well.
+    // `fill('')` simply did not register with the controlled input, so
+    // TabProfile's change-diff found nothing changed and correctly declined to
+    // send an empty PATCH.
+    //
+    // This is §1's rule arriving with a bill attached: drive real key events,
+    // because `fill()` is not typing.
+    for (const id of ['#org-gstin', '#org-pan', '#org-tan']) {
+      const field = page.locator(id);
+      await field.click();
+      await field.press('ControlOrMeta+a');
+      await field.press('Delete');
+      await expect(field).toHaveValue('');
+    }
 
     // The button must not be disabled by an empty tax field.
     const save = page.getByRole('button', { name: /Save company profile/ });
     await expect(save).toBeEnabled();
-    await save.click();
+
+    // ⚠ ASSERT THE STATUS FIRST, then the toast. On 2026-08-28 this test failed
+    // waiting for a toast that never came, and a missing toast cannot tell
+    // "the save was refused" from "the confirmation is not shown". Only the
+    // response separates them — and if a blank statutory field is being
+    // REFUSED, that is the regression CLAUDE.md says has drifted back more than
+    // once, so it must name itself rather than read as a UI nicety.
+    const res = await saveAndWait(page, /Save company profile/, /\/org\/profile/);
+    expect(
+      res.status(),
+      `GSTIN / PAN / TAN MUST BLOCK NOTHING — a blank save was answered ` +
+      `${res.status()}.${dump(wire)}`,
+    ).toBeLessThan(400);
 
     // It must SAVE — not warn, not block.
     // ⚠ TEST BUG, fixed. The bare text matched TWO nodes — the sr-only
@@ -298,6 +390,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   });
 
   test('02.4 email sender addresses save', async ({ page }) => {
+    const wire = watchWire(page);
     await signIn(page, requireUnicode());
     await openTab(page, 'senders');
 
@@ -318,7 +411,9 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await first.fill('test@unicodegroup.com');
     await page.locator(`#snd-${purpose}-name`).fill('Unicode Group');
 
-    await page.getByRole('button', { name: /Save sender addresses/ }).click();
+    const res = await saveAndWait(page, /Save sender addresses/, /senders/);
+    expect(res.status(), `saving a sender answered ${res.status()}.${dump(wire)}`)
+      .toBeLessThan(400);
     await page.reload();
     await expect(first).toHaveValue('test@unicodegroup.com', { timeout: 30_000 });
 
@@ -328,6 +423,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   });
 
   test('02.5 UPI is one ID PER PLATFORM, not one VPA field', async ({ page }) => {
+    const wire = watchWire(page);
     await signIn(page, requireUnicode());
     await openTab(page, 'upi');
 
@@ -347,7 +443,9 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await page.locator('#upi-gpay').fill('unicodegroup@okhdfcbank');
     await page.locator('#upi-gpay-name').fill('Unicode Group');
 
-    await page.getByRole('button', { name: /Save UPI IDs/ }).click();
+    const res = await saveAndWait(page, /Save UPI IDs/, /upi-accounts/);
+    expect(res.status(), `saving UPI ids answered ${res.status()}.${dump(wire)}`)
+      .toBeLessThan(400);
     await page.reload();
     await expect(page.locator('#upi-paytm')).toHaveValue('unicodegroup@paytm', { timeout: 30_000 });
     await expect(page.locator('#upi-phonepe')).toHaveValue('unicodegroup@ybl');
@@ -358,13 +456,38 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await signIn(page, requireUnicode());
 
     // ⚠ NOT under /settings/organisation. `TabDocNumbers` is imported by
-    // `GanitPage.jsx` and mounted at `/ganit?tab=settings` — it is a Ganit
-    // screen, and the org-settings tab bar has no entry for it. So this test is
-    // GATED BY THE GANIT MODULE, which Unicode does not have (zero
-    // `module_subscriptions` rows). Until Aekam provisions ganit this cannot
-    // pass, and the honest outcome is a failure naming that, not a skip.
-    await page.goto('/ganit?tab=settings');
-    await page.waitForTimeout(3000);
+    // `GanitPage.jsx` and registered as `['settings', TabDocNumbers]` — it is a
+    // Ganit screen, and the org-settings tab bar has no entry for it.
+    //
+    // ⚠⚠ AND IT CANNOT BE REACHED BY URL. Fixed 2026-08-28 after this test
+    // failed on a stale assumption. `GanitPage` says so in its own words:
+    // "This page reads its tab from nowhere deeper than local state — no URL
+    // param, no route state", so `/ganit?tab=settings` renders whatever the
+    // user's starred default is (invoices) and silently ignores the query. The
+    // suite was asserting against Finance's invoice list and calling the
+    // numbering screen missing.
+    //
+    // A USER GETS THERE BY CLICKING. Ganit shows seven tabs and a `More +14`
+    // button, and `settings` is one of the fourteen behind it — which is also
+    // why this is driven as a click rather than a navigation: the overflow menu
+    // IS the only route, so if it ever stops opening, this screen becomes
+    // unreachable and that must fail here.
+    await page.goto('/ganit');
+    await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 30_000 });
+
+    const more = page.getByRole('button', { name: /^More/ });
+    await expect(
+      more,
+      'Ganit hides 14 tabs behind a More button; without it the numbering ' +
+      'screen has no route at all',
+    ).toBeVisible({ timeout: 30_000 });
+    await more.click();
+
+    const settingsTab = page.getByRole('tab', { name: /settings/i })
+      .or(page.getByRole('menuitem', { name: /settings/i }))
+      .or(page.getByRole('button', { name: /^settings$/i }));
+    await expect(settingsTab.first()).toBeVisible({ timeout: 15_000 });
+    await settingsTab.first().click();
 
     const body = ((await page.locator('body').innerText().catch(() => '')) || '');
     if (/is not active|Contact your administrator to activate/i.test(body)) {

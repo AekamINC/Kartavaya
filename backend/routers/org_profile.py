@@ -488,7 +488,25 @@ async def update_profile(
                 )
             fields["tan"] = candidate
         else:
-            fields["tan"] = ""
+            # NULL, NOT "". The database models "this firm has no TAN" as NULL:
+            #
+            #   organisations_tan_format
+            #   CHECK ((tan IS NULL) OR (tan ~ '^[A-Z]{4}[0-9]{5}[A-Z]$'))
+            #
+            # read from pg_constraint on 2026-08-28, not from a migration file.
+            # An empty string satisfies neither arm, so clearing the field wrote
+            # a value the column refuses and asyncpg raised CheckViolationError
+            # — a 500 that escaped before the CORS headers were attached, so the
+            # browser reported `net::ERR_FAILED` and the screen said only
+            # "Failed to save profile".
+            #
+            # The cost of that was not one field. The PATCH carries the whole
+            # form, so a firm clearing a TAN it no longer needs lost its name,
+            # address and bank details in the same click, and was told nothing
+            # about why. Found by driving the real form on 2026-08-28; the
+            # intent in the comment above was always right ("blank stays legal")
+            # and only the encoding of "blank" was wrong.
+            fields["tan"] = None
 
     # ── The logo's durable half ───────────────────────────────────────────────
     #
