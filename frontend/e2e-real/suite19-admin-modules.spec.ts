@@ -133,20 +133,48 @@ test.describe('Suite 19 — platform console · module provisioning', () => {
   test('19.1 the customer genuinely cannot do this — the grid is inert by design', async ({
     page,
   }) => {
-    // Recorded here rather than only in a comment, because "provisioning is
-    // Aekam's job" is the JUSTIFICATION for this whole suite using god mode.
-    // If the customer-facing grid ever becomes writable, this suite's premise
-    // is void and it should be deleted rather than quietly kept.
-    const res = await page.request.patch(`${API_BASE}/api/v1/org/modules`, {
-      headers: { Authorization: `Bearer ${process.env.E2E_UNICODE_TOKEN ?? ''}` },
-      data: { modules: [{ module_code: 'graha', is_active: true }] },
-    });
-    expect(
-      res.status(),
-      'an ORG-SCOPED credential must not be able to activate a module — if this ' +
-        'starts succeeding, an org_admin can hand themselves payroll in one request',
-    ).toBeGreaterThanOrEqual(400);
-    console.log(`\n[19.1] org-scoped PATCH /org/modules -> ${res.status()} (refused, as designed)\n`);
+    // "Provisioning is Aekam's job" is the JUSTIFICATION for this whole suite
+    // using god mode, so it is asserted rather than asserted-in-a-comment. If
+    // the customer-facing grid ever becomes writable, this suite's premise is
+    // void and it should be deleted rather than quietly kept.
+    //
+    // ⚠ THIS USED TO FIRE A REAL `PATCH /api/v1/org/modules` WITH AN ORG-SCOPED
+    // TOKEN AND EXPECT A REFUSAL — and `check-e2e-no-bypass.mjs` flagged it,
+    // rightly. Proposal 93 rule 1 is "nothing is posted straight to an API",
+    // and the ratchet cannot tell a write that creates a row from one that is
+    // expected to be refused. Teaching it that difference would be teaching it
+    // to ignore things, and the gate was mine to break, not to weaken.
+    //
+    // So the assertion moved to the layer that owns it. Whether an endpoint
+    // refuses a role is a property of the endpoint, not of a user journey:
+    // `backend/tests/test_module_activation_is_owner_only.py` asserts that
+    // `patch_modules` is gated on exactly `("org_owner",)` — proved to bite by
+    // mutation, widening it to `ORG_SETTINGS_ROLES` turns it red naming the
+    // escalation. What is left HERE is the half a browser can actually see.
+    await page.goto('/login');
+    await page.evaluate(
+      (t) => localStorage.setItem('auth_token', t!),
+      process.env.E2E_UNICODE_TOKEN,
+    );
+    await page.goto('/settings/organisation?tab=modules');
+
+    const cards = page.locator('.omod__c');
+    await expect(cards.first()).toBeVisible({ timeout: 30_000 });
+
+    // Every toggle inert — not merely styled as though it were.
+    const toggles = page.locator('.omod__c input[type="checkbox"]');
+    const n = await toggles.count();
+    expect(n, 'the modules grid rendered no toggles at all').toBeGreaterThan(0);
+    for (let i = 0; i < n; i += 1) {
+      await expect(toggles.nth(i)).toBeDisabled();
+    }
+
+    // And it must say WHOSE decision it is, rather than leaving the customer to
+    // guess why a control they can see does nothing.
+    await expect(
+      page.getByText(/switched on by your\s+account manager at Aekam/i),
+    ).toBeVisible();
+    console.log(`\n[19.1] ${n} module toggles, every one disabled, and the screen says why\n`);
   });
 
   for (const subject of SUBJECTS) {

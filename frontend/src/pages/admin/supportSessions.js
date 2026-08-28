@@ -30,15 +30,32 @@
  *      `revoked` and `denied` are tested FIRST and return terminal states, so
  *      a row that lost a clause falls out of `active` rather than into it.
  *
- * ── THE TABLE DOES NOT EXIST ────────────────────────────────────────────────
- * `SELECT to_regclass('staging.platform_support_sessions')` returned NULL on
- * the live database on 6 August 2026, and 111 is deliberately unapplied — one
- * `staging` schema, production writes to it, so applying it is the owner's
- * call. The endpoints this file calls therefore 404 today, and that is not an
- * error: it is "there are no support sessions", which is the true answer and
- * will be for weeks. `listSessions` returns `{ dormant: true, data: [] }` and
- * every surface renders NOTHING for it — no error, no empty state, no console
- * noise. See `DORMANT` below.
+ * ── THE TABLE EXISTS. THIS HEADER SAID OTHERWISE, AND WAS WRONG ─────────────
+ * ⚠ Corrected 2026-08-28. It read "THE TABLE DOES NOT EXIST", on a
+ * `to_regclass('staging.platform_support_sessions')` that returned NULL on
+ * 6 August 2026 with migration 111 unapplied.
+ *
+ * **Re-measured live today, it RESOLVES — 20 columns** — and
+ * `staging.platform_support_requests` exists as well, with 9.
+ * `routers/support_sessions.py:436-440` recorded the correction on 2026-08-21
+ * ("It is APPLIED … table and view present, zero rows"); this file and
+ * `org/TabSupportAccess.jsx` both kept the old sentence for a week.
+ *
+ * Only `public.platform_support_sessions` is absent — and that is precisely the
+ * trap CLAUDE.md names: **a schema-qualified negative is a fact about THAT
+ * SCHEMA only.** Closing a question on one is how `public.report_schedules` was
+ * declared missing while it had a CRUD and an armed hourly cron.
+ *
+ * Why a stale header of this kind is worth correcting rather than ignoring: it
+ * is load-bearing. A reader who believes the table is missing reads every empty
+ * panel as "not built yet" and stops looking — which is how a shipped feature
+ * goes unnoticed for a week, and how a real defect behind it goes unfound.
+ *
+ * The dormant path below is unchanged and still correct on its own terms: an
+ * endpoint may answer 403/404/501 for reasons that have nothing to do with a
+ * missing table, and an empty result is not an error. `listSessions` returns
+ * `{ dormant: true, data: [] }` and every surface renders NOTHING for it — no
+ * error, no empty state, no console noise. See `DORMANT` below.
  */
 
 /**

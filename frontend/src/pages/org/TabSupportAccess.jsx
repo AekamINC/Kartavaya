@@ -44,12 +44,26 @@ import { ColumnsButton } from '../../components/ui/CustomizeColumns';
  * `org_admin` in the org they are requesting into.
  *
  * ── Absent when there is nothing ────────────────────────────────────────────
- * `staging.platform_support_sessions` does not exist on the live database —
- * `to_regclass` returned NULL on 6 August 2026 and migration 111 is
- * deliberately unapplied. The endpoint 404s, `listSessions` answers dormant,
- * and this component renders NOTHING: no error, no empty state, no console
- * noise. A settings page that grew a "Support access — none" panel because a
- * migration has not run is worse than the panel being absent.
+ * ⚠ THIS HEADER WAS STALE AND IS CORRECTED, 2026-08-28. It said
+ * `staging.platform_support_sessions` "does not exist on the live database",
+ * on a `to_regclass` NULL measured 6 August. **Re-measured live today it
+ * RESOLVES, with 20 columns**, and `staging.platform_support_requests` exists
+ * too, with 9. `routers/support_sessions.py:436-440` had already recorded the
+ * correction on 2026-08-21 — "It is APPLIED … table and view present, zero
+ * rows" — and this file never caught up.
+ *
+ * Only `public.platform_support_sessions` is absent, and that is the trap
+ * CLAUDE.md names: **a schema-qualified negative is a fact about THAT SCHEMA
+ * only**, never about the database. Closing a question on one is exactly how
+ * `public.report_schedules` was declared missing while it had a CRUD and an
+ * armed hourly cron.
+ *
+ * The dormant path below still stands on its own merits — the endpoint can
+ * answer 403/404/501 for reasons other than a missing table, and an empty
+ * result is not an error. This component renders NOTHING in that case: no
+ * error, no empty state, no console noise. A settings page that grew a
+ * "Support access — none" panel because a migration has not run is worse than
+ * the panel being absent.
  *
  * When there is nothing but HISTORY — everything ended, declined or expired —
  * the live panel is absent and the record stays, because "nobody is in here
