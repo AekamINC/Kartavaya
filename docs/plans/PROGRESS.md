@@ -4253,8 +4253,9 @@ The plan for everything that follows is `docs/plans/93-STAGE3-EXECUTION-PLAN.md`
 ## 2026-08-28 · Suite 02 driven for real — and a 500 nobody could see
 
 Suite 02 ran against staging in real Chrome on the Unicode reference lane.
-First pass 3/7. After triage: **5/7**, one real product bug found and fixed, and
-one still open.
+First pass 3/7. **Now 7/7, and green twice in a row from its own output** —
+the idempotence §6 requires, proved by running it again rather than asserted.
+One real product bug found and fixed; one decision raised.
 
 ### The bug: a firm cannot remove its TAN
 
@@ -4307,6 +4308,31 @@ owner rather than settled unilaterally — the database is shared with productio
 
 Every write suite now records the wire, so the next failure reports what the
 server actually said instead of an empty input box.
+
+### Two more test defects, both about re-running
+
+Both appeared only on the SECOND run, which is the point of running it twice:
+
+- **02.2** cleared the three codes and left them cleared, so its next run had
+  nothing to change, sent no PATCH, and timed out looking like a broken save. It
+  now SETS the codes and then clears them — self-sufficient from any state, and
+  it exercises add AND remove, which is the direction the product bug was in.
+- **02.6** wrote the prefix `UNI` every time; the second run diffed it against
+  `UNI` and sent nothing. It now writes a value different from what is there.
+
+A test that passes alone and fails in the suite is depending on state it did not
+create. §7 chose delete-first precisely so that cannot hide.
+
+### Two product facts recorded, neither a defect
+
+- **Ganit tabs are local state with no URL param**, so `/ganit?tab=settings` is
+  ignored and a reload returns to the starred default. Document numbering is
+  reachable only by clicking `More +14` → `settings`; it cannot be linked to,
+  bookmarked or recovered by refreshing. A design choice (tab prefs own the
+  opening tab), recorded rather than turned into a red test.
+- **Two save confirmations appear when a form is saved twice**, and the sr-only
+  announcement is a separate node from the visible toast. That separation is the
+  product doing accessibility correctly.
 
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
 

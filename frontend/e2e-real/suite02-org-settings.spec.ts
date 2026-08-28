@@ -281,7 +281,38 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     //
     // This is §1's rule arriving with a bill attached: drive real key events,
     // because `fill()` is not typing.
-    for (const id of ['#org-gstin', '#org-pan', '#org-tan']) {
+    // ⚠ SET THEM FIRST, THEN CLEAR THEM — idempotence, and it was a real defect
+    // in this test. §6 requires "a second execution recognises its own output
+    // and verifies rather than duplicating". This test cleared three fields and
+    // left them cleared, so its NEXT run had nothing to change: the diff found
+    // no change, no PATCH was sent, and `waitForResponse` timed out. It passed
+    // alone and failed in the suite, which is the signature of a test that
+    // depends on state it did not create.
+    //
+    // Setting them first also buys the coverage that matters. The product bug
+    // found on 2026-08-28 was on REMOVE, not on add — a blank TAN was written
+    // as "" against a column whose CHECK accepts only NULL or a well-formed TAN,
+    // and the 500 took the whole form with it. Add-then-remove exercises both
+    // directions in one pass.
+    const CODES: [string, string][] = [
+      ['#org-gstin', '24AAACU5678U1Z9'],
+      ['#org-pan', 'AAACU5678U'],
+      ['#org-tan', 'AHMA12345B'],
+    ];
+
+    for (const [id, value] of CODES) {
+      const field = page.locator(id);
+      await field.click();
+      await field.press('ControlOrMeta+a');
+      await field.pressSequentially(value);
+      await expect(field).toHaveValue(value);
+    }
+    const set = await saveAndWait(page, /Save company profile/, /\/org\/profile/);
+    expect(set.status(), `SETTING the statutory codes answered ${set.status()}.${dump(wire)}`)
+      .toBeLessThan(400);
+
+    // Now remove all three. This is the direction that was broken.
+    for (const [id] of CODES) {
       const field = page.locator(id);
       await field.click();
       await field.press('ControlOrMeta+a');
@@ -313,10 +344,19 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // announcement and the visible confirmation are deliberately separate
     // nodes. Scoped to the toast, with the sr-only twin asserted on its own so
     // the fix does not quietly drop the a11y coverage it was tripping over.
-    await expect(page.locator('.tst__t').getByText(/Company profile saved/i))
+    // ⚠ `.last()`, and `not.toHaveCount(0)` rather than `toHaveCount(1)`.
+    // This test now saves TWICE by design — set the codes, then clear them —
+    // so two confirmations are on screen and strict mode rightly refused the
+    // ambiguous locator. Two toasts is the product behaving correctly: it
+    // confirmed both saves. The assertion that matters is that the LAST save,
+    // the one that cleared the fields, was confirmed.
+    await expect(page.locator('.tst__t').getByText(/Company profile saved/i).last())
       .toBeVisible({ timeout: 30_000 });
+    // The sr-only announcement is a separate node from the visible toast — that
+    // separation is the product doing accessibility correctly, and it must not
+    // be lost while fixing the count.
     await expect(page.locator('[aria-live="polite"]').getByText(/Company profile saved/i))
-      .toHaveCount(1);
+      .not.toHaveCount(0);
     // And no field may be marked invalid for being empty.
     await expect(page.locator('#org-gstin')).not.toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#org-pan')).not.toHaveAttribute('aria-invalid', 'true');
@@ -453,6 +493,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   });
 
   test('02.6 document number series', async ({ page }) => {
+    const wire = watchWire(page);
     await signIn(page, requireUnicode());
 
     // ⚠ NOT under /settings/organisation. `TabDocNumbers` is imported by
@@ -483,11 +524,25 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     ).toBeVisible({ timeout: 30_000 });
     await more.click();
 
-    const settingsTab = page.getByRole('tab', { name: /settings/i })
-      .or(page.getByRole('menuitem', { name: /settings/i }))
-      .or(page.getByRole('button', { name: /^settings$/i }));
-    await expect(settingsTab.first()).toBeVisible({ timeout: 15_000 });
-    await settingsTab.first().click();
+    // ⚠ SCOPED TO THE POPOVER. A previous attempt used an `.or()` chain that
+    // included a bare `button` named /settings/, and `.first()` resolves in DOM
+    // order — so it matched the SIDEBAR, clicked that, and left Ganit sitting on
+    // its invoice list. The suite then reported the numbering screen missing.
+    // Suite rule 6: scope lookups to the surface you opened.
+    //
+    // `ModuleTabs` renders the overflow as `role="menu"` with `role="menuitem"`
+    // rows — a keyboard contract, not decoration — and the label is the tab id
+    // with hyphens spaced (`GanitPage.jsx:164`), so this one is literally
+    // "settings".
+    const menu = page.getByRole('menu');
+    await expect(menu, 'the More button must open a menu').toBeVisible({ timeout: 15_000 });
+    const settingsItem = menu.getByRole('menuitem', { name: /^settings$/i });
+    await expect(
+      settingsItem,
+      'document numbering has no other route — if this row is gone the screen ' +
+      'is unreachable, which is a product defect and not a selector problem',
+    ).toBeVisible({ timeout: 15_000 });
+    await settingsItem.click();
 
     const body = ((await page.locator('body').innerText().catch(() => '')) || '');
     if (/is not active|Contact your administrator to activate/i.test(body)) {
@@ -506,11 +561,43 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
 
     const box = page.locator('.gn-form__grid input.inp').first();
     await expect(box).toBeVisible();
-    await box.fill('UNI');
-    await page.getByRole('button', { name: /^Save \d+ change/ }).click();
-    await page.reload();
+
+    // Real keystrokes, not `fill()` — 02.2 proved a controlled input can ignore
+    // a programmatic fill entirely, and a save that sends nothing looks exactly
+    // like a save the server refused.
+    //
+    // ⚠ AND THE VALUE MUST DIFFER FROM WHAT IS ALREADY THERE. §6: a second
+    // execution has to verify rather than duplicate. Writing the same prefix
+    // twice is not a save at all — the form diffs, finds nothing changed, sends
+    // nothing, and the test reports a timeout that reads like a broken product.
+    // This test failed exactly that way on its second run.
+    const current = await box.inputValue();
+    const prefix = current === 'UNI' ? 'UNX' : 'UNI';
+
+    await box.click();
+    await box.press('ControlOrMeta+a');
+    await box.pressSequentially(prefix);
+    await expect(box).toHaveValue(prefix);
+
+    const saved = await saveAndWait(page, /^Save \d+ change/, /doc-prefixes|ganit/);
+    expect(saved.status(), `saving a document prefix answered ${saved.status()}.${dump(wire)}`)
+      .toBeLessThan(400);
+
+    // ⚠ RE-NAVIGATED, NOT RELOADED — and the reason is a product fact worth
+    // recording. `GanitPage` holds its open tab in local state with no URL
+    // param, so `page.reload()` does not return to Numbering: it lands on the
+    // starred default (invoices), where `.gn-form__grid` does not exist. The
+    // suite read that as "the prefix did not persist".
+    //
+    // The consequence for a customer is real if minor: this screen cannot be
+    // linked to, bookmarked, or recovered by refreshing. Recorded rather than
+    // asserted — it is a design choice (tab prefs own the opening tab), not a
+    // defect, and turning it into a red test would be inventing a requirement.
+    await page.goto('/ganit');
+    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('menu').getByRole('menuitem', { name: /^settings$/i }).click();
     await expect(page.locator('.gn-form__grid input.inp').first())
-      .toHaveValue('UNI', { timeout: 30_000 });
+      .toHaveValue(prefix, { timeout: 30_000 });
   });
 
   test('02.7 no UUID is rendered, and no native date input exists', async ({ page }) => {
