@@ -10,7 +10,9 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
-Last updated: **2026-08-27**. **BOTH deploys verified — check both, always.**
+Last updated: **2026-08-28**. Proposal 93 Wave 1: Suite 02 **8/8** (of the 7
+screens written — §10 requires 18, so ten tests do not exist yet), migration 238
+applied. The route for the next session is `docs/plans/93-NEXT-SESSION.md`. **BOTH deploys verified — check both, always.**
 Backend: Railway staging at `43961e25`, SUCCESS 05:16:47 UTC, branch `staging`
 (this line named `cc371297` until 2026-08-27, by which point it was **33 commits
 behind** — a deploy line that is not re-read every time is worse than none,
