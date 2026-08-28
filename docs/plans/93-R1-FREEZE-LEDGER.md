@@ -1,5 +1,20 @@
 # Proposal 93 · R1 freeze ledger
 
+> ## ⚠ THE FREEZE IS ON, 2026-08-28. All 7 crons are DISARMED.
+>
+> Every staging cron below is set to `0 0 1 1 *` — valid, and next due 1 January.
+> Verified by **reading the schedules back** from the Railway API afterwards, not
+> by having set them: `STILL ARMED: 0 / 7`.
+>
+> **R9 restores each one to the "Restore to" value in the table below.** That is
+> the whole of the un-freeze, and it is why this file was written before the
+> freeze rather than after it.
+>
+> ⚠ `0 0 30 2 *` (30 February) was tried first as a never-fires schedule and was
+> rejected by Railway's validator. `0 0 1 1 *` is the working equivalent — but it
+> **does fire once a year**, so it is a freeze for this programme's window, not a
+> permanent disarm.
+
 **This file exists so R9 can undo R1 without this session's memory.** Every value
 below was read from the live Railway API *before* anything was changed. If the
 session that wrote this file never comes back, restoring these exact values is

@@ -21,10 +21,60 @@ behind it.
 
 ## OPEN
 
-### 15. The plus-addressing probe cannot be sent from this session
+### 15. The plus-addressing probe — SENT, AND IT BOUNCED
 
-**Status:** OPEN · blocks ~550 seeded addresses in proposal 93 §3. Everything
-else in R0 is answered; this is the one question left.
+**Status:** OPEN · ⚠ **the answer is bad, and it changes §3.** You allowed the
+send on 2026-08-28 and it went immediately. Three messages, all ACCEPTED by SES:
+
+    simulator  success@simulator.amazonses.com   ACCEPTED
+    control    test@unicodegroup.com             ACCEPTED
+    probe      test+probe@unicodegroup.com       ACCEPTED
+
+**Then SES's own statistics recorded a BOUNCE.** Read back from
+`get_send_statistics`, the 09:39 UTC bucket: `attempts=2, bounces=1`.
+
+    last 3h: attempts=8 bounces=1  ->  12.5% bounce rate in the window
+
+⚠ **`success@simulator.amazonses.com` never bounces** — that is the entire point
+of the simulator — so **the bounce is one of the two `unicodegroup.com`
+addresses.** This is exactly the risk the probe existed to find, and it fired on
+the first attempt.
+
+**What it means for the plan:** proposal 93 §3 seeds ~550 recipients as
+`test+<tag>@unicodegroup.com` on the SES account that sends your real invoices.
+Had that gone ahead on the assumption, a large share would have hard-bounced.
+**That share must not be seeded until the question below is settled.**
+
+**What I cannot tell you, and why.** SES reports bounces in aggregate only.
+Per-message outcomes need a configuration set with an SNS event destination,
+which does not exist (item 13) — so the API cannot say *which* of the two
+bounced. Only the mailbox can.
+
+**What you do — one look settles it.** Check the `unicodegroup.com` mailbox for
+two messages, subject `[Kartavaya R0] plus-addressing probe`:
+
+| What you see | What it means | What I do |
+|---|---|---|
+| Neither arrived | there is no `test@` mailbox at all | the 5% share moves to the gmail-tag scheme |
+| Only `control` arrived | **IONOS rejects plus-tags** — the doubt from 18 Aug was right | same: move the 5% to gmail tags |
+| Both arrived | the bounce was something else and needs a second look | seed as §3 planned |
+
+**What I finish once you have:** either confirm the §3 recipient mix as written,
+or re-point the 5% share at `kevalvshah03+` / `kelisweet+`, both already proven
+deliverable. Nothing else in the plan moves either way.
+
+**Not urgent for reputation:** one bounce on eight attempts is a small absolute
+number and the simulator traffic is reputation-exempt. It would only have become
+dangerous at the ~550 the plan called for — which is precisely why the probe ran
+first.
+
+---
+
+### 15a. (superseded) The plus-addressing probe could not be sent
+
+Kept for the record: the send was refused by this session's permission layer
+while the read-only half of the identical path succeeded. You lifted it and the
+result is above.
 
 **The question.** §3 seeds ~550 recipients shaped `test+<tag>@unicodegroup.com`
 and carries an **unresolved** doubt, recorded on 2026-08-18, that IONOS may

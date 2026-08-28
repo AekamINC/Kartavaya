@@ -205,6 +205,42 @@ burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
 vendor picker. Verified orphaned across every vendor-referencing column *before*
 deleting. Nine real suppliers remain.
 
+## Proposal 93 · Stage 2 EXECUTED 28 Aug — the three test orgs are wiped
+
+**The reseed's irreversible half is done.** 25,854 rows deleted across `public`
+and `staging` for Unicode Group, E2E Test & Associates and UK AekamINC.
+
+- **R1** — 7 of 7 staging crons disarmed (`0 0 1 1 *`), verified by reading the
+  schedules back. Restore values: `docs/plans/93-R1-FREEZE-LEDGER.md`.
+- **R2** — `reseed_backup_20260828`: 265 relations, 26,064 rows. **A restore was
+  performed and content-diffed — 248 tables, 0 mismatches.** ⚠ That schema is now
+  **the only copy of the deleted rows**; it is dropped only when the owner names
+  it, at R9.
+- **R4** — `public` first (2 FKs in the whole schema, so a wrong order would be
+  neither prevented nor reported), then `staging` with the delete order
+  **discovered by fixpoint** rather than hand-written, raising on a stall instead
+  of reaching for CASCADE.
+
+**Verified after, by re-query, not by the migrations reporting success:**
+protected 20 intact with all 84 notifications and 56 activity rows · Aekam Inc
+untouched at 220 tasks / 30 teams / 164 members · `public.users` 50, never
+written · all 5 `organisations` rows intact · every target org still has an owner
+and admin, so each can be signed into and rebuilt · 210 rows remain and every one
+is accounted for (170 protected + 40 seats).
+
+⚠ **Two things are deliberately NOT done and are not oversights:** the accounts
+themselves still exist in the global, production-shared `public.users` (removing
+the seat removes the member from the org; deleting the login is a separate act
+with a different blast radius), and no `staging.organisations` row was deleted —
+152 CASCADEs hang off that table, one crossing into `public.org_settings`.
+
+**🔴 The plus-addressing probe BOUNCED.** SES accepted all three probe messages,
+then reported `attempts=2, bounces=1`. `success@simulator.amazonses.com` never
+bounces, so one of `test@unicodegroup.com` / `test+probe@unicodegroup.com` is
+undeliverable. **§3's ~550 `test+<tag>@unicodegroup.com` recipients must not be
+seeded** until the mailbox says which — on the SES account that sends real
+invoices. OWNER-ACTIONS 15.
+
 ## Open, found 28 Aug during proposal 93 R0 — NOT fixed
 
 **🔴 The release APK cannot run on either emulator, so Suite 21 is blocked.**

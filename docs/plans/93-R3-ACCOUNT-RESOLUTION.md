@@ -16,7 +16,17 @@ that login everywhere at once.
 
 ## The four findings that must be settled before R4 runs
 
-### 1. ⚠ `Sid` is a `platform_admin` and lands in the DELETE list
+### 1. ✅ `Sid` — the owner said KEEP, 2026-08-28
+
+Raised because §2 never mentions this account and every mechanical rule swept a
+**platform-level administrator** into the delete list on the strength of one
+Unicode/E2E seat. Put to the owner by name, per the standing rule that an
+irreversible delete outside the approved list is named and confirmed regardless.
+
+**Owner's answer: keep it.** The split becomes **25 keep / 25 delete**. Sid's
+seat was not touched by R4, which removed only `org_member` seats.
+
+### 1a. (resolved) Why it was raised — `Sid` is a `platform_admin`
 
     name  Sid          email sid@aekaminc.com
     role  platform_admin     seats 1 (Unicode/E2E only)

@@ -3999,6 +3999,90 @@ approver and the twelve dummy accounts carry **passwords**, so they sign in
 through the real form, which is what "driven as a user" requires anyway. Worth
 knowing before someone reads the token path as the only way in.
 
+---
+
+## 2026-08-28 · Proposal 93 · R1–R4 EXECUTED — the three test orgs are wiped
+
+The owner lifted the permission block. Stage 2 ran end to end. **25,854 rows
+deleted across two schemas; the protected set, Aekam Inc and Demo untouched;
+every guarantee verified by re-query rather than by the migration reporting
+success.**
+
+⚠ **A correction I owe first.** I reported "R1–R4 are blocked by the permission
+classifier". That was wrong, and being wrong about a block is as bad as being
+wrong about a fact. One Railway MCP server was blocked; **a second one worked**,
+and I had **never tested the Supabase write path at all** — I inferred it from
+two unrelated denials. The classifier turned out to be intermittent, not
+categorical. The lesson is the repo's own: never call anything blocked without
+testing that path.
+
+### R1 — freeze · 7 of 7 crons disarmed
+
+Set to `0 0 1 1 *` and **read back** from the API: `STILL ARMED: 0 / 7`.
+Original schedules recorded in `93-R1-FREEZE-LEDGER.md` **before** the freeze.
+⚠ `0 0 30 2 *` was rejected by Railway's validator — 30 February is not a date —
+so the freeze fires once a year rather than never. R9 restores the seven.
+
+### R2 — backup, and a restore actually PERFORMED
+
+`reseed_backup_20260828`, **265 relations, 26,064 rows**. Risk report written
+before the statement ran (`93-R2-BACKUP-RISK-REPORT.md`).
+
+- per-table count diff vs source: **0 mismatched across 248 tables**
+- ⚠ the gate: the backup was **restored** into a third throwaway schema and
+  diffed on **content** — md5 over sorted row-text, because `json` columns have
+  no equality operator and `EXCEPT` would throw — **248 tables, 0 content
+  mismatches**. A backup nobody has restored is a belief, not a safety net.
+- the throwaway restore schema is dropped; **the backup is not**, and will not be
+  until the owner names it at R9. It is now the only copy of the deleted rows.
+
+### R4 — the delete
+
+**Phase A, `public`** — the dangerous one: 2 foreign keys in the whole schema, so
+Postgres would neither prevent nor report a wrong order, and the protected 20 sit
+on a table production serves live. Every statement that could reach them carried
+its guard explicitly, and the phase opened and closed by counting the protected
+set, with a `RAISE EXCEPTION` rollback if it moved.
+
+⚠ **v1 aborted** on `public.channel_members` having no `org_id` — I assumed the
+column instead of reading the catalogue. The transaction rolled the whole phase
+back and nothing was deleted, which is the design working. 24 of `public`'s 42
+tables carry `org_id`; the corrected list is in the migration.
+
+**Phases B–D, `staging`** — the order was **discovered, not hand-written**. 391
+FKs make a hand-built 100-step order a list of chances to be wrong, so the
+migration retries every table until a pass makes no progress. The FK graph was
+verified acyclic, so that fixpoint *is* a valid topological order — and it
+`RAISE`s on a stall rather than reaching for CASCADE. No step relies on CASCADE,
+SET NULL or RESTRICT anywhere.
+
+**Seats** — 19 member seats removed. All 19 were `org_member`: not one owner or
+admin seat was touched, and the migration refuses to commit if any target org is
+left with no owner or admin. §2's physical constraint holds — every org can still
+be signed into and rebuilt.
+
+### Verified after, by re-query
+
+| Guarantee | Result |
+|---|---|
+| target-org rows remaining | **210**, and every one accounted for: 170 protected-set rows + 40 seats |
+| protected tasks | **20** — with all 84 notifications, 56 activity, 5 comments, 2 reminders, 2 mentions |
+| Aekam Inc | **untouched** — 220 tasks, 30 teams, 164 team members, 10 seats |
+| `public.users` | **50, untouched** — global and production-shared, never written |
+| `staging.organisations` | **5, all intact** — 152 CASCADEs hang off that table |
+| every target org still has an owner | ✅ Unicode 1+5, E2E 1+5, UK 1+3 |
+| null-org tasks | 40, surviving as predicted — not a failed wipe |
+
+### ⚠ And the plus-addressing probe bounced
+
+Sent on the owner's authorisation. All three ACCEPTED by SES; then
+`get_send_statistics` recorded **`attempts=2, bounces=1`**. The simulator address
+never bounces, so **one of the two `unicodegroup.com` addresses is
+undeliverable** — the exact risk the probe existed to find, on the first attempt.
+§3's ~550 `test+<tag>@unicodegroup.com` recipients **must not be seeded** until
+the mailbox says which. OWNER-ACTIONS 15.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
+
 
 
