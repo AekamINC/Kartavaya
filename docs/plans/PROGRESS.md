@@ -3837,4 +3837,94 @@ the file skips without a live database, so it has been failing unseen. That
 matters because what it guards is the Phase 2 blocker "payroll pays 10 leavers"
 — the guard is currently unverified against the real catalogue.
 
+---
+
+## 2026-08-28 · Proposal 93 · R0 preconditions, and Stage-2 preparation
+
+**Nothing has been deleted, frozen or migrated.** Every line below is a
+measurement or a document. Stage 2 is blocked — see the end of this entry.
+
+### R0 — three of four answered, one owner-blocked
+
+- **Both deploys verified on the same SHA**, `b4f9fbca` = local HEAD =
+  `origin/staging`, checked from the Railway and Vercel deployment records
+  rather than by comparing bundle hashes (which `.env.staging` makes
+  meaningless). Staging `/api/health` returns the current field set;
+  production returns the old short form, consistent with prod being far behind.
+- **`R2_BUCKET_NAME` is `aekaminc`, not `kartavya-storage`**, prefix
+  `staging/`. §5's open question, closed.
+- **`AWS_REGION` is `ap-south-1`** on the running service, read live rather
+  than inferred from the 287 accepted sends.
+- **Plus-addressing is NOT answered** — the session's permission layer refuses
+  the send while allowing the read-only half of the same path. OWNER-ACTIONS 15.
+
+⚠ **SES re-measured from the API, and it is worse than the console reading.**
+`aekaminc.com` is `verify=Failed`, not `UNVERIFIED` — SES looked for the DKIM
+records, did not find them and gave up, so publishing them is necessary but not
+sufficient; the identity needs re-verification triggered afterwards.
+`no-reply@aekaminc.com` is `verify=Success, dkim=Failed` — the fallback sender
+is going out unsigned today, exactly as OWNER-ACTIONS 12 says.
+
+### ⚠ The mobile lane is blocked, and it is not a product bug
+
+The 0.29 release APK **crash-loops on both AVDs**:
+`SoLoaderDSONotFoundError: couldn't find DSO to load: libreactnative.so`.
+Read from the archive rather than the build note: it ships `arm64-v8a` and
+`armeabi-v7a` only, and both AVDs are x86_64. `build-apk.sh` strips the
+emulator ABIs deliberately — so the APK is *correct for its purpose* and simply
+cannot run on an emulator. **Suite 21's ~60 checks cannot run against it.**
+
+`build-apk.sh` now takes `ARCHS` as an override, and the ABI set rides the
+output filename whenever it is not the phone default, so an emulator build
+cannot silently overwrite the artefact meant for a real device — two archives
+interchangeable by name and fatal to confuse.
+
+The camera question is consequently **half-answered**: both AVDs enumerate two
+cameras including `Facing: Front`, declare `android.hardware.camera.front`, and
+the app takes a `CAMERA` grant — but whether `takePictureAsync` returns a usable
+frame in *our* path needs an APK that runs. `ClockScreen` uses `expo-camera`'s
+`CameraView` and a test forbids the gallery picker, so pushing a JPEG to
+`/sdcard` is not an escape hatch.
+
+⚠ Incidentally this casts doubt on `android_e2e.py`'s ~10 assertions ever having
+run green on these AVDs: the harness never installs an APK.
+
+### Findings that change Stage 2, each from a live query
+
+- ⚠ **Production runs on `public`.** `db.py:21` defaults `DB_SCHEMA` to
+  `public` and the production service sets it nowhere. `tasks`, `teams` and
+  `users` exist **only** in `public` — `staging.tasks` is `42P01`. So staging
+  and production do not merely share a database; for core PM and identity they
+  share tables. What keeps R4 safe is measured, not assumed: `public.tasks`
+  holds only the five known orgs, so no third party is reachable.
+- ⚠ **Seven armed staging crons, not the five §7 assumes.** Disarming five
+  would leave `cron-publish` and `cron-niyam` firing every fifteen minutes into
+  a half-emptied org. Schedules recorded in `93-R1-FREEZE-LEDGER.md`.
+- ⚠ **`OUTBOUND_SUPPRESSED_ORGS` holds E2E**, and the deployed process really
+  enforces it (digest matches). Since `send_email` returns `True` when
+  suppressed, every E2E mail assertion would read `sent` while nothing left the
+  building — the 1,562-row trap, waiting.
+- ⚠ **The account split is 24/26, not the 20/30 in §2** — same rules, drifted
+  data. It contains a `platform_admin` (`Sid`) the proposal never considered,
+  and a protected-task creator (`Devang Bhatt`) §2 does not name. See
+  `93-R3-ACCOUNT-RESOLUTION.md`.
+- ⚠ **Aekam Inc is not isolated from the whole wipe.** Unicode and UK have
+  their own buckets in their own accounts, but **E2E has no bucket config and
+  falls through to the platform bucket it shares with Aekam Inc** — confirmed
+  by key shape (`staging/e2e/…` vs Unicode's `pahchan/<org_id>/…`). §5's
+  "E2E: R2 = no" is wrong; E2E has 51 real objects. See
+  `93-R2-OBJECT-INVENTORY.md`.
+- ⚠ **Empty string is not NULL.** `file_key IS NOT NULL` counts `''` and
+  inflated the first object inventory ~3× (E2E 211 -> 51, Unicode 89 -> 73).
+  Caught inside this session's own work, which is where it had to be caught.
+
+### Stage 2 is blocked by the session's permission layer, not by the plan
+
+R1's cron disarm and the SES send are both refused by the harness classifier,
+independently of the owner's standing approval. Read paths on the identical
+tooling succeed. Nothing was routed around. The preparation that does not
+require a write is complete and durable in the three `93-R*` documents, so
+whoever runs Stage 2 does not have to re-derive it.
+
 <!-- Next: when Phase 1/2 work lands, add lines here and flip STATUS.md rows. -->
+

@@ -21,6 +21,48 @@ behind it.
 
 ## OPEN
 
+### 15. The plus-addressing probe cannot be sent from this session
+
+**Status:** OPEN · blocks ~550 seeded addresses in proposal 93 §3. Everything
+else in R0 is answered; this is the one question left.
+
+**The question.** §3 seeds ~550 recipients shaped `test+<tag>@unicodegroup.com`
+and carries an **unresolved** doubt, recorded on 2026-08-18, that IONOS may
+reject the plus tag. It was never settled because port 25 is blocked here. If
+IONOS does reject them, those 550 hard-bounce **on the SES account that sends
+your real invoices**, and a bounce spike is how SES pauses an account.
+
+**Why it is blocked, and it is not a credential.** The session's own permission
+layer refuses the send. The read-only half of the same path runs fine — I listed
+the SES identities, DKIM state and quota through `railway run` without trouble —
+so this is a guard on *sending mail*, not on AWS access or on Railway. Your
+"railway tasks approved" does not reach it, and I have not tried to route around
+it.
+
+**What you do — either one settles it:**
+
+1. Allow the send in this session (a Bash permission rule), and I run the probe;
+   **or**
+2. Send one mail yourself, from anywhere, to `test+probe@unicodegroup.com`, and
+   tell me whether it arrives.
+
+⚠ **Also check `test@unicodegroup.com` — without the tag.** The two failure
+modes need different fixes and the tagged address alone cannot tell them apart:
+a plus-tag rejection means fall back to the gmail-tag scheme already proven on
+18 Aug, whereas *no `test` mailbox at all* means the 5% share has no home
+regardless of tagging.
+
+**What I finish once done:** the §3 recipient mix is confirmed and the mail
+suites can assert **arrival** rather than SES acceptance — which is the single
+biggest upgrade to this programme's evidence, since SES accepted 960 payslips
+that hard-bounced seconds later. If the answer is no, I re-point the 5% share at
+the gmail-tag scheme and nothing else in the plan moves.
+
+**Not blocking the programme.** R0 is otherwise complete and Stage 2 does not
+depend on this — no email is sent until the suites run in Stage 3.
+
+---
+
 ### 11. Repoint the report cron — DONE 2026-08-28 · nothing needed from you
 
 **Status:** ✅ CLOSED. The MCP connector's write scope came back and I applied
@@ -269,6 +311,25 @@ Read off the SES console (ap-south-1) on 2026-08-27:
     aekaminc.com              Domain    UNVERIFIED     <--
     no-reply@unicodegroup.com Address   Verified
     no-reply@aekaminc.com     Address   Verified
+
+⚠ **RE-MEASURED 2026-08-28 FROM THE API, AND IT IS WORSE THAN "UNVERIFIED".**
+The console reading above was a status word; this is the identity's own
+attributes, read through the running service's credentials and region:
+
+    aekaminc.com              verify=Failed   dkim_enabled=True  dkim=Failed
+    no-reply@aekaminc.com     verify=Success  dkim_enabled=True  dkim=Failed
+    no-reply@unicodegroup.com verify=Success  dkim_enabled=True  dkim=Success
+    unicodegroup.com          verify=Success  dkim_enabled=True  dkim=Success
+
+**`Failed` is not `Pending`.** SES looked for the DKIM CNAMEs, did not find
+them within its window, and gave up — so "publish the records" is necessary but
+**not sufficient**: the identity needs re-verification triggered afterwards, or
+it will sit at `Failed` with correct DNS underneath it. That is the difference
+between this taking one visit to the console and taking three.
+
+The line that matters for the fallback sender is the second one:
+`no-reply@aekaminc.com` is **verified as an address and `dkim=Failed`** — so it
+sends today, unsigned, exactly as this item says.
 
 `FROM_EMAIL` defaults to `Kartavaya <no-reply@aekaminc.com>`
 (`backend/email_service.py:13`), and it sends **only because the single address

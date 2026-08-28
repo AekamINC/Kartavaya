@@ -57,13 +57,27 @@ sed -i 's|^org.gradle.jvmargs=.*|org.gradle.jvmargs=-Xmx6144m -XX:MaxMetaspaceSi
 
 # Only the two ABIs a real phone uses. x86/x86_64 are emulator-only and roughly
 # double the file.
-ARCHS="arm64-v8a,armeabi-v7a"
+#
+# ⚠ OVERRIDABLE, because the default CANNOT RUN ON THE EMULATORS. Both AVDs on
+# this machine (Pixel_9_Pro, Tab_A11_Plus) are x86_64, so an APK built with the
+# default installs and then dies on launch with
+#     SoLoaderDSONotFoundError: couldn't find DSO to load: libreactnative.so
+# — which reads like an app crash and is really a missing ABI. Suite 21 of
+# proposal 93 needs an emulator build, so:
+#     ARCHS=x86_64 bash mobile/scripts/build-apk.sh release
+ARCHS="${ARCHS:-arm64-v8a,armeabi-v7a}"
 
 echo "==> assemble${VARIANT^}"
 ( cd android && ./gradlew "assemble${VARIANT^}" -PreactNativeArchitectures="$ARCHS" )
 
 APK="android/app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
-OUT="../build/Kartavaya-$(node -p "require('./app.json').expo.version")-$VARIANT.apk"
+# The ABI set rides the filename whenever it is NOT the phone default, so an
+# emulator build cannot silently overwrite the artefact meant for a real device.
+# Those two archives are interchangeable by name and fatal to confuse: each one
+# refuses to launch on the other's hardware.
+SUFFIX=""
+[ "$ARCHS" != "arm64-v8a,armeabi-v7a" ] && SUFFIX="-$(echo "$ARCHS" | tr ',' '+')"
+OUT="../build/Kartavaya-$(node -p "require('./app.json').expo.version")-$VARIANT$SUFFIX.apk"
 mkdir -p ../build && cp "$APK" "$OUT"
 
 echo "==> verifying the signature — an unsigned APK will not install"

@@ -205,6 +205,53 @@ burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
 vendor picker. Verified orphaned across every vendor-referencing column *before*
 deleting. Nine real suppliers remain.
 
+## Open, found 28 Aug during proposal 93 R0 — NOT fixed
+
+**🔴 The release APK cannot run on either emulator, so Suite 21 is blocked.**
+Measured, not inferred: installed on `Pixel_9_Pro` and it crash-loops at launch
+with `SoLoaderDSONotFoundError: couldn't find DSO to load: libreactnative.so`.
+Reading the archive, `build/Kartavaya-2.0.4-release.apk` ships **`arm64-v8a` and
+`armeabi-v7a` only**; both AVDs are x86_64. `mobile/scripts/build-apk.sh` strips
+the emulator ABIs on purpose, so **the APK is correct for its purpose** — a real
+phone — and mobile is untestable on this machine until an x86_64 build exists.
+The script now takes an `ARCHS` override and puts the ABI set in the filename so
+the two archives cannot be confused. ⚠ This also means `mobile/e2e/android_e2e.py`'s
+~10 assertions cannot have run green against a release APK on these AVDs — the
+harness never installs one.
+
+**🟡 The emulator camera question is half-answered.** Both AVDs enumerate two
+cameras including `Facing: Front` and declare `android.hardware.camera.front`,
+and the app accepts a `CAMERA` grant — but whether `takePictureAsync` returns a
+usable frame through `expo-camera`'s `CameraView` needs an APK that runs.
+`ClockScreen` forbids the gallery picker by test, so pushing a JPEG to `/sdcard`
+is not a substitute.
+
+**🔴 `aekaminc.com` SES verification is `Failed`, not merely unverified.** Read
+from the API rather than the console: `verify=Failed, dkim=Failed`. SES looked
+for the DKIM records, did not find them, and gave up — so publishing them is
+necessary but **not sufficient**; re-verification must be triggered afterwards.
+`no-reply@aekaminc.com` is `verify=Success, dkim=Failed`, so the production
+fallback sender is going out unsigned today. OWNER-ACTIONS 12.
+
+**⚠ Production and staging share `public.tasks`, `public.teams`, `public.users`.**
+`db.py:21` defaults `DB_SCHEMA` to `public` and the production service sets it
+nowhere; those three tables exist **only** in `public` (`staging.tasks` is
+42P01). Not a new bug — but it means core PM and identity are one table set
+across both environments, and it is the constraint every delete plan must be
+written against. `public.tasks` holds only the five known orgs, so no third
+party is reachable by an org-scoped delete.
+
+**⚠ 926 `public.notifications` rows carry `task_id` and no `org_id`**, 3 of them
+on the protected 20 tasks. An org-scoped delete misses them entirely; a
+join-based sweep without the team guard destroys protected rows that **no
+`org_id` predicate could have saved**. `docs/plans/93-R4-DELETE-PLAN.md`.
+
+**⚠ `public` has exactly 2 foreign keys** (`task_reminders_task_id_fkey`,
+`org_settings_org_id_fkey`) against `staging`'s 391. `tasks`, `teams`,
+`team_members`, `task_comments`, `time_entries`, `mentions`, `notifications` and
+`activity_events` have none, so Postgres will neither prevent nor report a wrong
+delete order there.
+
 ## Open, found 26–27 Aug, NOT fixed
 
 **🟢 Biometric attendance now reaches payroll — FIXED 27 Aug.**
