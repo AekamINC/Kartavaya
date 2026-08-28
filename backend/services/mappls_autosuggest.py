@@ -50,52 +50,107 @@ look for it. `sentry_scrub.py` redacts credentials, not addresses.
 
 ── THE CREDENTIAL, AND WHY THIS ONE ─────────────────────────────────────────
 
-The **Static Key** (`MAPPLS_STATIC_KEY`), passed as the `access_token` QUERY
-parameter — Mappls' documented static-key method for the REST APIs, the same
-credential and the same parameter name as the Web Map SDK.
+The **`MAPPLS_CLIENT_ID` / `MAPPLS_CLIENT_SECRET` pair**, exchanged for an OAuth
+bearer token that travels in the `Authorization` header — which is exactly what
+PHASE-7 §7.6 specified, and the plan was right.
 
-It is emphatically NOT the `MAPPLS_CLIENT_ID`/`MAPPLS_CLIENT_SECRET` pair that
-PHASE-7 §7.6 asked for. That plan was written before 2026-08-27, when the pair
-was proved live to mint tokens that every Mappls product refuses — the
-post-2025 host cannot distinguish our real token from a random string. Building
-7.6 on the OAuth pair as specified would have produced a feature that mints
-successfully, calls confidently, and returns nothing, which is precisely the
-failure that cost Phase 7.5 months. See `services/mappls.py`.
+⚠ **THIS PARAGRAPH PREVIOUSLY SAID THE OPPOSITE, AND IT WAS WRONG.** The first
+version of this file sent `?access_token=<Static Key>`, arguing that the Web Map
+SDK takes the console key in a query parameter of that name and that the REST
+APIs would be the same. It was refused live on 2026-08-28 with **HTTP 401**,
+while that same Static Key was drawing the Gujarat outline in a browser.
 
-⚠ Unlike the SDK case, this key does NOT reach the browser. The proxy exists so
-that it does not: a client-side autosuggest would publish a non-expiring key on
-every keystroke, and the console's domain whitelist — the only compensating
-control on a key that cannot expire — does not restrain a lifted key used from
-curl.
+The generalisation underneath the mistake is the thing worth keeping: **a
+Mappls credential that works for one of their products tells you nothing about
+another.** §7.5 lost months to the mirror image of this — a dead SDK URL read as
+a missing key. Both times the code was right that a credential was involved and
+wrong about which one, and both times the only evidence that settled it was a
+live call. `services/mappls.py` carries a note calling the OAuth token "not
+accepted by anything"; that was true of the SDK and false in general, and it is
+corrected there.
+
+⚠ Neither credential reaches the browser, and the proxy exists so that neither
+does. A client-side autosuggest would publish a credential on every keystroke,
+and the console's domain whitelist — the only compensating control on the
+non-expiring Static Key — does not restrain a lifted key used from curl. The
+OAuth token is better still: it expires in ~24h, so even a leak is bounded.
 
 ── THREE OUTCOMES, NEVER MERGED ─────────────────────────────────────────────
 
 Same discipline as `pin_boundaries`' `unmatched`/`unavailable` and the token
 endpoint's `not_configured`, because they need opposite responses:
 
-    not_configured  this environment holds no Static Key. A local checkout or a
+    not_configured  this environment holds no OAuth pair. A local checkout or a
                     preview deploy. NOT a fault; do not log at error.
-    unavailable     we hold a key and Mappls did not answer usefully. A fault,
-                    and it must not be dressed up as "autosuggest is off here".
+    unavailable     we hold the pair and Mappls did not answer usefully — the
+                    mint failed, or the search did. A fault, and it must not be
+                    dressed up as "autosuggest is off here". Keeping these two
+                    apart is what turned the 401 above into a one-line
+                    diagnosis instead of another month of guessing.
     []              Mappls answered and knows no such place. Not a fault at
                     all, and distinct from both of the above — an Indian PIN
                     averages ~82 km² and plenty of real premises are simply
                     not in anyone's gazetteer.
 """
 import logging
+import os
+import time
 
 import httpx
 
-from services.mappls import NOT_CONFIGURED, UNAVAILABLE, static_key
+from services.mappls import NOT_CONFIGURED, UNAVAILABLE
 
 log = logging.getLogger(__name__)
 
 #: Mappls' Autosuggest API. The `atlas` host, not the `apis`/`sdk` ones.
-#:
-#: The static-key method documented for the REST APIs puts the console key in
-#: the `access_token` QUERY parameter — the same parameter name the Web Map SDK
-#: uses, which is the one piece of consistency in this provider's auth story.
 SUGGEST_URL = "https://atlas.mappls.com/api/places/search/json"
+
+#: ⚠ THE `atlas` HOST TAKES AN OAuth BEARER TOKEN, NOT THE STATIC KEY.
+#:
+#: This file first shipped sending `?access_token=<Static Key>`, reasoning that
+#: the Web Map SDK takes the console key in a query parameter of that name and
+#: that the REST APIs would be the same. **That was wrong, and it was refused
+#: live**: 2026-08-28, one call against the deployed staging backend,
+#:
+#:     GET /api/v1/maps/address/suggest?q=Bopal Circle
+#:     -> available:false  reason:unavailable
+#:     -> mappls autosuggest refused the static key (HTTP 401)
+#:
+#: while the SAME Static Key was drawing the Gujarat territory outline in a
+#: browser. Mappls' own documentation for this endpoint is explicit: the APIs
+#: "follow OAuth 2.0 based security", the caller requests a token with
+#: `client_id`/`client_secret`, and `{token_type} {access_token}` goes in the
+#: **Authorization header**.
+#:
+#: This is the SECOND time this codebase has been right that a Mappls
+#: credential was missing and wrong about which one — §7.5 spent months on a
+#: dead SDK URL for the same reason. The lesson both times is the same: a
+#: credential that works for one Mappls product tells you nothing about
+#: another, and the only evidence that counts is a live call.
+#:
+#: PHASE-7 §7.6 specified the OAuth pair from the start. It was right.
+TOKEN_URL = "https://outpost.mappls.com/api/security/oauth/token"
+
+#: Seconds subtracted from the token's own lifetime before it is considered
+#: stale. The token is good for ~24h; a request that begins 4 minutes before
+#: expiry and is answered after it would 401 for a reason no log would explain.
+_EXPIRY_SKEW_SECONDS = 300
+
+#: ── THE TOKEN IS CACHED, AND THAT IS NOT THE CACHE MAPPLS FORBIDS ───────────
+#:
+#: The prohibition is on caching RESULTS to avoid fees — geocodes, suggestions,
+#: content. An access token is a CREDENTIAL: Mappls issues it with a 24-hour
+#: lifetime for the explicit purpose of being reused, and minting a fresh one on
+#: every keystroke would be an extra round trip per character and a self-inflicted
+#: rate limit. `test_mappls_autosuggest.py` asserts the same query twice makes
+#: two SEARCH calls; nothing about that is weakened by reusing the credential
+#: they are both sent with.
+#:
+#: Module-level, so it is per-process and dies with the container. A failure is
+#: NEVER cached — the same rule `services/mappls.py` records for the SDK: a
+#: cached failure turns a blip into an outage that lasts until a redeploy.
+_token: str | None = None
+_token_expires_at: float = 0.0
 
 #: Below this, we do not call. Two independent reasons and both matter:
 #:
@@ -186,6 +241,102 @@ def _shape(item: dict) -> dict | None:
     return out
 
 
+def oauth_pair_configured() -> bool:
+    """Both halves present. Neither value is ever returned or logged."""
+    return bool((os.getenv("MAPPLS_CLIENT_ID") or "").strip()
+                and (os.getenv("MAPPLS_CLIENT_SECRET") or "").strip())
+
+
+def _forget_token() -> None:
+    """Drop the cached token so the next call mints a fresh one."""
+    global _token, _token_expires_at
+    _token = None
+    _token_expires_at = 0.0
+
+
+async def reset_token_cache() -> None:
+    """Test seam. Named for what it does rather than exported by accident."""
+    _forget_token()
+
+
+async def _access_token(client: httpx.AsyncClient) -> str | None:
+    """A live OAuth bearer token, minted or reused. `None` if it cannot be got.
+
+    ── WHY THE PAIR AND NOT THE STATIC KEY ──────────────────────────────────
+
+    Because `atlas.mappls.com` refused the Static Key with a 401 while that
+    same key was drawing a map in a browser — see the `TOKEN_URL` note above.
+    Mappls' documentation for this endpoint says the APIs follow OAuth 2.0 and
+    the Authorization header carries `{token_type} {access_token}`.
+
+    ── WHAT IS NEVER LOGGED ─────────────────────────────────────────────────
+
+    The client id, the secret, the token, and any body Mappls returns on a
+    failure. `sentry_scrub.py` redacts by variable NAME and cannot see a
+    credential echoed inside a third party's error string, so a non-200 is
+    reported by STATUS CODE only. The same discipline `services/mappls.py`
+    documents for the SDK mint.
+    """
+    global _token, _token_expires_at
+
+    now = time.monotonic()
+    if _token is not None and now < _token_expires_at:
+        return _token
+
+    cid = (os.getenv("MAPPLS_CLIENT_ID") or "").strip()
+    secret = (os.getenv("MAPPLS_CLIENT_SECRET") or "").strip()
+    if not cid or not secret:
+        return None
+
+    try:
+        resp = await client.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": cid,
+                "client_secret": secret,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    except httpx.HTTPError as exc:
+        # By TYPE, not repr: httpx puts the request URL in several exception
+        # reprs, and this one's body carries the client secret.
+        log.warning("mappls token transport failure: %s", type(exc).__name__)
+        return None
+
+    if resp.status_code != 200:
+        # Status code only. The body of a failed OAuth response routinely
+        # echoes the client id back.
+        log.error("mappls token mint refused (HTTP %s)", resp.status_code)
+        return None
+
+    try:
+        payload = resp.json()
+    except ValueError:
+        log.warning("mappls token response was not JSON")
+        return None
+
+    token = payload.get("access_token")
+    if not isinstance(token, str) or not token:
+        log.warning("mappls token response carried no access_token")
+        return None
+
+    # `expires_in` is seconds and Mappls sends 86399. Defended anyway: a
+    # missing or absurd value must not produce a token treated as valid for
+    # ever, nor one considered stale the instant it arrives.
+    try:
+        lifetime = int(payload.get("expires_in") or 0)
+    except (TypeError, ValueError):
+        lifetime = 0
+    lifetime = max(60, min(lifetime or 3600, 86400))
+
+    _token = token
+    _token_expires_at = now + lifetime - _EXPIRY_SKEW_SECONDS
+    # No token, no id, no secret — only that one was obtained and for how long.
+    log.info("mappls token minted, valid %ss", lifetime)
+    return token
+
+
 async def suggest(q: str) -> dict:
     """Autosuggest for ONE typed fragment. Never for a stored record.
 
@@ -209,15 +360,28 @@ async def suggest(q: str) -> dict:
         # when the real answer is "keep typing".
         return {"available": True, "reason": TOO_SHORT, "suggestions": []}
 
-    key = static_key()
-    if key is None:
+    if not oauth_pair_configured():
         return {"available": False, "reason": NOT_CONFIGURED, "suggestions": []}
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            token = await _access_token(client)
+            if token is None:
+                # Minting failed. `UNAVAILABLE`, never `NOT_CONFIGURED`: we
+                # HOLD the pair and the provider did not give us a token, which
+                # is a fault somebody must look at rather than an environment
+                # that was never given a credential. Keeping those two apart is
+                # what turned the 401 above into a one-line diagnosis instead of
+                # another month of guessing.
+                return {"available": False, "reason": UNAVAILABLE, "suggestions": []}
             resp = await client.get(
                 SUGGEST_URL,
-                params={"query": fragment, "access_token": key},
+                # The FRAGMENT is the only thing in the query string. The
+                # credential goes in the header, which also keeps it out of any
+                # intermediary's access log — the query-parameter form put a
+                # non-expiring key there on every keystroke.
+                params={"query": fragment},
+                headers={"Authorization": f"Bearer {token}"},
             )
     except httpx.HTTPError as exc:
         # `exc` is logged by TYPE, not repr. httpx puts the request URL in the
@@ -228,15 +392,17 @@ async def suggest(q: str) -> dict:
 
     if resp.status_code in (401, 403):
         # Named separately from every other failure because it is the one this
-        # feature is most likely to hit and the hardest to diagnose from the
-        # outside: the Static Key is documented as the REST credential, but the
-        # last time this codebase assumed a Mappls credential worked across
-        # products it was wrong for months. If this line appears in Railway
-        # logs, the key is real and the AUTOSUGGEST product is not accepting it
-        # — check the console's allocation before touching this file.
+        # feature is most likely to hit and the hardest to diagnose from
+        # outside. This line is what caught the Static Key being the wrong
+        # credential for the `atlas` host, so it stays — but the token is
+        # dropped first, because a 401 on a token we believe is live is exactly
+        # the case a cached-past-its-life credential produces, and retrying
+        # with the same one would fail identically for ever.
+        _forget_token()
         log.error(
-            "mappls autosuggest refused the static key (HTTP %s) — check the "
-            "Autosuggest allocation and the domain whitelist in the console",
+            "mappls autosuggest refused the OAuth token (HTTP %s) — the token "
+            "minted but the Autosuggest product did not accept it; check the "
+            "product entitlement on the console before changing this file",
             resp.status_code,
         )
         return {"available": False, "reason": UNAVAILABLE, "suggestions": []}

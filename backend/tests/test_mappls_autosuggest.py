@@ -79,22 +79,44 @@ CALLER = {
 }
 
 
+#: The bearer token the scripted OAuth endpoint issues.
+TOKEN = "test-bearer-token-value"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_token_cache():
+    """The token cache is module-level, so it MUST be cleared between tests.
+
+    Without this, the first test to mint leaves a live token behind and every
+    later test silently skips the mint — including the ones whose whole point
+    is what happens when minting fails.
+    """
+    autosuggest._forget_token()
+    yield
+    autosuggest._forget_token()
+
+
 @pytest.fixture
 def configured(monkeypatch):
-    """A Static Key present, with the useless OAuth pair beside it as on Railway."""
-    monkeypatch.setenv("MAPPLS_STATIC_KEY", KEY)
+    """The OAuth pair present — the credential the REST APIs actually take.
+
+    The Static Key is set beside it exactly as it is on Railway, and it must
+    make no difference to anything here: `atlas.mappls.com` refused it with a
+    401 on 2026-08-28 while it was simultaneously drawing a map in a browser.
+    """
     monkeypatch.setenv("MAPPLS_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("MAPPLS_CLIENT_SECRET", CLIENT_SECRET)
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", KEY)
 
 
 @pytest.fixture
 def unconfigured(monkeypatch):
-    """No Static Key. The OAuth pair is left SET on purpose — that is the state
-    Railway was in throughout the 7.5 misdiagnosis, and with respect to the
-    credential that works it is *not configured*."""
-    monkeypatch.delenv("MAPPLS_STATIC_KEY", raising=False)
-    monkeypatch.setenv("MAPPLS_CLIENT_ID", "test-client-id")
-    monkeypatch.setenv("MAPPLS_CLIENT_SECRET", CLIENT_SECRET)
+    """No OAuth pair. The STATIC KEY is left set on purpose — it is present on
+    Railway and it is not the credential this feature uses, so with respect to
+    autosuggest an environment holding only the key is *not configured*."""
+    monkeypatch.delenv("MAPPLS_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MAPPLS_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", KEY)
 
 
 class Upstream:
@@ -105,11 +127,23 @@ class Upstream:
     assertions need.
     """
 
-    def __init__(self, *, status=200, json=None, text=None, raises=None):
+    def __init__(self, *, status=200, json=None, text=None, raises=None,
+                 token_status=200, token_json=None):
         self.status, self.json, self.text, self.raises = status, json, text, raises
+        self.token_status = token_status
+        self.token_json = (token_json if token_json is not None
+                           else {"access_token": TOKEN, "token_type": "bearer",
+                                 "expires_in": 86399})
         self.requests: list[httpx.Request] = []
+        self.token_requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        # The OAuth mint is answered and recorded SEPARATELY, so that
+        # `requests` and `calls` keep meaning "search calls" — which is what
+        # every licence and allocation assertion in this file is about.
+        if str(request.url).startswith(autosuggest.TOKEN_URL):
+            self.token_requests.append(request)
+            return httpx.Response(self.token_status, json=self.token_json)
         self.requests.append(request)
         if self.raises is not None:
             raise self.raises
@@ -152,10 +186,16 @@ async def test_only_the_fragment_and_the_key_are_submitted(configured, upstream)
 
     Mappls take a perpetual, worldwide, sub-licensable licence over content
     submitted to their servers. So the wire is checked positively AND
-    negatively: `query` is the fragment, `access_token` is the key, and there
-    is no third parameter — because the way this rule breaks is not somebody
-    sending the address instead of the fragment, it is somebody sending the
-    address *as well*, in a `context=` or a `near=` added to improve results.
+    negatively: the ONLY query parameter is `query`, and it is the fragment —
+    because the way this rule breaks is not somebody sending the address
+    instead of the fragment, it is somebody sending the address *as well*, in a
+    `context=` or a `near=` added to improve results.
+
+    ⚠ The credential is now in the `Authorization` HEADER and not in the query
+    string, which is the correct place for it twice over: `atlas.mappls.com`
+    demands it there (the Static Key in `?access_token=` was refused 401 live
+    on 2026-08-28), and a credential in a query string ends up in every
+    intermediary's access log beside the customer's fragment.
     """
     script = upstream(json=BODY)
 
@@ -164,8 +204,7 @@ async def test_only_the_fragment_and_the_key_are_submitted(configured, upstream)
     assert script.calls == 1
     sent = script.requests[0].url
     assert sent.params["query"] == "Bopal Circle"
-    assert sent.params["access_token"] == KEY
-    assert set(sent.params.keys()) == {"query", "access_token"}, (
+    assert set(sent.params.keys()) == {"query"}, (
         "a parameter beyond the fragment was submitted to Mappls — everything "
         "sent here is licensed to them in perpetuity")
     assert str(sent).startswith(autosuggest.SUGGEST_URL)
@@ -322,7 +361,7 @@ async def test_a_refused_key_is_logged_loudly_enough_to_diagnose(
         result = await autosuggest.suggest("Bopal Circle")
 
     assert result["reason"] == mappls.UNAVAILABLE
-    assert any(r.levelno == logging.ERROR and "static key" in r.message.lower()
+    assert any(r.levelno == logging.ERROR and "oauth token" in r.message.lower()
                for r in caplog.records)
 
 
@@ -587,3 +626,139 @@ async def test_the_credential_module_still_reaches_no_network():
     is recorded where the new code is, not only where the old guard is."""
     assert "import httpx" not in inspect.getsource(mappls)
     assert "import httpx" in inspect.getsource(autosuggest)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  THE CREDENTIAL. `atlas` takes an OAuth bearer token, NOT the Static Key.
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This block exists because the first version of this feature got it wrong and
+# shipped. It sent `?access_token=<Static Key>`, reasoning that the Web Map SDK
+# takes the console key in a query parameter of that name and that the REST APIs
+# would be the same. Refused live 2026-08-28 with HTTP 401 — while that same
+# Static Key was drawing the Gujarat outline in a browser.
+#
+# The generalisation worth keeping: A MAPPLS CREDENTIAL THAT WORKS FOR ONE OF
+# THEIR PRODUCTS TELLS YOU NOTHING ABOUT ANOTHER. §7.5 lost months to the mirror
+# image of this. Both times the only evidence that settled it was a live call.
+
+async def test_the_token_goes_in_the_header_and_the_key_goes_nowhere(
+        configured, upstream):
+    """The whole correction, in one assertion."""
+    script = upstream(json=BODY)
+    await autosuggest.suggest("Bopal Circle")
+
+    sent = script.requests[0]
+    assert sent.headers.get("authorization") == f"Bearer {TOKEN}"
+    # The Static Key is SET in this fixture, exactly as it is on Railway, and
+    # it must not appear anywhere on this request.
+    assert KEY not in str(sent.url)
+    assert KEY not in str(sent.headers)
+    assert "access_token" not in sent.url.params
+
+
+async def test_the_pair_is_exchanged_at_the_oauth_host(configured, upstream):
+    script = upstream(json=BODY)
+    await autosuggest.suggest("Bopal Circle")
+
+    assert len(script.token_requests) == 1
+    mint = script.token_requests[0]
+    assert str(mint.url).startswith("https://outpost.mappls.com/")
+    body = mint.content.decode()
+    assert "grant_type=client_credentials" in body
+    assert "client_id=test-client-id" in body
+
+
+async def test_the_token_is_reused_across_calls_but_the_SEARCH_is_not(
+        configured, upstream):
+    """The token is a CREDENTIAL and is cached; RESULTS are not.
+
+    Mappls forbid caching results to avoid fees. They issue this token with a
+    24-hour life for the express purpose of reuse. Minting per keystroke would
+    be an extra round trip per character and a self-inflicted rate limit.
+    """
+    script = upstream(json=BODY)
+    await autosuggest.suggest("Bopal Circle")
+    await autosuggest.suggest("Bopal Circle")
+
+    assert script.calls == 2, "a results cache appeared; Mappls' terms forbid one"
+    assert len(script.token_requests) == 1, (
+        "the token was minted twice — it is valid for ~24h and reusing it is "
+        "what it is for")
+
+
+async def test_a_failed_mint_is_UNAVAILABLE_and_never_not_configured(
+        configured, upstream, caplog):
+    """We HOLD the pair and the provider did not answer. That is a fault.
+
+    Reporting `not_configured` here would say "autosuggest is off in this
+    environment", which sends the reader to Railway to add a variable that is
+    already there — the exact wrong turn that cost 7.5 months.
+    """
+    upstream(json=BODY, token_status=500)
+    with caplog.at_level(logging.INFO):
+        out = await autosuggest.suggest("Bopal Circle")
+
+    assert out["available"] is False
+    assert out["reason"] == mappls.UNAVAILABLE
+    assert out["reason"] != mappls.NOT_CONFIGURED
+
+
+async def test_no_search_is_attempted_when_the_mint_fails(configured, upstream):
+    """A hit against a 200-call allocation must not be spent on a request that
+    cannot possibly be authorised."""
+    script = upstream(json=BODY, token_status=401)
+    await autosuggest.suggest("Bopal Circle")
+    assert script.calls == 0
+
+
+async def test_a_401_on_the_SEARCH_drops_the_cached_token(configured, upstream):
+    """Otherwise a token that expired early is retried for ever, identically.
+
+    A 401 on a token we believe is live is exactly what a cached-past-its-life
+    credential produces, so the cache must be dropped rather than trusted.
+    """
+    # ONE script, mutated between calls. Installing a second `upstream()` does
+    # not work: the factory captures `httpx.AsyncClient` at install time, so a
+    # second install wraps the first and keeps the FIRST transport — a trap
+    # worth naming, because the test would then pass or fail for a reason that
+    # has nothing to do with the token.
+    script = upstream(status=401, json={})
+    await autosuggest.suggest("Bopal Circle")
+    assert len(script.token_requests) == 1
+    assert script.calls == 1
+
+    script.status, script.json = 200, BODY
+    await autosuggest.suggest("Bopal Circle")
+    assert len(script.token_requests) == 2, (
+        "the stale token was reused after a 401 — every later call would fail "
+        "the same way until the container restarts")
+    assert script.calls == 2
+
+
+async def test_no_pair_is_NOT_CONFIGURED_even_with_a_static_key_present(
+        unconfigured, upstream):
+    """The Static Key is present in this fixture and is not this feature's
+    credential. An environment holding only it is genuinely unconfigured for
+    autosuggest, and saying so is not a fault."""
+    script = upstream(json=BODY)
+    out = await autosuggest.suggest("Bopal Circle")
+
+    assert out["reason"] == mappls.NOT_CONFIGURED
+    assert script.calls == 0
+    assert len(script.token_requests) == 0, "the pair is absent; nothing to mint"
+
+
+async def test_neither_half_of_the_pair_is_ever_logged(configured, upstream, caplog):
+    """`sentry_scrub.py` redacts by variable NAME and cannot see a credential
+    echoed inside a third party's error string, so a non-200 mint is reported
+    by STATUS CODE only — the body of a failed OAuth response routinely echoes
+    the client id back."""
+    upstream(json=BODY, token_status=403)
+    with caplog.at_level(logging.DEBUG):
+        await autosuggest.suggest("Bopal Circle")
+
+    blob = " ".join(r.message for r in caplog.records)
+    assert CLIENT_SECRET not in blob
+    assert "test-client-id" not in blob
+    assert TOKEN not in blob

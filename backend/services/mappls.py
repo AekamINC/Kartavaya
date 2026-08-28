@@ -56,12 +56,31 @@ import os
 #: Mappls' OAuth 2.0 client-credentials endpoint. Verified live 2026-08-27:
 #: HTTP 200, `expires_in` 86399, `scope` READ, project `prj1787726591i922664629`.
 #:
-#: ── AND THE TOKEN IT RETURNS IS NOT ACCEPTED BY ANYTHING ────────────────────
+#: ── ⚠ CORRECTED 2026-08-28: THE TOKEN IS THE REST CREDENTIAL ────────────────
 #:
-#: NOTHING CALLS THIS. It is a documented dead end, kept because the pair is
-#: still on Railway and the next person WILL find it and assume it is the
-#: credential. See the module docstring for the live proof. If you are here
-#: because the map is blank, the variable you want is `MAPPLS_STATIC_KEY`.
+#: This note used to read "the token it returns is not accepted by ANYTHING",
+#: and that was an over-generalisation from one true fact. What was actually
+#: measured on 27 Aug is that the post-2025 **Web Map SDK** host refuses it —
+#: it cannot distinguish our real token from a random string. That is a fact
+#: about the SDK, and it says nothing about the REST APIs.
+#:
+#: `atlas.mappls.com` — Autosuggest, and every other REST product — takes
+#: exactly this token, as `Authorization: Bearer …`, and REFUSES the Static Key
+#: with a 401. Proved live on 28 Aug, in both directions, while the Static Key
+#: was simultaneously drawing a map in a browser.
+#:
+#: So the two credentials are not better and worse; they are for different
+#: products:
+#:
+#:     Web Map SDK (browser)   MAPPLS_STATIC_KEY, `?access_token=` query param
+#:     REST APIs   (server)    the pair below -> OAuth bearer token in a header
+#:
+#: NOTHING IN THIS MODULE CALLS THIS URL — the minting lives in
+#: `services/mappls_autosuggest.py`, because `tests/test_mappls_token.py`
+#: asserts this file never imports httpx. The constant stays here because this
+#: is the module about credentials. If you are here because the MAP is blank,
+#: the variable you want is `MAPPLS_STATIC_KEY`; if an ADDRESS LOOKUP is
+#: failing, it is the pair.
 TOKEN_URL = "https://outpost.mappls.com/api/security/oauth/token"
 
 #: The Web Map SDK, post-August-2025. Quoted from Mappls' own README:
