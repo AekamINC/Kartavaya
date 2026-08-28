@@ -711,6 +711,29 @@ test.describe('Suite 02b — compliance & support access · Unicode Group', () =
   };
 
   /**
+   * `MODULE_LABEL`, from `pages/admin/supportSessions.js:118` — built out of
+   * `SUPPORT_MODULES`, which is the nine a session may be requested for.
+   *
+   * ⚠ `vetana`, `manav` and `pahchan` are ABSENT here exactly as they are
+   * absent there: salary, statutory identifiers and face templates are the
+   * three sets of records a support ticket never needs and a customer cannot
+   * un-see once an outsider has read them. If one of them ever appears in a
+   * session's modules, `|| code` renders the bare code and the assertion below
+   * still runs — a missing label must not silently pass.
+   */
+  const SUPPORT_MODULE_LABEL: Record<string, string> = {
+    graha: 'Graha · CRM',
+    vikray: 'Vikray · Sales',
+    prachar: 'Prachar · Marketing',
+    dristi: 'Dristi · Analytics',
+    sanvaad: 'Sanvaad · Messaging',
+    esign: 'e-Sign',
+    varta: 'Varta · WhatsApp',
+    ganit: 'Ganit · Accounts',
+    sahayak: 'Sahayak · Hub',
+  };
+
+  /**
    * The sessions the server holds FOR THIS ORG, read fresh.
    *
    * ⚠ `org_id` IS PASSED EXPLICITLY, and that is the most important line in this
@@ -939,19 +962,78 @@ test.describe('Suite 02b — compliance & support access · Unicode Group', () =
 
       await row.getByRole('button', { name: 'Decide' }).click();
 
+      /**
+       * ⚠ SCOPED TO THE DECIDE PANEL, AND THAT IS THE WHOLE FIX.
+       *
+       * This assertion had NEVER RUN before 2026-08-29. The approve branch
+       * needs a pending request that `can_approve` allows, and until Suite 19.3
+       * existed there had never been one — `platform_support_sessions` held
+       * zero rows for its entire life. So this locator met real markup for the
+       * first time and resolved to TWO nodes:
+       *
+       *   1. `<span class="omt__e">— look at, without changing</span>`
+       *      the reach cell in the sessions table (`TabSupportAccess.jsx:286`)
+       *   2. `<p class="apg__lede">They asked to look at, without changing …`
+       *      the decide panel's own lede (`:389`)
+       *
+       * BOTH ARE CORRECT. `levelPhrase()` is deliberately used in both places —
+       * the row says what a session reaches, the panel says what is being asked
+       * for. Nothing about the product is wrong; the locator was unscoped, which
+       * is suite rule 6, and an unscoped `getByText` resolves in DOM order and
+       * would happily have asserted against the TABLE while the panel behind it
+       * said something else entirely.
+       *
+       * The panel is anchored on `#ssa-deny` — a control that exists nowhere
+       * else on the screen — rather than on its heading text, because the
+       * heading carries the operator's NAME and this suite must never assert the
+       * name of a person it did not itself create (a human accepted one of this
+       * programme's invitations from their phone on 28 Aug).
+       */
+      // ⚠ `.last()`, and it is not a shrug. `Card` renders `<section class="card">`
+       // and the decide panel is NESTED INSIDE the outer "Support access" card,
+       // so `has: #ssa-deny` matches BOTH — the ancestor and the panel itself.
+       // Playwright returns matches in document order, so the innermost is last.
+       // The outer card would have contained the sessions table too, which is
+       // the exact node this scoping exists to exclude, so taking either one
+       // "because it matched" would have put the bug straight back.
+      const decideCards = page.locator('section.card').filter({ has: page.locator('#ssa-deny') });
+      await expect(decideCards.first(), 'the Decide panel did not open').toBeVisible({
+        timeout: 15_000,
+      });
+      const decidePanel = decideCards.last();
+
+      // Proof we took the INNER card and not its ancestor: the panel holds the
+      // decision controls and none of the table's per-row Decide buttons. An
+      // assertion that cannot tell the two apart is the one that just failed.
+      await expect(
+        decidePanel.getByRole('button', { name: 'Decide' }),
+        'this is the outer card, not the decide panel — it still holds the table',
+      ).toHaveCount(0);
+
       // What is being asked for, in the customer's words rather than the
       // schema's — `levelPhrase` turns viewer/editor into "look at, without
       // changing" / "look at and change".
       const phrase = pending.access_level === 'editor'
         ? 'look at and change'
         : 'look at, without changing';
-      await expect(page.getByText(phrase)).toBeVisible({ timeout: 15_000 });
+      await expect(decidePanel.getByText(phrase)).toBeVisible({ timeout: 15_000 });
+
+      // And the panel names the MODULES asked for, not merely the level — the
+      // customer is agreeing to a scope, and "look at, without changing" with
+      // no subject is not a scope.
+      for (const code of (pending.modules || [])) {
+        await expect(
+          decidePanel,
+          `the decide panel does not name the ${code} module being asked for`,
+        ).toContainText(SUPPORT_MODULE_LABEL[code] || code);
+      }
+
       // The three sets of records a session can never ask for: payroll, HR and
       // attendance. `SUPPORT_MODULES` omits vetana, manav and pahchan, and the
       // screen says so before the customer decides, so nobody is ever put in the
       // position of having to refuse.
       await expect(
-        page.getByText('Payroll, HR records and attendance cannot be asked for at all'),
+        decidePanel.getByText('Payroll, HR records and attendance cannot be asked for at all'),
         'the panel no longer states which records are out of scope entirely',
       ).toBeVisible();
 
