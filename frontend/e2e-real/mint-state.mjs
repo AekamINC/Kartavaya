@@ -82,16 +82,68 @@ fs.mkdirSync(STATE_DIR, { recursive: true });
 
 /** Both roles, so a single run unblocks every spec rather than half of them. */
 const ACCOUNTS = [
-  { token: process.env.E2E_ADMIN_TOKEN, file: 'owner.json', label: 'owner' },
-  { token: process.env.E2E_APPROVER_TOKEN, file: 'approver.json', label: 'approver' },
+  { token: process.env.E2E_ADMIN_TOKEN, file: 'owner.json', label: 'owner', org: process.env.E2E_ORG_ID },
+  { token: process.env.E2E_APPROVER_TOKEN, file: 'approver.json', label: 'approver', org: process.env.E2E_ORG_ID },
   // The god-mode account, which is the only one that can reach MORE THAN ONE
   // organisation. `.env.e2e` has been a hybrid before — E2E_ORG_ID naming one
   // org while E2E_ADMIN_TOKEN belonged to an admin of another, who is not a
   // member of the first — and the symptom was a write landing in the wrong
   // org while `api()`'s X-Org-Id header 403'd. A suite that must CHOOSE its
   // target org needs an account that can switch; this is it.
+  // ⚠ NO `org` FOR GOD MODE, DELIBERATELY. This state exists for Suite 19,
+  // whose SUBJECT is the platform console and which reaches into other people's
+  // organisations one call at a time through the admin console's own `scoped()`
+  // header. Pinning an active org here would fight that.
   { token: process.env.E2E_GODMODE_TOKEN, file: 'godmode.json', label: 'godmode' },
 ];
+
+/**
+ * ⚠⚠ THE FAULT THIS FILE SHIPPED, AND WHY THE ACTIVE ORG IS NOW SEEDED
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Measured live 2026-08-28. `E2E_ADMIN_TOKEN` and `E2E_GODMODE_TOKEN` decode to
+ * the SAME subject, `user_f798947b8a2e` — they are one account, and it is the
+ * platform one. Its seats, oldest first:
+ *
+ *     Aekam Inc (org_admin, 2026-07-16)  <-- OLDEST
+ *     Unicode Group · E2E Test & Associates · UK AekamINC
+ *
+ * This file used to seed `auth_token` and NOTHING ELSE. With no active org,
+ * `src/lib/api.js:39` sends no `X-Org-Id`, and — in that file's own words —
+ * "the server resolves to the user's OLDEST membership". So every browser write
+ * from `owner.json` landed in **Aekam Inc**: the one organisation proposal 93
+ * guarantees is untouched. `GET /org/profile` on that token returns
+ * "Aekam Inc", live, today.
+ *
+ * IT WAS ALSO SPLIT-BRAINED, which is worse than either half. `_helpers.api()`
+ * DOES send `X-Org-Id: E2E_ORG_ID`, so the API side read E2E while the browser
+ * side wrote Aekam — a suite could go green having written to the wrong company,
+ * which is exactly the shape of the 2026-08-28 cross-org incident.
+ *
+ * 23 specs use `OWNER_STATE`, among them manav, graha, ganit, vetana, pahchan
+ * and vikray — every Wave 2-5 module suite. Re-pointing those at proposal 93's
+ * volumes without this fix would have typed ~7,510 records into Aekam Inc.
+ *
+ * ⚠ AND THE EXISTING SAFETY PROBE COULD NOT SEE IT. The check below probes the
+ * token against `E2E_ORG_ID` and accepts a 200 — but `platform_bypass` answers
+ * 200 for EVERY org, so "the token can reach that org" and "the token belongs to
+ * that org" are indistinguishable from a status code. Only asking the server
+ * WHICH ORG IT RESOLVED TO can tell them apart, which is what `resolvedOrg()`
+ * now does.
+ */
+const ORG_KEY = 'Kartavaya_active_org';   // src/lib/orgContext.js:30
+
+/** Which org the SERVER says this token resolves to, with no header set. */
+async function resolvedOrg(token) {
+  try {
+    const base = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+    const res = await fetch(`${base}/api/v1/org/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body?.id || body?.org_id || null;
+  } catch { return null; }
+}
 
 /** A JWT's exp, read without verifying — this is a convenience check, not a
  *  security boundary. An expired token is the single most likely reason a
@@ -215,7 +267,7 @@ if (process.env.E2E_ADMIN_TOKEN && process.env.E2E_ORG_ID) {
 }
 
 let wrote = 0;
-for (const { token, file, label } of ACCOUNTS) {
+for (const { token, file, label, org } of ACCOUNTS) {
   if (!token) {
     console.log(`· ${label}: no token in .env.e2e — skipped`);
     continue;
@@ -229,17 +281,41 @@ for (const { token, file, label } of ACCOUNTS) {
     continue;
   }
 
+  // Seed the ACTIVE ORG alongside the token, so the browser and `_helpers.api()`
+  // target the same organisation. Without it they disagree — see the block above.
+  const entries = [{ name: 'auth_token', value: token }];
+  if (org) entries.push({ name: ORG_KEY, value: org });
+
+  // ⚠ REFUSE, rather than mint something that writes to the wrong company.
+  // A state file that silently misdirects is worse than no state file: the
+  // suites still run, still go green, and land their rows somewhere else.
+  if (org) {
+    const lands = await resolvedOrg(token);
+    if (lands && lands !== org) {
+      console.error(`\n⚠ ${label}: THIS TOKEN DOES NOT NATIVELY BELONG TO ITS TARGET ORG.`);
+      console.error(`    with no header it resolves to : ${lands}`);
+      console.error(`    but ${file} is meant to act as : ${org}`);
+      console.error(`    ${ORG_KEY} is now seeded, so the browser will send X-Org-Id`);
+      console.error('    and both halves of the harness will agree. THAT IS THE REPAIR,');
+      console.error('    and it is why this warns rather than refusing — refusing would');
+      console.error('    block every suite while leaving the misdirection unfixed.');
+      console.error('    But the underlying question stands: E2E_ADMIN_TOKEN and');
+      console.error('    E2E_GODMODE_TOKEN shared one subject on 2026-08-28, and both');
+      console.error('    resolved to Aekam Inc — the org proposal 93 guarantees is');
+      console.error('    untouched. An org-scoped credential is the real answer.\n');
+    } else if (lands) {
+      console.log(`  · ${label} resolves to ${lands} ✓ and is pinned to ${org}`);
+    }
+  }
+
   const state = {
     cookies: [],
-    origins: [{
-      origin: BASE,
-      localStorage: [{ name: 'auth_token', value: token }],
-    }],
+    origins: [{ origin: BASE, localStorage: entries }],
   };
   const out = path.join(STATE_DIR, file);
   fs.writeFileSync(out, JSON.stringify(state, null, 2));
   wrote++;
-  console.log(`✓ ${label}: ${out}${exp ? `  (expires ${exp.toISOString()})` : ''}`);
+  console.log(`✓ ${label}: ${out}${org ? `  [org ${org}]` : '  [no org pinned — platform console]'}${exp ? `  (expires ${exp.toISOString()})` : ''}`);
 }
 
 if (!wrote) {

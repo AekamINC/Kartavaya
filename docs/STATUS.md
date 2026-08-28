@@ -238,6 +238,54 @@ with a different blast radius), and no `staging.organisations` row was deleted �
 
 **↑ The first of those two was reversed on 2026-08-28 — see R4b below.**
 
+## Proposal 93 - the harness wrote to Aekam Inc, and nothing said so (28 Aug)
+
+**23 specs drove a god-mode credential that resolved to Aekam Inc** - the one
+organisation this programme guarantees is untouched. Found while sizing Wave 2,
+before running any of them. Every link measured, none inferred:
+
+  * `E2E_ADMIN_TOKEN` and `E2E_GODMODE_TOKEN` decode to the SAME subject,
+    `user_f798947b8a2e`. They are one account, and it is the platform one.
+  * `mint-state.mjs` seeded `auth_token` and NOTHING ELSE into `owner.json`.
+  * With no active org, `src/lib/api.js:39` sends no `X-Org-Id`, and in that
+    file's own words the server then resolves "the user's OLDEST membership".
+    For that account the oldest seat is **Aekam Inc, granted 2026-07-16**.
+  * Live proof: `GET /org/profile` on that token returns **"Aekam Inc"**.
+
+**IT WAS SPLIT-BRAINED, which is worse than either half.** `_helpers.api()` DOES
+send `X-Org-Id: E2E_ORG_ID`, so the API side read E2E while the browser side
+wrote Aekam. That is exactly how a suite goes green having written to the wrong
+company - the same shape as the 2026-08-28 cross-org incident.
+
+The 23 include `manav`, `graha`, `ganit`, `vetana`, `pahchan` and `vikray` -
+**every Wave 2-5 module suite.** Following §14's "re-point the existing suites at
+the volume constants" without this fix would have typed roughly 7,510 records
+into Aekam Inc.
+
+**The existing safety probe could not see it.** It probes the token against
+`E2E_ORG_ID` and accepts a 200 - but `platform_bypass` answers 200 for EVERY
+org, so "can reach that org" and "belongs to that org" are indistinguishable from
+a status code. Only asking the server WHICH ORG IT RESOLVED TO tells them apart.
+
+**Fixed at the root:** `mint-state.mjs` now seeds `Kartavaya_active_org`
+(`src/lib/orgContext.js:30`) beside the token, so the browser and the API helper
+target the same organisation; and it asks the server which org each token
+actually resolves to, warning loudly when that is not the intended one. God mode
+is deliberately left unpinned - Suite 19's subject IS the console, and it scopes
+per call through the admin console's own `scoped()` header.
+
+**Proved, not assumed:**
+
+    no X-Org-Id  -> Aekam Inc                       045b76ad-...
+    X-Org-Id set -> E2E Test & Associates [TEST ORG] 64e7bea6-...
+
+and the minted `owner.json` now carries `auth_token` AND `Kartavaya_active_org`.
+The warning fires today, naming both ids.
+
+⚠ **The underlying credential question stands and is owed to the owner:**
+`E2E_ADMIN_TOKEN` is the platform account, not an org-scoped one. The seeding
+makes the harness coherent; an org-scoped credential is the real answer.
+
 ## Proposal 93 · Suite 02 members — 12/12, green twice · 28 Aug
 
 **§10 asks for 18 screens and eight had tests.** The members lane is the first
