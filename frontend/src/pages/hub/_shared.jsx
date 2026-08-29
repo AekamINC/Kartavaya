@@ -35,6 +35,7 @@
 // cannot collapse them.
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, rows as unwrapRows } from '../../lib/api';
+import { apiErrorText } from '../../lib/apiError';
 
 /* ── Vocabulary ──────────────────────────────────────────────────────────── */
 
@@ -170,10 +171,51 @@ export const MANUAL_PAGE_FIELD = {
  * The server's own `detail` wins wherever it wrote one — the hub routers answer
  * 402 with what ran out and 403 with which grant is missing, and replacing that
  * with "Failed to load" throws away the only text that says what to do next.
+ *
+ * ── ⚠ AND FOR EVERY CREDIT REFUSAL IT DID EXACTLY THAT ──────────────────────
+ *
+ * This read `typeof detail === 'string'` and nothing else, so it only ever kept
+ * ONE of the three shapes FastAPI sends. `services/credits.CreditError` builds
+ * `detail` as a DICT — `{"error": code, "message": sentence, …numbers}`, the
+ * house pattern `routers/documents.py:914` established and `lib/docErrors.js`
+ * already unpacks — so every 402 in this module fell through to the status line
+ * below and the server's sentence was thrown away.
+ *
+ * Measured against the deployed service, proposal 93 Suite 14, 2026-08-29,
+ * `POST /v1/scrapers/run` on an org with an empty wallet. On the wire:
+ *
+ *   {"detail":{"error":"org_credits_exhausted","message":"This needs 1 credits.
+ *    Your organisation has 0 (0 allowance + 0 purchased). Allowance resets on
+ *    1 September 2026. Contact Aekam to top up.", …}}
+ *
+ * On the screen: **"This action needs more credits than the wallet holds."** —
+ * no figure, no reset date, no remedy, on the one surface a person opens to
+ * find out what to do next.
+ *
+ * It is worse than vague. `credits.py` raises TWO exceptions on purpose,
+ * because the remedies differ and "the message must say so":
+ * `InsufficientOrgCredits` sends the reader to Aekam, `MemberCapExceeded` sends
+ * them to their own org admin and quotes the org balance so they do not
+ * escalate to the wrong place. Both are 402, so both rendered as the SAME
+ * sentence and the distinction the service was built around never reached
+ * anybody.
+ *
+ * `apiErrorText` already handles all three shapes and is what the rest of the
+ * product moved to; delegating rather than growing a fourth copy of the same
+ * unpacking is the point. The status sentences below survive as the fallback
+ * for a body that genuinely says nothing — a gateway page, a network drop.
  */
 export function errText(err, fallback = 'Retry, or check your connection.') {
   const detail = err?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;
+  // A dict or an array `detail` — the credit refusals, the document-validation
+  // shape, and a 422's field list. Sentinel rather than `fallback`, so "the
+  // server said nothing usable" is distinguishable from "it said the fallback".
+  if (detail != null && typeof detail === 'object') {
+    const NOTHING = '__errText: nothing usable__';
+    const said = apiErrorText(err, NOTHING);
+    if (said !== NOTHING) return said;
+  }
   const status = err?.response?.status;
   if (status === 402) return 'This action needs more credits than the wallet holds.';
   if (status === 403) return 'You do not have access to this part of Sahayak.';

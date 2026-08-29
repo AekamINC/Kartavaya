@@ -95,7 +95,7 @@ _NAMES_ROUTER = re.compile(
 
 #: Writing routers with NO live-schema test, measured 2026-08-27. ONLY SHRINKS.
 UNCOVERED = {
-    "admin_orgs", "column_prefs", "esign", "hub", "hub_chat",
+    "admin_orgs", "column_prefs", "esign", "hub_chat",
     "hub_connectors", "hub_publish", "lead_sources", "me", "messaging",
     "niyam_rules", "org_members", "org_modules", "org_security",
     "pay", "procurement", "products", "pulse",
@@ -208,7 +208,26 @@ UNCOVERED = {
     # This name leaves the list on a REAL `await conn.prepare(sql)` call, not on
     # a docstring, which is the hole in `_PREPARES` recorded immediately above.
     #
-    # 26 remain.
+    # ── AND `hub` LEFT BY GAINING ONE, 2026-08-29 ────────────────────────────
+    #
+    # `tests/test_hub_org_brand.py` covers `routers/hub.py`'s statements against
+    # the real catalogue. It was written while fixing `PUT /v1/hub/org/brand`,
+    # which answered 500 for EVERY organisation: it INSERTed `(org_id)` alone
+    # into a table whose `client_id` is NOT NULL, on a branch nothing could skip
+    # because nothing had ever written `org_id` there.
+    #
+    # ⚠ AND THIS ENTRY IS HERE BECAUSE A DIFFERENT AGENT NOTICED IT WAS OWED.
+    # The test file landed untracked while `hub` was still on this list, so
+    # `test_the_baseline_only_shrinks` went RED in the working tree for a name
+    # nobody was looking at — exactly the "expected failure nobody reads" this
+    # file's own `graha` note warns about. It was caught by a suite agent
+    # running the backend tests for an unrelated module, who reported that the
+    # baseline edit was owed by whoever committed the new file. Recorded because
+    # the catch is worth more than the edit: with several people writing in one
+    # tree a ratchet can go red for work that is CORRECT and merely unfinished,
+    # and that is precisely the state in which ratchets get ignored.
+    #
+    # 25 remain.
 }
 
 

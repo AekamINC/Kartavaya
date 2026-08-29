@@ -4310,20 +4310,80 @@ async def update_org_brand(
         if k in updates and isinstance(updates[k], list):
             updates[k] = json.dumps(updates[k])
 
-    existing = await pool.fetchrow(
+    # ══════════════════════════════════════════════════════════════════════
+    # ⚠ THIS ROUTE COULD NEVER SUCCEED FOR ANY ORGANISATION, AND IT 500'd.
+    #
+    # It read `WHERE org_id=$1`, and when that missed it inserted `(org_id)`
+    # alone. Two facts, both read from the live catalogue on 2026-08-29 rather
+    # than from a migration file:
+    #
+    #   · `hub_brand_profiles.client_id` is NOT NULL with NO DEFAULT, and
+    #     `hub_brand_profiles_client_id_key` is UNIQUE on it.
+    #   · NOTHING in the product ever writes `org_id` on this table. The only
+    #     creator is `get_or_create_org_client` above, which inserts
+    #     `(client_id)` and leaves `org_id` NULL — both live rows carry NULL.
+    #
+    # So the SELECT missed every time, the INSERT ran every time, and the
+    # INSERT could not succeed. Proven from the deploy log rather than reasoned
+    # about (Railway deployment 93cd7719, 2026-08-29T09:59:34Z):
+    #
+    #     ERROR - Unhandled error on PUT /api/v1/hub/org/brand
+    #       File "/app/routers/hub.py", in update_org_brand
+    #         "INSERT INTO staging.hub_brand_profiles (org_id) VALUES ($1::uuid)"
+    #     asyncpg.exceptions.NotNullViolationError: null value in column
+    #       "client_id" of relation "hub_brand_profiles" violates not-null
+    #       constraint
+    #
+    # This is the ONLY org-scoped brand route — `hub/BrandTab.jsx` puts to
+    # `/clients/{id}/brand`, which is `require_platform_role` — so an
+    # organisation has never been able to set its own brand profile by any
+    # means, and the KPI strip on the client page tells it so: "Not set —
+    # output will be generic until it is."
+    #
+    # THE ROW TO WRITE IS THE ONE `GET /org/brand` ALREADY FALLS BACK TO: the
+    # internal client's profile, created beside the client itself. Anything
+    # else would be a SECOND brand row for one organisation, which is how the
+    # read and the write come to disagree.
+    #
+    # UPDATED BY ID, NOT BY `org_id`. A row found through the fallback has a
+    # NULL `org_id`, so `WHERE org_id=$1` would match nothing, change nothing,
+    # and still answer `{"status":"updated"}` — a save that reports success and
+    # stores none of it, which is the worse half of this bug and would have
+    # survived a fix that only stopped the crash.
+    #
+    # `org_id` is STAMPED while we are here, so the denormalised column starts
+    # being true. `quick_generate` reads the brand with `WHERE org_id=$1::uuid`
+    # and has therefore never found one — every org-level generation has run
+    # with no brand context at all, silently.
+    # ══════════════════════════════════════════════════════════════════════
+    row = await pool.fetchrow(
         "SELECT id FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
     )
-    if not existing:
-        await pool.execute(
-            "INSERT INTO staging.hub_brand_profiles (org_id) VALUES ($1::uuid)", org_id
+    if not row:
+        row = await pool.fetchrow(
+            "SELECT bp.id FROM staging.hub_brand_profiles bp "
+            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE AND c.is_active=TRUE "
+            "ORDER BY bp.created_at LIMIT 1",
+            org_id,
+        )
+    if not row:
+        # An org that has never opened Sahayak has no internal client and so no
+        # profile to write. Say that, rather than raising a constraint violation
+        # the caller cannot read.
+        raise HTTPException(
+            404,
+            "This organisation has no Sahayak workspace yet, so there is no brand "
+            "profile to change. Open Sahayak once and one is created for you.",
         )
 
-    set_clauses = ", ".join(f"{k}=${i+2}" for i, k in enumerate(updates))
-    values = [org_id] + list(updates.values())
+    # $1 is the row, $2 the org; the updates start at $3.
+    set_clauses = ", ".join(f"{k}=${i+3}" for i, k in enumerate(updates))
     await pool.execute(
-        f"UPDATE staging.hub_brand_profiles SET {set_clauses}, updated_at=NOW() "
-        f"WHERE org_id=$1::uuid",
-        *values,
+        f"UPDATE staging.hub_brand_profiles "
+        f"SET org_id=$2::uuid, {set_clauses}, updated_at=NOW() "
+        f"WHERE id=$1::uuid",
+        row["id"], org_id, *list(updates.values()),
     )
     return {"status": "updated"}
 

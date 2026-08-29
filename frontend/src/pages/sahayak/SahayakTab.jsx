@@ -358,6 +358,32 @@ function shaped(detail, status = 500, extra = {}) {
 function detailOf(parsed, status) {
   const d = parsed?.detail;
   if (typeof d === 'string' && d.trim()) return d;
+  // ⚠ THE DICT SHAPE, AND IT IS THE ONE THIS COMPOSER MEETS MOST OFTEN.
+  //
+  // `services/credits.CreditError` writes `detail` as
+  // `{"error": code, "message": sentence, …numbers}` — the third FastAPI shape,
+  // the one `lib/apiError.js` exists for. It is not a string and not an array,
+  // so it fell through both branches and this returned `''`; the caller then
+  // threw `status ${res.status}` and the thread read
+  //
+  //     Not delivered — status 402
+  //
+  // over a body that said, in full: "This needs 2 credits. Your organisation
+  // has 0 (0 allowance + 0 purchased). Allowance resets on 1 September 2026.
+  // Contact Aekam to top up." A bare status is the one thing a reader can do
+  // nothing with, and the wallet is the most common reason an answer does not
+  // arrive. Measured against the deployed service, proposal 93 Suite 14,
+  // 2026-08-29.
+  //
+  // `message` only. The numbers beside it (`needed`, `org_total`,
+  // `member_remaining`) are already inside the sentence the server composed,
+  // and a screen that re-assembles them is a second opinion about a figure —
+  // which is the drift this module has already paid for once on the credit
+  // strip.
+  if (d && typeof d === 'object' && !Array.isArray(d)
+      && typeof d.message === 'string' && d.message.trim()) {
+    return d.message.trim();
+  }
   if (!Array.isArray(d) || !d.length) return '';
   // Both pydantic vintages: v2 types the rejection `string_too_long`, v1 wrote
   // "ensure this has at most 4000 characters" into `msg`.
