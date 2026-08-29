@@ -21,6 +21,88 @@ behind it.
 
 ## OPEN
 
+### 17. The recycle-bin sweeper is BUILT AND DISARMED — arming it is yours
+
+`POST /api/internal/cron/recycle-bin`, authenticated by `CRON_SECRET` like every
+other job, with `dry_run` **defaulting to `true`**. It destroys the R2 objects of
+files binned more than 90 days ago, and it is the only irreversible act in the
+whole recycle-bin feature.
+
+**It is deliberately not scheduled on Railway, for three reasons:**
+
+1. `/cron/project-bin` sets the precedent in its own words — *"the last time a
+   deleting job was armed on this platform it was armed without anybody knowing
+   how many rows it would take on its first run; that is not repeated here."*
+2. Proposal 93 R1 disarmed all seven staging crons to `0 0 1 1 *`, and R9
+   restores exactly those seven. Arming an eighth in the middle of that window
+   would be a change nobody agreed to, on the one job that deletes files.
+3. Nothing is due yet. The bin is days old; the floor is 90 days. There is
+   nothing for it to do until late November at the earliest.
+
+**What you do, when you want it armed:** add a Railway cron entry on the
+`Kartavya` staging service calling that path with the `X-Cron-Secret` header,
+daily is ample. **Read a `?dry_run=true` run first** — it counts and NAMES what
+it would destroy, up to fifty rows, rather than reporting a bare number.
+
+⚠ **What happens if it is never armed, stated plainly:** binned files are
+retained past 90 days and keep counting against the org's storage quota. That
+costs money and destroys nothing — which is the correct direction for a job like
+this one to fail in, and why it is safe to leave this sitting here.
+
+---
+
+### 18. Storage quota accounting is broken, independently of the recycle bin
+
+Found while wiring the bin's quota credit. **Not caused by it**, and not fixed by
+it — raised here rather than absorbed, because it is a change of shape across
+several modules and §7 says that gets an estimate rather than silent time.
+
+**`update_org_storage` is never called with a negative anywhere in the product.**
+Until the recycle bin's purge, nothing in this codebase had ever decremented
+`storage_used_bytes`. There was no delete that reached storage, so there was
+nothing to decrement — but it means the counter has only ever gone up.
+
+**And it does not go up reliably either.** Exactly two call sites increment it —
+`routers/uploads.py:248` and `server.py`'s task-attachment upload — and both only
+when an org can be resolved from a `team_id`. Every one of these uploads counts
+nothing:
+
+| Path | What it writes |
+|---|---|
+| `routers/esign.py` ×4 | signature image, original PDF, certificate JSON, executed PDF |
+| `routers/graha.py` CRM document upload | ⚠ and it never calls `check_storage_limit` either, so a CRM document can push an org past its limit |
+| `routers/pahchan.py` punch photo | one per punch — §4 budgets 240 per org |
+| `services/ai_router.py` ×2 | generated images |
+| `routers/scrapers.py` | raw `put_object`, bypasses `upload_file` entirely |
+| `routers/uploads.py` personal branch | any upload with no `team_id` |
+
+The product is honest about this on screen — the tile is labelled **"Recorded as
+used"**, not "Used", and the server sends a note saying documents written by
+e-sign, attendance, marketing and the scrapers "are not added to this figure
+yet". That honesty is the only reason this is not already a customer-facing
+wrong number.
+
+**The size of the gap, measured:** Unicode Group's counter reads **20,182 bytes**
+against a bucket last measured at **89,591,092**. Four thousand times out.
+
+**A second, narrower bug found with it, and this one IS fixed** (2026-08-29):
+`TaskDrawer.jsx` read each file's `size` off the upload response, held it in
+state, and then dropped it in every one of three `saveTask` maps — so the value
+was thrown away on the very save that persisted the file. **53 of the 59
+attachment elements in this database carry no size at all** because of it, and
+`server.py`'s own `Attachment` model already carried a comment saying the other
+half of this had been fixed while this half went on vanishing one layer up. It
+stopped being cosmetic when the bin landed: `size_bytes` is what the quota is
+credited by at purge, so a file saved without its size is one an org can never
+get its space back for.
+
+**Estimate: one to two days** — every upload path routed through one accounting
+call, a reconciliation pass to correct the existing counters from the buckets,
+and a test per path. Worth doing before storage limits are ever enforced
+commercially, and not urgent before that.
+
+---
+
 ### 16. Two product defects found on 2026-08-28, deferred by decision — your call on when
 
 Neither is blocked on you in the usual sense: I can fix both. They are here

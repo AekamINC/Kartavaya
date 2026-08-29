@@ -1669,12 +1669,27 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await sheet.getByRole('button', { name: 'Close' }).click();
     await expect(sheet).toHaveCount(0, { timeout: 10_000 });
 
-    // ── C. UPLOAD, DOWNLOAD, DELETE — MEASURED, NOT ASSUMED ─────────────────
+    // ── C. THE STORAGE TAB IS READ-ONLY, AND THAT IS NOW A DECISION ─────────
     //
-    // Every locator below is a question about the rendered tab. `.sto__ask`
-    // ("What is this?") is deliberately NOT counted as any of the three: it
-    // opens the identify sheet, it moves no bytes, and counting it would let a
-    // support control stand in for a missing file operation.
+    // ⚠ THIS ASSERTION USED TO BE ITS OWN OPPOSITE, and the change is the
+    // owner answering a question rather than a standard slipping.
+    //
+    // It used to MEASURE the tab for upload, download and delete controls and
+    // FAIL naming the ones that were absent, because §10 lists this screen as
+    // "storage browse/upload/download/delete" while `TabStorage.jsx:40-45`
+    // said the absence was deliberate. Those two could not both be right, and
+    // the suite deliberately did not get to pick — "not built" against
+    // "excluded by decision" is the owner's call, and a `test.skip` would have
+    // made the question disappear.
+    //
+    // ANSWERED 2026-08-29: the tab stays read-only, and delete is built on the
+    // surfaces that OWN the row — task attachments and CRM documents — behind
+    // a two-stage recycle bin. `TabStorage.jsx`'s reasoning survives intact: a
+    // file here is a POINTER held in a column, and deleting the object without
+    // the row produces exactly the failure this tab exists to diagnose.
+    //
+    // So the three controls must STAY absent, and this now fails if somebody
+    // adds one. The measurement is the same; the expected answer flipped.
     const uploadControls =
       (await panel.locator('input[type="file"]').count()) +
       (await panel.getByRole('button', { name: /upload|add file|choose file|attach/i }).count());
@@ -1685,35 +1700,264 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
       .getByRole('button', { name: /delete|remove|discard/i })
       .count();
 
-    const missing: string[] = [];
-    if (!uploadControls) missing.push('UPLOAD — no file input and no upload button on the Storage tab');
-    if (!downloadControls) missing.push('DOWNLOAD — no download control and no link to an object');
-    if (!deleteControls) missing.push('DELETE — no delete control');
-
-    console.log('\n[02.12] ' + notes.join('\n[02.12] ') + '\n');
+    const wrongly: string[] = [];
+    if (uploadControls) wrongly.push(`UPLOAD — ${uploadControls} control(s) on a tab that must not write`);
+    if (downloadControls) wrongly.push(`DOWNLOAD — ${downloadControls} control(s)`);
+    if (deleteControls) wrongly.push(`DELETE — ${deleteControls} control(s). Delete belongs on the surface that owns the row`);
 
     expect(
-      missing,
-      '\n  §10 lists this screen as "storage browse/upload/download/delete" and §4\n' +
-        '  budgets four uploads, "R2 round trip incl. delete". BROWSE and IDENTIFY\n' +
-        '  are present and were driven successfully (see the [02.12] log above).\n' +
-        '  These are not:\n' +
-        missing.map((m) => `     · ${m}`).join('\n') +
-        '\n\n' +
-        '  WHAT THE CODE SAYS, so this is not read as a selector problem:\n' +
-        '     · frontend/src/pages/org/TabStorage.jsx:40-45 — "WHAT IS DELIBERATELY\n' +
-        '       ABSENT … There is no delete and no upload", on the grounds that a\n' +
-        '       file is a pointer held in a column and deleting the object without\n' +
-        '       the row produces the exact failure this tab exists to diagnose.\n' +
-        '     · backend/routers/storage_browser.py mounts three routes and no more:\n' +
-        '       GET "" (:319), GET /browse (:390), POST /resolve (:501).\n' +
-        '     · backend/services/storage.py:832 has delete_file — the capability\n' +
-        '       exists; no route and no screen reaches it.\n\n' +
-        '  THIS IS NOT A JUDGEMENT, IT IS A MEASUREMENT. Whether §10 is owed three\n' +
-        '  controls or whether the screen is right and §10 is stale — "not built"\n' +
-        '  against "excluded by decision" — is the owner\'s call. A `test.skip`\n' +
-        '  here would make the question disappear, which is why there is not one.\n',
+      wrongly,
+      '\n  The Storage tab has gained a file operation. It is a DIAGNOSTIC\n' +
+        '  surface and read-only by decision (TabStorage.jsx:40-45): a file here\n' +
+        '  is a pointer held in a column, and removing the object without its\n' +
+        '  row produces the exact failure this tab exists to diagnose.\n' +
+        '  Delete lives on the surfaces that own the row, behind the recycle\n' +
+        '  bin. If that decision has genuinely changed, change this test\n' +
+        '  deliberately — do not widen it to let the control through.\n' +
+        wrongly.map((m) => `     · ${m}`).join('\n'),
     ).toEqual([]);
+
+    // And the reader must be TOLD where recovery lives, or somebody landing
+    // here looking for a deleted file concludes the product has no bin.
+    await expect(
+      panel.getByText(/recycle bin/i),
+      'the Storage tab does not mention the Recycle bin, so a reader looking ' +
+        'for a deleted file is left thinking nothing can be recovered',
+    ).toBeVisible();
+
+    console.log('\n[02.12] ' + notes.join('\n[02.12] ') + '\n');
+  });
+
+  /**
+   * 02.12b · THE R2 ROUND TRIP, INCLUDING DELETE — §4's "R2 round trip incl.
+   * delete", driven end to end for the first time.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   * WHAT THIS PROVES THAT NOTHING ELSE DOES
+   * ═══════════════════════════════════════════════════════════════════════
+   * Before the recycle bin there was no delete anywhere in this product that
+   * KEPT the file. `TaskDrawer.jsx` and `graha.py`'s document route both
+   * dropped the pointer and left the R2 object in the bucket — billed forever,
+   * unreachable by anyone including Aekam, with no confirmation and no undo.
+   *
+   * A row count could not see any of that. Only walking the object through
+   * upload → delete → bin → restore → bin → second stage → destroyed, and
+   * asking the BUCKET at each step, can.
+   *
+   * ── SELF-SUFFICIENT, WHICH THE FROM-ZERO DECISION REQUIRES ──────────────
+   * It creates its own document rather than borrowing one. §7: a suite written
+   * against a populated org can silently depend on rows it did not create, and
+   * "it passed because the code works" becomes indistinguishable from "it
+   * passed because a document happened to exist". `client_id` is optional on
+   * `/documents/upload` (Form("")), so this needs no client and does not wait
+   * on Suite 04.
+   *
+   * ⚠ IT DESTROYS ITS OWN FIXTURE AT THE END, on purpose. The permanent delete
+   * IS the last step of the round trip, so the org is left exactly as it was
+   * found — which is also what makes the test re-runnable (§6).
+   *
+   * ⚠ THE PROTECTED 20 ARE NEVER TOUCHED. This drives a CRM document it
+   * created seconds earlier; `team_ae1d58543b21`'s tasks are not reachable
+   * from any control it clicks.
+   */
+  test('02.12b recycle bin — upload, delete, restore, second stage, and the object is gone', async ({
+    page,
+  }) => {
+    await signInAs(page, requireUnicode());
+
+    const stamp = `93-bin-${RUN}`;
+    const fixture = logoFixturePath();
+    const bytes = readFileSync(fixture);
+
+    /** The org's bin, from the server. A read — verification, not a bypass. */
+    const readBin = async () => {
+      const r = await apiGet(page, '/api/v1/recycle-bin');
+      return (r?.data ?? []) as any[];
+    };
+    /** The CRM documents this org can see. Soft-deleted ones are filtered out
+     *  by the router, so absence here IS the delete having landed. */
+    const readDocs = async () => {
+      const r = await apiGet(page, '/api/v1/graha/documents');
+      return (r?.data ?? r ?? []) as any[];
+    };
+
+    // ── 1. UPLOAD, through the real form ──────────────────────────────────
+    await page.goto('/graha?tab=documents');
+    await page.getByRole('button', { name: /Add Document|Add document/i }).first().click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture);
+    // The file's own name is the default, so this overwrites it with something
+    // this run can find again. `RUN` makes a second execution its own fixture
+    // rather than colliding with the first (§6).
+    const nameField = page.getByLabel(/^Name/).first();
+    await nameField.fill(stamp);
+    const [up] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/graha/documents/upload') && r.request().method() === 'POST',
+        { timeout: 60_000 },
+      ),
+      page.getByRole('button', { name: /^Save$|^Upload$|^Add$/ }).first().click(),
+    ]);
+    expect(up.status(), `document upload -> ${up.status()}: ${await up.text()}`).toBeLessThan(400);
+
+    const docs = await readDocs();
+    const doc = docs.find((d: any) => d.name === stamp);
+    expect(doc, `the uploaded document ${stamp} is not in GET /graha/documents`).toBeTruthy();
+    expect(doc.file_key, 'the document row carries no R2 key, so nothing can be binned').toBeTruthy();
+
+    // ⚠ THE OBJECT, NOT THE ROW. A 200 on the upload proves the request was
+    // accepted; this proves bytes exist. Five executed e-sign PDFs once had
+    // rows pointing at objects the bucket did not have.
+    const fetched = await page.request.get(doc.file_url);
+    expect(fetched.ok(), `the uploaded object is not readable: ${fetched.status()}`).toBeTruthy();
+    expect(
+      Buffer.from(await fetched.body()).length,
+      'the object in the bucket is a different size from the file on disk',
+    ).toBe(bytes.length);
+
+    // ── 2. DELETE IT — the control asks first ─────────────────────────────
+    const row = page.locator('tbody tr').filter({ hasText: stamp }).first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.getByRole('button', { name: /Delete|Remove/i }).first().click();
+
+    // The dialog must SAY it is recoverable, because it now is. A warning that
+    // overstates the consequence teaches people to click through it.
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog).toContainText(/recycle bin/i);
+    await Promise.all([
+      page.waitForResponse(
+        (r) => /\/graha\/documents\//.test(r.url()) && r.request().method() === 'DELETE',
+        { timeout: 30_000 },
+      ),
+      dialog.getByRole('button', { name: /Move to bin/i }).click(),
+    ]);
+
+    expect(
+      (await readDocs()).some((d: any) => d.name === stamp),
+      'the document is still listed after being deleted',
+    ).toBeFalsy();
+
+    // ── 3. IT IS IN THE BIN, IN STAGE 1 ──────────────────────────────────
+    let binned = (await readBin()).find((b: any) => b.file_name === stamp);
+    expect(binned, `${stamp} is not in the recycle bin — the object has orphaned`).toBeTruthy();
+    expect(binned.stage, 'a freshly deleted file must be in stage 1').toBe(1);
+    expect(binned.source_kind).toBe('graha_document');
+    // No user id, ever. The server sends a NAME and does not send the id.
+    expect(Object.keys(binned)).not.toContain('deleted_by');
+    expect(binned.deleted_by_name, 'the bin row names nobody').toBeTruthy();
+
+    // ⚠ THE OBJECT IS STILL THERE. That is the whole feature: a delete that
+    // destroys the file immediately is not a bin.
+    expect(
+      (await page.request.get(doc.file_url)).ok(),
+      'the R2 object was destroyed by a stage-1 delete — nothing should be ' +
+        'destroyed until somebody destroys it deliberately',
+    ).toBeTruthy();
+
+    // ── 4. RESTORE IT, from the customer's own tab ───────────────────────
+    await openTab(page, 'recycle');
+    const binRow = page.locator('tbody tr').filter({ hasText: stamp }).first();
+    await expect(binRow).toBeVisible({ timeout: 30_000 });
+    await Promise.all([
+      page.waitForResponse(
+        (r) => /\/recycle-bin\/.*\/restore/.test(r.url()) && r.request().method() === 'POST',
+        { timeout: 30_000 },
+      ),
+      binRow.getByRole('button', { name: /Restore/i }).click(),
+    ]);
+
+    expect(
+      (await readDocs()).some((d: any) => d.name === stamp),
+      'the document did not come back after Restore',
+    ).toBeTruthy();
+    expect(
+      (await readBin()).some((b: any) => b.file_name === stamp),
+      'a restored file is still listed in the bin',
+    ).toBeFalsy();
+
+    // ── 5. DELETE AGAIN, THEN CLEAR IT OUT OF STAGE 1 ────────────────────
+    await page.goto('/graha?tab=documents');
+    const row2 = page.locator('tbody tr').filter({ hasText: stamp }).first();
+    await expect(row2).toBeVisible({ timeout: 30_000 });
+    await row2.getByRole('button', { name: /Delete|Remove/i }).first().click();
+    const dialog2 = page.getByRole('alertdialog');
+    await expect(dialog2).toBeVisible({ timeout: 15_000 });
+    await Promise.all([
+      page.waitForResponse(
+        (r) => /\/graha\/documents\//.test(r.url()) && r.request().method() === 'DELETE',
+        { timeout: 30_000 },
+      ),
+      dialog2.getByRole('button', { name: /Move to bin/i }).click(),
+    ]);
+
+    await openTab(page, 'recycle');
+    const binRow2 = page.locator('tbody tr').filter({ hasText: stamp }).first();
+    await expect(binRow2).toBeVisible({ timeout: 30_000 });
+    await binRow2.getByRole('button', { name: /Move to second-stage|Delete/i }).first().click();
+    const dialog3 = page.getByRole('alertdialog');
+    await expect(dialog3).toBeVisible({ timeout: 15_000 });
+    // Nothing is destroyed by this step, so it must not be dressed as danger.
+    await expect(dialog3).toContainText(/still be recovered|second-stage/i);
+    await Promise.all([
+      page.waitForResponse(
+        (r) => /\/recycle-bin\//.test(r.url()) && r.request().method() === 'DELETE',
+        { timeout: 30_000 },
+      ),
+      dialog3.getByRole('button', { name: /Move to second-stage/i }).click(),
+    ]);
+
+    binned = (await readBin()).find((b: any) => b.file_name === stamp);
+    expect(binned, 'the file left the bin entirely when it should have moved to stage 2').toBeTruthy();
+    expect(binned.stage, 'clearing stage 1 must PROMOTE, never destroy').toBe(2);
+    expect(
+      (await page.request.get(doc.file_url)).ok(),
+      'the R2 object was destroyed by moving to the second-stage bin',
+    ).toBeTruthy();
+
+    // ── 6. DESTROY IT — the only irreversible control on the screen ──────
+    await page.reload();
+    const binRow3 = page.locator('tbody tr').filter({ hasText: stamp }).first();
+    await expect(binRow3).toBeVisible({ timeout: 30_000 });
+    await binRow3.getByRole('button', { name: /Delete permanently/i }).click();
+    const dialog4 = page.getByRole('alertdialog');
+    await expect(dialog4).toBeVisible({ timeout: 15_000 });
+    await expect(dialog4).toContainText(/cannot be (undone|recovered)/i);
+
+    // ⚠ THE TYPED GUARD. `ConfirmDialog` disables Confirm until the text
+    // matches, and that guard is the difference between this control and the
+    // one a click reaches by accident. Asserted DISABLED first, or "it was
+    // enabled all along" would pass silently.
+    const destroy = dialog4.getByRole('button', { name: /Delete permanently/i });
+    await expect(destroy, 'the permanent delete was enabled before the name was typed').toBeDisabled();
+    await dialog4.locator('input[type="text"], .cd__type input').first().fill(stamp);
+    await expect(destroy).toBeEnabled();
+    await Promise.all([
+      page.waitForResponse(
+        (r) => /\/recycle-bin\//.test(r.url()) && r.request().method() === 'DELETE',
+        { timeout: 45_000 },
+      ),
+      destroy.click(),
+    ]);
+
+    // ── 7. THE OBJECT IS GONE FROM THE BUCKET ────────────────────────────
+    // The assertion the whole feature exists for, and the only one that could
+    // not be faked by a row count.
+    expect(
+      (await readBin()).some((b: any) => b.file_name === stamp),
+      'a permanently deleted file is still in the bin',
+    ).toBeFalsy();
+    const afterPurge = await page.request.get(doc.file_url);
+    expect(
+      afterPurge.ok(),
+      `the R2 object is STILL READABLE after a permanent delete (${afterPurge.status()}). ` +
+        'The row went and the object stayed — which is the exact orphan this ' +
+        'whole feature was built to stop.',
+    ).toBeFalsy();
+
+    console.log(
+      `\n[02.12b] ${stamp}: uploaded (${bytes.length} bytes) -> deleted -> stage 1 -> ` +
+        'restored -> deleted -> stage 2 -> destroyed. Object unreadable at the end.\n',
+    );
   });
 
   test('02.13 the company logo uploads to R2, downloads back byte-for-byte, and survives a reload', async ({

@@ -62,6 +62,36 @@ const MAX_FILES    = 10;
    longest real exit (220ms) with room for a slow frame. */
 const EXIT_FALLBACK_MS = 420;
 
+/**
+ * The shape an attachment is SAVED in — written once because it was written
+ * three times and one field went missing from all three.
+ *
+ * ⚠ `size` USED TO BE DROPPED HERE, and it is why 53 of the 59 attachment
+ * elements in this database carry no size at all. `handleFileChange` reads it
+ * off the upload response and holds it in state; every one of these maps then
+ * rebuilt the object without it, so the value was thrown away on the very save
+ * that persisted the file. `server.py`'s own `Attachment` model records the
+ * other half of this: "TaskDrawer.jsx has been sending `size` at upload all
+ * along, where the model silently discarded it." The model was fixed; this was
+ * not, so the field went on vanishing one layer up.
+ *
+ * It stopped being cosmetic when the recycle bin landed. `deleted_files.size_bytes`
+ * is what the quota is credited by at purge — so a file saved without its size
+ * is one an org can never get its space back for, and the bin would report a
+ * successful permanent delete that freed nothing.
+ *
+ * `uploaded_by` is deliberately NOT carried: it is a user_id, it is INTERNAL,
+ * and the model's comment says it must never reach a client.
+ */
+const attachmentForSave = (f) => ({
+  name: f.name,
+  url: f.url,
+  key: f.key || null,
+  size: typeof f.size === 'number' ? f.size : null,
+  is_private: f.is_private || false,
+  visible_to: f.visible_to || [],
+});
+
 export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers = [] }) {
   const me = currentUser();
   const { pushToast } = useToast();
@@ -529,6 +559,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   }, [taskId]);
 
   // ── Attachment actions ────────────────────────────────────────────────────
+
   const handleFileChange = async e => {
     const picked = Array.from(e.target.files);
     if (!picked.length) return;
@@ -607,7 +638,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       if (newFiles.length) {
         const updated = [...attachments, ...newFiles];
         setAttachments(updated);
-        await saveTask({ attachments: updated.map(f => ({ name: f.name, url: f.url, key: f.key || null, is_private: f.is_private || false, visible_to: f.visible_to || [] })) });
+        await saveTask({ attachments: updated.map(attachmentForSave) });
         pushToast({ type: 'success', title: `${newFiles.length} file${newFiles.length > 1 ? 's' : ''} uploaded` });
       }
     } finally {
@@ -697,10 +728,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
             const updated = attachments.filter((_, i) => i !== idx);
             setAttachments(updated);
             await saveTask({
-              attachments: updated.map(f => ({
-                name: f.name, url: f.url, key: f.key || null,
-                is_private: f.is_private || false, visible_to: f.visible_to || [],
-              })),
+              attachments: updated.map(attachmentForSave),
             });
           }
           pushToast({
@@ -721,7 +749,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const handlePrivacyChange = async (idx, updatedFile) => {
     const updated = attachments.map((f, i) => i === idx ? updatedFile : f);
     setAttachments(updated);
-    await saveTask({ attachments: updated.map(f => ({ name: f.name, url: f.url, key: f.key || null, is_private: f.is_private || false, visible_to: f.visible_to || [] })) });
+    await saveTask({ attachments: updated.map(attachmentForSave) });
   };
 
   // ── Time actions ──────────────────────────────────────────────────────────
