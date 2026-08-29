@@ -8,7 +8,7 @@ import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import LineItemEditor from '../../components/LineItemEditor';
 import { inr } from '../../lib/inr';
-import { emptyLine, previewTotals, loadProducts } from './_shared';
+import { emptyLine, previewTotals, loadProducts, shipToFields, EMPTY_SHIP_TO } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
@@ -51,7 +51,10 @@ export default function OrderForm({ onCreated, onCancel }) {
     // The login credited with the sale. `vikray_orders.salesperson_id` feeds the
     // leaderboard and commission; no create path wrote it before this.
     salesperson_id: '',
-    discount: 0, shipping_address: {}, notes: '', line_items: [emptyLine()],
+    // WHERE THE GOODS GO. This was `{}` with no input anywhere in `src/` — a
+    // column the API could write and a person could not — so `OrderDetail`'s
+    // "Ship to" section could never appear. See `_shared.shipToFields`.
+    discount: 0, shipping_address: { ...EMPTY_SHIP_TO }, notes: '', line_items: [emptyLine()],
   });
 
   useEffect(() => {
@@ -406,6 +409,22 @@ export default function OrderForm({ onCreated, onCancel }) {
           </p>
         </div>
       )}
+
+      {/* WHERE THE GOODS GO. `shipping_address` is a live jsonb column that
+          `OrderCreate` has always accepted and that no screen could write, so
+          the "Ship to" block `OrderDetail` renders could never appear. One
+          definition for this form and the record's edit form — see
+          `_shared.shipToFields` for why that matters. */}
+      <h4 className="vk-form__t">
+        Ship to<Secondary className="vk-form__hi" value="पता" />
+      </h4>
+      <p className="vk-form__chkhint">
+        Where the goods go, when that is not the customer&rsquo;s own address. Optional —
+        nothing here is required and none of it affects the tax.
+      </p>
+      <div className="vk-form__grid" role="group" aria-label="Ship to">
+        {shipToFields(form.shipping_address, shipping_address => set({ shipping_address }))}
+      </div>
 
       {/* is_igst is the one piece of GST logic that must not be got wrong: it
           decides CGST+SGST against IGST, and the server splits on it. The hint

@@ -763,6 +763,58 @@ async def resolve_contact_territory(pool, org_id: str, territory_id: str) -> str
     return territory_id
 
 
+async def resolve_deal_owner(pool, org_id: str, user_id: str) -> str:
+    """The person a deal is assigned to, PROVEN to be a member of this org.
+
+    ── WHY THIS EXISTS NOW AND NOT BEFORE ──────────────────────────────────
+
+    `graha_deals.assigned_to` is a bare `text` column holding a
+    `users.user_id`. It carries NO foreign key at all — not a non-composite
+    one like the four ids `create_deal` already resolves, none — so the
+    database has never had an opinion about who a deal may be assigned to, and
+    neither did this router: `body.assigned_to` went straight into the INSERT
+    and `update_deal`'s SET-build.
+
+    It stayed harmless for one reason only: NO SCREEN IN THE PRODUCT COULD
+    WRITE THE COLUMN. A sweep of `frontend/src` and `mobile/` on 2026-08-29
+    found three readers and no writer, and 0 of 30 live deals on the reference
+    org carried a value. The hole was latent because the door was shut.
+
+    That door is now open — Graha's deal form and the deal record both offer an
+    owner — so the guard lands in the SAME change that makes the column
+    reachable. Phase 7.1a's rule, and the one `resolve_contact_territory`
+    records four functions up: the leak closes in the commit that arms it, not
+    in the one after.
+
+    What an unchecked value would buy an attacker is real rather than
+    theoretical. `graha_deals.assigned_to` is what Vikray's sales-target
+    attainment joins on (`routers/vikray.py` `_ATTAINMENT_SQL`), what the
+    rep-performance report groups by, and what `GET /graha/today` filters a
+    person's own work list on — so one organisation could post its revenue
+    into another organisation's leaderboard, and name a stranger as the owner
+    of a deal they can see on their own screens.
+
+    Membership is `staging.user_roles`, which is the sole tenant path
+    (`memory/architecture_tenancy`) and the same table `GET /v1/org/members`
+    lists the picker's options from — so anything the form can offer, this
+    accepts, and nothing else.
+
+    Returns "" for "nobody named", never None: `""` is the deliberate clear
+    value and both call sites bind it through `NULLIF($n,'')`. Both parameters
+    are text against text columns, so there is no untyped-`$n`-into-`uuid`
+    hazard here — the fault this repo signs its name to — and no cast is added
+    that would invite one.
+    """
+    if not user_id:
+        return ""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
+        user_id, org_id)
+    if not ok:
+        raise HTTPException(400, "That person is not a member of this organisation")
+    return user_id
+
+
 async def resolve_deal_contact(pool, org_id: str, contact_id: str) -> str:
     """Which PERSON is this deal with? — `graha_deals.contact_id`.
 
@@ -1848,6 +1900,12 @@ async def create_deal(
     # that org's lead score from our request.
     contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
 
+    # THE OWNER. A `users.user_id` with no foreign key behind it at all, and
+    # unchecked here for the whole life of the file — see `resolve_deal_owner`
+    # for why that was latent until the deal form grew an owner field, and why
+    # the guard lands in the same change that opens the door.
+    assigned_to = await resolve_deal_owner(pool, org_id, body.assigned_to)
+
     # The INSERT and its `deal.created` event share ONE transaction — the same
     # contract every emitter in this router keeps: the event exists if and only
     # if the deal committed. The pipeline bootstrap above stays on the pool on
@@ -1868,7 +1926,7 @@ async def create_deal(
                 "RETURNING *",
                 org_id, pipeline_id, contact_id, client_id, body.title, body.value,
                 body.stage, body.probability, body.expected_close_date,
-                body.assigned_to, body.notes, body.tags, user["user_id"],
+                assigned_to, body.notes, body.tags, user["user_id"],
                 json.dumps(body.custom_data or {}), territory_id,
             )
             await deal_created(_conn, org_id=org_id, actor_id=user["user_id"],
@@ -2064,6 +2122,11 @@ async def update_deal(
     if "contact_id" in updates:
         updates["contact_id"] = await resolve_deal_contact(
             pool, org_id, updates["contact_id"])
+    if "assigned_to" in updates:
+        # `""` clears the owner and passes straight through, exactly as it does
+        # for the three ids above; anything else must be a member of this org.
+        updates["assigned_to"] = await resolve_deal_owner(
+            pool, org_id, updates["assigned_to"])
     if "pipeline_id" in updates:
         # THE ONE THAT CANNOT BE CLEARED, and it is refused explicitly rather
         # than silently ignored. `create_deal` guarantees every deal is on a

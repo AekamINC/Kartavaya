@@ -35,6 +35,7 @@ import { Secondary } from '../../components/Bilingual';
 import {
   FLOW_STAGES, nextStatus, ADVANCE_LABEL, asItems, lineAmount,
   previewTotals, useGanitAccess, loadProducts, isRecordId, notFound,
+  shipToFields, EMPTY_SHIP_TO,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
 import AddressBlock, { addressLines } from '../../components/ui/AddressBlock';
@@ -127,6 +128,11 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
       discount: Number(order.discount || 0),
       notes: order.notes || '',
       line_items: asItems(order.line_items).map(li => ({ ...li })),
+      // `OrderUpdate.shipping_address` has always been accepted and no edit
+      // form offered a box, so an order's ship-to could not be corrected any
+      // more than it could be set. Spread over the defaults so a stored
+      // address with only some of the five keys still edits every one of them.
+      shipping_address: { ...EMPTY_SHIP_TO, ...(order.shipping_address || {}) },
     });
     setEditing(true);
   }
@@ -419,6 +425,17 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                           — a preview. The final figures are computed and stored by the server when you save.
                         </span>
                       </p>
+
+                      {/* WHERE THE GOODS GO — the column the API could write
+                          and no screen could. One definition, shared with the
+                          create form; see `_shared.shipToFields`. */}
+                      <h4 className="dr__lbl vkd__editrow">
+                        Ship to<Secondary className="dr__lbl-hi" value="पता" />
+                      </h4>
+                      <div className="vk-form__grid" role="group" aria-label="Ship to">
+                        {shipToFields(draft.shipping_address,
+                          shipping_address => setDraft(d => ({ ...d, shipping_address })))}
+                      </div>
 
                       <label className="fld vkd__editrow">
                         <span className="fld__l">Notes</span>

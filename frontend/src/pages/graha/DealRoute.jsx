@@ -35,7 +35,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { api, body } from '../../lib/api';
+import { api, body, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
@@ -75,6 +75,45 @@ export default function DealRoute() {
 
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
+  /* ── THE OWNER, AND WHY THE RECORD IS WHERE IT MATTERS MOST ─────────────
+     `graha_deals.assigned_to` had three readers in the whole product and no
+     writer (sweep of `frontend/src` and `mobile/`, 2026-08-29). The create
+     form now offers it — but a deal is assigned and RE-assigned long after it
+     is raised, and the thirty deals already on this org were raised without
+     one, so the record is the surface that actually clears the backlog.
+
+     It is also the join Vikray's sales-target attainment stands on
+     (`routers/vikray.py` `_ATTAINMENT_SQL` — `d.assigned_to =
+     t.salesperson_id`), so every target in every org read Rs 0 until this
+     existed. Same directory as `TargetsTab`'s salesperson picker, so the two
+     sides of that join are chosen from one list. */
+  const [members, setMembers] = useState([]);
+
+  /**
+   * A `users.user_id` resolved to the person's NAME, or '' when it cannot be.
+   *
+   * Never the id itself, on any branch. A caller below org_admin gets no
+   * directory at all, and the honest answer there is to say nothing rather
+   * than print twelve characters of an internal identifier — which is exactly
+   * what `ContactsTab` and `TargetsTab` each shipped once and had to undo.
+   */
+  const ownerName = (id) => {
+    if (!id) return '';
+    const m = members.find(x => String(x.user_id) === String(id));
+    return m ? (m.full_name || m.email || '') : '';
+  };
+
+  /**
+   * What the record PRINTS for the owner. Three answers, not two.
+   *
+   * "Unassigned" over a deal that IS assigned would be a false statement about
+   * the record — and it is the statement Vikray's attainment turns on, so it
+   * is the one place a shrug is better than a guess.
+   */
+  const ownerLabel = (id) => {
+    if (!id) return 'Unassigned';
+    return ownerName(id) || 'Assigned — only an organisation admin can see to whom';
+  };
 
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
@@ -106,6 +145,19 @@ export default function DealRoute() {
   }, [dealId]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* The org directory, for the owner field. `/v1/org/members` is org_admin+
+     only: a plain member gets a 403 and the field says so rather than offering
+     a box to paste a `users.user_id` into — a screen must never ask a person
+     to handle an id, and must never print one. Fetched once, not per edit,
+     because opening the editor should not wait on a round trip. */
+  useEffect(() => {
+    let dead = false;
+    api.get('/v1/org/members')
+      .then(r => { if (!dead) setMembers(rows(r)); })
+      .catch(() => { /* not an admin: the field explains itself */ });
+    return () => { dead = true; };
+  }, []);
 
   /**
    * Closing is a navigation, so Back, Escape and the × all mean one thing.
@@ -152,6 +204,10 @@ export default function DealRoute() {
       expected_close_date: asDate(deal.expected_close_date),
       notes: deal.notes || '',
       custom_data: deal.custom_data || {},
+      // '' is a legitimate value and CLEARS the owner: `update_deal` binds
+      // `assigned_to=NULLIF($n,'')`, so unassigning is a real edit and not a
+      // dropped key.
+      assigned_to: deal.assigned_to || '',
     });
   }
 
@@ -252,6 +308,16 @@ export default function DealRoute() {
                 <h3 className="dr__lbl">Deal<Secondary className="dr__lbl-hi" value="सौदा" /></h3>
                 <div className="gr__dgrid">
                   <div className="gr__dpair">Probability: {d.probability}%</div>
+                  {/* THE OWNER, BY NAME. `get_deal` answers `d.*`, so
+                      `assigned_to` is a raw `users.user_id` — never renderable
+                      (`decision_names_not_ids`). The name is resolved from the
+                      directory this component already holds, which is also why
+                      the line reads "Unassigned" rather than disappearing: a
+                      deal nobody owns is the fact Vikray's attainment turns on,
+                      and a missing line says nothing. */}
+                  <div className="gr__dpair">
+                    Owner: {ownerLabel(d.assigned_to)}
+                  </div>
                   {d.expected_close_date && (
                     <div className="gr__dpair">Expected close: {asDate(d.expected_close_date)}</div>
                   )}
@@ -298,6 +364,24 @@ export default function DealRoute() {
                     {field('Probability (%)', <input className="k-input" type="number" min="0" max="100"
                       value={draft.probability}
                       onChange={e => setDraft({ ...draft, probability: parseInt(e.target.value, 10) || 0 })} />)}
+                    {field('Assigned to', (
+                      <select
+                        className="k-input"
+                        aria-label="Assigned to"
+                        value={draft.assigned_to}
+                        disabled={!members.length}
+                        title={members.length ? undefined
+                          : 'Only an organisation admin can list members, so a deal cannot be assigned from here.'}
+                        onChange={e => setDraft({ ...draft, assigned_to: e.target.value })}
+                      >
+                        <option value="">— Unassigned —</option>
+                        {members.map(m => (
+                          <option key={m.user_id} value={m.user_id}>
+                            {m.full_name || m.email}
+                          </option>
+                        ))}
+                      </select>
+                    ))}
                     {/* Never a native date input — see `ui/DateInput.jsx`. */}
                     {field('Expected Close', <DateInput className="k-input" type="date"
                       value={draft.expected_close_date}

@@ -12,7 +12,7 @@
 // `/vikray/orders/:orderId` (`OrderRoute.jsx`); every door into it is now a
 // `navigate`, and this file no longer knows what an order looks like.
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
@@ -36,6 +36,8 @@ import useModuleWrite from '../../hooks/useModuleWrite';
  *  reopen the record later. One destination, three doors — not two behaviours. */
 export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId, onOpen }) {
   const navigate = useNavigate();
+  // The tab the reader is on, carried into the record's URL — see `orderPath`.
+  const location = useLocation();
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'record orders' });
   const [orders, setOrders] = useState([]);
@@ -67,8 +69,15 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (newNonce) setShowForm(true); }, [newNonce]);
 
-  /** The one way this list opens a record. */
-  const open = useCallback(id => { if (id) navigate(orderPath(id)); }, [navigate]);
+  /** The one way this list opens a record.
+   *
+   *  `location.search` rides along: `VikrayPage` reads its open tab from
+   *  `?tab=` and falls back to the STARRED DEFAULT without it, so a bare path
+   *  swapped the list behind the drawer for whichever tab the reader had
+   *  starred. See `orderPath` for the whole finding. */
+  const open = useCallback(
+    id => { if (id) navigate(orderPath(id, location.search)); },
+    [navigate, location.search]);
 
   /* The shell's drill-in, forwarded. Cleared in the same tick it is read: the
      id is a one-shot instruction, and leaving it set meant that returning to
@@ -76,8 +85,8 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
   useEffect(() => {
     if (!openId) return;
     onOpen?.(null);
-    navigate(orderPath(openId));
-  }, [openId, onOpen, navigate]);
+    navigate(orderPath(openId, location.search));
+  }, [openId, onOpen, navigate, location.search]);
 
   /* A write inside the record — an advance, an edit, a cancellation — used to
      come back as `onChanged`, because the record was this component's child.

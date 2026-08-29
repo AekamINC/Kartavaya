@@ -456,13 +456,61 @@ async function apiRows(page: Page, pathAndQuery: string): Promise<any[]> {
   return [];
 }
 
-/** One object from an endpoint that answers a record rather than a list. */
-async function apiOne(page: Page, pathAndQuery: string): Promise<any> {
+/** The response body EXACTLY as the server sent it, unwrapped by nobody. */
+async function apiBody(page: Page, pathAndQuery: string): Promise<any> {
   const res = await apiGet(page, pathAndQuery);
   expect(res.status(), `GET ${pathAndQuery} → ${res.status()}: ${(await res.text()).slice(0, 300)}`)
     .toBeLessThan(400);
-  const body = await res.json();
+  return await res.json();
+}
+
+/**
+ * One object from an endpoint that answers a RECORD rather than a list.
+ *
+ * ⚠ NOT FOR AN ENVELOPE WHOSE `data` IS AN ARRAY. `?? ` falls through on null
+ * and undefined only, so `{data: [...], stages: [...]}` unwraps to the ARRAY and
+ * every sibling key is thrown away — which is exactly how 10.14 came to report
+ * "the pipeline answered no stages at all" about an endpoint that builds its
+ * stages from a CONSTANT (`_PIPELINE_STAGES`) and therefore cannot answer none.
+ * That read would have been wrong on a full order book too, so it was never the
+ * cascade it looked like. Use `apiBody` for those.
+ */
+async function apiOne(page: Page, pathAndQuery: string): Promise<any> {
+  const body = await apiBody(page, pathAndQuery);
+  if (Array.isArray(body?.data)) {
+    throw new Error(
+      `apiOne("${pathAndQuery}") was handed a LIST envelope — its \`data\` is an array, so ` +
+      'unwrapping it would silently discard every sibling key. Use apiBody() and read the ' +
+      'envelope, or apiRows() if the rows are all you want.');
+  }
   return body?.data ?? body;
+}
+
+/**
+ * "Everything", said the only way the delta contract will accept it.
+ *
+ * ⚠ THE 2020 SENTINEL WAS A TEST BUG AND IT COST SEVEN TESTS ON THE FIRST RUN.
+ * `?since=2020-01-01T00:00:00Z` answered
+ *   400 {"detail":"`since` is more than 365 days old. Resync in full."}
+ * and the product was RIGHT: `services/delta_sync.parse_since` refuses a window
+ * older than `MAX_SINCE_DAYS = 365` — "a `since` far in the past means the
+ * client believes it is doing a delta while actually asking for everything,
+ * which is the most expensive query in the product dressed as the cheapest".
+ * It is rejected outright rather than clamped, deliberately, and it says so in
+ * the body. Seven tests read that refusal as a Vikray defect.
+ *
+ * 364 days, computed at call time, is the widest window the contract allows.
+ * What that CANNOT see is an order last touched more than a year ago — stated
+ * rather than papered over. It does not reach this suite: every mark below is
+ * written by this run or a recent one, and 10.16 asserts the count it expects
+ * rather than trusting the window, so a row that fell off the back would fail
+ * loudly instead of being quietly absent.
+ *
+ * Whole seconds, no milliseconds: `parse_since` hands the string to
+ * `datetime.fromisoformat` and there is no reason to make it work harder.
+ */
+function deltaSince(): string {
+  return new Date(Date.now() - 364 * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 /**
@@ -475,11 +523,11 @@ async function apiOne(page: Page, pathAndQuery: string): Promise<any> {
  * door deliberately drops that filter — "the delta must NOT apply the
  * `is_active=TRUE` filter, that row is exactly the change the device needs"
  * (`routers/vikray.py:183`) — so it is the only read that can see the whole
- * set. `since` is far enough back to mean "everything"; the cap is 200 and
- * thirty-five is well inside it, which is asserted rather than assumed.
+ * set. The window is `deltaSince()` above; the cap is 200 and thirty-five is
+ * well inside it, which is asserted rather than assumed.
  */
 async function myOrders(page: Page): Promise<Map<string, any>> {
-  const rows = await apiRows(page, '/api/v1/vikray/orders?since=2020-01-01T00:00:00Z');
+  const rows = await apiRows(page, `/api/v1/vikray/orders?since=${encodeURIComponent(deltaSince())}`);
   expect(rows.length,
     'the delta list came back at its 200-row cap, so it is a page and not the whole set — ' +
     'every count below would be a floor rather than a total')
@@ -916,6 +964,16 @@ type OrderPlan = {
   salesperson: string;
   lines: { product: string; productIndex: number; qty: number }[];
   discount: number;
+  /**
+   * WHERE THE GOODS GO. §4: "Orders — cost price, salesperson, ship-to
+   * address". `vikray_orders.shipping_address` is a live jsonb column that
+   * `OrderCreate` has always accepted and that NO SCREEN COULD WRITE — the
+   * defect 10.04 was written to report and that `_shared.shipToFields` now
+   * closes. Derived from the customer's own city and state, because that is
+   * where a delivery to that firm actually goes, with a per-order door number
+   * so the address is distinct and deterministic run to run.
+   */
+  shipTo: { line1: string; line2: string; city: string; state: string; pincode: string };
   /** Where the order is left standing at the end of 10.06. */
   lifecycle: Lifecycle;
   cancel: boolean;
@@ -1002,11 +1060,25 @@ function planOrders(clients: any[], members: string[], homeState: string): Order
                     : n <= 32 ? 'closed'
                       : 'draft';
 
+    const addr = c?.address || {};
     out.push({
       n,
       mark: orderMark(n),
       clientName: String(c.name),
       clientState,
+      shipTo: {
+        // The mark rides in `line1`, so a stored address is traceable to the
+        // order that carries it without a join — and §6 can tell its own
+        // output from anybody else's.
+        line1: `Unit ${pad(n)}, ${orderMark(n)} Receiving Bay`,
+        line2: String(addr.line2 || addr.line1 || 'Industrial Estate').slice(0, 60),
+        city: String(addr.city || clientState),
+        // The customer's OWN state. Deliberately the same fact the GST split
+        // is derived from, so an order whose ship-to contradicts its tax
+        // treatment would be visible rather than plausible.
+        state: clientState,
+        pincode: String(addr.pincode || '').replace(/\D/g, '').slice(0, 6) || '395002',
+      },
       split: expectedSplit(homeState, clientState),
       salesperson: members[(n - 1) % members.length],
       lines,
@@ -1035,6 +1107,23 @@ async function memberNames(page: Page): Promise<string[]> {
     if (id && name && !byLogin.has(id)) byLogin.set(id, name);
   }
   return [...byLogin.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * A stored `shipping_address`, as an object, whichever shape it arrives in.
+ *
+ * `db.py` installs a jsonb decoder so this is normally a dict — but it logs
+ * "set_type_codec failed after 3 attempts (PgBouncer)" as a real possibility,
+ * and `AddressBlock` decodes the string case for exactly that reason. A suite
+ * that read only the dict shape would report "the form is not sending it"
+ * about a form that was, which is the wrong diagnosis.
+ */
+function asAddress(v: any): Record<string, any> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v;
+  if (typeof v === 'string') {
+    try { const o = JSON.parse(v); return o && typeof o === 'object' ? o : {}; } catch { return {}; }
+  }
+  return {};
 }
 
 /** The gross value of one planned line, before tax and before any discount. */
@@ -1319,6 +1408,27 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           await typeInto(form.locator(`input[aria-label="Line ${i + 1} quantity"]`), String(li.qty));
         }
 
+        // ── WHERE THE GOODS GO ────────────────────────────────────────────
+        // §4 asks every order to carry a ship-to address. The column has always
+        // been writable and no screen could write it, which is what 10.04
+        // reported; these are the five inputs that closed it. Scoped to the
+        // form's own `Ship to` group, because "Address line 1" and "City" are
+        // words that appear on other surfaces of this page.
+        const ship = form.locator('[role="group"][aria-label="Ship to"]');
+        await expect(ship, 'the new-order form offers no ship-to address. §4 asks every order ' +
+          'to carry one and `OrderCreate.shipping_address` has always accepted it — a column ' +
+          'the API can write and a human cannot is a MISSING CONTROL, not a skip.')
+          .toBeVisible({ timeout: 20_000 });
+        for (const [label, value] of [
+          ['address line 1', plan.shipTo.line1],
+          ['address line 2', plan.shipTo.line2],
+          ['city', plan.shipTo.city],
+          ['state', plan.shipTo.state],
+          ['pincode', plan.shipTo.pincode],
+        ] as [string, string][]) {
+          await typeInto(ship.locator(`input[aria-label="Ship to ${label}"]`), value);
+        }
+
         if (plan.discount) {
           await typeInto(
             form.locator('label.fld', { hasText: 'Order discount' }).locator('input.inp'),
@@ -1352,10 +1462,15 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         `${orders.size} carrying this suite's mark${dumpWire(wire)}`).toBe(N_ORDERS);
 
       const problems: string[] = [];
+      /** Plan slots that no longer name the company their order was raised for. */
+      const drifted: string[] = [];
+      /** The CRM companies by id, so the pair comes off the STORED order. */
+      const clientById = new Map<string, any>(clients.map((c) => [String(c.id), c]));
       let costedLines = 0;
       let uncostedLines = 0;
       let intra = 0;
       let inter = 0;
+      let nilRated = 0;
 
       for (const plan of PLAN) {
         const row = orders.get(plan.mark);
@@ -1393,21 +1508,71 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           }
         }
 
-        // ── the GST split, derived from the state pair ─────────────────────
+        // ── the GST split, taken from the pair ON THE STORED ORDER ───────
+        //
+        // ⚠ NOT FROM `plan.split`, AND THAT WAS A TEST BUG.
+        //
+        // `planOrders` cycles the CRM companies by sorted name, and that
+        // mapping is only true at the moment an order is created. Let the
+        // client list change by one row — a company added, renamed or archived
+        // by any suite — and every later slot shifts, so a second execution
+        // compares an order against a customer it was never raised for.
+        // Measured 2026-08-29 across two runs: the list went from 25 companies
+        // to 26, the plan then said `S10-SO-32` was for a Tamil Nadu customer
+        // and demanded IGST, and the stored order names `S04 Client 07 Surat`
+        // — Gujarat — carrying CGST=SGST correctly. The product was right and
+        // the expectation had drifted underneath it.
+        //
+        // `plan.clientState` survives only in the drift log below, where a
+        // divergence is worth SEEING and is not something to assert on.
+        const soldTo = clientById.get(String(full.client_id || ''));
+        const soldToState = String(soldTo?.address?.state || '').trim();
+        if (!soldToState) {
+          problems.push(`${plan.mark}: the stored order names no company with an address ` +
+            'state, so the place of supply cannot be derived from the row itself');
+          continue;
+        }
+        if (soldToState !== plan.clientState) {
+          drifted.push(`${plan.mark}: raised for ${soldTo?.name} (${soldToState}); this run's ` +
+            `plan slot names ${plan.clientName} (${plan.clientState})`);
+        }
+        const split = expectedSplit(homeState, soldToState);
+
         const cgst = money(full.cgst);
         const sgst = money(full.sgst);
         const igst = money(full.igst);
-        if (plan.split === 'CGST+SGST') {
+
+        // ⚠ A NIL-RATED SUPPLY BEARS NO TAX, AND DEMANDING A POSITIVE ONE IS
+        //   AN ASSERTION THAT IS RED AND WRONG.
+        //
+        // Six of Suite 05's eighteen catalogue entries carry `gst_rate = 0`.
+        // An order whose every line is zero-rated correctly stores CGST 0,
+        // SGST 0 and IGST 0 — there is no tax to place in any column — and
+        // this demanded `igst > 0` and reported five such orders as defects.
+        // What the split is about is WHICH column carries the tax when there
+        // is some; where the lines carry none, the only true assertion is
+        // that all three are nil.
+        const taxDue = money(items.reduce((n: number, li: any) =>
+          n + (Number(li.quantity) || 0) * (Number(li.rate) || 0) *
+          (1 - (Number(li.discount_pct) || 0) / 100) * (Number(li.gst_rate) || 0) / 100, 0));
+
+        if (taxDue === 0) {
+          nilRated++;
+          if (cgst !== 0 || sgst !== 0 || igst !== 0) {
+            problems.push(`${plan.mark}: every line is zero-rated, so the supply bears no GST ` +
+              `at all. Stored: CGST ${cgst}, SGST ${sgst}, IGST ${igst}.`);
+          }
+        } else if (split === 'CGST+SGST') {
           intra++;
           if (!(cgst > 0 && sgst > 0) || !near(cgst, sgst, 0.01) || igst !== 0) {
-            problems.push(`${plan.mark}: supplier in ${homeState}, customer in ${plan.clientState} ` +
+            problems.push(`${plan.mark}: supplier in ${homeState}, customer in ${soldToState} ` +
               `— an INTRA-State supply bearing CGST=SGST with IGST nil (s.8 IGST Act). ` +
               `Stored: CGST ${cgst}, SGST ${sgst}, IGST ${igst}.`);
           }
         } else {
           inter++;
           if (!(igst > 0) || cgst !== 0 || sgst !== 0) {
-            problems.push(`${plan.mark}: supplier in ${homeState}, customer in ${plan.clientState} ` +
+            problems.push(`${plan.mark}: supplier in ${homeState}, customer in ${soldToState} ` +
               `— an INTER-State supply bearing IGST alone (s.7 IGST Act). ` +
               `Stored: CGST ${cgst}, SGST ${sgst}, IGST ${igst}.`);
           }
@@ -1447,9 +1612,12 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       console.log(`\n  10.03 — orders: ${made.typed} typed, ${made.found} already present ` +
         `(§6 idempotence); ${orders.size}/${N_ORDERS} on the register\n` +
         `     supplier state: ${homeState} (${homeCode}), read from the live org profile\n` +
-        `     GST split derived from the state pair: ${intra} intra-State, ${inter} inter-State\n` +
+        `     GST split from the pair ON THE STORED ORDER: ${intra} intra-State, ${inter} inter-State, ${nilRated} bearing no GST (every line zero-rated)\n` +
         `     line costs: ${costedLines} from costed catalogue entries, ${uncostedLines} from ` +
         'entries with no recorded cost\n' +
+        (drifted.length
+          ? `     ⚠ ${drifted.length} plan slots no longer name the company their order was raised for — the client\n       cycle shifted between runs, so the pair was taken from the ROW:\n       ${drifted.join('\n       ')}\n`
+          : '') +
         (contradicting.length
           ? `     ⚠ Suite 04 fixture, NOT a Vikray fault — ${contradicting.length} clients whose ` +
             `GSTIN state prefix contradicts their address:\n       ${contradicting.join('\n       ')}\n` +
@@ -1465,73 +1633,123 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
   // ──────────────────────────────────────────────────────────────────────────
   // 10.04 · the ship-to address §4 requires
   // ──────────────────────────────────────────────────────────────────────────
-  test('10.04 §4 asks every order to carry a ship-to address, and nothing in the module writes one',
+  test('10.04 every order carries the ship-to address §4 asks for, and the record can correct it',
     async ({ page }) => {
-      test.setTimeout(15 * 60_000);
+      test.setTimeout(30 * 60_000);
       const con = watchConsole(page);
+      const wire = watchWire(page);
       await signIn(page);
       con.at('orders');
       const p = await openTab(page, 'orders', 'orders');
 
-      // ── the CREATE form ────────────────────────────────────────────────
+      // ── THE CONTROL ON THE CREATE FORM ────────────────────────────────
+      // A missing control is a FAILURE, never a skip (suite rule 1). Until
+      // 2026-08-29 this test reported the ABSENCE: `OrderForm` held
+      // `shipping_address: {}` in form state and rendered no input for it, so
+      // `OrderDetail`'s "Ship to" section — guarded on `addressLines(...)` —
+      // could never appear for a row a person created. Live at the time: of
+      // 380 orders in `reseed_backup_20260828`, 358 carried `{}` or NULL and
+      // the 22 that did not were written by an API caller. A column the API can
+      // write and a human cannot is the same shape as the vendor address
+      // before 8.0. It now has five inputs; this is what holds them there.
       await p.locator('.vk-bar__new').click();
       const form = p.locator('form.vk-form').first();
       await expect(form, 'the new-order form did not open').toBeVisible({ timeout: 30_000 });
 
-      const shipControls = await form.locator(
-        'input, textarea, select, [role="combobox"], button[aria-haspopup]',
-      ).evaluateAll((els) => els
-        .map((el) => [
-          el.getAttribute('aria-label') || '',
-          el.getAttribute('placeholder') || '',
-          (el.closest('label')?.textContent || ''),
-        ].join(' | '))
-        .filter((s) => /ship|deliver.*address|address/i.test(s)));
-
-      const formHasShipTo = shipControls.length > 0;
-
-      // ── the EDIT form on the record ────────────────────────────────────
+      const FIELDS = ['address line 1', 'address line 2', 'city', 'state', 'pincode'];
+      const missingOnCreate: string[] = [];
+      const createGroup = form.locator('[role="group"][aria-label="Ship to"]');
+      if (!await createGroup.count()) {
+        missingOnCreate.push('the whole Ship to group');
+      } else {
+        for (const f of FIELDS) {
+          if (!await createGroup.locator(`input[aria-label="Ship to ${f}"]`).count()) {
+            missingOnCreate.push(f);
+          }
+        }
+      }
       await form.getByRole('button', { name: 'Cancel' }).click();
+
+      // ── AND ON THE RECORD, WHICH IS WHERE AN ADDRESS IS CORRECTED ─────
       const orders = await myOrders(page);
-      const draft = [...orders.values()].find((o) => o.status === 'draft');
-      expect(draft, 'no draft order exists to open the edit form on — 10.03 leaves three in ' +
-        'draft on purpose').toBeTruthy();
+      expect(orders.size, `10.03 raises ${N_ORDERS} orders and ${orders.size} carry its mark — ` +
+        'this test reads them rather than raising its own').toBe(N_ORDERS);
+      const draft = orders.get(orderMark(34));
+      expect(draft, `${orderMark(34)} is meant to be left in draft by 10.03 and is not on the ` +
+        'register, so the edit path has nothing to open').toBeTruthy();
 
       const drawer = await openOrder(page, p, String(draft.order_number));
       await drawer.getByRole('button', { name: 'Edit', exact: true }).click();
       const editForm = drawer.locator('form.dr__sec');
       await expect(editForm, 'the edit form did not open on the record').toBeVisible();
-      const editHasShipTo = await editForm.locator(
-        'input, textarea, select, button[aria-haspopup]',
-      ).evaluateAll((els) => els.some((el) => /ship|address/i.test(
-        [el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || '',
-          el.closest('label')?.textContent || ''].join(' '))));
-      await drawer.getByRole('button', { name: 'Discard' }).click();
+
+      const editGroup = editForm.locator('[role="group"][aria-label="Ship to"]');
+      const missingOnEdit: string[] = [];
+      if (!await editGroup.count()) {
+        missingOnEdit.push('the whole Ship to group');
+      } else {
+        for (const f of FIELDS) {
+          if (!await editGroup.locator(`input[aria-label="Ship to ${f}"]`).count()) {
+            missingOnEdit.push(f);
+          }
+        }
+      }
+
+      expect([...missingOnCreate.map((f) => `create form: ${f}`),
+        ...missingOnEdit.map((f) => `record edit form: ${f}`)],
+      '§4 asks every sales order to carry a SHIP-TO ADDRESS, and a screen that cannot write ' +
+      'one leaves `vikray_orders.shipping_address` reachable only by an API caller. ' +
+      '`OrderCreate` and `OrderUpdate` have both accepted the field since they were written and ' +
+      '`OrderDetail` already renders a "Ship to" block off it — the input is the only thing that ' +
+      'was ever missing:').toEqual([]);
+
+      // ── THE EDIT IS A REAL EDIT, judged on the CANONICAL ROW ──────────
+      // A per-run city, so this proves a WRITE rather than re-reading what
+      // 10.03 typed. The address is otherwise left as the plan made it.
+      const corrected = `Ship-corrected ${RUN}`;
+      await typeInto(editGroup.locator('input[aria-label="Ship to address line 2"]'), corrected);
+      await saveAndWait(page, async () => {
+        await editForm.getByRole('button', { name: /^Save changes/ }).click();
+      }, new RegExp(`/v1/vikray/orders/${draft.id}$`), `correcting ${orderMark(34)}'s ship-to`,
+      ['PATCH']);
       await closeDrawer(page, drawer);
 
-      // ── and what the database has to say about it ──────────────────────
-      const withAddress = [...orders.values()].filter((o) => {
-        const a = o?.shipping_address;
-        return a && typeof a === 'object' && Object.keys(a).length > 0;
-      });
+      // Suite rule 3: the POST/PATCH echo is not the record. Fetch the row.
+      const after = await apiOne(page, `/api/v1/vikray/orders/${draft.id}`);
+      expect(String(asAddress(after?.shipping_address).line2 || ''),
+        `${orderMark(34)}'s ship-to line 2 was corrected on the record's own edit form and the ` +
+        'stored row does not carry it — `OrderUpdate.shipping_address` is accepted by the ' +
+        'endpoint, so a value that does not arrive means the form is not sending it')
+        .toBe(corrected);
+
+      // ── AND EVERY ORDER §4 ASKED FOR CARRIES ONE ──────────────────────
+      const problems: string[] = [];
+      for (const [mark, row] of orders) {
+        const a = asAddress(row?.shipping_address);
+        const usable =
+          ['line1', 'line2', 'city', 'state', 'pincode'].some((k) => String(a[k] ?? '').trim());
+        if (!usable) {
+          problems.push(`${mark}: no ship-to address on the stored row ` +
+            `(${JSON.stringify(a)})`);
+        }
+      }
+
+      // The section that could never appear, seen on a real record.
+      const shown = await openOrder(page, p, String(draft.order_number));
+      await expect(shown.locator('.dr__lbl', { hasText: /^Ship to/ }).first(),
+        `${orderMark(34)} carries a ship-to address and the record does not print it — ` +
+        '`OrderDetail` guards the block on `addressLines(...).length`, so a heading that never ' +
+        'appears means nothing readable reached the column')
+        .toBeVisible({ timeout: 20_000 });
+      await closeDrawer(page, shown);
 
       console.log('\n  10.04 — the ship-to address:\n' +
-        `     create form offers a shipping control: ${formHasShipTo}\n` +
-        `     edit form offers one:                 ${editHasShipTo}\n` +
-        `     orders raised by this suite carrying an address: ${withAddress.length}/${orders.size}\n`);
+        `     create form fields present: ${FIELDS.length - missingOnCreate.length}/${FIELDS.length}\n` +
+        `     record edit fields present: ${FIELDS.length - missingOnEdit.length}/${FIELDS.length}\n` +
+        `     orders carrying an address: ${orders.size - problems.length}/${orders.size}\n`);
 
-      expect(formHasShipTo || editHasShipTo,
-        '§4 asks every sales order to carry a SHIP-TO ADDRESS and no screen in this module ' +
-        'writes one. `OrderForm` holds `shipping_address: {}` in form state and renders no input ' +
-        'for it — `OrderForm.jsx:54` is the only mention of the field in the whole of `src/` — ' +
-        'and the record\'s edit form offers `expected_delivery`, `discount`, the line grid and ' +
-        '`notes` and nothing else. `OrderUpdate` accepts the field, `OrderDetail.jsx:315` renders ' +
-        'a "Ship to" section guarded on `addressLines(...)`, and that section can therefore never ' +
-        'appear for a row a person created. Live: of 380 orders in `reseed_backup_20260828`, 358 ' +
-        'carry `{}` or NULL and the 22 that do not were written by an API caller. A column the ' +
-        'API can write and a human cannot is the same shape as the vendor address before 8.0.')
-        .toBeTruthy();
-
+      expect(problems, '§4 asks EVERY order to carry a ship-to address:\n     ' +
+        problems.join('\n     ') + dumpWire(wire)).toEqual([]);
       assertNoUncaught(con);
     });
 
@@ -2036,13 +2254,31 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       async function adjust(product: any, delta: number, reason: string, expectNegative = false) {
         p = await openTab(page, 'stock', 'stock');
         const name = String(product.name);
-        const row = p.locator('tr', { has: p.locator(`button.vk-stk__name:text-is("${name}")`) }).first();
-        await expect(row, `${name} is not on the stock ledger`).toBeVisible({ timeout: 30_000 });
+        // ⚠ NOT `p.locator('tr', { has: p.locator(…) })`, which is what this
+        // was and which matched NOTHING. Playwright re-roots a `has:` locator
+        // at the OUTER element, so an inner locator carrying its own ancestor
+        // prefix becomes `tr >> #mt-panel-stock >> button…` — and the panel is
+        // the row's ancestor, never its descendant. The row was on screen the
+        // whole time (the failure snapshot shows `button "S05 Product 01"`),
+        // and the suite reported a MISSING CONTROL, which is the wrong
+        // diagnosis entirely. Anchor on the button and climb to its row.
+        const nameBtn = p.locator(`button.vk-stk__name:text-is("${name}")`).first();
+        await expect(nameBtn, `${name} is not on the stock ledger`).toBeVisible({ timeout: 30_000 });
+        const row = nameBtn.locator('xpath=ancestor::tr[1]');
         await row.getByRole('button', { name: 'Adjust…' }).click();
 
         const dialog = page.locator('[data-testid="vk-adjust"]');
         await expect(dialog, 'the Adjust stock dialog did not open').toBeVisible({ timeout: 20_000 });
-        await typeInto(dialog.locator('#vk-adjust-form input[type=number]'), String(delta));
+        // ⚠ `fill`, NOT `typeInto`. `typeInto` CLICKS first so it can select
+        // and replace an existing value, and `Modal` animates in — the click
+        // landed while the dialog was still moving ("element is not stable"),
+        // then the node was swapped underneath it ("element was detached") and
+        // the suite reported a 20s timeout against a dialog that had opened
+        // perfectly. The Change field starts EMPTY by construction
+        // (`useState('')`), so there is nothing to select and the click bought
+        // nothing. `fill` waits for actionability and retries through a
+        // re-render, which is exactly the difference.
+        await dialog.locator('#vk-adjust-form input[type=number]').fill(String(delta));
         await dialog.locator('#vk-adjust-form select.inp').selectOption(reason);
 
         // The dialog previews the resulting balance and WARNS when the change
@@ -2192,11 +2428,29 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
 
       const problems: string[] = [];
 
-      // ── ONE ROW PER COMPANY THAT HAS ORDERED ──────────────────────────
-      // Two people at one firm used to appear as two customers with the firm's
-      // orders split between them; the row is keyed on the COMPANY now.
-      const orderedCompanies = new Set(
-        orders.map((o) => String(o.contact_company || o.contact_name || '')).filter(Boolean));
+      // ── WHICH COMPANIES HAVE ACTUALLY ORDERED ─────────────────────────
+      //
+      // ⚠ BY `client_id`, AND READING IT OFF THE CONTACT WAS A TEST BUG.
+      // This derived the set from `o.contact_company || o.contact_name` — the
+      // CRM contact's employer. Every order this suite raises names a COMPANY
+      // and no individual, which is the ordinary B2B case and the one this
+      // product's own rule describes ("a CRM client is the company; contacts
+      // are people who come and go, the customer stays"). So `contact_company`
+      // was null on all thirty-five, the set came back EMPTY, and the suite
+      // accused the module of listing twenty-five companies that had "never
+      // ordered" while the endpoint was grouping them correctly by
+      // `client_id`. Measured 2026-08-29: 19 customers from 29 active orders
+      // over 25 companies — exactly 25 less the six whose only order was
+      // cancelled. The product was right and the derivation was wrong.
+      //
+      // `contact_company` survives only as the fallback for orders that
+      // predate migration 136 and whose contact belonged to no company, which
+      // is the same fallback `list_customers` itself keeps.
+      const nameOfClient = new Map<string, string>(
+        clients.map((c) => [String(c.id), String(c.name || '')]));
+      const companyOf = (o: any) => (o.client_id && nameOfClient.get(String(o.client_id)))
+        || String(o.contact_company || o.contact_name || '');
+      const orderedCompanies = new Set(orders.map(companyOf).filter(Boolean));
       const customerNames = new Set(customers.map((c) => String(c.customer_name || '')));
 
       for (const name of orderedCompanies) {
@@ -2205,25 +2459,33 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         }
       }
 
-      // ── AND A COMPANY WITH NO ORDER IS NOT ONE ────────────────────────
+      // ── AND NOTHING IS A CUSTOMER WITHOUT ONE ─────────────────────────
       // This is the distinction the tab exists for: Graha owns the contact,
-      // Vikray owns the trading history. A company that has never ordered
-      // cannot appear, because it has no orders to group.
+      // Vikray owns the trading history. Asserted from the CUSTOMER side, so
+      // it holds whether or not the fixture happens to leave a company
+      // unordered — a precondition that "some company has never ordered"
+      // would be a check that stops biting the day the fixture changes, and
+      // it is not the property under test. The count is REPORTED either way.
       const never = clients.filter((c) => !orderedCompanies.has(String(c.name)));
-      expect(never.length, 'every CRM company has an order, so "a company with no order does ' +
-        'not appear" cannot be tested — 10.03 raises orders against a cycle of them precisely ' +
-        'so that some are left alone').toBeGreaterThan(0);
       for (const c of never) {
         if (customerNames.has(String(c.name))) {
           problems.push(`"${c.name}" has never placed an order and is listed as a customer — ` +
             'this tab is trading history and not a second contact list');
         }
       }
+      // Every customer the tab lists must be a company with an order behind it.
+      for (const name of customerNames) {
+        if (name && !orderedCompanies.has(name)) {
+          problems.push(`"${name}" is listed as a customer and no order on the register names ` +
+            'it — this tab is built by grouping this module\'s own orders, so a row with ' +
+            'nothing behind it is a second contact list wearing a sales label');
+        }
+      }
 
       // ── the figures reconcile to the orders behind them ───────────────
       for (const cust of customers) {
         const name = String(cust.customer_name || '');
-        const mine = orders.filter((o) => String(o.contact_company || o.contact_name || '') === name);
+        const mine = orders.filter((o) => companyOf(o) === name);
         if (!mine.length) continue;
         if (Number(cust.order_count) !== mine.length) {
           problems.push(`"${name}": the customers table counts ${cust.order_count} orders and the ` +
@@ -2475,63 +2737,226 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
   // ──────────────────────────────────────────────────────────────────────────
   // 10.12 · attainment can never move
   // ──────────────────────────────────────────────────────────────────────────
-  test('10.12 attainment can never move — nothing in the product assigns a deal to a salesperson',
+  test('10.12 a deal is assigned from the deal record, and target attainment moves',
     async ({ page }) => {
-      test.setTimeout(20 * 60_000);
+      test.setTimeout(45 * 60_000);
       const con = watchConsole(page);
+      const wire = watchWire(page);
       await signIn(page);
 
+      // ══════════════════════════════════════════════════════════════════
+      // WHAT THIS TEST USED TO REPORT, AND WHY IT NOW DRIVES INSTEAD
+      // ══════════════════════════════════════════════════════════════════
+      // Sales-target attainment is `graha_deals.assigned_to =
+      // vikray_targets.salesperson_id` (`routers/vikray.py` `_ATTAINMENT_SQL`)
+      // and NOTHING IN THE PRODUCT WROTE `assigned_to`. A sweep of
+      // `frontend/src` and `mobile/` on 2026-08-29 found three readers —
+      // Graha's pipeline card, the rep-performance report and the contact
+      // drawer — and no writer anywhere. Live the same day: 30 deals on this
+      // org, 0 with an assignee, 8 of them Won, 10 people holding targets and
+      // all 10 reading Rs 0. The Targets tab tells the user in prose that
+      // actuals arrive this way.
+      //
+      // It was the THIRD instance of one shape inside `DealCreate`/`_DEAL_COLS`
+      // — `routers/graha.py` documents `territory_id` and `contact_id` as the
+      // other two, in its own comments, in the same model.
+      //
+      // The deal record now carries an "Assigned to" select, so this test does
+      // what §1 asks of every other row in this programme: it TYPES the value
+      // into the real form and asserts the number moves. The deals are Suite
+      // 04's and none is created here — only assigned, which is the act the
+      // Targets tab is asking for. ⚠ NOTHING IS BACKFILLED BY SQL.
+      // ══════════════════════════════════════════════════════════════════
+
       const targets = await apiRows(page, '/api/v1/vikray/targets');
+      expect(targets.length, '10.11 sets ten targets and none is on the table, so there is ' +
+        'nothing whose attainment could move').toBeGreaterThan(0);
+
+      // Only the targets whose window covers today can be moved by a deal won
+      // today, which is every won deal on this org.
+      const now = new Date();
+      const current = targets.filter((t) => {
+        const a = new Date(`${t.period_start}T00:00:00`);
+        const b = new Date(`${t.period_end}T23:59:59`);
+        return a <= now && now <= b;
+      });
+      expect(current.length, 'no target covers today, so no deal closed today can attain ' +
+        'against one and this test would pass vacuously').toBeGreaterThan(0);
+
       const deals = await apiRows(page, '/api/v1/graha/deals?limit=200');
-      const assigned = deals.filter((d) => d.assigned_to);
-      const attained = targets.filter((t) => Number(t.actual_amount) > 0);
+      expect(deals.length, 'the deals list came back at its 200-row cap, so the reconciliation ' +
+        'below would be over a page rather than the book').toBeLessThan(200);
+      const won = deals.filter((d) => String(d.stage) === 'Won');
+      expect(won.length, 'no deal on this org stands at Won, so there is no revenue for a ' +
+        'target to claim — Suite 04 closes eight').toBeGreaterThan(0);
 
-      // ── THE CONTROL THAT WOULD MOVE IT ────────────────────────────────
-      // Attainment is `graha_deals.assigned_to = vikray_targets.salesperson_id`.
-      // The Targets tab tells the user in prose that actuals come from deals
-      // "assigned to that salesperson". So the deal form must be able to say
-      // who a deal is assigned to, and it is opened here and read.
-      await page.goto('/graha?tab=deals');
-      const dealsPanel = page.locator('#mt-panel-deals');
-      await expect(dealsPanel, 'the CRM deals tab did not open')
-        .toBeVisible({ timeout: 60_000 });
-      await settle(page);
+      // ── THE CONTROL, ON THE RECORD ────────────────────────────────────
+      // A missing control is a FAILURE, never a skip. Opened by CLICKING the
+      // deal on the board, which is the door a person uses.
+      const board = page.locator('#mt-panel-deals');
 
-      const opener = dealsPanel.getByRole('button', { name: /New deal|Add deal|\+ Deal/i }).first();
-      let formFields: string[] = [];
-      if (await opener.count()) {
-        await opener.click();
+      /** Open one deal by its title, assign it to `person`, and save. */
+      async function assign(deal: any, person: string) {
+        await page.goto('/graha?tab=deals');
+        await expect(board, 'the CRM deals tab did not open').toBeVisible({ timeout: 60_000 });
         await settle(page);
-        formFields = await dealsPanel.locator('form input, form select, form textarea, ' +
-          'form button[aria-haspopup]').evaluateAll((els) => els.map((el) => [
-            el.getAttribute('aria-label') || '',
-            el.getAttribute('placeholder') || '',
-            (el.closest('label')?.textContent || '').trim(),
-          ].filter(Boolean).join(' / ')).filter(Boolean));
+        const card = board.locator('button.gr__link', { hasText: String(deal.title) }).first();
+        await expect(card, `the deal "${deal.title}" is not on the board, so its record ` +
+          'cannot be opened by clicking it').toBeVisible({ timeout: 30_000 });
+        await card.click();
+
+        const record = page.getByRole('dialog').first();
+        await expect(record, `the record for "${deal.title}" did not open`)
+          .toBeVisible({ timeout: 30_000 });
+        await record.getByRole('button', { name: 'Edit deal' }).click();
+
+        const sel = record.locator('select[aria-label="Assigned to"]');
+        await expect(sel,
+          'THE DEAL RECORD OFFERS NO WAY TO ASSIGN THE DEAL. `graha_deals.assigned_to` is ' +
+          'written by `create_deal`, sits in `update_deal`’s `_DEAL_COLS`, is read by three ' +
+          'screens — and is the join sales-target attainment stands on, so with no writer every ' +
+          'target in every org reads Rs 0 for ever. A missing control is a failure, not a skip.')
+          .toBeVisible({ timeout: 20_000 });
+        const chose = await pickByLabel(sel, person, 'deal assignee');
+        expect(chose, `the assignee picker chose "${chose}" and the target belongs to "${person}"`)
+          .toContain(person);
+
+        await saveAndWait(page, async () => {
+          await record.getByRole('button', { name: /^Sav/ }).click();
+        }, new RegExp(`/v1/graha/deals/${deal.id}$`), `assigning "${deal.title}" to ${person}`,
+        ['PATCH']);
+        await closeDrawer(page, record);
       }
-      const offersAssignee = formFields.some((f) =>
-        /assign|owner|salesperson|rep\b/i.test(f));
 
-      console.log('\n  10.12 — the assignee:\n' +
-        `     deals on Unicode Group:                 ${deals.length}\n` +
-        `     deals carrying an assignee:             ${assigned.length}\n` +
-        `     targets reporting non-zero attainment:  ${attained.length} of ${targets.length}\n` +
-        `     the deal form's own fields:             ${formFields.join(' · ') || '(no form opened)'}\n`);
+      // ── ONE WON DEAL PER TARGET-HOLDER WHOSE PERIOD IS OPEN ───────────
+      // §6: a deal already assigned to the right person is recognised, not
+      // re-typed. `salesperson_name` is what the target carries and what the
+      // picker offers — an id is never read, matched on, or printed.
+      const holders = [...new Set(current
+        .map((t) => String(t.salesperson_name || '').trim())
+        .filter(Boolean))];
+      expect(holders.length, 'no target resolves a salesperson NAME, so no deal can be ' +
+        'assigned to the person who holds it').toBeGreaterThan(0);
 
-      expect(offersAssignee,
-        'TARGET ATTAINMENT CAN NEVER MOVE. `vikray_targets` attainment is ' +
-        '`graha_deals.assigned_to = t.salesperson_id` (routers/vikray.py:1080) and NO FORM IN THE ' +
-        'PRODUCT WRITES `assigned_to`: a sweep of `frontend/src` finds three readers — Graha\'s ' +
-        'pipeline card, the rep-performance report and the contact drawer — and no writer, and ' +
-        "`DealsTab`'s own create form carries title · client · contact · territory · stage · " +
-        'probability · value · close date · notes and no assignee. Measured live 2026-08-29: ' +
-        `${deals.length} deals on this org, ${assigned.length} with an assignee, ` +
-        `${attained.length} of ${targets.length} targets with any attainment at all. The join was ` +
-        'moved off `owner_id` — a column nothing ever wrote — and onto `assigned_to`, which ' +
-        'nothing on a screen writes either, so every target in every org still reads Rs 0 against ' +
-        'its number. The Targets tab tells the user in prose that this is how actuals arrive.')
-        .toBeTruthy();
+      const byName = new Map<string, string>();
+      for (const m of await apiRows(page, '/api/v1/org/members')) {
+        const n = String(m?.full_name || '').trim();
+        if (n && !byName.has(n)) byName.set(n, String(m.user_id));
+      }
 
+      let typed = 0;
+      let found = 0;
+      const unclaimed = won.filter((d) => !d.assigned_to);
+      let next = 0;
+      for (const person of holders) {
+        const id = byName.get(person);
+        if (!id) continue;                       // reported by 10.11, not here
+        if (won.some((d) => String(d.assigned_to || '') === id)) { found++; continue; }
+        const deal = unclaimed[next];
+        if (!deal) break;                        // fewer won deals than holders
+        next++;
+        await assign(deal, person);
+        typed++;
+      }
+      expect(typed + found, 'no won deal was assigned to anybody, so attainment could not ' +
+        'move and this test would prove nothing').toBeGreaterThan(0);
+
+      // ── AND THE NUMBER MOVED ──────────────────────────────────────────
+      const dealsAfter = await apiRows(page, '/api/v1/graha/deals?limit=200');
+      const wonAfter = dealsAfter.filter((d) => String(d.stage) === 'Won');
+      const assignedAfter = wonAfter.filter((d) => d.assigned_to);
+      expect(assignedAfter.length,
+        'won deals were assigned through the deal record and the stored rows carry no ' +
+        'assignee — `update_deal` binds `assigned_to=NULLIF($n,’’)`, so a value that ' +
+        'does not arrive means the form is not sending it' + dumpWire(wire))
+        .toBeGreaterThan(0);
+
+      const after = await apiRows(page, '/api/v1/vikray/targets');
+      const currentAfter = after.filter((t) => {
+        const a = new Date(`${t.period_start}T00:00:00`);
+        const b = new Date(`${t.period_end}T23:59:59`);
+        return a <= new Date() && new Date() <= b;
+      });
+
+      // ⚠ THE CLOSE DATE IS NOT ON THE LIST ENDPOINT, AND READING IT THERE
+      //   MADE THIS TEST ACCUSE THE PRODUCT OF ITS OWN BUG.
+      //
+      // `GET /v1/graha/deals` selects a NAMED column list — id, title, value,
+      // stage, probability, expected_close_date, assigned_to, created_at,
+      // tags, client_id, territory, the joined names — and neither `won_at`
+      // nor `updated_at` is in it. Reading `d.won_at` off a list row therefore
+      // yielded `undefined`, `new Date('')` is Invalid Date, every deal fell
+      // out of every window, the expected figure was 0 for everyone and the
+      // test reported "ATTAINMENT STILL READS ZERO FOR EVERYONE" — about a
+      // join that was working. Verified against the live database the same
+      // moment it failed: running `_ATTAINMENT_SQL` by hand matched exactly
+      // one won deal to each of the five current-period targets.
+      //
+      // That is suite rule 3 in its purest form: a partial payload turns every
+      // field it omits into NaN, and the failure message sounds like a defect
+      // in the thing being measured. The close date comes from the RECORD.
+      const closedAt = new Map<string, string>();
+      for (const d of wonAfter.filter((x) => x.assigned_to)) {
+        const rec = await apiOne(page, `/api/v1/graha/deals/${d.id}`);
+        const full = rec?.deal ?? rec;
+        const when = String(full?.won_at || full?.updated_at || '');
+        expect(when, `deal "${d.title}" stands at Won and its record carries no close date, so ` +
+          'no target period can contain it — `PATCH /deals/{id}` stamps `won_at` when the stage ' +
+          'flips to Won').toBeTruthy();
+        closedAt.set(String(d.id), when);
+      }
+
+      const problems: string[] = [];
+      let moved = 0;
+      for (const t of currentAfter) {
+        const name = String(t.salesperson_name || '').trim();
+        const id = byName.get(name);
+        if (!id) continue;
+        // What THIS person actually closed inside THIS window, computed from
+        // Graha's own rows rather than from a figure this spec invents.
+        const theirs = wonAfter.filter((d) => {
+          if (String(d.assigned_to || '') !== id) return false;
+          const closed = new Date(closedAt.get(String(d.id)) || '');
+          if (Number.isNaN(closed.getTime())) return false;
+          const a = new Date(`${t.period_start}T00:00:00`);
+          const b = new Date(`${t.period_end}T23:59:59`);
+          return a <= closed && closed <= b;
+        });
+        const expected = money(theirs.reduce((s2, d) => s2 + Number(d.value || 0), 0));
+        const actual = money(t.actual_amount);
+        if (!near(actual, expected, 1)) {
+          problems.push(`${name}: the target reports ${actual} attained over ` +
+            `${t.period_start} → ${t.period_end} and Graha holds ${expected} across ` +
+            `${theirs.length} won deals assigned to them in that window`);
+        }
+        if (expected > 0 && actual > 0) moved++;
+      }
+
+      expect(moved,
+        'ATTAINMENT STILL READS ZERO FOR EVERYONE. Deals were assigned through the real form ' +
+        'and the stored rows carry the assignee, so a target still reading Rs 0 means the join ' +
+        '`d.assigned_to = t.salesperson_id` is not finding them — the two sides are both TEXT ' +
+        '(`vikray_targets.salesperson_id` since migration 092, `graha_deals.assigned_to` ' +
+        'always), and a cast on either is the fingerprint of the wrong column.')
+        .toBeGreaterThan(0);
+
+      // ── AND THE SCREEN SAYS SO ────────────────────────────────────────
+      const p = await openTab(page, 'targets', 'targets');
+      await expect(p.locator('table.vk-tg'), 'the targets table did not render')
+        .toBeVisible({ timeout: 30_000 });
+      await expect
+        .poll(async () => await p.locator('.vk-tg__bar').count(),
+          { message: 'no achievement bar rendered on any target row', timeout: 20_000 })
+        .toBeGreaterThan(0);
+
+      console.log(`\n  10.12 — the assignee: ${typed} deals assigned this run, ${found} already ` +
+        `assigned (§6 idempotence)\n` +
+        `     won deals: ${wonAfter.length}, ${assignedAfter.length} carrying an assignee\n` +
+        `     targets covering today: ${currentAfter.length}, ${moved} now reporting a ` +
+        'non-zero attainment\n');
+
+      expect(problems, 'a target’s attainment is not what the deals behind it say:\n     ' +
+        problems.join('\n     ')).toEqual([]);
       assertNoUncaught(con);
     });
 
@@ -2749,7 +3174,12 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       con.at('pipeline');
       const p = await openTab(page, 'pipeline', 'pipeline');
 
-      const board = await apiOne(page, '/api/v1/vikray/pipeline');
+      // ⚠ `apiBody`, NOT `apiOne`. `GET /pipeline` answers
+      // `{data: [orders…], stages: [stages…]}` — a two-key envelope whose
+      // `data` is a LIST — and `apiOne` unwraps `body.data`, which discards
+      // `stages` and made this test report "no stages at all" against an
+      // endpoint that builds them from a constant and cannot answer none.
+      const board = await apiBody(page, '/api/v1/vikray/pipeline');
       const stages: any[] = Array.isArray(board?.stages) ? board.stages : [];
       const rows: any[] = Array.isArray(board?.data) ? board.data : [];
       expect(stages.length, 'the pipeline answered no stages at all').toBeGreaterThan(0);
@@ -2842,10 +3272,26 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
             `${actual}`);
         }
       }
-      const totalValue = money(orders.reduce((s, o) => s + Number(o.total || 0), 0));
+      // ⚠ "ORDER VALUE" IS THE COMMITTED BOOK, AND IT EXCLUDES DRAFTS.
+      //
+      // `GET /vikray/dashboard` sums `status NOT IN ('cancelled','draft')`,
+      // deliberately: a draft is what somebody is still typing, and counting
+      // it as order value would tell a firm it has sold something it has not
+      // even quoted. This summed EVERY active order and accused the endpoint
+      // of being short. Measured 2026-08-29: dashboard 791,875, all active
+      // 1,101,435, the three drafts exactly 309,560 — the product was right
+      // to the rupee and the expectation was wrong.
+      //
+      // Both figures are reported below, so a reader sees the committed book
+      // and the drafts standing behind it rather than one number.
+      const committed = orders.filter((o) => String(o.status) !== 'draft');
+      const totalValue = money(committed.reduce((s, o) => s + Number(o.total || 0), 0));
+      const draftValue = money(orders.filter((o) => String(o.status) === 'draft')
+        .reduce((s, o) => s + Number(o.total || 0), 0));
       if (!near(money(mix.order_value), totalValue, 1)) {
         problems.push(`the dashboard values the order book at ${money(mix.order_value)} and the ` +
-          `${orders.length} active orders total ${totalValue}`);
+          `${committed.length} active NON-DRAFT orders total ${totalValue} ` +
+          `(${draftValue} more sits in drafts, which this figure excludes on purpose)`);
       }
 
       // ── A COUNT IS ONLY USEFUL IF IT TAKES YOU TO THE ROWS IT COUNTS ──
@@ -2889,7 +3335,8 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           'nothing has stalled and the card does not say so in words').toBeVisible();
       }
 
-      console.log(`\n  10.15 — dashboard: ${orders.length} active orders worth ${totalValue}; ` +
+      console.log(`\n  10.15 — dashboard: ${orders.length} active orders, ` +
+        `${committed.length} committed worth ${totalValue} plus ${draftValue} in drafts; ` +
         `${flagged.length} need somebody\n`);
 
       expect(problems, `the dashboard is not what the orders say:\n     ` +
@@ -2924,8 +3371,11 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       push('orders crediting a salesperson',
         [...orders.values()].filter((o) => o.salesperson_id).length, N_ORDERS);
       push('orders carrying a ship-to address',
-        [...orders.values()].filter((o) => o.shipping_address &&
-          Object.keys(o.shipping_address).length > 0).length, N_ORDERS);
+        [...orders.values()].filter((o) => {
+          const a = asAddress(o.shipping_address);
+          return ['line1', 'line2', 'city', 'state', 'pincode']
+            .some((k) => String(a[k] ?? '').trim());
+        }).length, N_ORDERS);
 
       const stock = (await apiRows(page, '/api/v1/vikray/stock'))
         .filter((r) => String(r.name || '').startsWith('S05 Product '));

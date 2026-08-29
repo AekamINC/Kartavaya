@@ -6,7 +6,9 @@
 // that `inrShort` already does — the ninth reimplementation of Indian digit
 // grouping in the tree, and the reason a figure could read "₹5.6 L" on one
 // surface and "₹5.6L" on the next.
-import { useEffect, useState } from 'react';
+// `React` by name, not only the hooks: this file renders JSX now
+// (`shipToFields`) and the classic runtime needs the binding in scope.
+import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { ORDER_LABELS } from '../../lib/statusColors';
 
@@ -35,8 +37,36 @@ export const ORDER_FLOW = ['draft', 'confirmed', 'dispatched', 'delivered', 'clo
  *
  * The id in a URL is not the id on screen — the names-not-ids rule is about
  * what is DRAWN, and nothing here draws it.
+ *
+ * ── `search` IS NOT OPTIONAL DECORATION. IT IS THE LIST UNDERNEATH. ─────────
+ *
+ * This returned the bare path, and that quietly undid the reason the record is
+ * a nested route at all. `VikrayPage` reads its open tab from `?tab=` and falls
+ * back to the STARRED DEFAULT when the query is absent — so opening an order
+ * from the orders list navigated to a URL with no tab in it, and the list
+ * behind the drawer silently became whichever tab the reader had starred
+ * (Pipeline, on the reference org). Press Back, or share the link, or refresh,
+ * and you land on a tab you were never on.
+ *
+ * `OrderRoute.jsx`'s own header says keeping the list underneath is the whole
+ * point: "the list underneath is genuinely still there … Back returns the
+ * reader to the tab, the stage filter and the chip they left." It could not,
+ * because the tab was dropped on the way in.
+ *
+ * Found by proposal 93 Suite 10 (10.05) on 2026-08-29, driving the real screen:
+ * the orders panel was gone from behind the drawer and the pipeline panel had
+ * taken its place.
+ *
+ * So the caller passes the location's own `search` and the tab rides along.
+ * Passing nothing is still correct for a caller that genuinely has no context —
+ * a notification deep-link — which is why the parameter defaults to empty
+ * rather than being required.
  */
-export const orderPath = id => `/vikray/orders/${encodeURIComponent(id)}`;
+export const orderPath = (id, search = '') => {
+  const q = String(search || '');
+  const query = q && q !== '?' ? (q.startsWith('?') ? q : `?${q}`) : '';
+  return `/vikray/orders/${encodeURIComponent(id)}${query}`;
+};
 
 /**
  * What the order list HAS, declared once — the floor `useColumnPrefs` resolves
@@ -145,6 +175,82 @@ export const emptyLine = () => ({
   product_id: '', description: '', hsn_code: '', quantity: 1,
   unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0,
 });
+
+/**
+ * THE SHIP-TO ADDRESS — the field set, written ONCE, for both order surfaces.
+ *
+ * ── The defect this closes ─────────────────────────────────────────────────
+ *
+ * `vikray_orders.shipping_address` is a live jsonb column. `OrderCreate` and
+ * `OrderUpdate` have both accepted it since they were written, the INSERT binds
+ * it `$15::jsonb`, and `OrderDetail` renders a "Ship to" section off it — and
+ * NO SCREEN HAD AN INPUT. `OrderForm` held `shipping_address: {}` in form state
+ * and offered no box for it, so the section in the record could never appear
+ * and the column could only be filled by an API caller. Measured 2026-08-29
+ * across `reseed_backup_20260828`: of 380 orders, 358 carried `{}` or NULL and
+ * the 22 that did not were written by a caller, not by a person.
+ *
+ * That is the same shape as the vendor address before Phase 8.0 and as
+ * `graha_contacts.billing_address` before it grew fields: a column the API can
+ * write and a human cannot. Proposal 93 §4 asks every order to carry one, so
+ * this is the control that makes that possible.
+ *
+ * ── ONE DEFINITION, TWO SURFACES ───────────────────────────────────────────
+ *
+ * The create form and the record's edit form both write this jsonb. Two
+ * surfaces writing one column is exactly how a field set forks — the Ganit/Kray
+ * vendor form did it and needed a set-equality test to stop it, and
+ * `ContactsTab` records the same rule for `billing_address`. So it is defined
+ * here and spread into both.
+ *
+ * The five keys are `ContactsTab`'s, which are the five `AddressBlock` reads
+ * first, so an order's ship-to renders the same way a client's address does.
+ * `state_code` is deliberately not asked for: `AddressBlock` never prints it,
+ * and the GST split on an order comes from the IGST checkbox, not from here.
+ *
+ * NOTHING HERE VALIDATES. A pincode is the same kind of fact as GSTIN/PAN/TAN
+ * — non-mandatory, blocks nothing — and a half-typed one must not stop somebody
+ * saving an order.
+ */
+export const EMPTY_SHIP_TO = { line1: '', line2: '', city: '', state: '', pincode: '' };
+
+/** True when a stored address has nothing a reader could use. */
+export const shipToIsEmpty = a =>
+  !a || !Object.keys(EMPTY_SHIP_TO).some(k => String(a[k] ?? '').trim());
+
+/**
+ * The five inputs, rendered into whatever grid the caller is using.
+ *
+ * @param {object}   addr    the address as held in form state
+ * @param {function} onAddr  called with the WHOLE next address
+ */
+export function shipToFields(addr, onAddr) {
+  const a = addr || EMPTY_SHIP_TO;
+  const set = (k, v) => onAddr({ ...EMPTY_SHIP_TO, ...a, [k]: v });
+  const field = (label, key, extra = {}) => (
+    <label className="fld" key={key}>
+      <span className="fld__l">{label}</span>
+      <input
+        className="inp"
+        aria-label={`Ship to ${label.toLowerCase()}`}
+        value={a[key] || ''}
+        onChange={e => set(key, e.target.value)}
+        {...extra}
+      />
+    </label>
+  );
+  return (
+    <>
+      {field('Address line 1', 'line1')}
+      {field('Address line 2', 'line2')}
+      {field('City', 'city')}
+      {field('State', 'state')}
+      {/* `inputMode` gets the numeric keypad on a phone, which is the whole of
+          what this field owes the person filling it in. Not enforced. */}
+      {field('Pincode', 'pincode', { inputMode: 'numeric', maxLength: 6, placeholder: '395002' })}
+    </>
+  );
+}
 
 /** `line_items` arrives as jsonb from one endpoint and as a string from another. */
 export const asItems = v => {

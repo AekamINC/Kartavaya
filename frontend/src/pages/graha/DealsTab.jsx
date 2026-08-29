@@ -139,7 +139,30 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
      them, but no create form could set one and no screen could read one — so a
      territory could be defined and never used. */
   const [territories, setTerritories] = useState([]);
-  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '' });
+  /* ── THE DEAL'S OWNER, AND WHY THIS FIELD HAD TO EXIST ──────────────────
+     `graha_deals.assigned_to` is written by `create_deal`, sits in
+     `update_deal`'s `_DEAL_COLS`, and is READ in three places — the pipeline
+     card, the rep-performance report and the contact drawer. NO SCREEN WROTE
+     IT. A sweep of `frontend/src` on 2026-08-29 found three readers and no
+     writer anywhere in the product, web or mobile.
+
+     What that costs is not cosmetic. Vikray's sales-target attainment is
+     `graha_deals.assigned_to = vikray_targets.salesperson_id`
+     (`routers/vikray.py` `_ATTAINMENT_SQL`), so with nothing ever assigned,
+     EVERY TARGET IN EVERY ORG READS Rs 0 AGAINST ITS NUMBER — for ever, and
+     correctly, because nobody has claimed the revenue. Live on Unicode Group
+     the same day: 30 deals, 0 with an assignee, 8 of them Won, 10 people
+     holding targets and 10 reading zero. The Targets tab tells the user in
+     prose that actuals arrive this way.
+
+     The directory is `GET /v1/org/members`, the same one `TargetsTab` picks a
+     salesperson from — so the two sides of that join are chosen from one list
+     and cannot name different things. The id lives only in the option's
+     `value`; the option TEXT is the person's name, which is the shape
+     `scripts/check-rendered-ids.mjs` admits and the one the territory and
+     client dropdowns already use. */
+  const [members, setMembers] = useState([]);
+  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '' });
   const [saving, setSaving] = useState(false);
 
   /** Open one deal. The single door — see the note at the top of this file. */
@@ -239,6 +262,15 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
       setDealClients(rows(clr));
       setTerritories(rows(tr));
     } catch { /* selects offer "None" only */ }
+    // Separately, and deliberately not inside the Promise.all above:
+    // `/v1/org/members` is org_admin+ only, so a plain member gets a 403 and
+    // taking the whole enrichment down with it would empty the contact and
+    // company dropdowns for everybody below admin. A silent 403 here just
+    // leaves the owner field reading "Unassigned", which is the right default.
+    try {
+      const mr = await api.get('/v1/org/members');
+      setMembers(rows(mr));
+    } catch { /* not an admin: no directory, and the field says so */ }
   }
 
   async function save(e) {
@@ -248,7 +280,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
       await api.post('/v1/graha/deals', { ...form, value: parseFloat(form.value) || 0 });
       pushToast({ title: 'Deal created', type: 'success' });
       setShowForm(false);
-      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '' });
+      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '' });
       load();
     } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
@@ -482,6 +514,27 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
               <select className="k-input" value={form.territory_id} onChange={e => setForm({ ...form, territory_id: e.target.value })}>
                 <option value="">— None —</option>
                 {territories.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            ))}
+            {/* WHO OWNS IT. See the note beside `members` above: this column
+                is read by three screens, written by none, and it is the join
+                Vikray's target attainment stands on. */}
+            {field('Assigned to', (
+              <select
+                className="k-input"
+                aria-label="Assigned to"
+                value={form.assigned_to}
+                disabled={!members.length}
+                title={members.length ? undefined
+                  : 'Only an organisation admin can list members, so a deal cannot be assigned from here.'}
+                onChange={e => setForm({ ...form, assigned_to: e.target.value })}
+              >
+                <option value="">— Unassigned —</option>
+                {members.map(m => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.full_name || m.email}
+                  </option>
+                ))}
               </select>
             ))}
             {field('Stage', (

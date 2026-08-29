@@ -14,7 +14,7 @@
 // And one the spec could not have known: `GET /v1/vikray/stock/{id}/moves` has
 // existed since migration 036 and had NO caller. Every adjustment was written
 // to an audit trail nobody could read. Expanding a row reads it.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
@@ -221,12 +221,35 @@ export default function StockTab() {
   const [adjusting, setAdjusting] = useState(null);
   const [expanded, setExpanded] = useState(null);
 
+  /* ── THE SKELETON IS FOR THE FIRST LOAD ONLY, AND THAT IS NOT COSMETIC ────
+     This called `setLoading(true)` on EVERY load, including the refresh that
+     every write on this screen fires — so the whole table was torn down and
+     replaced by a shimmer after each one. Two consequences, and the second is
+     the one that made point 2 at the top of this file untrue:
+
+       · `Threshold` sets its own state to 'saved' and then calls `onSaved()`,
+         which is this function. React batches the two, `loading` flips before a
+         paint, the component UNMOUNTS, and it comes back from the refetch with
+         its state reset to ''. The field that was written to say whether it
+         saved could never say it. Measured 2026-08-29 by Suite 10 test 10.02:
+         the PATCH answered 200 and `.vk-th__s` was empty on fifteen polls
+         across fifteen seconds.
+       · And `−1` / `+1` blanked an eighteen-row ledger on every click, losing
+         the reader's place on a screen whose whole job is scanning rows.
+
+     A list already on screen stays on screen through a refetch — the same rule
+     `DealsTab` records ("the list deliberately stays on screen through a
+     refetch rather than collapsing into a skeleton each time"). A ref rather
+     than state because it must not itself cause a render. */
+  const loaded = useRef(false);
+
   const load = useCallback(async () => {
     setErr(null);
-    setLoading(true);
+    if (!loaded.current) setLoading(true);
     try {
       const r = await api.get('/v1/vikray/stock', { params: lowOnly ? { low_stock: true } : undefined });
       setStock(r.data?.data || []);
+      loaded.current = true;
     } catch (e) {
       // "No stock records" on a failed load reads as "you hold no stock", which
       // on an inventory screen is a number somebody may reorder against.

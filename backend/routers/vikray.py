@@ -131,21 +131,66 @@ class StockAdjust(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────
 
 def _compute_order_totals(line_items: list[dict], discount: float, is_igst: bool):
+    """`(subtotal, cgst, sgst, igst, total)` — and `subtotal` is GROSS.
+
+    ── THE DISCOUNT WAS DEDUCTED ONCE AND SHOWN TWICE ──────────────────────
+
+    This stored `subtotal` ALREADY NET of the flat order discount and then
+    returned `subtotal + tax` as the total, so on any discounted order the
+    identity every money document obeys —
+
+        subtotal + tax − discount = total
+
+    — did not hold. `OrderDetail`'s totals block prints Subtotal, CGST, SGST,
+    Discount and Total one under the other, so the five figures a customer
+    reads did not add up on screen.
+
+    Ganit computes the same document the other way: `_compute_invoice`
+    (`routers/ganit.py`) keeps `subtotal` GROSS and takes the discount off the
+    TOTAL. So did this module's own client-side preview
+    (`pages/vikray/_shared.jsx` `previewTotals`), which is what the person
+    filling the form was shown. The server was the only one of the three
+    disagreeing.
+
+    That is not merely cosmetic, because `generate_invoice_from_order` copies
+    `order["subtotal"]` straight into `ganit_invoices.subtotal` — a column every
+    Ganit reader treats as gross. A discounted order therefore minted a tax
+    invoice whose TAXABLE VALUE was understated by the discount, and any reader
+    computing `subtotal − discount` took it off a second time.
+
+    ── WHAT DOES NOT CHANGE ────────────────────────────────────────────────
+
+    `total` is arithmetically identical — `(gross − discount) + tax` and
+    `gross + tax − discount` are the same money — so no order's payable amount
+    moves. Only the taxable value is now stated correctly.
+
+    Live exposure measured before the change, 2026-08-29: `staging
+    .vikray_orders` held ONE row in the entire table (Aekam Inc, SO-2026-0001)
+    and its discount is 0.00, so the identity held vacuously and no stored row
+    is affected. Nothing is backfilled; the figures are recomputed by the write
+    path on the next create or edit, which is the only place they are ever set.
+
+    Rounding follows `_compute_invoice` line for line, because
+    `services/purchase_orders.py` matches a PO against the invoice it becomes
+    and two roundings would report a tax discrepancy on every match.
+    """
     subtotal = 0
     total_tax = 0
     for item in line_items:
         qty = item.get("quantity", 1)
         rate = item.get("rate", 0)
         disc = item.get("discount_pct", 0)
-        line_total = qty * rate * (1 - disc / 100)
+        line_total = round(qty * rate * (1 - disc / 100), 2)
         gst = item.get("gst_rate", 18) / 100
         subtotal += line_total
-        total_tax += line_total * gst
-    subtotal_after_disc = subtotal - discount
+        total_tax += round(line_total * gst, 2)
+    subtotal = round(subtotal, 2)
+    total_tax = round(total_tax, 2)
+    total = round(subtotal + total_tax - discount, 2)
     if is_igst:
-        return subtotal_after_disc, 0, 0, total_tax, subtotal_after_disc + total_tax
+        return subtotal, 0, 0, total_tax, total
     half = round(total_tax / 2, 2)
-    return subtotal_after_disc, half, total_tax - half, 0, subtotal_after_disc + total_tax
+    return subtotal, half, round(total_tax - half, 2), 0, total
 
 _VALID_TRANSITIONS = {
     "draft": {"confirmed", "cancelled"},
@@ -877,17 +922,6 @@ async def generate_invoice_from_order(
     # Refusing before `next_doc_number` is deliberate: a refusal that has
     # already drawn a serial leaves a permanent gap in the invoice sequence,
     # which is precisely what a tax auditor asks about.
-    from routers.ganit import _refuse_final_if_incomplete
-    await _refuse_final_if_incomplete(pool, org_id, {
-        "invoice_type": "tax_invoice",
-        "invoice_number": "pending",
-        "invoice_date": date.today(),
-        "line_items": lines,
-        "is_igst": order["is_igst"],
-        "subtotal": order["subtotal"], "cgst": order["cgst"],
-        "sgst": order["sgst"], "igst": order["igst"], "total": order["total"],
-    }, order["contact_id"])
-
     # The company crosses the module boundary with the document. The order
     # already knows which firm it is for — migration 136's `client_id`, set on
     # both create paths — and this INSERT dropped it, so the moment a sale
@@ -906,6 +940,44 @@ async def generate_invoice_from_order(
             pool, org_id, "",
             str(order["contact_id"]) if order["contact_id"] else "")
     )
+
+    from routers.ganit import _refuse_final_if_incomplete
+    await _refuse_final_if_incomplete(pool, org_id, {
+        "invoice_type": "tax_invoice",
+        "invoice_number": "pending",
+        "invoice_date": date.today(),
+        "line_items": lines,
+        "is_igst": order["is_igst"],
+        "subtotal": order["subtotal"], "cgst": order["cgst"],
+        "sgst": order["sgst"], "igst": order["igst"], "total": order["total"],
+        # ⚠ `client_id`, AND WITHOUT IT A B2B ORDER COULD NEVER BE INVOICED.
+        #
+        # Rule 46(e) asks for the name of the RECIPIENT, and this gate resolved
+        # it from `contact_id` alone. An order raised against a COMPANY with no
+        # individual named — which is the ordinary B2B case, and the one this
+        # product's own rule describes ("a CRM client is the company; contacts
+        # are people who come and go, the customer stays") — therefore arrived
+        # with `contact = None`, raised the BLOCKING "Recipient name" gap, and
+        # 422'd. The order could be confirmed, dispatched and delivered and
+        # then never billed, with the customer's name sitting on the row the
+        # whole time.
+        #
+        # `_refuse_final_if_incomplete` already carries the company fallback —
+        # it resolves `graha_clients` when there is no contact and hands the
+        # firm's name in as the `company` the validator accepts. `create_invoice`
+        # and `client_billing.generate_usage_invoice` both pass the key. THIS
+        # ROUTE WAS THE ONE CALLER THAT DID NOT, so the fallback could not fire.
+        # Found by proposal 93 Suite 10 (10.08) on 2026-08-29: every one of the
+        # thirty-five orders raised through the real form names a company and no
+        # person, and the first `Generate invoice` answered 422.
+        #
+        # Nothing is invented: the name comes from the row the order already
+        # points at, and it is the same row the INSERT below files the invoice
+        # under. The resolution moved ABOVE this call for that reason — it used
+        # to sit between the gate and the INSERT, which is why the gate could
+        # not see it.
+        "client_id": client_id or "",
+    }, order["contact_id"])
 
     inv_number = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
     inv = await pool.fetchrow(
