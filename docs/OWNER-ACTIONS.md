@@ -21,6 +21,56 @@ behind it.
 
 ## OPEN
 
+### 19. Five Graha features that have no way in — found by Suite 04, 2026-08-29
+
+Proposal 93 §7: a fix that is a missing feature rather than a bug gets raised
+with its evidence and an estimate instead of being folded silently into a
+suite's time. **The reseed run continued past all five.**
+
+Each was found by driving the real screen, and each is a failing test in
+`suite04-graha.spec.ts` rather than a silent cap — so the day one is built, the
+suite goes green by itself.
+
+⚠ **What these have in common is worth more than any one of them.** In every
+case the DATABASE COLUMN EXISTS, the API accepts the value, and there is no
+control anywhere that sets it. That is the "code shipped is 🟡" line in its
+purest form: five features are complete except for the part a customer touches.
+
+| # | What is missing | Evidence | Estimate |
+|---|---|---|---|
+| a | **`lost_reason` has no input anywhere in Graha** | Column live (`018:64`), `DealUpdate.lost_reason` exists (`graha.py:242`), `_DEAL_COLS` writes it (`:2037`), a backend test pins it — and a grep across `frontend/` returns nothing. The only screen that edits a deal offers Title / Value / Stage / Probability / Expected Close / custom fields / Notes. **6 deals now sit in Lost with no reason.** | **~1 hour.** One field on the deal drawer, shown when the stage is Lost |
+| b | **A web form can be published that nobody can fill in** | No hosted page, no preview, no copy-embed, and no public route in `App.jsx` — only a `<code>` block telling the customer to write the JavaScript themselves. **0 of §4's 12 public submissions were possible.** | **~1 day.** A public route, a rendered form from the stored field list, and a submit that routes the lead |
+| c | **No screen sets a lead-scoring rule, and there is no route either** | `routers/graha.py` has GET and PATCH for scoring rules and **no POST**. All 53 contacts carry `lead_score` 0. The gap is in both layers, so this is not a UI-only job | **~half a day** |
+| d | **No control creates a pipeline** | `PipelineTab`'s empty state says "Create one from the Deals tab"; the Deals tab has no such control. ⚠ `create_deal:1806` silently INSERTs a **"Default Pipeline"** — so the org's only pipeline is one nobody typed, and the empty state points at a control that does not exist | **~2 hours**, plus deciding whether the silent insert should stay |
+| e | **A territory cannot be given a priority** | The form offers Name / Description / Assigned Users / Pincodes. `rules` jsonb is wholesale-replaced on every edit. The routing report *returns* an `overlaps` array — **the product detects the collision and tells you afterwards, with no way to decide it in advance** | **~half a day** |
+
+**(a) is the one I would do first** — it is an hour, `lost_reason` is the field a
+sales conversation actually turns on, and 93 §10 names it explicitly as the
+thing this suite exists to prove ("`lost_reason` persists, which it never
+could"). It still cannot.
+
+**(b) is the one that costs a customer something today.** A form that publishes
+and cannot receive is worse than no form: it is a feature that reports success.
+
+Three smaller things found beside them, not worth their own item:
+
+- `CustomFieldInputs` renders `<input type="phone">` for a phone field.
+  There is no such input type — it falls back to `text`, so a phone number gets
+  no numeric keypad on mobile, contrary to that component's own comment. It
+  should be `type="tel"`. **Five minutes.**
+- A `select` custom field is creatable and unusable: the New Field form has no
+  control for its options, so the field renders with an empty dropdown.
+- **The Documents register draws a client UUID on screen.** The folder column
+  and the folder filter both print `crm/<uuid>/documents`. The server builds
+  that string, so `check-rendered-ids.mjs` — which is static and positional —
+  reports "no id drawn on screen" and stays green. That is the SECOND ratchet
+  blind spot of this shape found on 2026-08-29; the first was a user id resolved
+  through a helper on the recycle-bin screen. **The ratchet cannot see an id
+  that arrives from the server pre-formatted**, and both times the only thing
+  that caught it was a person or a test reading the rendered page.
+
+---
+
 ### 17. The recycle-bin sweeper is BUILT AND DISARMED — arming it is yours
 
 `POST /api/internal/cron/recycle-bin`, authenticated by `CRON_SECRET` like every

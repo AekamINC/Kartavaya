@@ -40,6 +40,25 @@ export const CUSTOM_FIELD_ENTITIES = [
  * it draws a section heading — and because the same definitions drive both the
  * create panel and the edit panel of a tab, which would otherwise fetch twice.
  */
+/**
+ * A stored `field_type` mapped to a REAL HTML input type.
+ *
+ * `phone` is the reason this exists: it is not an input type, and passing it
+ * through produced `<input type="phone">`, which every browser silently treats
+ * as `text` — so it looked right and quietly cost the numeric keypad on the one
+ * device where a phone number is typed most.
+ *
+ * Explicit rather than a pass-through: an unrecognised type falls to `text`,
+ * which is what the browser did anyway, so a new field type added later cannot
+ * become an invalid attribute by default.
+ */
+const HTML_INPUT_TYPE = {
+  text: 'text',
+  url: 'url',
+  email: 'email',
+  phone: 'tel',
+};
+
 export function useCustomFields(entity) {
   const [fields, setFields] = useState([]);
   useEffect(() => {
@@ -115,10 +134,23 @@ export default function CustomFieldInputs({ entity, value, onChange, field, disa
       default:
         // text · url · email · phone all differ only by the input type, which
         // is what gives a phone its numeric keypad and an email its validation.
+        //
+        // ⚠ AND THE PHONE ONE WAS NOT GETTING IT. This read
+        // `type={f.field_type === 'text' ? 'text' : f.field_type}`, so a field
+        // whose stored type is `phone` rendered `<input type="phone">` — WHICH
+        // IS NOT AN HTML INPUT TYPE. The browser falls back to `text`, so it
+        // renders fine and looks correct, and a phone number gets no numeric
+        // keypad on the device where that matters most. The comment above
+        // promised exactly the behaviour the line below prevented.
+        //
+        // Found by Suite 04, 2026-08-29. The map is explicit rather than a
+        // pass-through so a new `field_type` cannot silently become an invalid
+        // attribute again: anything unrecognised is `text`, which is the safe
+        // default and what the browser was doing anyway.
         node = (
           <input
             className="k-input"
-            type={f.field_type === 'text' ? 'text' : f.field_type}
+            type={HTML_INPUT_TYPE[f.field_type] || 'text'}
             value={v}
             disabled={disabled}
             required={f.is_required}
