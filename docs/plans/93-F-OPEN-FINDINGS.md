@@ -236,6 +236,45 @@ must NEVER BLOCK.**
 
 ---
 
+## 16. "Seen by" names people who never saw the message
+**Correctness · ACTIVE · Sanvaad**
+
+    staging.samvada_read_receipts   0 rows — in the ENTIRE HISTORY of the
+                                    database — no writer, no reader.
+
+The feature does not use that table. It is DERIVED from `last_read_at`, and
+`add_member` stamps `last_read_at = NOW()` — so **a person added to a channel is
+reported as having seen every earlier message in it.** Read live off the screen:
+`"Seen by Anaya, Rajesh +2"`.
+
+**A fabricated receipt is worse than no receipt, because somebody acts on it.**
+"They've seen it" changes whether a person chases, escalates, or assumes a
+decision was noticed.
+
+Three candidate fixes: write real receipts into the table that already exists
+and is unused; stop stamping `last_read_at` on `add_member` (cheapest, honest
+from now on, repairs nothing); or stop showing "Seen by" until it is real.
+⚠ Re-stamping existing rows is a data change and is the owner's.
+
+## 17. "Jump to latest" covers the controls beneath it
+**Interaction · ACTIVE · Sanvaad**
+
+`.m2jump` OVERLAYS and intercepts the message controls under it — evidenced from
+Playwright's own actionability log. The **mouse path is broken and the keyboard
+path works**, which is the shape that survives review: it looks fine, and it is
+unusable with the input almost everyone uses.
+
+## 18. There is no way to delete a channel
+**ACTIVE or by-design — undecided · Sanvaad**
+
+No DELETE route exists anywhere in the product; archive is the only retirement.
+That may be deliberate. **Decide, and record it somewhere durable**, because
+this programme's own probe channels cannot be cleaned up and the next person
+will re-derive the same question. Suite 13 left 5 named probe channels for
+exactly this reason rather than pretending it had swept them.
+
+---
+
 ## Also open, from the suites, not separately chipped
 
 - **eSign field placement stores nothing.** `staging.sign_fields` exists
