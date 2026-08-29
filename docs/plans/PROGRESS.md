@@ -5338,3 +5338,93 @@ outbound record and nothing checks it), and there is no bounce visibility at all
 kind, or a 25 MB receiving limit, would still arrive asynchronously to nobody
 while the row reads `sent`. **The risk was never the bounce; it is that we would
 not learn of it.** Recorded as 22, with 22a marked answered.
+
+## 2026-08-29 · Finding 19 — a template applied twice handed the customer two boards
+
+`S3 Project 05`, measured: `To Do`, `In Progress`, `In Review`, `Approval` and
+`Done` each present **TWICE, at the SAME `sort_order`** — (0,0) (1,1) (2,2)
+(3,3) (4,4). The board was duplicated AND its ordering was ambiguous. It closes
+exactly across the org: 4x9 + 3x14 + 1x5 = **83 rows**.
+
+The board is the first screen a new customer opens. They apply a template, do
+not see it land, apply it again, and own two "In Progress" columns in an order
+the database cannot decide between.
+
+### Why it survived being looked at
+
+`apply_project_template` carried `ON CONFLICT DO NOTHING`, which reads as
+protection against exactly this. **It could never fire.** The conflict target is
+`column_id`, minted from `uuid4` on the line above — a key that is new on every
+call has no conflict to do nothing about. Nothing anywhere compared the NAME.
+
+⚠ And the obvious query says there is no problem: columns live in
+`public.project_columns`, while `public.boards` and `public.board_columns` both
+hold **0 rows in the whole database**.
+
+### The second defect, in the same loop, that nobody had reported
+
+`field_definitions.sort_order` was the literal `0` for every field — not the
+loop index, the constant. Four custom fields, four rows all claiming position 0,
+order decided by the planner. **Wrong from the FIRST apply, not the second**, and
+no test had ever looked.
+
+### The fix
+
+Idempotent by normalised name, so `"to do "` and `"To Do"` are one column —
+trailing space is what a paste produces. New columns number **after** whatever
+the board already has, so `sort_order` comes out unambiguous. A name already
+present is **left alone**: its colour, its `is_done` and its position are the
+customer's, not the template's.
+
+Chosen over "refuse on a non-empty board" deliberately. Refusing breaks the
+legitimate case of adding a template to a project that already has a column or
+two of its own, which is very often a new customer's project. Applying twice is
+almost always an accident; applying to a partly-built board is not.
+
+The dead `ON CONFLICT` is **removed, not kept**. On a `uuid4` key the only
+collision it could ever catch is a birthday collision, and silently dropping a
+column on one of those is worse than the 500 that now happens: a 500 is
+reported, a missing column is found weeks later by the person who cannot locate
+their work.
+
+`created` now counts what was WRITTEN. It was incremented once per config item
+whatever the database did, and the page turns it straight into "Applied — 5
+columns created" — so a call that created nothing said it had created five.
+`skipped` is returned beside it, and the page now says "Already applied — this
+project has these columns".
+
+### Proof
+
+`backend/tests/test_apply_template_is_idempotent.py` — **13 tests, 13 green**,
+three of them LIVE (`railway run`) parsing every statement against the real
+catalogue. The fake pool **remembers what it was told to write**, which is the
+whole point: the old code passes against a forgetful pool, because a second
+apply then looks exactly like the first.
+
+**Five mutations, each biting a DIFFERENT set** — so no assertion is vacuous:
+
+| mutated | went red |
+|---|---|
+| column name-skip removed | 5 tests |
+| column `sort_order` back to a constant | 3 |
+| field `sort_order` back to the literal `0` | 1 |
+| in-loop bookkeeping removed (same name twice in ONE template) | 1 |
+| task duplicate-check removed | 2 |
+
+⚠ **A sixth mutation did NOT bite, and it corrected me.** Removing the `::text`
+cast changed nothing — re-planned against the live server, Postgres still infers
+`text`, because `btrim` has one single-argument candidate. **That is the
+`$1::int + $2::int` shape, not this one.** The cast stays because it costs
+nothing and says what is meant; the claim that it was load-bearing does not, and
+both the comment and the test's docstring now say what was actually measured.
+The test asserts the type the SERVER infers rather than the characters in the
+string, which is why it is worth having either way.
+
+### Not done, deliberately
+
+- **The 83 existing duplicate rows are NOT repaired.** A data change to live
+  rows is the owner's decision.
+- **No `UNIQUE (team_id, lower(name))` migration**, for the same reason: it
+  would fail on the data already there.
+- **Not deployed.** `git show HEAD:` still carries the defect, so a customer
+  applying a template on staging right now still gets two boards.

@@ -233,37 +233,163 @@ async def apply_project_template(
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
     cfg = tmpl["config"] if isinstance(tmpl["config"], dict) else json.loads(tmpl["config"])
     created = {"columns": 0, "fields": 0, "tasks": 0}
+    skipped = {"columns": 0, "fields": 0, "tasks": 0}
 
-    for i, col in enumerate(cfg.get("columns", [])):
+    # ── APPLY IS IDEMPOTENT BY NAME, AND IT WAS NOT ──────────────────────────
+    #
+    # MEASURED on `S3 Project 05`, 2026-08-29: `To Do`, `In Progress`,
+    # `In Review`, `Approval` and `Done` each existed TWICE, at the SAME
+    # `sort_order` — (0,0) (1,1) (2,2) (3,3) (4,4). The board was doubled AND its
+    # ordering was ambiguous. It closes exactly across the org: 4x9 + 3x14 +
+    # 1x5 = 83 rows. A new customer applies a template, does not see it land,
+    # applies it again, and now owns a kanban board with two "In Progress"
+    # columns in an order the database cannot decide.
+    #
+    # THE `ON CONFLICT DO NOTHING` THAT USED TO BE HERE COULD NEVER FIRE. It
+    # guarded `column_id`, which is minted fresh from `uuid4` on the line above
+    # — a key that is new every time has no conflict to do nothing about. It
+    # read as protection and was none. It is gone rather than kept, because the
+    # only collision it could ever actually catch is a `uuid4().hex[:10]`
+    # birthday collision, and silently dropping a column on one of those is
+    # worse than the 500 that now happens: a 500 is reported, a missing column
+    # is discovered weeks later by the person who cannot find their work.
+    #
+    # ⚠ COLUMNS LIVE IN `public.project_columns`. Not `board_columns` — and both
+    # `public.boards` and `public.board_columns` hold ZERO rows in the whole
+    # database, so a query against those will report that there is no problem.
+    #
+    # WHY IDEMPOTENT-BY-NAME rather than "refuse on a non-empty board":
+    # refusing would break the legitimate case of adding a template's columns to
+    # a project that already has one or two of its own, and a new customer's
+    # project is very often exactly that. Applying twice is almost always an
+    # accident; applying to a partly-built board is not. So a name that is
+    # already there is left ALONE — its colour, its `is_done` flag and its
+    # position are the customer's, not the template's, and a second apply must
+    # not reach in and overwrite choices somebody made.
+    #
+    # WHY NO UNIQUE INDEX: `UNIQUE (team_id, lower(name))` is the durable fix
+    # and it cannot be created — the duplicates above already exist, so the
+    # migration would fail on live data. Repairing them is a DATA CHANGE to live
+    # rows and therefore the owner's decision, recorded as finding 19. This
+    # stops the bleeding; it does not clean the floor.
+
+    def _key(s) -> str:
+        """Match names the way a person reads them, not the way bytes compare.
+
+        A template's "To Do" and a board's "to do " are the same column to
+        everybody except `=`. Trailing space is what a paste produces.
+        """
+        return " ".join(str(s or "").split()).casefold()
+
+    # ── Columns ──────────────────────────────────────────────────────────────
+    col_rows = await pool.fetch(
+        "SELECT name, sort_order FROM project_columns WHERE team_id=$1", team_id,
+    )
+    have_cols = {_key(r["name"]) for r in col_rows}
+    # New columns go AFTER whatever is already on the board. `sort_order` was
+    # the loop index, which is how two columns ended up sharing a position: on
+    # the second apply the template restarted its own numbering at 0 on top of a
+    # board that already used 0..4. `-1 + 1` gives 0 on an empty board.
+    next_sort = max(
+        (r["sort_order"] for r in col_rows if r["sort_order"] is not None),
+        default=-1,
+    ) + 1
+
+    for col in cfg.get("columns", []):
+        key = _key(col["name"])
+        # `have_cols` is added to inside the loop as well, so a template that
+        # itself lists the same column name twice writes it once — that would
+        # otherwise duplicate a board in a SINGLE apply, which no amount of
+        # re-run protection would catch.
+        if not key or key in have_cols:
+            skipped["columns"] += 1
+            continue
         col_id = f"col_{uuid.uuid4().hex[:10]}"
         await pool.execute(
             "INSERT INTO project_columns (column_id, team_id, name, color, sort_order, is_done, org_id) "
-            "VALUES ($1,$2,$3,$4,$5,$6,(SELECT org_id FROM teams WHERE team_id=$2)) ON CONFLICT DO NOTHING",
-            col_id, team_id, col["name"], col.get("color", "#0082c6"), i, col.get("is_done", False)
+            "VALUES ($1,$2,$3,$4,$5,$6,(SELECT org_id FROM teams WHERE team_id=$2))",
+            col_id, team_id, col["name"], col.get("color", "#0082c6"),
+            next_sort, col.get("is_done", False),
         )
+        have_cols.add(key)
+        next_sort += 1
         created["columns"] += 1
 
+    # ── Custom fields ────────────────────────────────────────────────────────
+    #
+    # `sort_order` was the literal 0 for EVERY field — not the loop index, the
+    # constant. So a template with four fields wrote four rows all claiming
+    # position 0, and the order they came back in was whatever the planner felt
+    # like. That is the same ambiguity as the columns, present from the first
+    # apply rather than the second, and it is fixed here for the same reason.
+    field_rows = await pool.fetch(
+        "SELECT name, sort_order FROM field_definitions WHERE team_id=$1", team_id,
+    )
+    have_fields = {_key(r["name"]) for r in field_rows}
+    next_field_sort = max(
+        (r["sort_order"] for r in field_rows if r["sort_order"] is not None),
+        default=-1,
+    ) + 1
+
     for field_cfg in cfg.get("fields", []):
+        key = _key(field_cfg["name"])
+        if not key or key in have_fields:
+            skipped["fields"] += 1
+            continue
         fid = f"fld_{uuid.uuid4().hex[:10]}"
         await pool.execute(
             "INSERT INTO field_definitions (field_id, team_id, name, type, config, sort_order, org_id) "
-            "VALUES ($1,$2,$3,$4,$5::jsonb,$6,(SELECT org_id FROM teams WHERE team_id=$2)) ON CONFLICT DO NOTHING",
+            "VALUES ($1,$2,$3,$4,$5::jsonb,$6,(SELECT org_id FROM teams WHERE team_id=$2))",
             fid, team_id, field_cfg["name"], field_cfg["type"],
-            json.dumps(field_cfg.get("config", {})), 0
+            json.dumps(field_cfg.get("config", {})), next_field_sort,
         )
+        have_fields.add(key)
+        next_field_sort += 1
         created["fields"] += 1
 
+    # ── Sample tasks ─────────────────────────────────────────────────────────
+    #
+    # Asked per task rather than by fetching every title on the team: a template
+    # carries a handful of sample tasks and a real project carries thousands of
+    # rows, so the set-membership shape used for columns above would pull the
+    # whole board's titles across to check five strings.
+    #
+    # `$2::text` is DEFENSIVE, not required — and that was worth finding out
+    # rather than asserting. Removing it and re-planning the statement against
+    # the live server, Postgres still infers `text`: `btrim` has one single-
+    # argument candidate, so an unknown resolves to it without help. This is NOT
+    # the `$1::int + $2::int` shape the conventions warn about, where two
+    # candidates make the expression genuinely ambiguous and PgBouncer turns the
+    # untyped parse into an instant 500. The cast stays because it costs nothing
+    # and says what is meant; the claim that it is load-bearing does not, and
+    # `test_the_duplicate_check_binds_the_title_as_text` pins the type the
+    # SERVER infers rather than the characters in the string.
     for task_cfg in cfg.get("sample_tasks", []):
+        title = task_cfg.get("title") or ""
+        dup = await pool.fetchrow(
+            "SELECT 1 FROM tasks WHERE team_id=$1 "
+            "AND lower(btrim(title)) = lower(btrim($2::text)) LIMIT 1",
+            team_id, title,
+        )
+        if not title.strip() or dup:
+            skipped["tasks"] += 1
+            continue
         task_id = f"task_{uuid.uuid4().hex[:10]}"
         await pool.execute(
             "INSERT INTO tasks (task_id, team_id, created_by_user_id, title, description, status, priority, org_id) "
             "VALUES ($1,$2,$3,$4,$5,'todo','medium',(SELECT org_id FROM teams WHERE team_id=$2))",
             task_id, team_id, user["user_id"],
-            task_cfg["title"], task_cfg.get("description", "")
+            title, task_cfg.get("description", ""),
         )
         created["tasks"] += 1
 
-    return {"ok": True, "created": created}
+    # `created` now counts what was WRITTEN. It used to be incremented once per
+    # item in the config whatever the database did, so it reported the size of
+    # the template rather than the effect of the call — and the page turns it
+    # straight into "Applied — 5 columns created". `skipped` is returned beside
+    # it so that screen can say "already there" instead of "0 created", which a
+    # customer reads as a failure.
+    return {"ok": True, "created": created, "skipped": skipped}
 
 
 # ── Task templates ───────────────────────────────────────────────────────────────

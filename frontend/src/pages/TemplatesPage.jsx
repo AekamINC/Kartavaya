@@ -154,7 +154,22 @@ export default function TemplatesPage() {
     try {
       const res = await api.post(`/templates/projects/${tmplId}/apply?team_id=${pid}`);
       const created = body(res).created || {};
-      pushToast({ type: 'success', title: `Applied — ${created.columns ?? 0} columns created` });
+      const skipped = body(res).skipped || {};
+      // Apply is idempotent by name as of 2026-08-29 — a second apply used to
+      // DOUBLE the board (measured: five columns twice, at the same
+      // `sort_order`). Now it writes nothing, and "Applied — 0 columns created"
+      // is what a customer reads as a failure. So the sentence has to be able
+      // to say "already there", or the fix looks like a new bug.
+      const made = created.columns ?? 0;
+      const same = skipped.columns ?? 0;
+      pushToast({
+        type: 'success',
+        title: made
+          ? `Applied — ${made} column${made === 1 ? '' : 's'} created`
+          : same
+            ? 'Already applied — this project has these columns'
+            : 'Applied',
+      });
       setApplyModal(null); setApplyToProject('');
       navigate(`/projects/${pid}`);
     } catch {

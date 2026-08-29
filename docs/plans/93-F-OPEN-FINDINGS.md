@@ -326,8 +326,8 @@ exactly this reason rather than pretending it had swept them.
 
 ---
 
-## 19. Applying a project template duplicates every column
-**ACTIVE · Core PM**
+## 19. ~~Applying a project template duplicates every column~~ FIXED
+**FIXED 2026-08-29 - Core PM - not yet deployed**
 
 Verified on `S3 Project 05`: `To Do`, `In Progress`, `In Review`, `Approval` and
 `Done` each exist **TWICE, at the SAME `sort_order`** (0,0 / 1,1 / 2,2 / 3,3 /
@@ -345,6 +345,41 @@ database**, so querying those will suggest there is no problem.
 Three defensible fixes: make apply idempotent by name; refuse on a non-empty
 board and say so; or merge and renumber. **Whichever is chosen, `sort_order`
 must come out unambiguous** — a kanban board's column order is not cosmetic.
+
+### FIXED 2026-08-29 — how, and what is still owed
+
+Idempotent by normalised name; new columns numbered AFTER whatever the board
+already has, so `sort_order` comes out unambiguous. A name already present is
+left ALONE — its colour, its `is_done` and its position are the customer's, not
+the template's. Chosen over "refuse on a non-empty board" because refusing would
+break the legitimate case of adding a template to a project that already has a
+column or two, which is very often a new customer's project.
+
+The dead `ON CONFLICT` is REMOVED rather than kept: on a `uuid4` key the only
+collision it can catch is a birthday collision, and silently dropping a column
+on one of those is worse than the 500 that now happens.
+
+Second defect in the same loop went with it — `field_definitions.sort_order` was
+the literal `0` for every field, wrong from the FIRST apply, and nothing had
+looked. `created` now counts what was WRITTEN rather than the size of the
+template, and `TemplatesPage.jsx` says "Already applied" instead of "0 columns
+created", which a customer reads as a failure.
+
+`test_apply_template_is_idempotent.py` — 13 tests, 13 green, three LIVE against
+the real catalogue. Five mutations, each biting a DIFFERENT set: name-skip
+removed (5 red), column sort_order back to a constant (3), field sort_order back
+to 0 (1), in-loop bookkeeping removed (1), task duplicate-check removed (2).
+
+⚠ A sixth mutation did NOT bite, and it corrected me. Removing the `::text` cast
+from `lower(btrim($2::text))` changed nothing — re-planned against the live
+server, Postgres still infers `text`, because `btrim` has one single-argument
+candidate. That is not the `$1::int + $2::int` shape the conventions warn about.
+The cast stays; the comment claiming it was load-bearing did not.
+
+⚠ **STILL OPEN AND IT IS THE OWNER'S: the 83 existing duplicate rows are NOT
+repaired.** That is a data change to live rows. It is also why no
+`UNIQUE (team_id, lower(name))` migration was written — it would fail on the data
+already there. This stopped the bleeding; it did not clean the floor.
 
 ## 20. Four active employees are missing from the employee list
 **ACTIVE · Manav — found by Suite 16, on Suite 07's ground**
