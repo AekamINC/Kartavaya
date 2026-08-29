@@ -829,10 +829,22 @@ async def _get_alert_recipients(pool, org_id: str) -> list[str]:
     """Get email addresses of org owner + admins, plus the Aekam admin."""
     recipients = []
     try:
+        # `ur.role_code`, NOT `ur.role`. There has never been a `role` column on
+        # user_roles — its columns are (id, user_id, org_id, role_code,
+        # granted_by, granted_at, updated_at, updated_by). This query therefore
+        # raised 42703 on every single call, the `except` below swallowed it, and
+        # the org's owners and admins have never once been told their email cap
+        # was running out; only AEKAM_ADMIN_EMAIL ever got the alert.
+        #
+        # The table halves are right and load-bearing: `users` lives in `public`
+        # only, `user_roles` moves to `public` with migration 241, and both
+        # user_id columns are `text`. Measured against the live catalogue
+        # 2026-08-29 — the corrected query returns 7/6/5/4/1 recipients for the
+        # five orgs that have any, where the old one returned none, ever.
         rows = await pool.fetch(
             "SELECT DISTINCT u.email FROM public.user_roles ur "
             "JOIN public.users u ON u.user_id = ur.user_id "
-            "WHERE ur.org_id = $1::uuid AND ur.role IN ('org_owner', 'org_admin') "
+            "WHERE ur.org_id = $1::uuid AND ur.role_code IN ('org_owner', 'org_admin') "
             "AND u.email IS NOT NULL",
             org_id,
         )
@@ -840,7 +852,20 @@ async def _get_alert_recipients(pool, org_id: str) -> list[str]:
             if r["email"]:
                 recipients.append(r["email"])
     except Exception:
-        pass
+        # MUST NOT RAISE, but MUST NOT BE SILENT EITHER.
+        #
+        # Not raising is deliberate: the fallback below still yields
+        # AEKAM_ADMIN_EMAIL, so a broken lookup degrades from "everyone is told"
+        # to "Aekam is told" rather than losing the alert altogether. This runs
+        # inside the outbound email path; letting it propagate would turn a
+        # cap-alert lookup failure into a failure of the send that triggered it.
+        #
+        # The silence is what has to go. `except Exception: pass` is the only
+        # reason a query that could never succeed survived in production — there
+        # was no symptom to notice. exc_info=True at exception level, matching
+        # _fire_cap_alert's own handler, so the next such bug shows up in Sentry
+        # on its first call instead of being found by reading the source.
+        logger.exception("outbound: cap alert recipient lookup failed for %s", org_id)
 
     import os
     aekam_admin = os.getenv("AEKAM_ADMIN_EMAIL", "admin@aekaminc.com")
