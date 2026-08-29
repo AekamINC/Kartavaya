@@ -732,7 +732,12 @@ async def send_otp(token: str, request: Request):
     pool = await get_pool()
 
     signer = await pool.fetchrow(
-        "SELECT s.*, d.title, d.status as doc_status "
+        # `d.org_id` is selected for the outbound record and for nothing else —
+        # see the `org_scope` block below. It is taken off the DOCUMENT rather
+        # than off `s.*`, because `create_document` inserts its signer rows
+        # without an `org_id` at all (only the Ganit path fills that column), so
+        # `sign_signers.org_id` is NULL for every signer raised in this module.
+        "SELECT s.*, d.title, d.status as doc_status, d.org_id AS doc_org_id "
         "FROM staging.sign_signers s "
         "JOIN staging.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1",
@@ -768,13 +773,44 @@ async def send_otp(token: str, request: Request):
 
     from email_service import send_email
     html = _build_otp_email(signer["name"], otp, signer["title"])
-    send_email(
-        to_email=signer["email"],
-        subject="Your signing verification code",
-        html_content=html,
-        purpose="signing_otp",
-        ref=f"signing_otp:{signer['id']}",
-    )
+
+    # ── THE ORG, AND WHY THIS SEND NEEDS IT SAID OUT LOUD ────────────────────
+    #
+    # This endpoint is PUBLIC: no `require_user`, no `get_org_id`, so the
+    # ContextVar `outbound.begin()` reads the org from is unset when the send
+    # runs, and the row lands with `org_id = NULL`. `email_service` names that
+    # outcome by hand — "a send from this function with neither is an outbound
+    # row no org can ever see" — and it is exactly what happened: measured on
+    # 2026-08-29, `staging.outbound_log` held a `signing_otp` row for the signer
+    # with a NULL `org_id`, while the `signature_request` and
+    # `signature_reminder` rows for the same document carried the org, because
+    # both of those are sent from authenticated routes.
+    #
+    # The consequence is customer-visible and specific. Every org-scoped read of
+    # that table is `WHERE org_id = $1::uuid` (`routers/billing.py`), and
+    # `/api/v1/billing/me/outbound/messages` reports `excludes_orgless: true` in
+    # its own body — so a firm whose client says "I never got a code" opens the
+    # one screen that answers that question per address and is told nothing was
+    # ever sent. The identity-verification message is the limb of the IT Act
+    # §10A claim that ties the signature to the signatory; it is the one e-sign
+    # message the firm could not evidence.
+    #
+    # `org_scope` and not `set_org`, for the reason `support_session.py:816` and
+    # `reminder_service.py:546` give: this is a request path that cannot rely on
+    # a task boundary to throw the value away, so it puts back what it found.
+    # `begin()` captures on the CALLER's thread, before `send_email` hands off,
+    # so the scope reaches the row even though the provider call does not run
+    # inside it.
+    from outbound import org_scope
+
+    with org_scope(str(signer["doc_org_id"]) if signer["doc_org_id"] else None):
+        send_email(
+            to_email=signer["email"],
+            subject="Your signing verification code",
+            html_content=html,
+            purpose="signing_otp",
+            ref=f"signing_otp:{signer['id']}",
+        )
 
     client_ip = request.client.host if request.client else "unknown"
 
