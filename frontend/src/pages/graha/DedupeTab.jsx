@@ -68,6 +68,54 @@ const DEDUPE_MERGE_COLUMNS = [
   { id: 'actions', label: 'Actions', sr: true, fixed: true },
 ];
 
+/**
+ * "Rows Moved" — a COUNT, from a jsonb object of per-table counts.
+ *
+ * ⚠ THIS CELL USED TO CRASH THE WHOLE PAGE, and it had never once been seen.
+ *
+ * It rendered `{m.moved_rows ?? '—'}` directly. `moved_rows` is jsonb —
+ * `services/contact_dedupe.py` writes `{t: len(v) for t, v in moved_rows.items()}`,
+ * so it arrives as an OBJECT like `{"graha_activities": 3, "graha_deals": 1}`.
+ * React refuses to render an object as a child (error #31), the ErrorBoundary
+ * caught it, and the Dedupe tab rendered NOTHING AT ALL — not a broken cell, a
+ * blank page.
+ *
+ * `?? '—'` never helped: an object is not null.
+ *
+ * ── WHY NOBODY EVER SAW IT, WHICH IS THE INTERESTING PART ─────────────────
+ * `graha_contact_merges` held ZERO ROWS for its entire life, because the write
+ * path 500d on a column declared UUID against ids that never were (migration
+ * 240, 2026-08-29). An empty ledger renders an empty table, and an empty table
+ * cannot hit this line.
+ *
+ * So fixing the write revealed the read. The same shape as the notice register
+ * the same day: **a broken write hides every bug downstream of it**, and the
+ * emptiness reads as "nobody has used this yet" rather than "this has never
+ * worked".
+ *
+ * The number is what the column asks for; the breakdown goes in the tooltip,
+ * because "9" without "which tables" is the question a person asks next.
+ */
+export function movedRowsTotal(moved) {
+  if (moved == null) return '—';
+  if (typeof moved === 'number') return moved;          // older rows, if any
+  if (typeof moved !== 'object') return String(moved);
+  const total = Object.values(moved).reduce(
+    (n, v) => n + (typeof v === 'number' ? v : 0), 0,
+  );
+  return total;
+}
+
+export function movedRowsDetail(moved) {
+  if (moved == null || typeof moved !== 'object') return undefined;
+  const parts = Object.entries(moved)
+    // The table name is the product's own, so it is shown as-is rather than
+    // guessed at a label — a wrong friendly name is worse than a raw one here.
+    .filter(([, v]) => typeof v === 'number' && v > 0)
+    .map(([t, v]) => `${t}: ${v}`);
+  return parts.length ? parts.join('\n') : undefined;
+}
+
 export default function DedupeTab() {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'merge contacts' });
@@ -293,7 +341,11 @@ export default function DedupeTab() {
                     {mergeCols.cells({
                       survivor_name: <td className="gr__td--name">{m.survivor_name}</td>,
                       merged_name: <td className="gr__td--mute">{m.merged_name}</td>,
-                      moved_rows: <td className="gr__td--mute">{m.moved_rows ?? '—'}</td>,
+                      moved_rows: (
+                        <td className="gr__td--mute" title={movedRowsDetail(m.moved_rows)}>
+                          {movedRowsTotal(m.moved_rows)}
+                        </td>
+                      ),
                       created_at: (
                         <td className="gr__td--when">
                           {m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
