@@ -209,7 +209,7 @@ def test_geometry_is_echoed_back_on_save(monkeypatch, pool, all_reachable):
         ]),
         user=USER, org_id=ORG))
     insert = next(c for c in pool.calls
-                  if "INSERT INTO staging.analytics_views" in c[0])
+                  if "INSERT INTO public.analytics_views" in c[0])
     assert json.loads(insert[1][4]) == [
         {"metric": "ganit.dso", "viz": "trend", "w": 6, "x": 3, "y": 2, "h": 4}]
 

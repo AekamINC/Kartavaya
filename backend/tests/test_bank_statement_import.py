@@ -79,7 +79,7 @@ async def test_the_import_inserts_every_line_and_reports_the_count(monkeypatch):
 
     class _Pool:
         async def execute(self, q, *a):
-            if "INSERT INTO staging.ganit_bank_statement_lines" in q:
+            if "INSERT INTO public.ganit_bank_statement_lines" in q:
                 inserted.append(a)
                 captured["batch"] = a[6]
 

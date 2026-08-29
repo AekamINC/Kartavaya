@@ -369,7 +369,7 @@ def _c9_pool(totals=None, rates=None, heads=None, statute=None):
                  "net_of_tax": 2151690, "tax_on_the_bill": 387304.20},
             ],
         },
-        row_by={"FROM staging.ganit_invoices": totals or _totals()},
+        row_by={"FROM public.ganit_invoices": totals or _totals()},
     )
 
 

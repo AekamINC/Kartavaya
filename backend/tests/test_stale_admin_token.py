@@ -105,6 +105,16 @@ def test_is_org_admin_reads_the_database_not_the_token():
     """
     roles = (pathlib.Path(__file__).resolve().parent.parent / "middleware" / "roles.py").read_text(encoding="utf-8")
     i = roles.index("async def is_org_admin(")
-    body = roles[i:i + 1800]
-    assert "staging.user_roles" in body
-    assert 'user.get("role")' not in body
+    # The whole function, not a fixed 1800 characters. That window stopped
+    # 1,564 characters short of the SELECT and was being satisfied by the
+    # DOCSTRING, which names the table in prose — so the assertion passed
+    # without ever reading the query it exists to pin.
+    end = re.search(r"\n(?:async )?def ", roles[i + 10:])
+    body = roles[i: i + 10 + end.start()] if end else roles[i:]
+    # And the prose is stripped, so only CODE can satisfy it.
+    code = re.sub(r'"""(?:.|\n)*?"""', "", body)
+    code = "\n".join(ln for ln in code.splitlines()
+                     if not ln.strip().startswith("#"))
+    assert "public.user_roles" in code, (
+        "is_org_admin no longer reads public.user_roles in its own SQL")
+    assert 'user.get("role")' not in code

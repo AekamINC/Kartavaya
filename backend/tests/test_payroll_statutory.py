@@ -473,8 +473,8 @@ async def test_the_slab_query_is_scoped_to_the_org(frozen):
     """It is per-org seed data; an unscoped read would show one firm another
     firm's configuration."""
     src = inspect.getsource(brief_professional_tax)
-    assert "FROM staging.pay_professional_tax" in src
-    idx = src.index("FROM staging.pay_professional_tax")
+    assert "FROM public.pay_professional_tax" in src
+    idx = src.index("FROM public.pay_professional_tax")
     assert "org_id = $1::uuid" in src[idx:idx + 260]
 
 

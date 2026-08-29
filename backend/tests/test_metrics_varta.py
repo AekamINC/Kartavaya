@@ -58,7 +58,7 @@ def test_the_batch_passes_the_universal_rules_before_wiring():
     for key in SQL_KEYS:
         m = REGISTRY[key]
         sql, params = m.sql(MetricRequest(org_id=ORG, window=WIN, bucket="month"))
-        assert re.search(r"\bstaging\.", sql), f"{key}: unqualified table"
+        assert re.search(r"\bpublic\.", sql), f"{key}: unqualified table"
         assert "$1::uuid" in sql, f"{key}: org parameter not cast"
         assert params[0] == ORG
         placeholders = {int(n) for n in re.findall(r"\$(\d+)", sql)}
@@ -83,7 +83,7 @@ def test_every_metric_is_outbound_only_and_never_counts_suppressed():
         sql, _ = build(key)
         assert "direction = 'outbound'" in sql, key
         assert "status <> 'suppressed'" in sql, key
-        assert "FROM staging.varta_messages" in sql, key
+        assert "FROM public.varta_messages" in sql, key
 
 
 # ── sends ────────────────────────────────────────────────────────────────────

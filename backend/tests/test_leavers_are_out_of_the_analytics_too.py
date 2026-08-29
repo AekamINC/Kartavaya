@@ -85,7 +85,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What the app's own pool does on every connection (`db.py`), so a statement is
 #: planned the way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. These checks parse the two read surfaces' SQL against "
@@ -98,7 +98,7 @@ SKIP_REASON = (
 #: The guard, as a pattern rather than a literal, so reformatting the SQL does
 #: not fail the test but deleting the guard does. Applied to NORMALISED SQL.
 _GUARD = re.compile(
-    r"AND NOT EXISTS \( SELECT 1 FROM staging\.manav_offboarding x "
+    r"AND NOT EXISTS \( SELECT 1 FROM public\.manav_offboarding x "
     r"WHERE x\.org_id = e\.org_id AND x\.employee_id = e\.id "
     r"AND x\.status <> 'cancelled' AND x\.last_working_day < (?P<bound>[^)]+)\) "
 )
@@ -477,7 +477,7 @@ def test_live_the_histogram_now_totals_the_people_still_on_the_rolls():
 
     async def work(conn):
         orgs = [r["org_id"] for r in await conn.fetch(
-            "SELECT DISTINCT org_id FROM staging.vetana_salary_structures "
+            "SELECT DISTINCT org_id FROM public.vetana_salary_structures "
             " WHERE is_active = TRUE")]
         out = []
         for org in orgs:
@@ -489,12 +489,12 @@ def test_live_the_histogram_now_totals_the_people_still_on_the_rolls():
             # either, and the equality below would be measuring two things.
             leavers = await conn.fetchval(
                 "SELECT COUNT(DISTINCT s.employee_id) "
-                "FROM staging.vetana_salary_structures s "
-                "JOIN staging.manav_employees e ON e.id = s.employee_id "
+                "FROM public.vetana_salary_structures s "
+                "JOIN public.manav_employees e ON e.id = s.employee_id "
                 " AND e.org_id = s.org_id AND e.is_active = TRUE "
                 "WHERE s.org_id = $1::uuid AND s.is_active = TRUE "
                 " AND s.effective_from <= CURRENT_DATE "
-                " AND EXISTS (SELECT 1 FROM staging.manav_offboarding x "
+                " AND EXISTS (SELECT 1 FROM public.manav_offboarding x "
                 "   WHERE x.org_id = e.org_id AND x.employee_id = e.id "
                 "     AND x.status <> 'cancelled' "
                 "     AND x.last_working_day < CURRENT_DATE)", org)
@@ -531,7 +531,7 @@ def test_live_readiness_stops_auditing_people_the_run_will_not_pay():
 
     async def work(conn):
         orgs = [r["org_id"] for r in await conn.fetch(
-            "SELECT DISTINCT org_id FROM staging.manav_employees "
+            "SELECT DISTINCT org_id FROM public.manav_employees "
             " WHERE is_active = TRUE")]
         out = []
         for org in orgs:
@@ -542,7 +542,7 @@ def test_live_readiness_stops_auditing_people_the_run_will_not_pay():
             all_rows = {r["employee_id"] for r in await conn.fetch(before, org, MONTH, 2000)
                         if r["employee_id"] is not None}
             left = {r["employee_id"] for r in await conn.fetch(
-                "SELECT DISTINCT employee_id FROM staging.manav_offboarding "
+                "SELECT DISTINCT employee_id FROM public.manav_offboarding "
                 " WHERE org_id = $1::uuid AND status <> 'cancelled' "
                 "   AND last_working_day < $2::date", org, month_start)}
             out.append((str(org), kept, all_rows, left))

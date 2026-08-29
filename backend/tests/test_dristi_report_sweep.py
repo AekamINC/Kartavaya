@@ -450,9 +450,9 @@ async def test_armed_sweep_is_still_gated_on_the_arming_variable(monkeypatch):
     async def _fetch(q, *a):
         if "FROM public.users" in q:
             return [{"email": "kevalvshah03@gmail.com"}]
-        if "FROM staging.analytics_views" in q:
+        if "FROM public.analytics_views" in q:
             return []
-        if "FROM staging.dristi_scheduled_reports" in q:
+        if "FROM public.dristi_scheduled_reports" in q:
             return [_row()]
         return []
 
@@ -474,7 +474,7 @@ async def test_armed_sweep_is_still_gated_on_the_arming_variable(monkeypatch):
     order = []
 
     async def _fetchval(q, *a):
-        if "UPDATE staging.dristi_scheduled_reports" in q:
+        if "UPDATE public.dristi_scheduled_reports" in q:
             order.append("claim")
             return "11111111-1111-1111-1111-111111111111"
         return 0

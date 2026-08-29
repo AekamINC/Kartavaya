@@ -75,7 +75,7 @@ def pool(monkeypatch):
 def _written(p, verb):
     """The one INSERT into / UPDATE of ganit_vendors, or None if nothing ran."""
     for q, a in p.calls:
-        if q.lstrip().startswith(verb) and "staging.ganit_vendors" in q:
+        if q.lstrip().startswith(verb) and "public.ganit_vendors" in q:
             return q, a
     return None
 

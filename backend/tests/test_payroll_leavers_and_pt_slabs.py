@@ -98,7 +98,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What the app's own pool does on every connection (`db.py`), so a statement is
 #: planned the way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. These checks parse payroll's SQL against the real "
@@ -164,13 +164,13 @@ class _CapturePool:
 
     async def fetchrow(self, sql, *args):
         self._record(sql, args)
-        if "INSERT INTO staging.vetana_payroll_runs" in sql:
+        if "INSERT INTO public.vetana_payroll_runs" in sql:
             return {"id": RUN_ID}
         return None
 
     async def fetch(self, sql, *args):
         self._record(sql, args)
-        if "staging.vetana_salary_structures s" in sql:
+        if "public.vetana_salary_structures s" in sql:
             raise _Stop()
         return []
 
@@ -213,7 +213,7 @@ def norm(sql: str) -> str:
 def structures():
     """The structures statement and its bound parameters, no state column —
     which is the shape that runs in production today."""
-    sql, args = capture().find("staging.vetana_salary_structures s")
+    sql, args = capture().find("public.vetana_salary_structures s")
     return norm(sql), args
 
 
@@ -228,7 +228,7 @@ def test_the_structures_query_excludes_anyone_whose_exit_predates_the_month(stru
     assert "NOT EXISTS" in sql, (
         "the leaver guard is gone; payroll is back to trusting `is_active` "
         "alone, which ten live employees do not clear: %s" % sql)
-    assert "staging.manav_offboarding x" in sql
+    assert "public.manav_offboarding x" in sql
     assert "x.last_working_day < $3::date" in sql, (
         "the guard no longer compares the exit date against the start of the "
         "month being paid: %s" % sql)
@@ -275,7 +275,7 @@ def test_the_guard_is_the_hr_paths_shape_and_not_a_second_one():
     from analytics.metrics import manav as hr
 
     hr_sql = norm(inspect.getsource(hr._headcount_asat))
-    for piece in ("staging.manav_offboarding x",
+    for piece in ("public.manav_offboarding x",
                   "x.org_id = e.org_id AND x.employee_id = e.id",
                   "x.status <> 'cancelled'",
                   "x.last_working_day"):
@@ -284,9 +284,9 @@ def test_the_guard_is_the_hr_paths_shape_and_not_a_second_one():
             "gone). Re-derive the payroll guard from it rather than leaving the "
             "two to drift." % piece)
 
-    payroll_sql, _args = capture().find("staging.vetana_salary_structures s")
+    payroll_sql, _args = capture().find("public.vetana_salary_structures s")
     payroll_sql = norm(payroll_sql)
-    for piece in ("staging.manav_offboarding x",
+    for piece in ("public.manav_offboarding x",
                   "x.org_id = e.org_id AND x.employee_id = e.id",
                   "x.status <> 'cancelled'"):
         assert piece in payroll_sql, piece
@@ -314,13 +314,13 @@ def test_this_query_is_the_only_thing_that_decides_who_gets_a_payslip():
     letting the gap reopen quietly.
     """
     src = inspect.getsource(vetana.process_payroll)
-    assert src.count("INSERT INTO staging.vetana_payslips") == 1, (
+    assert src.count("INSERT INTO public.vetana_payslips") == 1, (
         "payroll writes payslips from more than one place; excluding a leaver "
         "from the structures query no longer excludes them from the run")
 
     loop = "for s in unique_structures:"
     assert src.count(loop) == 1
-    assert src.index("INSERT INTO staging.vetana_payslips") > src.index(loop), (
+    assert src.index("INSERT INTO public.vetana_payslips") > src.index(loop), (
         "the payslip INSERT is no longer inside the loop over the structures")
 
     # …and `unique_structures` is built from the guarded query and nothing else.
@@ -333,9 +333,9 @@ def test_the_guard_is_not_an_inner_join_that_would_drop_everyone_else():
     """A `JOIN manav_offboarding` would pay only the leavers — the inversion of
     the bug, and a payroll run that pays nobody. NOT EXISTS keeps the 98
     employees who have no exit row at all."""
-    sql, _args = capture().find("staging.vetana_salary_structures s")
+    sql, _args = capture().find("public.vetana_salary_structures s")
     sql = norm(sql)
-    assert "JOIN staging.manav_offboarding" not in sql, sql
+    assert "JOIN public.manav_offboarding" not in sql, sql
     assert "NOT EXISTS" in sql
 
 
@@ -570,7 +570,7 @@ def test_the_income_tax_ladders_are_data_and_never_a_literal():
     for gone in ("300000", "700000", "250000", "112500", "140000"):
         assert gone not in src, (
             f"{gone} is back in the statutory function — an income-tax band "
-            f"belongs in staging.pay_income_tax_slabs, read at the run's period "
+            f"belongs in public.pay_income_tax_slabs, read at the run's period "
             f"end. A literal here silently applies one year's law for ever.")
     assert "income_tax.ladder_for" in src and "income_tax.annual_tax" in src, (
         "the ladder is no longer read from the table")
@@ -635,7 +635,7 @@ def test_the_column_name_can_only_ever_come_from_the_allowlist():
     async def _hostile():
         class _P:
             async def fetchval(self, sql, *args):
-                return "salary; DROP TABLE staging.manav_employees"
+                return "salary; DROP TABLE public.manav_employees"
         return await vetana._employee_state_column(_P())
 
     assert asyncio.run(_hostile()) is None
@@ -646,7 +646,7 @@ def test_the_slab_read_is_scoped_to_the_org_that_seeded_it():
     of the nine live rows carries an `org_id`, so the org predicate is what
     keeps them apart."""
     sql = norm(inspect.getsource(vetana._pt_slabs))
-    assert "FROM staging.pay_professional_tax" in sql
+    assert "FROM public.pay_professional_tax" in sql
     assert "org_id = $1::uuid" in sql, sql
     # Exactly ONE organisation is ever named. Asserted as "there is no
     # second org bind" rather than by counting occurrences of
@@ -810,13 +810,13 @@ def test_live_the_state_column_shape_parses_once_the_column_exists():
     async def find_column(conn):
         return await conn.fetchval(
             "SELECT column_name FROM information_schema.columns "
-            " WHERE table_schema='staging' AND table_name='manav_employees' "
+            " WHERE table_schema = ANY(current_schemas(false)) AND table_name='manav_employees' "
             "   AND column_name = ANY($1::text[]) LIMIT 1",
             list(vetana._PT_STATE_COLUMNS))
 
     column = live(find_column)
     if column is None:
-        sql, _args = capture().find("staging.vetana_salary_structures s")
+        sql, _args = capture().find("public.vetana_salary_structures s")
         assert "employee_state" not in sql, (
             "payroll is selecting a state column that does not exist live")
         pytest.skip("manav_employees carries no state column, so the slab read "
@@ -824,7 +824,7 @@ def test_live_the_state_column_shape_parses_once_the_column_exists():
 
     # OUTSIDE any loop: `capture().find()` runs the handler under its own
     # `asyncio.run`, and nothing is running here.
-    sql, _args = capture(state_col=column).find("staging.vetana_salary_structures s")
+    sql, _args = capture(state_col=column).find("public.vetana_salary_structures s")
     assert "employee_state" in sql
 
     async def plan(conn):
@@ -843,11 +843,11 @@ def test_live_the_slab_table_has_the_columns_this_code_names():
                 for r in await conn.fetch(
                     "SELECT column_name, data_type, is_nullable "
                     "  FROM information_schema.columns "
-                    " WHERE table_schema='staging' "
+                    " WHERE table_schema = ANY(current_schemas(false)) "
                     "   AND table_name='pay_professional_tax'")}
 
     cols = live(work)
-    assert cols, "staging.pay_professional_tax does not exist"
+    assert cols, "public.pay_professional_tax does not exist"
     for name in ("org_id", "state_code", "state_name", "slab_from", "slab_to",
                  "monthly_tax", "effective_from"):
         assert name in cols, f"pay_professional_tax has no {name}: {sorted(cols)}"
@@ -865,7 +865,7 @@ def test_live_the_seeded_ladders_still_pay_what_the_fixture_says():
     async def work(conn):
         return [dict(r) for r in await conn.fetch(
             "SELECT state_code, state_name, slab_from, slab_to, monthly_tax, "
-            "       effective_from FROM staging.pay_professional_tax "
+            "       effective_from FROM public.pay_professional_tax "
             " WHERE org_id = $1::uuid", ORG)]
 
     rows = live(work)
@@ -896,7 +896,7 @@ def test_live_the_fix_removes_exactly_the_people_who_had_already_left():
     structure. The assertion is on the PROPERTY, not on 10, so the number
     moving as leavers are properly deactivated does not turn this red.
     """
-    guarded_sql, _args = capture().find("staging.vetana_salary_structures s")
+    guarded_sql, _args = capture().find("public.vetana_salary_structures s")
     unguarded_sql = re.sub(
         r"AND NOT EXISTS \(.*?x\.last_working_day < \$3::date\) ",
         "", norm(guarded_sql))
@@ -905,7 +905,7 @@ def test_live_the_fix_removes_exactly_the_people_who_had_already_left():
 
     async def work(conn):
         orgs = [r["org_id"] for r in await conn.fetch(
-            "SELECT DISTINCT org_id FROM staging.vetana_salary_structures "
+            "SELECT DISTINCT org_id FROM public.vetana_salary_structures "
             " WHERE is_active = TRUE")]
         month_end, month_start = date(2026, 8, 31), date(2026, 8, 1)
         out = []
@@ -915,7 +915,7 @@ def test_live_the_fix_removes_exactly_the_people_who_had_already_left():
             all_rows = {r["employee_id"] for r in await conn.fetch(
                 unguarded_sql, org, month_end)}
             left = {r["employee_id"] for r in await conn.fetch(
-                "SELECT DISTINCT employee_id FROM staging.manav_offboarding "
+                "SELECT DISTINCT employee_id FROM public.manav_offboarding "
                 " WHERE org_id = $1::uuid AND status <> 'cancelled' "
                 "   AND last_working_day < $2::date", org, month_start)}
             out.append((org, kept, all_rows, left))

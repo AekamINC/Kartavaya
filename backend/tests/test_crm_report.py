@@ -173,7 +173,7 @@ def test_won_value_windows_on_the_won_date_not_the_created_date():
         "inside the period but opened before it drops out of a figure headed "
         "'Won value' — 39% short on a real org when this was last measured."
     )
-    assert "FROM staging.graha_deals WHERE org_id=$1::uuid," not in sql, (
+    assert "FROM public.graha_deals WHERE org_id=$1::uuid," not in sql, (
         "the WHERE clause has regained a `created_at` filter. Filtering the "
         "table on the created date puts every deal won-but-not-opened in the "
         "window beyond reach of the FILTERs that follow."

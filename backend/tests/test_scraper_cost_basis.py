@@ -188,7 +188,7 @@ async def test_the_admin_console_guard_admits_only_platform_roles(
     seen = {}
 
     async def _fetchval(query, *args):
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             seen["roles"] = args[-1]
         return None
 

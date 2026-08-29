@@ -119,7 +119,7 @@ def _rows_written(pool) -> list[dict]:
     rows: list[dict] = []
     for call in list(pool.execute.call_args_list) + list(pool.fetch.call_args_list):
         args = call.args
-        if not args or "INSERT INTO staging.outbound_log" not in str(args[0]):
+        if not args or "INSERT INTO public.outbound_log" not in str(args[0]):
             continue
         columns = args[1:]
         assert len(columns) == len(outbound_log._INSERT_COLUMNS)

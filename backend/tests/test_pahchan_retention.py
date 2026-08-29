@@ -173,7 +173,7 @@ async def test_punch_photo_purge_never_deletes_the_record(pool):
     assert p.execute.await_count == 4
     for call in p.execute.await_args_list:
         sql = call.args[0]
-        assert "UPDATE staging.pahchan_punches" in sql
+        assert "UPDATE public.pahchan_punches" in sql
         assert "photo_key = NULL" in sql
         assert "DELETE" not in sql.upper()
 
@@ -197,7 +197,7 @@ async def test_record_purge_deletes_the_photo_before_the_row(pool, monkeypatch):
     assert out["records_deleted"] == 3
     assert seen == ["k0", "k1", "k2"], "the object goes first, every time"
     for call in p.execute.await_args_list:
-        assert "DELETE FROM staging.pahchan_punches" in call.args[0]
+        assert "DELETE FROM public.pahchan_punches" in call.args[0]
 
 
 @pytest.mark.asyncio

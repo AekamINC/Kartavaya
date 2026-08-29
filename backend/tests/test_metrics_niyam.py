@@ -74,7 +74,7 @@ def test_rules_fired_counts_every_evaluation_with_its_splits():
     "fired" is evaluations — with the refused and dry splits riding along
     rather than a narrower "fired" the tables do not record."""
     sql, params = build("core.niyam_rules_fired")
-    assert "FROM staging.niyam_runs r" in sql
+    assert "FROM public.niyam_runs r" in sql
     assert "COUNT(*) AS value" in sql
     assert "COUNT(*) FILTER (WHERE r.dry_run) AS dry_runs" in sql
     assert "COUNT(*) FILTER (WHERE ref.refused) AS refused_runs" in sql
@@ -96,7 +96,7 @@ def test_actions_scope_through_the_run_because_steps_carry_no_org():
     """niyam_run_steps has NO org_id column (migration 143) — the only honest
     tenant path is run_steps.run_id -> niyam_runs.org_id."""
     sql, params = build("core.niyam_actions")
-    assert "JOIN staging.niyam_runs r ON r.run_id = s.run_id" in sql
+    assert "JOIN public.niyam_runs r ON r.run_id = s.run_id" in sql
     assert "r.org_id = $1::uuid" in sql
     assert "s.org_id" not in sql, "run_steps has no org_id to filter on"
     assert params == [ORG, WIN.start, WIN.end]
@@ -147,7 +147,7 @@ def test_failure_rate_a_failed_run_means_a_failed_step_counted_once():
     one failed run."""
     sql, params = build("core.niyam_failure_rate")
     assert "s.outcome = 'failed' LIMIT 1" in sql
-    assert "FROM staging.niyam_runs r" in sql
+    assert "FROM public.niyam_runs r" in sql
     assert "r.org_id = $1::uuid" in sql
     assert params == [ORG, WIN.start, WIN.end]
 
@@ -172,10 +172,10 @@ def test_never_fired_is_enabled_rules_with_zero_runs():
     anything), and NOT EXISTS against the runs table — zero runs is the
     definition, because every evaluation writes a run."""
     sql, _ = build("core.niyam_never_fired")
-    assert "FROM staging.niyam_rules ru" in sql
+    assert "FROM public.niyam_rules ru" in sql
     assert "ru.enabled" in sql
     assert "NOT EXISTS" in sql
-    assert "staging.niyam_runs r WHERE r.rule_id = ru.rule_id" in sql
+    assert "public.niyam_runs r WHERE r.rule_id = ru.rule_id" in sql
 
 
 def test_never_fired_labels_the_name_and_never_an_id():

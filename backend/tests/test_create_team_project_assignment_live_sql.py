@@ -61,7 +61,7 @@ import pytest
 import server
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. A parameter-type deduction is the PLANNER's opinion and "

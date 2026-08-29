@@ -122,7 +122,7 @@ class _Pool:
 
     async def fetch(self, sql, *a):
         self.seen.append((sql, a))
-        if "staging.statute_calendar" in sql:
+        if "public.statute_calendar" in sql:
             if "obligation_key = $1" in sql:
                 return [r for r in self.statute if r["obligation_key"] == a[0]]
             # the listing form: authority / key_prefix / periodicity / state
@@ -134,7 +134,7 @@ class _Pool:
             if a[2] is not None:
                 rows = [r for r in rows if r["periodicity"] == a[2]]
             return rows
-        if "staging.manav_holidays" in sql:
+        if "public.manav_holidays" in sql:
             return self.holidays
         if "public.approvals" in sql and "count(*)" in sql:
             return self.tallies
@@ -142,17 +142,17 @@ class _Pool:
             return self.approvals
         if "project_assignments" in sql:
             return self.approvers
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return self.escalation
-        if "staging.graha_contacts" in sql:
+        if "public.graha_contacts" in sql:
             return self.leads
-        if "staging.varta_contacts" in sql:
+        if "public.varta_contacts" in sql:
             return self.consent
         return []
 
     async def fetchrow(self, sql, *a):
         self.seen.append((sql, a))
-        if "staging.organisations" in sql:
+        if "public.organisations" in sql:
             return self.org
         return None
 
@@ -474,7 +474,7 @@ async def test_the_org_state_code_is_passed_to_the_statute_lookup(frozen):
     pool = _Pool(statute=[_statute("gst.return.gstr1")], org=_org(state_code="27"))
     await brief_firm_filing_calendar(pool, ORG, month="2026-08")
     listing = [a for sql, a in pool.seen
-               if "staging.statute_calendar" in sql and "obligation_key = $1" not in sql]
+               if "public.statute_calendar" in sql and "obligation_key = $1" not in sql]
     assert listing and listing[0][3] == "27"
 
 
@@ -896,7 +896,7 @@ async def test_every_graha_join_carries_the_org_id(frozen):
     live; pinned here."""
     pool = _Pool(org=_org(), leads=[_lead()])
     await pack_lead_first_touch(pool, ORG)
-    sql = next(s for s, _ in pool.seen if "staging.graha_clients" in s)
+    sql = next(s for s, _ in pool.seen if "public.graha_clients" in s)
     flat = " ".join(sql.split())
     assert "cl.id = c.client_id AND cl.org_id = c.org_id" in flat
 
@@ -928,7 +928,7 @@ async def test_every_query_is_scoped_to_one_tenant(frozen):
 
     for sql, args in pool.seen:
         flat = " ".join(sql.split())
-        if "staging.statute_calendar" in flat:
+        if "public.statute_calendar" in flat:
             continue
         scoped = (
             "org_id = $1::uuid" in flat

@@ -179,8 +179,8 @@ def test_geofence_sql_reads_the_five_columns_verified_live():
     geofence_id and flags are on pahchan_punches; radius_m is on
     pahchan_sites. All read out of information_schema on 2026-08-25."""
     sql, params = build(GEOFENCE)
-    assert "FROM staging.pahchan_punches p" in sql
-    assert "LEFT JOIN staging.pahchan_sites s ON s.id = p.geofence_id" in sql
+    assert "FROM public.pahchan_punches p" in sql
+    assert "LEFT JOIN public.pahchan_sites s ON s.id = p.geofence_id" in sql
     for col in ("p.flags", "p.distance_m", "p.geofence_id", "s.radius_m"):
         assert col in sql, col
     assert params == [ORG, WIN.start, WIN.end]
@@ -188,7 +188,7 @@ def test_geofence_sql_reads_the_five_columns_verified_live():
 
 def test_offline_sql_reads_the_capture_versus_receipt_timeline():
     sql, _ = build(OFFLINE)
-    assert "FROM staging.pahchan_punches p" in sql
+    assert "FROM public.pahchan_punches p" in sql
     assert "p.source = 'offline'" in sql
     assert "p.received_at - p.captured_at <= INTERVAL '72 hours'" in sql
 

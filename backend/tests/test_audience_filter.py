@@ -110,11 +110,11 @@ class _Contacts:
 
     async def fetch(self, q: str, *args):
         flat = re.sub(r"\s+", " ", q)
-        if "staging.prachar_unsubscribes" in flat:
+        if "public.prachar_unsubscribes" in flat:
             self.reads.append("unsubscribes")
             assert args[0] == ORG, "the suppression list is read for the wrong org"
             return [{"email": e} for e in self.unsubscribed]
-        if "staging.graha_contacts" in flat:
+        if "public.graha_contacts" in flat:
             self.reads.append("audience")
             return self._audience(flat, args)
         raise AssertionError(f"unexpected query: {flat[:120]}")
@@ -129,7 +129,7 @@ class _Contacts:
         # it. Answered rather than asserted on: this fake exists to execute the
         # AUDIENCE query, and the footer is somebody else's test.
         flat = re.sub(r"\s+", " ", q)
-        if "staging.organisations" in flat:
+        if "public.organisations" in flat:
             return "Acme Consulting"
         raise AssertionError(f"unexpected fetchval: {flat[:120]}")
 
@@ -530,7 +530,7 @@ def test_the_send_path_resolves_before_it_suppresses():
     order is pinned there too, at the source, rather than assumed to match."""
     src = inspect.getsource(prachar.send_campaign)
     resolve_at = src.index("_resolve_audience(")
-    unsub_at = src.index("staging.prachar_unsubscribes")
+    unsub_at = src.index("public.prachar_unsubscribes")
     assert resolve_at < unsub_at, (
         "send_campaign reads the suppression list before it resolves the "
         "audience; the two counts it returns then describe different sets"

@@ -676,9 +676,9 @@ def wired(po_app, caller, mock_pool):
     # production: by answering its two queries. Routed on SQL TEXT, which is
     # what tells the org-scoped question apart from the platform one.
     async def _fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return None
-        if "staging.user_roles" in query and "org_id=$2::uuid" in query:
+        if "public.user_roles" in query and "org_id=$2::uuid" in query:
             return "org_owner"
         if "settings->'purchase_orders'" in query:
             return None
@@ -1072,7 +1072,7 @@ async def test_the_tax_split_is_derived_from_the_suppliers_state(po_client, wire
         "line_items": [{"description": "x", "qty_ordered": 1, "rate": 100,
                         "gst_rate": 18}]})
     insert = next(c for c in wired.acquire().fetchrow.call_args_list
-                  if "INSERT INTO staging.ganit_purchase_orders" in c[0][0])
+                  if "INSERT INTO public.ganit_purchase_orders" in c[0][0])
     args = insert[0]
     assert args[9] is True                      # is_igst, derived not taken
     assert args[8] == "24"                      # place of supply
@@ -1099,7 +1099,7 @@ async def test_submitting_with_no_matching_rule_issues_immediately(po_client, wi
 @pytest.mark.anyio
 async def test_submitting_a_matching_order_waits_for_approval(po_client, wired):
     async def _fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return None
         if "settings->'purchase_orders'" in query:
             return {"approval_required": True, "rules": [
@@ -1290,7 +1290,7 @@ async def test_late_suppliers_reports_days_late_and_a_way_to_ring_them():
     them. The vendor id goes in the href and nowhere else."""
     expected = date.today() - timedelta(days=9)
     pool = _SkillPool(
-        {"FROM staging.ganit_purchase_orders po": [{
+        {"FROM public.ganit_purchase_orders po": [{
             "id": PO_ID, "po_number": "PO-2026-0001", "expected_date": expected,
             "total": 5000, "currency": "INR", "vendor_id": VENDOR_ID,
             "vendor": "Acme Supplies", "vendor_email": "sales@acme.example",
@@ -1314,7 +1314,7 @@ async def test_a_fully_received_order_past_its_date_is_not_a_late_supplier():
     """Every line arrived; the order simply has not been closed yet. That is
     bookkeeping tidiness, and reporting it trains the firm to ignore the list."""
     pool = _SkillPool(
-        {"FROM staging.ganit_purchase_orders po": [{
+        {"FROM public.ganit_purchase_orders po": [{
             "id": PO_ID, "po_number": "PO-2026-0002",
             "expected_date": date.today() - timedelta(days=30),
             "total": 5000, "currency": "INR", "vendor_id": VENDOR_ID,
@@ -1351,7 +1351,7 @@ async def test_194q_can_never_report_checked():
     """Whether the section applies at all turns on the firm's own turnover
     EXCLUDING GST — a figure this product does not hold. The honest verdict on
     applicability is permanently that it could not be checked."""
-    pool = _SkillPool({"FROM staging.ganit_vendors v": []})
+    pool = _SkillPool({"FROM public.ganit_vendors v": []})
     out = await procurement_ops.check_194q_approaching(pool, ORG)
     assert out["verdict"] == "could_not_check"
     assert out["basis"] == "purchase value INCLUDING GST"
@@ -1362,7 +1362,7 @@ async def test_194q_can_never_report_checked():
 async def test_194q_separates_crossed_from_approaching_and_counts_orders_in():
     """Advances count and 194Q bites at payment or credit, whichever is
     earlier — which is why a PO already placed belongs in the projection."""
-    pool = _SkillPool({"FROM staging.ganit_vendors v": [
+    pool = _SkillPool({"FROM public.ganit_vendors v": [
         {"id": VENDOR_ID, "name": "Acme", "tds_section": None,
          "vendor_email": None, "vendor_phone": None,
          "purchased_ytd": 5_500_000, "on_order": 0},

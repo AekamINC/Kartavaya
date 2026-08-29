@@ -165,7 +165,7 @@ class _Conn:
         return _T()
 
     async def fetchval(self, sql, *args):
-        return MSG if "INSERT INTO staging.hub_chat_messages" in sql else None
+        return MSG if "INSERT INTO public.hub_chat_messages" in sql else None
 
     async def execute(self, sql, *args):
         return "OK"
@@ -174,8 +174,8 @@ class _Conn:
 class _ChatPool:
     def __init__(self):
         self.rows = {
-            "FROM staging.hub_chat_sessions": {"client_id": CLIENT},
-            "COUNT(*) FROM staging.hub_chat_messages": 1,
+            "FROM public.hub_chat_sessions": {"client_id": CLIENT},
+            "COUNT(*) FROM public.hub_chat_messages": 1,
             "hub_brand_profiles": None,
         }
 

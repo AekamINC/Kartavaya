@@ -135,7 +135,7 @@ def test_the_founder_is_seated_as_org_owner():
     organisation could ever administer itself."""
     code = _code(admin_orgs.create_org)
     role_insert = re.search(
-        r"INSERT INTO staging\.user_roles.{0,200}", code, re.S,
+        r"INSERT INTO public\.user_roles.{0,200}", code, re.S,
     )
     assert role_insert, "the owner-role insert is no longer recognisable"
     assert "'org_owner'" in role_insert.group(0)
@@ -172,8 +172,8 @@ def test_the_bootstrap_only_raises_an_existing_administrator():
 
 def test_the_bootstrap_never_rewrites_a_grant():
     code = _code(admin_orgs.nominate_org_owner)
-    assert "UPDATE staging.user_roles" not in code
-    assert "DELETE FROM staging.user_roles" not in code
+    assert "UPDATE public.user_roles" not in code
+    assert "DELETE FROM public.user_roles" not in code
     # The org row's owner column is FILLED, never overwritten.
     assert "owner_user_id IS NULL" in code
 

@@ -195,6 +195,6 @@ def test_the_acting_scan_would_catch_a_sender():
     apart.
     """
     sender_like = 'if policy["report_weekly"]:\n    await send_summary(...)\n'
-    store_like = "INSERT INTO staging.pahchan_policy (report_weekly) VALUES ($1)"
+    store_like = "INSERT INTO public.pahchan_policy (report_weekly) VALUES ($1)"
     assert 'if policy["report_weekly"]' in sender_like
     assert 'if policy["report_weekly"]' not in store_like

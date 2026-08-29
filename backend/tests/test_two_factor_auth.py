@@ -53,7 +53,7 @@ async def test_login_not_enrolled_no_totp_table_unaffected(api_client, mock_pool
     today's plain login, exactly like before this feature existed."""
     mock_pool.fetchrow.return_value = admin_user
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": 0,
+        "to_regclass('user_totp')": 0,
     })
     resp = await api_client.post("/api/auth/login", json={
         "email": admin_user["email"], "password": TEST_PASSWORD,
@@ -66,8 +66,8 @@ async def test_login_not_enrolled_no_totp_table_unaffected(api_client, mock_pool
 async def test_login_enrolled_returns_mfa_pending_not_a_session(api_client, mock_pool, admin_user):
     mock_pool.fetchrow.return_value = admin_user
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
-        "SELECT 1 FROM staging.user_totp": 1,
+        "to_regclass('user_totp')": "user_totp",
+        "SELECT 1 FROM public.user_totp": 1,
     })
     resp = await api_client.post("/api/auth/login", json={
         "email": admin_user["email"], "password": TEST_PASSWORD,
@@ -107,8 +107,8 @@ async def test_login_wrong_password_unaffected_by_2fa_check(api_client, mock_poo
 async def test_login_blocked_when_org_requires_2fa_and_user_not_enrolled(api_client, mock_pool, admin_user):
     mock_pool.fetchrow.return_value = admin_user
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
-        "SELECT 1 FROM staging.user_totp": 0,
+        "to_regclass('user_totp')": "user_totp",
+        "SELECT 1 FROM public.user_totp": 0,
         "os.tfa_enforced = TRUE": "Unicode Group",
     })
     resp = await api_client.post("/api/auth/login", json={
@@ -121,8 +121,8 @@ async def test_login_blocked_when_org_requires_2fa_and_user_not_enrolled(api_cli
 async def test_login_not_blocked_when_no_org_requires_2fa(api_client, mock_pool, admin_user):
     mock_pool.fetchrow.return_value = admin_user
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
-        "SELECT 1 FROM staging.user_totp": 0,
+        "to_regclass('user_totp')": "user_totp",
+        "SELECT 1 FROM public.user_totp": 0,
         "os.tfa_enforced = TRUE": None,
     })
     resp = await api_client.post("/api/auth/login", json={
@@ -140,7 +140,7 @@ async def test_verify_2fa_correct_code_completes_login(api_client, mock_pool, ad
     mfa_token = auth_router._create_mfa_pending_token(admin_user["user_id"], remembered=False)
 
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT secret, last_used_step FROM staging.user_totp": _totp_row(secret),
+        "SELECT secret, last_used_step FROM public.user_totp": _totp_row(secret),
         "SELECT * FROM users WHERE user_id=$1": admin_user,
     })
     resp = await api_client.post("/api/auth/verify-2fa", json={
@@ -156,7 +156,7 @@ async def test_verify_2fa_wrong_code_rejected(api_client, mock_pool, admin_user)
     secret = totp_service.generate_secret()
     mfa_token = auth_router._create_mfa_pending_token(admin_user["user_id"], remembered=False)
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT secret, last_used_step FROM staging.user_totp": _totp_row(secret),
+        "SELECT secret, last_used_step FROM public.user_totp": _totp_row(secret),
     })
     resp = await api_client.post("/api/auth/verify-2fa", json={
         "mfa_token": mfa_token, "code": "000000",
@@ -172,7 +172,7 @@ async def test_verify_2fa_replay_rejected(api_client, mock_pool, admin_user):
     mfa_token = auth_router._create_mfa_pending_token(admin_user["user_id"], remembered=False)
     # This code's step was already spent — as if a first verify just ran.
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT secret, last_used_step FROM staging.user_totp": _totp_row(secret, last_used_step=step),
+        "SELECT secret, last_used_step FROM public.user_totp": _totp_row(secret, last_used_step=step),
     })
     resp = await api_client.post("/api/auth/verify-2fa", json={
         "mfa_token": mfa_token, "code": code,
@@ -198,14 +198,14 @@ async def test_verify_2fa_recovery_code_success_and_single_use(api_client, mock_
     used = {"flag": False}
 
     async def fetch_side_effect(query, *args):
-        if "SELECT id, code_hash FROM staging.user_totp_recovery_codes" in query:
+        if "SELECT id, code_hash FROM public.user_totp_recovery_codes" in query:
             if used["flag"]:
                 return []
             return [{"id": "rc_1", "code_hash": code_hash}]
         return []
 
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT secret, last_used_step FROM staging.user_totp": _totp_row(secret),
+        "SELECT secret, last_used_step FROM public.user_totp": _totp_row(secret),
         "SELECT * FROM users WHERE user_id=$1": admin_user,
     })
     mock_pool.fetch.side_effect = fetch_side_effect
@@ -242,7 +242,7 @@ def as_user(app, admin_user):
 
 async def test_2fa_status_not_enrolled(api_client, mock_pool, admin_user, as_user):
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     mock_pool.fetchrow.return_value = None
     resp = await api_client.get("/api/v1/me/2fa")
@@ -252,7 +252,7 @@ async def test_2fa_status_not_enrolled(api_client, mock_pool, admin_user, as_use
 
 async def test_2fa_setup_then_confirm_returns_recovery_codes(api_client, mock_pool, admin_user, as_user):
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     setup_resp = await api_client.post("/api/v1/me/2fa/setup")
     assert setup_resp.status_code == 200
@@ -273,7 +273,7 @@ async def test_2fa_setup_then_confirm_returns_recovery_codes(api_client, mock_po
 
 async def test_2fa_confirm_wrong_code_does_not_enrol(api_client, mock_pool, admin_user, as_user):
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     setup_resp = await api_client.post("/api/v1/me/2fa/setup")
     setup = setup_resp.json()
@@ -289,7 +289,7 @@ async def test_2fa_setup_token_is_refused_by_require_user(api_client, mock_pool,
     this test pass even if the real function's `purpose` check were deleted.
     Exercises the actual `require_user` via a real bearer token instead."""
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     mock_pool.fetchrow.return_value = admin_user
     real_session_token = make_token(admin_user["user_id"])
@@ -305,7 +305,7 @@ async def test_2fa_setup_token_is_refused_by_require_user(api_client, mock_pool,
 
 async def test_2fa_disable_requires_correct_password(api_client, mock_pool, admin_user, as_user):
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     mock_pool.fetchrow.return_value = admin_user  # salt/password_hash for verification
     resp = await api_client.post("/api/v1/me/2fa/disable", json={"password": "WrongPassword!"})
@@ -314,7 +314,7 @@ async def test_2fa_disable_requires_correct_password(api_client, mock_pool, admi
 
 async def test_2fa_disable_blocked_when_org_requires_it(api_client, mock_pool, admin_user, as_user):
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     mock_pool.fetchrow.return_value = admin_user
     mock_pool.fetch.return_value = [{"org_name": "Unicode Group"}]
@@ -327,7 +327,7 @@ async def test_2fa_disable_succeeds_with_correct_password_and_no_org_lock(
     api_client, mock_pool, admin_user, as_user,
 ):
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "to_regclass('staging.user_totp')": "staging.user_totp",
+        "to_regclass('user_totp')": "user_totp",
     })
     mock_pool.fetchrow.return_value = admin_user
     mock_pool.fetch.return_value = []

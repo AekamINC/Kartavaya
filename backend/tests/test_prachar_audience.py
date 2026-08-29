@@ -264,7 +264,7 @@ async def test_the_preview_reads_suppressions_the_way_send_does():
     pool = _FakePool([[]])
     await prachar._audience_preview_body(pool, "org-1", {}, CONTACTS)
     q, args = pool.queries[0]
-    assert "staging.prachar_unsubscribes" in q
+    assert "public.prachar_unsubscribes" in q
     assert "org_id=$1" in q
     assert args == ("org-1",)
 

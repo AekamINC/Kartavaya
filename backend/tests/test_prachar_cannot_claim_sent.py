@@ -155,7 +155,7 @@ def test_a_suppressed_contact_is_not_written_as_sent(label):
 
 def _campaign_updates(src: str) -> list[str]:
     return [c for c in _consts(ast.parse(src))
-            if "UPDATE staging.prachar_campaigns" in c]
+            if "UPDATE public.prachar_campaigns" in c]
 
 
 @pytest.mark.parametrize("label", sorted(PATHS))

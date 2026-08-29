@@ -275,7 +275,7 @@ class _Join:
 
     def __str__(self) -> str:                 # pragma: no cover - messages only
         return (f"{self.file}::{self.func}  "
-                f"JOIN staging.{self.table} {self.alias} ON {self.clause}")
+                f"JOIN public.{self.table} {self.alias} ON {self.clause}")
 
 
 def _scanned_files() -> list[pathlib.Path]:
@@ -295,7 +295,7 @@ def _joins_in(sql: str, file: str = "<literal>",
     found: list[_Join] = []
     for table in _PARTY_TABLES:
         for m in re.finditer(
-                rf"JOIN\s+staging\.{table}\s+(\w+)\s+ON\b", sql, re.I):
+                rf"JOIN\s+public\.{table}\s+(\w+)\s+ON\b", sql, re.I):
             rest = sql[m.end():]
             stop = _NEXT_CLAUSE.search(rest)
             found.append(_Join(file, func, table, m.group(1),
@@ -341,7 +341,7 @@ def _party_joins() -> tuple[list[_Join], list[str]]:
             if not (isinstance(node, ast.Constant)
                     and isinstance(node.value, str)):
                 continue
-            if "JOIN staging." not in node.value:
+            if "JOIN public." not in node.value:
                 continue
             joins.extend(_joins_in(node.value, rel,
                                    owner.get(id(node), "<module>")))
@@ -399,8 +399,8 @@ def test_a_comment_can_neither_fake_nor_hide_a_predicate():
         allowlists.
     """
     faked, = _joins_in(
-        "SELECT cl.name FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        "SELECT cl.name FROM public.graha_deals d "
+        "LEFT JOIN public.graha_clients cl ON cl.id = d.client_id "
         "  -- still owed: cl.org_id = d.org_id\n"
         "WHERE d.org_id = $1::uuid")
     assert not faked.scoped, (
@@ -408,8 +408,8 @@ def test_a_comment_can_neither_fake_nor_hide_a_predicate():
         "sentence about it")
 
     hidden, = _joins_in(
-        "SELECT cl.name FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        "SELECT cl.name FROM public.graha_deals d "
+        "LEFT JOIN public.graha_clients cl ON cl.id = d.client_id "
         "  -- scoped below, which is where the tenancy comes from\n"
         "  AND cl.org_id = d.org_id "
         "WHERE d.org_id = $1::uuid")
@@ -584,7 +584,7 @@ def _select(sql: str):
     async def run():
         conn = await asyncpg.connect(_live_dsn(), statement_cache_size=0)
         try:
-            await conn.execute("SET search_path TO staging, public")
+            await conn.execute("SET search_path TO public")
             return [dict(r) for r in await conn.fetch(sql)]
         finally:
             await conn.close()
@@ -605,7 +605,7 @@ def test_the_party_tables_still_carry_an_org_id(live):
     rows that hold a NULL."""
     rows = _select(
         "SELECT table_name, is_nullable FROM information_schema.columns "
-        "WHERE table_schema = 'staging' AND column_name = 'org_id' "
+        "WHERE table_schema = ANY(current_schemas(false)) AND column_name = 'org_id' "
         "  AND table_name IN ('graha_clients', 'graha_contacts')")
     found = {r["table_name"]: r["is_nullable"] for r in rows}
     assert found == {"graha_clients": "NO", "graha_contacts": "NO"}, found
@@ -628,7 +628,7 @@ def test_no_foreign_key_makes_the_join_predicate_redundant(live):
           JOIN pg_class rel ON rel.oid = c.conrelid
           JOIN pg_class fr  ON fr.oid  = c.confrelid
           JOIN pg_namespace n ON n.oid = rel.relnamespace
-         WHERE n.nspname = 'staging' AND c.contype = 'f'
+         WHERE n.nspname = ANY(current_schemas(false)) AND c.contype = 'f'
            AND fr.relname IN ('graha_clients', 'graha_contacts')
     """)
     assert rows, "no foreign keys to the party tables found at all"
@@ -653,28 +653,28 @@ def test_no_row_points_at_another_organisations_party_row(live):
     """
     rows = _select("""
         SELECT 'graha_deals.client_id' AS edge, count(*) AS foreign_refs FROM (
-            SELECT d.org_id, d.client_id FROM staging.graha_deals d
+            SELECT d.org_id, d.client_id FROM public.graha_deals d
              WHERE d.client_id IS NOT NULL
             EXCEPT
-            SELECT cl.org_id, cl.id FROM staging.graha_clients cl) a
+            SELECT cl.org_id, cl.id FROM public.graha_clients cl) a
         UNION ALL
         SELECT 'graha_deals.contact_id', count(*) FROM (
-            SELECT d.org_id, d.contact_id FROM staging.graha_deals d
+            SELECT d.org_id, d.contact_id FROM public.graha_deals d
              WHERE d.contact_id IS NOT NULL
             EXCEPT
-            SELECT c.org_id, c.id FROM staging.graha_contacts c) b
+            SELECT c.org_id, c.id FROM public.graha_contacts c) b
         UNION ALL
         SELECT 'ganit_invoices.client_id', count(*) FROM (
-            SELECT i.org_id, i.client_id FROM staging.ganit_invoices i
+            SELECT i.org_id, i.client_id FROM public.ganit_invoices i
              WHERE i.client_id IS NOT NULL
             EXCEPT
-            SELECT cl.org_id, cl.id FROM staging.graha_clients cl) c
+            SELECT cl.org_id, cl.id FROM public.graha_clients cl) c
         UNION ALL
         SELECT 'ganit_invoices.contact_id', count(*) FROM (
-            SELECT i.org_id, i.contact_id FROM staging.ganit_invoices i
+            SELECT i.org_id, i.contact_id FROM public.ganit_invoices i
              WHERE i.contact_id IS NOT NULL
             EXCEPT
-            SELECT ct.org_id, ct.id FROM staging.graha_contacts ct) d
+            SELECT ct.org_id, ct.id FROM public.graha_contacts ct) d
     """)
     assert len(rows) == 4, f"the comparison did not run: {rows}"
     leaked = [r for r in rows if r["foreign_refs"]]

@@ -85,7 +85,7 @@ def _wire(mock_pool, *, level="editor", channel=None, membership=None,
 
     async def _fetchrow(sql, *a):
         s = " ".join(str(sql).split())
-        if "FROM staging.samvada_channels" in s:
+        if "FROM public.samvada_channels" in s:
             return channel
         if "samvada_channel_members" in s:
             return membership
@@ -95,11 +95,11 @@ def _wire(mock_pool, *, level="editor", channel=None, membership=None,
 
     async def _fetch(sql, *a):
         s = " ".join(str(sql).split())
-        if "staging.samvada_typing" in s:
+        if "public.samvada_typing" in s:
             return list(typing_rows or [])
-        if "staging.samvada_presence" in s:
+        if "public.samvada_presence" in s:
             return list(presence_rows or [])
-        if "staging.samvada_channels c" in s:
+        if "public.samvada_channels c" in s:
             return list(channel_rows or [])
         return []
 
@@ -238,7 +238,7 @@ async def test_the_heartbeat_is_written_on_every_poll(
     and then everybody looks permanently offline."""
     _wire(mock_pool)
     await api_client.get("/api/v1/messaging/live")
-    hits = _matching(mock_pool, "INSERT INTO staging.samvada_presence", "ON CONFLICT")
+    hits = _matching(mock_pool, "INSERT INTO public.samvada_presence", "ON CONFLICT")
     assert hits, "no presence heartbeat was written"
     sql, args = hits[-1]
     assert "DO UPDATE SET last_seen_at = now()" in sql, (
@@ -257,7 +257,7 @@ async def test_a_hidden_tab_reports_away_rather_than_online(
     left a browser open — which is `@channel` with extra steps."""
     _wire(mock_pool)
     await api_client.get("/api/v1/messaging/live", params={"away": 1})
-    sql, args = _matching(mock_pool, "INSERT INTO staging.samvada_presence")[-1]
+    sql, args = _matching(mock_pool, "INSERT INTO public.samvada_presence")[-1]
     assert "away" in args and "online" not in args
 
 
@@ -272,7 +272,7 @@ async def test_typing_upserts_only_for_a_channel_the_caller_may_read(
         "/api/v1/messaging/live", params={"channel_id": CHANNEL_ID, "typing": 1}
     )
     assert r.status_code == 200, r.text
-    hits = _matching(mock_pool, "INSERT INTO staging.samvada_typing")
+    hits = _matching(mock_pool, "INSERT INTO public.samvada_typing")
     assert hits, "typing=1 wrote no typing row"
     sql, args = hits[-1]
     assert "ON CONFLICT (channel_id, user_id) DO UPDATE SET updated_at = now()" in sql
@@ -287,7 +287,7 @@ async def test_typing_is_not_written_for_a_private_channel_the_caller_is_not_in(
         "/api/v1/messaging/live", params={"channel_id": CHANNEL_ID, "typing": 1}
     )
     assert r.status_code == 200, "a refused channel must not fail the whole poll"
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_typing")
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_typing")
     assert r.json()["typing"] == []
 
 
@@ -301,7 +301,7 @@ async def test_typing_zero_deletes_the_row_rather_than_waiting_for_a_timeout(
     await api_client.get(
         "/api/v1/messaging/live", params={"channel_id": CHANNEL_ID, "typing": 0}
     )
-    hits = _matching(mock_pool, "DELETE FROM staging.samvada_typing", "user_id=$2")
+    hits = _matching(mock_pool, "DELETE FROM public.samvada_typing", "user_id=$2")
     assert hits, "typing=0 left the row in place"
     assert CHANNEL_ID in hits[-1][1] and member_user["user_id"] in hits[-1][1]
 
@@ -322,7 +322,7 @@ async def test_the_poll_sweeps_abandoned_typing_rows_in_the_open_channel(
     await api_client.get(
         "/api/v1/messaging/live", params={"channel_id": CHANNEL_ID, "typing": 1}
     )
-    hits = _matching(mock_pool, "DELETE FROM staging.samvada_typing", "updated_at <")
+    hits = _matching(mock_pool, "DELETE FROM public.samvada_typing", "updated_at <")
     assert hits, "abandoned typing rows are never cleaned up"
     sql, args = hits[-1]
     assert "15 seconds" in sql
@@ -345,7 +345,7 @@ async def test_a_rail_only_poll_does_not_sweep(
     _wire(mock_pool)
     await api_client.get("/api/v1/messaging/live")
     assert not _matching(
-        mock_pool, "DELETE FROM staging.samvada_typing", "updated_at <"
+        mock_pool, "DELETE FROM public.samvada_typing", "updated_at <"
     ), "a poll with no channel open is sweeping the whole table again"
 
 
@@ -363,7 +363,7 @@ async def test_the_typing_list_excludes_the_caller(
     await api_client.get(
         "/api/v1/messaging/live", params={"channel_id": CHANNEL_ID, "typing": 1}
     )
-    hits = _matching(mock_pool, "FROM staging.samvada_typing t")
+    hits = _matching(mock_pool, "FROM public.samvada_typing t")
     assert hits, "no typing list was read"
     sql, args = hits[-1]
     assert re.search(r"t\.user_id (<>|!=) \$\d+", sql), sql
@@ -407,10 +407,10 @@ async def test_the_channel_counts_cover_the_same_channels_as_the_rail(
     rather than vanishing."""
     _wire(mock_pool)
     await api_client.get("/api/v1/messaging/live")
-    hits = _matching(mock_pool, "FROM staging.samvada_channels c")
+    hits = _matching(mock_pool, "FROM public.samvada_channels c")
     assert hits, "no channel counts were read"
     sql, args = hits[-1]
-    assert "LEFT JOIN staging.samvada_channel_members" in sql
+    assert "LEFT JOIN public.samvada_channel_members" in sql
     assert "c.type = 'public' OR cm_me.user_id IS NOT NULL" in sql
     assert "c.org_id = $1::uuid" in sql
     assert TEST_ORG_ID in args
@@ -424,7 +424,7 @@ async def test_your_own_message_is_not_unread(
     have to agree or the badge flickers."""
     _wire(mock_pool)
     await api_client.get("/api/v1/messaging/live")
-    sql, _ = _matching(mock_pool, "FROM staging.samvada_channels c")[-1]
+    sql, _ = _matching(mock_pool, "FROM public.samvada_channels c")[-1]
     assert re.search(r"m\.sender_id (<>|!=) \$\d+", sql), (
         f"the unread count still includes the caller's own messages:\n{sql}"
     )
@@ -438,7 +438,7 @@ async def test_presence_is_derived_in_sql_not_in_python(
     database's `now()`, which is also where `last_seen_at` came from."""
     _wire(mock_pool)
     await api_client.get("/api/v1/messaging/live")
-    hits = _matching(mock_pool, "FROM staging.samvada_presence p")
+    hits = _matching(mock_pool, "FROM public.samvada_presence p")
     assert hits, "presence was never read"
     sql, args = hits[-1]
     assert "now() - interval '70 seconds'" in sql
@@ -486,8 +486,8 @@ async def test_the_poll_degrades_instead_of_500ing_before_the_migration(
         "/api/v1/messaging/live", params={"channel_id": CHANNEL_ID, "typing": 1}
     )
     assert r.status_code == 200, r.text
-    for absent in ("staging.samvada_typing", "staging.samvada_presence",
-                   "staging.samvada_mentions"):
+    for absent in ("public.samvada_typing", "public.samvada_presence",
+                   "public.samvada_mentions"):
         assert not _matching(mock_pool, absent), (
             f"the poll still queries {absent} before 093 has been applied"
         )
@@ -535,7 +535,7 @@ async def test_mute_sets_the_column_and_echoes_the_value(
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True, "muted": True}
 
-    hits = _matching(mock_pool, "UPDATE staging.samvada_channel_members", "muted")
+    hits = _matching(mock_pool, "UPDATE public.samvada_channel_members", "muted")
     assert hits, "nothing wrote the muted column"
     sql, args = hits[-1]
     assert CHANNEL_ID in args and member_user["user_id"] in args and True in args
@@ -552,7 +552,7 @@ async def test_muting_a_public_channel_you_never_joined_creates_the_row(
         f"/api/v1/messaging/channels/{CHANNEL_ID}/mute", json={"muted": True}
     )
     assert r.status_code == 200, r.text
-    hits = _matching(mock_pool, "INSERT INTO staging.samvada_channel_members", "muted")
+    hits = _matching(mock_pool, "INSERT INTO public.samvada_channel_members", "muted")
     assert hits, "no member row was created for the mute"
     assert "ON CONFLICT (channel_id, user_id) DO UPDATE SET muted" in hits[-1][0]
 

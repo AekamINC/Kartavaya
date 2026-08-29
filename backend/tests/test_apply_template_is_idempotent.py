@@ -339,7 +339,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection, so a statement is planned the way it
 #: will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "

@@ -113,14 +113,14 @@ def _set_clause(sql: str, field: str) -> str | None:
 
 def test_an_explicit_null_end_date_is_written_and_that_is_the_resume(pooled):
     """THE FIX. `period_end: null` reaches the column as NULL."""
-    pool = pooled([("UPDATE staging.client_service_lines", {"id": LINE})])
+    pool = pooled([("UPDATE public.client_service_lines", {"id": LINE})])
     body = client_billing.ServiceLineUpdate.model_validate(
         {"description": "Retainer", "amount": 48000,
          "period_end": None, "auto_invoice": False})
     _run(client_billing.update_service_line(
         line_id=LINE, body=body, user=USER, org_id=ORG))
 
-    sql, args = pool.one("UPDATE staging.client_service_lines")
+    sql, args = pool.one("UPDATE public.client_service_lines")
     clause = _set_clause(sql, "period_end")
     assert clause is not None, (
         "`period_end` is missing from the SET list, so clearing the end date is "
@@ -144,12 +144,12 @@ def test_an_omitted_end_date_is_still_left_alone(pooled):
     A fix that wrote NULL for every absent key would erase an end date on any
     PATCH that did not mention one — turning a repair into a data-loss bug.
     """
-    pool = pooled([("UPDATE staging.client_service_lines", {"id": LINE})])
+    pool = pooled([("UPDATE public.client_service_lines", {"id": LINE})])
     body = client_billing.ServiceLineUpdate.model_validate({"amount": 50000})
     _run(client_billing.update_service_line(
         line_id=LINE, body=body, user=USER, org_id=ORG))
 
-    sql, _ = pool.one("UPDATE staging.client_service_lines")
+    sql, _ = pool.one("UPDATE public.client_service_lines")
     assert _set_clause(sql, "period_end") is None, (
         "a PATCH that never mentioned `period_end` is writing to it anyway, so "
         f"editing the amount would silently reopen an ended line.\n  SQL: {sql}")
@@ -165,8 +165,8 @@ def test_a_null_against_a_not_null_column_is_still_dropped(pooled):
     and turn an empty box into a 500.
     """
     pool = pooled([
-        ("SELECT invoiced FROM staging.client_metered_usage", False),
-        ("UPDATE staging.client_metered_usage", {"id": USAGE}),
+        ("SELECT invoiced FROM public.client_metered_usage", False),
+        ("UPDATE public.client_metered_usage", {"id": USAGE}),
     ])
     body = client_billing.MeteredUsageUpdate.model_validate(
         {"metric": "Hours", "quantity": 4, "unit": "hours", "rate": 1200,
@@ -174,7 +174,7 @@ def test_a_null_against_a_not_null_column_is_still_dropped(pooled):
     _run(client_billing.update_metered_usage(
         usage_id=USAGE, body=body, user=USER, org_id=ORG))
 
-    sql, args = pool.one("UPDATE staging.client_metered_usage")
+    sql, args = pool.one("UPDATE public.client_metered_usage")
     assert _set_clause(sql, "recorded_date") is None, (
         "an explicit null is being written to `recorded_date`, which is NOT "
         f"NULL on the live table — that is a 500, not a cleared field.\n  {sql}")
@@ -193,7 +193,7 @@ def test_a_rate_cards_effective_from_cannot_be_cleared_but_its_to_can(pooled):
     `effective_from` is NOT NULL; `effective_to` is nullable. The form sends
     `x || null` for each, so one PATCH carries both spellings of an empty box.
     """
-    pool = pooled([("UPDATE staging.vendor_rate_cards", {"id": CARD})])
+    pool = pooled([("UPDATE public.vendor_rate_cards", {"id": CARD})])
     body = client_billing.RateCardUpdate.model_validate(
         {"item_category": "Cabling", "rate": 1250, "unit": "hours",
          "effective_from": None, "effective_to": None,
@@ -201,7 +201,7 @@ def test_a_rate_cards_effective_from_cannot_be_cleared_but_its_to_can(pooled):
     _run(client_billing.update_rate_card(
         card_id=CARD, body=body, user=USER, org_id=ORG))
 
-    sql, args = pool.one("UPDATE staging.vendor_rate_cards")
+    sql, args = pool.one("UPDATE public.vendor_rate_cards")
     assert _set_clause(sql, "effective_from") is None, (
         f"a null is being written to the NOT NULL `effective_from`.\n  {sql}")
     for field in ("effective_to", "notes"):
@@ -228,14 +228,14 @@ def test_a_patch_that_says_nothing_at_all_is_still_a_400(pooled):
 
 def test_a_rate_card_nothing_references_is_deleted(pooled):
     pool = pooled([
-        ("SELECT id, item_category FROM staging.vendor_rate_cards",
+        ("SELECT id, item_category FROM public.vendor_rate_cards",
          {"id": CARD, "item_category": "S17 Rate 03"}),
-        ("SELECT sla_metric, period FROM staging.vendor_sla_credits", []),
+        ("SELECT sla_metric, period FROM public.vendor_sla_credits", []),
     ])
     out = _run(client_billing.delete_rate_card(
         card_id=CARD, user=USER, org_id=ORG))
     assert out == {"ok": True}
-    assert pool.any("DELETE FROM staging.vendor_rate_cards"), (
+    assert pool.any("DELETE FROM public.vendor_rate_cards"), (
         "the route answered ok and issued no DELETE")
 
 
@@ -251,9 +251,9 @@ def test_a_rate_card_an_sla_credit_prices_off_is_refused_by_name(pooled):
     so this is the ordinary case rather than the corner.
     """
     pooled([
-        ("SELECT id, item_category FROM staging.vendor_rate_cards",
+        ("SELECT id, item_category FROM public.vendor_rate_cards",
          {"id": CARD, "item_category": "S17 Rate 01"}),
-        ("SELECT sla_metric, period FROM staging.vendor_sla_credits",
+        ("SELECT sla_metric, period FROM public.vendor_sla_credits",
          [{"sla_metric": "S17 SLA 01", "period": "2026-08"}]),
     ])
     with pytest.raises(HTTPException) as exc:
@@ -278,9 +278,9 @@ def test_the_delete_never_leaves_its_org(pooled):
     assumed.
     """
     pool = pooled([
-        ("SELECT id, item_category FROM staging.vendor_rate_cards",
+        ("SELECT id, item_category FROM public.vendor_rate_cards",
          {"id": CARD, "item_category": "S17 Rate 03"}),
-        ("SELECT sla_metric, period FROM staging.vendor_sla_credits", []),
+        ("SELECT sla_metric, period FROM public.vendor_sla_credits", []),
     ])
     _run(client_billing.delete_rate_card(card_id=CARD, user=USER, org_id=ORG))
 
@@ -291,7 +291,7 @@ def test_the_delete_never_leaves_its_org(pooled):
 
 
 def test_a_card_in_another_org_is_a_404_before_anything_else(pooled):
-    pool = pooled([("SELECT id, item_category FROM staging.vendor_rate_cards", None)])
+    pool = pooled([("SELECT id, item_category FROM public.vendor_rate_cards", None)])
     with pytest.raises(HTTPException) as exc:
         _run(client_billing.delete_rate_card(
             card_id=CARD, user=USER, org_id=ORG))
@@ -362,7 +362,7 @@ def test_the_auto_invoice_sweep_uses_the_same_series(pooled):
     assert out["created"] == 1, f"the sweep raised nothing: {out}"
     # The serial is not returned, so it is read off the INSERT that carried it.
     import db
-    sql, args = db._pool.one("INSERT INTO staging.ganit_invoices")
+    sql, args = db._pool.one("INSERT INTO public.ganit_invoices")
     serials = [a for a in args if isinstance(a, str) and "-2026-" in a]
     assert serials and serials[0].startswith("UNX-"), (
         f"the sweep numbered itself {serials}, outside the firm's own series")
@@ -380,14 +380,14 @@ def _new_statements() -> list[str]:
     async def run():
         import db
         cases = [
-            ([("UPDATE staging.client_service_lines", {"id": LINE})],
+            ([("UPDATE public.client_service_lines", {"id": LINE})],
              lambda: client_billing.update_service_line(
                  line_id=LINE,
                  body=client_billing.ServiceLineUpdate.model_validate(
                      {"description": "d", "amount": 1, "period_end": None,
                       "auto_invoice": False}),
                  user=USER, org_id=ORG)),
-            ([("UPDATE staging.client_billing_profiles", {"id": PROFILE})],
+            ([("UPDATE public.client_billing_profiles", {"id": PROFILE})],
              lambda: client_billing.update_profile(
                  profile_id=PROFILE,
                  body=client_billing.ProfileUpdate.model_validate(
@@ -396,15 +396,15 @@ def _new_statements() -> list[str]:
                       "gst_treatment": "registered", "credit_limit": None,
                       "notes": None}),
                  user=USER, org_id=ORG)),
-            ([("SELECT invoiced FROM staging.client_metered_usage", False),
-              ("UPDATE staging.client_metered_usage", {"id": USAGE})],
+            ([("SELECT invoiced FROM public.client_metered_usage", False),
+              ("UPDATE public.client_metered_usage", {"id": USAGE})],
              lambda: client_billing.update_metered_usage(
                  usage_id=USAGE,
                  body=client_billing.MeteredUsageUpdate.model_validate(
                      {"metric": "m", "quantity": 1, "unit": "u", "rate": 1,
                       "recorded_date": "2026-08-01", "source_ref": None}),
                  user=USER, org_id=ORG)),
-            ([("UPDATE staging.vendor_rate_cards", {"id": CARD})],
+            ([("UPDATE public.vendor_rate_cards", {"id": CARD})],
              lambda: client_billing.update_rate_card(
                  card_id=CARD,
                  body=client_billing.RateCardUpdate.model_validate(
@@ -412,9 +412,9 @@ def _new_statements() -> list[str]:
                       "effective_from": "2026-08-01", "effective_to": None,
                       "proration_clause": False, "notes": None}),
                  user=USER, org_id=ORG)),
-            ([("SELECT id, item_category FROM staging.vendor_rate_cards",
+            ([("SELECT id, item_category FROM public.vendor_rate_cards",
                {"id": CARD, "item_category": "c"}),
-              ("SELECT sla_metric, period FROM staging.vendor_sla_credits", [])],
+              ("SELECT sla_metric, period FROM public.vendor_sla_credits", [])],
              lambda: client_billing.delete_rate_card(
                  card_id=CARD, user=USER, org_id=ORG)),
         ]
@@ -464,7 +464,7 @@ def live():
             nullable = await conn.fetch(
                 "SELECT table_name, column_name, is_nullable "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'staging' "
+                "WHERE table_schema = ANY(current_schemas(false)) "
                 "  AND table_name IN ('client_service_lines','vendor_rate_cards',"
                 "                     'client_metered_usage','client_billing_profiles')"
             )

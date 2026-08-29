@@ -244,22 +244,22 @@ def pooled(monkeypatch):
 #: bolted on, it is the default answer when either end of the supply is
 #: unknown. '24' (Gujarat) against a Maharashtra customer makes the fixture
 #: an INTER-state supply, so the happy path exercises the IGST branch.
-SUPPLIER_STATE = ("SELECT state_code FROM staging.organisations", {"state_code": "24"})
+SUPPLIER_STATE = ("SELECT state_code FROM public.organisations", {"state_code": "24"})
 
 SWEEP_SCRIPT = [
     SUPPLIER_STATE,
-    ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
+    ("FROM public.client_service_lines sl", [SERVICE_LINE]),
     # Not billed for this period yet — the sweep proceeds.
-    ("FROM staging.client_invoice_lines", None),
+    ("FROM public.client_invoice_lines", None),
     # `next_doc_number` reads the newest serial; none yet, so it mints 0001.
-    ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ("SELECT invoice_number FROM public.ganit_invoices", None),
 ]
 
 USAGE_SCRIPT = [
     SUPPLIER_STATE,
-    ("FROM staging.client_billing_profiles p", BILLING_PROFILE),
-    ("FROM staging.client_metered_usage ", [USAGE_ROW]),
-    ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ("FROM public.client_billing_profiles p", BILLING_PROFILE),
+    ("FROM public.client_metered_usage ", [USAGE_ROW]),
+    ("SELECT invoice_number FROM public.ganit_invoices", None),
 ]
 
 
@@ -281,13 +281,13 @@ async def _run_usage_invoice(pooled) -> CapturePool:
     return pool
 
 
-INVOICE_INSERT = "INSERT INTO staging.ganit_invoices"
+INVOICE_INSERT = "INSERT INTO public.ganit_invoices"
 
 
 def _column_list(sql: str) -> list[str]:
     """The column names an INSERT names, in order."""
     m = re.search(
-        r"INSERT INTO staging\.ganit_invoices\s*\((.*?)\)\s*VALUES", sql, re.S)
+        r"INSERT INTO public\.ganit_invoices\s*\((.*?)\)\s*VALUES", sql, re.S)
     assert m, f"could not read the column list out of:\n{sql}"
     return [c.strip() for c in m.group(1).split(",")]
 
@@ -311,11 +311,11 @@ async def test_both_invoice_inserts_are_reached(pooled):
     """
     sweep = await _run_sweep(pooled)
     sweep.one(INVOICE_INSERT)
-    sweep.one("INSERT INTO staging.client_invoice_lines")
+    sweep.one("INSERT INTO public.client_invoice_lines")
 
     usage = await _run_usage_invoice(pooled)
     usage.one(INVOICE_INSERT)
-    usage.one("UPDATE staging.client_metered_usage")
+    usage.one("UPDATE public.client_metered_usage")
 
 
 @pytest.mark.parametrize("path", ["sweep", "usage"])
@@ -330,7 +330,7 @@ async def test_neither_insert_names_gst_rate(pooled, path):
                   else _run_usage_invoice(pooled))
     sql, _ = pool.one(INVOICE_INSERT)
     assert "gst_rate" not in _column_list(sql), (
-        "gst_rate is not a column of staging.ganit_invoices — this INSERT "
+        "gst_rate is not a column of public.ganit_invoices — this INSERT "
         "cannot ever have succeeded"
     )
 
@@ -352,7 +352,7 @@ async def test_every_invoice_is_born_with_a_serial(pooled, path):
     )
 
     # It came through the shared allocator, which is the statement the pool saw.
-    assert pool.any("SELECT invoice_number FROM staging.ganit_invoices"), \
+    assert pool.any("SELECT invoice_number FROM public.ganit_invoices"), \
         "the serial was not drawn through utils.next_doc_number"
 
     placeholder = _value_list(sql)[cols.index("invoice_number")]
@@ -479,18 +479,18 @@ async def test_a_line_already_billed_spends_no_serial(pooled):
     sequence, which is the thing a tax auditor asks about. Every skip in the
     sweep therefore happens before the allocator is called."""
     pool = pooled([
-        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
+        ("FROM public.client_service_lines sl", [SERVICE_LINE]),
         # Never invoiced, so the period is the line's first one …
-        ("MAX(period_start) FROM staging.client_invoice_lines", None),
+        ("MAX(period_start) FROM public.client_invoice_lines", None),
         # … and that period is already on an invoice. The duplicate guard is
         # what stops this one; it stands as the concurrency belt now that the
         # period advances from the last invoiced one (two sweeps racing would
         # both read the same MAX).
-        ("SELECT 1 FROM staging.client_invoice_lines", 1),
+        ("SELECT 1 FROM public.client_invoice_lines", 1),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=TODAY)
     assert out == {"date": str(TODAY), "created": 0, "skipped": 1}
-    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices"), \
+    assert not pool.any("SELECT invoice_number FROM public.ganit_invoices"), \
         "a serial was drawn for a line the sweep then skipped — permanent gap"
     assert not pool.any(INVOICE_INSERT)
 
@@ -508,15 +508,15 @@ async def test_a_retainer_invoices_the_next_period_not_the_first_one_again(poole
     """August is billed; a September sweep raises SEPTEMBER."""
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
-        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 8, 1)),
-        ("SELECT 1 FROM staging.client_invoice_lines", None),
-        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+        ("FROM public.client_service_lines sl", [SERVICE_LINE]),
+        ("MAX(period_start) FROM public.client_invoice_lines", date(2026, 8, 1)),
+        ("SELECT 1 FROM public.client_invoice_lines", None),
+        ("SELECT invoice_number FROM public.ganit_invoices", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=date(2026, 9, 2))
     assert out["created"] == 1, "the retainer did not recur"
 
-    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    _, args = pool.one("INSERT INTO public.client_invoice_lines")
     # (invoice_id, line_id, period_start, amount)
     assert args[2] == date(2026, 9, 1), \
         f"billed {args[2]} again instead of advancing a month"
@@ -530,13 +530,13 @@ async def test_two_sweeps_inside_one_period_invoice_once(pooled):
     """
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
-        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 8, 1)),
-        ("SELECT 1 FROM staging.client_invoice_lines", None),
+        ("FROM public.client_service_lines sl", [SERVICE_LINE]),
+        ("MAX(period_start) FROM public.client_invoice_lines", date(2026, 8, 1)),
+        ("SELECT 1 FROM public.client_invoice_lines", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=TODAY)
     assert out == {"date": str(TODAY), "created": 0, "skipped": 1}
-    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices")
+    assert not pool.any("SELECT invoice_number FROM public.ganit_invoices")
     assert not pool.any(INVOICE_INSERT)
 
 
@@ -544,16 +544,16 @@ async def test_a_quarterly_line_advances_a_quarter(pooled):
     """The cadence decides the step — `period_end_for`, not `+1 month`."""
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl",
+        ("FROM public.client_service_lines sl",
          [{**SERVICE_LINE, "cadence": "quarterly", "billing_cycle": "quarterly"}]),
-        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 5, 1)),
-        ("SELECT 1 FROM staging.client_invoice_lines", None),
-        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+        ("MAX(period_start) FROM public.client_invoice_lines", date(2026, 5, 1)),
+        ("SELECT 1 FROM public.client_invoice_lines", None),
+        ("SELECT invoice_number FROM public.ganit_invoices", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 25))
     assert out["created"] == 1
 
-    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    _, args = pool.one("INSERT INTO public.client_invoice_lines")
     assert args[2] == date(2026, 8, 1)
 
 
@@ -566,18 +566,18 @@ async def test_invoice_from_is_a_floor_on_a_line_with_no_history(pooled):
     """
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl",
+        ("FROM public.client_service_lines sl",
          [{**SERVICE_LINE,
            "period_start": date(2026, 4, 1),
            "invoice_from": date(2026, 8, 1)}]),
-        ("MAX(period_start) FROM staging.client_invoice_lines", None),
-        ("SELECT 1 FROM staging.client_invoice_lines", None),
-        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+        ("MAX(period_start) FROM public.client_invoice_lines", None),
+        ("SELECT 1 FROM public.client_invoice_lines", None),
+        ("SELECT invoice_number FROM public.ganit_invoices", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 26))
     assert out["created"] == 1
 
-    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    _, args = pool.one("INSERT INTO public.client_invoice_lines")
     assert args[2] == date(2026, 8, 1), \
         f"back-billed {args[2]} — the floor did not hold"
 
@@ -591,18 +591,18 @@ async def test_history_beats_the_floor(pooled):
     """
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl",
+        ("FROM public.client_service_lines sl",
          [{**SERVICE_LINE,
            "period_start": date(2026, 4, 1),
            "invoice_from": date(2026, 8, 1)}]),
-        ("MAX(period_start) FROM staging.client_invoice_lines", date(2026, 7, 1)),
-        ("SELECT 1 FROM staging.client_invoice_lines", None),
-        ("SELECT invoice_number FROM staging.ganit_invoices", None),
+        ("MAX(period_start) FROM public.client_invoice_lines", date(2026, 7, 1)),
+        ("SELECT 1 FROM public.client_invoice_lines", None),
+        ("SELECT invoice_number FROM public.ganit_invoices", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 26))
     assert out["created"] == 1
 
-    _, args = pool.one("INSERT INTO staging.client_invoice_lines")
+    _, args = pool.one("INSERT INTO public.client_invoice_lines")
     assert args[2] == date(2026, 8, 1)
 
 
@@ -611,16 +611,16 @@ async def test_a_floor_in_the_future_raises_nothing_yet(pooled):
     before the serial is drawn, so no gap in the sequence."""
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl",
+        ("FROM public.client_service_lines sl",
          [{**SERVICE_LINE,
            "period_start": date(2026, 4, 1),
            "invoice_from": date(2026, 9, 1)}]),
-        ("MAX(period_start) FROM staging.client_invoice_lines", None),
-        ("SELECT 1 FROM staging.client_invoice_lines", None),
+        ("MAX(period_start) FROM public.client_invoice_lines", None),
+        ("SELECT 1 FROM public.client_invoice_lines", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=date(2026, 8, 26))
     assert out == {"date": "2026-08-26", "created": 0, "skipped": 1}
-    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices")
+    assert not pool.any("SELECT invoice_number FROM public.ganit_invoices")
 
 
 async def test_one_org_can_be_swept_without_touching_another(pooled):
@@ -631,13 +631,13 @@ async def test_one_org_can_be_swept_without_touching_another(pooled):
     await client_billing.sweep_client_auto_invoices(
         today=TODAY, org_id="64e7bea6-6abe-490c-a2a4-27a60c6be916")
 
-    sql, args = pool.one("FROM staging.client_service_lines sl")
+    sql, args = pool.one("FROM public.client_service_lines sl")
     assert "sl.org_id = $2::uuid" in sql
     assert args[1] == "64e7bea6-6abe-490c-a2a4-27a60c6be916"
 
     unscoped = pooled(SWEEP_SCRIPT)
     await client_billing.sweep_client_auto_invoices(today=TODAY)
-    _, args = unscoped.one("FROM staging.client_service_lines sl")
+    _, args = unscoped.one("FROM public.client_service_lines sl")
     assert args[1] is None, "the cron must sweep every org"
 
 
@@ -646,13 +646,13 @@ async def test_a_one_off_never_advances(pooled):
     advancement may make it recur — the MAX is not even read for one."""
     pool = pooled([
         SUPPLIER_STATE,
-        ("FROM staging.client_service_lines sl",
+        ("FROM public.client_service_lines sl",
          [{**SERVICE_LINE, "cadence": "one_off"}]),
-        ("SELECT 1 FROM staging.client_invoice_lines", 1),
+        ("SELECT 1 FROM public.client_invoice_lines", 1),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=TODAY)
     assert out == {"date": str(TODAY), "created": 0, "skipped": 1}
-    assert not pool.any("MAX(period_start) FROM staging.client_invoice_lines")
+    assert not pool.any("MAX(period_start) FROM public.client_invoice_lines")
 
 
 async def test_the_usage_invoice_returns_the_serial(pooled):
@@ -683,7 +683,7 @@ async def test_a_profile_for_another_orgs_client_is_404(pooled):
     """
     pool = pooled([
         # Scoped to THIS org, the client is not found — it is another org's.
-        ("FROM staging.graha_clients", None),
+        ("FROM public.graha_clients", None),
     ])
     with pytest.raises(HTTPException) as exc:
         await client_billing.create_profile(
@@ -692,30 +692,30 @@ async def test_a_profile_for_another_orgs_client_is_404(pooled):
             org_id=ORG,
         )
     assert exc.value.status_code == 404
-    assert not pool.any("INSERT INTO staging.client_billing_profiles"), \
+    assert not pool.any("INSERT INTO public.client_billing_profiles"), \
         "the profile was written anyway"
 
 
 async def test_the_ownership_check_runs_before_the_duplicate_check(pooled):
     """A client this org cannot see is NOT FOUND, whatever else is true of it.
     Answering 409 first would confirm the existence of another org's row."""
-    pool = pooled([("FROM staging.graha_clients", None)])
+    pool = pooled([("FROM public.graha_clients", None)])
     with pytest.raises(HTTPException):
         await client_billing.create_profile(
             body=client_billing.ProfileCreate(client_id=CLIENT),
             user={"user_id": "user_admin001"},
             org_id=ORG,
         )
-    assert not pool.any("SELECT id FROM staging.client_billing_profiles"), \
+    assert not pool.any("SELECT id FROM public.client_billing_profiles"), \
         "the duplicate lookup ran for a client that is not this org's"
 
 
 async def test_the_orgs_own_client_still_creates(pooled):
     """The negative control. The check refuses a foreigner, not everyone."""
     pool = pooled([
-        ("FROM staging.graha_clients", {"id": CLIENT}),
-        ("SELECT id FROM staging.client_billing_profiles", None),
-        ("INSERT INTO staging.client_billing_profiles", {"id": PROFILE}),
+        ("FROM public.graha_clients", {"id": CLIENT}),
+        ("SELECT id FROM public.client_billing_profiles", None),
+        ("INSERT INTO public.client_billing_profiles", {"id": PROFILE}),
     ])
     out = await client_billing.create_profile(
         body=client_billing.ProfileCreate(client_id=CLIENT),
@@ -723,14 +723,14 @@ async def test_the_orgs_own_client_still_creates(pooled):
         org_id=ORG,
     )
     assert out == {"id": PROFILE}
-    assert pool.any("INSERT INTO staging.client_billing_profiles")
+    assert pool.any("INSERT INTO public.client_billing_profiles")
 
 
 async def test_a_second_profile_for_the_same_client_is_still_409(pooled):
     """The duplicate rule survived the new check being put in front of it."""
     pool = pooled([
-        ("FROM staging.graha_clients", {"id": CLIENT}),
-        ("SELECT id FROM staging.client_billing_profiles", PROFILE),
+        ("FROM public.graha_clients", {"id": CLIENT}),
+        ("SELECT id FROM public.client_billing_profiles", PROFILE),
     ])
     with pytest.raises(HTTPException) as exc:
         await client_billing.create_profile(
@@ -790,7 +790,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection. Matched so a statement is planned the
 #: way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "
@@ -862,7 +862,7 @@ def _describe(calls):
             catalogue = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'staging' AND table_name = 'ganit_invoices'"
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name = 'ganit_invoices'"
             )
             return failures, params, [dict(r) for r in catalogue]
         finally:
@@ -924,7 +924,7 @@ def test_every_column_named_exists_and_every_required_one_is_supplied(live):
                 if c["is_nullable"] == "NO" and c["column_default"] is None}
     assert "invoice_number" in required, (
         "the premise of this test changed: invoice_number is no longer NOT "
-        "NULL-without-default on staging.ganit_invoices"
+        "NULL-without-default on public.ganit_invoices"
     )
 
     seen = 0
@@ -934,7 +934,7 @@ def test_every_column_named_exists_and_every_required_one_is_supplied(live):
         seen += 1
         cols = set(_column_list(sql))
         assert not (cols - known), (
-            f"[{path}] names columns staging.ganit_invoices does not have: "
+            f"[{path}] names columns public.ganit_invoices does not have: "
             f"{sorted(cols - known)}")
         assert not (required - cols), (
             f"[{path}] omits NOT NULL columns with no default: "
@@ -1019,15 +1019,15 @@ async def test_the_sweep_skips_a_line_it_cannot_tax_and_spends_no_serial(pooled)
     invoice number for a document it does not write. A serial spent on a
     refused invoice is a permanent gap in the book."""
     pool = pooled([
-        ("SELECT state_code FROM staging.organisations", {"state_code": None}),
-        ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
-        ("FROM staging.client_invoice_lines", None),
+        ("SELECT state_code FROM public.organisations", {"state_code": None}),
+        ("FROM public.client_service_lines sl", [SERVICE_LINE]),
+        ("FROM public.client_invoice_lines", None),
     ])
     out = await client_billing.sweep_client_auto_invoices(today=TODAY)
     assert out["created"] == 0
     assert out["skipped"] == 1
-    assert not pool.any("INSERT INTO staging.ganit_invoices")
-    assert not pool.any("SELECT invoice_number FROM staging.ganit_invoices"), (
+    assert not pool.any("INSERT INTO public.ganit_invoices")
+    assert not pool.any("SELECT invoice_number FROM public.ganit_invoices"), (
         "a serial was drawn for an invoice that was never written")
 
 
@@ -1037,9 +1037,9 @@ async def test_the_usage_route_400s_rather_than_mis_taxing(pooled):
     marking any usage row invoiced — `invoiced = TRUE` is never reset anywhere,
     so a row consumed by a failed call could never be billed again."""
     pool = pooled([
-        ("SELECT state_code FROM staging.organisations", {"state_code": None}),
-        ("FROM staging.client_billing_profiles p", BILLING_PROFILE),
-        ("FROM staging.client_metered_usage ", [USAGE_ROW]),
+        ("SELECT state_code FROM public.organisations", {"state_code": None}),
+        ("FROM public.client_billing_profiles p", BILLING_PROFILE),
+        ("FROM public.client_metered_usage ", [USAGE_ROW]),
     ])
     with pytest.raises(HTTPException) as exc:
         await client_billing.generate_usage_invoice(
@@ -1047,6 +1047,6 @@ async def test_the_usage_route_400s_rather_than_mis_taxing(pooled):
             user={"user_id": "user_admin001"}, org_id=ORG)
     assert exc.value.status_code == 400
     assert "state_code" in str(exc.value.detail)
-    assert not pool.any("INSERT INTO staging.ganit_invoices")
+    assert not pool.any("INSERT INTO public.ganit_invoices")
     assert not pool.any("SET invoiced = TRUE"), (
         "usage rows were consumed by a call that raised")

@@ -101,7 +101,7 @@ def test_the_regularisation_handler_parses_both_of_its_temporal_fields():
     assert "date.fromisoformat(body.for_date)" in src, (
         "request_regularisation no longer parses for_date. It binds to $4::date, "
         "so a str 500s on every call — which is why "
-        "staging.pahchan_regularisations held 0 rows for its entire life."
+        "public.pahchan_regularisations held 0 rows for its entire life."
     )
     assert "datetime.fromisoformat(body.requested_at_time)" in src, (
         "request_regularisation no longer parses requested_at_time. It binds to "

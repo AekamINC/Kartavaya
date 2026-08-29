@@ -124,8 +124,8 @@ _LINE = {"description": "Service", "hsn_code": "998231", "quantity": 1,
 #: The lookups `resolve_order_company` performs, by the fragment that
 #: identifies each. Scripting by fragment rather than call order means a test
 #: cannot pass because the handler happened to ask in the expected sequence.
-_ORG_CHECK = "FROM staging.graha_clients "
-_CONTACT_EMPLOYER = "SELECT client_id::text FROM staging.graha_contacts"
+_ORG_CHECK = "FROM public.graha_clients "
+_CONTACT_EMPLOYER = "SELECT client_id::text FROM public.graha_contacts"
 
 #: Where `client_id` sits in the INSERT's argument tuple. Appended LAST, after
 #: doc_status — $18 is deliberately bound twice (total and balance_due), so
@@ -160,14 +160,14 @@ def rig(monkeypatch):
     monkeypatch.setattr(ganit, "_refuse_final_if_incomplete", _gate_ok)
     monkeypatch.setattr(ganit, "invoice_created", _noop_emitter)
 
-    p.fetchrow_responses = [("INSERT INTO staging.ganit_invoices", _INV_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.ganit_invoices", _INV_ROW)]
     return p
 
 
 def _insert(p):
     """The one INSERT into ganit_invoices, or None if nothing was written."""
     for q, a in p.calls:
-        if "INSERT INTO staging.ganit_invoices" in q:
+        if "INSERT INTO public.ganit_invoices" in q:
             return q, a
     return None
 

@@ -311,7 +311,7 @@ def test_every_client_join_carries_the_org_predicate():
     because a mock pool cannot tell a leaking join from a safe one.
     """
     source = cr._REGISTER_SQL + cr._REGISTER_TOTALS_SQL
-    joins = source.lower().count("join staging.graha_clients")
+    joins = source.lower().count("join public.graha_clients")
     guards = source.lower().count("c.org_id = co.org_id")
     assert joins == 2 and guards == 2, (
         "every join to graha_clients must carry AND c.org_id = co.org_id — the "

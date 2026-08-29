@@ -202,7 +202,7 @@ def test_the_account_count_is_joined_on_the_org_and_not_on_the_client_alone():
     proved the client belongs to the caller; this is the second lock, and
     counts are cheap to leak and impossible to unsee."""
     src = inspect.getsource(hc.social_status)
-    assert "JOIN staging.hub_clients c ON c.id = sa.client_id" in src
+    assert "JOIN public.hub_clients c ON c.id = sa.client_id" in src
     assert "c.org_id=$2::uuid" in src
 
 

@@ -40,7 +40,7 @@ COST_FRAGMENT = "COALESCE(p.gross, 0) + COALESCE(p.pf_employer, 0) + COALESCE(p.
 #: here too, and this metric gets updated WITH it rather than drifting.
 REVENUE_FRAGMENT = "SUM(CASE WHEN invoice_type = 'credit_note' THEN -total ELSE total END)"
 REVENUE_GUARDS = (
-    "FROM staging.ganit_invoices",
+    "FROM public.ganit_invoices",
     "is_active = TRUE AND doc_status <> 'draft'",
     "invoice_date BETWEEN $2::date AND $3::date",
 )
@@ -92,7 +92,7 @@ def test_the_universal_registry_rules_hold_locally():
         m = REGISTRY[key]
         win = WIN if m.grain == "flow" else None
         sql, params = m.sql(MetricRequest(org_id=ORG, window=win, bucket="month"))
-        assert re.search(r"\bstaging\.", sql), f"{key}: unqualified table"
+        assert re.search(r"\bpublic\.", sql), f"{key}: unqualified table"
         assert "$1::uuid" in sql, f"{key}: org parameter not cast"
         assert params[0] == ORG
         placeholders = {int(n) for n in re.findall(r"\$(\d+)", sql)}
@@ -113,10 +113,10 @@ def test_the_universal_registry_rules_hold_locally():
 def test_payroll_cost_is_cost_to_company_from_non_draft_runs():
     sql, params = build("vetana.payroll_cost")
     assert COST_FRAGMENT in sql
-    assert "FROM staging.vetana_payslips p" in sql
+    assert "FROM public.vetana_payslips p" in sql
     # A reverted run drops to 'draft' WITHOUT deleting its payslips, so the
     # payslip row alone cannot be trusted — the run join is the guard.
-    assert "JOIN staging.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id" in sql
+    assert "JOIN public.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id" in sql
     assert "r.status <> 'draft'" in sql
     assert "p.is_active = TRUE" in sql
     assert params == [ORG, WIN.start, WIN.end]
@@ -141,7 +141,7 @@ def test_payroll_cost_department_split_labels_blanks_and_only_appears_when_asked
     # department is a free-text NAME on manav_employees — there is no
     # department_id column to join (the router states this twice).
     assert "COALESCE(NULLIF(e.department, ''), 'Unassigned') AS department" in grouped
-    assert "JOIN staging.manav_employees e ON e.id = p.employee_id AND e.org_id = p.org_id" in grouped
+    assert "JOIN public.manav_employees e ON e.id = p.employee_id AND e.org_id = p.org_id" in grouped
     assert "GROUP BY 1, 2" in grouped
     # An exited employee's payslips still cost money — a flow must keep them.
     assert "e.is_active" not in grouped
@@ -185,7 +185,7 @@ def test_overtime_reads_the_payslip_snapshot_never_rateless_attendance():
     # attendance holds hours with no rate column anywhere — the payslip is
     # the one place overtime COST exists, written at process time.
     assert "manav_attendance" not in sql
-    assert "FROM staging.vetana_payslips p" in sql
+    assert "FROM public.vetana_payslips p" in sql
     assert "r.status <> 'draft'" in sql
     assert params == [ORG, WIN.start, WIN.end]
 
@@ -207,7 +207,7 @@ def test_salary_bands_count_each_employees_current_structure_once():
     # behaviour on real rows are held in
     # test_leavers_are_out_of_the_analytics_too.py; this line is here so a
     # reader of THIS file cannot delete the guard and see only green.
-    assert "staging.manav_offboarding x" in sql, (
+    assert "public.manav_offboarding x" in sql, (
         "the histogram is banding people whose last working day has passed — "
         "see test_leavers_are_out_of_the_analytics_too.py")
     assert params == [ORG]
@@ -277,7 +277,7 @@ def test_payroll_share_is_the_same_single_row_under_every_bucket():
 
 def test_run_status_is_a_stock_of_statuses_binding_only_the_org():
     sql, params = build("vetana.run_status")
-    assert "FROM staging.vetana_payroll_runs r" in sql
+    assert "FROM public.vetana_payroll_runs r" in sql
     assert "GROUP BY r.status" in sql
     assert "MAX(r.month) AS latest_month" in sql
     assert params == [ORG]

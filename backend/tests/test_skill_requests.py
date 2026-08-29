@@ -165,20 +165,20 @@ class FakeRequests:
         async def _fetchrow(query, *args):
             if "to_regclass" in query:
                 return {"ok": self.exists}
-            if "FROM staging.hub_skill_templates" in query:
+            if "FROM public.hub_skill_templates" in query:
                 return {"id": TEMPLATE, "name": template_name}
-            if "SELECT name FROM staging.organisations" in query:
+            if "SELECT name FROM public.organisations" in query:
                 return {"name": "Bharat Textiles"}
-            if "INSERT INTO staging.hub_skill_requests" in query:
+            if "INSERT INTO public.hub_skill_requests" in query:
                 return self._insert(query, args[0], args[1], args[2], args[3])
-            if "SELECT * FROM staging.hub_skill_requests" in query:
+            if "SELECT * FROM public.hub_skill_requests" in query:
                 return self._open(args[0], args[1])
             return None
 
         async def _fetch(query, *args):
-            if "FROM staging.user_roles" in query and "JOIN users" in query:
+            if "FROM public.user_roles" in query and "JOIN users" in query:
                 return contacts
-            if "FROM staging.hub_skill_requests" in query:
+            if "FROM public.hub_skill_requests" in query:
                 return [r for r in self.rows if r["status"] == "open"]
             return []
 
@@ -379,7 +379,7 @@ async def test_a_missing_template_is_404_before_anything_is_written(
     async def _fetchrow(query, *args):
         if "to_regclass" in query:
             return {"ok": True}
-        if "FROM staging.hub_skill_templates" in query:
+        if "FROM public.hub_skill_templates" in query:
             return None
         return None
     mock_pool.fetchrow.side_effect = _fetchrow
@@ -535,7 +535,7 @@ async def test_the_row_survives_a_fan_out_that_fails_outright(
     fake = FakeRequests().install(mock_pool)
 
     async def _fetch_boom(query, *args):
-        if "FROM staging.user_roles" in query:
+        if "FROM public.user_roles" in query:
             raise RuntimeError("the roles table is unreachable")
         return []
     mock_pool.fetch.side_effect = _fetch_boom

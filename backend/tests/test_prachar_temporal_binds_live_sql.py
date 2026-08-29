@@ -89,7 +89,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection. Matched so a statement is planned the
 #: way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This file parses Prachar's temporal binds against the "
@@ -253,20 +253,20 @@ def test_an_unreadable_value_is_a_400_that_quotes_it():
 STATEMENTS: list[tuple[str, str, dict[int, str]]] = [
     (
         "create_campaign",
-        "INSERT INTO staging.prachar_campaigns "
+        "INSERT INTO public.prachar_campaigns "
         "(org_id, name, template_id, subject, body_html, channel, audience_filter, scheduled_at, created_by) "
         "VALUES ($1::uuid,$2,$3::uuid,$4,$5,$6,$7::jsonb,$8::timestamptz,$9) RETURNING *",
         {8: "timestamptz"},
     ),
     (
         "update_campaign:scheduled_at",
-        "UPDATE staging.prachar_campaigns SET scheduled_at=$1::timestamptz, updated_at=NOW() "
+        "UPDATE public.prachar_campaigns SET scheduled_at=$1::timestamptz, updated_at=NOW() "
         "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
         {1: "timestamptz"},
     ),
     (
         "create_event",
-        "INSERT INTO staging.prachar_events "
+        "INSERT INTO public.prachar_events "
         "(org_id, title, description, event_type, location, location_url, "
         "starts_at, ends_at, max_attendees, registration_open, tags, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::timestamptz, "
@@ -275,7 +275,7 @@ STATEMENTS: list[tuple[str, str, dict[int, str]]] = [
     ),
     (
         "update_event:starts_and_ends",
-        "UPDATE staging.prachar_events SET starts_at=$1::timestamptz, ends_at=$2::timestamptz, "
+        "UPDATE public.prachar_events SET starts_at=$1::timestamptz, ends_at=$2::timestamptz, "
         "updated_at=NOW() WHERE id=$3::uuid AND org_id=$4::uuid AND is_active=TRUE RETURNING *",
         {1: "timestamptz", 2: "timestamptz"},
     ),
@@ -299,7 +299,7 @@ def _describe():
             cols = await conn.fetch(
                 "SELECT table_name, column_name, data_type, is_nullable, column_default "
                 "  FROM information_schema.columns "
-                " WHERE table_schema='staging' "
+                " WHERE table_schema = ANY(current_schemas(false)) "
                 "   AND table_name IN ('prachar_campaigns','prachar_events')"
             )
             return failures, inferred, [dict(r) for r in cols]

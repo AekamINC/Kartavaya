@@ -290,7 +290,7 @@ def test_the_query_is_org_scoped_and_date_bounded():
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "
@@ -345,17 +345,17 @@ def _probe():
 
             constraints = [r["conname"] for r in await conn.fetch(
                 "SELECT conname FROM pg_constraint "
-                "WHERE conrelid = 'staging.varta_rate_card'::regclass")]
+                "WHERE conrelid = 'public.varta_rate_card'::regclass")]
 
             rows = [dict(r) for r in await conn.fetch(
                 "SELECT category, rate_per_message, rate_basis, estimate_note, "
                 "       source_url, source_read_on, billed_by, billed_to, "
                 "       org_id IS NULL AS shared "
-                "  FROM staging.varta_rate_card")]
+                "  FROM public.varta_rate_card")]
 
             default = await conn.fetchval(
                 "SELECT column_default FROM information_schema.columns "
-                "WHERE table_schema='staging' AND table_name='varta_rate_card' "
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name='varta_rate_card' "
                 "  AND column_name='rate_basis'")
 
             return plan_error, declared, constraints, rows, default
@@ -367,11 +367,26 @@ def _probe():
 
 @pytest.fixture(scope="module")
 def live():
+    """Skips only when the DATABASE cannot be reached — never when it answers.
+
+    `_probe` casts `'public.varta_rate_card'::regclass`, which raises
+    UndefinedTableError if the relation is absent. Under a blanket
+    `except Exception` that raise was converted into a skip, so a MISSING TABLE
+    turned all eight live tests in this file green-by-absence — including
+    `test_the_routers_sql_plans_on_the_real_schema`, whose entire job is to
+    report that exact condition. Narrowed to connection failures, a reachable
+    database that lacks the table now fails loudly instead.
+    """
+    import asyncpg
+
     if live_dsn() is None:
         pytest.skip(SKIP_REASON)
     try:
         return _probe()
-    except Exception as exc:                                      # noqa: BLE001
+    except (OSError, asyncio.TimeoutError,
+            asyncpg.PostgresConnectionError,
+            asyncpg.InvalidAuthorizationSpecificationError,
+            asyncpg.InvalidCatalogNameError) as exc:
         pytest.skip(f"could not reach the database: {exc}\n\n{SKIP_REASON}")
 
 

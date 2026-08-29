@@ -39,18 +39,18 @@ def _console(mock_pool, caller_role, *, limit=None, seats_used=0, org_rows=None)
     """
     async def fetchval(query, *args):
         q = " ".join(query.split())
-        if "staging.user_roles" in q and "org_id IS NULL" in q and "role_code = ANY" in q:
+        if "public.user_roles" in q and "org_id IS NULL" in q and "role_code = ANY" in q:
             if "COUNT(DISTINCT user_id)" in q:
                 return 2            # never the last god-mode row
             allowed = args[1] if len(args) > 1 else []
             return caller_role if caller_role in allowed else None
         if "COALESCE(o.max_users, p.max_users)" in q:
             return limit
-        if "COUNT(DISTINCT user_id)" in q and "staging.user_roles" in q:
+        if "COUNT(DISTINCT user_id)" in q and "public.user_roles" in q:
             return seats_used
-        if "staging.user_roles" in q and "org_id=$2::uuid" in q:
+        if "public.user_roles" in q and "org_id=$2::uuid" in q:
             return None             # not already in the org
-        if "FROM staging.organisations" in q:
+        if "FROM public.organisations" in q:
             return ORG
         return None
 
@@ -58,9 +58,9 @@ def _console(mock_pool, caller_role, *, limit=None, seats_used=0, org_rows=None)
         q = " ".join(query.split())
         if "FROM users WHERE user_id" in q:
             return {"email": "success+console@simulator.amazonses.com"}
-        if "FROM staging.user_roles WHERE id" in q:
+        if "FROM public.user_roles WHERE id" in q:
             return {"user_id": TARGET, "role_code": "hr_admin"}
-        if "FROM staging.organisations" in q:
+        if "FROM public.organisations" in q:
             return {"id": ORG, "team_id": "team_console"}
         return None
 

@@ -64,7 +64,7 @@ def wire(pool, *, leaver, tasks=(), clients=(), follow_ups=(), access=(), ledger
     that reads like a product bug.
     """
     async def _fetchrow(sql, *args):
-        if "FROM staging.manav_employees e" in sql:
+        if "FROM public.manav_employees e" in sql:
             return leaver
         if "FROM public.users u" in sql:
             return user_by_email
@@ -73,13 +73,13 @@ def wire(pool, *, leaver, tasks=(), clients=(), follow_ups=(), access=(), ledger
     async def _fetch(sql, *args):
         if "FROM public.tasks t" in sql:
             return list(tasks)
-        if "FROM staging.graha_deals d" in sql:
+        if "FROM public.graha_deals d" in sql:
             return list(clients)
-        if "FROM staging.graha_follow_ups f" in sql:
+        if "FROM public.graha_follow_ups f" in sql:
             return list(follow_ups)
-        if "FROM staging.user_roles r" in sql:
+        if "FROM public.user_roles r" in sql:
             return list(access)
-        if "FROM staging.manav_offboarding_custody" in sql:
+        if "FROM public.manav_offboarding_custody" in sql:
             return list(ledger)
         raise AssertionError(f"unexpected fetch: {sql[:80]}")
 
@@ -547,7 +547,7 @@ async def test_record_custody_proves_the_exit_belongs_to_this_org(pool):
     )
 
     sql = pool.fetchrow.call_args[0][0]
-    assert "FROM staging.manav_offboarding o" in sql
+    assert "FROM public.manav_offboarding o" in sql
     assert "o.org_id = $1::uuid" in sql
     assert "o.id = $2::uuid" in sql
     assert "o.employee_id = $3::uuid" in sql
@@ -664,7 +664,7 @@ def test_every_membership_table_is_schema_qualified():
         for table in ("project_assignments", "teams", "tasks", "users"):
             for line in sql.splitlines():
                 if table in line and "FROM" in line or (table in line and "JOIN" in line):
-                    assert f"public.{table}" in line or f"staging.{table}" in line, \
+                    assert f"public.{table}" in line, \
                         f"{name} names {table} without a schema: {line.strip()!r}"
 
 

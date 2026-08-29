@@ -516,7 +516,7 @@ class TestThePolicyRoutes:
 
     async def test_it_reports_unavailable_before_migration_117(self, api_client, mock_pool, as_admin):
         async def fetchval_side(query, *args):
-            if "staging.user_roles" in query and "org_id IS NULL" in query:
+            if "public.user_roles" in query and "org_id IS NULL" in query:
                 return "platform_admin"
             if "information_schema" in query:
                 return None
@@ -530,7 +530,7 @@ class TestThePolicyRoutes:
 
     async def test_it_lists_projects_once_the_column_exists(self, api_client, mock_pool, as_admin):
         async def fetchval_side(query, *args):
-            if "staging.user_roles" in query and "org_id IS NULL" in query:
+            if "public.user_roles" in query and "org_id IS NULL" in query:
                 return "platform_admin"
             if "information_schema" in query:
                 return 1
@@ -548,7 +548,7 @@ class TestThePolicyRoutes:
             self, api_client, mock_pool, as_admin):
         """Not a 500 from a missing column, and not a silent success."""
         async def fetchval_side(query, *args):
-            if "staging.user_roles" in query and "org_id IS NULL" in query:
+            if "public.user_roles" in query and "org_id IS NULL" in query:
                 return "platform_admin"
             return None
         mock_pool.fetchval.side_effect = fetchval_side

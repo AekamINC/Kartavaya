@@ -52,7 +52,7 @@ class _Conn:
         self.parent = parent
 
     async def fetch(self, sql, *args):
-        if "FROM staging.analytics_alerts" in sql:
+        if "FROM public.analytics_alerts" in sql:
             return self.parent.alerts
         # the metric's own SQL — answer whatever the case queued
         return self.parent.metric_rows
@@ -164,7 +164,7 @@ async def test_one_broken_alert_does_not_silence_the_next(emitted):
     orig_fetch = _Conn.fetch
 
     async def flaky(self, sql, *args):
-        if "FROM staging.analytics_alerts" in sql:
+        if "FROM public.analytics_alerts" in sql:
             return self.parent.alerts
         if self.parent.first:
             self.parent.first = False

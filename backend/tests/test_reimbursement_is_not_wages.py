@@ -71,7 +71,7 @@ import routers.vetana as vetana
 _SRC = open(vetana.__file__, encoding="utf-8").read()
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 
 def _capacity_expression() -> str:

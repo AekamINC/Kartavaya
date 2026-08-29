@@ -129,7 +129,7 @@ def test_every_column_the_router_writes_exists_in_the_migration():
 
 def test_the_router_writes_the_table_the_migration_creates():
     src = _ROUTER.read_text(encoding="utf-8")
-    assert "staging.pahchan_notice_acknowledgements" in src
+    assert "public.pahchan_notice_acknowledgements" in src
     # The table the first draft of this feature invented, before 113 was found.
     assert "pahchan_notice_acks" not in src
 

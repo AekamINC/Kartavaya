@@ -287,7 +287,7 @@ def test_the_personal_upsert_names_the_partial_index_and_names_it_twice(pool):
     inserts = [c for c in pool.calls if c[0].startswith("INSERT")]
     assert len(inserts) == 2
     for sql, args in inserts:
-        assert "INSERT INTO staging.user_tab_prefs" in sql
+        assert "INSERT INTO public.user_tab_prefs" in sql
         assert "ON CONFLICT (user_id, module) WHERE user_id IS NOT NULL" in sql
         # PgBouncer turns an untyped array parse into an instant 500 — the
         # credits incident. The cast is part of the contract.
@@ -332,7 +332,7 @@ def test_an_org_admin_writes_the_org_row(pool, as_admin):
                                    user=USER, org_id=ORG))
     assert out["source"] == "org"
     sql, args = pool.calls[0]
-    assert "INSERT INTO staging.user_tab_prefs" in sql
+    assert "INSERT INTO public.user_tab_prefs" in sql
     assert "ON CONFLICT (org_id, module) WHERE user_id IS NULL" in sql
     assert "$3::text[]" in sql
     assert args == [ORG, "ganit", ["invoices", "stats"], "stats"]
@@ -357,7 +357,7 @@ def test_delete_drops_only_the_callers_own_row(pool):
     out = run(tp.delete_my_tab_prefs("ganit", user=USER))
     assert out == {"removed": True, "module": "ganit"}
     sql, args = pool.calls[0]
-    assert sql.startswith("DELETE FROM staging.user_tab_prefs")
+    assert sql.startswith("DELETE FROM public.user_tab_prefs")
     assert "user_id = $1::text AND module = $2::text" in sql
     assert args == [USER["user_id"], "ganit"]
 
@@ -411,4 +411,4 @@ def test_every_statement_is_schema_qualified(pool, as_admin):
     run(tp.delete_my_tab_prefs("ganit", user=USER))
     assert pool.calls, "the sweep must have swept something"
     for sql, _ in pool.calls:
-        assert "staging.user_tab_prefs" in sql
+        assert "public.user_tab_prefs" in sql

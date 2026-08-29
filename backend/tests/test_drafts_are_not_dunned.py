@@ -79,7 +79,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` does on every connection. Matched so a statement is planned the
 #: way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 USER = {"user_id": "user_admin001"}
 ORG = "00000000-0000-0000-0000-0000000000aa"
@@ -122,7 +122,7 @@ class CapturePool:
 
     async def fetchrow(self, sql, *args, **kwargs):
         self._record(sql, args)
-        if "staging.graha_contacts" in sql:
+        if "public.graha_contacts" in sql:
             return {"name": "Khanna Electronics", "company": "Khanna Electronics",
                     "email": "ap@example.invalid", "gstin": None,
                     "designation": "Accounts Payable",
@@ -136,7 +136,7 @@ class CapturePool:
         # The project report 404s on a falsy team id and never reaches its
         # invoice read, so this one lookup gets a truthy answer. Everything
         # else stays 0 — the emptier the answers, the fewer assumptions.
-        if "SELECT team_id FROM staging.organisations" in sql:
+        if "SELECT team_id FROM public.organisations" in sql:
             return "team_001"
         return 0
 
@@ -474,13 +474,17 @@ def _without_guard(sql: str) -> str:
     return out
 
 
-#: The ONE statement in these two routers the live catalogue refuses, named so
-#: it cannot hide inside a general allowance. `documents.py` asks for
-#: `staging.time_entries`; only `public.time_entries` exists. The project
-#: report issues it unconditionally, fifth of five reads, so that route 500s
-#: for every caller — reported, not fixed, because choosing the schema is a
-#: decision, not a typo to guess at.
-KNOWN_UNPLANNABLE = "staging.time_entries"
+#: `documents.py` once asked for `staging.time_entries` when only
+#: `public.time_entries` existed, so the project report 500ed for every caller
+#: it ever had. It now names `public.time_entries` — the table that does exist
+#: — so there is no statement left to exempt, and the parse check below covers
+#: every one of them.
+#:
+#: What replaces that exemption is a COUNT. `assert not failures` is green
+#: against an empty capture, so the number of statements actually described is
+#: the only thing that distinguishes "all eighteen plan" from "nothing was
+#: captured and nothing was checked".
+DESCRIBED_STATEMENTS = 18       # 7 statement + 2 revenue tile + 1 export + 8 project
 
 
 def test_every_captured_statement_plans_against_the_real_catalogue(
@@ -494,24 +498,23 @@ def test_every_captured_statement_plans_against_the_real_catalogue(
     instant 500, is invisible to the offline suite.
     """
     async def go(conn):
-        failures, exempt = [], []
+        failures, seen = [], 0
         for pool in (statement_pool, revenue_pool, export_pool, project_pool):
             for sql in pool.statements:
+                seen += 1
                 try:
                     await conn.prepare(sql)
                 except Exception as exc:                      # noqa: BLE001
-                    line = f"{type(exc).__name__}: {exc}\n    {_norm(sql)[:200]}"
-                    (exempt if KNOWN_UNPLANNABLE in sql else failures).append(line)
-        return failures, exempt
+                    failures.append(
+                        f"{type(exc).__name__}: {exc}\n    {_norm(sql)[:200]}")
+        return failures, seen
 
-    failures, exempt = _live(go)
+    failures, seen = _live(go)
+    assert seen >= DESCRIBED_STATEMENTS, (
+        f"only {seen} statements were described, not {DESCRIBED_STATEMENTS} — "
+        f"the capture rotted and `assert not failures` below proves nothing")
     assert not failures, ("statements the server refuses to plan:\n  "
                           + "\n  ".join(failures))
-    assert exempt, (
-        f"{KNOWN_UNPLANNABLE} now plans against the live catalogue. The project "
-        f"report's missing table has been resolved — delete KNOWN_UNPLANNABLE "
-        f"and this assertion, and let the parse check cover every statement."
-    )
 
 
 def test_live_every_query_binds_the_way_its_route_binds_it(
@@ -538,14 +541,13 @@ def test_live_every_query_binds_the_way_its_route_binds_it(
     read-only SELECT returning zero rows — the bind is the whole point.
     """
     async def go(conn):
-        failures = []
+        failures, seen = [], 0
         for name, pool in (("statement", statement_pool),
                            ("revenue tile", revenue_pool),
                            ("revenue export", export_pool),
                            ("project report", project_pool)):
             for sql, args in pool.calls:
-                if KNOWN_UNPLANNABLE in sql:
-                    continue
+                seen += 1
                 try:
                     await conn.fetch(sql, *args)
                 except Exception as exc:                      # noqa: BLE001
@@ -553,9 +555,12 @@ def test_live_every_query_binds_the_way_its_route_binds_it(
                         f"{name}: {type(exc).__name__}: {exc}"
                         + f"\n    {_norm(sql)[:180]}"
                         + f"\n    args={args!r}")
-        return failures
+        return failures, seen
 
-    failures = _live(go)
+    failures, seen = _live(go)
+    assert seen >= DESCRIBED_STATEMENTS, (
+        f"only {seen} queries were bound, not {DESCRIBED_STATEMENTS} — the "
+        f"capture rotted and `assert not failures` below proves nothing")
     assert not failures, (
         "queries their own route cannot bind:\n  "
         + ("\n  ").join(failures))
@@ -567,7 +572,7 @@ def test_live_the_revenue_tile_drops_real_drafts(revenue_sql):
 
     async def go(conn):
         org = await conn.fetchval(
-            "SELECT org_id FROM staging.ganit_invoices "
+            "SELECT org_id FROM public.ganit_invoices "
             "WHERE COALESCE(doc_status,'') = 'draft' AND is_active = TRUE "
             "  AND invoice_date >= (CURRENT_DATE - INTERVAL '1 year') "
             "GROUP BY org_id ORDER BY COUNT(*) DESC LIMIT 1")
@@ -576,7 +581,7 @@ def test_live_the_revenue_tile_drops_real_drafts(revenue_sql):
                         "the fixture is the live table, and it has moved")
         drafts = await conn.fetchrow(
             "SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0)::float AS amt "
-            "FROM staging.ganit_invoices "
+            "FROM public.ganit_invoices "
             "WHERE org_id = $1 AND COALESCE(doc_status,'') = 'draft' "
             "  AND is_active = TRUE "
             "  AND invoice_date >= (CURRENT_DATE - INTERVAL '1 year')", org)
@@ -587,7 +592,7 @@ def test_live_the_revenue_tile_drops_real_drafts(revenue_sql):
         # What `routers/analytics.py`'s client report would count over the same
         # rows — its guards, verbatim, un-narrowed.
         agreed = await conn.fetchval(
-            "SELECT COALESCE(SUM(total),0)::float FROM staging.ganit_invoices "
+            "SELECT COALESCE(SUM(total),0)::float FROM public.ganit_invoices "
             "WHERE org_id = $1 AND is_active = TRUE AND doc_status <> 'draft' "
             "  AND invoice_date >= (CURRENT_DATE - INTERVAL '1 year')", org)
         return dict(org=org, n=drafts["n"], amt=drafts["amt"],
@@ -625,7 +630,7 @@ def test_live_the_statement_stops_printing_real_drafts(statement_sql):
 
     async def go(conn):
         row = await conn.fetchrow(
-            "SELECT org_id, contact_id FROM staging.ganit_invoices "
+            "SELECT org_id, contact_id FROM public.ganit_invoices "
             "WHERE contact_id IS NOT NULL AND is_active AND cancelled_at IS NULL "
             "  AND COALESCE(doc_status,'') = 'draft' "
             "GROUP BY org_id, contact_id ORDER BY COUNT(*) DESC LIMIT 1")
@@ -635,7 +640,7 @@ def test_live_the_statement_stops_printing_real_drafts(statement_sql):
         org, contact = str(row["org_id"]), str(row["contact_id"])
         draft_numbers = {
             r["invoice_number"] for r in await conn.fetch(
-                "SELECT invoice_number FROM staging.ganit_invoices "
+                "SELECT invoice_number FROM public.ganit_invoices "
                 "WHERE org_id = $1::uuid AND contact_id = $2::uuid AND is_active "
                 "  AND cancelled_at IS NULL AND COALESCE(doc_status,'') = 'draft'",
                 org, contact)}

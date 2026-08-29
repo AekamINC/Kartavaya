@@ -1143,7 +1143,7 @@ async def _reap_abandoned_runs(pool) -> int:
         try:
             rows = await pool.fetch(
                 f"""
-                UPDATE staging.{table}
+                UPDATE public.{table}
                    SET status = 'failed',
                        completed_at = now(),
                        error_message = COALESCE(NULLIF(error_message, ''),

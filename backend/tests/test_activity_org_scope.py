@@ -64,7 +64,7 @@ class Pool:
     async def fetchrow(self, sql, *args):
         flat = " ".join(sql.split())
         self.queries.append((flat, args))
-        if "SELECT org_id FROM staging.user_roles" in flat:
+        if "SELECT org_id FROM public.user_roles" in flat:
             # The planner's choice, modelled as the FIRST row — which for the
             # owner is Aekam Inc, the org they joined first and are not on.
             held = [o for o in self.roles]

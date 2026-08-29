@@ -207,9 +207,9 @@ async def test_create_client_emits_on_the_writes_own_connection(pool, emitted):
     assert kw["row"]["gstin"] == CLIENT_ROW["gstin"]
     assert kw["row"]["created_by"] == ACTOR
 
-    insert = pool.calls[_ledger_index(pool, "INSERT INTO staging.graha_clients")][0]
+    insert = pool.calls[_ledger_index(pool, "INSERT INTO public.graha_clients")][0]
     assert "RETURNING *" in insert, "the emitter is reading a three-column row"
-    assert _ledger_index(pool, "INSERT INTO staging.graha_clients") \
+    assert _ledger_index(pool, "INSERT INTO public.graha_clients") \
         < _ledger_index(pool, "<emit client_created>"), "emitted before the write"
 
     # The widened RETURNING must not leak into the response shape.
@@ -272,9 +272,9 @@ async def test_create_deal_emits_on_the_writes_own_connection(pool, emitted):
     assert kw["row"]["value"] == 50000
     assert kw["row"]["created_by"] == ACTOR
 
-    insert = pool.calls[_ledger_index(pool, "INSERT INTO staging.graha_deals")][0]
+    insert = pool.calls[_ledger_index(pool, "INSERT INTO public.graha_deals")][0]
     assert "RETURNING *" in insert
-    assert _ledger_index(pool, "INSERT INTO staging.graha_deals") \
+    assert _ledger_index(pool, "INSERT INTO public.graha_deals") \
         < _ledger_index(pool, "<emit deal_created>")
 
     assert resp == {"status": "created", "id": DEAL_ROW["id"],
@@ -285,7 +285,7 @@ async def test_create_deal_emits_on_the_writes_own_connection(pool, emitted):
 async def test_create_deal_failed_insert_emits_nothing(pool, emitted):
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        if "INSERT INTO staging.graha_deals" in q:
+        if "INSERT INTO public.graha_deals" in q:
             raise RuntimeError("fk violation")
         return {"id": "p001"}
 
@@ -315,7 +315,7 @@ CONVERTED_ROW = {
 async def test_convert_lead_emits_the_row_as_converted(pool, emitted):
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        if "UPDATE staging.graha_contacts" in q:
+        if "UPDATE public.graha_contacts" in q:
             return dict(CONVERTED_ROW)
         return {"id": str(CONTACT_ID), "contact_type": "lead"}
 
@@ -342,9 +342,9 @@ async def test_convert_lead_emits_the_row_as_converted(pool, emitted):
     check = pool.calls[_ledger_index(pool, "SELECT id, contact_type")][0]
     assert "FOR UPDATE" in check
 
-    update = pool.calls[_ledger_index(pool, "UPDATE staging.graha_contacts")][0]
+    update = pool.calls[_ledger_index(pool, "UPDATE public.graha_contacts")][0]
     assert "RETURNING *" in update
-    assert _ledger_index(pool, "UPDATE staging.graha_contacts") \
+    assert _ledger_index(pool, "UPDATE public.graha_contacts") \
         < _ledger_index(pool, "<emit lead_converted>")
 
     assert resp == {"status": "converted", "contact": CONVERTED_ROW}
@@ -370,5 +370,5 @@ async def test_convert_lead_already_customer_is_400_and_silent(pool, emitted):
         await graha.convert_lead(CONTACT_ID, user={"user_id": ACTOR}, org_id=ORG)
     assert e.value.status_code == 400
     assert emitted == []
-    assert not any("UPDATE staging.graha_contacts" in q for q, _ in pool.calls), \
+    assert not any("UPDATE public.graha_contacts" in q for q, _ in pool.calls), \
         "the refusal wrote anyway"

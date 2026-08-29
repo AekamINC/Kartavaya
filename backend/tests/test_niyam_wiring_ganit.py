@@ -215,7 +215,7 @@ _LINE = {"description": "Service", "hsn_code": "998231", "quantity": 1,
 @pytest.mark.asyncio
 async def test_create_invoice_emits_invoice_created(rig):
     p, em = rig
-    p.fetchrow_responses = [("INSERT INTO staging.ganit_invoices", _INV_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.ganit_invoices", _INV_ROW)]
 
     out = await ganit.create_invoice(
         ganit.InvoiceCreate(invoice_type="tax_invoice", line_items=[ganit.LineItem(**_LINE)]),
@@ -240,7 +240,7 @@ async def test_create_invoice_with_no_lines_emits_nothing(rig):
             user={"user_id": "u1"}, org_id="org1")
     assert exc.value.status_code == 400
     _assert_silent(em, *_EMITTERS)
-    assert not any("INSERT INTO staging.ganit_invoices" in q for q, _ in p.calls), \
+    assert not any("INSERT INTO public.ganit_invoices" in q for q, _ in p.calls), \
         "refused, yet an invoice was written"
 
 
@@ -263,8 +263,8 @@ _QUOTATION = {
 async def test_converting_an_estimate_emits_invoice_created(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("SELECT * FROM staging.ganit_invoices", _QUOTATION),
-        ("INSERT INTO staging.ganit_invoices", _INV_ROW),
+        ("SELECT * FROM public.ganit_invoices", _QUOTATION),
+        ("INSERT INTO public.ganit_invoices", _INV_ROW),
     ]
     await ganit.convert_to_invoice("q1", user={"user_id": "u1"}, org_id="org1")
 
@@ -279,7 +279,7 @@ async def test_converting_an_estimate_emits_invoice_created(rig):
 async def test_converting_an_unaccepted_estimate_emits_nothing(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("SELECT * FROM staging.ganit_invoices",
+        ("SELECT * FROM public.ganit_invoices",
          {**_QUOTATION, "estimate_status": "pending"}),
     ]
     with pytest.raises(HTTPException) as exc:
@@ -302,8 +302,8 @@ _RECURRING = {
 async def test_generating_a_recurring_invoice_emits_invoice_created(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.ganit_recurring", _RECURRING),
-        ("INSERT INTO staging.ganit_invoices", _INV_ROW),
+        ("FROM public.ganit_recurring", _RECURRING),
+        ("INSERT INTO public.ganit_invoices", _INV_ROW),
     ]
     await ganit.generate_recurring_invoice("r1", user={"user_id": "u1"}, org_id="org1")
 
@@ -329,11 +329,11 @@ async def test_a_missing_recurring_profile_emits_nothing(rig):
 async def test_create_invoice_from_deal_emits_invoice_created(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.graha_deals",
+        ("FROM public.graha_deals",
          {"id": "d1", "title": "Big deal", "value": 1000, "contact_id": "ct1",
           "client_id": None}),
         # the "already invoiced?" probe falls through to the default None
-        ("INSERT INTO staging.ganit_invoices", _INV_ROW),
+        ("INSERT INTO public.ganit_invoices", _INV_ROW),
     ]
     out = await ganit.create_invoice_from_deal("d1", user={"user_id": "u1"}, org_id="org1")
 
@@ -350,7 +350,7 @@ async def test_a_deal_already_invoiced_emits_nothing(rig):
     announcing a creation would be a lie."""
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.graha_deals",
+        ("FROM public.graha_deals",
          {"id": "d1", "title": "Big deal", "value": 1000, "contact_id": "ct1",
           "client_id": None}),
         ("WHERE deal_id", {"id": "i0"}),
@@ -372,7 +372,7 @@ async def test_billing_time_entries_emits_invoice_created(rig):
             "employee_name": "A", "hourly_rate": 100,
         }]),
     ]
-    p.fetchrow_responses = [("INSERT INTO staging.ganit_invoices", _INV_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.ganit_invoices", _INV_ROW)]
 
     await ganit.create_invoice_from_time_entries(
         ganit.TimesheetInvoiceCreate(), user={"user_id": "u1"}, org_id="org1")
@@ -405,8 +405,8 @@ def _payment_rig(p, *, total, already_paid, after_row):
     p.fetchrow_responses = [
         ("SELECT total, amount_paid, payment_status",
          {"total": total, "amount_paid": already_paid, "payment_status": "unpaid"}),
-        ("INSERT INTO staging.ganit_payments", _PAY_ROW),
-        ("UPDATE staging.ganit_invoices SET amount_paid", after_row),
+        ("INSERT INTO public.ganit_payments", _PAY_ROW),
+        ("UPDATE public.ganit_invoices SET amount_paid", after_row),
     ]
 
 
@@ -516,7 +516,7 @@ async def test_paying_a_cancelled_invoice_emits_nothing(rig):
             user={"user_id": "u1"}, org_id="org1")
     assert exc.value.status_code == 400
     _assert_silent(em, *_EMITTERS)
-    assert not any("INSERT INTO staging.ganit_payments" in q for q, _ in p.calls), \
+    assert not any("INSERT INTO public.ganit_payments" in q for q, _ in p.calls), \
         "refused, yet a payment was written"
 
 
@@ -524,19 +524,19 @@ async def test_paying_a_cancelled_invoice_emits_nothing(rig):
 
 def _match_rig(p, *, ledger="receipts", invoice_row=None, update_matched=True):
     p.fetchrow_responses = [
-        ("SELECT id FROM staging.ganit_bank_statement_lines", {"id": "l1"}),
+        ("SELECT id FROM public.ganit_bank_statement_lines", {"id": "l1"}),
     ]
     if update_matched:
         # The guarded UPDATE (`... AND is_reconciled=FALSE RETURNING id`)
         # finds its row. Leave this out and the fake answers None — the
         # already-reconciled case.
         p.fetchrow_responses.append(
-            ("UPDATE staging.ganit_bank_statement_lines", {"id": "l1"}))
+            ("UPDATE public.ganit_bank_statement_lines", {"id": "l1"}))
     if invoice_row is not None:
-        p.fetchrow_responses.append(("FROM staging.ganit_invoices i", invoice_row))
+        p.fetchrow_responses.append(("FROM public.ganit_invoices i", invoice_row))
     p.fetchval_responses = [
-        ("FROM staging.ganit_payments", 1 if ledger == "receipts" else None),
-        ("FROM staging.ganit_vendor_payments", 1 if ledger == "vendor" else None),
+        ("FROM public.ganit_payments", 1 if ledger == "receipts" else None),
+        ("FROM public.ganit_vendor_payments", 1 if ledger == "vendor" else None),
         # the double-match probe falls through to the default None
     ]
 
@@ -554,7 +554,7 @@ async def test_reconciling_the_settling_payment_emits_invoice_paid(rig):
     assert len(em["invoice_paid"].calls) == 1
     conn, in_tx, kw = em["invoice_paid"].calls[0]
     _assert_rode_the_write(p, conn, in_tx)
-    assert any("UPDATE staging.ganit_bank_statement_lines" in q for q, _ in conn.calls), \
+    assert any("UPDATE public.ganit_bank_statement_lines" in q for q, _ in conn.calls), \
         "the event must ride the very connection that wrote the match"
     assert kw == {"org_id": "org1", "actor_id": "u1", "invoice_id": "i1",
                   "row": settled, "via": "reconciliation",
@@ -588,7 +588,7 @@ async def test_reconciling_a_vendor_payment_emits_nothing(rig):
     out = await ganit.match_bank_line("l1", "vp1", user={"user_id": "u1"}, org_id="org1")
     assert out["matched_type"] == "vendor_payment"
     _assert_silent(em, *_EMITTERS)
-    assert not any("FROM staging.ganit_invoices i" in q for q, _ in p.calls), \
+    assert not any("FROM public.ganit_invoices i" in q for q, _ in p.calls), \
         "a vendor payment has no invoice to look up"
 
 
@@ -596,13 +596,13 @@ async def test_reconciling_a_vendor_payment_emits_nothing(rig):
 async def test_a_payment_in_neither_ledger_emits_nothing(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("SELECT id FROM staging.ganit_bank_statement_lines", {"id": "l1"}),
+        ("SELECT id FROM public.ganit_bank_statement_lines", {"id": "l1"}),
     ]
     with pytest.raises(HTTPException) as exc:
         await ganit.match_bank_line("l1", "p-gone", user={"user_id": "u1"}, org_id="org1")
     assert exc.value.status_code == 404
     _assert_silent(em, *_EMITTERS)
-    assert not any("UPDATE staging.ganit_bank_statement_lines" in q for q, _ in p.calls), \
+    assert not any("UPDATE public.ganit_bank_statement_lines" in q for q, _ in p.calls), \
         "refused, yet the line was matched"
 
 
@@ -638,16 +638,16 @@ def _import_rig(p, *, amount=59000, ledger="receipts", invoice_row=None):
     p.fetch_responses = [
         # Order matters: both ledger queries name the statement-lines table in
         # their NOT IN subquery, so they must be dispatched before it.
-        ("FROM staging.ganit_payments", cand if ledger == "receipts" else []),
-        ("FROM staging.ganit_vendor_payments", cand if ledger == "vendor" else []),
-        ("FROM staging.ganit_bank_statement_lines",
+        ("FROM public.ganit_payments", cand if ledger == "receipts" else []),
+        ("FROM public.ganit_vendor_payments", cand if ledger == "vendor" else []),
+        ("FROM public.ganit_bank_statement_lines",
          [{"id": "l1", "amount": amount, "statement_date": day, "reference": "UTR1"}]),
     ]
     p.fetchrow_responses = [
-        ("UPDATE staging.ganit_bank_statement_lines", {"id": "l1"}),
+        ("UPDATE public.ganit_bank_statement_lines", {"id": "l1"}),
     ]
     if invoice_row is not None:
-        p.fetchrow_responses.append(("FROM staging.ganit_invoices i", invoice_row))
+        p.fetchrow_responses.append(("FROM public.ganit_invoices i", invoice_row))
     return ganit.BankStatementImport(lines=[
         ganit.BankStatementLine(statement_date="2026-08-01",
                                 description="Receipt", amount=amount),
@@ -671,7 +671,7 @@ async def test_auto_match_that_settles_an_invoice_emits_invoice_paid(rig):
     assert len(em["invoice_paid"].calls) == 1
     conn, in_tx, kw = em["invoice_paid"].calls[0]
     _assert_rode_the_write(p, conn, in_tx)
-    assert any("UPDATE staging.ganit_bank_statement_lines" in q for q, _ in conn.calls), \
+    assert any("UPDATE public.ganit_bank_statement_lines" in q for q, _ in conn.calls), \
         "the event must ride the very connection that wrote the auto-match"
     assert kw == {"org_id": "org1", "actor_id": None, "invoice_id": "i1",
                   "row": settled, "via": "reconciliation", "source": "import",
@@ -707,7 +707,7 @@ async def test_auto_match_choosing_a_vendor_payment_emits_nothing(rig):
 
     assert out["auto_matched"] == 1
     _assert_silent(em, *_EMITTERS)
-    assert not any("FROM staging.ganit_invoices i" in q for q, _ in p.calls), \
+    assert not any("FROM public.ganit_invoices i" in q for q, _ in p.calls), \
         "a vendor payment has no invoice to look up"
 
 
@@ -718,7 +718,7 @@ async def test_cancelling_emits_invoice_cancelled_with_the_written_row(rig):
     p, em = rig
     cancelled = {**_INV_ROW, "payment_status": "cancelled"}
     p.fetchrow_responses = [
-        ("UPDATE staging.ganit_invoices SET payment_status='cancelled'", cancelled),
+        ("UPDATE public.ganit_invoices SET payment_status='cancelled'", cancelled),
     ]
     await ganit.cancel_invoice("i1", user={"user_id": "u1"}, org_id="org1")
 
@@ -758,7 +758,7 @@ def test_no_invoice_insert_path_is_silent():
             continue
         strings = [c.value for c in ast.walk(node)
                    if isinstance(c, ast.Constant) and isinstance(c.value, str)]
-        if not any("INSERT INTO staging.ganit_invoices" in s for s in strings):
+        if not any("INSERT INTO public.ganit_invoices" in s for s in strings):
             continue
         calls = {c.func.id for c in ast.walk(node)
                  if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}

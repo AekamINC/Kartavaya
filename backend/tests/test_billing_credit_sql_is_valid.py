@@ -85,7 +85,7 @@ def test_the_magnitude_column_still_refuses_a_negative():
 # ══════════════════════════════════════════════════════════════════════════════
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the module's SQL against the real "
@@ -189,6 +189,11 @@ def test_every_statement_plans_on_the_real_schema(live):
             await conn.close()
 
     failures, params = asyncio.run(run())
+    # `assert not failures` is green against an EMPTY capture: if `_captured`
+    # stops driving the module, nothing is described, nothing can fail, and
+    # this test reports success about zero statements. Nine today.
+    assert len(calls) >= 9, \
+        f"only {len(calls)} statements were captured, not 9 — the capture rotted"
     assert not failures, "\n\n".join(
         f"{err}\n    {sql}" for sql, err in failures
     )
@@ -217,7 +222,7 @@ def test_the_credit_kind_is_in_the_live_check_constraint(live):
             return await conn.fetch(
                 "SELECT conname, pg_get_constraintdef(oid) AS def "
                 "FROM pg_constraint "
-                "WHERE conrelid = 'staging.org_billing_lines'::regclass "
+                "WHERE conrelid = 'public.org_billing_lines'::regclass "
                 "  AND conname IN ('org_billing_lines_kind_check', "
                 "                  'org_billing_lines_credit_ck')",
             )
@@ -241,7 +246,7 @@ def test_the_amount_column_is_still_non_negative(live):
         try:
             return await conn.fetchval(
                 "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-                "WHERE conrelid = 'staging.org_billing_lines'::regclass "
+                "WHERE conrelid = 'public.org_billing_lines'::regclass "
                 "  AND conname = 'org_billing_lines_amount_check'",
             )
         finally:

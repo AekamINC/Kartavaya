@@ -95,23 +95,23 @@ def wired(mock_pool, monkeypatch):
 
     async def _fetchval(query, *args):
         q = " ".join(query.split())
-        if "FROM staging.hub_clients" in q and "is_internal=TRUE" in q:
+        if "FROM public.hub_clients" in q and "is_internal=TRUE" in q:
             return state["client"]
-        if "INSERT INTO staging.hub_chat_messages" in q and "'assistant'" in q:
+        if "INSERT INTO public.hub_chat_messages" in q and "'assistant'" in q:
             if "answer" in q and not state["answer_column"]:
                 raise asyncpg.UndefinedColumnError("column \"answer\" does not exist")
             state["inserted"].append(("assistant", args))
             return uuid.UUID(MSG)
-        if "INSERT INTO staging.hub_chat_messages" in q and "'user'" in q:
+        if "INSERT INTO public.hub_chat_messages" in q and "'user'" in q:
             state["inserted"].append(("user", args))
             return uuid.UUID(MSG)
         return None
 
     async def _fetchrow(query, *args):
         q = " ".join(query.split())
-        if "FROM staging.hub_chat_sessions" in q and q.startswith("SELECT"):
+        if "FROM public.hub_chat_sessions" in q and q.startswith("SELECT"):
             return state["session"]
-        if "INSERT INTO staging.hub_chat_sessions" in q:
+        if "INSERT INTO public.hub_chat_sessions" in q:
             return {"id": uuid.UUID(SESSION)}
         if "hub_brand_profiles" in q:
             return state["brand"]
@@ -119,7 +119,7 @@ def wired(mock_pool, monkeypatch):
 
     async def _fetch(query, *args):
         q = " ".join(query.split())
-        if "SELECT role, content FROM staging.hub_chat_messages" in q:
+        if "SELECT role, content FROM public.hub_chat_messages" in q:
             return state["history"]
         return []
 

@@ -484,7 +484,7 @@ async def test_the_org_header_reaches_the_visibility_predicate(
         return None
 
     async def fetchrow_side(sql, *args):
-        if "staging.organisations" in sql:
+        if "public.organisations" in sql:
             return {"id": ORG_B}
         return None
 
@@ -521,7 +521,7 @@ def _org_resolving_pool(mock_pool, extra_fetchrow=None, extra_fetch=None):
         return None
 
     async def fetchrow_side(sql, *args):
-        if "staging.organisations" in sql:
+        if "public.organisations" in sql:
             return {"id": ORG_B}
         if extra_fetchrow:
             return await extra_fetchrow(sql, *args)

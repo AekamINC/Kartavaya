@@ -736,7 +736,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection, so a statement is planned the way it
 #: will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 DB_SKIP = (
     "no live database. This half PREPAREs the territory read against the real "
@@ -772,7 +772,7 @@ def described():
             stmt = await conn.prepare(pb.CLAIMED_PINS_SQL)
             columns = await conn.fetch(
                 "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema='staging' AND table_name='graha_territories'")
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name='graha_territories'")
             return len(stmt.get_parameters()), {r["column_name"]: r["data_type"]
                                                 for r in columns}
         finally:

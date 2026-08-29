@@ -26,7 +26,7 @@ import server
 
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the task write-path SQL against the "
@@ -39,7 +39,7 @@ SKIP_REASON = (
 
 #: The ownership predicate, verbatim from `_assert_client_in_org`.
 OWNERSHIP_SQL = (
-    "SELECT id FROM staging.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid"
+    "SELECT id FROM public.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid"
 )
 
 #: The column list and VALUES of the task INSERT, lifted from the handler at
@@ -115,7 +115,7 @@ def test_the_statements_plan_on_the_real_schema(live):
         # may be scoped.
         ("report", "SELECT t.client_id, c.name, count(*) AS tasks, "
                    "COALESCE(SUM(t.estimated_minutes),0) AS minutes "
-                   "FROM tasks t JOIN staging.graha_clients c "
+                   "FROM tasks t JOIN public.graha_clients c "
                    "  ON c.id = t.client_id AND c.org_id = t.org_id "
                    "WHERE t.org_id=$1::uuid AND t.client_id IS NOT NULL "
                    "GROUP BY t.client_id, c.name"),

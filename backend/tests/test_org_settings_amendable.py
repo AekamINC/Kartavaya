@@ -95,13 +95,13 @@ def wired(mock_pool):
     state = {"role": GOD, "updates": [], "row": None}
 
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return state["role"] if state["role"] in allowed else None
         return None
 
     async def fetchrow(query, *args):
-        if "markup_pct" in query and "FROM staging.organisations" in query:
+        if "markup_pct" in query and "FROM public.organisations" in query:
             return state["row"] or {
                 "markup_pct": 0.3, "monthly_credits": 500, "monthly_price": 9999,
                 "max_users": 5, "is_platform_org": False,

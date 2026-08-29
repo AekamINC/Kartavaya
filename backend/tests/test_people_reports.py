@@ -359,7 +359,7 @@ def test_an_unissued_asset_is_still_on_the_register():
     """30 of 100 assets are assigned to nobody. An INNER join would turn a
     100-asset register into a 70-asset one and understate what the firm owns
     by every item in the cupboard."""
-    assert "LEFT JOIN staging.manav_employees e" in pr.ASSET_SQL
+    assert "LEFT JOIN public.manav_employees e" in pr.ASSET_SQL
 
 
 def test_the_employee_master_keeps_deactivated_people():
@@ -495,14 +495,26 @@ def test_every_join_to_a_second_org_owned_table_carries_an_org_predicate(
     so the schema cannot refuse another org's row and the predicate is the
     only guard there is — the `graha_clients` shape this repo found once.
 
-    `public.users` is exempt and is the ONE exemption: it has no org_id
-    column at all, and every key reaching it came out of a row already scoped
-    to $1, so it can only name somebody this org's own data points at.
+    `public.users` is exempt and is the ONE exemption of its kind: it has no
+    org_id column at all, and every key reaching it came out of a row already
+    scoped to $1, so it can only name somebody this org's own data points at.
+
+    The CORE PM relations are exempt for a different, narrower reason: they
+    carry no org_id either and are scoped through the team hop instead, which
+    `test_the_org_hop_for_core_pm_uses_the_text_team_key` below is what checks.
+    Until the schema consolidation this scan read `JOIN staging.…` and skipped
+    them for free, because they have always lived in `public`; now that the
+    tenant tables are in `public` too, the exemption has to be NAMED. It is
+    deliberately a short, closed list: a tenant table added here would silence
+    a real cross-org join.
     """
-    for clause in re.findall(
-            r"JOIN\s+staging\.\w+\s+\w+\s+ON\s+(.*?)(?=\s+(?:LEFT\s+)?JOIN\s"
+    exempt = ("users", "teams", "tasks", "approvals", "time_entries")
+    for table, clause in re.findall(
+            r"JOIN\s+public\.(\w+)\s+\w+\s+ON\s+(.*?)(?=\s+(?:LEFT\s+)?JOIN\s"
             r"|\s+WHERE\s|\s+ORDER\s)", sql):
-        assert "org_id" in clause, (name, clause)
+        if table in exempt:
+            continue
+        assert "org_id" in clause, (name, table, clause)
     # The lateral in the employee master carries its own, inside its WHERE.
     if name == "MASTER_SQL":
         assert "x.employee_id = e.id AND x.org_id = e.org_id" in sql

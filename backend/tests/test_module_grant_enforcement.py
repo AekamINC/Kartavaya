@@ -213,7 +213,7 @@ async def test_a_platform_bypass_is_recorded_as_a_bypass(
         # The membership probe — `SELECT 1`, org-scoped. A bare org_member, so
         # the org-role lookup below it (which asks for org_owner/org_admin) still
         # misses and the platform row is still what admits them.
-        if "SELECT 1 FROM staging.user_roles" in query:
+        if "SELECT 1 FROM public.user_roles" in query:
             probed["membership"] = args[-1]
             return 1
         return None
@@ -346,7 +346,7 @@ def test_the_module_level_gate_reads_the_level_not_just_existence():
     import inspect
     from middleware import module_levels
     src = inspect.getsource(module_levels.held_level)
-    assert "SELECT role FROM staging.org_member_modules" in src
+    assert "SELECT role FROM public.org_member_modules" in src
 
 
 def test_an_unknown_or_legacy_grant_level_reads_as_the_weakest_not_the_strongest():

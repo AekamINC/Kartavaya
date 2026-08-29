@@ -330,7 +330,7 @@ class TestRecordingACertificate:
         """A certificate recorded as `with_client` reads back as unusable
         immediately, rather than looking fine until the next refresh."""
         pool = Pool().when(
-            "INSERT INTO staging.dsc_register",
+            "INSERT INTO public.dsc_register",
             dsc_written(custody_status="with_client", custody_location=None),
         )
         row = await dsc.record_certificate(
@@ -344,24 +344,24 @@ class TestRecordingACertificate:
         assert row["client_name"] == "Sharma Textiles Pvt Ltd"
 
     async def test_the_org_is_the_first_bound_argument(self):
-        pool = Pool().when("INSERT INTO staging.dsc_register", dsc_written())
+        pool = Pool().when("INSERT INTO public.dsc_register", dsc_written())
         await dsc.record_certificate(
             pool, ORG, as_of=TODAY, holder_name="A",
             valid_from=date(2025, 3, 1), valid_to=date(2027, 2, 28),
         )
-        args = pool.args_for("INSERT INTO staging.dsc_register")
+        args = pool.args_for("INSERT INTO public.dsc_register")
         assert args[0] == ORG
 
     async def test_an_absent_client_is_bound_as_null_and_not_as_a_blank(self):
         """`''` reaching a `::uuid` cast is an instant PgBouncer 500. An empty
         form field is exactly how one gets there."""
-        pool = Pool().when("INSERT INTO staging.dsc_register",
+        pool = Pool().when("INSERT INTO public.dsc_register",
                            dsc_written(client_id=None, client_name=None))
         row = await dsc.record_certificate(
             pool, ORG, as_of=TODAY, holder_name="A", client_id="",
             valid_from=date(2025, 3, 1), valid_to=date(2027, 2, 28),
         )
-        assert pool.args_for("INSERT INTO staging.dsc_register")[1] is None
+        assert pool.args_for("INSERT INTO public.dsc_register")[1] is None
         # NULL client means the PRACTICE'S OWN certificate, not "any client".
         assert row["belongs_to_firm"] is True
 
@@ -384,7 +384,7 @@ class TestRecordingACertificate:
 
     async def test_a_one_day_certificate_is_legitimate(self):
         """A re-issue on the day of expiry. The comparison is `<`, not `<=`."""
-        pool = Pool().when("INSERT INTO staging.dsc_register", dsc_written())
+        pool = Pool().when("INSERT INTO public.dsc_register", dsc_written())
         assert await dsc.record_certificate(
             pool, ORG, as_of=TODAY, holder_name="A",
             valid_from=date(2026, 8, 21), valid_to=date(2026, 8, 21),
@@ -422,7 +422,7 @@ class TestRecordingACertificate:
         is held to the same standard. A rejection here gets worked around by
         typing a date that is wrong in a way nothing notices."""
         pool = Pool().when(
-            "INSERT INTO staging.dsc_register",
+            "INSERT INTO public.dsc_register",
             dsc_written(valid_from=date(2025, 3, 1), valid_to=date(2037, 3, 1),
                         serial_number=None),
         )
@@ -436,23 +436,23 @@ class TestRecordingACertificate:
         assert any("serial" in w for w in row["warnings"])
 
     async def test_custody_changed_on_defaults_to_the_write_date(self):
-        pool = Pool().when("INSERT INTO staging.dsc_register", dsc_written())
+        pool = Pool().when("INSERT INTO public.dsc_register", dsc_written())
         await dsc.record_certificate(
             pool, ORG, as_of=TODAY, holder_name="A", custody_status="with_client",
             valid_from=date(2025, 3, 1), valid_to=date(2027, 2, 28),
         )
         # Without a date, `with_client` is undated and nobody can tell a token
         # returned last week from one returned in 2023.
-        assert pool.args_for("INSERT INTO staging.dsc_register")[16] == TODAY
+        assert pool.args_for("INSERT INTO public.dsc_register")[16] == TODAY
 
     async def test_portals_are_deduplicated_and_folded(self):
-        pool = Pool().when("INSERT INTO staging.dsc_register", dsc_written())
+        pool = Pool().when("INSERT INTO public.dsc_register", dsc_written())
         await dsc.record_certificate(
             pool, ORG, as_of=TODAY, holder_name="A",
             valid_from=date(2025, 3, 1), valid_to=date(2027, 2, 28),
             registered_portals=["MCA", "mca", " incometax "],
         )
-        assert pool.args_for("INSERT INTO staging.dsc_register")[19] == [
+        assert pool.args_for("INSERT INTO public.dsc_register")[19] == [
             "mca", "incometax"
         ]
 
@@ -469,7 +469,7 @@ class TestRevokingACertificate:
             .when("SET revoked_on",
                   written if written is not None else
                   dsc_written(revoked_on=date(2026, 6, 1)))
-            .when("FROM staging.dsc_register d",
+            .when("FROM public.dsc_register d",
                   existing if existing is not None else dsc_written())
         )
 
@@ -609,8 +609,8 @@ class TestRecordingASigning:
         exposure invisible."""
         old = TODAY - timedelta(days=90)
         pool = (Pool()
-                .when("staging.udin_window", window_rows())
-                .when("INSERT INTO staging.udin_register",
+                .when("public.udin_window", window_rows())
+                .when("INSERT INTO public.udin_register",
                       udin_written(signed_on=old)))
         row = await udin.record_signing(
             pool, ORG, now=NOW, document_kind="certificate",
@@ -622,7 +622,7 @@ class TestRecordingASigning:
         assert row["status"] == "signed"
 
     async def test_a_signing_dated_tomorrow_is_refused(self):
-        pool = Pool().when("staging.udin_window", window_rows())
+        pool = Pool().when("public.udin_window", window_rows())
         with pytest.raises(udin.UdinError) as exc:
             await udin.record_signing(
                 pool, ORG, now=NOW, document_kind="certificate",
@@ -632,7 +632,7 @@ class TestRecordingASigning:
         assert "future" in str(exc.value)
 
     async def test_the_row_is_born_unnumbered_and_says_so_if_asked_otherwise(self):
-        pool = Pool().when("staging.udin_window", window_rows())
+        pool = Pool().when("public.udin_window", window_rows())
         for kwargs in ({"status": "generated"}, {"udin": "26304576AKTSBN1359"}):
             with pytest.raises(udin.UdinError):
                 await udin.record_signing(
@@ -644,7 +644,7 @@ class TestRecordingASigning:
         assert "'signed'" in udin._INSERT_SIGNING
 
     async def test_neither_a_name_nor_a_client_is_refused(self):
-        pool = Pool().when("staging.udin_window", window_rows())
+        pool = Pool().when("public.udin_window", window_rows())
         with pytest.raises(udin.UdinError) as exc:
             await udin.record_signing(
                 pool, ORG, now=NOW, document_kind="certificate",
@@ -656,10 +656,10 @@ class TestRecordingASigning:
         # In the statement, not in a second round trip — so the snapshot and the
         # tenancy proof are the same read.
         assert "COALESCE(NULLIF(btrim($3::text), '')" in udin._INSERT_SIGNING
-        assert "staging.graha_clients c" in udin._INSERT_SIGNING
+        assert "public.graha_clients c" in udin._INSERT_SIGNING
 
     async def test_an_unknown_document_kind_lists_icais_three(self):
-        pool = Pool().when("staging.udin_window", window_rows())
+        pool = Pool().when("public.udin_window", window_rows())
         with pytest.raises(udin.UdinError) as exc:
             await udin.record_signing(
                 pool, ORG, now=NOW, document_kind="tax_return",
@@ -669,7 +669,7 @@ class TestRecordingASigning:
         assert "gst_or_tax_audit_report" in str(exc.value)
 
     async def test_a_wrong_looking_financial_year_is_refused_in_words(self):
-        pool = Pool().when("staging.udin_window", window_rows())
+        pool = Pool().when("public.udin_window", window_rows())
         with pytest.raises(udin.UdinError) as exc:
             await udin.record_signing(
                 pool, ORG, now=NOW, document_kind="certificate",
@@ -691,8 +691,8 @@ class TestTheSixtyDayWindowOnWrite:
     def _pool(self, *, generate_days=60, signed_on, status="signed",
               written=None):
         return (Pool()
-                .when("staging.udin_window", window_rows(generate_days))
-                .when("FROM staging.udin_register \n WHERE org_id" if False else
+                .when("public.udin_window", window_rows(generate_days))
+                .when("FROM public.udin_register \n WHERE org_id" if False else
                       "SELECT id, client_name, document_kind, document_title, "
                       "document_ref,        financial_year",
                       udin_written(signed_on=signed_on, status=status))
@@ -831,7 +831,7 @@ class TestTheUdinStringOnWrite:
 
         signed = TODAY - timedelta(days=5)
         pool = (Duplicating()
-                .when("staging.udin_window", window_rows())
+                .when("public.udin_window", window_rows())
                 .when("SELECT id, client_name, document_kind",
                       udin_written(signed_on=signed)))
         with pytest.raises(udin.UdinError) as exc:
@@ -845,7 +845,7 @@ class TestTheFortyEightHourWindowOnWrite:
 
     def _pool(self, *, generated_at, revoke_hours=48, status="generated"):
         return (Pool()
-                .when("staging.udin_window", window_rows(60, revoke_hours))
+                .when("public.udin_window", window_rows(60, revoke_hours))
                 .when("SELECT id, client_name, document_kind",
                       udin_written(status=status, udin="26304576AKTSBN1359",
                                    udin_generated_at=generated_at))
@@ -918,7 +918,7 @@ class TestMarkingNotRequired:
 
     def _pool(self, status="signed"):
         return (Pool()
-                .when("staging.udin_window", window_rows())
+                .when("public.udin_window", window_rows())
                 .when("SELECT id, client_name, document_kind",
                       udin_written(status=status))
                 .when("SET status = 'not_required'",
@@ -958,7 +958,7 @@ class TestRecordingANotice:
         # window snapshot comes from — so the catalogue rule is matched on the
         # predicate only `_FETCH_TYPE` carries, and the write rule goes first.
         return (Pool()
-                .when("INSERT INTO staging.notice_register",
+                .when("INSERT INTO public.notice_register",
                       [written if written is not None else notice_written()])
                 .when("t.code = $2::text",
                       kind if kind is not None else notice_type_row()))
@@ -1002,7 +1002,7 @@ class TestRecordingANotice:
                 received_on=date(2026, 8, 1),
             )
         assert "read off the notice" in str(exc.value)
-        assert not pool.ran("INSERT INTO staging.notice_register")
+        assert not pool.ran("INSERT INTO public.notice_register")
 
     async def test_the_officers_own_date_beats_the_statutory_default(self):
         """An ASMT-10 that says fifteen days is due in fifteen even though rule
@@ -1054,10 +1054,10 @@ class TestRecordingANotice:
                 received_on=date(2026, 8, 1),
             )
         assert "catalogue" in str(exc.value)
-        assert not pool.ran("INSERT INTO staging.notice_register")
+        assert not pool.ran("INSERT INTO public.notice_register")
 
     async def test_a_client_or_type_from_another_practice_is_a_refusal(self):
-        pool = (Pool().when("INSERT INTO staging.notice_register", [])
+        pool = (Pool().when("INSERT INTO public.notice_register", [])
                       .when("t.code = $2::text", notice_type_row()))
         assert await notices.record_notice(
             pool, ORG, as_of=TODAY, client_id=CLIENT,
@@ -1070,7 +1070,7 @@ class TestRecordingANotice:
 
         class Duplicating(Pool):
             async def fetch(self, sql, *args):
-                if "INSERT INTO staging.notice_register" in sql:
+                if "INSERT INTO public.notice_register" in sql:
                     raise asyncpg.UniqueViolationError("duplicate key")
                 return await super().fetch(sql, *args)
 
@@ -1107,14 +1107,14 @@ class TestRecordingANotice:
             received_on=date(2026, 8, 1),
         )
         assert row["owner_name"] is None
-        assert pool.args_for("INSERT INTO staging.notice_register")[6] is False
+        assert pool.args_for("INSERT INTO public.notice_register")[6] is False
 
 
 class TestTheNoticeLifecycle:
 
     def _pool(self, *, state=None, written=None):
         return (Pool()
-                .when("FROM staging.notice_register r\n     WHERE r.org_id"
+                .when("FROM public.notice_register r\n     WHERE r.org_id"
                       if False else "SELECT r.org_id,\n           "
                                     "r.reference_no,\n           "
                                     "r.received_on,\n           r.due_on,\n"
@@ -1324,7 +1324,7 @@ def _write_statements() -> dict[str, str]:
             if not isinstance(value, str) or not name.startswith("_"):
                 continue
             if not any(verb in value for verb in
-                       ("INSERT INTO staging.", "UPDATE staging.")):
+                       ("INSERT INTO public.", "UPDATE public.")):
                 continue
             out[f"{module.__name__.rsplit('.', 1)[-1]}.{name}"] = _uncommented(
                 value

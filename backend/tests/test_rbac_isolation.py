@@ -249,7 +249,7 @@ async def test_campaign_stats_reject_a_campaign_from_another_org(
 def _pool_with_platform_role(mock_pool, role):
     """Answer the platform-role probe in require_module with `role`."""
     async def _fetchval(sql, *args):
-        if "staging.user_roles" in sql and "org_id IS NULL" in sql:
+        if "public.user_roles" in sql and "org_id IS NULL" in sql:
             return role
         return None
     mock_pool.fetchval.side_effect = _fetchval
@@ -436,7 +436,7 @@ async def test_require_org_role_passes_platform_admin_inside_its_own_org(mock_po
     async def _fetchval(sql, *args):
         if "org_id IS NULL" in sql:
             return 1                      # god mode
-        if "SELECT 1 FROM staging.user_roles" in sql:
+        if "SELECT 1 FROM public.user_roles" in sql:
             return 1                      # …and a member of THIS org
         return None                       # but not org_owner/org_admin here
 

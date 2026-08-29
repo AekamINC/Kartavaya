@@ -812,7 +812,7 @@ class TestTheSqlShape:
         """
         for match in re.finditer(r"\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)", sql):
             name = match.group(1)
-            assert name.startswith("staging."), f"{name} is not schema-qualified"
+            assert name.startswith("public."), f"{name} is not schema-qualified"
 
     @pytest.mark.parametrize("sql", ALL)
     def test_every_parameter_carries_an_explicit_cast(self, sql):
@@ -837,7 +837,7 @@ class TestTheSqlShape:
         """An INNER JOIN would hide every exit that was never billed — the exits
         most worth seeing.
         """
-        assert "LEFT JOIN staging.ganit_invoices" in lifecycle._SELECT_EXITING
+        assert "LEFT JOIN public.ganit_invoices" in lifecycle._SELECT_EXITING
 
     def test_no_query_selects_star(self):
         for sql in self.ALL:
@@ -867,7 +867,7 @@ class TestEveryJoinIsOrgScoped:
     """
 
     JOIN = re.compile(
-        r"\b(?:LEFT\s+)?JOIN\s+(staging\.\w+)\s+(\w+)\s+ON\b([^\n]*(?:\n\s{8,}[^\n]*)*)",
+        r"\b(?:LEFT\s+)?JOIN\s+(public\.\w+)\s+(\w+)\s+ON\b([^\n]*(?:\n\s{8,}[^\n]*)*)",
         re.IGNORECASE,
     )
 
@@ -893,7 +893,7 @@ class TestEveryJoinIsOrgScoped:
         route the existing test cannot see.
         """
         sql = lifecycle._SELECT_EXITING
-        on_clause = sql.split("LEFT JOIN staging.ganit_invoices", 1)[1].split("WHERE", 1)[0]
+        on_clause = sql.split("LEFT JOIN public.ganit_invoices", 1)[1].split("WHERE", 1)[0]
         assert "i.org_id = e.org_id" in on_clause
         where = sql.split("WHERE", 1)[1]
         assert "i.org_id" not in where

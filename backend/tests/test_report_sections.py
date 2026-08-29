@@ -592,9 +592,9 @@ def test_every_register_qualifies_its_schema(module):
     unqualified table resolves to nothing — and a shadow table in `public` has
     bitten this repo before (migration 142)."""
     sql = sql_of(module)
-    assert " FROM staging." in sql, module.__name__
+    assert " FROM public." in sql, module.__name__
     for join in re.findall(r"JOIN\s+(\S+)", sql):
-        assert join.startswith("staging."), (module.__name__, join)
+        assert join.startswith("public."), (module.__name__, join)
     assert "SELECT *" not in sql
 
 
@@ -631,7 +631,7 @@ def test_no_join_anywhere_in_the_package_lacks_an_org_predicate():
         sql = sql_of(module)
         # Each ON clause runs to the next JOIN or the WHERE.
         for clause in re.findall(
-                r"JOIN\s+staging\.\w+\s+\w+\s+ON\s+(.*?)(?=\s+(?:LEFT\s+)?JOIN\s|\s+WHERE\s)",
+                r"JOIN\s+public\.\w+\s+\w+\s+ON\s+(.*?)(?=\s+(?:LEFT\s+)?JOIN\s|\s+WHERE\s)",
                 sql):
             assert "org_id" in clause, (module.__name__, clause)
 
@@ -652,7 +652,7 @@ def test_nothing_in_a_register_module_writes(module):
     because the prose in these files legitimately says things like "would
     silently drop those rows" — banning the word would ban the explanation."""
     src = inspect.getsource(module).lower()
-    for verb in ("insert into", "delete from", "update staging",
+    for verb in ("insert into", "delete from", "update public",
                  "drop table", "alter table", "truncate"):
         assert verb not in src, (module.__name__, verb)
 
@@ -886,8 +886,8 @@ def test_the_receipts_join_is_inner_and_org_scoped_on_both_sides():
     org's invoice. The org predicate is belt-and-braces on the joined row —
     fail-closed beats trusting a foreign key one hop away."""
     sql = sql_of(rr)
-    assert "JOIN staging.ganit_invoices i ON i.id = p.invoice_id AND i.org_id = p.org_id" in sql
-    assert "LEFT JOIN staging.ganit_invoices" not in sql
+    assert "JOIN public.ganit_invoices i ON i.id = p.invoice_id AND i.org_id = p.org_id" in sql
+    assert "LEFT JOIN public.ganit_invoices" not in sql
 
 
 def test_the_receipts_register_does_not_filter_on_doc_status():

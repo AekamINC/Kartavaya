@@ -41,12 +41,12 @@ class FakeConn:
         return _T()
 
     async def fetch(self, sql, *a):
-        if "FROM staging.niyam_rules" in sql:
+        if "FROM public.niyam_rules" in sql:
             return [r for r in self.rules if r.get("enabled", True)]
-        if "FROM staging.niyam_rule_steps" in sql:
+        if "FROM public.niyam_rule_steps" in sql:
             return sorted([s for s in self.steps if s["rule_id"] == a[0]],
                           key=lambda s: s["step_no"])
-        if "step_no FROM staging.niyam_run_steps" in sql:
+        if "step_no FROM public.niyam_run_steps" in sql:
             return [{"step_no": s["step_no"]} for s in self.run_steps
                     if s["run_id"] == a[0]]
         return []
@@ -58,7 +58,7 @@ class FakeConn:
         return None
 
     async def fetchval(self, sql, *a):
-        if "INSERT INTO staging.niyam_runs" in sql:
+        if "INSERT INTO public.niyam_runs" in sql:
             run_id, rule_id, event_id = a[0], a[1], a[2]
             if (rule_id, event_id) in self.claims:
                 return None                      # ON CONFLICT DO NOTHING
@@ -85,7 +85,7 @@ class FakeConn:
                                        "detail": json.loads(detail),
                                        "outbound_id": None})
             return "OK"
-        if "INSERT INTO staging.niyam_run_steps" in sql:
+        if "INSERT INTO public.niyam_run_steps" in sql:
             run_id, step_no = a[1], a[2]
             if any(s["run_id"] == run_id and s["step_no"] == step_no
                    for s in self.run_steps):

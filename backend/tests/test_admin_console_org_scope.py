@@ -107,7 +107,7 @@ def _console_pool(mock_pool, caller_role, caller_orgs=(), captured=None):
     assert on the SQL the handler actually sent.
     """
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return caller_role if caller_role in allowed else None
         return None
@@ -115,7 +115,7 @@ def _console_pool(mock_pool, caller_role, caller_orgs=(), captured=None):
     async def fetch(query, *args):
         if "org_id IS NOT NULL" in query and "DISTINCT" in query:
             return [{"org_id": o} for o in caller_orgs]
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return [{"role_code": caller_role}] if caller_role else []
         if captured is not None:
             captured.append((query, args))
@@ -147,7 +147,7 @@ async def test_list_users_is_no_longer_an_unfiltered_select(
     sql = "\n".join(
         line for line in query.splitlines() if not line.strip().startswith("--")
     )
-    assert "staging.user_roles" in sql, "no join to the tenant path"
+    assert "public.user_roles" in sql, "no join to the tenant path"
     assert "org_id = ANY" in sql, "the caller's orgs are not bound into the query"
     assert [AEKAM] in [list(a) if isinstance(a, (list, tuple)) else a for a in args], (
         "the caller's own orgs were not passed as a parameter"
@@ -228,7 +228,7 @@ async def test_only_god_mode_is_offered_the_unattributed_teams(
 def _two_org_pool(mock_pool, caller_role, caller_user_id, caller_orgs, target_orgs):
     """Caller and TARGET in different organisations."""
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return caller_role if caller_role in allowed else None
         return None
@@ -237,7 +237,7 @@ def _two_org_pool(mock_pool, caller_role, caller_user_id, caller_orgs, target_or
         if "org_id IS NOT NULL" in query and "DISTINCT" in query:
             orgs = target_orgs if args[0] == TARGET else caller_orgs
             return [{"org_id": o} for o in orgs]
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             # Nobody here holds a platform role except the caller, so the
             # SENIORITY guard cannot be what produces the refusal.
             return [{"role_code": caller_role}] if args[0] == caller_user_id else []
@@ -326,7 +326,7 @@ async def test_work_cannot_be_reassigned_to_a_user_in_another_org(
     Here the deletion target is legitimately in-org; only the recipient is not.
     """
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return GOD if GOD in allowed else None
         return None
@@ -334,7 +334,7 @@ async def test_work_cannot_be_reassigned_to_a_user_in_another_org(
     async def fetch(query, *args):
         if "org_id IS NOT NULL" in query and "DISTINCT" in query:
             return [{"org_id": UNICODE if args[0] == "user_outsider" else AEKAM}]
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return [{"role_code": GOD}] if args[0] == member_user["user_id"] else []
         return []
 

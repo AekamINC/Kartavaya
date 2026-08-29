@@ -175,7 +175,7 @@ def test_the_one_allowed_reference_is_prose_and_not_sql() -> None:
         for hit in hits:
             assert not re.search(
                 r"\b(FROM|JOIN|INTO|UPDATE|TABLE|DELETE\s+FROM)\s+"
-                r"[\"']?(staging\.)?sales_(territories|targets|routing_rules)",
+                r"[\"']?(public\.)?sales_(territories|targets|routing_rules)",
                 hit, re.IGNORECASE), (
                 f"{rel} contains what looks like SQL against a dropped table, "
                 f"not prose: {hit!r}")
@@ -304,17 +304,17 @@ async def test_live_the_three_are_gone_from_both_schemas() -> None:
             "SELECT count(*) FROM pg_trigger t "
             "JOIN pg_class c ON c.oid = t.tgrelid "
             "JOIN pg_namespace n ON n.oid = c.relnamespace "
-            "WHERE NOT t.tgisinternal AND n.nspname = 'staging' "
+            "WHERE NOT t.tgisinternal AND n.nspname = 'public' "
             "AND t.tgname = 'trg_stg_deal_close_target'")
         assert trig == 0, (
-            "trg_stg_deal_close_target is back on staging.crm_deals. Its body "
-            "UPDATEs staging.sales_targets, which does not exist: every deal "
+            "trg_stg_deal_close_target is back on public.crm_deals. Its body "
+            "UPDATEs public.sales_targets, which does not exist: every deal "
             "close now raises 42P01.")
 
         fn = await conn.fetchval(
             "SELECT count(*) FROM pg_proc p "
             "JOIN pg_namespace n ON n.oid = p.pronamespace "
-            "WHERE n.nspname = 'staging' "
+            "WHERE n.nspname = 'public' "
             "AND p.proname = 'sales_update_target_on_deal_close'")
         assert fn == 0, "the trigger function is back"
 
@@ -329,12 +329,22 @@ async def test_live_the_three_are_gone_from_both_schemas() -> None:
             f"42P01 at runtime): {[(r[0], r[1]) for r in bodies]}")
 
         # And the shared function that must have SURVIVED the drop.
+        #
+        # The schema is NAMED here rather than left to `current_schemas()`.
+        # `count(*) == 1` is only a tripwire while the filter is exact: a
+        # search-path-relative filter counts whatever happens to be in scope,
+        # so a SECOND copy of `touch_updated_at` in another schema would either
+        # be missed or push the count to 2 and be read as "the drop went
+        # wrong". After the consolidation the one true copy is `public`'s —
+        # before 241 has run this returns 0 and says so, which is the answer
+        # worth having.
         shared = await conn.fetchval(
             "SELECT count(*) FROM pg_proc p "
             "JOIN pg_namespace n ON n.oid = p.pronamespace "
-            "WHERE n.nspname = 'staging' AND p.proname = 'touch_updated_at'")
+            "WHERE n.nspname = 'public' AND p.proname = 'touch_updated_at'")
         assert shared == 1, (
-            "staging.touch_updated_at() is gone. It backs 27 triggers; "
-            "migration 235 was never allowed to touch it.")
+            f"expected exactly one public.touch_updated_at(), found {shared}. "
+            "It backs 27 triggers; migration 235 was never allowed to touch "
+            "it, and 241 must move it rather than duplicate it.")
     finally:
         await conn.close()

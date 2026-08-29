@@ -243,7 +243,7 @@ async def test_the_kill_switch_stops_the_send_even_inside_the_window(
 def _suppressed_insert(mock_pool):
     """The one INSERT the blocked branch writes, as (sql, args)."""
     for call in mock_pool.fetchrow.await_args_list:
-        if call.args and "INSERT INTO staging.varta_messages" in call.args[0]:
+        if call.args and "INSERT INTO public.varta_messages" in call.args[0]:
             return call.args[0], call.args[1:]
     raise AssertionError("the blocked send never wrote its suppressed row")
 

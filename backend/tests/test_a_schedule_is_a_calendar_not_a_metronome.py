@@ -109,7 +109,7 @@ def test_the_reaper_covers_both_run_tables():
     body = SRC[SRC.index("async def _reap_abandoned_runs"):SRC.index("@router.post(\"/cron/skills\"")]
     for table in ("hub_skill_runs", "hub_org_skill_runs"):
         assert table in body, (
-            f"the reaper does not cover staging.{table}. The 38 abandoned runs on "
+            f"the reaper does not cover public.{table}. The 38 abandoned runs on "
             f"the live database are in hub_org_skill_runs — the one a reaper "
             f"written against the client path would miss."
         )

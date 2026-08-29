@@ -60,7 +60,7 @@ def test_the_batch_passes_the_universal_rules_before_wiring():
         m = REGISTRY[key]
         win = WIN if m.grain == "flow" else None
         sql, params = m.sql(MetricRequest(org_id=ORG, window=win, bucket="month"))
-        assert re.search(r"\bstaging\.", sql), f"{key}: unqualified table"
+        assert re.search(r"\bpublic\.", sql), f"{key}: unqualified table"
         assert "$1::uuid" in sql, f"{key}: org parameter not cast"
         assert params[0] == ORG
         placeholders = {int(n) for n in re.findall(r"\$(\d+)", sql)}
@@ -85,7 +85,7 @@ def test_requests_sent_counts_the_audit_event_because_no_sent_at_exists():
     once per document — resends write 'reminder_sent'). updated_at is
     overwritten by every later touch and must never be read as a send time."""
     sql, params = build("esign.requests_sent")
-    assert "FROM staging.sign_audit_log a" in sql
+    assert "FROM public.sign_audit_log a" in sql
     assert "a.action = 'document_sent'" in sql
     assert "a.created_at::date BETWEEN $2::date AND $3::date" in sql
     assert "updated_at" not in sql
@@ -95,7 +95,7 @@ def test_requests_sent_counts_the_audit_event_because_no_sent_at_exists():
 def test_requests_sent_scopes_the_org_through_the_document():
     # sign_audit_log carries no org_id of its own — the join IS the scoping.
     sql, _ = build("esign.requests_sent")
-    assert "JOIN staging.sign_documents d ON d.id = a.document_id" in sql
+    assert "JOIN public.sign_documents d ON d.id = a.document_id" in sql
     assert "d.org_id = $1::uuid" in sql
 
 

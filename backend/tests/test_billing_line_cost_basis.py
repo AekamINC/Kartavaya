@@ -204,24 +204,24 @@ def pooled(monkeypatch):
 #: '24' (Gujarat) against a Maharashtra customer. `_tax_split` REFUSES rather
 #: than defaulting when either end of the supply is unknown, so a run with no
 #: supplier state writes no invoice at all and would prove nothing here.
-SUPPLIER_STATE = ("SELECT state_code FROM staging.organisations",
+SUPPLIER_STATE = ("SELECT state_code FROM public.organisations",
                   {"state_code": "24"})
 
 SWEEP_SCRIPT = [
     SUPPLIER_STATE,
-    ("FROM staging.client_service_lines sl", [SERVICE_LINE]),
-    ("FROM staging.client_invoice_lines", None),
-    ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ("FROM public.client_service_lines sl", [SERVICE_LINE]),
+    ("FROM public.client_invoice_lines", None),
+    ("SELECT invoice_number FROM public.ganit_invoices", None),
 ]
 
 USAGE_SCRIPT = [
     SUPPLIER_STATE,
-    ("FROM staging.client_billing_profiles p", BILLING_PROFILE),
-    ("FROM staging.client_metered_usage ", USAGE_ROWS),
-    ("SELECT invoice_number FROM staging.ganit_invoices", None),
+    ("FROM public.client_billing_profiles p", BILLING_PROFILE),
+    ("FROM public.client_metered_usage ", USAGE_ROWS),
+    ("SELECT invoice_number FROM public.ganit_invoices", None),
 ]
 
-INVOICE_INSERT = "INSERT INTO staging.ganit_invoices"
+INVOICE_INSERT = "INSERT INTO public.ganit_invoices"
 
 
 def _stored_lines(pool) -> list[dict]:

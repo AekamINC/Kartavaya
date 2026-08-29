@@ -42,7 +42,7 @@ def _probe(mock_pool, exists: bool, row=None):
     async def _fetchrow(query, *args):
         if "to_regclass" in query:
             return {"ok": exists}
-        if "FROM staging.organisations" in query:
+        if "FROM public.organisations" in query:
             return {"name": "Unicode Group"}
         return row
     mock_pool.fetchrow.side_effect = _fetchrow
@@ -119,7 +119,7 @@ async def test_the_id_is_stored_lower_cased(
         "accounts": [{"platform": "paytm", "vpa": "  Unicode@Paytm  "}],
     })
     written = [c for c in _conn(mock_pool).execute.await_args_list
-               if "INSERT INTO staging.org_upi_accounts" in c.args[0]]
+               if "INSERT INTO public.org_upi_accounts" in c.args[0]]
     assert written and written[0].args[3] == "unicode@paytm"
 
 
@@ -163,7 +163,7 @@ async def test_the_first_id_becomes_the_default_when_none_was_chosen(
         "accounts": [{"platform": "paytm", "vpa": "acme@paytm", "is_default": False}],
     })
     inserts = [c for c in _conn(mock_pool).execute.await_args_list
-               if "INSERT INTO staging.org_upi_accounts" in c.args[0]]
+               if "INSERT INTO public.org_upi_accounts" in c.args[0]]
     assert inserts[0].args[6] is True        # is_default
 
 
@@ -178,7 +178,7 @@ async def test_the_organisations_mirror_is_written_in_the_same_transaction(
                       "payee_name": "Unicode Group", "is_default": True}],
     })
     mirrors = [c for c in _conn(mock_pool).execute.await_args_list
-               if "UPDATE staging.organisations" in c.args[0]]
+               if "UPDATE public.organisations" in c.args[0]]
     assert mirrors and mirrors[-1].args[2] == "unicode@okhdfcbank"
 
 
@@ -192,10 +192,10 @@ async def test_clearing_every_id_clears_the_mirror_too(
         "accounts": [{"platform": "gpay", "vpa": None}],
     })
     mirrors = [c for c in _conn(mock_pool).execute.await_args_list
-               if "UPDATE staging.organisations" in c.args[0]]
+               if "UPDATE public.organisations" in c.args[0]]
     assert mirrors and mirrors[-1].args[2] is None
     deletes = [c for c in _conn(mock_pool).execute.await_args_list
-               if "DELETE FROM staging.org_upi_accounts" in c.args[0]]
+               if "DELETE FROM public.org_upi_accounts" in c.args[0]]
     assert deletes, "a blank field must clear the row, as it does for senders"
 
 

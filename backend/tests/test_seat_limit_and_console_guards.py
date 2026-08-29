@@ -51,25 +51,25 @@ def _console(mock_pool, caller_role, *, limit=None, seats_used=0, already_in=Fal
     fixed order and asserting on order would break the moment a query is added.
     """
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query and "role_code = ANY" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query and "role_code = ANY" in query:
             if "COUNT(DISTINCT user_id)" in query:
                 return god_mode_left
             allowed = args[1] if len(args) > 1 else []
             return caller_role if caller_role in allowed else None
         if "COALESCE(o.max_users, p.max_users)" in query:
             return limit
-        if "COUNT(DISTINCT user_id)" in query and "staging.user_roles" in query:
+        if "COUNT(DISTINCT user_id)" in query and "public.user_roles" in query:
             return seats_used
-        if "staging.user_roles" in query and "org_id=$2::uuid" in query:
+        if "public.user_roles" in query and "org_id=$2::uuid" in query:
             return 1 if already_in else None
         if "FROM users WHERE user_id" in query:
             return 1
-        if "FROM staging.organisations" in query:
+        if "FROM public.organisations" in query:
             return ORG
         return None
 
     async def fetchrow(query, *args):
-        if "markup_pct" in query and "FROM staging.organisations" in query:
+        if "markup_pct" in query and "FROM public.organisations" in query:
             # The read-back at the end of update_org_settings. It returns
             # EIGHT terms now: the original three, then `max_users` and
             # `is_platform_org` (writable by nothing and readable by nothing
@@ -81,11 +81,11 @@ def _console(mock_pool, caller_role, *, limit=None, seats_used=0, already_in=Fal
                     "max_users": 5, "is_platform_org": False,
                     "email_cap_daily": None, "email_cap_monthly": None,
                     "email_overage_rate": None}
-        if "FROM staging.organisations" in query:
+        if "FROM public.organisations" in query:
             return {"id": ORG, "team_id": "team_001"}
         if "FROM users" in query:
             return {"user_id": TARGET, "email": "seat@test.com"}
-        if "FROM staging.user_roles WHERE id" in query:
+        if "FROM public.user_roles WHERE id" in query:
             return role_row
         return None
 

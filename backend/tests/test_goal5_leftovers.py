@@ -164,7 +164,7 @@ def _wire(mock_pool, *, channel=None, membership=None, message=None,
         if "org_member_modules" in s:
             return level
         # `_assert_same_org` — the user being added belongs to this org.
-        if "staging.user_roles" in s:
+        if "public.user_roles" in s:
             return 1 if same_org else None
         # `_assert_not_archived` reads the boolean on its own.
         if "SELECT is_archived" in s:
@@ -177,11 +177,11 @@ def _wire(mock_pool, *, channel=None, membership=None, message=None,
         # Messages before channels: `send_message`'s INSERT and `edit_message`'s
         # UPDATE both end in `RETURNING *` and both name a channel id, so a
         # looser match would hand them the channel row.
-        if "staging.samvada_messages" in s:
+        if "public.samvada_messages" in s:
             return msg
-        if "staging.samvada_channels" in s:
+        if "public.samvada_channels" in s:
             return chan
-        if "staging.samvada_channel_members" in s:
+        if "public.samvada_channel_members" in s:
             return membership
         return None
 
@@ -394,7 +394,7 @@ async def test_the_before_cursor_is_scoped_to_the_channel(
 # that unmuting set `muted = false` and left the row standing.
 # ════════════════════════════════════════════════════════════════════════════
 
-MEMBERS = "staging.samvada_channel_members"
+MEMBERS = "public.samvada_channel_members"
 
 
 async def test_muting_a_channel_you_never_joined_marks_the_row_as_not_a_join(
@@ -491,7 +491,7 @@ async def test_the_unmute_delete_cannot_touch_a_real_membership(
         "the unmute DELETE is not restricted to rows the mute created, so it "
         "removes real members\n\n" + sql
     )
-    assert "NOT EXISTS" in sql and "staging.samvada_messages" in sql, (
+    assert "NOT EXISTS" in sql and "public.samvada_messages" in sql, (
         "the unmute DELETE does not ask whether the caller has ever posted, so "
         "it evicts somebody who muted first and joined by posting afterwards"
         "\n\n" + sql
@@ -719,12 +719,12 @@ def billed(monkeypatch, mock_pool, app):
         s = " ".join(str(sql).split())
         if "MAX(CAST(SUBSTRING(invoice_number" in s:
             return 1
-        if "staging.user_roles" in s:
+        if "public.user_roles" in s:
             return "platform_admin"
         return None
 
     async def _fetchrow(sql, *a):
-        if "INSERT INTO staging.subscription_invoices" in " ".join(str(sql).split()):
+        if "INSERT INTO public.subscription_invoices" in " ".join(str(sql).split()):
             return {"id": "dddddddd-eeee-ffff-0000-111111111111",
                     "invoice_number": a[1], "total": a[7],
                     "due_date": a[8], "payment_status": "pending"}

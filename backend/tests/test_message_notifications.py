@@ -263,9 +263,9 @@ def test_every_staging_relation_named_is_one_that_exists():
     Postgres does not have does not break notifications — it breaks sending a
     message, with a 500 the sender reads as "your message did not go".
     """
-    for rel in set(re.findall(r"\bstaging\.(\w+)", _code())):
+    for rel in set(re.findall(r"\bpublic\.(\w+)", _code())):
         assert rel in KNOWN_STAGING_RELATIONS, (
-            f"samvaad_message_notify.py names staging.{rel}, which is not a "
+            f"samvaad_message_notify.py names public.{rel}, which is not a "
             f"relation this feature has"
         )
 
@@ -287,8 +287,8 @@ def test_the_notifications_table_is_never_schema_qualified_and_the_samvada_ones_
     code = _code()
     for table in ("samvada_channels", "samvada_channel_members", "samvada_messages"):
         for m in re.finditer(rf"(\w*\.?){table}\b", code):
-            assert m.group(1) == "staging.", (
-                f"`{table}` is named without its `staging.` schema at "
+            assert m.group(1) == "public.", (
+                f"`{table}` is named without its `public.` schema at "
                 f"offset {m.start()} — on this database that is how a query "
                 f"finds a shadow table instead of the real one"
             )

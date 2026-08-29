@@ -443,7 +443,7 @@ def as_org_admin(app, member_user, mock_pool):
     async def _fetchval(query, *args):
         if "org_id IS NULL" in query:
             return None                      # no platform role, ever
-        if "staging.user_roles" in query and args[1:2] == (ORG,):
+        if "public.user_roles" in query and args[1:2] == (ORG,):
             return "org_admin"
         return None
 
@@ -1037,8 +1037,8 @@ def test_no_router_names_a_credit_table():
         src = inspect.getsource(module)
         for table in ("hub_org_credits", "org_member_credits",
                       "hub_org_credit_transactions", "credit_prices"):
-            assert f"staging.{table}" not in src, (
-                f"{module.__name__} names staging.{table}; every credit number "
+            assert f"public.{table}" not in src, (
+                f"{module.__name__} names public.{table}; every credit number "
                 f"must come through services.credits"
             )
 
@@ -1071,9 +1071,9 @@ def test_no_router_WRITES_the_billing_lines_tables():
         for table in tables:
             for verb in ("INSERT INTO", "UPDATE", "DELETE FROM"):
                 assert not re.search(
-                    rf"{verb}\s+staging\.{table}\b", src,
+                    rf"{verb}\s+public\.{table}\b", src,
                 ), (
-                    f"routers/{path.name} runs {verb} against staging.{table}. "
+                    f"routers/{path.name} runs {verb} against public.{table}. "
                     f"services/billing_lines.py is the only writer of both — a "
                     f"second one is how the no-double-charge rule stops holding."
                 )
@@ -1302,17 +1302,17 @@ class _Table096:
         return False
 
     async def fetchval(self, sql, *args):
-        if "FROM staging.organisations" in sql:
+        if "FROM public.organisations" in sql:
             return args[0] if str(args[0]) in self.orgs else None
         raise AssertionError(f"_Table096 does not model: {sql}")
 
     async def fetchrow(self, sql, *args):
         flat = re.sub(r"\s+", " ", sql)
-        if "INSERT INTO staging.org_billing_lines" in flat:
+        if "INSERT INTO public.org_billing_lines" in flat:
             return self._insert(*args)
-        if "UPDATE staging.org_billing_lines" in flat and "SET period_end=" in flat:
+        if "UPDATE public.org_billing_lines" in flat and "SET period_end=" in flat:
             return self._end(args[2], args[0], args[1])
-        if "UPDATE staging.org_billing_lines" in flat and "SET amount=" in flat:
+        if "UPDATE public.org_billing_lines" in flat and "SET amount=" in flat:
             return self._amend(args[1], args[0])
         if "AS monthly_total" in flat:
             return self._totals(flat, args)
@@ -1328,7 +1328,7 @@ class _Table096:
 
     async def fetch(self, sql, *args):
         flat = re.sub(r"\s+", " ", sql)
-        if "INSERT INTO staging.invoice_billing_lines" in flat:
+        if "INSERT INTO public.invoice_billing_lines" in flat:
             return self._record(flat, args)
         # Dispatched on the FIRST table in the statement, not on any mention of
         # one: `_NOT_YET_BILLED` puts `FROM staging.invoice_billing_lines b`
@@ -1336,13 +1336,13 @@ class _Table096:
         # `FROM staging.org_billing_lines e` inside another — so a substring
         # test routes the invoice query to the clash handler and every test
         # below it goes green for the wrong reason.
-        first = re.search(r"\bFROM\s+staging\.(\w+)", flat)
+        first = re.search(r"\bFROM\s+public\.(\w+)", flat)
         first = first.group(1) if first else ""
         if first == "invoice_billing_lines":
             return self._clash(flat, args)
         if "JOIN LATERAL" in flat:
             return self._with_covering(flat, args)
-        if "JOIN staging.invoice_billing_lines" in flat:
+        if "JOIN public.invoice_billing_lines" in flat:
             return self._already_billed(flat, args)
         if first == "org_billing_lines":
             return self._select_lines(flat, args)
@@ -1438,7 +1438,7 @@ class _Table096:
             negated = bool(re.search(r"NOT\s+\(\(l\.cadence", flat))
             rows = [r for r in rows
                     if _due(self.lines, r, period) is not negated]
-        if "NOT EXISTS (SELECT 1 FROM staging.invoice_billing_lines" in flat:
+        if "NOT EXISTS (SELECT 1 FROM public.invoice_billing_lines" in flat:
             rows = [r for r in rows if not self._is_billed(r["id"], period)]
 
         if "array_position" in flat:
@@ -1883,7 +1883,7 @@ class _CreateOrgProbe:
 
     def commit(self, flat: str, args: tuple):
         self.committed.append(flat)
-        if "INSERT INTO staging.organisations" in flat:
+        if "INSERT INTO public.organisations" in flat:
             self.orgs.append(str(args[0]))
 
     def tried(self, needle: str) -> bool:
@@ -2020,12 +2020,12 @@ def create_org(monkeypatch, mock_pool):
             return {"user_id": OWNER, "email": "owner@example.com"}
         if "FROM team_members" in sql:
             return {"team_id": TEAM}
-        if "FROM staging.organisations WHERE team_id" in sql:
+        if "FROM public.organisations WHERE team_id" in sql:
             # THE RETRY'S ANSWER, and it depends on whether the first attempt
             # left a row behind: `create_org` answers 409 "An organisation
             # already exists for this team" from exactly this read.
             return {"id": probe.orgs[0]} if probe.orgs else None
-        if "FROM staging.plans" in sql:
+        if "FROM public.plans" in sql:
             return {"id": PLAN, "code": "growth", "default_credits": 0}
         return None
 
@@ -2033,7 +2033,7 @@ def create_org(monkeypatch, mock_pool):
         # `as_admin` answers the platform-role query and this fixture is ordered
         # after it, so the role has to be answered here too or every commercial
         # field on the body 403s before reaching the code under test.
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return 1
         return 0
 
@@ -2107,10 +2107,10 @@ async def test_a_negative_monthly_price_commits_nothing(
         "no wallet and no platform line, and nothing rolls it back — that is "
         "the orphan, and the next test is what it costs."
     )
-    assert not create_org.kept("INSERT INTO staging.subscriptions"), (
+    assert not create_org.kept("INSERT INTO public.subscriptions"), (
         "a subscription survived for an organisation that does not exist"
     )
-    assert not create_org.kept("INSERT INTO staging.user_roles"), (
+    assert not create_org.kept("INSERT INTO public.user_roles"), (
         "an owner role survived on a refused organisation"
     )
     assert create_org.buckets == [], (

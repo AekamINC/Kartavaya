@@ -87,7 +87,7 @@ async def test_selects_open_deals_that_have_no_pending_follow_up(
 
     sql = _sql(mock_pool)
     assert "AND d.stage NOT IN ('Won','Lost')" in sql
-    assert "AND NOT EXISTS (SELECT 1 FROM staging.graha_follow_ups f" in sql
+    assert "AND NOT EXISTS (SELECT 1 FROM public.graha_follow_ups f" in sql
     assert resp.json()["data"][0]["id"] == DEAL_ROW["id"]
 
 

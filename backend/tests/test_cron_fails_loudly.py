@@ -377,7 +377,7 @@ async def test_the_org_query_excludes_deactivated_organisations(
     mock_pool.fetch = AsyncMock(side_effect=_fetch)
     r = await api_client.post("/api/internal/cron/stock", headers=cron_secret)
     assert r.status_code == 200
-    assert any("staging.organisations" in q and "is_active" in q for q in asked), (
+    assert any("public.organisations" in q and "is_active" in q for q in asked), (
         f"the sweep did not filter organisations on is_active: {asked}"
     )
 
@@ -396,7 +396,7 @@ async def test_one_failing_organisation_turns_the_whole_cron_red(
 
     async def _fake_find_low_stock(pool, org_id):
         if org_id == "org-bad":
-            raise RuntimeError("relation staging.vikray_stock does not exist")
+            raise RuntimeError("relation public.vikray_stock does not exist")
         done.append(org_id)
         return []
 

@@ -162,7 +162,7 @@ def test_admin_console_add_member_refuses_a_system_target():
     # above every write. What is asserted below — refusal before the INSERT — is
     # the rule, and it does not depend on how the condition is spelled.
     refusal = code.split('target.get("is_system")')[1]
-    write = refusal.find("INSERT INTO staging.user_roles")
+    write = refusal.find("INSERT INTO public.user_roles")
     raised = refusal.find("HTTPException")
     assert raised != -1 and (write == -1 or raised < write), \
         "the refusal does not precede the user_roles write"

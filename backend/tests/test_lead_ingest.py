@@ -222,7 +222,7 @@ async def test_a_new_lead_is_written_as_a_lead_in_the_callers_org(monkeypatch):
     conn = pool.acquire.return_value
     sql = " ".join(conn.fetchrow.call_args[0][0].split())
     args = conn.fetchrow.call_args[0][1:]
-    assert "INSERT INTO staging.graha_contacts" in sql
+    assert "INSERT INTO public.graha_contacts" in sql
     assert "'lead'" in sql, "contact_type"
     # org_id comes from the credentials row the URL resolved to — never from the
     # payload. A marketplace cannot name the org its leads land in.
@@ -251,7 +251,7 @@ async def test_the_same_person_twice_updates_rather_than_duplicating(monkeypatch
     # The enquiry lands in the CRM TIMELINE, the same way `POST /inbound-leads`
     # records it — so an enquiry arriving by API and one arriving by
     # notification email are indistinguishable to the salesperson.
-    assert any("INSERT INTO staging.graha_activities" in s for s in statements)
+    assert any("INSERT INTO public.graha_activities" in s for s in statements)
     # THEY contacted US. Resetting last_contacted_at would hide the lead from
     # the overdue-follow-up report that exists to surface exactly these.
     assert not any("last_contacted_at" in s for s in statements)

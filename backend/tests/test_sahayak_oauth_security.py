@@ -123,9 +123,9 @@ async def test_oauth_authorize_rejects_another_orgs_client(
     route_fetchval(mock_pool, {
         # caller is a legitimate Aekam operator — authority is NOT the thing
         # under test here; ownership of the client is.
-        "staging.user_roles": "platform_staff",
+        "public.user_roles": "platform_staff",
         # ORG_B's client is not in ORG_A -> the ownership probe finds nothing
-        "staging.hub_clients": None,
+        "public.hub_clients": None,
     })
 
     resp = await api_client.get(
@@ -138,7 +138,7 @@ async def test_oauth_authorize_rejects_another_orgs_client(
 
     ownership_probes = [
         c for c in mock_pool.fetchval.call_args_list
-        if "staging.hub_clients" in c[0][0]
+        if "public.hub_clients" in c[0][0]
     ]
     assert ownership_probes, "authorize never checked client ownership at all"
     sql, *args = ownership_probes[0][0]
@@ -161,8 +161,8 @@ async def test_oauth_authorize_allows_own_client_and_leaks_no_secret(
     monkeypatch.setenv("BACKEND_URL", "https://api.test")
 
     route_fetchval(mock_pool, {
-        "staging.user_roles": "platform_staff",
-        "staging.hub_clients": 1,
+        "public.user_roles": "platform_staff",
+        "public.hub_clients": 1,
     })
 
     resp = await api_client.get(
@@ -203,7 +203,7 @@ async def test_oauth_callback_writes_no_token_when_client_left_the_org(
         })
     }
     # the client is no longer in that org
-    route_fetchval(mock_pool, {"staging.hub_clients": None})
+    route_fetchval(mock_pool, {"public.hub_clients": None})
 
     resp = await api_client.get(
         "/api/v1/hub/oauth/facebook/callback?code=abc&state=xyz"
@@ -248,8 +248,8 @@ async def test_list_social_accounts_never_selects_token_columns(
 ):
     mock_pool.fetch.return_value = []
     route_fetchval(mock_pool, {
-        "staging.user_roles": "platform_admin",
-        "staging.hub_clients": 1,
+        "public.user_roles": "platform_admin",
+        "public.hub_clients": 1,
     })
 
     resp = await api_client.get(f"/api/v1/hub/clients/{CLIENT_A}/social-accounts")
@@ -285,7 +285,7 @@ async def test_publish_now_denied_to_plain_member(
     """RBAC-SPEC puts publishing at Sahayak admin. `require_module` only asks
     whether a grant exists, so before the gate a viewer could post publicly as
     the customer's brand."""
-    route_fetchval(mock_pool, {"staging.user_roles": None})
+    route_fetchval(mock_pool, {"public.user_roles": None})
 
     resp = await api_client.post(f"/api/v1/hub/publish/queue/{QUEUE_ID}/publish-now")
     assert resp.status_code == 403
@@ -295,7 +295,7 @@ async def test_connect_social_account_denied_to_plain_member(
     api_client, mock_pool, as_member, org_a, no_network,
 ):
     """Connecting an account writes a live credential from the request body."""
-    route_fetchval(mock_pool, {"staging.user_roles": None})
+    route_fetchval(mock_pool, {"public.user_roles": None})
 
     resp = await api_client.post(
         f"/api/v1/hub/clients/{CLIENT_A}/social-accounts",
@@ -307,7 +307,7 @@ async def test_connect_social_account_denied_to_plain_member(
 async def test_disconnect_denied_to_plain_member(
     api_client, mock_pool, as_member, org_a, no_network,
 ):
-    route_fetchval(mock_pool, {"staging.user_roles": None})
+    route_fetchval(mock_pool, {"public.user_roles": None})
     resp = await api_client.delete(
         f"/api/v1/hub/clients/{CLIENT_A}/social-accounts/{ACCOUNT_ID}"
     )
@@ -339,7 +339,7 @@ async def test_platform_staff_need_a_session_but_are_not_locked_out(
     app.dependency_overrides[require_user] = lambda: {"user_id": "u_staff"}
 
     async def _fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return "platform_staff"
         if "org_member_modules" in query:
             return "admin"
@@ -467,7 +467,7 @@ async def test_content_approvals_scope_through_the_content_item(
     assert resp.status_code == 200
 
     sql, *args = mock_pool.fetch.call_args[0]
-    assert "staging.hub_content_items" in sql, (
+    assert "public.hub_content_items" in sql, (
         "approvals read did not join through to something that carries a tenant"
     )
     assert "ci.client_id=$2::uuid" in sql
@@ -494,7 +494,7 @@ async def test_sync_meta_account_scopes_token_read_to_org(mock_pool, no_network)
     assert result == {"error": "Social account not found"}
 
     sql, *args = mock_pool.fetchrow.call_args[0]
-    assert "staging.hub_clients" in sql, "token read did not join through to an org"
+    assert "public.hub_clients" in sql, "token read did not join through to an org"
     assert "c.org_id=$2::uuid" in sql
     assert args == [ACCOUNT_ID, ORG_A]
 

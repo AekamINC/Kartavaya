@@ -189,7 +189,7 @@ def _wire(mock_pool, *, project_role="admin", task_row=TASK, column=None,
 
     async def fetchval_side(query, *args):
         q = " ".join(query.split())
-        if "staging.user_roles" in q:
+        if "public.user_roles" in q:
             return "org_admin" if org_admin else None
         if "is_done FROM project_columns" in q:
             return bool(column and column.get("is_done"))
@@ -726,7 +726,7 @@ class TestEveryIsProjectMemberRouteStillWorks:
 
 async def _org_admin_fetchval(query, *args):
     q = " ".join(query.split())
-    if "staging.user_roles" in q:
+    if "public.user_roles" in q:
         return "org_admin"
     if "COUNT(*) FROM project_columns" in q:
         return 3
@@ -827,7 +827,7 @@ def _wire_forward(mock_pool, *, target, target_is_project_client, caller_role="o
         # `as_admin` wires the platform row through `fetchval`; replacing the
         # side effect wholesale would silently un-admin the fixture and turn
         # `add_client_to_task`'s 403 into a false green.
-        if "staging.user_roles" in " ".join(query.split()):
+        if "public.user_roles" in " ".join(query.split()):
             return "platform_admin"
         return None
 

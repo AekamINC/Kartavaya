@@ -170,7 +170,7 @@ def _wire(
             return migration_applied
         # `_assert_same_org` — the THREE-role list, which is what tells it apart
         # from `_org_role` two lines up.
-        if "staging.user_roles" in s and "'org_member'" in s:
+        if "public.user_roles" in s and "'org_member'" in s:
             return same_org
         return 0
 
@@ -184,7 +184,7 @@ def _wire(
         # needs it to return nothing.
         if "c.type = 'dm'" in s:
             return existing_dm
-        if "FROM staging.samvada_channels" in s:
+        if "FROM public.samvada_channels" in s:
             return channel
         if "samvada_channel_members" in s:
             return membership
@@ -486,7 +486,7 @@ async def test_creating_a_channel_assigns_a_tone_and_binds_it_as_a_parameter(
     r = await api_client.post(f"{API}/channels", json={"name": "new-room"})
     assert r.status_code == 201, r.text
 
-    sql, args = _one(mock_pool, "INSERT INTO staging.samvada_channels")
+    sql, args = _one(mock_pool, "INSERT INTO public.samvada_channels")
     assert re.search(r"created_by\s*,\s*color\s*\)", sql), (
         f"the INSERT does not name the colour column:\n{sql}"
     )
@@ -516,7 +516,7 @@ async def test_creation_locks_the_org_before_it_reads_which_tones_are_in_use(
     read = next((i for i, s in enumerate(statements)
                  if "SELECT color, COUNT(*)" in s), None)
     insert = next((i for i, s in enumerate(statements)
-                   if s.startswith("INSERT INTO staging.samvada_channels")), None)
+                   if s.startswith("INSERT INTO public.samvada_channels")), None)
     assert lock is not None, "channel creation takes no tone lock"
     assert read is not None and insert is not None
     assert lock < read < insert, (
@@ -568,7 +568,7 @@ async def test_creation_still_works_and_names_no_column_before_the_migration(
     r = await api_client.post(f"{API}/channels", json={"name": "new-room"})
     assert r.status_code == 201, r.text
 
-    sql, _ = _one(mock_pool, "INSERT INTO staging.samvada_channels")
+    sql, _ = _one(mock_pool, "INSERT INTO public.samvada_channels")
     assert "color" not in sql, (
         f"the INSERT names a column that does not exist yet:\n{sql}"
     )
@@ -594,7 +594,7 @@ async def test_a_dm_is_never_given_a_colour(
     r = await api_client.post(f"{API}/dm", params={"target_user_id": SOMEBODY_ELSE})
     assert r.status_code == 200, r.text
 
-    sql, _ = _one(mock_pool, "INSERT INTO staging.samvada_channels")
+    sql, _ = _one(mock_pool, "INSERT INTO public.samvada_channels")
     assert "color" not in sql, f"the DM insert assigns a tone:\n{sql}"
     _none(mock_pool, "SELECT color, COUNT(*)")
     assert r.json()["color"] is None
@@ -616,7 +616,7 @@ async def test_a_known_tone_is_accepted_and_written(
     assert r.status_code == 200, r.text
     assert r.json()["color"] == "vetana"
 
-    sql, args = _one(mock_pool, "UPDATE staging.samvada_channels")
+    sql, args = _one(mock_pool, "UPDATE public.samvada_channels")
     assert re.search(r"color=\$\d+", sql), f"the colour was not written:\n{sql}"
     assert "vetana" in args
 
@@ -649,7 +649,7 @@ async def test_an_unknown_tone_is_refused_and_nothing_is_written(
     r = await api_client.patch(f"{API}/channels/{CHANNEL_ID}", json={"color": bad})
     assert r.status_code == 400, r.text
     assert "colour" in r.text.lower(), r.text
-    _none(mock_pool, "UPDATE staging.samvada_channels")
+    _none(mock_pool, "UPDATE public.samvada_channels")
 
 
 async def test_editing_a_colour_before_the_migration_says_so_instead_of_pretending(
@@ -669,7 +669,7 @@ async def test_editing_a_colour_before_the_migration_says_so_instead_of_pretendi
     assert "100_channel_colour" in r.text, (
         "the refusal does not name the migration that fixes it"
     )
-    _none(mock_pool, "UPDATE staging.samvada_channels")
+    _none(mock_pool, "UPDATE public.samvada_channels")
 
 
 async def test_renaming_a_channel_does_not_touch_the_colour_column(
@@ -684,7 +684,7 @@ async def test_renaming_a_channel_does_not_touch_the_colour_column(
                                json={"name": "renamed"})
     assert r.status_code == 200, r.text
 
-    sql, _ = _one(mock_pool, "UPDATE staging.samvada_channels")
+    sql, _ = _one(mock_pool, "UPDATE public.samvada_channels")
     assert "color" not in sql, f"an unrelated rename wrote the colour:\n{sql}"
 
 

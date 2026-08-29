@@ -68,7 +68,7 @@ def _statuses(pool):
     out = []
     for call in pool.execute.await_args_list:
         args = call.args
-        if args and "staging.reminders SET status" in args[0]:
+        if args and "public.reminders SET status" in args[0]:
             out.append(args[2] if len(args) > 2 else
                        ("suppressed" if "'suppressed'" in args[0] else "sent"))
     return out

@@ -23,8 +23,8 @@ async def test_enforced_dict_reports_2fa_as_real(api_client, mock_pool, admin_us
             return "platform_admin"  # require_org_role's is_platform probe
         if "org_id=$2::uuid AND role_code = ANY($3::text[])" in query and "LIMIT 1" not in query:
             return "org_owner"  # require_org_role's own-org role probe
-        if "to_regclass('staging.org_security')" in query:
-            return "staging.org_security"
+        if "to_regclass('org_security')" in query:
+            return "public.org_security"
         if "to_regclass($1)" in query:
             return None  # no TOTP table -> uncountable, exercised separately below
         return 0
@@ -57,13 +57,13 @@ async def test_lockout_count_activates_once_user_totp_exists(api_client, mock_po
             return "platform_admin"  # require_org_role's is_platform probe
         if "org_id=$2::uuid AND role_code = ANY($3::text[])" in query and "LIMIT 1" not in query:
             return "org_owner"  # require_org_role's own-org role probe
-        if "to_regclass('staging.org_security')" in query:
-            return "staging.org_security"
+        if "to_regclass('org_security')" in query:
+            return "public.org_security"
         if "to_regclass($1)" in query:
-            return "staging.user_totp"
-        if "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles" in query:
+            return "public.user_totp"
+        if "SELECT COUNT(DISTINCT user_id) FROM public.user_roles" in query:
             return 5
-        if "JOIN staging.user_roles ur ON ur.user_id = t.user_id" in query:
+        if "JOIN public.user_roles ur ON ur.user_id = t.user_id" in query:
             return 2
         return 0
 

@@ -61,7 +61,7 @@ def test_the_index_scope_matches_the_routers_seen_check():
     says so BEFORE a redelivered message lands twice."""
     router = (_BACKEND / "routers" / "whatsapp.py").read_text(encoding="utf-8")
     seen = re.search(
-        r'"SELECT 1 FROM staging\.varta_messages "\s*'
+        r'"SELECT 1 FROM public\.varta_messages "\s*'
         r'"WHERE org_id=\$1::uuid AND wa_message_id=\$2 "\s*'
         r'"  AND direction=\'inbound\'"',
         router)

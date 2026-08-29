@@ -154,7 +154,7 @@ def _table_the_token_is_written_to() -> str:
     src = _stripped_fn(ESIGN_SERVICE, "send_for_signature")
     hits = [
         table for table, cols in
-        re.findall(r"INSERT INTO staging\.(\w+)\s*\(([^)]*)\)", src, re.S)
+        re.findall(r"INSERT INTO public\.(\w+)\s*\(([^)]*)\)", src, re.S)
         if re.search(r"\btoken\b", cols)
     ]
     assert hits, "send_for_signature writes no token to any table"
@@ -165,7 +165,7 @@ def _table_the_token_is_written_to() -> str:
 def _table_the_public_endpoint_reads() -> str:
     """Which table the endpoint behind the emailed link looks the token up in."""
     src = _stripped_fn(ESIGN_ROUTER, "get_signing_page")
-    m = re.search(r"FROM staging\.(\w+)\s+(\w+)\s", src)
+    m = re.search(r"FROM public\.(\w+)\s+(\w+)\s", src)
     assert m, "get_signing_page reads no staging table"
     table, alias = m.group(1), m.group(2)
     assert re.search(rf"WHERE {alias}\.token=", src), (
@@ -186,8 +186,8 @@ def test_the_token_is_written_to_the_table_the_link_resolves_against():
     written = _table_the_token_is_written_to()
     read = _table_the_public_endpoint_reads()
     assert written == read, (
-        f"a signature request writes its token to staging.{written}, but the "
-        f"endpoint behind the emailed link reads staging.{read}. Every signer "
+        f"a signature request writes its token to public.{written}, but the "
+        f"endpoint behind the emailed link reads public.{read}. Every signer "
         f"who clicks gets a dead link."
     )
 

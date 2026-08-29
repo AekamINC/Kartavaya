@@ -196,9 +196,9 @@ class _Wire:
     async def _fetchrow(self, sql, *args):
         s = _flat(sql)
         self.queries.append(s)
-        if "staging.samvada_channel_members" in s:
+        if "public.samvada_channel_members" in s:
             return self.membership
-        if "staging.samvada_channels" in s:
+        if "public.samvada_channels" in s:
             return self.channel
         return None
 
@@ -209,7 +209,7 @@ class _Wire:
         # different feature, so the fake still recognises the statement if the
         # thread columns are ever gated away — and the test then fails on the
         # missing key instead of on an empty page.
-        if "FROM staging.samvada_messages m" not in s or "AS seen_count" not in s:
+        if "FROM public.samvada_messages m" not in s or "AS seen_count" not in s:
             return []
         return self._list_messages(s, args)
 
@@ -271,7 +271,7 @@ class _Wire:
 
     def list_sql(self) -> str:
         return next(q for q in self.queries
-                    if "FROM staging.samvada_messages m" in q and "AS seen_count" in q)
+                    if "FROM public.samvada_messages m" in q and "AS seen_count" in q)
 
 
 # ════════════════════════════════════════════════════════════════════════════

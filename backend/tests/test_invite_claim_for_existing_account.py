@@ -53,13 +53,13 @@ def test_both_doors_call_the_same_membership_code():
 def test_the_membership_rules_exist_in_exactly_one_place():
     """If these reappear in a handler, a second copy has been started."""
     shared = _code(auth_router._apply_org_invite)
-    assert "INSERT INTO staging.user_roles" in shared
+    assert "INSERT INTO public.user_roles" in shared
     assert "org_member_modules" in shared
     assert "manav_employees" in shared
 
     for handler in (auth_router.accept_invite, auth_router.claim_invite):
         code = _code(handler)
-        assert "INSERT INTO staging.user_roles" not in code, \
+        assert "INSERT INTO public.user_roles" not in code, \
             f"{handler.__name__} writes its own role row again"
         assert "org_member_modules" not in code, \
             f"{handler.__name__} writes its own grants again"

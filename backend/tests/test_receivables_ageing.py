@@ -316,8 +316,8 @@ def test_sql_is_schema_qualified_org_scoped_and_cast():
     a bind, and every parameter cast — PgBouncer turns an untyped parse
     error into an instant 500 (the credits incident)."""
     sql = " ".join(ra.OPEN_ITEMS_SQL.split())
-    assert "staging.ganit_invoices" in sql
-    assert "staging.graha_clients" in sql
+    assert "public.ganit_invoices" in sql
+    assert "public.graha_clients" in sql
     assert "i.org_id = $1::uuid" in sql
     assert "$2::text" in sql
     # Both lookaheads are load-bearing. `\$\d(?!::)` — the first version of
@@ -339,7 +339,7 @@ def test_sql_left_joins_the_client():
     """INNER would drop ₹42,34,873.20 of the seeded org's open book —
     the 234 invoices with no linked client — without a trace."""
     sql = " ".join(ra.OPEN_ITEMS_SQL.split())
-    assert "LEFT JOIN staging.graha_clients" in sql
+    assert "LEFT JOIN public.graha_clients" in sql
 
 
 def test_run_binds_the_org_and_the_unlinked_label():

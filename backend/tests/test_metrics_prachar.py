@@ -67,7 +67,7 @@ def test_sends_scope_through_the_campaign_never_the_unwritten_org_id():
     column arrived with seed data and is NULL on every product-written row.
     Scoping on it would return zero sends for every real org."""
     sql, params = build("prachar.sends")
-    assert "JOIN staging.prachar_campaigns c ON c.id = r.campaign_id" in sql
+    assert "JOIN public.prachar_campaigns c ON c.id = r.campaign_id" in sql
     assert "c.org_id = $1::uuid" in sql
     assert "r.org_id" not in sql, "r.org_id is NULL on every product-written row"
     assert params == [ORG, WIN.start, WIN.end]
@@ -120,7 +120,7 @@ def test_list_growth_counts_only_marketable_undupped_contacts():
     assert "COALESCE(g.email, '') <> ''" in sql
     # A folded duplicate was never a distinct audience member.
     assert "g.merged_into_id IS NULL" in sql
-    assert "FROM staging.prachar_unsubscribes" in sql
+    assert "FROM public.prachar_unsubscribes" in sql
     assert "u.unsubscribed_at::date BETWEEN $2::date AND $3::date" in sql
 
 
@@ -145,7 +145,7 @@ def test_unsubscribe_rate_denominator_is_real_sends_in_the_same_bucket():
     denominator, and only rows marked 'sent' qualify."""
     sql, _ = build("prachar.unsubscribe_rate")
     assert "r.status = 'sent'" in sql
-    assert "JOIN staging.prachar_campaigns c ON c.id = r.campaign_id" in sql
+    assert "JOIN public.prachar_campaigns c ON c.id = r.campaign_id" in sql
     assert "r.org_id" not in sql
     assert sql.count("$1::uuid") == 2, "both legs must be org-filtered"
 
@@ -173,7 +173,7 @@ def test_event_attendance_keeps_empty_events_without_inventing_registrations():
     COUNT(*) — keeps its row of NULLs from booking a phantom registration.
     r.org_id sits in the ON clause so the outer join survives it."""
     sql, _ = build("prachar.event_attendance")
-    assert "LEFT JOIN staging.prachar_event_registrations r" in sql
+    assert "LEFT JOIN public.prachar_event_registrations r" in sql
     assert "ON r.event_id = e.id AND r.org_id = $1::uuid" in sql
     assert "COUNT(*)" not in sql
 

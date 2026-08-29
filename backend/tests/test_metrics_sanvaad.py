@@ -139,7 +139,7 @@ def test_message_volume_channel_split_labels_the_unnamed_honestly():
     # samvada_channels.name is '' by default (and always '' on a DM) — a
     # blank label is not a name.
     assert "COALESCE(NULLIF(c.name, ''), 'Unnamed channel')" in sql
-    assert "JOIN staging.samvada_channels c ON c.id = m.channel_id" in sql
+    assert "JOIN public.samvada_channels c ON c.id = m.channel_id" in sql
     assert "ORDER BY value DESC" in sql
     assert params == [ORG, WIN.start, WIN.end]
 

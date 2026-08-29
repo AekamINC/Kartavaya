@@ -101,7 +101,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What the app's own pool does on every connection (`db.py`), so a statement is
 #: planned the way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. These checks parse auto-mark's SQL against the real "
@@ -238,14 +238,14 @@ def plain():
     """The statement that runs on an ordinary weekend — no regional holiday, so
     no state probe. This is the shape that ran on five of the six dates the
     sixty bad rows carry."""
-    sql, args = capture().find("FROM staging.manav_employees")
+    sql, args = capture().find("FROM public.manav_employees")
     return norm(sql), args
 
 
 @pytest.fixture
 def state_aware():
     """The other branch, taken when a holiday on the date names a state."""
-    sql, args = capture(holidays=[MH_HOLIDAY]).find("FROM staging.manav_employees")
+    sql, args = capture(holidays=[MH_HOLIDAY]).find("FROM public.manav_employees")
     return norm(sql), args
 
 
@@ -260,7 +260,7 @@ def test_the_weekend_query_excludes_anyone_whose_exit_predates_the_day(plain):
     assert "NOT EXISTS" in sql, (
         "the leaver guard is gone; auto-mark is back to trusting `is_active` "
         "alone, which ten live E2E employees do not clear: %s" % sql)
-    assert "staging.manav_offboarding x" in sql, sql
+    assert "public.manav_offboarding x" in sql, sql
 
 
 def test_the_state_aware_query_carries_the_same_guard(state_aware):
@@ -269,7 +269,7 @@ def test_the_state_aware_query_carries_the_same_guard(state_aware):
     which is nearly every date, and is five of the six dates already damaged.
     """
     sql, _args = state_aware
-    assert "staging.manav_offboarding x" in sql, (
+    assert "public.manav_offboarding x" in sql, (
         "the state-aware branch has no leaver guard, so a date with a regional "
         "holiday on it still marks people who have left: %s" % sql)
 
@@ -347,7 +347,7 @@ def test_the_guard_is_the_hr_paths_shape_and_not_a_third_one():
     from analytics.metrics import manav as hr
 
     hr_sql = norm(inspect.getsource(hr._headcount_asat))
-    for piece in ("staging.manav_offboarding x",
+    for piece in ("public.manav_offboarding x",
                   "x.org_id = e.org_id AND x.employee_id = e.id",
                   "x.status <> 'cancelled'",
                   "x.last_working_day"):
@@ -356,8 +356,8 @@ def test_the_guard_is_the_hr_paths_shape_and_not_a_third_one():
             "gone). Re-derive the auto-mark guard from it rather than leaving "
             "the two to drift." % piece)
 
-    sql, _args = capture().find("FROM staging.manav_employees")
-    for piece in ("staging.manav_offboarding x",
+    sql, _args = capture().find("FROM public.manav_employees")
+    for piece in ("public.manav_offboarding x",
                   "x.org_id = e.org_id AND x.employee_id = e.id",
                   "x.status <> 'cancelled'"):
         assert piece in norm(sql), piece
@@ -443,12 +443,12 @@ def test_this_query_is_the_only_thing_that_decides_who_gets_a_row():
     function, inside the loop over the rows this query returned.
     """
     src = inspect.getsource(mark_holidays_weekends)
-    assert src.count("INSERT INTO staging.manav_attendance") == 1, (
+    assert src.count("INSERT INTO public.manav_attendance") == 1, (
         "auto-mark writes attendance from more than one place; excluding a "
         "leaver from the employee query no longer excludes them from the run")
     loop = "for emp in employees:"
     assert src.count(loop) == 1
-    assert src.index("INSERT INTO staging.manav_attendance") > src.index(loop)
+    assert src.index("INSERT INTO public.manav_attendance") > src.index(loop)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -492,8 +492,8 @@ def _both_employee_statements() -> list[str]:
     ordinary run — and an unparsed statement is exactly how a router ships a
     column that has never existed."""
     return [
-        norm(capture().find("FROM staging.manav_employees")[0]),
-        norm(capture(holidays=[MH_HOLIDAY]).find("FROM staging.manav_employees")[0]),
+        norm(capture().find("FROM public.manav_employees")[0]),
+        norm(capture(holidays=[MH_HOLIDAY]).find("FROM public.manav_employees")[0]),
     ]
 
 
@@ -550,7 +550,7 @@ def test_live_the_fix_removes_exactly_the_people_who_had_already_left():
     assertion is on the PROPERTY, not on 10, so the number moving as leavers
     are properly deactivated does not turn this red.
     """
-    guarded = norm(capture().find("FROM staging.manav_employees")[0])
+    guarded = norm(capture().find("FROM public.manav_employees")[0])
     unguarded = re.sub(
         r"AND NOT EXISTS \(.*?x\.last_working_day < \$2::date\)\s*", "", guarded)
     assert "NOT EXISTS" not in unguarded, (
@@ -562,7 +562,7 @@ def test_live_the_fix_removes_exactly_the_people_who_had_already_left():
             kept = {r["id"] for r in await conn.fetch(guarded, org, SAT)}
             everyone = {r["id"] for r in await conn.fetch(unguarded, org)}
             left = {r["employee_id"] for r in await conn.fetch(
-                "SELECT DISTINCT employee_id FROM staging.manav_offboarding "
+                "SELECT DISTINCT employee_id FROM public.manav_offboarding "
                 " WHERE org_id = $1::uuid AND status <> 'cancelled' "
                 "   AND last_working_day < $2::date", org, SAT)}
             out.append((org, kept, everyone, left))
@@ -594,13 +594,13 @@ def test_live_the_guard_would_have_prevented_every_row_already_written():
     run the same replay with the month-start bound payroll uses and six rows
     come back.
     """
-    guarded = norm(capture().find("FROM staging.manav_employees")[0])
+    guarded = norm(capture().find("FROM public.manav_employees")[0])
 
     async def work(conn):
         bad = await conn.fetch(
             "SELECT a.org_id, a.employee_id, a.date "
-            "  FROM staging.manav_attendance a "
-            "  JOIN staging.manav_offboarding o "
+            "  FROM public.manav_attendance a "
+            "  JOIN public.manav_offboarding o "
             "    ON o.org_id = a.org_id AND o.employee_id = a.employee_id "
             "   AND o.status <> 'cancelled' "
             " WHERE a.org_id = ANY($1::uuid[]) AND a.marked_by = 'system' "

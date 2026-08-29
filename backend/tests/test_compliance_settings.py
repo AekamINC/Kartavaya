@@ -173,7 +173,7 @@ def _route_fetchrow(rules):
     org-scoped route in this file needs it and forgetting it is a 404 that
     reads exactly like the test's OWN 404 assertion — see the incident this
     comment exists because of, two commits up."""
-    base = {"SELECT id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE": {"id": _ORG_ID}}
+    base = {"SELECT id FROM public.organisations WHERE id=$1::uuid AND is_active=TRUE": {"id": _ORG_ID}}
     merged = {**base, **rules}
 
     async def _side_effect(query, *args):
@@ -203,7 +203,7 @@ async def test_get_compliance_settings_unknown_module(api_client, mock_pool, as_
 
 async def test_patch_compliance_setting(api_client, mock_pool, as_admin):
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "INSERT INTO staging.module_compliance_settings":
+        "INSERT INTO public.module_compliance_settings":
             {"rule_key": "hsn_required", "state": "enforced", "set_by": "user_admin001", "set_at": None, "reason": "strict"},
     })
     resp = await api_client.patch("/api/v1/org/compliance/ganit", headers=_ORG_HEADER, json={
@@ -279,11 +279,11 @@ async def test_record_employee_consent_opt_out(mock_pool):
 
     mock_pool.fetchval.side_effect = _route_fetchval({
         # `_may_view_others_biometrics` — the org_owner admitted by row.
-        "staging.user_roles": 1,
+        "public.user_roles": 1,
     })
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT id FROM staging.manav_employees": {"id": "emp_1"},
-        "INSERT INTO staging.pahchan_employee_consents": {
+        "SELECT id FROM public.manav_employees": {"id": "emp_1"},
+        "INSERT INTO public.pahchan_employee_consents": {
             "id": "c1", "employee_id": "emp_1", "notice_version": "2026-08-06.1",
             "method": "paper", "consented": False, "recorded_by": "user_owner001",
             "recorded_at": None, "note": "declined, prefers badge",
@@ -304,11 +304,11 @@ async def test_enrollment_refused_for_opted_out_employee(mock_pool):
     from routers.pahchan import EnrollBody, enroll_photo
 
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT user_id FROM staging.manav_employees": {"user_id": None},
+        "SELECT user_id FROM public.manav_employees": {"user_id": None},
     })
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "staging.user_roles": 1,  # _may_view_others_biometrics — admitted
-        "SELECT consented FROM staging.pahchan_employee_consents": False,
+        "public.user_roles": 1,  # _may_view_others_biometrics — admitted
+        "SELECT consented FROM public.pahchan_employee_consents": False,
     })
 
     body = EnrollBody(
@@ -327,12 +327,12 @@ async def test_enrollment_proceeds_when_no_optout_recorded(mock_pool):
     from routers.pahchan import EnrollBody, enroll_photo
 
     mock_pool.fetchrow.side_effect = _route_fetchrow({
-        "SELECT user_id FROM staging.manav_employees": {"user_id": None},
-        "INSERT INTO staging.pahchan_enrollment_photos":
+        "SELECT user_id FROM public.manav_employees": {"user_id": None},
+        "INSERT INTO public.pahchan_enrollment_photos":
             {"id": "photo_1", "slot": 1, "source": "hr_upload", "approved_at": None},
     })
     mock_pool.fetchval.side_effect = _route_fetchval({
-        "staging.user_roles": 1,  # _may_view_others_biometrics — admitted
+        "public.user_roles": 1,  # _may_view_others_biometrics — admitted
         # No override for the consent query — default 0 -> not opted out.
     })
 

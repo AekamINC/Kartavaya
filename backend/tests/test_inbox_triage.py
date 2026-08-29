@@ -128,7 +128,7 @@ class _Pool:
 
     async def fetch(self, sql, *args):
         self.sql_seen.append(sql)
-        if "staging.statute_calendar" in sql:
+        if "public.statute_calendar" in sql:
             return list(self.statute.get(args[0], []))
         for fragment, payload in self.fetch_by.items():
             if fragment in sql:
@@ -168,7 +168,7 @@ def _msg(text, **kw):
 def _triage_pool(messages, total=None, first=None, last=None):
     n = len(messages) if total is None else total
     return _Pool(
-        fetch_by={"FROM staging.varta_messages m\n        LEFT JOIN": messages},
+        fetch_by={"FROM public.varta_messages m\n        LEFT JOIN": messages},
         row_by={"count(*)::int AS inbound_total": {
             "inbound_total": n,
             "first_at": first or (NOW - timedelta(days=6)),
@@ -375,14 +375,14 @@ def _reply_pool(conv=None, person=None, invoices=(), payments=(), orders=(), thr
     ]
     return _Pool(
         fetch_by={
-            "FROM staging.varta_messages m\n        WHERE": thread,
-            "FROM staging.ganit_invoices i\n                WHERE": list(invoices),
-            "FROM staging.ganit_payments p": list(payments),
-            "FROM staging.vikray_orders v": list(orders),
+            "FROM public.varta_messages m\n        WHERE": thread,
+            "FROM public.ganit_invoices i\n                WHERE": list(invoices),
+            "FROM public.ganit_payments p": list(payments),
+            "FROM public.vikray_orders v": list(orders),
         },
         row_by={
-            "FROM staging.varta_conversations c": conv,
-            "FROM staging.graha_contacts gc": person,
+            "FROM public.varta_conversations c": conv,
+            "FROM public.graha_contacts gc": person,
         },
     )
 
@@ -585,7 +585,7 @@ def _bill(**kw):
 
 def _schedule_pool(bills, statute=None):
     return _Pool(
-        fetch_by={"FROM staging.ganit_vendor_bills b": bills},
+        fetch_by={"FROM public.ganit_vendor_bills b": bills},
         statute=statute if statute is not None else {
             "gst.return.gstr3b": [GSTR3B_ROW],
             "gst.itc.time_limit": [ITC_ROW],
@@ -739,7 +739,7 @@ def test_nothing_here_writes():
     """These read. Delivery, assignment and recording are separate armed
     decisions the owner makes."""
     lowered = SRC.lower()
-    for verb in ("insert into", "update staging.", "delete from", "upsert"):
+    for verb in ("insert into", "update public.", "delete from", "upsert"):
         assert verb not in lowered, verb
 
 
@@ -765,7 +765,7 @@ def test_every_query_is_scoped_to_one_org():
     sqls = [
         n.value for n in ast.walk(tree)
         if isinstance(n, ast.Constant) and isinstance(n.value, str)
-        and "FROM staging." in n.value
+        and "FROM public." in n.value
     ]
     assert len(sqls) >= 6, "no SQL found — the extraction is wrong, not the handler"
     for sql in sqls:
@@ -776,7 +776,7 @@ def test_both_graha_joins_carry_org_id():
     """The FK on `graha_clients` is on the id ALONE, so an id-only join prints
     another practice's client name against this practice's conversation. Proved
     live; see migration 163."""
-    joins = re.findall(r"(?:LEFT )?JOIN staging\.graha_(\w+) (\w+)\s+ON ([^\n]+)", SRC)
+    joins = re.findall(r"(?:LEFT )?JOIN public\.graha_(\w+) (\w+)\s+ON ([^\n]+)", SRC)
     assert joins, "no graha join found — the extraction is wrong"
     for _table, _alias, on in joins:
         assert "org_id" in on, on
@@ -785,7 +785,7 @@ def test_both_graha_joins_carry_org_id():
 def test_every_varta_join_carries_org_id_too():
     """Same rule, same reason: `varta_conversations` and `varta_contacts` are
     joined on ids that are unique per row but not per tenant in the FK."""
-    joins = re.findall(r"(?:LEFT )?JOIN staging\.varta_(\w+) (\w+)\s+ON ([^\n]+)", SRC)
+    joins = re.findall(r"(?:LEFT )?JOIN public\.varta_(\w+) (\w+)\s+ON ([^\n]+)", SRC)
     assert joins
     for _table, _alias, on in joins:
         assert "org_id" in on, on

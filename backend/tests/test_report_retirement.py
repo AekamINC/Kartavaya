@@ -184,7 +184,7 @@ def test_the_final_user_delete_is_still_not_error_swallowed():
 
 def test_the_claim_happens_before_the_delivery_call():
     code = _uncommented(dristi.dispatch_scheduled_reports)
-    claim = code.index("UPDATE staging.dristi_scheduled_reports")
+    claim = code.index("UPDATE public.dristi_scheduled_reports")
     send = code.index("_deliver_scheduled_report(pool, full)")
     assert claim < send, (
         "the sweep still marks the schedule after delivering it — a failure on "
@@ -196,7 +196,7 @@ def test_the_claim_is_conditional_on_the_row_not_having_moved():
     row; only one may take it."""
     code = _uncommented(dristi.dispatch_scheduled_reports)
     claim = re.search(
-        r"UPDATE staging\.dristi_scheduled_reports.{0,500}", code, re.S)
+        r"UPDATE public\.dristi_scheduled_reports.{0,500}", code, re.S)
     assert claim, "the claim is no longer recognisable"
     assert "RETURNING id" in claim.group(0), (
         "the claim does not report whether it took the row, so it cannot fence "
@@ -209,7 +209,7 @@ def test_the_claim_uses_is_not_distinct_from_and_not_equals():
     sent — the sweep would look fenced and be wide open."""
     code = _uncommented(dristi.dispatch_scheduled_reports)
     claim = re.search(
-        r"UPDATE staging\.dristi_scheduled_reports.{0,500}", code, re.S).group(0)
+        r"UPDATE public\.dristi_scheduled_reports.{0,500}", code, re.S).group(0)
     assert "IS NOT DISTINCT FROM" in claim
 
 
@@ -227,8 +227,8 @@ def test_the_row_is_fetched_before_it_is_claimed_so_the_window_stays_honest():
     `last_sent_at` of NOW() and every report would cover a zero-length
     period — a document that is wrong rather than missing."""
     code = _uncommented(dristi.dispatch_scheduled_reports)
-    assert (code.index("SELECT * FROM staging.dristi_scheduled_reports")
-            < code.index("UPDATE staging.dristi_scheduled_reports"))
+    assert (code.index("SELECT * FROM public.dristi_scheduled_reports")
+            < code.index("UPDATE public.dristi_scheduled_reports"))
 
 
 def test_one_schedule_failing_does_not_stop_the_other_orgs():

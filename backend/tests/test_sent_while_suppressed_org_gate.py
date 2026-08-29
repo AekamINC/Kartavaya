@@ -141,7 +141,7 @@ def _reminder_statuses(pool):
     out = []
     for call in pool.execute.await_args_list:
         args = call.args
-        if args and "staging.reminders SET status" in args[0]:
+        if args and "public.reminders SET status" in args[0]:
             out.append(args[2] if len(args) > 2 else
                        ("suppressed" if "'suppressed'" in args[0] else "sent"))
     return out
@@ -190,7 +190,7 @@ class _CampaignPool:
         self.executed: list[tuple] = []
 
     async def fetchrow(self, sql, *args):
-        if "FROM staging.prachar_campaigns c" in sql:
+        if "FROM public.prachar_campaigns c" in sql:
             return {"id": CAMP_ID, "org_id": self.org_id, "name": "Diwali",
                     "subject": "Hello {{name}}", "body_html": "<p>Hi</p>",
                     "channel": "email", "status": "scheduled",
@@ -207,12 +207,12 @@ class _CampaignPool:
         if "gc.client_id IS NULL" in sql:
             return 0
         # "already materialised" — keeps the runner off the router import.
-        if "COUNT(*) FROM staging.prachar_campaign_contacts" in sql:
+        if "COUNT(*) FROM public.prachar_campaign_contacts" in sql:
             return 1
         return 0
 
     async def fetch(self, sql, *args):
-        if "FROM staging.prachar_campaign_contacts cc" in sql:
+        if "FROM public.prachar_campaign_contacts cc" in sql:
             return [{"id": "cc1", "contact_id": "ct1",
                      "email": "lead@example.com", "name": "A",
                      # campaign_sender selects `c.company` for {{company}}
@@ -251,7 +251,7 @@ async def test_a_listed_orgs_scheduled_campaign_records_suppressed(
     )
     # …and the campaign itself is 'suppressed' with sent_at cleared, the
     # zero-delivery contract this module already keeps for dry mode.
-    camp = pool.wrote("UPDATE staging.prachar_campaigns")
+    camp = pool.wrote("UPDATE public.prachar_campaigns")
     assert any("'suppressed'" in s for s, _ in camp)
 
 
@@ -362,9 +362,9 @@ async def _run_interactive_send(monkeypatch, org_id):
 
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        if "UPDATE staging.prachar_campaigns" in q and "RETURNING" in q:
+        if "UPDATE public.prachar_campaigns" in q and "RETURNING" in q:
             return dict(campaign, status="sent", total_recipients=a[0])
-        if "SELECT * FROM staging.prachar_campaigns" in q:
+        if "SELECT * FROM public.prachar_campaigns" in q:
             return dict(campaign)
         return None
 
@@ -383,7 +383,7 @@ async def test_a_listed_orgs_interactive_send_records_suppressed(
 ):
     pool = await _run_interactive_send(monkeypatch, LISTED_ORG)
     contact_writes = [q for q, _ in pool.calls
-                      if "UPDATE staging.prachar_campaign_contacts" in q]
+                      if "UPDATE public.prachar_campaign_contacts" in q]
     assert any("status='suppressed'" in q for q in contact_writes), \
         "the contact row does not say the gate stopped it"
     assert not any("status='sent'" in q for q in contact_writes), (
@@ -394,7 +394,7 @@ async def test_a_listed_orgs_interactive_send_records_suppressed(
     # zero delivered → the campaign is 'suppressed' with sent_at cleared
     assert any("status='suppressed'" in q and "sent_at=NULL" in q
                for q, _ in pool.calls
-               if "UPDATE staging.prachar_campaigns" in q)
+               if "UPDATE public.prachar_campaigns" in q)
 
 
 @pytest.mark.asyncio
@@ -403,6 +403,6 @@ async def test_an_unlisted_orgs_interactive_send_still_records_sent(
 ):
     pool = await _run_interactive_send(monkeypatch, OTHER_ORG)
     contact_writes = [q for q, _ in pool.calls
-                      if "UPDATE staging.prachar_campaign_contacts" in q]
+                      if "UPDATE public.prachar_campaign_contacts" in q]
     assert any("status='sent'" in q for q in contact_writes)
     assert not any("status='suppressed'" in q for q in contact_writes)

@@ -79,8 +79,8 @@ async def test_the_listing_is_scoped_through_hub_clients(
     assert r.status_code == 200
 
     q = seen["query"]
-    assert "staging.hub_social_accounts" in q
-    assert "JOIN staging.hub_clients" in q
+    assert "public.hub_social_accounts" in q
+    assert "JOIN public.hub_clients" in q
     assert "c.org_id=$1::uuid" in q
     assert seen["args"][0] == with_org_id
 

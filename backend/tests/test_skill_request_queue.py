@@ -136,7 +136,7 @@ class FakeQueue:
             return None
 
         async def _fetch(query, *args):
-            if "FROM staging.hub_skill_requests" in query:
+            if "FROM public.hub_skill_requests" in query:
                 self.queries.append((query, args))
                 return list(self.rows)
             return []

@@ -54,13 +54,13 @@ class RecordingPool:
 
     async def fetchrow(self, sql, *args):
         self.calls.append((" ".join(sql.split()), list(args)))
-        if "FROM staging.graha_clients" in sql:
+        if "FROM public.graha_clients" in sql:
             return self.client_row
-        if "FROM staging.analytics_accounts" in sql:
+        if "FROM public.analytics_accounts" in sql:
             return self.account_rows.get(args[2] if len(args) > 2 else None)
-        if "FROM staging.graha_deals" in sql:
+        if "FROM public.graha_deals" in sql:
             return {"won_count": 2, "won_value": 500000.0}
-        if "FROM staging.ganit_invoices" in sql:
+        if "FROM public.ganit_invoices" in sql:
             return {"invoiced": 118000.0, "invoice_count": 3}
         return None
 
@@ -179,7 +179,7 @@ def test_collected_is_payment_dated_like_the_registry(pool, all_reachable):
     for sql in col:
         assert "payment_date BETWEEN" in sql, \
             "collected must be dated by payment_date — ganit.collected's basis"
-        assert "JOIN staging.ganit_invoices" in sql, \
+        assert "JOIN public.ganit_invoices" in sql, \
             "payments carry no client; the join is the only honest path"
 
 
@@ -255,7 +255,7 @@ def test_the_join_binds_the_org_on_both_sides(pool, all_reachable):
     """Belt-and-braces: the payment→invoice hop carries its own org filter —
     fail-closed beats trusting a foreign key one table away."""
     report(pool)
-    joins = [sql for sql, _ in pool.calls if "JOIN staging.ganit_invoices" in sql]
+    joins = [sql for sql, _ in pool.calls if "JOIN public.ganit_invoices" in sql]
     assert joins
     for sql in joins:
         assert "i.org_id = $2::uuid" in sql, sql

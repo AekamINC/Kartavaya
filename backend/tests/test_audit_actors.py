@@ -297,7 +297,7 @@ def test_the_ratchet_does_not_fire_on_a_legitimate_email_column():
     fine = [
         "SELECT u.user_id, u.email, COALESCE(u.full_name, u.name) AS full_name",
         "COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')",
-        "SELECT ct.email AS contact_email FROM staging.graha_contacts ct",
+        "SELECT ct.email AS contact_email FROM public.graha_contacts ct",
         "WHERE email=$1 AND NOT COALESCE(is_system, FALSE)",
         "COALESCE(NULLIF(btrim(ct.email), ''), '') AS to_email,",
     ]

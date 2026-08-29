@@ -93,7 +93,7 @@ class _Pool:
         self.fetched.append(q)
         if "pg_advisory_xact_lock" in q:
             return None
-        if "invoice_number FROM staging.ganit_invoices" in q:
+        if "invoice_number FROM public.ganit_invoices" in q:
             return self.last_number
         return None
 
@@ -104,9 +104,9 @@ class _Pool:
     async def fetchrow(self, sql, *a):
         q = " ".join(sql.split())
         self.fetched.append(q)
-        if "staging.organisations" in q:
+        if "public.organisations" in q:
             return self.org
-        if "staging.graha_contacts" in q:
+        if "public.graha_contacts" in q:
             return self.contact
         return None
 
@@ -153,7 +153,7 @@ async def test_the_schedule_update_does_not_set_a_column_that_does_not_exist():
     """`updated_at` is not on ganit_recurring; setting it raised on the way out."""
     pool = _Pool([_rec()])
     await G.generate_due_invoices(pool, "org-1")
-    upd = next(s for s, _ in pool.executed if "UPDATE staging.ganit_recurring" in s)
+    upd = next(s for s, _ in pool.executed if "UPDATE public.ganit_recurring" in s)
     assert "updated_at" not in upd
 
 
@@ -230,7 +230,7 @@ async def test_the_generated_number_continues_the_series_the_ui_is_writing():
     """
     pool = _Pool([_rec()], last_number="INV-2026-0149")
     await G.generate_due_invoices(pool, "org-1")
-    ins = next((s, a) for s, a in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    ins = next((s, a) for s, a in pool.executed if "INSERT INTO public.ganit_invoices" in s)
     assert "INV-2026-0150" in ins[1]
 
 
@@ -290,7 +290,7 @@ async def test_monthly_is_a_calendar_month_and_not_thirty_days():
     pool = _Pool([_rec(next_date=date(2026, 1, 15), frequency="monthly")],
                  last_number="INV-2026-0001")
     await G.generate_due_invoices(pool, "org-1")
-    upd = next(a for s, a in pool.executed if "UPDATE staging.ganit_recurring" in s)
+    upd = next(a for s, a in pool.executed if "UPDATE public.ganit_recurring" in s)
     assert upd[1] == date(2026, 2, 15)
 
 
@@ -327,7 +327,7 @@ async def test_an_incomplete_invoice_is_written_as_a_draft_not_a_final():
     """
     pool = _Pool([_rec()], last_number="INV-2026-0001", contact=None)
     out = await G.generate_due_invoices(pool, "org-1")
-    ins = next(a for s, a in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    ins = next(a for s, a in pool.executed if "INSERT INTO public.ganit_invoices" in s)
     assert "draft" in ins
     assert "final" not in ins
     assert out["held_as_draft"] == 1
@@ -346,7 +346,7 @@ async def test_a_complete_invoice_is_still_born_final():
     """The gate has to let the ordinary case through, or it is just an outage."""
     pool = _Pool([_rec(template_items=_LINE_OK)], last_number="INV-2026-0001")
     out = await G.generate_due_invoices(pool, "org-1")
-    ins = next(a for s, a in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    ins = next(a for s, a in pool.executed if "INSERT INTO public.ganit_invoices" in s)
     assert "final" in ins
     assert out["held_as_draft"] == 0
 
@@ -360,5 +360,5 @@ async def test_the_insert_names_doc_status_at_all():
     """
     pool = _Pool([_rec(template_items=_LINE_OK)], last_number="INV-2026-0001")
     await G.generate_due_invoices(pool, "org-1")
-    sql = next(s for s, _ in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    sql = next(s for s, _ in pool.executed if "INSERT INTO public.ganit_invoices" in s)
     assert "doc_status" in sql

@@ -141,7 +141,7 @@ def test_the_order_and_the_invoice_agree_on_the_taxable_value():
 
 def test_the_owner_resolver_checks_org_membership():
     code = _code(graha.resolve_deal_owner)
-    assert "staging.user_roles" in code, (
+    assert "public.user_roles" in code, (
         "membership is `user_roles` and nothing else — it is the sole tenant path"
     )
     assert "org_id=$2::uuid" in code
@@ -182,7 +182,7 @@ def test_assigned_to_is_still_bound_through_nullif_and_never_cast_to_uuid():
     # POSITION rather than by grepping the whole statement for "::uuid", which
     # would trip over the four genuine uuid columns beside it.
     insert = _code(graha.create_deal)
-    cols = re.search(r"\"INSERT INTO staging\.graha_deals \"\s*\n\s*\"\((.*?)\)\s*\"",
+    cols = re.search(r"\"INSERT INTO public\.graha_deals \"\s*\n\s*\"\((.*?)\)\s*\"",
                      insert, re.S)
     assert cols, "the deal INSERT's column list could not be read"
     names = [c.strip() for c in cols.group(1).replace('"', " ").split(",")]
@@ -250,5 +250,5 @@ def test_the_validator_still_accepts_a_company_as_the_recipient():
     from routers import ganit
     code = _code(ganit._refuse_final_if_incomplete)
     assert 'if not contact and invoice.get("client_id")' in code
-    assert "staging.graha_clients" in code
+    assert "public.graha_clients" in code
     assert '"company": client["name"]' in code

@@ -86,7 +86,7 @@ def test_the_page_size_is_bounded():
 
 def test_an_unknown_sort_is_refused_not_interpolated():
     with pytest.raises(HTTPException) as exc:
-        _content_order("created_at; DROP TABLE staging.hub_content_items", "desc")
+        _content_order("created_at; DROP TABLE public.hub_content_items", "desc")
     assert exc.value.status_code == 400
     # The refusal names the valid keys, so the caller can fix it without reading
     # the source.

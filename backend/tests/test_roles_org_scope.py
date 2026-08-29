@@ -119,7 +119,7 @@ def _pool(monkeypatch, *, god, org_role, member):
         asked.append((s, args))
         if "org_id IS NULL" in s:
             return 1 if god else None
-        if "SELECT 1 FROM staging.user_roles" in s:
+        if "SELECT 1 FROM public.user_roles" in s:
             return 1 if member else None
         return org_role
 
@@ -140,7 +140,7 @@ def _membership_probes(asked):
     membership probe was not written as a second `SELECT role_code`."""
     return [
         (s, a) for s, a in asked
-        if "SELECT 1 FROM staging.user_roles" in s and "org_id IS NULL" not in s
+        if "SELECT 1 FROM public.user_roles" in s and "org_id IS NULL" not in s
     ]
 
 

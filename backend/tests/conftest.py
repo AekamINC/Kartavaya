@@ -351,10 +351,10 @@ def as_admin(app, admin_user, mock_pool):
     _orig_side = original_fetchval.side_effect
 
     def _is_org_scoped_role_query(query: str) -> bool:
-        return "staging.user_roles" in query and "org_id=$2::uuid" in query
+        return "public.user_roles" in query and "org_id=$2::uuid" in query
 
     async def _fetchval_with_platform_role(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return "platform_admin"
         if _orig_side:
             answer = await _orig_side(query, *args)

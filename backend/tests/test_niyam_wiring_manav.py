@@ -213,8 +213,8 @@ _LEAVE_ROW = {
 
 async def test_submitting_leave_emits_on_the_writes_own_connection(pool, emitted):
     _dispatch(pool, {
-        "SELECT id FROM staging.manav_employees": {"id": "e1"},
-        "INSERT INTO staging.manav_leave_requests": _LEAVE_ROW,
+        "SELECT id FROM public.manav_employees": {"id": "e1"},
+        "INSERT INTO public.manav_leave_requests": _LEAVE_ROW,
     })
     _fetchval_returns(pool, "login-1")
 
@@ -249,7 +249,7 @@ async def test_leave_without_an_employee_record_emits_nothing(pool, emitted):
 
 async def test_insufficient_balance_emits_nothing(pool, emitted):
     _dispatch(pool, {
-        "SELECT id FROM staging.manav_employees": {"id": "e1"},
+        "SELECT id FROM public.manav_employees": {"id": "e1"},
         "SELECT allocated, used, carried_forward":
             {"allocated": 2, "used": 2, "carried_forward": 0},
     })
@@ -276,9 +276,9 @@ async def test_actioning_leave_emits_one_event_with_the_decision(pool, emitted, 
     decided = dict(_LEAVE_ROW, status=decision)
     _dispatch(pool, {
         "SELECT employee_id, leave_type_id, days, status": _PENDING_LR,
-        "UPDATE staging.manav_leave_requests": decided,
+        "UPDATE public.manav_leave_requests": decided,
         # the post-decision notify lookup — no email, so no send is attempted
-        "SELECT name, email FROM staging.manav_employees": None,
+        "SELECT name, email FROM public.manav_employees": None,
     })
     _fetchval_returns(pool, "login-1")
 
@@ -338,7 +338,7 @@ async def test_losing_the_decision_race_is_a_409_and_emits_nothing(pool, emitted
     # a real database rather than double-deciding.
     (upd_q, upd_args), = [
         (q, a) for q, a in pool.calls
-        if q.startswith("UPDATE staging.manav_leave_requests")
+        if q.startswith("UPDATE public.manav_leave_requests")
     ]
     assert "AND org_id=" in upd_q
     assert "AND status='pending'" in upd_q
@@ -357,7 +357,7 @@ _EMP_ROW = {
 
 
 async def test_creating_an_employee_emits_joined(pool, emitted):
-    _dispatch(pool, {"INSERT INTO staging.manav_employees": _EMP_ROW})
+    _dispatch(pool, {"INSERT INTO public.manav_employees": _EMP_ROW})
 
     out = await manav.create_employee(
         manav.EmployeeCreate(name="Rahul", employee_code="EMP002",
@@ -390,11 +390,11 @@ async def test_a_refused_hire_emits_nothing(pool, emitted):
 
 async def test_hiring_a_candidate_emits_joined_for_that_row_creation(pool, emitted):
     _dispatch(pool, {
-        "SELECT * FROM staging.manav_candidates": {
+        "SELECT * FROM public.manav_candidates": {
             "id": "c1", "converted_employee_id": None,
             "full_name": "Rahul", "email": "r@x.in", "phone": "9",
         },
-        "INSERT INTO staging.manav_employees": _EMP_ROW,
+        "INSERT INTO public.manav_employees": _EMP_ROW,
     })
 
     out = await manav.hire_candidate(
@@ -412,7 +412,7 @@ async def test_rehiring_a_converted_candidate_emits_nothing(pool, emitted):
     # The guard that keeps "one event per actual row creation" true: a
     # candidate already converted creates no second row and no second event.
     _dispatch(pool, {
-        "SELECT * FROM staging.manav_candidates":
+        "SELECT * FROM public.manav_candidates":
             {"id": "c1", "converted_employee_id": "e-old"},
     })
     with pytest.raises(HTTPException) as e:
@@ -439,7 +439,7 @@ _EXITING_EMP = dict(_EMP_ROW, id="e1", user_id="login-9",
 async def test_completing_offboarding_emits_exited_with_the_exit_type(pool, emitted):
     _dispatch(pool, {
         "SELECT o.*, e.name AS employee_name": _OFFBOARDING,
-        "UPDATE staging.manav_employees": _EXITING_EMP,
+        "UPDATE public.manav_employees": _EXITING_EMP,
     })
 
     out = await manav.complete_offboarding(
@@ -496,8 +496,8 @@ _CLAIM_ROW = {
 
 async def test_claiming_an_expense_emits(pool, emitted):
     _dispatch(pool, {
-        "SELECT id FROM staging.manav_employees": {"id": "e1"},
-        "INSERT INTO staging.manav_expense_claims": _CLAIM_ROW,
+        "SELECT id FROM public.manav_employees": {"id": "e1"},
+        "INSERT INTO public.manav_expense_claims": _CLAIM_ROW,
     })
     _fetchval_returns(pool, "login-1")
 
@@ -548,8 +548,8 @@ def as_org_admin(monkeypatch):
 async def test_deciding_a_claim_emits_the_decision(pool, emitted, as_org_admin,
                                                    handler, decision):
     _dispatch(pool, {
-        "UPDATE staging.manav_expense_claims": dict(_CLAIM_ROW, status=decision),
-        "SELECT name, email FROM staging.manav_employees": None,   # no notify
+        "UPDATE public.manav_expense_claims": dict(_CLAIM_ROW, status=decision),
+        "SELECT name, email FROM public.manav_employees": None,   # no notify
     })
     _fetchval_returns(pool, "login-1")
 

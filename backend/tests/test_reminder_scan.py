@@ -116,7 +116,7 @@ def test_the_comment_stripper_actually_strips():
     )
     # And a literal that is not a docstring must survive, or the SQL assertions
     # below would pass on an empty string.
-    assert "staging.reminders" in stripped
+    assert "public.reminders" in stripped
     assert "assignee_user_ids" in stripped
 
 
@@ -281,7 +281,7 @@ def test_every_column_a_scan_reads_exists_in_the_live_schema(name):
     sql, aliases = _ALIASES[name]
     seen = 0
     for alias, column in _QUALIFIED.findall(sql):
-        if alias == "staging":          # schema.table, not alias.column
+        if alias == "public":           # schema.table, not alias.column
             continue
         assert alias in aliases, (
             f"{name} uses the alias {alias!r}, which this test does not know "

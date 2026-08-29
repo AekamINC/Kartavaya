@@ -101,7 +101,7 @@ def _wire(mock_pool, *, channel=None, membership=None, rows=None):
 
     async def _fetchrow(sql, *a):
         s = " ".join(str(sql).split())
-        if "FROM staging.samvada_channels" in s:
+        if "FROM public.samvada_channels" in s:
             return channel
         if "samvada_channel_members" in s:
             return membership
@@ -200,7 +200,7 @@ async def test_without_a_channel_id_the_directory_is_still_the_whole_org(
     assert r.status_code == 200, r.text
 
     sql, args = _the_directory_query(mock_pool)
-    assert "FROM staging.user_roles ur" in sql
+    assert "FROM public.user_roles ur" in sql
     assert "samvada_channel_members" not in sql, (
         "the unscoped directory now joins the channel members table; it has no "
         "channel to scope to"
@@ -230,7 +230,7 @@ async def test_a_private_channel_scopes_the_set_to_its_members(
     assert r.status_code == 200, r.text
 
     sql, args = _the_directory_query(mock_pool)
-    assert "FROM staging.samvada_channel_members cm" in sql
+    assert "FROM public.samvada_channel_members cm" in sql
     assert "user_roles" not in sql, (
         "a private channel's picker is drawn from the org, which is the whole "
         "defect: the resolver will refuse every name that is not a member"
@@ -249,7 +249,7 @@ async def test_a_dm_scopes_the_set_to_its_two_members(
     assert r.status_code == 200, r.text
 
     sql, _ = _the_directory_query(mock_pool)
-    assert "FROM staging.samvada_channel_members cm" in sql
+    assert "FROM public.samvada_channel_members cm" in sql
     assert "user_roles" not in sql, "a DM's picker offers the whole org"
 
 
@@ -267,8 +267,8 @@ async def test_a_public_channel_scopes_to_its_members_union_the_org(
     assert r.status_code == 200, r.text
 
     sql, args = _the_directory_query(mock_pool)
-    assert "FROM staging.samvada_channel_members cm" in sql
-    assert "FROM staging.user_roles ur" in sql
+    assert "FROM public.samvada_channel_members cm" in sql
+    assert "FROM public.user_roles ur" in sql
     assert re.search(r"\bUNION\b(?!\s+ALL)", sql), (
         "UNION ALL, or no union at all: a user holding two role rows in one org "
         "is offered twice"

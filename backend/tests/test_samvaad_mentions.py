@@ -160,7 +160,7 @@ def _balanced(text: str, open_idx: int) -> str:
 def _inserts(code: str) -> list[tuple[str, list[str], str]]:
     """Every `INSERT INTO <table> (cols)` → (table, columns, tail-after-cols)."""
     out = []
-    for m in re.finditer(r"INSERT\s+INTO\s+(?:staging\.)?(\w+)\s*\(", code, re.I):
+    for m in re.finditer(r"INSERT\s+INTO\s+(?:public\.)?(\w+)\s*\(", code, re.I):
         table = m.group(1)
         inner = _balanced(code, m.end() - 1)
         cols = [c.strip().strip('"') for c in inner.split(",") if c.strip()]
@@ -224,9 +224,9 @@ def test_every_staging_relation_this_feature_names_is_one_that_exists():
     """A misspelt table is an UndefinedTableError on the send path, not a
     mention that quietly does not fire."""
     for name, code in _sources().items():
-        for rel in set(re.findall(r"\bstaging\.(\w+)", _strip_comments(code))):
+        for rel in set(re.findall(r"\bpublic\.(\w+)", _strip_comments(code))):
             assert rel in KNOWN_STAGING_RELATIONS, (
-                f"{name} names staging.{rel}, which is not a relation this "
+                f"{name} names public.{rel}, which is not a relation this "
                 f"feature has. Check it against the live catalogue — a mocked "
                 f"cursor will resolve any name you give it."
             )
@@ -270,7 +270,7 @@ def test_no_on_conflict_target_names_a_column_that_does_not_exist():
             # Which table this conflict clause belongs to: the nearest INSERT
             # INTO above it.
             before = clean[:m.start()]
-            owner = re.findall(r"INSERT\s+INTO\s+(?:staging\.)?(\w+)", before, re.I)
+            owner = re.findall(r"INSERT\s+INTO\s+(?:public\.)?(\w+)", before, re.I)
             if not owner:
                 continue
             known = CATALOGUE.get(owner[-1], set())
@@ -289,7 +289,7 @@ def test_no_update_sets_a_column_that_does_not_exist():
     for name, code in _sources().items():
         clean = _strip_comments(code)
         for m in re.finditer(
-            r"UPDATE\s+(?:staging\.)?(\w+)\s+SET\s+(.*?)(?:\sWHERE\s|\sRETURNING\s|\"\"\"|'''|\")",
+            r"UPDATE\s+(?:public\.)?(\w+)\s+SET\s+(.*?)(?:\sWHERE\s|\sRETURNING\s|\"\"\"|'''|\")",
             clean, re.I | re.S,
         ):
             table = m.group(1)
@@ -316,7 +316,10 @@ def test_the_names_that_read_right_and_are_wrong_stay_out():
         # `routers/messaging.py:5-41`: to_regclass('staging.users') is NULL.
         # This exact name made every read endpoint in the router 500 while the
         # whole suite was green.
-        r"staging\.users": "public.users is unqualified; staging.users does not exist",
+        # NOT rewritten to `public.`: this bans a name that NEVER existed.
+        # `public.users` is the correct relation, so banning it would invert
+        # the rule into one that forbids the only spelling that works.
+        r"staging\.users": "the users table is `public.users`; staging.users does not exist",
         r"u\.avatar_url\b": "the column is `avatar`; `AS avatar_url` is the wire name",
         # samvada_mentions.read_at is a timestamptz.
         r"\bis_read\b": "the mention row records read_at, not a boolean",
@@ -484,7 +487,7 @@ class FakePool:
         return [(s, a) for kind, s, a in self.timeline if kind == "sql"]
 
     def writes_to(self, table: str) -> list[tuple[str, list]]:
-        pat = re.compile(rf"INSERT\s+INTO\s+(?:staging\.)?{table}\b", re.I)
+        pat = re.compile(rf"INSERT\s+INTO\s+(?:public\.)?{table}\b", re.I)
         return [(s, a) for s, a in self.statements() if pat.search(s)]
 
     # ── the API asyncpg exposes ────────────────────────────────
@@ -810,7 +813,7 @@ async def test_an_unmuted_recipient_gets_the_row_the_notification_and_the_push(p
 
     stmts = pool.statements()
     row_at = next(i for i, (s, a) in enumerate(stmts)
-                  if re.search(r"INSERT\s+INTO\s+(?:staging\.)?samvada_mentions", s, re.I))
+                  if re.search(r"INSERT\s+INTO\s+(?:public\.)?samvada_mentions", s, re.I))
     notif_at = next(i for i, (s, a) in enumerate(stmts)
                     if re.search(r"INSERT\s+INTO\s+notifications", s, re.I))
     assert row_at < notif_at, "the notification was written before the mention row"
@@ -1025,7 +1028,7 @@ def _router_queries(mock_pool) -> list[tuple[str, list]]:
 
 def _feed_query(mock_pool) -> tuple[str, list]:
     hits = [(s, a) for s, a in _router_queries(mock_pool)
-            if "FROM staging.samvada_mentions mn" in s]
+            if "FROM public.samvada_mentions mn" in s]
     assert hits, "no mentions feed query was issued"
     return hits[-1]
 
@@ -1129,7 +1132,7 @@ async def test_marking_mentions_read_cannot_clear_somebody_elses_badge(
     )
     assert r.status_code == 200, r.text
     hits = [(s, a) for s, a in _router_queries(mock_pool)
-            if "UPDATE staging.samvada_mentions" in s]
+            if "UPDATE public.samvada_mentions" in s]
     assert hits, "nothing was updated"
     sql, args = hits[-1]
     assert "org_id=$1::uuid" in sql and "mentioned_user_id=$2" in sql
@@ -1149,7 +1152,7 @@ async def test_a_malformed_mention_id_does_not_take_the_call_down(
     )
     assert r.status_code == 200, r.text
     sql, args = [(s, a) for s, a in _router_queries(mock_pool)
-                 if "UPDATE staging.samvada_mentions" in s][-1]
+                 if "UPDATE public.samvada_mentions" in s][-1]
     assert [FEED_MENTION] in args, (
         "the well-formed id was dropped along with the malformed one"
     )
@@ -1166,7 +1169,7 @@ async def test_mark_all_can_be_scoped_to_one_channel(
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True, "updated": 3}
     sql, args = [(s, a) for s, a in _router_queries(mock_pool)
-                 if "UPDATE staging.samvada_mentions" in s][-1]
+                 if "UPDATE public.samvada_mentions" in s][-1]
     assert "channel_id = $3::uuid" in sql
     assert FEED_CHANNEL in args
 
@@ -1190,10 +1193,10 @@ async def test_opening_a_channel_clears_its_mention_badge(
     assert r.status_code == 200, r.text
 
     statements = [s for s, _ in _router_queries(mock_pool)]
-    assert any("UPDATE staging.samvada_channel_members SET last_read_at" in s
+    assert any("UPDATE public.samvada_channel_members SET last_read_at" in s
                for s in statements), "the unread count was not cleared"
     mention_writes = [(s, a) for s, a in _router_queries(mock_pool)
-                      if "UPDATE staging.samvada_mentions" in s]
+                      if "UPDATE public.samvada_mentions" in s]
     assert mention_writes, "opening the channel left the mention badge lit"
     sql, args = mention_writes[-1]
     assert "read_at = now()" in sql and "read_at IS NULL" in sql
@@ -1217,4 +1220,4 @@ async def test_the_mentions_feed_before_the_migration_is_empty_not_a_500(
     assert r.status_code == 200
     assert r.json() == []
     assert not [s for s, _ in _router_queries(mock_pool)
-                if "staging.samvada_mentions" in s]
+                if "public.samvada_mentions" in s]

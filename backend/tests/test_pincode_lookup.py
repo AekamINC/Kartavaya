@@ -236,7 +236,7 @@ def test_it_is_behind_require_user(route):
 # ══════════════════════════════════════════════════════════════════════════════
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 DB_SKIP = (
     "no live database. This half PREPAREs the route's statement against the "

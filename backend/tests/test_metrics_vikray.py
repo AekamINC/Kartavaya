@@ -101,7 +101,7 @@ def test_every_bucket_is_honoured(key):
 
 def test_orders_windows_on_order_date_and_coalesces_the_money():
     sql, params = build("vikray.orders")
-    assert "FROM staging.vikray_orders" in sql
+    assert "FROM public.vikray_orders" in sql
     assert "SUM(COALESCE(total, 0))::float AS value" in sql
     assert "COUNT(*) AS orders" in sql
     assert "order_date BETWEEN $2::date AND $3::date" in sql
@@ -230,7 +230,7 @@ def test_attainment_salesperson_join_is_text_to_text_with_no_cast():
     sql, _ = build("vikray.target_attainment")
     assert "u.user_id = t.salesperson_id" in sql
     assert "salesperson_id::" not in sql
-    assert "FROM staging.vikray_targets t" in sql
+    assert "FROM public.vikray_targets t" in sql
     assert "public.users" in sql
 
 

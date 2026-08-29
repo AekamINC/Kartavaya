@@ -113,7 +113,7 @@ def _inv(**kw):
 def _pool(lines, invoices):
     return _Pool({
         "ganit_bank_statement_lines": lines,
-        "FROM staging.ganit_invoices i": invoices,
+        "FROM public.ganit_invoices i": invoices,
     })
 
 
@@ -283,7 +283,7 @@ def test_every_query_is_scoped_to_one_org():
     sqls = [
         n.value for n in ast.walk(tree)
         if isinstance(n, ast.Constant) and isinstance(n.value, str)
-        and "FROM staging." in n.value
+        and "FROM public." in n.value
     ]
     assert sqls, "no SQL found — the extraction is wrong, not the handler"
     for sql in sqls:
@@ -293,7 +293,7 @@ def test_every_query_is_scoped_to_one_org():
 def test_both_graha_joins_carry_org_id():
     """The FK on graha_clients is on the id ALONE, so an id-only join can print
     another practice's client name. Measured live; see migration 163."""
-    for m in re.finditer(r"LEFT JOIN staging\.graha_(\w+) (\w+)\s+ON ([^\n]+)", SRC):
+    for m in re.finditer(r"LEFT JOIN public\.graha_(\w+) (\w+)\s+ON ([^\n]+)", SRC):
         assert "org_id" in m.group(3), m.group(0)
 
 

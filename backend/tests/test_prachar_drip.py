@@ -117,7 +117,7 @@ def test_the_stripper_keeps_sql_and_drops_prose():
         '    # A comment naming delay_hours, which is not a column either.\n'
         '    return q(\n'
         '        """\n'
-        '        SELECT step_order FROM staging.prachar_sequence_steps\n'
+        '        SELECT step_order FROM public.prachar_sequence_steps\n'
         '        """\n'
         '    )\n'
     )
@@ -251,7 +251,7 @@ def test_enrollments_table_has_no_updated_at():
     import services.skills.action.sequence_step_executor as executor
 
     code = _code_only(inspect.getsource(executor))
-    for stmt in re.findall(r"UPDATE\s+staging\.prachar_sequence_enrollments.*?(?:WHERE|$)",
+    for stmt in re.findall(r"UPDATE\s+public\.prachar_sequence_enrollments.*?(?:WHERE|$)",
                            code, re.S | re.I):
         assert "updated_at" not in stmt, (
             "An UPDATE on prachar_sequence_enrollments sets updated_at, and that "

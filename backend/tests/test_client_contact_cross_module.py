@@ -95,7 +95,7 @@ def ganit_only(app, mock_pool):
 
     async def _fetch(sql, *a):
         s = " ".join(sql.split())
-        if "staging.user_roles" in s:
+        if "public.user_roles" in s:
             return []                         # not org_owner / org_admin
         # Both list queries NAME BOTH TABLES — the client list counts contacts
         # in a subselect, the contact list joins clients for the company name —
@@ -109,7 +109,7 @@ def ganit_only(app, mock_pool):
 
     async def _fetchrow(sql, *a):
         s = " ".join(sql.split())
-        if "staging.subscriptions" in s:
+        if "public.subscriptions" in s:
             return {"status": "active", "features": {}}
         if "graha_contacts" in s:
             return dict(CONTACT_ROW)

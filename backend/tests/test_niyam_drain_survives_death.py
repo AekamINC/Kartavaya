@@ -39,7 +39,7 @@ class _Conn:
 
     # -- asyncpg surface -----------------------------------------------------
     async def fetch(self, sql, *args):
-        if "FROM staging.niyam_events" in sql and "processed_at IS NULL" in sql:
+        if "FROM public.niyam_events" in sql and "processed_at IS NULL" in sql:
             return [e for e in self.events
                     if e["event_id"] not in self.processed]
         return []
@@ -131,14 +131,14 @@ async def _drain_without_the_guard(conn):
             rows = await c.fetch(sweep._CLAIM_EVENTS, 200, sweep.STALE_CLAIM_MINUTES)
             if rows:
                 await c.execute(
-                    "UPDATE staging.niyam_events SET claimed_at = NOW() "
+                    "UPDATE public.niyam_events SET claimed_at = NOW() "
                     "WHERE event_id = ANY($1::bigint[])",
                     [r["event_id"] for r in rows])
     for event in [dict(r) for r in rows]:
         await sweep.process_event(pool, event)          # may raise, uncaught
         async with pool.acquire() as c:
             await c.execute(
-                "UPDATE staging.niyam_events SET processed_at = NOW() "
+                "UPDATE public.niyam_events SET processed_at = NOW() "
                 "WHERE event_id = $1::bigint", event["event_id"])
 
 

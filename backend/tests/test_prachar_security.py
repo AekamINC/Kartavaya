@@ -103,7 +103,7 @@ async def test_create_campaign_stores_org_id(api_client, mock_pool, as_admin, or
     assert resp.status_code == 200
 
     sql, *args = mock_pool.fetchrow.call_args[0]
-    assert "INSERT INTO staging.prachar_campaigns" in sql
+    assert "INSERT INTO public.prachar_campaigns" in sql
     assert args[0] == ORG_A
 
 
@@ -204,5 +204,5 @@ async def test_create_template_stores_org_id(api_client, mock_pool, as_admin, or
     assert resp.status_code == 200
 
     sql, *args = mock_pool.fetchrow.call_args[0]
-    assert "INSERT INTO staging.prachar_templates" in sql
+    assert "INSERT INTO public.prachar_templates" in sql
     assert args[0] == ORG_A

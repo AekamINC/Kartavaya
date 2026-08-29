@@ -283,10 +283,10 @@ def _gujarat(pins=(SURAT,), rules=None):
 async def test_a_contact_is_filed_and_the_next_rep_takes_it():
     conn = RecordingConn({
         "c.billing_address->>'pincode'": _ladder_row(),
-        "FROM staging.graha_territories t": _gujarat(),
+        "FROM public.graha_territories t": _gujarat(),
         "SELECT assigned_users": {"assigned_users": ["user_a", "user_b"],
                                   "round_robin_index": 0},
-        "UPDATE staging.graha_contacts": {"id": CONTACT},
+        "UPDATE public.graha_contacts": {"id": CONTACT},
     })
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out["routed"] is True
@@ -306,8 +306,8 @@ async def test_the_round_robin_turn_is_not_burned_on_a_contact_that_has_an_owner
     unassigned" is the half that cannot destroy work."""
     conn = RecordingConn({
         "c.billing_address->>'pincode'": _ladder_row(assigned_to="user_z"),
-        "FROM staging.graha_territories t": _gujarat(),
-        "UPDATE staging.graha_contacts": {"id": CONTACT},
+        "FROM public.graha_territories t": _gujarat(),
+        "UPDATE public.graha_contacts": {"id": CONTACT},
     })
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out["routed"] is True
@@ -334,8 +334,8 @@ async def test_a_territory_a_person_already_chose_is_never_overwritten():
     })
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out["kept"] is True and out["routed"] is False
-    assert conn.issued("UPDATE staging.graha_contacts") == 0
-    assert conn.issued("FROM staging.graha_territories t") == 0
+    assert conn.issued("UPDATE public.graha_contacts") == 0
+    assert conn.issued("FROM public.graha_territories t") == 0
 
 
 async def test_a_pin_in_no_territory_assigns_nothing_and_refuses_nothing():
@@ -344,13 +344,13 @@ async def test_a_pin_in_no_territory_assigns_nothing_and_refuses_nothing():
     territory carried a single PIN."""
     conn = RecordingConn({
         "c.billing_address->>'pincode'": _ladder_row(billing=MUMBAI),
-        "FROM staging.graha_territories t": _gujarat(),
+        "FROM public.graha_territories t": _gujarat(),
     })
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out["routed"] is False and out["error"] == ""
     assert out["pin"] == MUMBAI          # it was READ, and simply matched nothing
     assert out["territory_name"] == ""
-    assert conn.issued("UPDATE staging.graha_contacts") == 0
+    assert conn.issued("UPDATE public.graha_contacts") == 0
 
 
 async def test_a_contact_with_no_pin_anywhere_is_left_alone():
@@ -359,19 +359,19 @@ async def test_a_contact_with_no_pin_anywhere_is_left_alone():
     })
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out == {**out, "routed": False, "pin": "", "pin_source": ""}
-    assert conn.issued("FROM staging.graha_territories t") == 0
-    assert conn.issued("UPDATE staging.graha_contacts") == 0
+    assert conn.issued("FROM public.graha_territories t") == 0
+    assert conn.issued("UPDATE public.graha_contacts") == 0
 
 
 async def test_a_territory_whose_pin_list_is_a_string_does_not_stop_the_others():
     conn = RecordingConn({
         "c.billing_address->>'pincode'": _ladder_row(),
-        "FROM staging.graha_territories t": [
+        "FROM public.graha_territories t": [
             {"id": OTHER_TERRITORY, "name": "Broken", "rules": {"pincodes": SURAT}},
             {"id": TERRITORY, "name": "Gujarat", "rules": {"pincodes": [SURAT]}},
         ],
         "SELECT assigned_users": {"assigned_users": [], "round_robin_index": 0},
-        "UPDATE staging.graha_contacts": {"id": CONTACT},
+        "UPDATE public.graha_contacts": {"id": CONTACT},
     })
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out["territory_name"] == "Gujarat"
@@ -388,7 +388,7 @@ async def test_routing_can_never_cost_the_caller_its_contact():
     event down with it."""
     conn = RecordingConn({
         "c.billing_address->>'pincode'": _ladder_row(),
-    }, fail_on="FROM staging.graha_territories t")
+    }, fail_on="FROM public.graha_territories t")
     out = await tr.route_contact(conn, ORG, CONTACT)
     assert out["routed"] is False
     assert out["error"] == "RuntimeError"
@@ -462,7 +462,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection, matched so a statement is planned the
 #: way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the routing SQL against the real "
@@ -490,7 +490,7 @@ def _sql_constants() -> dict:
     untested writer gets in.
     """
     return {name: value for name, value in vars(tr).items()
-            if isinstance(value, str) and "staging." in value}
+            if isinstance(value, str) and "public." in value}
 
 
 def _captured_calls() -> list[tuple[str, tuple]]:
@@ -502,10 +502,10 @@ def _captured_calls() -> list[tuple[str, tuple]]:
     """
     conn = RecordingConn({
         "c.billing_address->>'pincode'": _ladder_row(),
-        "FROM staging.graha_territories t": _gujarat(),
+        "FROM public.graha_territories t": _gujarat(),
         "SELECT assigned_users": {"assigned_users": ["user_a"],
                                   "round_robin_index": 0},
-        "UPDATE staging.graha_contacts": {"id": CONTACT},
+        "UPDATE public.graha_contacts": {"id": CONTACT},
     })
     asyncio.run(tr.route_contact(conn, ORG, CONTACT))
     return conn.calls
@@ -566,7 +566,12 @@ def live():
 def test_every_statement_plans_on_the_real_schema(live):
     """UndefinedColumn / UndefinedTable means the statement has never worked
     and never could — the failure mode a mock connection is blind to."""
-    failures, _, _ = live
+    failures, params, _ = live
+    # An empty capture makes `assert not failures` green while proving
+    # nothing. Seven SQL constants are described today.
+    assert len(params) + len(failures) >= 7, (
+        f"only {len(params) + len(failures)} statements were described, not 7 "
+        f"— the capture rotted")
     assert not failures, "\n".join(f"{n}: {why}" for n, why in failures)
 
 
@@ -588,18 +593,19 @@ def test_every_statement_binds_as_many_arguments_as_it_declares(live):
     assert declared["PIN_LADDER_ONE"] == 2
 
 
-def test_the_table_is_in_staging_and_only_staging(live):
+def test_the_table_is_in_public_and_only_public(live):
     """A 42P01 from a schema-qualified query is a fact about THAT SCHEMA only.
     Phase 6.4 was closed on one — `public.report_schedules` was real, with a
     CRUD and an armed hourly cron. So this checks BOTH schemas rather than
-    assuming, and records the answer: `graha_territories` exists in `staging`
-    and nowhere else."""
+    assuming, and records the answer: after the consolidation `graha_territories`
+    exists in `public` and nowhere else. A row still in `staging` means 241 has
+    not run (or has half-run), which is the case this must not pass over."""
     _, _, catalogue = live
     schemas = {c["table_schema"] for c in catalogue
                if c["table_name"] == "graha_territories"}
-    assert schemas == {"staging"}, (
+    assert schemas == {"public"}, (
         f"graha_territories now exists in {sorted(schemas)} — every statement "
-        f"in this module is schema-qualified to `staging` and a second copy is "
+        f"in this module is schema-qualified to `public` and a second copy is "
         f"a shadow table (see `shadow-tables-and-search-path`)"
     )
 
@@ -612,15 +618,15 @@ def test_the_columns_routing_writes_are_the_types_it_binds_them_as(live):
     _, _, catalogue = live
     types = {(c["table_schema"], c["table_name"], c["column_name"]): c["data_type"]
              for c in catalogue}
-    assert types[("staging", "graha_contacts", "territory_id")] == "uuid", (
+    assert types[("public", "graha_contacts", "territory_id")] == "uuid", (
         "bound as NULLIF($3,'')::uuid")
-    assert types[("staging", "graha_contacts", "assigned_to")] == "text", (
+    assert types[("public", "graha_contacts", "assigned_to")] == "text", (
         "bound as NULLIF($4,'') with no cast")
-    assert types[("staging", "graha_contacts", "updated_at")].startswith("timestamp")
-    assert types[("staging", "graha_territories", "rules")] == "jsonb"
-    assert types[("staging", "graha_territories", "round_robin_index")] == "integer"
-    assert types[("staging", "graha_territories", "assigned_users")] == "ARRAY"
+    assert types[("public", "graha_contacts", "updated_at")].startswith("timestamp")
+    assert types[("public", "graha_territories", "rules")] == "jsonb"
+    assert types[("public", "graha_territories", "round_robin_index")] == "integer"
+    assert types[("public", "graha_territories", "assigned_users")] == "ARRAY"
     # The three rungs of the ladder, in the order the ladder reads them.
-    assert types[("staging", "graha_contacts", "billing_address")] == "jsonb"
-    assert types[("staging", "graha_contacts", "shipping_address")] == "jsonb"
-    assert types[("staging", "graha_clients", "address")] == "jsonb"
+    assert types[("public", "graha_contacts", "billing_address")] == "jsonb"
+    assert types[("public", "graha_contacts", "shipping_address")] == "jsonb"
+    assert types[("public", "graha_clients", "address")] == "jsonb"

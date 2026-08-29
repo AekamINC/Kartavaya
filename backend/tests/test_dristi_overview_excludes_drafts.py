@@ -96,7 +96,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` does on every connection, so a statement is planned the way it
 #: will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 USER = {"user_id": "user_admin001"}
 
@@ -378,7 +378,7 @@ def test_the_pivot_guard_is_per_source_not_global(pivot_deals_pool):
     for sql in pivot_deals_pool.statements:
         assert "doc_status" not in sql, (
             f"the deals pivot now filters on doc_status, a column "
-            f"staging.graha_deals does not have:\n  {_norm(sql)[:200]}")
+            f"public.graha_deals does not have:\n  {_norm(sql)[:200]}")
 
 
 def test_only_invoice_sources_declare_the_draft_guard():
@@ -392,7 +392,7 @@ def test_only_invoice_sources_declare_the_draft_guard():
                if spec.get("not_draft")}
     assert flagged == {"invoices"}, (
         f"sources declaring the draft guard: {sorted(flagged)}. Only "
-        f"`invoices` reads staging.ganit_invoices; every other table in the "
+        f"`invoices` reads public.ganit_invoices; every other table in the "
         f"builder would raise UndefinedColumn on doc_status.")
 
 
@@ -573,7 +573,7 @@ def test_live_the_kpi_tile_drops_real_drafts(overview_pool):
 
     async def go(conn):
         org = await conn.fetchval(
-            "SELECT org_id::text FROM staging.ganit_invoices "
+            "SELECT org_id::text FROM public.ganit_invoices "
             "WHERE org_id = ANY($1::uuid[]) AND COALESCE(doc_status,'') = 'draft' "
             "  AND is_active = TRUE "
             "GROUP BY org_id ORDER BY COUNT(*) DESC LIMIT 1", list(IN_SCOPE))
@@ -584,7 +584,7 @@ def test_live_the_kpi_tile_drops_real_drafts(overview_pool):
             "SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0)::float AS amt, "
             "COALESCE(SUM(total - amount_paid) FILTER "
             "  (WHERE payment_status NOT IN ('paid','cancelled')),0)::float AS due "
-            "FROM staging.ganit_invoices WHERE org_id = $1::uuid "
+            "FROM public.ganit_invoices WHERE org_id = $1::uuid "
             "  AND COALESCE(doc_status,'') = 'draft' AND is_active = TRUE", org)
         fixed = await conn.fetchrow(_norm(sql), org)
         before = await conn.fetchrow(_without_guard(sql), org)
@@ -612,7 +612,7 @@ def test_live_the_pivot_drops_the_same_drafts_as_the_tile(
 
     async def go(conn):
         org = await conn.fetchval(
-            "SELECT org_id::text FROM staging.ganit_invoices "
+            "SELECT org_id::text FROM public.ganit_invoices "
             "WHERE org_id = ANY($1::uuid[]) AND COALESCE(doc_status,'') = 'draft' "
             "  AND is_active = TRUE "
             "GROUP BY org_id ORDER BY COUNT(*) DESC LIMIT 1", list(IN_SCOPE))
@@ -640,7 +640,7 @@ def test_live_the_exported_overview_drops_a_paid_draft(export_pool):
 
     async def go(conn):
         org = await conn.fetchval(
-            "SELECT org_id::text FROM staging.ganit_invoices "
+            "SELECT org_id::text FROM public.ganit_invoices "
             "WHERE org_id = ANY($1::uuid[]) AND COALESCE(doc_status,'') = 'draft' "
             "  AND is_active = TRUE AND payment_status = 'paid' "
             "GROUP BY org_id ORDER BY COUNT(*) DESC LIMIT 1", list(IN_SCOPE))
@@ -648,7 +648,7 @@ def test_live_the_exported_overview_drops_a_paid_draft(export_pool):
             pytest.skip("no in-scope org holds a draft marked paid any more — "
                         "the fixture is the live table, and it has moved")
         moved = await conn.fetchval(
-            "SELECT COALESCE(SUM(total),0)::float FROM staging.ganit_invoices "
+            "SELECT COALESCE(SUM(total),0)::float FROM public.ganit_invoices "
             "WHERE org_id = $1::uuid AND COALESCE(doc_status,'') = 'draft' "
             "  AND is_active = TRUE AND payment_status = 'paid'", org)
         fixed = float(await conn.fetchval(_norm(sql), org) or 0)

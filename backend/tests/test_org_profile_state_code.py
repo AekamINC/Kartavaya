@@ -63,7 +63,7 @@ import routers.org_profile as org_profile
 from services.gst_states import GST_STATES
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. `_PROFILE_COLUMNS` is interpolated into a SELECT and a "
@@ -101,7 +101,7 @@ def _get_sql() -> str:
     fresh deploy uses.
     """
     cols = ", ".join(org_profile._selectable(frozenset()))
-    return (f"SELECT {cols}, logo_key FROM staging.organisations "
+    return (f"SELECT {cols}, logo_key FROM public.organisations "
             "WHERE id=$1::uuid")
 
 
@@ -113,7 +113,7 @@ def _patch_sql() -> str:
     the write finds it, and that is what `prepare()` does without writing.
     """
     cols = ", ".join(org_profile._selectable(frozenset()))
-    return ("UPDATE staging.organisations SET state_code=$1 WHERE id=$2::uuid "
+    return ("UPDATE public.organisations SET state_code=$1 WHERE id=$2::uuid "
             f"RETURNING {cols}")
 
 
@@ -175,13 +175,13 @@ async def test_the_column_is_two_characters_so_a_long_code_must_never_reach_it()
         row = await conn.fetchrow(
             "SELECT data_type, character_maximum_length AS len "
             "FROM information_schema.columns "
-            "WHERE table_schema='staging' AND table_name='organisations' "
+            "WHERE table_schema = ANY(current_schemas(false)) AND table_name='organisations' "
             "AND column_name='state_code'")
     finally:
         await conn.close()
 
     assert row is not None, (
-        "staging.organisations.state_code does not exist. Two routers SELECT it "
+        "public.organisations.state_code does not exist. Two routers SELECT it "
         "unguarded and this one now RETURNs it — every profile read would 500.")
     assert row["len"] == 2, (
         f"state_code is now {row['data_type']}({row['len']}). The handler "

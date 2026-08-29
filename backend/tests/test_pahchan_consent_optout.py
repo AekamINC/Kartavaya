@@ -97,10 +97,10 @@ ATTENDANCE_ROW = {
 # Each names exactly one statement. `_EMP_FULL` and `_EMP_NARROW` differ only
 # in their SELECT list, which is what keeps them distinguishable.
 
-_EMP_FULL = "SELECT id, name, employment_type FROM staging.manav_employees"
-_EMP_NARROW = "SELECT id, name FROM staging.manav_employees"
-_ROLES = "SELECT 1 FROM staging.user_roles"
-_OPTED_OUT = "SELECT consented FROM staging.pahchan_employee_consents"
+_EMP_FULL = "SELECT id, name, employment_type FROM public.manav_employees"
+_EMP_NARROW = "SELECT id, name FROM public.manav_employees"
+_ROLES = "SELECT 1 FROM public.user_roles"
+_OPTED_OUT = "SELECT consented FROM public.pahchan_employee_consents"
 
 #: What `_employee_opted_out` reads: the `consented` COLUMN of the newest row,
 #: not a boolean meaning "opted out". It answers `latest is False`, so `False`
@@ -111,11 +111,11 @@ DECLINED = False
 AGREED = True
 NEVER_ASKED = None
 _LATEST = "SELECT notice_version, method, consented, recorded_at, note"
-_CONSENT_INSERT = "INSERT INTO staging.pahchan_employee_consents"
-_ATTENDANCE_INSERT = "INSERT INTO staging.manav_attendance"
+_CONSENT_INSERT = "INSERT INTO public.pahchan_employee_consents"
+_ATTENDANCE_INSERT = "INSERT INTO public.manav_attendance"
 _ROSTER = "COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) AS approved_refs"
-_MANUAL_LIST = "FROM staging.manav_attendance a"
-_PUNCH_INSERT = "INSERT INTO staging.pahchan_punches"
+_MANUAL_LIST = "FROM public.manav_attendance a"
+_PUNCH_INSERT = "INSERT INTO public.pahchan_punches"
 
 
 # ── the capture pool ─────────────────────────────────────────
@@ -343,9 +343,9 @@ def test_the_roster_starts_from_the_payroll_not_from_the_consent_table():
     pool, _, _ = drive(ROSTER_SCRIPT, lambda: pahchan.consent_roster(
         user={"user_id": ACTOR}, org_id=ORG, _g=None))
     sql, _ = pool.one(_ROSTER)
-    assert "FROM staging.manav_employees e" in sql
+    assert "FROM public.manav_employees e" in sql
     assert "LEFT JOIN LATERAL" in sql
-    assert "LEFT JOIN staging.pahchan_enrollment_photos" in sql
+    assert "LEFT JOIN public.pahchan_enrollment_photos" in sql
 
 
 def test_the_roster_asks_only_people_who_are_still_here():
@@ -354,7 +354,7 @@ def test_the_roster_asks_only_people_who_are_still_here():
     pool, _, _ = drive(ROSTER_SCRIPT, lambda: pahchan.consent_roster(
         user={"user_id": ACTOR}, org_id=ORG, _g=None))
     sql, _ = pool.one(_ROSTER)
-    assert "staging.manav_offboarding" in sql
+    assert "public.manav_offboarding" in sql
     assert "x.org_id = e.org_id" in sql
 
 
@@ -527,11 +527,11 @@ def test_the_list_shows_only_people_who_declined():
 
 PUNCH_SCRIPT = [
     (_EMP_FULL, EMPLOYEE_ROW),
-    ("SELECT id, direction, captured_at, flags FROM staging.pahchan_punches", None),
-    ("SELECT * FROM staging.pahchan_policy", None),
-    ("FROM staging.pahchan_policy_overrides", []),
-    ("FROM staging.pahchan_sites", []),
-    ("SELECT COUNT(*) FROM staging.pahchan_enrollment_photos", 2),
+    ("SELECT id, direction, captured_at, flags FROM public.pahchan_punches", None),
+    ("SELECT * FROM public.pahchan_policy", None),
+    ("FROM public.pahchan_policy_overrides", []),
+    ("FROM public.pahchan_sites", []),
+    ("SELECT COUNT(*) FROM public.pahchan_enrollment_photos", 2),
     (_OPTED_OUT, DECLINED),
     (_PUNCH_INSERT, {"id": "p1", "direction": "in", "captured_at": None,
                      "received_at": None, "flags": [], "source": "live"}),
@@ -624,7 +624,7 @@ def test_the_face_of_someone_who_declined_never_reaches_the_object_store():
 # ══════════════════════════════════════════════════════════════════════════════
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "
@@ -685,7 +685,7 @@ def _describe(calls):
             columns = await conn.fetch(
                 "SELECT table_name, column_name, is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'staging' "
+                "WHERE table_schema = ANY(current_schemas(false)) "
                 "  AND table_name IN ('manav_attendance', 'pahchan_employee_consents')"
             )
             checks = await conn.fetch(
@@ -693,8 +693,8 @@ def _describe(calls):
                 "       pg_get_constraintdef(oid) AS def "
                 "FROM pg_constraint "
                 "WHERE conrelid IN ("
-                "  'staging.manav_attendance'::regclass, "
-                "  'staging.pahchan_employee_consents'::regclass) "
+                "  'public.manav_attendance'::regclass, "
+                "  'public.pahchan_employee_consents'::regclass) "
                 "  AND contype = 'c'"
             )
             return (failures, params,
@@ -707,12 +707,28 @@ def _describe(calls):
 
 @pytest.fixture(scope="module")
 def live():
+    """Skips only when the DATABASE cannot be reached — never when it answers.
+
+    `_describe` casts `'public.manav_attendance'::regclass` and
+    `'public.pahchan_employee_consents'::regclass`, either of which raises
+    UndefinedTableError when the relation is absent. Under a blanket
+    `except Exception` that raise became a skip, so a MISSING TABLE turned all
+    eight live tests in this file green-by-absence — including
+    `test_every_statement_plans_on_the_real_schema`, which exists to report
+    exactly that. Narrowed to connection failures, a reachable database that
+    lacks the table now fails loudly instead.
+    """
+    import asyncpg
+
     if live_dsn() is None:
         pytest.skip(SKIP_REASON)
     calls = _captured_calls()
     try:
         return _describe(calls)
-    except Exception as exc:                                  # noqa: BLE001
+    except (OSError, asyncio.TimeoutError,
+            asyncpg.PostgresConnectionError,
+            asyncpg.InvalidAuthorizationSpecificationError,
+            asyncpg.InvalidCatalogNameError) as exc:
         pytest.skip(f"could not reach the database: {exc}\n\n{SKIP_REASON}")
 
 
@@ -753,7 +769,7 @@ def test_both_inserts_name_real_columns_and_supply_every_required_one(live):
         ("manav_attendance", _ATTENDANCE_INSERT),
     ):
         known = {c["column_name"] for c in columns if c["table_name"] == table}
-        assert known, f"staging.{table} has no columns — wrong schema?"
+        assert known, f"public.{table} has no columns — wrong schema?"
         required = {c["column_name"] for c in columns
                     if c["table_name"] == table
                     and c["is_nullable"] == "NO" and c["column_default"] is None}
@@ -763,7 +779,7 @@ def test_both_inserts_name_real_columns_and_supply_every_required_one(live):
             seen.add(table)
             cols = set(_column_list(sql))
             assert not (cols - known), (
-                f"[{path}] names columns staging.{table} does not have: "
+                f"[{path}] names columns public.{table} does not have: "
                 f"{sorted(cols - known)}")
             assert not (required - cols), (
                 f"[{path}] omits NOT NULL columns with no default: "

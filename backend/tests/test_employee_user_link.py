@@ -529,9 +529,9 @@ async def test_link_options_asks_for_members_links_and_module_grants(
     resp = await api_client.get("/api/v1/manav/employees/link-options")
     assert resp.status_code == 200
     asked = _queries(mock_pool.fetch)
-    assert "staging.user_roles" in asked[0]
+    assert "public.user_roles" in asked[0]
     assert "manav_employees" in asked[1] and "user_id IS NOT NULL" in asked[1]
-    assert "staging.org_member_modules" in asked[2]
+    assert "public.org_member_modules" in asked[2]
 
 
 async def test_one_account_holding_two_roles_is_one_row(

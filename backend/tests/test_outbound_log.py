@@ -136,7 +136,7 @@ def _rows_written(pool) -> list[dict]:
     calls = list(pool.execute.call_args_list) + list(pool.fetch.call_args_list)
     for call in calls:
         args = call.args
-        if not args or "INSERT INTO staging.outbound_log" not in str(args[0]):
+        if not args or "INSERT INTO public.outbound_log" not in str(args[0]):
             continue
         columns = args[1:]
         assert len(columns) == len(outbound_log._INSERT_COLUMNS), (
@@ -154,7 +154,7 @@ def _updates_written(pool) -> list[tuple[int, dict]]:
     out: list[tuple[int, dict]] = []
     for call in pool.execute.call_args_list:
         args = call.args
-        if not args or "UPDATE staging.outbound_log" not in str(args[0]):
+        if not args or "UPDATE public.outbound_log" not in str(args[0]):
             continue
         ids, columns = args[1], args[2:]
         for row_id, values in zip(ids, zip(*columns)):
@@ -579,7 +579,7 @@ async def test_an_unapplied_migration_goes_quiet_instead_of_flooding(mock_pool):
     empty table: after this, THE PROCESS WRITES NOTHING UNTIL IT IS RESTARTED.
     """
     mock_pool.execute.side_effect = asyncpg.exceptions.UndefinedTableError(
-        'relation "staging.outbound_log" does not exist')
+        'relation "public.outbound_log" does not exist')
 
     outbound.suppressed("email", "arjun@client.example", "Subject")
     await outbound_log.flush()
@@ -625,7 +625,7 @@ async def test_one_bad_row_does_not_cost_the_batch(mock_pool):
     calls = {"n": 0}
 
     async def _execute(sql, *args):
-        if "INSERT INTO staging.outbound_log" not in str(sql):
+        if "INSERT INTO public.outbound_log" not in str(sql):
             return "UPDATE 0"
         calls["n"] += 1
         # The batched statement fails; the per-row retries succeed.
@@ -1031,7 +1031,7 @@ def test_the_reader_in_billing_names_only_columns_098_declares():
     assert read <= declared
 
     import routers.billing as B
-    assert B._OUTBOUND == "staging.outbound_log"
+    assert B._OUTBOUND == "public.outbound_log"
     # The reader offers exactly the statuses the CHECK allows, so a drill-down
     # can never open on a value the column cannot hold.
     assert set(B._KNOWN_STATUSES) == {
@@ -1068,7 +1068,7 @@ def as_org_admin(app, member_user, mock_pool):
     async def _fetchval(query, *args):
         if "org_id IS NULL" in query:
             return None                       # no platform role, ever
-        if "staging.user_roles" in query and args[1:2] == (ORG,):
+        if "public.user_roles" in query and args[1:2] == (ORG,):
             return "org_admin"
         return None
 

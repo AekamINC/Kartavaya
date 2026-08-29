@@ -200,7 +200,7 @@ def test_a_site_is_deactivated_and_never_deleted():
     history with it."""
     assert "is_active" in pahchan._SITE_AMENDABLE
     src = inspect.getsource(pahchan)
-    assert "DELETE FROM staging.pahchan_sites" not in src
+    assert "DELETE FROM public.pahchan_sites" not in src
 
 
 # ── The employee sees the rule they are judged by ───────────────────────────

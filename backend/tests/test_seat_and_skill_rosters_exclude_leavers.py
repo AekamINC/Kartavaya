@@ -124,7 +124,7 @@ class _Recorder:
 
     def touching_employees(self) -> list[str]:
         """Every captured statement that reads the employee table."""
-        return [s for s in self.seen if "staging.manav_employees" in s]
+        return [s for s in self.seen if "public.manav_employees" in s]
 
     def matching(self, marker: str) -> list[str]:
         return [s for s in self.seen if marker in s]

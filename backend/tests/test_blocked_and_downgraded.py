@@ -123,15 +123,15 @@ def _chase_pool(*, tasks=None, waba=0, wa_log=0, checklists=(), links=0,
         "created_by_name": "Priya Sharma",
     }]
     return FakePool([
-        ("FROM staging.outbound_log",
+        ("FROM public.outbound_log",
          [{"total": 100, "whatsapp": wa_log, "email": 90, "push": 10}]),
-        ("FROM staging.varta_business_accounts",
+        ("FROM public.varta_business_accounts",
          [{"total": waba, "active": waba}]),
         ("to_regclass",
          lambda args: [{"t": args[0] if args[0] in checklists else None}]),
         ("FROM public.task_clients", [{"rows_for_this_org": links}]),
         ("FROM public.tasks", tasks),
-        ("FROM staging.reminders", reminders or []),
+        ("FROM public.reminders", reminders or []),
     ])
 
 
@@ -239,7 +239,7 @@ def test_47_counts_a_suppressed_chase_as_no_chase():
     """
     pool = _chase_pool()
     asyncio.run(check_whatsapp_chase_leg(pool, ORG))
-    reminders_sql = [s for s, _ in pool.seen if "staging.reminders" in s]
+    reminders_sql = [s for s, _ in pool.seen if "public.reminders" in s]
     assert reminders_sql, "the handler must read what was already chased"
     assert "status = 'sent'" in reminders_sql[0]
     assert "suppressed" not in reminders_sql[0]
@@ -298,11 +298,11 @@ def test_47_renders_no_uuid_where_a_name_belongs():
 
 def _conv_pool(convs, *, approved=6, pending=2, total=10, waba=0):
     return FakePool([
-        ("FROM staging.varta_conversations", convs),
-        ("FROM staging.varta_templates",
+        ("FROM public.varta_conversations", convs),
+        ("FROM public.varta_templates",
          [{"total": total, "approved": approved,
            "utility": max(0, approved - 1), "pending": pending}]),
-        ("FROM staging.varta_business_accounts", [{"n": waba}]),
+        ("FROM public.varta_business_accounts", [{"n": waba}]),
     ])
 
 
@@ -467,7 +467,7 @@ def _ticket_pool(*, table=True, messages=False, columns=None, rows=0):
                 or (args[0] == "graha_ticket_messages" and messages)
             ) else None}]),
         ("information_schema.columns", [{"column_name": c} for c in cols]),
-        ("FROM staging.graha_tickets", [{"n": rows}]),
+        ("FROM public.graha_tickets", [{"n": rows}]),
     ])
 
 
@@ -477,7 +477,7 @@ def test_60_says_loudly_that_a_ticket_table_does_exist():
     as a report source — so a reader who greps finds a table. That is exactly
     how a convincing zero is built, and it has to be said out loud."""
     out = asyncio.run(brief_ticket_sla_feasibility(_ticket_pool(), ORG))
-    assert out["what_exists"]["staging.graha_tickets"] is True
+    assert out["what_exists"]["public.graha_tickets"] is True
     assert "stale" in out["folio_finding_correction"]
     assert "EXISTS" in out["folio_finding_correction"]
     assert out["what_exists"]["its_columns"] == TICKET_COLS
@@ -488,7 +488,7 @@ def test_60_if_the_table_were_gone_the_folio_would_be_upheld():
     stale' would itself go stale the day somebody drops the stub."""
     out = asyncio.run(brief_ticket_sla_feasibility(
         _ticket_pool(table=False), ORG))
-    assert out["what_exists"]["staging.graha_tickets"] is False
+    assert out["what_exists"]["public.graha_tickets"] is False
     assert "exactly right" in out["folio_finding_correction"]
     assert out["counts"]["ticket_tables_present"] == 0
 

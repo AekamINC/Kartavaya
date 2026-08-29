@@ -160,7 +160,7 @@ class _Pool:
         self.queries.append(q)
         if "org_id IS NULL" in q:
             return 1 if self.is_platform else None
-        if "staging.user_roles" in q:
+        if "public.user_roles" in q:
             return 1 if self.is_member else None
         return None
 
@@ -171,9 +171,9 @@ class _Pool:
         if "v_active_support_sessions" in q:
             rows = self._view_rows(q, a[0], a[1])
             return rows[0] if rows else None
-        if "staging.user_roles" in q and "role_code IN" in q:
+        if "public.user_roles" in q and "role_code IN" in q:
             return {"org_id": ORG_A} if self.is_member else None
-        if "staging.organisations" in q:
+        if "public.organisations" in q:
             return {"id": a[0]} if self.org_active else None
         return None
 
@@ -330,7 +330,7 @@ def test_the_guard_reads_the_view_and_not_the_table():
     permissive: the clause a reader forgets is one that EXCLUDES rows."""
     sql = R._SUPPORT_SESSION_SQL
     assert "v_active_support_sessions" in sql
-    assert "FROM staging.platform_support_sessions" not in sql
+    assert "FROM public.platform_support_sessions" not in sql
     for forbidden in ("approved_at IS NOT NULL", "revoked_at IS NULL",
                       "denied_at IS NULL"):
         assert forbidden not in sql, (
@@ -680,7 +680,7 @@ async def test_a_write_against_an_absent_table_says_so_rather_than_doing_nothing
     customer pressing Approve."""
     class _P:
         async def fetchrow(self, sql, *a):
-            if "staging.organisations" in sql:
+            if "public.organisations" in sql:
                 return {"id": ORG_A, "name": "Unicode Group"}
             raise asyncpg.UndefinedTableError("relation does not exist")
 
@@ -743,7 +743,7 @@ class _TxPool:
             return self.row
         if "role_code = 'org_owner'" in q:
             return self.owner
-        if "UPDATE staging.platform_support_sessions" in q:
+        if "UPDATE public.platform_support_sessions" in q:
             self.updated.append(a)
             if self.update_returns is None:
                 return None
@@ -753,9 +753,9 @@ class _TxPool:
                 "approved_at": NOW,
                 "expires_at": NOW + timedelta(hours=ttl) if ttl > 0 else None,
             }
-        if "SELECT name, email FROM staging.organisations" in q:
+        if "SELECT name, email FROM public.organisations" in q:
             return self.org
-        if "SELECT name FROM staging.organisations" in q:
+        if "SELECT name FROM public.organisations" in q:
             return self.org
         if "FROM users WHERE user_id" in q:
             return {"name": "Priya (Aekam)", "email": "priya@aekaminc.com"}
@@ -1028,7 +1028,7 @@ async def test_the_clock_is_computed_by_postgres_in_the_approving_statement(sent
     else."""
     import inspect
     src = inspect.getsource(S.open_session)
-    update = src[src.index("UPDATE staging.platform_support_sessions"):]
+    update = src[src.index("UPDATE public.platform_support_sessions"):]
     update = update[:update.index('"""') if '"""' in update else len(update)]
     assert "approved_at = NOW()" in update
     assert "NOW() + make_interval(hours => $3)" in update
@@ -1089,7 +1089,7 @@ def test_there_is_no_way_to_extend_a_session():
     # The only UPDATE an APPROVED row ever takes is the revocation triple.
     src = inspect.getsource(S)
     starts = [m.start() for m in
-              re.finditer(r"UPDATE staging\.platform_support_sessions", src)]
+              re.finditer(r"UPDATE public\.platform_support_sessions", src)]
     assert len(starts) == 3, "approve, deny, revoke — and nothing else"
     for start in starts:
         stmt = " ".join(src[start:start + 700].split())

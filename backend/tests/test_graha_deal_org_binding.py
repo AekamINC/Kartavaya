@@ -86,7 +86,7 @@ def scoped_fetchval(pool, *, allow=()):
     """
     def answer(sql, *args):
         s = " ".join(str(sql).split())
-        if s.startswith("SELECT 1 FROM staging.graha_") and "org_id=$2::uuid" in s:
+        if s.startswith("SELECT 1 FROM public.graha_") and "org_id=$2::uuid" in s:
             return 1 if args and args[0] in allow else None
         # The default-pipeline lookup in `create_deal` — a real id, this org's.
         if "is_default=TRUE" in s:
@@ -133,7 +133,7 @@ async def test_create_deal_refuses_another_orgs_id(
     assert resp.status_code == 400, (
         f"{field} from another organisation was accepted — the foreign key on "
         f"{table} is not composite with org_id, so nothing else stops it")
-    assert find_call(mock_pool, "INSERT INTO staging.graha_deals") is None, (
+    assert find_call(mock_pool, "INSERT INTO public.graha_deals") is None, (
         "the deal was written before the id was refused")
 
 
@@ -151,7 +151,7 @@ async def test_create_deal_refusal_does_not_fall_through_to_the_default_pipeline
     resp = await api_client.post("/api/v1/graha/deals",
                                  json={"title": "T", "pipeline_id": FOREIGN})
     assert resp.status_code == 400
-    assert find_call(mock_pool, "INSERT INTO staging.graha_pipelines") is None
+    assert find_call(mock_pool, "INSERT INTO public.graha_pipelines") is None
 
 
 async def test_create_deal_binds_the_resolved_ids_not_the_body(
@@ -173,7 +173,7 @@ async def test_create_deal_binds_the_resolved_ids_not_the_body(
         "pipeline_id": OURS, "territory_id": OURS,
     })
     assert resp.status_code == 200
-    call = find_call(mock_pool, "INSERT INTO staging.graha_deals")
+    call = find_call(mock_pool, "INSERT INTO public.graha_deals")
     assert call is not None
     assert call.args.count(OURS) >= 4, (
         "the resolved ids did not all reach the INSERT")
@@ -214,7 +214,7 @@ async def test_update_deal_refuses_another_orgs_id(
     resp = await api_client.patch(f"/api/v1/graha/deals/{DEAL}",
                                   json={field: FOREIGN})
     assert resp.status_code == 400
-    assert find_call(mock_pool, "UPDATE staging.graha_deals SET") is None
+    assert find_call(mock_pool, "UPDATE public.graha_deals SET") is None
 
 
 async def test_update_deal_refuses_to_take_a_deal_off_every_board(
@@ -247,7 +247,7 @@ async def test_pipeline_id_is_bound_as_a_uuid_not_an_untyped_parameter(
     resp = await api_client.patch(f"/api/v1/graha/deals/{DEAL}",
                                   json={"pipeline_id": OURS})
     assert resp.status_code == 200
-    call = find_call(mock_pool, "UPDATE staging.graha_deals SET")
+    call = find_call(mock_pool, "UPDATE public.graha_deals SET")
     assert "pipeline_id=NULLIF($" in sql_of(call) and "::uuid" in sql_of(call)
 
 
@@ -277,7 +277,7 @@ async def test_a_lost_reason_typed_by_a_person_is_actually_saved(
         f"/api/v1/graha/deals/{DEAL}",
         json={"stage": "Lost", "lost_reason": "Price — went with the incumbent"})
     assert resp.status_code == 200
-    call = find_call(mock_pool, "UPDATE staging.graha_deals SET")
+    call = find_call(mock_pool, "UPDATE public.graha_deals SET")
     assert call is not None, "no UPDATE was issued at all"
     assert "lost_reason=$" in sql_of(call), (
         "the reason a deal was lost was accepted by the model and then "
@@ -301,7 +301,7 @@ async def test_the_reason_can_also_be_cleared(
     resp = await api_client.patch(f"/api/v1/graha/deals/{DEAL}",
                                   json={"lost_reason": ""})
     assert resp.status_code == 200
-    call = find_call(mock_pool, "UPDATE staging.graha_deals SET")
+    call = find_call(mock_pool, "UPDATE public.graha_deals SET")
     assert "lost_reason=$" in sql_of(call)
     assert "" in call.args
 
@@ -315,7 +315,7 @@ async def test_client_id_on_a_deal_is_no_longer_set_once_at_create(
                                   json={"client_id": OURS})
     assert resp.status_code == 200
     assert "client_id=NULLIF($" in sql_of(
-        find_call(mock_pool, "UPDATE staging.graha_deals SET"))
+        find_call(mock_pool, "UPDATE public.graha_deals SET"))
 
 
 async def test_custom_data_survives_the_create_form(
@@ -332,7 +332,7 @@ async def test_custom_data_survives_the_create_form(
                                   json={"custom_data": {"po": "PO-91"}})
     assert resp.status_code == 200
     assert "custom_data=$" in sql_of(
-        find_call(mock_pool, "UPDATE staging.graha_deals SET"))
+        find_call(mock_pool, "UPDATE public.graha_deals SET"))
 
 
 def test_the_model_and_the_allowlist_can_never_drift_apart_again():
@@ -381,7 +381,7 @@ async def test_an_activity_cannot_be_filed_on_another_orgs_record(
     resp = await api_client.post("/api/v1/graha/activities", json={
         "title": "Called them", "activity_type": "call", field: FOREIGN})
     assert resp.status_code == 400
-    assert find_call(mock_pool, "INSERT INTO staging.graha_activities") is None
+    assert find_call(mock_pool, "INSERT INTO public.graha_activities") is None
 
 
 @pytest.mark.parametrize("field", ["deal_id", "contact_id"])
@@ -397,7 +397,7 @@ async def test_a_follow_up_cannot_be_filed_on_another_orgs_record(
     resp = await api_client.post("/api/v1/graha/follow-ups", json={
         "title": "Chase", "due_at": "2026-09-01T10:00:00+00:00", field: FOREIGN})
     assert resp.status_code == 400
-    assert find_call(mock_pool, "INSERT INTO staging.graha_follow_ups") is None
+    assert find_call(mock_pool, "INSERT INTO public.graha_follow_ups") is None
 
 
 @pytest.mark.parametrize("field", ["deal_id", "contact_id"])
@@ -412,7 +412,7 @@ async def test_a_document_cannot_be_filed_on_another_orgs_record(
         field: FOREIGN,
     })
     assert resp.status_code == 400
-    assert find_call(mock_pool, "INSERT INTO staging.graha_documents") is None
+    assert find_call(mock_pool, "INSERT INTO public.graha_documents") is None
 
 
 @pytest.mark.parametrize("field", ["deal_id", "contact_id"])
@@ -429,7 +429,7 @@ async def test_a_document_cannot_be_RE_filed_onto_another_orgs_record(
         "/api/v1/graha/documents/e0000000-0000-0000-0000-00000000000e",
         json={field: FOREIGN})
     assert resp.status_code == 400
-    assert find_call(mock_pool, "UPDATE staging.graha_documents") is None
+    assert find_call(mock_pool, "UPDATE public.graha_documents") is None
 
 
 def test_every_deal_resolver_checks_org_AND_is_active():

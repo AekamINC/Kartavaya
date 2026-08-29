@@ -115,7 +115,7 @@ def hiring(mock_pool):
     async def fetchval(query, *args):
         if "table_name='invites'" in query and "employee_id" in query:
             return 1 if state["migration_187"] else None
-        if "role_code FROM staging.user_roles" in query:
+        if "role_code FROM public.user_roles" in query:
             return state["caller_org_role"]
         if "COALESCE(o.max_users" in query:
             return state["seat_limit"]
@@ -123,7 +123,7 @@ def hiring(mock_pool):
             return state["seats_joined"]
         if "COUNT(*) FROM public.invites" in query:
             return state["seats_pending"]
-        if "SELECT name FROM staging.organisations" in query:
+        if "SELECT name FROM public.organisations" in query:
             return "Test Org"
         return None
 
@@ -134,7 +134,7 @@ def hiring(mock_pool):
             # No organisation has this column set; a NULL allowance is unlimited.
             return {"seat_limit": None, "roster": 0, "exempt": 0,
                     "module_active": True}
-        if "INSERT INTO staging.manav_employees" in query:
+        if "INSERT INTO public.manav_employees" in query:
             state["employees_inserted"] += 1
             return {
                 "id": EMP_ID, "name": "Rahul Mehta", "employee_code": "EMP002",
@@ -534,7 +534,7 @@ def accepting(mock_pool):
         return None
 
     async def fetchval(query, *args):
-        if "UPDATE staging.manav_employees" in query:
+        if "UPDATE public.manav_employees" in query:
             state["link_calls"].append((query, args))
             if state["raises"] is not None:
                 raise state["raises"]
@@ -691,4 +691,4 @@ async def test_the_account_and_its_org_role_are_written_before_the_link(
     assert resp.status_code == 200
     written = [q for q, _ in accepting["executed"]]
     assert any("INSERT INTO users" in q for q in written)
-    assert any("staging.user_roles" in q for q in written)
+    assert any("public.user_roles" in q for q in written)

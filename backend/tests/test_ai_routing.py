@@ -89,7 +89,7 @@ class _Conn:
         return _T()
 
     async def fetchval(self, sql, *args):
-        if "INSERT INTO staging.hub_chat_messages" in sql:
+        if "INSERT INTO public.hub_chat_messages" in sql:
             return MSG
         return None
 
@@ -155,8 +155,8 @@ class _Pool:
 
 def _chat_pool():
     return _Pool(rows={
-        "FROM staging.hub_chat_sessions": {"client_id": CLIENT},
-        "COUNT(*) FROM staging.hub_chat_messages": 1,
+        "FROM public.hub_chat_sessions": {"client_id": CLIENT},
+        "COUNT(*) FROM public.hub_chat_messages": 1,
         "hub_brand_profiles": None,
     })
 
@@ -479,7 +479,7 @@ async def test_a_grounded_answer_is_stored_with_its_web_sources(monkeypatch):
         },
     )
 
-    args = pool.args_of("INSERT INTO staging.hub_chat_messages")
+    args = pool.args_of("INSERT INTO public.hub_chat_messages")
     stored = json.loads(args[2])
 
     web = [s for s in stored if s.get("type") == "web"]

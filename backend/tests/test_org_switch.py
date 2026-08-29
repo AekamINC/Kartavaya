@@ -301,7 +301,7 @@ async def test_an_approved_session_is_listed_with_its_request_and_expiry(pool_of
     ends = _dt.datetime(2026, 8, 6, 18, 30, tzinfo=_dt.timezone.utc)
     pool_of(
         [_row("11111111-1111-1111-1111-111111111111", "Aekam Inc", "org_owner", 1)],
-        support_table="staging.platform_support_sessions",
+        support_table="public.platform_support_sessions",
         support_rows=[{
             "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             "org_id": "99999999-9999-9999-9999-999999999999",
@@ -327,7 +327,7 @@ async def test_an_unapproved_or_expired_session_is_not_offered(pool_of):
     """Appearing in this list is what makes an org look reachable. A requested
     session is not an approved one, and an expired session must disappear
     rather than silently keep working."""
-    pool_of([], support_table="staging.platform_support_sessions")
+    pool_of([], support_table="public.platform_support_sessions")
     await org_switch.list_memberships(user={"user_id": "user_abc"})
     import inspect
     src = inspect.getsource(org_switch._support_sessions)

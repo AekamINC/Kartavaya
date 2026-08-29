@@ -165,7 +165,7 @@ def test_attendance_rate_is_sums_over_sums_with_payrolls_own_formula():
     ) in sql
     assert "AVG(" not in sql, "the mean of per-day rates is not the period's rate"
     assert "AS attended" in sql and "AS marked" in sql
-    assert "FROM staging.manav_attendance" in sql
+    assert "FROM public.manav_attendance" in sql
     assert params == [ORG, WIN.start, WIN.end]
 
 
@@ -180,7 +180,7 @@ def test_attendance_rate_drops_buckets_with_no_workable_days():
 def test_attendance_rate_team_cut_is_department_with_an_honest_empty_label():
     sql, _ = build("pahchan.attendance_rate", group_by="team")
     assert "COALESCE(NULLIF(e.department, ''), 'No department') AS team" in sql
-    assert "JOIN staging.manav_employees e ON e.id = a.employee_id" in sql
+    assert "JOIN public.manav_employees e ON e.id = a.employee_id" in sql
     assert "GROUP BY 1, 2" in sql and sql.rstrip().endswith("ORDER BY 1, 2")
     # department is free text with no FK — the lookup table must not be
     # joined (the ganit_expense_categories trap).
@@ -249,7 +249,7 @@ def test_reconciliation_ranges_text_months_and_honours_the_soft_delete():
         "AND to_char($3::date, 'YYYY-MM')"
     ) in sql
     assert "p.is_active = TRUE" in sql
-    assert "FROM staging.vetana_payslips p" in sql
+    assert "FROM public.vetana_payslips p" in sql
 
 
 def test_reconciliation_answers_when_either_side_has_data_and_ghosts_get_nothing():

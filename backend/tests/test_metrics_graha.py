@@ -184,7 +184,7 @@ def test_pipeline_groups_by_the_org_own_stage_text():
         "money is COALESCEd before arithmetic — value is nullable"
     )
     assert "HAVING COUNT(*) > 0" in sql
-    assert "FROM staging.graha_deals" in sql
+    assert "FROM public.graha_deals" in sql
 
 
 # ── win_rate ────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ def test_win_rate_by_rep_joins_assigned_to_and_labels_names_never_ids():
 def test_win_rate_by_source_reads_the_contact_source():
     """Deals have no source column — the source is the contact's."""
     sql, _ = build("graha.win_rate", group_by="source")
-    assert "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id" in sql
+    assert "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id" in sql
     assert "COALESCE(NULLIF(c.source, ''), 'No source') AS source" in sql
     assert "d.source" not in sql
 
@@ -283,7 +283,7 @@ def test_deal_aging_last_touch_is_activity_or_deal_edit():
     sql, _ = build("graha.deal_aging")
     assert "GREATEST(d.updated_at, la.last_at)::date" in sql
     assert "MAX(a.created_at) AS last_at" in sql
-    assert "FROM staging.graha_activities a" in sql
+    assert "FROM public.graha_activities a" in sql
     assert "LEFT JOIN LATERAL" in sql, (
         "a deal with no activities must age from its last edit, not vanish"
     )
@@ -301,7 +301,7 @@ def test_lead_conversion_is_counts_over_counts_with_an_org_scoped_exists():
     sql, params = build("graha.lead_conversion")
     assert "/ NULLIF(COUNT(*), 0)::float * 100" in sql
     assert "AVG(" not in sql
-    assert "EXISTS (SELECT 1 FROM staging.graha_deals d WHERE d.contact_id = c.id AND d.org_id = $1::uuid)" in sql
+    assert "EXISTS (SELECT 1 FROM public.graha_deals d WHERE d.contact_id = c.id AND d.org_id = $1::uuid)" in sql
     assert "AS with_deal" in sql and "AS contacts" in sql
     assert params == [ORG, WIN.start, WIN.end]
 
@@ -394,4 +394,4 @@ def test_contacts_added_excludes_merged_and_deleted_contacts():
     assert "is_active = TRUE" in sql, (
         "a merged duplicate (migration 024 soft-merge) is the same person twice"
     )
-    assert "FROM staging.graha_contacts" in sql
+    assert "FROM public.graha_contacts" in sql

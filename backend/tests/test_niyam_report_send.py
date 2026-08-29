@@ -81,7 +81,7 @@ class _MemberPool:
 
     async def fetch(self, q, *a):
         self.asked.append((q, a))
-        assert "FROM public.users" in q and "staging.user_roles" in q
+        assert "FROM public.users" in q and "public.user_roles" in q
         wanted = a[1]
         return [{"email": e} for e in self.member_emails if e in wanted]
 
@@ -125,14 +125,14 @@ class _Conn:
         self.executed = []
 
     async def fetchrow(self, q, *a):
-        if "FROM staging.dristi_scheduled_reports" in q:
+        if "FROM public.dristi_scheduled_reports" in q:
             return self.schedule
         # The guarded stamp is a write the assertions read — recorded here
         # because it runs through fetchrow (UPDATE ... RETURNING id) now.
         if "SET last_sent_at = NOW()" in q:
             self.executed.append((q, a))
             return {"id": a[0]}
-        if "FROM staging.organisations" in q:
+        if "FROM public.organisations" in q:
             return None
         return None
 

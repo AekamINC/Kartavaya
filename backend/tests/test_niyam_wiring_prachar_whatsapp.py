@@ -206,10 +206,10 @@ async def _run_send(monkeypatch, pool, *, dry_run):
 
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        if "UPDATE staging.prachar_campaigns" in q and "RETURNING" in q:
+        if "UPDATE public.prachar_campaigns" in q and "RETURNING" in q:
             # the terminal write's RETURNING * row
             return _campaign_row(status="sent", total_recipients=a[0])
-        if "SELECT * FROM staging.prachar_campaigns" in q:
+        if "SELECT * FROM public.prachar_campaigns" in q:
             return _campaign_row()
         return None
 
@@ -246,7 +246,7 @@ async def test_a_delivered_campaign_emits_from_the_terminal_write(monkeypatch):
 
     # …and the write it rode carries RETURNING, inside the same transaction.
     terminal = [q for q, _ in pool.calls
-                if "UPDATE staging.prachar_campaigns" in q and "status='sent'" in q]
+                if "UPDATE public.prachar_campaigns" in q and "status='sent'" in q]
     assert terminal and "RETURNING *" in terminal[0]
 
 
@@ -262,7 +262,7 @@ async def test_a_fully_suppressed_campaign_emits_nothing(monkeypatch):
     assert rec.calls == [], "a suppressed campaign reached nobody — no event"
     # the suppressed terminal write still happened, eventlessly
     assert any("status='suppressed'" in q for q, _ in pool.calls
-               if "UPDATE staging.prachar_campaigns" in q)
+               if "UPDATE public.prachar_campaigns" in q)
 
 
 # ═════════════════════════════════════════════════════════════
@@ -278,7 +278,7 @@ async def test_manual_unsubscribe_emits_with_an_actor(monkeypatch):
 
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        if "INSERT INTO staging.prachar_unsubscribes" in q:
+        if "INSERT INTO public.prachar_unsubscribes" in q:
             return {"id": "un1", "org_id": a[0], "email": a[1], "reason": a[2]}
         return None
 
@@ -341,7 +341,7 @@ async def test_link_unsubscribe_emits_with_no_actor(monkeypatch):
 
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        if "INSERT INTO staging.prachar_unsubscribes" in q:
+        if "INSERT INTO public.prachar_unsubscribes" in q:
             return {"id": "un1", "org_id": a[0], "email": a[1], "reason": "link"}
         return None
 
@@ -410,12 +410,12 @@ def _webhook_pool(*, contact_exists: bool) -> _Pool:
         pool.calls.append((q, a))
         if "varta_business_accounts" in q:
             return {"id": "acc1", "org_id": "org1"}
-        if "INSERT INTO staging.varta_contacts" in q:
+        if "INSERT INTO public.varta_contacts" in q:
             return {"id": "vc1", "org_id": a[0], "phone_number": a[1],
                     "name": a[2], "graha_contact_id": None, "opted_in": False}
         if "varta_contacts" in q:                      # the SELECT
             return {"id": "vc1"} if contact_exists else None
-        if "INSERT INTO staging.varta_conversations" in q:
+        if "INSERT INTO public.varta_conversations" in q:
             return {"id": "conv1"}
         if "varta_conversations" in q:                 # the SELECT
             return None
@@ -573,7 +573,7 @@ async def test_a_concurrent_redelivery_that_hits_157s_index_is_skipped_whole(
     base_fetchrow = pool.fetchrow
 
     async def _racing_fetchrow(q, *a):
-        if "INSERT INTO staging.varta_messages" in q and "wamid.dup" in a:
+        if "INSERT INTO public.varta_messages" in q and "wamid.dup" in a:
             pool.calls.append((q, a))   # the ledger still sees the attempt
             raise asyncpg.exceptions.UniqueViolationError(
                 'duplicate key value violates unique constraint '
@@ -616,7 +616,7 @@ async def test_a_concurrent_redelivery_that_hits_157s_index_is_skipped_whole(
     # both messages REACHED the insert — the duplicate was skipped at the
     # seam, not dropped before it
     attempts = [q for q, _ in pool.calls
-                if "INSERT INTO staging.varta_messages" in q]
+                if "INSERT INTO public.varta_messages" in q]
     assert len(attempts) == 2
 
 
@@ -633,10 +633,10 @@ async def test_an_empty_wa_id_still_inserts_with_no_dedupe_key(monkeypatch):
     out = await whatsapp.webhook_receive(req)
 
     assert out == {"ok": True}
-    assert any("INSERT INTO staging.varta_messages" in q for q, _ in pool.calls), \
+    assert any("INSERT INTO public.varta_messages" in q for q, _ in pool.calls), \
         "an id-less message still lands in the inbox"
     seen = [q for q, _ in pool.calls
-            if "SELECT 1 FROM staging.varta_messages" in q]
+            if "SELECT 1 FROM public.varta_messages" in q]
     assert seen == [], "no id, nothing to look up — the seen-check is skipped"
     assert len(inbound.calls) == 1
     kw = _rode_the_write(pool, inbound.calls[0])

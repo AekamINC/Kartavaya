@@ -168,7 +168,7 @@ async def test_no_account_is_created_when_the_seat_check_refuses(api_client, wir
         "the account was created and only then was the seat refused"
     assert "UPDATE public.invites SET accepted_at" not in written, \
         "the invitation was consumed by an acceptance that did not happen"
-    assert "staging.user_roles" not in written, \
+    assert "public.user_roles" not in written, \
         "the membership row was written past the seat limit"
 
 

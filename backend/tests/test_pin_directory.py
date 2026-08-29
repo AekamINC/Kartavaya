@@ -283,7 +283,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection, so a statement is planned the way it
 #: will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 DB_SKIP = (
     "no live database. This half PREPAREs the loader's statements against the "
@@ -321,15 +321,15 @@ def described():
             columns = await conn.fetch(
                 "SELECT column_name, data_type, is_nullable "
                 "FROM information_schema.columns "
-                "WHERE table_schema='staging' AND table_name='pin_directory'")
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name='pin_directory'")
             indexes = await conn.fetch(
                 "SELECT indexname, indexdef FROM pg_indexes "
-                "WHERE schemaname='staging' AND tablename='pin_directory'")
+                "WHERE schemaname = ANY(current_schemas(false)) AND tablename='pin_directory'")
             checks = await conn.fetch(
                 "SELECT c.conname, pg_get_constraintdef(c.oid) AS def "
                 "FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
                 "JOIN pg_namespace n ON n.oid = t.relnamespace "
-                "WHERE n.nspname='staging' AND t.relname='pin_directory'")
+                "WHERE n.nspname = ANY(current_schemas(false)) AND t.relname='pin_directory'")
             live = await conn.fetchrow(pdir.SUMMARY_SQL, pdir.VINTAGE)
             return {
                 "upsert_binds": len(upsert.get_parameters()),

@@ -94,11 +94,11 @@ BRAND = "22222222-2222-2222-2222-222222222222"
 USER = {"user_id": "user_admin001"}
 
 #: The fallback SELECT — the one that finds the internal client's profile.
-FALLBACK = "JOIN staging.hub_clients c ON c.id = bp.client_id"
+FALLBACK = "JOIN public.hub_clients c ON c.id = bp.client_id"
 #: The primary SELECT — a row already stamped with this org.
-PRIMARY = "SELECT id FROM staging.hub_brand_profiles WHERE org_id"
-UPDATE = "UPDATE staging.hub_brand_profiles"
-INSERT = "INSERT INTO staging.hub_brand_profiles"
+PRIMARY = "SELECT id FROM public.hub_brand_profiles WHERE org_id"
+UPDATE = "UPDATE public.hub_brand_profiles"
+INSERT = "INSERT INTO public.hub_brand_profiles"
 
 
 def _run(coro):
@@ -315,10 +315,11 @@ def live():
             cols = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_schema='staging' AND table_name='hub_brand_profiles' "
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name='hub_brand_profiles' "
                 "  AND column_name IN ('client_id','org_id')"
             )
-            return failures, {r["column_name"]: dict(r) for r in cols}
+            return (failures, {r["column_name"]: dict(r) for r in cols},
+                    len(statements))
         finally:
             await conn.close()
 
@@ -326,7 +327,12 @@ def live():
 
 
 def test_every_statement_parses_against_the_real_schema(live):
-    failures, _ = live
+    failures, _, described = live
+    # `assert not failures` is green against an EMPTY capture. The count is
+    # what separates "all three statements parse" from "the handler was never
+    # driven, so nothing was parsed and nothing could fail".
+    assert described >= 3, \
+        f"only {described} statements were captured, not 3 — the capture rotted"
     assert not failures, "statements the live catalogue refused:\n" + "\n".join(
         f"  {err}\n    {sql}" for sql, err in failures)
 
@@ -335,7 +341,7 @@ def test_client_id_is_still_not_null_which_is_why_the_insert_had_to_go(live):
     """THE RATCHET. If somebody later makes `client_id` nullable, or gives it a
     default, the reasoning above changes and this test is where they find that
     out — rather than in a review of a handler that looks fine either way."""
-    _, cols = live
+    _, cols, _ = live
     assert cols, "the catalogue read returned nothing at all"
     client_id = cols.get("client_id")
     assert client_id, "hub_brand_profiles has no client_id column any more"

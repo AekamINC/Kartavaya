@@ -222,27 +222,27 @@ class _MatchPool:
         # handler proceed to the invoice re-read, which answers None below —
         # so these tests stay about the write, and the emission path has its
         # own suite (test_niyam_wiring_ganit.py).
-        if "UPDATE staging.ganit_bank_statement_lines" in q:
+        if "UPDATE public.ganit_bank_statement_lines" in q:
             self.updates.append(a)
             return {"id": a[2]}
-        if "FROM staging.ganit_invoices" in q:
+        if "FROM public.ganit_invoices" in q:
             return None
-        if "FROM staging.ganit_bank_statement_lines" in q and self.line:
+        if "FROM public.ganit_bank_statement_lines" in q and self.line:
             return {"id": a[0], "amount": Decimal("59000.00"),
                     "statement_date": date(2026, 8, 1), "is_reconciled": False}
         return None
 
     async def fetchval(self, q, *a):
-        if "FROM staging.ganit_payments" in q:
+        if "FROM public.ganit_payments" in q:
             return 1 if self.in_receipts else None
-        if "FROM staging.ganit_vendor_payments" in q:
+        if "FROM public.ganit_vendor_payments" in q:
             return 1 if self.in_vendor else None
-        if "FROM staging.ganit_bank_statement_lines" in q:
+        if "FROM public.ganit_bank_statement_lines" in q:
             return 1 if self.clash else None
         return None
 
     async def execute(self, q, *a):
-        if "UPDATE staging.ganit_bank_statement_lines" in q:
+        if "UPDATE public.ganit_bank_statement_lines" in q:
             self.updates.append(a)
 
     async def fetch(self, *a, **k):
@@ -356,18 +356,18 @@ async def test_the_importer_never_claims_one_payment_twice(monkeypatch):
 
     class _Pool:
         async def execute(self, q, *a):
-            if "UPDATE staging.ganit_bank_statement_lines" in q:
+            if "UPDATE public.ganit_bank_statement_lines" in q:
                 updates.append(a)
 
         async def fetch(self, q, *a):
             # Order matters: the candidate queries name the statement-lines
             # table inside their NOT IN subquery, so the ledger tables have to
             # be tested for first or every query looks like the line fetch.
-            if "FROM staging.ganit_payments" in q:
+            if "FROM public.ganit_payments" in q:
                 return receipts
-            if "FROM staging.ganit_vendor_payments" in q:
+            if "FROM public.ganit_vendor_payments" in q:
                 return []
-            if "FROM staging.ganit_bank_statement_lines" in q:
+            if "FROM public.ganit_bank_statement_lines" in q:
                 return lines
             return []
 
@@ -376,7 +376,7 @@ async def test_the_importer_never_claims_one_payment_twice(monkeypatch):
             # transaction now (it emits invoice.paid when a receipt settles
             # an invoice) — record it here, answer the invoice re-read with
             # None so no emission complicates a test about claim-dedupe.
-            if "UPDATE staging.ganit_bank_statement_lines" in q:
+            if "UPDATE public.ganit_bank_statement_lines" in q:
                 updates.append(a)
                 return {"id": a[2]}
             return None
@@ -433,7 +433,7 @@ async def test_the_candidates_endpoint_offers_the_right_ledger(monkeypatch):
     _use(monkeypatch, _Pool())
     out = await ganit.bank_line_candidates("l1", user={"user_id": "u1"}, org_id="org1")
     assert out["ledger"] == "vendor_payment"
-    assert "staging.ganit_vendor_payments" in asked["q"]
+    assert "public.ganit_vendor_payments" in asked["q"]
     assert out["data"][0]["amount_matches"] is True
 
 

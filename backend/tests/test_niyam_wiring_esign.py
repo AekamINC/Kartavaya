@@ -231,7 +231,7 @@ def _send_pool():
     # _doc_for_reader's SELECT carries the org predicate; the flip is the UPDATE.
     pool.rows["AND org_id=$2::uuid"] = _doc_row()
     pool.rows["SET status='sent'"] = _doc_row(status="sent")
-    pool.lists["FROM staging.sign_signers WHERE document_id=$1"] = [_signer_row(status="pending")]
+    pool.lists["FROM public.sign_signers WHERE document_id=$1"] = [_signer_row(status="pending")]
     return pool
 
 
@@ -292,8 +292,8 @@ async def test_a_signature_emits_document_signed_with_the_remaining_count(monkey
     # The signer flip is a guarded transition now (AND status != 'signed',
     # RETURNING id) — the rig answers it, or the route correctly refuses
     # before any emit, which is the OTHER test's subject.
-    pool.rows["UPDATE staging.sign_signers SET"] = {"id": str(SIGNER_ID)}
-    pool.rows["UPDATE staging.sign_documents SET signers_completed"] = _doc_row(
+    pool.rows["UPDATE public.sign_signers SET"] = {"id": str(SIGNER_ID)}
+    pool.rows["UPDATE public.sign_documents SET signers_completed"] = _doc_row(
         status="partially_signed", signers_completed=1)
     _install(monkeypatch, pool)
     emit = _Emit()
@@ -323,8 +323,8 @@ async def test_a_signature_emits_document_signed_with_the_remaining_count(monkey
 async def test_the_last_signature_reports_zero_remaining(monkeypatch):
     pool = _Pool()
     pool.rows["s.token=$1"] = _signer_row(signers_total=1)
-    pool.rows["UPDATE staging.sign_signers SET"] = {"id": str(SIGNER_ID)}
-    pool.rows["UPDATE staging.sign_documents SET signers_completed"] = _doc_row(
+    pool.rows["UPDATE public.sign_signers SET"] = {"id": str(SIGNER_ID)}
+    pool.rows["UPDATE public.sign_documents SET signers_completed"] = _doc_row(
         status="completed", signers_total=1, signers_completed=1)
     _install(monkeypatch, pool)
     emit = _Emit()
@@ -392,7 +392,7 @@ async def test_a_raced_signer_flip_is_refused_with_400_and_emits_nothing(monkeyp
     # Deliberately NO answer for the signer flip: the guarded UPDATE returns
     # None, exactly what the loser of the race sees. The counter query HAS an
     # answer on purpose — proving it is never asked, not merely unanswered.
-    pool.rows["UPDATE staging.sign_documents SET signers_completed"] = _doc_row(
+    pool.rows["UPDATE public.sign_documents SET signers_completed"] = _doc_row(
         status="partially_signed", signers_completed=1)
     _install(monkeypatch, pool)
     emit = _Emit()
@@ -421,8 +421,8 @@ async def test_a_decline_emits_document_declined_with_the_reason(monkeypatch):
     pool.rows["s.token=$1"] = _signer_row()
     # The decline write is a guarded transition too (NOT IN signed/declined,
     # RETURNING id) — a replay matches nothing and emits nothing.
-    pool.rows["UPDATE staging.sign_signers SET status='declined'"] = {"id": str(SIGNER_ID)}
-    pool.rows["SELECT * FROM staging.sign_documents WHERE id=$1"] = _doc_row(status="sent")
+    pool.rows["UPDATE public.sign_signers SET status='declined'"] = {"id": str(SIGNER_ID)}
+    pool.rows["SELECT * FROM public.sign_documents WHERE id=$1"] = _doc_row(status="sent")
     _install(monkeypatch, pool)
     emit = _Emit()
     monkeypatch.setattr(esign, "document_declined", emit)
@@ -482,7 +482,7 @@ async def test_a_replayed_decline_is_refused_with_400_and_emits_nothing(monkeypa
     # NO answer for the guarded decline UPDATE — the replay's view. The
     # document SELECT has an answer on purpose: the proof is that the refusal
     # happens BEFORE the route ever fetches a row for the emitter.
-    pool.rows["SELECT * FROM staging.sign_documents WHERE id=$1"] = _doc_row(status="sent")
+    pool.rows["SELECT * FROM public.sign_documents WHERE id=$1"] = _doc_row(status="sent")
     _install(monkeypatch, pool)
     emit = _Emit()
     monkeypatch.setattr(esign, "document_declined", emit)
@@ -495,7 +495,7 @@ async def test_a_replayed_decline_is_refused_with_400_and_emits_nothing(monkeypa
     assert any("NOT IN ('signed', 'declined')" in q and "RETURNING id" in q
                for q, _ in pool.calls), \
         "the guarded transition itself is gone — the decline is unconditional again"
-    assert not any("SELECT * FROM staging.sign_documents WHERE id=$1" in q
+    assert not any("SELECT * FROM public.sign_documents WHERE id=$1" in q
                    for q, _ in pool.calls), \
         "the refused decline still fetched the document row it would have emitted with"
 

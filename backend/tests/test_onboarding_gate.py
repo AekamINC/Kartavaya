@@ -59,14 +59,14 @@ def _wire_me(mock_pool, user, org_rows, org_row, column_exists=True):
     async def fetch(query, *args):
         if "org_id IS NULL" in query:
             return []
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return org_rows
         return []
 
     async def fetchrow(query, *args):
         if "information_schema.columns" in query:
             return {"ok": 1} if column_exists else None
-        if "staging.organisations" in query:
+        if "public.organisations" in query:
             return org_row
         return user
 
@@ -138,14 +138,14 @@ async def test_a_failed_org_lookup_omits_the_key_rather_than_saying_false(
     async def fetch(query, *args):
         if "org_id IS NULL" in query:
             return []
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return _org_member_rows()
         return []
 
     async def fetchrow(query, *args):
         if "information_schema.columns" in query:
             return {"ok": 1}
-        if "staging.organisations" in query:
+        if "public.organisations" in query:
             raise RuntimeError("connection reset by peer")
         return admin_user
 
@@ -186,14 +186,14 @@ async def test_the_org_header_is_ignored_when_the_caller_is_not_a_member(
     async def fetch(query, *args):
         if "org_id IS NULL" in query:
             return []
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return _org_member_rows()
         return []
 
     async def fetchrow(query, *args):
         if "information_schema.columns" in query:
             return {"ok": 1}
-        if "staging.organisations" in query:
+        if "public.organisations" in query:
             asked.append(args[0])
             return {"id": args[0], "name": "Aekam Inc", "onboarding_complete": True}
         return admin_user
@@ -231,7 +231,7 @@ async def test_the_org_header_is_honoured_for_an_org_the_caller_does_belong_to(
     async def fetch(query, *args):
         if "org_id IS NULL" in query:
             return []
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return _org_member_rows() + [
                 {"org_id": second, "role_code": "org_owner", "org_name": "Second Ltd"}
             ]
@@ -240,7 +240,7 @@ async def test_the_org_header_is_honoured_for_an_org_the_caller_does_belong_to(
     async def fetchrow(query, *args):
         if "information_schema.columns" in query:
             return {"ok": 1}
-        if "staging.organisations" in query:
+        if "public.organisations" in query:
             asked.append(args[0])
             return {"id": args[0], "name": "Second Ltd", "onboarding_complete": False}
         return admin_user

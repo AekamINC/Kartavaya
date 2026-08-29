@@ -42,7 +42,7 @@ import routers.manav as manav_router  # noqa: F401  (names the router for the ra
 from services.custody import notices as notices_svc
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. These statements are parsed against the real catalogue "
@@ -60,8 +60,8 @@ def live_dsn() -> str | None:
 #: The asset-return pre-read, exactly as the router composes it.
 ASSET_RETURN_PREREAD = (
     "SELECT a.assigned_to, a.name AS asset_name, a.category, e.name, e.email "
-    "FROM staging.manav_assets a "
-    "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+    "FROM public.manav_assets a "
+    "LEFT JOIN public.manav_employees e ON e.id = a.assigned_to "
     "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE"
 )
 
@@ -116,7 +116,7 @@ def test_manav_assets_has_no_asset_type_column():
 
     assert "asset_type" not in code, (
         "`asset_type` is back in routers/manav.py. There is no such column on "
-        "staging.manav_assets — migration 043 calls it `category`. In a SELECT "
+        "public.manav_assets — migration 043 calls it `category`. In a SELECT "
         "it 500s (the return path); read off a `RETURNING *` row it silently "
         "yields '' and sends a notification naming no asset type (the assign "
         "path). The quiet one is the half nobody reports."

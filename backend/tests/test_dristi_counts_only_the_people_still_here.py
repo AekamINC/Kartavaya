@@ -96,7 +96,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` does on every connection, so a statement is planned the way it
 #: will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 USER = {"user_id": "user_admin001"}
 
@@ -359,9 +359,9 @@ def test_the_router_takes_the_predicate_from_the_shared_module(request):
     src = inspect.getsource(dr)
     assert dr.still_on_the_rolls is still_on_the_rolls, (
         "routers/dristi.py no longer imports the shared predicate")
-    inlined = src.count("staging.manav_offboarding")
+    inlined = src.count("public.manav_offboarding")
     assert inlined == 1, (
-        f"{inlined} statements in routers/dristi.py name staging.manav_offboarding "
+        f"{inlined} statements in routers/dristi.py name public.manav_offboarding "
         f"in their own SQL. Exactly one is expected — the `/overview` headcount "
         f"tile, written before services/on_the_rolls.py existed. Every other "
         f"employee read must call still_on_the_rolls(), or the definition "
@@ -383,7 +383,7 @@ def test_the_guard_is_declared_on_the_source_not_on_soft_delete():
                if spec.get("on_the_rolls")}
     assert flagged == {"employees"}, (
         f"sources declaring the on-the-rolls guard: {sorted(flagged)}. Only "
-        f"`employees` reads staging.manav_employees; every other table in the "
+        f"`employees` reads public.manav_employees; every other table in the "
         f"builder would be joined to an offboarding row that cannot mean "
         f"anything about it.")
     assert all(spec.get("soft_delete") for spec in dr._ALLOWED_QUERY_TABLES.values()), (
@@ -564,8 +564,8 @@ def _leavers(conn, org: str, extra: str = ""):
     filter — `/reports?type=hr` also requires `status='active'`.
     """
     return conn.fetchval(
-        "SELECT COUNT(*)::int FROM staging.manav_employees e "
-        "JOIN staging.manav_offboarding x "
+        "SELECT COUNT(*)::int FROM public.manav_employees e "
+        "JOIN public.manav_offboarding x "
         "  ON x.org_id = e.org_id AND x.employee_id = e.id "
         "WHERE e.org_id = $1::uuid AND e.is_active = TRUE " + extra +
         "  AND x.status <> 'cancelled' AND x.last_working_day < CURRENT_DATE", org)
@@ -573,8 +573,8 @@ def _leavers(conn, org: str, extra: str = ""):
 
 def _org_with_leavers(conn):
     return conn.fetchval(
-        "SELECT e.org_id::text FROM staging.manav_employees e "
-        "JOIN staging.manav_offboarding x "
+        "SELECT e.org_id::text FROM public.manav_employees e "
+        "JOIN public.manav_offboarding x "
         "  ON x.org_id = e.org_id AND x.employee_id = e.id "
         "WHERE e.org_id = ANY($1::uuid[]) AND e.is_active = TRUE "
         "  AND x.status <> 'cancelled' AND x.last_working_day < CURRENT_DATE "
@@ -676,9 +676,9 @@ def test_live_an_org_with_no_exits_does_not_move(hr_pool):
     async def go(conn):
         org = await conn.fetchval(
             "SELECT o.id::text FROM UNNEST($1::uuid[]) AS o(id) "
-            "WHERE EXISTS (SELECT 1 FROM staging.manav_employees e "
+            "WHERE EXISTS (SELECT 1 FROM public.manav_employees e "
             "               WHERE e.org_id = o.id AND e.is_active = TRUE) "
-            "  AND NOT EXISTS (SELECT 1 FROM staging.manav_offboarding x "
+            "  AND NOT EXISTS (SELECT 1 FROM public.manav_offboarding x "
             "                   WHERE x.org_id = o.id "
             "                     AND x.status <> 'cancelled' "
             "                     AND x.last_working_day < CURRENT_DATE) "

@@ -54,7 +54,7 @@ def test_only_real_members_can_be_assigned():
     """Whatever was typed into the free-text box went into round-robin and out
     into `deals.assigned_to` — assigning leads to a person who does not exist."""
     code = _code(graha._validated_territory_users)
-    assert "staging.user_roles" in code and "org_id" in code
+    assert "public.user_roles" in code and "org_id" in code
     assert "400" in code
     for fn in (graha.create_territory, graha.update_territory):
         assert "_validated_territory_users" in _code(fn)
@@ -158,7 +158,7 @@ def test_a_contact_cannot_be_filed_under_another_orgs_territory():
     firm's salesperson; it is not a labelling mistake.
     """
     code = _code(graha.resolve_contact_territory)
-    assert "staging.graha_territories" in code
+    assert "public.graha_territories" in code
     assert "org_id" in code, "the org predicate is the whole point of this function"
     assert "is_active" in code, (
         "DELETE /territories/{id} is a SOFT delete — it flips is_active and "
@@ -225,7 +225,7 @@ def test_routing_runs_inside_the_write_and_not_in_a_background_task():
     """
     code = _code(graha.create_contact)
     assert "territory_routing.route_contact" in code
-    insert = code.index("INSERT INTO staging.graha_contacts")
+    insert = code.index("INSERT INTO public.graha_contacts")
     route = code.index("territory_routing.route_contact")
     event = code.index("contact_created(_conn")
     assert insert < route < event, (
@@ -334,7 +334,7 @@ def _territory_join_sites():
                 continue
             seen.add(path)
             text = _sql_text(path)
-            for m in _re.finditer(r"JOIN staging\.graha_territories\s+(\w+)", text):
+            for m in _re.finditer(r"JOIN public\.graha_territories\s+(\w+)", text):
                 tail = text[m.end():m.end() + 200]
                 on = tail.split(" JOIN ")[0].split(" WHERE ")[0]
                 yield path.name, m.group(1), on

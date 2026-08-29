@@ -26,7 +26,7 @@ async def test_write_inserts_into_audit_log(mock_audit_pool):
 
     mock_audit_pool.execute.assert_called_once()
     sql = mock_audit_pool.execute.call_args[0][0]
-    assert "staging.audit_log" in sql
+    assert "public.audit_log" in sql
     args = mock_audit_pool.execute.call_args[0]
     assert args[3] == "auth.login"
     assert args[6] == "1.2.3.4"

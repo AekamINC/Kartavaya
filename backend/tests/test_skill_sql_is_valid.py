@@ -78,7 +78,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What the app's own pool does on every connection (`db.py`). Matched here so
 #: a statement is planned the way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 #: An org id that exists nowhere. Only ever bound as a value in a capture; no
 #: statement built with it is ever executed.
@@ -497,12 +497,12 @@ def test_the_parser_would_have_caught_the_bug_that_prompted_this_file(
             await conn.execute(_SEARCH_PATH)
             with pytest.raises(asyncpg.exceptions.UndefinedColumnError):
                 await conn.prepare(
-                    "SELECT sd.min_staff FROM staging.manav_shift_definitions sd"
+                    "SELECT sd.min_staff FROM public.manav_shift_definitions sd"
                 )
             # And the other half of the promise: a statement that IS valid
             # plans without touching a row.
             stmt = await conn.prepare(
-                "SELECT id FROM staging.manav_shift_definitions "
+                "SELECT id FROM public.manav_shift_definitions "
                 "WHERE org_id = $1::uuid"
             )
             assert stmt is not None

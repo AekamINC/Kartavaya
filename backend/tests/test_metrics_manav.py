@@ -196,7 +196,7 @@ def test_no_stock_site_hand_writes_its_own_exit_test(key, group_by):
     shared fragment — so the table is named exactly as often as the guard is,
     which is once."""
     sql, _ = build(key, group_by=group_by)
-    assert sql.count("staging.manav_offboarding") == sql.count(GUARD) == 1, sql
+    assert sql.count("public.manav_offboarding") == sql.count(GUARD) == 1, sql
 
 
 @pytest.mark.parametrize("key,group_by", ROLLS_SITES)
@@ -205,7 +205,7 @@ def test_the_guard_correlates_to_an_alias_the_query_actually_declares(key, group
     query with no alias would not parse — and inlining an aliasless variant
     to dodge that is the twenty-sixth copy. Declare `e`."""
     sql, _ = build(key, group_by=group_by)
-    assert re.search(r"staging\.manav_employees e\b", sql), sql
+    assert re.search(r"public\.manav_employees e\b", sql), sql
 
 
 @pytest.mark.parametrize("key,group_by", FLOW_SITES)
@@ -241,7 +241,7 @@ def test_headcount_counts_the_rolls_not_the_dashboards_narrower_status():
     on notice is still headcount; the dashboard's status='active' count is a
     different, narrower question and must not leak in here."""
     sql, params = build("manav.headcount")
-    assert "FROM staging.manav_employees" in sql
+    assert "FROM public.manav_employees" in sql
     assert "is_active = TRUE" in sql
     assert "status = 'active'" not in sql
     assert "COUNT(*) FILTER (WHERE status = 'on_notice') AS on_notice" in sql
@@ -268,10 +268,10 @@ def test_bridge_joins_the_two_dated_facts_that_exist():
     manav_offboarding.last_working_day, and that is what the leaver leg must
     read. The joiner leg reads date_of_joining."""
     sql, params = build("manav.headcount_bridge")
-    assert "FROM staging.manav_employees" in sql
+    assert "FROM public.manav_employees" in sql
     assert "date_of_joining BETWEEN $2::date AND $3::date" in sql
     assert "UNION ALL" in sql
-    assert "FROM staging.manav_offboarding o" in sql
+    assert "FROM public.manav_offboarding o" in sql
     assert "o.last_working_day BETWEEN $2::date AND $3::date" in sql
     assert params == [ORG, WIN.start, WIN.end]
 
@@ -324,7 +324,7 @@ def test_attrition_reconstruction_only_counts_placeable_employees():
 
 def test_attrition_leavers_come_from_offboarding_rows():
     sql, _ = build("manav.attrition")
-    assert "FROM staging.manav_offboarding o" in sql
+    assert "FROM public.manav_offboarding o" in sql
     assert "o.status <> 'cancelled'" in sql
     assert "o.last_working_day BETWEEN $2::date AND $3::date" in sql
 
@@ -401,7 +401,7 @@ def test_mixes_fold_blank_free_text_into_unassigned():
     assert "COALESCE(NULLIF(designation, ''), 'Unassigned') AS label" in desg
     for sql, params in ((dept, dparams), (desg, gparams)):
         assert "is_active = TRUE" in sql
-        assert "FROM staging.manav_employees" in sql
+        assert "FROM public.manav_employees" in sql
         assert params == [ORG]
 
 
@@ -438,7 +438,7 @@ def test_leave_liability_counts_paid_types_for_current_employees_only():
     sql, _ = build("manav.leave_liability_days")
     assert "t.is_paid = TRUE" in sql
     assert "e.is_active = TRUE" in sql
-    assert "FROM staging.manav_leave_balances b" in sql
+    assert "FROM public.manav_leave_balances b" in sql
     assert "HAVING COUNT(*) > 0" in sql
 
 

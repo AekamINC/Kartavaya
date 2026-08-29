@@ -191,7 +191,7 @@ def _wire(mock_pool, *, level="editor", archived=False, channel_type="public",
         # Messages before channels: the parent probe, `send_message`'s INSERT and
         # `edit_message`'s UPDATE all name a channel id, so a looser test would
         # hand one of them the channel row.
-        if "staging.samvada_messages" in s:
+        if "public.samvada_messages" in s:
             if "SELECT parent_message_id" in s:
                 # The probe, emulated as Postgres answers it: the row comes back
                 # only if EVERY predicate matches. `a` is (parent, channel, org).
@@ -204,10 +204,10 @@ def _wire(mock_pool, *, level="editor", archived=False, channel_type="public",
             if s.startswith("INSERT") or s.startswith("UPDATE"):
                 return _message_row()
             return {"channel_id": message_channel, "sender_id": sender_id, "1": 1}
-        if "staging.samvada_channels" in s:
+        if "public.samvada_channels" in s:
             return {"id": CHANNEL_ID, "type": channel_type,
                     "is_archived": archived, "name": "q1-audit"}
-        if "staging.samvada_channel_members" in s:
+        if "public.samvada_channel_members" in s:
             return {"?column?": 1} if membership else None
         return None
 
@@ -315,7 +315,7 @@ async def test_editing_a_message_in_an_archived_channel_is_refused(
         "the caller is refused without being told the channel is archived, so "
         "the refusal reads as a permissions bug"
     )
-    assert not _matching(mock_pool, "UPDATE staging.samvada_messages", "content=$1"), (
+    assert not _matching(mock_pool, "UPDATE public.samvada_messages", "content=$1"), (
         "the stored text of an archived message was rewritten"
     )
     assert fan_out_calls == [], (
@@ -370,7 +370,7 @@ async def test_reacting_to_a_message_in_an_archived_channel_is_refused(
 
     assert r.status_code == 403, r.text
     assert ARCHIVED_SENTENCE in r.json()["detail"]
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_message_reactions"), (
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_message_reactions"), (
         "a reaction was written into an archived channel"
     )
 
@@ -434,7 +434,7 @@ async def test_removing_your_own_reaction_is_still_allowed_when_archived(
         f"/api/v1/messaging/messages/{MESSAGE_ID}/reactions/%F0%9F%91%8D"
     )
     assert r.status_code == 200, r.text
-    assert _matching(mock_pool, "DELETE FROM staging.samvada_message_reactions"), (
+    assert _matching(mock_pool, "DELETE FROM public.samvada_message_reactions"), (
         "withdrawing a reaction on an archived channel is now refused, which "
         "traps anybody who reacted in the minute before an admin archived it"
     )
@@ -528,7 +528,7 @@ async def test_a_parent_in_another_channel_is_refused(
     )
 
     assert r.status_code == 400, r.text
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_messages"), (
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_messages"), (
         "the reply was written with a parent in another channel"
     )
 
@@ -584,7 +584,7 @@ async def test_an_empty_string_parent_is_a_plain_message_not_an_error(
         json={"content": "just a message", "parent_message_id": ""},
     )
     assert r.status_code == 201, r.text
-    inserts = _matching(mock_pool, "INSERT INTO staging.samvada_messages")
+    inserts = _matching(mock_pool, "INSERT INTO public.samvada_messages")
     assert inserts, "the message was not written"
     assert "" not in inserts[-1][1], (
         'the empty string reached the INSERT as a parent id rather than NULL'
@@ -618,7 +618,7 @@ async def test_a_reply_to_a_reply_is_refused(
         "is false and unactionable — it is a real message and the problem is "
         "that it is already a reply"
     )
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_messages")
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_messages")
 
 
 async def test_a_valid_parent_in_this_channel_still_posts(
@@ -633,7 +633,7 @@ async def test_a_valid_parent_in_this_channel_still_posts(
         json={"content": "on it", "parent_message_id": MESSAGE_ID},
     )
     assert r.status_code == 201, r.text
-    inserts = _matching(mock_pool, "INSERT INTO staging.samvada_messages")
+    inserts = _matching(mock_pool, "INSERT INTO public.samvada_messages")
     assert inserts and MESSAGE_ID in inserts[-1][1], (
         "the reply was written without its parent"
     )
@@ -653,7 +653,7 @@ def test_the_parent_probe_binds_the_channel_and_the_org_and_not_only_the_id():
 
     src = " ".join(_body(send_message).split())
     probe = re.search(
-        r"SELECT parent_message_id FROM staging\.samvada_messages\s+WHERE (.+?)\"\"\"",
+        r"SELECT parent_message_id FROM public\.samvada_messages\s+WHERE (.+?)\"\"\"",
         src,
     )
     assert probe, "send_message no longer probes the parent before the INSERT"
@@ -692,7 +692,7 @@ async def test_a_parent_belonging_to_another_org_is_refused(
     )
 
     assert r.status_code == 400, r.text
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_messages"), (
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_messages"), (
         "a message was written whose parent belongs to another tenant"
     )
     assert not any(
@@ -758,7 +758,7 @@ async def test_a_failed_parent_check_does_not_leave_a_membership_row_behind(
     )
 
     assert r.status_code == 400, r.text
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_channel_members"), (
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_channel_members"), (
         "a failed send joined the caller to the channel anyway"
     )
 
@@ -821,7 +821,7 @@ async def test_get_thread_scopes_the_replies_to_the_parents_own_org_and_channel(
     assert r.status_code == 200, r.text
 
     replies = _matching(mock_pool, "m.parent_message_id = $1::uuid",
-                        "staging.samvada_messages m")
+                        "public.samvada_messages m")
     assert replies, "the thread query is gone"
     sql, args = replies[-1]
     assert "m.org_id = $2::uuid" in sql and "m.channel_id = $3::uuid" in sql, (
@@ -850,12 +850,12 @@ async def test_the_thread_count_subselects_are_scoped_the_same_way(
     r = await api_client.get(f"/api/v1/messaging/channels/{CHANNEL_ID}/messages")
     assert r.status_code == 200, r.text
 
-    log = _matching(mock_pool, "FROM staging.samvada_messages m", "thread_count")
+    log = _matching(mock_pool, "FROM public.samvada_messages m", "thread_count")
     assert log, "the message log query is gone"
     sql = log[-1][0]
 
     subs = re.findall(
-        r"FROM staging\.samvada_messages (\w+) WHERE (.+?)\) AS (thread_count|last_reply_at)",
+        r"FROM public\.samvada_messages (\w+) WHERE (.+?)\) AS (thread_count|last_reply_at)",
         sql,
     )
     assert len(subs) == 2, (
@@ -889,7 +889,7 @@ async def test_the_message_log_still_hides_replies_from_the_channel_body(
     r = await api_client.get(f"/api/v1/messaging/channels/{CHANNEL_ID}/messages")
     assert r.status_code == 200, r.text
 
-    log = _matching(mock_pool, "FROM staging.samvada_messages m", "thread_count")
+    log = _matching(mock_pool, "FROM public.samvada_messages m", "thread_count")
     assert "m.parent_message_id IS NULL" in log[-1][0], (
         "the channel log now returns replies as top-level messages"
     )
@@ -929,7 +929,7 @@ async def test_muting_a_channel_you_never_joined_stamps_the_read_position(
     )
     assert r.status_code == 200, r.text
 
-    inserts = _matching(mock_pool, "INSERT INTO staging.samvada_channel_members")
+    inserts = _matching(mock_pool, "INSERT INTO public.samvada_channel_members")
     assert inserts, "no membership row was written, so the mute was not recorded"
     sql, args = inserts[-1]
     assert "last_read_at" in sql, (
@@ -965,7 +965,7 @@ async def test_unmuting_a_channel_you_never_joined_writes_nothing_at_all(
 
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True, "muted": False}
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_channel_members"), (
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_channel_members"), (
         "unmuting a channel the caller was never in joined them to it"
     )
 
@@ -987,11 +987,11 @@ async def test_a_real_members_read_position_survives_a_mute(
         f"/api/v1/messaging/channels/{CHANNEL_ID}/mute", json={"muted": True}
     )
     assert r.status_code == 200, r.text
-    assert not _matching(mock_pool, "INSERT INTO staging.samvada_channel_members"), (
+    assert not _matching(mock_pool, "INSERT INTO public.samvada_channel_members"), (
         "an existing member's row was re-inserted rather than updated"
     )
 
-    updates = _matching(mock_pool, "UPDATE staging.samvada_channel_members", "muted")
+    updates = _matching(mock_pool, "UPDATE public.samvada_channel_members", "muted")
     assert updates and "last_read_at" not in updates[-1][0], (
         "muting moved an existing member's read position, silently marking the "
         "channel read"
@@ -1149,11 +1149,15 @@ def test_every_column_the_archive_gate_names_exists_in_058():
 
     cols = _columns_058()
     src = _sql_of(_assert_not_archived)
-    m = re.search(r"SELECT (\w+) FROM staging\.(\w+) WHERE (.+?),", src)
+    # This scans the ROUTER SOURCE, not the migration file, so it follows the
+    # runtime to `public.`. `cols` still comes from 058, which is a historical
+    # record and still spells its DDL `staging.` — the table NAME is what the
+    # two sides share.
+    m = re.search(r"SELECT (\w+) FROM public\.(\w+) WHERE (.+?),", src)
     assert m, f"the archive gate no longer reads the channel:\n{src}"
     column, table, where = m.groups()
 
-    assert table in cols, f"the archive gate reads staging.{table}, which 058 " \
+    assert table in cols, f"the archive gate reads public.{table}, which 058 " \
                           f"does not create"
     assert column in cols[table], (
         f"the archive gate selects {table}.{column}, which does not exist — "
@@ -1171,7 +1175,7 @@ def test_every_column_the_parent_probe_names_exists_in_058():
     cols = _columns_058()["samvada_messages"]
     src = " ".join(_body(send_message).split())
     probe = re.search(
-        r"SELECT (parent_message_id) FROM staging\.samvada_messages\s+WHERE (.+?)\"\"\"",
+        r"SELECT (parent_message_id) FROM public\.samvada_messages\s+WHERE (.+?)\"\"\"",
         src,
     )
     assert probe, "send_message no longer probes the parent"
@@ -1199,7 +1203,7 @@ def test_every_column_the_thread_scoping_names_exists_in_058():
 
     log = " ".join(_body(messaging.list_messages).split())
     for alias, predicate, _label in re.findall(
-        r"FROM staging\.samvada_messages (\w+) WHERE (.+?)\) AS (thread_count|last_reply_at)",
+        r"FROM public\.samvada_messages (\w+) WHERE (.+?)\) AS (thread_count|last_reply_at)",
         log,
     ):
         unknown = _names_in(predicate) - cols
@@ -1218,7 +1222,7 @@ def test_every_column_the_mute_insert_names_exists_in_058():
     cols = _columns_058()["samvada_channel_members"]
     src = " ".join(_body(set_channel_mute).split())
     m = re.search(
-        r"INSERT INTO staging\.samvada_channel_members \(([^)]*)\)", src
+        r"INSERT INTO public\.samvada_channel_members \(([^)]*)\)", src
     )
     assert m, "the mute no longer writes a membership row"
     named = {c.strip() for c in m.group(1).split(",") if c.strip()}
@@ -1265,7 +1269,7 @@ def test_no_gate_depends_on_a_column_093_introduces():
     # rather than whole: both legitimately touch 093 columns elsewhere, behind
     # `_parity_ready`.
     probe = re.search(
-        r"SELECT parent_message_id FROM staging\.samvada_messages\s+WHERE (.+?)\"\"\"",
+        r"SELECT parent_message_id FROM public\.samvada_messages\s+WHERE (.+?)\"\"\"",
         " ".join(_body(messaging.send_message).split()),
     )
     assert probe
@@ -1293,7 +1297,7 @@ def test_the_two_tables_these_gates_read_are_created_by_058_not_093():
                messaging.get_thread):
         src = _body(fn)
         for table in from_093:
-            assert f"staging.{table}" not in src, (
-                f"{fn.__name__} reads staging.{table}, which 093 creates — the "
+            assert f"public.{table}" not in src, (
+                f"{fn.__name__} reads public.{table}, which 093 creates — the "
                 f"gate is open until somebody runs the migration by hand"
             )

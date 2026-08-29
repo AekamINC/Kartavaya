@@ -68,7 +68,7 @@ UNICODE_ORG = "fae87907-2f99-4b35-a241-c94d9e1e4a17"  # Gujarat '24'
 OTHER_ORG = "22222222-2222-2222-2222-222222222222"
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. The live half PARSES the router's SQL against the real "
@@ -251,7 +251,7 @@ async def test_an_unreadable_table_returns_no_ladders_rather_than_raising():
     this is what stands between that and a 500 on every payslip."""
     class Exploding:
         async def fetch(self, *a, **k):
-            raise RuntimeError("relation staging.pay_income_tax_slabs does not exist")
+            raise RuntimeError("relation public.pay_income_tax_slabs does not exist")
 
     assert await income_tax.ladders(Exploding(), E2E_ORG, date(2026, 8, 31)) == {}
 
@@ -329,7 +329,7 @@ def test_no_slab_figure_is_written_into_the_resolution_module():
         f"{_MODULE.name} contains slab figures {found}. A ladder compiled into "
         f"this module would silently apply the wrong year's law whenever a row "
         f"was missing, and it would look correct doing it. The ladder lives in "
-        f"staging.pay_income_tax_slabs and nowhere else.")
+        f"public.pay_income_tax_slabs and nowhere else.")
 
 
 def test_the_module_names_no_hardcoded_rate_fraction_either():
@@ -598,7 +598,7 @@ def _describe(calls):
             catalogue = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "  FROM information_schema.columns "
-                " WHERE table_schema='staging' "
+                " WHERE table_schema = ANY(current_schemas(false)) "
                 "   AND table_name='pay_income_tax_slabs'")
             return failures, params, [dict(r) for r in catalogue]
         finally:
@@ -646,7 +646,7 @@ def test_live_every_column_named_exists_and_every_required_one_is_supplied(descr
     """
     _, params, catalogue = described
     assert catalogue, (
-        "staging.pay_income_tax_slabs does not exist — migration 228 has not "
+        "public.pay_income_tax_slabs does not exist — migration 228 has not "
         "been applied, and the backend must NOT be deployed before it is")
     known = {c["column_name"] for c in catalogue}
     required = {c["column_name"] for c in catalogue
@@ -654,7 +654,7 @@ def test_live_every_column_named_exists_and_every_required_one_is_supplied(descr
 
     seen = 0
     for path, sql, _, _ in params:
-        if "INSERT INTO staging.pay_income_tax_slabs" not in sql:
+        if "INSERT INTO public.pay_income_tax_slabs" not in sql:
             continue
         seen += 1
         cols = set(re.findall(r"\w+", sql.split("(", 1)[1].split(")", 1)[0]))
@@ -686,7 +686,7 @@ def test_live_the_constraints_are_in_the_catalogue_not_just_in_the_file():
             "SELECT c.conname, pg_get_constraintdef(c.oid) AS def "
             "  FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid "
             "  JOIN pg_namespace n ON n.oid=t.relnamespace "
-            " WHERE n.nspname='staging' AND t.relname='pay_income_tax_slabs'")
+            " WHERE n.nspname = ANY(current_schemas(false)) AND t.relname='pay_income_tax_slabs'")
 
     rows = {r["conname"]: r["def"] for r in live(work)}
     for name in ("pay_income_tax_slabs_regime_ck",
@@ -706,7 +706,7 @@ def test_live_a_duplicate_band_is_impossible_because_of_the_unique_index():
     def work(conn):
         return conn.fetch(
             "SELECT indexname, indexdef FROM pg_indexes "
-            " WHERE schemaname='staging' AND tablename='pay_income_tax_slabs'")
+            " WHERE schemaname = ANY(current_schemas(false)) AND tablename='pay_income_tax_slabs'")
 
     rows = {r["indexname"]: r["indexdef"] for r in live(work)}
     assert "pay_income_tax_slabs_band_uniq" in rows, sorted(rows)
@@ -725,7 +725,7 @@ def test_live_the_seeded_rows_are_exactly_what_the_migration_header_claims():
         return conn.fetch(
             "SELECT regime, effective_from, slab_from, slab_to, rate_percent, "
             "       org_id, assessment_year, source_ref "
-            "  FROM staging.pay_income_tax_slabs "
+            "  FROM public.pay_income_tax_slabs "
             " ORDER BY regime, effective_from, slab_from")
 
     rows = [dict(r) for r in live(work)]

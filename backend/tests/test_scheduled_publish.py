@@ -294,7 +294,7 @@ def test_the_cap_lives_in_an_existing_column_and_needs_no_migration():
     `lead_capture_client_id`). A new settings table would have needed a
     migration applied before publishing worked at all."""
     src = Path("services/social_publisher.py").read_text(encoding="utf-8")
-    assert "staging.organisations" in src
+    assert "public.organisations" in src
     assert "settings->>" in src
     assert sp.BATCH_LIMIT_KEY == "publish_batch_limit"
 

@@ -52,8 +52,8 @@ from fastapi import HTTPException
 MIGRATION = (Path(__file__).resolve().parents[1]
              / "migrations" / "237_client_contact_coordinates.sql")
 
-CLIENTS = "staging.graha_clients"
-CONTACTS = "staging.graha_contacts"
+CLIENTS = "public.graha_clients"
+CONTACTS = "public.graha_contacts"
 
 #: Surat, where Unicode Group's clients actually are.
 SURAT = (21.1702, 72.8311)
@@ -231,7 +231,7 @@ async def test_the_table_name_can_only_come_from_the_allowlist(
     pool = _install(route, monkeypatch, row=SET_ROW)
     with pytest.raises(HTTPException) as e:
         await route._set_coordinate(
-            "staging.users", REC, _body(route), USER, ORG)
+            "public.users", REC, _body(route), USER, ORG)
     assert e.value.status_code == 500
     assert pool.calls == [], "a statement was issued for an unknown table"
     assert set(route._COORD_TABLES.values()) == {CLIENTS, CONTACTS}
@@ -452,7 +452,7 @@ def test_the_migration_backfills_nothing_and_defaults_nothing(route):
 # ══════════════════════════════════════════════════════════════════════════════
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 DB_SKIP = (
     "no live database. This half PREPAREs all four of the route's statements "
@@ -475,7 +475,7 @@ _COLUMNS_SQL = """
 SELECT table_schema, table_name, column_name, data_type,
        numeric_precision, numeric_scale, is_nullable, column_default
   FROM information_schema.columns
- WHERE table_schema IN ('staging','public')
+ WHERE table_schema = ANY(current_schemas(false))
    AND table_name IN ('graha_clients','graha_contacts')
    AND column_name IN ('lat','lng','geo_source','geo_fetched_at')
  ORDER BY table_schema, table_name, column_name
@@ -487,7 +487,7 @@ SELECT n.nspname AS schema, t.relname AS table, c.conname AS name,
   FROM pg_constraint c
   JOIN pg_class t ON t.oid = c.conrelid
   JOIN pg_namespace n ON n.oid = t.relnamespace
- WHERE n.nspname IN ('staging','public')
+ WHERE n.nspname = ANY(current_schemas(false))
    AND t.relname IN ('graha_clients','graha_contacts')
    AND c.conname LIKE '%geo%'
  ORDER BY 1, 2, 3
@@ -538,9 +538,9 @@ def live():
             out["coordinates_written"] = [
                 dict(r) for r in await conn.fetch(
                     "SELECT 'clients' AS t, count(*) AS n "
-                    "FROM staging.graha_clients WHERE lat IS NOT NULL "
+                    "FROM public.graha_clients WHERE lat IS NOT NULL "
                     "UNION ALL SELECT 'contacts', count(*) "
-                    "FROM staging.graha_contacts WHERE lat IS NOT NULL")]
+                    "FROM public.graha_contacts WHERE lat IS NOT NULL")]
             return out
         finally:
             await conn.close()
@@ -559,10 +559,10 @@ def test_migration_237_has_been_applied(live):
     found = {(c["table_schema"], c["table_name"], c["column_name"])
              for c in live["columns"]}
     missing = sorted(
-        f"staging.{t}.{c}"
+        f"public.{t}.{c}"
         for t in ("graha_clients", "graha_contacts")
         for c in ("lat", "lng", "geo_source", "geo_fetched_at")
-        if ("staging", t, c) not in found)
+        if ("public", t, c) not in found)
     assert not missing, (
         "migration 237 is not applied. Measured live in BOTH product schemas, "
         f"absent: {missing}. Apply "
@@ -630,8 +630,8 @@ def test_all_four_statements_parse_against_the_real_catalogue(live):
     if not live["prepared"]:
         pytest.skip(NOT_APPLIED)
     assert set(live["prepared"]) == {
-        "staging.graha_clients.set", "staging.graha_clients.clear",
-        "staging.graha_contacts.set", "staging.graha_contacts.clear"}
+        "public.graha_clients.set", "public.graha_clients.clear",
+        "public.graha_contacts.set", "public.graha_contacts.clear"}
     for key, got in live["prepared"].items():
         if key.endswith(".set"):
             assert got["binds"] == ["uuid", "uuid", "numeric", "numeric",

@@ -71,7 +71,7 @@ async def test_writes_one_row_with_every_column_bound():
     )
     assert out == 1
     sql, args = conn.calls[0]
-    assert "INSERT INTO staging.niyam_events" in sql
+    assert "INSERT INTO public.niyam_events" in sql
     # Every parameter is CAST. An untyped parameter expression is an instant
     # PgBouncer 500 — this product lost every credit spend to that once.
     for cast in ("$1::uuid", "$2::text", "$7::jsonb"):

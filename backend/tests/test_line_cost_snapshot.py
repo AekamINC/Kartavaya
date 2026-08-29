@@ -129,7 +129,7 @@ UNCOSTED = "22222222-2222-4222-8222-222222222222"
 OTHER_ORG = "33333333-3333-4333-8333-333333333333"
 
 #: The one lookup this feature performs, by the fragment that identifies it.
-PRODUCT_LOOKUP = "FROM staging.ganit_products "
+PRODUCT_LOOKUP = "FROM public.ganit_products "
 
 _ORDER_ROW = {"id": "o1", "order_number": "SO-2026-0001", "total": 118.0,
               "client_id": None, "created_by": "u1", "status": "draft"}
@@ -191,7 +191,7 @@ def order_rig(monkeypatch):
     monkeypatch.setattr(vikray, "get_pool", _get_pool)
     monkeypatch.setattr(vikray, "next_doc_number", _next_doc_number)
     monkeypatch.setattr(vikray, "order_created", _noop_emitter)
-    p.fetchrow_responses = [("INSERT INTO staging.vikray_orders", _ORDER_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.vikray_orders", _ORDER_ROW)]
     return p
 
 
@@ -212,7 +212,7 @@ def invoice_rig(monkeypatch):
     monkeypatch.setattr(ganit, "next_doc_number", _next_doc_number)
     monkeypatch.setattr(ganit, "_refuse_final_if_incomplete", _gate_ok)
     monkeypatch.setattr(ganit, "invoice_created", _noop_emitter)
-    p.fetchrow_responses = [("INSERT INTO staging.ganit_invoices", _INV_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.ganit_invoices", _INV_ROW)]
     return p
 
 
@@ -242,7 +242,7 @@ async def test_order_line_from_a_costed_product_stores_the_cost_per_unit(order_r
             product_id=COSTED, description="Widget", quantity=7, rate=100)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "INSERT INTO staging.vikray_orders")[1])[0]
+    line = _stored_lines(_query(p, "INSERT INTO public.vikray_orders")[1])[0]
     assert line["cost_price"] == 40, "the cost is per unit, not the line total"
     assert isinstance(line["cost_price"], (int, float)) \
         and not isinstance(line["cost_price"], bool), \
@@ -262,7 +262,7 @@ async def test_invoice_line_from_a_costed_product_stores_the_cost_per_unit(invoi
                            hsn_code="998231", quantity=3, rate=1000)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "INSERT INTO staging.ganit_invoices")[1])[0]
+    line = _stored_lines(_query(p, "INSERT INTO public.ganit_invoices")[1])[0]
     assert line["cost_price"] == 250
     assert line["product_id"] == COSTED, \
         "_compute_invoice's explicit key list must keep carrying product_id"
@@ -283,7 +283,7 @@ async def test_a_free_text_line_stores_no_cost_key_at_all(order_rig):
             description="Consulting, as agreed", quantity=1, rate=5000)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "INSERT INTO staging.vikray_orders")[1])[0]
+    line = _stored_lines(_query(p, "INSERT INTO public.vikray_orders")[1])[0]
     assert "cost_price" not in line, "an unresolvable cost must be ABSENT, never 0"
     assert _query(p, PRODUCT_LOOKUP) is None, \
         "no product named, so no lookup should have been issued at all"
@@ -301,7 +301,7 @@ async def test_a_product_with_no_recorded_cost_stores_no_key(order_rig):
             product_id=UNCOSTED, description="Widget", quantity=2, rate=100)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "INSERT INTO staging.vikray_orders")[1])[0]
+    line = _stored_lines(_query(p, "INSERT INTO public.vikray_orders")[1])[0]
     assert "cost_price" not in line
     assert line["product_id"] == UNCOSTED, "the product itself is still recorded"
 
@@ -320,7 +320,7 @@ async def test_a_free_text_line_beside_a_costed_one_stays_uncosted(order_rig):
         ]),
         user={"user_id": "u1"}, org_id="org1")
 
-    lines = _stored_lines(_query(p, "INSERT INTO staging.vikray_orders")[1])
+    lines = _stored_lines(_query(p, "INSERT INTO public.vikray_orders")[1])
     assert lines[0]["cost_price"] == 40
     assert "cost_price" not in lines[1]
 
@@ -358,7 +358,7 @@ async def test_a_product_that_is_not_this_orgs_resolves_to_no_cost(order_rig):
             product_id=OTHER_ORG, description="Widget", rate=100)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "INSERT INTO staging.vikray_orders")[1])[0]
+    line = _stored_lines(_query(p, "INSERT INTO public.vikray_orders")[1])[0]
     assert "cost_price" not in line
 
 
@@ -435,11 +435,11 @@ async def test_updating_an_order_does_not_reprice_an_existing_costed_line(order_
     """
     p = order_rig
     p.fetchrow_responses = [
-        ("SELECT * FROM staging.vikray_orders",
+        ("SELECT * FROM public.vikray_orders",
          {"status": "draft", "discount": 0, "is_igst": False,
           "line_items": [{"product_id": COSTED, "description": "Widget",
                           "quantity": 1, "rate": 100, "cost_price": 40}]}),
-        ("UPDATE staging.vikray_orders", _ORDER_ROW),
+        ("UPDATE public.vikray_orders", _ORDER_ROW),
     ]
     # Procurement has since renegotiated. The catalogue says 90 today.
     _catalogue(p, {"id": COSTED, "cost_price": 90})
@@ -450,7 +450,7 @@ async def test_updating_an_order_does_not_reprice_an_existing_costed_line(order_
             product_id=COSTED, description="Widget (blue)", quantity=1, rate=100)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "UPDATE staging.vikray_orders")[1])[0]
+    line = _stored_lines(_query(p, "UPDATE public.vikray_orders")[1])[0]
     assert line["cost_price"] == 40, \
         "the edit re-priced the order at TODAY's cost — copy-never-join defeated"
     assert line["description"] == "Widget (blue)", "the edit itself must still apply"
@@ -462,11 +462,11 @@ async def test_a_line_added_by_an_update_is_costed_now(order_rig):
     just been written, and now is the moment it was written."""
     p = order_rig
     p.fetchrow_responses = [
-        ("SELECT * FROM staging.vikray_orders",
+        ("SELECT * FROM public.vikray_orders",
          {"status": "draft", "discount": 0, "is_igst": False,
           "line_items": [{"product_id": COSTED, "description": "Widget",
                           "quantity": 1, "rate": 100, "cost_price": 40}]}),
-        ("UPDATE staging.vikray_orders", _ORDER_ROW),
+        ("UPDATE public.vikray_orders", _ORDER_ROW),
     ]
     _catalogue(p, {"id": UNCOSTED, "cost_price": 12})
 
@@ -478,7 +478,7 @@ async def test_a_line_added_by_an_update_is_costed_now(order_rig):
         ]),
         user={"user_id": "u1"}, org_id="org1")
 
-    lines = _stored_lines(_query(p, "UPDATE staging.vikray_orders")[1])
+    lines = _stored_lines(_query(p, "UPDATE public.vikray_orders")[1])
     assert lines[0]["cost_price"] == 40, "the line already on the order kept its cost"
     assert lines[1]["cost_price"] == 12, "the line the edit added was resolved now"
     # The carried product is never asked about — that IS the carry.
@@ -496,7 +496,7 @@ async def test_updating_an_invoice_does_not_reprice_an_existing_costed_line(invo
           "sent_at": None, "viewed_at": None,
           "line_items": [{"product_id": COSTED, "description": "Widget",
                           "quantity": 1, "rate": 1000, "cost_price": 250}]}),
-        ("UPDATE staging.ganit_invoices", _INV_ROW),
+        ("UPDATE public.ganit_invoices", _INV_ROW),
     ]
     _catalogue(p, {"id": COSTED, "cost_price": 700})
 
@@ -507,7 +507,7 @@ async def test_updating_an_invoice_does_not_reprice_an_existing_costed_line(invo
                            hsn_code="998231", quantity=1, rate=1000)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "UPDATE staging.ganit_invoices")[1])[0]
+    line = _stored_lines(_query(p, "UPDATE public.ganit_invoices")[1])[0]
     assert line["cost_price"] == 250, "the edit re-priced the invoice at today's cost"
 
 
@@ -518,11 +518,11 @@ async def test_a_prior_null_cost_is_not_carried_as_a_number(order_rig):
     unknown into gross profit; re-resolving it is correct."""
     p = order_rig
     p.fetchrow_responses = [
-        ("SELECT * FROM staging.vikray_orders",
+        ("SELECT * FROM public.vikray_orders",
          {"status": "draft", "discount": 0, "is_igst": False,
           "line_items": [{"product_id": COSTED, "description": "Widget",
                           "rate": 100, "cost_price": None}]}),
-        ("UPDATE staging.vikray_orders", _ORDER_ROW),
+        ("UPDATE public.vikray_orders", _ORDER_ROW),
     ]
     _catalogue(p, {"id": COSTED, "cost_price": 90})
 
@@ -532,7 +532,7 @@ async def test_a_prior_null_cost_is_not_carried_as_a_number(order_rig):
             product_id=COSTED, description="Widget", rate=100)]),
         user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "UPDATE staging.vikray_orders")[1])[0]
+    line = _stored_lines(_query(p, "UPDATE public.vikray_orders")[1])[0]
     assert line["cost_price"] == 90
 
 
@@ -564,13 +564,13 @@ async def test_order_to_invoice_carries_the_cost_verbatim(monkeypatch):
     stored = [{"product_id": COSTED, "description": "Widget", "quantity": 2,
                "rate": 100, "gst_rate": 18, "cost_price": 40}]
     p.fetchrow_responses = [
-        ("SELECT * FROM staging.vikray_orders",
+        ("SELECT * FROM public.vikray_orders",
          {"id": "o1", "status": "confirmed", "invoice_id": None,
           "line_items": stored, "is_igst": False, "contact_id": None,
           "client_id": None, "subtotal": 200, "cgst": 18, "sgst": 18,
           "igst": 0, "discount": 0, "total": 236,
           "order_number": "SO-2026-0001"}),
-        ("INSERT INTO staging.ganit_invoices", {"id": "i1"}),
+        ("INSERT INTO public.ganit_invoices", {"id": "i1"}),
     ]
     # Deliberately different from the order's 40: if this path resolved, the
     # assertion below would read 90 and the two documents would disagree.
@@ -579,7 +579,7 @@ async def test_order_to_invoice_carries_the_cost_verbatim(monkeypatch):
     await vikray.generate_invoice_from_order(
         "o1", user={"user_id": "u1"}, org_id="org1")
 
-    line = _stored_lines(_query(p, "INSERT INTO staging.ganit_invoices")[1])[0]
+    line = _stored_lines(_query(p, "INSERT INTO public.ganit_invoices")[1])[0]
     assert line["cost_price"] == 40, "the invoice disagrees with its own order"
     assert _query(p, PRODUCT_LOOKUP) is None, \
         "the catalogue was re-read on a path that must only copy"
@@ -619,7 +619,7 @@ def test_no_invoice_write_path_computes_lines_without_costing():
     nothing says so.
     """
     offenders = [n.name for n in _async_defs(ganit)
-                 if _writes(n, "INSERT INTO staging.ganit_invoices")
+                 if _writes(n, "INSERT INTO public.ganit_invoices")
                  and "_compute_invoice" in _calls_named(n)]
     assert not offenders, (
         "these invoice write paths call the UNCOSTED _compute_invoice: "
@@ -632,7 +632,7 @@ def test_every_order_insert_costs_its_lines():
     fails here rather than shipping uncosted lines nobody notices for a
     quarter."""
     offenders = [n.name for n in _async_defs(vikray)
-                 if _writes(n, "INSERT INTO staging.vikray_orders")
+                 if _writes(n, "INSERT INTO public.vikray_orders")
                  and "apply_line_costs" not in _calls_named(n)]
     assert not offenders, \
         f"these order write paths never cost their lines: {offenders}"

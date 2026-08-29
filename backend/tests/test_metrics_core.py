@@ -73,7 +73,7 @@ def test_approval_metrics_join_teams_on_the_text_key(key):
     assert "tm.id" not in sql, f"{key}: joined teams.id (uuid) — matches nothing\n{sql}"
     assert "tm.org_id = $1::uuid" in sql, f"{key}: org scope missing or uncast\n{sql}"
     assert "public.approvals" in sql, (
-        f"{key}: must read public.approvals, not staging.approval_requests (0 rows, dead)"
+        f"{key}: must read public.approvals, not public.approval_requests (0 rows, dead)"
     )
 
 

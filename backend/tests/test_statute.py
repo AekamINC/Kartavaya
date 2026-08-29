@@ -566,7 +566,7 @@ class TestTheSqlShape:
 
     def test_every_query_is_schema_qualified(self):
         for sql in (statute._SELECT_BY_KEY, statute._SELECT_LISTING):
-            assert "staging.statute_calendar" in sql
+            assert "public.statute_calendar" in sql
             assert re.search(r"FROM\s+statute_calendar", sql) is None
 
     def test_every_parameter_is_cast(self):

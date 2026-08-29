@@ -205,11 +205,11 @@ def _msme_pool(bills=(), facts=None, bill_facts=None, statute=None):
         fetch_by={
             "statute_calendar": list(statute if statute is not None
                                      else SECTION_ROWS + WINDOW_ROWS),
-            "FROM staging.ganit_vendor_bills b\n        JOIN": list(bills),
+            "FROM public.ganit_vendor_bills b\n        JOIN": list(bills),
         },
         row_by={
-            "FROM staging.ganit_vendors": facts or _vendor_facts(),
-            "FROM staging.ganit_vendor_bills b\n        WHERE":
+            "FROM public.ganit_vendors": facts or _vendor_facts(),
+            "FROM public.ganit_vendor_bills b\n        WHERE":
                 bill_facts or _bill_facts(),
         },
     )
@@ -341,7 +341,7 @@ async def test_the_sql_gate_excludes_medium_and_traders_and_not_nulls(frozen):
     pool = _msme_pool(bills=[_bill()])
     await check_msme_payment_clock(pool, ORG)
     detail = next(s for s in pool.sql_seen
-                  if "JOIN staging.ganit_vendors v" in s)
+                  if "JOIN public.ganit_vendors v" in s)
 
     assert "v.enterprise_class = ANY($3::text[])" in detail   # class, not is_msme
     assert "v.vendor_kind IS DISTINCT FROM $4::text" in detail  # NULL survives it
@@ -569,9 +569,9 @@ def _tds_pool(vendors=(), facts=None, expenses=None, statute=()):
             "WITH billed AS": list(vendors),
         },
         row_by={
-            "FROM staging.ganit_vendors\n        WHERE": facts or {
+            "FROM public.ganit_vendors\n        WHERE": facts or {
                 "vendors_total": 0, "section_recorded": 0},
-            "FROM staging.ganit_expenses": expenses or {
+            "FROM public.ganit_expenses": expenses or {
                 "expenses_in_year": 0, "linked_to_a_vendor": 0,
                 "tds_amount_recorded": 0, "tds_recorded_total": 0},
         },

@@ -35,7 +35,7 @@ class _Conn:
     async def fetch(self, sql, *args):
         if self.explode:
             raise RuntimeError("the membership lookup failed")
-        assert "staging.user_roles" in sql
+        assert "public.user_roles" in sql
         asked = args[1]
         return [{"user_id": u} for u in asked if u in self.members]
 

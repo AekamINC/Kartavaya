@@ -138,8 +138,8 @@ def test_failure_rate_is_counts_over_counts_across_both_run_tables():
     assert "COUNT(*) FILTER (WHERE d.failed)::float / NULLIF(COUNT(*), 0)::float * 100" in sql
     assert "AS failed" in sql and "AS runs" in sql
     assert "UNION ALL" in sql
-    assert "FROM staging.hub_skill_runs r" in sql
-    assert "FROM staging.hub_scraper_runs s" in sql
+    assert "FROM public.hub_skill_runs r" in sql
+    assert "FROM public.hub_scraper_runs s" in sql
     assert params == [ORG, WIN.start, WIN.end]
 
 
@@ -148,7 +148,7 @@ def test_failure_rate_scopes_both_arms_to_the_org():
     arms must bind the org, or one module's runs leak across tenants."""
     sql, _ = build("sahayak.failure_rate")
     assert sql.count("$1::uuid") == 2
-    assert "JOIN staging.hub_clients hc ON hc.id = r.client_id" in sql
+    assert "JOIN public.hub_clients hc ON hc.id = r.client_id" in sql
     assert "hc.org_id = $1::uuid" in sql
     assert "s.org_id = $1::uuid" in sql
 
@@ -191,7 +191,7 @@ def test_scraper_spend_compares_billed_to_the_current_price_list():
         sql, _ = build("sahayak.scraper_spend", **kw)
         assert "SUM(COALESCE(r.billed_inr, 0))::float AS value" in sql
         assert "SUM(c.price_inr)::float AS list_inr" in sql
-        assert "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id" in sql
+        assert "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id" in sql
         assert "COUNT(*) AS runs" in sql
 
 

@@ -425,7 +425,7 @@ def test_the_warn_fraction_is_not_in_the_calendar():
 # ══════════════════════════════════════════════════════════════════════════════
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the statute lookups and the two "
@@ -461,30 +461,30 @@ def _statements() -> list[tuple[str, str]]:
         # The GSTR-1 fetch that `_build_gstr1` issues around it.
         ("gstr1.invoices",
          f"SELECT {documents._GSTR1_COLS} "
-         "FROM staging.ganit_invoices i "
-         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+         "FROM public.ganit_invoices i "
+         "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
          "WHERE i.org_id=$1::uuid AND i.is_active "
          "AND i.invoice_date >= $2::text::date AND i.invoice_date < $3::text::date "
          "ORDER BY i.invoice_date, i.invoice_number"),
         ("gstr1.org",
          f"SELECT {__import__('services.gst_period', fromlist=['_ORG_COLS'])._ORG_COLS} "
-         "FROM staging.organisations WHERE id=$1::uuid"),
+         "FROM public.organisations WHERE id=$1::uuid"),
         # The 194Q vendor position the resolved threshold is applied to.
         ("194q.vendors", """
         SELECT v.id, v.name, v.tds_section,
                NULLIF(btrim(v.email), '') AS vendor_email,
                NULLIF(btrim(v.phone), '') AS vendor_phone,
-               COALESCE((SELECT SUM(b.total) FROM staging.ganit_vendor_bills b
+               COALESCE((SELECT SUM(b.total) FROM public.ganit_vendor_bills b
                           WHERE b.vendor_id = v.id AND b.org_id = v.org_id
                             AND b.is_active AND b.bill_date >= $2::date), 0)
                    AS purchased_ytd,
                COALESCE((SELECT SUM(po.total)
-                           FROM staging.ganit_purchase_orders po
+                           FROM public.ganit_purchase_orders po
                           WHERE po.vendor_id = v.id AND po.org_id = v.org_id
                             AND po.is_active
                             AND po.status = ANY($3::text[])), 0)
                    AS on_order
-        FROM staging.ganit_vendors v
+        FROM public.ganit_vendors v
         WHERE v.org_id = $1::uuid AND v.is_active
         ORDER BY v.name
         LIMIT $4::int

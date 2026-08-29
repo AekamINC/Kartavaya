@@ -62,7 +62,7 @@ def test_client_gates_do_not_read_the_legacy_users_role_column():
         hits = LEGACY_GATE.findall(_source(path))
         assert not hits, (
             f"{path} still decides 'is a client' from users.role. That column "
-            f"disagrees with staging.user_roles on live data — two org_admin "
+            f"disagrees with public.user_roles on live data — two org_admin "
             f"accounts carry role='client' — so this hides their own "
             f"organisation's comments and files from them. Use "
             f"middleware.roles.is_portal_client."
@@ -78,7 +78,7 @@ def test_is_portal_client_requires_both_the_column_and_the_absence_of_a_role():
         "would turn non-clients into clients."
     )
     assert "user_roles" in body, (
-        "is_portal_client must consult staging.user_roles — the column alone is "
+        "is_portal_client must consult public.user_roles — the column alone is "
         "the bug it exists to fix."
     )
     # An ALLOW-LIST, not "any role that is not org_client". The two agree on

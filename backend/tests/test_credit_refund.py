@@ -221,11 +221,11 @@ class _Conn:
         q = _norm(sql)
         self._guard(q)
 
-        if "FROM staging.credit_prices" in q:
+        if "FROM public.credit_prices" in q:
             return [{"kind": k, "credits": c, "unit_size": u, "is_active": a}
                     for k, (c, u, a) in self.db.prices.items()]
 
-        if "FROM staging.hub_org_credit_transactions" in q and "t.tx_type='debit'" in q:
+        if "FROM public.hub_org_credit_transactions" in q and "t.tx_type='debit'" in q:
             return self._latest_spend(*args)
 
         raise AssertionError(f"_Conn.fetch does not model: {q[:140]}")
@@ -234,17 +234,17 @@ class _Conn:
         q = _norm(sql)
         self._guard(q)
 
-        if "INSERT INTO staging.hub_org_credit_transactions" in q:
+        if "INSERT INTO public.hub_org_credit_transactions" in q:
             return self._insert_tx(args)
 
-        if "FROM staging.organisations" in q:
+        if "FROM public.organisations" in q:
             org = self.db.orgs.get(args[0])
             if org is None:
                 return None
             return {"id": args[0], "monthly_credits": org["monthly_credits"],
                     "is_platform_org": org["is_platform_org"]}
 
-        if "FROM staging.hub_org_credits" in q:
+        if "FROM public.hub_org_credits" in q:
             w = self.db.wallets.get(args[0])
             if w is None:
                 return None
@@ -252,7 +252,7 @@ class _Conn:
                     "purchased_balance": w["purchased"],
                     "balance": w["balance"], "period_start": w["period_start"]}
 
-        if "FROM staging.hub_org_credit_transactions" in q:
+        if "FROM public.hub_org_credit_transactions" in q:
             if "idempotency_key=$1" in q:
                 return self._find(lambda t: args[0] is not None
                                   and t["idempotency_key"] == args[0])
@@ -261,7 +261,7 @@ class _Conn:
             if "reverses_tx_id=$1::uuid" in q:
                 return self._find(lambda t: t["reverses_tx_id"] == args[0])
 
-        if "FROM staging.org_member_credits" in q:
+        if "FROM public.org_member_credits" in q:
             row = self.db.members.get((args[0], args[1], args[2]))
             return None if row is None else dict(row)
 
@@ -272,13 +272,13 @@ class _Conn:
         q = _norm(sql)
         self._guard(q)
 
-        if "INSERT INTO staging.hub_org_credits" in q:
+        if "INSERT INTO public.hub_org_credits" in q:
             self.db.wallets.setdefault(args[0], {
                 "allowance": 0, "purchased": 0, "balance": 0, "period_start": args[1],
             })
             return "INSERT 0 1"
 
-        if "UPDATE staging.hub_org_credits" in q:
+        if "UPDATE public.hub_org_credits" in q:
             rolling = "period_start=$3::date" in q
             w = self.db.wallets[args[3] if rolling else args[2]]
             w["allowance"], w["purchased"] = args[0], args[1]
@@ -287,7 +287,7 @@ class _Conn:
                 w["period_start"] = args[2]
             return "UPDATE 1"
 
-        if "INSERT INTO staging.org_member_credits" in q and "NULL, $4, NULL" in q:
+        if "INSERT INTO public.org_member_credits" in q and "NULL, $4, NULL" in q:
             key = (args[0], args[1], args[2])
             row = self.db.members.get(key)
             if row is None:
@@ -297,7 +297,7 @@ class _Conn:
                 row["spent_credits"] += args[3]
             return "INSERT 0 1"
 
-        if "UPDATE staging.org_member_credits" in q and "GREATEST" in q:
+        if "UPDATE public.org_member_credits" in q and "GREATEST" in q:
             row = self.db.members.get((args[1], args[2], args[3]))
             if row is not None:
                 row["spent_credits"] = max(row["spent_credits"] - args[0], 0)
@@ -633,7 +633,7 @@ async def test_a_second_refund_of_the_same_failure_writes_nothing(db, conn):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("statement,where", [
     ("t.tx_type='debit'", "reading the ledger for the matching debit"),
-    ("UPDATE staging.hub_org_credits", "writing the wallet back"),
+    ("UPDATE public.hub_org_credits", "writing the wallet back"),
 ])
 async def test_a_failing_refund_never_raises(db, conn, statement, where):
     """

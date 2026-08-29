@@ -46,7 +46,7 @@ def _updates(pool):
     return [
         c.args for c in pool.fetchrow.call_args_list
         if c.args and isinstance(c.args[0], str)
-        and "UPDATE staging.organisations" in c.args[0]
+        and "UPDATE public.organisations" in c.args[0]
     ]
 
 

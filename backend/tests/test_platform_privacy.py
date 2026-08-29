@@ -110,7 +110,7 @@ def test_support_can_still_tell_two_people_apart():
     name belongs to is what replaces it — resolved through `user_roles`, the
     sole tenant path — so two people called Sharma are distinguishable."""
     platform, _ = _branches(server.list_users, "is_platform_staff")
-    assert "staging.user_roles" in platform and "staging.organisations" in platform
+    assert "public.user_roles" in platform and "public.organisations" in platform
     assert "AS orgs" in platform
 
 
@@ -142,7 +142,7 @@ def test_the_customer_org_list_does_not_carry_an_owners_email():
             candidate = _literals(ast.parse(textwrap.dedent(inspect.getsource(fn))))
         except (TypeError, OSError, SyntaxError):
             continue
-        if "FROM staging.organisations o " in candidate and "plan_code" in candidate:
+        if "FROM public.organisations o " in candidate and "plan_code" in candidate:
             src = candidate
             break
     assert src, "could not find the org list endpoint"
@@ -610,7 +610,7 @@ ALLOWED: dict[tuple[str, str], str] = {
         "and the response echo `body.email`, the caller's own input. Audited "
         "at warn as `platform.org_owner_nominated`, by user_id.",
     ("routers/admin_orgs.py", "set_org_contact_email"):
-        "Writes `staging.organisations.email` — an ORGANISATION's point of "
+        "Writes `public.organisations.email` — an ORGANISATION's point of "
         "contact, not a person's mailbox. The owner's rule names this "
         "capability: 'CHANGE THE ORG EMAIL ADDRESS … if someone leaves that "
         "org there is a new point of contact'.",

@@ -132,7 +132,7 @@ def test_every_statement_is_schema_qualified():
     """
     unqualified = [
         (path, sql) for path, sql, _ in _captured()
-        if TABLE in sql and f"staging.{TABLE}" not in sql
+        if TABLE in sql and f"public.{TABLE}" not in sql
     ]
     assert not unqualified, unqualified
 
@@ -162,7 +162,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection, so a statement is planned the way it
 #: will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the acknowledgement statements against "
@@ -207,12 +207,12 @@ def _describe(calls):
             catalogue = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'staging' AND table_name = $1",
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name = $1",
                 TABLE,
             )
             indexes = await conn.fetch(
                 "SELECT indexdef FROM pg_indexes "
-                "WHERE schemaname = 'staging' AND tablename = $1",
+                "WHERE schemaname = ANY(current_schemas(false)) AND tablename = $1",
                 TABLE,
             )
             return (failures, params, [dict(r) for r in catalogue],
@@ -272,10 +272,10 @@ def test_every_column_named_exists_and_every_required_one_is_supplied(live):
     known = {c["column_name"] for c in catalogue}
     required = {c["column_name"] for c in catalogue
                 if c["is_nullable"] == "NO" and c["column_default"] is None}
-    assert known, f"staging.{TABLE} is not in the catalogue at all"
+    assert known, f"public.{TABLE} is not in the catalogue at all"
     assert "finding_label" in required, (
         "the premise of this test changed: finding_label is no longer NOT "
-        f"NULL-without-default on staging.{TABLE}"
+        f"NULL-without-default on public.{TABLE}"
     )
 
     seen = 0
@@ -285,7 +285,7 @@ def test_every_column_named_exists_and_every_required_one_is_supplied(live):
             continue
         seen += 1
         assert not (set(cols) - known), (
-            f"[{path}] names columns staging.{TABLE} does not have: "
+            f"[{path}] names columns public.{TABLE} does not have: "
             f"{sorted(set(cols) - known)}"
         )
         assert not (required - set(cols)), (

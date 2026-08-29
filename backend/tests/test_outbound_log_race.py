@@ -120,7 +120,7 @@ class _Table:
     # ── the two statements the writer issues ────────────────────────────────
 
     async def fetch(self, sql, *args):
-        if "INSERT INTO staging.outbound_log" not in sql:
+        if "INSERT INTO public.outbound_log" not in sql:
             return []
         rows = _decode_insert(args)
         await self._round_trip()
@@ -134,7 +134,7 @@ class _Table:
         return out
 
     async def execute(self, sql, *args):
-        if "INSERT INTO staging.outbound_log" in sql:
+        if "INSERT INTO public.outbound_log" in sql:
             rows = _decode_insert(args)
             await self._round_trip()
             if self.fail_insert:
@@ -142,7 +142,7 @@ class _Table:
             for row in rows:
                 self._store(row)
             return f"INSERT 0 {len(rows)}"
-        if "UPDATE staging.outbound_log" in sql:
+        if "UPDATE public.outbound_log" in sql:
             await self._round_trip()
             for row_id, patch in _decode_update(args):
                 self._apply(row_id, patch)

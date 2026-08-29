@@ -90,7 +90,7 @@ class _Pool:
     async def fetch(self, sql, *args):
         self.sql_seen.append(sql)
         self.args_seen.append(args)
-        if "FROM staging.ganit_bank_statement_lines l" in sql:
+        if "FROM public.ganit_bank_statement_lines l" in sql:
             return self._lines
         return []
 
@@ -355,7 +355,7 @@ def test_every_query_is_tenant_scoped_and_schema_qualified():
     assert pool.sql_seen, "the handler issued no query at all"
     for sql in pool.sql_seen:
         assert "org_id = $1::uuid" in sql, sql
-        assert "staging.ganit_bank_statement_lines" in sql, sql
+        assert "public.ganit_bank_statement_lines" in sql, sql
         assert re.search(r"\bfrom\s+ganit_", sql, re.I) is None, \
             f"unqualified table reference: {sql}"
 

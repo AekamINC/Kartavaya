@@ -220,7 +220,7 @@ def _wire(mock_pool, *, team_id, visible_teams, creator="user_someone_else"):
             return None
         if "information_schema.columns" in query:
             return None          # the is_client_visible column is not applied
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return None          # not an admin anywhere
         return None
 

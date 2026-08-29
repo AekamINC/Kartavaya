@@ -137,13 +137,13 @@ def _wire(mock_pool, *, level="editor", channel=None, membership=None,
         # Messages before channels: `send_message`'s INSERT and `edit_message`'s
         # UPDATE both end in `RETURNING *` and both name a channel id, so a
         # looser test would hand them the channel row.
-        if "staging.samvada_messages" in s:
+        if "public.samvada_messages" in s:
             if "SELECT sender_id" in s:
                 return {"sender_id": sender_id}
             return msg_row
-        if "staging.samvada_channels" in s:
+        if "public.samvada_channels" in s:
             return chan
-        if "staging.samvada_channel_members" in s:
+        if "public.samvada_channel_members" in s:
             return membership if membership is not None else {"?column?": 1}
         return None
 
@@ -1004,7 +1004,14 @@ def test_the_readiness_probe_asks_about_objects_093_actually_creates():
         # `samvada_mentions`, so a plain `in` passes for the singular typo —
         # which is the likeliest way this line is ever got wrong, and the whole
         # feature would be dark with a green test.
-        assert re.search(rf"CREATE TABLE IF NOT EXISTS {re.escape(rel)}\b", migration), (
+        # The probe is search-path-relative now (`to_regclass('samvada_
+        # mentions')`), while 093 is a historical file that still qualifies its
+        # DDL `staging.`. Compare the RELATION NAME and let either side carry a
+        # schema — the `\b` that stops `samvada_mention` matching the plural is
+        # what this assertion is really for, and it is untouched.
+        bare = rel.split(".")[-1]
+        assert re.search(
+            rf"CREATE TABLE IF NOT EXISTS (?:\w+\.)?{re.escape(bare)}\b", migration), (
             f"the readiness probe asks for {rel}, which 093 never creates — "
             f"every 093-dependent path is degraded for the life of the deploy"
         )
@@ -1036,7 +1043,7 @@ def test_the_typing_sweep_names_real_columns_and_leads_with_the_primary_key():
     look exactly as fixed.
     """
     sweep = re.search(
-        r"DELETE FROM staging\.samvada_typing (WHERE [^;]*?updated_at <[^,]*?)'",
+        r"DELETE FROM public\.samvada_typing (WHERE [^;]*?updated_at <[^,]*?)'",
         _sql_source(ROUTER),
     )
     assert sweep, (

@@ -85,10 +85,10 @@ class _Conn:
 
     async def fetchval(self, sql, *args):
         self.executed.append(sql)
-        if "INSERT INTO staging.hub_kb_documents" in sql:
+        if "INSERT INTO public.hub_kb_documents" in sql:
             self.docs.append(args)
             return DOC
-        if "INSERT INTO staging.hub_chat_messages" in sql:
+        if "INSERT INTO public.hub_chat_messages" in sql:
             return MSG
         return None
 
@@ -232,8 +232,8 @@ def test_channel_price_key_is_seeded_and_used(key, owner):
 
 def _chat_pool():
     return _Pool(rows={
-        "FROM staging.hub_chat_sessions": {"client_id": CLIENT},
-        "COUNT(*) FROM staging.hub_chat_messages": 1,
+        "FROM public.hub_chat_sessions": {"client_id": CLIENT},
+        "COUNT(*) FROM public.hub_chat_messages": 1,
         "hub_brand_profiles": None,
     })
 
@@ -296,7 +296,7 @@ async def test_chat_charge_shares_the_transaction_that_stores_the_question(
     s = spends.spends[0]
     assert s["conn"] is pool.conn, "the charge ran on its own connection"
     assert s["in_txn"] is True, "the charge was not inside the caller's transaction"
-    assert any("INSERT INTO staging.hub_chat_messages" in q for q in pool.conn.executed)
+    assert any("INSERT INTO public.hub_chat_messages" in q for q in pool.conn.executed)
 
 
 @pytest.mark.asyncio
@@ -457,7 +457,7 @@ def test_rerank_no_longer_buys_google_search_to_score_text_we_already_have():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _rag_pool():
-    return _Pool(rows={"SELECT org_id FROM staging.hub_clients": ORG})
+    return _Pool(rows={"SELECT org_id FROM public.hub_clients": ORG})
 
 
 @pytest.mark.asyncio
@@ -554,7 +554,7 @@ def _queue_row(platform):
 async def _publish(monkeypatch, platform, publisher_result=None, publisher_raises=None):
     from services import social_publisher as sp
 
-    pool = _Pool(rows={"FROM staging.hub_publish_queue": _queue_row(platform)})
+    pool = _Pool(rows={"FROM public.hub_publish_queue": _queue_row(platform)})
     monkeypatch.setattr(sp, "get_pool", AsyncMock(return_value=pool))
 
     async def _pub(account, text, media=None):
@@ -640,5 +640,5 @@ def test_the_publish_query_reaches_an_org_to_bill():
     from services import social_publisher as sp
 
     src = inspect.getsource(sp.publish_content)
-    assert "JOIN staging.hub_clients cl ON cl.id = q.client_id" in src
+    assert "JOIN public.hub_clients cl ON cl.id = q.client_id" in src
     assert "cl.org_id AS client_org_id" in src

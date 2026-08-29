@@ -207,7 +207,7 @@ def _role_lookups(mock_pool):
     """
     return [
         c for c in mock_pool.fetchval.await_args_list
-        if "staging.user_roles" in str(c.args[0])
+        if "public.user_roles" in str(c.args[0])
         and "role_code IN ('org_owner','org_admin','org_member')" not in str(c.args[0])
     ]
 

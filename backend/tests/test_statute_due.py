@@ -358,7 +358,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 #: will actually be planned. `services/statute.py` schema-qualifies its FROM
 #: anyway — migration 142's shadow-table incident is why — but the two must be
 #: measured together or the qualification is untested.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. The offline half above runs the real resolver against "
@@ -441,7 +441,7 @@ def _describe_and_count(calls):
             # the authority column, and how many rows each value holds.
             by_authority = await conn.fetch(
                 "SELECT authority, count(*) AS n "
-                "FROM staging.statute_calendar GROUP BY authority"
+                "FROM public.statute_calendar GROUP BY authority"
             )
 
             # The endpoint's own listing statement, executed as the endpoint

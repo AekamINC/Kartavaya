@@ -57,7 +57,7 @@ E2E_ORG = "64e7bea6-6abe-490c-a2a4-27a60c6be916"      # Maharashtra '27'
 UNICODE_ORG = "fae87907-2f99-4b35-a241-c94d9e1e4a17"  # Gujarat '24'
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. The live half reads the seeded ladder from the real "
@@ -467,7 +467,7 @@ def test_live_the_seeded_rows_are_exactly_what_the_statute_table_says():
         return [dict(r) for r in await conn.fetch(
             "SELECT state_code, state_name, slab_from, slab_to, monthly_tax, "
             "       effective_from, month, org_id "
-            "  FROM staging.pay_professional_tax "
+            "  FROM public.pay_professional_tax "
             " WHERE state_code = ANY($1::text[]) "
             " ORDER BY state_code, slab_from", sorted(SEEDED))]
 
@@ -578,10 +578,10 @@ def test_live_seeding_four_states_moved_nobody_in_either_in_scope_org():
                 "  SELECT p.employee_id, p.gross, p.professional_tax,"
                 "         row_number() OVER (PARTITION BY p.employee_id "
                 "                            ORDER BY p.created_at DESC) rn"
-                "    FROM staging.vetana_payslips p"
+                "    FROM public.vetana_payslips p"
                 "   WHERE p.org_id=$1::uuid AND p.is_active IS NOT FALSE)"
                 " SELECT l.gross, l.professional_tax, e.state"
-                "   FROM latest l JOIN staging.manav_employees e"
+                "   FROM latest l JOIN public.manav_employees e"
                 "     ON e.id = l.employee_id"
                 "  WHERE l.rn = 1", org)
             out[label] = [

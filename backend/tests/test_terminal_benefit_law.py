@@ -106,11 +106,11 @@ def test_every_seeded_key_is_live_and_carries_its_source():
     async def run():
         conn = await asyncpg.connect(_live_dsn(), statement_cache_size=0)
         try:
-            await conn.execute("SET search_path TO staging, public")
+            await conn.execute("SET search_path TO public")
             return await conn.fetch(
                 "SELECT obligation_key, rate_percent, threshold_amount, "
                 "       effective_from, source_ref, notes "
-                "  FROM staging.statute_calendar "
+                "  FROM public.statute_calendar "
                 " WHERE obligation_key = ANY($1::text[])",
                 list(KEYS),
             )
@@ -161,7 +161,7 @@ def test_the_reader_resolves_every_term_against_the_live_store():
     async def run():
         conn = await asyncpg.connect(_live_dsn(), statement_cache_size=0)
         try:
-            await conn.execute("SET search_path TO staging, public")
+            await conn.execute("SET search_path TO public")
             return await vetana._terminal_benefit_terms(_Pool(conn), date(2026, 8, 31))
         finally:
             await conn.close()
@@ -200,7 +200,7 @@ def test_a_date_before_the_law_resolves_to_nothing_rather_than_guessing():
     async def run():
         conn = await asyncpg.connect(_live_dsn(), statement_cache_size=0)
         try:
-            await conn.execute("SET search_path TO staging, public")
+            await conn.execute("SET search_path TO public")
             return await vetana._terminal_benefit_terms(_Pool(conn), date(1960, 1, 1))
         finally:
             await conn.close()

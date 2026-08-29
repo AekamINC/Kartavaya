@@ -42,7 +42,7 @@ def test_you_cannot_remove_an_owner():
 def test_the_owner_check_runs_before_the_delete():
     """A guard after the DELETE is not a guard."""
     src = _src()
-    assert src.index("if is_owner:") < src.index("DELETE FROM staging.user_roles"), \
+    assert src.index("if is_owner:") < src.index("DELETE FROM public.user_roles"), \
         "the owner check runs after the row has already been deleted"
 
 
@@ -60,6 +60,6 @@ def test_removal_also_clears_the_module_grants_and_team_row():
     has to clear both too.
     """
     src = _src()
-    assert "DELETE FROM staging.org_member_modules" in src
+    assert "DELETE FROM public.org_member_modules" in src
     assert "DELETE FROM public.team_members" in src
     assert "DELETE FROM public.project_assignments" in src

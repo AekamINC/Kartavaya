@@ -146,12 +146,12 @@ def resolves_org(mock_pool):
     could most plausibly have.
     """
     async def _fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id=$2::uuid" in query:
+        if "public.user_roles" in query and "org_id=$2::uuid" in query:
             return 1                        # a member of whatever was asked for
         return None                         # and no platform role anywhere
 
     async def _fetchrow(query, *args):
-        if "staging.organisations" in query:
+        if "public.organisations" in query:
             return {"id": args[0]}
         return None
 
@@ -243,7 +243,7 @@ def _rows_written(pool) -> list[dict]:
     rows: list[dict] = []
     for call in list(pool.execute.call_args_list) + list(pool.fetch.call_args_list):
         args = call.args
-        if not args or "INSERT INTO staging.outbound_log" not in str(args[0]):
+        if not args or "INSERT INTO public.outbound_log" not in str(args[0]):
             continue
         columns = args[1:]
         assert len(columns) == len(outbound_log._INSERT_COLUMNS)

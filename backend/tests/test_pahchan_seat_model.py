@@ -250,7 +250,7 @@ def _wire(mock_pool, *, limit, roster, exempt=0, module_active=True):
         if "max_pahchan_seats" in query:
             return {"seat_limit": limit, "roster": roster, "exempt": exempt,
                     "module_active": module_active}
-        if "INSERT INTO staging.manav_employees" in query:
+        if "INSERT INTO public.manav_employees" in query:
             return {"id": "e0000000-0000-0000-0000-000000000001",
                     "name": "Ramesh Kumar", "employee_code": "EMP900"}
         return None
@@ -264,7 +264,7 @@ def _inserted(mock_pool) -> bool:
     these strings carry no comments, which is what keeps this from asserting
     against somebody's explanation of an INSERT rather than an INSERT."""
     return any(
-        "INSERT INTO staging.manav_employees" in c.args[0]
+        "INSERT INTO public.manav_employees" in c.args[0]
         for c in mock_pool.fetchrow.await_args_list if c.args
     )
 

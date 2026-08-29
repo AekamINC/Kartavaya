@@ -165,7 +165,7 @@ def test_expenses_never_join_the_categories_table():
     for kw in ({}, {"group_by": "category"}):
         sql, _ = build("ganit.expense_by_category", **kw)
         assert "ganit_expense_categories" not in sql
-        assert "FROM staging.ganit_expenses" in sql
+        assert "FROM public.ganit_expenses" in sql
         assert "is_active = TRUE" in sql
 
 
@@ -175,7 +175,7 @@ def test_reconciliation_rate_is_counts_over_counts_with_the_counts_shown():
     sql, _ = build("ganit.reconciliation_rate")
     assert "COUNT(*) FILTER (WHERE is_reconciled)::float / NULLIF(COUNT(*), 0)::float * 100" in sql
     assert "AS matched" in sql and "AS total" in sql
-    assert "FROM staging.ganit_bank_statement_lines" in sql
+    assert "FROM public.ganit_bank_statement_lines" in sql
     assert "statement_date BETWEEN $2::date AND $3::date" in sql
 
 
@@ -189,7 +189,7 @@ def test_top_debtors_is_a_stock_binding_only_the_org():
 def test_top_debtors_labels_a_null_client_honestly_and_never_selects_an_id():
     sql, _ = build("ganit.top_debtors")
     assert "COALESCE(c.name, 'Unlinked client') AS label" in sql
-    assert "LEFT JOIN staging.graha_clients c ON c.id = i.client_id" in sql
+    assert "LEFT JOIN public.graha_clients c ON c.id = i.client_id" in sql
     # names-not-ids: no id may reach the select list — c.id and i.id belong
     # to the JOIN and GROUP BY only.
     select_list = sql.split(" FROM ")[0]

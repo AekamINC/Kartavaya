@@ -180,7 +180,7 @@ def _writes_grant_rows(text: str) -> bool:
     handing it out — so `org_members.remove_member` is not dragged into a rule
     about granting.
     """
-    return f"insert into staging.{GRANT_TABLE}" in _sql_blob(text)
+    return f"insert into public.{GRANT_TABLE}" in _sql_blob(text)
 
 
 #: The writer that puts the grant in an INVITE rather than in the grant table.
@@ -506,7 +506,7 @@ def test_the_console_delete_cannot_reach_a_sensitive_grant():
     from routers.admin_orgs import set_member_modules
 
     src = inspect.getsource(set_member_modules)
-    delete = src[src.index("DELETE FROM staging.org_member_modules"):]
+    delete = src[src.index("DELETE FROM public.org_member_modules"):]
     delete = delete[:delete.index(")")]
     assert "SENSITIVE_MODULES" in src
     assert "NOT (module_code = ANY" in delete, (
@@ -523,7 +523,7 @@ def test_the_console_insert_names_the_level_column():
     from routers.admin_orgs import set_member_modules
 
     src = inspect.getsource(set_member_modules)
-    insert = src[src.index("INSERT INTO staging.org_member_modules"):]
+    insert = src[src.index("INSERT INTO public.org_member_modules"):]
     assert "role" in insert[:insert.index("VALUES")]
 
 
@@ -588,7 +588,7 @@ def _route_pool(mock_pool, *, caller_role: str, held: dict, has_owner: bool):
             return None                       # not a platform account
         if "role_code='org_owner'" in sql:
             return 1 if has_owner else None
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return caller_role                # the gate, and _caller_org_role
         return None
 
@@ -826,7 +826,7 @@ def test_only_the_examined_endpoints_write_an_org_owner_row():
     for path in _sources():
         text = path.read_text(encoding="utf-8-sig", errors="ignore")
         blob = _sql_blob(text)
-        for stmt in re.findall(r"insert into staging\.user_roles.{0,400}", blob):
+        for stmt in re.findall(r"insert into public\.user_roles.{0,400}", blob):
             if "'org_owner'" in stmt:
                 offenders.append(path.relative_to(BACKEND).as_posix())
 
@@ -855,7 +855,7 @@ def test_the_bootstrap_cannot_replace_an_owner_that_exists():
     assert "role_code='org_admin'" in src, \
         "the nominee is no longer required to be an administrator of this org"
     # Inserts, never updates: an existing grant is not rewritten to achieve this.
-    assert "UPDATE staging.user_roles" not in src
+    assert "UPDATE public.user_roles" not in src
 
 
 @pytest.mark.parametrize("module", sorted(SEPARATED_DUTY_MODULES))

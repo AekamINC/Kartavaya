@@ -422,8 +422,8 @@ async def test_the_query_is_scoped_to_one_org_and_reads_nothing_else():
     assert pool.fetch_args[0] == ORG
     # Every table qualified. An unqualified name resolves against search_path,
     # and this repo has already been bitten by a shadow twin of a staging table.
-    assert "staging.ganit_vendor_bills" in pool.fetch_sql
-    assert "staging.ganit_vendors" in pool.fetch_sql
+    assert "public.ganit_vendor_bills" in pool.fetch_sql
+    assert "public.ganit_vendors" in pool.fetch_sql
 
     for write in ("insert ", "update ", "delete ", "merge "):
         assert write not in pool.fetch_sql.lower(), "this handler is read-only"
@@ -438,7 +438,7 @@ async def test_a_soft_deleted_vendor_does_not_delete_the_exposure():
     pool = _Pool([_bill(vendor_name="(vendor record unavailable)", vendor_gstin=None)])
     out = await _run(pool)
 
-    assert "LEFT JOIN staging.ganit_vendors" in pool.fetch_sql
+    assert "LEFT JOIN public.ganit_vendors" in pool.fetch_sql
     assert out["vendors"][0]["vendor"] == "(vendor record unavailable)"
     assert out["totals"]["credit_at_risk"] == 18000.0
 

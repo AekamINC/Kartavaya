@@ -289,7 +289,7 @@ def test_the_drip_door_is_gated_at_enrolment():
     # Enrolment and not send time: refusing later would leave a queue of people
     # the product intends to mail and will not, which reads as a bug on the
     # Enrolled table rather than as a refusal.
-    assert "SELECT id, client_id FROM staging.graha_contacts" in src
+    assert "SELECT id, client_id FROM public.graha_contacts" in src
 
 
 def test_the_cron_sender_has_the_same_gate():

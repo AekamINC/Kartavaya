@@ -77,6 +77,9 @@ async def test_the_tasks_arm_no_longer_reads_a_table_that_does_not_exist():
     await aggregate_kpis(pool, ORG)
 
     joined = " ".join(pool.queries)
+    # `staging.tasks` is a name that NEVER existed — not one the consolidation
+    # moved — so this ban stays spelled `staging.` and is not rewritten to
+    # `public.`, which is the real table asserted two lines below.
     assert "staging.tasks" not in joined
     assert "project_id" not in joined
     assert "public.tasks" in joined

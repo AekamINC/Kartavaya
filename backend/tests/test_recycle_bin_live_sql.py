@@ -49,7 +49,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection. Matched so a statement is planned the
 #: way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This file parses the recycle bin's SQL against the real "
@@ -84,14 +84,14 @@ STATEMENTS: list[tuple[str, str]] = [
     ("get_row", bin_svc._SELECT + " WHERE id = $1::uuid AND org_id = $2::uuid"),
     ("purge:by_id", bin_svc._SELECT + " WHERE id = $1::uuid"),
     ("bin_file", """
-        INSERT INTO staging.deleted_files
+        INSERT INTO public.deleted_files
               (org_id, source_kind, source_id, file_name, r2_key, file_url,
                size_bytes, deleted_by)
         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::bigint, $8)
         RETURNING *
         """),
     ("promote", """
-        UPDATE staging.deleted_files
+        UPDATE public.deleted_files
            SET stage2_at = now()
          WHERE id = $1::uuid AND org_id = $2::uuid
            AND purged_at IS NULL AND restored_at IS NULL
@@ -99,15 +99,15 @@ STATEMENTS: list[tuple[str, str]] = [
         RETURNING *
         """),
     ("mark_restored", """
-        UPDATE staging.deleted_files
+        UPDATE public.deleted_files
            SET restored_at = now()
          WHERE id = $1::uuid AND org_id = $2::uuid
            AND purged_at IS NULL AND restored_at IS NULL
         RETURNING *
         """),
-    ("purge:mark", "UPDATE staging.deleted_files SET purged_at=now(), purge_error=NULL "
+    ("purge:mark", "UPDATE public.deleted_files SET purged_at=now(), purge_error=NULL "
                    "WHERE id=$1::uuid"),
-    ("purge:error", "UPDATE staging.deleted_files SET purge_error=$2 WHERE id=$1::uuid"),
+    ("purge:error", "UPDATE public.deleted_files SET purge_error=$2 WHERE id=$1::uuid"),
     ("due_for_purge", bin_svc._SELECT + """
          WHERE purged_at IS NULL
            AND restored_at IS NULL
@@ -119,11 +119,11 @@ STATEMENTS: list[tuple[str, str]] = [
                           "WHERE task_id=$1 AND org_id=$2::uuid"),
     ("restore:write_task", "UPDATE public.tasks SET attachments=$1::jsonb, updated_at=NOW() "
                            "WHERE task_id=$2 AND org_id=$3::uuid"),
-    ("restore:graha", "UPDATE staging.graha_documents "
+    ("restore:graha", "UPDATE public.graha_documents "
                       "   SET is_active=TRUE, updated_at=NOW(), updated_by=$3 "
                       " WHERE id=$1::uuid AND org_id=$2::uuid"),
     ("graha:read_before_bin",
-     "SELECT id, name, file_key, file_url, file_size FROM staging.graha_documents "
+     "SELECT id, name, file_key, file_url, file_size FROM public.graha_documents "
      "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE"),
 ]
 
@@ -144,7 +144,7 @@ def _describe():
             catalogue = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "  FROM information_schema.columns "
-                " WHERE table_schema='staging' AND table_name='deleted_files'"
+                " WHERE table_schema = ANY(current_schemas(false)) AND table_name='deleted_files'"
             )
             return failures, [dict(r) for r in catalogue]
         finally:
@@ -176,6 +176,15 @@ def test_every_not_null_column_is_supplied_by_bin_file(live):
     omitted, and the INSERT had never once succeeded.
     """
     _, catalogue = live
+    # `required` is built FROM this catalogue read, and `set() <= supplied` is
+    # True — so an empty read makes the assertion below unconditionally green
+    # while proving nothing about `deleted_files`. Its sibling files
+    # (test_compliance_settings_screen, test_income_tax_ladder) each carry this
+    # guard; this one did not.
+    assert catalogue, (
+        "the catalogue read returned no columns for `deleted_files` — the "
+        "table is absent from the search_path schemas, so the NOT NULL check "
+        "below is vacuous")
     supplied = {
         "org_id", "source_kind", "source_id", "file_name", "r2_key",
         "file_url", "size_bytes", "deleted_by",

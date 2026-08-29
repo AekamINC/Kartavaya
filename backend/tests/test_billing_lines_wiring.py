@@ -371,20 +371,20 @@ class _Table:
         return False
 
     async def fetchval(self, sql, *args):
-        if "FROM staging.organisations" in sql:
+        if "FROM public.organisations" in sql:
             return args[0] if str(args[0]) in self.orgs else None
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return 1
-        if "RETURNING id" in sql and "UPDATE staging.organisations" in sql:
+        if "RETURNING id" in sql and "UPDATE public.organisations" in sql:
             return args[-1] if str(args[-1]) in self.orgs else None
         return None
 
     async def fetchrow(self, sql, *args):
-        if "INSERT INTO staging.org_billing_lines" in sql:
+        if "INSERT INTO public.org_billing_lines" in sql:
             return self._insert(*args)
-        if "UPDATE staging.org_billing_lines" in sql and "SET amount=" in sql:
+        if "UPDATE public.org_billing_lines" in sql and "SET amount=" in sql:
             return self._amend(args[0], args[1])
-        if "UPDATE staging.org_billing_lines" in sql and "SET period_end=" in sql:
+        if "UPDATE public.org_billing_lines" in sql and "SET period_end=" in sql:
             return self._end(args[2], args[0], args[1])
         # Checked BEFORE the open-line arm: `create_line` looks a top-up up by
         # `source_ref` alone, with ONE argument, and routing that to the
@@ -392,14 +392,14 @@ class _Table:
         # answer — which is how this fake told on itself.
         if "WHERE source_ref=$1" in sql:
             return next((r for r in self.lines if r["source_ref"] == args[0]), None)
-        if "FROM staging.org_billing_lines" in sql:
+        if "FROM public.org_billing_lines" in sql:
             return self._open_line(args[0], args[1])
         return None
 
     async def fetch(self, sql, *args):
-        if "FROM staging.invoice_billing_lines" in sql:
+        if "FROM public.invoice_billing_lines" in sql:
             return self._clash(args[0], args[1])
-        if "INSERT INTO staging.invoice_billing_lines" in sql:
+        if "INSERT INTO public.invoice_billing_lines" in sql:
             # `$5` is the per-line amounts array and is the LAST parameter; it is
             # passed positionally so the fake breaks loudly if the statement ever
             # stops sending it, rather than silently falling back to the line.
@@ -419,7 +419,7 @@ class _Table:
         # That is the double reporting a bug the product does not have, which
         # is the one failure mode a double must not have: it sends whoever
         # reads it to fix code that is already right.
-        if "INSERT INTO staging.organisations" in sql:
+        if "INSERT INTO public.organisations" in sql:
             self.orgs.add(str(args[0]))
         return "UPDATE 1"
 
@@ -560,9 +560,9 @@ def create_org(monkeypatch, mock_pool, table):
             return {"user_id": OWNER, "email": "owner@example.com"}
         if "FROM team_members" in sql:
             return {"team_id": TEAM}
-        if "FROM staging.organisations WHERE team_id" in sql:
+        if "FROM public.organisations WHERE team_id" in sql:
             return None                                   # no org for this team
-        if "FROM staging.plans" in sql:
+        if "FROM public.plans" in sql:
             return {"id": PLAN, "code": "professional", "default_credits": 0}
         return None
 
@@ -570,7 +570,7 @@ def create_org(monkeypatch, mock_pool, table):
         # `as_admin` routes this for the platform-role check; this fixture is
         # ordered after it, so the role must be answered here too or every
         # commercial field on the body 403s.
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return 1
         return 0
 
@@ -674,7 +674,7 @@ class _NoSuchTable(Exception):
     """
 
     def __init__(self):
-        super().__init__('relation "staging.org_billing_lines" does not exist')
+        super().__init__('relation "public.org_billing_lines" does not exist')
         self.sqlstate = "42P01"
 
 
@@ -689,7 +689,7 @@ class _PreO96Table(_Table):
     """
 
     def _boom(self, sql):
-        return "staging.org_billing_lines" in sql
+        return "public.org_billing_lines" in sql
 
     async def fetchval(self, sql, *args):
         if self._boom(sql):
@@ -758,7 +758,7 @@ async def test_the_pre_096_org_is_whole_and_says_its_line_is_missing(
 
     async def _execute(sql, *args):
         seen.append(sql)
-        if "INSERT INTO staging.subscription_events" in sql:
+        if "INSERT INTO public.subscription_events" in sql:
             events.append(json.loads(args[2]))
         return await _PreO96Table.execute(table, sql, *args)
 
@@ -772,9 +772,9 @@ async def test_the_pre_096_org_is_whole_and_says_its_line_is_missing(
     ))
     assert resp.status_code in (200, 201), resp.text
 
-    assert any("INSERT INTO staging.organisations" in s for s in seen)
-    assert any("INSERT INTO staging.subscriptions" in s for s in seen)
-    assert any("INSERT INTO staging.user_roles" in s for s in seen), (
+    assert any("INSERT INTO public.organisations" in s for s in seen)
+    assert any("INSERT INTO public.subscriptions" in s for s in seen)
+    assert any("INSERT INTO public.user_roles" in s for s in seen), (
         "the owner role was the write most often lost to this 500; an org whose "
         "owner cannot open it is the orphan in its purest form"
     )
@@ -850,9 +850,9 @@ async def test_a_negative_monthly_price_is_refused_before_anything_is_written(
 @pytest.fixture
 def settings(mock_pool, table):
     async def _fetchval(sql, *args):
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return 1
-        if "UPDATE staging.organisations" in sql and "RETURNING id" in sql:
+        if "UPDATE public.organisations" in sql and "RETURNING id" in sql:
             return ORG
         return 0
 
@@ -990,7 +990,7 @@ def topup(monkeypatch, mock_pool, table):
     monkeypatch.setattr(admin_orgs, "grant", _grant)
 
     async def _fetchval(sql, *args):
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return 1
         return 0
 
@@ -1221,12 +1221,12 @@ def invoice(monkeypatch, mock_pool, one_line, app):
     async def _fetchval(sql, *args):
         if "MAX(CAST(SUBSTRING(invoice_number" in sql:
             return 1
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return 1
         return None
 
     async def _fetchrow(sql, *args):
-        if "INSERT INTO staging.subscription_invoices" in sql:
+        if "INSERT INTO public.subscription_invoices" in sql:
             return {"id": uuid.uuid4(), "invoice_number": args[1],
                     "total": args[7], "due_date": args[8],
                     "payment_status": "pending"}
@@ -1236,7 +1236,7 @@ def invoice(monkeypatch, mock_pool, one_line, app):
     _real_fetchrow = table.fetchrow
 
     async def _row(sql, *args):
-        if "staging.subscription_invoices" in sql:
+        if "public.subscription_invoices" in sql:
             return await _fetchrow(sql, *args)
         return await _real_fetchrow(sql, *args)
 

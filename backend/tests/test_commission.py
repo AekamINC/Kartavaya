@@ -850,9 +850,18 @@ def test_no_row_this_module_builds_can_carry_a_uuid():
             f"a column is named for an id: {list(row)}"
 
 
-#: Every `staging.<table> <alias>` a query names, however it is reached —
+#: Every `public.<table> <alias>` a query names, however it is reached —
 #: FROM, JOIN or a comma join. The alias is what the predicate has to mention.
-_STAGING_REF_RE = re.compile(r"\b(staging\.\w+)\s+(\w+)\b", re.I)
+_TENANT_REF_RE = re.compile(r"\b(public\.\w+)\s+(\w+)\b", re.I)
+
+#: Relations with NO `org_id` column, which the scan below therefore cannot
+#: apply to. Before the schema consolidation the scan matched `staging.` only,
+#: so `public.users` fell outside it for free. Now that the tenant tables live
+#: in `public` too, the exemption has to be NAMED rather than implied — and
+#: naming it is the point: `test_the_one_schema_qualified_join_is_the_users_
+#: table_that_has_no_org` records why this one relation is safe, and a second
+#: entry appearing here is a tenancy decision somebody has to argue for.
+_ORGLESS_RELATIONS = {"public.users"}
 
 #: `JOIN <schema>.<table> <alias> ON <predicate>`, predicate running to the
 #: next clause keyword.
@@ -862,13 +871,13 @@ _JOIN_RE = re.compile(
     r"|\s*\)|$)", re.I)
 
 
-def test_every_staging_table_a_query_touches_is_scoped_to_the_caller_org():
+def test_every_tenant_table_a_query_touches_is_scoped_to_the_caller_org():
     """The substantive tenancy check, and it does not care HOW the table was
     reached.
 
     Most of the tables here are reached inside a CTE and joined by CTE name
     afterwards, so a scan that only looked at JOIN clauses would inspect one
-    join in the whole commit and pass forever. Every `staging.x alias`
+    join in the whole commit and pass forever. Every `public.x alias`
     reference is found instead, and each one must carry
     `alias.org_id = $1::uuid` somewhere in the same query — which is the
     predicate that stops another org's row surfacing (graha_clients_join_leak;
@@ -877,7 +886,9 @@ def test_every_staging_table_a_query_touches_is_scoped_to_the_caller_org():
     seen = 0
     for name, sql in sql_constants(CR).items():
         assert "$1::uuid" in sql, f"{name} is not org-scoped"
-        for table, alias in set(_STAGING_REF_RE.findall(sql)):
+        for table, alias in set(_TENANT_REF_RE.findall(sql)):
+            if table.lower() in _ORGLESS_RELATIONS:
+                continue
             seen += 1
             assert f"{alias}.org_id = $1::uuid" in sql, \
                 f"{name}: {table} (as {alias}) is not scoped to the caller org"

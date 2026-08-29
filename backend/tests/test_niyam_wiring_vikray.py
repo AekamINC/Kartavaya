@@ -213,7 +213,7 @@ _ORDER_ROW = {
 async def test_create_order_emits_order_created(rig, prior, expected_first):
     p, em = rig
     p.fetchval_responses = [("graha_clients", 1), ("COUNT(*)", prior)]
-    p.fetchrow_responses = [("INSERT INTO staging.vikray_orders", _ORDER_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.vikray_orders", _ORDER_ROW)]
 
     await vikray.create_order(_order_body(client_id="c1"),
                               user={"user_id": "u1"}, org_id="org1")
@@ -233,7 +233,7 @@ async def test_create_order_counts_prior_orders_before_the_insert(rig):
     insert — so the new row cannot count itself and flip the answer."""
     p, em = rig
     p.fetchval_responses = [("graha_clients", 1), ("COUNT(*)", 0)]
-    p.fetchrow_responses = [("INSERT INTO staging.vikray_orders", _ORDER_ROW)]
+    p.fetchrow_responses = [("INSERT INTO public.vikray_orders", _ORDER_ROW)]
 
     await vikray.create_order(_order_body(client_id="c1"),
                               user={"user_id": "u1"}, org_id="org1")
@@ -241,7 +241,7 @@ async def test_create_order_counts_prior_orders_before_the_insert(rig):
     count_idx = next(i for i, (q, _) in enumerate(p.calls)
                      if "COUNT(*)" in q and "vikray_orders" in q)
     insert_idx = next(i for i, (q, _) in enumerate(p.calls)
-                      if q.startswith("INSERT INTO staging.vikray_orders"))
+                      if q.startswith("INSERT INTO public.vikray_orders"))
     assert count_idx < insert_idx, "the first-order count must precede the insert"
 
 
@@ -251,7 +251,7 @@ async def test_create_order_with_no_client_passes_first_order_false(rig):
     emitter's own contract — and no COUNT query is even attempted."""
     p, em = rig
     # contact resolves to no client (fetchval default None), insert succeeds
-    p.fetchrow_responses = [("INSERT INTO staging.vikray_orders",
+    p.fetchrow_responses = [("INSERT INTO public.vikray_orders",
                              {**_ORDER_ROW, "client_id": None})]
 
     await vikray.create_order(_order_body(contact_id="ct1"),
@@ -275,7 +275,7 @@ async def test_create_order_refusal_emits_nothing(rig):
                                   user={"user_id": "u1"}, org_id="org1")
     assert exc.value.status_code == 400
     _assert_silent(em, *em)
-    assert not any(q.startswith("INSERT INTO staging.vikray_orders")
+    assert not any(q.startswith("INSERT INTO public.vikray_orders")
                    for q, _ in p.calls), "refused, yet the order was written"
 
 
@@ -289,8 +289,8 @@ _DEAL = {"id": "d1", "title": "Big deal", "value": 100, "stage": "Won",
 async def test_create_order_from_deal_emits_order_created(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.graha_deals", _DEAL),
-        ("INSERT INTO staging.vikray_orders", _ORDER_ROW),
+        ("FROM public.graha_deals", _DEAL),
+        ("INSERT INTO public.vikray_orders", _ORDER_ROW),
     ]
     p.fetchval_responses = [("graha_clients", 1), ("COUNT(*)", 2)]
 
@@ -313,7 +313,7 @@ async def test_create_order_from_deal_emits_order_created(rig):
 @pytest.mark.asyncio
 async def test_create_order_from_an_open_deal_emits_nothing(rig):
     p, em = rig
-    p.fetchrow_responses = [("FROM staging.graha_deals",
+    p.fetchrow_responses = [("FROM public.graha_deals",
                              {**_DEAL, "stage": "Proposal"})]
     with pytest.raises(HTTPException) as exc:
         await vikray.create_order_from_deal(
@@ -328,8 +328,8 @@ async def test_a_second_conversion_returns_the_first_order_and_emits_nothing(rig
     announcing a creation would be a lie."""
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.graha_deals", _DEAL),
-        ("SELECT id, order_number FROM staging.vikray_orders",
+        ("FROM public.graha_deals", _DEAL),
+        ("SELECT id, order_number FROM public.vikray_orders",
          {"id": "o0", "order_number": "SO-2026-0000"}),
     ]
     out = await vikray.create_order_from_deal(
@@ -344,7 +344,7 @@ def _status_rig(p, old, new):
     p.fetchrow_responses = [
         ("SELECT status, deal_id, line_items",
          {"status": old, "deal_id": None, "line_items": "[]"}),
-        ("UPDATE staging.vikray_orders SET status=",
+        ("UPDATE public.vikray_orders SET status=",
          {"id": "o1", "order_number": "SO-2026-0001", "total": 118.0,
           "client_id": "c1", "status": new}),
     ]
@@ -414,7 +414,7 @@ async def test_a_refused_transition_emits_nothing(rig):
             user={"user_id": "u1"}, org_id="org1")
     assert exc.value.status_code == 400
     _assert_silent(em, *em)
-    assert not any("UPDATE staging.vikray_orders SET status=" in q
+    assert not any("UPDATE public.vikray_orders SET status=" in q
                    for q, _ in p.calls), "refused, yet the status was written"
 
 
@@ -441,7 +441,7 @@ async def test_a_raced_status_update_is_a_409_and_emits_nothing(rig):
     # the guarded UPDATE is what detected the race — it must carry the
     # pre-read status in its WHERE …
     guarded = [(q, a) for q, a in p.calls
-               if "UPDATE staging.vikray_orders SET status=" in q]
+               if "UPDATE public.vikray_orders SET status=" in q]
     assert guarded and "AND status=" in guarded[0][0], \
         "the status write lost its optimistic-concurrency guard"
     assert "draft" in guarded[0][1], "the guard must bind the PRE-READ status"
@@ -456,13 +456,13 @@ def _deal_close_rig(p, deal_before_stage):
     p.fetchrow_responses = [
         ("SELECT status, deal_id, line_items",
          {"status": "delivered", "deal_id": "d1", "line_items": "[]"}),
-        ("UPDATE staging.vikray_orders SET status=",
+        ("UPDATE public.vikray_orders SET status=",
          {"id": "o1", "order_number": "SO-2026-0001", "total": 118.0,
           "client_id": "c1", "status": "closed"}),
-        ("SELECT * FROM staging.graha_deals",
+        ("SELECT * FROM public.graha_deals",
          {"id": "d1", "stage": deal_before_stage, "value": 100.0,
           "assigned_to": "u2", "client_id": "c1"}),
-        ("UPDATE staging.graha_deals",
+        ("UPDATE public.graha_deals",
          {"id": "d1", "stage": "Won", "value": 100.0,
           "assigned_to": "u2", "client_id": "c1"}),
     ]
@@ -507,7 +507,7 @@ async def test_reclosing_against_an_already_won_deal_stays_silent(rig):
         user={"user_id": "u1"}, org_id="org1")
 
     assert em["deal_stage_changed"].calls == []
-    assert any("UPDATE staging.graha_deals" in q for q, _ in p.calls), \
+    assert any("UPDATE public.graha_deals" in q for q, _ in p.calls), \
         "the won_at stamp must still be written on a re-close"
     assert len(em["order_status_changed"].calls) == 1
 
@@ -519,7 +519,7 @@ async def test_cancelling_emits_the_status_change_from_inside_the_write(rig):
     p, em = rig
     p.fetchrow_responses = [
         ("SELECT status, line_items", {"status": "draft", "line_items": "[]"}),
-        ("UPDATE staging.vikray_orders SET status='cancelled'",
+        ("UPDATE public.vikray_orders SET status='cancelled'",
          {"id": "o1", "order_number": "SO-2026-0001", "total": 118.0,
           "client_id": "c1", "status": "cancelled"}),
     ]
@@ -552,7 +552,7 @@ async def test_a_raced_cancel_is_a_409_with_no_event_and_no_restock(rig):
     assert exc.value.status_code == 409
     _assert_silent(em, *em)
     guarded = [(q, a) for q, a in p.calls
-               if "UPDATE staging.vikray_orders SET status='cancelled'" in q]
+               if "UPDATE public.vikray_orders SET status='cancelled'" in q]
     assert guarded and "AND status=" in guarded[0][0], \
         "the cancel write lost its optimistic-concurrency guard"
     assert "confirmed" in guarded[0][1], "the guard must bind the PRE-READ status"
@@ -566,8 +566,8 @@ async def test_a_raced_cancel_is_a_409_with_no_event_and_no_restock(rig):
 async def test_manual_adjustment_emits_both_sides_of_the_write(rig):
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.ganit_products", {"id": "p1", "name": "Widget"}),
-        ("SELECT * FROM staging.vikray_stock",
+        ("FROM public.ganit_products", {"id": "p1", "name": "Widget"}),
+        ("SELECT * FROM public.vikray_stock",
          {"org_id": "org1", "product_id": "p1", "quantity_on_hand": 15.0}),
     ]
     p.fetchval_responses = [
@@ -586,7 +586,7 @@ async def test_manual_adjustment_emits_both_sides_of_the_write(rig):
                   "product_name": "Widget",
                   "quantity_before": 10.0, "quantity_after": 15.0}
     # the ledger row rides in the same transaction as the event
-    assert any("INSERT INTO staging.vikray_stock_moves" in q for q, _ in p.calls)
+    assert any("INSERT INTO public.vikray_stock_moves" in q for q, _ in p.calls)
 
 
 @pytest.mark.asyncio
@@ -594,8 +594,8 @@ async def test_a_threshold_only_change_is_not_an_adjustment(rig):
     """No quantity moved — nothing to announce."""
     p, em = rig
     p.fetchrow_responses = [
-        ("FROM staging.ganit_products", {"id": "p1", "name": "Widget"}),
-        ("SELECT * FROM staging.vikray_stock",
+        ("FROM public.ganit_products", {"id": "p1", "name": "Widget"}),
+        ("SELECT * FROM public.vikray_stock",
          {"org_id": "org1", "product_id": "p1", "quantity_on_hand": 10.0}),
     ]
     await vikray.adjust_stock(

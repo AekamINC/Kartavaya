@@ -157,7 +157,7 @@ def test_the_recorder_binds_enums_and_never_the_raw_ua():
     run(record_login_pulse(pool, "user_aaa111", UA_CHROME_WIN, None))
     assert len(pool.calls) == 1
     sql, args = pool.calls[0]
-    assert "INSERT INTO staging.pulse_logins" in sql
+    assert "INSERT INTO public.pulse_logins" in sql
     assert "$1::text" in sql and "$2::text" in sql and "$3::text" in sql
     assert args == ["user_aaa111", "web", "windows"]
     # The privacy contract, asserted on the wire shape: no fragment of the
@@ -176,7 +176,7 @@ def test_a_login_with_the_version_header_also_upserts_one_row_per_user():
     login_sql, login_args = pool.calls[0]
     assert login_args == ["user_aaa111", "app", "android"]
     ver_sql, ver_args = pool.calls[1]
-    assert "INSERT INTO staging.pulse_app_versions" in ver_sql
+    assert "INSERT INTO public.pulse_app_versions" in ver_sql
     assert "ON CONFLICT (user_id) DO UPDATE" in ver_sql
     assert "version = EXCLUDED.version" in ver_sql
     assert ver_args == ["user_aaa111", "2.0.3"]
@@ -186,7 +186,7 @@ def test_the_upsert_sql_shape_is_one_row_per_user():
     pool = RecordingPool()
     run(record_app_version(pool, "user_aaa111", "2.0.3"))
     sql, args = pool.calls[0]
-    assert "staging.pulse_app_versions" in sql
+    assert "public.pulse_app_versions" in sql
     assert "ON CONFLICT (user_id)" in sql
     assert "updated_at = now()" in sql
     assert args == ["user_aaa111", "2.0.3"]
@@ -269,7 +269,7 @@ async def test_login_records_one_pulse_row_with_enums_only(
     assert resp.status_code == 200
     await _drain_pulse_tasks()
     pulse_calls = [c for c in mock_pool.execute.await_args_list
-                   if "staging.pulse_logins" in c.args[0]]
+                   if "public.pulse_logins" in c.args[0]]
     assert len(pulse_calls) == 1
     assert list(pulse_calls[0].args[1:]) == \
         [admin_user["user_id"], "web", "windows"]
@@ -291,11 +291,11 @@ async def test_an_app_login_upserts_the_version_too(
     assert resp.status_code == 200
     await _drain_pulse_tasks()
     login_calls = [c for c in mock_pool.execute.await_args_list
-                   if "staging.pulse_logins" in c.args[0]]
+                   if "public.pulse_logins" in c.args[0]]
     assert list(login_calls[0].args[1:]) == \
         [admin_user["user_id"], "app", "android"]
     ver_calls = [c for c in mock_pool.execute.await_args_list
-                 if "staging.pulse_app_versions" in c.args[0]]
+                 if "public.pulse_app_versions" in c.args[0]]
     assert len(ver_calls) == 1
     assert list(ver_calls[0].args[1:]) == [admin_user["user_id"], "2.0.3"]
 
@@ -363,7 +363,7 @@ def test_an_undefined_table_failure_logs_its_traceback_once(
     from asyncpg.exceptions import UndefinedTableError
 
     monkeypatch.setattr(pulse_service, "_undefined_table_logged", False)
-    exc = UndefinedTableError('relation "staging.pulse_logins" does not exist')
+    exc = UndefinedTableError('relation "public.pulse_logins" does not exist')
 
     with caplog.at_level(logging.INFO, logger="services.pulse"):
         for _ in range(3):
@@ -406,7 +406,7 @@ async def test_the_sync_route_upserts_once_per_user_version_pair(mock_pool):
             user={"user_id": "user_aaa111"}, org_id="org-1")
         assert out["resync_required"] is False
     ver_calls = [c for c in mock_pool.execute.await_args_list
-                 if "staging.pulse_app_versions" in c.args[0]]
+                 if "public.pulse_app_versions" in c.args[0]]
     assert len(ver_calls) == 1          # three polls, one write
     assert list(ver_calls[0].args[1:]) == ["user_aaa111", "2.0.3"]
     # A NEW version is a new fact and writes again — this is how an OTA
@@ -415,7 +415,7 @@ async def test_the_sync_route_upserts_once_per_user_version_pair(mock_pool):
     await sync.list_tombstones(request=req2, since=_recent_since(),
                                user={"user_id": "user_aaa111"}, org_id="org-1")
     ver_calls = [c for c in mock_pool.execute.await_args_list
-                 if "staging.pulse_app_versions" in c.args[0]]
+                 if "public.pulse_app_versions" in c.args[0]]
     assert len(ver_calls) == 2
 
 
@@ -508,7 +508,7 @@ def test_surface_os_labels_rows_the_way_the_proposal_draws_them():
                   "'Web · other'", "'Android app'", "'iOS app'",
                   "'iPadOS app'"):
         assert label in sql
-    assert "staging.pulse_logins" in sql
+    assert "public.pulse_logins" in sql
     assert "$1::date" in sql and "$2::date" in sql
     assert params == [win.start, win.end]
     # No id and no raw column leaves the query — labels and counts only.
@@ -518,7 +518,7 @@ def test_surface_os_labels_rows_the_way_the_proposal_draws_them():
 def test_app_versions_reads_the_one_row_per_user_table():
     sql, params = PULSE_REGISTRY["pulse.app_versions"].sql(
         MetricRequest(org_id="", window=None, bucket="day"))
-    assert "staging.pulse_app_versions" in sql
+    assert "public.pulse_app_versions" in sql
     assert "COUNT(*)::int" in sql
     assert params == []
 

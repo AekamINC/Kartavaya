@@ -37,12 +37,12 @@ class _Conn:
 
     async def fetchrow(self, sql, *args):
         self.p.executed.append((" ".join(sql.split()), args))
-        if "INSERT INTO staging.analytics_entities" in sql:
+        if "INSERT INTO public.analytics_entities" in sql:
             return {"id": f"ent-{args[2]}"}
         return None
 
     async def fetch(self, sql, *args):
-        if "FROM staging.analytics_accounts" in sql:
+        if "FROM public.analytics_accounts" in sql:
             return self.p.accounts
         return []
 

@@ -244,11 +244,11 @@ def _crm(**kw):
 
 def _preflight_pool(campaigns=None, crm=None, unsubs=(), wa=()):
     return _Pool(fetch_by={
-        "FROM staging.prachar_campaigns": campaigns if campaigns is not None else [_campaign()],
-        "FROM staging.prachar_unsubscribes": [{"email": e} for e in unsubs],
-        "SELECT phone_number, opted_in FROM staging.varta_contacts":
+        "FROM public.prachar_campaigns": campaigns if campaigns is not None else [_campaign()],
+        "FROM public.prachar_unsubscribes": [{"email": e} for e in unsubs],
+        "SELECT phone_number, opted_in FROM public.varta_contacts":
             [{"phone_number": p, "opted_in": o} for p, o in wa],
-        "FROM staging.graha_contacts gc": crm if crm is not None else [_crm()],
+        "FROM public.graha_contacts gc": crm if crm is not None else [_crm()],
     })
 
 
@@ -277,7 +277,7 @@ def _volume(**kw):
 
 def _cost_pool(templates=None, volume=()):
     return _Pool(fetch_by={
-        "FROM staging.varta_templates": templates if templates is not None else [_template()],
+        "FROM public.varta_templates": templates if templates is not None else [_template()],
         "GROUP BY m.template_name": list(volume),
     })
 
@@ -324,7 +324,7 @@ def test_nothing_in_this_module_writes():
     """Mechanical. Recording a consent nobody gave — or a suppression nobody
     asked for — is worse than recording none, and both are one careless UPDATE
     away."""
-    for pattern in (r"\bINSERT\s+INTO\b", r"\bUPDATE\s+staging\.", r"\bDELETE\s+FROM\b"):
+    for pattern in (r"\bINSERT\s+INTO\b", r"\bUPDATE\s+public\.", r"\bDELETE\s+FROM\b"):
         assert not re.search(pattern, SRC, re.I), f"{pattern} found in the module"
     # `_Pool.execute` raises, so the three runs above also prove it at runtime.
 
@@ -344,7 +344,7 @@ def test_every_query_carries_the_tenant_boundary():
             assert "org_id = $1::uuid" in sql or "org_id=$1::uuid" in sql, sql[:200]
             assert args and str(args[0]) == ORG
 
-    joins = re.findall(r"JOIN staging\.graha_contacts \w+\s+ON [^\n]+", SRC)
+    joins = re.findall(r"JOIN public\.graha_contacts \w+\s+ON [^\n]+", SRC)
     assert joins, "expected at least one graha_contacts join to check"
     for join in joins:
         assert "org_id" in join, f"id-only graha join: {join}"
@@ -383,7 +383,7 @@ def test_the_missing_write_path_names_columns_a_migration_could_add():
     out = _run(check_consent_ledger(_consent_pool(), ORG))
     named = " ".join(out["missing_write_path"]["columns_that_would_close_it"])
     for column in ("opt_in_source", "opt_in_notice", "opted_out_at", "opted_out_reason"):
-        assert f"staging.varta_contacts.{column}" in named
+        assert f"public.varta_contacts.{column}" in named
     assert "prachar_unsubscribes" in out["missing_write_path"]["refusal_that_would_enforce_it"]
 
 
@@ -658,7 +658,7 @@ def test_no_audience_value_is_ever_interpolated_into_the_sql():
     a parameter number it generated itself."""
     params = [ORG]
     sql, _ = _audience_predicates(
-        {"type": "customer'; DROP TABLE staging.graha_contacts; --",
+        {"type": "customer'; DROP TABLE public.graha_contacts; --",
          "source": "referral", "tag": "audit", "min_score": 50, "company": "Acme"},
         params,
     )

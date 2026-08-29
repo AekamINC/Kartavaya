@@ -563,7 +563,7 @@ def test_the_client_name_join_is_org_scoped():
         if not line.strip().startswith("--")
     )
     assert re.search(
-        r"JOIN\s+staging\.graha_clients\s+c\s+ON\s+c\.id\s*=\s*r\.client_id"
+        r"JOIN\s+public\.graha_clients\s+c\s+ON\s+c\.id\s*=\s*r\.client_id"
         r"\s+AND\s+c\.org_id\s*=\s*r\.org_id",
         sql,
     ), "the graha_clients join is not org-scoped"

@@ -116,7 +116,7 @@ class _Conn:
 
     async def fetchval(self, sql, *args):
         self.sql.append((sql, args))
-        if "INSERT INTO staging.hub_scraper_runs" in sql:
+        if "INSERT INTO public.hub_scraper_runs" in sql:
             return self.run_id
         return None
 
@@ -216,7 +216,7 @@ async def test_the_run_row_is_written_before_the_debit(wired):
 
     stmts = [s for s, _ in wired["conn"].sql]
     insert_at = next(i for i, s in enumerate(stmts)
-                     if "INSERT INTO staging.hub_scraper_runs" in s)
+                     if "INSERT INTO public.hub_scraper_runs" in s)
     # `credits.spend` is not SQL on this fake, so its position is recorded by
     # the statement that follows it: the credits_charged write-back.
     charged_at = next(i for i, s in enumerate(stmts) if "credits_charged=$2" in s)

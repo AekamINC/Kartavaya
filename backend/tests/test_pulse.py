@@ -317,7 +317,7 @@ def test_put_view_accepts_geometry_and_upserts_one_row(pool):
     assert out["layout"] == [{"metric": "pulse.active_users", "viz": "trend",
                               "w": 6, "x": 3, "y": 2, "h": 4}]
     sql, args = pool.calls[0]
-    assert "staging.pulse_views" in sql
+    assert "public.pulse_views" in sql
     assert "ON CONFLICT (user_id)" in sql
     assert args[0] == USER["user_id"]
     assert json.loads(args[1]) == out["layout"]

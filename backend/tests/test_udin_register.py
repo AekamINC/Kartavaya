@@ -268,7 +268,7 @@ class TestTheWindowsAreDataNotConstants:
 
     @pytest.mark.asyncio
     async def test_the_table_answers_when_it_has_a_covering_row(self):
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         w = await udin.load_windows(pool, as_of=date(2026, 8, 19))
         assert (w.generate_days, w.revoke_hours) == (60, 48)
         assert w.sources == {"generate": "table", "revoke": "table"}
@@ -280,7 +280,7 @@ class TestTheWindowsAreDataNotConstants:
         rows = window_rows()
         rows.append({"window_key": "generate", "window_amount": 90, "window_unit": "days",
                      "effective_from": date(2026, 4, 1), "effective_to": None})
-        pool = RecordingPool([("staging.udin_window", rows)])
+        pool = RecordingPool([("public.udin_window", rows)])
         w = await udin.load_windows(pool, as_of=date(2026, 8, 19))
         assert w.generate_days == 90
         # ... and the OLD window still answers for an older date.
@@ -297,7 +297,7 @@ class TestTheWindowsAreDataNotConstants:
             {"window_key": "generate", "window_amount": 60, "window_unit": "days",
              "effective_from": date(2021, 9, 17), "effective_to": None},
         ]
-        pool = RecordingPool([("staging.udin_window", rows)])
+        pool = RecordingPool([("public.udin_window", rows)])
         assert (await udin.load_windows(pool, as_of=date(2021, 9, 16))).generate_days == 15
         assert (await udin.load_windows(pool, as_of=date(2021, 9, 17))).generate_days == 60
 
@@ -306,7 +306,7 @@ class TestTheWindowsAreDataNotConstants:
         # 48 stored as 'days' must never become a 48-DAY revocation window.
         rows = [{"window_key": "revoke", "window_amount": 48, "window_unit": "days",
                  "effective_from": date(2023, 6, 23), "effective_to": None}]
-        pool = RecordingPool([("staging.udin_window", rows)])
+        pool = RecordingPool([("public.udin_window", rows)])
         w = await udin.load_windows(pool, as_of=date(2026, 8, 19))
         assert w.revoke_hours == udin.ICAI_REVOKE_WINDOW_HOURS
         assert w.revoke_source == "icai-default"
@@ -315,7 +315,7 @@ class TestTheWindowsAreDataNotConstants:
     async def test_it_falls_back_to_the_icai_numbers_when_the_table_is_absent(self):
         # Migration 161 is NOT applied. The register must still work.
         pool = RecordingPool([
-            ("staging.udin_window", asyncpg.exceptions.UndefinedTableError("no table")),
+            ("public.udin_window", asyncpg.exceptions.UndefinedTableError("no table")),
         ])
         w = await udin.load_windows(pool, as_of=date(2026, 8, 19))
         assert (w.generate_days, w.revoke_hours) == (60, 48)
@@ -323,7 +323,7 @@ class TestTheWindowsAreDataNotConstants:
 
     @pytest.mark.asyncio
     async def test_an_empty_table_falls_back_too(self):
-        pool = RecordingPool([("staging.udin_window", [])])
+        pool = RecordingPool([("public.udin_window", [])])
         w = await udin.load_windows(pool, as_of=date(2026, 8, 19))
         assert (w.generate_days, w.revoke_hours) == (60, 48)
         assert w.generate_source == "icai-default"
@@ -332,7 +332,7 @@ class TestTheWindowsAreDataNotConstants:
     async def test_as_of_is_keyword_only_and_has_no_default(self):
         # Same rule as services/statute.py: a window read "as of today" is the
         # wrong window for a document signed last November.
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         with pytest.raises(TypeError):
             await udin.load_windows(pool)
 
@@ -347,8 +347,8 @@ class TestTheAtRiskList:
     async def test_it_reports_the_day_of_the_window_and_what_is_left(self):
         # Signed 1 July 2026, asked on 19 August 2026: day 50 of 60.
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [open_row(signed_on=date(2026, 7, 1))]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [open_row(signed_on=date(2026, 7, 1))]),
         ])
         rows = await udin.at_risk(pool, ORG, as_of=self.AS_OF)
         assert len(rows) == 1
@@ -365,8 +365,8 @@ class TestTheAtRiskList:
         edge = udin.signed_on_for_deadline(self.AS_OF, window_days=60)
         assert edge == date(2026, 6, 21)
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [open_row(signed_on=edge)]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [open_row(signed_on=edge)]),
         ])
         row = (await udin.at_risk(pool, ORG, as_of=self.AS_OF))[0]
         assert row["day_of_window"] == 60
@@ -379,8 +379,8 @@ class TestTheAtRiskList:
     async def test_one_day_earlier_is_lapsed(self):
         edge = udin.signed_on_for_deadline(self.AS_OF, window_days=60)
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [open_row(signed_on=edge - timedelta(days=1))]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [open_row(signed_on=edge - timedelta(days=1))]),
         ])
         row = (await udin.at_risk(pool, ORG, as_of=self.AS_OF))[0]
         assert row["days_left"] == -1
@@ -390,8 +390,8 @@ class TestTheAtRiskList:
     @pytest.mark.asyncio
     async def test_it_is_ordered_by_least_time_left_first(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [
                 open_row(id="c", signed_on=date(2026, 8, 10), document_title="C"),
                 open_row(id="a", signed_on=date(2026, 6, 25), document_title="A"),
                 open_row(id="b", signed_on=date(2026, 7, 15), document_title="B"),
@@ -405,8 +405,8 @@ class TestTheAtRiskList:
     async def test_it_never_hands_back_a_client_org_or_user_id(self):
         # NAMES, NOT IDS. The fixture row carries all three; none may escape.
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [open_row()]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [open_row()]),
         ])
         row = (await udin.at_risk(pool, ORG, as_of=self.AS_OF))[0]
         assert "client_id" not in row
@@ -422,8 +422,8 @@ class TestTheAtRiskList:
     @pytest.mark.asyncio
     async def test_a_future_dated_signing_is_flagged_and_does_not_crash(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [open_row(signed_on=date(2026, 9, 1))]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [open_row(signed_on=date(2026, 9, 1))]),
         ])
         row = (await udin.at_risk(pool, ORG, as_of=self.AS_OF))[0]
         assert row["day_of_window"] < 1
@@ -432,15 +432,15 @@ class TestTheAtRiskList:
     @pytest.mark.asyncio
     async def test_an_unknown_document_kind_still_renders(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [open_row(document_kind="peer_review")]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [open_row(document_kind="peer_review")]),
         ])
         row = (await udin.at_risk(pool, ORG, as_of=self.AS_OF))[0]
         assert row["document_kind_label"] == "peer_review"
 
     @pytest.mark.asyncio
     async def test_a_caller_may_pass_windows_it_has_already_resolved(self):
-        pool = RecordingPool([("staging.udin_register", [open_row()])])
+        pool = RecordingPool([("public.udin_register", [open_row()])])
         rows = await udin.at_risk(
             pool, ORG, as_of=self.AS_OF, windows=UdinWindows(generate_days=90)
         )
@@ -451,7 +451,7 @@ class TestTheAtRiskList:
 
     @pytest.mark.asyncio
     async def test_a_bad_limit_or_a_negative_within_days_is_refused(self):
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         with pytest.raises(UdinError):
             await udin.at_risk(pool, ORG, as_of=self.AS_OF, limit=0)
         with pytest.raises(UdinError):
@@ -472,16 +472,16 @@ class TestTheBoundsThatGoIntoTheSql:
 
     @pytest.mark.asyncio
     async def test_by_default_neither_bound_is_applied(self):
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         await udin.at_risk(pool, ORG, as_of=self.AS_OF)
-        _, args = pool.call_for("staging.udin_register")
+        _, args = pool.call_for("public.udin_register")
         assert args == (ORG, None, None, udin.DEFAULT_LIMIT)
 
     @pytest.mark.asyncio
     async def test_excluding_lapsed_binds_the_signing_date_whose_deadline_is_today(self):
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         await udin.at_risk(pool, ORG, as_of=self.AS_OF, include_lapsed=False)
-        _, args = pool.call_for("staging.udin_register")
+        _, args = pool.call_for("public.udin_register")
         # as_of - 59, NOT as_of - 60: the row signed that day is on its LAST
         # day and must be kept, not dropped.
         assert args[1] == date(2026, 6, 21)
@@ -490,37 +490,37 @@ class TestTheBoundsThatGoIntoTheSql:
 
     @pytest.mark.asyncio
     async def test_within_days_binds_the_far_edge(self):
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         await udin.at_risk(pool, ORG, as_of=self.AS_OF, within_days=7)
-        _, args = pool.call_for("staging.udin_register")
+        _, args = pool.call_for("public.udin_register")
         assert udin.generation_deadline(args[2], window_days=60) == self.AS_OF + timedelta(days=7)
 
     @pytest.mark.asyncio
     async def test_within_days_zero_means_due_today(self):
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         await udin.at_risk(pool, ORG, as_of=self.AS_OF, within_days=0)
-        _, args = pool.call_for("staging.udin_register")
+        _, args = pool.call_for("public.udin_register")
         assert udin.generation_deadline(args[2], window_days=60) == self.AS_OF
 
     @pytest.mark.asyncio
     async def test_the_bounds_move_with_the_window_not_with_a_constant(self):
-        pool = RecordingPool([("staging.udin_register", [])])
+        pool = RecordingPool([("public.udin_register", [])])
         await udin.at_risk(
             pool, ORG, as_of=self.AS_OF, include_lapsed=False,
             windows=UdinWindows(generate_days=90),
         )
-        _, args = pool.call_for("staging.udin_register")
+        _, args = pool.call_for("public.udin_register")
         assert args[1] == self.AS_OF - timedelta(days=89)
 
     @pytest.mark.asyncio
     async def test_the_revocation_cutoff_is_bound_not_written_as_an_interval(self):
         now = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", []),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", []),
         ])
         await udin.revocable_now(pool, ORG, now=now)
-        sql, args = pool.call_for("staging.udin_register")
+        sql, args = pool.call_for("public.udin_register")
         assert args[1] == now - timedelta(hours=48)
         assert "interval" not in sql.lower()
         assert "now()" not in sql.lower()
@@ -535,8 +535,8 @@ class TestTheRevocableList:
     @pytest.mark.asyncio
     async def test_it_returns_what_is_still_inside_the_window(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [
                 generated_row(udin_generated_at=self.NOW - timedelta(hours=1)),
             ]),
         ])
@@ -550,8 +550,8 @@ class TestTheRevocableList:
         # The SQL cutoff is `>=`, so this row COMES BACK from the database and
         # is dropped here — which is the point of deciding it in Python.
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [
                 generated_row(udin_generated_at=self.NOW - timedelta(hours=48)),
             ]),
         ])
@@ -560,8 +560,8 @@ class TestTheRevocableList:
     @pytest.mark.asyncio
     async def test_a_row_one_second_inside_the_window_survives(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [
                 generated_row(udin_generated_at=self.NOW - timedelta(hours=48) + timedelta(seconds=1)),
             ]),
         ])
@@ -571,8 +571,8 @@ class TestTheRevocableList:
     @pytest.mark.asyncio
     async def test_it_is_ordered_by_what_runs_out_first(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [
                 generated_row(id="fresh", document_title="Fresh",
                               udin_generated_at=self.NOW - timedelta(hours=2)),
                 generated_row(id="stale", document_title="Stale",
@@ -585,8 +585,8 @@ class TestTheRevocableList:
     @pytest.mark.asyncio
     async def test_it_never_hands_back_a_client_org_or_user_id(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [
                 generated_row(udin_generated_at=self.NOW - timedelta(hours=1)),
             ]),
         ])
@@ -601,8 +601,8 @@ class TestTheRevocableList:
         # The CHECK on staging.udin_register makes this impossible; a register
         # that refuses to render is worse than one that omits an impossible row.
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", [generated_row(udin_generated_at=None)]),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", [generated_row(udin_generated_at=None)]),
         ])
         assert await udin.revocable_now(pool, ORG, now=self.NOW) == []
 
@@ -617,13 +617,13 @@ class TestTheSummary:
     async def test_it_counts_statuses_and_buckets_the_open_work(self):
         edge = udin.signed_on_for_deadline(self.AS_OF, window_days=60)
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
+            ("public.udin_window", window_rows()),
             ("GROUP BY status", [
                 {"status": "signed", "n": 4},
                 {"status": "generated", "n": 11},
                 {"status": "revoked", "n": 1},
             ]),
-            ("staging.udin_register", [
+            ("public.udin_register", [
                 {"signed_on": edge},                              # last_day
                 {"signed_on": edge - timedelta(days=1)},          # lapsed
                 {"signed_on": edge + timedelta(days=2)},          # critical
@@ -650,7 +650,7 @@ class TestTheSummary:
     async def test_the_count_query_carries_no_limit(self):
         # A count that silently caps is the one lie a compliance register may
         # never tell.
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         await udin.register_summary(pool, ORG, as_of=self.AS_OF)
         for sql, _ in pool.calls:
             if "udin_register" in sql:
@@ -730,7 +730,7 @@ def _register_sql():
     rather than the day somebody remembers to add it here."""
     return {
         name: sql for name, sql in _service_sql().items()
-        if "staging.udin_register" in sql
+        if "public.udin_register" in sql
     }
 
 
@@ -762,14 +762,14 @@ class TestTenancy:
     @pytest.mark.asyncio
     async def test_the_org_is_the_first_bound_argument_of_every_register_read(self):
         pool = RecordingPool([
-            ("staging.udin_window", window_rows()),
-            ("staging.udin_register", []),
+            ("public.udin_window", window_rows()),
+            ("public.udin_register", []),
         ])
         await udin.at_risk(pool, ORG, as_of=self.AS_OF)
         await udin.revocable_now(pool, ORG, now=datetime(2026, 8, 19, 9, 0, tzinfo=UTC))
         await udin.register_summary(pool, ORG, as_of=self.AS_OF)
         register_calls = [
-            (sql, args) for sql, args in pool.calls if "staging.udin_register" in sql
+            (sql, args) for sql, args in pool.calls if "public.udin_register" in sql
         ]
         # at_risk, revocable_now, and the summary's two reads.
         assert len(register_calls) == 4, register_calls
@@ -781,9 +781,9 @@ class TestTenancy:
         # A signature that quietly fell back to some ambient org would be the
         # same leak wearing a different hat, so the org actually asked for is
         # the one that must arrive.
-        pool = RecordingPool([("staging.udin_window", window_rows())])
+        pool = RecordingPool([("public.udin_window", window_rows())])
         await udin.at_risk(pool, self.OTHER, as_of=self.AS_OF)
-        _, args = pool.call_for("staging.udin_register")
+        _, args = pool.call_for("public.udin_register")
         assert args[0] == self.OTHER
 
     def test_the_windows_read_is_the_only_unscoped_query(self):
@@ -798,7 +798,7 @@ class TestTenancy:
             if "org_id = $1::uuid" not in sql
         ]
         assert unscoped == ["_SELECT_WINDOWS"], unscoped
-        assert "staging.udin_window" in udin._SELECT_WINDOWS
+        assert "public.udin_window" in udin._SELECT_WINDOWS
         # No parameter at all, so there is no argument that could be mistaken
         # for a tenant and no way this query grows one unnoticed.
         assert "$" not in udin._SELECT_WINDOWS

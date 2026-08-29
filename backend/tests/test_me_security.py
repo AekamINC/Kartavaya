@@ -61,7 +61,7 @@ def _migrated(mock_pool):
     ts = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
 
     async def _fetchrow(sql, *args):
-        if "INSERT INTO staging.account_requests" in sql:
+        if "INSERT INTO public.account_requests" in sql:
             return {"requested_at": ts}
         return None            # no open request, no notification_prefs row
 
@@ -346,7 +346,7 @@ async def test_double_click_race_is_not_a_500(api_client, as_member, mock_pool):
     import asyncpg
 
     async def _fetchrow(sql, *args):
-        if "INSERT INTO staging.account_requests" in sql:
+        if "INSERT INTO public.account_requests" in sql:
             raise asyncpg.exceptions.UniqueViolationError("one open request")
         return None
 

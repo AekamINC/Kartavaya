@@ -282,7 +282,7 @@ def test_a_new_writing_router_has_a_test_that_runs_its_sql():
     """THE RULE. A router that writes and is not baselined must be covered."""
     gap = writing_routers() - routers_with_a_live_sql_test() - UNCOVERED
     assert not gap, (
-        f"{sorted(gap)} write to staging.* and no test PREPAREs their statements "
+        f"{sorted(gap)} write to public.* and no test PREPAREs their statements "
         f"against the real schema. A MagicMock pool answers happily to a "
         f"statement naming a column that does not exist — that is how "
         f"`gst_rate` survived in client_billing.py until it had never once "
@@ -311,7 +311,7 @@ def test_the_baseline_names_only_real_writing_routers():
     that makes the number look worse than it is."""
     stale = sorted(UNCOVERED - writing_routers())
     assert not stale, (
-        f"{stale} is baselined but does not write to staging.* any more (or the "
+        f"{stale} is baselined but does not write to public.* any more (or the "
         f"module is gone). Delete it from UNCOVERED."
     )
 

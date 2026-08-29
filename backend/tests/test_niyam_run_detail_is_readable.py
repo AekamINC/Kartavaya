@@ -44,7 +44,7 @@ class _Conn:
         # The org-membership gate in `notify.send`. Returning the asked-for ids
         # means "everyone named is a member"; `test_niyam_recipient_scoping`
         # covers the case where they are not.
-        if "staging.user_roles" in sql:
+        if "public.user_roles" in sql:
             return [{"user_id": u} for u in (a[1] if len(a) > 1 else [])]
         return []
 

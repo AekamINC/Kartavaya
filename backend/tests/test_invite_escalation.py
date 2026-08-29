@@ -39,7 +39,7 @@ def _platform_role_pool(mock_pool, caller_role, target_role=None):
     a user may hold several platform rows and the strongest has to win.
     """
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return caller_role if caller_role in allowed else None
         return 0
@@ -56,7 +56,7 @@ def _platform_role_pool(mock_pool, caller_role, target_role=None):
         # Tenancy has its own tests in `test_admin_console_org_scope.py`.
         if "org_id IS NOT NULL" in query:
             return []
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             user_id = args[0]
             role = target_role if user_id == TARGET else caller_role
             return [{"role_code": role}] if role else []
@@ -98,7 +98,7 @@ async def test_invite_listing_never_returns_a_token_or_link(
         # its own `fetch`, so it needs the same ordering.
         if "org_id IS NOT NULL" in query:
             return []
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return [{"role_code": GOD}]
         if "FROM public.invites" in query:
             # The route must not even ASK for the token.

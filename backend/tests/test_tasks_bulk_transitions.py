@@ -63,9 +63,9 @@ def _wire(mock_pool, task_row, *, is_done_column=False):
         # `get_org_id` falls back to user_roles when no X-Org-Id is sent; without
         # these two the route 403s on org membership and every assertion below
         # would be measuring the resolver instead of the state machine.
-        if "FROM staging.user_roles" in query:
+        if "FROM public.user_roles" in query:
             return {"org_id": TEST_ORG_ID}
-        if "FROM staging.organisations" in query:
+        if "FROM public.organisations" in query:
             return {"id": TEST_ORG_ID}
         if "requires_approval FROM teams" in query:
             return {"requires_approval": False}

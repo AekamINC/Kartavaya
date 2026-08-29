@@ -92,9 +92,9 @@ def _route_fetchval(mock_pool, *, table_exists, org_role=None,
             return table_exists
         if "org_module_approvers" in query:
             return approver_row
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return platform_role
-        if "staging.user_roles" in query and "org_owner" in query:
+        if "public.user_roles" in query and "org_owner" in query:
             return org_role
         return 0
     mock_pool.fetchval.side_effect = _fv

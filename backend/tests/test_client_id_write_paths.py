@@ -56,9 +56,9 @@ BACKEND = pathlib.Path(__file__).resolve().parent.parent
 #: a write path, and a migration writes DDL rather than rows.
 SCANNED = ("routers", "services", "analytics")
 
-CONTACTS = "staging.graha_contacts"
-INVOICES = "staging.ganit_invoices"
-ORDERS = "staging.vikray_orders"
+CONTACTS = "public.graha_contacts"
+INVOICES = "public.ganit_invoices"
+ORDERS = "public.vikray_orders"
 
 #: Write paths that exist today and do NOT set `client_id`, each with the
 #: reason. They are recorded rather than silenced.
@@ -279,7 +279,7 @@ def test_every_contact_insert_names_client_id():
         offenders.append(p)
 
     assert not offenders, (
-        "these INSERTs into staging.graha_contacts do not name client_id, so "
+        "these INSERTs into public.graha_contacts do not name client_id, so "
         "every contact they create is permanently unemailable under the ICAI "
         f"gate: {offenders}. Name the column, or record the path in "
         "KNOWN_GAPS with the reason."
@@ -391,7 +391,7 @@ def test_every_invoice_insert_carries_the_company():
         and p.key not in KNOWN_GAPS
     ]
     assert not offenders, (
-        "these INSERTs into staging.ganit_invoices do not name client_id, so "
+        "these INSERTs into public.ganit_invoices do not name client_id, so "
         f"the invoice they raise belongs to no company: {offenders}"
     )
 
@@ -404,7 +404,7 @@ def test_every_order_insert_carries_the_company():
         and p.key not in KNOWN_GAPS
     ]
     assert not offenders, (
-        f"these INSERTs into staging.vikray_orders do not name client_id: "
+        f"these INSERTs into public.vikray_orders do not name client_id: "
         f"{offenders}"
     )
 
@@ -423,7 +423,7 @@ def test_a_company_from_a_request_body_is_checked_against_the_caller_s_org():
 
     for fn in (graha.resolve_contact_company, vikray.resolve_order_company):
         src = inspect.getsource(fn)
-        assert "staging.graha_clients" in src
+        assert "public.graha_clients" in src
         assert "org_id=$2::uuid" in src
         assert "400" in src, "an unknown company must be refused, not written"
 
@@ -507,12 +507,12 @@ class _RecordingConn:
 
     async def fetchrow(self, sql, *args):
         q = " ".join(sql.split())
-        if "INSERT INTO staging.graha_contact_merges" in q:
+        if "INSERT INTO public.graha_contact_merges" in q:
             self.executed.append((q, args))
             return {"id": "00000000-0000-0000-0000-0000000000ff"}
-        if "staging.graha_contact_merges" in q:
+        if "public.graha_contact_merges" in q:
             return self.merges.get(str(args[0]))
-        if "staging.graha_contacts" in q:
+        if "public.graha_contacts" in q:
             return self.contacts.get(str(args[0]))
         return None
 
@@ -522,7 +522,7 @@ class _RecordingConn:
     # The statements a test wants to read back.
     def contact_updates(self) -> list[tuple[str, tuple]]:
         return [(s, a) for s, a in self.executed
-                if s.startswith("UPDATE staging.graha_contacts SET")]
+                if s.startswith("UPDATE public.graha_contacts SET")]
 
     def backfill(self) -> tuple[str, tuple]:
         """The SET list built from the allowlist — never the fixed tombstone or

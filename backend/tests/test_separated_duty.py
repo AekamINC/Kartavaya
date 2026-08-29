@@ -220,7 +220,7 @@ def _tenancy_calls(mock_pool):
     """Every fetchval that asked the tenant table, in order."""
     return [
         c.args for c in mock_pool.fetchval.call_args_list
-        if c.args and "staging.user_roles" in c.args[0]
+        if c.args and "public.user_roles" in c.args[0]
     ]
 
 
@@ -265,8 +265,8 @@ async def test_same_org_check_queries_user_roles_with_the_callers_org(
         "/api/v1/messaging/dm", params={"target_user_id": FOREIGN_USER}
     )
     calls = _tenancy_calls(mock_pool)
-    assert calls, "the tenant table was never asked — staging.user_roles is the only tenant path"
+    assert calls, "the tenant table was never asked — public.user_roles is the only tenant path"
     query, *args = calls[-1]
-    assert "staging.user_roles" in query
+    assert "public.user_roles" in query
     assert args == [FOREIGN_USER, TEST_ORG_ID]
     assert OTHER_ORG_ID not in args

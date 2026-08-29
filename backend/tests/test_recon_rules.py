@@ -163,15 +163,15 @@ def _threading_pool(*, org_name="Chopra & Co", upi_accounts=1, invoices=None,
     return _Pool(
         row_by={
             "to_regclass": {"ok": True},
-            "FROM staging.organisations o": {"org_name": org_name,
+            "FROM public.organisations o": {"org_name": org_name,
                                              "fallback_vpa": ""},
-            "FROM staging.org_upi_accounts a": {"n": upi_accounts},
-            "FROM staging.ganit_invoices i": {"n": len(invoices)},
+            "FROM public.org_upi_accounts a": {"n": upi_accounts},
+            "FROM public.ganit_invoices i": {"n": len(invoices)},
         },
         fetch_by={
             "COALESCE(btrim(i.invoice_number), '') <> ''": numbers,
-            "FROM staging.ganit_invoices i": invoices,
-            "FROM staging.ganit_bank_statement_lines l": credits,
+            "FROM public.ganit_invoices i": invoices,
+            "FROM public.ganit_bank_statement_lines l": credits,
         },
     )
 
@@ -360,15 +360,15 @@ def _proof_pool(*, waba_active=1, proofs=None, invoices=None, lines=None,
     proofs = proofs if proofs is not None else []
     return _Pool(
         row_by={
-            "FROM staging.varta_business_accounts b": {"total": 1,
+            "FROM public.varta_business_accounts b": {"total": 1,
                                                        "active": waba_active},
-            "FROM staging.varta_messages m": {"inbound_total": inbound_total,
+            "FROM public.varta_messages m": {"inbound_total": inbound_total,
                                               "with_media": len(proofs)},
         },
         fetch_by={
-            "FROM staging.varta_messages m": proofs,
+            "FROM public.varta_messages m": proofs,
             "payment_status IN ('unpaid', 'partial')": invoices or [],
-            "FROM staging.ganit_bank_statement_lines l": lines or [],
+            "FROM public.ganit_bank_statement_lines l": lines or [],
         },
     )
 
@@ -504,7 +504,7 @@ def _rules_pool(lines, columns=("category", "categorised_by", "categorised_at"))
         fetch_by={
             "information_schema.columns": [{"column_name": c}
                                            for c in [*base, *columns]],
-            "FROM staging.ganit_bank_statement_lines l": lines,
+            "FROM public.ganit_bank_statement_lines l": lines,
         },
     )
 
@@ -658,7 +658,7 @@ def _paper_pool(*, drift_rows=None, drift_n=0, drift_gross=0,
         },
         fetch_by={
             "ROUND(i.total - i.amount_paid - i.balance_due, 2) <> 0": drift_rows or [],
-            "FROM staging.ganit_payments p": receipts,
+            "FROM public.ganit_payments p": receipts,
         },
     )
 

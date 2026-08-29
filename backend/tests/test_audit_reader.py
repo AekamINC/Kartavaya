@@ -47,8 +47,8 @@ def test_something_finally_reads_the_audit_log():
     import subprocess
     root = pathlib.Path(__file__).resolve().parent.parent
     readers = [p for p in root.rglob("*.py")
-               if ".venv" not in str(p) and "FROM staging.audit_log" in p.read_text(encoding="utf-8", errors="ignore")]
-    assert readers, "nothing in the backend reads staging.audit_log"
+               if ".venv" not in str(p) and "FROM public.audit_log" in p.read_text(encoding="utf-8", errors="ignore")]
+    assert readers, "nothing in the backend reads public.audit_log"
 
 
 def test_both_endpoints_are_scoped_to_one_org():

@@ -120,7 +120,7 @@ async def test_feedback_takes_its_org_from_the_resolver_not_the_body(
     one tenant writes into another's correction loop."""
     async def _fetchval(query, *args):
         q = " ".join(query.split())
-        if "FROM staging.hub_chat_messages m" in q:
+        if "FROM public.hub_chat_messages m" in q:
             return 1                                  # the message is ours
         return None
 

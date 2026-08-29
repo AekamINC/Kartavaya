@@ -386,8 +386,8 @@ async def test_withdrawing_stops_the_document_and_not_just_the_contract():
     await esign.cancel_signature(pool, CONTRACT["id"], CONTRACT["org_id"], "user-1")
 
     wrote = " ".join(pool.executed)
-    assert "staging.ganit_contracts" in wrote
-    assert "staging.sign_documents" in wrote, (
+    assert "public.ganit_contracts" in wrote
+    assert "public.sign_documents" in wrote, (
         "the contract says cancelled and the document does not — the signing "
         "links go on working"
     )
@@ -400,7 +400,7 @@ async def test_completion_reaches_the_contract_that_asked_for_it():
     await esign.mark_source_signed(pool, "d0000000-0000-0000-0000-000000000009")
 
     wrote = " ".join(pool.executed)
-    assert "staging.ganit_contracts" in wrote
+    assert "public.ganit_contracts" in wrote
     assert "signature_status='signed'" in wrote
 
 

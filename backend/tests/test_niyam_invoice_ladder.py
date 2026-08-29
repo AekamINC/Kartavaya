@@ -46,12 +46,12 @@ class _Conn:
         self.client_emails = list(client_emails)
 
     async def fetchrow(self, sql, *a):
-        assert "FROM staging.ganit_invoices" in sql
+        assert "FROM public.ganit_invoices" in sql
         assert "org_id = $2::uuid" in sql, "the invoice fetch must be org-scoped"
         return dict(self.invoice) if self.invoice else None
 
     async def fetchval(self, sql, *a):
-        assert "FROM staging.graha_contacts" in sql
+        assert "FROM public.graha_contacts" in sql
         return self.contact_email
 
     async def fetch(self, sql, *a):

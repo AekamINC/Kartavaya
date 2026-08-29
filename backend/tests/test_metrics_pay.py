@@ -79,7 +79,7 @@ def test_links_opened_anchors_on_the_first_scan_not_a_send():
     the earliest observable fact about a link."""
     sql, params = build("ganit.pay_links_opened")
     assert "MIN(s.created_at) AS first_open" in sql
-    assert "FROM staging.ganit_pay_scans s" in sql
+    assert "FROM public.ganit_pay_scans s" in sql
     assert "date_trunc('month', fo.first_open)::date" in sql
     assert "fo.first_open::date BETWEEN $2::date AND $3::date" in sql
     assert params == [ORG, WIN.start, WIN.end]
@@ -124,7 +124,7 @@ def test_time_to_payment_is_a_median_not_a_mean():
 
 def test_time_to_payment_windows_on_the_payment_and_scopes_both_tables():
     sql, params = build("ganit.pay_time_to_payment")
-    assert "FROM staging.ganit_payments p" in sql
+    assert "FROM public.ganit_payments p" in sql
     assert sql.count("$1::uuid") == 2, "payments AND scans must both be org-filtered"
     assert "p.payment_date BETWEEN $2::date AND $3::date" in sql
     assert params == [ORG, WIN.start, WIN.end]
@@ -154,7 +154,7 @@ def test_reconciliation_lag_is_a_median_over_the_two_recorded_dates():
 
 def test_reconciliation_lag_joins_only_reconciled_invoice_payment_lines():
     sql, params = build("ganit.pay_reconciliation_lag")
-    assert "FROM staging.ganit_bank_statement_lines l" in sql
+    assert "FROM public.ganit_bank_statement_lines l" in sql
     assert "p.id = l.matched_payment_id" in sql
     assert "l.is_reconciled" in sql
     assert "l.matched_type = 'invoice_payment'" in sql

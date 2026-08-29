@@ -104,7 +104,7 @@ def _wire(
             return level
         if "COUNT(*)" in s and "pinned_at IS NOT NULL" in s:
             return pin_count
-        if "SELECT pinned_at FROM staging.samvada_messages" in s:
+        if "SELECT pinned_at FROM public.samvada_messages" in s:
             return PINNED_AT
         return 0
 
@@ -112,9 +112,9 @@ def _wire(
         s = " ".join(str(sql).split())
         if s.upper().startswith("UPDATE"):
             return updated
-        if "FROM staging.samvada_messages" in s:
+        if "FROM public.samvada_messages" in s:
             return message
-        if "FROM staging.samvada_channels" in s:
+        if "FROM public.samvada_channels" in s:
             return channel
         if "samvada_channel_members" in s and "role" in s:
             return member_role
@@ -171,7 +171,7 @@ def _code_of(fn) -> str:
 
 def _the_search_query(mock_pool) -> tuple[str, list]:
     hits = [(s, a) for s, a in _queries(mock_pool)
-            if "FROM staging.samvada_messages m" in s and "ORDER BY m.created_at DESC" in s]
+            if "FROM public.samvada_messages m" in s and "ORDER BY m.created_at DESC" in s]
     assert hits, "no search query was issued"
     return hits[-1]
 
@@ -211,7 +211,7 @@ async def test_search_scopes_the_channel_join_to_the_callers_own_org(
     assert r.status_code == 200, r.text
 
     sql, args = _the_search_query(mock_pool)
-    assert re.search(r"JOIN staging\.samvada_channels c ON c\.id = m\.channel_id "
+    assert re.search(r"JOIN public\.samvada_channels c ON c\.id = m\.channel_id "
                      r"AND c\.org_id = \$\d+::uuid", sql), (
         f"the org filter is not on the channel join:\n{sql}"
     )
@@ -232,7 +232,7 @@ async def test_search_returns_only_public_channels_and_ones_the_caller_is_in(
     sql, args = _the_search_query(mock_pool)
     assert "c.type = 'public'" in sql
     assert re.search(
-        r"EXISTS \(\s*SELECT 1 FROM staging\.samvada_channel_members cm\s+"
+        r"EXISTS \(\s*SELECT 1 FROM public\.samvada_channel_members cm\s+"
         r"WHERE cm\.channel_id = c\.id AND cm\.user_id = \$\d+\)", sql
     ), f"the membership arm is gone:\n{sql}"
     assert member_user["user_id"] in args, "the caller was never bound to the query"

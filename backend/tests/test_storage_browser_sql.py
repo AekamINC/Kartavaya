@@ -109,7 +109,7 @@ class CapturePool:
 
     async def fetchrow(self, sql, *args, **kw):
         self.calls.append((sql, args))
-        if "staging.organisations" in sql:
+        if "public.organisations" in sql:
             return dict(self.ORGANISATION)
         return None
 
@@ -308,7 +308,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 #: What `db.py` sets on every connection. Matched so a statement is planned the
 #: way it will actually be planned — and it is load-bearing here, because two
 #: of this router's relations are in `public` and the rest are in `staging`.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "
@@ -356,10 +356,10 @@ def _describe(calls):
                 "SELECT table_schema, table_name, column_name "
                 "FROM information_schema.columns "
                 "WHERE (table_schema, table_name) IN ("
-                "  ('staging','organisations'), ('staging','pahchan_punches'),"
-                "  ('staging','sign_documents'), ('staging','graha_documents'),"
-                "  ('staging','graha_clients'), ('staging','manav_employees'),"
-                "  ('staging','projects'), ('staging','user_roles'),"
+                "  ('public','organisations'), ('public','pahchan_punches'),"
+                "  ('public','sign_documents'), ('public','graha_documents'),"
+                "  ('public','graha_clients'), ('public','manav_employees'),"
+                "  ('public','projects'), ('public','user_roles'),"
                 "  ('public','users'), ('public','teams'))"
             )
             return failures, params, [dict(r) for r in catalogue]
@@ -389,7 +389,14 @@ def test_every_statement_the_router_issues_plans_on_the_real_schema(live):
     """UndefinedColumn / UndefinedTable means the statement has never worked.
     IndeterminateDatatype means `$1 + $2` with no cast, which PgBouncer turns
     into an instant 500."""
-    failures, _, _ = live
+    failures, params, _ = live
+    # `assert not failures` is green against an EMPTY capture, so the count of
+    # statements actually described is what separates "all seventeen plan"
+    # from "the capture broke and nothing was checked". 1 overview + 6 browse
+    # + 10 resolve.
+    assert len(params) + len(failures) >= 17, (
+        f"only {len(params) + len(failures)} statements were described, not 17 "
+        f"— the capture rotted")
     assert not failures, "\n\n".join(
         f"[{endpoint}] {err}\n{sql}" for endpoint, sql, err in failures)
 
@@ -429,11 +436,12 @@ def test_every_label_source_exists_with_the_columns_it_names(live):
         schema, name = table.split(".", 1)
         for column in ("id", "org_id", name_col):
             assert (schema, name, column) in have, f"{table}.{column} does not exist"
-    # The two that are NOT in `staging`, and the reason `search_path` matters.
+    # Core product relations, alongside the module tables consolidated into
+    # `public` by 241. `search_path` still matters: these are read qualified.
     assert ("public", "users", "user_id") in have
     assert ("public", "teams", "team_id") in have
     assert ("public", "teams", "org_id") in have
-    assert ("staging", "user_roles", "org_id") in have
+    assert ("public", "user_roles", "org_id") in have
 
 
 def test_the_overview_reads_only_the_five_columns_it_returns(live):
@@ -441,11 +449,11 @@ def test_the_overview_reads_only_the_five_columns_it_returns(live):
     once, inside `IS NOT NULL`."""
     _, params, catalogue = live
     have = {c["column_name"] for c in catalogue
-            if c["table_schema"] == "staging" and c["table_name"] == "organisations"}
+            if c["table_schema"] == "public" and c["table_name"] == "organisations"}
     overview = [sql for endpoint, sql, _d, _b in params if endpoint == "overview"]
     assert len(overview) == 1
     for column in ("name", "r2_bucket_name", "storage_used_bytes",
                    "storage_limit_bytes", "r2_account_id"):
-        assert column in have, f"staging.organisations has no {column}"
+        assert column in have, f"public.organisations has no {column}"
     assert "r2_access_key_id" not in overview[0]
     assert "r2_secret_access_key" not in overview[0]

@@ -55,7 +55,7 @@ class _Pool:
         self.chases = chases or {}          # entity_type -> [{entity_id, n}]
 
     async def fetch(self, sql, *a):
-        if "staging.reminders" in sql:
+        if "public.reminders" in sql:
             return self.chases.get(a[1], [])
         if "public.tasks" in sql:
             return self.tasks
@@ -321,7 +321,7 @@ def test_the_task_query_is_scoped_through_the_org_not_a_passed_team(frozen):
     """`public.tasks` has no org_id, so the org path is
     organisations.team_id — resolved from the org here, so a caller cannot hand
     this another org's team."""
-    assert "SELECT team_id FROM staging.organisations" in SRC
+    assert "SELECT team_id FROM public.organisations" in SRC
     assert "WHERE id = $1::uuid" in SRC
 
 

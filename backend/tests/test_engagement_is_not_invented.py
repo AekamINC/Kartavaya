@@ -434,7 +434,7 @@ def test_the_writer_scan_would_actually_catch_one():
     caught.
     """
     receiver_sql = (
-        "UPDATE staging.prachar_campaigns SET total_opened = total_opened + 1 "
+        "UPDATE public.prachar_campaigns SET total_opened = total_opened + 1 "
         "WHERE id = $1::uuid"
     )
     upper = " ".join(receiver_sql.split()).upper()
@@ -442,6 +442,6 @@ def test_the_writer_scan_would_actually_catch_one():
     assert any(c in receiver_sql for c in em.UNMEASURED_COLUMNS)
 
     # And the inverse: a legitimate read must not trip it.
-    read_sql = "SELECT COALESCE(SUM(total_opened),0) FROM staging.prachar_campaigns"
+    read_sql = "SELECT COALESCE(SUM(total_opened),0) FROM public.prachar_campaigns"
     read_upper = " ".join(read_sql.split()).upper()
     assert "INSERT INTO" not in read_upper and "UPDATE " not in read_upper

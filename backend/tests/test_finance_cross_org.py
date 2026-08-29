@@ -177,6 +177,9 @@ async def test_time_entry_billing_marks_entries_in_the_real_table(
 
     writes = " ".join(str(c.args[0]) for c in conn.execute.call_args_list if c.args)
     assert "UPDATE time_entries" in writes
+    # `staging.time_entries` never existed — the table is a core-product one
+    # and has always been `public`. This ban stays spelled `staging.`; it is
+    # not a name the consolidation moved.
     assert "staging.time_entries" not in writes
 
 

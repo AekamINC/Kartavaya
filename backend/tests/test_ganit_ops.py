@@ -248,9 +248,9 @@ def _doc(number, day, **kw):
 
 def _series_pool(docs, org=None):
     return _Pool(
-        fetch_by={"FROM staging.ganit_invoices i": docs,
+        fetch_by={"FROM public.ganit_invoices i": docs,
                   "statute_calendar": []},
-        row_by={"FROM staging.organisations": org or {
+        row_by={"FROM public.organisations": org or {
             "name": "E2E Test & Associates",
             "gstin": "27AAACE1234E1Z5",
             "state_code": "27",
@@ -301,7 +301,7 @@ def test_no_handler_writes_anything(handler):
     that answers `execute` happily would not notice.
     """
     src = inspect.getsource(handler).lower()
-    for forbidden in ("insert into", "update staging", "delete from",
+    for forbidden in ("insert into", "update public", "delete from",
                       " pool.execute", "generate_image"):
         assert forbidden not in src, (
             f"{handler.__name__} contains {forbidden!r}. These handlers are "
@@ -331,7 +331,7 @@ def test_every_query_is_schema_qualified_and_org_scoped(handler):
         for hit in range(src.count(table)):
             pass
         # Any occurrence as a FROM/JOIN target must carry the schema.
-        assert f" {table}" not in src.replace(f"staging.{table}", "") or True
+        assert f" {table}" not in src.replace(f"public.{table}", "") or True
     assert "org_id = $1::uuid" in src or "org_id=$1::uuid" in src, (
         f"{handler.__name__} has no org_id filter — a skill that reads across "
         f"tenants is the one bug this codebase cannot ship."
@@ -348,7 +348,7 @@ def test_the_client_join_carries_org_id():
     import services.skills.data.ganit_ops as mod
 
     src = inspect.getsource(mod)
-    joins = src.count("staging.graha_clients cl")
+    joins = src.count("public.graha_clients cl")
     guarded = src.count("cl.id = ct.client_id AND cl.org_id = ct.org_id")
     assert joins and joins == guarded, (
         f"{joins} join(s) to graha_clients but only {guarded} carry org_id."
@@ -368,9 +368,9 @@ async def test_a_schedule_past_its_end_date_is_the_silent_failure():
     nothing at all.
     """
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [_recurring(
+        "public.ganit_recurring": [_recurring(
             next_date=date(2026, 8, 22), end_date=date(2026, 8, 1))],
-        "staging.ganit_contracts": [],
+        "public.ganit_contracts": [],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG, month="2026-08")
     faults = [f["fault"] for f in out["due_soon"][0]["faults"]]
@@ -390,9 +390,9 @@ async def test_a_template_with_no_customer_produces_a_draft_not_nothing():
     row that exists.
     """
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [_recurring(
+        "public.ganit_recurring": [_recurring(
             no_contact_on_template=True, bill_to="", contact_email="")],
-        "staging.ganit_contracts": [],
+        "public.ganit_contracts": [],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG)
     fault = next(f for f in out["due_soon"][0]["faults"]
@@ -413,8 +413,8 @@ async def test_a_missing_email_never_claims_to_stop_generation():
     would be describing a feature that does not exist.
     """
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [_recurring(contact_email="", auto_send=True)],
-        "staging.ganit_contracts": [],
+        "public.ganit_recurring": [_recurring(contact_email="", auto_send=True)],
+        "public.ganit_contracts": [],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG)
     fault = next(f for f in out["due_soon"][0]["faults"]
@@ -431,8 +431,8 @@ async def test_an_unrecognised_frequency_bills_on_the_wrong_cadence():
     a billing term nobody agreed to, and completely silent.
     """
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [_recurring(frequency="fortnightly")],
-        "staging.ganit_contracts": [],
+        "public.ganit_recurring": [_recurring(frequency="fortnightly")],
+        "public.ganit_contracts": [],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG)
     assert any(f["fault"] == "frequency_not_recognised"
@@ -444,8 +444,8 @@ async def test_a_healthy_schedule_is_not_listed():
     """A page headed "what will fail" that lists everything makes the reader
     do the filtering. The denominator stays on `counts`."""
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [_recurring()],
-        "staging.ganit_contracts": [],
+        "public.ganit_recurring": [_recurring()],
+        "public.ganit_contracts": [],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG)
     assert out["due_soon"] == []
@@ -462,8 +462,8 @@ async def test_an_over_billed_contract_says_the_link_is_by_customer():
     so would be an accusation the data cannot support.
     """
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [],
-        "staging.ganit_contracts": [_contract(billed_since_start=1702337.62,
+        "public.ganit_recurring": [],
+        "public.ganit_contracts": [_contract(billed_since_start=1702337.62,
                                               contract_value=869605)],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG)
@@ -483,8 +483,8 @@ async def test_a_contract_with_no_customer_is_neither_billed_nor_unbilled():
     contracts.
     """
     pool = _Pool(fetch_by={
-        "staging.ganit_recurring": [],
-        "staging.ganit_contracts": [_contract(no_contact=True, bill_to="")],
+        "public.ganit_recurring": [],
+        "public.ganit_contracts": [_contract(no_contact=True, bill_to="")],
     })
     out = await check_retainers_that_stopped_billing(pool, ORG)
     assert out["contracts"] == []
@@ -501,8 +501,8 @@ async def test_the_billing_month_defaults_forward_not_back():
     this one defaults to the current month and is also right. The two clocks
     sit side by side on purpose.
     """
-    pool = _Pool(fetch_by={"staging.ganit_recurring": [],
-                           "staging.ganit_contracts": []})
+    pool = _Pool(fetch_by={"public.ganit_recurring": [],
+                           "public.ganit_contracts": []})
     out = await check_retainers_that_stopped_billing(pool, ORG)
     from services.skills.timeutil import utc_now
     assert out["month"] == utc_now().strftime("%Y-%m")
@@ -570,7 +570,7 @@ async def test_internal_ref_is_never_used_as_duplicate_evidence():
             )
 
     pool = _Pool(fetch_by={"WITH bills AS": [_bill_pair()],
-                           "staging.ganit_vendors v": []})
+                           "public.ganit_vendors v": []})
     out = await check_duplicate_vendor_bills(pool, ORG)
     assert any("carries no duplicate signal" in lim for lim in out["limitations"])
 
@@ -588,7 +588,7 @@ async def test_the_pair_is_ordered_by_date_so_second_means_the_later_one():
     assert "b.id > a.id" not in sql
 
     pool = _Pool(fetch_by={"WITH bills AS": [_bill_pair()],
-                           "staging.ganit_vendors v": []})
+                           "public.ganit_vendors v": []})
     out = await check_duplicate_vendor_bills(pool, ORG)
     pair = out["pairs"][0]
     assert pair["first"]["bill_date"] < pair["second"]["bill_date"]
@@ -605,7 +605,7 @@ async def test_the_exposure_is_one_side_and_survives_a_settled_twin():
     pool = _Pool(fetch_by={
         "WITH bills AS": [_bill_pair(amount_paid=69030, status="paid",
                                      b_amount_paid=0, b_status="unpaid")],
-        "staging.ganit_vendors v": [],
+        "public.ganit_vendors v": [],
     })
     out = await check_duplicate_vendor_bills(pool, ORG)
     assert out["counts"]["amount_at_risk_if_every_pair_is_a_duplicate"] == 69030.0
@@ -624,7 +624,7 @@ async def test_each_matcher_states_its_own_confidence_in_words():
         _bill_pair(matcher="same_amount_days_apart"),
         _bill_pair(matcher="same_amount_different_numbers", days_apart=82),
     ]
-    pool = _Pool(fetch_by={"WITH bills AS": rows, "staging.ganit_vendors v": []})
+    pool = _Pool(fetch_by={"WITH bills AS": rows, "public.ganit_vendors v": []})
     out = await check_duplicate_vendor_bills(pool, ORG)
     by = {p["matcher"]: p["confidence"] for p in out["pairs"]}
     assert "near-certain" in by["same_supplier_invoice_number"]
@@ -657,7 +657,7 @@ async def test_the_vendor_record_blind_spot_is_on_the_output():
     """
     pool = _Pool(fetch_by={
         "WITH bills AS": [],
-        "staging.ganit_vendors v": [{"name": "Sattva Facility Services Pvt Ltd",
+        "public.ganit_vendors v": [{"name": "Sattva Facility Services Pvt Ltd",
                                      "records": 2}],
     })
     out = await check_duplicate_vendor_bills(pool, ORG)
@@ -670,7 +670,7 @@ async def test_the_vendor_record_blind_spot_is_on_the_output():
 async def test_a_nil_result_says_which_windows_it_looked_in():
     """"Nothing found" over an unstated window is indistinguishable from a
     check that never ran."""
-    pool = _Pool(fetch_by={"WITH bills AS": [], "staging.ganit_vendors v": []})
+    pool = _Pool(fetch_by={"WITH bills AS": [], "public.ganit_vendors v": []})
     out = await check_duplicate_vendor_bills(pool, ORG, near_days=5, wide_days=120)
     joined = " ".join(out["caveats"])
     assert "5 days" in joined and "120 days" in joined
@@ -680,7 +680,7 @@ async def test_a_nil_result_says_which_windows_it_looked_in():
 @pytest.mark.asyncio
 async def test_a_capped_duplicate_run_calls_itself_a_floor():
     pool = _Pool(fetch_by={"WITH bills AS": [_bill_pair() for _ in range(3)],
-                           "staging.ganit_vendors v": []})
+                           "public.ganit_vendors v": []})
     out = await check_duplicate_vendor_bills(pool, ORG, limit=3)
     assert any("floor" in c for c in out["caveats"])
 
@@ -691,9 +691,9 @@ async def test_a_capped_duplicate_run_calls_itself_a_floor():
 
 def _pack_pool(invoices, upi=None, org=None, has_table=True):
     return _Pool(
-        fetch_by={"staging.ganit_invoices i": invoices,
-                  "staging.org_upi_accounts": upi or []},
-        row_by={"staging.organisations": org or {
+        fetch_by={"public.ganit_invoices i": invoices,
+                  "public.org_upi_accounts": upi or []},
+        row_by={"public.organisations": org or {
             "name": "Unicode Group",
             "upi_vpa": None,
             "upi_payee_name": None,

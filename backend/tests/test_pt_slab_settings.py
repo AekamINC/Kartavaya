@@ -85,7 +85,7 @@ class TestASharedRowIsReadByEveryoneAndEditableByNobody:
         assert r.status_code == 200, r.text
         sql = mock_pool.execute.call_args[0][0]
         assert "org_id=$" in sql.replace(" ", ""), sql
-        assert "DELETE FROM staging.pay_professional_tax" in sql
+        assert "DELETE FROM public.pay_professional_tax" in sql
 
     async def test_a_row_that_is_not_yours_is_a_404_and_not_a_403(
         self, api_client, mock_pool, as_admin, with_org_id,
@@ -133,7 +133,7 @@ class TestTheWritePathItself:
         })
         assert r.status_code == 200, r.text
         sql, *params = mock_pool.fetchrow.call_args[0]
-        assert "INSERT INTO staging.pay_professional_tax" in sql
+        assert "INSERT INTO public.pay_professional_tax" in sql
         assert "$1::uuid" in sql, "org_id is not bound as the first parameter"
         assert params[0], "org_id was bound empty"
 

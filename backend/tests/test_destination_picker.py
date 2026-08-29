@@ -386,7 +386,7 @@ async def test_two_destinations_for_one_client_both_survive(
             return _Row(**{"?column?": 1})
         if "hub_oauth_states" in query:
             return _Row(data=json.dumps(parked))
-        if "INSERT INTO staging.hub_social_accounts" in query:
+        if "INSERT INTO public.hub_social_accounts" in query:
             inserts.append((query, args))
             return _Row(platform=args[2], account_name=args[3])
         return None
@@ -428,7 +428,7 @@ async def test_two_destinations_for_one_client_both_survive(
         # And the consent is spent — its parked tokens deleted, not left to
         # expire.
         deletes = [c for c in mock_pool.execute.call_args_list
-                   if "DELETE FROM staging.hub_oauth_states" in c.args[0]]
+                   if "DELETE FROM public.hub_oauth_states" in c.args[0]]
         assert len(deletes) == 1
     finally:
         for dep in (require_user, get_org_id, hp._hub_gate,
@@ -472,7 +472,7 @@ async def test_a_parked_token_is_never_encrypted_twice(
             return _Row(**{"?column?": 1})
         if "hub_oauth_states" in query:
             return _Row(data=json.dumps(parked))
-        if "INSERT INTO staging.hub_social_accounts" in query:
+        if "INSERT INTO public.hub_social_accounts" in query:
             stored["token"] = args[6]
             return _Row(platform="facebook", account_name="Aekam Inc")
         return None

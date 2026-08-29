@@ -197,7 +197,7 @@ def test_every_graha_join_in_the_filing_path_is_org_scoped():
     """The FK is on the id alone; only the query can scope it."""
     sql = _joined_sql(PERIOD_SRC)
     unscoped = []
-    for m in re.finditer(r"JOIN\s+staging\.graha_\w+\s+(\w+)\s+ON\s+([^\"]+?)(?=WHERE|JOIN|$)",
+    for m in re.finditer(r"JOIN\s+public\.graha_\w+\s+(\w+)\s+ON\s+([^\"]+?)(?=WHERE|JOIN|$)",
                          sql, re.IGNORECASE):
         if "org_id" not in m.group(2):
             unscoped.append(m.group(0).strip()[:90])

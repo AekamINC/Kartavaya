@@ -48,7 +48,7 @@ def _body(steps, **kw):
 
 async def _post(api_client, mock_pool, steps, **kw):
     async def _fetchrow(query, *args):
-        if "INSERT INTO staging.hub_skill_templates" in query:
+        if "INSERT INTO public.hub_skill_templates" in query:
             # Echo enough of the row back that the handler can build its reply.
             return {"id": "11111111-1111-1111-1111-111111111111",
                     "name": args[0], "steps": args[3], "estimated_credits": args[4]}
@@ -214,7 +214,7 @@ _PRICES = [
 
 def _serve_prices(mock_pool):
     async def _fetch(query, *args):
-        if "FROM staging.credit_prices" in query:
+        if "FROM public.credit_prices" in query:
             return _PRICES
         return []
 
@@ -223,7 +223,7 @@ def _serve_prices(mock_pool):
 
 def _capture_estimate(mock_pool, captured):
     async def _fetchrow(query, *args):
-        if "INSERT INTO staging.hub_skill_templates" in query:
+        if "INSERT INTO public.hub_skill_templates" in query:
             captured["estimated"] = args[4]
             return {"id": "11111111-1111-1111-1111-111111111111"}
         return None

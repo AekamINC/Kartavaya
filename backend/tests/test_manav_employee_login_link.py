@@ -310,7 +310,7 @@ async def test_link_candidates_asks_for_org_members_and_existing_links(
     assert body["total"] == 1
     assert body["unlinked_accounts"] == 1
     asked = _queries(mock_pool.fetch)
-    assert "staging.user_roles" in asked[0]
+    assert "public.user_roles" in asked[0]
     assert "manav_employees" in asked[1] and "user_id IS NOT NULL" in asked[1]
 
 
@@ -355,7 +355,7 @@ async def test_link_by_email_resolves_through_the_member_list(
     )
     assert resp.status_code == 200
     member_query = _queries(mock_pool.fetchrow)[1]
-    assert "staging.user_roles" in member_query
+    assert "public.user_roles" in member_query
     assert "LOWER(u.email)=LOWER($3)" in member_query
 
 
@@ -416,7 +416,7 @@ async def test_the_ordinary_patch_cannot_move_the_link(api_client, mock_pool, as
     )
     assert resp.status_code == 200
     writes = [c.args[0] for c in mock_pool.execute.await_args_list
-              if c.args and "UPDATE staging.manav_employees" in c.args[0]]
+              if c.args and "UPDATE public.manav_employees" in c.args[0]]
     assert writes, "the patch wrote nothing at all"
     assert all("user_id=" not in w for w in writes)
 

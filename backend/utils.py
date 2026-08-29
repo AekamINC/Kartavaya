@@ -304,7 +304,7 @@ async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: st
             lock_key = hash((org_id, table)) & 0x7FFFFFFF
             await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
             last = await conn.fetchval(
-                f"SELECT {column} FROM staging.{table} "
+                f"SELECT {column} FROM public.{table} "
                 "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
                 org_id,
             )

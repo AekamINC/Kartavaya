@@ -219,7 +219,7 @@ def _wire(mock_pool, *, role=GOD, joined=5, org_row=None):
     order and asserting on order breaks the moment a query is added.
     """
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return role if role in allowed else None
         if "COALESCE(o.max_users, p.max_users)" in query:
@@ -231,7 +231,7 @@ def _wire(mock_pool, *, role=GOD, joined=5, org_row=None):
         return None
 
     async def fetchrow(query, *args):
-        if "FROM staging.organisations" in query:
+        if "FROM public.organisations" in query:
             return dict(org_row if org_row is not None else FULL_ORG_ROW)
         if "FROM users" in query:
             return {"user_id": "user_target", "email": "new.admin@unicodegroup.com"}
@@ -419,7 +419,7 @@ def _wire_contact(mock_pool, *, role=GOD, current="info@unicodegroup.com", exist
     """Wire the contact-email route. The handler works on an acquired connection,
     so the org read and both writes are on the CONNECTION mock, not the pool."""
     async def fetchval(query, *args):
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             allowed = args[1] if len(args) > 1 else []
             return role if role in allowed else None
         return None
@@ -479,7 +479,7 @@ async def test_the_change_is_written_with_an_audit_row(
     )
     assert r.status_code == 200, r.text
 
-    updates = [s for s in statements if "UPDATE staging.organisations" in s[0]]
+    updates = [s for s in statements if "UPDATE public.organisations" in s[0]]
     events = [s for s in statements if "subscription_events" in s[0]]
     assert len(updates) == 1, "the address was not written exactly once"
     assert "accounts@unicodegroup.com" in updates[0][1]

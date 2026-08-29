@@ -88,8 +88,8 @@ class _Pool:
             "WITH line AS": "order_lines_q",
             "AS open_lines": "order_coverage_q",
             "AS days,": "reminder_q",
-            "staging.ganit_recurring": "recurring_q",
-            "staging.ganit_contracts k": "contracts_q",
+            "public.ganit_recurring": "recurring_q",
+            "public.ganit_contracts k": "contracts_q",
         }
         for marker, key in markers.items():
             if marker in sql:
@@ -285,12 +285,12 @@ async def test_every_graha_join_carries_org_id(marker):
     import services.skills.data.stock_and_crm as mod
     source = inspect.getsource(mod)
     for line in source.splitlines():
-        if f"staging.{marker}" in line and "JOIN" in line:
+        if f"public.{marker}" in line and "JOIN" in line:
             # The ON clause is the next line in every case; check the window.
             idx = source.splitlines().index(line)
             window = " ".join(source.splitlines()[idx:idx + 3])
             assert "org_id" in window, (
-                f"a join to staging.{marker} does not carry org_id:\n{window}"
+                f"a join to public.{marker} does not carry org_id:\n{window}"
             )
 
 
@@ -753,7 +753,7 @@ async def test_staleness_comes_from_the_query_not_from_re_derivation():
     out = await check_stale_retainer_rates(pool, ORG)
     assert out["contracts"][0]["reasons"] == ["unchanged_too_long"]
     assert out["counts"]["unchanged_too_long"] == 1
-    sql = _sql_for(pool, "staging.ganit_contracts k")
+    sql = _sql_for(pool, "public.ganit_contracts k")
     assert "AS unchanged_too_long" in sql
 
 

@@ -210,4 +210,4 @@ def test_the_upsert_drops_verification_when_the_domain_changes():
     sql = " ".join(org_profile._UPSERT_SENDER.split())
     assert "ON CONFLICT (org_id, purpose) DO UPDATE" in sql
     assert "split_part(EXCLUDED.from_email, '@', 2)" in sql
-    assert "is_verified = ( staging.org_email_senders.is_verified AND" in sql
+    assert "is_verified = ( public.org_email_senders.is_verified AND" in sql

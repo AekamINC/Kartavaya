@@ -60,7 +60,7 @@ NOTIFICATIONS = {
 # inferred, so this file states what it is defending against.
 COLUMNS_THAT_DO_NOT_EXIST = {
     ("public.tasks", "due_date"),
-    ("staging.manav_holidays", "is_active"),
+    ("public.manav_holidays", "is_active"),
     ("notifications", "metadata"),
     ("manav_employees", "employee_id"),
 }
@@ -130,13 +130,13 @@ def test_holiday_lookup_does_not_reference_is_active():
     src = _source("services/skills/action/attendance_auto_mark.py")
 
     holiday_sql = re.search(
-        r"SELECT id, name.*?FROM staging\.manav_holidays.*?\"\"\"", src, re.S
+        r"SELECT id, name.*?FROM public\.manav_holidays.*?\"\"\"", src, re.S
     )
     assert holiday_sql, "the holiday lookup has moved; update this test with it"
     body = holiday_sql.group(0)
 
     assert "is_active" not in body, (
-        "staging.manav_holidays has no is_active column — it has "
+        "public.manav_holidays has no is_active column — it has "
         f"{sorted(STAGING_MANAV_HOLIDAYS)}. This is the exact query that made "
         "POST /api/internal/cron/hr answer 500 for every organisation."
     )
@@ -152,7 +152,7 @@ def test_optional_holidays_are_not_auto_marked():
     """
     src = _source("services/skills/action/attendance_auto_mark.py")
     holiday_sql = re.search(
-        r"SELECT id, name.*?FROM staging\.manav_holidays.*?\"\"\"", src, re.S
+        r"SELECT id, name.*?FROM public\.manav_holidays.*?\"\"\"", src, re.S
     ).group(0)
 
     assert "is_optional" in holiday_sql, (
@@ -239,7 +239,7 @@ def test_employee_lookup_may_still_use_is_active():
     src = _source("services/skills/action/attendance_auto_mark.py")
     emp_sqls = [
         b for b in _sql_block_list(src)
-        if "staging.manav_employees" in b and "manav_holidays" not in b
+        if "public.manav_employees" in b and "manav_holidays" not in b
     ]
     assert emp_sqls, "the employee lookup has moved; update this test with it"
     for block in emp_sqls:
@@ -277,7 +277,7 @@ def test_the_state_column_is_probed_before_it_is_selected():
     # And the un-scoped fallback must still exist, or the probe guards nothing.
     fallback = [
         b for b in _sql_block_list(src)
-        if "staging.manav_employees" in b and "state" not in b
+        if "public.manav_employees" in b and "state" not in b
     ]
     assert fallback, (
         "the query that does NOT select `state` was removed, so a database "

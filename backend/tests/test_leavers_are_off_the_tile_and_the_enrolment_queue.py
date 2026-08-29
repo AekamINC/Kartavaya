@@ -89,7 +89,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What the app's own pool does on every connection (`db.py`), so a statement is
 #: planned the way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. These checks plan both statements against the real "
@@ -189,7 +189,7 @@ def headcount_sql() -> str:
     return one_statement(
         statements_of(lambda: vetana.dashboard(
             user=USER, org_id=ORG, levels=LEVELS)),
-        "COUNT(*)", "staging.manav_employees")
+        "COUNT(*)", "public.manav_employees")
 
 
 def enrolment_statements() -> list[str]:
@@ -283,7 +283,7 @@ def test_the_employee_table_is_aliased_rather_than_the_predicate_inlined(get_sql
     to be the reason somebody inlined a variant — so the alias is added to the
     query, and this is the check that says so."""
     sql = get_sql()
-    assert "staging.manav_employees e" in sql, (
+    assert "public.manav_employees e" in sql, (
         "the employee table lost its alias, so the shared predicate cannot be "
         "applied to it without writing a variant:\n" + sql)
     assert "e.is_active" in sql, (
@@ -485,16 +485,16 @@ def test_live_the_tile_now_counts_the_people_still_on_the_rolls():
 
     async def work(conn):
         orgs = [r["org_id"] for r in await conn.fetch(
-            "SELECT DISTINCT org_id FROM staging.manav_employees "
+            "SELECT DISTINCT org_id FROM public.manav_employees "
             " WHERE is_active = TRUE")]
         out = []
         for org in orgs:
             after_n = await conn.fetchval(fixed, org)
             before_n = await conn.fetchval(before, org)
             leavers = await conn.fetchval(
-                "SELECT COUNT(*) FROM staging.manav_employees e "
+                "SELECT COUNT(*) FROM public.manav_employees e "
                 " WHERE e.org_id = $1::uuid AND e.is_active = TRUE "
-                "   AND EXISTS (SELECT 1 FROM staging.manav_offboarding x "
+                "   AND EXISTS (SELECT 1 FROM public.manav_offboarding x "
                 "     WHERE x.org_id = e.org_id AND x.employee_id = e.id "
                 "       AND x.status <> 'cancelled' "
                 "       AND x.last_working_day < CURRENT_DATE)", org)
@@ -532,14 +532,14 @@ def test_live_the_enrolment_queue_stops_listing_people_who_have_left():
 
     async def work(conn):
         orgs = [r["org_id"] for r in await conn.fetch(
-            "SELECT DISTINCT org_id FROM staging.manav_employees "
+            "SELECT DISTINCT org_id FROM public.manav_employees "
             " WHERE is_active = TRUE")]
         out = []
         for org in orgs:
             kept = {r["employee_id"] for r in await conn.fetch(fixed, org)}
             all_rows = {r["employee_id"] for r in await conn.fetch(before, org)}
             left = {r["employee_id"] for r in await conn.fetch(
-                "SELECT DISTINCT employee_id FROM staging.manav_offboarding "
+                "SELECT DISTINCT employee_id FROM public.manav_offboarding "
                 " WHERE org_id = $1::uuid AND status <> 'cancelled' "
                 "   AND last_working_day < CURRENT_DATE", org)}
             out.append((str(org), kept, all_rows, left))

@@ -67,7 +67,7 @@ def wired(mock_pool):
         # with the caller's own role.
         if "role_code='org_owner'" in query:
             return 1 if state["has_owner"] else None
-        if "role_code FROM staging.user_roles" in query:
+        if "role_code FROM public.user_roles" in query:
             return state["caller_role"]
         if "COALESCE(o.max_users" in query:
             return state["limit"]
@@ -75,9 +75,9 @@ def wired(mock_pool):
             return state["seats_used"]
         if "COUNT(*) FROM public.invites" in query:
             return state["pending"]
-        if "SELECT name FROM staging.organisations" in query:
+        if "SELECT name FROM public.organisations" in query:
             return "Test Org"
-        if "staging.user_roles" in query and "org_id IS NULL" in query:
+        if "public.user_roles" in query and "org_id IS NULL" in query:
             return None          # not god-mode
         return None
 

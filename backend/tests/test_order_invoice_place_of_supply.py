@@ -358,23 +358,23 @@ class CapturePool:
 
 def _script(parties=None, order=None):
     return [
-        ("FROM staging.vikray_orders", order or ORDER_ROW),
+        ("FROM public.vikray_orders", order or ORDER_ROW),
         # The counterparty read this change adds. Matched before the two
         # single-table reads below, which is why the needle names the join.
-        ("LEFT JOIN staging.graha_clients cl", parties if parties is not None
+        ("LEFT JOIN public.graha_clients cl", parties if parties is not None
          else PARTIES_ROW),
         # `_refuse_final_if_incomplete`'s own reads.
-        ("SELECT name, gstin, pan, billing_address FROM staging.organisations",
+        ("SELECT name, gstin, pan, billing_address FROM public.organisations",
          {"name": "A Firm LLP", "gstin": GJ_GSTIN, "pan": "AABCU9603R",
           "billing_address": {"line1": "1 Road", "city": "Surat",
                               "state": "Gujarat", "pincode": "395001"}}),
-        ("FROM staging.graha_contacts",
+        ("FROM public.graha_contacts",
          {"name": "A Person", "company": "A Client Pvt Ltd",
           "gstin": MH_GSTIN}),
-        ("FROM staging.module_compliance_settings", []),
+        ("FROM public.module_compliance_settings", []),
         # `next_doc_number` reads the newest serial; none yet, so it mints 0001.
-        ("SELECT invoice_number FROM staging.ganit_invoices", None),
-        ("INSERT INTO staging.ganit_invoices", {"id": INVOICE}),
+        ("SELECT invoice_number FROM public.ganit_invoices", None),
+        ("INSERT INTO public.ganit_invoices", {"id": INVOICE}),
     ]
 
 
@@ -391,12 +391,12 @@ async def _convert(script=None) -> CapturePool:
     return pool
 
 
-INVOICE_INSERT = "INSERT INTO staging.ganit_invoices"
+INVOICE_INSERT = "INSERT INTO public.ganit_invoices"
 
 
 def _column_list(sql: str) -> list[str]:
     m = re.search(
-        r"INSERT INTO staging\.ganit_invoices\s*\((.*?)\)\s*VALUES", sql, re.S)
+        r"INSERT INTO public\.ganit_invoices\s*\((.*?)\)\s*VALUES", sql, re.S)
     assert m, f"could not read the column list out of:\n{sql}"
     return [c.strip() for c in m.group(1).split(",")]
 
@@ -422,7 +422,7 @@ async def test_the_conversion_is_reached_at_all():
     pass by checking nothing."""
     pool = await _convert()
     pool.one(INVOICE_INSERT)
-    pool.one("UPDATE staging.vikray_orders")
+    pool.one("UPDATE public.vikray_orders")
 
 
 async def test_the_place_of_supply_is_bound_and_not_a_hardcoded_blank():
@@ -484,7 +484,7 @@ async def test_the_counterparty_read_is_org_scoped_on_both_joins():
     belonging to another tenant would answer and put ANOTHER FIRM'S STATE on
     this org's tax invoice."""
     pool = await _convert()
-    sql, _ = pool.one("LEFT JOIN staging.graha_clients cl")
+    sql, _ = pool.one("LEFT JOIN public.graha_clients cl")
     joins = [ln.strip() for ln in sql.split("LEFT JOIN")[1:]]
     assert len(joins) == 2, f"expected two counterparty joins, read {len(joins)}"
     for join in joins:
@@ -501,7 +501,7 @@ async def test_the_serial_is_still_drawn_after_the_gate():
     gate = next(i for i, s in enumerate(stmts)
                 if "SELECT name, gstin, pan, billing_address" in s)
     serial = next(i for i, s in enumerate(stmts)
-                  if "SELECT invoice_number FROM staging.ganit_invoices" in s)
+                  if "SELECT invoice_number FROM public.ganit_invoices" in s)
     assert gate < serial, "the serial is drawn before the Rule 46 gate runs"
 
 
@@ -540,7 +540,7 @@ _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
 
 #: What `db.py` sets on every connection. Matched so a statement is planned the
 #: way it will actually be planned.
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "
@@ -596,7 +596,7 @@ def _describe(calls):
             catalogue = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'staging' AND table_name = 'ganit_invoices'"
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name = 'ganit_invoices'"
             )
             return failures, described, [dict(r) for r in catalogue]
         finally:
@@ -679,7 +679,7 @@ def test_every_column_named_exists_and_every_required_one_is_supplied(live):
                 if c["is_nullable"] == "NO" and c["column_default"] is None}
     assert "invoice_number" in required, (
         "the premise changed: invoice_number is no longer NOT NULL-without-"
-        "default on staging.ganit_invoices")
+        "default on public.ganit_invoices")
 
     seen = 0
     for sql, _, _ in described:
@@ -688,7 +688,7 @@ def test_every_column_named_exists_and_every_required_one_is_supplied(live):
         seen += 1
         cols = set(_column_list(sql))
         assert not (cols - known), (
-            f"names columns staging.ganit_invoices does not have: "
+            f"names columns public.ganit_invoices does not have: "
             f"{sorted(cols - known)}")
         assert not (required - cols), (
             f"omits NOT NULL columns with no default: {sorted(required - cols)}")

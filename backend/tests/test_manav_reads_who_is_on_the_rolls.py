@@ -80,7 +80,7 @@ USER = {"user_id": "user_hr_admin"}
 UNDATED = object()
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. These checks parse Manav's SQL against the real "
@@ -152,7 +152,7 @@ def _guard_applies(sql: str) -> bool:
     the SQL says, so these tests answer "does the query ask?". Whether the
     database agrees is what the live half is for.
     """
-    return "staging.manav_offboarding x" in sql
+    return "public.manav_offboarding x" in sql
 
 
 def _survivors(sql: str, employees) -> list[dict]:
@@ -196,11 +196,11 @@ class _Pool:
     async def fetch(self, sql, *args):
         self._record(sql, args)
         n = norm(sql)
-        if "FROM staging.manav_departments d" in n:
+        if "FROM public.manav_departments d" in n:
             return [{"id": "dept-1", "name": "Accounts", "created_at": None,
                      "head_name": "Stayer",
                      "employee_count": len(_survivors(n, self._employees))}]
-        if "FROM staging.manav_leave_requests lr" in n:
+        if "FROM public.manav_leave_requests lr" in n:
             rows = []
             for e in _survivors(n, self._employees):
                 if e is STAYER:
@@ -210,9 +210,9 @@ class _Pool:
                              "employee_name": e["name"],
                              "employee_code": e["employee_code"]})
             return rows
-        if "FROM staging.manav_schedules s" in n:
+        if "FROM public.manav_schedules s" in n:
             return []
-        if "staging.manav_employees" in n:
+        if "public.manav_employees" in n:
             rows = _survivors(n, self._employees)
             return [dict(e, _total=len(rows)) for e in rows]
         raise AssertionError(f"unexpected fetch: {n[:160]}")
@@ -220,18 +220,18 @@ class _Pool:
     async def fetchval(self, sql, *args):
         self._record(sql, args)
         n = norm(sql)
-        if "staging.manav_employees" in n:
+        if "public.manav_employees" in n:
             return len(_survivors(n, self._employees))
         return 0
 
     async def fetchrow(self, sql, *args):
         self._record(sql, args)
         n = norm(sql)
-        if "INSERT INTO staging.manav_announcements" in n:
+        if "INSERT INTO public.manav_announcements" in n:
             return {"id": "ann-1", "title": args[1]}
-        if "UPDATE staging.manav_assets" in n:
+        if "UPDATE public.manav_assets" in n:
             return dict(self._asset)
-        if "staging.manav_employees" in n:
+        if "public.manav_employees" in n:
             wanted = str(args[0])
             for e in _survivors(n, self._employees):
                 if e["id"] == wanted:
@@ -330,7 +330,7 @@ class TestAssetsAreNotIssuedToPeopleWhoHaveLeft:
         from fastapi import HTTPException
         with pytest.raises(HTTPException):
             self._assign(pool, monkeypatch, LEAVER["id"])
-        assert not any("UPDATE staging.manav_assets" in s
+        assert not any("UPDATE public.manav_assets" in s
                        for s, _ in pool.statements), pool.statements
 
     def test_somebody_serving_notice_can_still_be_issued_an_asset(
@@ -648,10 +648,10 @@ def test_live_the_guard_removes_exactly_the_people_who_have_left():
     was ALSO deactivated by hand. That comparison is the shape of the whole
     defect — the guard held exactly where a person remembered to apply it.
     """
-    guarded = ("SELECT e.id FROM staging.manav_employees e "
+    guarded = ("SELECT e.id FROM public.manav_employees e "
                "WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
                + still_on_the_rolls("e"))
-    flag_only = ("SELECT e.id FROM staging.manav_employees e "
+    flag_only = ("SELECT e.id FROM public.manav_employees e "
                  "WHERE e.org_id=$1::uuid AND e.is_active=TRUE")
 
     async def work(conn):
@@ -660,7 +660,7 @@ def test_live_the_guard_removes_exactly_the_people_who_have_left():
             kept = {r["id"] for r in await conn.fetch(guarded, org)}
             everyone = {r["id"] for r in await conn.fetch(flag_only, org)}
             left = {r["employee_id"] for r in await conn.fetch(
-                "SELECT DISTINCT employee_id FROM staging.manav_offboarding "
+                "SELECT DISTINCT employee_id FROM public.manav_offboarding "
                 " WHERE org_id=$1::uuid AND status <> 'cancelled' "
                 "   AND last_working_day < CURRENT_DATE", org)}
             out.append((org, kept, everyone, left))
@@ -690,8 +690,8 @@ def test_live_the_ten_were_really_being_emailed_and_really_hold_assets():
     async def work(conn):
         return await conn.fetchrow(
             "WITH leavers AS ("
-            "  SELECT e.id, e.email FROM staging.manav_employees e "
-            "    JOIN staging.manav_offboarding x "
+            "  SELECT e.id, e.email FROM public.manav_employees e "
+            "    JOIN public.manav_offboarding x "
             "      ON x.org_id = e.org_id AND x.employee_id = e.id "
             "     AND x.status <> 'cancelled' "
             "   WHERE e.org_id = $1::uuid AND e.is_active = TRUE "
@@ -699,7 +699,7 @@ def test_live_the_ten_were_really_being_emailed_and_really_hold_assets():
             "SELECT (SELECT COUNT(*) FROM leavers) AS leavers, "
             "       (SELECT COUNT(*) FROM leavers "
             "         WHERE email IS NOT NULL AND email <> '') AS mailable, "
-            "       (SELECT COUNT(*) FROM staging.manav_assets a "
+            "       (SELECT COUNT(*) FROM public.manav_assets a "
             "         WHERE a.org_id = $1::uuid AND a.is_active = TRUE "
             "           AND a.assigned_to IN (SELECT id FROM leavers)) AS assets",
             E2E)

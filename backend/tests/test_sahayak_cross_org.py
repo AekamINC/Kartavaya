@@ -75,12 +75,12 @@ def platform_caller(mock_pool):
         q = " ".join(query.split())
         # The platform-role probe — `held_module_levels` and the new gate both
         # make it, and both must see the same answer or they cannot agree.
-        if "staging.user_roles" in q and "org_id IS NULL" in q:
+        if "public.user_roles" in q and "org_id IS NULL" in q:
             return state["role"]
         # Two org-scoped probes share this shape: `held_module_levels`' owner/
         # admin lookup and the membership lookup. Both mean "does this person
         # belong to this organisation", so one answer is correct for both.
-        if "staging.user_roles" in q and "org_id=$2::uuid" in q:
+        if "public.user_roles" in q and "org_id=$2::uuid" in q:
             return "org_admin" if state["member"] else None
         return None
 
@@ -97,7 +97,7 @@ def platform_caller(mock_pool):
         # role", which is the same verdict as "not a member" and would make the
         # compatibility tests below pass on a branch they never exercised.
         q = " ".join(query.split())
-        if "staging.user_roles" in q and "org_id=$2::uuid" in q:
+        if "public.user_roles" in q and "org_id=$2::uuid" in q:
             return [{"role_code": "org_admin"}] if state["member"] else []
         return []                       # no org_member_modules row anywhere
 
@@ -360,7 +360,7 @@ def hub_chat_wiring(mock_pool, platform_caller, monkeypatch):
 
     async def _fetchval(query, *args):
         q = " ".join(query.split())
-        if "FROM staging.hub_clients" in q and "is_internal=TRUE" in q:
+        if "FROM public.hub_clients" in q and "is_internal=TRUE" in q:
             return state["client"]
         if q.startswith("INSERT"):
             state["writes"].append(q)

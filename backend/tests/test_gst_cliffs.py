@@ -479,7 +479,7 @@ async def test_the_ims_brief_scopes_the_vendor_join_to_the_same_org():
     assert joins, "no vendor join was issued at all"
     for sql in joins:
         assert "v.org_id = b.org_id" in sql
-        assert "staging.ganit_vendor_bills" in sql   # schema-qualified, always
+        assert "public.ganit_vendor_bills" in sql   # schema-qualified, always
     for args in pool.args_seen:
         if args:
             assert args[0] == ORG
@@ -974,8 +974,8 @@ async def test_every_query_is_schema_qualified_and_scoped_to_one_org():
         for table in ("ganit_vendor_bills", "ganit_vendors", "ganit_products",
                       "ganit_invoices", "statute_calendar"):
             if table in sql:
-                assert f"staging.{table}" in sql, f"{table} unqualified in:\n{sql}"
-        if "staging.ganit_" in sql:
+                assert f"public.{table}" in sql, f"{table} unqualified in:\n{sql}"
+        if "public.ganit_" in sql:
             assert "org_id = $1::uuid" in sql, f"unscoped query:\n{sql}"
 
 

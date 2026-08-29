@@ -304,10 +304,10 @@ def test_the_id_only_join_hazard_is_closed_everywhere():
     tables are the same shape. An id-only join prints ANOTHER PRACTICE'S
     CUSTOMER NAME — proved live once already for graha_clients."""
     source = MODULE_PATH.read_text(encoding="utf-8")
-    for alias, parent in (("staging.crm_accounts a", "a.org_id"),
-                          ("staging.crm_deals    d", "d.org_id"),
-                          ("staging.varta_conversations", "cv.org_id"),
-                          ("staging.varta_contacts", "ct.org_id")):
+    for alias, parent in (("public.crm_accounts a", "a.org_id"),
+                          ("public.crm_deals    d", "d.org_id"),
+                          ("public.varta_conversations", "cv.org_id"),
+                          ("public.varta_contacts", "ct.org_id")):
         assert alias in source
         assert parent in source, f"{alias} is joined without carrying {parent}"
 

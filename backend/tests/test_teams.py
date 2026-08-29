@@ -322,7 +322,7 @@ async def test_a_user_id_add_answers_with_a_name_and_no_address(api_client, mock
     address — that is the point of stubbing it here — and the response must
     not."""
     async def fetchval_side(query, *args):
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return 1          # a platform row: the bypass admits this caller
         return None           # teams.org_id
 
@@ -387,7 +387,7 @@ async def test_a_role_change_answers_with_a_name_and_no_address(api_client, mock
     `UPDATE … RETURNING *` hands the handler one. The privacy ratchet cannot
     see this route at all: every SQL literal in it is a role or a status."""
     async def fetchval_side(query, *args):
-        if "staging.user_roles" in query:
+        if "public.user_roles" in query:
             return 1
         if "FROM users WHERE user_id" in query:
             return "Ravi Kumar"

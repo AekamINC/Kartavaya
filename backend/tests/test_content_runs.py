@@ -126,7 +126,7 @@ def test_the_engagement_join_is_org_scoped():
     alone and an id-only join prints another practice's client."""
     src = inspect.getsource(pack_engagement_letter_inputs)
     for line in src.splitlines():
-        if "JOIN staging.graha_" in line:
+        if "JOIN public.graha_" in line:
             idx = src.index(line)
             assert "org_id" in src[idx:idx + 200], line
 
@@ -308,5 +308,5 @@ def test_every_query_is_org_scoped():
     import ast
     for node in ast.walk(ast.parse(SRC)):
         if (isinstance(node, ast.Constant) and isinstance(node.value, str)
-                and "FROM staging." in node.value):
+                and "FROM public." in node.value):
             assert "org_id = $1::uuid" in node.value, node.value[:120]

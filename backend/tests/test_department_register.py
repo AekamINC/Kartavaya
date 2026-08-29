@@ -176,8 +176,8 @@ def test_every_table_is_schema_qualified_and_every_parameter_is_cast():
     """A shadow table has bitten this repo (migration 142), and PgBouncer turns
     an untyped parse error into an instant 500 (the credits incident)."""
     for sql in (dr.DEPT_SQL, dr.DEPT_SPREAD_SQL):
-        assert "staging.manav_" in sql
-        assert " manav_departments" not in sql.replace("staging.manav_departments", "")
+        assert "public.manav_" in sql
+        assert " manav_departments" not in sql.replace("public.manav_departments", "")
         assert "$1::uuid" in sql
     assert "$2::date" in dr.DEPT_SQL and "$3::date" in dr.DEPT_SQL
     assert "$4::int" in dr.DEPT_SQL

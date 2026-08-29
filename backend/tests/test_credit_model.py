@@ -170,17 +170,17 @@ class _Conn:
     async def fetchrow(self, sql, *args):
         q = _norm(sql)
 
-        if "INSERT INTO staging.hub_org_credit_transactions" in q:
+        if "INSERT INTO public.hub_org_credit_transactions" in q:
             return self._insert_tx(args)
 
-        if "FROM staging.organisations" in q and "monthly_credits" in q:
+        if "FROM public.organisations" in q and "monthly_credits" in q:
             org = self.db.orgs.get(args[0])
             if org is None:
                 return None
             return {"id": args[0], "monthly_credits": org["monthly_credits"],
                     "is_platform_org": org["is_platform_org"]}
 
-        if "FROM staging.hub_org_credits" in q:
+        if "FROM public.hub_org_credits" in q:
             w = self.db.wallets.get(args[0])
             if w is None:
                 return None
@@ -188,7 +188,7 @@ class _Conn:
                     "purchased_balance": w["purchased"],
                     "balance": w["balance"], "period_start": w["period_start"]}
 
-        if "FROM staging.hub_org_credit_transactions" in q:
+        if "FROM public.hub_org_credit_transactions" in q:
             if "idempotency_key=$1" in q:
                 return self._find(lambda t: t["idempotency_key"] == args[0]
                                   and args[0] is not None)
@@ -197,7 +197,7 @@ class _Conn:
             if "reverses_tx_id=$1::uuid" in q:
                 return self._find(lambda t: t["reverses_tx_id"] == args[0])
 
-        if "FROM staging.org_member_credits" in q:
+        if "FROM public.org_member_credits" in q:
             row = self.db.member(args[0], args[1], args[2])
             return None if row is None else dict(row)
 
@@ -208,22 +208,22 @@ class _Conn:
         if "markup_pct" in q:
             org = self.db.orgs.get(args[0])
             return None if org is None else org["markup_pct"]
-        if "credit_cost FROM staging.hub_scraper_catalog" in q:
+        if "credit_cost FROM public.hub_scraper_catalog" in q:
             return self.db.catalog.get(args[0])
         raise AssertionError(f"_Conn.fetchval does not model: {q[:140]}")
 
     async def fetch(self, sql, *args):
         q = _norm(sql)
-        if "FROM staging.credit_prices" in q:
+        if "FROM public.credit_prices" in q:
             return [{"kind": k, "credits": c, "unit_size": u, "is_active": a}
                     for k, (c, u, a) in self.db.prices.items()]
-        if "FROM staging.org_member_credits" in q:
+        if "FROM public.org_member_credits" in q:
             org_id, period = args[0], args[1]
             return [{"user_id": uid, "cap_credits": r["cap_credits"],
                      "spent_credits": r["spent_credits"]}
                     for (o, uid, p), r in sorted(self.db.members.items())
                     if o == org_id and p == period]
-        if "FROM staging.hub_org_credit_transactions" in q:
+        if "FROM public.hub_org_credit_transactions" in q:
             return [dict(t) for t in reversed(self.db.txns)]
         raise AssertionError(f"_Conn.fetch does not model: {q[:140]}")
 
@@ -231,14 +231,14 @@ class _Conn:
     async def execute(self, sql, *args):
         q = _norm(sql)
 
-        if "INSERT INTO staging.hub_org_credits" in q:
+        if "INSERT INTO public.hub_org_credits" in q:
             self.db.wallets.setdefault(args[0], {
                 "allowance": 0, "purchased": 0, "balance": 0,
                 "period_start": args[1],
             })
             return "INSERT 0 1"
 
-        if "UPDATE staging.hub_org_credits" in q:
+        if "UPDATE public.hub_org_credits" in q:
             w = self.db.wallets[args[3] if "period_start=$3::date" in q else args[2]]
             w["allowance"], w["purchased"] = args[0], args[1]
             w["balance"] = args[0] + args[1]
@@ -246,7 +246,7 @@ class _Conn:
                 w["period_start"] = args[2]
             return "UPDATE 1"
 
-        if "INSERT INTO staging.org_member_credits" in q:
+        if "INSERT INTO public.org_member_credits" in q:
             if "SELECT m.org_id" in q:               # roll_period carry-forward
                 return self._carry(args[0], args[1])
             if "$3::date, NULL, $4, NULL" in q:      # spend bumps spent_credits
@@ -269,7 +269,7 @@ class _Conn:
                     row["cap_credits"], row["set_by"] = args[3], args[4]
                 return "INSERT 0 1"
 
-        if "UPDATE staging.org_member_credits" in q and "GREATEST" in q:
+        if "UPDATE public.org_member_credits" in q and "GREATEST" in q:
             row = self.db.members.get((args[1], args[2], args[3]))
             if row is not None:
                 row["spent_credits"] = max(row["spent_credits"] - args[0], 0)
@@ -1030,7 +1030,7 @@ def test_the_select_lists_in_credits_py_name_only_declared_columns():
         selected = {c.strip().lower() for c in const.split(",") if c.strip()}
         undeclared = selected - {c.lower() for c in NAMED[table]}
         assert not undeclared, (
-            f"credits.py selects {sorted(undeclared)} from staging.{table} but "
+            f"credits.py selects {sorted(undeclared)} from public.{table} but "
             f"NAMED does not declare it — either the column is invented or this "
             f"test's list is stale, and both are worth stopping for"
         )

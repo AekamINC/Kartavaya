@@ -257,7 +257,7 @@ def test_get_scopes_on_the_token_and_the_current_org(pool):
     run(cp.get_column_prefs(user=USER, org_id=ORG))
     sql, args = pool.calls[0]
     assert args == [USER["user_id"], ORG]
-    assert "staging.user_column_prefs" in sql
+    assert "public.user_column_prefs" in sql
     assert "$1::text" in sql and "$2::uuid" in sql
 
 
@@ -295,7 +295,7 @@ def test_the_personal_upsert_names_the_partial_index_predicate(pool):
         "graha.contacts", _cols(("name", False, 200), ("email", True)), user=USER))
     sql, args = pool.calls[0]
     assert "ON CONFLICT (user_id, table_key) WHERE user_id IS NOT NULL" in sql
-    assert "staging.user_column_prefs" in sql
+    assert "public.user_column_prefs" in sql
     assert args[0] == USER["user_id"]
     assert args[1] == "graha.contacts"
     assert json.loads(args[2]) == [
@@ -386,8 +386,8 @@ def test_every_statement_is_schema_qualified(pool, as_admin):
     run(cp.put_org_column_prefs("graha.contacts", _cols(("a",)),
                                 user=USER, org_id=ORG))
     for sql, _ in pool.calls:
-        assert "staging.user_column_prefs" in sql
-        assert "user_column_prefs" not in sql.replace("staging.user_column_prefs", "")
+        assert "public.user_column_prefs" in sql
+        assert "user_column_prefs" not in sql.replace("public.user_column_prefs", "")
 
 
 # ── the ladder helper, shared with tab_prefs ────────────────────────────────

@@ -195,7 +195,7 @@ async def test_set_rule_refuses_to_enforce_something_nothing_reads():
 
 async def test_set_rule_still_accepts_the_two_declared_states():
     pool = _ScriptPool({
-        "INSERT INTO staging.module_compliance_settings": {
+        "INSERT INTO public.module_compliance_settings": {
             "rule_key": "pf_applicable", "state": "not_applicable",
             "set_by": SETTER, "set_at": SET_AT, "reason": "no employees under EPF",
         },
@@ -208,7 +208,7 @@ async def test_set_rule_still_accepts_the_two_declared_states():
 
 async def test_resolve_all_returns_every_module_in_display_order():
     pool = _ScriptPool({
-        "FROM staging.module_compliance_settings": [
+        "FROM public.module_compliance_settings": [
             {"module": "vetana", "rule_key": "esi_applicable", "state": "not_applicable",
              "set_by": SETTER, "set_at": SET_AT, "reason": "never ten at one location"},
             # A row for a rule the registry does not know. It must be ignored
@@ -257,20 +257,20 @@ def _driven():
                 # its statement is captured. With no rows there is nobody to
                 # name and the query the privacy rule depends on is never
                 # issued — the one this file most needs to describe.
-                "FROM staging.module_compliance_settings": [stored_row],
+                "FROM public.module_compliance_settings": [stored_row],
                 "FROM public.users": [{"user_id": SETTER, "setter_name": "Keval Shah"}],
-                "FROM staging.module_subscriptions": [{"module_code": "ganit"}],
+                "FROM public.module_subscriptions": [{"module_code": "ganit"}],
              },
              lambda: router_mod.get_all_settings(user={"user_id": SETTER}, org_id=ORG)),
             ("get_module", {
-                "FROM staging.module_compliance_settings": [stored_row],
+                "FROM public.module_compliance_settings": [stored_row],
                 "FROM public.users": [{"user_id": SETTER, "setter_name": "Keval Shah"}],
              },
              lambda: router_mod.get_module_settings("ganit", user={"user_id": SETTER}, org_id=ORG)),
             ("patch", {
-                "FROM staging.module_compliance_settings": [stored_row],
+                "FROM public.module_compliance_settings": [stored_row],
                 "FROM public.users": [{"user_id": SETTER, "setter_name": "Keval Shah"}],
-                "INSERT INTO staging.module_compliance_settings": dict(stored_row),
+                "INSERT INTO public.module_compliance_settings": dict(stored_row),
              },
              lambda: router_mod.patch_module_setting(
                  "ganit",
@@ -303,12 +303,12 @@ async def _payload(handler, script):
 
 
 _SEEDED = {
-    "FROM staging.module_compliance_settings": [{
+    "FROM public.module_compliance_settings": [{
         "module": "ganit", "rule_key": "hsn_required", "state": "enforced",
         "set_by": SETTER, "set_at": SET_AT, "reason": "we always need HSN",
     }],
     "FROM public.users": [{"user_id": SETTER, "setter_name": "Keval Shah"}],
-    "FROM staging.module_subscriptions": [{"module_code": "ganit"}],
+    "FROM public.module_subscriptions": [{"module_code": "ganit"}],
 }
 
 
@@ -393,7 +393,7 @@ async def test_the_patch_audit_row_says_what_it_changed_from(monkeypatch):
             router_mod.RulePatch(rule_key="hsn_required", state="not_applicable",
                                  reason="composition dealer"),
             _FakeRequest(), user={"user_id": SETTER}, org_id=ORG),
-        {**_SEEDED, "INSERT INTO staging.module_compliance_settings": {
+        {**_SEEDED, "INSERT INTO public.module_compliance_settings": {
             "rule_key": "hsn_required", "state": "not_applicable",
             "set_by": SETTER, "set_at": SET_AT, "reason": "composition dealer",
         }})
@@ -411,7 +411,7 @@ async def test_the_patch_audit_row_says_what_it_changed_from(monkeypatch):
 # ══════════════════════════════════════════════════════════════════════════
 
 _PLACEHOLDER_DSN = "postgresql://test:test@localhost/test"
-_SEARCH_PATH = "SET search_path TO staging, public"
+_SEARCH_PATH = "SET search_path TO public"
 
 SKIP_REASON = (
     "no live database. This half parses the router's SQL against the real "
@@ -433,7 +433,7 @@ def live_dsn() -> str | None:
 
 def _column_list(sql: str) -> list[str]:
     """The column list of an INSERT, as written."""
-    m = re.search(r"INSERT INTO\s+staging\.\w+\s*\(([^)]*)\)", sql, re.I | re.S)
+    m = re.search(r"INSERT INTO\s+public\.\w+\s*\(([^)]*)\)", sql, re.I | re.S)
     return [c.strip() for c in m.group(1).split(",")] if m else []
 
 
@@ -455,7 +455,7 @@ def _describe(calls):
             catalogue = await conn.fetch(
                 "SELECT column_name, is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'staging' AND table_name = $1",
+                "WHERE table_schema = ANY(current_schemas(false)) AND table_name = $1",
                 TABLE,
             )
             return failures, params, [dict(r) for r in catalogue]
@@ -502,22 +502,22 @@ def test_the_upsert_names_real_columns_and_omits_no_required_one(live):
     migration 210's `CREATE TABLE IF NOT EXISTS` is not evidence of the
     columns that are actually there."""
     _, params, catalogue = live
-    assert catalogue, f"staging.{TABLE} is not on the database"
+    assert catalogue, f"public.{TABLE} is not on the database"
     known = {c["column_name"] for c in catalogue}
     required = {c["column_name"] for c in catalogue
                 if c["is_nullable"] == "NO" and c["column_default"] is None}
     assert {"org_id", "module", "rule_key"} <= required, (
         "the premise changed: org_id/module/rule_key are no longer NOT NULL "
-        f"without a default on staging.{TABLE}")
+        f"without a default on public.{TABLE}")
 
     seen = 0
     for path, sql, _, _ in params:
-        if f"INSERT INTO staging.{TABLE}" not in sql:
+        if f"INSERT INTO public.{TABLE}" not in sql:
             continue
         seen += 1
         cols = set(_column_list(sql))
         assert not (cols - known), (
-            f"[{path}] names columns staging.{TABLE} does not have: "
+            f"[{path}] names columns public.{TABLE} does not have: "
             f"{sorted(cols - known)}")
         assert not (required - cols), (
             f"[{path}] omits NOT NULL columns with no default: "
@@ -532,10 +532,10 @@ def test_the_three_statements_the_screen_depends_on_were_all_described(live):
     _, params, _ = live
     described = " ".join(sql for _, sql, _, _ in params)
     for needle in (
-        f"FROM staging.{TABLE}",          # resolve / resolve_all
-        "FROM staging.module_subscriptions",  # which modules are on
+        f"FROM public.{TABLE}",          # resolve / resolve_all
+        "FROM public.module_subscriptions",  # which modules are on
         "FROM public.users",              # names, not ids
-        f"INSERT INTO staging.{TABLE}",   # the upsert
+        f"INSERT INTO public.{TABLE}",   # the upsert
     ):
         assert needle in described, f"never captured a statement with {needle!r}"
     assert pathlib.Path(router_mod.__file__).name == "compliance_settings.py"
@@ -556,7 +556,7 @@ def test_the_state_check_constraint_still_matches_the_python_vocabulary(live):
                 "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
                 "JOIN pg_class t ON t.oid = c.conrelid "
                 "JOIN pg_namespace n ON n.oid = t.relnamespace "
-                "WHERE n.nspname='staging' AND t.relname=$1 AND c.contype='c' "
+                "WHERE n.nspname = ANY(current_schemas(false)) AND t.relname=$1 AND c.contype='c' "
                 "AND pg_get_constraintdef(c.oid) ILIKE '%state%'",
                 TABLE,
             )
@@ -565,7 +565,7 @@ def test_the_state_check_constraint_still_matches_the_python_vocabulary(live):
 
     definition = asyncio.run(run())
     assert definition, (
-        f"staging.{TABLE} has no CHECK on `state` — the three-state "
+        f"public.{TABLE} has no CHECK on `state` — the three-state "
         "vocabulary is enforced only in Python")
     for state in svc.STATES:
         assert state in definition, (

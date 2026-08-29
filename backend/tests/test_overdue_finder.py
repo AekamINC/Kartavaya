@@ -98,6 +98,8 @@ def test_no_spec_references_a_table_or_column_that_does_not_exist():
     """
     for module, spec in _MODULE_MAP.items():
         blob = " ".join(str(v) for v in spec.values())
+        # `staging.tasks` never existed; `public.tasks` is the real relation.
+        # The ban keeps naming `staging.`, per the docstring above.
         assert "staging.tasks" not in blob, f"{module} points at a table that does not exist"
         assert "is_done" not in blob, f"{module} filters a column that does not exist"
 
