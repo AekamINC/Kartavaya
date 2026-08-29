@@ -386,13 +386,19 @@ def test_the_scan_is_not_vacuous():
     )
 
 
+#: Files whose PROSE describes a staging-qualified probe, and how many such
+#: lines each carries. Deliberately NOT pinned to line numbers: the first
+#: version of this test was, and a one-line insertion elsewhere in
+#: `support_session.py` shifted 77 -> 78 and turned the whole ratchet red for a
+#: reason that had nothing to do with what it guards. A count per file keeps the
+#: anti-vacuity property — the prose must still exist, and in the same volume —
+#: without breaking every time an unrelated line lands above it.
 DOCUMENTED_PROBE_SITES = [
-    ("routers/messaging.py", 11),
-    ("routers/org_modules.py", 169),
-    ("routers/org_security.py", 12),
-    ("routers/org_switch.py", 51),
-    ("services/support_session.py", 77),
-    ("services/support_session.py", 78),
+    ("routers/messaging.py", 1),
+    ("routers/org_modules.py", 1),
+    ("routers/org_security.py", 1),
+    ("routers/org_switch.py", 1),
+    ("services/support_session.py", 2),
 ]
 
 
@@ -408,7 +414,9 @@ def test_the_stripper_removes_prose_but_leaves_code():
     raw_hits, stripped_hits = [], []
     pattern = FORBIDDEN_PATTERNS["to_regclass_literal"]
 
-    for relpath, lineno in DOCUMENTED_PROBE_SITES:
+    expected_total = sum(n for _, n in DOCUMENTED_PROBE_SITES)
+
+    for relpath, expected_count in DOCUMENTED_PROBE_SITES:
         path = BACKEND_ROOT / relpath
         assert path.exists(), (
             "{} has moved; update DOCUMENTED_PROBE_SITES".format(relpath))
@@ -416,24 +424,27 @@ def test_the_stripper_removes_prose_but_leaves_code():
         original = raw.decode("utf-8", "replace").splitlines()
         code = _strip_comments_and_docstrings(raw)
 
-        assert lineno <= len(original), (
-            "{}:{} is past the end of the file - the prose moved. Re-locate it "
-            "and update DOCUMENTED_PROBE_SITES; do not just delete the "
-            "entry.".format(relpath, lineno)
+        found = [n for n, line in enumerate(original, 1) if pattern.search(line)]
+        assert len(found) == expected_count, (
+            "{} carries {} prose probe line(s), expected {}. If the prose was "
+            "deliberately removed, lower the count; do not delete the entry, "
+            "because an empty list makes this test prove nothing."
+            .format(relpath, len(found), expected_count)
         )
-        if pattern.search(original[lineno - 1]):
-            raw_hits.append("{}:{}".format(relpath, lineno))
-        if pattern.search(code[lineno - 1]):
-            stripped_hits.append("{}:{}: {}".format(
-                relpath, lineno, original[lineno - 1].strip()))
+        raw_hits.extend("{}:{}".format(relpath, n) for n in found)
+
+        for n in found:
+            if n <= len(code) and pattern.search(code[n - 1]):
+                stripped_hits.append("{}:{}: {}".format(
+                    relpath, n, original[n - 1].strip()))
 
     # Anti-vacuity for the stripper itself: if the prose is gone, this test is
     # no longer proving anything and must be re-pointed rather than left green.
-    assert len(raw_hits) == len(DOCUMENTED_PROBE_SITES), (
+    assert len(raw_hits) == expected_total, (
         "only {} of {} documented probe sites still contain the pattern in raw "
         "text: {}. This test now proves nothing about the comment stripper - "
         "re-point DOCUMENTED_PROBE_SITES at prose that still exists.".format(
-            len(raw_hits), len(DOCUMENTED_PROBE_SITES), raw_hits)
+            len(raw_hits), expected_total, raw_hits)
     )
     assert not stripped_hits, (
         "The comment/docstring stripper is flagging prose, not code:\n  "
@@ -443,13 +454,13 @@ def test_the_stripper_removes_prose_but_leaves_code():
     )
 
 
-PLANTED = b'''"""Module docstring: to_regclass('staging.user_totp') is NULL here."""
+PLANTED = b'''"""Module docstring: to_regclass('public.user_totp') is NULL here."""
 
 
 async def probe_in_parens(pool):
-    # A comment mentioning to_regclass('staging.user_totp') must be ignored.
+    # A comment mentioning to_regclass('public.user_totp') must be ignored.
     return await pool.fetchval(
-        "SELECT to_regclass('staging.user_totp')"
+        "SELECT to_regclass('public.user_totp')"
     )
 
 
@@ -483,7 +494,7 @@ def test_the_matcher_catches_a_planted_violation():
 
     only = violations[0]
     assert only.rule == "to_regclass_literal"
-    assert "staging.user_totp" in only.line
+    assert "public.user_totp" in only.line
     assert "planted.py:7" in str(only), (
         "the failure message must name file:line so the next person can act "
         "without re-deriving anything; got {}".format(only)
