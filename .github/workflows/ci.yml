@@ -167,11 +167,22 @@ jobs:
       # as an artefact, so the number lands somewhere a person can read it. If you want it for a branch, run it locally:
       #   cd backend && pytest --cov=. --cov-report=term-missing
       - name: Run unit tests
-        run: pytest -q
+        run: pytest -q -rs
         env:
           JWT_SECRET: ci-test-secret-minimum-32-chars-long
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
-          # DATABASE_URL is intentionally absent — db._pool is mocked in tests
+          # DATABASE_URL is intentionally absent — db._pool is mocked in tests.
+          #
+          # ⚠ AND THAT MAKES 44 FILES SKIP, SILENTLY, ON EVERY RUN.
+          # Every `live_dsn()` test — the ones that execute real SQL against the
+          # real catalogue — returns None here and calls pytest.skip. A green tick
+          # over 44 wholesale skips is the exact condition under which a schema
+          # change ships unnoticed, so `-rs` now prints the skip reasons into the
+          # log. Do not remove it to quieten the output: the noise IS the signal.
+          #
+          # Supplying a DSN is NOT the fix. staging and production share one
+          # Supabase database, so a CI job with credentials could write to live
+          # customer data from any pull request.
 
       # The golden eval set — proposal 69 mechanism C. Deliberately NOT part of
       # the pytest step above: `pytest.ini` pins `testpaths = tests`, which is

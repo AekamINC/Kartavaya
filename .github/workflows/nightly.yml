@@ -59,8 +59,15 @@ jobs:
       # `pytest.ini` pins `testpaths = tests`, which is what keeps the suite
       # offline. This job must not become the one that reaches the shared
       # Supabase instance.
+      #
+      # ⚠ THE COST OF THAT, MADE VISIBLE: 44 live-SQL files skip wholesale
+      # without a DSN. A green tick over that silence is the exact condition
+      # under which a schema change ships unnoticed, so `-rs` prints the skip
+      # reasons into the log. Do not drop it to quieten the output.
+      # Supplying a DSN is NOT the fix — staging and production share one
+      # database, so a job with credentials could write to live customer data.
       - name: Run unit tests with coverage
-        run: pytest -q --cov=. --cov-report=term-missing --cov-report=xml
+        run: pytest -q -rs --cov=. --cov-report=term-missing --cov-report=xml
         env:
           JWT_SECRET: ci-test-secret-minimum-32-chars-long
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
