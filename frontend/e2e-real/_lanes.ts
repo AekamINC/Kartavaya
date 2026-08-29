@@ -112,6 +112,25 @@ export async function signInAs(page: Page, l: Lane) {
   await page.evaluate((t) => localStorage.setItem('auth_token', t), l.token);
   await page.goto('/dashboard');
   await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 45_000 });
+
+  // ⚠ THE GUARD RUNS HERE, NOT IN EACH SPEC, AND THAT WAS THE WHOLE POINT.
+  //
+  // `ae7f0510` was titled "the org guard had never run" and named two faults:
+  // `assertOrg` compared against an `id` the endpoint did not return, and NO
+  // SPEC IMPORTED IT. The first was fixed. The second was recorded as fixed —
+  // "now called inside `signInAs()`, the only way into the suite, so a test
+  // cannot reach a form without passing it" — and **it was not**. Measured
+  // 2026-08-29: `signInAs` returned here, and the guard was a line each spec
+  // had to remember.
+  //
+  // Eight files do remember it today, which is why nothing went wrong. But a
+  // rule every author must re-apply is the rule that renamed Aekam Inc, and a
+  // NEW suite is exactly the case that forgets. So it is a property of getting
+  // in, rather than a habit.
+  //
+  // `page.request` shares this context's cookies and storage, so it asks as
+  // the session that was just established rather than as an anonymous client.
+  await assertOrg(page.request, page, l);
 }
 
 /**

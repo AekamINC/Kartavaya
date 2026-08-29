@@ -1690,15 +1690,40 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     //
     // So the three controls must STAY absent, and this now fails if somebody
     // adds one. The measurement is the same; the expected answer flipped.
+    /**
+     * ⚠ FOLDER NAMES ARE BUTTONS ON THIS TAB, AND ONE OF THEM IS CALLED
+     * "Personal uploads".
+     *
+     * `TabStorage` renders a folder as a `<button>` so it can be walked into
+     * and a file as a `<span>` (`:240` and `:264`) — both carry `.sto__nm`. So
+     * an unscoped `getByRole('button', { name: /upload/i })` matches the
+     * FOLDER `personal/`, whose label is "Personal uploads", and reports an
+     * upload control on a tab that has none.
+     *
+     * Measured on staging 2026-08-29: zero `input[type=file]` on the entire
+     * page, nine buttons in the panel, and exactly one of them matching —
+     * "Personal uploads". The bucket's own contents were deciding the verdict.
+     *
+     * That is the worse half of it. A check whose answer depends on what
+     * happens to be in R2 is one that passes or fails for reasons nothing in
+     * this suite created — §7's "a suite written against a populated org can
+     * silently depend on rows it did not create", arriving through a locator
+     * rather than through a fixture.
+     *
+     * It was invisible before because the assertion ran the other way: the old
+     * test asked whether the control was MISSING, so a false positive here
+     * quietly suppressed one line of a failure that was failing anyway.
+     */
+    const controls = panel.locator('button').locator(':not(.sto__nm)');
+    const named = (rx: RegExp) => controls.filter({ hasText: rx });
+
     const uploadControls =
       (await panel.locator('input[type="file"]').count()) +
-      (await panel.getByRole('button', { name: /upload|add file|choose file|attach/i }).count());
+      (await named(/upload|add file|choose file|attach/i).count());
     const downloadControls =
-      (await panel.getByRole('button', { name: /download|open file|get a link|save a copy/i }).count()) +
+      (await named(/download|open file|get a link|save a copy/i).count()) +
       (await panel.locator('a[download], a[href^="http"]').count());
-    const deleteControls = await panel
-      .getByRole('button', { name: /delete|remove|discard/i })
-      .count();
+    const deleteControls = await named(/delete|remove|discard/i).count();
 
     const wrongly: string[] = [];
     if (uploadControls) wrongly.push(`UPLOAD — ${uploadControls} control(s) on a tab that must not write`);
@@ -1795,7 +1820,12 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
         (r) => r.url().includes('/graha/documents/upload') && r.request().method() === 'POST',
         { timeout: 60_000 },
       ),
-      page.getByRole('button', { name: /^Save$|^Upload$|^Add$/ }).first().click(),
+      // `DocumentsTab.jsx`'s own label, read off the JSX rather than guessed:
+      // `{saving ? 'Saving…' : 'Add Document'}`. An earlier `/^Add$/` matched
+      // nothing — an anchored guess at a label is the same mistake as guessing
+      // a column name, and it fails as "element not found", which reads as a
+      // missing control rather than as a wrong selector.
+      page.getByRole('button', { name: 'Add Document', exact: true }).click(),
     ]);
     expect(up.status(), `document upload -> ${up.status()}: ${await up.text()}`).toBeLessThan(400);
 
@@ -1893,7 +1923,14 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await openTab(page, 'recycle');
     const binRow2 = page.locator('tbody tr').filter({ hasText: stamp }).first();
     await expect(binRow2).toBeVisible({ timeout: 30_000 });
-    await binRow2.getByRole('button', { name: /Move to second-stage|Delete/i }).first().click();
+    // ⚠ THE ACCESSIBLE NAME IS THE `aria-label`, NOT THE VISIBLE TEXT.
+    // The row's button READS "Delete" and is labelled
+    // `Move <file name> to the second-stage bin` — deliberately, so a screen
+    // reader is not read twelve identical "Delete"s
+    // (`TabRecycleBin.jsx`). `getByRole` matches the accessible name, so a
+    // locator written against the visible text finds nothing and fails as a
+    // MISSING CONTROL, which is the wrong diagnosis entirely.
+    await binRow2.getByRole('button', { name: /second-stage/i }).click();
     const dialog3 = page.getByRole('alertdialog');
     await expect(dialog3).toBeVisible({ timeout: 15_000 });
     // Nothing is destroyed by this step, so it must not be dressed as danger.
@@ -1918,7 +1955,8 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await page.reload();
     const binRow3 = page.locator('tbody tr').filter({ hasText: stamp }).first();
     await expect(binRow3).toBeVisible({ timeout: 30_000 });
-    await binRow3.getByRole('button', { name: /Delete permanently/i }).click();
+    // Same reason as above: the label is `Delete <file name> permanently`.
+    await binRow3.getByRole('button', { name: /permanently/i }).click();
     const dialog4 = page.getByRole('alertdialog');
     await expect(dialog4).toBeVisible({ timeout: 15_000 });
     await expect(dialog4).toContainText(/cannot be (undone|recovered)/i);
@@ -1927,7 +1965,10 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // matches, and that guard is the difference between this control and the
     // one a click reaches by accident. Asserted DISABLED first, or "it was
     // enabled all along" would pass silently.
-    const destroy = dialog4.getByRole('button', { name: /Delete permanently/i });
+    // The DIALOG's button is `confirmLabel`, a fixed string with no file name
+    // in it, so this one is exact — the two are different controls and the
+    // distinction is what stops the row button satisfying the dialog check.
+    const destroy = dialog4.getByRole('button', { name: 'Delete permanently', exact: true });
     await expect(destroy, 'the permanent delete was enabled before the name was typed').toBeDisabled();
     await dialog4.locator('input[type="text"], .cd__type input').first().fill(stamp);
     await expect(destroy).toBeEnabled();
