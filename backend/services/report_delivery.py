@@ -273,7 +273,7 @@ async def load_passphrase(pool, org_id: str) -> str:
     try:
         raw = await pool.fetchval(
             "SELECT settings->$2::text->>$3::text "
-            "  FROM staging.organisations WHERE id = $1::uuid",
+            "  FROM public.organisations WHERE id = $1::uuid",
             str(org_id), SETTINGS_KEY, PASSPHRASE_FIELD)
     except Exception:
         log.warning("report_delivery: settings read failed for org %s", org_id)
