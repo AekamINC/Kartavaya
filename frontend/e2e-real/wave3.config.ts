@@ -85,5 +85,31 @@ export default defineConfig({
       outputDir: path.join(OUT, 'ganit'),
       use: { ...devices['Desktop Chrome'] },
     },
+    /**
+     * ── SUITE 03 · CORE PM ─────────────────────────────────────────────────
+     *
+     * §14 places Suite 03 in WAVE 5, not here — it needs Suite 04's clients for
+     * the task→client link and reads nothing else from waves 2–4. It rides this
+     * config rather than a wave5 file of its own because a config is a runner,
+     * not a schedule, and adding a fifth is a fifth place for `channel:
+     * 'chrome'` and the timeout to drift. Run it on its own:
+     *
+     *   npx playwright test --config e2e-real/wave3.config.ts --project corepm
+     *
+     * ⚠ ITS OWN `outputDir`, for the reason the header of this file records:
+     * Playwright EMPTIES the directory at the start of a run, so two concurrent
+     * agents sharing one delete each other's in-flight traces and a green
+     * journey is reported red.
+     *
+     * `workers` is inherited (3) and this project is a single spec file, so it
+     * runs on one worker in declaration order — which Suite 03 depends on: its
+     * tests build on each other's rows. See the `serial` note in the spec.
+     */
+    {
+      name: 'corepm',
+      testMatch: /suite03-core-pm\.spec\.ts/,
+      outputDir: path.join(OUT, 'corepm'),
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
 });

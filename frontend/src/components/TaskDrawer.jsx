@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api, rows } from '../lib/api';
 import { currentUser } from '../lib/auth';
+import { navContext } from './layout/navConfig';
 import ConfirmDialog from './ui/ConfirmDialog';
 import FocusTrap from './ui/FocusTrap';
 import FieldRenderer from './fields/FieldRenderer';
@@ -104,6 +105,8 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [draft,       setDraft]      = useState({});
   const [columns,     setColumns]    = useState([]);
   const [members,     setMembers]    = useState([]);
+  /** This caller's role ON THIS PROJECT, from `GET /teams/{id}.your_role`. */
+  const [myRole,      setMyRole]     = useState(null);
   const [categories,  setCategories] = useState([]);
 
   // ── UI state ──────────────────────────────────────────────────────────────
@@ -240,7 +243,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     if (bodyRef.current) bodyRef.current.scrollTop = 0;
     setTask(null); setFields([]); setFValues({});
     setComments([]); setActivity([]); setEntries([]); setTimer(null); setTimeErr(null); setAttachments([]);
-    setMembers([]); setActLoad(false);
+    setMembers([]); setMyRole(null); setActLoad(false);
 
     api.get('/categories').then(r => setCategories(Array.isArray(r.data) ? r.data : [])).catch(() => {});
 
@@ -267,7 +270,14 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       setAttachments(Array.isArray(att) ? att.map(a => typeof a === 'string' ? { url: a, name: a.split('/').pop() } : a) : []);
       if (t.team_id) {
         api.get(`/projects/${t.team_id}/columns`).then(r => setColumns(Array.isArray(r.data) ? r.data : [])).catch(() => {});
-        api.get(`/teams/${t.team_id}`).then(r => setMembers(Array.isArray(r.data?.members) ? r.data.members : [])).catch(() => {});
+        // `your_role` comes back on this SAME response and was being thrown
+        // away. It is the server's own answer to "what may this caller do on
+        // this project", which is the question the permission block at the foot
+        // of this file has to answer — see the note there.
+        api.get(`/teams/${t.team_id}`).then(r => {
+          setMembers(Array.isArray(r.data?.members) ? r.data.members : []);
+          setMyRole(r.data?.your_role || null);
+        }).catch(() => {});
         // These two were the only reads in this effect with no rejection
         // handler — every sibling above has one. A 403 or a 500 on either
         // therefore became an Unhandled Rejection, and the custom-field section
@@ -895,10 +905,54 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   };
 
   // ── Permission helpers ────────────────────────────────────────────────────
-  const isSystemAdmin = me?.role === 'admin';
-  const isOwnerAdmin  = me?.role === 'admin' || me?.role === 'owner';
-  const isClient      = me?.role === 'client';
-  const canDeleteTask = isSystemAdmin || (task && teamMembers.find(m => m.user_id === me?.user_id && (m.role === 'admin' || m.role === 'owner')));
+  /**
+   * ⚠ NOT `users.role`. That column is a single GLOBAL string and cannot say
+   * "client of org A, org_admin of org B" — and on the live database it does
+   * not even agree with `staging.user_roles`.
+   *
+   * MEASURED 2026-08-29, read-only:
+   *
+   *     org_admin + users.role='client'   2 accounts
+   *     org_admin + users.role='member'   8
+   *     org_owner + users.role='member'   2
+   *     ── 12 of the 18 org owners/administrators in this database ──
+   *
+   * Every one of those twelve opened a task in their OWN organisation and got
+   * a drawer with no Approve, no Reject, no Archive and no Delete; the two on
+   * `'client'` also lost the Time tab entirely and were shown the CLIENT
+   * approve/reject panel instead of the administrator's.
+   *
+   * The backend already fixed exactly this, and named these same two accounts
+   * while doing it — `middleware/roles.is_portal_client`: "two accounts carry
+   * `users.role='client'` while holding `org_admin`. Both are org
+   * administrators who were shown an empty comment list and no files on their
+   * own organisation's tasks, because every client gate believed the column."
+   * `navConfig.navContext` is the client-side twin of that repair and has been
+   * correct since it was written; this file was the last staff surface still
+   * reading the column directly.
+   *
+   * Each predicate below is the CLIENT-SIDE MIRROR of the server rule that
+   * actually decides, so no control is offered that the server would refuse:
+   *
+   *   isClient        `is_portal_client` — role='client' AND no org role at all
+   *   isSystemAdmin   `is_org_admin(user, active_org)` — the comment-moderation
+   *                   and delete escape hatch (`server.delete_task`)
+   *   isOwnerAdmin    `is_project_owner(team) OR is_org_admin(user)` —
+   *                   `approvals_router.approve_task` / `reject_task`
+   *   canDeleteTask   the same pair, `server.delete_task`
+   *
+   * `myRole` is the SERVER's answer for this project (`GET /teams/{id}` →
+   * `your_role`), not a role guessed from a member row: `members[].member_role`
+   * is a JOB TITLE ("ORG Test Account") and reading it as a permission would be
+   * worse than reading the legacy column.
+   */
+  const nav           = navContext(me);
+  const isSystemAdmin = nav.isOrgAdmin;
+  const isProjectLead = ['owner', 'admin'].includes(myRole || '')
+    || !!teamMembers.find(m => m.user_id === me?.user_id && (m.role === 'admin' || m.role === 'owner'));
+  const isOwnerAdmin  = isSystemAdmin || isProjectLead;
+  const isClient      = nav.isClient;
+  const canDeleteTask = isSystemAdmin || (task && isProjectLead);
 
   if (!open) return null;
 

@@ -167,7 +167,44 @@ export default function KanbanView({
     transientTimers.current.add(t);
   }, []);
 
-  const canManageCols = !readOnly && !!teamId && ['admin', 'owner'].includes(currentUserRole);
+  /**
+   * ⚠ THE PROJECT ROLE, NOT `users.role` — and this was a shipped blocker.
+   *
+   * The server's rule for column CRUD is one line, repeated on all four routes
+   * (`server.create_column` / `update_column` / `delete_column` /
+   * `reorder_columns`):
+   *
+   *     mem = await is_project_member(pool, team_id, user)
+   *     if not mem or mem["role"] not in ("owner", "admin"): 403
+   *
+   * That is `project_assignments.role` — the caller's role ON THIS PROJECT.
+   * This line asked a different question: `currentUserRole` is `me.role`, the
+   * legacy GLOBAL `users.role` column, which `is_project_member`'s own
+   * docstring calls out as "a per-user GLOBAL column [where] the tier model is
+   * per-org and per-module".
+   *
+   * MEASURED 2026-08-29, read-only, across `staging.user_roles`:
+   *
+   *     org_admin + users.role='member'   8 accounts
+   *     org_admin + users.role='client'   2
+   *     org_owner + users.role='member'   2
+   *     ── 12 of 18 org owners/administrators ──
+   *
+   * All twelve create a project (which seats them `owner` in
+   * `project_assignments`, `server.create_team`) and are then refused every
+   * column control on their own board — no Add column, no rename, no delete,
+   * and on an empty board the EmptyState tells them "An admin or owner can add
+   * columns to this project" while they ARE the owner.
+   *
+   * `teamMembers` is `GET /teams/{id}` → `members` (or `/teams/{id}/members`),
+   * whose `role` IS `project_assignments.role`. `member_role` on that same row
+   * is a JOB TITLE and must never be read here. The legacy column stays as the
+   * last fallback so a surface that passes no roster is no worse than before.
+   */
+  const myProjectRole =
+    (teamMembers || []).find(m => m.user_id && m.user_id === currentUserId)?.role;
+  const canManageCols = !readOnly && !!teamId
+    && ['admin', 'owner'].includes(myProjectRole || currentUserRole);
 
   const startRename = (col) => {
     if (!canManageCols || col._synthetic) return;
@@ -283,7 +320,23 @@ export default function KanbanView({
     }
   }, [readOnly, onTasksChange, markTransient, pushToast]);
 
-  const isClient = currentUserRole === 'client';
+  /**
+   * A PORTAL client, not "anyone whose legacy column says client".
+   *
+   * The server's predicate is `middleware/roles.is_portal_client`, and its
+   * docstring names the two accounts this line was catching: org administrators
+   * carrying `users.role='client'`. Here the consequence was that they could
+   * drag only their own not-yet-started cards on their own organisation's
+   * board — see `canManageCols` above for the measurement.
+   *
+   * The project role decides, exactly as it does on the server
+   * (`services/task_actor.project_role`): a `client` row in
+   * `project_assignments` is a client of THIS project, whatever the global
+   * column says.
+   */
+  const isClient = myProjectRole
+    ? myProjectRole === 'client'
+    : currentUserRole === 'client';
 
   // Columns to render — prepend/append synthetic cols when enabled.
   const visibleColumns = useMemo(() => {

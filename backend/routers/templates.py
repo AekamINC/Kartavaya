@@ -269,10 +269,52 @@ async def apply_project_template(
 # ── Task templates ───────────────────────────────────────────────────────────────
 
 @router.get("/tasks")
-async def list_task_templates(team_id: Optional[str] = None, pool=Depends(get_pool), user=Depends(require_user)):
+async def list_task_templates(
+    team_id: Optional[str] = None,
+    pool=Depends(get_pool),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """Task templates for the caller's ACTIVE organisation.
+
+    ── THE ORG PREDICATE, WHICH THIS ROUTE DID NOT HAVE ─────────────────────
+
+    MEASURED 2026-08-29 against staging, with `X-Org-Id` naming **Unicode
+    Group** and an ORG-SCOPED token:
+
+        GET /api/templates/tasks
+        → ttmpl_4910d50bdd "Video Shoot"    team_95beaa7529a9  org 045b76ad
+          ttmpl_d4c780228d "Kartavya-Issue" team_95beaa7529a9  org 045b76ad
+
+    `045b76ad` is **Aekam Inc**. Unicode Group holds no task template at all,
+    and the New Task modal on a Unicode board offered two of the vendor's, by
+    name, with their titles, descriptions, subtasks and attachment links inside
+    them.
+
+    The no-team branch below scoped by PROJECT MEMBERSHIP alone — "every
+    template on every project I am on" — which is a union across organisations,
+    not a tenancy predicate. The caller here holds a `client` seat on one Aekam
+    project and `org_admin` of Unicode; the union handed Aekam's templates to a
+    Unicode screen. This is the same shape as the `create_deal` sweep and the
+    same shape `navConfig` records for the sidebar: a role question answered
+    over the union of every org instead of over the active one.
+
+    `list_project_templates` beside it already got this right and its docstring
+    states the rule — "Aekam sees what the org it is acting in sees" — so the
+    fix here is to hold the same line rather than invent a second one, INCLUDING
+    for platform staff, whose all-rows branch was the widest version of the same
+    fault.
+
+    Org-wide templates (`team_id IS NULL`, and therefore `org_id IS NULL`, which
+    only platform staff can create) stay visible to everyone: they are the
+    product's own, not a tenant's.
+    """
     is_staff = await is_platform_staff(user["user_id"])
 
     if team_id:
+        # The team pins the organisation, so no separate org predicate is
+        # needed — and `_assert_team_member` is what stops a caller naming
+        # somebody else's project here.
         if not is_staff:
             await _assert_team_member(pool, team_id, user["user_id"])
         rows = await pool.fetch("""
@@ -280,20 +322,24 @@ async def list_task_templates(team_id: Optional[str] = None, pool=Depends(get_po
             WHERE team_id=$1 OR team_id IS NULL
             ORDER BY is_default DESC, created_at ASC
         """, team_id)
+    elif is_staff:
+        rows = await pool.fetch("""
+            SELECT * FROM task_templates
+            WHERE org_id = $1::uuid OR (org_id IS NULL AND team_id IS NULL)
+            ORDER BY is_default DESC, created_at ASC
+        """, org_id)
     else:
-        if not is_staff:
-            rows = await pool.fetch("""
-                SELECT DISTINCT tt.* FROM task_templates tt
-                LEFT JOIN (
-                    -- PROJECT membership; see `_is_team_member` above for why
-                    -- `project_assignments` alone is the whole set.
-                    SELECT team_id FROM public.project_assignments WHERE user_id=$1
-                ) my_teams ON my_teams.team_id = tt.team_id
-                WHERE tt.team_id IS NULL OR my_teams.team_id IS NOT NULL
-                ORDER BY tt.is_default DESC, tt.created_at ASC
-            """, user["user_id"])
-        else:  # platform staff
-            rows = await pool.fetch("SELECT * FROM task_templates ORDER BY is_default DESC, created_at ASC")
+        rows = await pool.fetch("""
+            SELECT DISTINCT tt.* FROM task_templates tt
+            LEFT JOIN (
+                -- PROJECT membership; see `_is_team_member` above for why
+                -- `project_assignments` alone is the whole set.
+                SELECT team_id FROM public.project_assignments WHERE user_id=$1
+            ) my_teams ON my_teams.team_id = tt.team_id
+            WHERE (tt.org_id = $2::uuid OR (tt.org_id IS NULL AND tt.team_id IS NULL))
+              AND (tt.team_id IS NULL OR my_teams.team_id IS NOT NULL)
+            ORDER BY tt.is_default DESC, tt.created_at ASC
+        """, user["user_id"], org_id)
     return [dict(r) for r in rows]
 
 

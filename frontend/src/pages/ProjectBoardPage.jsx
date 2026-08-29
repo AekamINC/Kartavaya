@@ -60,6 +60,17 @@ import { Secondary } from '../components/Bilingual';
 import DateInput from '../components/ui/DateInput';
 import { apiErrorText } from '../lib/apiError';
 
+/**
+ * The three view types `saved_views.type` can hold.
+ *
+ * Not a preference — `saved_views_type_check` is a live CHECK constraint
+ * (`CHECK (type = ANY (ARRAY['kanban','table','calendar'])))`, verified from
+ * `pg_constraint` on 2026-08-29) and `routers/views.create_view` re-states it
+ * with a 400. The board offers seven views; the other four are recorded in
+ * `config.viewType`, which is where this page was already putting them.
+ */
+const STORABLE_VIEW_TYPES = ['kanban', 'table', 'calendar'];
+
 /** Month to date — the window a status report is usually asked for. */
 function monthToDate(today = new Date()) {
   const iso = d => d.toISOString().slice(0, 10);
@@ -95,7 +106,11 @@ export default function ProjectBoardPage() {
   const [newTaskEditor, setNewTaskEditor] = useState({ open: false, columnId: null, dueAt: '' });
 
   const { defs: fieldDefs, createField, deleteField } = useFields(projectId);
-  const { savedViews, saveView } = useViews(projectId);
+  // `views`, renamed. `useViews` has never exported `savedViews`, so this
+  // destructure produced `undefined` — which is why the button's label counter
+  // was written `savedViews?.length || 0` and why nothing on this page could
+  // tell you a view had been saved. See `saveView` below for the other half.
+  const { views: savedViews, saveView } = useViews(projectId);
   const { pushToast } = useToast();
 
   const { tasks, setTasks } = useRealtimeTasks(projectId, rawTasks);
@@ -204,7 +219,31 @@ export default function ProjectBoardPage() {
             <button
               type="button"
               className="k-btn k-btn--ghost k-btn--sm"
-              onClick={() => saveView({ name: `View ${(savedViews?.length || 0) + 1}`, config: { viewType: view } })}
+              /**
+               * ⚠ `saveView(name, type, config, isDefault)` — FOUR POSITIONAL
+               * ARGUMENTS. This call passed ONE OBJECT, so `name` was
+               * `{name, config}` and `type` was `undefined`, and
+               * `ViewCreate` (routers/views.py) declares both as required
+               * `str`. Every press of this button since it was written
+               * answered 422 and reported nothing: the promise is not awaited
+               * and there is no catch.
+               *
+               * MEASURED 2026-08-29: `public.saved_views` holds ZERO rows — in
+               * the whole database, all time, across five organisations. The
+               * feature has never produced a single row.
+               *
+               * `type` is storage-side and the column has a CHECK constraint —
+               * `saved_views_type_check` admits kanban · table · calendar and
+               * nothing else — while this page offers SEVEN views. So the
+               * nearest storable type goes in the column and the ACTUAL view
+               * goes in `config.viewType`, which is the field it was always
+               * being put in. Nothing is lost and no migration is needed.
+               */
+              onClick={() => saveView(
+                `View ${(savedViews?.length || 0) + 1}`,
+                STORABLE_VIEW_TYPES.includes(view) ? view : 'kanban',
+                { viewType: view },
+              )}
             >
               + Save view
             </button>
