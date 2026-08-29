@@ -5728,3 +5728,66 @@ primary key from the catalogue.
 `premerge_backup_20260829` holds all 258 tables as they were, row-verified
 (29,608 rows, 0 mismatches), plus `_parity`, `_delete_scope` and `_remaining`
 recording exactly what was counted and removed. Nothing deleted today is gone.
+
+---
+
+## 2026-08-29 — THE CUTOVER. One schema, one code base, `staging` dropped.
+
+Accepted the way this file requires — live reads, not claims:
+
+    production /api/health  {"schema":"public","environment":"production"}
+    staging    /api/health  {"schema":"public","environment":"staging"}
+    public 42 -> 300 tables · staging 258 -> 0 -> DROPPED
+
+Migration 241 moved 258 tables, 5 views and 14 functions, generated from the
+catalogue rather than hand-listed. It refused to start unless three things held:
+no name collision in ANY object class, no staging table without RLS, and a
+manifest of ≥250 objects captured first. **Both environments were serving
+`public` 30 seconds after the push.**
+
+`DROP SCHEMA staging RESTRICT` — never CASCADE — ran after the schema was
+verified empty on every object class. 15 schemas remain; `public` is the
+product's only one.
+
+### The two defects the cutover itself produced
+
+**1. A merge silently reverted a codemod.** `member_activity.py` and
+`report_delivery.py` were untracked locally (with the codemod applied) and
+tracked on `main` (without it). The merge took main's side wholesale and shipped
+three live queries naming a schema that had just been dropped:
+
+    member_activity.py:252   FROM staging.ganit_invoices
+    member_activity.py:401   FROM staging.graha_deals
+    report_delivery.py:276   FROM staging.organisations
+
+⚠ **A merge resolves per FILE, not per CHANGE.** A file only one side tracks is
+taken whole from that side, and work applied to an untracked copy is invisible
+to the merge that overwrites it. Caught only by byte-comparing what had been set
+aside against what landed — `diff` first reported the whole file changed, which
+reads as a line-ending artefact.
+
+**2. Four views were a route around the RLS enabled hours earlier.**
+`user_org_context`, `pahchan_org_usage`, `v_org_credit_drift` and
+`v_org_platform_line_drift` were `SECURITY DEFINER` (the default for a view),
+owned by `postgres` which holds `BYPASSRLS`, with `anon` able to SELECT. In
+`staging` that was inert — PostgREST never exposed the schema. In `public` it
+bypasses the deny-all RLS on all 300 tables. All four set to
+`security_invoker = on`, matching `v_active_support_sessions`, which had been
+correct all along.
+
+**The check that mattered passed:** `rls_disabled_in_public` is still exactly
+**2** — the same two empty tables as before the move. Zero new exposure from
+relocating 258 tables into the API-exposed schema. That is what the pre-move RLS
+work bought.
+
+### Error budget
+
+**One** Sentry event for the entire cutover: the old code's stranded-run sweep
+firing in the ~30 seconds between the migration completing and the deploy
+landing. The deployed sweep reads `public.hub_scraper_runs`.
+
+### Branches
+
+Consolidated to three, on the owner's instruction: `main`, `staging`,
+`main-backup-20260724`. `schema-consolidation` deleted after verifying it was
+fully merged. Work continues on `main`.

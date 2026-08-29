@@ -27,49 +27,42 @@ same status audit, written over and over. Do not add a proposal 91.
 ## The one dangerous fact
 
 **Staging and production share a single Supabase database, and since
-2026-08-29 they also share a single SCHEMA.** Every migration and every
-write-path probe touches production data.
+2026-08-29 a single SCHEMA.** Every migration and every write-path probe
+touches production data. There is no second environment to be wrong in.
 
-⚠ **This line was WRONG until 2026-08-29 and the error was in the DIRECTION.**
-It claimed production wrote to `staging`. It did not: production ran `public`
-only (no `DB_SCHEMA` set, and `origin/main:backend/db.py` had zero
-schema-routing code). The real hazard ran the other way — staging writing into
-`public`, which was production's only schema. Anyone who trusted the old
-sentence reasoned about the wrong blast radius.
+⚠ **`staging` THE SCHEMA NO LONGER EXISTS.** Migration 241 moved all 258 of its
+tables into `public` and `DROP SCHEMA staging RESTRICT` ran the same evening.
+`DB_SCHEMA` is gone from the code; nothing reads it. Anything written before
+2026-08-29 that names `staging.<table>` is describing history, not the database.
 
-**It is true NOW, for a new reason.** The 2026-08-29 promotion set
-`DB_SCHEMA=staging` on production and fast-forwarded `main` to `staging`
-(1,898 commits). Verified live, not assumed:
+    production /api/health -> {"schema":"public","environment":"production"}
 
-    production /api/health -> {"schema":"staging","environment":"production"}
+`/api/health` reports `current_schema()` read from the connection, so which
+schema a deploy actually resolves is always checkable rather than assumed.
 
-⚠ **So `staging` is now a PRODUCTION schema. Dropping it deletes the product.**
-It holds all 258 module tables — invoicing, CRM, payroll, HR. `public` holds
-only the 42 core PM tables. Consolidating to one schema means MOVING
-`staging`'s tables INTO `public` and then dropping the emptied shell — never
-"removing staging".
+⚠ **RLS IS THE ONLY TENANCY CONTROL THAT WORKS, AND IT WORKS BY DENY-ALL.**
+`public` is exposed to PostgREST; the anon key is compiled into the shipped
+browser bundle. All 300 tables carry RLS with no policies, which is why a
+holder of that key reads nothing. **A new table without RLS is a cross-tenant
+leak the moment it is created, and it produces no error and no log line.**
+Two views were exactly this hole on 2026-08-29 — `SECURITY DEFINER`, owned by
+a `BYPASSRLS` role, readable by `anon` — and were closed with
+`security_invoker = on`. Run the Supabase security advisor after any DDL and
+treat a new `rls_disabled_in_public` as a breach, not a lint.
 
-⚠ **"Only `staging` and `public` exist" was wrong** and cost a day: a `42P01`
-from a schema-qualified query is a fact about **that schema only**, and closing
-Phase 6.4 on one is exactly how `public.report_schedules` was declared missing
-while it had a CRUD and an armed hourly cron. **Re-measured 2026-08-29 and the
-number had MOVED: there are now fifteen.** `staging` and `public` are the
-product's two; `auth`, `extensions`, `graphql`, `graphql_public`, `realtime`,
-`storage`, `supabase_migrations` and `vault` are Supabase's own; and
-`dead_tables_20260822`, `ledger_repair_20260826`, `tenancy_195_backup`,
-`payroll_smallrun_20260827` and **`reseed_backup_20260828`** are restore points
-from approved changes. **Check both product schemas before calling anything
-missing.**
-
-⚠ **This count is a MEASUREMENT WITH A DATE, not a constant — re-run it, do not
-cite it.** It said fourteen and was right on 2026-08-27; proposal 93's own R2
-backup then added the fifteenth, so the line in this file was stale within two
-days of being written. On 2026-08-29 a sweep reported **sixteen** and was also
-wrong. The query that settles it, and the only thing worth trusting:
+⚠ **THE SCHEMA COUNT IS A MEASUREMENT WITH A DATE, NOT A CONSTANT.** It was
+fourteen on 08-27, fifteen on 08-29 morning, sixteen after the pre-merge
+backup, and fifteen again after the drop. Re-run it; do not cite it:
 
     SELECT count(*), string_agg(nspname, ', ' ORDER BY nspname)
     FROM pg_namespace
     WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema';
+
+`public` is the product's only schema. `auth`, `extensions`, `graphql`,
+`graphql_public`, `realtime`, `storage`, `supabase_migrations` and `vault` are
+Supabase's. The rest are dated restore points, including
+**`premerge_backup_20260829`** — 258 tables, 29,608 rows, row-verified, the
+reversal path for the consolidation.
 
 - Never test validation by writing to the live DB.
 - Before trusting any live probe, confirm which SHA the service is actually
