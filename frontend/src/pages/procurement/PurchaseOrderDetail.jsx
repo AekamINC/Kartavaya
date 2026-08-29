@@ -19,8 +19,13 @@ import DateInput from '../../components/ui/DateInput';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
-import { Badge, PO_STATUS_COLORS } from './_shared';
+import { Badge, PO_STATUS_COLORS, EMPTY_LINE, previewTotals } from './_shared';
 import { apiErrorText } from '../../lib/apiError';
+
+/** Statuses an order is edited IN PLACE at. Mirrors
+ *  `services/purchase_orders.EDITABLE_STATUSES`; everything else that is still
+ *  changeable mints a revision instead. */
+const EDIT_IN_PLACE = ['draft', 'rejected'];
 
 const LINE_COLUMNS = [
   '#', 'Description', 'HSN/SAC',
@@ -42,6 +47,29 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
   const [settings, setSettings] = useState(null);
   const [receipt, setReceipt] = useState({ po_line_id: '', qty: '', received_on: '', note: '' });
   const [closeReason, setCloseReason] = useState('');
+  /* ── CHANGING AN ORDER AFTER IT IS RAISED ─────────────────────────────────
+   *
+   * `PATCH /v1/procurement/purchase-orders/{po_id}` has been complete and
+   * deployed since proposal 77 — it snapshots the previous state whole into
+   * `ganit_po_revisions.snapshot`, records a field-by-field `diff`, refuses to
+   * remove a line goods have already arrived against, and sends the order back
+   * down the approval path when `needs_reapproval()` says the rise is material.
+   * The "Revision history" panel further down this file renders its output.
+   *
+   * NOTHING CALLED IT. Measured 2026-08-29 by enumerating every frontend call
+   * to that path: the tab GETs the list and POSTs a create; this drawer GETs
+   * the record and the match and POSTs to /submit /approve /reject /receipts
+   * /close. There was no `api.patch` on the route anywhere in `frontend/src`,
+   * so an issued order could not be amended, a draft raised by mistake could
+   * not be corrected, and `staging.ganit_po_revisions` held ZERO rows for its
+   * entire life. "Can I edit a PO after it has been approved?" is, by this
+   * module's own docstring, the most-asked question at every vendor in this
+   * market — and the answer the product gave was no.
+   *
+   * `null` when the form is closed; otherwise the order as it is being changed.
+   */
+  const [edit, setEdit] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [bills, setBills] = useState([]);
   const [linkBill, setLinkBill] = useState('');
 
@@ -132,6 +160,110 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
     await act('close', { reason: closeReason }, 'Order closed');
   }
 
+  /** Open the change form on the order as it stands. */
+  function startEdit(order, orderLines) {
+    setEdit({
+      po_date: order.po_date || '',
+      expected_date: order.expected_date || '',
+      department: order.department || '',
+      category: order.category || '',
+      is_igst: !!order.is_igst,
+      terms: order.terms || '',
+      notes: order.notes || '',
+      reason: '',
+      /* `qty_received` rides along so the form can refuse to delete a line
+         goods have arrived against — the server refuses it with a 409 and
+         letting a person press a button that cannot work is worse than not
+         offering it. `id` is kept only as a React key. */
+      line_items: (orderLines || []).map(l => ({
+        id: l.id,
+        product_id: l.product_id || '',
+        description: l.description || '',
+        hsn_code: l.hsn_code || '',
+        sac_code: l.sac_code || '',
+        qty_ordered: Number(l.qty_ordered) || 0,
+        unit: l.unit || 'NOS',
+        rate: Number(l.rate) || 0,
+        gst_rate: Number(l.gst_rate) || 0,
+        discount_pct: Number(l.discount_pct) || 0,
+        qty_received: Number(l.qty_received) || 0,
+      })),
+    });
+  }
+
+  function updateEditLine(idx, key, value) {
+    setEdit(f => {
+      const items = [...f.line_items];
+      items[idx] = { ...items[idx], [key]: value };
+      return { ...f, line_items: items };
+    });
+  }
+
+  /**
+   * Save the change. IN PLACE on a draft; as a REVISION once it is issued.
+   *
+   * ⚠ LINE IDENTITY IS POSITIONAL ON THE WAY BACK. `POLine` carries no
+   * `line_no`, so `compute_po_totals` numbers the incoming lines 1..n by their
+   * ORDER, and `_reject_receipt_orphans` compares those numbers against the
+   * lines that already exist. So the order of `line_items` IS the mapping onto
+   * what has already been received, and this form neither reorders them nor
+   * offers a way to. Removing a line is only offered where nothing has arrived.
+   */
+  async function saveEdit(e) {
+    e.preventDefault();
+    if (!edit) return;
+    const short = edit.line_items.find(l => l.qty_received > (Number(l.qty_ordered) || 0));
+    if (short) {
+      pushToast({
+        title: 'That line has already had more delivered than that',
+        message: `${short.qty_received} has arrived against "${short.description || 'this line'}". `
+          + 'Close the order short instead of ordering less than turned up.',
+        type: 'error',
+      });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const r = await api.patch(`/v1/procurement/purchase-orders/${poId}`, {
+        po_date: edit.po_date,
+        expected_date: edit.expected_date,
+        department: edit.department,
+        category: edit.category,
+        is_igst: !!edit.is_igst,
+        terms: edit.terms,
+        notes: edit.notes,
+        reason: edit.reason,
+        line_items: edit.line_items.map(l => ({
+          product_id: l.product_id || '',
+          description: l.description,
+          hsn_code: l.hsn_code || '',
+          sac_code: l.sac_code || '',
+          qty_ordered: Number(l.qty_ordered) || 0,
+          unit: l.unit || 'NOS',
+          rate: Number(l.rate) || 0,
+          gst_rate: Number(l.gst_rate) || 0,
+          discount_pct: Number(l.discount_pct) || 0,
+        })),
+      });
+      const out = body(r);
+      /* The SERVER says what happened, and the three answers are genuinely
+         different: nothing changed, changed in place, or recorded as a revision
+         that did or did not go back for approval. A single "Saved" would hide
+         the one a person most needs to know. */
+      pushToast({
+        title: out.changed === false ? 'Nothing changed' : 'Purchase order updated',
+        message: out.note || undefined,
+        type: out.changed === false ? 'info' : 'success',
+      });
+      setEdit(null);
+      await load();
+      await loadMatch();
+      onChanged?.();
+    } catch (e2) {
+      pushToast({ title: apiErrorText(e2, 'The order could not be changed'), type: 'error' });
+    } finally { setSavingEdit(false); }
+  }
+
   async function attachBill(e) {
     e.preventDefault();
     if (!linkBill) return;
@@ -170,6 +302,12 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
   const linked = po?.bills || [];
   const canReceive = o && ['issued', 'part_received', 'received'].includes(o.status);
   const write = canWrite && !busy;
+  /* Closed and cancelled are terminal — the router answers 409 for both, and a
+     button that can only fail is not a button. Everything else is changeable:
+     in place while it is a draft, as a revision once it has been issued. */
+  const canAmend = o && !['closed', 'cancelled'].includes(o.status);
+  const editsInPlace = o && EDIT_IN_PLACE.includes(o.status);
+  const editPreview = edit ? previewTotals(edit.line_items, edit.is_igst) : null;
 
   const panel = (
     <div
@@ -256,7 +394,198 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
                   {o.status === 'awaiting_approval' && !approval?.caller_may_approve && (
                     <span className="gn-row__meta">{approval?.caller_may_not_because}</span>
                   )}
+                  {canAmend && (
+                    <button
+                      type="button" className="btn btn--ghost btn--sm" disabled={!write}
+                      title={denial || undefined}
+                      onClick={() => (edit ? setEdit(null) : startEdit(o, lines))}
+                    >
+                      {edit ? 'Stop editing' : editsInPlace ? 'Edit' : 'Revise'}
+                    </button>
+                  )}
                 </div>
+
+                {/* ── Changing the order ───────────────────────────── */}
+                {edit && (
+                  <form className="gn-form" onSubmit={saveEdit}>
+                    <h4 className="gn-form__h">
+                      {editsInPlace ? 'Edit this order' : 'Revise this order'}
+                    </h4>
+                    <p className="gn-tot__note">
+                      {editsInPlace
+                        ? 'This order has not been issued, so it is changed in place and no '
+                          + 'revision is recorded — nobody has seen it yet.'
+                        : 'This order has been issued. The version below replaces it and the '
+                          + 'previous one is kept whole, with a record of exactly what moved. '
+                          + 'A change that materially raises the total goes back for approval; '
+                          + 'reducing an order never does.'}
+                    </p>
+                    <div className="gn-form__grid">
+                      <label className="fld">
+                        <span className="fld__l">Order date</span>
+                        <DateInput
+                          className="inp" type="date" value={edit.po_date}
+                          onChange={e => setEdit({ ...edit, po_date: e.target.value })}
+                        />
+                      </label>
+                      <label className="fld">
+                        <span className="fld__l">Expected by</span>
+                        <DateInput
+                          className="inp" type="date" value={edit.expected_date}
+                          onChange={e => setEdit({ ...edit, expected_date: e.target.value })}
+                        />
+                      </label>
+                      <label className="fld">
+                        <span className="fld__l">Department</span>
+                        <input
+                          className="inp" value={edit.department}
+                          onChange={e => setEdit({ ...edit, department: e.target.value })}
+                        />
+                      </label>
+                      <label className="fld">
+                        <span className="fld__l">Category</span>
+                        <input
+                          className="inp" value={edit.category}
+                          onChange={e => setEdit({ ...edit, category: e.target.value })}
+                        />
+                      </label>
+                      <label className="gn-chk">
+                        <input
+                          type="checkbox" checked={edit.is_igst}
+                          onChange={e => setEdit({ ...edit, is_igst: e.target.checked })}
+                        />
+                        <span>Inter-state (IGST)</span>
+                      </label>
+                    </div>
+                    {/* The supplier is deliberately NOT changeable here. A bill
+                        may already be linked to this order and the link is only
+                        legal while the two name the same supplier, so moving the
+                        order to another vendor would make every three-way match
+                        on both documents wrong. Raising a new order is what that
+                        is. */}
+                    <p className="gn-tot__note">
+                      The supplier is {o.vendor_name} and is set when the order is
+                      raised. A bill linked to this order belongs to them, so
+                      moving it elsewhere is a new order rather than a change.
+                    </p>
+
+                    <h4 className="gn-form__h">Line items</h4>
+                    {edit.line_items.map((li, i) => (
+                      <div
+                        key={li.id || `new-${i}`} className="gn-li"
+                        style={{ '--gn-li': '1.6fr 80px 110px 80px 1fr 30px' }}
+                      >
+                        <div>
+                          {i === 0 && <span className="gn-li__l">Description</span>}
+                          <input
+                            className="inp" required value={li.description}
+                            onChange={e => updateEditLine(i, 'description', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          {i === 0 && <span className="gn-li__l">Qty</span>}
+                          <input
+                            className="inp" type="number" step="any" value={li.qty_ordered}
+                            onChange={e => updateEditLine(i, 'qty_ordered', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div>
+                          {i === 0 && <span className="gn-li__l">Rate</span>}
+                          <input
+                            className="inp" type="number" step="any" value={li.rate}
+                            onChange={e => updateEditLine(i, 'rate', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div>
+                          {i === 0 && <span className="gn-li__l">GST%</span>}
+                          <input
+                            className="inp" type="number" step="any" value={li.gst_rate}
+                            onChange={e => updateEditLine(i, 'gst_rate', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div>
+                          {i === 0 && <span className="gn-li__l">HSN/SAC</span>}
+                          <input
+                            className="inp" value={li.hsn_code}
+                            onChange={e => updateEditLine(i, 'hsn_code', e.target.value)}
+                          />
+                        </div>
+                        {/* A line something has arrived against cannot be
+                            removed — the server answers 409 and it is right to.
+                            The control says why rather than disappearing. */}
+                        <button
+                          type="button" className="gn-li__x"
+                          aria-label={li.qty_received
+                            ? `Line ${i + 1} cannot be removed — ${li.qty_received} received`
+                            : `Remove line ${i + 1}`}
+                          title={li.qty_received
+                            ? `${li.qty_received} has already been received against this line. `
+                              + 'Close the order short instead.'
+                            : undefined}
+                          disabled={edit.line_items.length === 1 || !!li.qty_received}
+                          onClick={() => setEdit(f => ({
+                            ...f, line_items: f.line_items.filter((_, j) => j !== i),
+                          }))}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button" className="btn btn--ghost btn--sm"
+                      onClick={() => setEdit(f => ({
+                        ...f, line_items: [...f.line_items, { ...EMPTY_LINE, qty_received: 0 }],
+                      }))}
+                    >
+                      + Add line
+                    </button>
+
+                    <div className="gn-tot">
+                      <div className="gn-tot__r">
+                        <span className="gn-tot__l">Was</span>
+                        <span className="gn-tot__v">{inr(Number(o.total), { decimals: 2 })}</span>
+                      </div>
+                      <div className="gn-tot__r gn-tot__r--sum">
+                        <span className="gn-tot__l">Becomes</span>
+                        <span className="gn-tot__v">{inr(editPreview.total, { decimals: 2 })}</span>
+                      </div>
+                    </div>
+
+                    <label className="fld gn-form__wide">
+                      <span className="fld__l">Terms</span>
+                      <textarea
+                        className="inp gn-ta" rows={2} value={edit.terms}
+                        onChange={e => setEdit({ ...edit, terms: e.target.value })}
+                      />
+                    </label>
+                    <label className="fld gn-form__wide">
+                      <span className="fld__l">Notes</span>
+                      <textarea
+                        className="inp gn-ta" rows={2} value={edit.notes}
+                        onChange={e => setEdit({ ...edit, notes: e.target.value })}
+                      />
+                    </label>
+                    {!editsInPlace && (
+                      <label className="fld gn-form__wide">
+                        <span className="fld__l">Why is it changing?</span>
+                        <input
+                          className="inp" value={edit.reason}
+                          placeholder="Recorded on the revision — a change order nobody can explain later"
+                          onChange={e => setEdit({ ...edit, reason: e.target.value })}
+                        />
+                      </label>
+                    )}
+
+                    <div className="gn-form__acts">
+                      <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEdit(null)}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn--fill btn--sm" disabled={savingEdit || !write}>
+                        {savingEdit ? 'Saving…' : editsInPlace ? 'Save changes' : 'Record revision'}
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 {approval?.required && (
                   <div className="gn-panel">

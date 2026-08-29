@@ -41,6 +41,7 @@ import { ToastProvider } from '../../../components/ui/toast';
 import { previewTotals, PO_STATUS_LABELS, PO_STATUSES } from '../_shared';
 import PurchaseOrdersTab from '../PurchaseOrdersTab';
 import POSettingsPanel from '../POSettingsPanel';
+import PurchaseOrderDetail from '../PurchaseOrderDetail';
 
 const VENDORS = [{ id: 'v-1', name: 'Acme Supplies', gstin: '27AAAAA0000A1Z5' }];
 const PRODUCTS = [{ id: 'p-1', name: 'A4 paper', hsn_code: '4802', unit: 'REAM',
@@ -344,5 +345,172 @@ describe('POSettingsPanel', () => {
     const [url, payload] = api.put.mock.calls[0];
     expect(url).toBe('/v1/procurement/settings');
     expect(payload.prefix).toBe('PO');
+  });
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4 · Changing an order after it is raised
+//
+// `PATCH /v1/procurement/purchase-orders/{po_id}` shipped complete with
+// proposal 77 — snapshot, field-by-field diff, receipt-orphan refusal,
+// re-approval when the rise is material — and `PurchaseOrderDetail` already
+// rendered a "Revision history" panel for the rows it produces. NOTHING CALLED
+// IT: measured 2026-08-29, `frontend/src` held no `api.patch` on that path at
+// all, so an issued order could not be amended, a draft raised by mistake could
+// not be corrected, and `staging.ganit_po_revisions` held ZERO rows for its
+// entire life. Suite 06's 06.07 is the live check; these are the unit ones.
+//
+// ⚠ THE DRAWER PORTALS ONTO document.body, so every helper above — which
+// searches `container` — is blind to it. These use their own.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const PO_LINES = [
+  { id: 'l-1', line_no: 1, description: 'A4 paper', hsn_code: '4802',
+    qty_ordered: 10, qty_received: 4, qty_billed: 0, unit: 'REAM',
+    rate: 200, gst_rate: 18, discount_pct: 0, line_total: 2000 },
+  { id: 'l-2', line_no: 2, description: 'Toner', hsn_code: '8443',
+    qty_ordered: 2, qty_received: 0, qty_billed: 0, unit: 'NOS',
+    rate: 4000, gst_rate: 18, discount_pct: 0, line_total: 8000 },
+];
+
+function record(status, extra = {}) {
+  return {
+    data: {
+      id: 'po-9', po_number: status === 'draft' ? null : 'PO-2026-0007',
+      revision: 0, status, vendor_id: 'v-1', vendor_name: 'Acme Supplies',
+      po_date: '2026-08-01', expected_date: '2026-08-20',
+      department: 'Audit', category: 'Stationery', currency: 'INR',
+      is_igst: false, subtotal: 10000, cgst: 900, sgst: 900, igst: 0,
+      total: 11800, terms: 'Net 30', notes: 'S06-PO-01',
+      approval_required: false, approvers_required: 0, closed_reason: null,
+      ...extra,
+    },
+    lines: PO_LINES,
+    receipts: [], revisions: [], approvals: [], bills: [],
+    approval: { required: false, approvers_required: 0, decisions_this_revision: 0,
+      caller_may_approve: false, caller_may_not_because: '' },
+    editable: ['draft', 'rejected'].includes(status),
+  };
+}
+
+/** Everything the drawer paints — it is a portal, so this is document-wide. */
+const inDrawer = (sel) => Array.from(document.querySelectorAll('.dr.gnd ' + sel));
+const drawerButton = (label) => inDrawer('button')
+  .find(b => b.textContent.trim() === label);
+const drawerText = () => (document.querySelector('.dr.gnd') || {}).textContent || '';
+
+async function openRecord(status, extra) {
+  api.get.mockImplementation((url) => {
+    const u = String(url);
+    if (u === '/v1/procurement/purchase-orders/po-9') {
+      return Promise.resolve({ data: record(status, extra) });
+    }
+    if (u.endsWith('/match')) {
+      return Promise.resolve({ data: { matched: true, exceptions: [], basis: 'x' } });
+    }
+    return answer(url);
+  });
+  await mount(<PurchaseOrderDetail poId="po-9" onClose={() => {}} onChanged={() => {}} />);
+}
+
+describe('PurchaseOrderDetail — changing an order', () => {
+  it('offers to REVISE an order that has been issued', async () => {
+    await openRecord('issued');
+    // The assertion that bites: take the button out of the drawer's action bar
+    // and this goes red. It WAS red — for the whole life of the module.
+    expect(drawerButton('Revise')).toBeTruthy();
+    expect(drawerButton('Edit')).toBeFalsy();
+  });
+
+  it('offers to EDIT a draft in place, because nobody has seen it', async () => {
+    await openRecord('draft');
+    expect(drawerButton('Edit')).toBeTruthy();
+    expect(drawerButton('Revise')).toBeFalsy();
+  });
+
+  it('offers neither on an order that is closed, which the server refuses anyway', async () => {
+    await openRecord('closed', { closed_reason: 'No longer required' });
+    expect(drawerButton('Revise')).toBeFalsy();
+    expect(drawerButton('Edit')).toBeFalsy();
+  });
+
+  it('asks WHY on a revision, and says a draft needs no reason', async () => {
+    await openRecord('issued');
+    await click(drawerButton('Revise'));
+    expect(drawerText()).toContain('Why is it changing?');
+  });
+
+  it('does not ask WHY on a draft, and says why not', async () => {
+    await openRecord('draft');
+    await click(drawerButton('Edit'));
+    expect(drawerText()).not.toContain('Why is it changing?');
+    expect(drawerText()).toContain('changed in place and no revision is recorded');
+  });
+
+  it('PATCHes the order and its lines to the procurement route', async () => {
+    api.patch.mockImplementation(() => Promise.resolve({
+      data: { data: {}, changed: true, revision: 1, note: 'Recorded as a revision.' },
+    }));
+    await openRecord('issued');
+    await click(drawerButton('Revise'));
+
+    const form = Array.from(document.querySelectorAll('.dr.gnd form.gn-form'))
+      .find(f => f.textContent.includes('Revise this order'));
+    expect(form).toBeTruthy();
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await settle();
+
+    expect(api.patch).toHaveBeenCalled();
+    const [url, payload] = api.patch.mock.calls[0];
+    expect(url).toBe('/v1/procurement/purchase-orders/po-9');
+    expect(Array.isArray(payload.line_items)).toBe(true);
+    expect(payload.line_items).toHaveLength(2);
+    // ⚠ LINE IDENTITY IS POSITIONAL ON THE WAY BACK — `POLine` carries no
+    // `line_no`, so `compute_po_totals` numbers what it is sent 1..n by ORDER
+    // and `_reject_receipt_orphans` compares those numbers against the lines
+    // that already exist. The order sent must be the order that was shown.
+    expect(payload.line_items[0].description).toBe('A4 paper');
+    expect(payload.line_items[1].description).toBe('Toner');
+    expect(payload.line_items[0].qty_ordered).toBe(10);
+    expect('reason' in payload).toBe(true);
+  });
+
+  it('will not let a line goods have arrived against be removed', async () => {
+    // The server answers 409 and is right to: a receipt hanging off a line the
+    // order no longer has makes every derived quantity quietly wrong. Offering
+    // a button that can only fail is worse than not offering one.
+    await openRecord('issued');
+    await click(drawerButton('Revise'));
+    const removes = inDrawer('.gn-li__x');
+    expect(removes).toHaveLength(2);
+    expect(removes[0].disabled).toBe(true);   // 4 of 10 received
+    expect(removes[1].disabled).toBe(false);  // nothing received
+    expect(removes[0].getAttribute('aria-label')).toContain('cannot be removed');
+  });
+
+  it('shows what the total was and what it becomes', async () => {
+    await openRecord('issued');
+    await click(drawerButton('Revise'));
+    expect(drawerText()).toContain('Was');
+    expect(drawerText()).toContain('Becomes');
+  });
+
+  it('uses DateInput on the revision form, never a bare native date field', async () => {
+    await openRecord('issued');
+    await click(drawerButton('Revise'));
+    const dates = inDrawer('input[type="date"]');
+    expect(dates.length).toBeGreaterThan(0);
+    dates.forEach(i => expect(i.classList.contains('pk__native')).toBe(true));
+  });
+
+  it('never paints the supplier as an id, and says why the supplier is fixed', async () => {
+    await openRecord('issued');
+    await click(drawerButton('Revise'));
+    expect(drawerText()).toContain('Acme Supplies');
+    expect(drawerText()).not.toContain('v-1');
+    expect(drawerText()).toContain('a new order rather than a change');
   });
 });

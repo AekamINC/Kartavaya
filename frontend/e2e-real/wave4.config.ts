@@ -78,5 +78,26 @@ export default defineConfig({
       outputDir: path.join(OUT, 'vikray'),
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      // Suite 06 — Kray, procurement. APPENDED, never inserted: `vikray` above
+      // was RUNNING out of this file when this entry was added, and Playwright
+      // empties `outputDir` at the start of a run — so its own directory under
+      // the same OUT is not tidiness, it is the difference between two agents
+      // reading their own traces and reading each other's.
+      //
+      // It reads what Suites 04, 05 and 07 left and creates none of it: the
+      // eighteen products and fourteen suppliers are Suite 05's, and the two
+      // suppliers this one types are the two shapes that register cannot
+      // express — an out-of-state GSTIN and none at all. Re-measured live on
+      // 2026-08-29 before the spec was written: 18 products (12 costed), 14
+      // vendors (11 Gujarat, 3 with no GSTIN), 14 unlinked vendor bills, 53
+      // invoices, 9 members — and ZERO rows in every one of
+      // ganit_purchase_orders, ganit_po_lines, ganit_po_receipts,
+      // ganit_po_revisions and ganit_po_approvals.
+      name: 'kray',
+      testMatch: /suite06-kray\.spec\.ts/,
+      outputDir: path.join(OUT, 'kray'),
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
 });
