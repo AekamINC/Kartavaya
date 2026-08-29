@@ -38,7 +38,17 @@ PAY_URL = (os.environ.get("PAY_URL") or "https://pay.kartavaya.com").rstrip("/")
 # ── Email provider: AWS SES (primary) ─────────────────────────────────────────
 AWS_ACCESS_KEY_ID     = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
-AWS_REGION            = os.environ.get("AWS_REGION", "us-east-1")
+# The default is `ap-south-1` because that is the ONLY region this account has
+# SES in: the dashboard reads "Asia Pacific (Mumbai)", 50,000/day, 14/sec, out
+# of sandbox. It used to default to `us-east-1`, which is a region where this
+# account has no verified identity at all — so an unset AWS_REGION did not
+# degrade, it sent every invoice and payslip at an empty region and had each
+# one rejected. Identities in SES are PER-REGION: a domain verified in Mumbai
+# does not exist in Virginia, and the console will happily show it green while
+# the app cannot use it. Staging never hit this because its variable is set;
+# production has never sent a message since July, so its value has never been
+# exercised. Keep this default equal to the account's real region.
+AWS_REGION            = os.environ.get("AWS_REGION", "ap-south-1")
 
 ses_client = None
 
