@@ -4768,7 +4768,14 @@ async def assign_asset(
         from services.employee_email import send_asset_email
         send_asset_email(
             emp_info["email"], emp_info["name"],
-            row.get("name", "Asset"), row.get("asset_type", ""), "assigned",
+            row.get("name", "Asset"), row.get("category", ""), "assigned",
+            # ⚠ `category` here too. This row comes from `RETURNING *`, so it
+            # carries every real column — and `asset_type` is not one of them.
+            # `.get()` returned "" and the assignment notification went out
+            # naming no asset type at all. The SAME root cause as the return
+            # path above, with the opposite symptom: that one 500s loudly, this
+            # one succeeds quietly and sends a worse email. The quiet half is
+            # the one nobody would ever have reported.
         )
     return dict(row)
 
@@ -4784,7 +4791,15 @@ async def return_asset(
     _require(levels, EDITOR)
     # Fetch current assignee before clearing
     prev = await pool.fetchrow(
-        "SELECT a.assigned_to, a.name AS asset_name, a.asset_type, e.name, e.email "
+        # ⚠ `a.category`, NOT `a.asset_type`. There is no `asset_type` column on
+        # `staging.manav_assets` and there never has been — migration 043 calls
+        # it `category`. So this SELECT raised UndefinedColumn, the 500 escaped
+        # before the CORS headers, the browser saw `net::ERR_FAILED`, and the
+        # screen said "No response from the server".
+        #
+        # ⚠ RETURNING AN ASSET HAS THEREFORE NEVER WORKED. Found by proposal 93
+        # Suite 07 on 2026-08-29: 24 assets issued, 0 returnable.
+        "SELECT a.assigned_to, a.name AS asset_name, a.category, e.name, e.email "
         "FROM staging.manav_assets a LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
         "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
         asset_id, org_id,
@@ -4805,7 +4820,7 @@ async def return_asset(
         from services.employee_email import send_asset_email
         send_asset_email(
             prev["email"], prev["name"],
-            prev.get("asset_name", "Asset"), prev.get("asset_type", ""), "returned",
+            prev.get("asset_name", "Asset"), prev.get("category", ""), "returned",
         )
     return dict(row)
 

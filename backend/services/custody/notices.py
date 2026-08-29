@@ -876,7 +876,17 @@ _WRITE_RETURNING = (
     "org_id, id, client_id, notice_type_id, owner_user_id, "
     "reference_no, received_on, due_on, due_on_override, "
     "reply_window_days, reply_window_months, window_in_working_days, "
-    "status, replied_on, closed_on, notes, created_by, updated_by"
+    "status, replied_on, closed_on, notes, created_by, updated_by, "
+    # ⚠ `created_at` AND `updated_at` ARE IN THIS LIST BECAUSE `_SELECT_WRITTEN`
+    # READS THEM OFF THIS CTE. They were omitted, so every CREATE raised
+    # `UndefinedColumnError: column r.created_at does not exist` while every
+    # READ worked — reads select from the real table, which has both columns.
+    #
+    # ⚠ THAT IS WHY THE NOTICE REGISTER HELD ZERO ROWS IN ITS ENTIRE LIFE.
+    # Found by proposal 93 Suite 07 on 2026-08-29 from the Railway deploy log,
+    # not from reading this file. A RETURNING list that is narrower than what
+    # the SELECT over it asks for is invisible to every read path.
+    "created_at, updated_at"
 )
 
 #: Resolve a notice type by CODE, inside one practice's visible catalogue.
