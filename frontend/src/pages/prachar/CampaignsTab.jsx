@@ -543,7 +543,43 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
         <div className="k-detail__actions">
           {(c.status === 'draft' || c.status === 'scheduled') && (
             <>
-              <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={send} disabled={busy || !canWrite} title={denial || undefined}>
+              {/* ── SEND IS NOT OFFERED BEFORE THE NUMBER IT CONFIRMS AGAINST ──
+                  `send()` below builds its confirmation from `audience.data`,
+                  and this button used to be live from the moment the drawer
+                  mounted — while that fetch was still in flight. Press it in
+                  that window and `n` is undefined, so the confirm falls to its
+                  `n == null` branch and reads "Send X to this campaign's
+                  audience?" with NO NUMBER AT ALL, on an action the same
+                  sentence calls irreversible.
+
+                  Found by proposal 93 Suite 11 on 2026-08-29, from the dialog
+                  text the run captured verbatim:
+
+                    Send "S11-C7" to this campaign's audience? | Audience:
+                    Clients only · company ~ "S11 Prachar Reach" | This cannot
+                    be undone.
+
+                  That is the same defect this file already fixed once, one step
+                  earlier: the comment in `send()` records a marketer agreeing
+                  to 128 while 116 were sent. Quoting no number is not safer
+                  than quoting the wrong one — it is the same failure to tell
+                  somebody what they are about to do.
+
+                  ⚠ GATED ON `loading`, NEVER ON `data`. If the audience fetch
+                  FAILS, `loading` is false and `data` stays null — and the
+                  button must remain pressable, because the Panel below already
+                  shows that error with a Retry and locking the operator out of
+                  their own send would be a worse bug than the one being fixed.
+                  In that case the honest `n == null` wording is exactly right
+                  and is deliberately kept. */}
+              <button
+                type="button"
+                className="k-btn k-btn--primary k-btn--sm"
+                onClick={send}
+                disabled={busy || !canWrite || audience.loading}
+                title={denial
+                  || (audience.loading ? 'Working out who this reaches…' : undefined)}
+              >
                 {busy ? 'Sending…' : 'Send now'}
               </button>
               <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => onEdit(c)}>

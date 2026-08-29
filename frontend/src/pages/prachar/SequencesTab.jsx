@@ -255,6 +255,52 @@ function SequenceDetail({ seq, onBack }) {
     if (r.ok) reloadAll();
   };
 
+  /**
+   * Undo a pause — and it is NOT `setStatus('active')`.
+   *
+   * ── WHY THIS EXISTS, AND WHY THE BUTTON BESIDE IT WAS WORSE THAN NOTHING ──
+   *
+   * `POST /sequences/{id}/resume` makes TWO writes: the sequence back to
+   * `active`, AND every enrolment frozen by the pause back from `paused` to
+   * `active`. `PATCH /sequences/{id} {status:'active'}` — which is what
+   * `Activate` calls — makes only the FIRST.
+   *
+   * The drip cron requires BOTH (`marketing_skills.py`: `WHERE e.status =
+   * 'active' AND s.status = 'active'`). So pressing Activate on a paused
+   * sequence turns the badge green, leaves every contact frozen, and sends
+   * nobody anything — for ever, with nothing on screen saying so.
+   *
+   * `93-E-ORPHANED-CAPABILITY-SWEEP.md` filed this as "pause is a one-way door;
+   * there is no Resume button". Half of that is right — no control called the
+   * resume route. The other half is worse than a dead end: Activate DOES render
+   * on a paused sequence (`s.status !== 'active'`), so the door looked open. A
+   * recovery that appears to work and does not is harder to notice than one
+   * that is missing.
+   *
+   * ⚠ MEASURED, on rows proposal 93 Suite 11 created by driving Pause and then
+   * the only control offered:
+   *
+   *     S11-SEQ-1   sequence 'active'   ·   8 of 8 enrolments 'paused'
+   *
+   * `resume_sequence`'s own docstring notes it is safe to invert the pause
+   * wholesale because `status='paused'` has exactly one writer and there is no
+   * per-enrolment pause to trample.
+   */
+  const resume = async () => {
+    const r = await go(() => api.post(`/v1/prachar/sequences/${seq.id}/resume`).then(body), null);
+    if (r.ok) {
+      // The route returns how many people this actually restarted, which is the
+      // number the operator wants before walking away from the screen.
+      const n = r.out?.enrollments_resumed;
+      pushToast({
+        type: 'success',
+        title: 'Sequence resumed',
+        message: n == null ? undefined : `${plural(n, 'contact')} back on the ladder.`,
+      });
+      reloadAll();
+    }
+  };
+
   const setStatus = async (status) => {
     const r = await go(() => api.patch(`/v1/prachar/sequences/${seq.id}`, { status }), `Sequence ${status}`);
     if (r.ok) reloadAll();
@@ -278,7 +324,15 @@ function SequenceDetail({ seq, onBack }) {
             <Badge text={humanise(s.status)} color={SEQ_COLORS[s.status]} />
           </div>
           <div className="k-detail__actions">
-            {s.status !== 'active' && steps.length > 0 && (
+            {/* PAUSED HAS ITS OWN CONTROL, and it is not Activate — see
+                `resume` above. Activate keeps `draft` and `archived`, where
+                there are no paused enrolments for it to leave behind. */}
+            {s.status === 'paused' && (
+              <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={resume} disabled={busy || !canWrite} title={denial || undefined}>
+                Resume
+              </button>
+            )}
+            {s.status !== 'active' && s.status !== 'paused' && steps.length > 0 && (
               <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setStatus('active')} disabled={busy || !canWrite} title={denial || undefined}>
                 Activate
               </button>

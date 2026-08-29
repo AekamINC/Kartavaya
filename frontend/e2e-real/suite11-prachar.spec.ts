@@ -1157,8 +1157,15 @@ test('11.1 Prachar opens, mounts exactly the tabs PracharPage declares, and says
         'is indistinguishable from a broken one, which is the day-one failure ' +
         'Suite 00 exists to catch').toBeVisible({ timeout: 20_000 });
     } else {
-      await expect(panel.locator('table.tbl, .pr__grid, .pr__steps').first(),
-        `the ${tab} tab holds ${(before as any)[tab]} rows and drew no list`)
+      // ⚠ `.pr__cal` IS IN THIS LIST BECAUSE CAMPAIGNS DOES NOT OPEN ON A TABLE.
+      // Its default view is the MONTH CALENDAR, which is the whole point of the
+      // screen — "what goes out, and when". The first version of this listed
+      // only the three list shapes and reported "the campaigns tab holds 12
+      // rows and drew no list" against a calendar that was drawing all twelve.
+      // It could not fail until campaigns existed, which is exactly the kind of
+      // hole a second run is for.
+      await expect(panel.locator('table.tbl, .pr__grid, .pr__steps, .pr__cal, .pr__week').first(),
+        `the ${tab} tab holds ${(before as any)[tab]} rows and drew neither a list nor a calendar`)
         .toBeVisible({ timeout: 20_000 });
     }
   }
@@ -1442,6 +1449,18 @@ test('11.4 six segments built in the real audience panel, each previewed and cou
   console.log(`  11.4 unfiltered audience (previewed, NEVER sent): ${everyoneText}`);
 
   // ── The six segments ─────────────────────────────────────────────────────
+  //
+  // The suppression list AS IT STANDS NOW, read once. On the first run of a
+  // fresh org it is empty; on every run after 11.7 it holds six of the reach
+  // list, and the reach figures below are derived from it rather than assumed.
+  const suppressed = new Set(
+    (await rowsOf(page, '/api/v1/prachar/unsubscribes'))
+      .map((u) => String(u.email || '').toLowerCase()));
+  if (suppressed.size) {
+    console.log(`  11.4 ${suppressed.size} address(es) already opted out — the reach ` +
+      'figures below are net of them');
+  }
+
   await aud.getByRole('button', { name: 'A segment' }).click();
   const counted: Record<string, number> = {};
 
@@ -1470,21 +1489,45 @@ test('11.4 six segments built in the real audience panel, each previewed and cou
 
     counted[s.key] = s.expect;
 
+    // ⚠ MATCHED IS STABLE; EVERYTHING AFTER IT IS POST-SUPPRESSION.
+    //
+    // The poll above asserts `matched`, which does NOT move when somebody opts
+    // out — an opt-out is a suppression, not a deletion, and that is the
+    // property 11.7 depends on. The clients-only line and the sample below are
+    // about who RECEIVES, so both shrink by however many of this segment's
+    // people are on the list.
+    //
+    // The first version hardcoded `${s.expect} of ${s.expect}` and passed on a
+    // fresh org and only on a fresh org: the six opt-outs 11.7 writes survive
+    // into the next run, and this test declares BEFORE 11.7 in the file but
+    // AFTER it in time on every run but the first. A number that is only right
+    // once is the §6 flaw a second run exists to find, and it found it.
+    //
+    // So the figure is DERIVED from the suppression list as it stands right
+    // now, rather than assumed.
+    const optedOutHere = REACH.filter((r) =>
+      suppressed.has(r.email.toLowerCase())
+      && (!s.type || r.type === s.type)).length;
+    const willReceive = s.expect - optedOutHere;
+
     // THE ICAI LINE, said even at zero. "0 non-clients" is the reassurance a
     // partner wants before pressing send; a line that appears only on failure is
     // a line nobody trusts.
     await expect(aud.getByText(/Existing clients only/i).first(),
       `segment ${s.key}: the panel does not state the clients-only gate`).toBeVisible();
-    await expect(aud.getByText(new RegExp(`Existing clients only — ${s.expect} of ${s.expect}`)).first(),
-      `segment ${s.key}: the clients-only line does not read ${s.expect} of ${s.expect}`)
+    await expect(aud.getByText(new RegExp(`Existing clients only — ${willReceive} of ${willReceive}`)).first(),
+      `segment ${s.key}: the clients-only line does not read ${willReceive} of ${willReceive} ` +
+      `(${s.expect} match, ${optedOutHere} of them opted out)`)
       .toBeVisible({ timeout: 15_000 });
 
-    // And the sample table lists people, by name and address, never by id.
+    // And the sample table lists people, by name and address, never by id. The
+    // sample is who will RECEIVE, not who matched — an unsubscribed address
+    // listed in an audience is the same defect as one receiving mail.
     const sample = aud.locator('table.tbl').first();
     await expect(sample, `segment ${s.key} drew no sample of who it reaches`).toBeVisible();
     const shown = await sample.locator('tbody tr').count();
-    expect(shown, `segment ${s.key}: the sample shows ${shown} rows for ${s.expect} matches`)
-      .toBe(Math.min(8, s.expect));
+    expect(shown, `segment ${s.key}: the sample shows ${shown} rows for ${willReceive} recipients`)
+      .toBe(Math.min(8, willReceive));
     const addrs = await sample.locator('tbody tr td:nth-child(2)').allTextContents();
     const bad = addrs.map((a) => a.trim()).filter((a) => a && !ALLOWED.test(a));
     expect(bad, `segment ${s.key} previews address(es) outside the allowed set: ${bad.join(', ')}`)
@@ -1602,7 +1645,6 @@ test('11.5 twelve campaigns created from templates, and the calendar reschedules
 
   const target = byName.get('S11-D1');
   const from = new Date(target.scheduled_at);
-  const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
   // Both days must be in the month on screen, so the pill and the target cell
   // are both rendered. D1 is 10 days out and D3 is 12, so a month boundary is
   // possible — page the calendar to the pill's own month first.
@@ -1616,19 +1658,147 @@ test('11.5 twelve campaigns created from templates, and the calendar reschedules
   await expect(pill, 'S11-D1 is not on the calendar — a campaign with a date that the ' +
     'grid does not draw is a campaign nobody can see').toBeVisible({ timeout: 20_000 });
 
+  /**
+   * ⚠ THE TARGET DAY IS CHOSEN FROM THE GRID, AND IT MUST BE EMPTY. TWO REASONS,
+   * and the second one is a product finding.
+   *
+   * 1 · `from.getDate() + 1` DRIFTED. Each run moved D1 one day later and the
+   *     next run started from there — 09-08, 09-09, 09-10, 09-11 over three
+   *     runs. §6 asks for a suite that recognises its own output and verifies
+   *     rather than duplicating; a date that walks forward for ever is the same
+   *     defect wearing a different hat, and it took four runs to surface.
+   *
+   * 2 · AND AS IT DRIFTED IT REACHED THE BOTTOM OF THE VIEWPORT, which is where
+   *     the gesture actually died — "no write request was made at all",
+   *     reproduced five times running.
+   *
+   * ⚠ A THEORY I HELD AND DISPROVED, KEPT BECAUSE IT WAS PLAUSIBLE AND WRONG.
+   *   By the fourth run D1 sat on the 11th beside `S11-SMS-1` and the target day
+   *   held `S11-WA-1`, so the obvious reading was that a pill is a dead drop
+   *   zone: `onDragOver`/`onDrop` live on `.pr__cal-d`, and `Pill` is a
+   *   `<button draggable>` with no `onDragOver` of its own, so it never calls
+   *   `preventDefault()`. That would have been a real product defect on a busy
+   *   calendar — and it is NOT what happened. Instrumenting the page with
+   *   capture-phase listeners settled it:
+   *
+   *     mousedown:pr__pill · dragstart:pr__pill · dragover:pr__pill ×6 ·
+   *     dragover:pr__cal-d · dragover:pr__cal-d is-drop · … · drop:pr__cal-n
+   *
+   *   `dragover` fires on the pill AND the cell goes `is-drop`, because a pill
+   *   sits INSIDE `.pr__cal-d` and React's synthetic events bubble to the cell's
+   *   handler. Pills are not dead zones. Filing that would have been a false
+   *   product finding, which is worse than a flake.
+   *
+   *   The real cause was geometry: the boxes read
+   *   `src.y = 683.6` in a 720px viewport — 26px of headroom, hard against the
+   *   edge where Chromium turns a drag into an auto-scroll. Centring the row
+   *   first moved the same gesture to `y = 395.6` and it completed on the first
+   *   attempt.
+   *
+   * So the target is the NEAREST day in the month that draws no pill, excluding
+   * the day D1 is on (`drop()` returns early when the day has not changed), and
+   * the row is centred before the boxes are measured. Deterministic given the
+   * data, always a real move, and never near an edge.
+   */
   const cells = page.locator('.pr__cal-d:not(.is-pad)');
-  const targetCell = cells.filter({ has: page.locator(`.pr__cal-n:text-is("${to.getDate()}")`) }).first();
-  await expect(targetCell).toBeVisible();
+  // Day, emptiness and ROW for every cell in the month, read in one pass. The
+  // row is the cell's own offsetTop, which is what makes "the same week" a
+  // measured fact rather than arithmetic on a lead offset.
+  const grid: { day: number; empty: boolean; top: number }[] =
+    await cells.evaluateAll((els) => els.map((el) => ({
+      day: Number(el.querySelector('.pr__cal-n')?.textContent || 0),
+      empty: el.querySelectorAll('.pr__pill').length === 0,
+      top: Math.round((el as HTMLElement).getBoundingClientRect().top),
+    })).filter((c) => c.day > 0));
 
-  const patched = await writes(page, wire, /\/prachar\/campaigns\/[0-9a-f-]+$/,
-    () => pill.dragTo(targetCell));
+  const here = grid.find((c) => c.day === from.getDate());
+  expect(here, `the ${from.getDate()}th is not on the grid, so S11-D1 has no cell`).toBeTruthy();
+  const free = grid.filter((c) => c.empty && c.day !== from.getDate());
+  expect(free.length, 'every day in this month already carries a campaign, so there is ' +
+    'nowhere to drag one').toBeGreaterThan(0);
+
+  // ⚠ SAME ROW FIRST, and it is the difference between a stable test and one
+  // that passes alone and fails in a full run.
+  //
+  // "Nearest by date" put the 13th next to the 14th — which in a Monday-first
+  // September 2026 are the LAST cell of one week and the FIRST of the next, so
+  // the gesture ran the full width of the grid and down a row. That drag
+  // completed in isolation and did not inside the suite, five times over, which
+  // is the signature of a distance/timing problem rather than of anything the
+  // product did. Constraining the move to the same week keeps it short and
+  // horizontal — the geometry Chromium handles most reliably — and it is still
+  // deterministic: excluding the current day guarantees a real move, and the
+  // choice settles into alternating between two adjacent days.
+  const sameRow = free.filter((c) => Math.abs(c.top - here!.top) <= 4);
+  const pool = sameRow.length ? sameRow : free;
+  const toDay = pool.sort(
+    (a, b) => Math.abs(a.day - from.getDate()) - Math.abs(b.day - from.getDate())
+      || a.day - b.day)[0].day;
+
+  const targetCell = cells.filter({ has: page.locator(`.pr__cal-n:text-is("${toDay}")`) }).first();
+  await expect(targetCell).toBeVisible();
+  expect(await targetCell.locator('.pr__pill').count(),
+    `the ${toDay}th was chosen because it was empty and it is not`).toBe(0);
+
+  /**
+   * The gesture, driven as a hand does it rather than through `dragTo`.
+   *
+   * `locator.dragTo()` presses, makes ONE move to the target and releases.
+   * Chromium starts a native HTML5 drag only after the pointer has travelled,
+   * and `MonthGrid`'s `onDragOver` — the handler that calls `preventDefault()`
+   * and therefore decides whether the cell is a legal drop target at all — has
+   * to fire on the destination BEFORE the release. A single jump gives it one
+   * chance and the release can beat it.
+   *
+   * So: settle on the source, press, break the drag threshold, cross in steps,
+   * nudge once more so `dragover` fires again on the cell we are actually over,
+   * then let go. `scrollIntoViewIfNeeded` first, because a drag that has to
+   * scroll is the case that fails.
+   */
+  // ⚠ CENTRE THE ROW, ONCE. Calling `scrollIntoViewIfNeeded()` on the pill and
+  // then on the target scrolls TWICE, and the second scroll moves the first
+  // element: measured, the pill ended up centred at y=693.8 in a 720px
+  // viewport — 26px of headroom, hard against the edge where Chromium starts
+  // auto-scrolling instead of dragging. The gesture then never completed, three
+  // runs in a row, against a target this test had already proved was empty.
+  // One `block: 'center'` scroll puts the whole row in the middle, and both
+  // boxes are read AFTER it so neither is stale.
+  await targetCell.evaluate((el) => el.scrollIntoView({ block: 'center', inline: 'nearest' }));
+  await page.waitForTimeout(300);
+  const src = (await pill.boundingBox())!;
+  const dst = (await targetCell.boundingBox())!;
+  expect(src && dst, 'the pill or the target day has no box — one of them is not rendered')
+    .toBeTruthy();
+  const vp = page.viewportSize()!;
+  for (const [what, box] of [['the pill', src], ['the target day', dst]] as const) {
+    expect(box.y > 30 && box.y + box.height < vp.height - 30,
+      `${what} sits at y=${Math.round(box.y)}..${Math.round(box.y + box.height)} in a ` +
+      `${vp.height}px viewport. A drag that starts or ends within 30px of the edge is a ` +
+      'drag Chromium turns into an auto-scroll, and it will not complete — that is a ' +
+      'limitation of the gesture, not a finding about the product.').toBeTruthy();
+  }
+  const sx = src.x + src.width / 2;
+  const sy = src.y + src.height / 2;
+  // The TOP of the day cell, not its centre: the centre is where the pills sit,
+  // and a pill is not a drop target (see the note above).
+  const dx = dst.x + dst.width / 2;
+  const dy = dst.y + 10;
+
+  const patched = await writes(page, wire, /\/prachar\/campaigns\/[0-9a-f-]+$/, async () => {
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(sx + 12, sy + 12, { steps: 6 });   // past the drag threshold
+    await page.mouse.move(dx, dy, { steps: 24 });
+    await page.mouse.move(dx, dy + 2, { steps: 4 });          // one more dragover on the cell
+    await page.mouse.up();
+  });
   expect(patched, 'the drag produced no PATCH').toBeTruthy();
 
   const moved = await orgGet(page, `/api/v1/prachar/campaigns/${target.id}`);
   const movedTo = new Date((moved.data || moved).scheduled_at);
-  expect(movedTo.getDate(), `S11-D1 was dragged onto the ${to.getDate()}th and the ROW ` +
+  expect(movedTo.getDate(), `S11-D1 was dragged onto the ${toDay}th and the ROW ` +
     `still says the ${movedTo.getDate()}th — the drag animated and did not save.${dump(page, wire)}`)
-    .toBe(to.getDate());
+    .toBe(toDay);
   // A sent campaign's date is fixed (`PATCH` refuses once it is sending or
   // sent), so those pills must not be draggable. Checked as a property of the
   // markup rather than by attempting a drag that should fail.
@@ -1925,6 +2095,32 @@ test('11.7 six opt-outs, then the next campaign excludes them — proven per add
     await page.getByRole('button', { name: 'S11-C7', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'S11-C7' })).toBeVisible({ timeout: 20_000 });
 
+    // ⚠ WAIT FOR THE AUDIENCE BEFORE PRESSING SEND — suite rule 5, and the line
+    // this test was missing while 11.6 had it.
+    //
+    // The first version clicked Send as soon as the heading appeared. The
+    // audience is a SEPARATE fetch (`useResource(..., [c.id])`), so `n` was
+    // still undefined and the confirm took its `n == null` branch. The run
+    // captured it verbatim — "Send "S11-C7" to this campaign's audience? …" —
+    // and this test then accused the product of quoting the PRE-SUPPRESSION
+    // count, which is not what happened and is not a thing the product did. An
+    // assertion message that names the wrong defect is worse than a bare
+    // failure, because it sends the next reader to the wrong file.
+    //
+    // The product half of that finding is fixed separately — `Send now` is now
+    // disabled while the audience is in flight, so this window no longer exists
+    // for a person either (`CampaignsTab.jsx`, and
+    // `src/__tests__/e2e/prachar-irreversible-controls.test.jsx` pins it). This
+    // wait stays regardless: a test that races a fetch is a flake whether or not
+    // the button is gated.
+    await expect(page.getByText(/18 people will receive this/i).first(),
+      'the detail screen never settled on the post-suppression reach, so the ' +
+      'confirmation is about to be built from an audience that has not loaded')
+      .toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Send now' }),
+      'Send now is still disabled after the audience resolved — the operator ' +
+      'cannot send at all').toBeEnabled({ timeout: 15_000 });
+
     const dialogsBefore = dialogs.length;
     const out = await writes(page, wire, /\/prachar\/campaigns\/[0-9a-f-]+\/send$/,
       () => page.getByRole('button', { name: 'Send now' }).click());
@@ -2104,14 +2300,80 @@ test('11.8 three sequences, twelve steps, twenty-four enrolments; exit-on-reply 
       const now = await orgGet(page, `/api/v1/prachar/sequences/${row.id}`);
       expect(String((now.sequence || now.data?.sequence).status),
         `${s.name} did not become active`).toBe('active');
-      // Pause and resume, so the two controls are exercised and the enrolments
-      // are seen to follow the sequence.
+      // ── PAUSE AND RESUME, AND THE ASSERTION IS ON THE ENROLMENTS ────────
+      //
+      // ⚠ THE FIRST VERSION OF THIS PRESSED **Activate** TO COME BACK, because
+      // that was the only control a paused sequence offered — and it left eight
+      // real people stranded. Measured on the rows this suite created:
+      //
+      //     S11-SEQ-1   sequence 'active'   ·   8 of 8 enrolments 'paused'
+      //
+      // `PATCH {status:'active'}` writes the SEQUENCE only; `POST /resume`
+      // writes the sequence AND puts the enrolments back. The drip cron
+      // requires both (`marketing_skills.py`), so the badge read active while
+      // nobody would ever be sent anything again.
+      //
+      // Filed by `93-E-ORPHANED-CAPABILITY-SWEEP.md` finding 3 as "no Resume
+      // button"; the sharper statement is that the button that WAS there looked
+      // like a recovery and was not. A Resume control now exists, and this
+      // drives it.
+      //
+      // Running this also REPAIRS the eight rows the earlier revision stranded,
+      // through the real control rather than through SQL.
       await writes(page, wire, /\/prachar\/sequences\/[0-9a-f-]+\/pause$/,
         () => page.getByRole('button', { name: 'Pause' }).click());
       const paused = await orgGet(page, `/api/v1/prachar/sequences/${row.id}`);
       expect(String((paused.sequence || paused.data?.sequence).status)).toBe('paused');
-      await writes(page, wire, /\/prachar\/sequences\/[0-9a-f-]+$/,
-        () => page.getByRole('button', { name: 'Activate' }).click());
+      expect(((paused.enrollments || paused.data?.enrollments || []) as any[])
+        .filter((e) => e.status === 'active').length,
+        'pausing the sequence left enrolments running — the pause is the one write ' +
+        'that has to reach both tables').toBe(0);
+
+      // ⚠ PAUSE IS TAKEN, SO THE RECOVERY IS UNCONDITIONAL.
+      //
+      // If the Resume control is not on the deployed build, this test must fail
+      // — a missing control is a FAILURE, never a skip. But it must not fail
+      // while HOLDING the sequence down: leaving it `paused` would make the very
+      // next run unable to reach its own precondition, and a test that corrupts
+      // the state it needs is red for ever afterwards for the wrong reason.
+      //
+      // So the badge is put back with whatever control IS offered before the
+      // failure is raised. That restores the state to exactly what it was —
+      // sequence active, enrolments paused — and adds no new harm, because that
+      // is the state the earlier revision already left these rows in.
+      try {
+        await expect(page.getByRole('button', { name: 'Resume' }),
+          'a paused sequence offers no Resume control. `POST /sequences/{id}/resume` ' +
+          'exists and is the only route that puts the enrolments back; if the only ' +
+          'button here is Activate, coming back recovers the badge and not the people')
+          .toBeVisible({ timeout: 20_000 });
+      } catch (missing) {
+        const fallback = page.getByRole('button', { name: 'Activate' });
+        if (await fallback.count()) {
+          await writes(page, wire, /\/prachar\/sequences\/[0-9a-f-]+$/, () => fallback.click());
+        }
+        throw missing;
+      }
+      expect(await page.getByRole('button', { name: 'Activate' }).count(),
+        'a paused sequence still offers Activate, which recovers the badge and not ' +
+        'the people').toBe(0);
+
+      const out = await writes(page, wire, /\/prachar\/sequences\/[0-9a-f-]+\/resume$/,
+        () => page.getByRole('button', { name: 'Resume' }).click());
+      expect(String((out || {}).status), 'resume did not return the sequence to active')
+        .toBe('active');
+
+      // THE CANONICAL ROWS, which is the whole point: a resume that moved the
+      // badge and not the ladder is exactly the bug this replaced.
+      const resumed = await orgGet(page, `/api/v1/prachar/sequences/${row.id}`);
+      expect(String((resumed.sequence || resumed.data?.sequence).status)).toBe('active');
+      const back = (resumed.enrollments || resumed.data?.enrollments || []) as any[];
+      expect(back.filter((e) => e.status === 'paused').length,
+        `${s.name} reads 'active' and ${back.filter((e) => e.status === 'paused').length} ` +
+        'of its enrolments are still paused. The cron requires BOTH, so nobody under ' +
+        'this sequence would ever be sent anything again.').toBe(0);
+      expect(back.filter((e) => e.status === 'active').length,
+        'resume put nobody back on the ladder').toBe(8);
     }
   }
 
@@ -2246,14 +2508,26 @@ test('11.9 three events, thirty registrations, publish, attend, cancel, and the 
 
   let marked = 0;
   const regRows = await rowsOf(page, `/api/v1/prachar/events/${ev2.id}/registrations`);
-  const toAttend = regRows.filter((r) => r.status === 'registered').slice(0, 3);
+  // ⚠ MARK THE SHORTFALL, NOT A FIXED THREE.
+  //
+  // The first version took `.slice(0, 3)` of whatever was still `registered`,
+  // so every run promoted three MORE people — 3 attended after run one, 6 after
+  // run two, 9 after run three. The assertion below is `>= 3`, so it stayed
+  // green while the data drifted every time the suite ran, which is precisely
+  // the "creates a second copy of everything on re-run" §6 calls a defect in
+  // the suite. Targets are 3 attended and 2 cancelled, TOTAL.
+  const alreadyAttended = regRows.filter((r) => r.status === 'attended').length;
+  const alreadyCancelled = regRows.filter((r) => r.status === 'cancelled').length;
+  const toAttend = regRows.filter((r) => r.status === 'registered')
+    .slice(0, Math.max(0, 3 - alreadyAttended));
   for (const r of toAttend) {
     const line = exp2.locator('table.tbl tr').filter({ hasText: String(r.email) }).first();
     await writes(page, wire, /\/registrations\/[0-9a-f-]+\?status=attended$/,
       () => line.getByRole('button', { name: 'Mark attended' }).click());
     marked += 1;
   }
-  const toCancel = regRows.filter((r) => r.status === 'registered').slice(3, 5);
+  const toCancel = regRows.filter((r) => r.status === 'registered')
+    .slice(3 - alreadyAttended, (3 - alreadyAttended) + Math.max(0, 2 - alreadyCancelled));
   for (const r of toCancel) {
     const line = exp2.locator('table.tbl tr').filter({ hasText: String(r.email) }).first();
     if (await line.getByRole('button', { name: 'Cancel' }).count()) {
@@ -2262,8 +2536,15 @@ test('11.9 three events, thirty registrations, publish, attend, cancel, and the 
     }
   }
   const final = await rowsOf(page, `/api/v1/prachar/events/${ev2.id}/registrations`);
+  // EXACT, and it is the §6 assertion rather than the attendance one: the count
+  // must be what it was plus exactly what this run marked. `>= 3` was true on
+  // every run of the drifting version and would have stayed true at nine.
   expect(final.filter((r) => r.status === 'attended').length,
-    'attendance did not persist on the canonical rows').toBeGreaterThanOrEqual(3);
+    'attendance did not persist on the canonical rows, or the run marked somebody it ' +
+    'did not intend to')
+    .toBe(alreadyAttended + toAttend.length);
+  expect(final.filter((r) => r.status === 'attended').length,
+    'fewer than the three attendances §4 asks for').toBeGreaterThanOrEqual(3);
   expect(final.length, 'a cancelled registration was DELETED rather than cancelled — the row ' +
     'is the record that somebody signed up').toBe(10);
 
@@ -2478,6 +2759,15 @@ test('11.13 the standing rules, on Prachar\'s own screens', async ({ page }) => 
     await prachar(page, t);
     const panel = page.locator(`#mt-panel-${t}`);
     await expect(panel).toBeVisible();
+
+    // ⚠ CAMPAIGNS OPENS ON THE CALENDAR, NOT A TABLE, so the row contract went
+    // unmeasured on the busiest screen in the module and this test reported
+    // "NO ROWS" against twelve campaigns. Switch to the List view, which is
+    // where the table lives, before measuring.
+    if (t === 'campaigns') {
+      const list = page.getByRole('button', { name: 'List', exact: true });
+      if (await list.count()) { await list.click(); await settle(page); }
+    }
 
     // ── NAMES, NOT IDS ───────────────────────────────────────────────────
     // ⚠ `check-rendered-ids.mjs` is static and positional and has been GREEN
