@@ -21,6 +21,69 @@ behind it.
 
 ## OPEN
 
+### 22. Four DATA decisions that are yours, not mine — proposal 93, 2026-08-29
+
+Every one of these edits rows that already exist. Code changes I make; **data
+changes to live rows I raise first with the reversal written down**, and none of
+these has been touched.
+
+**a. Four non-draft orders carry the OLD discount arithmetic.** `_compute_order_
+totals` stored `subtotal` NET and returned it gross, so `subtotal + tax −
+discount = total` did not hold and the record drawer's five figures did not add
+up on screen. **The code is fixed and deployed.** But `S10-SO-07` and
+`S10-SO-14` among others were written before it, and their stored subtotals are
+still net. Suite 10's test `10.03` stays red on exactly that line and on nothing
+else.
+*Reversal:* the pre-image of every affected row, captured before any UPDATE.
+*My recommendation:* recompute them. They are Playwright-created test rows, not
+a customer's filed money — unlike the two June payslips below, which are.
+
+**b. Two organisations still have NO GST state code.** `Aekam Inc` and
+`Demo - Kartavaya` are both NULL. Until today nothing in the product could set
+one; **that is fixed and live**, so a human can now set them in Settings →
+Organisation → Company Profile. I did not set them: Aekam Inc is the §12
+no-touch org, and picking a tax jurisdiction for your own company is not my
+call. Until it is set, neither org can raise a GST invoice.
+*Reversal:* set it back to NULL. One column, one row each.
+
+**c. The 30 payslip emails.** Unchanged and still yours — it needs addresses on
+30 real personnel rows and `outbound_mode` is `live`.
+
+**d. Restating PS-2026-0011 / PS-2026-0019.** Unchanged and still yours. Filed
+money gets its own written risk report before anything moves.
+
+---
+
+### 21. Two marketing feature sets that are NOT BUILT — §4 asks for them and they cannot be done
+
+Found by Suite 11, 2026-08-29. **Not blocked, not broken — absent.** Recorded
+here because §4 counts them, and six silent zeroes would otherwise read as a
+defect in six weeks' time.
+
+**a. Landing pages, tracked links, clicks and referrals.** Five tables exist and
+hold **0 rows each** — `mkt_landing_pages`, `mkt_tracked_links`,
+`mkt_link_clicks`, `mkt_referrals`, `mkt_referral_codes` — verified live in
+`staging`, and absent from `public`. **No router references any of them**: they
+appear only in migrations 030/201 and one line of `STAGING_SETUP.md`, and six
+candidate routes answer 404. So §4's *landing pages 2 · form submissions 12 ·
+tracked links 6 · clicks 24 · referrals 4* are **unachievable** — there is no
+code to drive.
+
+**b. Prachar automations.** The tab is unmounted in `PracharPage.jsx`,
+`POST /automations` answers **501**, and `GET` returns `engine: null` with a
+note. The table has held 0 rows for its whole life. §4's *marketing automations
+fired: 5* is likewise unachievable.
+
+**What I need from you:** whether either is in scope to BUILD. I have not folded
+that into this programme's estimate — it is a feature, not a bug, and §7 says I
+do not silently spend the programme's time building what it was not scoped to
+build. Say the word and I will scope them separately.
+
+⚠ Related and already known: **web forms have no public route** (item 19), so
+"form submissions" has no door either.
+
+---
+
 ### 20. Three Manav gaps, and a ratchet that cannot see what it checks — Suite 07, 2026-08-29
 
 Three of Suite 07's findings were real defects and are **already fixed** (asset
