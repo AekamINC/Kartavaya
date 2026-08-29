@@ -594,6 +594,48 @@ export default function KanbanView({
                           draggableId={task.task_id}
                           index={idx}
                           isDragDisabled={!canDrag(task)}
+                          /* ⚠ WITHOUT THIS, NO CARD ON THIS BOARD CAN BE
+                             DRAGGED WITH A MOUSE — AT ALL.
+
+                             `TaskCard`'s root is a <button> (TaskCard.jsx:60),
+                             and it sits between the pointer and the drag handle
+                             spread on the <div> below. Read from the shipped
+                             library, not from memory —
+                             `@hello-pangea/dnd/dist/dnd.cjs.js`:
+
+                               interactiveTagNames = ['input','button',
+                                 'textarea','select','option','optgroup',
+                                 'video','audio']
+
+                               if (sourceEvent
+                                   && !entry.options.canDragInteractiveElements
+                                   && isEventInInteractiveElement(el, sourceEvent))
+                                 return null;
+
+                             `isAnInteractiveElement` walks from the event target
+                             UP to the draggable, so every pointerdown on a card
+                             finds that <button> first, the sensor returns null,
+                             and the lock is never claimed. The press then falls
+                             through to the browser as a text selection.
+
+                             MEASURED by proposal 93 Suite 03 on 2026-08-29:
+                             24 mouse drags across two runs produced ZERO
+                             `PATCH /api/tasks/{id}/move` requests, and the
+                             failure screenshot shows the board text-selected
+                             rather than a card lifted. §1 names "a drag that
+                             animates and does not save"; this is the harder
+                             version — a drag that never begins.
+
+                             `disableInteractiveElementBlocking` is the
+                             library's own escape hatch for exactly this shape.
+                             The click-vs-drag distinction is unaffected: the
+                             sensor still needs its ~5px threshold to lift, and
+                             `onClick` below is already guarded by `draggingId`.
+
+                             The alternative fix is to stop rendering the card
+                             as a <button>, which is a bigger change to a
+                             component four views share. */
+                          disableInteractiveElementBlocking
                         >
                           {(dragProvided, dragSnapshot) => (
                             <div

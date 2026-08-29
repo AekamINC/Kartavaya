@@ -3755,9 +3755,46 @@ async def _ensure_default_owner(pool, team_id: str, creator: dict):
         "VALUES ($1,$2,$3,$4,'owner','active',(SELECT org_id FROM teams WHERE team_id=$2))",
         f"mem_{uuid.uuid4().hex[:12]}", team_id, owner["email"], owner["user_id"],
     )
+    #
+    # ⚠ `$2::text` IS LOAD-BEARING, AND ITS ABSENCE 500'd EVERY PROJECT A
+    # CUSTOMER CREATED.
+    #
+    # `$2` appears twice: once as the value of `project_assignments.team_id`,
+    # and once inside `WHERE teams.team_id=$2`. Measured from `pg_attribute`
+    # 2026-08-29 — never from a migration file, per CLAUDE.md:
+    #
+    #     teams.team_id                text
+    #     team_members.team_id         text          ← the INSERT above is safe
+    #     project_assignments.team_id  varchar(255)   ← THIS ONE IS NOT
+    #
+    # `project_assignments` is the ONLY table in either product schema whose
+    # `team_id` is not `text` (swept: 17 tables carry the column). So Postgres
+    # deduced `character varying` from the target column and `text` from the
+    # sub-select and refused to plan the statement at all:
+    #
+    #     42P08 inconsistent types deduced for parameter $2
+    #     DETAIL: text versus character varying
+    #
+    # asyncpg raises that at `prepare`, so the exception lands AFTER the three
+    # INSERTs above have committed — a project with a roster, no
+    # `project_assignments` row for the default owner, and no kanban columns,
+    # because `ensure_default_columns` is the next line and never runs. The
+    # browser saw `net::ERR_FAILED` (the 500 escapes before the CORS headers
+    # are attached) and printed "Could not create project" over a project that
+    # existed. Two live victims: `team_921428b4cb2f` "Demo Kartavaya"
+    # (2026-08-23, 0 columns to this day) and `team_c55f3960bf2f`
+    # "S3 Project 01" (2026-08-29).
+    #
+    # It only ever fired for a creator who is NOT `DEFAULT_OWNER_EMAIL` — i.e.
+    # never for Aekam staff, and always for a customer creating their first
+    # project, which is why it survived.
+    #
+    # The cast makes both uses `text` and the assignment cast to varchar(255)
+    # on insert is implicit. The durable fix is a migration aligning the
+    # column with the other sixteen; that is the lead's call, not an agent's.
     await pool.execute(
         "INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by,org_id) "
-        "VALUES ($1,$2,$3,'owner',$4,(SELECT org_id FROM teams WHERE team_id=$2))",
+        "VALUES ($1,$2::text,$3,'owner',$4,(SELECT org_id FROM teams WHERE team_id=$2::text))",
         f"assign_{uuid.uuid4().hex[:12]}", team_id, owner["user_id"], owner["user_id"],
     )
 
@@ -4973,10 +5010,18 @@ async def task_is_in_org(pool, org: str | None, *, team_id: str | None,
 
     ── HOW A TASK'S ORG IS DERIVED ────────────────────────────────────────────
 
-    `tasks.org_id` DOES NOT EXIST. It is added only in
-    `migrations/PROPOSED_076_org_id_add_nullable.sql:66`, which is unapplied and
-    is the owner's decision to run, so the org has to be reached through the
-    task's team — the same route `get_visible_team_ids` takes.
+    ⚠ THIS PARAGRAPH SAID `tasks.org_id` DOES NOT EXIST. IT DOES, NOW.
+    Measured from `information_schema` 2026-08-29: `public.tasks.org_id` is a
+    real column holding 280 rows, **240 populated and 40 NULL**. Whatever
+    applied it, `PROPOSED_076` is no longer the whole story and the negative
+    was stale — the standing rule is that nothing is called missing without a
+    live query, and this comment was a live query nobody had re-run.
+
+    The derivation below is KEPT ANYWAY, and not out of caution: 40 rows carry
+    no `org_id`, so the column cannot be the sole predicate without silently
+    refusing every one of them. It is now a corroborating signal rather than
+    the absent one, and the org is still reached through the task's team — the
+    same route `get_visible_team_ids` takes.
 
       team_id set   -> `teams.org_id` must equal `org`, **or be NULL**. The NULL
                        leg is not a hole and is spelled out for the same reason

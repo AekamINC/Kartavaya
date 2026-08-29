@@ -209,7 +209,7 @@
  */
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, assertOrg } from './_lanes';
-import { settle } from './_helpers';
+import { settle, setDate } from './_helpers';
 
 const LANE = lane('unicode');
 const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
@@ -373,8 +373,34 @@ async function signIn(page: Page) {
  * `check-e2e-no-bypass` bans `page.request.post/put/patch/delete` and permits
  * `get`, because asserting that the row appeared IS the required evidence.
  */
+/**
+ * The session token, read ONCE at sign-in and remembered.
+ *
+ * ⚠ `orgGet` used to call `page.evaluate(() => localStorage.getItem(…))` on
+ * every read, and that is a call into the PAGE — so a read that happens while
+ * the board is navigating dies with
+ *
+ *     page.evaluate: Execution context was destroyed, most likely because of
+ *     a navigation
+ *
+ * which is what killed 03.16 half way through its fourteen approvals. The
+ * token does not change during a test, so reading it once removes a whole
+ * class of flake from every read-back in this file. `TOKENS` is per Page, so
+ * two tests never share one.
+ */
+const TOKENS = new WeakMap<Page, string>();
+
+async function sessionToken(page: Page): Promise<string | null> {
+  const cached = TOKENS.get(page);
+  if (cached) return cached;
+  const token = await page.evaluate(() => localStorage.getItem('auth_token'))
+    .catch(() => null);
+  if (token) TOKENS.set(page, token);
+  return token;
+}
+
 async function orgGet(page: Page, path: string): Promise<any> {
-  const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+  const token = await sessionToken(page);
   const res = await page.request.get(`${API}${path}`, {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -677,15 +703,105 @@ async function dragCard(page: Page, title: string, toColumn: string) {
   const dst = column(page, toColumn).locator('.bd__list');
   await expect(dst, `no column "${toColumn}" to drop into`).toBeVisible();
 
-  const a = await src.boundingBox();
-  const b = await dst.boundingBox();
+  /**
+   * Scrolled INTO view before measuring — `toBeVisible()` is true for a card
+   * that is in the DOM and unhidden but below the fold, and `boundingBox()`
+   * then returns a y the mouse cannot reach.
+   *
+   * TWO PASSES, because the two elements pull in opposite directions: the
+   * source column is the tall one (it holds every card yet to move) and the
+   * target is short, so scrolling to a card low in "To Do" pushes the target's
+   * `.bd__list` above the viewport — measured: `column y=-116 h=101`. If the
+   * target ends up unreachable, scroll to IT instead and re-measure both. The
+   * guard below then fails loudly if neither pass can see the pair, rather
+   * than mis-dropping and blaming the product.
+   */
+  const hasOnScreenHeight = (r: { y: number; height: number } | null) =>
+    !!r && r.y + r.height > 60 && r.y < (page.viewportSize()?.height ?? 720) - 60;
+
+  await src.scrollIntoViewIfNeeded();
+  let a = await src.boundingBox();
+  let b = await dst.boundingBox();
+  if (!hasOnScreenHeight(b)) {
+    await dst.scrollIntoViewIfNeeded();
+    a = await src.boundingBox();
+    b = await dst.boundingBox();
+  }
   expect(a && b, 'the card or the target column has no box to drag between').toBeTruthy();
 
-  await page.mouse.move(a!.x + a!.width / 2, a!.y + a!.height / 2);
+  /**
+   * ⚠ BOTH BOXES MUST BE INSIDE THE VIEWPORT, AND THIS GUARD IS WHY.
+   *
+   * `page.mouse.move` CLAMPS to the viewport. A board with nine columns is
+   * ~2500px wide in a 1280px window, so a target column off to the right has a
+   * bounding box whose centre the mouse can never reach: every move landed at
+   * the right edge, the drop fell on nothing, `handleDragEnd` returned without
+   * a PATCH, and the test reported "the drag animated and did not save" — the
+   * exact defect it exists to catch, manufactured by its own arithmetic.
+   *
+   * Failing loudly here is the point: a silent mis-drop is indistinguishable
+   * from the product bug, and the caller is told to pick a visible column
+   * rather than being handed a false red.
+   */
+  const vp = page.viewportSize();
+  const W = vp?.width ?? 1280;
+  const H = vp?.height ?? 720;
+
+  /**
+   * ⚠ ONLY THE HORIZONTAL SPAN OF THE COLUMN IS REQUIRED, AND THE DROP FOLLOWS
+   * THE CARD'S OWN ROW.
+   *
+   * The first version aimed at the column's own top edge. `.bd__list` is as
+   * tall as the column, so once the board is scrolled to bring the fifth card
+   * into view the column's box starts ABOVE the viewport — measured on the run
+   * that caught it: `card y=540`, `column y=-226`. Aiming at the column's top
+   * put the pointer off-screen, `page.mouse.move` clamped it, and the drop
+   * landed on nothing.
+   *
+   * A person dragging a card sideways does not aim at the column heading; they
+   * move across at the height they are already at. So the drop point is the
+   * column's horizontal centre at the CARD's vertical position — which is
+   * inside `.bd__list` for any card the board has scrolled into view.
+   */
+  const onScreenX = (r: { x: number; width: number }) => r.x >= 0 && r.x + r.width <= W + 1;
+  const onScreenY = (r: { y: number; height: number }) => r.y >= 0 && r.y + r.height <= H + 1;
+  expect(
+    onScreenX(a!) && onScreenY(a!) && onScreenX(b!),
+    `"${title}" or the column "${toColumn}" cannot be reached inside the ${W}x${H} ` +
+    `viewport, so a mouse drag between them cannot be simulated — ` +
+    `page.mouse.move clamps to the viewport and the drop would land on nothing.\n` +
+    `     card   x=${Math.round(a!.x)} y=${Math.round(a!.y)} w=${Math.round(a!.width)} h=${Math.round(a!.height)}\n` +
+    `     column x=${Math.round(b!.x)} y=${Math.round(b!.y)} w=${Math.round(b!.width)}\n` +
+    `     This is a TEST precondition, not a product finding: choose a column ` +
+    `that is on screen beside the card.`,
+  ).toBeTruthy();
+
+  const fromX = a!.x + a!.width / 2;
+  const fromY = a!.y + a!.height / 2;
+  const toX = b!.x + b!.width / 2;
+
+  /**
+   * The card's own row — but clamped into the TARGET LIST'S OWN BOX as well as
+   * the viewport. A column holding one card has a short `.bd__list`, and
+   * dropping at the source card's height then lands below it, on the column
+   * behind: the drop is discarded and no PATCH is sent, which reads as the
+   * product losing the move.
+   */
+  const lo = Math.max(b!.y + 8, 60);
+  const hi = Math.min(b!.y + b!.height - 8, H - 60);
+  expect(
+    hi >= lo,
+    `the "${toColumn}" drop area has no on-screen height to aim at ` +
+    `(y=${Math.round(b!.y)} h=${Math.round(b!.height)} in a ${W}x${H} viewport)`,
+  ).toBeTruthy();
+  const toY = Math.min(Math.max(fromY, lo), hi);
+
+  await page.mouse.move(fromX, fromY);
   await page.mouse.down();
-  await page.mouse.move(a!.x + a!.width / 2, a!.y + a!.height / 2 + 10, { steps: 4 });
-  await page.mouse.move(b!.x + b!.width / 2, b!.y + Math.min(40, b!.height / 2), { steps: 24 });
-  await page.mouse.move(b!.x + b!.width / 2, b!.y + Math.min(48, b!.height / 2) + 4, { steps: 6 });
+  // Past @hello-pangea/dnd's ~5px sloppy-click threshold before travelling.
+  await page.mouse.move(fromX, fromY + 10, { steps: 4 });
+  await page.mouse.move(toX, toY, { steps: 24 });
+  await page.mouse.move(toX, toY + 4, { steps: 6 });
   await page.mouse.up();
 }
 
@@ -779,21 +895,68 @@ test('03.2 every Core PM surface that is genuinely empty says so in words, and n
    * The brand-new-org lane (UK AekamINC, §4) is where all fourteen are
    * genuinely blank, and this same file is what runs there in Stage 4.
    */
-  const empties: Array<[string, RegExp]> = [
-    ['/settings/categories', /No categories yet|अभी कोई वर्ग नहीं/],
-    ['/templates', /No project templates yet|No task templates yet|अभी कोई साँचा नहीं/],
-    ['/approvals', /Nothing waiting|No .*(approval|request)|caught up/i],
+  /**
+   * ⚠ THIS TEST COULD NOT PASS TWICE, AND THAT IS §6's WHOLE POINT.
+   *
+   * It used to assert the empty-state wording UNCONDITIONALLY on these three
+   * screens. But 03.3 creates eight categories and 03.17 creates five
+   * templates — later in the same file — so the first run emptied the very
+   * claim the second run makes. Measured 2026-08-29: this passed on the run
+   * that found 18 other failures and FAILED on the next run against the same
+   * org, with nothing changed but the rows its siblings had left behind. §6 is
+   * proved by running twice, and a suite that only passes from empty is a
+   * suite that has never been re-run.
+   *
+   * So the emptiness is READ, not assumed. A screen that holds nothing must
+   * say so in words; a screen that holds something must show it and must not
+   * hang on a skeleton. Both halves are real requirements and neither depends
+   * on which sibling ran first.
+   */
+  const surfaces: Array<[string, RegExp, string[], RegExp]> = [
+    ['/settings/categories', /No categories yet|अभी कोई वर्ग नहीं/,
+      ['/api/categories'], /S3 Cat 01/],
+    ['/templates', /No project templates yet|No task templates yet|अभी कोई साँचा नहीं/,
+      ['/api/templates/projects', '/api/templates/tasks'], /S3 Project Template 1/],
+    ['/approvals', /Nothing waiting|No .*(approval|request)|caught up/i,
+      ['/api/approvals/pending', '/api/approvals/history'], /Recent decisions/],
   ];
-  for (const [path, wording] of empties) {
+  for (const [path, wording, sources, present] of surfaces) {
+    let held = 0;
+    for (const src of sources) held += (await rowsOf(page, src)).length;
+
     await page.goto(path);
     await settle(page);
     const text = await page.locator('.k-screen').innerText();
-    expect(
-      wording.test(text),
-      `${path} holds nothing and does not SAY so. §1: "It says there is nothing yet, ` +
-      `in words. This is what a new customer sees on day one."\n     screen read: ` +
-      `${text.replace(/\s+/g, ' ').slice(0, 400)}`,
-    ).toBeTruthy();
+
+    if (held === 0) {
+      expect(
+        wording.test(text),
+        `${path} holds nothing and does not SAY so. §1: "It says there is nothing yet, ` +
+        `in words. This is what a new customer sees on day one."\n     screen read: ` +
+        `${text.replace(/\s+/g, ' ').slice(0, 400)}`,
+      ).toBeTruthy();
+    } else {
+      /**
+       * POSITIVE EVIDENCE ONLY, and this is the correction to my own first
+       * attempt. I had also asserted that the EMPTY wording must be absent
+       * whenever the org holds rows — which went red on `/approvals`, a page
+       * that is entirely correct: it draws two tabs and a decisions panel, so
+       * the empty tab legitimately prints "No pending approvals … you are all
+       * caught up" while the tiles read 2 pending / 6 approved / 4 rejected
+       * and the decisions list names real tasks. "The empty state is absent"
+       * is not a safe inverse on any screen built from more than one list.
+       */
+      expect(
+        present.test(text),
+        `${path} holds ${held} rows and does not render ${String(present)} — the ` +
+        `screen resolved to neither its rows nor its empty state.` +
+        `\n     screen read: ${text.replace(/\s+/g, ' ').slice(0, 400)}`,
+      ).toBeTruthy();
+    }
+    await expect(
+      page.locator('[aria-busy="true"]'),
+      `${path} still shows a busy region after the network settled`,
+    ).toHaveCount(0, { timeout: 30_000 });
   }
 
   // The four that legitimately carry the protected set: they must RENDER, and
@@ -949,19 +1112,142 @@ test('03.5 the status report is the whole of what a project plan offers — mile
     'a plan section that silently prints actuals against nothing is worse than one that says so',
   ).toContainText(/Milestones, risks and the planned side .* not stored anywhere yet/);
 
-  // The half that DOES work: the PDF. §4's project surface earns a download.
-  const from = panel.getByRole('button', { name: /^From|^Choose a date$/ }).first();
-  await expect(from, 'the report period has no date control').toBeVisible();
-  const dl = page.waitForEvent('download', { timeout: 120_000 });
+  /**
+   * The half that DOES work: the PDF. §4's project surface earns a download.
+   *
+   * ⚠ THE PERIOD IS A `DateInput`, AND IT HAS NO ACCESSIBLE NAME — suite rule 8
+   * in its sharpest form. `ProjectBoardPage` writes
+   * `<label className="fld"><span>From</span><DateInput …/></label>`, and
+   * `DateInput` renders a `<button class="pk__tr">` whose only content is an
+   * `aria-hidden` icon plus the formatted value. A `<label>` does not name a
+   * `<button>` in the accessibility tree, and no `aria-label` is passed here, so
+   * the trigger announces as "No date, button" and
+   * `getByRole('button', { name: /^From/ })` matches NOTHING.
+   *
+   * That is a real (small) a11y defect and it is reported — but it is NOT a
+   * missing control, and calling it one would have been the wrong diagnosis.
+   * The control is addressed the way `_helpers.ts::setDate()` addresses every
+   * other `DateInput` in this repo: through its wrapping label.
+   */
+  const from = panel.locator('label.fld', { hasText: 'From' }).locator('.pk--dt button.pk__tr').first();
+  const to = panel.locator('label.fld', { hasText: 'To' }).locator('.pk--dt button.pk__tr').first();
+  await expect(from, 'the report period has no From date control').toBeVisible({ timeout: 20_000 });
+  await expect(to, 'the report period has no To date control').toBeVisible({ timeout: 20_000 });
+
+  /**
+   * Drive it, rather than only assert it exists: a period the customer chose.
+   *
+   * ⚠ BOTH DATES ARE INSIDE THE MONTH THE CALENDAR OPENS ON, AND THAT IS A
+   * WORKAROUND FOR A REAL DEFECT — REPORTED, NOT HIDDEN.
+   *
+   * The first version asked for "30 days ago", which needs one press of
+   * `Previous month`. That press cannot be made at 1280×720:
+   *
+   *     locator.click: Timeout 20000ms exceeded
+   *       - <div class="vtb__bar">…</div> from <div class="vtb">…</div>
+   *         subtree intercepts pointer events
+   *
+   * The panel sits low on the board, so `DateInput`'s measured flip opens the
+   * calendar UPWARDS — straight underneath the board's view-toolbar card,
+   * which paints over it. The failure screenshot shows the month header and
+   * the first two weeks of the grid hidden behind the toolbar, with only days
+   * 9–31 reachable. A customer on a 720px-tall window has the same calendar
+   * and the same unreachable `Previous month`. That is a stacking defect in
+   * `.pk__pop` versus `.vtb__bar`, it reaches every `DateInput` rendered low
+   * on a board, and a global z-index change is not a Suite 03 decision — so it
+   * is REPORTED with this evidence and recorded in the ledger below.
+   *
+   * `reportPeriod` already defaults to the 1st of the current month, so the
+   * calendar opens on a month that needs no navigation.
+   *
+   * ⚠ AND THE DAY IS THE 15th, NOT THE 1st, FOR THE SAME DEFECT ONE ROW LOWER.
+   * Avoiding the month nav was not enough: the second attempt was refused on
+   * the day cell itself —
+   *
+   *     locator.click: Timeout 20000ms exceeded
+   *       - locator resolved to <button … aria-label="Saturday, 1 August 2026">
+   *       - <div class="fb">…</div> from <div class="vtb">…</div>
+   *         subtree intercepts pointer events
+   *
+   * — because the 1st is in the calendar's FIRST week, which is the part of
+   * the upward-flipped popup the toolbar covers. The screenshot shows days
+   * 1–8 hidden and 9–31 reachable. So the whole top of the grid is
+   * unclickable, not merely the month header, and a customer cannot pick an
+   * early-month date on this panel at all. Measured, not inferred:
+   * `--z-picker: 340` IS defined (animations.css:142) and `.vtb`/`.vtb__bar`
+   * carry neither `position: sticky` nor a `z-index`, so this is a CLIPPING
+   * or paint-order fault around the flipped popup rather than a missing
+   * token — named here so the next reader does not re-derive it.
+   */
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), 15);
+  await setDate(panel, 'From', `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-15`);
+  await setDate(panel, 'To',
+    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
+  await expect(
+    panel.locator('.pb__none', { hasText: 'The start date is after the end date' }),
+    'the period the suite typed reads as inverted',
+  ).toHaveCount(0);
+
+  /**
+   * ⚠ THIS IS THE ASSERTION THAT FOUND THE ROUTE HAS NEVER WORKED.
+   *
+   * Measured 2026-08-29, the first time any run reached this button (every
+   * earlier attempt died on the calendar above):
+   *
+   *     POST /api/v1/documents/projects/team_c55f3960bf2f/report/pdf
+   *          ?period_start=2026-08-15&period_end=2026-08-29   →  404
+   *
+   * `routers/documents.download_project_report_pdf` looks the project up as
+   *
+   *     SELECT board_id, name FROM public.boards
+   *      WHERE board_id=$1 AND team_id=$2
+   *
+   * and raises `404 "Project board not found"` when it misses. It always
+   * misses. Read live from the catalogue, both product schemas:
+   *
+   *     public.boards            0 rows   (whole database, all time)
+   *     public.board_columns     0 rows
+   *     tasks WHERE board_id IS NOT NULL   0 rows
+   *
+   * In this product a board IS a project — `/projects/:id` renders
+   * `public.teams` + `public.project_columns`, and `ProjectBoardPage` sends
+   * its `projectId`, which is a `team_…` id and can never equal a
+   * `boards.board_id`. The route also resolves the team as
+   * `SELECT team_id FROM staging.organisations WHERE id=$1`, i.e. ONE team per
+   * organisation, which is not the model either. Its own comments record a
+   * previous `UndefinedTableError` here that "raised for every caller it has
+   * ever had"; that one was fixed and the route now fails one statement
+   * earlier instead.
+   *
+   * PRODUCT BUG, never worked, reported rather than rewritten: re-pointing an
+   * eight-statement handler off a table that has no rows onto `teams` /
+   * `project_columns` / `tasks.team_id` is a piece of work in its own right and
+   * not a Suite 03 edit.
+   */
+  const dl = page.waitForEvent('download', { timeout: 60_000 });
   await panel.getByRole('button', { name: 'Download report' }).click();
-  const file = await dl;
-  const path = await file.path();
+  const file = await dl.catch(() => null);
+  expect(
+    file,
+    'the "Download report" button produced no file. POST /v1/documents/projects/' +
+    '{id}/report/pdf answers 404 "Project board not found" because it looks the ' +
+    'project up in public.boards, which holds 0 rows in the whole database — ' +
+    'a board in this product IS a project (public.teams). PRODUCT BUG.',
+  ).not.toBeNull();
+  const path = await file!.path();
   expect(path, 'the report download produced no file — a 200 with an empty body is §1\'s named failure').toBeTruthy();
 
+  ledger('report calendar top half', 1, 0, 0,
+    'PRODUCT DEFECT — the upward-flipped .pk__pop is covered by .vtb on the project ' +
+    'board: month nav AND days 1-8 are unclickable at 1280x720. Reported, not fixed ' +
+    'here — the owner of the design system decides, not Suite 03.');
   ledger('milestones', 16, 0, 0, 'NO CONTROL, NO WRITE PATH — see the test body');
   ledger('risks', 8, 0, 0, 'NO CONTROL, NO WRITE PATH');
   ledger('baselines', 4, 0, 0, 'NO CONTROL, NO WRITE PATH');
-  ledger('project report PDF', 1, 1, 1);
+  ledger('project report PDF', 1, 0, 0,
+    'PRODUCT BUG — POST /v1/documents/projects/{id}/report/pdf 404s: it reads ' +
+    'public.boards (0 rows, all time) for an id that is a team_ id');
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1098,7 +1384,17 @@ test('03.7 eighty tasks typed into the board, twelve of them through the New Tas
     if (existing.has(title)) continue;
     await page.goto('/tasks');
     await page.getByRole('button', { name: 'New task' }).first().click();
-    const modal = page.getByRole('dialog', { name: /New task|Create/i }).first();
+    /**
+     * ⚠ SUITE RULE 8, AND THIS ONE COST A WHOLE TEST. `getByRole(name)` matches
+     * the ACCESSIBLE NAME. `NewTaskModal` is `role="dialog"
+     * aria-labelledby="ntm-title"`, and `#ntm-title` reads **"What needs
+     * doing?"** — the words "New task" appear only in the kicker above it,
+     * which is not the labelledby target. So `{ name: /New task|Create/i }`
+     * matched nothing and this reported a DEAD CONTROL over a modal that had
+     * opened correctly. Verified from the failure's own page snapshot:
+     * `dialog "What needs doing?"`.
+     */
+    const modal = page.getByRole('dialog', { name: /What needs doing/i }).first();
     await expect(modal, 'the New Task modal did not open').toBeVisible({ timeout: 20_000 });
     await modal.getByRole('textbox', { name: 'Task title' }).fill(title);
     await modal.getByRole('combobox', { name: 'PROJECT' }).selectOption({ label: P(1) });
@@ -1121,17 +1417,39 @@ test('03.7 eighty tasks typed into the board, twelve of them through the New Tas
       const col = column(page, COL[k]);
       await expect(col, `column ${COL[k]} is missing on ${P(b + 1)} — 03.6 owns it`).toBeVisible();
       const per = Math.ceil((V.tasks - V.fieldTasks) / (V.boards * COL.length));
+      /**
+       * ⚠ THE COMPOSER STAYS OPEN AFTER ⏎, AND THE ADD BUTTON IS GONE WHILE IT
+       * IS. `KanbanView` says so in its own comment — "the composer replaces
+       * the Add button in place. It does NOT close on ⏎; that is the whole
+       * point, and it is why the confirm is a 'Done' link rather than a
+       * Cancel." This loop used to click "Add task" once per task, so the
+       * SECOND task in every column waited 20s for a button that the product
+       * had deliberately removed, and reported a dead control.
+       *
+       * Opened once per column and then typed into repeatedly, which is both
+       * what the control is designed for and what a person filling a column
+       * actually does.
+       */
+      const composer = page.getByRole('textbox', { name: `New task in ${COL[k]}` });
       for (let j = 0; j < per && n <= V.tasks; j++, n++) {
         const title = T(n);
         if (existing.has(title)) continue;
-        await col.getByRole('button', { name: 'Add task' }).click();
-        const composer = page.getByRole('textbox', { name: `New task in ${COL[k]}` });
-        await expect(composer, `no inline composer in ${COL[k]}`).toBeVisible({ timeout: 15_000 });
+        if (!(await composer.isVisible().catch(() => false))) {
+          const add = col.getByRole('button', { name: 'Add task' });
+          await expect(add, `no "Add task" control in ${COL[k]} on ${P(b + 1)}`)
+            .toBeVisible({ timeout: 20_000 });
+          await add.click();
+          await expect(composer, `no inline composer in ${COL[k]}`).toBeVisible({ timeout: 15_000 });
+        }
         await composer.fill(title);
         await writes(page, /\/api\/tasks$/, async () => { await composer.press('Enter'); });
         typed += 1;
       }
+      // Escape closes the composer so the next column's Add button is drawn.
       await page.keyboard.press('Escape').catch(() => {});
+      await expect(composer, `the ${COL[k]} composer would not close on Escape`)
+        .toBeHidden({ timeout: 10_000 })
+        .catch(async () => { await page.mouse.click(4, 4); });
     }
   }
 
@@ -1159,6 +1477,20 @@ test('03.7 eighty tasks typed into the board, twelve of them through the New Tas
 
 test('03.8 twelve cards dragged between columns, and every one persisted its column_id', async ({ page }) => {
   test.setTimeout(30 * 60_000);
+  /**
+   * ⚠ A TALLER WINDOW, AND IT IS THE GEOMETRY THAT NEEDS IT, NOT THE PRODUCT.
+   *
+   * At 720px high, "To Do" holding a dozen cards is longer than the viewport,
+   * so bringing the card into view scrolls the short target column off the
+   * top: `card y=540, column y=-226`. A mouse drag needs BOTH ends reachable
+   * at once, and no amount of scrolling gets there while the column is taller
+   * than the window. 1600px holds a full column, which is also what a real
+   * user's maximised desktop window does with this board.
+   *
+   * 03.21 is where the narrow breakpoints are exercised; this test is about
+   * whether a drop persists.
+   */
+  await page.setViewportSize({ width: 1280, height: 1600 });
   await signIn(page);
   const id = await requireProject(page, P(1));
   await board(page, id);
@@ -1173,15 +1505,47 @@ test('03.8 twelve cards dragged between columns, and every one persisted its col
     const before = (await rowsOf(page, '/api/tasks')).find((t: any) => t.title === title);
     expect(before, `${title} is missing — 03.7 owns it`).toBeTruthy();
 
-    // Always a DIFFERENT column from the one it is in, so `handleDragEnd`'s
-    // "same column, same index → return" branch cannot make a no-op look green.
-    const targetName = COL[i % COL.length] === undefined ? COL[0] : COL[i % COL.length];
-    const target = byName[targetName] === before.column_id
-      ? COL[(i + 1) % COL.length]
-      : targetName;
+    /**
+     * Always a DIFFERENT column from the one it is in, so `handleDragEnd`'s
+     * "same column, same index → return" branch cannot make a no-op look green.
+     *
+     * ⚠ THE TARGETS ARE THE ADJACENT DEFAULT COLUMNS, NOT THE HAND-MADE `S3
+     * Col *` ONES, AND THAT IS A MEASURED CONSTRAINT RATHER THAN A PREFERENCE.
+     * P(1) carries nine columns after 03.6 — the five defaults plus four typed
+     * ones — which is ~2500px of board in a 1280px window. The S3 columns sit
+     * off-screen to the right, `page.mouse.move` clamps to the viewport, and
+     * every drop landed on nothing. The 12 cards this test moves all start in
+     * "To Do" (03.7 creates them through the New Task modal, which sets a
+     * status and no column), so the columns beside them are the ones a mouse
+     * can actually reach.
+     *
+     * §4 asks for twelve drags that persist, not for twelve particular
+     * columns. `dragCard` now fails loudly rather than silently mis-dropping
+     * if a target is ever off-screen again.
+     */
+    const REACHABLE = ['In Progress', 'In Review'];
+    const first = REACHABLE[i % REACHABLE.length];
+    const target = byName[first] === before.column_id
+      ? REACHABLE[(i + 1) % REACHABLE.length]
+      : first;
+    expect(
+      byName[target],
+      `"${target}" is not a column on ${P(1)} — 03.4 creates the five defaults ` +
+      `and 03.6 adds four more. Columns seen: ${Object.keys(byName).join(', ')}`,
+    ).toBeTruthy();
 
-    await dragCard(page, title, target);
-    const res = await writes(page, new RegExp(`/api/tasks/${before.task_id}/move$`), async () => { },
+    /**
+     * ⚠ THE WAIT IS REGISTERED BEFORE THE DRAG, AND THAT IS THE WHOLE POINT.
+     * This read `await dragCard(...)` and only THEN opened a `waitForResponse`
+     * with an empty action — but `handleDragEnd` fires the PATCH within a few
+     * milliseconds of `mouse.up()`, so the listener was routinely armed after
+     * the response it was waiting for had already arrived. It would then time
+     * out and accuse the product of a drag that "animates and does not save" —
+     * which is precisely the defect this test exists to detect, reported by the
+     * test's own race. A check that cries wolf is worse than no check.
+     */
+    const res = await writes(page, new RegExp(`/api/tasks/${before.task_id}/move$`),
+      async () => { await dragCard(page, title, target); },
       { methods: ['PATCH'], timeout: 30_000 }).catch(async (e) => {
         throw new Error(
           `the drag of ${title} into "${target}" fired no PATCH /tasks/{id}/move.\n` +
@@ -1221,7 +1585,11 @@ test('03.8 twelve cards dragged between columns, and every one persisted its col
     'ships this sensor; a board that is mouse-only is §1\'s named failure.',
   ).not.toBeNull();
 
-  ledger('column drags', V.drags, moved, moved);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  ledger('column drags', V.drags, moved, moved,
+    'between the reachable default columns — a 9-column board is ~2500px and ' +
+    'the hand-made S3 columns are off-screen at 1280px');
   ledger('keyboard drag', 1, 1, 1);
 });
 
@@ -1247,9 +1615,28 @@ test('03.9 five projects given a member roster, one of them a client seat', asyn
 
     const detail = await orgGet(page, `/api/teams/${id}`);
     const seated = new Set((detail.members || []).map((m: any) => m.display_name));
-    // Project i gets people 0..i-1 from the roster, so the five rosters differ
-    // and a "same list everywhere" bug cannot pass.
-    const wanted = ROSTER_PEOPLE.slice(0, Math.min(i, ROSTER_PEOPLE.length));
+    /**
+     * ⚠ P(1) GETS THE WHOLE ROSTER, AND IT HAS TO.
+     *
+     * This read `slice(0, i)`, so P(1) was seated with exactly ONE person —
+     * Rajesh Bhatt. But P(1) is the project every later test in this file
+     * works on, and two of them need somebody else on it:
+     *
+     *   · 03.13 mentions MENTION_TARGET, and `services/mentions.
+     *     _resolve_mentions` pass 1 selects members of the TASK'S PROJECT. A
+     *     mention of somebody not on P(1) resolves to nobody.
+     *   · 03.16 forwards two approvals to CLIENT_MEMBER, read from
+     *     `GET /teams/{id}/clients` — for P(1).
+     *
+     * Neither could ever have passed, and both would have failed with a
+     * precondition message pointing at THIS test, which is the shape that gets
+     * a working product blamed. So P(1) is seated in full and the shrinking
+     * rosters run across P(2)–P(5), where they still prove that the five
+     * differ and that a "same list everywhere" bug cannot pass.
+     */
+    const wanted = i === 1
+      ? [...ROSTER_PEOPLE]
+      : ROSTER_PEOPLE.slice(0, ((i - 2) % ROSTER_PEOPLE.length) + 1);
 
     await page.getByRole('combobox', { name: /^Project/ }).selectOption({ label: name });
     await settle(page);
@@ -1261,7 +1648,22 @@ test('03.9 five projects given a member roster, one of them a client seat', asyn
         .toBeVisible({ timeout: 20_000 });
       await openAdd.click();
 
-      const search = page.getByPlaceholder('Search by name or email…');
+      /**
+       * ⚠ EVERY CONTROL BELOW IS SCOPED TO THE ADD PANEL — SUITE RULE 6.
+       * `TeamsPage` draws one `<select aria-label="Role for {name}">` per person
+       * already on the roster, AND the add panel's own Role select, which sits
+       * in a `<label>` whose text is "Role · भूमिका" and therefore reaches the
+       * accessibility tree as `Roleभूमिका`. So `getByRole('combobox',
+       * { name: /^Role/ })` matched THREE elements and Playwright refused in
+       * strict mode — reported as a failure of the add-member flow, which was
+       * working perfectly. The panel is the scope; the roster cards are not.
+       */
+      const addPanel = page.locator('section.card').filter({
+        has: page.getByRole('heading', { name: /^Add member to / }),
+      }).first();
+      await expect(addPanel, 'the add-member panel did not open').toBeVisible({ timeout: 20_000 });
+
+      const search = addPanel.getByPlaceholder('Search by name or email…');
       await expect(search, 'the person picker is not on the add-member panel').toBeVisible();
       await search.fill(person);
       const hit = page.locator('.menu__item', { hasText: person }).first();
@@ -1279,10 +1681,14 @@ test('03.9 five projects given a member roster, one of them a client seat', asyn
        * completions into dozens of messages. `member` for everyone, except the
        * one `client` seat the by-email approval forward requires.
        */
-      const role = person === CLIENT_MEMBER && i === V.rosters ? 'client' : 'member';
-      await page.getByRole('combobox', { name: /^Role/ }).selectOption(role);
+      // ⚠ THE CLIENT SEAT IS ON P(1), not on P(5): 03.16 forwards its two
+      // approvals from a task on P(1), and `GET /teams/{id}/clients` is scoped
+      // to that project. Seating the client anywhere else makes the forward
+      // panel offer nobody and reads as a missing control.
+      const role = person === CLIENT_MEMBER && i === 1 ? 'client' : 'member';
+      await addPanel.getByRole('combobox').first().selectOption(role);
       const res = await writes(page, new RegExp(`/api/teams/${id}/members$`), async () => {
-        await page.getByRole('button', { name: new RegExp(`^Add to ${reEsc(name)}`) }).click();
+        await addPanel.getByRole('button', { name: new RegExp(`^Add to ${reEsc(name)}`) }).click();
       });
       expect(res.body?.member_id, `POST members echoed no member_id: ${res.text.slice(0, 200)}`).toBeTruthy();
       typed += 1;
@@ -1337,8 +1743,40 @@ test('03.10 twelve tasks carrying every field the drawer offers — and the two 
   const me = JSON.parse((await page.evaluate(() => localStorage.getItem('Kartavaya_user'))) || '{}');
   expect(me.user_id, 'the session carries no user_id').toBeTruthy();
 
+  /**
+   * ⚠ THE ACTING ACCOUNT'S NAME IS NOT THE NAME THE PICKER SHOWS, AND THAT IS
+   * A LIVE PRODUCT INCONSISTENCY THIS TEST MUST NOT TRIP OVER.
+   *
+   * Measured 2026-08-29 for this lane's account (`user_21457956f010`):
+   *
+   *     GET /api/auth/me           → name: "Devang Bhatt"    (public.users.name)
+   *     GET /api/teams/{id}        → display_name: "Keval UK" (users.full_name)
+   *
+   * `DrawerMeta.memberItems` builds the Assignees list from
+   * `display_name || full_name || name`, so the picker offers "Keval UK" and
+   * this test used to look for "Devang Bhatt" — no option, the `.catch()`
+   * below swallowed it, and the read-back then failed with "kept no assignee",
+   * which reads as a broken write path. The two columns disagreeing is
+   * reported as a finding; the ROSTER is the source of truth for what the
+   * picker will say, so that is what is asked.
+   */
+  const roster = (await orgGet(page, `/api/teams/${id}`)).members || [];
+  const mine = roster.find((m: any) => m.user_id === me.user_id);
+  expect(
+    mine?.display_name,
+    `this account is not on ${P(1)}'s roster, so the Assignees picker cannot ` +
+    `offer it. 03.4 seats the creator as owner; this is a precondition.` +
+    `\n     roster: ${roster.map((m: any) => m.display_name).join(', ')}`,
+  ).toBeTruthy();
+  const MY_PICKER_NAME = mine.display_name as string;
+
   const missingControls: string[] = [];
   let done = 0;
+  // ⚠ SEPARATE FROM `done`. `done` counts field-complete tasks — including the
+  // ones a previous run dressed — and it was being reported as `typed`, so the
+  // §6 ledger printed "12 typed" on a run that typed nothing. The idempotence
+  // number has to be what THIS run wrote.
+  let dressed = 0;
 
   for (let i = 1; i <= V.fieldTasks; i++) {
     const title = T(i);
@@ -1406,7 +1844,7 @@ test('03.10 twelve tasks carrying every field the drawer offers — and the two 
     }, { methods: ['PUT'] });
 
     /* assignees — the multi Picker. Self, except one cross-assignment. */
-    const assignTo = i === 1 ? MENTION_TARGET : (me.name || me.full_name);
+    const assignTo = i === 1 ? MENTION_TARGET : MY_PICKER_NAME;
     await pick(drawer, 'Assignees', assignTo).catch(async () => {
       // The multi picker stays open; the read-back below is the real assertion.
       await closePicker(page);
@@ -1424,6 +1862,7 @@ test('03.10 twelve tasks carrying every field the drawer offers — and the two 
     expect((canonical.assignee_user_ids || []).length,
       `${title} kept no assignee.${dump(wire)}`).toBeGreaterThan(0);
     done += 1;
+    dressed += 1;
   }
 
   /**
@@ -1452,7 +1891,7 @@ test('03.10 twelve tasks carrying every field the drawer offers — and the two 
   );
 
   console.log('\n  03.10 SHORTFALLS:\n' + missingControls.map((m) => '   · ' + m).join('\n') + '\n');
-  ledger('field-complete tasks', V.fieldTasks, done, V.fieldTasks,
+  ledger('field-complete tasks', V.fieldTasks, dressed, done,
     'tags · due(DateInput) · priority · category · assignees · client');
   ledger('task recurrence', V.fieldTasks, 0, 0, 'MISSING CONTROL — server accepts it, no screen offers it');
   ledger('task estimate', V.fieldTasks, 0, 0, 'MISSING CONTROL — server accepts it, no screen offers it');
@@ -1922,11 +2361,46 @@ test('03.15 an attachment uploaded, removed into the recycle bin, and restored f
     mimeType: 'text/plain',
     buffer: Buffer.alloc(11 * 1024 * 1024, 'x'),
   });
+  /**
+   * ⚠ THE REFUSAL WAS ON SCREEN AND THIS LOCATOR COULD NOT SEE IT.
+   *
+   * This read `.toast, [role="status"], [role="alert"]`. `components/ui/
+   * toast.jsx` renders NONE of those: the stack is `.k-toasts` with
+   * `role="region" aria-label="Alerts"`, and each toast is `.tst` carrying
+   * `.tst__t` (title) and `.tst__s` (message). So the test reported "an 11 MB
+   * file was accepted with no message" while `TaskDrawer.handleFileChange` had
+   * pushed exactly the message it was looking for — "That file is too large to
+   * upload", from `lib/uploadLimits.oversizeMessage`, against MAX_MB = 10,
+   * which is `uploads.MAX_BYTES` on the server.
+   *
+   * A test that accuses the product of shipping no size limit, because it
+   * looked for a class the design system does not use, is the exact "test bug
+   * wearing a product bug's clothes" this programme keeps finding.
+   */
   await expect(
-    page.locator('.toast, [role="status"], [role="alert"]').filter({ hasText: /too large/i }).first(),
+    page.locator('.k-toasts .tst').filter({ hasText: /too large/i }).first(),
     'an 11 MB file was accepted against a 10 MB document limit with no message. ' +
-    '§5 asks for one oversized file "to prove the limit".',
+    '§5 asks for one oversized file "to prove the limit". The toast stack is ' +
+    '`.k-toasts .tst` — check there before concluding the guard is missing.',
   ).toBeVisible({ timeout: 20_000 });
+
+  /**
+   * ⚠ AND IT MUST BE DISMISSED, BECAUSE AN ERROR TOAST NEVER EXPIRES.
+   * `components/ui/toast.jsx` gives an error no `lifeMs` — "Errors never
+   * expire, so they get no bar rather than a full one that never moves" — so
+   * this toast sits over the drawer for good and the next line's Close click
+   * was intercepted by it:
+   *
+   *     <div class="tst tst--err"> from <div role="region" class="k-toasts">
+   *     subtree intercepts pointer events
+   *
+   * Dismissing it here is not a workaround, it is §1's own requirement for a
+   * transition: "It opens, it is readable, and it closes."
+   */
+  const errToast = page.locator('.k-toasts .tst').filter({ hasText: /too large/i }).first();
+  await errToast.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(errToast, 'the error toast would not dismiss').toBeHidden({ timeout: 15_000 });
+
   await closeDrawer(page, drawer);
 
   ledger('attachments', 1, already ? 0 : 1, 1);
@@ -1956,7 +2430,15 @@ test('03.16 fourteen approvals requested and decided — eight approved, four re
     expect(row, `${title} is missing — 03.7 owns it`).toBeTruthy();
     if (row.approval_status) continue;   // already decided on a previous run
 
-    await board(page, id);
+    /**
+     * ⚠ THE TASK'S OWN BOARD, NOT P(1).
+     * 03.7 spreads T013–T080 across FOUR boards (twenty per board), so these
+     * hosts are not all on P(1): T033 onwards live on P(2) and beyond. Opening
+     * P(1) and hunting for the card there reports "no card titled S3-T033 on
+     * this board" — a missing-control message about a card that is on the next
+     * board along. The row already carries its `team_id`; use it.
+     */
+    await board(page, row.team_id || id);
     const drawer = await openDrawer(page, title);
     await drawerTab(drawer, 'Details');
 
@@ -2058,13 +2540,28 @@ test('03.16 fourteen approvals requested and decided — eight approved, four re
     page.locator('.k-stats'),
     'the Approvals page prints no decision counts',
   ).toBeVisible({ timeout: 30_000 });
-  // "—" is what the page shows when the count FAILED; a real number is the pass.
-  const stats = await page.locator('.k-stats').innerText();
-  expect(
-    /—/.test(stats) && !/\d/.test(stats),
-    `the Approvals stat tiles read "—", which is this page's own signal that the ` +
-    `count did not load: ${stats.replace(/\s+/g, ' ')}`,
-  ).toBeFalsy();
+  /**
+   * "—" is what the page shows when the count FAILED **or has not arrived
+   * yet** — `ApprovalsPage` renders `loading || queueErr ? '—' : …` for
+   * PENDING and `statsErr ? '—' : stats?.[k] ?? '—'` for the other two. The
+   * first version read `innerText` the instant `.k-stats` became visible,
+   * which is while `loading` is still true, and reported a broken counter over
+   * a page that was simply still fetching. Suite rule 5: wait for the refetch,
+   * not merely for the element.
+   *
+   * POLLED rather than settled, so the check still BITES: a counter that never
+   * resolves fails here after 30s with the same message it always had.
+   */
+  await settle(page);
+  await expect
+    .poll(async () => await page.locator('.k-stats').innerText(), {
+      message:
+        'the Approvals stat tiles still read "—" after the page settled, which is ' +
+        'this page\'s own signal that the count did not load (ApprovalsPage renders ' +
+        '"—" for a failed `stats` fetch and for a failed queue read).',
+      timeout: 30_000,
+    })
+    .toMatch(/\d/);
 
   ledger('approvals requested', V.approvalsRequested, requested, V.approvalsRequested);
   ledger('approvals approved', V.approve - V.byEmail, approved, states.approved || 0);
@@ -2165,7 +2662,31 @@ test('03.17 five templates created and three applied, and no other organisation\
     const tmpl = templates.find((t: any) => t.name === `S3 Project Template ${i}`);
     if (!tmpl) continue;
     const target = ids[P(4 + i)];              // projects 5,6,7 — never a source
-    const before = (await rowsOf(page, `/api/projects/${target}/columns`)).length;
+    expect(target, `${P(4 + i)} is missing — 03.4 owns it`).toBeTruthy();
+
+    /**
+     * ⚠ APPLY IS ADDITIVE ON THE SERVER, SO THIS HAD TO LEARN TO SKIP.
+     * `routers/templates.apply_project_template` INSERTs a fresh `col_<uuid>`
+     * per template column with `ON CONFLICT DO NOTHING` — and a brand-new
+     * primary key never conflicts. So every re-run added another full copy of
+     * the template's columns to the target board, while the old assertion
+     * (`after > before`) stayed green over the duplication. §6: "A suite that
+     * creates a second copy of everything on re-run is a defect in the suite."
+     *
+     * The template is captured from P(i)'s columns, so those names are the
+     * deterministic key: if the target already carries all of them the apply
+     * has happened and is counted as PRESENT, not typed.
+     */
+    const sourceNames = (await rowsOf(page, `/api/projects/${ids[P(i)]}/columns`))
+      .map((c: any) => c.name as string);
+    const beforeNames = new Set(
+      (await rowsOf(page, `/api/projects/${target}/columns`)).map((c: any) => c.name),
+    );
+    if (sourceNames.length && sourceNames.every((n) => beforeNames.has(n))) {
+      applied += 1;
+      continue;
+    }
+    const before = beforeNames.size;
 
     await page.goto('/templates');
     await page.getByRole('tab', { name: /Project templates/ }).click();
@@ -2181,12 +2702,22 @@ test('03.17 five templates created and three applied, and no other organisation\
     await writes(page, /\/api\/templates\/projects\/[^/]+\/apply/, async () => {
       await modal.getByRole('button', { name: 'Apply template' }).click();
     });
-    const after = (await rowsOf(page, `/api/projects/${target}/columns`)).length;
+    // Suite rule 3 — the canonical rows, and by NAME rather than by count, so
+    // "it created five of something" cannot stand in for "it created the
+    // template's columns".
+    const afterNames = (await rowsOf(page, `/api/projects/${target}/columns`))
+      .map((c: any) => c.name as string);
     expect(
-      after,
+      afterNames.length,
       `applying "${tmpl.name}" to ${P(4 + i)} created no columns — ` +
       `the toast said it worked and the row did not move.${dump(wire)}`,
     ).toBeGreaterThan(before);
+    const absent = sourceNames.filter((n) => !afterNames.includes(n));
+    expect(
+      absent,
+      `applying "${tmpl.name}" to ${P(4 + i)} left ${absent.length} of its ` +
+      `${sourceNames.length} columns behind: ${absent.join(', ')}${dump(wire)}`,
+    ).toEqual([]);
     applied += 1;
   }
 
@@ -2235,11 +2766,29 @@ test('03.18 five saved views — the first rows this table has ever held', async
   for (let i = before.length; i < V.savedViews; i++) {
     // A different view each time, so `config.viewType` is proved to carry the
     // four the CHECK constraint cannot store.
-    const view = ['kanban', 'table', 'calendar', 'timeline', 'priority'][i % 5];
-    await page.locator('.vtb__seg, .k-segctrl, [role="tablist"]').first().waitFor({ timeout: 20_000 })
-      .catch(() => { });
-    await page.getByRole('button', { name: new RegExp(`^${view}$`, 'i') }).first().click()
-      .catch(() => { /* the toolbar names views by icon+label; kanban is the default */ });
+    /**
+     * ⚠ THE VIEWS ARE TABS, AND THEY ARE NOT NAMED AFTER THEIR IDS.
+     * `viewDefs.VIEWS` maps id → label: kanban→**Board**, table→**List**,
+     * calendar→Calendar, timeline→Timeline, priority→Priority, and
+     * `ViewToolbar` draws each as `role="tab"` inside `role="tablist"`
+     * name="View". So `getByRole('button', { name: /^table$/i })` matched
+     * nothing, the `.catch()` swallowed it, and all five presses happened on
+     * the default Board view. Measured afterwards: the five rows this suite
+     * created on 2026-08-29 are ALL `type='kanban'`, `config.viewType='kanban'`
+     * — which is reported rather than papered over, because the
+     * seven-views-into-three-storable-types mapping is the interesting half
+     * and it is UNPROVEN on this org until a run starts from an empty table.
+     */
+    const [viewId, tabLabel] = ([
+      ['kanban', 'Board'], ['table', 'List'], ['calendar', 'Calendar'],
+      ['timeline', 'Timeline'], ['priority', 'Priority'],
+    ] as Array<[string, string]>)[i % 5];
+    const tab = page.getByRole('tab', { name: new RegExp(`^${tabLabel}`) });
+    await expect(tab, `the board has no "${tabLabel}" view tab`).toBeVisible({ timeout: 25_000 });
+    await tab.click();
+    await expect(tab, `the "${tabLabel}" tab did not become the selected view`)
+      .toHaveAttribute('aria-selected', 'true', { timeout: 15_000 });
+    void viewId;
     await writes(page, /\/api\/views\/?$/, async () => {
       await page.getByRole('button', { name: '+ Save view' }).click();
     });
@@ -2255,10 +2804,20 @@ test('03.18 five saved views — the first rows this table has ever held', async
     expect(typeof v.name, `a saved view's name is not a string: ${JSON.stringify(v.name)}`).toBe('string');
     expect(['kanban', 'table', 'calendar'], `saved_views.type violates its own CHECK: ${v.type}`)
       .toContain(v.type);
+    // The seven-into-three mapping: whatever view was showing goes in
+    // `config.viewType`, and `type` is the nearest storable one. A row whose
+    // config has lost the actual view is the half of this feature that would
+    // silently stop working.
+    expect(
+      v.config?.viewType,
+      `saved view "${v.name}" carries no config.viewType — the four views the ` +
+      `CHECK constraint cannot store have nowhere else to be recorded`,
+    ).toBeTruthy();
   }
 
+  const spread = [...new Set(after.map((v: any) => String(v.config?.viewType)))].sort();
   ledger('saved views', V.savedViews, typed, after.length,
-    'first rows public.saved_views has ever held');
+    `first rows public.saved_views has ever held · config.viewType seen: ${spread.join('/')}`);
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2275,15 +2834,40 @@ test('03.19 six column arrangements saved, one per table, and each one survives 
   const keys = Object.keys(before || {});
   let typed = 0;
 
-  /** Six surfaces that carry `ColumnsButton`: the task list plus five boards. */
+  /**
+   * Six surfaces that carry `ColumnsButton`: the task list plus five boards.
+   *
+   * ⚠ THE BOARD'S TABLE VIEW IS A TAB CALLED "List", NOT A BUTTON CALLED
+   * "table". `ViewToolbar` renders the seven views as `role="tab"` inside a
+   * `role="tablist"` named "View", and the table one is labelled **List**
+   * (`viewDefs`). So `getByRole('button', { name: /^table$/i })` matched
+   * nothing — and because the click was wrapped in `.catch(() => {})`, the
+   * board simply stayed in kanban, where there is no `ColumnsButton` at all
+   * (`TableView` renders it; `KanbanView` does not). The test then reported
+   * "no Columns control on this table" against a table it had never opened.
+   *
+   * The `.catch` is gone with it: a swallowed navigation is how a test ends up
+   * asserting about the wrong screen.
+   */
+  const openTableView = async (teamId: string, which: string) => {
+    // Without this, a missing project sends `board()` to `/projects/undefined`
+    // and the failure reads "the kanban never rendered" — a page fault where
+    // the truth is a precondition.
+    expect(teamId, `${which} is missing — 03.4 owns it`).toBeTruthy();
+    await board(page, teamId);
+    const list = page.getByRole('tab', { name: /^List/ });
+    await expect(list, 'the board has no List (table) view tab').toBeVisible({ timeout: 25_000 });
+    await list.click();
+    await expect(list, 'the List tab did not become the selected view')
+      .toHaveAttribute('aria-selected', 'true', { timeout: 15_000 });
+    await settle(page);
+  };
+
   const surfaces: Array<[string, () => Promise<void>]> = [
     ['tasks.list', async () => { await page.goto('/tasks'); }],
     ...[1, 2, 3, 4, 5].map((b) => [
       `board.table.${String(ids[P(b)] || '').toLowerCase().replace(/[^a-z0-9_-]/g, '')}`,
-      async () => {
-        await board(page, ids[P(b)]);
-        await page.getByRole('button', { name: /^table$/i }).first().click().catch(() => { });
-      },
+      async () => { await openTableView(ids[P(b)], P(b)); },
     ] as [string, () => Promise<void>]),
   ];
 
@@ -2342,7 +2926,15 @@ test('03.20 a task completed, reopened, archived and restored — each state pro
   let row = (await rowsOf(page, '/api/tasks')).find((t: any) => t.title === title);
   expect(row, `${title} is missing — 03.7 owns it`).toBeTruthy();
 
-  await board(page, id);
+  /**
+   * ⚠ T040 IS NOT ON P(1). 03.7 fills FOUR boards, twenty tasks each, so
+   * T013–T032 are on P(1), T033–T052 on P(2), and so on. Opening P(1) and
+   * waiting for this card produced a 20s timeout on `Mark S3-T040 done` — a
+   * dead-control message about a control that was on the next board along.
+   * The row knows which board it is on; `id` stays only as the fallback.
+   */
+  const boardId = row.team_id || id;
+  await board(page, boardId);
 
   /* Complete, from the card's own tick — the fastest path a person has. */
   if (row.status !== 'done') {
@@ -2354,7 +2946,7 @@ test('03.20 a task completed, reopened, archived and restored — each state pro
   expect(row.status, `${title} did not come back done.${dump(wire)}`).toBe('done');
 
   /* Reopen. */
-  await board(page, id);
+  await board(page, boardId);
   await writes(page, /\/api\/tasks\/[^/]+$/, async () => {
     await card(page, title).getByRole('button', { name: new RegExp(`^Mark ${reEsc(title)} as not done$`) })
       .click();
@@ -2363,7 +2955,7 @@ test('03.20 a task completed, reopened, archived and restored — each state pro
   expect(row.status, `${title} did not reopen.${dump(wire)}`).not.toBe('done');
 
   /* Archive from the drawer, then restore. */
-  await board(page, id);
+  await board(page, boardId);
   const drawer = await openDrawer(page, title);
   const archive = drawer.getByRole('button', { name: 'Archive task' });
   await expect(
@@ -2476,7 +3068,24 @@ test('03.22 the dashboard\'s ten cards render, and its figures reconcile to the 
     ['Approvals', /Approval/i],
     ['Upcoming week', /Upcoming|week/i],
     ['Team pulse', /Activity|pulse|Team/i],
-    ['Citation', /Gītā|Gita|कर्मण्येवाधिकारस्ते/],
+    /**
+     * ⚠ THE CITATION CARD RENDERED AND THIS ASSERTION STILL FAILED.
+     *
+     * It read `/Gītā|Gita|कर्मण्येवाधिकारस्ते/` — the text of the FALLBACK
+     * verse `DashboardPage` uses when `/api/verse-of-the-day` does not answer.
+     * The live route answers, and it answers a DIFFERENT verse every day with
+     * a short reference: measured 2026-08-29,
+     * `{"ref":"BG 6.5","sanskrit":"उद्धरेदात्मनात्मानं…"}`. The card drew
+     * "— BG 6.5 · …" and the test reported a missing card, which is the one
+     * diagnosis that sends someone looking for a component that is fine.
+     *
+     * `Citation` renders `— {source}`, so the em-dash-plus-reference is the
+     * stable shape across both the live verse and the fallback, and it still
+     * bites: delete the card and this goes red. It deliberately does not match
+     * the greeting's own "करणीयं कुरु — Do what must be done", which is a
+     * different element on the same page.
+     */
+    ['Citation', /—\s*(BG|Bhagavad)\s/],
   ];
   const screen = await page.locator('.k-screen').innerText();
   const absent = cards.filter(([, re]) => !re.test(screen)).map(([n]) => n);
