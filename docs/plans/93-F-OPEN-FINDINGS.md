@@ -410,6 +410,47 @@ sender's — Gmail around 25 MB, many corporate servers 10 MB.
 attachment work must cap the size and refuse or degrade deliberately rather than
 send something that can vanish silently.
 
+### 22a. Line length — ASKED, MEASURED, CLOSED, AND GUARDED (2026-08-29)
+
+The owner then raised the OTHER 552, which is a different fault with the same
+number: **`552 message line is too long`**, from a colleague's live incident on
+another stack where Microsoft 365 rejected every PDF they attached.
+
+RFC 5321 §4.5.3.1.6 caps an SMTP line at 1000 octets including the CRLF. Base64
+that is not wrapped is ONE line as long as the encoding — a 90 KB PDF becomes
+~123,000 characters. Their Node sender hand-built raw MIME
+(`boundary="aws-sdk-js-attachment"`) and pasted `buf.toString("base64")` in with
+no wrap.
+
+**We do not have that bug.** Measured on our own senders with a 90 KB payload:
+
+    encoded message   125,170 chars
+    total lines         1,643
+    base64 body lines   1,617, each exactly 76
+    LONGEST LINE           84   (a header, not the payload)
+
+All four attachment sites — `email_service.py` ×2 (PDF and Excel),
+`services/employee_email.py`, `services/pdf_email.py` — call
+`encoders.encode_base64`, which wraps at 76. It is `set_payload` on the line
+before and `encode_base64` on the line after, in all four.
+
+Guarded by `backend/tests/test_pdf_attachments_are_line_wrapped.py` (4 tests):
+three drive the REAL senders end to end and measure the exact bytes handed to
+`send_raw_email`; the fourth is a contract sweep so the FIFTH sender — P5's
+invoice PDF, the reason `services/pdf_email.py` exists at all — cannot arrive
+unwrapped.
+
+⚠ **The mutation proof found something the fix did not.** Deleting
+`encode_base64` from `services/pdf_email.py`, the **998-character assertion
+stayed GREEN** — the raw payload carried a `0x0A` often enough that no single
+line breached the limit. Only the "1,600 lines of exactly 76" assertion went
+red. **A guard that measured line length alone would have passed over a document
+with raw binary in it**, which is a worse fault than the one it was written for.
+Both assertions are in the file, and this is why.
+
+**Still open in 22:** the size cap and the invisible bounce. Neither is
+addressed by the above.
+
 ---
 
 ## Also open, from the suites, not separately chipped

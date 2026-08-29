@@ -5268,3 +5268,73 @@ would have been a false green in the proof itself:
   way the new one is, so they will stay red until the org is rebuilt.
 - **Nothing is deployed.** `git show HEAD:` still carries both defects, so every
   new assertion above is inert on staging until the lead commits and deploys.
+
+## 2026-08-29 · The owner's 552 — measured, answered, and guarded
+
+The owner raised a live incident from another company: PDFs attached by a Node
+sender, rejected by Microsoft 365 with **`552 message line is too long`**. The
+question was whether this product does the same, because P5 puts invoices,
+sales orders and "so many" other documents behind email.
+
+**It does not**, and the answer is a measurement rather than a reading of the
+code. RFC 5321 §4.5.3.1.6 caps an SMTP line at 1000 octets including the CRLF.
+Driving our own senders with a 90 KB payload:
+
+    encoded message   125,170 chars
+    total lines         1,643
+    base64 body lines   1,617, each exactly 76
+    LONGEST LINE           84   — and that is a header, not the payload
+
+Four attachment sites, and all four call `encoders.encode_base64` on the line
+after `set_payload`: `email_service.py` twice (the report's PDF and its Excel),
+`services/employee_email.py` (payslips), `services/pdf_email.py` (the shared
+mechanism). The other stack's sender hand-built raw MIME with
+`boundary="aws-sdk-js-attachment"` and pasted `buf.toString("base64")` in
+unwrapped; ours never builds the encoding itself.
+
+### The guard — `backend/tests/test_pdf_attachments_are_line_wrapped.py`
+
+**4 passed.** Two halves, and it needs both:
+
+- **Behavioural** — three tests drive the REAL senders end to end with a real
+  90 KB payload, stub SES with a capture that keeps the exact bytes handed to
+  `send_raw_email`, and measure every line of the document. The report test
+  asserts the PDF **and** the Excel in one message, because they are separate
+  `set_payload` calls and a fix applied to one is not applied to the other.
+- **Contract** — every `set_payload` in the backend is followed by
+  `encode_base64` within four lines, comments and docstrings stripped first.
+  This is the only half that can see the FIFTH sender: P5's invoice PDF is
+  coming, and `services/pdf_email.py`'s own docstring records that the previous
+  two senders were copies which each had to be patched separately for the same
+  two bugs. It also asserts the sweep FOUND four sites, so a rename cannot
+  leave it passing over zero files.
+
+### The mutation proof found something the fix did not
+
+Deleting `encode_base64` from `services/pdf_email.py`:
+
+| | |
+|---|---|
+| `test_pdf_email_wraps_its_attachment` | **RED** |
+| `test_every_set_payload_…_encode_base64` | **RED** |
+| payslip + report tests | **PASSED** — the anchor hit one function, not three |
+
+But it went red on the **wrong assertion**, and that is the finding:
+
+⚠ **The 998-character check stayed GREEN over an unencoded attachment.** The raw
+payload carried a `0x0A` often enough that no single line breached the limit.
+Only the "1,600 lines of exactly 76" assertion caught it. **A guard that
+measured line length alone would have passed a document with raw binary in it**
+— a worse fault than the one it was written to prevent. Both assertions are in
+the file and the reasoning is written above the second one, because the obvious
+test here is the incomplete one.
+
+### Still open
+
+`93-F` finding 22 is **not** closed by this. Its other two halves stand: there
+is no attachment SIZE cap anywhere (`attachment_bytes` is computed for the
+outbound record and nothing checks it), and there is no bounce visibility at all
+— no `bounced` status in `outbound_log`, no SNS endpoint. A 552 of the *other*
+kind, or a 25 MB receiving limit, would still arrive asynchronously to nobody
+while the row reads `sent`. **The risk was never the bounce; it is that we would
+not learn of it.** Recorded as 22, with 22a marked answered.
