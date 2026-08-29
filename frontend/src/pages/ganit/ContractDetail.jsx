@@ -13,6 +13,7 @@ import { Badge, CONTRACT_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 
@@ -80,7 +81,7 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
       await load();
       onChanged?.();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not update the contract', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not update the contract'), type: 'error' });
     } finally { setBusy(false); }
   }
 
@@ -107,7 +108,7 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
       await load();
       onChanged?.();
     } catch (e2) {
-      pushToast({ title: e2.response?.data?.detail || 'Could not update the contract', type: 'error' });
+      pushToast({ title: apiErrorText(e2, 'Could not update the contract'), type: 'error' });
     } finally { setSaving(false); }
   }
 

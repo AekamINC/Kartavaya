@@ -13,6 +13,7 @@ import { inr } from '../../lib/inr';
 import { safeArray, Badge, BILL_STATUS_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 export default function VendorBillDetail({ billId, onClose, onChanged }) {
   // F32 — the module is read from the route, never named here.
@@ -84,7 +85,7 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
           type: 'error',
         });
       } else {
-        pushToast({ title: e2.response?.data?.detail || 'Could not record the payment', type: 'error' });
+        pushToast({ title: apiErrorText(e2, 'Could not record the payment'), type: 'error' });
       }
     } finally { setPaying(false); }
   }

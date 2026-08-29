@@ -17,6 +17,7 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 export default function WebFormsTab() {
   // F32 — the module is read from the route, never named here.
@@ -52,7 +53,7 @@ export default function WebFormsTab() {
       setShowCreate(false);
       setForm({ name: '', slug: '', auto_source: 'web_form' });
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
   }
 
   async function remove(id) {

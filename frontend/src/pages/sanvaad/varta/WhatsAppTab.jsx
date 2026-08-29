@@ -20,6 +20,7 @@ import WAChat from './WAChat';
 import WAConnectAccount from './WAConnectAccount';
 import WARateCard from './WARateCard';
 import { Secondary } from '../../../components/Bilingual';
+import { apiErrorText } from '../../../lib/apiError';
 
 const SUB_TABS = [
   { value: 'conversations', label: 'Conversations' },
@@ -202,7 +203,7 @@ export default function WhatsAppTab() {
         } catch (e) {
           pushToast({
             type: 'error',
-            title: e?.response?.data?.detail || 'Could not disconnect the number.',
+            title: apiErrorText(e, 'Could not disconnect the number.'),
           });
         }
       },

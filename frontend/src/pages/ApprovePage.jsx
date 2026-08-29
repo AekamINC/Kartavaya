@@ -48,6 +48,7 @@ import { Card, CardHead, CardBody } from '../components/ui/Card';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonText } from '../components/ui/Skeleton';
 import { Secondary } from '../components/Bilingual';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * Follow the OS theme for a visitor who has never expressed a preference.
@@ -197,7 +198,7 @@ export default function ApprovePage() {
         // the visitor's network and resolves by waiting. Telling them apart is
         // the difference between "give up" and "try again in a minute".
         setErrKind(errorKind(e));
-        setErrMsg(e?.response?.data?.detail || '');
+        setErrMsg(apiErrorText(e, ''));
         setState('error');
       });
     return () => { live = false; };
@@ -210,7 +211,7 @@ export default function ApprovePage() {
       setState(act === 'approve' ? 'approved' : 'rejected');
     } catch (e) {
       setErrKind(errorKind(e));
-      setErrMsg(e?.response?.data?.detail || '');
+      setErrMsg(apiErrorText(e, ''));
       setState('error');
     }
   };

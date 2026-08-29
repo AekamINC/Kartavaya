@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const KINDS = ['retainer', 'subscription', 'one_off'];
 const CADENCES = ['monthly', 'quarterly', 'annual', 'one_off'];
@@ -79,7 +80,7 @@ export default function ServiceLinesTab() {
       setEditing(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to save'), type: 'error' });
     }
   }
 

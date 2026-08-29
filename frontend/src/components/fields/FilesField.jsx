@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { logger } from '../../lib/utils';
 import { oversizeMessage } from '../../lib/uploadLimits';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * FilesField.
@@ -69,7 +70,7 @@ export default function FilesField({ field, value, onChange, readOnly }) {
       onChange([...files, { name: res.data.name, url: res.data.url, key: res.data.key ?? null }]);
     } catch (err) {
       logger.error('Upload failed', err);
-      setError(err?.response?.data?.detail || 'Upload failed — the file was not attached.');
+      setError(apiErrorText(err, 'Upload failed — the file was not attached.'));
     }
     e.target.value = '';
   };

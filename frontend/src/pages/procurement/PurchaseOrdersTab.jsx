@@ -19,6 +19,7 @@ import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
 import PurchaseOrderDetail from './PurchaseOrderDetail';
 import POSettingsPanel from './POSettingsPanel';
+import { apiErrorText } from '../../lib/apiError';
 import {
   BLANK_PO, EMPTY_LINE, Badge, PO_STATUSES, PO_STATUS_COLORS,
   PO_STATUS_LABELS, previewTotals,
@@ -124,7 +125,7 @@ export default function PurchaseOrdersTab() {
       setOpenId(body(r).data?.id || null);
     } catch (e2) {
       pushToast({
-        title: e2.response?.data?.detail || 'Could not create the purchase order',
+        title: apiErrorText(e2, 'Could not create the purchase order'),
         type: 'error',
       });
     } finally { setSaving(false); }

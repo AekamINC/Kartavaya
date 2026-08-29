@@ -37,6 +37,7 @@ import {
 import { SvIcons } from './icons';
 import { CHANNEL_TONES, channelTone, toneVar } from './channelTone';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * `samvada_presence.status` is `'online'` or `'away'`, and a user with no row
@@ -138,7 +139,7 @@ export default function ChannelDetails({
       onChanged?.(r.data);
       pushToast({ type: 'success', title: 'Channel updated' });
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to save' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to save') });
     } finally {
       setSaving(false);
     }
@@ -171,7 +172,7 @@ export default function ChannelDetails({
       setTone(before);
       pushToast({
         type: 'error',
-        title: e.response?.data?.detail || 'Failed to change the channel colour',
+        title: apiErrorText(e, 'Failed to change the channel colour'),
       });
     } finally {
       setToning(false);
@@ -189,7 +190,7 @@ export default function ChannelDetails({
       setConfirmArchive(false);
       if (is_archived) onClose?.();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to archive' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to archive') });
     }
   };
 
@@ -223,7 +224,7 @@ export default function ChannelDetails({
       setMuted(before);
       pushToast({
         type: 'error',
-        title: e.response?.data?.detail || 'Failed to change notifications for this channel',
+        title: apiErrorText(e, 'Failed to change notifications for this channel'),
       });
     } finally {
       setMuting(false);
@@ -242,7 +243,7 @@ export default function ChannelDetails({
       onChanged?.(null, { members: true });
       pushToast({ type: 'success', title: `${person.full_name} added` });
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to add' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to add') });
     } finally {
       setAdding(null);
     }
@@ -254,7 +255,7 @@ export default function ChannelDetails({
       await loadMembers();
       onChanged?.(null, { members: true });
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to remove' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to remove') });
     }
   };
 

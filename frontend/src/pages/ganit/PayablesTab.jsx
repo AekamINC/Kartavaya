@@ -27,6 +27,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 import VendorForm from '../../components/VendorForm';
+import { apiErrorText } from '../../lib/apiError';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 const BLANK_BILL = {
@@ -122,7 +123,7 @@ export default function PayablesTab() {
       load();
       loadSummary();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not record the bill', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not record the bill'), type: 'error' });
     } finally { setSaving(false); }
   }
 

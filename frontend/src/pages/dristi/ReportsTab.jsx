@@ -25,6 +25,7 @@ import { Badge, Empty, Shimmer } from '../../components/editorial';
 import { Panel, NUM, DataTable, Td, useDristiWindow, windowQuery } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const FREQ_COLORS = {
   daily: 'var(--st-in-review)', weekly: 'var(--st-in-progress)', monthly: 'var(--ok)',
@@ -72,7 +73,7 @@ export default function ReportsTab() {
       setReports(rows);
     } catch (e) {
       setReports(null);
-      setErr(e.response?.data?.detail || 'The scheduled reports did not load.');
+      setErr(apiErrorText(e, 'The scheduled reports did not load.'));
     }
     setLoading(false);
   }, []);
@@ -84,7 +85,7 @@ export default function ReportsTab() {
       await api.post(`/v1/dristi/scheduled-reports/${id}/run-now`);
       pushToast({ type: 'success', title: 'Report queued for delivery' });
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not run the report' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not run the report') });
     }
   };
 
@@ -95,7 +96,7 @@ export default function ReportsTab() {
       if (view === 'detail') { setView('list'); setSelected(null); }
       load();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not delete' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not delete') });
     }
   };
 
@@ -104,7 +105,7 @@ export default function ReportsTab() {
       await api.patch(`/v1/dristi/scheduled-reports/${r.id}`, { is_active: !r.is_active });
       load();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not change state' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not change state') });
     }
   };
 
@@ -119,7 +120,7 @@ export default function ReportsTab() {
       // delivery history rendered the "No logs yet" empty state.
       setLogs({ rows: Array.isArray(res.data) ? res.data : (res.data?.logs || []), err: '' });
     } catch (e) {
-      setLogs({ rows: null, err: e.response?.data?.detail || 'Delivery history did not load.' });
+      setLogs({ rows: null, err: apiErrorText(e, 'Delivery history did not load.') });
     }
   };
 
@@ -160,7 +161,7 @@ export default function ReportsTab() {
       setView('list');
       load();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not schedule the report' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not schedule the report') });
     }
     setSaving(false);
   };

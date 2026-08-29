@@ -31,6 +31,7 @@ import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 import {
   safeArray, Badge, UpiPayBlock, waLink, waInvoiceText, payLink, payLinkBlocker,
   INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS,
@@ -108,7 +109,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
       onChanged?.();
       return true;
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || `Could not ${label}`, type: 'error' });
+      pushToast({ title: apiErrorText(e, `Could not ${label}`), type: 'error' });
       return false;
     } finally { setBusy(''); }
   }

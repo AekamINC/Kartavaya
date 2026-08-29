@@ -38,6 +38,7 @@ import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The target table's columns, declared once, in the order they shipped.
@@ -164,7 +165,7 @@ function TargetForm({ onSaved, onCancel }) {
       setProration(r.data);
     } catch (err) {
       pushToast({
-        title: err.response?.data?.detail || 'Could not work out the part-period target',
+        title: apiErrorText(err, 'Could not work out the part-period target'),
         type: 'error',
       });
     } finally { setProrating(false); }
@@ -182,7 +183,7 @@ function TargetForm({ onSaved, onCancel }) {
       pushToast({ title: 'Target saved', type: 'success' });
       onSaved();
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Could not save the target', type: 'error' });
+      pushToast({ title: apiErrorText(err, 'Could not save the target'), type: 'error' });
     } finally { setSaving(false); }
   }
 
@@ -371,7 +372,7 @@ export default function TargetsTab() {
       setEditId(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not update the target', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not update the target'), type: 'error' });
     } finally { setSavingEdit(false); }
   }
 
@@ -381,7 +382,7 @@ export default function TargetsTab() {
       pushToast({ title: 'Target removed', type: 'success' });
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not remove the target', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not remove the target'), type: 'error' });
     }
   }
 

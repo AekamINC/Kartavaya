@@ -305,16 +305,24 @@ describe('the label sites, discovered from source', () => {
     // element, or a prop rendered straight into a second-script span.
     //
     // Raise NOTHING here. Lower it when you convert more.
-    // 8 — and every one of them is a file a CONCURRENT run owns:
+    //
+    // 7 — down from 8, and the drift in between is the reason this line is a
+    // number rather than a note. It reached ELEVEN: `TabMembers.jsx` was
+    // converted, and then FOUR new leaks arrived behind it —
+    // `CatalogTab.jsx:463`, `ModuleGrantEditor.jsx:53`, `PayPage.jsx:371` and
+    // `SkillsTab.jsx:589`. Three were `{hi && <span lang="hi">…}`, which
+    // guards on the VALUE and not the language, so the Devanagari rendered
+    // under EN; the fourth was a hardcoded `कर्तव्य` in the Pay footer. All
+    // four converted on 2026-08-29, and this ratchet is what found them.
+    //
     //   components/layout/Topbar.jsx           the breadcrumb's second script
     //   pages/approvals/ApprovalModals.jsx     the modal title
     //   pages/hub/skills/CatalogTab.jsx  x2    the marketplace hero and stats
     //   pages/hub/skills/CreateTab.jsx         the card head
     //   pages/hub/skills/GuideTab.jsx          the card head
     //   pages/org/ModuleCard.jsx               the module name
-    //   pages/org/TabMembers.jsx               the module name
     // Each is one `<Secondary …/>` away, and none of them is this run's to make.
-    const REMAINING = 8;
+    const REMAINING = 7;
     expect(
       CENSUS.leaking.length,
       `leaking label sites:\n  ${CENSUS.leaking.join('\n  ')}`,

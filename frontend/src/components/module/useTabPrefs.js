@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, body } from '../../lib/api';
 import { useToastMaybe } from '../ui/toast';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * useTabPrefs — a person's own order for a module's tabs, and the tab the
@@ -222,7 +223,7 @@ export default function useTabPrefs(moduleKey, baseTabs, { fallback } = {}) {
         title: !forTeam ? 'Could not save your tabs'
           : orgFailed ? 'Could not save — neither your tabs nor the team default'
             : 'Saved the team default, but not your own tabs',
-        message: e?.response?.data?.detail || 'Please try again.',
+        message: apiErrorText(e, 'Please try again.'),
       });
       return false;
     }
@@ -263,7 +264,7 @@ export default function useTabPrefs(moduleKey, baseTabs, { fallback } = {}) {
       pushToast({
         type: 'error',
         title: 'Could not reset your tabs',
-        message: e?.response?.data?.detail || 'Please try again.',
+        message: apiErrorText(e, 'Please try again.'),
       });
       return false;
     }

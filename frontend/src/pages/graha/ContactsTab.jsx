@@ -35,6 +35,7 @@ import {
 } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * What this table HAS, declared once — the floor `useColumnPrefs` resolves a
@@ -183,7 +184,7 @@ export default function ContactsTab({ crm = true }) {
       setShowForm(false);
       setForm({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', territory_id: '', billing_address: { ...EMPTY_ADDRESS }, custom_data: {} });
       load();
-    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e) { pushToast({ title: apiErrorText(e, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -252,7 +253,7 @@ export default function ContactsTab({ crm = true }) {
       await api.post(`/v1/graha/contacts/${id}/convert`);
       pushToast({ title: 'Lead converted to customer', type: 'success' });
       loadDetail(id);
-    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Conversion failed', type: 'error' }); }
+    } catch (e) { pushToast({ title: apiErrorText(e, 'Conversion failed'), type: 'error' }); }
   }
 
   async function removeLabel(contactId, labelId) {

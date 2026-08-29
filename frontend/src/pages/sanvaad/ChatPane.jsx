@@ -26,6 +26,7 @@ import useChannelMessages from './useChannelMessages';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { useExitAnimation } from '../../hooks/useExitAnimation';
 import { ASK_LABEL } from './useSahayak';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The phone band. ONE string, declared here and imported by `ChannelsTab`.
@@ -253,7 +254,7 @@ export default function ChatPane({
     try {
       await pinMsg(msg.id);
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to pin the message' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to pin the message') });
     }
   };
 
@@ -261,7 +262,7 @@ export default function ChatPane({
     try {
       await unpinMsg(msg.id);
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to unpin the message' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to unpin the message') });
     }
   };
 
@@ -633,7 +634,7 @@ export default function ChatPane({
       onTyping?.(false);
       onSent?.();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to send') });
       throw e;
     }
   };
@@ -645,7 +646,7 @@ export default function ChatPane({
     try {
       return await edit(msg, content);
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to save the edit' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to save the edit') });
       throw e;
     }
   };
@@ -654,7 +655,7 @@ export default function ChatPane({
     try {
       await remove(msg);
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to delete the message' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to delete the message') });
       throw e;
     }
   };

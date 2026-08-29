@@ -62,6 +62,7 @@ import React, { useCallback, useState } from 'react';
 import { api, body } from '../lib/api';
 import PointRadiusMap from './PointRadiusMap';
 import useModuleWrite from '../hooks/useModuleWrite';
+import { apiErrorText } from '../lib/apiError';
 
 /** The five `geo_source` values migration 237's CHECK allows.
  *
@@ -147,7 +148,7 @@ export default function CoordinateCapture({
       // The server's sentence, not ours: it distinguishes "not one of these
       // five sources", "must be a finite number", a range, and Null Island,
       // and each of those tells the person something different to do.
-      setErr(e?.response?.data?.detail || 'The coordinate could not be saved.');
+      setErr(apiErrorText(e, 'The coordinate could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -167,7 +168,7 @@ export default function CoordinateCapture({
       setLngText('');
       setOpen(false);
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'The coordinate could not be removed.');
+      setErr(apiErrorText(e, 'The coordinate could not be removed.'));
     } finally {
       setBusy(false);
     }

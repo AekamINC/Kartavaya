@@ -31,6 +31,7 @@ import {
 } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The register's columns, declared once, in the order they shipped.
@@ -192,7 +193,7 @@ export default function DocumentsTab() {
       setFile(null);
       load();
       loadFolders();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -246,7 +247,7 @@ export default function DocumentsTab() {
             // The server's own sentence. A bin write that failed answers 500
             // with "it has not been removed", which is the opposite of what a
             // generic failure implies about the state of the row.
-            title: e?.response?.data?.detail || 'Could not delete document',
+            title: apiErrorText(e, 'Could not delete document'),
             type: 'error',
           });
         }

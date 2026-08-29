@@ -11,6 +11,7 @@ import { moduleMeta } from '../lib/moduleColors';
 import { useSecondary, Secondary } from '../components/Bilingual';
 import { useLanguage } from '../components/CustomizePanel';
 import { secondaryOf } from '../lib/labels';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * How long the lotus holds after a sign-in, before the app appears.
@@ -285,7 +286,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
  * which is the only 401 an unauthenticated form can produce.
  */
 const isNetworkError = (err) => !err?.response;
-const detailOf = (err) => err?.response?.data?.detail || '';
+const detailOf = (err) => apiErrorText(err, '');
 
 /**
  * What the user is actually shown for a server rejection.

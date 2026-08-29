@@ -10,6 +10,7 @@ import {
   ModuleGrantList, defaultGrantsFor, setLevelIn, toWireGrants, toggleGrantIn,
 } from './ModuleGrantEditor';
 import { DEFAULT_GRANT_LEVEL, levelLabel } from './levels';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabMembers — who is in the org, and what each of them can reach.
@@ -212,7 +213,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       pushToast({ type: 'success', title: `${m.full_name || m.email} is now an ${role.replace('_', ' ')}` });
       load();
     } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to update role' });
+      pushToast({ type: 'error', title: apiErrorText(err, 'Failed to update role') });
     }
   };
 
@@ -227,7 +228,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
         pushToast({ type: 'success', title: `${m.email} removed` });
         load();
       } catch (err) {
-        pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to remove member' });
+        pushToast({ type: 'error', title: apiErrorText(err, 'Failed to remove member') });
       }
     },
   });
@@ -316,7 +317,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       load();
       loadInvites();
     } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to add member' });
+      pushToast({ type: 'error', title: apiErrorText(err, 'Failed to add member') });
     } finally { setAdding(false); }
   };
 
@@ -343,7 +344,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       pushToast({ type: 'success', title: `Invitation to ${inv.email} revoked` });
       loadInvites();
     } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to revoke' });
+      pushToast({ type: 'error', title: apiErrorText(err, 'Failed to revoke') });
     }
   };
 
@@ -407,7 +408,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       setEditing(null);
       load();
     } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to update modules' });
+      pushToast({ type: 'error', title: apiErrorText(err, 'Failed to update modules') });
     } finally { setSavingGrants(false); }
   };
 

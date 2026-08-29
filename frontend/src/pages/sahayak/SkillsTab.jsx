@@ -71,6 +71,7 @@ import SkillDrawer, { permissionsFor } from '../../components/skills/SkillDrawer
 import { Findings } from '../../components/skills/findings';
 import { AGENT_LABELS, LANGUAGES, words, creditLabel } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 /** Where a module sits on the shelf. An unknown code goes last, never dropped. */
 const MODULE_ORDER = Object.fromEntries(ORG_MODULES.map((m, i) => [m.code, i]));
@@ -586,7 +587,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
             <section className="sk-shelf" key={group.code}>
               <h3 className="sk-shelf__t" style={{ '--mc': group.tone }}>
                 {group.module.label}
-                {group.module.hi && <span className="sk-shelf__hi" lang="hi"> {group.module.hi}</span>}
+                <Secondary className="sk-shelf__hi" value={group.module.hi}>{(s) => ` ${s}`}</Secondary>
                 <span className="sk-shelf__c">{group.list.length}</span>
                 {group.module.en && <small className="sk-shelf__d">{group.module.en}</small>}
               </h3>

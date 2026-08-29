@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const BLANK = {
   vendor_id: '', sla_metric: '', threshold: '', actual: '',
@@ -75,7 +76,7 @@ export default function SLACreditsTab() {
       setEditing(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to save'), type: 'error' });
     }
   }
 
@@ -94,7 +95,7 @@ export default function SLACreditsTab() {
       pushToast({ title: 'Credit applied to bill', type: 'success' });
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to apply credit', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to apply credit'), type: 'error' });
     }
     setBusy(null);
   }
@@ -110,7 +111,7 @@ export default function SLACreditsTab() {
           pushToast({ title: 'SLA credit waived', type: 'success' });
           load();
         } catch (e) {
-          pushToast({ title: e.response?.data?.detail || 'Failed to waive credit', type: 'error' });
+          pushToast({ title: apiErrorText(e, 'Failed to waive credit'), type: 'error' });
         }
         setBusy(null);
       },

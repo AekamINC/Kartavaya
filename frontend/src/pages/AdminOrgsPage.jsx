@@ -59,6 +59,7 @@ import { ColumnsButton } from '../components/ui/CustomizeColumns';
 import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
 import { Secondary } from '../components/Bilingual';
+import { apiErrorText } from '../lib/apiError';
 
 /* Module codes as `require_module(...)` spells them, with the sensitive set
    marked. Vetana, Ganit and Manav default to no access BY ROLE — the marking
@@ -161,7 +162,7 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
         : { type: 'error', title: 'R2 credentials rejected', message: d.error });
     } catch (e) {
       setVerified(false);
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Verification failed' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Verification failed') });
     } finally { setBusy(''); }
   };
 
@@ -206,7 +207,7 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
       onCreated();
       onClose();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not create the organisation' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not create the organisation') });
     } finally { setBusy(''); }
   };
 
@@ -679,7 +680,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
     try { await fn(); await load(); onChanged?.(); }
     catch (e) {
       console.error('act() error:', e);
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'That did not go through' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'That did not go through') });
     }
     finally { setBusy(''); }
   };
@@ -966,7 +967,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 await load();
                 onChanged?.();
               } catch (err) {
-                pushToast({ type: 'error', title: err?.response?.data?.detail || 'That did not go through' });
+                pushToast({ type: 'error', title: apiErrorText(err, 'That did not go through') });
               } finally {
                 setBusy('');
               }

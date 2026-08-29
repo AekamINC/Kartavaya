@@ -21,6 +21,7 @@ import {
 } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 const ENTITY_TYPES = ['deal', 'vendor_bill', 'expense_claim'];
 const STATUS_COLORS = { pending: 'var(--warn)', approved: 'var(--ok)', rejected: 'var(--danger)' };
@@ -148,7 +149,7 @@ export default function ApprovalsTab() {
       setShowRuleForm(false);
       setRuleForm({ entity_type: 'deal', threshold_amount: '', approver_role: '' });
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
   }
 
   async function deleteRule(id) {

@@ -6,6 +6,7 @@ import { errorKind } from '../../components/ui/ErrorState';
 import { useToast } from '../../components/ui/toast';
 import { api } from '../../lib/api';
 import { relTime } from '../../lib/utils';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * Approvals — the first card in the reference dashboard's right column
@@ -87,7 +88,7 @@ export default function ApprovalsCard({ onOpenApprovals }) {
       pushToast({
         type: 'error',
         title: 'Could not record that decision',
-        message: e?.response?.data?.detail || 'Try again in a moment.',
+        message: apiErrorText(e, 'Try again in a moment.'),
       });
     } finally {
       setBusy(b => { const n = { ...b }; delete n[id]; return n; });

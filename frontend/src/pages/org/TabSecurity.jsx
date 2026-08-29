@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { Toggle, Button } from '../../components/ui';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/toast';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabSecurity — org-level security policy, `GET/PATCH /api/v1/org/security`
@@ -83,7 +84,7 @@ export default function TabSecurity() {
     } catch (e) {
       pushToast({
         type: 'error',
-        title: e?.response?.data?.detail || 'Could not save.',
+        title: apiErrorText(e, 'Could not save.'),
       });
       return false;
     }

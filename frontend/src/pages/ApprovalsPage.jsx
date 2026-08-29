@@ -46,6 +46,7 @@ import HistoryPanel from './approvals/HistoryPanel';
 import PolicyPanel from './approvals/PolicyPanel';
 import { ApproveModal, ClientApproveModal, RejectModal } from './approvals/ApprovalModals';
 import { Secondary } from '../components/Bilingual';
+import { apiErrorText } from '../lib/apiError';
 
 export default function ApprovalsPage() {
   const { pushToast } = useToast();
@@ -142,7 +143,7 @@ export default function ApprovalsPage() {
       });
       load();
     } catch (e) {
-      pushToast({ type: 'error', title: 'Action failed', message: e?.response?.data?.detail || 'Try again' });
+      pushToast({ type: 'error', title: 'Action failed', message: apiErrorText(e, 'Try again') });
     } finally {
       setDeciding(d => { const n = { ...d }; delete n[approvalId]; return n; });
     }
@@ -159,7 +160,7 @@ export default function ApprovalsPage() {
       pushToast({ type: 'success', title: status === 'approved' ? 'Approved' : 'Rejected' });
       load();
     } catch (e) {
-      pushToast({ type: 'error', title: 'Action failed', message: e?.response?.data?.detail || 'Try again' });
+      pushToast({ type: 'error', title: 'Action failed', message: apiErrorText(e, 'Try again') });
     } finally {
       setDeciding(d => { const n = { ...d }; delete n[approvalId]; return n; });
     }

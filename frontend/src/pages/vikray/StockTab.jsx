@@ -29,6 +29,7 @@ import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The ledger's four columns, declared once, in the order they shipped.
@@ -124,7 +125,7 @@ function AdjustDialog({ row, onClose, onDone }) {
       onDone();
       onClose();
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Could not adjust the stock', type: 'error' });
+      pushToast({ title: apiErrorText(err, 'Could not adjust the stock'), type: 'error' });
     } finally { setSaving(false); }
   }
 

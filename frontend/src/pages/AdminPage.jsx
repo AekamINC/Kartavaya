@@ -54,6 +54,7 @@ import { secondaryOf } from '../lib/labels';
 import { Secondary } from '../components/Bilingual';
 import useColumnPrefs from '../hooks/useColumnPrefs';
 import { ColumnsButton } from '../components/ui/CustomizeColumns';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * The four record lists on this console, declared once each.
@@ -187,7 +188,7 @@ function EditUserPanel({ user, onClose, onSaved }) {
       onSaved(res.data);
       onClose();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not save' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not save') });
     } finally { setSaving(false); }
   };
 
@@ -286,7 +287,7 @@ function RemoveUserModal({ user, others, onClose, onRemoved }) {
       onRemoved(user.user_id);
       onClose();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not remove the user' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not remove the user') });
     } finally { setBusy(false); }
   };
 
@@ -377,7 +378,7 @@ function PlatformRolesPanel() {
       setEmail('');
       await load();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not assign the role' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not assign the role') });
     } finally { setBusy(false); }
   };
 
@@ -495,7 +496,7 @@ function PlatformRolesPanel() {
                                         pushToast({ type: 'success', title: 'Role revoked' });
                                         await load();
                                       } catch (e) {
-                                        pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not revoke' });
+                                        pushToast({ type: 'error', title: apiErrorText(e, 'Could not revoke') });
                                       }
                                     },
                                   })}
@@ -686,7 +687,7 @@ export default function AdminPage() {
       setInvite(EMPTY_INVITE);
       await load();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not send the invite' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not send the invite') });
     } finally { setSending(false); }
   };
 

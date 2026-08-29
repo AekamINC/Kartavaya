@@ -15,6 +15,7 @@ import '../../styles/admin.css';
 import { Secondary } from '../../components/Bilingual';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The two lists on this console. `fixed` on Reference and on the actions cell
@@ -280,7 +281,7 @@ export default function SupportSessionsPage() {
       // The database CHECK on the reason and the one-pending-per-org index
       // both surface here. The server's own words are better than ours: it
       // knows which of the two refused.
-      toast.error(e2?.response?.data?.detail || 'That request was refused.');
+      toast.error(apiErrorText(e2, 'That request was refused.'));
     } finally {
       setBusy(null);
     }
@@ -302,7 +303,7 @@ export default function SupportSessionsPage() {
       toast.success(`${session.ref} closed. Access ended now.`);
       await load();
     } catch (e2) {
-      toast.error(e2?.response?.data?.detail || 'Could not close that session.');
+      toast.error(apiErrorText(e2, 'Could not close that session.'));
     } finally {
       setBusy(null);
     }

@@ -33,6 +33,7 @@ import ArrangedDataTable from '../../components/ui/arrangeDataTable';
 import RestrictedNote from '../../components/module/RestrictedNote';
 import { useSecondary, Secondary } from '../../components/Bilingual';
 import { inr, inrShort, grouped } from '../../lib/inr';
+import { apiErrorText } from '../../lib/apiError';
 
 /** Indian digit grouping, one implementation — see lib/inr.js. */
 export const FMT = inr;
@@ -176,7 +177,7 @@ export function useDristi(path, { enabled = true, windowed = true } = {}) {
       if (e.response?.status === 403) {
         setRestricted(MODULE_OF[path] || { module: 'this data' });
       } else {
-        setErr(e.response?.data?.detail || 'Retry, or check your connection.');
+        setErr(apiErrorText(e, 'Retry, or check your connection.'));
       }
     }
     setLoading(false);

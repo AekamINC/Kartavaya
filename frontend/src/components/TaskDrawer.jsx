@@ -23,6 +23,7 @@ import DrawerTimeEntries from './drawer/DrawerTimeEntries';
 import DrawerApproval    from './drawer/DrawerApproval';
 import Lbl               from './drawer/DrawerLabel';
 import useAutosave       from './drawer/useAutosave';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * TaskDrawer — ORCHESTRATION ONLY (03 §5).
@@ -368,7 +369,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
           onClose();
         } catch (e) {
           logger.error(e);
-          pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not delete task' });
+          pushToast({ type: 'error', title: apiErrorText(e, 'Could not delete task') });
           setDeletingTask(false);
         }
       },
@@ -460,7 +461,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       pushToast({
         type: 'error',
         title: 'Could not delete comment',
-        message: e?.response?.data?.detail || e?.message || '',
+        message: apiErrorText(e, e?.message || ''),
         action: {
           label: 'Retry',
           onAction: () => {
@@ -622,7 +623,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
           if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
             pushToast({ type: 'error', title: 'Upload got stuck', message: 'No data transferred for 30 s. Check your connection and try again — if it keeps happening, please report it.' });
           } else {
-            pushToast({ type: 'error', title: err?.response?.data?.detail || 'Upload failed' });
+            pushToast({ type: 'error', title: apiErrorText(err, 'Upload failed') });
           }
           // break, NOT return. This `return` used to sit inside the per-file
           // catch, inside the loop, inside the outer try — so it jumped past the
@@ -739,7 +740,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
           logger.error('Remove attachment failed', e);
           pushToast({
             type: 'error',
-            title: e?.response?.data?.detail || 'Could not remove that file',
+            title: apiErrorText(e, 'Could not remove that file'),
           });
         }
       },
@@ -764,7 +765,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   // The server's own sentence wins where it has one; `_assert_task_access`
   // explains the refusal better than any generic string here could.
   const timeFailed = (e, fallback) =>
-    pushToast({ type: 'error', title: e?.response?.data?.detail || fallback });
+    pushToast({ type: 'error', title: apiErrorText(e, fallback) });
 
   const startTimer = async () => {
     try { const res = await api.post(`/time/start?task_id=${taskId}`); setTimer(res.data); }
@@ -813,7 +814,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       pushToast({ type: 'success', title: 'Approval request sent' });
     } catch (e) {
       logger.error(e);
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not send approval request' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not send approval request') });
     }
     finally { setApprovalLoading(false); }
   };
@@ -850,7 +851,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       setShowApprovePanel(false); setApprovalNotes(''); setClientUserId('');
     } catch (e) {
       logger.error(e);
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not approve task' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not approve task') });
     }
     finally { setApprovalLoading(false); }
   };
@@ -867,7 +868,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       setShowRejectInput(false); setRejectNote('');
     } catch (e) {
       logger.error(e);
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not reject task' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not reject task') });
     }
     finally { setApprovalLoading(false); }
   };

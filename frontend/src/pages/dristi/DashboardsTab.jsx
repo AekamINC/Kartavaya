@@ -23,6 +23,7 @@ import { useToast } from '../../components/ui/toast';
 import { Empty, Shimmer } from '../../components/editorial';
 import { Panel, Bars, Funnel, Meters, MONEY, NUM, Bi, downloadCSV } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 /** The reference's CHARTS, re-pointed at queries the server can actually run. */
 const PRESETS = [
@@ -78,7 +79,7 @@ export default function DashboardsTab() {
       setBoards(Array.isArray(r.data) ? r.data : (r.data?.data || []));
     } catch (e) {
       setBoards(null);
-      setBoardsErr(e.response?.data?.detail || 'Saved dashboards did not load.');
+      setBoardsErr(apiErrorText(e, 'Saved dashboards did not load.'));
     }
   }, []);
 
@@ -93,7 +94,7 @@ export default function DashboardsTab() {
       pushToast({ type: 'success', title: 'Dashboard created' });
       loadBoards();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not create the dashboard' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not create the dashboard') });
     }
     setCreating(false);
   };
@@ -104,7 +105,7 @@ export default function DashboardsTab() {
       pushToast({ type: 'success', title: 'Dashboard deleted' });
       loadBoards();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not delete' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not delete') });
     }
   };
 
@@ -118,7 +119,7 @@ export default function DashboardsTab() {
   useEffect(() => {
     api.get('/v1/dristi/widget-types')
       .then(r => setMeta(r.data))
-      .catch(e => setMetaErr(e.response?.data?.detail || 'The query vocabulary did not load.'));
+      .catch(e => setMetaErr(apiErrorText(e, 'The query vocabulary did not load.')));
   }, []);
 
   /** Run one card's query. Each card owns its own error — one 403 on invoices
@@ -136,7 +137,7 @@ export default function DashboardsTab() {
         ? { ...c, ...spec, rows: null, loading: false,
             err: e.response?.status === 403
               ? 'You don’t have access to this source.'
-              : (e.response?.data?.detail || 'This query failed.') }
+              : (apiErrorText(e, 'This query failed.')) }
         : c)));
     }
   }, []);
@@ -191,7 +192,7 @@ export default function DashboardsTab() {
       pushToast({ type: 'success', title: `Added to ${board.name}` });
       loadBoards();
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Could not add the chart' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not add the chart') });
     }
     setAdding(false);
   };

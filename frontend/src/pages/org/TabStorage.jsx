@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { Button, EmptyState, Sheet, SkeletonTable, StatTile, useToast } from '../../components/ui';
 import { DataTable, Td } from '../../components/editorial';
 import '../../styles/storage.css';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabStorage — the Storage tab. Proposal 83 §5, Phase 4.4.
@@ -132,7 +133,7 @@ export default function TabStorage() {
     } catch (e) {
       pushToast({
         type: 'error',
-        title: e?.response?.data?.detail || 'That key could not be looked up.',
+        title: apiErrorText(e, 'That key could not be looked up.'),
       });
     } finally {
       setAsking(false);

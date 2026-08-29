@@ -35,6 +35,7 @@ import Message from './Message';
 import Composer from './Composer';
 import LockedComposer from './LockedComposer';
 import { SvIcons } from './icons';
+import { apiErrorText } from '../../lib/apiError';
 import {
   isContinuation, optimisticMessage, parseReactions, toggleReactionLocal,
 } from './messageUtils';
@@ -163,7 +164,7 @@ export default function ThreadPanel({
       await load({ quiet: true });
     } catch (e) {
       drop();
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send reply' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to send reply') });
       throw e;
     }
   };
@@ -191,7 +192,7 @@ export default function ThreadPanel({
       setRootMsg(prev => hit(prev));
       return r.data;
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to save the edit' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to save the edit') });
       throw e;
     }
   };
@@ -204,7 +205,7 @@ export default function ThreadPanel({
       // rather than leaving a tombstone the next load would not reproduce.
       setReplies(prev => prev.filter(m => String(m.id) !== String(msg.id)));
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to delete the message' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to delete the message') });
       throw e;
     }
   };

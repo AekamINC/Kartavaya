@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button } from '../../components/ui';
 import { useToast } from '../../components/ui/toast';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabSecurity (customize/) — personal two-factor authentication.
@@ -109,7 +110,7 @@ export default function TabSecurity() {
       setCode('');
       load();
     } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Incorrect code. Check the time on your device.');
+      setErr(apiErrorText(e2, 'Incorrect code. Check the time on your device.'));
     } finally { setBusy(false); }
   };
 
@@ -122,7 +123,7 @@ export default function TabSecurity() {
       reset();
       load();
     } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Incorrect password.');
+      setErr(apiErrorText(e2, 'Incorrect password.'));
     } finally { setBusy(false); }
   };
 
@@ -136,7 +137,7 @@ export default function TabSecurity() {
       setCode('');
       load();
     } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Incorrect code.');
+      setErr(apiErrorText(e2, 'Incorrect code.'));
     } finally { setBusy(false); }
   };
 

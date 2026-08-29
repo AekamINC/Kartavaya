@@ -159,8 +159,13 @@ const LEGACY = {
   'pages/sanvaad/ThreadPanel.jsx': ['sv__none', 'svbtn'],
   'pages/sanvaad/icons.jsx': ['wa__fail', 'wa__tick', 'wa__tick--read'],
   'pages/sanvaad/varta/TemplatePicker.jsx': ['cmp__send'],
+  // `wa__note` joined this list on 2026-08-29 rather than being converted.
+  // Varta is the ONE surface proposal 93 §13 excludes by decision and the .m2
+  // migration is parked at 38%, so a new element in an unconverted file takes
+  // that file's vocabulary — converting one class in isolation would leave it
+  // styled by neither sheet.
   'pages/sanvaad/varta/WAChat.jsx': [
-    'msg--sending', 'sv__blank', 'sv__none', 'svbtn', 'wa__err',
+    'msg--sending', 'sv__blank', 'sv__none', 'svbtn', 'wa__err', 'wa__note',
   ],
   'pages/sanvaad/varta/WAConnectAccount.jsx': [
     'wa-conn', 'wa-conn__act', 'wa-conn__err', 'wa-conn__lede',
@@ -212,6 +217,12 @@ const REASON = {
     'cmp__fmt', 'cmp__fmtb', 'cmp__reply-t', 'cmp__locked-m', 'cmp__locked-t',
     'cmp__mn', 'cmp__mn-b', 'cmp__mn-e', 'cmp__mn-n', 'cmp__mn-r',
     'wa__win-t', 'wa__fail',
+    // `wa__note` — the outbound fence's own row. It says "sending is
+    // switched off here, so this was not sent", which is deliberately NOT
+    // `.m2-msg--failed`: nothing failed, and "Not delivered" would send a
+    // person looking for a fault that is not there. The prototype has no
+    // element for a message that was never attempted.
+    'wa__note',
   ],
   DELIBERATE: [
     // Message.jsx's own docblock: a tombstone and a module event are the two rows

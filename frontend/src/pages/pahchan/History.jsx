@@ -9,6 +9,7 @@ import Note from '../../components/module/Note';
 import { noticeLines } from '../../lib/pahchanNotice';
 import DateInput from '../../components/ui/DateInput';
 import RulesPanel from './Rules';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * History — the employee's own month. `17-mobile-app.md:129` lists it as
@@ -301,8 +302,7 @@ export default function History() {
       pushToast({
         type: 'error',
         title: 'That request was not filed',
-        message: err.response?.data?.detail
-          || 'Nothing was recorded. Try again, or ask HR to correct the day directly.',
+        message: apiErrorText(err, 'Nothing was recorded. Try again, or ask HR to correct the day directly.'),
       });
     } finally {
       setSending(false);

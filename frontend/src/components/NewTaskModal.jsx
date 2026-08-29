@@ -41,6 +41,7 @@ import { navContext } from './layout/navConfig';
 import ReminderPicker, { DEFAULT_REMINDERS } from './ReminderPicker';
 import { Secondary } from './Bilingual';
 import DateInput from './ui/DateInput';
+import { apiErrorText } from '../lib/apiError';
 
 
 
@@ -271,7 +272,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
           if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
             setUploadError('Upload got stuck — no data transferred for 30 s. Check your connection and try again.');
           } else {
-            setUploadError(err?.response?.data?.detail || 'Upload failed — please try again.');
+            setUploadError(apiErrorText(err, 'Upload failed — please try again.'));
           }
           return;
         }

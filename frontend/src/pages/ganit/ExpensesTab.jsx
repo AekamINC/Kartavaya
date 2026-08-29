@@ -43,6 +43,7 @@ import { ColumnsButton } from '../../components/ui/CustomizeColumns';
 // with 292 live contacts, so the list is narrowed by the SERVER as the user
 // types — filtering a truncated array in the browser hides people silently.
 import ServerPicker from '../../components/ui/ServerPicker';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The two tables on this tab, declared once each. Two keys, not one: they are
@@ -332,7 +333,7 @@ export default function ExpensesTab() {
       load();
       loadStats();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not record the expense', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not record the expense'), type: 'error' });
     } finally { setSaving(false); }
   }
 
@@ -371,7 +372,7 @@ export default function ExpensesTab() {
       load();
       loadStats();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not update the expense', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not update the expense'), type: 'error' });
     } finally { setEditSaving(false); }
   }
 
@@ -395,7 +396,7 @@ export default function ExpensesTab() {
       setCatForm({ name: '', icon: '📁' });
       loadCategories();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not create the category', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not create the category'), type: 'error' });
     }
   }
 

@@ -3,6 +3,7 @@ import { api, body } from '../lib/api';
 import AddressSuggest from './ui/AddressSuggest';
 import PincodeAutofill from './ui/PincodeAutofill';
 import { useToast } from './ui/toast';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * VendorForm — the ONE form that creates or edits a supplier.
@@ -305,7 +306,7 @@ export default function VendorForm({ vendor = null, onSaved, onCancel }) {
         : await api.post('/v1/ganit/vendors', vendorPayload(form));
       saved = body(r);
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Could not save vendor', type: 'error' });
+      pushToast({ title: apiErrorText(err, 'Could not save vendor'), type: 'error' });
     }
     /* Settled BEFORE `onSaved`, which is what closes this form on both call
        sites — a `finally` after it would be setting state on a component the

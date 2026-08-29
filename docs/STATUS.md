@@ -1029,6 +1029,54 @@ Both fixed, mutation-proved, and the query parsed against the live catalogue
 (6/6 under `railway run`). The two June payslips are **not restated** — a
 repair to a generated payslip needs its own written risk report.
 
+### ⚠ Suite 05 — an empty box was a 422 nobody could read
+
+**Rate cards stood at 0 of 3** while every other Ganit volume filled.
+`POST /v1/ganit/billing/rate-cards` refused every card that had no note:
+`RateCardCreate.notes` was `str = ""` and the form sends `notes: form.notes ||
+null`. It was never one field — across the four create/update pairs in
+`client_billing`, **eighteen** fields are nullable on update and were not on
+create. Blank accepted when you EDIT a row and refused when you CREATE one is
+not a rule anybody could guess.
+
+Fixed with a shared `_NullMeansUnset` base rather than eighteen widened
+annotations, because widening by hand leaves the nineteenth. A required field is
+still required; a field annotated `X | None` still takes `None` as a value.
+
+**And the other half: the screen only ever said "Failed to save".** FastAPI
+sends `detail` in three shapes, and 184 call sites handled one of them —
+`e.response?.data?.detail || 'Failed to save'`. On a **422 the detail is an
+ARRAY OF OBJECTS**, which is truthy, so `||` keeps it and hands an array to a
+React child: React error #31, the same crash that replaced a whole tab earlier
+in this programme. `frontend/src/lib/apiError.js` now flattens all three shapes
+to one readable line, and 184 sites across 90 files use it. The 5 sites that
+read `detail` structurally were left alone.
+
+`docs/modules` precedent: `docErrors.js` already argued this case for PDFs —
+"a toast reading 'Failed to generate PDF' tells the user nothing and leaves them
+clicking the button again". The same sentence was true of every other refusal.
+
+### The frontend test suite was RED before this session, on two ratchets
+
+Neither is in `npm run check` — **`check` does not run vitest**, which is how
+both stayed red unnoticed.
+
+**`labelShape` had drifted from 8 leaking label sites to 11.** `TabMembers.jsx`
+was converted and four new leaks arrived behind it: three were
+`{hi && <span lang="hi">…}`, which guards on the VALUE and not the language so
+the Devanagari renders under English, and the fourth was a hardcoded `कर्तव्य`
+in the Pay footer. All four converted to `<Secondary>` — which returns `null`
+under EN, so the node is absent rather than hidden — and **the baseline is
+lowered to 7**, never raised.
+
+**`sanvaadLegacyVocabulary`** wanted `wa__note` inventoried and reasoned. It is
+the outbound fence's own row, deliberately not `.m2-msg--failed`: nothing
+failed, and "Not delivered" would send a person looking for a fault that is not
+there. Varta is §13 excluded-by-decision and the `.m2` migration is parked at
+38%, so a new element there takes its file's vocabulary.
+
+**Vitest is now 3153/3153 green across 191 files.**
+
 | Run | Header says | Payslips actually |
 |---|---|---|
 | 2026-04 `disbursed` | 23 / ₹12,80,846.14 | **28** / ₹15,58,196.14 |

@@ -8,6 +8,7 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * Corrections — `POST`/`GET`/`PATCH /api/v1/pahchan/regularisations`.
@@ -166,8 +167,7 @@ export default function Corrections() {
       pushToast({
         type: 'error',
         title: 'Could not record that decision',
-        message: err.response?.data?.detail
-          || 'Only a pending correction can be decided. Reload and check whether someone already settled it.',
+        message: apiErrorText(err, 'Only a pending correction can be decided. Reload and check whether someone already settled it.'),
       });
     } finally {
       setBusy(null);

@@ -15,6 +15,7 @@ import StepDone from './StepDone';
 import { toWireGrants } from '../org/ModuleGrantEditor';
 import { OB_PRESETS, OB_TEMPLATES } from './data';
 import { Check, ChevLeft } from './icons';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * OnboardingWizard — 12-auth-onboarding.md §2.
@@ -354,8 +355,7 @@ export default function OnboardingPage() {
       pushToast({
         type: 'warning',
         title: 'Organisation details were not saved',
-        message: err?.response?.data?.detail
-          || 'They are held on this device — set them in Settings → Organisation.',
+        message: apiErrorText(err, 'They are held on this device — set them in Settings → Organisation.'),
       });
       advance(null);
     } finally { setBusy(false); }
@@ -430,8 +430,7 @@ export default function OnboardingPage() {
       pushToast({
         type: 'warning',
         title: 'Modules were not changed',
-        message: err?.response?.data?.detail
-          || 'Your picks are held on this device — change them in Settings → Modules.',
+        message: apiErrorText(err, 'Your picks are held on this device — change them in Settings → Modules.'),
       });
       advance(null);
     } finally { setBusy(false); }
@@ -551,7 +550,7 @@ export default function OnboardingPage() {
       pushToast({
         type: 'error',
         title: 'Could not create the project',
-        message: err?.response?.data?.detail || 'Try again, or create it from the dashboard.',
+        message: apiErrorText(err, 'Try again, or create it from the dashboard.'),
       });
     } finally { setBusy(false); }
   };

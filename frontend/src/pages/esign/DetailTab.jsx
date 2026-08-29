@@ -7,6 +7,7 @@ import {
   ErrorState, errorKind, SkeletonCard,
 } from '../../components/ui';
 import Note from '../../components/module/Note';
+import { apiErrorText } from '../../lib/apiError';
 import {
   EsignStatusPill, AuditTrail, FileTypeIcon, formatDate, relSigned,
 } from '../../components/documents';
@@ -76,7 +77,7 @@ export default function DetailTab({ docId, onBack }) {
       toast.success('Sent. Every signer has an email with their own link.');
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Could not send the document.');
+      toast.error(apiErrorText(e, 'Could not send the document.'));
     } finally { setSending(false); }
   };
 
@@ -88,7 +89,7 @@ export default function DetailTab({ docId, onBack }) {
       setConfirmCancel(false);
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Could not cancel the document.');
+      toast.error(apiErrorText(e, 'Could not cancel the document.'));
     } finally { setCancelling(false); }
   };
 
@@ -105,7 +106,7 @@ export default function DetailTab({ docId, onBack }) {
         : 'Signature record assembled. The signed file is not a PDF, so it could not be bound in.');
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Could not assemble the signed document.');
+      toast.error(apiErrorText(e, 'Could not assemble the signed document.'));
     } finally { setRebuilding(false); }
   };
 
@@ -114,7 +115,7 @@ export default function DetailTab({ docId, onBack }) {
       await api.post(`/v1/esign/documents/${docId}/resend/${signerId}`);
       toast.success(`Reminder sent to ${name}.`);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Could not send the reminder.');
+      toast.error(apiErrorText(e, 'Could not send the reminder.'));
     }
   };
 

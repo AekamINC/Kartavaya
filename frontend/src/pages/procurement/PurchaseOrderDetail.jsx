@@ -20,6 +20,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
 import { Badge, PO_STATUS_COLORS } from './_shared';
+import { apiErrorText } from '../../lib/apiError';
 
 const LINE_COLUMNS = [
   '#', 'Description', 'HSN/SAC',
@@ -109,7 +110,7 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
       return true;
     } catch (e) {
       pushToast({
-        title: e.response?.data?.detail || 'That could not be done',
+        title: apiErrorText(e, 'That could not be done'),
         type: 'error',
       });
       return false;
@@ -143,7 +144,7 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
       await loadMatch();
       onChanged?.();
     } catch (e2) {
-      pushToast({ title: e2.response?.data?.detail || 'Could not link the bill', type: 'error' });
+      pushToast({ title: apiErrorText(e2, 'Could not link the bill'), type: 'error' });
     } finally { setBusy(false); }
   }
 
@@ -156,7 +157,7 @@ export default function PurchaseOrderDetail({ poId, onClose, onChanged }) {
       await loadMatch();
       onChanged?.();
     } catch (e2) {
-      pushToast({ title: e2.response?.data?.detail || 'Could not unlink the bill', type: 'error' });
+      pushToast({ title: apiErrorText(e2, 'Could not unlink the bill'), type: 'error' });
     } finally { setBusy(false); }
   }
 

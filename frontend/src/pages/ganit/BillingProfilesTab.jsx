@@ -9,6 +9,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
 import { Modal } from '../../components/ui/modal';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 const BLANK = {
   client_id: '', billing_cycle: 'monthly', anchor_day: 1,
@@ -78,7 +79,7 @@ export default function BillingProfilesTab() {
       setEditing(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to save'), type: 'error' });
     }
   }
 

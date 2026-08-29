@@ -45,6 +45,7 @@ import { SkeletonCardGrid } from '../components/ui/Skeleton';
 import BrandKit from '../components/BrandKit';
 import { avatarBg } from '../components/ui/Avatar';
 import { Secondary } from '../components/Bilingual';
+import { apiErrorText } from '../lib/apiError';
 
 // Seven, not thirty — owner's decision 2026-08-09. Must stay equal to
 // `PROJECT_BIN_DAYS` in `backend/server.py`, which is what actually enforces
@@ -181,7 +182,7 @@ export default function ProjectsPage() {
         title: 'Could not archive project',
         // 503 here means migration 104 has not been applied to this database.
         // Saying so beats a generic failure the reader cannot act on.
-        message: e?.response?.data?.detail || undefined,
+        message: apiErrorText(e, '') || undefined,
       });
     }
   };

@@ -10,6 +10,7 @@ import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const EMPTY_ITEM = { description: '', quantity: 1, rate: 0, gst_rate: 18 };
 const BLANK = {
@@ -75,7 +76,7 @@ export default function RecurringTab() {
       setForm({ ...BLANK });
       load();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not create the schedule', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not create the schedule'), type: 'error' });
     } finally { setSaving(false); }
   }
 
@@ -97,7 +98,7 @@ export default function RecurringTab() {
       pushToast({ title: `Invoice ${body(res).invoice_number} generated`, type: 'success' });
       load();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not generate the invoice', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not generate the invoice'), type: 'error' });
     } finally { setBusyId(null); }
   }
 

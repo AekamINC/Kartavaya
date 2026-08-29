@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, ErrorState, SkeletonCard, Tag, useToast } from '../../components/ui';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabUpi — one receiving UPI ID per platform, and a code to scan before you
@@ -219,7 +220,7 @@ export default function TabUpi() {
     } catch (err) {
       pushToast({
         type: 'error',
-        title: err?.response?.data?.detail || 'Failed to save UPI IDs',
+        title: apiErrorText(err, 'Failed to save UPI IDs'),
       });
     } finally { setSaving(false); }
   };

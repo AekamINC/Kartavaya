@@ -41,6 +41,7 @@ import { Chip, ChipRow } from '../components/ui/Chip';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonText } from '../components/ui/Skeleton';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { apiErrorText } from '../lib/apiError';
 
 const API = `${import.meta.env.VITE_BACKEND_URL}/api`;
 
@@ -219,7 +220,7 @@ export default function SigningPage() {
         // A dead link and a dead network are different problems with different
         // correct actions, and only the second one resolves by waiting.
         setErrKind(errorKind(e));
-        setError(e.response?.data?.detail || '');
+        setError(apiErrorText(e, ''));
         setStep('error');
       });
   }, [token]);

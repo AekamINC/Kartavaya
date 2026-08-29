@@ -18,6 +18,7 @@ import { HeadCell } from '../../components/ui/Table';
 import { CreatedCell, CREATED_KEY } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * What this table HAS, declared once — the floor `useColumnPrefs` resolves a
@@ -185,7 +186,7 @@ export default function BankTab() {
       load();
       loadStats();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Import failed', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Import failed'), type: 'error' });
     } finally { setImporting(false); }
   }
 
@@ -197,7 +198,7 @@ export default function BankTab() {
       load();
       loadStats();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not unmatch the line', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not unmatch the line'), type: 'error' });
     } finally { setBusyId(null); }
   }
 
@@ -231,7 +232,7 @@ export default function BankTab() {
       // A 409 here is the server refusing to count one payment on two lines.
       // It carries the only sentence that tells the user what to do next, so it
       // is shown rather than replaced with a generic failure.
-      pushToast({ title: err2.response?.data?.detail || 'Could not match the line', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not match the line'), type: 'error' });
     } finally { setBusyId(null); }
   }
 

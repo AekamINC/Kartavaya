@@ -16,6 +16,7 @@ import { Badge, CONTRACT_COLORS, SIGN_STATUS_COLORS, SIGN_OUTSTANDING } from './
 import { loadSignatureState } from './ESignTab';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 const BLANK_SIGNER = { name: '', email: '', role: 'signer' };
 
@@ -70,7 +71,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
       await load();
       onChanged?.();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not send for signature', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not send for signature'), type: 'error' });
     } finally { setSending(false); }
   }
 
@@ -96,7 +97,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
       await load();
       onChanged?.();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not cancel the request', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not cancel the request'), type: 'error' });
     } finally { setCancelling(false); }
   }
 

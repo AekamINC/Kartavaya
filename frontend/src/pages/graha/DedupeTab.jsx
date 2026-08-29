@@ -26,6 +26,7 @@ import { Secondary } from '../../components/Bilingual';
 import { HeadCell } from '../../components/ui/Table';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 const FIELDS = [
   { key: 'name', label: 'Name' },
@@ -180,7 +181,7 @@ export default function DedupeTab() {
       setSurvivors(prev => { const n = { ...prev }; delete n[groupIdx]; return n; });
       loadGroups();
       loadMerges();
-    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Merge failed', type: 'error' }); }
+    } catch (e) { pushToast({ title: apiErrorText(e, 'Merge failed'), type: 'error' }); }
     finally { setMerging(false); }
   }
 
@@ -193,7 +194,7 @@ export default function DedupeTab() {
       setSurvivors({});
       loadGroups();
       loadMerges();
-    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Undo failed', type: 'error' }); }
+    } catch (e) { pushToast({ title: apiErrorText(e, 'Undo failed'), type: 'error' }); }
     finally { setUndoing(null); }
   }
 

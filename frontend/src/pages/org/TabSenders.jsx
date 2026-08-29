@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, ErrorState, SkeletonCard, Tag, useToast } from '../../components/ui';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabSenders — one From address per purpose, and the honest reason nine of them
@@ -148,7 +149,7 @@ export default function TabSenders() {
     } catch (err) {
       pushToast({
         type: 'error',
-        title: err?.response?.data?.detail || 'Failed to save sender addresses',
+        title: apiErrorText(err, 'Failed to save sender addresses'),
       });
     } finally { setSaving(false); }
   };

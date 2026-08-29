@@ -4846,3 +4846,64 @@ catalogue: 6/6 under `railway run`. 871 Vetana/Manav tests green.
 
 ⚠ **The two June payslips are NOT restated.** Repairing a generated payslip is a
 write to filed money and gets its own risk report, like the ledger repair did.
+
+---
+
+## 2026-08-29 — proposal 93, Suite 05 (Ganit): the empty box, and the error nobody could read
+
+**Rate cards were 0 of 3 and the reason was an empty Notes box.**
+`RateCardCreate.notes: str = ""` refuses `None`, and `RateCardsTab.save()` sends
+`notes: form.notes || null` — the ordinary JavaScript spelling of "the box is
+empty". Every card without a note was a 422.
+
+Eighteen fields across the four create/update pairs in `client_billing` had the
+same asymmetry: nullable when you EDIT a row, not nullable when you CREATE one.
+Nobody could guess that rule. Fixed with a shared `_NullMeansUnset` base that
+drops a `None` for any field that HAS a default, so the default applies exactly
+as if the key were absent — rather than widening eighteen annotations by hand
+and leaving the nineteenth. A required field (`vendor_id`, `period`,
+`profile_id`) is still refused, because "not provided" is a real error there and
+inventing a value silently would be worse than the 422. A field annotated
+`X | None` is untouched: `None` is a value it was given on purpose.
+
+**The other half was that the screen only ever said "Failed to save."**
+FastAPI's `detail` has three shapes and 184 call sites handled one:
+
+  1. `"a string"` — fine.
+  2. **`[{loc, msg, type}, …]` on a 422 — an ARRAY OF OBJECTS.** Truthy, so
+     `||` keeps it and the array goes into a React child. React error #31, the
+     same crash that replaced a whole tab earlier in this programme.
+  3. `{error, message, blocking}` — the document-validation shape.
+
+`frontend/src/lib/apiError.js` flattens all three to one readable line and
+always returns a string. Codemodded 184 sites across 90 files, restricted to the
+provably-safe `detail || <string literal>` shape; the 5 sites that read `detail`
+structurally were left alone, and 6 with non-literal fallbacks were done by
+hand. 9 unit tests cover every shape including "never returns a non-string".
+
+⚠ **`docErrors.js` had already made this argument** for PDF generation — "a
+toast reading 'Failed to generate PDF' tells the user nothing and leaves them
+clicking the button again; the useful message names the field and where to set
+it." It was true of every other refusal in the product too.
+
+### ⚠ The frontend suite was RED before this session started
+
+`npm run check` **does not run vitest**, so both had been red unnoticed.
+
+**`labelShape` had drifted 8 → 11.** `TabMembers.jsx` was converted, and four
+new leaks arrived behind it. Three were `{hi && <span lang="hi">…}` — a guard on
+the VALUE, not the language, so the Devanagari renders under English — in
+`CatalogTab.jsx:463`, `ModuleGrantEditor.jsx:53` and `SkillsTab.jsx:589`. The
+fourth was a hardcoded `कर्तव्य` in the Pay footer. All four now use
+`<Secondary>`, which returns `null` under EN so the node is ABSENT rather than
+hidden. **Baseline lowered 8 → 7**, and the drift is written into the comment so
+the next person sees that this number moved and why.
+
+**`sanvaadLegacyVocabulary`** wanted `wa__note` both inventoried and reasoned —
+the second assertion is the good one. It is the outbound fence's own row and
+deliberately not `.m2-msg--failed`: nothing failed, and "Not delivered" would
+send a person looking for a fault that is not there.
+
+**Vitest: 3153 passed across 191 files. `npm run check` 0. `npm run build` ok.
+1,470 backend billing tests green, and the new ratchet bites (5 failures when
+one model loses the base class).**

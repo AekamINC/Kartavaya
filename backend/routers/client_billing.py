@@ -13,7 +13,63 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+
+class _NullMeansUnset(BaseModel):
+    """`null` for an optional field means "not provided", not "type error".
+
+    ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+
+    Every create form on these screens sends `field: form.field || null`, which
+    is the ordinary JavaScript spelling of "the box is empty". The create models
+    give those fields a plain default — `notes: str = ""`, `rate: float = 0` —
+    and Pydantic refuses `None` against `str`. So an empty box is a **422**,
+    and the screen shows only "Failed to save".
+
+    ⚠ **`POST /v1/ganit/billing/rate-cards` refused EVERY rate card that had no
+    note.** Found by proposal 93 Suite 05 on 2026-08-29 — rate cards stood at
+    **0 of 3** while every other Ganit volume filled, and the person typing had
+    no way to learn that the empty Notes box was the cause.
+
+    It is not one field. Across the four create/update pairs in this file
+    **eighteen** fields are nullable on update and not on create — `notes`,
+    `item_category`, `rate`, `unit`, `proration_clause`, `metric`, `quantity`,
+    `description`, `amount`, `auto_invoice`, `billing_cycle`, `anchor_day`,
+    `payment_terms_days`, `currency`, `gst_treatment`. Blank accepted when you
+    EDIT a row and refused when you CREATE one is not a rule anybody could
+    guess, and widening eighteen annotations by hand leaves the nineteenth.
+
+    ── WHAT IT DOES ───────────────────────────────────────────────────────────
+
+    Drops `None` values before validation for any field that HAS a default, so
+    the default applies exactly as if the key had been omitted. A field with no
+    default — `vendor_id`, `period`, `client_id` — is untouched and still
+    required, because "not provided" is genuinely an error there and silently
+    inventing a value would be worse than the 422.
+
+    A field annotated `X | None` is also untouched: `None` is a legal value it
+    was given on purpose, and coercing it to the default would erase a
+    deliberate clear.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_nulls_that_have_defaults(cls, data):
+        if not isinstance(data, dict):
+            return data
+        out = None
+        for name, field in cls.model_fields.items():
+            if data.get(name, ...) is not None:
+                continue
+            if field.is_required():
+                continue  # no default to fall back on — a real 422
+            if type(None) in getattr(field.annotation, "__args__", ()):
+                continue  # `X | None`: None is a value, not an absence
+            if out is None:
+                out = dict(data)
+            out.pop(name, None)
+        return out if out is not None else data
 
 from auth_router import require_user
 from db import get_pool
@@ -164,7 +220,7 @@ _vendor_gate = require_any_module("ganit", "kray")
 
 # ── Pydantic models ──────────────────────────────────────────────────────
 
-class ProfileCreate(BaseModel):
+class ProfileCreate(_NullMeansUnset):
     client_id: str
     billing_cycle: str = "monthly"
     anchor_day: int = 1
@@ -185,7 +241,7 @@ class ProfileUpdate(BaseModel):
     notes: str | None = None
 
 
-class ServiceLineCreate(BaseModel):
+class ServiceLineCreate(_NullMeansUnset):
     profile_id: str
     kind: str = "retainer"
     description: str = ""
@@ -204,7 +260,7 @@ class ServiceLineUpdate(BaseModel):
     auto_invoice: bool | None = None
 
 
-class MeteredUsageCreate(BaseModel):
+class MeteredUsageCreate(_NullMeansUnset):
     profile_id: str
     metric: str = ""
     quantity: float = 0
@@ -228,7 +284,7 @@ class GenerateUsageInvoice(BaseModel):
     usage_ids: list[str] | None = None
 
 
-class RateCardCreate(BaseModel):
+class RateCardCreate(_NullMeansUnset):
     vendor_id: str
     item_category: str = ""
     rate: float = 0
@@ -249,7 +305,7 @@ class RateCardUpdate(BaseModel):
     notes: str | None = None
 
 
-class SLACreditCreate(BaseModel):
+class SLACreditCreate(_NullMeansUnset):
     vendor_id: str
     rate_card_id: str | None = None
     sla_metric: str = ""

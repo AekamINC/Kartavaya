@@ -11,6 +11,7 @@ import {
 } from '../admin/supportSessions';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabSupportAccess — the CUSTOMER's half of support access.
@@ -191,7 +192,7 @@ export default function TabSupportAccess() {
       setDecide(null);
       await load();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || 'That approval did not go through. Nothing was granted.');
+      toast.error(apiErrorText(e, 'That approval did not go through. Nothing was granted.'));
     } finally {
       setBusy(null);
     }
@@ -206,7 +207,7 @@ export default function TabSupportAccess() {
       setDecide(null); setDenyReason('');
       await load();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || 'That could not be recorded.');
+      toast.error(apiErrorText(e, 'That could not be recorded.'));
     } finally {
       setBusy(null);
     }
@@ -221,7 +222,7 @@ export default function TabSupportAccess() {
       toast.success(`${s.ref} revoked. Their access ended immediately.`);
       await load();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || 'Could not revoke that session.');
+      toast.error(apiErrorText(e, 'Could not revoke that session.'));
     } finally {
       setBusy(null);
       setConfirm(null);

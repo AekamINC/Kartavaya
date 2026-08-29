@@ -70,6 +70,7 @@ import { formatTime } from '../../lib/timeFormat';
 import { dayLabel, splitMentions } from './messageUtils';
 import { channelIcon, SvIcons } from './icons';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 /** `limit: int = Query(30, ge=1, le=100)`. */
 const PAGE = 30;
@@ -377,8 +378,7 @@ export default function MentionsPanel({
             title={errorKind(error) === 'denied' ? 'Mentions can’t be opened' : undefined}
             detail={errorKind(error) === 'offline'
               ? 'Mentions need a connection. Nothing has been lost — this reads what is already recorded, it does not change it.'
-              : (error?.response?.data?.detail
-                || 'Your mentions did not load. This is a read failure; no mention was cleared or removed.')}
+              : (apiErrorText(error, 'Your mentions did not load. This is a read failure; no mention was cleared or removed.'))}
           />
         )}
 

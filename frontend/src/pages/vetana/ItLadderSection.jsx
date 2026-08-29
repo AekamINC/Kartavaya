@@ -42,6 +42,7 @@ import DateInput from '../../components/ui/DateInput';
 import { Secondary } from '../../components/Bilingual';
 import { api } from '../../lib/api';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 const REGIMES = [
   { key: 'new', label: 'New regime', hi: 'नई व्यवस्था' },
@@ -110,7 +111,7 @@ export default function ItLadderSection() {
       setRows(r.data?.data ?? []);
       setResolved(r.data?.resolved ?? {});
     } catch (e) {
-      setError(e?.response?.data?.detail || 'The ladder could not be loaded.');
+      setError(apiErrorText(e, 'The ladder could not be loaded.'));
       setRows([]);
       setResolved({});
     }
@@ -164,7 +165,7 @@ export default function ItLadderSection() {
       setEditId(null);
       await load();
     } catch (e2) {
-      setError(e2?.response?.data?.detail || 'The band could not be saved.');
+      setError(apiErrorText(e2, 'The band could not be saved.'));
     } finally {
       setSaving(false);
     }
@@ -176,7 +177,7 @@ export default function ItLadderSection() {
       await api.delete(`/v1/vetana/it-slabs/${row.id}`);
       await load();
     } catch (e) {
-      setError(e?.response?.data?.detail || 'The band could not be removed.');
+      setError(apiErrorText(e, 'The band could not be removed.'));
     }
   }
 

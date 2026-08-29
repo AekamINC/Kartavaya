@@ -34,6 +34,7 @@ import {
  * their team can reach. The import travels with the component that needs it.
  */
 import '../../styles/org.css';
+import { Secondary } from '../../components/Bilingual';
 
 /** One module row: on/off, then at what level. */
 export function GrantRow({ mod, grant, levelsEditable = true, onToggle, onLevel }) {
@@ -50,7 +51,7 @@ export function GrantRow({ mod, grant, levelsEditable = true, onToggle, onLevel 
       />
       <span className="ogr__n">
         {mod.label}
-        <span className="ogr__hi" lang="hi">{mod.hi}</span>
+        <Secondary className="ogr__hi" value={mod.hi} />
         <span className="of__h"> {mod.en}</span>
       </span>
 

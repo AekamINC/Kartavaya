@@ -13,6 +13,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 export default function FollowUpsTab() {
   // F32 — the module is read from the route, never named here.
@@ -78,7 +79,7 @@ export default function FollowUpsTab() {
       setShowForm(false);
       setForm({ title: '', description: '', contact_id: '', deal_id: '', due_at: '', remind_at: '' });
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
   }
 

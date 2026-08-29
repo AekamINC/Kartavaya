@@ -33,6 +33,7 @@ import {
 } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * The catalogue's columns, declared once, in the order they shipped. ONE key
@@ -203,7 +204,7 @@ export default function ProductsTab() {
       setForm({ ...BLANK });
       load();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not create the product', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not create the product'), type: 'error' });
     } finally { setSaving(false); }
   }
 
@@ -229,7 +230,7 @@ export default function ProductsTab() {
       setEditId(null);
       load();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not update the product', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not update the product'), type: 'error' });
     } finally { setEditSaving(false); }
   }
 

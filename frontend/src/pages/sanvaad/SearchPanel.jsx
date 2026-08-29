@@ -68,6 +68,7 @@ import { useExitAnimation } from '../../hooks/useExitAnimation';
 import { formatTime } from '../../lib/timeFormat';
 import { dayLabel } from './messageUtils';
 import { channelIcon, SvIcons } from './icons';
+import { apiErrorText } from '../../lib/apiError';
 
 /** `q: str = Query(..., min_length=2, max_length=120)` — one character matches
  *  half the org and costs a round trip to prove it. */
@@ -407,8 +408,7 @@ export default function SearchPanel({
                for the rail. */
             detail={errorKind(error) === 'offline'
               ? 'Search needs a connection. Nothing has been lost — this reads history, it does not change it.'
-              : (error?.response?.data?.detail
-                || 'The search did not run. This is a read failure; no message was changed or removed.')}
+              : (apiErrorText(error, 'The search did not run. This is a read failure; no message was changed or removed.'))}
           />
         )}
 

@@ -29,6 +29,7 @@ import useBoardView from '../components/views/useBoardView';
 import { FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
 import NewTaskModal from '../components/NewTaskModal';
 import { Secondary } from '../components/Bilingual';
+import { apiErrorText } from '../lib/apiError';
 
 export default function BoardsPage() {
   const navigate  = useNavigate();
@@ -154,7 +155,7 @@ export default function BoardsPage() {
       setNewFieldName('');
       pushToast({ type: 'success', title: 'Field added' });
     } catch (e) {
-      pushToast({ type: 'error', title: 'Could not add field', message: e?.response?.data?.detail || e?.message });
+      pushToast({ type: 'error', title: 'Could not add field', message: apiErrorText(e, e?.message || '') });
     }
   };
 

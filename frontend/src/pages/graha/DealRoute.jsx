@@ -45,6 +45,7 @@ import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import CustomFieldInputs from './CustomFieldInputs';
+import { apiErrorText } from '../../lib/apiError';
 import {
   RotBadge, Badge, stageColor, dealsChanged, isRecordId, notFound,
 } from './_shared';
@@ -176,7 +177,7 @@ export default function DealRoute() {
       await load();
       dealsChanged();
     } catch (e2) {
-      pushToast({ title: e2.response?.data?.detail || 'Could not update deal', type: 'error' });
+      pushToast({ title: apiErrorText(e2, 'Could not update deal'), type: 'error' });
     } finally { setSaving(false); }
   }
 

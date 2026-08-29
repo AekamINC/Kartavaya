@@ -8,6 +8,7 @@ import { Secondary } from '../../components/Bilingual';
 import { formatDate, formatTime } from '../../lib/timeFormat';
 import { moduleByCode, moduleLabel } from './catalogue';
 import '../../styles/compliance.css';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabCompliance — the firm ticks what applies to it.
@@ -369,7 +370,7 @@ export default function TabCompliance() {
     } catch (err) {
       pushToast({
         type: 'error',
-        title: err?.response?.data?.detail || 'Could not save that setting',
+        title: apiErrorText(err, 'Could not save that setting'),
       });
     } finally { setSaving(false); }
   };

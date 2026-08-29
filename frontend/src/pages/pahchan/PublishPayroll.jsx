@@ -5,6 +5,7 @@ import { Section, DataTable, Td } from '../../components/editorial';
 import Note from '../../components/module/Note';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * Push attendance to payroll — `POST /api/v1/pahchan/attendance/publish`.
@@ -108,7 +109,7 @@ export default function PublishPayroll() {
       pushToast({
         type: 'error',
         title: dryRun ? 'Could not build the preview' : 'Nothing was published',
-        message: err.response?.data?.detail || 'Try again.',
+        message: apiErrorText(err, 'Try again.'),
       });
     } finally {
       setBusy(null);

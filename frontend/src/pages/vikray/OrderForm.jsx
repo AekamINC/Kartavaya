@@ -17,6 +17,7 @@ import DateInput from '../../components/ui/DateInput';
 // whole.
 import ServerPicker from '../../components/ui/ServerPicker';
 import { Picker } from '../../components/ui/Picker';
+import { apiErrorText } from '../../lib/apiError';
 
 export default function OrderForm({ onCreated, onCancel }) {
   // F32 — the module is read from the route, never named here.
@@ -271,7 +272,7 @@ export default function OrderForm({ onCreated, onCancel }) {
       pushToast({ title: `Order ${r.data.order_number} created`, type: 'success' });
       onCreated?.(r.data);
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Could not create the order', type: 'error' });
+      pushToast({ title: apiErrorText(err, 'Could not create the order'), type: 'error' });
     } finally { setSaving(false); }
   }
 

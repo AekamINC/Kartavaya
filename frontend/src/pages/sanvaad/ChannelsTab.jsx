@@ -56,6 +56,7 @@ import useSahayak from './useSahayak';
 import { ChatArt, SvIcons } from './icons';
 import useSanvaadAccess from './useSanvaadAccess';
 import usePresence from './usePresence';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * `PHONE` is IMPORTED, not declared here.
@@ -242,7 +243,7 @@ export default function ChannelsTab() {
       pushToast({ type: 'success', title: 'Channel created' });
       return r.data;
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to create channel' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to create channel') });
       return null;
     } finally {
       setCreating(false);
@@ -268,7 +269,7 @@ export default function ChannelsTab() {
       select(dm);
       return dm;
     } catch (e) {
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to open direct message' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Failed to open direct message') });
       return null;
     }
   };

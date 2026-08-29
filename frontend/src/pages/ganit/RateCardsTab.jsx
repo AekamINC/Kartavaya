@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const BLANK = {
   vendor_id: '', item_category: '', rate: '', unit: '',
@@ -71,7 +72,7 @@ export default function RateCardsTab() {
       setEditing(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to save'), type: 'error' });
     }
   }
 
@@ -85,7 +86,7 @@ export default function RateCardsTab() {
           pushToast({ title: 'Rate card deleted', type: 'success' });
           load();
         } catch (e) {
-          pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
+          pushToast({ title: apiErrorText(e, 'Failed to delete'), type: 'error' });
         }
       },
     });

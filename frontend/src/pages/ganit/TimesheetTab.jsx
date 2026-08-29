@@ -9,6 +9,7 @@ import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 export default function TimesheetTab() {
   // F32 — the module is read from the route, never named here.
@@ -51,7 +52,7 @@ export default function TimesheetTab() {
       setResult(data);
       pushToast({ title: `Invoice ${data.invoice_number} created`, type: 'success' });
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Could not generate the invoice', type: 'error' });
+      pushToast({ title: apiErrorText(err, 'Could not generate the invoice'), type: 'error' });
     } finally { setGenerating(false); }
   }
 

@@ -88,6 +88,7 @@ import { moduleEntry, orgModuleColor } from '../../org/catalogue';
 import useModuleWrite from '../../../hooks/useModuleWrite';
 import SkillDrawer, { SkillStatusPill } from '../../../components/skills/SkillDrawer';
 import ScheduleControl from './ScheduleControl';
+import { Secondary } from '../../../components/Bilingual';
 
 /* `CATEGORY_MODULE` MOVED TO ./_shared on 2026-08-20, unchanged. The org-side
    catalogue groups by module now and needs the same fallback map; two copies
@@ -460,7 +461,7 @@ function Shelf({
           four named kinds, and has no Devanagari pair. */}
       <h3 className="mkt-sec">
         {title}
-        {hi && <span className="mkt-sec__hi" lang="hi"> {hi}</span>}
+        <Secondary className="mkt-sec__hi" value={hi}>{(s) => ` ${s}`}</Secondary>
         <span className="mkt-sec__c">{packs.length}</span>
         <small className="mkt-sec__n">{note}</small>
       </h3>

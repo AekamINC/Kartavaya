@@ -48,6 +48,7 @@
 import { cloneElement, createElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, body } from '../lib/api';
 import { useToastMaybe } from '../components/ui/toast';
+import { apiErrorText } from '../lib/apiError';
 
 /* One GET for the whole app. `cache` is the landed answer, `inflight` the
    promise while it is out — four tables mounting in the same tick share the
@@ -473,7 +474,7 @@ export default function useColumnPrefs(tableKey, baseColumns, options = {}) {
         title: !forTeam ? 'Could not save your columns'
           : orgFailed ? 'Could not save — neither your columns nor the team default'
             : 'Saved the team default, but not your own columns',
-        message: e?.response?.data?.detail || 'Please try again.',
+        message: apiErrorText(e, 'Please try again.'),
       });
       return false;
     }
@@ -605,7 +606,7 @@ export default function useColumnPrefs(tableKey, baseColumns, options = {}) {
       pushToast({
         type: 'error',
         title: 'Could not reset your columns',
-        message: e?.response?.data?.detail || 'Please try again.',
+        message: apiErrorText(e, 'Please try again.'),
       });
       return false;
     }

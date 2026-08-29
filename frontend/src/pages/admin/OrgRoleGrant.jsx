@@ -26,6 +26,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, Field, Select } from '../../components/ui';
+import { apiErrorText } from '../../lib/apiError';
 
 /** Sentence case from a role code, for a server that sends codes and not labels. */
 function roleLabel(code) {
@@ -97,7 +98,7 @@ export default function OrgRoleGrant({ orgId, orgName, members = [], canAct = tr
       // The endpoint's refusals are written to be read by a person — it names
       // the rule and the door that IS open — so it is shown rather than
       // replaced with a generic failure.
-      pushToast?.({ type: 'error', title: e?.response?.data?.detail || 'That did not go through' });
+      pushToast?.({ type: 'error', title: apiErrorText(e, 'That did not go through') });
     } finally {
       setBusy(false);
     }

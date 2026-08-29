@@ -27,6 +27,7 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import DateInput from '../../components/ui/DateInput';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 const BLANK_RULE = {
   name: '', min_amount: 0, department: '', category: '',
@@ -120,7 +121,7 @@ export default function POSettingsPanel({ onClose }) {
         });
       } else {
         pushToast({
-          title: e2.response?.data?.detail || 'Nothing was saved',
+          title: apiErrorText(e2, 'Nothing was saved'),
           type: 'error',
         });
       }

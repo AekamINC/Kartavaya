@@ -33,6 +33,7 @@ import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
 import CustomFieldInputs from './CustomFieldInputs';
+import { apiErrorText } from '../../lib/apiError';
 
 /** Tomorrow, 09:00, in the `YYYY-MM-DDTHH:mm` DateInput hands back. Assembled
  *  by hand rather than through `toISOString()`, which is UTC and moves an IST
@@ -249,7 +250,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
       setShowForm(false);
       setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '' });
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -261,7 +262,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
     } catch (e) {
       // A 503 here names the migration that has not been applied. Say so —
       // "could not archive" is not something the reader can act on.
-      pushToast({ title: e.response?.data?.detail || 'Could not archive deal', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not archive deal'), type: 'error' });
     }
   }
 
@@ -323,7 +324,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
       pushToast({
         title: e.response?.status === 403
           ? 'This organisation does not have the Sales module'
-          : e.response?.data?.detail || 'Could not create the sales order',
+          : apiErrorText(e, 'Could not create the sales order'),
         type: 'error',
       });
     }
@@ -339,7 +340,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
         pushToast({ title: `Draft invoice ${b.invoice_number} created`, type: 'success' });
       }
       navigate('/ganit');
-    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Failed to create invoice', type: 'error' }); }
+    } catch (e) { pushToast({ title: apiErrorText(e, 'Failed to create invoice'), type: 'error' }); }
   }
 
   /* `startEditDeal` and `saveNote` lived here and PATCHed from the list. They
@@ -376,7 +377,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
       setFu(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not schedule the follow-up', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not schedule the follow-up'), type: 'error' });
     }
     finally { setFuSaving(false); }
   }

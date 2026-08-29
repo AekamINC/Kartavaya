@@ -39,6 +39,7 @@ import { HeadCell } from '../../components/ui/Table';
 import { CreatedCell, ByCell, CREATED_KEY } from '../../components/ui/CreatedColumn';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
 import { ColumnsButton } from '../../components/ui/CustomizeColumns';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * What this log HAS, declared once, in the order it shipped.
@@ -130,7 +131,7 @@ export default function ActivitiesTab() {
       setShowForm(false);
       setForm({ activity_type: 'note', title: '', description: '', deal_id: '', contact_id: '' });
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
   }
 

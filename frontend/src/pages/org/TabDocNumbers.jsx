@@ -25,6 +25,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList } from '../../components/ui/Skeleton';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 const LABELS = {
   tax_invoice: 'Tax invoice',
@@ -85,7 +86,7 @@ export default function TabDocNumbers() {
       });
       await load();
     } catch (e) {
-      pushToast({ kind: 'err', message: e?.response?.data?.detail || 'Could not save.' });
+      pushToast({ kind: 'err', message: apiErrorText(e, 'Could not save.') });
     } finally {
       setSaving(false);
     }

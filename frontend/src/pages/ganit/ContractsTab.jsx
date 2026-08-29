@@ -10,6 +10,7 @@ import { inr } from '../../lib/inr';
 import ContractDetail from './ContractDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 const BLANK = {
@@ -66,7 +67,7 @@ export default function ContractsTab() {
       setForm({ ...BLANK });
       load();
     } catch (err2) {
-      pushToast({ title: err2.response?.data?.detail || 'Could not create the contract', type: 'error' });
+      pushToast({ title: apiErrorText(err2, 'Could not create the contract'), type: 'error' });
     } finally { setSaving(false); }
   }
 

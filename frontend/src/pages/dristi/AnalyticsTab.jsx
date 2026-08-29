@@ -37,6 +37,7 @@ import WindowBar from './WindowBar';
 import ViewGrid, { AddWidget, Downloads } from './ViewGrid';
 import { normalizeLayout, placeAtBottom } from './boardEngine';
 import AlertsPanel from './AlertsPanel';
+import { apiErrorText } from '../../lib/apiError';
 
 // periodLabel moved to _shared — ViewGrid's trends read the same formatter,
 // so the board and these bespoke cards cannot drift apart on axis labels.
@@ -495,7 +496,7 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
             loading: false,
             err: e.response?.status === 403
               ? 'You do not have access to analytics.'
-              : (e.response?.data?.detail || 'Retry, or check your connection.'),
+              : (apiErrorText(e, 'Retry, or check your connection.')),
             byKey: null,
             absent: [],
           });

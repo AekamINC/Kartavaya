@@ -31,6 +31,7 @@ import { Secondary } from '../../components/Bilingual';
 import { api } from '../../lib/api';
 import { GST_STATES } from '../../lib/validators';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 /** The same statutory codelist the invoice form and the employee form use.
  *  Not a second copy — a free-text state is a state nothing can join on. */
@@ -75,7 +76,7 @@ export default function PtLadderSection() {
       const r = await api.get('/v1/vetana/pt-slabs');
       setRows(r.data?.data ?? []);
     } catch (e) {
-      setError(e?.response?.data?.detail || 'The ladder could not be loaded.');
+      setError(apiErrorText(e, 'The ladder could not be loaded.'));
       setRows([]);
     }
   }
@@ -126,7 +127,7 @@ export default function PtLadderSection() {
       setEditId(null);
       await load();
     } catch (e2) {
-      setError(e2?.response?.data?.detail || 'The band could not be saved.');
+      setError(apiErrorText(e2, 'The band could not be saved.'));
     } finally {
       setSaving(false);
     }
@@ -138,7 +139,7 @@ export default function PtLadderSection() {
       await api.delete(`/v1/vetana/pt-slabs/${row.id}`);
       await load();
     } catch (e) {
-      setError(e?.response?.data?.detail || 'The band could not be removed.');
+      setError(apiErrorText(e, 'The band could not be removed.'));
     }
   }
 

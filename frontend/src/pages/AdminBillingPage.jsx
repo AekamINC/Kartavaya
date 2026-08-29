@@ -76,6 +76,7 @@ import '../styles/admin.css';
 import { Secondary } from '../components/Bilingual';
 import useColumnPrefs from '../hooks/useColumnPrefs';
 import { ColumnsButton } from '../components/ui/CustomizeColumns';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * The two record lists on this console, declared once each — the floor a saved
@@ -228,7 +229,7 @@ export default function AdminBillingPage() {
       pushToast({ type: 'success', title: `${org?.name || 'Organisation'} moved to ${planForm.plan_code}` });
       await refresh();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not change the plan' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not change the plan') });
     } finally { setBusy(''); }
   });
 
@@ -243,7 +244,7 @@ export default function AdminBillingPage() {
       pushToast({ type: 'success', title: `Periods now start on day ${day}` });
       await refresh();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not change the billing anchor' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not change the billing anchor') });
     } finally { setBusy(''); }
   });
 
@@ -264,7 +265,7 @@ export default function AdminBillingPage() {
       });
       await refresh();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || `Could not ${action} the subscription` });
+      pushToast({ type: 'error', title: apiErrorText(e, `Could not ${action} the subscription`) });
     } finally { setBusy(''); }
   });
 
@@ -275,7 +276,7 @@ export default function AdminBillingPage() {
       pushToast({ type: 'success', title: `${code} ${on ? 'deactivated' : 'activated'}` });
       await refresh();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Module change failed' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Module change failed') });
     } finally { setBusy(''); }
   });
 
@@ -297,7 +298,7 @@ export default function AdminBillingPage() {
          right: there is no invoice to say anything about. */
       return res.data;
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not create the invoice' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not create the invoice') });
     } finally { setBusy(''); }
   });
 
@@ -315,7 +316,7 @@ export default function AdminBillingPage() {
       setPayTarget(null);
       await refresh();
     } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not record the payment' });
+      pushToast({ type: 'error', title: apiErrorText(e, 'Could not record the payment') });
     } finally { setBusy(''); }
   };
 

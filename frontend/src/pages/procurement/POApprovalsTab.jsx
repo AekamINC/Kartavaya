@@ -21,6 +21,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
 import PurchaseOrderDetail from './PurchaseOrderDetail';
+import { apiErrorText } from '../../lib/apiError';
 
 const QUEUE_COLUMNS = [
   'Order', 'Supplier', 'Rule',
@@ -97,7 +98,7 @@ export default function POApprovalsTab() {
       await loadReports();
     } catch (e) {
       pushToast({
-        title: e.response?.data?.detail || 'That decision could not be recorded',
+        title: apiErrorText(e, 'That decision could not be recorded'),
         type: 'error',
       });
     } finally { setBusyId(null); }

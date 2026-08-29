@@ -48,6 +48,7 @@ import { relTime } from '../../lib/utils';
 import { channelIcon, SvIcons } from './icons';
 import { toneStyle } from './channelTone';
 import { Secondary } from '../../components/Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * One conversation row.
@@ -485,8 +486,7 @@ export default function ChannelList({
                that would not have helped. */
             detail={errorKind(error) === 'offline'
               ? 'Your channels need a connection to load. Nothing has been lost — messages sent while you were away are waiting.'
-              : (error?.response?.data?.detail
-                || 'Your channel list did not load. This is a read failure; no channel or message was removed.')}
+              : (apiErrorText(error, 'Your channel list did not load. This is a read failure; no channel or message was removed.'))}
             onRetry={onRetry}
           />
         )}

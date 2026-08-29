@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/modal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const BLANK = {
   profile_id: '', metric: '', quantity: '', unit: '', rate: '',
@@ -78,7 +79,7 @@ export default function MeteredUsageTab() {
       setEditing(null);
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to save', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to save'), type: 'error' });
     }
   }
 
@@ -92,7 +93,7 @@ export default function MeteredUsageTab() {
           pushToast({ title: 'Usage entry deleted', type: 'success' });
           load();
         } catch (e) {
-          pushToast({ title: e.response?.data?.detail || 'Failed to delete', type: 'error' });
+          pushToast({ title: apiErrorText(e, 'Failed to delete'), type: 'error' });
         }
       },
     });
@@ -107,7 +108,7 @@ export default function MeteredUsageTab() {
       pushToast({ title: `Invoice created: ${res.entries} entries, ${inr(res.total)}`, type: 'success' });
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to generate invoice', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Failed to generate invoice'), type: 'error' });
     }
     setGenerating(null);
   }

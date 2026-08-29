@@ -26,6 +26,7 @@
 import React, { useState } from 'react';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
+import { apiErrorText } from '../../../lib/apiError';
 
 /* Mirrors `services/skills/schedule.py:describe`. Duplicated deliberately: this
    renders before any request is made, so the person sees the consequence of the
@@ -130,7 +131,7 @@ export default function ScheduleControl({ template, canManage, onChanged }) {
       pushToast({
         type: 'error',
         title: 'Could not set the schedule',
-        message: e?.response?.data?.detail || 'Try again.',
+        message: apiErrorText(e, 'Try again.'),
       });
     } finally { setBusy(false); }
   }

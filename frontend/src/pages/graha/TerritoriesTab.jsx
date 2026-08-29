@@ -12,6 +12,7 @@ import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import TerritoryMap from '../../components/TerritoryMap';
 import PinAreaPopover from '../../components/PinAreaPopover';
+import { apiErrorText } from '../../lib/apiError';
 
 /** How many pincodes a list row names before it stops and counts the rest. */
 const PIN_CHIPS = 12;
@@ -119,7 +120,7 @@ export default function TerritoriesTab() {
       pushToast({ title: editingId ? 'Territory updated' : 'Territory created', type: 'success' });
       closeForm();
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
   }
 
   async function routeAll() {
@@ -142,7 +143,7 @@ export default function TerritoriesTab() {
       pushToast({ title: `${body(r).count} contact(s) filed`, type: 'success' });
       load();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Could not route contacts', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not route contacts'), type: 'error' });
     } finally { setRouting(false); }
   }
 

@@ -12,6 +12,7 @@ import CardGhost from './CardGhost';
 import TaskDrawer from '../TaskDrawer';
 import { useToast, ConfirmDialog, EmptyState, Menu } from '../ui';
 import { Secondary } from '../Bilingual';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * KanbanView — columns, drag, and the drawer (04-boards-table-views.md §5).
@@ -197,7 +198,7 @@ export default function KanbanView({
           onColumnsChange?.(prev => prev.filter(c => c.column_id !== col.column_id));
           pushToast({ type: 'success', title: `"${col.name}" deleted` });
         } catch (e) {
-          pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not delete column' });
+          pushToast({ type: 'error', title: apiErrorText(e, 'Could not delete column') });
         }
       },
     });

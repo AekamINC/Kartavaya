@@ -34,6 +34,7 @@ import Button from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonCardGrid } from '../components/ui/Skeleton';
+import { apiErrorText } from '../lib/apiError';
 
 const BLANK = {
   name: '', slug: '', industry: '', website: '',
@@ -78,7 +79,7 @@ export default function HubClientsPage() {
       setForm(BLANK);
       load();
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Failed to create client', type: 'error' });
+      pushToast({ title: apiErrorText(err, 'Failed to create client'), type: 'error' });
     } finally {
       setSaving(false);
     }

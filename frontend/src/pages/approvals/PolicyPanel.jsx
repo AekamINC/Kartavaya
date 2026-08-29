@@ -7,6 +7,7 @@ import { SkeletonText } from '../../components/ui/Skeleton';
 import { Toggle } from '../../components/ui/Toggle';
 import { useToast } from '../../components/ui/toast';
 import { GATED_STATUS } from './transitions';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * WHICH PROJECTS REQUIRE AN APPROVER BEFORE WORK IS MARKED DONE.
@@ -77,7 +78,7 @@ export default function PolicyPanel() {
       pushToast({
         type: 'error',
         title: 'Could not change the setting',
-        message: e?.response?.data?.detail || 'Nothing was changed. Try again.',
+        message: apiErrorText(e, 'Nothing was changed. Try again.'),
       });
     } finally {
       setSaving(s => { const n = { ...s }; delete n[teamId]; return n; });

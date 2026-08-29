@@ -23,6 +23,7 @@ import RestrictedNote from '../../components/module/RestrictedNote';
 import { Panel, FMT, NUM, downloadCSV } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 const MEASURES = [['count', 'Count'], ['sum', 'Sum'], ['avg', 'Average']];
 
@@ -61,7 +62,7 @@ export default function PivotTab() {
       })
       .catch(e => {
         if (e.response?.status === 403) setRestricted(true);
-        else setMetaErr(e.response?.data?.detail || 'The query vocabulary did not load.');
+        else setMetaErr(apiErrorText(e, 'The query vocabulary did not load.'));
       });
   }, []);
 
@@ -87,7 +88,7 @@ export default function PivotTab() {
       setResult(r.data);
     } catch (e) {
       setResult(null);
-      setErr(e.response?.data?.detail || 'The query failed.');
+      setErr(apiErrorText(e, 'The query failed.'));
     }
     setRunning(false);
   }

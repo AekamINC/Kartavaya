@@ -5,6 +5,7 @@ import {
 } from '../../components/ui';
 import { DataTable, Td } from '../../components/editorial';
 import { formatBytes, formatDate, relSigned } from '../../components/documents';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabRecycleBin — the customer's own two-stage bin. Proposal 93 · B.
@@ -193,7 +194,7 @@ export default function TabRecycleBin() {
         // The server's own sentence. 409 means the task or the client record
         // this file belonged to is gone, and "could not restore" does not tell
         // the reader that; the detail does.
-        title: e?.response?.data?.detail || 'Could not restore that file',
+        title: apiErrorText(e, 'Could not restore that file'),
       });
     }
   };
@@ -219,7 +220,7 @@ export default function TabRecycleBin() {
         type: 'error',
         // 502 here is "the object could not be deleted from storage", which is
         // a different problem from "not found" and sends a person elsewhere.
-        title: e?.response?.data?.detail || 'Could not delete that file',
+        title: apiErrorText(e, 'Could not delete that file'),
       });
     }
   };

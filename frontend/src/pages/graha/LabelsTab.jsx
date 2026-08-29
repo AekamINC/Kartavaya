@@ -10,6 +10,7 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { apiErrorText } from '../../lib/apiError';
 
 // The one literal in this module that stays a literal. A label colour is USER
 // DATA: it is persisted to the DB and fed to <input type="color">, which accepts
@@ -55,7 +56,7 @@ export default function LabelsTab() {
       setShowForm(false);
       setForm({ name: '', color: DEFAULT_LABEL_COLOR });
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -83,7 +84,7 @@ export default function LabelsTab() {
       pushToast({ title: 'Label assigned', type: 'success' });
       setShowAssign(false);
       setAssignForm({ contact_id: '', label_id: '' });
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
   }
 
   return (

@@ -8,6 +8,7 @@ import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
 import Sites from './Sites';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * Attendance policy — geofence, flag thresholds, retention and reports.
@@ -183,7 +184,7 @@ export default function PahchanPolicy() {
       pushToast({
         type: 'error',
         title: 'Could not save the policy',
-        message: err.response?.data?.detail || 'Try again.',
+        message: apiErrorText(err, 'Try again.'),
       });
     } finally {
       setSaving(false);

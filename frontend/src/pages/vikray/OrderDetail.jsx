@@ -38,6 +38,7 @@ import {
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
 import AddressBlock, { addressLines } from '../../components/ui/AddressBlock';
+import { apiErrorText } from '../../lib/apiError';
 
 export default function OrderDetail({ orderId, onClose, onChanged }) {
   // F32 — the module is read from the route, never named here.
@@ -102,7 +103,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
       onChanged?.();
       return true;
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || `Could not ${label}`, type: 'error' });
+      pushToast({ title: apiErrorText(e, `Could not ${label}`), type: 'error' });
       return false;
     } finally { setBusy(''); }
   }
@@ -140,7 +141,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
       await load();
       onChanged?.();
     } catch (e2) {
-      pushToast({ title: e2.response?.data?.detail || 'Could not update the order', type: 'error' });
+      pushToast({ title: apiErrorText(e2, 'Could not update the order'), type: 'error' });
     } finally { setSaving(false); }
   }
 

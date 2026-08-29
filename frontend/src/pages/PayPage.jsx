@@ -42,6 +42,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { inr } from '../lib/inr';
 import '../styles/pay.css';
+import { Secondary } from '../components/Bilingual';
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL;
 
@@ -369,7 +370,7 @@ export default function PayPage() {
       )}
 
       <footer className="pay__foot">
-        कर्तव्य · Kartavaya <span>by Aekam Inc</span>
+        <Secondary value="कर्तव्य">{(s) => `${s} · `}</Secondary>Kartavaya <span>by Aekam Inc</span>
       </footer>
     </main>
   );

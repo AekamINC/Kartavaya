@@ -4,6 +4,7 @@ import { Button, ErrorState, SkeletonCard, useToast } from '../../components/ui'
 import { validateGSTIN, validatePAN, validateTAN, validateIFSC, panFromGSTIN } from '../../lib/validators';
 import { oversizeMessage } from '../../lib/uploadLimits';
 import LogoUpload from './LogoUpload';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * TabProfile — the company identity that every printed document is built from.
@@ -159,7 +160,7 @@ export default function TabProfile() {
       pushToast({
         type: 'error',
         title: 'Logo upload failed',
-        message: err?.response?.data?.detail || undefined,
+        message: apiErrorText(err, '') || undefined,
       });
     } finally { setUploading(false); }
   };
@@ -237,7 +238,7 @@ export default function TabProfile() {
           : undefined,
       });
     } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to save profile' });
+      pushToast({ type: 'error', title: apiErrorText(err, 'Failed to save profile') });
     } finally { setSaving(false); }
   };
 

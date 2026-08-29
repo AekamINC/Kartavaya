@@ -5,6 +5,7 @@ import { ErrorState, Button, Input, useToast } from '../components/ui';
 import { api } from '../lib/api';
 
 import '../styles/connectors.css';
+import { apiErrorText } from '../lib/apiError';
 
 /**
  * ConnectorsPage — every network on one page, each with its own form.
@@ -128,7 +129,7 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
     } catch (e) {
       // The server's sentence, not ours. It is the one that names which field
       // is still empty, and a generic "Could not save" would throw that away.
-      pushToast({ title: e?.response?.data?.detail || 'Could not save', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not save'), type: 'error' });
     } finally { setBusy(''); }
   };
 
@@ -141,7 +142,7 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
       pushToast({ title: r.data?.detail || '', type: r.data?.ok ? 'success' : 'error' });
       await onSaved();
     } catch (e) {
-      pushToast({ title: e?.response?.data?.detail || 'Could not test', type: 'error' });
+      pushToast({ title: apiErrorText(e, 'Could not test'), type: 'error' });
     } finally { setBusy(''); }
   };
 
@@ -348,7 +349,7 @@ export default function ConnectorsPage() {
     } catch (e) {
       setState({
         loading: false,
-        error: e?.response?.data?.detail || 'Could not load the connectors.',
+        error: apiErrorText(e, 'Could not load the connectors.'),
         data: null,
       });
     }

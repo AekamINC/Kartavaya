@@ -17,6 +17,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { CUSTOM_FIELD_ENTITIES } from './CustomFieldInputs';
+import { apiErrorText } from '../../lib/apiError';
 
 const FIELD_TYPES = ['text', 'number', 'date', 'select', 'checkbox', 'url', 'email', 'phone'];
 
@@ -51,7 +52,7 @@ export default function CustomFieldsTab() {
       pushToast({ title: 'Field created', type: 'success' });
       setShowForm(false);
       load();
-    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
   }
 
   async function remove(id) {

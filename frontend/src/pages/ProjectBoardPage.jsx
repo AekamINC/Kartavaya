@@ -58,6 +58,7 @@ import {
 
 import { Secondary } from '../components/Bilingual';
 import DateInput from '../components/ui/DateInput';
+import { apiErrorText } from '../lib/apiError';
 
 /** Month to date — the window a status report is usually asked for. */
 function monthToDate(today = new Date()) {
@@ -152,7 +153,7 @@ export default function ProjectBoardPage() {
       setNewFieldName('');
       pushToast({ type: 'success', title: 'Field added' });
     } catch (e) {
-      pushToast({ type: 'error', title: 'Could not add field', message: e?.response?.data?.detail || e?.message });
+      pushToast({ type: 'error', title: 'Could not add field', message: apiErrorText(e, e?.message || '') });
     }
   };
 
