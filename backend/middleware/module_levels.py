@@ -185,10 +185,26 @@ def require_level(module_code: str, required: str):
             # Until PROPOSED_074 is applied there is nowhere to record an
             # approver, so enforcing it would lock everyone out. Fall back to
             # the access these roles have today and say so in the log.
+            #
+            # ⚠ "the access these roles have today" MEANS THE ORDINARY LADDER,
+            # and until 2026-08-29 this did not. The platform check below was
+            # `if await _platform_role(...)` — truthiness alone, with
+            # can_reach_module never consulted — while `held_level` at the top
+            # of this file gates on exactly that. So the fallback was STRICTLY
+            # MORE PERMISSIVE than the path it stands in for, and admitted every
+            # code in PLATFORM_ROLE_PRECEDENCE to release payroll and void
+            # invoices: `sahayak_admin`, which role_tiers says has "no business
+            # in a customer's CRM", and `platform_support`, which "currently
+            # gets nothing", among them.
+            #
+            # That was not a decision anyone took; it was one missing clause.
+            # The docstring above states the rule this now actually keeps:
+            # Aekam support must never be able to release a customer's money.
             if not await approver_table_available(pool):
                 if await _org_role(pool, user_id, org_id):
                     return
-                if await _platform_role(pool, user_id):
+                platform_role = await _platform_role(pool, user_id)
+                if platform_role and can_reach_module(platform_role, module_code):
                     return
                 raise HTTPException(
                     403,

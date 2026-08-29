@@ -68,6 +68,8 @@ fixture-scope `except Exception: pytest.skip(...)` for this file to hide behind.
 
 import pytest
 
+from middleware.role_tiers import can_reach_module
+
 from middleware import module_levels
 from middleware.module_levels import require_level, reset_approver_table_cache
 from middleware.role_tiers import (
@@ -291,59 +293,83 @@ async def test_absent_a_plain_member_is_still_refused(guard, module):
 
 @pytest.mark.parametrize("module", SEPARATED)
 @pytest.mark.parametrize("platform_role", list(PLATFORM_ROLE_PRECEDENCE))
-async def test_absent_THE_BLAST_RADIUS_platform_staff_are_admitted(
+async def test_absent_platform_staff_are_admitted_only_within_module_reach(
     guard, module, platform_role,
 ):
-    """⚠ THE COST OF THE FALLBACK, WRITTEN DOWN.
+    """The fallback is now exactly as wide as the ladder it stands in for.
 
-    While `org_module_approvers` does not exist, `require_level(..., approver)`
-    admits ANY holder of ANY platform role to approve a payroll run or void a
-    customer's tax invoice — the exact thing the function's docstring says must
-    never be possible. There is no explicit grant, no audit row naming an
-    approver, and no log line: the branch simply returns.
+    ⚠ IT WAS NOT, UNTIL 2026-08-29. This test previously asserted the opposite
+    and was named THE_BLAST_RADIUS: the fallback tested `_platform_role(...)`
+    for truthiness alone, so ANY platform role could approve a payroll run or
+    void a tax invoice — including `sahayak_admin`, which role_tiers says has
+    "no business in a customer's CRM", and `platform_support`, which "currently
+    gets nothing". `held_level()` had always gated on `can_reach_module()`; the
+    fallback simply omitted the clause.
 
-    This is the live state of the product today. It is not a defect this test
-    endorses; it is the reason PROPOSED_074 is worth applying, stated as a
-    failing-capable assertion instead of as a comment.
+    Kept parametrised over every code in PLATFORM_ROLE_PRECEDENCE, so a role
+    added later is covered on the day it is added rather than the day someone
+    remembers. `vetana` admits platform_owner and platform_admin; `ganit` also
+    admits platform_manager; every other code is refused by both.
 
-    WHEN PROPOSED_074 LANDS this test stops describing reality and Part 1's
-    `test_present_platform_staff_is_refused_including_god_mode` takes over.
+    This still does NOT assert the full separation rule — that needs
+    PROPOSED_074 and an explicit approver grant. It asserts the narrower thing
+    that is true today: the fallback is not a hole that is wider than the door.
     """
     pool = RecordingPool(approver_table=False, org_role=None, platform_role=platform_role)
-    await guard(pool)(module, APPROVER)          # no raise: ADMITTED
+    reachable = can_reach_module(platform_role, module)
+
+    if reachable:
+        await guard(pool)(module, APPROVER)      # admitted, same as the ladder
+    else:
+        with pytest.raises(Exception) as exc:
+            await guard(pool)(module, APPROVER)
+        assert exc.value.status_code == 403, (
+            f"{platform_role!r} cannot reach {module!r} per role_tiers, so the "
+            "fallback must refuse it exactly as held_level() would. It did not."
+        )
+
     assert pool.asked("org_id IS NULL") == 1, (
-        "The admission must have come from the platform-role probe; if it did "
+        "The decision must have come from the platform-role probe; if it did "
         f"not, this test is asserting the wrong thing. Statements: {pool.seen!r}"
     )
 
 
 @pytest.mark.parametrize("module", SEPARATED)
-async def test_absent_the_fallback_is_wider_than_module_reach_itself(guard, module):
-    """The blast radius is wider than "platform staff", and this is the sharpest
-    statement of it.
+async def test_absent_the_fallback_is_no_wider_than_module_reach(guard, module):
+    """The regression test for the hole this file was written to expose.
 
-    The fallback tests `_platform_role(...)` for TRUTHINESS ONLY. It never asks
-    `can_reach_module()`. So a role that `role_tiers` says may not enter the
-    module AT ALL is nevertheless admitted to approve inside it:
+    ⚠ UNTIL 2026-08-29 THIS ASSERTED THE OPPOSITE, and was named
+    `..._is_wider_than_module_reach_itself`. The fallback tested
+    `_platform_role(...)` for TRUTHINESS ONLY and never asked
+    `can_reach_module()`, so a role role_tiers says may not enter the module AT
+    ALL was admitted to approve inside it:
 
       · `sahayak_admin` — role_tiers: "Authors Sahayak skills, and nothing else…
         they have no business in a customer's CRM, sales pipeline or analytics."
       · `platform_support` — role_tiers: "NOT yet implemented … a holder of this
         role currently gets nothing."
 
-    Both are members of `PLATFORM_ROLE_PRECEDENCE`, which is the list
-    `_platform_role`'s `role_code = ANY($2)` matches against, so both come back
-    truthy and both are let through. Compare `held_level()` on the non-separated
-    path, which DOES consult `can_reach_module` — the fallback is strictly more
-    permissive than the ordinary ladder it stands in for.
+    Both are in `PLATFORM_ROLE_PRECEDENCE`, the list `_platform_role`'s
+    `role_code = ANY($2)` matches, so both came back truthy and both were let
+    through. `held_level()` on the non-separated path had always consulted
+    `can_reach_module`; the fallback simply omitted the clause.
+
+    The clause is now there, and this test is what stops it being dropped again.
     """
     for role in ("sahayak_admin", "platform_support"):
         assert not can_reach_module(role, module), (
-            f"Premise changed: role_tiers now lets {role} reach {module}, so "
-            "this test is no longer describing an over-admission."
+            f"Premise changed: role_tiers now lets {role} reach {module}. This "
+            "test no longer guards what it claims to — re-point it at a role "
+            "that still cannot reach the module, rather than deleting it."
         )
         pool = RecordingPool(approver_table=False, platform_role=role)
-        await guard(pool)(module, APPROVER)      # no raise: ADMITTED ANYWAY
+        with pytest.raises(Exception) as exc:
+            await guard(pool)(module, APPROVER)
+        assert exc.value.status_code == 403, (
+            f"{role!r} cannot reach {module!r}, so the approver fallback must "
+            "refuse it exactly as the ordinary ladder would. This is the "
+            "regression that let Aekam support release a customer's money."
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -358,13 +384,17 @@ async def test_the_absent_answer_is_cached_for_the_life_of_the_process(guard):
     so the migration's cutover is a deploy, not a transaction, and seeding
     approver rows inside the migration does not close the window.
     """
-    absent = RecordingPool(approver_table=False, platform_role="platform_staff")
+    # `platform_admin`, not `platform_staff`: since 2026-08-29 the fallback also
+    # gates on can_reach_module, and `platform_staff` cannot reach vetana — it
+    # would be refused before ever reaching the caching behaviour under test.
+    # This test is about the LATCH, so it needs a role the reach gate admits.
+    absent = RecordingPool(approver_table=False, platform_role="platform_admin")
     await guard(absent)("vetana", APPROVER)      # admitted via the fallback
     assert absent.asked("to_regclass") == 1
 
     # PROPOSED_074 is applied. Same process, same worker, table now present and
     # this caller holds no approver row.
-    present = RecordingPool(approver_table=True, platform_role="platform_staff",
+    present = RecordingPool(approver_table=True, platform_role="platform_admin",
                             approver_row=None)
     try:
         await guard(present)("vetana", APPROVER)     # STILL ADMITTED
