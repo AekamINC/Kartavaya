@@ -111,7 +111,7 @@ async def _support_sessions(pool, user_id: str) -> list[dict]:
     are the ones most worth showing.
     """
     exists = await pool.fetchval(
-        "SELECT to_regclass('staging.platform_support_sessions')"
+        "SELECT to_regclass('platform_support_sessions')"
     )
     if not exists:
         return []

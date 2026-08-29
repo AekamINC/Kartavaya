@@ -3221,7 +3221,7 @@ async def bank_formats_ready(pool) -> bool:
         return False
     ok = await pool.fetchval(
         "SELECT 1 FROM information_schema.tables "
-        "WHERE table_schema='staging' AND table_name='ganit_bank_formats'")
+        "WHERE table_schema = ANY(current_schemas(false)) AND table_name='ganit_bank_formats'")
     if ok:
         _bank_formats_ready["yes"] = True
         return True

@@ -366,7 +366,7 @@ async def _seed_data(conn):
 
     # Check if organisations table exists before seeding
     has_orgs = await conn.fetchval(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='staging' AND table_name='organisations'"
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false)) AND table_name='organisations'"
     )
     if has_orgs:
         await conn.execute("""
@@ -419,7 +419,7 @@ async def _seed_data(conn):
 
     # Seed user_roles (RBAC)
     has_roles = await conn.fetchval(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='staging' AND table_name='user_roles'"
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false)) AND table_name='user_roles'"
     )
     if has_roles:
         for role in ("platform_admin", "org_admin"):
@@ -432,7 +432,7 @@ async def _seed_data(conn):
 
     # Seed plans
     has_plans = await conn.fetchval(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='staging' AND table_name='plans'"
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false)) AND table_name='plans'"
     )
     if has_plans:
         await conn.execute("""
@@ -448,7 +448,7 @@ async def _seed_data(conn):
 
     # Seed subscription
     has_subs = await conn.fetchval(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='staging' AND table_name='subscriptions'"
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false)) AND table_name='subscriptions'"
     )
     if has_subs:
         plan_id = await conn.fetchval("SELECT id FROM staging.plans WHERE code='professional' LIMIT 1")

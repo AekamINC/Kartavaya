@@ -1016,10 +1016,86 @@ async def _deliver_scheduled_report(pool, report) -> int:
         html_doc = await _asyncio.to_thread(
             render_report_html, org, label, period_line, widgets)
 
-        # `send_email` is sync (it threads internally) and it is the single
-        # choke point that honours OUTBOUND_MODE, `_safe_subject` and
-        # `outbound_log` — going through it is what keeps dry runs dry.
-        from email_service import send_email
+        # ── THE REPORT NOW TRAVELS AS AN ENCRYPTED PDF ────────────────────
+        #
+        # It used to travel as the EMAIL BODY. `render_report_html`'s docstring
+        # said so — "report.send mails it as the body … and the HTML **is** the
+        # report" — so a firm's turnover, receivables and who-sold-what sat
+        # unencrypted in every mailbox the schedule named, for ever. The owner's
+        # instruction (2026-08-29) was "report email needs to be in pdf as this
+        # email is not secure", and, told that a plain PDF in a mailbox is no
+        # more private than a body, chose PASSWORD-PROTECTED PDF.
+        #
+        # Every decision below — encrypt or not, attach or link, and why — lives
+        # in `services/report_delivery`, deliberately: it is a PURE function
+        # over (pdf, note, passphrase, limit), so the branch that matters most
+        # ("too large, do not send") is reachable in a unit test without a
+        # database, a mail server or a 7 MB fixture.
+        from email_service import FRONTEND_URL
+        from services import report_delivery as rd
+
+        passphrase = await rd.load_passphrase(pool, org_id)
+
+        # WeasyPrint or nothing. `render_pdf` raises RuntimeError when the
+        # native stack is missing — which is a real host condition, not a
+        # hypothetical — and a dead schedule is the outcome the link fallback
+        # exists to avoid, so this degrades rather than raising.
+        def _pdf() -> bytes | None:
+            from services.doc_render import render_pdf
+            try:
+                return render_pdf(html_doc)
+            except Exception as exc:                    # noqa: BLE001
+                log.warning("Dristi report %s: PDF render failed (%s) — "
+                            "falling back to the link shape",
+                            report_id, type(exc).__name__)
+                return None
+
+        pdf_bytes = await _asyncio.to_thread(_pdf)
+
+        # ⚠ The note is built BEFORE the decision only in the sense that the
+        # decision needs its size. `decide()` measures the whole message —
+        # base64'd PDF plus the note plus the modelled MIME framing — against
+        # the ceiling, because the limit SES and every receiving server applies
+        # is to the message, not to the file. A first pass with an empty note
+        # would understate it.
+        note_probe = rd.covering_note(
+            org=org, report_name=report["name"], label=label,
+            period_line=period_line,
+            delivery=rd.Delivery(rd.MODE_ENCRYPTED_PDF, None, "", 0),
+            frontend_url=FRONTEND_URL, skipped_recipients=skipped)
+        delivery = rd.decide(pdf_bytes, note_probe, passphrase)
+
+        # The real note, which on a link branch carries the REASON — so a
+        # recipient who gets no attachment is told why in the mail rather than
+        # left to wonder whether the report is broken.
+        html_body = rd.covering_note(
+            org=org, report_name=report["name"], label=label,
+            period_line=period_line, delivery=delivery,
+            frontend_url=FRONTEND_URL, skipped_recipients=skipped)
+
+        # ⚠ `_safe_subject`, WHICH THIS CALL SITE DID NOT APPLY. The comment
+        # that used to sit here claimed `send_email` "honours OUTBOUND_MODE,
+        # `_safe_subject` and `outbound_log`". It honours two of those three:
+        # `send_email` assigns `mime["Subject"] = subject` untouched and every
+        # other caller in `email_service.py` sanitises for itself. A schedule's
+        # `name` is customer free text. Measured rather than assumed: Python's
+        # email package REFUSES to serialise a header containing a newline
+        # (`HeaderParseError`), so this was never SMTP header injection — it was
+        # a crash inside the sending thread that would file the report 'failed'
+        # and deliver nothing. Latent, and now closed.
+        from email_service import _safe_subject
+        subject = _safe_subject(f"{report['name']} — {label} report")
+
+        # WHICH SHAPE WENT OUT, ON THE OUTBOUND ROW ITSELF. `outbound_log`
+        # stores the whole `ref` in `detail.ref` (200 chars) and derives
+        # `purpose` from the head before the first colon — so appending the
+        # mode keeps `purpose='report'` exactly as before while making the row
+        # answer "was this an encrypted attachment or a bare link?". Without it
+        # the two branches are indistinguishable in the one table that is
+        # evidence of a send, which is the definition of a silent downgrade.
+        # `bytes` on the same row carries the true encoded size, because
+        # `send_pdf_email` measures through `_metered_bytes`.
+        ref = f"report:{report_id}:{delivery.mode}"
 
         # Scoped per report, not once around the sweep's loop. This helper is
         # called in a loop that walks EVERY org, so a scope set once outside it
@@ -1033,27 +1109,66 @@ async def _deliver_scheduled_report(pool, report) -> int:
 
         with org_scope(org_id):
             for recipient in members:
-                send_email(
-                    to_email=recipient,
-                    subject=f"{report['name']} — {label} report",
-                    html_content=html_doc,
-                    # 098 asks for the 'unclassified' bucket to be watched
-                    # falling; this sender was in it. It is also what tells
-                    # `services/email_senders.py` to send from the
-                    # notifications address rather than the default one.
-                    purpose="report",
-                    ref=f"report:{report_id}",
-                )
+                if delivery.attaches:
+                    # `send_pdf_email`, not a fifth hand-rolled MIME document.
+                    # Its own docstring records why: the two senders that each
+                    # grew their own attachment branch each missed the
+                    # `OUTBOUND_MODE=dry` guard, and staging shares production's
+                    # SES identity — so a report run mailed real reports to real
+                    # people. It also base64s through `encoders.encode_base64`,
+                    # which wraps at 76 characters; an unwrapped attachment is
+                    # the OTHER cause of a 552, and
+                    # `tests/test_pdf_attachments_are_line_wrapped.py` holds it.
+                    from services.pdf_email import send_pdf_email
 
+                    send_pdf_email(
+                        to_email=recipient,
+                        subject=subject,
+                        html_content=html_body,
+                        pdf_bytes=delivery.pdf,
+                        filename=rd.filename(label, win.start.isoformat(),
+                                             win.end.isoformat()),
+                        purpose="report",
+                        ref=ref,
+                        label="Scheduled report",
+                    )
+                else:
+                    # No figures leave the building on this branch — the body
+                    # is a covering note and a link behind login. That is
+                    # strictly less disclosure than the code this replaced,
+                    # which mailed the whole report either way.
+                    from email_service import send_email
+
+                    send_email(
+                        to_email=recipient,
+                        subject=subject,
+                        html_content=html_body,
+                        # 098 asks for the 'unclassified' bucket to be watched
+                        # falling; this sender was in it. It is also what tells
+                        # `services/email_senders.py` to send from the
+                        # notifications address rather than the default one.
+                        purpose="report",
+                        ref=ref,
+                    )
+
+        # WHAT ACTUALLY HAPPENED, ON THE ROW. `send_email` and `send_pdf_email`
+        # both hand off to a thread, so neither return value is evidence of
+        # anything — `staging.outbound_log` is. This row is the second record,
+        # and it now says WHICH SHAPE went out: a 'sent' row that does not
+        # distinguish an encrypted attachment from a bare link is the silent
+        # downgrade this design was chosen to avoid.
+        #
         # `org_id` on the log row was never populated, so every delivery record
         # this table holds is org-NULL and the per-org log view cannot find it.
+        detail = f"delivery={delivery.mode}; {delivery.reason}"
+        if skipped:
+            detail = (f"{skipped} recipient(s) skipped — not members of this "
+                      f"org. {detail}")
         await pool.execute(
             "INSERT INTO staging.dristi_report_logs "
             "(scheduled_report_id, org_id, status, recipients_count, error) "
             "VALUES ($1::uuid, $2::uuid, 'sent', $3, $4)",
-            report_id, org_id, len(members),
-            (f"{skipped} recipient(s) skipped — not members of this org"
-             if skipped else None),
+            report_id, org_id, len(members), detail,
         )
         await pool.execute(
             "UPDATE staging.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",

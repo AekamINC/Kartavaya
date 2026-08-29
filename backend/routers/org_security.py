@@ -205,7 +205,7 @@ async def _storage_ready(pool) -> bool:
     if _table_present:
         return True
     _table_present = bool(
-        await pool.fetchval("SELECT to_regclass('staging.org_security')")
+        await pool.fetchval("SELECT to_regclass('org_security')")
     )
     return _table_present
 

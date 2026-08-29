@@ -187,7 +187,7 @@ async def _available_columns(pool) -> frozenset[str]:
         return _columns_present
     rows = await pool.fetch(
         "SELECT column_name FROM information_schema.columns "
-        "WHERE table_schema='staging' AND table_name='organisations' "
+        "WHERE table_schema = ANY(current_schemas(false)) AND table_name='organisations' "
         "AND column_name = ANY($1::text[])",
         list(_PENDING_COLUMNS),
     )
@@ -880,7 +880,7 @@ async def _senders_table_exists(pool) -> bool:
     if _senders_table:
         return True
     row = await pool.fetchrow(
-        "SELECT to_regclass('staging.org_email_senders') IS NOT NULL AS ok"
+        "SELECT to_regclass('org_email_senders') IS NOT NULL AS ok"
     )
     _senders_table = bool(row and row["ok"])
     return _senders_table
@@ -1133,7 +1133,7 @@ async def _upi_table_exists(pool) -> bool:
     if _upi_table:
         return True
     row = await pool.fetchrow(
-        "SELECT to_regclass('staging.org_upi_accounts') IS NOT NULL AS ok"
+        "SELECT to_regclass('org_upi_accounts') IS NOT NULL AS ok"
     )
     _upi_table = bool(row and row["ok"])
     return _upi_table
@@ -1388,6 +1388,174 @@ async def put_doc_prefixes(
         "note": (
             "Documents already issued keep their numbers. The next document of "
             "each changed type starts a new series at 0001."
+        ),
+    }
+
+
+class ReportPassphraseUpdate(BaseModel):
+    #: The plaintext the recipient will type into their PDF reader. An empty
+    #: string CLEARS it, which is a real choice and not the same as omitting a
+    #: field: cleared means "stop attaching reports", and the dispatcher then
+    #: sends the link shape and says so.
+    passphrase: str
+
+
+#: The one place the two sentences about who may READ and who may WRITE this
+#: value are written down, so a future edit cannot widen one by copying the
+#: other's decorator.
+#:
+#: BOTH are `ORG_SETTINGS_ROLES` — org_admin and org_owner. The read is gated
+#: as tightly as the write DELIBERATELY, and the trade is worth stating because
+#: it is visible to customers:
+#:
+#: `middleware/role_tiers.REPORT_RECIPIENT_ROLES` is `org_owner, org_admin,
+#: org_member, hr_admin` — so an `org_member` or an `hr_admin` can be ON a
+#: schedule's recipient list, receive the encrypted PDF, and NOT be able to read
+#: the passphrase in the product. They have to be told by an admin.
+#:
+#: That is deliberate and it is the conservative half of a genuine trade. The
+#: argument for widening it is good: a member who can log in and holds the
+#: module grant can already open the report on screen, so showing them the
+#: passphrase gives them nothing new. The argument against is that an
+#: `org_member` does NOT necessarily hold the ganit or graha grant — module
+#: access is a per-member grant, not a role — so a member without the finance
+#: module could read the passphrase and then open a finance PDF that reached
+#: them some other way. Narrow now, widen on request; the reverse is a
+#: regression for whoever came to rely on it.
+_PASSPHRASE_ROLES = ORG_SETTINGS_ROLES
+
+
+@router.get("/report-passphrase")
+async def get_report_passphrase(
+    user=Depends(require_org_role(*_PASSPHRASE_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """This org's report passphrase, IN PLAINTEXT, for an administrator to read.
+
+    ⚠ IT RETURNS THE VALUE, AND THAT IS THE WHOLE POINT. This is a document
+    passphrase, not a login credential: the server has to hold the plaintext in
+    order to encrypt with it, so it cannot be hashed, and an administrator who
+    cannot read it back has no way to tell anybody what it is. "Forgot it" is
+    therefore answered by looking at this screen, not by a reset flow — for an
+    administrator. For everybody else the answer is "ask an administrator",
+    which is stated on the screen rather than left to be discovered.
+
+    ROTATING IT DOES NOT RE-KEY DOCUMENTS ALREADY SENT. A PDF sitting in a
+    mailbox was encrypted with the passphrase that was current when it was
+    mailed and still opens with that one. The screen says so; a customer who
+    assumed otherwise would think they had revoked access they had not.
+
+    `settings` is NOT in `_PROFILE_COLUMNS`, so this value has never been part
+    of `GET /api/v1/org/profile` and is not reachable through the support-
+    operator surface `middleware/org_resolver.py` documents. Keeping it off that
+    tuple is load-bearing, not incidental.
+    """
+    from services.report_delivery import load_passphrase
+
+    pool = await get_pool()
+    value = await load_passphrase(pool, org_id)
+    return {
+        "passphrase": value,
+        "is_set": bool(value),
+        "note": (
+            "Recipients need this to open the report PDF. It is never included "
+            "in the email — a passphrase sent beside the document it protects "
+            "protects nothing. Tell recipients out of band. Changing it does "
+            "not change reports already delivered; those still open with the "
+            "passphrase that was set when they were sent."
+        ),
+    }
+
+
+@router.put("/report-passphrase")
+async def put_report_passphrase(
+    body: ReportPassphraseUpdate,
+    user=Depends(require_org_role(*_PASSPHRASE_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """Set or clear the passphrase scheduled report PDFs are encrypted with.
+
+    Stored ENCRYPTED AT REST through `services/encryption` (Fernet), in
+    `settings->'reports'->>'passphrase'` — a jsonb key rather than a column, for
+    the reason `services/purchase_orders.py` already states about
+    `settings->'purchase_orders'`: code ships on merge and migrations are
+    applied by hand afterwards, so a column that does not exist yet 500s the
+    whole screen for the gap between. It also means this feature needs no
+    migration at all.
+
+    ⚠ THE VALUE IS NEVER LOGGED — not here, not in `report_delivery`, and not in
+    the audit row. `resource_id` is the org, and the action says that a
+    passphrase changed, never what it changed to.
+
+    An EMPTY string clears it, and clearing is a supported choice rather than an
+    error: an org that clears it goes back to receiving a link instead of an
+    attachment, and the dispatcher says so in the mail.
+    """
+    from services import encryption
+    from services.report_delivery import (PASSPHRASE_FIELD, SETTINGS_KEY,
+                                          passphrase_problem)
+
+    pool = await get_pool()
+    raw = body.passphrase or ""
+
+    if raw == "":
+        stored = None
+    else:
+        problem = passphrase_problem(raw)
+        if problem:
+            # The sentence, not a code — it is shown to the person typing.
+            # "Nothing was saved" mirrors `put_doc_prefixes`, because a 400
+            # that leaves the reader unsure whether a partial write landed is
+            # the thing that makes people press Save twice.
+            raise HTTPException(400, f"{problem} Nothing was saved.")
+        stored = encryption.encrypt(raw)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # `jsonb_build_object` over the whole `reports` key, merged into
+            # `settings` with `||` — the same shape `put_doc_prefixes` uses one
+            # function up, so the two cannot drift about how a settings key is
+            # written. `COALESCE(settings, '{}')` because the column is
+            # nullable even though it defaults to '{}': a row inserted with an
+            # explicit NULL would otherwise make `||` return NULL and erase
+            # every other setting the org holds.
+            current = await conn.fetchval(
+                "SELECT COALESCE(settings->$2::text, '{}'::jsonb) "
+                "  FROM staging.organisations WHERE id = $1::uuid",
+                org_id, SETTINGS_KEY)
+            merged = {}
+            if current:
+                try:
+                    merged = (json.loads(current) if isinstance(current, str)
+                              else dict(current))
+                except Exception:
+                    merged = {}
+            if stored is None:
+                merged.pop(PASSPHRASE_FIELD, None)
+            else:
+                merged[PASSPHRASE_FIELD] = stored
+
+            updated = await conn.fetchval(
+                "UPDATE staging.organisations "
+                "   SET settings = COALESCE(settings, '{}'::jsonb) "
+                "                  || jsonb_build_object($2::text, $3::jsonb) "
+                " WHERE id = $1::uuid "
+                " RETURNING id",
+                org_id, SETTINGS_KEY, json.dumps(merged))
+
+    if not updated:
+        raise HTTPException(404, "Organisation not found. Nothing was saved.")
+
+    log.info("report passphrase %s for org=%s by=%s",
+             "cleared" if stored is None else "set", org_id, user["user_id"])
+    return {
+        "status": "saved",
+        "is_set": stored is not None,
+        "note": (
+            "Reports already delivered keep the passphrase they were sent with."
+            if stored is not None else
+            "Cleared. Scheduled reports will now arrive as a link to open in "
+            "Kartavaya rather than as an attachment, and the email says so."
         ),
     }
 

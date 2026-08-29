@@ -1642,7 +1642,7 @@ async def _skill_requests_ready(pool) -> bool:
     if _skill_requests_table:
         return True
     row = await pool.fetchrow(
-        "SELECT to_regclass('staging.hub_skill_requests') IS NOT NULL AS ok"
+        "SELECT to_regclass('hub_skill_requests') IS NOT NULL AS ok"
     )
     _skill_requests_table = bool(row and row["ok"])
     return _skill_requests_table

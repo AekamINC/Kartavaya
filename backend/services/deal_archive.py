@@ -53,7 +53,7 @@ async def archive_ready(pool) -> bool:
         return False
     ok = await pool.fetchval(
         "SELECT 1 FROM information_schema.columns "
-        "WHERE table_schema='staging' AND table_name='graha_deals' "
+        "WHERE table_schema = ANY(current_schemas(false)) AND table_name='graha_deals' "
         "  AND column_name='archived_at'")
     if ok:
         _ready["yes"] = True

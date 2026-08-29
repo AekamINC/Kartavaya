@@ -247,9 +247,9 @@ _PARITY_RECHECK_SECONDS: float = 60.0
 #: The mentions table is the relation half; `search_tsv` is the generated-column
 #: half, and a column cannot be seen by `to_regclass`.
 _PARITY_PROBE_SQL = """
-    SELECT to_regclass('staging.samvada_mentions') IS NOT NULL
+    SELECT to_regclass('samvada_mentions') IS NOT NULL
        AND EXISTS (SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'staging'
+                    WHERE table_schema = ANY(current_schemas(false))
                       AND table_name = 'samvada_messages'
                       AND column_name = 'search_tsv')
 """
@@ -361,7 +361,7 @@ _COLOUR_RECHECK_AFTER: float = 0.0
 #: through `information_schema.columns` the way 093's generated-column half does.
 _COLOUR_PROBE_SQL = """
     SELECT EXISTS (SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'staging'
+                    WHERE table_schema = ANY(current_schemas(false))
                       AND table_name = 'samvada_channels'
                       AND column_name = 'color')
 """

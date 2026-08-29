@@ -146,6 +146,42 @@ async def member_recipients(pool, org_id: str, addresses) -> tuple[list, int]:
     return members, len(wanted) - len(members)
 
 
+def _preset_entry_belongs(entry: dict, module: str) -> bool:
+    """Does this PRESET entry belong on `module`'s page — widget or section?
+
+    ⚠ THE SAME BUG THAT WAS FIXED AT THE ROUTER AND LEFT HERE. `report_entry`'s
+    docstring records it: `routers/analytics.py` used to read `w["metric"]` off
+    every layout entry, and a SECTION ({"report": ...}) has no `metric` key, so
+    a layout holding one raised KeyError there — on the json, csv, xlsx AND pdf
+    branches. That was fixed at the router. This function still did
+    `w["metric"] in REGISTRY` unconditionally, so the moment a preset carried a
+    section, `module_arrangement` would raise KeyError instead — inside a report
+    a cron mails, where nobody sees the traceback.
+
+    It was latent only because no preset held a section. `analytics/presets.py`
+    now holds two, so it is not latent any more and this is why they can be
+    there at all.
+
+    Discrimination is `is_section`'s, not a second copy of the test: a section
+    names `report`, a widget names `metric`, and an entry naming both is refused
+    at save time. A section belongs to the module its `ReportDef` declares —
+    read from the registry rather than parsed out of the key, because the key's
+    prefix is a convention the dataclass enforces and the module is the fact.
+    """
+    if is_section(entry):
+        from services.report_defs import REPORT_DEFS, load_all
+
+        load_all()
+        d = REPORT_DEFS.get(entry.get("report"))
+        # A retired key is DROPPED from a preset rather than rendered as a
+        # stated absence: a preset is our own code, so a dangling key there is
+        # our mistake and not a fact about this org worth printing on its page.
+        return d is not None and d.module == module
+
+    key = entry.get("metric")
+    return key in REGISTRY and REGISTRY[key].module == module
+
+
 async def module_arrangement(pool, user_id, org_id: str, module: str) -> tuple[list, str]:
     """The arrangement the module page shows, resolved server-side.
 
@@ -181,9 +217,7 @@ async def module_arrangement(pool, user_id, org_id: str, module: str) -> tuple[l
     for key, p in PRESETS.items():
         if module not in p.get("modules", ()):
             continue
-        layout = [w for w in p["layout"]
-                  if w["metric"] in REGISTRY
-                  and REGISTRY[w["metric"]].module == module]
+        layout = [w for w in p["layout"] if _preset_entry_belongs(w, module)]
         if layout:
             # A preset with nothing left after the cut is skipped, not
             # served as a husk.

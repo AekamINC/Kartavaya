@@ -481,7 +481,7 @@ async def check_upi_reference_threading(
     # for it rather than assuming it. The same caution is right here: a skill
     # that 500s on an older schema takes a whole scheduled run down with it.
     probe = await pool.fetchrow(
-        "SELECT to_regclass('staging.org_upi_accounts') IS NOT NULL AS ok"
+        "SELECT to_regclass('org_upi_accounts') IS NOT NULL AS ok"
     )
     has_upi_table = bool(probe and probe["ok"])
 
@@ -1047,7 +1047,7 @@ async def check_narration_rule_candidates(
         """
         SELECT column_name
         FROM information_schema.columns
-        WHERE table_schema = 'staging'
+        WHERE table_schema = ANY(current_schemas(false))
           AND table_name = 'ganit_bank_statement_lines'
         """
     )

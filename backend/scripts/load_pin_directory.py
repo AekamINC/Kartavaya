@@ -155,7 +155,7 @@ async def main() -> int:
     conn = await asyncpg.connect(dsn, statement_cache_size=0)
     try:
         exists = await conn.fetchval(
-            "SELECT to_regclass('staging.pin_directory') IS NOT NULL")
+            "SELECT to_regclass('pin_directory') IS NOT NULL")
         if not exists:
             print(_table_missing_message(), file=sys.stderr)
             return 5

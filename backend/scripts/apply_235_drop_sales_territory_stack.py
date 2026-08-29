@@ -68,20 +68,20 @@ async def _state(conn) -> dict:
         "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
         "JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE NOT t.tgisinternal AND t.tgname = 'trg_stg_deal_close_target' "
-        "AND n.nspname = 'staging' AND c.relname = 'crm_deals'")
+        "AND n.nspname = ANY(current_schemas(false)) AND c.relname = 'crm_deals'")
     out["function"] = await conn.fetchval(
         "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
-        "ON n.oid = p.pronamespace WHERE n.nspname = 'staging' "
+        "ON n.oid = p.pronamespace WHERE n.nspname = ANY(current_schemas(false)) "
         "AND p.proname = 'sales_update_target_on_deal_close'")
     # Must SURVIVE: shared by 27 triggers across the schema.
     out["touch_updated_at"] = await conn.fetchval(
         "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
-        "ON n.oid = p.pronamespace WHERE n.nspname = 'staging' "
+        "ON n.oid = p.pronamespace WHERE n.nspname = ANY(current_schemas(false)) "
         "AND p.proname = 'touch_updated_at'")
     out["crm_deals"] = await conn.fetchval(
         "SELECT count(*) FROM staging.crm_deals") \
         if await conn.fetchval(
-            "SELECT to_regclass('staging.crm_deals') IS NOT NULL") else None
+            "SELECT to_regclass('crm_deals') IS NOT NULL") else None
     return out
 
 
