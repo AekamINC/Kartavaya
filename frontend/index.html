@@ -61,18 +61,27 @@
          UI (not a logo on a gradient) at /og-kartavaya.png and uncomment:
          <meta property="og:image" content="/og-kartavaya.png" /> -->
     <meta name="author" content="Aekam Inc" />
-    <!-- `kartavya-`, one 'a'. The BRAND is Kartavaya and the domain is
-         kartavaya.com, but the Railway SERVICE is named `kartavya-production`
-         and a hostname is not a place to correct spelling. Both hints pointed
-         at `Kartavaya-production...`, which does not resolve — so they cost a
-         DNS lookup and bought nothing. `vercel.json`'s connect-src does not
-         admit that host either, which is the second signal it was never real.
-         It is now SUBSTITUTED rather than written out. Hardcoding the
-         production host meant every staging build opened a connection to
-         production's backend — a host that build never calls — while the one it
-         does call, `kartavya-staging`, got no hint at all. Vite replaces
+    <!-- These preconnect hints are SUBSTITUTED, never written out, and the
+         reason is now doubly proven.
+
+         First: hardcoding the production host meant every staging build opened
+         a connection to production's backend — a host that build never calls —
+         while the one it does call got no hint at all. Vite replaces
          `%VITE_BACKEND_URL%` at build time, so each environment preconnects to
-         its own API and the two can never drift apart again. -->
+         its own API and the two cannot drift apart.
+
+         Second, and the sharper lesson: on 2026-08-29 the Railway service was
+         renamed `Kartavya` → `Kartavaya`, which moved BOTH generated hostnames
+         at once. `kartavya-*.up.railway.app` (one 'a') is now a dead 404 with
+         no redirect; `kartavaya-*.up.railway.app` is the live pair. An earlier
+         version of this very comment asserted the opposite — that the
+         one-'a' spelling was the real service and the two-'a' one "does not
+         resolve" — and it was true when written. A hostname written into
+         source is a fact with an expiry date. This one expired and took
+         staging down with it: the bundle bakes `VITE_BACKEND_URL` at BUILD
+         time, so the site kept serving a dead host until a fresh commit forced
+         a rebuild. Substitution is what keeps the rename a config change
+         instead of a 78-occurrence sweep across 58 files. -->
     <link rel="preconnect" href="%VITE_BACKEND_URL%" crossorigin />
     <link rel="dns-prefetch" href="%VITE_BACKEND_URL%" />
 
