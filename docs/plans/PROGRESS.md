@@ -5532,3 +5532,82 @@ is read at request time and a build-only value is invisible to `env`.
   runs the other way, staging writing into `public`. Owed: the five-section risk
   report before anything is merged.
 - **Nothing deployed, no DNS touched, no repo transferred.** All owner actions.
+
+## 2026-08-29 · `_headers` had four defects, not one — and my own gate was blind
+
+The hash was the first. Extending the gate to compare the two policies properly
+found three more, each of which would have landed on cutover day.
+
+### The three the hash check could not see
+
+| defect | consequence on the first Pages deploy |
+|---|---|
+| `Permissions-Policy: camera=()` where `vercel.json` says `camera=(self)` | **the exact Pahchan defect fixed in `d47adafc` this morning** — the attendance camera switched off again, on Cloudflare only, hours after being fixed on Vercel |
+| every Mappls host absent from `script-src`, `style-src`, `style-src-elem`, `connect-src` | territory maps do not draw |
+| `worker-src 'self' blob:` absent entirely | workers blocked |
+
+### And a fourth, which was a wrong belief rather than a wrong value
+
+`_headers` carried this comment: *"Cloudflare applies the LAST matching rule per
+header, so the catch-all comes first and the specific caches override after."*
+
+**False.** Cloudflare's own documentation, read 2026-08-29 and stated twice on
+the page, with a worked example (`X-Robots-Tag: nosnippet, noindex`):
+
+> If a header is applied twice in the `_headers` file, the values are joined
+> with a comma separator.
+
+So `/assets/*` would have served
+`no-cache, no-store, must-revalidate, public, max-age=31536000, immutable` and
+**re-downloaded the entire hashed asset bundle on every load, for ever.** The
+fix is the DETACH syntax the same page documents — `! Cache-Control` — and
+`/index.html` and `/sw.js` no longer restate a value identical to the
+catch-all's, which would have joined it to itself.
+
+### The file is now GENERATED from `vercel.json`
+
+Not hand-maintained. It was hand-written once and drifted in four ways
+simultaneously, none of them visible to any gate. The CSP is copied verbatim and
+exactly two host swaps are applied (the Vercel→Cloudflare analytics pair). The
+gate compares the two policies **directive by directive**, applies the same two
+swaps to the Vercel side, and fails on anything left over.
+
+### ⚠ THE GATE ITSELF WAS GREEN AND BLIND, TWICE, AND BOTH ARE WORTH RECORDING
+
+**First:** the extraction was a regex over the raw file text, and it matched the
+explanatory comment written above the fix it was checking — `_headers`
+documents `camera=()` as the defect it used to carry. Same failure as the test
+this repo already shipped that matched its own comment. Now `vercel.json` is
+`JSON.parse`d and `_headers` has its `#` lines stripped before anything matches.
+
+**Second, and worse:** the regex was built in a **template literal** carrying
+`\s`. In a template literal `\s` collapses to a bare `s`, so the pattern read
+`^s+Content-Security-Policy:s*(.+)$`, matched nothing, and returned null — and
+every comparison below then SKIPPED. **Three mutations were run against that
+version — `camera=()`, Mappls deleted, `worker-src` deleted — and all three came
+back GREEN.** The mutation proof is the only reason this was caught.
+
+So the gate now treats **an unreadable policy as a failure, never a pass**, and
+says so. This is the repository's most-repeated defect, not a one-off:
+`check-rendered-ids` reported "596 components, no id drawn on screen" on a tree
+Suite 20 found three client UUIDs painted in; `check-table-rows` reported "13
+table classes, all on var(--row-h)" with eleven screens off the token.
+
+### Proof — six mutations, six red
+
+| mutated | caught by |
+|---|---|
+| `camera=(self)` → `camera=()` | Permissions-Policy comparison |
+| Mappls hosts removed from `script-src` | directive comparison, naming both hosts |
+| `worker-src` removed | directive comparison |
+| the `! Cache-Control` detach line removed | the join rule |
+| the original wrong hash restored | hash check, 3 problems |
+| the CSP line deleted outright | **the anti-vacuity guard** — "could not read the _headers CSP" |
+
+⚠ A seventh attempt was **vacuous and is recorded as such**: a `sed` with a
+`0,/script-src/` range did not modify the file, and the resulting "pass" was the
+mutation failing, not the gate. Re-run with a uniqueness-checked anchor, it went
+red naming both missing hosts. A mutation that does not apply is a false green
+in the proof itself.
+
+`npm run check` 16 gates exit 0; `npm run build` exit 0.

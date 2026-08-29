@@ -1,33 +1,66 @@
 # Cloudflare Pages headers — the _headers half of docs/CLOUDFLARE-MIGRATION.md W2.
 #
-# INERT ON VERCEL. Vite copies public/* into dist/ verbatim and Vercel ignores
-# a file named _headers, so this ships ahead of the cutover at zero risk. It
+# INERT ON VERCEL. Vite copies public/* into dist/ verbatim and Vercel ignores a
+# file named _headers, so this ships ahead of the cutover at zero risk. It
 # becomes live the moment a Pages project serves this build.
 #
-# Mirrors frontend/vercel.json with exactly three deliberate differences:
-#   1. staging.kartavya.com corrected to staging.kartavaya.com (the misspelling
-#      allowed a domain nobody owns and omitted the one we do).
-#   2. va.vercel-scripts.com / vitals.vercel-insights.com swapped for the
-#      Cloudflare Web Analytics pair — PAIRED WITH the S3 code swap in
-#      src/index.jsx (inject() -> beacon); do not land one without the other.
-#   3. Order inverted: Cloudflare applies the LAST matching rule per header,
-#      so the catch-all comes first and the specific caches override after.
+# ── GENERATED FROM vercel.json, NOT HAND-WRITTEN ────────────────────────────
+#
+# It was hand-written once and drifted immediately, in four ways at once, all
+# of them invisible to every gate. Rebuilt 2026-08-29 by copying vercel.json's
+# CSP verbatim and applying exactly the two host swaps below.
+# `scripts/check-csp-hash.mjs` now enforces that: it compares the two policies
+# directive by directive and fails on any difference that is not a declared
+# swap. Edit vercel.json and re-run it; do not edit this policy by hand.
+#
+# THE ONLY DELIBERATE DIFFERENCES:
+#   1. va.vercel-scripts.com   -> static.cloudflareinsights.com  (script-src)
+#   2. vitals.vercel-insights  -> cloudflareinsights.com          (connect-src)
+#      Both PAIRED WITH the analytics swap in src/index.jsx (inject() -> beacon);
+#      do not land one without the other.
+#
+# ── WHAT THE HAND-WRITTEN VERSION GOT WRONG, so it is not repeated ──────────
+#
+#   a. The CSP allowed sha256-4pEVfX…, which matched NO script in index.html —
+#      not drift, wrong on the day it was written. The first Pages deploy would
+#      have silently refused the pre-paint bootstrap.
+#   b. `Permissions-Policy: camera=()` — the EXACT Pahchan defect fixed in
+#      d47adafc this morning. It would have switched the attendance camera off
+#      again, on Cloudflare only, hours after being fixed on Vercel.
+#   c. Every Mappls host was missing from script-src, style-src, style-src-elem
+#      and connect-src, and `worker-src 'self' blob:` was absent entirely — so
+#      territory maps would have been dead and workers blocked.
+#   d. THE CACHE RULE WAS BACKWARDS. This file used to say "Cloudflare applies
+#      the LAST matching rule per header, so the catch-all comes first and the
+#      specific caches override after." That is FALSE. Cloudflare's own docs,
+#      read 2026-08-29: "If a header is applied twice in the `_headers` file,
+#      the values are joined with a comma separator" — their example shows
+#      `X-Robots-Tag: nosnippet, noindex`. So /assets/* would have served
+#      `no-cache, no-store, must-revalidate, public, max-age=31536000, immutable`
+#      and re-downloaded every asset on every load, for ever.
+#
+#      The fix is the DETACH syntax the same page documents: `! Header-Name`
+#      removes one added by a more pervasive rule, and then it can be re-set.
+#      /index.html and /sw.js no longer restate Cache-Control at all — they
+#      inherit the identical value from /*, and restating it would have joined
+#      it to itself.
 
 /*
   Cache-Control: no-cache, no-store, must-revalidate
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://rsms.me; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://rsms.me; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://rsms.me; connect-src 'self' https://kartavaya-production.up.railway.app https://kartavaya-staging.up.railway.app https://kartavaya.com https://www.kartavaya.com https://staging.kartavaya.com https://toacecaewujfxjfrjwco.supabase.co wss://toacecaewujfxjfrjwco.supabase.co wss://realtime.toacecaewujfxjfrjwco.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cloudflareinsights.com https://*.r2.cloudflarestorage.com; frame-src https://view.officeapps.live.com https://docs.google.com https://*.r2.cloudflarestorage.com https://*.r2.dev https:; object-src 'none'; frame-ancestors 'none';
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=' https://static.cloudflareinsights.com https://sdk.mappls.com https://apis.mappls.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://rsms.me https://sdk.mappls.com https://apis.mappls.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://rsms.me https://sdk.mappls.com https://apis.mappls.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://rsms.me; connect-src 'self' https://kartavaya-production.up.railway.app https://kartavaya-staging.up.railway.app https://kartavaya.com https://www.kartavaya.com https://staging.kartavaya.com https://toacecaewujfxjfrjwco.supabase.co wss://toacecaewujfxjfrjwco.supabase.co wss://realtime.toacecaewujfxjfrjwco.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://cloudflareinsights.com https://*.r2.cloudflarestorage.com https://sdk.mappls.com https://apis.mappls.com https://tile.mappls.com https://*.mappls.com; frame-src https://view.officeapps.live.com https://docs.google.com https://*.r2.cloudflarestorage.com https://*.r2.dev https:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Permissions-Policy: geolocation=(self), microphone=(), camera=(self)
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
 
+# Detach-then-set. Without the `!` line these two values JOIN and the hashed,
+# content-addressed asset bundle becomes uncacheable.
 /assets/*
+  ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 
+# Cache-Control inherited from /* — identical value, so restating it would
+# produce `no-cache, no-store, must-revalidate, no-cache, no-store, must-revalidate`.
 /sw.js
-  Cache-Control: no-cache, no-store, must-revalidate
   Service-Worker-Allowed: /
-
-/index.html
-  Cache-Control: no-cache, no-store, must-revalidate

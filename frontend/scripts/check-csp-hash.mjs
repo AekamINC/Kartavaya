@@ -138,6 +138,145 @@ if (existsSync(headersPath)) {
     console.error(`  The two hosts must allow the SAME scripts. They may differ in hosts and`);
     console.error(`  in rule order — see the header of public/_headers — never in hashes.`);
   }
+
+  // ── EVERY DIRECTIVE, not just the hashes ───────────────────────────────────
+  //
+  // The hash was one of FOUR ways the hand-written `_headers` had drifted from
+  // `vercel.json`, and on its own it is the least expensive of them. Measured
+  // 2026-08-29, before this block existed:
+  //
+  //   · `Permissions-Policy: camera=()` where vercel.json says `camera=(self)`
+  //     — the EXACT Pahchan defect fixed in d47adafc that same morning. The
+  //     cutover would have switched the attendance camera off again, on
+  //     Cloudflare only, hours after it was fixed on Vercel.
+  //   · every Mappls host missing from script-src, style-src, style-src-elem
+  //     and connect-src, so territory maps would not have drawn.
+  //   · `worker-src 'self' blob:` absent entirely.
+  //
+  // A gate that checked only the hash would have passed all three. So the two
+  // policies are compared DIRECTIVE BY DIRECTIVE, and the only differences
+  // permitted are the two host swaps declared below — which are also the only
+  // two the file's own header claims.
+  const SWAPS = [
+    ['https://va.vercel-scripts.com', 'https://static.cloudflareinsights.com'],
+    ['https://vitals.vercel-insights.com', 'https://cloudflareinsights.com'],
+  ];
+
+  // ⚠ THE VALUES ARE PARSED, NOT REGEXED OUT OF THE RAW TEXT — and the first
+  // version of this block WAS a regex over raw text, which promptly matched the
+  // explanatory comment written above the very fix it was checking. That is a
+  // named failure in this repository (`test_approvals_router_org_scope` strips
+  // comments for the same reason). `_headers` documents `camera=()` as the
+  // defect it used to carry, so a naive match reads the warning as the policy.
+  //
+  // So: vercel.json is parsed as JSON, and `_headers` has its `#` comment lines
+  // removed before anything is matched.
+  const headerValue = (key) => {
+    const v = JSON.parse(vercel);
+    for (const rule of v.headers || []) {
+      for (const h of rule.headers || []) {
+        if (h.key === key) return h.value;
+      }
+    }
+    return null;
+  };
+  const cfBody = headers.replace(/^#.*$/gm, '');
+  // ⚠ `\\s`, NOT `\s`. Inside a TEMPLATE LITERAL a `\s` collapses to a bare
+  // `s`, so this read `^s+Content-Security-Policy:s*(.+)$`, matched nothing and
+  // returned null — and every comparison below then skipped, leaving the check
+  // reporting ok. Three mutations were run against that version (camera=(),
+  // Mappls hosts deleted, worker-src deleted) and ALL THREE CAME BACK GREEN.
+  const cfValue = (key) => {
+    const m = cfBody.match(new RegExp(`^\\s+${key}:\\s*(.+)$`, 'm'));
+    return m ? m[1].trim() : null;
+  };
+
+  const asDirectives = (policy) => {
+    if (!policy) return null;
+    const out = new Map();
+    for (const part of policy.split(';')) {
+      const bits = part.trim().split(/\s+/).filter(Boolean);
+      if (bits.length) out.set(bits[0], new Set(bits.slice(1)));
+    }
+    return out;
+  };
+
+  const vPolicy = asDirectives(headerValue('Content-Security-Policy'));
+  const cPolicy = asDirectives(cfValue('Content-Security-Policy'));
+  const vPerm = headerValue('Permissions-Policy');
+  const cPerm = cfValue('Permissions-Policy');
+
+  // ⚠ NOT BEING ABLE TO READ A POLICY IS A FAILURE, NEVER A PASS.
+  //
+  // Silence is what let those three mutations through, and it is this
+  // repository's most-repeated defect rather than a one-off:
+  // `check-rendered-ids` reported "596 components, no id drawn" on a tree with
+  // three client UUIDs on screen; `check-table-rows` reported "13 table classes,
+  // all on var(--row-h)" with eleven screens off the token. A gate that
+  // silently covers nothing is worse than no gate, because it reads as
+  // coverage. So absence is loud here.
+  for (const [what, got] of [
+    ['vercel.json CSP', vPolicy], ['_headers CSP', cPolicy],
+    ['vercel.json Permissions-Policy', vPerm], ['_headers Permissions-Policy', cPerm],
+  ]) {
+    if (!got) {
+      bad++;
+      console.error(`✗ could not read the ${what} — this check cannot do its job`);
+    }
+  }
+
+  // ── EVERY DIRECTIVE, not only the hashes ───────────────────────────────────
+  //
+  // The hash was one of FOUR ways the hand-written `_headers` had drifted, and
+  // on its own the least expensive. Measured 2026-08-29:
+  //   · `Permissions-Policy: camera=()` where vercel.json says `camera=(self)`
+  //     — the EXACT Pahchan defect fixed in d47adafc that same morning.
+  //   · every Mappls host missing from script-src, style-src, style-src-elem
+  //     and connect-src, so territory maps would not draw.
+  //   · `worker-src 'self' blob:` absent entirely.
+  // A gate checking only the hash passes all three.
+  if (vPolicy && cPolicy) {
+    for (const [from, to] of SWAPS) {
+      for (const set of vPolicy.values()) {
+        if (set.delete(from)) set.add(to);
+      }
+    }
+    for (const d of [...new Set([...vPolicy.keys(), ...cPolicy.keys()])].sort()) {
+      const a = vPolicy.get(d) || new Set();
+      const b = cPolicy.get(d) || new Set();
+      const missing = [...a].filter(x => !b.has(x));
+      const extra = [...b].filter(x => !a.has(x));
+      if (missing.length || extra.length) {
+        bad++;
+        console.error(`✗ CSP directive '${d}' differs between the two hosts`);
+        if (missing.length) console.error(`  missing from _headers : ${missing.join(' ')}`);
+        if (extra.length) console.error(`  extra in _headers     : ${extra.join(' ')}`);
+      }
+    }
+  }
+
+  if (vPerm && cPerm && vPerm !== cPerm) {
+    bad++;
+    console.error(`✗ Permissions-Policy differs between the two hosts`);
+    console.error(`  vercel.json : ${vPerm}`);
+    console.error(`  _headers    : ${cPerm}`);
+    console.error(`  camera=() vs camera=(self) is one character and it is the`);
+    console.error(`  difference between the attendance camera working and not.`);
+  }
+
+  // Cloudflare JOINS a header applied twice — its own docs, and the example
+  // given there is `X-Robots-Tag: nosnippet, noindex`. So a Cache-Control on a narrower
+  // path does NOT override the catch-all, it appends to it, and /assets/* ends
+  // up uncacheable. The detach line is what makes the override real.
+  const assetsBlock = headers.match(/^\/assets\/\*[^\n]*\n((?:[ \t]+[^\n]*\n?)*)/m)?.[1] || '';
+  if (/Cache-Control:/i.test(assetsBlock) && !/^\s*!\s*Cache-Control\s*$/mi.test(assetsBlock)) {
+    bad++;
+    console.error(`✗ public/_headers sets Cache-Control on /assets/* without detaching it first`);
+    console.error(`  Cloudflare JOINS a header applied twice — it does not override.`);
+    console.error(`  /assets/* would serve "no-cache, no-store, must-revalidate, public,`);
+    console.error(`  max-age=31536000, immutable" and re-download every asset, for ever.`);
+    console.error(`  Fix: put a "! Cache-Control" line above it, per Cloudflare's detach syntax.`);
+  }
 } else {
   // Absence is reported, not passed over. A gate that silently covers nothing
   // when its input disappears is `check-rendered-ids` counting zero components:
