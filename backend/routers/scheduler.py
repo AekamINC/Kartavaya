@@ -1158,7 +1158,7 @@ async def _reap_abandoned_runs(pool) -> int:
             )
             if rows:
                 log.warning(
-                    "Cron skills: closed %d abandoned run(s) in staging.%s — they had "
+                    "Cron skills: closed %d abandoned run(s) in %s — they had "
                     "been 'running' with nothing written for over %s",
                     len(rows), table, _RUN_TIMEOUT,
                 )
