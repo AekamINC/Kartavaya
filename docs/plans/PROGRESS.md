@@ -5428,3 +5428,107 @@ string, which is why it is worth having either way.
   would fail on the data already there.
 - **Not deployed.** `git show HEAD:` still carries the defect, so a customer
   applying a template on staging right now still gets two boards.
+
+## 2026-08-29 · The Cloudflare cutover would have shipped a blocked bootstrap
+
+The owner has a director available today for the Cloudflare move and for AWS SES
+on kartavaya.com. Measuring what that would touch turned up a defect that only
+fires on cutover day.
+
+### `public/_headers` carried a hash that had NEVER matched
+
+    index.html inline hash            sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=
+    index.html at e07a2b74 (16 Aug,
+      the day _headers was written)   sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=
+    vercel.json allowed               sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=
+    _headers   allowed                sha256-4pEVfXQ1F7eho+kcMi5Ain6DIWMGHPGjtPExuWptQ+I=
+
+**Not drift.** `4pEVfX…` matched nothing on the day it was committed either.
+
+`_headers` is inert on Vercel — Vite copies `public/*` into `dist/` verbatim and
+Vercel ignores a file by that name — so it has shipped since 2026-08-16 with
+nothing reading it and nothing checking it. `frontend/scripts/` contained **zero**
+references to `_headers`, so `npm run check` passed today and would have passed
+on cutover morning.
+
+The consequence is the **26 August incident arriving again, on the one day
+nobody would attribute it correctly**: the first Cloudflare Pages deploy silently
+refuses the pre-paint bootstrap — wrong-theme flash every load, blurred sidebar
+on Windows — with a green build, no logs, and `docs/CLOUDFLARE-MIGRATION.md`
+recording that step as "✅ live header set reproduced".
+
+### The gate now covers both hosts, in ONE file
+
+Extended `check-csp-hash.mjs` rather than adding `check-cloudflare-headers.mjs`.
+This repo has two recorded incidents of one rule living in several copies and the
+copy nobody runs being the wrong one — the `.side` rule deletion and the
+three-copies drawer 403. A second script would have been a third copy.
+
+It asserts three things: every inline script is allowed by `vercel.json`; every
+inline script is allowed by `_headers`; and **the two hash SETS are identical**.
+The last is what makes a NEW hash added to one file and not the other fail here
+instead of white-screening there. `_headers` may differ from `vercel.json` in
+exactly three declared ways — the corrected staging hostname, the Cloudflare
+analytics pair, the inverted rule order — and none of them is a hash.
+
+A missing `_headers` is REPORTED, not passed over. A gate that silently covers
+nothing when its input disappears is `check-rendered-ids` counting zero
+components: green, and blind.
+
+**Two mutations, both bit:**
+
+| mutated | result |
+|---|---|
+| the wrong hash put back in `_headers` (the real bug) | **3 problems**, exit 1 |
+| a new hash added to `vercel.json` only | **2 problems**, exit 1 |
+
+No new CI step needed — `check-csp-hash` already runs at `ci.yml:332`, so the
+coverage lands in CI without touching `check-ci-runs-every-gate`'s list.
+
+### `CLOUDFLARE-OWNER-ACTIONS.md` B3 said eight variables. Six exist.
+
+Read live from `vercel env ls`, 2026-08-29:
+
+| variable | scopes that actually hold it |
+|---|---|
+| `VITE_BACKEND_URL` | **Preview (staging) only** |
+| `VITE_ENVIRONMENT` | **Preview (staging) only** |
+| `VITE_PAY_BASE_URL` | **Preview (staging) only** |
+| `VITE_SUPABASE_URL` | Preview (staging), Development, Production |
+| `VITE_SUPABASE_ANON_KEY` | Preview (staging), Development, Production |
+| `VITE_MAPPLS_KEY` | Preview, Production — **live, and absent from the doc** |
+
+`VITE_LEAD_CTA_HREF`, `VITE_AEKAM_STATE_CODE` and `BACKEND_URL` are in **no**
+Vercel scope. And the instruction read "copy the current *production* values" for
+three variables that have no production value — the director would have stopped
+mid-task with nothing to copy.
+
+### ⚠ A correction I had to make to my own correction
+
+I first wrote that the `/i/:token` OG rewrite had no Cloudflare equivalent.
+**Wrong** — W3 (`public/_redirects`) and W4 (`functions/i/[token].js`) are both
+done and both files exist. Checked before leaving it in a document somebody would
+act on.
+
+The real gap is the value they read:
+
+    functions/i/[token].js:56   env.VITE_BACKEND_URL || env.BACKEND_URL || ''
+    api/og.js:51                process.env.VITE_BACKEND_URL || process.env.BACKEND_URL || ''
+
+Vercel holds `VITE_BACKEND_URL` for Preview only and `BACKEND_URL` not at all, so
+on production that expression is `''` **today**. The WhatsApp/Slack/LinkedIn
+preview card for a shared payment link is already broken on `www.kartavaya.com`.
+Not a Cloudflare regression — but the cutover must not inherit it, and on Pages
+the variable must be set as a **RUNTIME** binding, since `env.VITE_BACKEND_URL`
+is read at request time and a build-only value is invisible to `env`.
+
+### Not done
+
+- **The schema merge was refused, with a reason.** Production runs `public`
+  (no `DB_SCHEMA` on the production service; `origin/main`'s `db.py` has no
+  schema routing at all), staging runs `staging, public`. Merging `staging` into
+  `public` pours every proposal-93 test row into the schema production serves.
+  ⚠ **`CLAUDE.md`'s "Production writes to `staging` too" is FALSE** — the hazard
+  runs the other way, staging writing into `public`. Owed: the five-section risk
+  report before anything is merged.
+- **Nothing deployed, no DNS touched, no repo transferred.** All owner actions.

@@ -67,20 +67,67 @@ Fill in every `_____` as you go. Tick boxes as they complete.
   - Method: `_____`
   - Token stored in `.env.cloudflare` as `CLOUDFLARE_API_TOKEN`: **yes / no**
 
-- [ ] **B3 · Collect the eight environment variables from Vercel.**
-  Vercel → project → **Settings → Environment Variables**. Copy the current *production* values.
-  These get entered into the Pages project for **both** Production and Preview.
+- [ ] **B3 · Collect the SIX environment variables from Vercel.**
 
-  | Variable | Where it comes from | Copied? |
-  |---|---|---|
-  | `VITE_BACKEND_URL` | Railway production URL | ☐ |
-  | `VITE_SUPABASE_URL` | Supabase project URL | ☐ |
-  | `VITE_SUPABASE_ANON_KEY` | Supabase publishable key | ☐ |
-  | `VITE_ENVIRONMENT` | `production` | ☐ |
-  | `VITE_PAY_BASE_URL` | payment link base | ☐ |
-  | `VITE_LEAD_CTA_HREF` | lead CTA target | ☐ |
-  | `VITE_AEKAM_STATE_CODE` | GST state code | ☐ |
-  | `BACKEND_URL` | same as `VITE_BACKEND_URL`, for the OG function | ☐ |
+  ⚠ **THIS SECTION WAS WRONG UNTIL 2026-08-29 AND SAID EIGHT.** Re-read live from
+  `vercel env ls` on that date. Three of the eight did not exist in Vercel at all, one
+  live variable was missing from the list, and — the part that would have stopped the
+  director mid-task — **the instruction said "copy the current *production* values" for
+  variables that have no production value.**
+
+  Vercel → project → **Settings → Environment Variables**.
+
+  | Variable | Which Vercel scope actually holds it | Where it comes from | Copied? |
+  |---|---|---|---|
+  | `VITE_BACKEND_URL` | **Preview (staging) ONLY** | Railway URL | ☐ |
+  | `VITE_SUPABASE_URL` | Preview (staging), Development, **Production** | Supabase project URL | ☐ |
+  | `VITE_SUPABASE_ANON_KEY` | Preview (staging), Development, **Production** | Supabase publishable key | ☐ |
+  | `VITE_ENVIRONMENT` | **Preview (staging) ONLY** | `production` for the Pages production scope | ☐ |
+  | `VITE_PAY_BASE_URL` | **Preview (staging) ONLY** | payment link base | ☐ |
+  | `VITE_MAPPLS_KEY` | Preview, **Production** | Mappls token — added ~2026-08-26 | ☐ |
+
+  **Where the production build gets `VITE_BACKEND_URL` today**, since Vercel does not hold one:
+  from `frontend/.env.production`, which is committed and reads
+  `https://kartavya-production.up.railway.app`. Vite reads `.env.production` at build time,
+  so the production bundle is configured by a file in the repo and not by the dashboard.
+  **Cloudflare Pages runs the same `vite build` and will pick up the same file** — so this
+  variable does not strictly need entering. Enter it anyway, matching `.env.production`, so
+  the two agree; a build configured from two places is how they drift.
+
+  **Removed from this list, and why — all three verified absent from Vercel:**
+
+  | was listed | verdict |
+  |---|---|
+  | `VITE_LEAD_CTA_HREF` | not in Vercel in any scope |
+  | `VITE_AEKAM_STATE_CODE` | not in Vercel in any scope |
+  | `BACKEND_URL` | not in Vercel in any scope — but do NOT simply strike it out; read the next block. |
+
+  ### ⚠ The OG card: a variable to SET, not to copy — and it is broken on production today
+
+  I first wrote here that the `/i/:token` rewrite had no Cloudflare equivalent. **That was
+  wrong and is corrected**: `CLOUDFLARE-MIGRATION.md` W3/W4 are done —
+  `frontend/public/_redirects` carries the SPA fallback and
+  `frontend/functions/i/[token].js` is the crawler card as a Pages Function. Both files
+  exist. The migration work is not missing.
+
+  What IS missing is the value both of them read:
+
+  ```
+  frontend/functions/i/[token].js:56   const BACKEND = env.VITE_BACKEND_URL || env.BACKEND_URL || '';
+  frontend/api/og.js:51                process.env.VITE_BACKEND_URL || process.env.BACKEND_URL || '';
+  ```
+
+  Vercel holds `VITE_BACKEND_URL` for **Preview (staging) only**, and `BACKEND_URL` not at
+  all — so on **production** that expression resolves to `''` right now. **The WhatsApp /
+  Slack / LinkedIn preview card for a shared payment link is already broken on
+  `www.kartavaya.com`**, and has been. It is not a Cloudflare regression; the cutover just
+  must not inherit it.
+
+  So for Pages: set **`VITE_BACKEND_URL` as a RUNTIME variable**, not only a build one. The
+  Function reads `env.VITE_BACKEND_URL` when a crawler hits the URL, which is request time —
+  a build-time-only value is baked into the bundle and is invisible to `env`. Set it in both
+  the Production and Preview scopes of the Pages project, pointing at the Railway backend for
+  that scope. `BACKEND_URL` needs no separate entry; it is only the fallback arm.
 
   - Any variable in Vercel **not** on this list: `_____`
     *(If there is one, tell me — it means something in the app reads config I did not find.)*
