@@ -24,7 +24,7 @@ from middleware.module_levels import require_level
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import APPROVER
 from middleware.subscription import require_module, require_any_module
-from services.audit_actors import actor_joins, actor_select
+from services.audit_actors import actor_joins, actor_select, display_name
 from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
 # Imported BY NAME at module level, the vikray idiom: subjects.py owns every
@@ -553,7 +553,38 @@ async def list_invoices(
         "i.place_of_supply, i.is_igst, "
         "i.subtotal, i.cgst, i.sgst, i.igst, i.total, i.amount_paid, i.balance_due, "
         "i.payment_status, i.created_at, i.updated_at, i.customer_ref, "
+        # ⚠ `doc_status` WAS NOT SELECTED, so the register could not tell a
+        # DRAFT from an issued invoice nobody has paid. Both read `unpaid` in
+        # the only status column the list returned, and a firm looking at its
+        # own receivables could not see which of them had even been sent.
+        #
+        # Found by proposal 93 Suite 05 on 2026-08-29, on a register holding
+        # 45 invoices of which 13 were drafts. The column is stored and
+        # defaults to `final`; the share-tracking query 3,200 lines below
+        # already selected it. Only this one — the register everybody reads —
+        # did not.
+        #
+        # ⚠ It is NOT an editability flag. An unpaid invoice is editable by
+        # product rule and `doc_status` defaults to `final`, so nothing may
+        # infer "can I edit this" from this column. It answers one question:
+        # has this document been issued.
+        "i.doc_status, i.estimate_status, "
         "c.name as contact_name, c.company as contact_company, "
+        # WHOSE SALE IT IS, as a NAME. `salesperson_id` is TEXT holding a
+        # `users.user_id`, and a user id must never reach a screen — so the
+        # register returned nothing at all rather than returning the id, and
+        # the answer to "who sold this" was simply absent from the list.
+        #
+        # `display_name` is the shared ladder and its own docstring already
+        # names `salesperson_name` as one of its call sites. The CASE matters:
+        # the ladder ends at `Unnamed member`, which is the right answer for
+        # "an id with no user row behind it any more" and the WRONG answer for
+        # "no salesperson was ever recorded". Those are two different absences
+        # — the same distinction `actor_select` keeps with `has_creator` — and
+        # a LEFT JOIN alone would collapse them into one.
+        "CASE WHEN i.salesperson_id IS NULL THEN NULL ELSE "
+        + display_name("_sp")
+        + " END AS salesperson_name, "
         # WHO raised it and WHO last amended it, as NAMES. `created_by` and
         # `updated_by` are `users.user_id` and a user id must never reach the
         # screen, so the resolution happens here rather than being left to a
@@ -575,6 +606,11 @@ async def list_invoices(
         + "COUNT(*) OVER() AS _total "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        # LEFT and never INNER: an invoice whose salesperson has since left
+        # must still appear on the register. An inner join here would make
+        # rows VANISH when somebody leaves the firm — data loss that looks
+        # like a filter working.
+        "LEFT JOIN public.users _sp ON _sp.user_id = i.salesperson_id "
         + actor_joins("i", updated=True)
         + "WHERE i.org_id=$1::uuid "
         + ("" if since_dt is not None else "AND i.is_active=TRUE ")
@@ -909,11 +945,30 @@ async def get_invoice(
         # The salesperson's NAME, never their id, for the detail header. The
         # id stays in i.salesperson_id for the form's picker to pre-select; the
         # name is what a human reads (check-rendered-ids forbids the id on
-        # screen). Same COALESCE ladder crm_report uses, stopping before email.
-        "COALESCE(sp.full_name, sp.name) as salesperson_name "
+        # screen).
+        #
+        # This was a hand-written `COALESCE(sp.full_name, sp.name)` — the very
+        # thing `services/audit_actors` exists to stop having twenty copies of.
+        # It stopped before email, correctly, but it had no `btrim`/`NULLIF`, so
+        # an account whose `name` is the empty string rendered a BLANK cell that
+        # reads as "this invoice has no salesperson" rather than as "we cannot
+        # name them". The shared ladder keeps those two apart, and the CASE
+        # below keeps a third case apart from both: no salesperson recorded at
+        # all is NULL, not `Unnamed member`.
+        "CASE WHEN i.salesperson_id IS NULL THEN NULL ELSE "
+        + display_name("sp")
+        + " END as salesperson_name "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
-        "LEFT JOIN users sp ON sp.user_id = i.salesperson_id "
+        # ⚠ `public.users`, SCHEMA-QUALIFIED. This join said plain `users` and
+        # resolved correctly only through `search_path`'s second entry. Measured
+        # 2026-08-29: `users` exists in TWO schemas — `public` (the product's)
+        # and `auth` (Supabase's own, which also has an `email` column). Nothing
+        # is broken today because `auth` is not on the path, but migration 142
+        # exists precisely because a query that relied on `search_path` found a
+        # shadow table in the other schema, and a silent switch here would
+        # return WRONG ROWS rather than an error.
+        "LEFT JOIN public.users sp ON sp.user_id = i.salesperson_id "
         "WHERE i.id=$1::uuid AND i.org_id=$2::uuid",
         str(invoice_id), org_id,
     )
@@ -1883,6 +1938,32 @@ async def list_expense_categories(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # ⚠ THIS ENDPOINT USED TO WRITE TEN ROWS. When the org had no categories it
+    # INSERTed the ten defaults and re-read them, so **merely opening the
+    # Expenses tab created data**.
+    #
+    # Three things were wrong with that, and only the first is about HTTP:
+    #
+    #   1. A GET must be safe. `lib/api.js` RETRIES a GET up to three times on
+    #      502/503/504 precisely because repeating a read is supposed to cost
+    #      nothing.
+    #   2. **A member with no write permission created rows.** `_gate` is a
+    #      MODULE gate — it asks whether the org has Ganit, not whether this
+    #      person may write — so read-only access was enough to insert.
+    #   3. Nothing could tell "the firm chose these ten" from "somebody opened
+    #      the tab once". Proposal 93 Suite 05 found it the way you would
+    #      expect: a read-only probe created them, on a database production
+    #      shares.
+    #
+    # The categories are a PICKER OF NAMES, which is what makes the fix cheap —
+    # `ganit_expenses.category` is a text column holding the name, not a foreign
+    # key to a row here. So a default that has never been stored works exactly
+    # as well as one that has, and it is materialised by the POST below on the
+    # day somebody actually edits the set.
+    #
+    # It is a UNION, not a fallback. Returning the defaults ONLY when the table
+    # is empty would make all ten vanish the moment a firm added its first
+    # custom category — which is the bug the old code avoided by writing.
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT id, name, icon, created_at "
@@ -1890,22 +1971,16 @@ async def list_expense_categories(
         "ORDER BY name",
         org_id,
     )
-
-    if not rows:
-        for name, icon in _DEFAULT_EXPENSE_CATEGORIES:
-            await pool.execute(
-                "INSERT INTO staging.ganit_expense_categories (org_id, name, icon) "
-                "VALUES ($1::uuid, $2, $3) ON CONFLICT (org_id, name) DO NOTHING",
-                org_id, name, icon,
-            )
-        rows = await pool.fetch(
-            "SELECT id, name, icon, created_at "
-            "FROM staging.ganit_expense_categories WHERE org_id=$1::uuid AND is_active=TRUE "
-            "ORDER BY name",
-            org_id,
-        )
-
-    return {"data": [dict(r) for r in rows]}
+    stored = [dict(r) for r in rows]
+    have = {r["name"] for r in stored}
+    # `id: None` says out loud that this one is not a row yet. The picker keys
+    # on the name, and nothing else in the product reads a category id.
+    stored.extend(
+        {"id": None, "name": name, "icon": icon, "created_at": None, "is_default": True}
+        for name, icon in _DEFAULT_EXPENSE_CATEGORIES if name not in have
+    )
+    stored.sort(key=lambda r: r["name"])
+    return {"data": stored}
 
 
 @router.post("/expense-categories")

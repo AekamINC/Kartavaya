@@ -158,7 +158,7 @@ from utils import SQL_USER_ROLE
 # ── Shared constants ──────────────────────────────────────
 _NOT_TEAM_MEMBER  = "Not a team member"
 # Single definition for the COALESCE name expression used across all queries.
-_COALESCE_NAME    = "COALESCE(full_name, name, email)"
+_COALESCE_NAME    = "COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member')"
 _SQL_USER_ROLE    = SQL_USER_ROLE          # local alias kept for backward compat
 _SQL_GET_SUBTASKS = "SELECT subtasks,team_id FROM tasks WHERE task_id=$1 AND team_id=ANY($2::text[])"
 _SQL_SET_SUBTASKS = "UPDATE tasks SET subtasks=$1,updated_at=NOW() WHERE task_id=$2 AND team_id=ANY($3::text[]) RETURNING *"
@@ -3325,7 +3325,7 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
         if status == "approved":
             try:
                 requester = await pool.fetchrow(
-                    "SELECT email, COALESCE(full_name, name, email) AS name FROM users WHERE user_id=$1",
+                    "SELECT email, COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS name FROM users WHERE user_id=$1",
                     approval["requested_by"]
                 )
                 reviewer_name = actor_display(user, "")
@@ -4822,7 +4822,7 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
     try:
         if notif_targets:
             user_rows = await pool.fetch(
-                "SELECT user_id, COALESCE(full_name,name,email) AS name, email FROM users WHERE user_id=ANY($1::text[])",
+                "SELECT user_id, COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS name, email FROM users WHERE user_id=ANY($1::text[])",
                 notif_targets
             )
             project_row  = await pool.fetchrow("SELECT name FROM teams WHERE team_id=$1", team_id) if team_id else None
@@ -5419,7 +5419,7 @@ async def add_task_attachment(
     # the uploader leaves the firm, and so the client portal never needs a join
     # against `users` to render "who shared it".
     uploader_name = await pool.fetchval(
-        "SELECT COALESCE(full_name, name, email) FROM users WHERE user_id=$1", user["user_id"]
+        "SELECT COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') FROM users WHERE user_id=$1", user["user_id"]
     )
     current.append({
         "name": file.filename or "upload",

@@ -334,7 +334,7 @@ async def request_approval(task_id: str, payload: ApprovalRequest,
         raise HTTPException(400, "No project owner or admin found to approve")
 
     requester = await pool.fetchrow(
-        "SELECT COALESCE(full_name, name, email) AS name FROM users WHERE user_id=$1",
+        "SELECT COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS name FROM users WHERE user_id=$1",
         user["user_id"]
     )
     requester_name = requester["name"] if requester else "A team member"
@@ -604,7 +604,7 @@ async def client_approve_task(task_id: str, payload: ApprovalRequest,
     new_col_id = done_col["column_id"] if done_col else task["column_id"]
 
     client_user = await pool.fetchrow(
-        "SELECT COALESCE(full_name,name,email) AS display FROM users WHERE user_id=$1", user["user_id"]
+        "SELECT COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS display FROM users WHERE user_id=$1", user["user_id"]
     )
     client_name = client_user["display"] if client_user else "Client"
 
@@ -734,7 +734,7 @@ async def approve_by_token(token: str, payload_body: ApprovalRequest, pool=Depen
     # Fan-out: in-app notification + email to all project members/owners
     try:
         client_row = await pool.fetchrow(
-            "SELECT COALESCE(full_name, name, email) AS name FROM users WHERE user_id=$1", client_user_id
+            "SELECT COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') AS name FROM users WHERE user_id=$1", client_user_id
         )
         client_name = client_row["name"] if client_row else "Client"
         recipients = await pool.fetch("""

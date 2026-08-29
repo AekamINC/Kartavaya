@@ -401,7 +401,7 @@ async def _transactions_body(
 #: value present, so a profile with a blank name field comes back blank. This is
 #: `server.py:list_users`'s expression, copied verbatim rather than re-derived.
 #:
-#: THE OLD FORM WAS `COALESCE(full_name, name, email)`, which is the same leak as
+#: THE OLD FORM WAS `COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member')`, which is the same leak as
 #: selecting the address outright: every member with an incomplete profile was
 #: listed to Aekam's finance console BY ADDRESS in a field called `name`, where
 #: nobody reviewing this file would think to look for one.

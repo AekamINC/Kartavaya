@@ -34,7 +34,7 @@ here or it is not a fix.
 Each row now carries `actor_name`, resolved through the same `LEFT JOIN users u
 ON u.user_id = …` every other router in this repo uses. Two rules on it:
 
-  · The email is NOT the fallback. `COALESCE(full_name, name, email)` is the
+  · The email is NOT the fallback. `COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member')` is the
     house pattern and it is wrong for this table — an org admin reading their
     own history sees a colleague's address in the "who" column for anyone whose
     profile is incomplete, and the owner's standing rule is that contact details

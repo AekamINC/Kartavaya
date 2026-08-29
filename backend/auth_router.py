@@ -743,7 +743,7 @@ async def preview_invite(request: Request, token: str):
     inviter = None
     if invite["invited_by"]:
         inviter = await pool.fetchval(
-            "SELECT COALESCE(full_name, name, email) FROM users WHERE user_id=$1",
+            "SELECT COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member') FROM users WHERE user_id=$1",
             invite["invited_by"],
         )
 

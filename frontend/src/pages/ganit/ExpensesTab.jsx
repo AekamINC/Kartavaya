@@ -148,7 +148,7 @@ function ExpenseFields({ value, onChange, categories, contactItems, onSearchCont
         <span className="fld__l">Category</span>
         <select className="inp" value={value.category} onChange={e => set('category', e.target.value)}>
           <option value="general">General</option>
-          {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+          {categories.map(c => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}
         </select>
       </label>
       <label className="fld">
@@ -475,7 +475,7 @@ export default function ExpensesTab() {
           <span className="gn-bar__fl">Category</span>
           <select className="inp gn-bar__sel" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
             <option value="">All categories</option>
-            {categories.map(c => <option key={c.id} value={c.name}>{c.icon} {c.name}</option>)}
+            {categories.map(c => <option key={c.id || c.name} value={c.name}>{c.icon} {c.name}</option>)}
           </select>
         </label>
         <span className="gn-bar__sp" />

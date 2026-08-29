@@ -29,7 +29,7 @@ SELECTs, so it does not breach it). The facts every query stands on:
 "BY USER" is allowed here — operational spend attribution, per the D5 brief —
 but names-not-ids still applies: the dimension is `member`, resolved through
 public.users (user_id TEXT, the join key the whole product uses) with the
-house display chain COALESCE(full_name, name, email). A ledger row whose
+house display chain COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member'). A ledger row whose
 user_id matches no users row is 'Departed member'; a NULL user_id is
 'System' (period rolls, cron spends). The raw id never reaches an output
 column.

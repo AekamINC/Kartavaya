@@ -61,7 +61,7 @@ async def _resolve_mentions(pool, body: str, team_id, actor_id: str | None = Non
     # ── THE DISPLAY LADDER, AND WHY IT NO LONGER ENDS AT AN EMAIL ───────────
     #
     # All three queries in this file resolved a person with
-    # `COALESCE(full_name, name, email)`. THE OWNER RULED (2026-08-23) that a
+    # `COALESCE(NULLIF(btrim(full_name), ''), NULLIF(btrim(name), ''), 'Unnamed member')`. THE OWNER RULED (2026-08-23) that a
     # display-name ladder must never end at an email address: Aekam must not see
     # client emails, and a person is named by their name — an email used as a
     # display fallback is a CONTACT DETAIL rendered as a LABEL, on a screen that

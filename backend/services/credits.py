@@ -1817,7 +1817,7 @@ async def usage_by_source(
 #: spellings of one display rule is how they come to disagree.
 #:
 #: IT DOES NOT FALL THROUGH TO `email`, AND THAT IS THE POINT. The previous
-#: `COALESCE(u.full_name, u.name, u.email)` was the platform-privacy leak wearing
+#: `COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')` was the platform-privacy leak wearing
 #: a different column name: every spender with an incomplete profile was listed
 #: to Aekam's finance console BY ADDRESS, in a field called `name`, where no
 #: reader would think to look for one.

@@ -454,7 +454,13 @@ async def test_preview_invite_returns_org_inviter_role_and_grants(api_client, mo
             return "Aekam Inc"
         if "COUNT(DISTINCT user_id)" in query:
             return 6
-        if "COALESCE(full_name, name, email)" in query:
+        # Keyed on the COLUMNS the inviter lookup reads, not on the exact
+        # COALESCE text. The ladder's spelling changed on 2026-08-29 when the
+        # email rung was removed from all 17 production sites (owner's ruling,
+        # 2026-08-23: a name ladder must never end at an email address), and a
+        # mock pinned to the old string silently returned None — which reads as
+        # "the inviter has no name", not as "this mock stopped matching".
+        if "full_name" in query and "FROM users WHERE user_id" in query:
             return "Keval Shah"
         return None
 

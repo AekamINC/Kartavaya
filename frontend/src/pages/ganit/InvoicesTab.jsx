@@ -68,6 +68,7 @@ const INVOICE_COLUMNS = [
   { id: 'created_by_name', label: 'Raised by', sortKey: 'created_by_name', className: 'tbl__by' },
   // THEIR reference, not ours. What their accounts-payable team quotes.
   { id: 'customer_ref', label: 'Their ref', sortKey: 'customer_ref' },
+  { id: 'salesperson_name', label: 'Salesperson', sortKey: 'salesperson_name' },
   /* WHEN it was last touched, and by WHOM. The pair lands at the end because
      that is where `reconcileColumnPrefs` appends anything shipped after a
      saved arrangement anyway, so base order and every arranged order agree.
@@ -324,7 +325,35 @@ export default function InvoicesTab({ newNonce = 0 }) {
                     {inr(Number(inv.balance_due))}
                   </td>
                   ),
-                  status: <td><Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || 'var(--on-surface-3)'} /></td>,
+                  /* ⚠ A DRAFT AND AN ISSUED-UNPAID INVOICE READ IDENTICALLY
+                     until 2026-08-29: the register did not select `doc_status`
+                     at all, so both showed `unpaid` and a firm could not see
+                     which of its receivables had even been sent. Found by
+                     proposal 93 Suite 05 on a register of 45 invoices, 13 of
+                     them drafts.
+
+                     A draft's payment status is not a fact about the world —
+                     nobody has been asked to pay, so "unpaid" is not a state
+                     the customer is in. Draft REPLACES it rather than sitting
+                     beside it. Once issued, the payment status is the answer
+                     again and this cell is exactly what it always was.
+
+                     `doc_status` is NOT the editability signal: it defaults to
+                     `'final'` and an unpaid invoice is editable by product
+                     rule. It answers one question — has this been issued. */
+                  status: (
+                  <td>
+                    {inv.doc_status === 'draft'
+                      ? <Badge text="Draft" color="var(--on-surface-3)" />
+                      : <Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || 'var(--on-surface-3)'} />}
+                  </td>
+                  ),
+                  /* WHOSE SALE IT IS. `salesperson_id` is a `users.user_id`, so
+                     the NAME is resolved server-side and the id never reaches
+                     here. Null means no salesperson was ever recorded, which is
+                     a different absence from `Unnamed member` (an id whose user
+                     row is gone) — the server keeps them apart deliberately. */
+                  salesperson_name: <td className="gn-tbl__mute">{inv.salesperson_name || '—'}</td>,
                   [CREATED_KEY]: <CreatedCell value={inv.created_at} />,
                   created_by_name: <ByCell name={inv.created_by_name} hasActor={inv.has_creator} />,
                   customer_ref: <td className="gn-tbl__mute">{inv.customer_ref || '—'}</td>,

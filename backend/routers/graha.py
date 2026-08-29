@@ -2358,7 +2358,7 @@ async def list_activities(
     # a person is shown.
     #
     # ── WHY THE EMAIL RUNG IS GONE ────────────────────────────────────────
-    # This line used to read `COALESCE(u.full_name, u.name, u.email)`. The
+    # This line used to read `COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')`. The
     # `u.email` fallback looked like defensive coding — always print SOMETHING
     # — and was the opposite: a user row with both name columns blank silently
     # printed that person's EMAIL ADDRESS into a table cell. Graha's actors

@@ -96,7 +96,7 @@ async def team_activity(
         # ── THE ACTOR LADDER, AND WHY IT NO LONGER ENDS AT AN EMAIL ─────────
         #
         # All three feeds in this file named the actor with
-        # `COALESCE(u.full_name, u.name, u.email)`. THE OWNER RULED
+        # `COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member')`. THE OWNER RULED
         # (2026-08-23) that a display-name ladder must never end at an email
         # address: Aekam must not see client emails, and a person is named by
         # their name — an email used as a display fallback is a CONTACT DETAIL
