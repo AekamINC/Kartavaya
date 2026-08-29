@@ -21,7 +21,7 @@ review never becomes pay, and a row HR typed by hand is never overwritten.
 from typing import Optional
 from uuid import UUID
 
-from datetime import date
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -138,6 +138,40 @@ async def request_regularisation(
                 403, "You can only request a correction to your own attendance"
             )
 
+    # ⚠ `$4::date` AND `$6::timestamptz` MAKE ASYNCPG INFER DATE/TIMESTAMP
+    # PARAMETERS, so a `str` is refused with "'str' object has no attribute
+    # 'toordinal'" and the endpoint 500s. **REQUESTING A CORRECTION HAS NEVER
+    # ONCE WORKED** — `staging.pahchan_regularisations` holds 0 rows, and that
+    # is the consequence rather than a coincidence beside it.
+    #
+    # THE IDENTICAL FAULT IS DOCUMENTED 200 LINES BELOW IN THIS FILE.
+    # `publish_attendance_to_payroll` says it "did that on every call, for every
+    # org, since it was written" and names the bank statement import (2b864aa8)
+    # and the sales target (eae0b912) as the same family. That one was fixed by
+    # parsing at the top of the handler; this one was left, in the same file,
+    # under the same comment.
+    #
+    # Found by proposal 93 Suite 09, 2026-08-29, from the Railway deploy log.
+    #
+    # Parsed here, and a bad value is a 400 that QUOTES IT rather than an opaque
+    # 500 — a date typed into an attendance correction is ordinary human input,
+    # and the person who typed it is the one who can fix it.
+    try:
+        for_date = date.fromisoformat(body.for_date)
+    except ValueError as exc:
+        raise HTTPException(
+            400,
+            f"'{body.for_date}' is not a date this can read. Use YYYY-MM-DD.",
+        ) from exc
+    try:
+        requested_at_time = datetime.fromisoformat(body.requested_at_time)
+    except ValueError as exc:
+        raise HTTPException(
+            400,
+            f"'{body.requested_at_time}' is not a time this can read. "
+            "Use an ISO timestamp, for example 2026-08-18T09:30:00.",
+        ) from exc
+
     # ── THE REQUEST IS AN EVENT — a date and a status, never the reason ─────
     # `correction.requested` rides the INSERT's own transaction. The emitter
     # (`subjects.correction_requested`) derives `reason_type` from whether
@@ -155,8 +189,8 @@ async def request_regularisation(
                 "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::date, $5, "
                 "        $6::timestamptz, $7, $8, 'pending') "
                 "RETURNING *",
-                org_id, body.employee_id, body.punch_id or "", body.for_date,
-                body.requested_direction, body.requested_at_time, body.reason,
+                org_id, body.employee_id, body.punch_id or "", for_date,
+                body.requested_direction, requested_at_time, body.reason,
                 body.evidence_key,
             )
             _emp_user_id = await _conn.fetchval(

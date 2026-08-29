@@ -959,6 +959,42 @@ column records a platform. The only place the platform is written down is
 (they were seeded straight into the database). Any future claim about "the web
 clock-in works" has to name the audit row it is reading.
 
+### ⚠ Suite 09 found the reason nobody has ever punched from a browser — TWO of them
+
+Proposal 93 Suite 09 drove the Clock-in tab as a person, 2026-08-29, and the
+flow does not merely lack a caller: **two separate faults each independently
+make it impossible**, and both are now fixed.
+
+**1. An HTTP header switched the camera and GPS off.** `frontend/vercel.json`
+sent `Permissions-Policy: geolocation=(), microphone=(), camera=()` on
+`/(.*)`. ⚠ **An empty allowlist is not "no restriction" — it disables the
+feature for the document's OWN origin**, so `getUserMedia` and
+`geolocation.getCurrentPosition` were refused before any permission prompt
+could appear, and no grant the person gives can override it. Pahchan's whole
+premise is a selfie inside a geofence; the header removed both. Verified served
+on staging AND on `www.kartavaya.com` before the change. Now
+`geolocation=(self), microphone=(), camera=(self)` — microphone stays off
+because nothing here records audio.
+
+**2. Requesting a regularisation 500'd on every call, always.**
+`POST /v1/pahchan/regularisations` bound `body.for_date` (a `str`) to
+`$4::date` and `body.requested_at_time` to `$6::timestamptz`. asyncpg infers
+the Python type from the cast and refuses a `str` before Postgres sees the
+statement — so `staging.pahchan_regularisations` has held **0 rows for its
+entire life**, which is the consequence, not a coincidence beside it.
+
+⚠ **The identical fault, with its fix and its history, sits 200 lines below in
+the same file.** `publish_attendance_to_payroll` documents that it "did that on
+every call, for every org, since it was written" and names the bank-statement
+import (`2b864aa8`) and the sales target (`eae0b912`) as the same family. Four
+shipped instances now, the fourth reintroduced under the comment explaining it.
+That is the argument for a check over a rule, so there is one:
+`backend/tests/test_date_params_are_parsed_not_bound_as_str.py`, mutation-proved
+to fail when the parse is removed.
+
+Both are 🟡 until a punch and a regularisation are typed by a person — code
+shipped is not a customer completing the flow.
+
 | Run | Header says | Payslips actually |
 |---|---|---|
 | 2026-04 `disbursed` | 23 / ₹12,80,846.14 | **28** / ₹15,58,196.14 |

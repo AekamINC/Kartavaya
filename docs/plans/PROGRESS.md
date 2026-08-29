@@ -4762,3 +4762,43 @@ property of getting in rather than a line each author must remember.
 refetch race that `rowMenuItem` absorbs. Re-running to establish whether it is
 intermittent before touching it; widening a retry to quiet a flake is how a
 genuinely missing control starts passing.
+
+---
+
+## 2026-08-29 — proposal 93, Suite 09 (Pahchan): the flow was off at the header
+
+Suite 09 ran 7 passed / 6 failed. Two product defects, each on its own
+sufficient to make browser attendance impossible, and one test bug of mine.
+
+**`Permissions-Policy` disabled the camera and GPS for our own origin.**
+`frontend/vercel.json` sent `geolocation=(), microphone=(), camera=()`. An
+EMPTY allowlist is a denial, not an absence — the feature is off for the
+document's own origin and no user grant can re-enable it. Confirmed served on
+staging and on `www.kartavaya.com` (the apex does not send it). Pahchan's clock
+screen asks for a selfie inside a geofence and was refused both, before any
+prompt. Now `geolocation=(self), microphone=(), camera=(self)`; JSON re-parsed
+and checked for a `"//"` key, which kills a Vercel deploy with no logs.
+
+**`POST /v1/pahchan/regularisations` 500'd on every call since it was written.**
+`str` bound to `$4::date` / `$6::timestamptz`. `pahchan_regularisations` holds
+0 rows and that is why. ⚠ **The same fault, its fix and its precedent are
+documented 200 lines below in the same file** — `publish_attendance_to_payroll`
+names the bank import `2b864aa8` and the sales target `eae0b912` as this
+family. Fourth shipped instance; the fourth was reintroduced beneath the comment
+explaining it. Parsed at the top of the handler now, with a 400 that QUOTES the
+value — a date typed into an attendance correction is ordinary human input and
+the person who typed it is the one who can fix it. 415 Pahchan tests green.
+
+**The rule got a check, because a rule in a comment had already failed:**
+`backend/tests/test_date_params_are_parsed_not_bound_as_str.py`.
+
+⚠ **Its first version was wrong and I rewrote it.** It looked for a raw
+`body.<field>` anywhere after the word `RETURNING` and flagged
+`publish_attendance_to_payroll` — which parses correctly and then quite properly
+echoes the ORIGINAL STRINGS in its response payload. A check that cannot tell a
+correct use from an incorrect one is worse than none: it teaches people to edit
+the test. Re-asked as the question that matters — *is every temporal field
+parsed?* — and mutation-proved: removing one `fromisoformat` fails two tests,
+and the file restores byte-identical.
+
+Both defects are 🟡, not ✅. Nobody has yet typed a punch or a regularisation.
