@@ -4802,3 +4802,47 @@ parsed?* — and mutation-proved: removing one `fromisoformat` fails two tests,
 and the file restores byte-identical.
 
 Both defects are 🟡, not ✅. Nobody has yet typed a punch or a regularisation.
+
+---
+
+## 2026-08-29 — proposal 93, Suite 08 (Vetana): two money defects, both live
+
+**A lender took the whole of somebody's expense reimbursement.**
+`loan_capacity = max(0.0, gross_fixed + reimbursement_total - statutory - floor)`.
+A reimbursement is the employee's own spending coming back, not an earning, and
+the 50% take-home floor cannot protect it — the floor is a share of
+`gross_fixed`, and in a month somebody did not work, half of zero is zero.
+
+Live: **PS-2026-0011, Aarav Trivedi, June 2026** — gross ₹0.00, reimbursement
+₹750.00, loan ₹750.00, **net ₹0.00**. He funded the firm's expense and received
+nothing. The control sits in the same run: **PS-2026-0019, Aditya Barot**, same
+₹0.00 gross, ₹875.00 reimbursement, no loan, **net ₹875.00**. One difference.
+
+⚠ **The paragraph immediately above the line gives the reason it was wrong** —
+capacity is on the FIXED gross so "adding a bonus can never increase what is
+taken out of somebody's pay" — and the next line added a reimbursement. Same
+shape as the `$4::date` fault in `pahchan_attendance.py` earlier today: a
+comment that states the rule its own code breaks. Statutory as well as unkind:
+Payment of Wages Act 1936 s.2(vi) excludes reimbursed special expenses from
+"wages"; s.7 deductions are FROM WAGES and the s.7(3) 50% ceiling is a share of
+wages, so the base was inflated with money the Act says is not wages at all.
+
+**The reimbursement sweep had no upper bound.** Every approved unpaid claim
+landed on whichever run was processed next, in whatever order months were run.
+**2 of 2 reimbursements ever paid were wrong** — expenses dated 5 and 6 August
+2026 reimbursed on JUNE 2026 payslips. Now `expense_date <= month_end`: the END
+of the period, deliberately, so a claim approved on the 3rd for an expense on
+the 28th still rides the next run instead of being stranded forever. Also
+`is_active=TRUE`, matching `GET /manav/expense-claims`, so payroll pays what the
+screen shows — zero live exposure today (no delete route exists) but the two
+queries disagreeing is a payment nobody could account for.
+
+`backend/tests/test_reimbursement_is_not_wages.py` **evaluates the expression
+the module actually contains** rather than reimplementing the arithmetic — a
+re-derived formula would agree with itself forever. The live figures go in and
+the live wrong answer must not come out. Both mutants bite (2 failures each),
+source restores byte-identical, and the claim query parses against the real
+catalogue: 6/6 under `railway run`. 871 Vetana/Manav tests green.
+
+⚠ **The two June payslips are NOT restated.** Repairing a generated payslip is a
+write to filed money and gets its own risk report, like the ledger repair did.

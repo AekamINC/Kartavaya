@@ -2028,11 +2028,37 @@ async def process_payroll(
             "ORDER BY disbursed_date",
             org_id, emp_id,
         )
+        # ── WHAT THE FIRM OWES THIS PERSON BACK, AS AT THE END OF THIS MONTH ─
+        #
+        # ⚠ `expense_date <= month_end` — WITHOUT IT, A RUN REIMBURSES AN
+        # EXPENSE THAT HAD NOT HAPPENED YET. The sweep was unbounded, so every
+        # approved-and-unpaid claim landed on whichever run was processed next,
+        # in whatever order the months happened to be run.
+        #
+        # Live on 2026-08-29, 2 OF THE 2 REIMBURSEMENTS THIS PRODUCT HAS EVER
+        # PAID were wrong this way: claims incurred on 5 and 6 AUGUST 2026 were
+        # reimbursed on JUNE 2026 payslips (PS-2026-0011 and PS-2026-0019).
+        # A payslip is filed, disputed and audited years later, and a June
+        # salary certificate that carries an August expense cannot be defended.
+        #
+        # The bound is the END of the period, NOT the period itself. An expense
+        # incurred on the 28th and approved on the 3rd must still be paid — it
+        # simply rides the next run, which is what an employee expects and what
+        # "we owe you this" means. Bounding to the month exactly would strand
+        # any claim approved after its own month closed, and nothing would ever
+        # pick it up again.
+        #
+        # `is_active=TRUE` matches `GET /manav/expense-claims` exactly, so
+        # payroll pays what the screen shows. There is no delete route today —
+        # nothing sets the column FALSE and live exposure is zero — but the two
+        # queries disagreeing is the kind of gap that only surfaces as a
+        # payment nobody can account for.
         approved_claims = await pool.fetch(
             "SELECT id, amount FROM staging.manav_expense_claims "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
-            "AND status='approved' AND payslip_id IS NULL",
-            org_id, emp_id,
+            "AND status='approved' AND payslip_id IS NULL "
+            "AND is_active=TRUE AND expense_date <= $3::date",
+            org_id, emp_id, month_end,
         )
         reimbursement_total = sum(float(c["amount"]) for c in approved_claims)
         claim_ids = [str(c["id"]) for c in approved_claims]
@@ -2084,8 +2110,44 @@ async def process_payroll(
         # because somebody earned a bonus is a real question — and it is the
         # firm's, not this file's. Keeping it on the fixed figure means adding
         # a bonus can never increase what is taken out of somebody's pay.
+        # ⚠ A REIMBURSEMENT IS NOT WAGES AND A LOAN MAY NOT BE TAKEN OUT OF IT.
+        #
+        # This line read `gross_fixed + reimbursement_total - statutory - floor`
+        # — and the paragraph directly above it already gives the reason that is
+        # wrong. It says the capacity is computed on the FIXED gross so that
+        # "adding a bonus can never increase what is taken out of somebody's
+        # pay", and then the next line added a reimbursement, which is not even
+        # an earning.
+        #
+        # A reimbursement is the employee's OWN MONEY coming back. They paid for
+        # something the firm needed and the firm owes them. Lending it to the
+        # lender means the person funded the firm's expense and received
+        # nothing for it.
+        #
+        # ⚠ THIS HAPPENED, LIVE. PS-2026-0011, Aarav Trivedi, June 2026:
+        # gross ₹0.00 (he worked none of that month), reimbursement ₹750.00,
+        # **loan deduction ₹750.00, net pay ₹0.00**. The 50% floor protected
+        # nothing because the floor is a share of `gross_fixed`, and half of
+        # zero is zero — while the reimbursement was handed to the capacity in
+        # full. The control case is in the same run: PS-2026-0019, Aditya
+        # Barot, identical ₹0 gross, ₹875 reimbursement, NO ACTIVE LOAN, net
+        # ₹875. The loan is the only difference between the two.
+        #
+        # STATUTORY, not merely unkind: Payment of Wages Act 1936 s.2(vi)
+        # excludes from "wages" any sum paid to defray special expenses
+        # entailed on the employee by the nature of their employment. s.7
+        # deductions — including s.7(2)(f) recovery of an advance — are
+        # deductions FROM WAGES, and the s.7(3) ceiling is a share of wages.
+        # Counting a reimbursement in the base inflates that ceiling with money
+        # the Act says is not wages at all.
+        #
+        # Nothing is lost by the firm: an amount not recovered stays in
+        # `balance_remaining` and the next run takes it, exactly as the
+        # shortfall carry-forward above already describes.
+        #
+        # Found by proposal 93 Suite 08, 2026-08-29.
         floor = 0.0 if final_settlement else round(gross_fixed * _NET_PAY_FLOOR_PCT, 2)
-        loan_capacity = max(0.0, gross_fixed + reimbursement_total - statutory - floor)
+        loan_capacity = max(0.0, gross_fixed - statutory - floor)
 
         loan_deductions = []
         loan_total = 0.0

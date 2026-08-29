@@ -995,6 +995,40 @@ to fail when the parse is removed.
 Both are 🟡 until a punch and a regularisation are typed by a person — code
 shipped is not a customer completing the flow.
 
+### ⚠ Suite 08 found two money defects in payroll — both on live payslips
+
+**A loan was recovered out of a reimbursement, and the employee was paid ₹0.**
+`loan_capacity` read `gross_fixed + reimbursement_total - statutory - floor`.
+A reimbursement is the employee's OWN money coming back — they paid for
+something the firm needed. The 50% take-home floor does not protect it, because
+the floor is a share of `gross_fixed`, and half of zero is zero.
+
+**PS-2026-0011, Aarav Trivedi, June 2026, live:** gross ₹0.00, reimbursement
+₹750.00, loan deduction **₹750.00**, net pay **₹0.00**. The control case is in
+the same run — PS-2026-0019, Aditya Barot, identical ₹0.00 gross, ₹875.00
+reimbursement, no active loan, net **₹875.00**. The loan is the only difference
+between the two payslips.
+
+⚠ **The comment directly above the line already stated the rule the line
+broke** — it explains the capacity uses the FIXED gross so "adding a bonus can
+never increase what is taken out of somebody's pay", and the next line added a
+reimbursement, which is not even an earning. Payment of Wages Act 1936 s.2(vi)
+excludes reimbursed special expenses from "wages", and s.7 deductions are
+deductions FROM WAGES, so this also inflated the s.7(3) ceiling with money the
+Act says is not wages.
+
+**A June run reimbursed August expenses.** The claim sweep had no upper bound,
+so every approved unpaid claim landed on whichever run was processed next.
+**2 of the 2 reimbursements this product has ever paid were wrong this way** —
+claims dated 5 and 6 August 2026 paid on June 2026 payslips. Bounded to
+`expense_date <= month_end` (the END of the period, so a claim approved after
+its month still rides the next run rather than being stranded), and aligned to
+`is_active=TRUE` so payroll pays what the expenses screen shows.
+
+Both fixed, mutation-proved, and the query parsed against the live catalogue
+(6/6 under `railway run`). The two June payslips are **not restated** — a
+repair to a generated payslip needs its own written risk report.
+
 | Run | Header says | Payslips actually |
 |---|---|---|
 | 2026-04 `disbursed` | 23 / ₹12,80,846.14 | **28** / ₹15,58,196.14 |
