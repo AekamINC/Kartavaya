@@ -74,7 +74,7 @@ tests are all shipped; nothing is calling them.
 Add `scraper-prices` to the job list:
 
 ```
-sh -c 'rc=0; for p in hr invoices crm stock marketing publish skills scraper-prices; do c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavya-staging.up.railway.app/api/internal/cron/$p"); echo "$p -> $c $(head -c 400 /tmp/o)"; [ "$c" = "200" ] || rc=1; done; exit $rc'
+sh -c 'rc=0; for p in hr invoices crm stock marketing publish skills scraper-prices; do c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavaya-staging.up.railway.app/api/internal/cron/$p"); echo "$p -> $c $(head -c 400 /tmp/o)"; [ "$c" = "200" ] || rc=1; done; exit $rc'
 ```
 
 Only `skills` → `skills scraper-prices` changes. **Then redeploy the service**,
@@ -293,7 +293,7 @@ re-notifies people. Nothing needs doing until the table is large.
   something is wrong:
 
 ```bash
-curl -s -H "X-Cron-Secret: $CRON_SECRET" https://kartavya-staging.up.railway.app/api/internal/niyam/status
+curl -s -H "X-Cron-Secret: $CRON_SECRET" https://kartavaya-staging.up.railway.app/api/internal/niyam/status
 ```
 
 Read `last_tick_at` first. If it is more than ~20 minutes old, the cron has

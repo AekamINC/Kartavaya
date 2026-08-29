@@ -284,7 +284,7 @@ async def run_publish(x_cron_secret: str = Header("")):
 
             sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o
             -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET"
-            "https://kartavya-staging.up.railway.app/api/internal/cron/$p");
+            "https://kartavaya-staging.up.railway.app/api/internal/cron/$p");
             echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1;
             done; exit $rc'
 

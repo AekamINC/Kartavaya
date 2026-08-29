@@ -41,7 +41,7 @@
  *
  *   $ curl -H "Authorization: Bearer $E2E_ADMIN_TOKEN" \
  *          -H "X-Org-Id: fae87907-…" \
- *          https://kartavya-staging.up.railway.app/api/v1/org/members
+ *          https://kartavaya-staging.up.railway.app/api/v1/org/members
  *   401 {"detail":"Invalid or expired token"}
  *
  * So the tests that need to BE a Unicode member fail with one precise sentence
@@ -141,9 +141,59 @@ const BLOCKED =
  * while nothing leaves the building — the 1,562-row trap in §0 exactly. Any
  * assertion about mail ARRIVING must skip on this lane rather than pass.
  */
-type Lane = { creds: Creds; org: string; reference: boolean; outboundSuppressed: boolean };
+type Lane = { creds: Creds; org: string; reference: boolean; outboundSuppressed: boolean;
+              /** Set only when the lane cannot be driven at all — see UK_BLOCKED. */
+              blocked?: string };
+
+/** ⚠ STAGE 4 (§14) — Suite 01 CANNOT be replayed on the UK lane, and the reason
+ *  is an ENVIRONMENT one that should be stated rather than worked around.
+ *
+ *  Every branch of `resolveLane()` resolves to Unicode or to E2E. Asked for UK
+ *  it would fall through to `E2E_APPROVER_*` and run the whole suite against
+ *  **E2E Test & Associates** while the run was filed as a UK replay — the
+ *  "silent third org in the middle" this file's own header says would corrupt
+ *  the §14 comparison.
+ *
+ *  A UK branch cannot fix it either, and that is the finding rather than an
+ *  omission: Suite 01's SUBJECT is the login form — six bad passwords to trip
+ *  the 5/min limiter, TOTP enrolment, login by recovery code — and the UK lane
+ *  holds a TOKEN, not a password (`_lanes.ts`: `E2E_UK_OWNER_TOKEN`, and there
+ *  is no `E2E_UK_PASSWORD` in `.env.e2e`). A token login skips the very control
+ *  the suite exists to exercise, so a "UK pass" would prove nothing.
+ *
+ *  Unblocked by an owner action: add a password for keval.shah@unicodegroup.com. */
+const UK_LANE = (process.env.E2E_LANE || '').trim().toLowerCase() === 'uk';
+const UK_BLOCKED =
+  'BLOCKED — Suite 01 drives the LOGIN FORM and the UK lane has only a token, no ' +
+  'password. Running it would fall through to E2E Test & Associates and file an ' +
+  'E2E run as a UK replay. ENVIRONMENT blocker — not a product defect and not a ' +
+  'test defect. Unblocked by adding E2E_UK_PASSWORD (owner action).';
 
 function resolveLane(): Lane {
+  // ⚠ STAGE 4 (§14) — REFUSE, do not silently substitute.
+  //
+  // Every branch below resolves to Unicode or to E2E. Asked for the UK lane
+  // this function would have fallen through to `E2E_APPROVER_*` and run the
+  // whole suite against **E2E Test & Associates** while the run was filed as a
+  // UK replay — the "silent third org in the middle" this file's own header
+  // says would corrupt the §14 comparison.
+  //
+  // It cannot be fixed by adding a UK branch either, and that is a finding
+  // rather than an omission: Suite 01's subject IS the login form — six bad
+  // passwords to trip the 5/min limiter, TOTP enrolment, login by recovery
+  // code — and the UK lane holds a TOKEN, not a password (`_lanes.ts`:
+  // `E2E_UK_OWNER_TOKEN`, no `E2E_UK_PASSWORD`). A token login would skip the
+  // very control this suite exists to exercise.
+  //
+  // So: BLOCKED on the UK lane, for an ENVIRONMENT reason, stated out loud.
+  // ⚠ It must NOT throw here. `resolveLane()` runs at MODULE scope, and a throw
+  // at module scope fails the whole RUN — every sibling spec Playwright loaded
+  // alongside this one — even under a `--grep` that excludes this file. Measured
+  // 2026-08-29: it took wave 1's entire UK replay down with it. So the refusal
+  // is carried on the lane and enforced by `test.skip` below.
+  if (UK_LANE) return { creds: { email: '', password: '' }, org: 'UK AekamINC',
+    reference: false, outboundSuppressed: false, blocked: UK_BLOCKED };
+
   const uni = unicodeCreds();
   if (uni) {
     return { creds: uni, org: 'Unicode Group', reference: true, outboundSuppressed: false };
@@ -160,6 +210,8 @@ function resolveLane(): Lane {
 }
 
 const LANE = resolveLane();
+
+test.skip(() => Boolean(LANE.blocked), UK_BLOCKED);
 
 test.beforeAll(() => {
   console.log(`\n  LANE: ${LANE.org}${LANE.reference ? '  (reference lane, §14)' : '  ⚠ FALLBACK — NOT the reference lane'}`);

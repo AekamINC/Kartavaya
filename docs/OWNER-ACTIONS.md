@@ -508,7 +508,7 @@ staging. Change exactly two things:
 **1. Start command** — currently calls `/api/reports/dispatch`, which I deleted
 today, so it is failing hourly right now. Replace with:
 
-    sh -c 'c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavya-staging.up.railway.app/api/v1/dristi/scheduled-reports/dispatch"); echo "dristi-sweep -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || exit 1'
+    sh -c 'c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavaya-staging.up.railway.app/api/v1/dristi/scheduled-reports/dispatch"); echo "dristi-sweep -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || exit 1'
 
 Note it now uses **`CRON_SECRET`**, not `REPORT_DISPATCH_SECRET`. This is the
 shape `cron-niyam` already uses, copied rather than invented.
@@ -573,7 +573,7 @@ phases are now complete, so it was built:
     signature      v2 scheme, VERIFIED
     JS bundle      assets/index.android.bundle, 3,224,296 bytes  <- checked
     ABIs           arm64-v8a, armeabi-v7a
-    backend        https://kartavya-staging.up.railway.app  (STAGING)
+    backend        https://kartavaya-staging.up.railway.app  (STAGING)
 
 ⚠ **The JS bundle was verified INSIDE the archive, not assumed.** A debug APK
 carries none and is useless off the build machine — it launches and then cannot
@@ -587,7 +587,7 @@ not undergo. This is the same software, rebuilt because the file was lost.
 840 mobile tests pass.
 
 ⚠ **It points at STAGING.** `src/config.js` compiles
-`EXPO_PUBLIC_API_URL ?? https://kartavya-staging.up.railway.app`, and there is a
+`EXPO_PUBLIC_API_URL ?? https://kartavaya-staging.up.railway.app`, and there is a
 runtime override at `config.apiBaseUrl`. That is right for a verification
 build — the inbox-9 reproduction queues and clears a real punch, and it must not
 do that against production.

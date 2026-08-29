@@ -15,7 +15,7 @@ import Constants from 'expo-constants';
  */
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
-  'https://kartavya-staging.up.railway.app';
+  'https://kartavaya-staging.up.railway.app';
 
 /**
  * X-App-Version — the ONE version signal the owner approved for Pulse

@@ -36,10 +36,26 @@
  * third-party warning is not a defect and treating it as one is how a suite
  * gets ignored.
  *
+ * ── ⚠ WHICH ORG THIS AUDITS — corrected 2026-08-29 (Stage 4) ───────────────
+ *
+ * §14 puts Suite 00 FIRST **on the brand-new org**, because "an unconfigured
+ * org is survivable" is the one claim that can only be tested while the org is
+ * still unconfigured. Measured 2026-08-29, this file did not do that: it logged
+ * in with `E2E_APPROVER_EMAIL`, and that credential resolves to **E2E Test &
+ * Associates** (`64e7bea6…`, `state_code 27`, `gstin 27AAACE1234E1Z5`) — a
+ * CONFIGURED org. So every previous run of this suite audited a configured org
+ * and the cold-start claim was never actually tested.
+ *
+ * It is now lane-aware. `E2E_LANE` unset keeps the exact previous behaviour, so
+ * nothing already reported changes; `E2E_LANE=uk` runs it where §14 wants it:
+ *
+ *   E2E_LANE=uk npx playwright test --config e2e-real/coldstart.config.ts
+ *
  * Run:
  *   npx playwright test --config e2e-real/coldstart.config.ts
  */
 import { test, expect, Page, ConsoleMessage } from '@playwright/test';
+import { activeLane, signInAs } from './_lanes';
 
 /** Top-level destinations, in nav order. Params-only routes are excluded — they
  *  need an id, and inventing one tests the 404 path rather than the screen. */
@@ -93,9 +109,21 @@ function interesting(m: ConsoleMessage): boolean {
 }
 
 async function login(page: Page) {
+  // Stage 4: an explicit lane goes through `signInAs`, which runs `assertOrg`
+  // and so proves the org from the id the SERVER resolved. Unset = the previous
+  // approver login, unchanged, so no already-reported result moves.
+  if (process.env.E2E_LANE) {
+    const l = activeLane();
+    console.log(`\n  LANE: ${l.org} (${l.orgId})  — E2E_LANE=${process.env.E2E_LANE}\n`);
+    await signInAs(page, l);
+    return;
+  }
+
   const email = process.env.E2E_APPROVER_EMAIL;
   const password = process.env.E2E_APPROVER_PASSWORD;
   test.skip(!email || !password, 'E2E_APPROVER_EMAIL / _PASSWORD not in .env.e2e');
+  console.log('\n  LANE: E2E Test & Associates (approver credential — a CONFIGURED org).');
+  console.log('  ⚠ §14 wants Suite 00 on the BRAND-NEW org: re-run with E2E_LANE=uk.\n');
 
   await page.goto('/login');
   const emailBox = page.locator('#au-email, input[type="email"], input[name="email"]').first();

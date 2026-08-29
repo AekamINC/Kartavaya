@@ -116,9 +116,9 @@
  */
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
-import { ORG as ORG_IDS, assertOrg, lane, signInAs } from './_lanes';
+import { ORG as ORG_IDS, assertOrg, lane, activeLane, signInAs } from './_lanes';
 
-const API_BASE = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
 /**
  * THE LANE. Unicode Group, and asserted to be Unicode Group rather than
@@ -137,7 +137,22 @@ const API_BASE = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway
  * exactly how a "safe, read-only look at the danger tab" would end up looking
  * at somebody else's company.
  */
-const LANE = lane('unicode');
+// ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
+// unset run is byte-for-byte the Unicode run this suite was authored against.
+// `lane('unicode')` frozen here at import time was why the UK replay could not
+// be run at all — §14's own first category, a hidden dependency on Unicode.
+const LANE = activeLane();
+
+// ⚠ EXCLUDED BY DECISION ON A NON-UNICODE LANE, not broken and not skipped for
+// convenience. 02.18's subject is the danger tab READ-ONLY, behind three cages,
+// and it is deliberately pinned to one org. Under `E2E_LANE=uk` the honest
+// outcome is "not run, and here is why" — running it against Unicode inside a
+// UK report would put the silent third org in the middle that §14 warns about.
+test.skip(
+  () => (process.env.E2E_LANE || 'unicode').trim().toLowerCase() !== 'unicode',
+  'EXCLUDED BY DECISION on this lane — 02.18 is hard-wired to Unicode Group and ' +
+  'must not be repointed. Re-run without E2E_LANE to exercise it.',
+);
 
 test.beforeAll(() => {
   expect(

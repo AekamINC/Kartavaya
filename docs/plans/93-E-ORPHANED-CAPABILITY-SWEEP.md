@@ -17,7 +17,7 @@ rather than an omission.
 
 | | |
 |---|---|
-| **Route inventory** | The **DEPLOYED** OpenAPI, fetched twice — `curl -s https://kartavya-staging.up.railway.app/openapi.json`. **759 paths → 958 operations.** Both fetches `sha256[:16] = 7aa2b98bf8c1703a`, byte-identical, so the surface did not move under the sweep |
+| **Route inventory** | The **DEPLOYED** OpenAPI, fetched twice — `curl -s https://kartavaya-staging.up.railway.app/openapi.json`. **759 paths → 958 operations.** Both fetches `sha256[:16] = 7aa2b98bf8c1703a`, byte-identical, so the surface did not move under the sweep |
 | **Client inventory** | Every path-shaped string literal in `frontend/src` (**7,668**) and `mobile/src` (**2,026**), scanned line-by-line across `'…'`, `"…"` and `` `…` ``, with `${…}` collapsed to `{}` |
 | **Matching** | Segment-wise, and **deliberately generous in the route's favour**: a client `{}` matches ANY server segment, so `` `/tasks/${id}/${action}` `` counts as reaching `/api/tasks/{id}/archive`, `/toggle`, `/move` and every other sibling. A route reported orphaned is one that **no literal, no template and no dynamically-composed action segment** in either client can produce |
 | **Test files excluded** | `__tests__`, `*.test.*` and `src/__tests__/e2e` literals are recorded separately. A route reached only by a unit test is **not** reached by the product |

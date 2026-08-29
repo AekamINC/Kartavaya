@@ -88,7 +88,7 @@ Fill in every `_____` as you go. Tick boxes as they complete.
 
   **Where the production build gets `VITE_BACKEND_URL` today**, since Vercel does not hold one:
   from `frontend/.env.production`, which is committed and reads
-  `https://kartavya-production.up.railway.app`. Vite reads `.env.production` at build time,
+  `https://kartavaya-production.up.railway.app`. Vite reads `.env.production` at build time,
   so the production bundle is configured by a file in the repo and not by the dashboard.
   **Cloudflare Pages runs the same `vite build` and will pick up the same file** — so this
   variable does not strictly need entering. Enter it anyway, matching `.env.production`, so

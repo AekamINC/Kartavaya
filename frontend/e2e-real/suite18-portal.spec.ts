@@ -152,11 +152,15 @@
  *   npx playwright test --config e2e-real/suite18.config.ts
  */
 import { test, expect, Page } from '@playwright/test';
-import { lane, assertOrg, ORG } from './_lanes';
+import { lane, activeLane, assertOrg, ORG } from './_lanes';
 import { settle } from './_helpers';
 
-const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+// ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
+// unset run is byte-for-byte the Unicode run this suite was authored against.
+// `lane('unicode')` frozen here at import time was why the UK replay could not
+// be run at all — §14's own first category, a hidden dependency on Unicode.
+const LANE = activeLane();
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +

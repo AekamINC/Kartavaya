@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { OWNER_STATE, APPROVER_STATE, DL_DIR } from './real.config';
 
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 const STAMP = '2 Aug 2026';
 
 /** GET an API path with the browser context's cookies + bearer token. */

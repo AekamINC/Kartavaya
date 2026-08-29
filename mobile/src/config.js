@@ -53,7 +53,7 @@ export const API_BASE_URL_KEY = 'config.apiBaseUrl';
 
 /** Compiled into the bundle. Staging unless a profile named otherwise. */
 export const BUILD_BACKEND_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'https://kartavya-staging.up.railway.app';
+  process.env.EXPO_PUBLIC_API_URL ?? 'https://kartavaya-staging.up.railway.app';
 
 /**
  * A stored override, or undefined if there is nothing usable there.

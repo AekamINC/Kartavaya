@@ -90,6 +90,166 @@ export function lane(key: Lane['key']): Lane {
   }
 }
 
+/**
+ * ⚠ THE STAGE 4 LANE SWITCH — added 2026-08-29, and its absence WAS the first
+ * Stage 4 finding.
+ *
+ * §14 says the suites proven on Unicode are "then run against UK AekamINC
+ * **without modification**". Measured on 2026-08-29, that was not possible:
+ * nineteen suites opened with a literal `const LANE = lane('unicode')` at
+ * module scope, and suites 01/02/02b carried a private `resolveLane()` whose
+ * three branches were Unicode-by-password, Unicode-by-token and E2E-by-password
+ * — no UK branch anywhere. `coldstart-nav-audit` (Suite 00) did not use a lane
+ * at all; it logged in with `E2E_APPROVER_*`, which resolves to **E2E Test &
+ * Associates**, not to the brand-new org Suite 00 exists to audit.
+ *
+ * That is §14's OWN first category — "the suite carried a hidden dependency on
+ * Unicode's state" — in its strongest form: a dependency on Unicode's
+ * IDENTITY, frozen at import time. So the replay could not have been run at
+ * all, and a Stage 4 report saying "all suites pass on UK" would have been
+ * describing runs that never left Unicode.
+ *
+ * THE FIX IS DELIBERATELY DEFAULT-PRESERVING. `E2E_LANE` unset resolves to
+ * `unicode`, byte-for-byte the behaviour every banked Unicode result was
+ * produced under — so this cannot retroactively invalidate Stage 3. Only
+ * `E2E_LANE=uk` (or `=e2e`) moves anything, and it moves the LANE, never an
+ * assertion. §14: "A suite quietly patched to pass on both orgs destroys the
+ * only evidence this stage exists to produce."
+ *
+ *   E2E_LANE=uk npx playwright test --config e2e-real/wave1.config.ts
+ *
+ * `assertOrg()` still runs inside `signInAs()` and still proves the target from
+ * the id the SERVER resolved, so a mis-set `E2E_LANE` fails loudly rather than
+ * writing into the wrong org.
+ */
+export function activeLane(): Lane {
+  const raw = (process.env.E2E_LANE || 'unicode').trim().toLowerCase();
+  if (raw !== 'unicode' && raw !== 'uk' && raw !== 'e2e') {
+    throw new Error(
+      `E2E_LANE="${process.env.E2E_LANE}" is not a lane. Use unicode | uk | e2e.`,
+    );
+  }
+  return lane(raw as Lane['key']);
+}
+
+/**
+ * ⚠⚠ THE IDENTITY A SUITE IS ALLOWED TO TYPE INTO ITS LANE — added 2026-08-29.
+ *
+ * `assertOrg()` guards WHERE a suite writes. It cannot guard WHAT it writes,
+ * and on 2026-08-29 that gap was measured as a live hazard in Stage 4.
+ *
+ * `suite02-org-settings` 02.1 filled `#org-name` with the LITERAL string
+ * `'Unicode Group'`, `#org-city` with `'Ahmedabad'` and `#org-state` with
+ * `'Gujarat'`, then saved. Pointed at the UK lane it would have passed
+ * `assertOrg` — the session really is on UK AekamINC — and then RENAMED UK
+ * AekamINC to "Unicode Group" and moved it to Gujarat. That is the content half
+ * of the 2026-08-28 incident this file was written to prevent: the org guard
+ * caught the wrong-org write and nothing at all caught the wrong-org DATA.
+ *
+ * ⚠ AND THE SECOND-ORDER EFFECT WAS THE WORSE ONE. `suite10-vikray` derives the
+ * supplier's state from `billing_address.state`. The product does NOT —
+ * `services/gstr1_json.supplier_state_code()` reads GSTIN, then `state_code`,
+ * and only falls back to the billing address "for an org recorded before the
+ * column existed". So a Gujarat billing address written onto UK would leave the
+ * PRODUCT deriving Maharashtra (27) and the SUITE deriving Gujarat (24), and
+ * every GST split in Stage 4 would have been computed against the wrong
+ * supplier state while the run stayed green. §9's whole point — "identical
+ * figures across the two orgs would mean the ladders are not being read at
+ * all" — would have been inverted into a false pass.
+ *
+ * So identity payloads come from the LANE, never from a literal. A suite that
+ * types a company name, address, state or statutory code reads it from here.
+ *
+ * ⚠ THE STATE PAIR IS LOAD-BEARING (§9) — Unicode Gujarat 24, UK Maharashtra
+ * 27, deliberately, so identical suites must produce a DIFFERENT GST split and
+ * a DIFFERENT professional tax. Nothing here may collapse the two onto one
+ * state.
+ */
+export type LaneIdentity = {
+  name: string;
+  line1: string;
+  city: string;
+  state: string;
+  stateCode: string;
+  pin: string;
+  country: string;
+  /** ⚠ Both are CHECKSUM-INVALID on purpose — see the note below. */
+  gstin: string;
+  pan: string;
+  tan: string;
+  /** Two interchangeable invoice-series prefixes for THIS lane. 02.6 toggles
+   *  between them because §6 requires a second run to CHANGE something; both
+   *  must therefore belong to this org, not to the reference lane. */
+  docPrefixA: string;
+  docPrefixB: string;
+};
+
+/**
+ * ⚠ Why the GSTINs here are deliberately checksum-INVALID.
+ *
+ * `24AAACU5678U1Z9` is what Suite 02 has always typed, and measured against the
+ * product's own `services.gstin.is_valid()` on 2026-08-29 it is **not a valid
+ * GSTIN** — the 15th character does not check out. That is not a defect in the
+ * fixture: CLAUDE.md's standing rule is that **GSTIN/PAN/TAN block nothing**,
+ * and a value the validator rejects is exactly what proves the form still
+ * saves. The UK twin is built the same way, from the same body with a `27`
+ * prefix, so the two lanes exercise identical shapes.
+ *
+ * It also means neither value can hijack `supplier_state_code()`, whose first
+ * branch fires only for a VALID GSTIN — so the state each lane files under
+ * still comes from `state_code`, which is where §9 put it. (A valid Maharashtra
+ * twin, if one is ever wanted, is `27AAACU5678U1Z7`.)
+ */
+export function laneIdentity(l: Lane): LaneIdentity {
+  switch (l.key) {
+    case 'unicode':
+      return {
+        name: 'Unicode Group',
+        line1: '4th Floor, Unicode House',
+        city: 'Ahmedabad',
+        state: 'Gujarat',
+        stateCode: '24',
+        pin: '380015',
+        country: 'India',
+        gstin: '24AAACU5678U1Z9',
+        pan: 'AAACU5678U',
+        tan: 'AHMA12345B',
+        docPrefixA: 'UNI',
+        docPrefixB: 'UNX',
+      };
+    case 'uk':
+      return {
+        name: 'UK AekamINC',
+        line1: '2nd Floor, Aekam House',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        stateCode: '27',
+        pin: '400001',
+        country: 'India',
+        gstin: '27AAACU5678U1Z9',
+        pan: 'AAACU5678U',
+        tan: 'MUMA12345B',
+        docPrefixA: 'UKA',
+        docPrefixB: 'UKB',
+      };
+    case 'e2e':
+      return {
+        name: 'E2E Test & Associates [TEST ORG]',
+        line1: '1st Floor, E2E Chambers',
+        city: 'Pune',
+        state: 'Maharashtra',
+        stateCode: '27',
+        pin: '411001',
+        country: 'India',
+        gstin: '27AAACE1234E1Z5',
+        pan: 'AAACE1234E',
+        tan: 'PNEA12345B',
+        docPrefixA: 'E2A',
+        docPrefixB: 'E2B',
+      };
+  }
+}
+
 /** Sign in: the real form when a password exists, the org-scoped token otherwise. */
 export async function signInAs(page: Page, l: Lane) {
   if (l.password && l.email) {
@@ -144,7 +304,7 @@ export async function signInAs(page: Page, l: Lane) {
 export async function assertOrg(request: APIRequestContext, page: Page, l: Lane) {
   const token = await page.evaluate(() => localStorage.getItem('auth_token'));
   const res = await request.get(
-    `${process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app'}/api/v1/org/profile`,
+    `${process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app'}/api/v1/org/profile`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );
   expect(res.ok(), `org profile probe failed: ${res.status()}`).toBeTruthy();

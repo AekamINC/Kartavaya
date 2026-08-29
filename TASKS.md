@@ -33,7 +33,7 @@ Cross out with `- [x]` or just tell me it's done.
   Start Command (literal — Railway does NOT shell-interpret this field, the `sh -c`
   wrapper does that itself):
 
-      sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavya-staging.up.railway.app/api/internal/cron/$p"); echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1; done; exit $rc'
+      sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET" "https://kartavaya-staging.up.railway.app/api/internal/cron/$p"); echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1; done; exit $rc'
 
   Cron Schedule: `*/15 * * * *`
 
@@ -56,7 +56,7 @@ Cross out with `- [x]` or just tell me it's done.
   query form: it still works for back-compatibility but writes the secret into every
   access, proxy and platform log the request passes through.
 
-      sh -c 'c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Dispatch-Secret: $REPORT_DISPATCH_SECRET" "https://kartavya-staging.up.railway.app/api/reports/dispatch"); echo "dispatch -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || exit 1'
+      sh -c 'c=$(curl -sS -m 600 -o /tmp/o -w "%{http_code}" -X POST -H "X-Dispatch-Secret: $REPORT_DISPATCH_SECRET" "https://kartavaya-staging.up.railway.app/api/reports/dispatch"); echo "dispatch -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || exit 1'
 
   Cron Schedule: `0 * * * *` (hourly, as the docstring specifies).
 

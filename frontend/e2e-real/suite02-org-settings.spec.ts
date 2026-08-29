@@ -63,7 +63,7 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import { readFileSync } from 'fs';
 import * as path from 'path';
-import { ORG as ORG_IDS, assertOrg, type Lane as OrgLane } from './_lanes';
+import { ORG as ORG_IDS, assertOrg, laneIdentity, lane as laneOf, type Lane as OrgLane } from './_lanes';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +
@@ -89,6 +89,34 @@ type Creds = { email: string; password: string };
 type Lane = { creds: Creds; org: string; orgId: string; reference: boolean; token?: string };
 
 function resolveLane(): Lane {
+  // 0. ⚠ STAGE 4 — the UK replay (§14), and it is opt-in by env var so that a
+  //    run with `E2E_LANE` unset is byte-for-byte the Unicode run every banked
+  //    Stage 3 result came from. Without this branch the suite could not be
+  //    pointed at UK AekamINC at all, which is §14's own first category — "the
+  //    suite carried a hidden dependency on Unicode's state" — in its strongest
+  //    form: a dependency on Unicode's IDENTITY, frozen at import time.
+  //
+  //    `E2E_UK_OWNER_TOKEN` is an ORG-SCOPED org_owner on UK, not a platform
+  //    credential, so rule 1 of `_lanes.ts` holds and `assertOrg()` still proves
+  //    the target from the id the SERVER resolved.
+  const laneKey = (process.env.E2E_LANE || '').trim().toLowerCase();
+  if (laneKey === 'uk') {
+    const ukToken = process.env.E2E_UK_OWNER_TOKEN;
+    if (!ukToken) {
+      throw new Error(
+        'BLOCKED — E2E_LANE=uk but E2E_UK_OWNER_TOKEN is not in .env.e2e. ' +
+        'ENVIRONMENT blocker, not a product or test defect.',
+      );
+    }
+    return {
+      creds: { email: 'keval.shah@unicodegroup.com', password: '' },
+      org: 'UK AekamINC',
+      orgId: ORG_IDS.UK,
+      reference: false,
+      token: ukToken,
+    };
+  }
+
   // 1. Unicode with a password — the ideal: reference lane, real form login.
   const uniEmail = process.env.E2E_UNICODE_EMAIL;
   const uniPassword = process.env.E2E_UNICODE_PASSWORD;
@@ -131,6 +159,12 @@ function resolveLane(): Lane {
 }
 
 const LANE = resolveLane();
+
+/** ⚠ The identity this lane is allowed to type. See `_lanes.ts::laneIdentity` —
+ *  it exists because `assertOrg()` guards WHERE a suite writes, never WHAT. */
+const ID = laneIdentity(
+  laneOf(LANE.orgId === ORG_IDS.UK ? 'uk' : LANE.orgId === ORG_IDS.E2E ? 'e2e' : 'unicode'),
+);
 
 test.beforeAll(() => {
   console.log(
@@ -302,13 +336,20 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // exactly how a gap gets papered over by a green test.
     await expect(page.locator('#org-name')).toBeVisible({ timeout: 30_000 });
 
-    await page.locator('#org-name').fill('Unicode Group');
-    await page.locator('#org-l1').fill('4th Floor, Unicode House');
+    // ⚠ THE IDENTITY COMES FROM THE LANE, NEVER FROM A LITERAL — Stage 4, §14.
+    // These seven lines used to type 'Unicode Group' / 'Ahmedabad' / 'Gujarat'
+    // as constants. `assertOrg()` guards WHERE this suite writes and cannot
+    // guard WHAT it writes, so on the UK lane that would have passed the org
+    // guard and then RENAMED UK AekamINC to "Unicode Group" and moved it to
+    // Gujarat — the content half of the 2026-08-28 incident. `laneIdentity()`
+    // carries the reasoning and the §9 state-pair constraint in full.
+    await page.locator('#org-name').fill(ID.name);
+    await page.locator('#org-l1').fill(ID.line1);
     await page.locator('#org-l2').fill(`Suite ${RUN.slice(-4)}`);
-    await page.locator('#org-city').fill('Ahmedabad');
-    await page.locator('#org-state').fill('Gujarat');
-    await page.locator('#org-pin').fill('380015');
-    await page.locator('#org-country').fill('India');
+    await page.locator('#org-city').fill(ID.city);
+    await page.locator('#org-state').fill(ID.state);
+    await page.locator('#org-pin').fill(ID.pin);
+    await page.locator('#org-country').fill(ID.country);
 
     await page.getByRole('button', { name: /Save company profile/ }).click();
     // ⚠ TEST BUG, fixed. The bare text matched TWO nodes — the sr-only
@@ -325,8 +366,8 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // Saved means it survives a reload, not that a toast appeared. A toast is
     // the client's opinion; a reload is the server's.
     await page.reload();
-    await expect(page.locator('#org-city')).toHaveValue('Ahmedabad', { timeout: 30_000 });
-    await expect(page.locator('#org-state')).toHaveValue('Gujarat');
+    await expect(page.locator('#org-city')).toHaveValue(ID.city, { timeout: 30_000 });
+    await expect(page.locator('#org-state')).toHaveValue(ID.state);
     await expect(page.locator('#org-l2')).toHaveValue(`Suite ${RUN.slice(-4)}`);
   });
 
@@ -371,9 +412,9 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // and the 500 took the whole form with it. Add-then-remove exercises both
     // directions in one pass.
     const CODES: [string, string][] = [
-      ['#org-gstin', '24AAACU5678U1Z9'],
-      ['#org-pan', 'AAACU5678U'],
-      ['#org-tan', 'AHMA12345B'],
+      ['#org-gstin', ID.gstin],
+      ['#org-pan', ID.pan],
+      ['#org-tan', ID.tan],
     ];
 
     for (const [id, value] of CODES) {
@@ -654,7 +695,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // rejects plus tags — proven by probe 2026-08-28). It is safe as a FROM
     // address: this stores a sender, it does not send anything.
     await first.fill('test@unicodegroup.com');
-    await page.locator(`#snd-${purpose}-name`).fill('Unicode Group');
+    await page.locator(`#snd-${purpose}-name`).fill(ID.name);
 
     const res = await saveAndWait(page, /Save sender addresses/, /senders/);
     expect(res.status(), `saving a sender answered ${res.status()}.${dump(wire)}`)
@@ -682,11 +723,11 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     }
 
     await page.locator('#upi-paytm').fill('unicodegroup@paytm');
-    await page.locator('#upi-paytm-name').fill('Unicode Group');
+    await page.locator('#upi-paytm-name').fill(ID.name);
     await page.locator('#upi-phonepe').fill('unicodegroup@ybl');
-    await page.locator('#upi-phonepe-name').fill('Unicode Group');
+    await page.locator('#upi-phonepe-name').fill(ID.name);
     await page.locator('#upi-gpay').fill('unicodegroup@okhdfcbank');
-    await page.locator('#upi-gpay-name').fill('Unicode Group');
+    await page.locator('#upi-gpay-name').fill(ID.name);
 
     const res = await saveAndWait(page, /Save UPI IDs/, /upi-accounts/);
     expect(res.status(), `saving UPI ids answered ${res.status()}.${dump(wire)}`)
@@ -776,8 +817,13 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     // twice is not a save at all — the form diffs, finds nothing changed, sends
     // nothing, and the test reports a timeout that reads like a broken product.
     // This test failed exactly that way on its second run.
+    // ⚠ AND THE PAIR COMES FROM THE LANE. These were the literals 'UNI'/'UNX'
+    // — Unicode's own invoice series — so on any other org this test stamped a
+    // Unicode-branded series onto somebody else's documents. Same defect class
+    // as 02.1's hardcoded company name, and `assertOrg()` cannot catch either:
+    // it guards WHERE this suite writes, never WHAT.
     const current = await box.inputValue();
-    const prefix = current === 'UNI' ? 'UNX' : 'UNI';
+    const prefix = current === ID.docPrefixA ? ID.docPrefixB : ID.docPrefixA;
 
     await box.click();
     await box.press('ControlOrMeta+a');
@@ -884,7 +930,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   ];
   const slotEmail = (tag: string) => `kevalvshah03+u${tag}@gmail.com`;
 
-  const API_BASE = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+  const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
   /** The member rows the SERVER holds, read fresh. The screen is the claim; this is the fact. */
   /**

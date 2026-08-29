@@ -18,7 +18,7 @@
       },
       "env": {
         "APP_ENV": "development",
-        "EXPO_PUBLIC_API_URL": "https://kartavya-staging.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://kartavaya-staging.up.railway.app"
       }
     },
     "preview": {
@@ -32,7 +32,7 @@
       },
       "env": {
         "APP_ENV": "preview",
-        "EXPO_PUBLIC_API_URL": "https://kartavya-staging.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://kartavaya-staging.up.railway.app"
       }
     },
     "simulator": {
@@ -43,7 +43,7 @@
       },
       "env": {
         "APP_ENV": "preview",
-        "EXPO_PUBLIC_API_URL": "https://kartavya-staging.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://kartavaya-staging.up.railway.app"
       }
     },
     "production": {
@@ -58,7 +58,7 @@
       },
       "env": {
         "APP_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://kartavya-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://kartavaya-production.up.railway.app"
       }
     }
   },

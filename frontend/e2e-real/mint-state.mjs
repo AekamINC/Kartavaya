@@ -135,7 +135,7 @@ const ORG_KEY = 'Kartavaya_active_org';   // src/lib/orgContext.js:30
 /** Which org the SERVER says this token resolves to, with no header set. */
 async function resolvedOrg(token) {
   try {
-    const base = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+    const base = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
     const res = await fetch(`${base}/api/v1/org/profile`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -197,7 +197,7 @@ function subjectOf(token) {
 // happens NEXT, and its absence is a reason to refuse — never a reason to skip
 // the question.
 if (process.env.E2E_ADMIN_TOKEN && process.env.E2E_ORG_ID) {
-  const api = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+  const api = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
   const probe = async (token) => {
     try {
       const r = await fetch(`${api}/api/v1/org/members?limit=1`, {

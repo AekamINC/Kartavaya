@@ -303,14 +303,18 @@ import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
+import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 import { setDate } from './_helpers';
 
 const DL = path.join(os.tmpdir(), 'kartavya-e2e-wave4', 'vikray-downloads');
 fs.mkdirSync(DL, { recursive: true });
 
-const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+// ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
+// unset run is byte-for-byte the Unicode run this suite was authored against.
+// `lane('unicode')` frozen here at import time was why the UK replay could not
+// be run at all — §14's own first category, a hidden dependency on Unicode.
+const LANE = activeLane();
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +
@@ -396,6 +400,60 @@ const GST_STATE_CODE: Record<string, string> = {
   Telangana: '36', 'Andhra Pradesh': '37', Ladakh: '38',
   'Other Territory': '97', 'Centre Jurisdiction': '99',
 };
+
+/** code -> name, inverted from the table above so there is ONE list to maintain. */
+const GST_STATE_NAME: Record<string, string> = Object.fromEntries(
+  Object.entries(GST_STATE_CODE).map(([name, code]) => [code, name]),
+);
+
+/**
+ * ⚠ THE SUPPLIER'S STATE, DERIVED THE WAY THE PRODUCT DERIVES IT — fixed
+ * 2026-08-29 (Stage 4, §14). **This was a TEST BUG, and it was about to become
+ * an invisible one.**
+ *
+ * This suite used to read the supplier's state as
+ * `profile.billing_address.state` and nothing else. The product does not:
+ * `backend/services/gstr1_json.py::supplier_state_code()` reads, in order —
+ *
+ *   1. the first two characters of a VALID `gstin`
+ *   2. `state_code`, when it is a real GST code
+ *   3. `state_code` parsed as a state NAME
+ *   4. `billing_address.state`  ← last, and its own docstring says this is the
+ *      fallback "for an org recorded before the column existed"
+ *
+ * So the suite read the product's LAST fallback as its ONLY source. Measured
+ * 2026-08-29 on the two Stage 4 lanes:
+ *
+ *   Unicode  state_code 24  billing_address.state "Gujarat"  -> agreed, by luck
+ *   UK       state_code 27  billing_address       {}         -> suite got ""
+ *
+ * On UK the old helper produced `""` and `expectedSplit()` failed its own
+ * precondition, which is how the fault was FOUND. The dangerous version is the
+ * one it was heading for: Suite 02 wrote a Gujarat billing address onto every
+ * lane it ran, so once wave 1 had run on UK this helper would have returned
+ * "Gujarat" for a Maharashtra org and every GST split in the Stage 4 replay
+ * would have been computed against the wrong supplier state — silently, and
+ * green. §9's state pair exists precisely so the two orgs CANNOT agree.
+ *
+ * Reading `state_code` is therefore not a workaround for UK's empty address; it
+ * is the suite finally asking the question the product asks.
+ */
+function supplierState(profile: any): string {
+  const gstin = String(profile?.gstin || '').trim().toUpperCase();
+  // Prefix only, and only when there are 15 characters to take it from — the
+  // checksum is the product's business, not this suite's. A malformed GSTIN
+  // simply falls through, which is also what `gstin_is_valid()` causes.
+  if (gstin.length === 15 && GST_STATE_NAME[gstin.slice(0, 2)]) {
+    return GST_STATE_NAME[gstin.slice(0, 2)];
+  }
+  const declared = String(profile?.state_code || '').trim();
+  if (declared) {
+    const padded = declared.padStart(2, '0');
+    if (GST_STATE_NAME[padded]) return GST_STATE_NAME[padded];
+    if (GST_STATE_CODE[declared]) return declared;   // already a name
+  }
+  return String(profile?.billing_address?.state || '').trim();
+}
 
 /**
  * THE STATUTORY RULE, in one function, derived from the PAIR.
@@ -1322,9 +1380,10 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       // THE SUPPLIER'S STATE, READ LIVE. Never a constant — a suite that
       // hardcodes it cannot notice when the org's own registration changes.
       const profile = await apiOne(page, '/api/v1/org/profile');
-      const homeState = String(profile?.billing_address?.state || '').trim();
-      expect(homeState, 'the organisation profile carries no billing state, so the place of ' +
-        'supply pair cannot be formed and every GST assertion below would be a guess')
+      const homeState = supplierState(profile);
+      expect(homeState, 'the organisation profile yields no supplier state from gstin, ' +
+        'state_code OR billing address, so the place-of-supply pair cannot be formed and ' +
+        'every GST assertion below would be a guess')
         .toBeTruthy();
       const homeCode = GST_STATE_CODE[homeState];
       expect(homeCode, `"${homeState}" is not a GST state`).toBeTruthy();
@@ -1890,7 +1949,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       const clients = await apiRows(page, '/api/v1/graha/clients');
       const members = await memberNames(page);
       const profile = await apiOne(page, '/api/v1/org/profile');
-      const PLAN = planOrders(clients, members, String(profile?.billing_address?.state || ''));
+      const PLAN = planOrders(clients, members, supplierState(profile));
 
       const orders = await myOrders(page);
       const problems: string[] = [];
@@ -1980,7 +2039,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       const clients = await apiRows(page, '/api/v1/graha/clients');
       const members = await memberNames(page);
       const profile = await apiOne(page, '/api/v1/org/profile');
-      const PLAN = planOrders(clients, members, String(profile?.billing_address?.state || ''));
+      const PLAN = planOrders(clients, members, supplierState(profile));
       const toCancel = PLAN.filter((o) => o.cancel);
       expect(toCancel.length, '§4 asks for six cancelled orders and the plan names ' +
         `${toCancel.length}`).toBe(N_CANCELLED);
@@ -2099,7 +2158,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       const clients = await apiRows(page, '/api/v1/graha/clients');
       const members = await memberNames(page);
       const profile = await apiOne(page, '/api/v1/org/profile');
-      const homeState = String(profile?.billing_address?.state || '');
+      const homeState = supplierState(profile);
       const PLAN = planOrders(clients, members, homeState);
       const toInvoice = PLAN.filter((o) => o.invoice);
       expect(toInvoice.length, `§4 asks for ${N_INVOICED} orders converted to invoices and the ` +

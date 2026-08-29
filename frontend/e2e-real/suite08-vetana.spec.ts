@@ -343,11 +343,15 @@
  *   npx playwright test --config e2e-real/wave3.config.ts --project vetana
  */
 import { test, expect, Page, Locator } from '@playwright/test';
-import { lane, signInAs } from './_lanes';
+import { lane, activeLane, signInAs } from './_lanes';
 import { setDate, settle, download } from './_helpers';
 
-const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+// ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
+// unset run is byte-for-byte the Unicode run this suite was authored against.
+// `lane('unicode')` frozen here at import time was why the UK replay could not
+// be run at all — §14's own first category, a hidden dependency on Unicode.
+const LANE = activeLane();
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
 /** The three consecutive months §4 asks for. See §4-not-reachable note 1. */
 const MONTHS = ['2026-06', '2026-07', '2026-08'] as const;

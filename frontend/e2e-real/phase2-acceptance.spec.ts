@@ -253,7 +253,7 @@ test('2.5 · creating a billing profile for another org\'s client is refused',
     const theirs = await api(page, 'get', '/api/v1/graha/clients?limit=1');
     // Read it as the OTHER org, then ask for it as THIS one.
     const asThem = await page.request.get(
-      `${process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app'}` +
+      `${process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app'}` +
       '/api/v1/graha/clients?limit=1',
       {
         headers: {

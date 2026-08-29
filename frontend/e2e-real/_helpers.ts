@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DL_DIR } from './real.config';
 
-export const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+export const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 export const ORG = process.env.E2E_ORG_ID || '';
 
 /**

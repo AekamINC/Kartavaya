@@ -231,7 +231,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
+import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -239,8 +239,12 @@ const FIX = path.join(HERE, 'fixtures', 'generated', 'esign');
 const OUT = path.join(os.tmpdir(), 'kartavya-e2e-suite15', 'downloads');
 fs.mkdirSync(OUT, { recursive: true });
 
-const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+// ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
+// unset run is byte-for-byte the Unicode run this suite was authored against.
+// `lane('unicode')` frozen here at import time was why the UK replay could not
+// be run at all — §14's own first category, a hidden dependency on Unicode.
+const LANE = activeLane();
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 const BASE = process.env.E2E_BASE_URL || 'https://staging.kartavaya.com';
 
 const BLOCKED =

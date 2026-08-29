@@ -1441,7 +1441,7 @@ what the domain serves. Fetched `staging.kartavaya.com` and hashed what it
 actually returns: 3 entry assets + 123 lazy chunks, 3.17 MB js / 580 KB css,
 carrying `--m-niyam` (76b7c6f), `.blx` (0ef99dcb) and `st__group--flush`
 (5980a63b). The deployed frontend calls
-`https://kartavya-staging.up.railway.app` — the staging backend, confirmed from
+`https://kartavaya-staging.up.railway.app` — the staging backend, confirmed from
 its own network traffic.
 
 **Phase-1 UI driven live with the godmode token** (session restore of

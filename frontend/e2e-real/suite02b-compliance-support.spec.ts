@@ -62,13 +62,29 @@ const BLOCKED =
   'platform_bypass and will write there. ENVIRONMENT blocker, not a product ' +
   'or test defect.';
 
-const API_BASE = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
 type Creds = { email: string; password: string };
 type Lane = { creds: Creds; org: string; orgId: string; reference: boolean; token?: string };
 
-/** Mirrors `suite02-org-settings.spec.ts::resolveLane` exactly. See its header. */
+/** Mirrors `suite02-org-settings.spec.ts::resolveLane` exactly. See its header,
+ *  including branch 0 — the Stage 4 (§14) UK replay switch, opt-in on
+ *  `E2E_LANE=uk` so an unset run is byte-for-byte the previous Unicode run. */
 function resolveLane(): Lane {
+  const laneKey = (process.env.E2E_LANE || '').trim().toLowerCase();
+  if (laneKey === 'uk') {
+    const ukToken = process.env.E2E_UK_OWNER_TOKEN;
+    if (!ukToken) {
+      throw new Error(
+        'BLOCKED — E2E_LANE=uk but E2E_UK_OWNER_TOKEN is not in .env.e2e. ' +
+        'ENVIRONMENT blocker, not a product or test defect.',
+      );
+    }
+    return {
+      creds: { email: 'keval.shah@unicodegroup.com', password: '' },
+      org: 'UK AekamINC', orgId: ORG_IDS.UK, reference: false, token: ukToken,
+    };
+  }
   const uniEmail = process.env.E2E_UNICODE_EMAIL;
   const uniPassword = process.env.E2E_UNICODE_PASSWORD;
   if (uniEmail && uniPassword) {

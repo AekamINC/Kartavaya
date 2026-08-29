@@ -352,11 +352,15 @@ import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
+import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 import { openTab } from './_helpers';
 
-const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+// ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
+// unset run is byte-for-byte the Unicode run this suite was authored against.
+// `lane('unicode')` frozen here at import time was why the UK replay could not
+// be run at all — §14's own first category, a hidden dependency on Unicode.
+const LANE = activeLane();
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 
 const BLOCKED =
   'BLOCKED — no credential for the Unicode Group lane. Set E2E_UNICODE_TOKEN (or ' +

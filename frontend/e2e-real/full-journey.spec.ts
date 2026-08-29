@@ -50,7 +50,7 @@ import * as path from 'path';
 import { OWNER_STATE, DL_DIR } from './real.config';
 import { submitting, pickOption, openTab } from './_helpers';
 
-const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
 const RUN = Date.now() % 1000000;
 // AWS SES simulator: accepts and discards, never bounces, reaches no human.
 // A fresh address per run is not decoration — the members screen adds an
