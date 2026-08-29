@@ -78,9 +78,18 @@
  *            is copied into a column Ganit's readers treat as gross, and the
  *            discount is then subtracted a second time by every reader that
  *            computes `subtotal − discount`.
- *          A third, reported not asserted: the invoice is minted with
- *          `place_of_supply=''` (`routers/vikray.py:918`), a Rule 46 particular
- *          on an inter-State tax invoice.
+ *          A third was reported-not-asserted here and is now FIXED AND
+ *          ASSERTED, 2026-08-29: the conversion minted every invoice with
+ *          `place_of_supply=''` — measured, 10 of 10 order-generated invoices
+ *          blank and 6 of them inter-State. `services/gstr1_json.py` reads that
+ *          exact column, and a blank one on an inter-State supply is not an
+ *          error there: the invoice is HELD OUT OF THE RETURN altogether, so
+ *          the sale never appears. `_order_place_of_supply` now derives it from
+ *          the counterparty and the order's own `is_igst`, and 10.08 asserts it
+ *          against the same client state this suite derives its tax split from.
+ *          ⚠ Asserted on THIS RUN'S conversions only; the historical blanks are
+ *          named in the log, because re-stating a Rule 46 particular on an
+ *          issued tax invoice is a data change to live rows and is the owner's.
  *
  *   10.05  Opening an order drops the tab from the URL. `orderPath()`
  *          (`vikray/_shared.jsx`) is `/vikray/orders/<id>` with no query, while
@@ -132,13 +141,19 @@
  * ⚠ THREE FACTS ABOUT THE LIVE DATA AND THE PRODUCT, measured 2026-08-29 and
  *   reported rather than worked around:
  *
- *   · **Vikray has no place-of-supply field at all.** Ganit's invoice form has
- *     a place-of-supply select and derives a suggestion from the two GSTINs;
- *     the order form has a bare `Inter-state supply (IGST)` CHECKBOX and
- *     derives nothing. So the split on a sales order is whatever the person
+ *   · **Vikray's ORDER FORM has no place-of-supply field.** Ganit's invoice
+ *     form has a place-of-supply select and derives a suggestion from the two
+ *     GSTINs; the order form has a bare `Inter-state supply (IGST)` CHECKBOX
+ *     and derives nothing. So the split on a sales order is whatever the person
  *     ticked, and `vikray_orders` carries no record of which State the supply
  *     was into. This suite therefore derives the answer itself, ticks the box
  *     accordingly, and asserts the SERVER split against the derivation.
+ *     ⚠ CHANGED 2026-08-29 for the INVOICE, not the order. The conversion no
+ *     longer needs a field to carry: it resolves the state from the customer's
+ *     GSTIN then their address, skipping any candidate that would contradict
+ *     the `is_igst` the order already records — which is what the eight
+ *     contradicting fixtures below make necessary. The ORDER still stores no
+ *     state, and that remains true and untested-for.
  *   · **Suite 04's fixture GSTINs contradict their addresses.** Measured:
  *     eight of the twenty-five Unicode clients carry a GSTIN beginning `24`
  *     (Gujarat) at a Maharashtra or Karnataka address — `S04 Client 04 Pune`,
@@ -2084,7 +2099,8 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       const clients = await apiRows(page, '/api/v1/graha/clients');
       const members = await memberNames(page);
       const profile = await apiOne(page, '/api/v1/org/profile');
-      const PLAN = planOrders(clients, members, String(profile?.billing_address?.state || ''));
+      const homeState = String(profile?.billing_address?.state || '');
+      const PLAN = planOrders(clients, members, homeState);
       const toInvoice = PLAN.filter((o) => o.invoice);
       expect(toInvoice.length, `§4 asks for ${N_INVOICED} orders converted to invoices and the ` +
         `plan names ${toInvoice.length}`).toBe(N_INVOICED);
@@ -2093,6 +2109,15 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       const problems: string[] = [];
       let raised = 0;
       let already = 0;
+      /** The orders THIS execution converted — the only ones whose document
+       *  was written by the code under test. §6 makes a second run find them
+       *  all already present, so a check scoped to this set proves nothing on
+       *  a re-run and says so rather than passing silently. */
+      const raisedNow = new Set<string>();
+      /** Blanks on documents raised BEFORE the fix. Named, never asserted on:
+       *  re-stating a Rule 46 particular on an issued tax invoice is a data
+       *  change to live rows and is the owner's. */
+      const preexistingBlank: string[] = [];
 
       for (const plan of toInvoice) {
         const row = orders.get(plan.mark);
@@ -2114,6 +2139,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           /\/v1\/vikray\/orders\/[0-9a-f-]+\/invoice$/,
           `invoicing ${row.order_number}`, ['POST']);
         raised++;
+        raisedNow.add(plan.mark);
         await expect(drawer.locator('.vkd__title'), `${row.order_number} was invoiced and the ` +
           'record does not show the Invoiced tag').toContainText('Invoiced', { timeout: 30_000 });
         await closeDrawer(page, drawer);
@@ -2176,13 +2202,59 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
             'reader that will subtract the discount again.');
         }
 
-        // Reported, not asserted: an inter-State tax invoice needs its place of
-        // supply under Rule 46, and this conversion mints one with `''`.
-        if (invoice.is_igst && !String(invoice.place_of_supply || '').trim()) {
-          console.log(`     ⚠ ${plan.mark} → ${invoice.invoice_number}: an inter-State tax ` +
-            'invoice with an empty place_of_supply (routers/vikray.py:918 writes the literal \'\'). ' +
-            'Rule 46(n) requires it. Reported, not asserted — Vikray has no place-of-supply field ' +
-            'for the conversion to carry.');
+        // ── THE PLACE OF SUPPLY ────────────────────────────────────────
+        //
+        // ⚠ ASSERTED ON WHAT THIS EXECUTION MINTED, AND REPORTED ON THE REST
+        // — the same rule 17.07 applies to the invoice series, and for the
+        // same reason: the fix reaches every FUTURE conversion and cannot
+        // re-write a document already issued. Re-stating the place of supply
+        // on a tax invoice that has gone out is a data change to live rows
+        // and is the owner's call (`docs/OWNER-ACTIONS.md` item 22), not a
+        // suite's. So the strict check is scoped to the orders invoiced in
+        // THIS run, where it bites, and a historical blank is NAMED in the
+        // log rather than either failing for ever or passing silently.
+        //
+        // WHAT IT USED TO BE. `generate_invoice_from_order` wrote the literal
+        // `''`, and `services/gstr1_json.py` reads that exact column. On an
+        // INTRA-state supply the return builder falls back to the supplier's
+        // own state and is right anyway; on an INTER-state one there is
+        // nothing to fall back on and the invoice is HELD OUT OF GSTR-1
+        // entirely, silently, with the money still on the books.
+        //
+        // WHAT IT MUST BE. The customer's own state — and this suite already
+        // derives that, from the client's ADDRESS, for the tax split it
+        // asserts a few lines above. So the check reuses `plan.clientState`
+        // rather than re-deriving: if the invoice's place of supply and the
+        // suite's own split were ever computed from different facts, the two
+        // assertions could pass while contradicting each other.
+        const posRaw = String(invoice.place_of_supply || '').trim();
+        if (!raisedNow.has(plan.mark)) {
+          if (!posRaw) preexistingBlank.push(`${plan.mark} → ${invoice.invoice_number}`);
+        } else if (!posRaw) {
+          problems.push(`${plan.mark}: the invoice raised this run carries NO place of supply. ` +
+            'Rule 46(n) asks for it, and `gstr1_json.parse_state_code` reads this exact column: ' +
+            'an inter-State supply with a blank one is held out of the GST return altogether ' +
+            'rather than reported wrongly, so the sale never appears.');
+        } else {
+          const posCode = GST_STATE_CODE[posRaw];
+          const wantCode = GST_STATE_CODE[plan.clientState];
+          if (!posCode) {
+            problems.push(`${plan.mark}: the invoice's place of supply reads "${posRaw}", which ` +
+              'is not a GST state this product knows. `services/gst_states.py` is the one ' +
+              'codelist and every writer must draw its spelling from it, because ' +
+              '`gstr1_json.parse_state_code` is what has to read the value back.');
+          } else if (posCode !== wantCode) {
+            problems.push(`${plan.mark}: the customer is in ${plan.clientState} and the invoice ` +
+              `says the supply was into "${posRaw}". Place of supply is the field that decides ` +
+              'CGST/SGST against IGST on the return, so naming the wrong one moves tax between ' +
+              'two state governments.');
+          } else if ((posCode !== GST_STATE_CODE[homeState]) !== Boolean(invoice.is_igst)) {
+            problems.push(`${plan.mark}: the invoice is marked ` +
+              `${invoice.is_igst ? 'inter' : 'intra'}-State and its place of supply is ` +
+              `"${posRaw}" against a supplier in ${homeState}. The document states one ` +
+              'treatment and carries another, which is `doc_validation`\'s blocking "Tax ' +
+              'split" gap — one supply cannot be taxed both ways.');
+          }
         }
       }
 
@@ -2200,6 +2272,23 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
 
       console.log(`\n  10.08 — ${raised} invoices raised this run, ${already} already present ` +
         `(§6 idempotence); ${converted}/${N_INVOICED} orders carry an invoice${dumpWire(wire)}\n`);
+
+      // ── WHAT THE PLACE-OF-SUPPLY CHECK ACTUALLY PROVED THIS RUN ───────────
+      // Said out loud, because a check scoped to this run's own output proves
+      // NOTHING on a second execution — every order is already invoiced — and
+      // a silent zero there reads exactly like a pass.
+      console.log(`  10.08 — place of supply: ASSERTED on ${raisedNow.size} invoice(s) raised ` +
+        `this run${raisedNow.size === 0
+          ? '. NOTHING WAS PROVED THIS EXECUTION — every order was already invoiced (§6), so '
+            + 'the check bites only on a run that converts, i.e. against a rebuilt org'
+          : ` (supplier ${homeState || 'UNKNOWN'})`}.\n` +
+        (preexistingBlank.length
+          ? `     ⚠ ${preexistingBlank.length} invoice(s) raised BEFORE the fix still carry a `
+            + 'blank place_of_supply. `gstr1_json` holds every inter-State one out of the return '
+            + 'entirely. NOT corrected here: re-stating a Rule 46 particular on an issued tax '
+            + 'invoice is a data change to live rows and is the owner\'s (OWNER-ACTIONS item 22).'
+            + `\n       ${preexistingBlank.join('\n       ')}\n`
+          : '     No historical blanks among this suite\'s converted orders.\n'));
 
       expect(converted, `§4 asks for ${N_INVOICED} orders converted to invoices and ${converted} ` +
         'carry one').toBe(N_INVOICED);

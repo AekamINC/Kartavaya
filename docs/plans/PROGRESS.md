@@ -5092,3 +5092,179 @@ been a false product finding". A NUL byte written and removed. A `count()` that
 counted the empty-string default, re-queried as 0/18. And a cross-agent ratchet
 left red by CORRECT but unfinished work, reported by an agent working on an
 entirely different suite.
+
+---
+
+## 2026-08-29 · §F items 1 and 2 — the two statutory findings on the invoice path
+
+Both are on the GST/invoice write path, which is why they were one assignment.
+Every count below came from a live query on the date shown, read-only.
+
+### Finding 1 — the auto-invoice sweep was minting FINAL tax invoices unattended
+
+`sweep_client_auto_invoices` INSERTed into `staging.ganit_invoices` without
+naming `doc_status`. **Confirmed from the live catalogue, not from a migration
+file** (`pg_attrdef`, 2026-08-29):
+
+    staging.ganit_invoices.doc_status      text  DEFAULT 'final'::text
+    staging.ganit_invoices.invoice_type    text  NOT NULL DEFAULT 'tax_invoice'
+    staging.ganit_invoices.place_of_supply text  DEFAULT ''::text
+    `public` has no ganit_invoices at all — BOTH product schemas checked.
+    Schemas re-measured the same day: FIFTEEN, not fourteen.
+
+So a cron minted a finished tax invoice, with a Rule 46(b) serial spent on it,
+that never passed `ganit._refuse_final_if_incomplete` — the gate whose refusal
+reads *"Nothing has been invented to fill the gap."*
+
+**⚠ THE EXPOSURE MEASUREMENT WAS THE INTERESTING PART, AND THE FIRST READING WAS
+WRONG.** Live today:
+
+| | rows |
+|---|---|
+| `staging.client_invoice_lines` | **0** |
+| `ganit_invoices WHERE created_by='system'` | **0** |
+| `client_service_lines WHERE auto_invoice` | **0** of 9 |
+
+That reads "latent". It is not. This file's own Phase 3.3 acceptance records
+`/cron/billing` raising **INV-2026-0093 (₹88,500)** and **INV-2026-0094
+(₹17,700)** against Unicode Group on 2026-08-27, serials drawn from that firm's
+live series. Both rows were deleted by the 93 Stage 2 reseed on 08-28. **A zero
+that means "wiped", not "never"** — the failure shape
+`broken_write_hides_downstream_bugs` describes, met from the other direction.
+
+And `billing` **is** in `cron-daily`'s start command, read off the Railway
+service config 2026-08-29. STATUS.md said that step was still owed; both cells
+are corrected. The tick schedule was not read, so the claim is *wired*, not
+*firing*.
+
+**THE DECISION: it writes `'draft'`.** Not "run the gate before writing".
+Running the gate needs an answer for a row that FAILS it, and every answer is
+worse than a draft: skipping leaves a monthly retainer silently unbilled, which
+is the same shape as the "invoiced exactly once, for ever" defect the period
+logic already exists to prevent, and the kind a firm finds at year end. Nothing
+is thrown away — the invoice is created, numbered, on the register, and issued
+by a person with `Mark final`, which DOES run the gate. It is also what the
+sibling `generate_usage_invoice` in the same file already writes to the same
+column; a sweep minting `final` beside a button minting `draft` was the
+inconsistency, not a design.
+
+**The sibling blind spot was checked, not assumed.** The 08-29 fix to
+`generate_invoice_from_order` was that the gate got only `contact_id`, so a
+company with no named person 422'd. A swept invoice is exactly that shape —
+`client_id`, no `contact_id`. `ganit.update_invoice_status` allows
+`draft -> final` and passes `client_id`, so the Rule 46(e) company fallback
+fires and a swept draft can actually be issued. Asserted.
+
+### Finding 2 — every converted invoice stored a blank place of supply
+
+`generate_invoice_from_order` hardcoded `''`. Measured 2026-08-29 over all 65
+invoices:
+
+| | |
+|---|---|
+| blank `place_of_supply` | **31** |
+| from an order (`notes LIKE 'Generated from order %'`) | **10** |
+| ...of those, blank | **10 — every one** |
+| ...of those, `is_igst` | **6** |
+| blank AND `is_igst`, all sources | **19** |
+
+**Severity turns on what `parse_state_code('')` does, so it was read rather than
+guessed.** It returns `""`, and `gstr1_json` then splits:
+
+- **intra-state** — falls back to the supplier's own state, correctly, "because
+  that is what `is_igst = false` MEANS". The return is right; the document is
+  short of a Rule 46(n) particular.
+- **inter-state** — nothing to fall back on, so the row is `_hold`'d: *"no place
+  of supply recorded, and it cannot be inferred for an inter-state supply"*.
+  **The invoice does not appear in the return at all**, silently, with the money
+  still on the books. **Six live invoices are in that state.** ACTIVE.
+
+**The convention was read off the live column, not invented.** Of 34 populated
+rows, **32 carry a NAME** ("Gujarat", "Maharashtra", "Tamil Nadu", "Karnataka",
+"Delhi") — all written by `ganit.create_invoice` from the form, which is the
+directly-created path and the reference behaviour — and 2 carry a bare code from
+`client_billing.generate_usage_invoice`. The name is also what Rule 46(n) asks
+to appear ("along with the name of the State") and what `invoice_pdf.py:259`
+prints RAW onto the customer's document. So: the name.
+
+`_order_place_of_supply` derives it from the supplier's state
+(`gstr1_json.supplier_state_code`) and the counterparty (the person's GSTIN
+prefix, then the company's, then either address — the order `InvoiceForm.jsx`
+already derives in), reading every candidate through **`parse_state_code`, the
+same function that reads this column back**. No second codelist:
+`services/gst_states.py` supplies the names.
+
+**⚠ AND IT MAY NOT CONTRADICT THE TAX THE INVOICE CARRIES.** Live data forces
+this: INV-2026-0059, -0060 and -0065 name clients whose GSTIN begins `24` — the
+supplier's own state — at Maharashtra, Karnataka and Maharashtra addresses, on
+orders flagged inter-state. A naive GSTIN-first derivation would write `24` onto
+an IGST invoice, which is `doc_validation`'s BLOCKING "Tax split" gap: a
+document stating one treatment and carrying another. So a candidate equal to the
+supplier's state is SKIPPED on an inter-state supply and the next one answers.
+Where nothing resolves it writes `''` — exactly what was written before, so this
+can only improve the column and never blank a populated one. **GSTIN/PAN/TAN
+still block nothing.**
+
+`28` (pre-bifurcation Andhra Pradesh) is never written, matching
+`validators.js`'s stated rule; a test round-trips every other code through
+`parse_state_code`, so nothing this writes can be held out of the return.
+
+### Proof
+
+- `tests/test_client_billing_invoices.py` — 3 new tests, and the LIVE half now
+  PREPAREs the changed sweep INSERT against the real catalogue.
+- `tests/test_order_invoice_place_of_supply.py` — NEW, 28 tests, the reference
+  file's three-half shape. The live half asserts the parameter TYPE Postgres
+  infers for the appended `$16`.
+- **`vikray` comes OFF `UNCOVERED`** in `test_every_writer_has_a_live_sql_test.py`
+  (25 -> 24), with the caveat written down: the ratchet credits per ROUTER and
+  this covers one route's statements.
+- **Backend: 1,485 passed / 24 skipped** across 36 related files, exit 0. With a
+  live DSN (`railway run`), **68 passed / 0 skipped** on the two invoice files.
+
+**Ten mutations, every one bit** — scoped by line span or unique anchor, because
+both invoice INSERT column lists are now byte-identical and a `replace(..., 1)`
+would have been a false green in the proof itself:
+
+| mutated | check that went red |
+|---|---|
+| `doc_status` dropped from the sweep's column list | `[sweep]` failed, `[usage]` PASSED — proof the anchor hit one function |
+| sweep writes `'final'` again | same pair, same asymmetry |
+| `place_of_supply` back to the literal `''` | the bound-not-blank test |
+| the column name mistyped | **LIVE** — a real `UndefinedColumnError` from the server |
+| `$16` swapped onto the boolean column | **LIVE** — the inferred-type test |
+| an org predicate dropped from a counterparty join | the tenancy test |
+| the gate no longer told the place of supply | that test |
+| the derivation stops skipping a contradicting candidate | the live-data case |
+| 28 made writable | the retired-code test |
+| **e2e** run-scope removed from 10.08's new check | **all ten real blanks caught** |
+
+### e2e — extended, and honest about what it proved
+
+- **10.08** (suite 10): the "reported, not asserted" place-of-supply note is now
+  an assertion, against the same client state the suite already derives its tax
+  split from. **Scoped to invoices raised in THAT run** — the historical blanks
+  are NAMED in the log with their invoice numbers, because re-stating a Rule 46
+  particular on an issued tax invoice is a data change to live rows and is the
+  owner's (OWNER-ACTIONS item 22). Run twice, identical: 0 raised, 10 already
+  present, so it **proved nothing this execution and says so**.
+- **17.11** (suite 17): the sweep's draft rule, asserted over everything the
+  sweep has ever left in the org. Zero today, and the log says the check proved
+  nothing. The failure is the narrow one that can only be the cron — not a draft
+  AND `has_updater` false — so a person correctly issuing a swept draft can
+  never turn it red. Run twice, passed both.
+
+### Not done, deliberately
+
+- **No backfill, no re-status, no re-numbering.** Left in a wrong state for the
+  owner to decide with a number: **10** order-generated invoices with a blank
+  place of supply, **6** of them inter-state and therefore absent from GSTR-1;
+  **19** blank-and-inter-state from all sources; **31** blank in total.
+- **The sweep's fix cannot be proved by driving the product**, because nothing
+  in the UI runs it. That is a finding as much as the fix is, and 17.11 says so.
+- **10.08 is still RED, unchanged by this work** — identical failures on two
+  runs, all of them the salesperson and `balance_due` gaps on the ten invoices
+  raised BEFORE those fixes landed. Those two assertions are NOT run-scoped the
+  way the new one is, so they will stay red until the org is rebuilt.
+- **Nothing is deployed.** `git show HEAD:` still carries both defects, so every
+  new assertion above is inert on staging until the lead commits and deploys.

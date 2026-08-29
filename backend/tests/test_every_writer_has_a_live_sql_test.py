@@ -99,7 +99,7 @@ UNCOVERED = {
     "hub_connectors", "hub_publish", "lead_sources", "me", "messaging",
     "niyam_rules", "org_members", "org_modules", "org_security",
     "pay", "procurement", "products", "pulse",
-    "scheduler", "scrapers", "subscription", "tab_prefs", "totp", "vikray",
+    "scheduler", "scrapers", "subscription", "tab_prefs", "totp",
     # `whatsapp` left this list on 2026-08-27 — the first name to, and the
     # ratchet is what noticed.
     #
@@ -227,7 +227,29 @@ UNCOVERED = {
     # tree a ratchet can go red for work that is CORRECT and merely unfinished,
     # and that is precisely the state in which ratchets get ignored.
     #
-    # 25 remain.
+    # ── AND `vikray` LEFT BY GAINING ONE, 2026-08-29 ─────────────────────────
+    #
+    # `tests/test_order_invoice_place_of_supply.py` PREPAREs every statement
+    # `generate_invoice_from_order` issues against the real catalogue, asserts
+    # the parameter count of an INSERT whose placeholder list was extended by
+    # hand, and asserts the TYPE the server infers for the new parameter.
+    #
+    # It exists because proposal 93 finding 2 measured that route hardcoding
+    # `''` into `place_of_supply` — 10 of 10 order-generated invoices blank,
+    # 6 of them inter-state and therefore held out of GSTR-1 entirely by
+    # `services/gstr1_json.py`, which reads that exact column.
+    #
+    # ⚠ WHAT THAT NAME NOW CLAIMS, STATED PLAINLY. This ratchet credits
+    # coverage per ROUTER, and the new file covers ONE route's statements —
+    # the whole of the order-to-invoice conversion, and not the whole of
+    # `routers/vikray.py`. Every name that has left this list carries the same
+    # property (`ganit` left on `test_invoicing_reads_the_dated_law.py`), so
+    # this is the rule working as designed rather than an exception — but it is
+    # written down here because "vikray is covered" is a weaker sentence than
+    # it looks, and the next person to add a writer to that router will read
+    # this line rather than a green tick.
+    #
+    # 24 remain.
 }
 
 

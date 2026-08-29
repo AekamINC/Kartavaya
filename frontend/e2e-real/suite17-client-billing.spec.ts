@@ -2338,6 +2338,38 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
     // reported here rather than asserted, because whether the programme wants
     // to arm a line and wait for a tick is the lead's decision, not a suite's.
     const lineRows = await apiGet(page, '/api/v1/ganit/billing/service-lines');
+
+    // ── AND WHAT THE SWEEP WRITES WHEN IT DOES RUN ─────────────────────────
+    //
+    // The sweep INSERTed without naming `doc_status`, which DEFAULTS to
+    // `'final'` (read from `pg_attrdef` 2026-08-29, not from a migration
+    // file). So the ONE invoice writer in this product that nobody is
+    // watching minted a FINISHED tax invoice, with a Rule 46(b) serial spent
+    // on it, and never passed `ganit._refuse_final_if_incomplete` — the gate
+    // every hand-issued invoice clears, whose refusal reads "Nothing has been
+    // invented to fill the gap." Fixed 2026-08-29: it writes `'draft'`, the
+    // same as its sibling `generate_usage_invoice` (17.07), and a person
+    // issues it with `Mark final`, which DOES run the gate.
+    //
+    // ⚠ THIS CANNOT BE PROVED BY DRIVING THE PRODUCT, and that is the finding
+    // as much as the fix is. There is no control anywhere that runs the
+    // sweep. So the check below is over whatever the sweep has ever left
+    // behind — nothing today — and it says so rather than reporting a
+    // vacuous pass. It bites the first time a tick of `/cron/billing`
+    // produces a row, which is exactly when it is wanted.
+    // ⚠ `has_updater` IS WHAT MAKES THIS ASSERTABLE AT ALL. A swept invoice
+    // that is `final` is not automatically wrong — the whole point of writing
+    // a draft is that a PERSON can issue it, and `Mark final` stamps
+    // `updated_by`. A test that went red the moment somebody did the right
+    // thing would be a defect in the test. So the failure is the narrow one
+    // that can only be the cron: not a draft, and nobody ever touched it.
+    const swept = (await apiRows(page, '/api/v1/ganit/invoices'))
+      .filter((i) => String(i.notes || '').startsWith('Auto-invoice: '));
+    const sweptIssued = swept.filter((i) => String(i.doc_status || '') !== 'draft');
+    const sweptFinal = sweptIssued
+      .filter((i) => !i.has_updater)
+      .map((i) => `${i.invoice_number} (${i.doc_status}, nobody has ever touched it)`);
+
     console.log('  17.11 — AUTO-INVOICE, stated plainly rather than left as a silent zero:\n' +
       '     · The sweep has no user-reachable trigger. Its only caller is POST /cron/billing,\n' +
       '       which passes no org_id, so it runs for EVERY organisation at once.\n' +
@@ -2345,7 +2377,22 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
       '       can produce or observe from inside the product.\n' +
       `     · GET /service-lines answered ${lineRows.status()}; ` +
       `${lines.filter((r) => r.auto_invoice).length} of this suite's ${lines.length} lines are armed ` +
-      '(deliberately none — see 17.04).\n');
+      '(deliberately none — see 17.04).\n' +
+      `     · Invoices the sweep has EVER written in this org: ${swept.length}` +
+      `${swept.length === 0
+        ? '. So the draft check below PROVED NOTHING this run — it bites on the first tick of '
+          + '/cron/billing that produces a row.'
+        : `, of which ${sweptIssued.length} have been issued and ${sweptFinal.length} were `
+          + 'issued by nobody.'}\n`);
+
+    expect(sweptFinal,
+      'AN UNATTENDED CRON ISSUED A TAX INVOICE. `sweep_client_auto_invoices` must write ' +
+      '`doc_status = \'draft\'`: the column DEFAULTS to \'final\', nobody reviews a cron\'s ' +
+      'output, and a document reaching `final` without passing `_refuse_final_if_incomplete` ' +
+      'is precisely what that gate exists to prevent. A draft is not a document withheld — it ' +
+      'is created, numbered, on the register, and issued by a person with `Mark final`, which ' +
+      'runs the gate and stamps the person. These carry no updater at all, so no person issued ' +
+      'them.').toEqual([]);
 
     const wrong = counts.filter((c) => c.got !== c.want);
     expect(wrong.map((c) => `${c.what}: ${c.got} (wanted ${c.want})`),

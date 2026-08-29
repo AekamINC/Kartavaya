@@ -17,30 +17,81 @@ is the owner's stated goal and the reason the programme exists.**
 
 ---
 
-## 1. Cron-minted invoices are born `final` and skip the Rule 46 gate
-**Statutory · ACTIVE · `client_billing.sweep_client_auto_invoices`**
+## 1. ~~Cron-minted invoices are born `final` and skip the Rule 46 gate~~ FIXED
+**Statutory · was ACTIVE, and it HAD ALREADY FIRED · `client_billing.sweep_client_auto_invoices`**
+**Closed 2026-08-29. Uncommitted at the time of writing — the lead commits.**
 
-The sweep INSERTs into `staging.ganit_invoices` without naming `doc_status`,
-which DEFAULTS to `'final'`. So every invoice automatic billing mints is born
-final and never passes `_refuse_final_if_incomplete` — the Rule 46 completeness
-gate every manually-issued invoice must clear. It is created unattended.
+The sweep INSERTed into `staging.ganit_invoices` without naming `doc_status`,
+which DEFAULTS to `'final'` — **confirmed from `pg_attrdef`, not from a
+migration file**. So every invoice automatic billing minted was born final and
+never passed `_refuse_final_if_incomplete`, the Rule 46 completeness gate every
+manually-issued invoice must clear. Created unattended.
 
-The gate's own refusal text is *"Nothing has been invented to fill the gap."*
-An invoice reaching `final` without passing it is precisely the document the
-gate was written to prevent.
+**⚠ THE FIRST EXPOSURE READING SAID "LATENT" AND WAS WRONG.** Live today:
+`client_invoice_lines` **0**, `ganit_invoices WHERE created_by='system'` **0**,
+service lines with `auto_invoice` **0 of 9**. But `PROGRESS.md`'s own Phase 3.3
+acceptance records `/cron/billing` raising **INV-2026-0093 (₹88,500)** and
+**INV-2026-0094 (₹17,700)** on 2026-08-27 — both `final`, both numbered out of
+Unicode's live serial sequence. The 93 Stage 2 reseed deleted them on 08-28.
+**A zero that means "wiped", not "never".** And `billing` IS in `cron-daily`'s
+start command (Railway service config, read 2026-08-29); STATUS.md said that
+step was still owed, and both of its cells are now corrected.
 
-**Decision needed:** run the gate before the sweep writes (and decide what
-happens to a row that FAILS it), or write `draft` and leave issuing to a person.
+**DECIDED: the sweep writes `'draft'`.** Running the gate first would need an
+answer for a row that FAILS it, and every answer is worse than a draft —
+skipping leaves a monthly retainer silently unbilled, which is the shape of the
+"invoiced exactly once, for ever" defect the period logic already exists to
+prevent. Nothing is thrown away: the invoice is created, numbered, on the
+register, and issued by a person via `Mark final`, which DOES run the gate. It
+is also what the sibling `generate_usage_invoice` in the same file already
+writes to the same column.
 
-## 2. Converted invoices store a blank `place_of_supply`, and GSTR-1 reads it
-**Statutory · ACTIVE · `vikray.generate_invoice_from_order`**
+**The sibling blind spot was CHECKED, not assumed.** A swept invoice names a
+company and no person — exactly the shape that 422'd on 08-29 — and
+`ganit.update_invoice_status` allows `draft → final` and passes `client_id`, so
+the Rule 46(e) company fallback fires and the draft can actually be issued.
 
-The INSERT hardcodes `''` for `place_of_supply`. `services/gstr1_json.py` reads
-that exact column via `parse_state_code(row["place_of_supply"])`. Place of
-supply decides CGST/SGST vs IGST on a GST return.
+⚠ **NOT PROVABLE BY DRIVING THE PRODUCT**, because nothing in the UI runs the
+sweep. That is a finding as much as the fix is. 17.11 now asserts over whatever
+the sweep has ever left in the org — zero today — and its log says the check
+proved nothing this run rather than reporting a vacuous pass.
 
-The order already knows the answer — it carries `is_igst`, and the org's
-`state_code` became settable on 2026-08-29.
+## 2. ~~Converted invoices store a blank `place_of_supply`~~ FIXED
+**Statutory · was ACTIVE · `vikray.generate_invoice_from_order`**
+**Closed 2026-08-29. Uncommitted at the time of writing — the lead commits.**
+
+The INSERT hardcoded `''`. Measured over all 65 invoices: **31 blank**; **10
+came from an order and every one of them is blank**; **6 of those are
+inter-state**.
+
+`parse_state_code('')` returns `""` — read, not guessed — and `gstr1_json` then
+splits two ways: an INTRA-state supply falls back to the supplier's own state
+and files correctly, while an INTER-state one is **held out of the return
+entirely** ("no place of supply recorded, and it cannot be inferred"), so the
+sale never appears. Those six are the live exposure.
+
+`_order_place_of_supply` derives it from `gstr1_json.supplier_state_code` and
+the counterparty — the person's GSTIN prefix, then the company's, then either
+address, the order `InvoiceForm.jsx` already derives in — reading every
+candidate through `parse_state_code`, the same function that reads this column
+back. It writes the state NAME: what 32 of the 34 populated rows already carry,
+what Rule 46(n) asks for ("along with the name of the State"), and what
+`invoice_pdf.py:259` prints raw onto the customer's document.
+
+**⚠ A candidate equal to the supplier's own state is SKIPPED on an inter-state
+supply.** Three live clients carry a `24` GSTIN at a Maharashtra or Karnataka
+address, and writing `24` onto an IGST invoice is `doc_validation`'s BLOCKING
+"Tax split" gap — a document stating one treatment and carrying another.
+Unresolvable stays `''`, which is what was written before, so this can only
+improve the column and never blank a populated one. GSTIN/PAN/TAN still block
+nothing.
+
+⚠ **STILL OPEN, AND IT IS A NUMBER FOR THE OWNER RATHER THAN A TASK:** **10**
+order-generated invoices carry a blank place of supply, **6** of them
+inter-state and therefore absent from GSTR-1; **19** are blank-and-inter-state
+from all sources; **31** are blank in total. Not backfilled — re-stating a Rule
+46 particular on an issued tax invoice is a data change to live rows
+(`OWNER-ACTIONS.md` item 22). 10.08 names every one of them in its log.
 
 ## 3. The outbound freeze cannot stop a mention or comment email
 **Safety — about OUR OWN guarantee, not the product's · ACTIVE**

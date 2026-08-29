@@ -384,6 +384,83 @@ async def test_the_invoice_records_what_is_still_owed(pooled, path):
 
 
 @pytest.mark.parametrize("path", ["sweep", "usage"])
+async def test_neither_auto_invoice_is_born_final(pooled, path):
+    """`doc_status` DEFAULTS to 'final', and NEITHER of these has a person in it.
+
+    Read from the live catalogue on 2026-08-29, not from a migration file::
+
+        staging.ganit_invoices.doc_status   text   DEFAULT 'final'::text
+        staging.ganit_invoices.invoice_type text   NOT NULL DEFAULT 'tax_invoice'
+
+    So an INSERT that omits the column mints a FINISHED TAX INVOICE — and both
+    of these paths omitted it. The metered-usage button was fixed first; the
+    SWEEP is the worse of the two, because it is the only invoice writer in the
+    product that nobody is watching. A cron drew a Rule 46(b) serial, wrote a
+    document with it, and never passed `ganit._refuse_final_if_incomplete` —
+    the gate every manually-issued invoice must clear, whose own refusal reads
+    "Nothing has been invented to fill the gap." An invoice reaching `final`
+    without it is precisely the document that gate exists to prevent.
+
+    Asserted on BOTH paths together, deliberately. They are two functions in
+    one file writing one column, and the defect was that they disagreed.
+    """
+    pool = await (_run_sweep(pooled) if path == "sweep"
+                  else _run_usage_invoice(pooled))
+    sql, _ = pool.one(INVOICE_INSERT)
+    cols, vals = _column_list(sql), _value_list(sql)
+    assert "doc_status" in cols, (
+        "doc_status is omitted, so it DEFAULTS to 'final' — an unattended "
+        "writer minting a finished tax invoice that never passed the Rule 46 "
+        "gate. Name the column and write 'draft'."
+    )
+    assert vals[cols.index("doc_status")] == "'draft'", (
+        f"doc_status is written as {vals[cols.index('doc_status')]!r}. It must "
+        f"be the literal 'draft': a person issues the document through "
+        f"PATCH /invoices/{{id}}/status, which runs the Rule 46 gate."
+    )
+
+
+async def test_a_swept_draft_can_actually_be_issued_by_a_person(pooled):
+    """The half that makes `draft` a decision rather than a dodge.
+
+    Writing a draft is only defensible if a human can turn it into an invoice,
+    and this product has had the opposite: `generate_usage_invoice`'s drafts
+    could never leave draft, because `_refuse_final_if_incomplete` resolved the
+    recipient from `contact_id` alone and raised the BLOCKING Rule 46(e)
+    "Recipient name" gap on a document that named a COMPANY. Fixed 2026-08-29
+    by the company fallback — and the sweep writes exactly that shape of row,
+    so this is the sibling blind spot, checked rather than assumed.
+
+    Three things have to hold, and all three are read off the code:
+
+      1. the sweep files the invoice under a `client_id` (there IS no contact
+         on a billing-profile invoice, and there never will be — a CRM client
+         is the company);
+      2. `ganit.update_invoice_status` allows draft -> final at all;
+      3. and it hands `client_id` to the gate, so the fallback can fire.
+    """
+    pool = await _run_sweep(pooled)
+    sql, _ = pool.one(INVOICE_INSERT)
+    cols = _column_list(sql)
+    assert "client_id" in cols and "contact_id" not in cols, (
+        "a swept invoice names a company and no person — so the Rule 46(e) "
+        "company fallback is the ONLY thing that can name its recipient"
+    )
+
+    import routers.ganit as ganit
+    src = inspect.getsource(ganit.update_invoice_status)
+    assert '"draft": ("final",)' in src, (
+        "draft -> final is no longer an allowed transition, so every invoice "
+        "the sweep writes is stranded"
+    )
+    gate = src.index("_refuse_final_if_incomplete")
+    assert '"client_id"' in src[gate:], (
+        "the mark-final gate does not pass client_id, so a swept invoice — "
+        "which names a company and no person — can never leave draft"
+    )
+
+
+@pytest.mark.parametrize("path", ["sweep", "usage"])
 async def test_the_invoice_is_filed_under_a_company_and_a_profile(pooled, path):
     """A CRM client is the COMPANY, and it is what files money owed under the
     party that owes it. `billing_profile_id` is the only link back from the

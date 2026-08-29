@@ -868,6 +868,151 @@ async def update_order_status(
     return dict(row)
 
 
+#: The one state code this product will not WRITE onto a new document.
+#:
+#: 28 is pre-bifurcation Andhra Pradesh. `services/gst_states.py` keeps it so an
+#: old GSTIN still resolves to a readable name, and `gstr1_json._VALID_CODES`
+#: still accepts it on input — but `frontend/src/lib/validators.js` states the
+#: rule this side must match: "28 is deliberately absent … historical documents
+#: still carry it, so the backend accepts it on input, but nothing issued today
+#: should be given that name." A candidate resolving to 28 is therefore SKIPPED
+#: rather than written, and the next candidate is tried.
+_NOT_ISSUABLE_TODAY = frozenset({"28"})
+
+
+def _json_obj(value):
+    """A jsonb column as a dict, whether or not the codec was registered.
+
+    `db._init_conn` registers a jsonb decoder, but it WARNS rather than raising
+    when PgBouncer drops the connection mid-handshake — its own docstring says
+    so, and names this exact consequence: "without it asyncpg hands JSONB back
+    as a string, and a caller doing `row["settings"]["tan"]` gets a TypeError
+    on a string index". An address that silently arrives as text would make the
+    place of supply below unreadable on precisely the connections that are
+    already having a bad day, and the fallback for "unreadable" is a blank
+    place of supply on a tax invoice.
+
+    Returns `{}` for anything that is not an object, so callers may index it.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _state_name(code: str) -> str:
+    """A two-digit GST state code as the NAME that goes on the document.
+
+    Rule 46(n) asks for the place of supply "along with the name of the State",
+    and `services/invoice_pdf.py:259` prints this column RAW onto the customer's
+    tax invoice — so a bare "24" would be a document that does not say what the
+    rule asks it to say.
+
+    THE NAME IS ALSO THE CONVENTION ALREADY IN THE COLUMN. Measured live
+    2026-08-29 across all 65 invoices: 32 populated rows carry a NAME
+    ("Gujarat", "Maharashtra", "Tamil Nadu", "Karnataka", "Delhi") — every one
+    of them written by `ganit.create_invoice` from the form, which is the
+    directly-created path and therefore the reference behaviour — and 2 carry a
+    bare code, from `client_billing.generate_usage_invoice`. Writing the name
+    joins the 32, rather than inventing a third spelling.
+
+    `services/gst_states.py` is the single codelist and this reads it through
+    `state_view` rather than carrying a second table — the exact coupling that
+    module's own docstring was written about.
+    """
+    from services.gst_states import state_view
+    return state_view(code)["state_name"] or ""
+
+
+def _order_place_of_supply(org: dict, order_is_igst: bool,
+                           candidates: list) -> str:
+    """The state this order is supplied INTO, as a name, or '' if unknowable.
+
+    ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+
+    `generate_invoice_from_order` hardcoded `''` here, so EVERY invoice
+    converted from an order stored a blank place of supply. Measured live
+    2026-08-29: 10 of 10 order-generated invoices blank, and 6 of those flagged
+    inter-state.
+
+    That is not cosmetic, because `services/gstr1_json.py` reads this exact
+    column — `parse_state_code(row["place_of_supply"])` — and an empty one is
+    NOT an error there. It is worse than an error:
+
+      · on an INTRA-state supply the builder falls back to the supplier's own
+        state, correctly, because that is what `is_igst = False` means. The
+        return is right and the DOCUMENT is incomplete.
+      · on an INTER-state supply there is nothing to fall back on, so the
+        invoice is HELD BACK from GSTR-1 with "no place of supply recorded".
+        It does not appear in the return at all — silently, with the money
+        still on the books. Six live invoices are in that state today.
+
+    ── WHAT IT DERIVES FROM, AND WHY IT CANNOT CONTRADICT THE TAX ─────────────
+
+    The order already knows the answer and the invoice copies its tax heads
+    verbatim, so the place of supply MUST agree with `is_igst` — otherwise the
+    document states one treatment and carries another, which is the blocking
+    "Tax split" gap `doc_validation` already refuses.
+
+      · `is_igst` FALSE — an intra-state supply is, by the definition of the
+        flag, supplied in the supplier's own state. This is not a new
+        classifier; `gstr1_json` performs exactly this inference already and
+        says so in as many words. Writing it down makes the row STATE what its
+        reader was inferring.
+      · `is_igst` TRUE — the destination is elsewhere, so it must come from the
+        counterparty, and it must DIFFER from the supplier's state. A candidate
+        equal to the supplier's own state is skipped rather than written: live
+        data has clients whose GSTIN says 24 and whose address says
+        Maharashtra, and writing 24 onto an IGST invoice would produce a
+        document that contradicts its own tax heads. That is a worse row than
+        a blank one.
+
+    ── AND WHY IT RETURNS '' RATHER THAN GUESSING ─────────────────────────────
+
+    '' is exactly what was written before, so this can only ever IMPROVE the
+    column and never blank one that was populated. `_tax_split` in
+    `client_billing.py` refuses on the same principle: "a service line left
+    uninvoiced this run is recoverable in a minute; a wrongly-taxed invoice
+    that has gone to a customer and into a GSTR-1 is not." Here the invoice is
+    still raised either way — ⚠ GSTIN/PAN/TAN BLOCK NOTHING, and neither does
+    this — the gap simply stays visible where it already is: an ADVISORY Rule
+    46(n) gap on the document, and `gst_period.check`'s
+    `place_of_supply_missing`.
+
+    `parse_state_code` does the reading, and it is the function `gstr1_json`
+    itself uses on this column — so anything this writes is by construction
+    something that reader can classify. One function, both directions.
+    """
+    from services.gstr1_json import parse_state_code, supplier_state_code
+
+    home = supplier_state_code(org or {})
+
+    def _usable(raw) -> str:
+        code = parse_state_code(raw)
+        return "" if code in _NOT_ISSUABLE_TODAY else code
+
+    if not order_is_igst:
+        # Intra-state: the supplier's own state IS the place of supply.
+        if home and home not in _NOT_ISSUABLE_TODAY:
+            return _state_name(home)
+        # Nobody has said where we supply FROM. An intra-state supply puts both
+        # ends in one state, so any counterparty state names it just as well.
+        for raw in candidates:
+            code = _usable(raw)
+            if code:
+                return _state_name(code)
+        return ""
+
+    # Inter-state: the recipient's state, and it may not be our own.
+    for raw in candidates:
+        code = _usable(raw)
+        if code and code != home:
+            return _state_name(code)
+    return ""
+
+
 @router.post("/orders/{order_id}/invoice")
 # `balance_due` is written explicitly, and that is not cosmetic. The column
 # DEFAULTS to 0 and this INSERT omitted it, so an invoice generated from an
@@ -941,6 +1086,59 @@ async def generate_invoice_from_order(
             str(order["contact_id"]) if order["contact_id"] else "")
     )
 
+    # ── THE PLACE OF SUPPLY, WHICH THIS ROUTE USED TO HARDCODE AS '' ─────────
+    #
+    # One statement for all three ends of the derivation — ours, the company's
+    # and the person's — because they are one fact about one document and a
+    # query per party is a query per party. `LEFT JOIN` on both counterparties:
+    # an order may name a company and no person, or a person and no company,
+    # and neither is a reason to fail to invoice it.
+    #
+    # ⚠ ORG-SCOPED ON BOTH JOINS. `ganit_invoices.client_id`'s foreign key is
+    # not composite with `org_id`, and neither is `contact_id`'s — so without
+    # `AND …org_id = $2` a counterparty uuid belonging to another tenant would
+    # answer here and put ANOTHER FIRM'S STATE on this org's tax invoice. The
+    # same predicate `client_billing`'s sweep calls load-bearing rather than
+    # defensive, for the same reason.
+    parties = await pool.fetchrow(
+        "SELECT o.gstin AS org_gstin, o.state_code AS org_state_code, "
+        "       o.billing_address AS org_billing_address, "
+        "       cl.gstin AS client_gstin, cl.address AS client_address, "
+        "       ct.gstin AS contact_gstin, "
+        "       ct.billing_address AS contact_address "
+        "FROM staging.organisations o "
+        # EVERY PARAMETER CARRIES ITS CAST. An order with no company, or none
+        # with no named person, binds NULL here — and an UNTYPED NULL through
+        # PgBouncer is this repo's signature failure, the parse error that
+        # arrives as an instant 500. `::uuid` on each one makes the NULL typed,
+        # so the join simply matches nothing, which is the intended answer.
+        "LEFT JOIN staging.graha_clients cl "
+        "  ON cl.id = $2::uuid AND cl.org_id = $1::uuid "
+        "LEFT JOIN staging.graha_contacts ct "
+        "  ON ct.id = $3::uuid AND ct.org_id = $1::uuid "
+        "WHERE o.id = $1::uuid",
+        org_id,
+        client_id or None,
+        str(order["contact_id"]) if order["contact_id"] else None,
+    )
+    _p = dict(parties) if parties else {}
+    place_of_supply = _order_place_of_supply(
+        {"gstin": _p.get("org_gstin"),
+         "state_code": _p.get("org_state_code"),
+         "billing_address": _json_obj(_p.get("org_billing_address"))},
+        bool(order["is_igst"]),
+        # THE PERSON'S REGISTRATION FIRST, THEN THE COMPANY'S — the order
+        # `InvoiceForm.jsx` already derives in (`customer?.gstin ||
+        # company?.gstin`), so the two paths cannot disagree about one sale.
+        # The addresses follow, because an UNREGISTERED customer has no GSTIN
+        # at all and must still produce a place of supply: GSTIN blocks nothing
+        # in this product and it does not start blocking here.
+        [str(_p.get("contact_gstin") or "")[:2],
+         str(_p.get("client_gstin") or "")[:2],
+         _json_obj(_p.get("client_address")).get("state"),
+         _json_obj(_p.get("contact_address")).get("state")],
+    )
+
     from routers.ganit import _refuse_final_if_incomplete
     await _refuse_final_if_incomplete(pool, org_id, {
         "invoice_type": "tax_invoice",
@@ -948,6 +1146,10 @@ async def generate_invoice_from_order(
         "invoice_date": date.today(),
         "line_items": lines,
         "is_igst": order["is_igst"],
+        # Handed to the gate as well as to the INSERT, so the ADVISORY Rule
+        # 46(n) gap it raises describes the document that is about to be
+        # written rather than the blank this route used to send it.
+        "place_of_supply": place_of_supply,
         "subtotal": order["subtotal"], "cgst": order["cgst"],
         "sgst": order["sgst"], "igst": order["igst"], "total": order["total"],
         # ⚠ `client_id`, AND WITHOUT IT A B2B ORDER COULD NEVER BE INVOICED.
@@ -1004,7 +1206,22 @@ async def generate_invoice_from_order(
         "place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, "
         "discount, total, balance_due, notes, created_by, client_id, "
         "salesperson_id) "
-        "VALUES ($1::uuid, $2, $3, 'tax_invoice', CURRENT_DATE, '', $4, "
+        # ⚠ `$16` IS APPENDED, NOT SLOTTED IN, and that is the house rule rather
+        # than untidiness. `$11` is deliberately bound TWICE — `total` and
+        # `balance_due` — so renumbering the list to put the place of supply in
+        # sixth position is a chance to break the one placeholder that is not
+        # 1:1, which is the omission that made every order-generated invoice
+        # read as fully paid. `ganit.create_invoice` appends `client_id` as
+        # `$23` and `salesperson_id` as `$26` for exactly this reason and says
+        # so. Postgres does not care where a `$n` appears; the argument list
+        # does.
+        #
+        # Bound rather than a literal because it is DERIVED — see
+        # `_order_place_of_supply`. It stayed `''` here for the life of this
+        # route, on documents whose `invoice_type` is 'tax_invoice', and
+        # `services/gstr1_json.py` reads this column to decide whether a supply
+        # is reported as IGST or as CGST+SGST.
+        "VALUES ($1::uuid, $2, $3, 'tax_invoice', CURRENT_DATE, $16, $4, "
         "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13, NULLIF($14,'')::uuid, "
         "NULLIF($15,'')) "
         "RETURNING id",
@@ -1015,6 +1232,7 @@ async def generate_invoice_from_order(
         user["user_id"],
         client_id or "",
         order["salesperson_id"] or "",
+        place_of_supply,
     )
     await pool.execute(
         # Attaching the invoice IS an amendment of the order, and the person who

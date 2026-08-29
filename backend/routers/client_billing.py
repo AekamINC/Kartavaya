@@ -676,11 +676,16 @@ async def sweep_client_auto_invoices(
     today: date | None = None,
     org_id: str | None = None,
 ) -> dict:
-    """Generate ganit_invoices for client_service_lines due today.
+    """Generate DRAFT ganit_invoices for client_service_lines due today.
 
     Called from the billing cron.  For each auto_invoice line whose current
     period is due, creates a ganit_invoices row and a client_invoice_lines
     join row to prevent double-billing.
+
+    Draft is written explicitly at the INSERT — see the note there. Nobody is
+    watching a cron, and `doc_status` DEFAULTS to 'final', so this was the one
+    path in the product that could reach `final` without passing
+    `ganit._refuse_final_if_incomplete`. A person issues it from the register.
 
     `org_id` SCOPES THE RUN TO ONE ORGANISATION, and the cron does not pass it —
     a nightly sweep is for everybody, which is the whole point of it. It exists
@@ -898,7 +903,7 @@ async def sweep_client_auto_invoices(
                     "(id, org_id, client_id, billing_profile_id, invoice_number, "
                     " invoice_date, due_date, line_items, subtotal, "
                     " cgst, sgst, igst, total, balance_due, payment_status, "
-                    " notes, created_by, is_igst, place_of_supply) "
+                    " notes, created_by, is_igst, place_of_supply, doc_status) "
                     # $12 is bound twice — `total` and `balance_due` — the same
                     # convention ganit.py and vikray.py use. `balance_due`
                     # DEFAULTS to 0, so omitting it mints an invoice that reads
@@ -908,7 +913,55 @@ async def sweep_client_auto_invoices(
                     "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, "
                     "        $6::date, $7::date, $8::jsonb, $9, "
                     "        $10, $11, $12, $13, $13, 'unpaid', "
-                    "        $14, 'system', $15, $16)",
+                    # DRAFT, EXPLICITLY — and this is the ONE unattended writer
+                    # in the product, which is why it matters more here than in
+                    # the sibling below.
+                    #
+                    # `doc_status` DEFAULTS to 'final' (read from `pg_attrdef`
+                    # 2026-08-29, not from a migration file), so omitting it
+                    # meant a CRON minted a FINISHED tax invoice, with a Rule
+                    # 46(b) serial spent on it, without any person seeing the
+                    # document and without it ever passing
+                    # `ganit._refuse_final_if_incomplete`. Every other path to
+                    # `final` in this product clears that gate; this one did not
+                    # reach it, and it is the only one nobody is watching.
+                    #
+                    # ⚠ THIS HAS FIRED. It is not a latent hole. The Phase 3.3
+                    # acceptance (`docs/plans/PROGRESS.md`, 2026-08-27) records
+                    # `/cron/billing` raising INV-2026-0093 (₹88,500) and
+                    # INV-2026-0094 (₹17,700) against Unicode Group, serials
+                    # drawn from that firm's own live series — two finished tax
+                    # invoices, unattended, ungated. Both rows are gone now,
+                    # deleted by the 93 Stage 2 reseed on 08-28, which is the
+                    # only reason a count today reads zero: A ZERO THAT MEANS
+                    # "WIPED", NOT "NEVER". And `billing` is in `cron-daily`'s
+                    # loop, read off the Railway start command 2026-08-29 —
+                    # STATUS.md still says that step is outstanding.
+                    #
+                    # WHY DRAFT RATHER THAN RUNNING THE GATE HERE. Both were on
+                    # the table. Running the gate would mean deciding what an
+                    # unattended sweep does with a row that FAILS it, and every
+                    # answer is worse than a draft: skipping leaves a monthly
+                    # retainer silently unbilled — the exact shape of the
+                    # "invoiced exactly once, for ever" defect the period logic
+                    # above exists to prevent, and the kind a firm discovers at
+                    # year end. Nothing is thrown away here: the invoice is
+                    # created, numbered, visible on the register and finalised
+                    # by a person through `Mark final`
+                    # (`InvoiceDetail.jsx` -> `PATCH /invoices/{id}/status`),
+                    # which DOES run the gate — and runs it with `client_id`,
+                    # so the Rule 46(e) company fallback fires for these rows,
+                    # which carry a company and no named person.
+                    #
+                    # It is also what the sibling `generate_usage_invoice`
+                    # already writes, for the same reasons, and the two are one
+                    # file writing one column: a sweep minting `final` beside a
+                    # button minting `draft` was the inconsistency, not a
+                    # design. The draft filter on the statement of account, the
+                    # revenue tile and dunning is what separates "counted and
+                    # chased" from "not", so a document nobody reviewed no
+                    # longer reaches a customer's statement.
+                    "        $14, 'system', $15, $16, 'draft')",
                     str(invoice_id), sl["org_id"], sl["client_id"],
                     sl["profile_id"], invoice_number,
                     today, due_date, json.dumps(line_items), amount,
@@ -927,7 +980,12 @@ async def sweep_client_auto_invoices(
                 )
         created += 1
         logger.info(
-            "Auto-invoiced %s for %s: %s – %s, ₹%.2f",
+            # "as a DRAFT" is in the line because the cron's log is the only
+            # place anybody sees this run. A sweep reporting "Auto-invoiced"
+            # for a document that has not been issued would read as money
+            # already billed, which is the same misreading `created` invites.
+            "Auto-invoiced %s for %s: %s – %s, ₹%.2f — as a DRAFT, awaiting "
+            "Mark final",
             sl["client_name"], sl["description"], period_start, period_end, total,
         )
 
