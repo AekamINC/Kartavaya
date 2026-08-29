@@ -180,7 +180,7 @@ MAX_IP_RANGES = 50
 #: `auth.mfa_factors` is deliberately absent: it keys on `auth.users.id` and
 #: this product's users are rows in `public.users` with `user_...` ids. There is
 #: no join, so counting it would count zero and call it knowable.
-TOTP_TABLES: tuple[str, ...] = ("staging.user_totp", "staging.user_mfa_factors")
+TOTP_TABLES: tuple[str, ...] = ("user_totp", "user_mfa_factors")
 
 DEFAULTS: dict = {
     # Permissive by default because nothing enforces it yet; the honest default

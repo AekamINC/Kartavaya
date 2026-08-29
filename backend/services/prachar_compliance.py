@@ -623,7 +623,7 @@ async def table_exists(pool, name: str) -> bool:
     if _table_cache.get(name):
         return True
     try:
-        found = await pool.fetchval("SELECT to_regclass($1)", f"staging.{name}")
+        found = await pool.fetchval("SELECT to_regclass($1)", name)
     except Exception:                                        # noqa: BLE001
         logger.exception("Prachar compliance: could not probe staging.%s", name)
         return False

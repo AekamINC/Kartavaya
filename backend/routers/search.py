@@ -572,7 +572,7 @@ async def search(
             elif entity == "invoices":
                 rows, total = await _search_invoices(pool, org_id, tsq, term, unaccent, limit)
             elif entity == "messages":
-                if not await _relation_exists(pool, "staging.samvada_messages"):
+                if not await _relation_exists(pool, "samvada_messages"):
                     unavailable.append(entity)
                     continue
                 rows, total = await _search_messages(

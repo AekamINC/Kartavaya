@@ -200,10 +200,10 @@ def test_47_a_blocker_that_gets_fixed_stops_being_reported(monkeypatch):
 
 def test_47_a_checklist_table_appearing_flips_the_second_blocker():
     out = asyncio.run(check_whatsapp_chase_leg(
-        _chase_pool(checklists=("staging.document_requests",)), ORG))
+        _chase_pool(checklists=("document_requests",)), ORG))
     checklist = out["blockers"][1]
     assert checklist["still_true"] is False
-    assert checklist["evidence"]["tables_found"] == ["staging.document_requests"]
+    assert checklist["evidence"]["tables_found"] == ["document_requests"]
     assert out["counts"]["checklist_tables_found"] == 1
 
 
@@ -463,8 +463,8 @@ def _ticket_pool(*, table=True, messages=False, columns=None, rows=0):
     return FakePool([
         ("to_regclass", lambda args: [{
             "t": args[0] if (
-                (args[0] == "staging.graha_tickets" and table)
-                or (args[0] == "staging.graha_ticket_messages" and messages)
+                (args[0] == "graha_tickets" and table)
+                or (args[0] == "graha_ticket_messages" and messages)
             ) else None}]),
         ("information_schema.columns", [{"column_name": c} for c in cols]),
         ("FROM staging.graha_tickets", [{"n": rows}]),

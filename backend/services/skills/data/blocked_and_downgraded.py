@@ -169,12 +169,11 @@ DEFAULT_WARN_WITHIN_HOURS = 4.0
 #: precisely a claim about what does not exist, and the folio has been stale
 #: before.
 CHECKLIST_CANDIDATES = (
-    "staging.graha_document_requests",
-    "staging.graha_client_checklists",
-    "staging.client_document_checklist",
-    "staging.document_requests",
-    "staging.kartavya_checklists",
-    "public.document_requests",
+    "graha_document_requests",
+    "graha_client_checklists",
+    "client_document_checklist",
+    "document_requests",
+    "kartavya_checklists",
 )
 
 #: What the live product would have to grow before a ticket SLA watch could be a
@@ -755,8 +754,8 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
     """
     today = utc_now().date()
 
-    has_tickets = await _table_exists(pool, "staging.graha_tickets")
-    has_messages = await _table_exists(pool, "staging.graha_ticket_messages")
+    has_tickets = await _table_exists(pool, "graha_tickets")
+    has_messages = await _table_exists(pool, "graha_ticket_messages")
 
     columns: list[str] = []
     rows_here = None
