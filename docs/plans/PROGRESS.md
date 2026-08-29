@@ -5669,3 +5669,62 @@ The schema consolidation (`staging` → `public`, then drop the emptied shell) i
 delete 258 module tables. It needs the five-section risk report and a DROP named
 explicitly. Three read-only agents are measuring DDL, code assumptions and data
 exposure to build that report.
+
+---
+
+## 2026-08-29 — seeded tenant data deleted before the schema merge
+
+Owner instruction: dump the seeded data, keep Aekam's. Executed against the live
+database. **Every figure below is a live count, before and after.**
+
+### What went
+
+    Unicode Group    4,573 rows across 112 tables
+                     69 invoices · 90 payslips · 29 clients · 30 employees
+    UK AekamINC        110 rows / 13 tables   ] logs and content only;
+    Demo - Kartavaya    42 rows /  8 tables   ] identity, users, RBAC and
+    E2E Test           21 rows /  4 tables   ] module provisioning all kept
+
+### What was proved BEFORE deleting, not assumed
+
+`Unicode Group` was created 2026-07-17, inside the window Aekam's real client
+teams were created — so the name and date alone were not enough. Three
+independent checks settled it:
+
+    appears in public.teams (the real client list)   0
+    appears in staging.graha_clients                 0
+    its 69 invoices span                             1 distinct day, all 08-29
+
+A tenant whose entire financial history was written in a single day is a seed.
+
+### What was never in scope
+
+    public.*          Aekam's PM data — 30 users, 41 teams, 206 members,
+                      364 tasks, 2,808 notifications. Untouched throughout.
+    Aekam Inc org     11 users, 13 modules, 961 audit rows. Kept in full.
+    reference data    pin_directory 20,144 · tax slabs 23 · statute calendar 61
+                      (no org_id column, so structurally out of reach)
+
+All five organisations survive, with all 47 memberships and every RBAC role.
+
+### Method, because the method is the safety
+
+Both deletions ran in a transaction that ITERATES to resolve foreign-key order —
+delete what can be deleted, repeat while progress is made — and then RE-COUNTS
+and RAISES if anything survived. A half-deleted tenant was never a reachable
+state.
+
+⚠ **AND THE RESTORE PROVED THE POINT BY FAILING FIRST.** Unicode's modules were
+restored on request. The first attempt refused and rolled back: `subscriptions`
+has no `id` column (its PK is `org_id`), the hardcoded `s.id = b.id` dedupe
+raised `undefined_column`, and the script's own `EXCEPTION` handler swallowed
+it — so that table silently never inserted. The completion check caught it. The
+same bug class this whole day has been about: **a handler catching more than it
+meant to, turning a failure into a silence.** Redone reading each table's real
+primary key from the catalogue.
+
+### Recoverable
+
+`premerge_backup_20260829` holds all 258 tables as they were, row-verified
+(29,608 rows, 0 mismatches), plus `_parity`, `_delete_scope` and `_remaining`
+recording exactly what was counted and removed. Nothing deleted today is gone.
