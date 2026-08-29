@@ -4988,3 +4988,107 @@ alone: flipping it to `dry` would have destroyed §3's ability to assert arrival
 rather than acceptance, and added a flip/restore pair to R9 for no safety gain.
 **Suite 11 (Prachar, ~150 recipients) is the one that must re-measure before it
 sends**, and that gate is written into its assignment.
+
+---
+
+## 2026-08-29 (third session, continued) — seven suites, and the shape they share
+
+**Eleven product bugs closed with rows to prove it, and every one had never
+worked for any organisation since the day it was written.**
+
+### The class, named — THE ROUTE EXISTS, THE SCREEN CANNOT ASK IT
+
+Found independently **seven times in one day**, which is why it stopped being a
+coincidence and became a sweep (`93-E-ORPHANED-CAPABILITY-SWEEP.md`: 958
+operations inventoried from the DEPLOYED OpenAPI, 849 reached, **67 genuinely
+orphaned**). ⚠ A naive scan said **361** — resolving five dynamically-composed
+base paths and adding `mobile/` as a second client took it to 109. That gap is
+the finding behind the finding.
+
+| What | Evidence |
+|---|---|
+| Org GST state code | no route, no screen, no `UPDATE` anywhere — **every org born NULL** |
+| `graha_deals.assigned_to` | API accepts, no form sends — 10 targets reading zero |
+| PO revisions | route complete, history panel RENDERED, **0 rows all time** |
+| Client billing ×3 | resume, generate-invoice, and a Delete with **no route** (405) |
+| `salesperson_id` on conversion | column exists, 12 invoices carry one, **0 from an order** |
+| eSign `sign_fields` | table exists, **no writer** — Pydantic v2 drops unknown members silently |
+| `lost_reason`, `pipeline_id` | 6 Lost deals, 0 reasons |
+
+### The five that were never reachable at all
+
+- 🔴→✅ **A customer's FIRST project 500'd.** `AmbiguousParameterError` on `$2`:
+  `project_assignments.team_id` is `varchar(255)` and is **the only one of 17
+  `team_id` columns that is not `text`**. Fires ONLY when the creator is not
+  `DEFAULT_OWNER_EMAIL` — never for Aekam staff, always for a customer. Four
+  live victims; "Demo Kartavaya" has had **0 kanban columns since 2026-08-23**.
+- 🔴→✅ **No kanban card could be dragged with a mouse.** 24 drags over two full
+  runs, **zero** `PATCH /move`; the board text-selected instead. `TaskCard`'s
+  root is a `<button>` and `@hello-pangea/dnd` aborts on interactive elements.
+- 🔴→✅ **Prachar: a campaign with a date and an event of ANY kind.** A `str`
+  into `::timestamptz` at four call sites. `prachar_campaigns` held **1 row in
+  the whole database**; `prachar_events` **0**. Now 13 and 3.
+- 🔴→✅ **`PUT /hub/org/brand` answered 500 for every organisation** — INSERTed
+  `(org_id)` alone into a table whose `client_id` is NOT NULL. The quieter half:
+  its UPDATE matched nothing and still answered `{"status":"updated"}`.
+- 🔴→✅ **A B2B order could never be invoiced** — the Rule 46 gate got only
+  `contact_id`; the company fallback existed and one caller was not using it.
+
+### Two safety findings about our own guarantees
+
+- ⚠ **R1's freeze would not stop a mention email.** `POST /tasks/{id}/comments`
+  resolves no org, so `begin()` files `org_id = NULL` and `_org_suppressed(None)`
+  returns False BY DESIGN. **180 org-less rows since 2026-08-07.** The gate that
+  makes staging safe to drive could not see the core PM surface.
+- ⚠ **The signing OTP carried no organisation** — 5 of 5 rows NULL, and the
+  outbound report excludes orgless, so a firm whose client says "I never got the
+  code" is told nothing was sent.
+
+### Settled, after weeks as an open question
+
+**"The KB has never returned a result."** From the pre-reseed backup: **60
+documents, 0 chunks, 0 embeddings** — all 60 created 2026-08-02, 53-54
+characters each, **a SQL seed, never through `ingest_document`**. `search_hybrid`
+reads chunks. It was never broken; it was never loaded.
+
+### Where I was WRONG, recorded because the corrections cost real time
+
+1. **"No `POST /api/teams` reached the server."** It did, and it 500'd —
+   Sentry had it with the exact exception. I read one log source, it answered
+   "no", and I stopped. **One source saying nothing happened is not the same as
+   nothing happening.**
+2. **"The Generate Invoice control is missing."** It was there all along —
+   7 groups, 7 controls. A `loading` flag raised by re-selecting an
+   already-selected value (exactly what `selectOption` sends) and never cleared.
+3. **"03.9/03.13 are upstream precondition gaps."** They were not; Suite 03
+   needs 4 members, not 18.
+4. **I authorised `@example.com` as a safe recipient. Suite 11 refused and was
+   right** — all 53 Unicode contacts are `@example.com`, a null-MX domain, so
+   seven campaigns would have been ~144 hard bounces on the SES account that
+   sends real invoices. **A gate may be tightened without asking.**
+5. **My outbound audit flagged "45 sends to a third party."** They were PUSH
+   rows whose recipient is a `user_id`. Caught by drilling in, not by reporting.
+
+### Traps that cost evidence, now in the brief
+
+- **Piping Playwright through `tail` masks the exit code** — a 12-failure run
+  reported `exit 0`.
+- **Playwright starts a NEW WORKER after a failed test**, resetting module-level
+  ledgers. **Two independent agents hit this**; one had a test PASS on a defect
+  it had just measured. Both now use a file.
+- **"The code already does X" must be checked against `HEAD`, not the working
+  tree** — an agent verified against a local backend serving another agent's
+  uncommitted edit and reported a fallback "already exists" when `git show HEAD:`
+  had zero occurrences.
+- **Never kill processes by wildcard** — one agent took another's suite with it,
+  producing failures that read exactly like product defects.
+
+### What the agents caught in THEMSELVES
+
+A vacuous mutation proof rewritten rather than counted. Two more caught vacuous
+and redone (13 proofs, not 11). A product theory about dead drop zones raised
+and **disproved** with capture-phase instrumentation — "filing that would have
+been a false product finding". A NUL byte written and removed. A `count()` that
+counted the empty-string default, re-queried as 0/18. And a cross-agent ratchet
+left red by CORRECT but unfinished work, reported by an agent working on an
+entirely different suite.
