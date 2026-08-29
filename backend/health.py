@@ -2,7 +2,7 @@ import hashlib
 import os
 from fastapi import APIRouter
 from datetime import datetime, timezone
-from db import get_pool, DB_SCHEMA
+from db import get_pool
 
 # The module, not the names: `outbound.MODE` and `outbound.SUPPRESSED_ORGS` are
 # read through the module attribute on every request, the same "read now, so a
@@ -45,16 +45,21 @@ def suppressed_orgs_digest(orgs) -> str:
 @router.get("/api/health")
 async def health():
     db_ok = False
+    live_schema = None
     try:
         pool = await get_pool()
         await pool.fetchval("SELECT 1")
         db_ok = True
+        # The schema this CONNECTION resolves, read from the connection itself.
+        # Reporting the env var instead would report an intention; this reports
+        # the fact, and it is what the e2e fence and every cutover check read.
+        live_schema = await pool.fetchval("SELECT current_schema()")
     except Exception:
         pass
     return {
         "status": "ok" if db_ok else "degraded",
         "db": "connected" if db_ok else "unreachable",
-        "schema": DB_SCHEMA,
+        "schema": live_schema,
         "environment": os.getenv("ENVIRONMENT", "production"),
         # What THIS process actually runs with — not what the Railway dashboard
         # says the variable is. A config edit is not a deployment (the cron-niyam

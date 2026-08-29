@@ -3,8 +3,10 @@ db.py — Supabase PostgreSQL connection pool for Kartavaya
 Lazy connection — does NOT connect at startup, connects on first request.
 This prevents Railway crashes if DATABASE_URL is misconfigured.
 
-Schema routing: set DB_SCHEMA=staging to route queries to the staging
-schema (new modules) while keeping public schema accessible for auth tables.
+Schema routing was removed by migration 241, which moved every object into
+`public`. There is one schema. `/api/health` reports `current_schema()` read
+from the connection, so what a deploy actually resolves is checkable without
+trusting a variable.
 """
 import asyncio
 import json
@@ -18,7 +20,8 @@ logger = logging.getLogger(__name__)
 _pool: asyncpg.Pool | None = None
 _pool_lock = asyncio.Lock()
 
-DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
+# DB_SCHEMA is gone with migration 241 — there is one schema now. The variable
+# may linger in Railway; nothing reads it.
 
 
 def _json_encoder(value):
@@ -108,11 +111,15 @@ async def _init_conn(conn):
             logger.warning("_init_conn attempt %d failed: %s", attempt + 1, exc)
             await asyncio.sleep(0.5 * (attempt + 1))
 
-    if DB_SCHEMA == "staging":
-        try:
-            await conn.execute("SET search_path TO staging, public")
-        except Exception as exc:
-            logger.warning("SET search_path failed: %s", exc)
+    # No SET search_path. Migration 241 moved every object into `public`, which
+    # is already the server default, and every query in this codebase is
+    # schema-qualified regardless.
+    #
+    # Worth a note because deleting it has NO observable symptom either way: a
+    # `SET search_path` naming a schema that no longer exists SUCCEEDS silently
+    # — Postgres ignores missing entries — so leaving the line would have been
+    # inert rather than protective. The only honest check is `current_schema()`,
+    # which `/api/health` now reports.
 
 
 def _direct_dsn(dsn: str) -> str:
