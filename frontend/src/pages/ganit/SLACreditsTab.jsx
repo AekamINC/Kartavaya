@@ -220,7 +220,7 @@ export default function SLACreditsTab() {
             <label className="fld">
               <span className="fld__l">Period <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'अवधि'}</span></span>
               <DateInput value={editing.period}
-                onChange={v => setEditing({ ...editing, period: v })} />
+                onChange={e => setEditing({ ...editing, period: e.target.value })} />
             </label>
             <label className="fld gn-form__wide">
               <span className="fld__l">Rate Card <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'दर कार्ड'}</span></span>

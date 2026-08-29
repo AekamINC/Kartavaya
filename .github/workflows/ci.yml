@@ -350,6 +350,16 @@ jobs:
       - name: e2e bypass gate (no SQL or direct-API writes in specs)
         run: node scripts/check-e2e-no-bypass.mjs
 
+      # DateInput is deliberately INPUT-SHAPED — it emits
+      # `onChange({ target: { value … } })` so it is a drop-in for the native
+      # date input this product uses nowhere. A handler written `v => …` stores
+      # the whole EVENT as the value; fed back on the next render it makes
+      # `(value || '').slice(0,10)` throw, and the ErrorBoundary replaces the
+      # WHOLE TAB. Eight of these were live on 2026-08-29 — two in Vetana's
+      # statutory ladders and six across Ganit, all latent, all shipped.
+      - name: DateInput handler gate (onChange must read .target.value)
+        run: node scripts/check-dateinput-handlers.mjs
+
       - name: Class collision gate
         run: node scripts/check-class-collisions.mjs
 

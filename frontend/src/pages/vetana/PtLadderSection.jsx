@@ -233,7 +233,7 @@ export default function PtLadderSection() {
                 scripts/ and DateInput.jsx's own header both say so. */}
             <DateInput
               value={form.effective_from}
-              onChange={v => setForm(f => ({ ...f, effective_from: v || '' }))}
+              onChange={e => setForm(f => ({ ...f, effective_from: e.target.value || '' }))}
             />
           </label>
 

@@ -184,12 +184,12 @@ export default function RateCardsTab() {
             <label className="fld">
               <span className="fld__l">Effective From <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'प्रभावी तिथि'}</span></span>
               <DateInput value={editing.effective_from}
-                onChange={v => setEditing({ ...editing, effective_from: v })} />
+                onChange={e => setEditing({ ...editing, effective_from: e.target.value })} />
             </label>
             <label className="fld">
               <span className="fld__l">Effective To <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'समाप्ति तिथि'}</span></span>
               <DateInput value={editing.effective_to}
-                onChange={v => setEditing({ ...editing, effective_to: v })} />
+                onChange={e => setEditing({ ...editing, effective_to: e.target.value })} />
             </label>
             <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 'var(--sp-2)' }}>
               <input type="checkbox" checked={!!editing.proration_clause}

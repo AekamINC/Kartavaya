@@ -209,13 +209,13 @@ export default function ServiceLinesTab() {
               <label className="fld">
                 <span className="fld__l">Period Start <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'अवधि प्रारंभ'}</span></span>
                 <DateInput value={editing.period_start}
-                  onChange={v => setEditing({ ...editing, period_start: v })} />
+                  onChange={e => setEditing({ ...editing, period_start: e.target.value })} />
               </label>
             )}
             <label className="fld">
               <span className="fld__l">Period End <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'अवधि समाप्ति'}</span></span>
               <DateInput value={editing.period_end}
-                onChange={v => setEditing({ ...editing, period_end: v })} />
+                onChange={e => setEditing({ ...editing, period_end: e.target.value })} />
             </label>
             <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 'var(--sp-2)' }}>
               <input type="checkbox" checked={editing.auto_invoice}

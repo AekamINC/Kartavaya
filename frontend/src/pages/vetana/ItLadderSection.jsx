@@ -263,7 +263,7 @@ export default function ItLadderSection() {
                 shared date is what makes the ladder resolve as a unit. */}
             <DateInput
               value={form.effective_from}
-              onChange={v => setForm(f => ({ ...f, effective_from: v || '' }))}
+              onChange={e => setForm(f => ({ ...f, effective_from: e.target.value || '' }))}
             />
           </label>
 

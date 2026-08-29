@@ -264,7 +264,7 @@ export default function MeteredUsageTab() {
             <label className="fld">
               <span className="fld__l">Date <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'तिथि'}</span></span>
               <DateInput value={editing.recorded_date}
-                onChange={v => setEditing({ ...editing, recorded_date: v })} />
+                onChange={e => setEditing({ ...editing, recorded_date: e.target.value })} />
             </label>
             <label className="fld gn-form__wide">
               <span className="fld__l">Source Reference <span aria-hidden="true" lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{'स्रोत संदर्भ'}</span></span>
