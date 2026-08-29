@@ -52,7 +52,7 @@ async def _storage_ready(pool) -> bool:
     global _table_present
     if _table_present:
         return True
-    _table_present = bool(await pool.fetchval("SELECT to_regclass('staging.user_totp')"))
+    _table_present = bool(await pool.fetchval("SELECT to_regclass('user_totp')"))
     return _table_present
 
 

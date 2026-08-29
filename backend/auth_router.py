@@ -433,7 +433,7 @@ async def _onboarding_column_exists(pool) -> bool:
         return True
     row = await pool.fetchrow(
         "SELECT 1 AS ok FROM information_schema.columns "
-        "WHERE table_schema='staging' AND table_name='organisations' "
+        "WHERE table_schema = ANY(current_schemas(false)) AND table_name='organisations' "
         "AND column_name='onboarding_complete'"
     )
     # The query returns at most one row, and only when the column exists.
@@ -1370,7 +1370,7 @@ async def login(request: Request, body: LoginBody):
     # Runs only after the password has already been proven correct, so this
     # cannot become a second username-enumeration oracle — reaching this
     # point already required knowing a valid password for this exact email.
-    _totp_present = bool(await pool.fetchval("SELECT to_regclass('staging.user_totp')"))
+    _totp_present = bool(await pool.fetchval("SELECT to_regclass('user_totp')"))
     enrolled = False
     if _totp_present:
         enrolled = bool(await pool.fetchval(

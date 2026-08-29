@@ -83,7 +83,7 @@ async def approver_table_available(pool) -> bool:
     if _approver_table_exists is None:
         try:
             _approver_table_exists = bool(await pool.fetchval(
-                "SELECT to_regclass('staging.org_module_approvers') IS NOT NULL"
+                "SELECT to_regclass('org_module_approvers') IS NOT NULL"
             ))
         except Exception as exc:  # pragma: no cover — defensive
             logger.warning("approver table probe failed, assuming absent: %s", exc)

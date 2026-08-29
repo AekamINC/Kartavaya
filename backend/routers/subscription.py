@@ -193,7 +193,7 @@ async def _upi_columns_ready(pool) -> bool:
         return True
     rows = await pool.fetch(
         "SELECT table_name, column_name FROM information_schema.columns "
-        "WHERE table_schema='staging' AND table_name = ANY($1::text[]) "
+        "WHERE table_schema = ANY(current_schemas(false)) AND table_name = ANY($1::text[]) "
         "AND column_name = ANY($2::text[])",
         ["organisations", "subscription_invoices"],
         ["upi_vpa", "upi_payee_name"],

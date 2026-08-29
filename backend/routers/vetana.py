@@ -763,7 +763,7 @@ async def _employee_state_column(pool) -> str | None:
     """
     name = await pool.fetchval(
         "SELECT column_name FROM information_schema.columns "
-        " WHERE table_schema = 'staging' AND table_name = 'manav_employees' "
+        " WHERE table_schema = ANY(current_schemas(false)) AND table_name = 'manav_employees' "
         "   AND column_name = ANY($1::text[]) "
         " ORDER BY array_position($1::text[], column_name) "
         " LIMIT 1",
@@ -1837,7 +1837,7 @@ async def process_payroll(
     # where it is present every payslip carries it.
     payslip_records_treatment = bool(await pool.fetchval(
         "SELECT 1 FROM information_schema.columns "
-        " WHERE table_schema = 'staging' AND table_name = 'vetana_payslips' "
+        " WHERE table_schema = ANY(current_schemas(false)) AND table_name = 'vetana_payslips' "
         "   AND column_name = 'statutory_treatment'"))
     if not payslip_records_treatment:
         logging.warning(

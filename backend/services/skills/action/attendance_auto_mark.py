@@ -87,7 +87,7 @@ async def _employee_state_column_exists(pool) -> bool:
         """
         SELECT EXISTS (
             SELECT 1 FROM information_schema.columns
-            WHERE table_schema = 'staging'
+            WHERE table_schema = ANY(current_schemas(false))
               AND table_name = 'manav_employees'
               AND column_name = 'state'
         )

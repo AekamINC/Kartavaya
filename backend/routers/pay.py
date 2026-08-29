@@ -202,7 +202,7 @@ async def _upi_accounts(org_id, org_name: str, fallback_vpa: str,
     pool = await get_pool()
     if not _upi_table:
         probe = await pool.fetchrow(
-            "SELECT to_regclass('staging.org_upi_accounts') IS NOT NULL AS ok"
+            "SELECT to_regclass('org_upi_accounts') IS NOT NULL AS ok"
         )
         _upi_table = bool(probe and probe["ok"])
 

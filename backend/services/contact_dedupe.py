@@ -238,8 +238,8 @@ async def _referencing_tables(conn) -> list[tuple[str, str]]:
           ON att.attrelid = con.conrelid
          AND att.attnum   = con.conkey[1]
         WHERE con.contype = 'f'
-          AND con.confrelid = 'staging.graha_contacts'::regclass
-          AND con.conrelid <> 'staging.graha_contacts'::regclass
+          AND con.confrelid = 'graha_contacts'::regclass
+          AND con.conrelid <> 'graha_contacts'::regclass
         ORDER BY 1
         """
     )

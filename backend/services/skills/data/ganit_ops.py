@@ -1027,7 +1027,7 @@ async def pack_collection_messages(
     # a cached FALSE would keep every pack on the fallback until a redeploy.
     upi_rows = []
     has_table = await pool.fetchval(
-        "SELECT to_regclass('staging.org_upi_accounts') IS NOT NULL"
+        "SELECT to_regclass('org_upi_accounts') IS NOT NULL"
     )
     if has_table:
         upi_rows = await pool.fetch(

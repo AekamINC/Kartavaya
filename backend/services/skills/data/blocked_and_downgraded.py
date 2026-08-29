@@ -767,7 +767,7 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
                 """
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_schema = 'staging' AND table_name = 'graha_tickets'
+                WHERE table_schema = ANY(current_schemas(false)) AND table_name = 'graha_tickets'
                 ORDER BY ordinal_position
                 """
             )
