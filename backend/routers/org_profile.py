@@ -61,6 +61,7 @@ from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
 from middleware.org_resolver import get_org_id
 from services import email_senders, upi
+from services.gst_states import GST_STATES, RETIRED_STATE_CODES, norm_state
 from services.gstin import GSTINError
 from services.gstin import normalise as normalise_gstin
 from services.gstin import validate as validate_gstin
@@ -91,7 +92,35 @@ _PROFILE_COLUMNS = (
     # to it. `documents.py` still carried a comment saying TAN had no column and
     # read it out of `settings` instead — that is now stale and is corrected
     # there.
-    "name", "gstin", "pan", "tan", "billing_address", "logo_url", "email", "phone",
+    # `state_code` is the numeric GST state code of the place this firm supplies
+    # FROM — '24' Gujarat, '27' Maharashtra. It sits with gstin/pan/tan because
+    # it is the same kind of thing, and it was missing for the same reason and
+    # with the same consequence, one field over from the TAN note above.
+    #
+    # ⚠ THIS TUPLE IS THREE THINGS AT ONCE — the GET projection, the PATCH
+    # writable allowlist and the RETURNING list — so a column absent from it can
+    # be neither read back nor written through this router. Nothing else in the
+    # product writes `organisations.state_code` either: `grep` finds only
+    # SELECTs (`client_billing.py:132`, `procurement.py:575`), and the one
+    # INSERT that creates an organisation (`admin_orgs.py:679`) does not name the
+    # column, so every org is born with it NULL.
+    #
+    # The consequence is not cosmetic. `client_billing._tax_split` REFUSES
+    # outright when it is empty — "this organisation has no state_code, so an
+    # invoice cannot be taxed as inter- or intra-state. Set the organisation's
+    # state in Settings -> Profile." — pointing at this screen, where there was
+    # no such field. That is the TDS-challan failure repeated exactly: a form
+    # that is otherwise complete, a document that can be filled in full and then
+    # never issued, and a message naming a control that does not exist.
+    #
+    # Measured live 2026-08-29: 2 of 5 organisations (Aekam Inc, Demo -
+    # Kartavaya) hold NULL and could not raise a GST invoice by any route. The
+    # three that carry a code got it by migration or by hand, never through the
+    # product — `GET /api/v1/org/profile` returned no `state_code` key at all
+    # while the column held '24', and a PATCH naming it answered
+    # "Nothing to update" because pydantic had already dropped the key.
+    "name", "gstin", "pan", "tan", "state_code", "billing_address", "logo_url",
+    "email", "phone",
     "website", "bank_details", "invoice_note",
     "description", "industry", "team_size", "founded_year",
 )
@@ -220,6 +249,21 @@ class ProfileUpdate(BaseModel):
     gstin: str | None = None
     pan: str | None = None
     tan: str | None = None
+
+    #: The numeric GST state code, and it is NOT validated here.
+    #:
+    #: A `field_validator` that raises produces a **422** with pydantic's own
+    #: envelope, and this project has already paid for that once — "an empty box
+    #: was a 422, and 184 sites could not read the reason". The rule the owner
+    #: set for this field is a **400 naming the field**, so the check lives in
+    #: the handler beside the GSTIN and TAN ones, which are there for the same
+    #: reason: they need to speak in this router's voice, not pydantic's.
+    #:
+    #: Declared `str` rather than a constrained type so 'MH', 'Maharashtra' and
+    #: '4' all reach `norm_state` and are canonicalised, instead of being
+    #: refused by a shape rule before anything has tried to understand them.
+    state_code: str | None = None
+
     billing_address: dict | None = None
     logo_url: str | None = None
     email: str | None = None
@@ -507,6 +551,82 @@ async def update_profile(
             # intent in the comment above was always right ("blank stays legal")
             # and only the encoding of "blank" was wrong.
             fields["tan"] = None
+
+    # ── THE GST STATE CODE ────────────────────────────────────────────────────
+    #
+    # ⚠ EMPTY MUST STAY SAVEABLE, AND THAT IS THE HALF THAT MATTERS MOST HERE.
+    #
+    # Two live organisations hold NULL today. Blocking a blank would lock both
+    # of them out of saving their NAME, their address and their bank details —
+    # the whole form, over a field they have never been able to fill in. That is
+    # the identical failure the TAN block above exists to prevent, and it is the
+    # standing rule this product keeps re-learning: a statutory code never
+    # blocks a save. Blank is written as **NULL, not ""**, so "nobody has said"
+    # has one representation on the column rather than two — the same reasoning
+    # as the TAN, arrived at from the opposite direction: there is no CHECK
+    # here forcing the issue, and a column holding both NULL and '' for one
+    # meaning is how an `IS NULL` filter starts lying.
+    #
+    # ── WHY A NON-EMPTY BAD VALUE IS REFUSED, WHERE A BAD GSTIN IS NOT ────────
+    #
+    # The GSTIN and TAN warn instead of blocking because the thing judging them
+    # is OUR regex and OUR check digit, and being wrong about a legitimate
+    # number costs a real firm its afternoon with nothing to argue with. That
+    # asymmetry does not exist here, for three reasons:
+    #
+    #   · The state codes are a CLOSED, PUBLISHED codelist of 40 values — not
+    #     our guess at a format. `services/gst_states.GST_STATES` is that list.
+    #   · The column is `varchar(2)` (information_schema, live, 2026-08-29). A
+    #     three-character value does not warn, it raises
+    #     StringDataRightTruncation — an instant 500 that escapes before the
+    #     CORS headers, so the browser reports `net::ERR_FAILED` and the screen
+    #     says only "Failed to save profile". That is this repo's signature
+    #     failure and it is what a warning-only path would have shipped.
+    #   · Storing an unrecognised code is WORSE than refusing it. Every reader
+    #     goes through `norm_state`, which answers None for anything off the
+    #     list, and `_tax_split` then refuses the invoice with "this
+    #     organisation has no state_code" — while this screen displays a value.
+    #     The user would be told to set a field they can see is already set.
+    #
+    # So: refused, as a 400 that names the field and says nothing was saved —
+    # the same shape as the doc-prefix refusals below, and never a 422.
+    #
+    # A SELECT is the only control that writes this, so the refusal is
+    # unreachable from the product; it is the guard for a hand-made request.
+    if "state_code" in fields:
+        raw = fields["state_code"]
+        if raw is None or not str(raw).strip():
+            fields["state_code"] = None
+        else:
+            # Accepts '27', 27, 'MH', 'mh' and 'Maharashtra'; canonicalises all
+            # of them to '27'. Generous on the way in precisely so the refusal
+            # below fires only on something genuinely unrecognisable, and so
+            # this router agrees with `manav` and `vetana`, which already
+            # normalise the same three spellings for the same reason.
+            code = norm_state(raw)
+            if code is None:
+                raise HTTPException(
+                    400,
+                    f"'{str(raw).strip()}' is not a GST state code. It is a "
+                    "two-digit code from the published list — 24 Gujarat, 27 "
+                    "Maharashtra, 29 Karnataka, and so on, plus 97 Other "
+                    "Territory and 99 Centre Jurisdiction. Leave it empty if "
+                    "you would rather not say. Nothing was saved.",
+                )
+            fields["state_code"] = code
+            # 25 (Daman and Diu) merged into 26 on 26 January 2020 and 28
+            # (undivided Andhra Pradesh) died with the 2014 bifurcation. Both
+            # still appear on old registrations, so they RESOLVE — refusing
+            # them would refuse a firm its own historic GSTIN prefix. Neither
+            # can be issued today though, so a new one is almost certainly a
+            # typo, and that travels back in `code_warnings` exactly as the
+            # GSTIN and TAN complaints do.
+            if code in RETIRED_STATE_CODES:
+                code_warnings["state_code"] = (
+                    f"{GST_STATES[code][1]} ({code}) is no longer issued on new "
+                    "GST registrations. It has been saved as chosen — check it "
+                    "against your GSTIN if this firm registered recently."
+                )
 
     # ── The logo's durable half ───────────────────────────────────────────────
     #

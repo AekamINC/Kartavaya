@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, ErrorState, SkeletonCard, useToast } from '../../components/ui';
-import { validateGSTIN, validatePAN, validateTAN, validateIFSC, panFromGSTIN } from '../../lib/validators';
+import {
+  validateGSTIN, validatePAN, validateTAN, validateIFSC, panFromGSTIN,
+  GST_STATES, stateFromGSTIN,
+} from '../../lib/validators';
 import { oversizeMessage } from '../../lib/uploadLimits';
 import LogoUpload from './LogoUpload';
 import { apiErrorText } from '../../lib/apiError';
@@ -38,7 +41,7 @@ const EMPTY = {
   // re-sign it from — `LogoUpload.jsx` already says the url is a stale mirror
   // and every consumer signs `logo_key` at read time. GET returns both; the
   // diff below sends whichever actually changed.
-  name: '', gstin: '', pan: '', tan: '', logo_url: '', logo_key: '', email: '', phone: '', website: '',
+  name: '', gstin: '', pan: '', tan: '', state_code: '', logo_url: '', logo_key: '', email: '', phone: '', website: '',
   billing_address: { line1: '', line2: '', city: '', state: '', pincode: '', country: 'India' },
   bank_details: { account_name: '', account_number: '', ifsc: '', bank_name: '', branch: '', upi_id: '' },
   invoice_note: '',
@@ -67,6 +70,49 @@ function asObject(v) {
   }
   if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
   return Object.fromEntries(Object.entries(o).filter(([k]) => !/^\d+$/.test(k)));
+}
+
+/**
+ * The GST state codes, by NAME, sorted by name.
+ *
+ * ⚠ REUSED, NOT RESTATED. `GST_STATES` is the one code→name table on this side
+ * and `AddressBlock`, `EmployeesTab`, `HolidaysTab`, `PtLadderSection` and
+ * `InvoiceForm` all read it. A second copy here is how the invoice form and the
+ * profile end up disagreeing about which code is Ladakh.
+ *
+ * The VALUE is the numeric code — that is what `organisations.state_code`
+ * holds and what `client_billing._supplier_state` reads. The visible text is
+ * the NAME and only the name: "Ahmedabad, 24" reads as a house number, which is
+ * the convention `AddressBlock.stateOf` was written to enforce.
+ */
+const STATE_OPTIONS = Object.entries(GST_STATES)
+  .sort((a, b) => a[1].localeCompare(b[1]));
+
+/** label + select + persistent hint + stacked error — `F`'s shape, one tag over.
+ *
+ * A SELECT and never a text box. This value decides CGST/SGST versus IGST on
+ * every invoice the firm raises, and a free-text box would let "Maharastra",
+ * "MH " and "27" all be stored as different states — the exact reason
+ * `InvoiceForm` made place-of-supply a select. It also means the 400 the server
+ * raises for an unrecognised code is unreachable from this screen. */
+function S({ id, label, hint, error, value, onChange, children }) {
+  return (
+    <div className="of__f">
+      <label className="of__l" htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        className="of__i"
+        value={value ?? ''}
+        onChange={onChange}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={[hint && `${id}-h`, error && `${id}-e`].filter(Boolean).join(' ') || undefined}
+      >
+        {children}
+      </select>
+      {hint && <span className="of__h" id={`${id}-h`}>{hint}</span>}
+      {error && <span className="of__e" id={`${id}-e`} role="alert">{error}</span>}
+    </div>
+  );
 }
 
 /** label + input + persistent hint + stacked error (26 §3). */
@@ -114,6 +160,12 @@ export default function TabProfile() {
         if (!alive) return;
         const merged = {
           ...EMPTY, ...r.data,
+          // `state_code` is deliberately NOT coalesced here, and the first
+          // draft of this fix did coalesce it with a comment claiming it kept
+          // the save diff honest. The mutation proof showed that claim was
+          // false — `null` compares equal to `null` and the diff was correct
+          // either way — so it was dead code with a reason attached, which is
+          // worse than no code. `S` handles the null, once, the way `F` does.
           billing_address: { ...EMPTY.billing_address, ...asObject(r.data.billing_address) },
           bank_details: { ...EMPTY.bank_details, ...asObject(r.data.bank_details) },
         };
@@ -226,7 +278,16 @@ export default function TabProfile() {
       // cannot drift from what was actually stored. An empty object clears
       // them, which is how a corrected typo stops being complained about.
       const warn = r.data?.code_warnings || {};
-      setErrors(e => ({ ...e, gstin: warn.gstin || null, pan: warn.pan || null, tan: warn.tan || null }));
+      setErrors(e => ({
+        ...e,
+        gstin: warn.gstin || null,
+        pan: warn.pan || null,
+        tan: warn.tan || null,
+        // A retired code — 25 or 28 — saves and then says so. It resolves to a
+        // real state name so an old GSTIN is still readable, but nothing is
+        // issued on either today, so a fresh one is almost certainly a typo.
+        state_code: warn.state_code || null,
+      }));
       pushToast({
         type: 'success',
         title: 'Company profile saved',
@@ -263,6 +324,27 @@ export default function TabProfile() {
   const embedded = panFromGSTIN(profile.gstin);
   const panMismatch = embedded && profile.pan && embedded !== profile.pan.trim().toUpperCase()
     ? `This PAN does not match the one inside the GSTIN (${embedded}).`
+    : null;
+
+  // The GSTIN's first two characters ARE the state of registration, so when
+  // both are filled and they disagree one of them is wrong — and, exactly as
+  // with the PAN above, neither field is invalid on its own so neither
+  // validator can see it. Said as a NAME, never as the digits.
+  //
+  // It reports and does not correct. Which of the two is the typo is not
+  // knowable from here, and a control that silently rewrote the field deciding
+  // CGST/SGST versus IGST would be worse than the disagreement it fixed.
+  const fromGstin = stateFromGSTIN(profile.gstin);
+  const stateMismatch = fromGstin && profile.state_code && fromGstin.code !== profile.state_code
+    ? `This GSTIN was issued in ${fromGstin.name}. Check which of the two is right — this field decides whether an invoice is taxed CGST/SGST or IGST.`
+    : null;
+
+  // A code the list does not carry — '28', pre-bifurcation Andhra Pradesh, is
+  // the real case: the server resolves it, this table deliberately does not.
+  // Without an option for it the select renders BLANK over a populated column,
+  // which is a control lying about what is stored.
+  const unlisted = profile.state_code && !GST_STATES[profile.state_code]
+    ? profile.state_code
     : null;
 
   return (
@@ -310,6 +392,29 @@ export default function TabProfile() {
             error={errors.tan}
             onBlur={check('tan', validateTAN)}
             onChange={e => set('tan', e.target.value)} />
+          {/* GST state. Absent until now, and the omission was load-bearing in
+              exactly the way the TAN's was: `client_billing` refuses to raise
+              an invoice without it — "Set the organisation's state in Settings
+              -> Profile" — which is THIS screen, which had no such field. Two
+              of five live organisations sat at NULL and could not raise a GST
+              invoice by any route.
+
+              ⚠ "Not set" is a real, permitted answer and stays first in the
+              list. Blocking a blank would lock those two orgs out of saving
+              their name, address and bank details over a field they have never
+              been able to fill in — the same rule that keeps GSTIN, PAN and
+              TAN from blocking anything. */}
+          <S id="org-state-code" label="GST state"
+            hint="The state you supply from. Decides whether an invoice is taxed CGST/SGST or IGST."
+            error={errors.state_code || stateMismatch}
+            value={profile.state_code}
+            onChange={e => set('state_code', e.target.value)}>
+            <option value="">Not set</option>
+            {unlisted && <option value={unlisted}>{`Code ${unlisted} — no longer issued`}</option>}
+            {STATE_OPTIONS.map(([code, name]) => (
+              <option key={code} value={code}>{name}</option>
+            ))}
+          </S>
         </div>
       </section>
 
@@ -324,7 +429,13 @@ export default function TabProfile() {
         <div className="of of--3 of--stacked">
           <F id="org-city" label="City" value={profile.billing_address.city}
             onChange={e => setAddr('city', e.target.value)} />
+          {/* This is the state as it PRINTS on the letterhead, and it is not
+              the field that taxes an invoice — that is "GST state" under Tax.
+              The two were indistinguishable while only this one existed, so a
+              firm could type "Gujarat" here, see a state on the form, and still
+              be refused an invoice for having no state_code. */}
           <F id="org-state" label="State" value={profile.billing_address.state}
+            hint="Printed on the letterhead. The tax state is under Tax."
             onChange={e => setAddr('state', e.target.value)} />
           <F id="org-pin" label="Pincode" inputMode="numeric" value={profile.billing_address.pincode}
             onChange={e => setAddr('pincode', e.target.value)} />

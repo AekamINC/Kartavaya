@@ -95,10 +95,10 @@ _NAMES_ROUTER = re.compile(
 
 #: Writing routers with NO live-schema test, measured 2026-08-27. ONLY SHRINKS.
 UNCOVERED = {
-    "admin_orgs", "column_prefs", "esign", "ganit", "hub", "hub_chat",
+    "admin_orgs", "column_prefs", "esign", "hub", "hub_chat",
     "hub_connectors", "hub_publish", "lead_sources", "me", "messaging",
-    "niyam_rules", "org_members", "org_modules", "org_profile", "org_security",
-    "pahchan_attendance", "pay", "prachar", "procurement", "products", "pulse",
+    "niyam_rules", "org_members", "org_modules", "org_security",
+    "pay", "prachar", "procurement", "products", "pulse",
     "scheduler", "scrapers", "subscription", "tab_prefs", "totp", "vikray",
     # `whatsapp` left this list on 2026-08-27 — the first name to, and the
     # ratchet is what noticed.
@@ -147,7 +147,50 @@ UNCOVERED = {
     # failure nobody reads. The list is the debt that remains, and it was
     # overstating the debt by one.
     #
-    # 30 remain.
+    # ── THREE MORE LEFT BY THE FIRST ROUTE, 2026-08-29 ───────────────────────
+    #
+    #   · `org_profile`   — `tests/test_org_profile_state_code.py` PREPAREs the
+    #                       GET projection and the PATCH `RETURNING` clause,
+    #                       both composed from `_PROFILE_COLUMNS` itself so a
+    #                       column added later is checked without editing the
+    #                       test. Written while fixing the org GST state code,
+    #                       which no screen and no route could set.
+    #   · `ganit`         — already covered by
+    #                       `tests/test_invoicing_reads_the_dated_law.py`.
+    #   · `pahchan_attendance` — already covered by
+    #                       `tests/test_pahchan_consent_optout.py`, which calls
+    #                       `await conn.prepare(sql)` at :680 and names the
+    #                       router five times.
+    #
+    # ⚠ THAT FILENAME WAS WRONG WHEN FIRST WRITTEN, and the correction is worth
+    # more than the fix. It said `test_attendance_bridge_marked_by.py` — a real
+    # file that names `pahchan_attendance` and contains **zero** `prepare()`
+    # calls. Checked 2026-08-29 by grepping for an actual call rather than
+    # trusting the name.
+    #
+    # ⚠⚠ AND CHECKING IT EXPOSED A HOLE IN THIS RATCHET ITSELF. `_PREPARES` is
+    # the bare substring `"prepare("`, matched against the whole file — so a
+    # test that merely MENTIONS `prepare()` IN PROSE credits the router it
+    # imports with live-SQL coverage it does not have.
+    # `tests/test_date_params_are_parsed_not_bound_as_str.py` is exactly that
+    # shape today: it imports `pahchan_attendance`, and its only `prepare(` is
+    # the word in a docstring at :36. It happens not to matter here, because
+    # `test_pahchan_consent_optout.py` provides the real thing — but the next
+    # name to leave this list could leave on a docstring alone.
+    # This is the third time a static ratchet in this repo has been found
+    # counting a string rather than a behaviour. Tightening `_PREPARES` to an
+    # actual call (`.prepare(`) is the fix; it is NOT made here because it may
+    # turn other names red and that is its own change, measured on its own.
+    #
+    # ⚠ The last two were NOT this change's work and are recorded as found.
+    # `test_the_baseline_only_shrinks` was ALREADY RED on `fbb1f0c5` naming both
+    # — proved by holding the new test file aside and watching it fail with
+    # `['ganit', 'pahchan_attendance']` instead of all three. That is the second
+    # time in two days this list has been caught overstating the debt, and it is
+    # the failure mode the `graha` note above describes: a baseline red for a
+    # name nobody is working on is one people learn to run past.
+    #
+    # 27 remain.
 }
 
 
