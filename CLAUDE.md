@@ -33,13 +33,24 @@ production data.
 ⚠ **"Only `staging` and `public` exist" was wrong** and cost a day: a `42P01`
 from a schema-qualified query is a fact about **that schema only**, and closing
 Phase 6.4 on one is exactly how `public.report_schedules` was declared missing
-while it had a CRUD and an armed hourly cron. Measured 2026-08-27, there are
-**fourteen**: `staging` and `public` are the product's two; `auth`,
-`extensions`, `graphql`, `graphql_public`, `realtime`, `storage`,
-`supabase_migrations` and `vault` are Supabase's own; and
-`dead_tables_20260822`, `ledger_repair_20260826`, `tenancy_195_backup` and
-`payroll_smallrun_20260827` are restore points from approved changes. **Check
-both product schemas before calling anything missing.**
+while it had a CRUD and an armed hourly cron. **Re-measured 2026-08-29 and the
+number had MOVED: there are now fifteen.** `staging` and `public` are the
+product's two; `auth`, `extensions`, `graphql`, `graphql_public`, `realtime`,
+`storage`, `supabase_migrations` and `vault` are Supabase's own; and
+`dead_tables_20260822`, `ledger_repair_20260826`, `tenancy_195_backup`,
+`payroll_smallrun_20260827` and **`reseed_backup_20260828`** are restore points
+from approved changes. **Check both product schemas before calling anything
+missing.**
+
+⚠ **This count is a MEASUREMENT WITH A DATE, not a constant — re-run it, do not
+cite it.** It said fourteen and was right on 2026-08-27; proposal 93's own R2
+backup then added the fifteenth, so the line in this file was stale within two
+days of being written. On 2026-08-29 a sweep reported **sixteen** and was also
+wrong. The query that settles it, and the only thing worth trusting:
+
+    SELECT count(*), string_agg(nspname, ', ' ORDER BY nspname)
+    FROM pg_namespace
+    WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema';
 
 - Never test validation by writing to the live DB.
 - Before trusting any live probe, confirm which SHA the service is actually

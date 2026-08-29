@@ -115,11 +115,21 @@ function TargetForm({ onSaved, onCancel }) {
     salesperson_id: '', period_start: q.start, period_end: q.end,
     target_amount: 0, target_deals: 0, notes: '',
   });
-  /* Phase 4.8 — `GET /v1/client-billing/quota-proration` has existed since
-     proposal 87 and had NO caller anywhere. This is the place it belongs: the
-     one screen where a target is set against a period. `join_date` is not on a
-     member record, so it is asked for — blank means "here for the whole
-     period", which is the common case and costs nobody a keystroke. */
+  /* Phase 4.8 — this route had existed since proposal 87 with NO caller
+     anywhere, and this is the place it belongs: the one screen where a target
+     is set against a period. `join_date` is not on a member record, so it is
+     asked for — blank means "here for the whole period", which is the common
+     case and costs nobody a keystroke.
+
+     ⚠ AND THE PATH IT NAMED DID NOT EXIST, SO THE BUTTON 404'd FROM THE DAY IT
+     SHIPPED. This comment said `GET /v1/client-billing/quota-proration`; the
+     deployed OpenAPI publishes `/api/v1/ganit/billing/quota-proration` and has
+     no `client-billing` prefix at all. Giving an orphaned route its first
+     caller and giving it the WRONG one land identically on screen — nothing
+     happens — which is why the route stayed in the orphan list even after this
+     screen was written to call it. Verified against the live OpenAPI
+     2026-08-29, both directions: the old path is absent, the new one is
+     present. */
   const [joinDate, setJoinDate] = useState('');
   const [proration, setProration] = useState(null);
   const [prorating, setProrating] = useState(false);
@@ -154,7 +164,7 @@ function TargetForm({ onSaved, onCancel }) {
     if (!joinDate || !form.period_start || !form.period_end) return;
     setProrating(true);
     try {
-      const r = await api.get('/v1/client-billing/quota-proration', {
+      const r = await api.get('/v1/ganit/billing/quota-proration', {
         params: {
           target: Number(form.target_amount) || 0,
           start_date: form.period_start,
