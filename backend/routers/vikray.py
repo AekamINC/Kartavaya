@@ -981,12 +981,32 @@ async def generate_invoice_from_order(
 
     inv_number = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
     inv = await pool.fetchrow(
+        # ⚠ `salesperson_id` — THE ORDER CREDITED SOMEBODY AND THE INVOICE
+        # CREDITED NOBODY, which is the point at which the credit stops being
+        # a note on a sales record and starts being money.
+        #
+        # `staging.ganit_invoices.salesperson_id` EXISTS (text, confirmed
+        # against the live catalogue) and 12 of Unicode's invoices carry one —
+        # every one of them raised DIRECTLY in Ganit, where the form has the
+        # field. Not one arrived through this conversion, because this INSERT
+        # never named the column. So the commission register loses attribution
+        # at exactly the moment an order becomes an invoice, and the rep who
+        # closed the sale disappears from the document the money is collected
+        # against.
+        #
+        # Same shape as the four `_DEAL_COLS` columns and the purchase-order
+        # revision route: THE COLUMN IS WRITABLE AND THE PATH THAT SHOULD WRITE
+        # IT DOES NOT. Text on both sides, so no cast — and a cast here would be
+        # the fingerprint of reaching for the wrong column, which is the note
+        # `_ATTAINMENT_SQL` already carries about this same id.
         "INSERT INTO staging.ganit_invoices "
         "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
         "place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, "
-        "discount, total, balance_due, notes, created_by, client_id) "
+        "discount, total, balance_due, notes, created_by, client_id, "
+        "salesperson_id) "
         "VALUES ($1::uuid, $2, $3, 'tax_invoice', CURRENT_DATE, '', $4, "
-        "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13, NULLIF($14,'')::uuid) "
+        "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13, NULLIF($14,'')::uuid, "
+        "NULLIF($15,'')) "
         "RETURNING id",
         org_id, order["contact_id"], inv_number, order["is_igst"],
         json.dumps(lines),
@@ -994,6 +1014,7 @@ async def generate_invoice_from_order(
         order["discount"], order["total"], f"Generated from order {order['order_number']}",
         user["user_id"],
         client_id or "",
+        order["salesperson_id"] or "",
     )
     await pool.execute(
         # Attaching the invoice IS an amendment of the order, and the person who
