@@ -326,6 +326,92 @@ exactly this reason rather than pretending it had swept them.
 
 ---
 
+## 19. Applying a project template duplicates every column
+**ACTIVE · Core PM**
+
+Verified on `S3 Project 05`: `To Do`, `In Progress`, `In Review`, `Approval` and
+`Done` each exist **TWICE, at the SAME `sort_order`** (0,0 / 1,1 / 2,2 / 3,3 /
+4,4) — so the board is duplicated AND its ordering is ambiguous. The arithmetic
+closes exactly across the org: 4x9 + 3x14 + 1x5 = 83 rows.
+
+Apply is additive server-side: each insert takes a FRESH `col_` primary key, so
+its `ON CONFLICT DO NOTHING` can never fire — it guards a key that is new every
+time.
+
+⚠ Columns live in `public.project_columns`. NOT `board_columns` — and both
+`public.boards` and `public.board_columns` hold **0 rows in the whole
+database**, so querying those will suggest there is no problem.
+
+Three defensible fixes: make apply idempotent by name; refuse on a non-empty
+board and say so; or merge and renumber. **Whichever is chosen, `sort_order`
+must come out unambiguous** — a kanban board's column order is not cosmetic.
+
+## 20. Four active employees are missing from the employee list
+**ACTIVE · Manav — found by Suite 16, on Suite 07's ground**
+
+`GET /api/v1/manav/employees` returns **26 of 30** for Unicode Group. Measured:
+30 rows carry `status='active'`, and **four have a PAST
+`manav_offboarding.last_working_day`**; the four with a FUTURE one are listed.
+So the list silently filters on a date in a joined table while the employee's
+own row still says active.
+
+**Two of the four hold the org's only usable leave balances — 170 days each —
+now unspendable**, because the person cannot be selected on any screen fed by
+this list.
+
+Which is wrong is a real decision: the LIST (someone serving notice is still an
+employee), or the STATUS (offboarding should have moved it, and something must
+do that). ⚠ The payroll leaver flag is DELIBERATE — a leaver is paid part-month
+— so a filter change must not quietly alter who a payroll run picks up.
+
+## 21. Niyam — quiet hours cannot work, and five more gaps
+**ACTIVE · found by Suite 16, none fixed**
+
+⚠ **§10's quiet-hours clause is unachievable behind TWO walls**, and both are
+needed for it to work at all:
+1. **The builder has no channel control.** `blankStep()` hardcodes `inapp`, so
+   **no authorable rule can ever use push or email** — the only channels
+   `send.INTERRUPTING` covers.
+2. **There is no deferral.** `deliver` returns `refused`, `run_pipeline` calls
+   `_finish`, `wake_at` is NULLed.
+The mechanism is real and simply not wired here: a `wait` step DOES defer —
+4 slept, 4 woke, 4 ran the step after.
+
+Also open, each walked live:
+- **3 of 6 action verbs have NO configuration fields** — `invoice.remind_
+  customer`, `task.add_comment`, `task.create` (1 select, 0 inputs each).
+- **`@org_admins` is not offerable.** Five live instances each fired, evaluated,
+  reached the action step and recorded *"nobody to notify on this event"*.
+- 4 of 11 families have no filter chip (esign, marketing, payroll, whatsapp).
+- **10 of 10 rule-editor controls have no accessible name**, 5 carrying a DEAD
+  `label="…"` attribute — `ui/Field.jsx` spreads the prop onto a bare `<input>`.
+  A shared-component cause, so it will not be the last.
+
+## 22. Report email carries no attachment size guard, and a bounce is invisible
+**ACTIVE · raised by the owner 2026-08-29**
+
+`email_service.send_report_email` computes
+`attachment_bytes = len(pdf_bytes or b"") + len(excel_bytes or b"")` **for the
+outbound record only — nothing checks it against any limit.** There is no cap,
+no refusal and no degradation path.
+
+That matters because of what sits underneath it: **there is no bounce handling
+in this product at all** — no `bounced` status in `outbound_log`
+(`queued · sent · suppressed · failed`) and no SNS/webhook endpoint. Confirmed
+by grep. So a recipient server answering **552 (message too large)** would
+arrive asynchronously **to nobody**, while the row already reads `sent`.
+
+⚠ This is the exact shape that has already burned this product once: **SES
+accepted 960 payslips and bounced them seconds later.** Base64 inflates an
+attachment by roughly a third, and receiving limits are commonly lower than the
+sender's — Gmail around 25 MB, many corporate servers 10 MB.
+
+**So the risk is not the bounce. It is that we would never learn of it.** Any
+attachment work must cap the size and refuse or degrade deliberately rather than
+send something that can vanish silently.
+
+---
+
 ## Also open, from the suites, not separately chipped
 
 - **eSign field placement stores nothing.** `staging.sign_fields` exists
