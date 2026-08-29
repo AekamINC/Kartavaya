@@ -28,6 +28,7 @@ def _bg_push(coro, label: str = "push"):
 from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from db import get_pool
 from middleware.roles import is_org_admin
+from middleware.org_resolver import active_org_id
 
 _JWT_ALG = "HS256"
 
@@ -114,7 +115,7 @@ async def fetch_task_or_404(pool, task_id: str, user_id: str):
     return task
 
 
-async def assert_may_act_on_task(pool, task, user) -> None:
+async def assert_may_act_on_task(pool, task, user, org: str | None = None) -> None:
     """
     Refuse a caller who has nothing to do with this task.
 
@@ -169,14 +170,82 @@ async def assert_may_act_on_task(pool, task, user) -> None:
         if member:
             return
 
-    # Read at request time and org-scoped, unlike the JWT claim above.
-    if await is_org_admin(user["user_id"]):
+    # Read at request time AND org-scoped — see `org_admin_may_reach_task`.
+    #
+    # ⚠ This comment used to say "and org-scoped" over a call that was not. It
+    # was `is_org_admin(user["user_id"])`, the one-argument form, which is True
+    # for an admin row in ANY organisation — so an administrator of one company
+    # reached this `return` on another company's task, and both callers
+    # (`request-approval`, `request-client-approval`) then WROTE. The claim is
+    # now true rather than aspirational, and `org` is threaded from
+    # `Depends(active_org_id)` to make it so.
+    if await org_admin_may_reach_task(pool, user["user_id"], org, task):
         return
 
     # 404, not 403: a 403 confirms the task exists, which is itself a probe
     # oracle for an id the caller was never meant to hold. `fetch_task_or_404`
     # already answers 404 for an unknown id, so the two are indistinguishable.
     raise HTTPException(status_code=404, detail=_TASK_NOT_FOUND)
+
+
+async def org_admin_may_reach_task(pool, user_id: str, org: str | None, task) -> bool:
+    """The org-admin escape hatch on a task — scoped BOTH ways, or not at all.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+
+    Every `is_org_admin` call in this module was the ONE-ARGUMENT form, and
+    `middleware.roles.is_org_admin`'s own docstring says what that means:
+    unscoped, it is True for an `org_owner`/`org_admin` row **in ANY
+    organisation**. Pair that with `fetch_task_or_404` — which is candid that it
+    "CHECKS NOTHING ELSE … one unfiltered `SELECT ... WHERE task_id=$1`" — and
+    the two together are: fetch any task in the database by id, then ask a
+    question that is True for an administrator of a different company.
+
+    Four WRITES sat behind it: `approve`, `reject`, `client-approve` and
+    `client-reject`; the last two also skipped the `task_clients` check that is
+    the whole of a client's authority.
+
+    ⚠ `server.py` was ALREADY SWEPT for exactly this and this file was left
+    behind — the shape, not the symptom. `server.delete_task` carries the
+    finding verbatim: "`is_org_admin(user_id)` with no org is True for an
+    `org_owner`/`org_admin` row in ANY organisation … Measured: an org_admin of
+    one small org permanently deleted another tenant's task by id, switcher
+    irrelevant." It was fixed there and not here.
+
+    A comment at `assert_may_act_on_task` even CLAIMED this was already done —
+    "Read at request time and org-scoped". It was request-time and it was not
+    org-scoped. A comment disagreeing with its code is how the support feature
+    stayed unreachable for its entire life; that comment is corrected too.
+
+    ── WHY TWO PREDICATES AND NOT ONE ──────────────────────────────────────────
+
+    `delete_task` states the rule this follows: "`is_org_admin(uid, org)` says
+    the caller administers THIS org; `task_is_in_org` says the task is IN it.
+    `get_task` had the first half only, and still returned every task in the
+    database. **A destructive write may not be one predicate short.**"
+
+    ── LIVE EXPOSURE WHEN THIS WAS WRITTEN, 2026-08-29 ─────────────────────────
+
+        accounts holding org_admin/org_owner (could walk through)   15
+        tasks ever decided (approved_by set, org known)              4
+        of those, decided by somebody with NO role in that org       0
+
+    **LATENT** — open, and not yet walked through. Same grade as the
+    `create_deal` finding, which was also 0 cross-org rows and fixed anyway.
+
+    `task_is_in_org` is imported INSIDE the function on purpose: `server.py`
+    imports this module, so a module-level import is circular.
+    `services/task_transitions.py:254` does the same with `is_project_owner`.
+    """
+    admin = await (is_org_admin(user_id, org) if org else is_org_admin(user_id))
+    if not admin:
+        return False
+    from server import task_is_in_org
+    return await task_is_in_org(
+        pool, org,
+        team_id=task.get("team_id"),
+        owner_ids=(task.get("user_id"), task.get("created_by_user_id")),
+    )
 
 
 async def is_project_owner(pool, team_id: str, user_id: str) -> bool:
@@ -314,10 +383,11 @@ async def send_approval_notification(pool, task_id: str, task_title: str,
 
 @router.post("/tasks/{task_id}/request-approval")
 async def request_approval(task_id: str, payload: ApprovalRequest,
-                            pool=Depends(get_pool), user=Depends(require_user)):
+                            pool=Depends(get_pool), user=Depends(require_user),
+                            org=Depends(active_org_id)):
     """Submit a task for approval by the project owner."""
     task = await fetch_task_or_404(pool, task_id, user["user_id"])
-    await assert_may_act_on_task(pool, task, user)
+    await assert_may_act_on_task(pool, task, user, org)
     if not task["team_id"]:
         raise HTTPException(400, "Cannot request approval for personal tasks")
 
@@ -373,7 +443,8 @@ async def request_approval(task_id: str, payload: ApprovalRequest,
 
 @router.post("/tasks/{task_id}/approve")
 async def approve_task(task_id: str, payload: ApprovalRequest,
-                        pool=Depends(get_pool), user=Depends(require_user)):
+                        pool=Depends(get_pool), user=Depends(require_user),
+                        org=Depends(active_org_id)):
     """Approve a pending task and advance it to the next kanban column."""
     task = await fetch_task_or_404(pool, task_id, user["user_id"])
     if not task["team_id"]:
@@ -382,7 +453,12 @@ async def approve_task(task_id: str, payload: ApprovalRequest,
     if not await is_project_owner(pool, task["team_id"], user["user_id"]):
         # `users.role` is a legacy column that authorisation no longer reads —
         # staging.user_roles is the single source of truth. See middleware/roles.py.
-        if not await is_org_admin(user["user_id"]):
+        #
+        # ⚠ AND THE ADMIN HATCH IS NOW SCOPED TO THIS ORG, AND TO THIS TASK.
+        # It was `is_org_admin(user["user_id"])`, which is True for an admin row
+        # in ANY organisation — so an administrator of one company could approve
+        # another company's task by id. See `org_admin_may_reach_task`.
+        if not await org_admin_may_reach_task(pool, user["user_id"], org, task):
             raise HTTPException(403, "Only project owner or admin can approve")
 
     all_cols = await pool.fetch(
@@ -422,14 +498,16 @@ async def approve_task(task_id: str, payload: ApprovalRequest,
 
 @router.post("/tasks/{task_id}/reject")
 async def reject_task(task_id: str, payload: ApprovalRequest,
-                       pool=Depends(get_pool), user=Depends(require_user)):
+                       pool=Depends(get_pool), user=Depends(require_user),
+                       org=Depends(active_org_id)):
     """Reject a pending task approval with a mandatory reason note."""
     task = await fetch_task_or_404(pool, task_id, user["user_id"])
     if not task["team_id"]:
         raise HTTPException(400, "Cannot reject personal tasks")
 
     if not await is_project_owner(pool, task["team_id"], user["user_id"]):
-        if not await is_org_admin(user["user_id"]):
+        # Scoped to this org AND this task — see `approve_task` above.
+        if not await org_admin_may_reach_task(pool, user["user_id"], org, task):
             raise HTTPException(403, "Only project owner or admin can reject")
 
     if not payload.notes or not payload.notes.strip():
@@ -474,6 +552,21 @@ async def get_pending_approvals(pool=Depends(get_pool), user=Depends(require_use
     `middleware/roles.may_reach_project`.
     """
     from middleware.roles import is_org_admin
+    # ⚠ DELIBERATELY THE UNSCOPED FORM, AND THE ONLY ONE LEFT IN THIS FILE.
+    #
+    # Every other `is_org_admin` here was the unscoped one-argument call and
+    # every other one was a hole (see `org_admin_may_reach_task`). This one is
+    # not, and it is left alone so that a later reader does not "fix" it into a
+    # behaviour change: it chooses WHICH QUERY RUNS, and **both queries require
+    # a `project_assignments` row for the caller**. The admin branch adds
+    # `EXISTS (… pa.team_id=t.team_id AND pa.user_id=$1)`; the ordinary branch
+    # INNER JOINs the same table and additionally demands `role IN
+    # ('owner','admin')`. So the unscoped answer can only ever widen this list
+    # to projects the caller is already a member of — which is not a tenancy
+    # boundary crossing, because membership is itself org-bounded.
+    #
+    # Verified by reading both statements 2026-08-29 rather than by assuming
+    # the comment below was true.
     if await is_org_admin(user["user_id"]):
         # Admins see only teams they are actually a member of — no cross-team data leak.
         tasks = await pool.fetch("""
@@ -510,12 +603,13 @@ class ClientApprovalRequest(BaseModel):
 
 @router.post("/tasks/{task_id}/request-client-approval")
 async def request_client_approval(task_id: str, payload: ClientApprovalRequest,
-                                   pool=Depends(get_pool), user=Depends(require_user)):
+                                   pool=Depends(get_pool), user=Depends(require_user),
+                                   org=Depends(active_org_id)):
     """Send a task to a client user for approval via email magic-link."""
     task   = await fetch_task_or_404(pool, task_id, user["user_id"])
     # Before the `task_clients` INSERT below, which is a grant of access, and
     # before an email carrying this task's title goes to a caller-named address.
-    await assert_may_act_on_task(pool, task, user)
+    await assert_may_act_on_task(pool, task, user, org)
     client = await pool.fetchrow(
         "SELECT user_id, name, full_name, email FROM users WHERE email=$1",
         payload.client_email.lower()
@@ -579,7 +673,8 @@ async def request_client_approval(task_id: str, payload: ClientApprovalRequest,
 
 @router.post("/tasks/{task_id}/client-approve")
 async def client_approve_task(task_id: str, payload: ApprovalRequest,
-                               pool=Depends(get_pool), user=Depends(require_user)):
+                               pool=Depends(get_pool), user=Depends(require_user),
+                               org=Depends(active_org_id)):
     """Allow an authenticated client user to approve a pending_client task."""
     task   = await fetch_task_or_404(pool, task_id, user["user_id"])
     # Only explicit task_clients entries may approve — not general project members.
@@ -589,7 +684,9 @@ async def client_approve_task(task_id: str, payload: ApprovalRequest,
     # holder was an admin kept the override for the life of that token, and the
     # value could not be scoped to an org at all. is_org_admin reads
     # staging.user_roles at request time.
-    if not await is_org_admin(user["user_id"]):
+    # ⚠ SCOPED. Unscoped, this hatch skipped the `task_clients` row — which is
+    # the whole of a client's authority — for an admin of ANY organisation.
+    if not await org_admin_may_reach_task(pool, user["user_id"], org, task):
         access = await pool.fetchrow(
             "SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2",
             task_id, user["user_id"]
@@ -818,10 +915,12 @@ async def reject_by_token(token: str, payload_body: ApprovalRequest, pool=Depend
 
 @router.post("/tasks/{task_id}/client-reject")
 async def client_reject_task(task_id: str, payload: ApprovalRequest,
-                              pool=Depends(get_pool), user=Depends(require_user)):
+                              pool=Depends(get_pool), user=Depends(require_user),
+                              org=Depends(active_org_id)):
     """Allow an authenticated client user to reject a pending_client task with a reason."""
     task   = await fetch_task_or_404(pool, task_id, user["user_id"])
-    if not await is_org_admin(user["user_id"]):
+    # Scoped, for the reason given on `client_approve_task`.
+    if not await org_admin_may_reach_task(pool, user["user_id"], org, task):
         access = await pool.fetchrow(
             "SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2",
             task_id, user["user_id"]
