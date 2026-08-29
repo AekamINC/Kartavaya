@@ -1836,7 +1836,11 @@ async def request_skill(
                 "ON CONFLICT DO NOTHING RETURNING *",
                 org_id, template_id, user["user_id"], body.note,
             )
-        except asyncpg.exceptions.UndefinedTableError:
+        # `3F000` too, because a missing SCHEMA is not `42P01` — Postgres raises
+        # invalid_schema_name before it looks for the relation, so
+        # `UndefinedTableError` does not catch it.
+        except (asyncpg.exceptions.UndefinedTableError,
+                asyncpg.exceptions.InvalidSchemaNameError):
             # The probe said the table was there and the INSERT disagreed. That
             # is a rollback between the two, and it is still "not recorded".
             raise _requests_pending_migration()
@@ -2028,7 +2032,11 @@ async def list_skill_requests(
             f"ORDER BY r.requested_at DESC LIMIT ${len(vals)}",
             *vals,
         )
-    except asyncpg.exceptions.UndefinedTableError:
+    # `3F000` too, because a missing SCHEMA is not `42P01` — Postgres raises
+    # invalid_schema_name before it looks for the relation, so
+    # `UndefinedTableError` does not catch it.
+    except (asyncpg.exceptions.UndefinedTableError,
+            asyncpg.exceptions.InvalidSchemaNameError):
         # The probe said the table was there and the read disagreed — a rollback
         # between the two. Same answer as never having been created.
         log.warning("hub_skill_requests vanished between probe and read")
@@ -3056,7 +3064,11 @@ async def list_org_skills(
                 org_id,
             )
             requests = [_request_row(r) for r in (open_rows or [])]
-        except asyncpg.exceptions.UndefinedTableError:
+        # `3F000` too, because a missing SCHEMA is not `42P01` — Postgres raises
+        # invalid_schema_name before it looks for the relation, so
+        # `UndefinedTableError` does not catch it.
+        except (asyncpg.exceptions.UndefinedTableError,
+                asyncpg.exceptions.InvalidSchemaNameError):
             # The probe and the read disagreed. The assigned list is the thing
             # this endpoint exists for and it already loaded; losing the
             # request markers is a degraded screen, not a broken one.

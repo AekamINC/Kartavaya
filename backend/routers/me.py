@@ -122,7 +122,21 @@ class DeleteRequest(BaseModel):
 
 
 def _missing_table(exc: Exception) -> bool:
-    return isinstance(exc, asyncpg.exceptions.UndefinedTableError)
+    """Is this "account_requests has nowhere to live"?
+
+    `3F000` (InvalidSchemaNameError) sits beside `42P01` because A MISSING SCHEMA
+    IS NOT `42P01` — Postgres raises invalid_schema_name before it looks for the
+    relation, so `UndefinedTableError` does not match it. Both mean the table is
+    not reachable, which is the 503 below saying "your request was NOT recorded",
+    not a 500 that a caller might read as "try again".
+    """
+    return isinstance(
+        exc,
+        (
+            asyncpg.exceptions.UndefinedTableError,
+            asyncpg.exceptions.InvalidSchemaNameError,
+        ),
+    )
 
 
 def _already_open(exc: Exception) -> bool:

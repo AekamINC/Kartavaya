@@ -109,17 +109,17 @@ class _AskPool:
 
     async def fetch(self, sql, *a):
         q = " ".join(sql.split())
-        if "staging.user_roles" in q:
+        if "public.user_roles" in q:
             return [dict(r) for r in self.recipients]
         return []
 
     async def fetchrow(self, sql, *a):
         q = " ".join(sql.split())
-        if "FROM staging.organisations" in q:
+        if "FROM public.organisations" in q:
             return self.org
         if "FROM users WHERE user_id" in q:
             return {"display_name": "Rohit (Unicode Group)"}
-        if "INSERT INTO staging.platform_support_requests" in q:
+        if "INSERT INTO public.platform_support_requests" in q:
             if self.insert_raises:
                 raise self.insert_raises
             self.inserted.append(a)
@@ -331,7 +331,7 @@ def test_the_ask_wraps_nothing_above_the_commit():
     # The two `except`s that ARE in there are named and answer with a status:
     # 42P01 is "migration 182 is unapplied" and the unique violation is "you
     # already asked today". Neither can swallow a failed audit or notification.
-    assert "except asyncpg.UndefinedTableError" in inside
+    assert "except _STORE_ABSENT" in inside  # named tuple: UndefinedTableError + InvalidSchemaNameError
     assert "except asyncpg.UniqueViolationError" in inside
     assert src.count("except Exception") == 1, (
         "there is a second blanket except; only the post-commit mail may have one"
@@ -510,7 +510,7 @@ async def test_a_write_against_an_absent_table_says_so_rather_than_doing_nothing
 ):
     S._REQUESTS_TABLE_ABSENT_LOGGED = False
     pool = _AskPool(insert_raises=asyncpg.UndefinedTableError(
-        "relation \"staging.platform_support_requests\" does not exist"
+        "relation \"public.platform_support_requests\" does not exist"
     ))
     with caplog.at_level("WARNING"):
         with pytest.raises(S.SupportSessionError) as exc:

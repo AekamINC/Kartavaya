@@ -276,8 +276,9 @@ async def active_support_session(pool, user_id: str, org_id: str, request=None):
 
     EVERYTHING MUST WORK WITH THE TABLE ABSENT. That is production's state today
     and stays so until the owner applies `migrations/111_platform_support_sessions.sql`
-    by hand. `42P01` means "no sessions", which is the TRUE answer, and it is
-    logged ONCE per process — a warning on every request is its own outage.
+    by hand. `42P01` — and `3F000`, see below — means "no sessions", which is the
+    TRUE answer, and it is logged ONCE per process — a warning on every request
+    is its own outage.
 
     NOTHING ELSE IS CAUGHT. A connection failure must not read as "no session";
     it raises, and a raise here refuses. Fail closed.
@@ -300,7 +301,13 @@ async def active_support_session(pool, user_id: str, org_id: str, request=None):
 
     try:
         row = await pool.fetchrow(_SUPPORT_SESSION_SQL, org_id, user_id)
-    except asyncpg.UndefinedTableError:
+    # `3F000` (InvalidSchemaNameError) is in this set because A MISSING SCHEMA IS
+    # NOT `42P01`: Postgres raises invalid_schema_name before it ever looks for
+    # the relation, so `UndefinedTableError` alone does not catch it and it would
+    # escape as a 500 — on EVERY request, since this runs on every request. It
+    # means the same thing as a missing view (there is no session) and it fails
+    # in the same safe direction, because "no session" grants nothing.
+    except (asyncpg.UndefinedTableError, asyncpg.InvalidSchemaNameError):
         if not _SUPPORT_TABLE_ABSENT_LOGGED:
             _SUPPORT_TABLE_ABSENT_LOGGED = True
             logger.warning(

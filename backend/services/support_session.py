@@ -65,10 +65,11 @@ An almost-append-only authorisation table is one an auditor can read.
 
 ── EVERYTHING MUST WORK WITH THE TABLE ABSENT ───────────────────────────────
 
-Every READ path here answers "no sessions" on `UndefinedTableError` (42P01) —
-one warning per process, then silence. Every WRITE path answers 503 with the
-migration named, because "your approval silently did nothing" is the worst
-possible answer to a customer pressing Approve.
+Every READ path here answers "no sessions" on `_STORE_ABSENT` — 42P01, the table
+gone, AND 3F000, the whole schema gone, which is a different sqlstate and a
+different exception class — one warning per process, then silence. Every WRITE
+path answers 503 with the migration named, because "your approval silently did
+nothing" is the worst possible answer to a customer pressing Approve.
 
 111 IS APPLIED, AND THIS FILE SAID OTHERWISE FOR A FORTNIGHT. Measured against
 the live catalogue on 2026-08-21 (project toacecaewujfxjfrjwco,
@@ -142,8 +143,19 @@ def new_ref() -> str:
     return "SUP-" + "".join(secrets.choice(_REF_ALPHABET) for _ in range(6))
 
 
+#: "The store is not there", in BOTH the shapes Postgres reports it.
+#:
+#: `42P01` / UndefinedTableError is the relation missing. `3F000` /
+#: InvalidSchemaNameError is THE SCHEMA missing — and Postgres raises that
+#: BEFORE it ever looks for the relation, so it is not a subclass of the first
+#: and `except asyncpg.UndefinedTableError` lets it straight out as a 500.
+#: Every handler below means "absent" in the sense of the section header above,
+#: which a dropped schema satisfies at least as completely as a dropped table.
+_STORE_ABSENT = (asyncpg.UndefinedTableError, asyncpg.InvalidSchemaNameError)
+
+
 def _absent(exc: BaseException) -> bool:
-    return isinstance(exc, asyncpg.UndefinedTableError)
+    return isinstance(exc, _STORE_ABSENT)
 
 
 def _note_absent() -> None:
@@ -739,7 +751,7 @@ async def raise_help_request(
                             "RETURNING id, ref, raised_at",
                             candidate, org_id, raised_by, reason.strip(), mods, ids,
                         )
-                except asyncpg.UndefinedTableError:
+                except _STORE_ABSENT:
                     _note_requests_absent()
                     raise SupportSessionError(503, _REQUESTS_UNAPPLIED)
                 except asyncpg.UniqueViolationError as exc:
@@ -890,7 +902,7 @@ async def request_session(
                 ref, org_id, requested_by, reason.strip(), list(modules),
                 access_level, ttl_hours,
             )
-        except asyncpg.UndefinedTableError:
+        except _STORE_ABSENT:
             _note_absent()
             raise SupportSessionError(503, _UNAPPLIED)
         except asyncpg.UniqueViolationError as exc:
@@ -986,7 +998,7 @@ async def open_session(
                     "   FOR UPDATE",
                     session_id, org_id,
                 )
-            except asyncpg.UndefinedTableError:
+            except _STORE_ABSENT:
                 _note_absent()
                 raise SupportSessionError(503, _UNAPPLIED)
 
@@ -1199,7 +1211,7 @@ async def deny_session(
                     " WHERE id = $1::uuid AND org_id = $2::uuid FOR UPDATE",
                     session_id, org_id,
                 )
-            except asyncpg.UndefinedTableError:
+            except _STORE_ABSENT:
                 _note_absent()
                 raise SupportSessionError(503, _UNAPPLIED)
 
@@ -1269,7 +1281,7 @@ async def revoke_session(
                     " WHERE id = $1::uuid AND org_id = $2::uuid FOR UPDATE",
                     session_id, org_id,
                 )
-            except asyncpg.UndefinedTableError:
+            except _STORE_ABSENT:
                 _note_absent()
                 raise SupportSessionError(503, _UNAPPLIED)
 
@@ -1425,7 +1437,7 @@ async def get_session(pool, session_id: str):
             "  FROM public.platform_support_sessions s WHERE s.id = $1::uuid",
             session_id,
         )
-    except asyncpg.UndefinedTableError:
+    except _STORE_ABSENT:
         _note_absent()
         return None
 
@@ -1444,7 +1456,7 @@ async def _listed(pool, where: str, *args, viewer_may_decide=False, viewer_id=No
             " ORDER BY s.requested_at DESC LIMIT 200",
             *args,
         )
-    except asyncpg.UndefinedTableError:
+    except _STORE_ABSENT:
         _note_absent()
         return []
     return [
@@ -1603,7 +1615,7 @@ async def list_help_requests(
             " ORDER BY r.raised_at DESC LIMIT 200",
             *args,
         )
-    except asyncpg.UndefinedTableError:
+    except _STORE_ABSENT:
         _note_requests_absent()
         return []
     return [_shape_ask(r) for r in rows]

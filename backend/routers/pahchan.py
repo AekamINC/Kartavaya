@@ -530,16 +530,20 @@ def _notice_store_absent(exc: Exception) -> bool:
     """
     Is this "migration 113 has not been applied"?
 
-    `42P01` is `staging.pahchan_notice_acknowledgements` not existing; `42703` is
-    it existing without a column this code names. Both mean the same thing to the
-    caller — the store is not there — and both must degrade rather than raise.
+    `42P01` is `pahchan_notice_acknowledgements` not existing; `42703` is it
+    existing without a column this code names; `3F000` is THE SCHEMA ITSELF not
+    existing, which Postgres raises as invalid_schema_name BEFORE it looks for
+    the relation — so it is not `42P01`, `asyncpg.UndefinedTableError` does not
+    catch it, and without it in this set a dropped schema would 500. All three
+    mean the same thing to the caller — the store is not there — and all three
+    must degrade rather than raise.
 
     113 states the rule in its own words: "a compliance record that can block
     attendance has become an availability incident wearing a compliance costume."
     On the phone this acknowledgement sits above the camera, so a 500 here is a
     person who cannot clock in, and 07 §2 is that NOTHING BLOCKS A PUNCH.
     """
-    return getattr(exc, "sqlstate", None) in ("42P01", "42703")
+    return getattr(exc, "sqlstate", None) in ("42P01", "42703", "3F000")
 
 
 async def _notice_ack(pool, org_id: str, user_id: str, version: str) -> Optional[datetime]:
