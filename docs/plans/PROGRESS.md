@@ -4907,3 +4907,84 @@ send a person looking for a fault that is not there.
 **Vitest: 3153 passed across 191 files. `npm run check` 0. `npm run build` ok.
 1,470 backend billing tests green, and the new ratchet bites (5 failures when
 one model loses the base class).**
+
+---
+
+## 2026-08-29 (third session) — `fbb1f0c5` verified, and it holds
+
+The save-point commit was reviewed rather than trusted. **All three gates are
+green on it, unchanged:** `npm run check` 0 (all 16 gates), `npm run build` 0,
+`npx vitest run` **3153/3153 across 191 files**. ⚠ `check` still does not run
+vitest — it was run separately, as it must always be.
+
+The three diffs committed unread at `fbb1f0c5` were read line by line and every
+factual claim in them re-measured against the live database. **All three hold.**
+
+- **`ProjectBoardPage.jsx` — verified true and the strongest of the three.**
+  `useViews` exports `views`, never `savedViews`, so the old destructure
+  produced `undefined`; and `saveView(name, type, config, isDefault)` takes
+  FOUR POSITIONAL arguments where the old call passed a single object, so
+  `type` was `undefined` against a required `str`. Every press answered 422,
+  unawaited and uncaught. Confirmed live: **`public.saved_views` holds 0 rows,
+  all time, all five organisations** — the feature has never produced a row.
+  `saved_views_type_check` read from `pg_constraint`:
+  `CHECK (type = ANY (ARRAY['kanban','table','calendar']))`, exactly as the
+  diff claims. `saved_views` exists in `public` only, not in `staging`.
+- **`TaskDrawer.jsx` and `KanbanView.jsx` — sound.** `navContext` exports
+  `isOrgAdmin` and `isClient` and is active-org scoped; `GET /teams/{id}`
+  really does return `your_role` (`server.py:3975`, `= mem["role"]`, the
+  project role); `currentUserId` and `teamMembers` are real props on
+  `KanbanView`. The client predicates now mirror the server rules they claim
+  to mirror — checked against `server.delete_task` and
+  `approvals_router.approve_task`/`reject_task`.
+
+**One claim did NOT survive measurement, and was corrected in both files.**
+They read "12 of the 18 org owners/administrators in this database". The three
+component figures are right, but they are **(user, role_code) GRANT rows, not
+people**: one account can hold `org_admin` in one org and `org_owner` in
+another. Measured 2026-08-29 — 18 grants are **15 distinct accounts**, and the
+12 mismatched grants are **10 mismatched accounts**. Both framings say "the
+majority"; only one is a number anybody can check. Corrected to say both.
+
+### Suites 03, 10 and 17 run for the first time — and none is green
+
+Staging was confirmed to be running **exactly `fbb1f0c5`** (deployment
+`3a98c0a2`, SUCCESS 05:50 UTC) before any result was trusted.
+
+    Suite 03 core PM          5 passed   18 failed
+    Suite 10 Vikray           5 passed   12 failed
+    Suite 17 client billing   2 passed   10 failed
+
+Both cascades trace to a single root each, and the third to a product bug:
+Suite 03's eleven downstream failures all follow `03.4`, where **no
+`POST /api/teams` ever reached the server** (Railway HTTP logs show only
+OPTIONS and GET, zero 5xx) — the write never left the browser. Suite 10's eight
+follow one helper passing `since=2020-01-01`, which the delta-sync contract
+correctly refuses as older than 365 days. Suite 17's ten all follow the
+`state_code` bug below.
+
+⚠ **Method note, recorded because it cost real detail:** piping Playwright
+output through `tail` truncates the failure blocks **and masks the exit code**
+— a 12-failure run reported `exit 0`. Read `report.json` instead, and force
+`PYTHONIOENCODING=utf-8` on Windows.
+
+### Outbound exposure, measured rather than assumed
+
+`GET /api/health` on staging reports **`outbound_mode: live`** with
+`suppressed_orgs_digest: "0"` — nothing is shielded. Before running anything
+that can send, the exposure was measured rather than the mode flipped:
+
+    sent in the last 3 days        54
+      owner's own gmail tags       40   (14 distinct addresses)
+      @example.com, unroutable     12
+      one real mailbox              2   keval.shah@unicodegroup.com — the owner's
+    third-party recipients          0
+
+    Unicode Group graha_contacts   53 rows, 0 third-party addresses
+    UK AekamINC                     0 contacts
+
+So the suites in flight **cannot reach a stranger**, and the mode was left
+alone: flipping it to `dry` would have destroyed §3's ability to assert arrival
+rather than acceptance, and added a flip/restore pair to R9 for no safety gain.
+**Suite 11 (Prachar, ~150 recipients) is the one that must re-measure before it
+sends**, and that gate is written into its assignment.

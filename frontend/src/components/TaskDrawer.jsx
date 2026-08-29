@@ -912,12 +912,19 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
    *
    * MEASURED 2026-08-29, read-only:
    *
-   *     org_admin + users.role='client'   2 accounts
+   *     org_admin + users.role='client'   2 grants
    *     org_admin + users.role='member'   8
    *     org_owner + users.role='member'   2
-   *     ── 12 of the 18 org owners/administrators in this database ──
+   *     ── 12 of the 18 (user, role_code) GRANTS ──
    *
-   * Every one of those twelve opened a task in their OWN organisation and got
+   * ⚠ RE-MEASURED 2026-08-29 and stated precisely, because the first pass
+   * conflated two units. Those are GRANT rows, and an account can hold
+   * `org_admin` in one org and `org_owner` in another, so the same 18 rows are
+   * only 15 DISTINCT accounts — of which 10, not 12, carry a legacy
+   * `users.role` that says neither admin nor owner. Both framings say the
+   * majority; only one of them is a number you can check.
+   *
+   * Every one of those ten opened a task in their OWN organisation and got
    * a drawer with no Approve, no Reject, no Archive and no Delete; the two on
    * `'client'` also lost the Time tab entirely and were shown the CLIENT
    * approve/reject panel instead of the administrator's.

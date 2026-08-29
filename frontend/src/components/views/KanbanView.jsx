@@ -185,12 +185,16 @@ export default function KanbanView({
    *
    * MEASURED 2026-08-29, read-only, across `staging.user_roles`:
    *
-   *     org_admin + users.role='member'   8 accounts
+   *     org_admin + users.role='member'   8 grants
    *     org_admin + users.role='client'   2
    *     org_owner + users.role='member'   2
-   *     ── 12 of 18 org owners/administrators ──
+   *     ── 12 of 18 (user, role_code) GRANTS = 10 of 15 DISTINCT accounts ──
    *
-   * All twelve create a project (which seats them `owner` in
+   * ⚠ Those are grant rows, not people: one account can hold `org_admin` in
+   * one org and `org_owner` in another, so 18 rows are 15 accounts and the 12
+   * mismatched rows are 10 mismatched accounts. Re-measured 2026-08-29.
+   *
+   * All ten create a project (which seats them `owner` in
    * `project_assignments`, `server.create_team`) and are then refused every
    * column control on their own board — no Add column, no rename, no delete,
    * and on an empty board the EmptyState tells them "An admin or owner can add
