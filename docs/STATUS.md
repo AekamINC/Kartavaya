@@ -32,6 +32,129 @@ actually returns — `assets/index-BDKPplLt.js`, byte-identical to what the
 so "READY" alone never establishes what the domain serves.
 Everything below marked "fixed 26 Aug" is therefore **running**.
 
+---
+
+## 2026-08-29, third session — the deploy line, re-read
+
+⚠ **The two lines above are STALE and are kept only as the record of how that
+verification was done.** Re-read today:
+
+**Backend:** Railway staging at **`1c749a45`**, deployment `e76030e0`, SUCCESS
+07:52:56 UTC, branch `staging`. **Frontend:** Vercel deployment
+`dpl_2yNhfY7t…` READY on the same commit — and confirmed FROM OUTSIDE rather
+than from "READY", because every deployment here has `target: null`:
+`staging.kartavaya.com` serves `assets/OrgSettingsPage-0z0Ul-en.js`, which
+**contains the new GST-state control** (`GST state`, `org-state-code`,
+`Not set`). ⚠ The main `index-*.js` does NOT contain it and that is not a
+failure — this app is code-split, so grepping the entry bundle for a settings
+screen proves nothing. Find the chunk.
+
+### `fbb1f0c5` was a save point. It is now verified.
+
+All three gates green on it, unchanged: `npm run check` 0 (16 gates),
+`npm run build` 0, `npx vitest run` **3153/3153 across 191 files**. The three
+diffs committed unread were read line by line and every claim re-measured live;
+all three hold. One number in them did not — "12 of 18 org owners/administrators"
+counts GRANT ROWS, not people (18 grants = **15 distinct accounts**, 12
+mismatched = **10 accounts**). Corrected in both files.
+
+### The dominant defect class, named — THE ROUTE EXISTS, THE SCREEN CANNOT ASK
+
+**Five instances found today by five independent pieces of work.** This is no
+longer a coincidence; it is the shape to sweep for, and
+`docs/plans/93-E-ORPHANED-CAPABILITY-SWEEP.md` is the sweep.
+
+- 🔴→✅ **An org's GST state code could not be set by anybody.**
+  `_PROFILE_COLUMNS` is one tuple serving the GET projection, the PATCH
+  allowlist AND the RETURNING list, and `state_code` was in none. No route, no
+  screen, and no `UPDATE` targeting that column existed anywhere in the backend
+  — **every organisation was born NULL and nothing could change it**. Meanwhile
+  `client_billing` refuses outright: "this organisation has no state_code, so an
+  invoice cannot be raised". **2 of 5 live orgs sat permanently unable to
+  invoice.** Fixed, deployed and proved live. Aekam Inc and Demo remain NULL —
+  a backfill is a data change and is the owner's.
+- 🔴 **Sales-target attainment can never move.** `vikray` joins
+  `graha_deals.assigned_to = vikray_targets.salesperson_id`; `DealCreate`
+  accepts `assigned_to` and **no form in the product sends it**. Live: 30 deals,
+  **0 assigned**, 8 won, 10 targets all carrying a salesperson. Ten people hold
+  a target that reads zero forever.
+- 🔴→🟡 **A purchase order could never be amended.** `PATCH
+  /procurement/purchase-orders/{id}` is complete and deployed, and
+  `PurchaseOrderDetail.jsx` already RENDERED a "Revision history" panel — and
+  nothing ever called the route. `staging.ganit_po_revisions`: **0 rows, all
+  orgs, all time.** A draft raised by mistake could not even be corrected.
+  Control built; 🟡 until it deploys and a revision row exists.
+- 🔴 **Client billing, three dead ends.** `PATCH /billing/service-lines/{id}`
+  exists but the ended-lines table has no action cell, so **a paused
+  subscription can never be resumed**. `POST /billing/metered-usage/
+  generate-invoice` exists but no screen offers the button, so **metered usage
+  can never be billed**. And the inverse: the rate-card Delete button calls a
+  route that **does not exist** — the deployed OpenAPI publishes PATCH only, so
+  the customer is shown a raw **"Method Not Allowed"**.
+- The two older ones `routers/graha.py` already documents in its own comments —
+  `territory_id` and `contact_id`, both "writable and unreachable".
+
+### Fixed — four approval WRITES asked "is this an admin" without asking "of which company"
+
+`server.py` had already been swept for this exact pattern; **`approvals_router.py`
+was left behind.** Every `is_org_admin` call there was the one-argument form,
+which is True for an admin row in ANY organisation, paired with
+`fetch_task_or_404`, which is one unfiltered `SELECT … WHERE task_id=$1`.
+`approve`, `reject`, `client-approve` and `client-reject` all wrote; the two
+client routes also skipped the `task_clients` row that is the whole of a
+client's authority. ⚠ A comment directly above the call **claimed** it was
+org-scoped. It was not.
+
+Exposure measured BEFORE the fix: **15 accounts could walk through it; 4 tasks
+have ever been decided; 0 by an outsider — LATENT.** Fixed with both predicates
+(`delete_task`'s rule: a destructive write may not be one predicate short),
+**4 mutations proved to bite**, 196 tests green. One call site is deliberately
+left unscoped and documented as such, with a test pinning the count at one.
+
+### Suites — first runs
+
+    Suite 03 core PM          5 passed  18 failed   11 cascade from 03.4
+    Suite 06 Kray (NEW)      10 passed   2 failed   both = the revision finding
+    Suite 10 Vikray           5 passed  12 failed    8 from one test-bug helper
+    Suite 17 client billing   2 → 8 passed, 10 → 4 failed  after the state_code fix
+
+⚠ **Suite 03's 03.4 is not a server fault.** Railway HTTP logs across the whole
+run window show only `OPTIONS` and `GET` on `/api/teams` and **zero 5xx** — no
+`POST /api/teams` ever reached the server. The write never left the browser.
+
+**§4 volumes on Unicode Group, measured live** — the shortfalls are named rather
+than absorbed: members **8/18**, projects **2/8**, tasks **20/80** (and all 20
+are the protected set — Suite 03 created none), orders **0/35**. At or above
+target: clients 25, contacts 53, deals 30, invoices 53, employees 30, targets
+10, POs 12, PO lines 34, receipts 10, approvals 6, budgets 4.
+
+✅ **The protected set is intact** — `team_ae1d58543b21` "Aekam Inc", exactly 20
+tasks, and they are the ONLY tasks in Unicode Group.
+
+### Outbound — measured, and deliberately NOT frozen
+
+`GET /api/health` reports **`outbound_mode: live`**, `suppressed_orgs_digest:
+"0"` — nothing shielded. Exposure was measured instead of the mode being
+flipped: of 54 sends in 3 days, 40 went to the owner's own gmail tags, 12 to
+unroutable `@example.com`, 2 to the owner's own `@unicodegroup.com`, and
+**0 to any third party**. Unicode Group holds 53 contacts with **0 third-party
+addresses**. Flipping to `dry` would have destroyed §3's ability to assert
+ARRIVAL rather than acceptance and added a restore to R9 for no safety gain.
+⚠ **Suite 11 is the one suite that mass-sends and must re-measure before it does.**
+
+### ⚠ Two method notes that cost real evidence today
+
+- **Piping Playwright through `tail` truncates the failure blocks AND masks the
+  exit code** — a 12-failure run reported `exit 0`, because the pipeline exits
+  with `tail`'s status. Read the JSON reporter's `report.json`, and force
+  `PYTHONIOENCODING=utf-8` on Windows or cp1252 breaks on this repo's prose.
+- **`test_every_writer_has_a_live_sql_test` counts a STRING, not a behaviour.**
+  `_PREPARES` is the bare substring `"prepare("` matched against the whole file,
+  so a test that only MENTIONS `prepare()` in prose credits the router it
+  imports with live-SQL coverage it does not have. One file is exactly that
+  shape today. Third time a static ratchet here has been caught this way.
+  Tightening it is its own change and is not made yet.
+
 Legend: ✅ done · 🟡 half (code but no data/screen, or partial) · 🔴 wrong now
 (broken in the running product) · ⬜ not started · 🔵 research/decision · ➖ n/a
 
