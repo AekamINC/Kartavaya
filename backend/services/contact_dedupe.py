@@ -456,7 +456,7 @@ async def merge_contacts(
                     "(org_id, survivor_id, merged_id, moved_rows, field_updates, "
                     " dropped_rows, actor_id) "
                     "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::jsonb, "
-                    "        $6::jsonb, NULLIF($7,'')::uuid) "
+                    "        $6::jsonb, NULLIF($7::text,'')) "
                     "RETURNING id",
                     org_id, survivor_id, loser_id,
                     json.dumps({t: len(v) for t, v in moved_rows.items()}),
@@ -607,7 +607,7 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
             )
             await conn.execute(
                 "UPDATE staging.graha_contact_merges "
-                "SET undone_at=NOW(), undone_by=NULLIF($2,'')::uuid WHERE id=$1::uuid",
+                "SET undone_at=NOW(), undone_by=NULLIF($2::text,'') WHERE id=$1::uuid",
                 merge_id, actor_id or "",
             )
             log.info("Undid merge %s: restored contact %s", merge_id, loser_id)

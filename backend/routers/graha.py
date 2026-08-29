@@ -4126,7 +4126,7 @@ async def create_web_form(
             # in the column, not here.
             "INSERT INTO staging.graha_web_forms "
             "(org_id, name, slug, fields, settings, auto_assign_to, auto_source, created_by) "
-            "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6,'')::uuid, $7, $8) "
+            "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6::text,''), $7, $8) "
             "RETURNING id, name, slug",
             org_id, body.name, slug, json.dumps(body.fields),
             json.dumps(body.settings),
