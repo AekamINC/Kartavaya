@@ -4676,3 +4676,44 @@ record of what was once believed survives.
 mutation on disk.** Caught by re-reading the file, not by the tests. Rewritten
 with the restore in a `finally` and UTF-8 forced on both the subprocess decode
 and stdout — Windows `cp1252` breaks both directions.
+
+
+---
+
+## 2026-08-29 · Proposal 93 · B — the two-stage recycle bin
+
+Migration 239 (additive only, one table, one-line reversal) + service + router +
+two binning call sites + a DISARMED sweeper + the customer's Recycle bin tab.
+Full detail in `docs/STATUS.md`; the risk report, written before the statement
+ran, is `docs/plans/93-B-RECYCLE-BIN-RISK-REPORT.md`.
+
+**The finding that mattered most was about the DOOR, not the bin.** The web app
+has never called `DELETE /api/tasks/{id}/attachments/{key}` — it went through
+`PUT /tasks/{id}`, and that route's only caller in the product is mobile. Binning
+the obvious route alone would have covered mobile and missed every browser
+deletion while reporting itself built.
+
+**The live-SQL rule paid for itself on its first use here.** `staging.graha_documents`
+has no `file_name` column — it is `name` — so the CRM delete would have 500'd on
+first use. A MagicMock pool would have reported success; `prepare()` against the
+real catalogue found it in twelve seconds.
+
+**Three claims in this repo's own docs were wrong and are corrected:**
+`delete_file` has one live caller (`pahchan_retention.py:90`, armed cron), not
+zero; a project bin with a 7-day window has existed since 2026-08-09, so "no
+delete anywhere" was overstated; and `TaskDrawer` was discarding every file's
+`size` on save, which is why 53 of 59 attachment elements have none.
+
+**A pre-existing red, proved pre-existing by stashing:**
+`test_every_writer_has_a_live_sql_test::test_the_baseline_only_shrinks` was
+failing on `graha`, covered by `test_client_coordinates.py` some time ago without
+the name coming off `UNCOVERED`. 31 -> 30.
+
+⚠ **OWED BACK: `sleepApplication` = TRUE on the staging `Kartavya` service.** It
+was set to FALSE on 2026-08-29 to clear a deploy queue wedged for 90+ minutes —
+two deployments stuck `DEPLOYING`/`SLEEPING` with every later commit queued
+behind them. Staging sleeps by deliberate cost decision. **Restore it at R9, with
+the crons.**
+
+⚠ **02.12 is written and unrun.** It type-checks; no screen has rendered against
+a real `deleted_files` row, and the table holds 0. 🟡, not ✅.

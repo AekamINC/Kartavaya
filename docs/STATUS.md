@@ -212,6 +212,85 @@ burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
 vendor picker. Verified orphaned across every vendor-referencing column *before*
 deleting. Nine real suppliers remain.
 
+## Proposal 93 · B — the recycle bin, and the delete path the web actually used (29 Aug)
+
+**There was no delete anywhere in this product that KEPT the file.** Both
+`TaskDrawer.jsx:621` and `server.py`'s attachment DELETE dropped the pointer and
+left the R2 object in the bucket — billed forever, unreachable by anyone
+including Aekam, with no confirmation and no undo.
+
+Owner-approved 28 Aug, shape settled 29 Aug: **two stages, SharePoint/OneDrive.**
+
+| | |
+|---|---|
+| Stage 1 | days 0–14. Org owner/admin see it and can **Restore**, or **Delete** — which PROMOTES to stage 2 and destroys nothing |
+| Stage 2 | days 14–90. Restore still works. **Delete permanently** destroys the R2 object, behind a typed confirmation |
+| Day 90 | the sweeper purges what is left — **and it ships DISARMED** |
+| Quota | binned files count at BOTH stages; `storage_used_bytes` is credited at purge and nowhere else |
+| Never binnable | Ganit invoices, eSign documents — 8-year Income Tax retention, 72-month GST, enforced by a CHECK |
+| Storage tab | stays READ-ONLY. That decision stands; delete belongs on the surface that owns the row |
+
+### ⚠ The most important fix is not the bin. It is which door it sits behind.
+
+`DELETE /api/tasks/{id}/attachments/{key}` already existed and is the obvious
+place to put a bin. **The web app has never called it.** `TaskDrawer` went
+through `PUT /tasks/{id}` — a wholesale replace — and that route's only caller in
+the entire product is mobile (`mobile/src/api/tasks.ts:143`).
+
+So binning the delete route alone would have captured mobile deletions, missed
+every deletion a customer makes in a browser, and **reported the feature built**.
+Both now go through one door.
+
+### What the live-SQL test caught, which is the whole reason that rule exists
+
+**`staging.graha_documents` has no `file_name` column. It is `name`.** My own
+earlier column query had shown that and I misread it. The CRM document delete
+would have 500'd on the first real use — invisible to a MagicMock pool, which is
+exactly how `gst_rate` survived in two INSERTs that had never once succeeded.
+`prepare()` against the real catalogue found it in twelve seconds.
+
+### Three corrections to the record
+
+- **`delete_file` does NOT have zero callers.** This file and
+  `93-NEXT-SESSION.md` both said so. `services/pahchan_retention.py:90` calls it
+  behind an armed daily cron, and `storage.py:838-844` documents a production
+  incident from that call site. The true statement is narrower: the storage
+  BROWSER has no delete.
+- **There WAS already a bin in this product** — projects, 7 days,
+  `services/project_purge.py`, owner's decision 2026-08-09. "No delete anywhere"
+  was overstated. What was true is that no delete reached an R2 object.
+- **`deleted_by` is no longer sent to the browser at all.** It was a raw user id
+  resolved client-side against `/v1/org/members`, which misses anybody who has
+  LEFT the org and every platform account. ⚠ It also sat in a ratchet blind
+  spot: `check-rendered-ids` is positional and reads what a component DRAWS, so
+  an id behind a helper is invisible to it — mutating the screen to render the
+  id turned the unit tests red and left `npm run check` GREEN.
+
+### And the size that was thrown away on save
+
+`TaskDrawer.handleFileChange` read each file's `size` off the upload response and
+all three `saveTask` maps rebuilt the object without it — **53 of the 59
+attachment elements in this database carry no size because of it.** It stopped
+being cosmetic when the bin landed: `size_bytes` is what the quota is credited by
+at purge, so a file saved without its size is one an org can never get its space
+back for. `server.py`'s `Attachment` model already carried a comment saying the
+other half of this had been fixed while this half went on vanishing one layer up.
+
+### Status
+
+Migration 239 applied and verified from `pg_constraint`; Aekam Inc unchanged at
+**11 seats / 220 tasks**. 5/5 live-SQL green against the real catalogue.
+
+⚠ **02.12 is written and NOT YET RUN.** Railway's staging deploy queue wedged for
+90+ minutes on 29 Aug — two deployments stuck `DEPLOYING`/`SLEEPING` with
+everything after them queued — so `/api/v1/recycle-bin` still answered 404 on the
+deployed SHA. **No screen has rendered against a real `deleted_files` row.** By
+this file's own rule that is 🟡, not ✅.
+
+⚠ **`sleepApplication` was set to FALSE on the staging `Kartavya` service** to
+clear that wedge. It is a deliberate cost setting and **must be set back to true**
+— see `docs/plans/PROGRESS.md` and R9.
+
 ## Proposal 93 · A.1 — the support-session feature was unreachable by anybody (29 Aug)
 
 **02.17 was filed as sequencing. It was a product bug, and the two halves sat in
