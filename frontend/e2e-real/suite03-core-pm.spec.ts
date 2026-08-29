@@ -208,6 +208,9 @@
  *   npx playwright test --config e2e-real/wave3.config.ts --project corepm
  */
 import { test, expect, Page, Locator } from '@playwright/test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { lane, assertOrg } from './_lanes';
 import { settle, setDate } from './_helpers';
 
@@ -275,13 +278,56 @@ const ROSTER_PEOPLE = ['Rajesh Bhatt', 'Rohan Desai', 'Anaya Iyer', 'Keval Test 
 /* ══════════════════════════════════════════════════════════════════════════
    THE IDEMPOTENCE LEDGER
    ══════════════════════════════════════════════════════════════════════════ */
+/**
+ * ⚠ ON DISK, NOT IN A MODULE VARIABLE — PLAYWRIGHT RESTARTS THE WORKER AFTER
+ * EVERY FAILED TEST.
+ *
+ * `const LEDGER: Line[] = []` lived in module scope, and a new worker
+ * re-imports the module with an EMPTY array. So on any run with a failure the
+ * `afterAll` print covered only the tests since the last failure — the run
+ * that found eighteen of them printed a ledger with ONE line in it, and every
+ * §4 total I read off a ledger before this was silently truncated at the last
+ * red test. (The volumes in the report were taken from live SQL, which is why
+ * they were right; the ledger was not the evidence, and it should have been
+ * able to be.)
+ *
+ * A JSONL file survives the restart. Worker 0 truncates it — Playwright
+ * numbers a restarted worker 1, 2, … so that happens exactly once per run —
+ * and `afterAll` reads back whatever every worker wrote, last line per entity
+ * winning.
+ */
 type Line = { entity: string; asked: number; typed: number; present: number; total: number; note?: string };
-const LEDGER: Line[] = [];
+const LEDGER_FILE = path.join(os.tmpdir(), 'kartavya-e2e-wave3', 'suite03-ledger.jsonl');
+
 function ledger(entity: string, asked: number, typed: number, total: number, note?: string) {
-  LEDGER.push({ entity, asked, typed, present: total - typed, total, note });
+  const line: Line = { entity, asked, typed, present: total - typed, total, note };
+  try {
+    fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
+    fs.appendFileSync(LEDGER_FILE, JSON.stringify(line) + '\n', 'utf8');
+  } catch { /* a ledger that cannot write must not fail the run */ }
+}
+
+function readLedger(): Line[] {
+  try {
+    const byEntity = new Map<string, Line>();
+    for (const raw of fs.readFileSync(LEDGER_FILE, 'utf8').split('\n')) {
+      if (!raw.trim()) continue;
+      const l = JSON.parse(raw) as Line;
+      byEntity.set(l.entity, l);          // a re-run of a test supersedes it
+    }
+    return [...byEntity.values()];
+  } catch { return []; }
 }
 
 test.beforeAll(() => {
+  // Worker 0 only: a restarted worker must APPEND to what the run has already
+  // recorded, never clear it.
+  if ((process.env.TEST_WORKER_INDEX ?? '0') === '0') {
+    try {
+      fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
+      fs.writeFileSync(LEDGER_FILE, '', 'utf8');
+    } catch { /* see above */ }
+  }
   console.log(
     `\n  SUITE 03 · Core PM · 14 surfaces` +
     `\n  LANE: ${LANE.org} (${LANE.orgId})  · reference lane, §14` +
@@ -293,15 +339,16 @@ test.beforeAll(() => {
 });
 
 test.afterAll(() => {
-  if (!LEDGER.length) return;
+  const rows = readLedger();
+  if (!rows.length) return;
   const pad = (s: string | number, n: number) => String(s).padEnd(n);
   console.log('\n  ── §4 VOLUMES ACHIEVED · SUITE 03 ────────────────────────────────');
   console.log(`  ${pad('entity', 26)}${pad('asked', 7)}${pad('typed', 7)}${pad('present', 9)}${pad('total', 7)}note`);
-  for (const l of LEDGER) {
+  for (const l of rows) {
     console.log(`  ${pad(l.entity, 26)}${pad(l.asked, 7)}${pad(l.typed, 7)}${pad(l.present, 9)}${pad(l.total, 7)}${l.note || ''}`);
   }
-  const typed = LEDGER.reduce((a, l) => a + l.typed, 0);
-  const present = LEDGER.reduce((a, l) => a + l.present, 0);
+  const typed = rows.reduce((a, l) => a + l.typed, 0);
+  const present = rows.reduce((a, l) => a + l.present, 0);
   console.log(`\n  §6 IDEMPOTENCE: ${typed} typed, ${present} already present.`);
   console.log('  A second run of this file must print "0 typed".\n');
 });
@@ -999,7 +1046,7 @@ test('03.3 eight task categories, typed into the real form', async ({ page }) =>
   let typed = 0;
 
   await page.goto('/settings/categories');
-  await expect(page.getByRole('heading', { name: 'Categories' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: /^Categories$/ })).toBeVisible({ timeout: 45_000 });
 
   for (let i = 1; i <= V.categories; i++) {
     const name = C(i);
@@ -1039,7 +1086,7 @@ test('03.4 eight projects created from /projects, each landing with its five def
   let typed = 0;
 
   await page.goto('/projects');
-  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: /^Projects$/ })).toBeVisible({ timeout: 45_000 });
 
   for (let i = 1; i <= V.projects; i++) {
     const name = P(i);
@@ -1060,14 +1107,35 @@ test('03.4 eight projects created from /projects, each landing with its five def
     expect(ids[P(i)], `"${P(i)}" is not in GET /api/teams after the run.${dump(wire)}`).toBeTruthy();
   }
 
-  // `server.create_team` calls `ensure_default_columns`, which is five columns.
-  // Asserting it here is what makes 03.6's "16 typed BY HAND" an honest number
-  // rather than a count that quietly includes the defaults.
-  const cols = await rowsOf(page, `/api/projects/${ids[P(1)]}/columns`);
-  expect(
-    cols.map((c: any) => c.name),
-    'a new project did not arrive with the five default columns',
-  ).toEqual(['To Do', 'In Progress', 'In Review', 'Approval', 'Done']);
+  /**
+   * `server.create_team` calls `ensure_default_columns`, which is five columns.
+   * Asserting it here is what makes 03.6's "16 typed BY HAND" an honest number
+   * rather than a count that quietly includes the defaults.
+   *
+   * ⚠ A SUBSET, ACROSS ALL EIGHT — NOT AN EXACT LIST ON P(1).
+   * This asserted `toEqual([...the five])` on P(1), which can only hold on a
+   * project no other test has touched. 03.6 adds four `S3 Col *` columns to
+   * boards 1–4, so the second time this test reaches the assertion it reads
+   * nine names and fails — reporting a broken `ensure_default_columns` over a
+   * board that is exactly right. It had never been reached before, because the
+   * POST above always timed out first; it went red the moment the 500 was
+   * fixed and the loop completed.
+   *
+   * Every project must CARRY the five, which is the server's actual guarantee,
+   * and checking all eight is stronger than checking one.
+   */
+  const DEFAULT_COLUMNS = ['To Do', 'In Progress', 'In Review', 'Approval', 'Done'];
+  for (let i = 1; i <= V.projects; i++) {
+    const names = (await rowsOf(page, `/api/projects/${ids[P(i)]}/columns`))
+      .map((c: any) => c.name as string);
+    const absent = DEFAULT_COLUMNS.filter((d) => !names.includes(d));
+    expect(
+      absent,
+      `${P(i)} did not arrive with the five default columns — missing ` +
+      `${absent.join(', ')}. server.create_team calls ensure_default_columns; ` +
+      `saw: ${names.join(', ')}`,
+    ).toEqual([]);
+  }
 
   // And the grid renders NAMES.
   await page.reload();
@@ -1606,7 +1674,7 @@ test('03.9 five projects given a member roster, one of them a client seat', asyn
   let rosters = 0;
 
   await page.goto('/teams');
-  await expect(page.getByRole('heading', { name: 'Team' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: /^Team$/ })).toBeVisible({ timeout: 45_000 });
 
   for (let i = 1; i <= V.rosters; i++) {
     const name = P(i);
@@ -2246,7 +2314,7 @@ test('03.14 thirty-five time entries logged from the drawer, plus one run of the
 
   /* The Time Report reads the same rows through a different door. */
   await page.goto('/time');
-  await expect(page.getByRole('heading', { name: 'Time Report' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: /^Time Report$/ })).toBeVisible({ timeout: 45_000 });
   await expect(page.locator('.k-screen')).toContainText(/S3 time|Total|hours|hrs/i, { timeout: 30_000 });
 
   ledger('time entries', V.timeEntries, typed, total);
@@ -2534,8 +2602,30 @@ test('03.16 fourteen approvals requested and decided — eight approved, four re
     `expected ${V.byEmail} tasks awaiting a client; states are ${JSON.stringify(states)}`,
   ).toBeGreaterThanOrEqual(V.byEmail);
 
+  /**
+   * ⚠ ANCHORED, AND NOT FOR TIDINESS — THE UNANCHORED FORM WAS RIGHT EXACTLY
+   * ONCE.
+   *
+   * `getByRole(name)` substring-matches the accessible name, so
+   * `{ name: 'Approvals' }` matched TWO headings the moment this suite emptied
+   * the queue it had just filled:
+   *
+   *     strict mode violation: resolved to 2 elements
+   *       1) <h1 class="k-pageh__h1">     "Approvals"
+   *       2) <h3 class="empty__title">    "No pending approvals"
+   *
+   * The second only exists once every request has been decided — which is the
+   * state this very test leaves behind. So it passed while a pending list
+   * existed and failed on the next run, reporting a missing page heading over
+   * a page that had simply finished its work.
+   *
+   * NOTE this is NOT suite rule 8: the accessible name matched fine. It
+   * matched twice. The same trap is latent on every page whose empty state
+   * repeats the page's own noun ("No categories yet", "No project templates
+   * yet"), so all six page-title headings in this file are anchored.
+   */
   await page.goto('/approvals');
-  await expect(page.getByRole('heading', { name: 'Approvals' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: /^(My )?Approvals$/ })).toBeVisible({ timeout: 45_000 });
   await expect(
     page.locator('.k-stats'),
     'the Approvals page prints no decision counts',
@@ -2612,7 +2702,7 @@ test('03.17 five templates created and three applied, and no other organisation\
 
   /* ── Project templates · 3 ─────────────────────────────────────────────── */
   await page.goto('/templates');
-  await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: /^Templates$/ })).toBeVisible({ timeout: 45_000 });
 
   const beforeP = await rowsOf(page, '/api/templates/projects');
   const haveP = new Set(beforeP.map((t: any) => t.name));
@@ -2657,6 +2747,11 @@ test('03.17 five templates created and three applied, and no other organisation\
 
   /* ── Applied · 3 ───────────────────────────────────────────────────────── */
   let applied = 0;
+  // ⚠ SEPARATE FROM `applied`. `applied` counts targets that CARRY the
+  // template — including the ones a previous run applied — and reporting it as
+  // `typed` made the ledger print "3 typed" on a run that applied nothing. The
+  // idempotence number has to be what THIS run did.
+  let appliedNow = 0;
   const templates = await rowsOf(page, '/api/templates/projects');
   for (let i = 1; i <= V.templatesApplied; i++) {
     const tmpl = templates.find((t: any) => t.name === `S3 Project Template ${i}`);
@@ -2683,7 +2778,7 @@ test('03.17 five templates created and three applied, and no other organisation\
       (await rowsOf(page, `/api/projects/${target}/columns`)).map((c: any) => c.name),
     );
     if (sourceNames.length && sourceNames.every((n) => beforeNames.has(n))) {
-      applied += 1;
+      applied += 1;              // already carries it — PRESENT, not typed
       continue;
     }
     const before = beforeNames.size;
@@ -2719,6 +2814,7 @@ test('03.17 five templates created and three applied, and no other organisation\
       `${sourceNames.length} columns behind: ${absent.join(', ')}${dump(wire)}`,
     ).toEqual([]);
     applied += 1;
+    appliedNow += 1;
   }
 
   const finalP = await rowsOf(page, '/api/templates/projects');
@@ -2734,7 +2830,9 @@ test('03.17 five templates created and three applied, and no other organisation\
 
   ledger('project templates', V.projectTemplates, typedP, V.projectTemplates);
   ledger('task templates', V.taskTemplates, typedT, V.taskTemplates);
-  ledger('templates applied', V.templatesApplied, applied, applied);
+  ledger('templates applied', V.templatesApplied, appliedNow, applied,
+    'apply is ADDITIVE server-side (fresh col_ PK, ON CONFLICT DO NOTHING), so a ' +
+    'second apply DUPLICATES the columns — the suite guards, the product does not');
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
