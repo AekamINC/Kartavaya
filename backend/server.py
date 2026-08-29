@@ -3360,8 +3360,101 @@ async def _has_client_visible_column(pool) -> bool:
         ))
     return _comment_visibility_column
 
+
+async def assert_may_reach_task_thread(pool, task_id: str, user: dict,
+                                       org: str | None) -> None:
+    """The STAFF-SIDE tenancy gate on a task's comment thread.
+
+    ── THE HOLE THIS CLOSES, MEASURED ON STAGING 2026-08-29 ───────────────────
+
+    `list_comments` and `add_comment` asked exactly one access question —
+    "`is_portal_client`? then `client_can_access_task`" — and had NO ELSE. Every
+    caller who is not a portal client, which is every ordinary staff account in
+    every organisation, fell straight through to `WHERE c.task_id=$1` with no
+    team predicate, no org predicate and no membership predicate of any kind.
+
+    Reproduced from a browser session, not from the source:
+
+        caller  user_21457956f010 (kevalvshah03+1@gmail.com)
+                org_admin of Unicode Group ONLY — no Aekam Inc role, no
+                project_assignments row on any of the teams below
+        GET /api/tasks/task_e03dc6c1e106            403 "Not authorized"
+        GET /api/tasks/task_e03dc6c1e106/comments   200, THREE comments,
+                                                    author names and bodies
+        GET /api/tasks/task_76394cae4212/comments   200, another firm's note
+                                                    about a client's Google
+                                                    Business verification
+        GET /api/tasks/task_7a773897f58f/comments   200, "Please co-ordinate
+                                                    with Sneha"
+
+    All three tasks belong to **Aekam Inc**. Live exposure at that moment:
+    **87 comments over 29 tasks, 22 of them on 15 Aekam Inc tasks**, readable
+    by any of the ~50 authenticated accounts in the database. ACTIVE, not
+    latent — the read above is the walk-through.
+
+    ── WHY THIS SHAPE, AND WHY IT WAS MISSED ─────────────────────────────────
+
+    It is the sibling of the four approval writes fixed the same week: a guard
+    added FOR THE CLIENT, with the staff path left as the fall-through. The
+    comment thread's own siblings were already swept — `edit_comment` and
+    `delete_comment` both carry `is_org_admin(uid, org)` AND
+    `_comment_task_in_org`, and `routers/time_entries.py::_assert_task_access`
+    guards the Time tab of the same drawer. The two handlers that FEED the
+    drawer were the two nobody came back to.
+
+    ── THE PREDICATE IS `get_task`'s, DELIBERATELY UNCHANGED ─────────────────
+
+    Transcribed rung for rung from `get_task` (`GET /api/tasks/{task_id}`)
+    rather than invented, because the contract has to be "if you can open the
+    task, you can read its thread". Anything narrower re-opens the 2026-08-08
+    defect this endpoint already has a regression file for
+    (`tests/test_task_drawer_access.py`): an org administrator who is not on
+    the project could LIST a task and be refused its detail, and the drawer
+    opened onto an empty skeleton. Anything wider is the hole above.
+
+    So the rungs are: the caller owns or raised it · they are assigned to it ·
+    they administer the task's OWN organisation (both halves, never one) ·
+    the task's project is inside `get_visible_team_ids` for the ACTIVE org ·
+    a `task_clients` row names them. `is_portal_client` callers do not come
+    here at all — `client_can_access_task` is their gate and it is stricter.
+
+    Raises 404 for a task that does not exist and 403 for one that does, which
+    is `get_task`'s existing distinction and not a new disclosure: the caller
+    already learns both from `GET /api/tasks/{id}`.
+    """
+    row = await pool.fetchrow(
+        "SELECT team_id, user_id, created_by_user_id, assignee_user_ids "
+        "FROM tasks WHERE task_id=$1", task_id)
+    if not row:
+        raise HTTPException(404, "Task not found")
+    uid = user["user_id"]
+    if row["created_by_user_id"] == uid or row["user_id"] == uid:
+        return
+    if uid in (row["assignee_user_ids"] or []):
+        return
+    # BOTH halves or neither — `delete_task`'s rule, quoted in
+    # `approvals_router.org_admin_may_reach_task`: "`is_org_admin(uid, org)`
+    # says the caller administers THIS org; `task_is_in_org` says the task is
+    # IN it. A write may not be one predicate short." A read of the firm's
+    # internal thread is held to the same standard.
+    _admin = await is_org_admin(uid, org) if org else await is_org_admin(uid)
+    if _admin and await task_is_in_org(
+            pool, org, team_id=row["team_id"],
+            owner_ids=(row["user_id"], row["created_by_user_id"])):
+        return
+    if row["team_id"]:
+        team_ids = await get_visible_team_ids(pool, uid, _user_dict=user, org_id=org)
+        if row["team_id"] in team_ids:
+            return
+    if await pool.fetchval(
+            "SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2", task_id, uid):
+        return
+    raise HTTPException(403, "Not authorized")
+
+
 @api_router.get("/tasks/{task_id}/comments",response_model=List[CommentOut])
-async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_user),
+                        org=Depends(active_org_id)):
     """Return comments on a task in chronological order.
 
     A client sees ONLY comments explicitly marked client-visible.
@@ -3373,11 +3466,18 @@ async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_us
     Until PROPOSED_072 lands there is no flag to be true, so a client gets an
     empty list. That is deliberate: no comments is correct, and guessing which
     internal comments are safe is not.
+
+    ⚠ AND EVERYONE WHO IS NOT A CLIENT HAS A GATE NOW TOO. The branch below had
+    no `else`, so a Unicode Group administrator read Aekam Inc's threads by task
+    id — 22 comments on 15 tasks, confirmed live on 2026-08-29. See
+    `assert_may_reach_task_thread`.
     """
     is_client = await is_portal_client(user)
     if is_client:
         if not await client_can_access_task(pool, task_id, user["user_id"]):
             raise HTTPException(403, "Not authorised to view comments on this task")
+    else:
+        await assert_may_reach_task_thread(pool, task_id, user, org)
     has_flag = await _has_client_visible_column(pool)
     if not has_flag and is_client:
         return []
@@ -3391,12 +3491,27 @@ async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_us
     return [CommentOut(**dict(r)) for r in rows]
 
 @api_router.post("/tasks/{task_id}/comments",response_model=CommentOut)
-async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=Depends(require_user)):
-    """Add a comment to a task and fan-out notifications to relevant users."""
+async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=Depends(require_user),
+                      org=Depends(active_org_id)):
+    """Add a comment to a task and fan-out notifications to relevant users.
+
+    ⚠ The WRITE half of the hole `assert_may_reach_task_thread` documents, and
+    the more serious half: this handler had the identical client-only branch
+    with no `else`, so any authenticated account could post into any task's
+    thread in any organisation by id — and the fan-out below then EMAILS that
+    task's creator, its assignees and its `task_clients` rows, so the injected
+    text leaves the product and reaches the other tenant's inbox.
+
+    Not probed live, deliberately: the probe IS the exploit, and Aekam Inc is
+    no-touch. Graded LATENT on that basis — the read half was walked through and
+    this one was not.
+    """
     author_is_client = await is_portal_client(user)
     if author_is_client:
         if not await client_can_access_task(pool, task_id, user["user_id"]):
             raise HTTPException(403, "Not authorised to comment on this task")
+    else:
+        await assert_may_reach_task_thread(pool, task_id, user, org)
     comment_id=f"cmt_{uuid.uuid4().hex[:12]}"
     # A client's own words are not internal firm data, so a comment authored BY
     # a client is client-visible by definition — otherwise they would post into

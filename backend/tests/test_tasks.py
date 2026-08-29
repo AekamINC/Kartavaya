@@ -161,6 +161,25 @@ async def test_add_comment_empty_body_rejected(api_client, as_admin):
 # ── GET /api/tasks/{task_id}/comments ────────────────────────────────────────
 
 async def test_list_comments(api_client, mock_pool, as_admin):
+    # THE TASK HAS TO EXIST NOW. This stubbed `fetch` alone and left `fetchrow`
+    # answering None — a database in which `task_test001` is not there, while
+    # asserting its comments. That passed only because `list_comments` looked
+    # the task up for nothing: it had no tenancy gate at all, so a Unicode Group
+    # administrator read Aekam Inc's threads by id (measured on staging
+    # 2026-08-29; see `tests/test_task_comment_tenancy.py`). The gate resolves
+    # the task first, so the fixture now describes one — created by this
+    # caller, which is `get_task`'s first rung and the cheapest way in.
+    async def fetchrow_side(query, *args):
+        if "FROM tasks WHERE task_id" in query:
+            return {
+                "team_id": "team_001",
+                "user_id": "user_admin001",
+                "created_by_user_id": "user_admin001",
+                "assignee_user_ids": [],
+            }
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side
     mock_pool.fetch.return_value = [COMMENT_ROW]
     resp = await api_client.get("/api/tasks/task_test001/comments")
     assert resp.status_code == 200
