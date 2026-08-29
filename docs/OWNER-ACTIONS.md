@@ -21,6 +21,67 @@ behind it.
 
 ## OPEN
 
+### 20. Three Manav gaps, and a ratchet that cannot see what it checks — Suite 07, 2026-08-29
+
+Three of Suite 07's findings were real defects and are **already fixed** (asset
+return, the assign-path notification, the notice register). These are what is
+left, and they are features rather than bugs, so §7 says they get an estimate
+here instead of this programme's time.
+
+**(a) A leave request cannot be cancelled.** §4 asks for 4 cancelled leaves.
+`PATCH /leaves/{id}/action` accepts only `approved` and `rejected` and answers
+400 to anything else; the screen renders exactly two buttons. So an employee who
+applies for the wrong dates has no way to withdraw, and an approver's only
+options are to approve something nobody wants or to reject it — which reads to
+the employee as a refusal rather than a withdrawal. **~2 hours**, and it needs a
+third status the API will accept.
+
+**(b) There is no performance review record at all.** §4 budgets 8.
+`PerformanceTab` has no create control and the summary it shows is **derived
+from attendance**. So "performance review" in this product currently means
+"attendance percentage", which is a different thing and is not what an appraisal
+cycle needs. Suite 07 substituted attendance marking and labelled it a
+substitution rather than claiming the volume. **~2 days** if it is a real
+feature; **five minutes** if the honest answer is to rename the tab.
+
+**(c) 18 employees cannot be linked to a login, because only 8 accounts exist.**
+Not a defect — a ceiling. The linking control connects an employee to an
+EXISTING account and invites nobody, and Unicode Group has 8 distinct member
+accounts. The standing "0 of 98 employees ever linked" finding is now **0 → 8**,
+all through the real screen. To reach §4's 18 the org needs 18 accounts first,
+which is Suite 01/02's invite flow at volume.
+
+---
+
+### ⚠ (d) `check-table-rows.mjs` cannot see the thing it is named after
+
+**DSC and UDIN register rows render 77px while `--row-h` resolves to 66px at the
+row itself.** Nine other Manav tables measure 66/66. The gate is GREEN, because
+it checks that the class *references* the token — not what the row actually
+measures in a browser.
+
+That is the **third ratchet blind spot of the same family found on 2026-08-29**,
+and together they are worth more than any one of the defects:
+
+| Ratchet | What it checks | What it cannot see |
+|---|---|---|
+| `check-rendered-ids` | ids drawn in component source | an id resolved through a helper — caught only by mutating the component |
+| `check-rendered-ids` | as above | an id the SERVER pre-formats into a string (`crm/<uuid>/documents`) |
+| `check-table-rows` | the class references `--row-h` | the row's rendered height |
+
+**None of these gates is wrong, and none of them is coverage.** All three are
+static and positional; all three stayed green over a real violation; and all
+three were caught only by a person or a test reading the rendered page. Worth
+knowing before any of them is cited as evidence that a rule holds.
+
+**~1 hour** for the row height. The ratchet question is larger and is a decision
+rather than a fix: a runtime check needs a browser, which means it belongs in
+the e2e suite rather than in `npm run check`. Suite 20 (cross-cutting) is where
+93 already puts "every table on `--row-h`", so the honest answer may be to let
+the static gate keep doing its cheap half and stop reading it as the whole.
+
+---
+
 ### 19. Five Graha features that have no way in — found by Suite 04, 2026-08-29
 
 Proposal 93 §7: a fix that is a missing feature rather than a bug gets raised
