@@ -959,8 +959,20 @@ necessary but **not sufficient**; re-verification must be triggered afterwards.
 `no-reply@aekaminc.com` is `verify=Success, dkim=Failed`, so the production
 fallback sender is going out unsigned today. OWNER-ACTIONS 12.
 
+**⚠ SUPERSEDED 2026-08-29 — production and staging now share EVERY table.**
+Production was promoted: `main` fast-forwarded to `staging` (1,898 commits) and
+`DB_SCHEMA=staging` was set on the production service, so it runs
+`search_path = staging, public` exactly as staging does. Verified live:
+`production /api/health -> {"schema":"staging","environment":"production"}`.
+The two environments are now one code base and one schema set.
+**`staging` is therefore a PRODUCTION schema — dropping it deletes the
+product** (258 module tables; `public` holds only the 42 core PM tables).
+
+The paragraph below was true until that promotion and is kept because every
+delete plan written before 2026-08-29 was written against it:
+
 **⚠ Production and staging share `public.tasks`, `public.teams`, `public.users`.**
-`db.py:21` defaults `DB_SCHEMA` to `public` and the production service sets it
+`db.py:21` defaults `DB_SCHEMA` to `public` and the production service set it
 nowhere; those three tables exist **only** in `public` (`staging.tasks` is
 42P01). Not a new bug — but it means core PM and identity are one table set
 across both environments, and it is the constraint every delete plan must be

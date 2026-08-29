@@ -5611,3 +5611,61 @@ red naming both missing hosts. A mutation that does not apply is a false green
 in the proof itself.
 
 `npm run check` 16 gates exit 0; `npm run build` exit 0.
+
+---
+
+## 2026-08-29 — PRODUCTION PROMOTED (staging code + staging schema)
+
+`main` fast-forwarded to `staging` @ `16f6fdfb` — **1,898 commits**. `main` was
+1,896 behind and **0 ahead**, so a clean FF via `git push origin staging:main`.
+Rollback is `git push origin 1aa49855:main --force` — NOT the `prod-20260724`
+tag, which points at `0517a429`, a different commit.
+
+Accepted the way this file requires — a live read, not a claim:
+
+    production /api/health
+    {"schema":"staging","environment":"production","outbound_mode":"dry", ...}
+
+Before: production ran `public` only, on July code (`1aa49855`, 2026-07-24), with
+24 of 434 frontend page files. Its writes had been failing silently since 25 Aug
+against migration 213's twelve `org_id` CHECK constraints. **That is fixed by
+this promotion** — the merged code sets `org_id`.
+
+Railway production variables went 28 → 43, copied from staging. Only
+`RESEND_API_KEY` still differs, and it has zero live references.
+
+### Four traps, each of which cost real time
+
+**1. A bulk variable paste silently reverted a safety setting.** `OUTBOUND_MODE`
+was set to `dry`; a paste of staging's variables overwrote it with `live`. The
+Railway **variable list still displayed the old value** while the running process
+reported `live`. For a window, production was a live sender against the schema
+holding ~1,600 `@example.com` addresses. **Verify outbound state from
+`/api/health`, never from the variable list.**
+
+**2. `OUTBOUND_SUPPRESSED_ORGS` IS EMPTY** — `suppressed_orgs_digest: 0` on both
+environments, though comments describe it as holding the E2E org's ~1,600
+addresses. `OUTBOUND_MODE=dry` is the *only* protection. `outbound.py:181`
+defaults the mode to **`live`**, and staging has been live since 2026-08-18
+despite many comments still saying dry.
+
+**3. Railway deduplicates a commit across environments.** Staging built
+`16f6fdfb`; fast-forwarding `main` to the **same SHA** produced **no production
+deployment at all** for 45 minutes. Not a broken git link — staging proved the
+link works. `redeploy` cannot fix it (it reuses the old build). The project's own
+`DEPLOY_NUDGE` variable is the mechanism: any variable change deploys the
+branch's current tip. Deployed 80s later.
+
+**4. Railway cron start commands are CONFIG, NOT CODE.** All nine cron services
+hardcoded the dead `kartavya-` hostname in their `curl` lines; the 78-occurrence
+repo sweep could not reach them. Seven fixed. **Production's
+`task-reminder-cron` remains broken** (`*/15 2-14 * * *`, ~52 failures/day) —
+and that breakage was accidentally protective during the `live` window above.
+
+### Not done, deliberately
+
+The schema consolidation (`staging` → `public`, then drop the emptied shell) is
+**not** started. `staging` is now a production schema; "remove staging" would
+delete 258 module tables. It needs the five-section risk report and a DROP named
+explicitly. Three read-only agents are measuring DDL, code assumptions and data
+exposure to build that report.

@@ -26,9 +26,28 @@ same status audit, written over and over. Do not add a proposal 91.
 
 ## The one dangerous fact
 
-**Staging and production share a single Supabase database.** Production writes
-to `staging` too — so every migration and every write-path probe touches
-production data.
+**Staging and production share a single Supabase database, and since
+2026-08-29 they also share a single SCHEMA.** Every migration and every
+write-path probe touches production data.
+
+⚠ **This line was WRONG until 2026-08-29 and the error was in the DIRECTION.**
+It claimed production wrote to `staging`. It did not: production ran `public`
+only (no `DB_SCHEMA` set, and `origin/main:backend/db.py` had zero
+schema-routing code). The real hazard ran the other way — staging writing into
+`public`, which was production's only schema. Anyone who trusted the old
+sentence reasoned about the wrong blast radius.
+
+**It is true NOW, for a new reason.** The 2026-08-29 promotion set
+`DB_SCHEMA=staging` on production and fast-forwarded `main` to `staging`
+(1,898 commits). Verified live, not assumed:
+
+    production /api/health -> {"schema":"staging","environment":"production"}
+
+⚠ **So `staging` is now a PRODUCTION schema. Dropping it deletes the product.**
+It holds all 258 module tables — invoicing, CRM, payroll, HR. `public` holds
+only the 42 core PM tables. Consolidating to one schema means MOVING
+`staging`'s tables INTO `public` and then dropping the emptied shell — never
+"removing staging".
 
 ⚠ **"Only `staging` and `public` exist" was wrong** and cost a day: a `42P01`
 from a schema-qualified query is a fact about **that schema only**, and closing
