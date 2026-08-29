@@ -1,0 +1,37 @@
+Zanskar Medtech Limited — Data Retention and Privacy
+
+This note explains what we hold, why, and for how long. It is written for
+customers who are asked by their own auditors.
+
+What we hold
+    Service records, including the serial number, the fault reported, the parts
+    fitted and the engineer's notes.
+    Contact details for the named laboratory contacts at each site.
+    Remote diagnostic logs, which contain instrument telemetry only.
+
+What we do not hold
+    We hold no patient data of any kind. Remote diagnostic logs are stripped of
+    sample identifiers at the instrument before transmission, and the
+    instrument will refuse to transmit if that stripping fails.
+
+Retention periods
+    Service records                       8 years from the date of the visit
+    Remote diagnostic logs                13 months
+    Contact details                       for the life of the contract plus 1 year
+    CCTV at the Mysuru works              30 days
+    Recorded support calls                90 days
+
+Legal basis and rights
+    Personal data is processed to perform the service contract. A data
+    principal may request access, correction or erasure by writing to
+    privacy@zanskar-medtech.example. We respond within 30 days.
+
+Sub-processors
+    Remote diagnostics are hosted in the Mumbai region of our cloud provider.
+    No customer data leaves India.
+
+Breach notification
+    We notify affected customers within 72 hours of becoming aware of a
+    personal data breach, and the regulator as required.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

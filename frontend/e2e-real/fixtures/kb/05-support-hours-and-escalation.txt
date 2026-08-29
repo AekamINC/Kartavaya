@@ -1,0 +1,36 @@
+Zanskar Medtech Limited — Support Hours and Escalation
+
+Business hours
+    Monday to Friday, 09:00 to 18:00 hours India Standard Time.
+    Saturday, 09:00 to 13:00 hours, for Gold plan customers only.
+    Closed on national holidays and on the second Saturday of each month.
+
+Contact
+    Email     support@zanskar-medtech.example
+    Portal    the customer portal, which raises a ticket automatically
+    Telephone +44 7700 900500 (a reserved drama number, not a real line)
+
+Ticket priorities
+    P1  Instrument down, patient testing stopped.
+        First response 1 hour. Target resolution 8 working hours.
+    P2  Instrument degraded, testing continues with a workaround.
+        First response 4 hours. Target resolution 3 working days.
+    P3  Question, request or cosmetic fault.
+        First response 1 working day. Target resolution 10 working days.
+
+Escalation path
+    Level 1   Support engineer on the ticket
+    Level 2   Regional service manager, after 2 breached targets or on request
+    Level 3   Head of Customer Operations, Farhan Sheikh
+    Level 4   Managing Director, Suresh Pillai
+
+A P1 ticket that is unresolved after 24 hours escalates to Level 3
+automatically, without the customer having to ask.
+
+Loan instruments
+    A loan instrument is offered to Gold plan customers when a repair is
+    expected to exceed 72 hours. It is despatched within 1 working day of the
+    decision and is returned within 7 days of the repaired instrument being
+    recommissioned.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

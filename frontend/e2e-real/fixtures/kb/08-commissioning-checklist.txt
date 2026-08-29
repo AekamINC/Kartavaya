@@ -1,0 +1,69 @@
+Zanskar Medtech Limited — Commissioning Checklist for the ZM-900 Analyser
+
+This checklist is completed by the commissioning engineer and countersigned by
+the laboratory manager. A copy is left on site and a copy is filed against the
+instrument serial number. It is deliberately long, because an instrument that
+is commissioned badly generates service calls for its whole life.
+
+Section A. Before the engineer travels
+The order acknowledgement must name a site contact and a delivery date. The
+site readiness form must have been returned and must confirm the electrical
+supply, the bench loading and the water quality described in the site
+requirements note. The engineer confirms that the instrument serial number on
+the despatch note matches the number on the purchase order. Any mismatch is
+resolved before travel, because a serial number corrected after commissioning
+propagates into the service history and cannot be unpicked cleanly.
+
+Section B. On arrival
+Inspect the outer packaging for crush damage, punctures and tilt indicators.
+Photograph any damage before the packaging is opened. Confirm that the shock
+indicator on the crate has not tripped. A tripped indicator does not stop
+commissioning, but it is recorded and photographed, and the customer is told
+before the crate is opened rather than afterwards.
+
+Section C. Physical installation
+Position the instrument on the bench with the specified clearances. Level the
+instrument using the four adjustable feet and confirm with a spirit level on
+both axes. Connect the deionised water supply and the gravity drain, and check
+every union for leaks under running conditions for five minutes. Connect the
+waste container and confirm that the level sensor reads correctly when the
+container is empty and when it is half full.
+
+Section D. Electrical and network
+Confirm the supply voltage under load and record it on the checklist. Confirm
+that earth to neutral is below two volts. Connect the instrument to the
+uninterruptible power supply, not directly to the wall socket. Assign the
+static address supplied by the laboratory and confirm that the instrument
+reaches the update service on outbound port four four three. Confirm that no
+inbound port has been opened, because none is required and an open inbound port
+is a finding at the customer's next audit.
+
+Section E. Fluidics and optics
+Prime the fluidics and run the automatic wash cycle three times. Inspect the
+sample probe for burrs and confirm the depth setting. Run the optical
+self-test and record the lamp energy figure. A lamp energy below the minimum
+stated in the service manual is replaced during commissioning and not left for
+the first service visit.
+
+Section F. Calibration and verification
+Run the calibration set supplied with the instrument. Record every calibrator
+lot number on the checklist. Run the verification controls at two levels and
+confirm that both fall within the stated acceptance range. If either fails,
+repeat the calibration once. If it fails a second time, stop and escalate to
+the regional service manager rather than adjusting the acceptance range.
+
+Section G. Operator training
+Train at least two named operators. Training covers daily start-up, the wash
+and shutdown routine, changing the sample probe, replacing the waste diaphragm
+kit, reading the error codes, and raising a support ticket. Record the names
+and the duration of the training on the checklist. Leave the quick reference
+card on the bench.
+
+Section H. Handover
+Walk the laboratory manager through the checklist item by item. Both parties
+sign. Record the commissioning date, because the twenty four month standard
+warranty runs from that date and not from the date of despatch. Upload the
+signed checklist to the customer portal within two working days. The warranty
+is not activated until the signed checklist is uploaded.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

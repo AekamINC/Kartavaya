@@ -207,7 +207,33 @@ async def read_body_capped(request, limit: int, label: Optional[str] = None) -> 
 
 
 def _mb(n: int) -> str:
-    return f"{n // (1024 * 1024)} MB"
+    """The size in a 413, in a unit that can actually hold the number.
+
+    ⚠ THIS WAS `f"{n // (1024 * 1024)} MB"` AND IT ROUNDED TO ZERO. Every limit
+    under a megabyte produced **"File exceeds the 0 MB limit"** — a refusal
+    naming a size no file can be under, so the person is told to do something
+    impossible and has no way to work out what was actually wanted.
+
+    Found 2026-08-29 on Pahchan's 768 KB punch-photo cap, whose own call site
+    names "a site worker's phone on a bad network" as the likeliest source of an
+    oversized upload. That is the message this path exists to produce, and it
+    had never been read back.
+
+    Fixed HERE as well as at that call site, because this is the DEFAULT label
+    for every `read_capped` caller that passes none — `esign.py:467`,
+    `graha.py:4701`, `uploads.py:169` and `server.py:5352` all rely on it, and
+    fixing only the caller that happened to be under a megabyte today would
+    leave the next sub-MB limit to rediscover it.
+
+    Integer division throughout, and no float formatting: a limit is a hard
+    boundary, and "9.8 MB" against a 10,485,760-byte cap invites somebody to
+    trim a 9.9 MB file and fail again.
+    """
+    if n >= 1024 * 1024:
+        return f"{n // (1024 * 1024)} MB"
+    if n >= 1024:
+        return f"{n // 1024} KB"
+    return f"{n} bytes"
 
 
 def _build_client(account_id: str, access_key: str, secret_key: str):

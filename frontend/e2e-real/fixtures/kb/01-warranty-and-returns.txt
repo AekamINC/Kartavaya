@@ -1,0 +1,42 @@
+Zanskar Medtech Limited — Warranty and Returns
+
+Standard warranty
+-----------------
+Every ZM-series analyser carries a standard warranty of 24 months from the date
+of commissioning, or 30 months from the date of despatch, whichever expires
+first. The warranty covers parts and labour for defects in materials and
+workmanship. It does not cover consumables, calibration drift caused by use
+outside the stated environmental range, or damage from an unauthorised repair.
+
+Extended warranty
+-----------------
+An extended warranty of a further 24 months may be purchased at any time before
+the standard warranty expires. The price is 11 per cent of the invoiced
+equipment value per year. It cannot be bought retrospectively once the standard
+warranty has lapsed.
+
+Returns
+-------
+Goods may be returned within 21 days of delivery if they are unopened and in
+original packaging. A restocking charge of 15 per cent applies to any return
+that is not the result of a despatch error on our part. Consumables, reagents
+and calibration standards cannot be returned once the tamper seal is broken.
+
+RMA numbers
+-----------
+No return is accepted without a Return Material Authorisation number. RMA
+numbers take the form ZM-RMA-YYYY-NNNN, for example ZM-RMA-2026-0417. Request
+one from support@zanskar-medtech.example. An RMA number is valid for 30 days
+from issue.
+
+Where to send returns
+---------------------
+All returns go to the Mysuru works, not to the regional office:
+
+    Zanskar Medtech Limited, Returns Department
+    Survey 118/2, Hebbal Industrial Area, Mysuru 570016
+
+Credit notes are raised within 10 working days of the goods being received and
+inspected.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

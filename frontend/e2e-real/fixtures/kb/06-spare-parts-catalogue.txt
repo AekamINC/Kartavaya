@@ -1,0 +1,32 @@
+Zanskar Medtech Limited — Spare Parts, 2026 Catalogue
+
+Prices exclude GST and are valid until 31 March 2027.
+
+Part number     Description                                  Price (Rs.)
+-----------------------------------------------------------------------
+ZM-P-1041       Peristaltic pump head, ZM-500                     14,200
+ZM-P-1042       Peristaltic pump head, ZM-900 and ZM-1200         21,750
+ZM-P-2210       Photometer lamp assembly, 12 V halogen             8,900
+ZM-P-2211       Photometer lamp assembly, LED, long life          16,400
+ZM-P-3305       Sample probe, stainless, 0.8 mm bore               4,650
+ZM-P-3306       Sample probe, ceramic tipped                       9,300
+ZM-P-4470       Reaction cuvette ring, 88 position                 33,500
+ZM-P-5512       Mains filter board                                 6,120
+ZM-P-5513       Main logic board, ZM-900                          78,000
+ZM-P-6620       Door interlock switch                              1,980
+ZM-P-7730       Waste pump diaphragm kit                           3,410
+ZM-P-8840       Touchscreen assembly, 10 inch                     27,600
+
+Ordering
+    Quote the part number and the instrument serial number. A part ordered
+    against the wrong instrument model is not returnable.
+
+Availability
+    Parts marked in the portal as stocked despatch within 2 working days.
+    Non-stocked parts have a lead time of 4 to 7 weeks.
+
+Exchange units
+    ZM-P-5513 and ZM-P-8840 are available as exchange units at 62 per cent of
+    the catalogue price, provided the faulty unit is returned within 21 days.
+
+This document is a test fixture. Every part number is invented.

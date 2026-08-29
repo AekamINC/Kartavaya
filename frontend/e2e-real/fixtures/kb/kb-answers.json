@@ -1,0 +1,178 @@
+{
+  "_readme": [
+    "The answer key for the eight KB documents in this directory.",
+    "",
+    "Proposal 93 §5: KB documents must be 'real prose with answerable facts, or the",
+    "KB test is unfalsifiable'. A document alone cannot make a test falsifiable — a",
+    "suite that ingests eight documents and asserts 'a result came back' passes on",
+    "the wrong result. This file is the other half: for each question, the exact",
+    "strings that must appear in the retrieved chunk, and the document they must",
+    "come from.",
+    "",
+    "WHY THE QUESTIONS LOOK LIKE THIS — retrieval is LEXICAL ONLY.",
+    "backend/services/rag.py:198 generate_embedding returns None unconditionally",
+    "('Knowledge-base search is TEXT-ONLY, deliberately' — owner decision",
+    "2026-08-17, no Google spend). The vector half of search_hybrid filters on",
+    "c.embedding IS NOT NULL and can therefore never match. Every question below",
+    "must survive websearch_to_tsquery on the 'english' configuration and share",
+    "stemmed terms with the document — a purely semantic paraphrase retrieves",
+    "nothing, and a question that fails for that reason is not evidence about the",
+    "knowledge base.",
+    "",
+    "Titles carry tsvector weight A and content weight B (rag.py:132 _KB_TSV), so",
+    "`ingest_title` below is part of the fixture, not decoration. Use it verbatim.",
+    "",
+    "unanswerable_questions exist so the suite can prove the KB says nothing rather",
+    "than inventing something. A KB that answers those is worse than one that",
+    "answers nothing."
+  ],
+
+  "client": {
+    "name": "Zanskar Medtech Limited",
+    "note": "Invented. Ingest under a hub_clients row created for the run; hub_kb_documents.client_id is NOT NULL and the org is resolved from it (rag.py:276)."
+  },
+
+  "documents": [
+    { "file": "01-warranty-and-returns.txt",       "ingest_title": "Warranty and Returns",                  "source_type": "text", "expect_chunks": 1 },
+    { "file": "02-service-plans-and-pricing.txt",  "ingest_title": "Service Plans and Pricing",             "source_type": "text", "expect_chunks": 1 },
+    { "file": "03-installation-requirements.txt",  "ingest_title": "Site and Installation Requirements",    "source_type": "text", "expect_chunks": 1 },
+    { "file": "04-shipping-and-lead-times.txt",    "ingest_title": "Despatch and Lead Times",               "source_type": "text", "expect_chunks": 1 },
+    { "file": "05-support-hours-and-escalation.txt","ingest_title": "Support Hours and Escalation",         "source_type": "text", "expect_chunks": 1 },
+    { "file": "06-spare-parts-catalogue.txt",      "ingest_title": "Spare Parts Catalogue 2026",            "source_type": "text", "expect_chunks": 1 },
+    { "file": "07-data-retention-and-privacy.txt", "ingest_title": "Data Retention and Privacy",            "source_type": "text", "expect_chunks": 1 },
+    { "file": "08-commissioning-checklist.txt",    "ingest_title": "Commissioning Checklist ZM-900",        "source_type": "text", "expect_chunks": 2 }
+  ],
+  "expect_total_chunks": 9,
+
+  "questions": [
+    {
+      "q": "What is the standard warranty period on a ZM-series analyser?",
+      "source": "01-warranty-and-returns.txt",
+      "expect_all": ["24 months", "commissioning", "30 months"],
+      "why": "Two competing periods in one sentence. An answer that gives only one of them has retrieved the chunk but read it wrong."
+    },
+    {
+      "q": "What restocking charge applies to a return?",
+      "source": "01-warranty-and-returns.txt",
+      "expect_all": ["15 per cent", "restocking"],
+      "why": "A single distinctive number."
+    },
+    {
+      "q": "What format does an RMA number take and how long is it valid?",
+      "source": "01-warranty-and-returns.txt",
+      "expect_all": ["ZM-RMA-", "30 days"],
+      "why": "An identifier format is impossible to answer by guessing."
+    },
+    {
+      "q": "How much does the Gold service plan cost per year?",
+      "source": "02-service-plans-and-pricing.txt",
+      "expect_all": ["1,42,000", "Gold"],
+      "why": "Three plans with three prices in one chunk; the wrong one is a visible failure."
+    },
+    {
+      "q": "What on-site response time does the Silver plan give?",
+      "source": "02-service-plans-and-pricing.txt",
+      "expect_all": ["Silver", "2 working days"],
+      "why": "Distinguishes Silver from Bronze (5 days) and Gold (1 day) within one chunk."
+    },
+    {
+      "q": "What ambient temperature range is required for installation?",
+      "source": "03-installation-requirements.txt",
+      "expect_all": ["18", "28", "Celsius"],
+      "why": "A range, so a half-right answer is detectable."
+    },
+    {
+      "q": "What is charged for a wasted installation visit?",
+      "source": "03-installation-requirements.txt",
+      "expect_all": ["6,500"],
+      "why": "One unusual number appearing exactly once in the corpus."
+    },
+    {
+      "q": "What is the lead time for a ZM-1200X?",
+      "source": "04-shipping-and-lead-times.txt",
+      "expect_all": ["ZM-1200X", "16 weeks"],
+      "why": "Four lead times in one block; the model code disambiguates ZM-1200 from ZM-1200X."
+    },
+    {
+      "q": "How quickly must transit damage be reported?",
+      "source": "04-shipping-and-lead-times.txt",
+      "expect_all": ["48 hours"],
+      "why": "Appears twice in the same document, so retrieval of either sentence answers it."
+    },
+    {
+      "q": "What is the first response target for a P1 ticket?",
+      "source": "05-support-hours-and-escalation.txt",
+      "expect_all": ["P1", "1 hour"],
+      "why": "Three priorities in one chunk with three different targets."
+    },
+    {
+      "q": "Who is level 3 in the escalation path?",
+      "source": "05-support-hours-and-escalation.txt",
+      "expect_all": ["Farhan Sheikh", "Head of Customer Operations"],
+      "why": "A named person the corpus mentions exactly once, so a hallucinated name is obvious."
+    },
+    {
+      "q": "What is the price of part ZM-P-5513?",
+      "source": "06-spare-parts-catalogue.txt",
+      "expect_all": ["ZM-P-5513", "78,000"],
+      "why": "A twelve-row price table. Retrieving the chunk is not enough; the right row must be read."
+    },
+    {
+      "q": "How long are remote diagnostic logs retained?",
+      "source": "07-data-retention-and-privacy.txt",
+      "expect_all": ["13 months", "diagnostic"],
+      "why": "Five retention periods in one list; 13 months is the only one in months."
+    },
+    {
+      "q": "Does Zanskar Medtech hold patient data?",
+      "source": "07-data-retention-and-privacy.txt",
+      "expect_all": ["no patient data"],
+      "why": "A negative fact. A KB that cannot answer a negative will answer this one wrongly rather than not at all."
+    },
+    {
+      "q": "When does the warranty period start, according to the commissioning checklist?",
+      "source": "08-commissioning-checklist.txt",
+      "expect_all": ["commissioning date", "not from the date of despatch"],
+      "why": "This fact lives in the SECOND chunk of the only multi-chunk document. If chunk 2 was never stored, this question is the one that fails — which is the point of including it."
+    },
+    {
+      "q": "What outbound port must the instrument reach for updates?",
+      "source": "08-commissioning-checklist.txt",
+      "expect_all": ["four four three"],
+      "why": "Deliberately spelled in words. Digits would be stripped differently by to_tsvector; this proves retrieval on ordinary prose rather than on a number."
+    }
+  ],
+
+  "unanswerable_questions": [
+    {
+      "q": "What is the calibration interval for the ZM-4000?",
+      "why": "There is no ZM-4000 anywhere in the corpus. The correct behaviour is to say so.",
+      "measured_warning": "This question SCORES 0.1319 against 08-commissioning-checklist and therefore CLEARS KB_MIN_SCORE (0.10). Measured on the live database 2026-08-29 with the exact ranking expression from rag.py. The retriever will hand a chunk to the model for a question the corpus cannot answer, so a suite that asserts 'no chunk returned' will FAIL here and a suite that asserts 'a chunk returned' proves nothing. Assert on the ANSWER TEXT: it must decline."
+    },
+    {
+      "q": "Who is the auditor of Zanskar Medtech Limited?",
+      "why": "The corpus never names an auditor. A KB grounded on these eight documents cannot know."
+    },
+    {
+      "q": "What is the mobile number of the Mysuru service manager?",
+      "why": "No telephone number in this corpus is a real number and none is a mobile. An answer here is a fabrication."
+    }
+  ],
+
+  "measured": {
+    "when": "2026-08-29",
+    "how": "A table-free SELECT on the live database reproducing rag.py's exact ranking — setweight(title,'A')||setweight(content,'B') scored with ts_rank(..., 32) against the ORed websearch_to_tsquery. No relation referenced, nothing written.",
+    "result": "Every answerable question ranked its own source document FIRST and cleared KB_MIN_SCORE. Correct-document scores: warranty period 0.2198, restocking 0.2590, RMA format 0.1593, Gold price 0.2325, Silver response 0.2085, commissioning-date warranty start 0.2085, outbound port 0.1685.",
+    "caveats": [
+      "Scores were computed on the FULL document text. Ingested chunks are smaller, and ts_rank rises as the matched document shortens, so live chunk scores should be at or above these. This is a floor, not a prediction.",
+      "The threshold does not discriminate on its own. 'What is the standard warranty period' clears 0.10 against TWO documents (0.2198 and 0.1352) and an off-corpus question clears it against one. Rank order is what separates them, so assert on which document came back, not on whether one did."
+    ]
+  },
+
+  "known_risk": {
+    "what": "KB_MIN_SCORE is low enough to pass an unanswerable question",
+    "where": "backend/services/rag.py:96",
+    "value": 0.1,
+    "note": "Measured, not suspected — see unanswerable_questions[0].measured_warning. This is a finding about the threshold, not about the fixture, and it is the reason every assertion here is on answer text rather than on result count."
+  }
+}

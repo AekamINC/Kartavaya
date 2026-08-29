@@ -1,0 +1,32 @@
+Zanskar Medtech Limited — Site and Installation Requirements
+
+Prepare the site before the engineer arrives. An engineer who finds the site
+unready will re-schedule, and a wasted visit is charged at Rs. 6,500.
+
+Electrical
+    Dedicated 230 V single-phase supply, 50 Hz, 16 A, on its own breaker.
+    Earth-to-neutral voltage must be below 2 V.
+    An online UPS of at least 3 kVA is required for the ZM-900 and ZM-1200.
+
+Space and clearance
+    Bench depth of at least 750 mm.
+    Clearance of 300 mm at the rear and 150 mm on each side for airflow.
+    Bench must support 140 kg for the ZM-1200 and 65 kg for the ZM-500.
+
+Environment
+    Ambient temperature 18 to 28 degrees Celsius.
+    Relative humidity 30 to 70 per cent, non-condensing.
+    Not in direct sunlight and not within 2 metres of an air-conditioning outlet.
+
+Water and drainage
+    Type II deionised water, resistivity above 10 megohm-centimetre.
+    A gravity drain no more than 1.5 metres from the instrument.
+
+Network
+    One RJ45 port with a static IPv4 address on the laboratory VLAN.
+    Outbound TCP 443 to the update service. No inbound ports are needed.
+
+Installation takes one working day for the ZM-500 and two for the ZM-900 and
+ZM-1200, plus a half day of operator training.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

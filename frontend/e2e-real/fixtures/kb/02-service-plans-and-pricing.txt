@@ -1,0 +1,34 @@
+Zanskar Medtech Limited — Service Plans
+
+We offer three service plans. All prices exclude GST and are per instrument per
+year.
+
+Bronze — Rs. 38,000 per year
+    One preventive maintenance visit per year.
+    Remote diagnostic support during business hours.
+    On-site response within 5 working days.
+    Parts charged separately at catalogue price.
+
+Silver — Rs. 74,500 per year
+    Two preventive maintenance visits per year.
+    Remote diagnostic support during business hours.
+    On-site response within 2 working days.
+    Parts included up to Rs. 40,000 per year.
+
+Gold — Rs. 1,42,000 per year
+    Four preventive maintenance visits per year.
+    Remote diagnostic support 24 hours, every day.
+    On-site response within 1 working day, including Saturdays.
+    All parts included with no annual cap.
+    A loan instrument if a repair exceeds 72 hours.
+
+Plans are billed annually in advance. A plan may be upgraded at any point in the
+year on payment of the difference, pro-rated to the day. A plan may not be
+downgraded mid-term.
+
+Instruments older than 9 years are eligible for Bronze only.
+
+Multi-instrument discount: 7 per cent for 3 to 9 instruments on one site, and
+12 per cent for 10 or more.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

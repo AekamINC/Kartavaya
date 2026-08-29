@@ -90,11 +90,52 @@ const norm = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ')
  * lets it be changed before anything is imported. An importer that guesses
  * silently is how a statement gets loaded with the debits reversed.
  */
+/**
+ * The order the COLUMNS are guessed in, which is deliberately not the order
+ * `FIELDS` lists them in — `FIELDS` drives the mapping screen, where "Amount
+ * (signed)" belongs above the two-column pair because that is how a person
+ * reads it.
+ *
+ * ⚠ WHY THE TWO-COLUMN PAIR MUST BE GUESSED FIRST. ICICI names its columns
+ * `Withdrawal Amount (INR )` and `Deposit Amount (INR )`. Guessing `amount`
+ * first, its substring hint `'amount'` matched the WITHDRAWAL column and
+ * marked it used; `debit` then found nothing. `credit` still mapped, so
+ * `toLines` took the two-column branch with `debit` unmapped — `out` was
+ * always 0, a withdrawal row's deposit cell is empty, and `amount` came out
+ * 0. **Every withdrawal was dropped and counted as a skipped row.**
+ *
+ * Five of eight rows vanished from a real statement shape, and the skip
+ * counter is designed for subtotal and opening-balance lines, so the loss read
+ * as the importer working correctly. Reproduced independently by renaming a
+ * plain `Debit` column to `Withdrawal Amount` — the trigger is the column
+ * NAME, not the bank.
+ *
+ * That matters more here than in most importers: this product has no payment
+ * gateway and never will, so bank reconciliation is the only path to "paid".
+ * A statement that silently drops its payments out corrupts the one ledger
+ * that decides whether an invoice is settled.
+ *
+ * This is the same failure the function already guards against one notch down
+ * — "Balance" stealing "Balance Amt", "Debit" matching "Debit Card" — just
+ * between field groups rather than within one.
+ */
+const GUESS_ORDER = [
+  'statement_date', 'description', 'reference',
+  // The pair before the signed column, always.
+  'debit', 'credit',
+  'amount',
+  'running_balance',
+];
+
 export function guessMapping(header) {
   const cols = header.map(norm);
   const used = new Set();
   const map = {};
-  for (const { key } of FIELDS) {
+  const ordered = GUESS_ORDER.map(k => FIELDS.find(f => f.key === k)).filter(Boolean);
+  // Anything FIELDS gains later still gets guessed, just last — a new field
+  // that nobody adds to GUESS_ORDER must not silently stop being mapped.
+  for (const f of FIELDS) if (!ordered.includes(f)) ordered.push(f);
+  for (const { key } of ordered) {
     const hints = HINTS[key] || [];
     let found = -1;
     // Exact first, so "Balance" does not steal the column called "Balance Amt"

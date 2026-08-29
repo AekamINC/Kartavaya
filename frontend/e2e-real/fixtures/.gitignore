@@ -1,0 +1,8 @@
+# Build product of make-fixtures.mjs, never committed.
+#
+# 79 files, ~11.9 MB, of which 11 MB is the two limit-crossing fixtures. This
+# repo went from 82 MB to 49 MB by getting file bytes out of the database;
+# committing a 10 MB blob to prove a 10 MB limit would put them back one layer
+# up. The generator is deterministic and MANIFEST.txt pins every byte, so the
+# bytes are reproducible rather than archived.
+generated/

@@ -1,0 +1,35 @@
+Zanskar Medtech Limited — Despatch and Lead Times
+
+Lead times are counted from the date a purchase order is acknowledged, not from
+the date it is received.
+
+Instruments
+    ZM-500      ex-stock, despatched within 4 working days
+    ZM-900      built to order, 6 weeks
+    ZM-1200     built to order, 11 weeks
+    ZM-1200X    built to order, 16 weeks
+
+Consumables and reagents
+    Despatched within 2 working days if ordered before 15:00 hours.
+    Cold-chain reagents are despatched Monday to Wednesday only, so that no
+    consignment is in transit over a weekend.
+
+Transit times from the Mysuru works
+    Karnataka and Tamil Nadu          1 to 2 days
+    Maharashtra, Telangana, Kerala    2 to 3 days
+    Gujarat, Rajasthan, Delhi NCR     3 to 5 days
+    North-east states                 6 to 9 days
+
+Freight
+    Orders above Rs. 2,00,000 are despatched freight prepaid. Below that,
+    freight is charged at actual with no handling markup.
+
+Partial despatch
+    We do not part-ship an instrument order. Consumable orders are part-shipped
+    on request at no extra charge.
+
+Damage in transit must be reported within 48 hours of delivery, with
+photographs of the packaging before it is discarded. A claim made after 48
+hours cannot be supported with the carrier.
+
+This document is a test fixture. Zanskar Medtech Limited does not exist.

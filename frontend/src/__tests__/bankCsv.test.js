@@ -136,3 +136,96 @@ describe('toLines', () => {
     expect(lines[0].amount).toBe(-25000);
   });
 });
+
+/**
+ * ICICI — where a column NAME cost every withdrawal in the statement.
+ *
+ * ⚠ THIS IS A REGRESSION TEST FOR SILENT DATA LOSS, found on 2026-08-29 while
+ * building proposal 93 §5's fixtures, and reproduced from the code before a
+ * word was written about it.
+ *
+ * ICICI writes `Withdrawal Amount (INR )` and `Deposit Amount (INR )`.
+ * `guessMapping` used to resolve `amount` before `debit`, so `amount`'s
+ * substring hint matched the WITHDRAWAL column and marked it used; `debit`
+ * then found nothing. `credit` still mapped, so `toLines` took the two-column
+ * branch with `debit` unmapped, `out` was always 0, and a withdrawal row —
+ * whose deposit cell is empty — produced `amount === 0` and was pushed onto
+ * `skipped`.
+ *
+ * Five of these eight rows vanished. And the loss did not look like a bug: the
+ * skip counter exists for subtotal and opening-balance lines, so the screen
+ * reported "3 imported, 5 skipped" and a person would read that as the
+ * importer doing its job.
+ *
+ * It matters more here than in most importers. This product has no payment
+ * gateway and never will — bank reconciliation is the ONLY path to "paid" — so
+ * a statement that drops its payments out corrupts the one ledger that decides
+ * whether an invoice is settled.
+ *
+ * The trigger is the column NAME, not the bank: the second test renames a
+ * plain `Debit` column and watches the same thing happen.
+ */
+const ICICI = `S No.,Value Date,Transaction Date,Cheque Number,Transaction Remarks,Withdrawal Amount (INR ),Deposit Amount (INR ),Balance (INR )
+1,01/08/2026,01/08/2026,,OPENING BALANCE,,,312500.00
+2,03/08/2026,03/08/2026,,UPI/312345678901/PAYMENT/OFFICE SUPPLIES,4750.00,,307750.00
+3,05/08/2026,05/08/2026,000123,CHQ PAID - VENDOR SETTLEMENT,68000.00,,239750.00
+4,08/08/2026,08/08/2026,,NEFT-INFOSYS BPM LTD-CONSULTING FEE,,225000.00,464750.00
+5,12/08/2026,12/08/2026,,GST PAYMENT-JULY 2026,40500.00,,424250.00
+6,18/08/2026,18/08/2026,,SALARY DISBURSEMENT AUG 2026,187000.00,,237250.00
+7,22/08/2026,22/08/2026,,IMPS-KUMAR ENTERPRISES-INV 2026-0184,,96500.00,333750.00
+8,28/08/2026,28/08/2026,,ELECTRICITY BILL-TORRENT POWER,9840.00,,323910.00
+`;
+
+describe('ICICI — the withdrawal column that was read as a signed amount', () => {
+  it('maps the withdrawal column to debit, not to amount', () => {
+    const m = guessMapping(parseCsv(ICICI)[0]);
+    expect(m.debit, 'the withdrawal column was not mapped to debit').toBe(5);
+    expect(m.credit).toBe(6);
+    // `amount` must find nothing: both candidates are legitimately taken, and
+    // an `amount` mapping here is what sends `toLines` down the wrong branch.
+    expect(m.amount, 'amount stole a column belonging to the two-column pair').toBeUndefined();
+  });
+
+  it('imports every transaction — all five withdrawals and both deposits', () => {
+    const rows = parseCsv(ICICI);
+    const { lines, skipped } = toLines(rows, guessMapping(rows[0]));
+    expect(lines).toHaveLength(7);
+    // Only OPENING BALANCE is skipped, which is what the skip counter is for.
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toContain('OPENING BALANCE');
+  });
+
+  it('gives money out a NEGATIVE amount and money in a positive one', () => {
+    const rows = parseCsv(ICICI);
+    const { lines } = toLines(rows, guessMapping(rows[0]));
+    const out = lines.filter(l => l.amount < 0);
+    const inn = lines.filter(l => l.amount > 0);
+    expect(out).toHaveLength(5);
+    expect(inn).toHaveLength(2);
+    // The salary run, by value rather than by position, so a re-order of the
+    // fixture cannot make this pass for the wrong reason.
+    expect(lines.find(l => l.description.includes('SALARY')).amount).toBe(-187000);
+    expect(lines.find(l => l.description.includes('INFOSYS')).amount).toBe(225000);
+  });
+
+  it('is triggered by the column NAME, on any bank', () => {
+    // A plain two-column statement, with one word changed.
+    const renamed = parseCsv(
+      'Date,Narration,Withdrawal Amount,Deposit Amount,Balance\n'
+      + '02/07/26,Rent,25000.00,,450000.00\n',
+    );
+    const m = guessMapping(renamed[0]);
+    expect(m.debit).toBe(2);
+    expect(m.amount).toBeUndefined();
+    expect(toLines(renamed, m).lines[0].amount).toBe(-25000);
+  });
+
+  it('still reads a genuinely signed Amount column', () => {
+    // The guard must not have been bought by breaking the single-column shape.
+    const csv = parseCsv('Date,Description,Amount\n02/07/26,Rent,-25000\n');
+    const m = guessMapping(csv[0]);
+    expect(m.amount).toBe(2);
+    expect(m.debit).toBeUndefined();
+    expect(toLines(csv, m).lines[0].amount).toBe(-25000);
+  });
+});

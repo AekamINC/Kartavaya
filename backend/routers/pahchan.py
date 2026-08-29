@@ -709,8 +709,18 @@ async def upload_punch_photo(
     # Chunked, so a 500MB body is refused in flight rather than after it is all
     # resident. A site worker's phone on a bad network is the likeliest source
     # of an oversized upload here, and it is also the likeliest to retry.
+    # ⚠ KB, NOT MB. `MAX_PHOTO_BYTES` is 768 KB, and `// (1024 * 1024)` on it is
+    # integer division to ZERO — so a site worker whose selfie was refused was
+    # told "File exceeds the 0MB photo limit", which is both wrong and unusable:
+    # there is no size they could have picked that satisfies it.
+    #
+    # Found 2026-08-29 while sizing proposal 93 §5's oversize fixture against
+    # the real constant. The comment above this call names "a site worker's
+    # phone on a bad network" as the likeliest source of an oversized upload
+    # here — so this is the message that path was written for, and it had never
+    # been read back.
     data = await storage.read_capped(
-        file, MAX_PHOTO_BYTES, f"{MAX_PHOTO_BYTES // (1024 * 1024)}MB photo",
+        file, MAX_PHOTO_BYTES, f"{MAX_PHOTO_BYTES // 1024}KB photo",
     )
     if not data:
         raise HTTPException(400, "Empty upload")
