@@ -59,10 +59,29 @@ export default defineConfig({
     ['html', { outputFolder: path.join(OUT, 'report'), open: 'never' }],
     ['json', { outputFile: path.join(OUT, 'report.json') }],
   ],
+  /**
+   * ⚠ ONE DIRECTORY PER PROJECT, AND THIS WAS A REAL BUG.
+   *
+   * Both suites shared the config's single `outputDir`, and Playwright EMPTIES
+   * that directory at the start of a run — so the two agents driving this wave
+   * concurrently were deleting each other's in-flight traces, and one had to
+   * pass `--output` by hand to work around it.
+   *
+   * `coldstart.config.ts` records the reason at length and it was already known:
+   * "a green journey is reported red". Knowing it at the config level and then
+   * writing one directory for two projects is how it came back.
+   */
   projects: [
     {
-      name: 'wave2',
-      testMatch: /suite(04-graha|07-manav)\.spec\.ts/,
+      name: 'graha',
+      testMatch: /suite04-graha\.spec\.ts/,
+      outputDir: path.join(OUT, 'graha'),
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'manav',
+      testMatch: /suite07-manav\.spec\.ts/,
+      outputDir: path.join(OUT, 'manav'),
       use: { ...devices['Desktop Chrome'] },
     },
   ],
