@@ -10,12 +10,16 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
-Last updated: **2026-08-29**. Proposal 93 Wave 1: **26 of 28 green**, Suite 02
-at **16 of the 18 screens §10 asks for**. The two that are not green are named
-in the section below and neither is a flake — 02.12 is a confirmed missing
-feature now approved for build, and **02.17 was NOT sequencing after all: the
-support-session feature was unreachable end to end by anybody** (§ 2026-08-29
-below, fixed and deployed).
+Last updated: **2026-08-29**. Proposal 93 **Wave 1 is 28/28 GREEN** and Suite 02
+covers all 18 screens §10 asks for. Both of the items that were red are closed
+and neither was a flake: **02.17 was not sequencing** — the support-session
+feature was unreachable end to end by anybody — and **02.12 is now a real R2
+round trip**, upload → delete → bin → restore → second stage → destroyed, with
+the object proved unreadable at the end.
+
+**Wave 2 has landed:** Suite 04 (Graha) 15/22 with its seven failures named
+below, Suite 07 (Manav) at §4 volumes. Migrations **239** (recycle bin) and
+**240** (the UUID columns that made contact merge impossible) are applied.
 Migration 238 applied; `platform_support` exists on exactly one account for the
 first time (§11). The route for the next session is `docs/plans/93-NEXT-SESSION.md`. **BOTH deploys verified — check both, always.**
 Backend: Railway staging at `43961e25`, SUCCESS 05:16:47 UTC, branch `staging`
@@ -211,6 +215,87 @@ all backed up to `ledger_repair_20260826.nikhil_*`. Unicode headcount 27 → 26.
 burst of write probes from 2026-07-28, 6 of Unicode's 15 and all six live in the
 vendor picker. Verified orphaned across every vendor-referencing column *before*
 deleting. Nine real suppliers remain.
+
+## Proposal 93 · WAVE 1 CLOSES AT 28/28, and Wave 2 lands (29 Aug)
+
+**The recycle bin round trip ran end to end for the first time:**
+
+```
+93-bin-202608290222: uploaded (449 bytes) -> deleted -> stage 1 -> restored
+-> deleted -> stage 2 -> destroyed. Object unreadable at the end.
+```
+
+Read back from `staging.deleted_files`, not from the log. That is ✅ by this
+file's own definition — a customer completed the flow and rows appeared where
+there were none.
+
+The last assertion is the one the feature exists for and the only one a row
+count could never fake: after the permanent delete the object's own URL is no
+longer readable. So is the third: the object is asserted **still present** after
+a stage-1 delete, because a delete that destroys the file immediately is not a
+bin.
+
+### The org guard is structural now, and it was not before
+
+`ae7f0510` named two faults and fixed one. It recorded the second as fixed —
+*"now called inside `signInAs()`, the only way into the suite"* — and **it was
+not**. Measured 2026-08-29: `signInAs` returned without calling `assertOrg`.
+Eight files remembered to call it themselves, which is why nothing went wrong;
+but a rule every author must re-apply is the rule that renamed Aekam Inc. It is
+now a property of getting in. Suite 19 is unaffected and must stay so — a
+platform session resolves to Aekam by design.
+
+### Wave 2 — Suite 04 (Graha) 15/22 and Suite 07 (Manav), §4 volumes hit
+
+Suite 04, three runs, §6 proved by running: 25 clients · 53 contacts · 30 deals
+(8 won, 6 lost) · **40/40 kanban moves by real mouse drag** · 45 activities · 18
+follow-ups · 6 territories · 12 documents · 2 dedupe runs.
+Suite 07: **30 employees · 6 leave types · 24 requests · 14 holidays · 24 assets
+· 18 candidates** — §4's numbers, essentially exactly.
+
+⚠ **Aekam Inc unchanged throughout at 11 seats / 220 tasks**, measured
+repeatedly while both suites wrote concurrently.
+
+### Contact merge has NEVER ONCE WORKED — found, fixed, and it took two fixes
+
+`invalid input syntax for type uuid: "user_21457956f010"`.
+`graha_contact_merges.actor_id` was declared UUID against ids that are
+`user_` + 12 hex. **The table held zero rows and always had** — the bug's
+consequence, not a coincidence beside it. `PROPOSED_083` named this exact column
+on 2026-07-28 and nobody applied it.
+
+Two things worth keeping:
+
+- **That proposal listed five columns; the catalogue said four.**
+  `graha_web_forms.created_by` was already `text`. Applying the file verbatim
+  would have harmed nothing but would have been a statement written against a
+  schema that had moved — which is why migration 238 exists.
+- ⚠ **The column was only half.** After migration 240 the merge STILL 500d, same
+  line: `contact_dedupe.py:458` casts the parameter explicitly,
+  `NULLIF($7,'')::uuid`. Three call sites carried that shape. Proved by
+  re-running and reading the log again rather than assuming the migration was
+  the fix.
+
+### Five Graha features have no way in — OWNER-ACTIONS 19
+
+`lost_reason` has no input anywhere · a web form publishes with no public route
+to fill it · no screen AND no route creates a lead-scoring rule · no control
+creates a pipeline (`create_deal` silently inserts one nobody typed) · a
+territory cannot be given a priority.
+
+⚠ **In every case the column exists, the API accepts the value, and nothing sets
+it.** Five features complete except for the part a customer touches — "code
+shipped is 🟡" in its purest form.
+
+### ⚠ A SECOND RATCHET BLIND SPOT of the same shape
+
+The Documents register draws a client UUID (`crm/<uuid>/documents`) in its
+folder column and filter. **The server builds that string**, so
+`check-rendered-ids` — static and positional — reports "no id drawn on screen"
+and stays green. The first was a user id behind a helper on the recycle-bin
+screen, caught only by mutating the component. **The ratchet cannot see an id
+that arrives pre-formatted from the server**, and both times only a person or a
+test reading the rendered page caught it.
 
 ## Proposal 93 · B — the recycle bin, and the delete path the web actually used (29 Aug)
 

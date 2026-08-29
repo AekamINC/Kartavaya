@@ -4717,3 +4717,48 @@ the crons.**
 
 ⚠ **02.12 is written and unrun.** It type-checks; no screen has rendered against
 a real `deleted_files` row, and the table holds 0. 🟡, not ✅.
+
+
+---
+
+## 2026-08-29 · Wave 1 closes at 28/28 · Wave 2 lands · three product defects
+
+**The recycle bin round trip ran end to end** — uploaded, deleted, stage 1,
+restored, deleted, promoted to stage 2, destroyed, and the R2 object proved
+unreadable afterwards. Full detail in `docs/STATUS.md`.
+
+**Product defects found by driving the product and fixed this session:**
+
+1. **Contact merge had never once worked.** `graha_contact_merges.actor_id`
+   declared UUID against `user_`+12hex ids; table held 0 rows for its whole
+   life. Needed BOTH migration 240 AND removing an explicit `::uuid` cast from
+   three call sites — the migration alone left it 500ing, which I found by
+   re-running and reading the log rather than assuming.
+2. **An ICICI bank statement silently lost every withdrawal** (earlier today).
+3. **A `phone` custom field rendered `<input type="phone">`** — not an HTML
+   type, so it falls back to text, looks correct, and costs the numeric keypad
+   on the device where a phone number is typed. The comment directly above the
+   line promised the behaviour the line prevented.
+
+**Three test bugs, all mine, all found by reading the page rather than guessing:**
+
+- ⚠ **"Personal uploads" is a FOLDER, not an upload control.** `TabStorage`
+  renders folders as buttons; my `/upload/i` matched `personal/`. Measured:
+  zero `input[type=file]` on the whole page. The verdict was depending on what
+  happens to be in the R2 bucket — §7's "depends on rows it did not create",
+  arriving through a locator instead of a fixture.
+- **The accessible name is the aria-label, not the visible text.** The bin's row
+  button reads "Delete" and is labelled `Move <file> to the second-stage bin`,
+  deliberately, so a screen reader is not read twelve identical "Delete"s. A
+  locator on visible text fails as a MISSING CONTROL — the wrong diagnosis.
+- `/^Add$/` against a button labelled "Add Document".
+
+**And one thing I was wrong about, corrected:** `signInAs()` did NOT call
+`assertOrg()`. I stated it in the plan and in two agent briefs; memory claimed
+it; the Suite 04 agent measured it and was right. Now wired, so the guard is a
+property of getting in rather than a line each author must remember.
+
+⚠ **02.14 failed once in a full wave run and passes alone** — the members-list
+refetch race that `rowMenuItem` absorbs. Re-running to establish whether it is
+intermittent before touching it; widening a retry to quiet a flake is how a
+genuinely missing control starts passing.
