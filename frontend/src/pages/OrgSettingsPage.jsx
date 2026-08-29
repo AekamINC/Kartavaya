@@ -14,6 +14,7 @@ import TabSecurity from './org/TabSecurity';
 import TabSenders from './org/TabSenders';
 import TabUpi from './org/TabUpi';
 import TabStorage from './org/TabStorage';
+import TabRecycleBin from './org/TabRecycleBin';
 import TabDanger from './org/TabDanger';
 
 import '../styles/org.css';
@@ -166,6 +167,22 @@ export default function OrgSettingsPage() {
     // on the same org_admin/org_owner pair this whole hub does, so there is no
     // tab-level permission to thread through.
     { value: 'storage',  label: <>Storage{hi('भंडार')}</>,   content: <TabStorage /> },
+    // DIRECTLY AFTER STORAGE, and before Danger zone. Storage is what this
+    // organisation is using and where its files physically are; the bin is the
+    // part of that figure it can still get back — binned files count against
+    // the allowance at both stages, so the two tabs are reading one number from
+    // two ends. And it is NOT in the danger zone: the tab's main control is
+    // Restore, and the one destructive act on it is already guarded by a typed
+    // confirmation of its own.
+    //
+    // रद्दी is the product's existing word for a bin — `ProjectsPage.jsx:313`
+    // titles the project bin `sanskrit="रद्दी"`. Two bins in one product must
+    // not be two different words in Devanagari, or they read as two features.
+    // पुनर्प्राप्ति ("recovery") is the more flattering gloss and describes what
+    // the tab is FOR, but it names the act rather than the place, it is twice
+    // the length of every other sub-label here (भंडार, संकट, सदस्य), and it
+    // would contradict the word already on screen one destination away.
+    { value: 'recycle',  label: <>Recycle bin{hi('रद्दी')}</>, content: <TabRecycleBin /> },
     { value: 'danger',   label: <>Danger zone{hi('संकट')}</>, content: <TabDanger orgName={orgRole?.org_name} /> },
   ]), [isOwner, user?.user_id, orgRole?.org_name, counts.members, counts.modules, report]);
 

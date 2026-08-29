@@ -12,6 +12,7 @@ import React, { useState, useEffect } from 'react';
 import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
@@ -75,6 +76,11 @@ const DOCUMENT_COLUMNS = [
  *  once there; the server is the authority and refuses as it reads. */
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
+/** Must stay equal to `STAGE2_AFTER_DAYS` in `backend/services/recycle_bin.py`,
+ *  which is what actually enforces the first-stage window. This only draws the
+ *  sentence in the delete confirmation. */
+const RECYCLE_BIN_DAYS = 14;
+
 /**
  * A document's tags as an ARRAY, whatever shape actually arrived.
  *
@@ -114,6 +120,10 @@ export default function DocumentsTab() {
   const [file, setFile] = useState(null);
   const [clients, setClients] = useState([]);
   const [saving, setSaving] = useState(false);
+  // The one dialog state for this tab. Object, not boolean — ConfirmDialog
+  // holds the last non-null value through its exit animation, so a dialog that
+  // is closing still has a title and buttons to draw.
+  const [confirm, setConfirm] = useState(null);
 
   const fmtSize = bytes => {
     if (!bytes) return '—';
@@ -186,14 +196,62 @@ export default function DocumentsTab() {
     finally { setSaving(false); }
   }
 
-  async function deleteDoc(id) {
-    if (!window.confirm('Delete this document? This cannot be undone.')) return;
-    try {
-      await api.delete(`/v1/graha/documents/${id}`);
-      pushToast({ title: 'Document deleted', type: 'success' });
-      setDocuments(prev => prev.filter(d => d.id !== id));
-      loadFolders();
-    } catch { pushToast({ title: 'Could not delete document', type: 'error' }); }
+  /**
+   * DELETE A DOCUMENT — two things were wrong here and they are different
+   * problems.
+   *
+   * 1 · `window.confirm`. `ConfirmDialog`'s own header says it "replaces
+   *     window.confirm throughout the app", and this was one of the last call
+   *     sites that had not moved. The native dialog has no focus trap, no
+   *     `role="alertdialog"`, no scroll lock, cannot carry a typed
+   *     confirmation, and is styled by the browser rather than by this product.
+   *
+   * 2 · **"This cannot be undone" is now false.** `DELETE /v1/graha/documents/
+   *     {id}` writes a `staging.deleted_files` row BEFORE it sets
+   *     `is_active=FALSE`, and refuses the whole delete if the bin write fails
+   *     (`routers/graha.py`) — so the document is recoverable from the org's
+   *     recycle bin for 14 days, and from the second-stage bin to 90. A dialog
+   *     that tells a customer their file is gone forever, about a file that is
+   *     not gone, teaches them to keep a copy of everything outside the
+   *     product.
+   *
+   * The wording matches `TaskDrawer.jsx removeAttachment` deliberately: those
+   * are the only two surfaces in this product that bin a file, and two
+   * sentences for one act is how they drift into contradicting each other.
+   * Including the split on the key — `bin_file` returns None when there is no
+   * `r2_key`, so a document whose object this product can no longer address is
+   * deactivated with nothing in the bin behind it, and promising a restore over
+   * one of those is a promise the server cannot keep.
+   */
+  function deleteDoc(doc) {
+    const label = doc.name || 'this document';
+    setConfirm({
+      title: 'Move to recycle bin?',
+      message: doc.file_key
+        ? `"${label}" moves to your organisation's recycle bin. An owner or admin can restore it for ${RECYCLE_BIN_DAYS} days.`
+        : `"${label}" will be removed. This record has no stored file reference, so it cannot be recovered.`,
+      confirmLabel: 'Move to bin',
+      intent: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/v1/graha/documents/${doc.id}`);
+          pushToast({
+            title: doc.file_key ? `"${label}" moved to the recycle bin` : `"${label}" removed`,
+            type: 'success',
+          });
+          setDocuments(prev => prev.filter(d => d.id !== doc.id));
+          loadFolders();
+        } catch (e) {
+          pushToast({
+            // The server's own sentence. A bin write that failed answers 500
+            // with "it has not been removed", which is the opposite of what a
+            // generic failure implies about the state of the row.
+            title: e?.response?.data?.detail || 'Could not delete document',
+            type: 'error',
+          });
+        }
+      },
+    });
   }
 
   const field = (label, node, mod = '') => (
@@ -324,7 +382,7 @@ export default function DocumentsTab() {
                           {d.file_url && (
                             <a className="k-btn k-btn--ghost" href={d.file_url} target="_blank" rel="noopener noreferrer">Open</a>
                           )}
-                          <button className="k-btn k-btn--reject" onClick={() => deleteDoc(d.id)}>Delete</button>
+                          <button className="k-btn k-btn--reject" onClick={() => deleteDoc(d)}>Delete</button>
                         </div>
                       </td>
                     ),
@@ -339,6 +397,8 @@ export default function DocumentsTab() {
         </div>
         </div>
       )}
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }

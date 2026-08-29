@@ -103,35 +103,46 @@ afterEach(async () => {
 });
 
 describe('Organisation hub tab bar', () => {
-  // TEN, and each addition is a decision rather than a drift. The design had
+  // ELEVEN, and each addition is a decision rather than a drift. The design had
   // six; `Senders` came next (per-purpose From addresses are a deliverability
   // setting, not a company detail); `UPI IDs` after it (one id PER PLATFORM,
-  // not one VPA field); and Phase 4 added two on 2026-08-27 — `Compliance`
-  // (4.1) and `Storage` (4.4), both endpoints that had existed with no caller.
+  // not one VPA field); Phase 4 added two on 2026-08-27 — `Compliance` (4.1)
+  // and `Storage` (4.4), both endpoints that had existed with no caller; and
+  // 2026-08-29 added `Recycle bin` (proposal 93 §B), which is the third of
+  // those — `routers/recycle_bin.py` and migration 239 shipped with no caller
+  // either.
+  //
+  // It sits between Storage and Danger zone on purpose: Storage is what this
+  // organisation is using and the bin is the part of that figure it can still
+  // get back, since binned files count against the allowance at both stages.
   //
   // The list is asserted in FULL and in order, because a count alone would let
   // a tab be renamed or reordered without anybody noticing. This file pinned
   // seven for long enough that it was two behind before Phase 4 touched it:
   // when a tab lands, this is the test that has to move with it.
-  it('renders the tabs in the design\'s order, plus the four added since', async () => {
+  it('renders the tabs in the design\'s order, plus the five added since', async () => {
     await draw();
     expect(tabs().map(t => t.textContent.replace(/[^A-Za-z ]/g, '').trim())).toEqual([
       'Profile', 'Members', 'Billing', 'Modules', 'Compliance', 'Senders',
-      'UPI IDs', 'Security', 'Storage', 'Danger zone',
+      'UPI IDs', 'Security', 'Storage', 'Recycle bin', 'Danger zone',
     ]);
   });
 
   it('carries each tab\'s Devanagari from the designer\'s TAB_HI map', async () => {
     await draw();
+    // रद्दी is not from `TAB_HI` — the designer's map predates this tab. It is
+    // the word `ProjectsPage.jsx:313` already puts on the project bin, taken
+    // deliberately rather than invented, so that one product does not have two
+    // Devanagari words for one object.
     expect(tabs().map(t => t.querySelector('.tabs__hi')?.textContent))
       .toEqual(['रूपरेखा', 'सदस्य', 'बीजक', 'खंड', 'अनुपालन', 'प्रेषक',
-                'यूपीआई', 'सुरक्षा', 'भंडार', 'संकट']);
+                'यूपीआई', 'सुरक्षा', 'भंडार', 'रद्दी', 'संकट']);
   });
 
   it('marks the Devanagari lang="hi" so it is not read as English', async () => {
     await draw();
     const marks = [...container.querySelectorAll('.tabs__hi')];
-    expect(marks.length).toBe(10);
+    expect(marks.length).toBe(11);
     for (const el of marks) expect(el.getAttribute('lang')).toBe('hi');
   });
 

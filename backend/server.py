@@ -64,6 +64,7 @@ from health import router as health_router
 # BEFORE close_pool() — see that hook. Imported here rather than inside it so an
 # import error surfaces at boot instead of at the one moment rows are at risk.
 from services import outbound_log
+from services import recycle_bin as bin_svc
 # Aliased because `audit` is a common local name in this 6k-line module and a
 # shadowed import fails at the call site rather than at the import.
 from services.audit import emit as _audit_emit
@@ -138,6 +139,7 @@ from routers.pay           import router as pay_router
 from routers.sync          import router as sync_router
 from routers.statute       import router as statute_router
 from routers.support_sessions import router as support_sessions_router
+from routers.recycle_bin  import router as recycle_bin_router
 from routers.custody   import router as custody_router
 from routers.maps          import router as maps_router
 from routers.pincodes      import router as pincodes_router
@@ -5443,7 +5445,24 @@ async def delete_task_attachment(
     user=Depends(require_user),
     org=Depends(active_org_id),
 ):
-    """Remove an attachment from a task by its R2 key."""
+    """Remove an attachment from a task — into the recycle bin, not into nothing.
+
+    ── WHAT THIS USED TO DO, AND WHY IT WAS A DEFECT ───────────────────────
+    It filtered the array and saved. The pointer went; the R2 object stayed in
+    the bucket, billed forever, with the key gone from the row — so it was
+    unreachable by anyone, INCLUDING Aekam. No confirmation, no undo, and no
+    record that it had ever existed. `TaskDrawer.jsx:621` did the same thing
+    client-side, so both doors led to the same orphan.
+
+    Proposal 93 §B, migration 239: the pointer still goes, and the file now
+    lands in the org's recycle bin — recoverable by an org admin or owner for
+    14 days, in the second-stage bin to 90, and destroyed only when somebody
+    deliberately destroys it or the (disarmed) sweeper reaches it.
+
+    ⚠ THE BIN ROW IS WRITTEN BEFORE THE POINTER IS DROPPED. The other order
+    loses the file if the second statement fails — which is exactly the orphan
+    this is fixing, reintroduced one line further down.
+    """
     team_ids = await get_visible_team_ids(pool, user["user_id"], _user_dict=user, org_id=org)
     row = await pool.fetchrow(
         "SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
@@ -5454,7 +5473,41 @@ async def delete_task_attachment(
     await assert_may_write_task(pool, team_id=row["team_id"], user=user, task_id=task_id)
 
     current  = _pj(row["attachments"], [])
+    going    = [a for a in current if a.get("key") == key]
     filtered = [a for a in current if a.get("key") != key]
+
+    # Nothing matched: say so rather than reporting a successful delete of a
+    # file that was never there. A 200 on a no-op is how a client learns to
+    # trust a delete it never performed.
+    if not going:
+        raise HTTPException(404, "That attachment is not on this task.")
+
+    if org:
+        for a in going:
+            try:
+                await bin_svc.bin_file(
+                    org_id=org,
+                    source_kind="task_attachment",
+                    source_id=task_id,
+                    file_name=a.get("name") or "file",
+                    r2_key=a.get("key") or "",
+                    file_url=a.get("url"),
+                    size_bytes=a.get("size") or 0,
+                    deleted_by=user["user_id"],
+                )
+            except Exception as exc:
+                # ⚠ REFUSE THE DELETE. A bin that silently fails open is worse
+                # than no bin: the customer is told the file is recoverable,
+                # the object orphans anyway, and nobody finds out until they
+                # try to restore it. Failing here leaves the attachment exactly
+                # where it was, which is the recoverable direction.
+                logger.error("recycle_bin: refusing to drop %s — %s", key, exc)
+                raise HTTPException(
+                    500,
+                    "That file could not be moved to the recycle bin, so it has "
+                    "not been removed. Please try again.",
+                )
+
     updated  = await pool.fetchrow(
         "UPDATE tasks SET attachments=$1::jsonb, updated_at=$2 WHERE task_id=$3 RETURNING *",
         json.dumps(filtered), now_utc(), task_id,
@@ -5486,8 +5539,16 @@ async def delete_task_attachment(
 
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
-    """Permanently delete a task; only project admins/owners or the personal task owner may delete."""
-    doc=await pool.fetchrow("SELECT team_id,user_id,created_by_user_id FROM tasks WHERE task_id=$1",task_id)
+    """Permanently delete a task; only project admins/owners or the personal task owner may delete.
+
+    ⚠ ITS ATTACHMENTS GO TO THE RECYCLE BIN FIRST (proposal 93 §B). This route
+    hard-deletes the row, and `tasks.attachments` goes with it — so every R2
+    object it pointed at orphaned WHOLESALE, in one statement, with no record.
+    That is the same defect as the per-attachment delete with a bigger blast
+    radius, and binning the files first is the difference between a delete and
+    a disappearance.
+    """
+    doc=await pool.fetchrow("SELECT team_id,user_id,created_by_user_id,attachments FROM tasks WHERE task_id=$1",task_id)
     if not doc: raise HTTPException(404)
     # ── THE ESCAPE HATCH IS READ AT REQUEST TIME, NOT OFF THE TOKEN ─────────
     #
@@ -5536,6 +5597,23 @@ async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
             personal=await pool.fetchrow("SELECT user_id FROM tasks WHERE task_id=$1",task_id)
             if not personal or personal["user_id"]!=user["user_id"]:
                 raise HTTPException(403,"Only project admin or owner can delete tasks")
+    # ── The files first, then the row ────────────────────────────────────────
+    # Best-effort by design, and that is the opposite of the per-attachment
+    # route's behaviour on purpose. There, refusing the delete leaves the file
+    # exactly where it was, which is recoverable. Here, refusing would leave a
+    # task the person asked to delete and cannot — and the attachments are the
+    # secondary concern in an act whose subject is the task. So a bin failure
+    # is logged loudly and the delete proceeds.
+    if org:
+        try:
+            kept = await bin_svc.bin_many(
+                [{**a, "_task_id": task_id} for a in _pj(doc["attachments"], [])],
+                org_id=org, deleted_by=user["user_id"],
+            )
+            if kept:
+                logger.info("recycle_bin: kept %d file(s) from deleted task %s", kept, task_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("recycle_bin: could not keep files from task %s — %s", task_id, exc)
     await pool.execute("DELETE FROM tasks WHERE task_id=$1",task_id)
     return {"ok":True}
 
@@ -5908,6 +5986,16 @@ app.include_router(pincodes_router)
 # admin_orgs.py:829 all pointed at it by name. Grants nobody anything by
 # itself — `platform_support` has zero holders, and only a customer opens a session.
 app.include_router(support_sessions_router)
+# The customer's two-stage recycle bin (proposal 93 §B, migration 239). Before
+# it there was no delete anywhere in this product that KEPT the file: both
+# `TaskDrawer.jsx:621` and `server.py`'s own attachment DELETE dropped the
+# pointer and left the R2 object billed forever and unreachable by anyone,
+# including Aekam, with no confirmation and no undo.
+#
+# ⚠ Registration order is not the hazard here — the MIGRATION is. 239 must be
+# live before this deploys or every delete verb 500s on a missing table. It was
+# applied first, and verified from pg_constraint rather than from its own file.
+app.include_router(recycle_bin_router)
 # The four custody registers — DSC tokens, UDIN, statutory notices, and what an
 # employee still holds on their way out. `services/custody/` was written, tested
 # and routed NOWHERE, so all four tables sat at 0 rows: not a missing column, a

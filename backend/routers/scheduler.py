@@ -377,6 +377,68 @@ async def run_project_bin_purge(dry_run: bool = True, x_cron_secret: str = Heade
     return result
 
 
+@router.post("/cron/recycle-bin", dependencies=[])
+async def run_recycle_bin_purge(dry_run: bool = True, x_cron_secret: str = Header("")):
+    """Destroy the R2 objects of files binned more than 90 days ago.
+
+    ── `dry_run` DEFAULTS TO TRUE, FOR `/cron/project-bin`'S REASON ────────────
+
+    This is the only irreversible act in the whole recycle-bin feature: it calls
+    `delete_file`, and an R2 object does not come back. The job beside this one
+    records why its default is the same — "the last time a deleting job was
+    armed on this platform it was armed without anybody knowing how many rows it
+    would take on its first run; that is not repeated here."
+
+    **This endpoint is deliberately NOT armed on Railway, and arming it is the
+    owner's call, not this programme's.** Proposal 93 R1 disarmed all seven
+    staging crons to `0 0 1 1 *` and R9 restores exactly those seven — adding an
+    eighth armed job in the middle of that window would be a change nobody had
+    agreed to, on the one job here that destroys data. It is listed in
+    `docs/OWNER-ACTIONS.md` instead.
+
+    ⚠ It is also worth noting what happens if it is NEVER armed: binned files
+    are retained past 90 days and keep counting against the org's quota. That
+    costs money and destroys nothing, which is the correct direction for a job
+    like this one to fail in.
+
+    ── WHY IT IS SEPARATE FROM `/cron/retention` ──────────────────────────────
+    That job trims logs and activity; losing a day of it costs nothing. This one
+    deletes a customer's files at the end of a recovery window they were shown
+    on screen, so it needs its own result in the logs and its own failure to be
+    visible rather than buried in another job's summary — the same argument
+    `/cron/pahchan-retention` makes below.
+    """
+    await _verify_cron(x_cron_secret)
+    from services import recycle_bin as bin_svc
+    due = await bin_svc.due_for_purge()
+    if dry_run:
+        # Counted and NAMED before anything is destroyed. A bare count is not
+        # enough to notice that the wrong rows are about to go.
+        return {
+            "dry_run": True,
+            "count": len(due),
+            "files": [
+                {"id": str(d["id"]), "org_id": str(d["org_id"]),
+                 "file_name": d["file_name"], "deleted_at": d["deleted_at"].isoformat()}
+                for d in due[:50]
+            ],
+            "truncated": len(due) > 50,
+        }
+    purged, failed = 0, []
+    for d in due:
+        result = await bin_svc.purge(org_id=None, bin_id=str(d["id"]))
+        if result.get("ok"):
+            purged += 1
+        else:
+            # Reported, not swallowed. A purge that fails leaves a row whose
+            # object is still billed, and `purge_error` is where somebody finds
+            # it — a silent skip reads as a completed sweep.
+            failed.append({"id": str(d["id"]), "reason": result.get("reason")})
+    out = {"dry_run": False, "purged": purged, "failed": failed, "due": len(due)}
+    log.info("Cron recycle-bin: %s", out)
+    return out
+
+
 @router.post("/cron/pahchan-retention", dependencies=[])
 async def run_pahchan_retention_cron(x_cron_secret: str = Header("")):
     """

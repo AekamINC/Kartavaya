@@ -452,3 +452,27 @@
 .oupi__qr { margin: 0; max-width: 15rem; text-align: center; }
 .oupi__qr img { display: block; background: #fff; padding: 6px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); }
 .oupi__qr figcaption { margin-top: 6px; font-size: var(--t-micro); color: var(--ink-3); line-height: 1.5; }
+
+/* ── Recycle bin ───────────────────────────────────────────────────────────
+   Four rules, added by hand rather than by a sweep, for `TabRecycleBin`. No
+   new stylesheet: the tab lives inside `.st` / `.st__group` like every other
+   panel on this hub, its table is the shared `.tbl` (so it sits on `--row-h`
+   with everything else), and its notices are the `.of__h` / `.opend` types
+   already declared above. What is genuinely local is the two-line cell — a
+   date over the sentence that reads it — and the pair of buttons at the end
+   of a row.
+
+   No colour is stated here. The stage a row is in is carried by the SECTION it
+   is under and by the words above it, not by a tint on the row: a tinted row
+   says two rows differ, it does not say that deleting one destroys a file and
+   deleting the other does not. */
+.orb__stk { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* The file's own name. Wraps rather than truncating: a name is the one thing
+   in the row a person matches against what they remember deleting, and
+   "Q3-work…" is not a match. */
+.orb__nm { font-weight: 500; color: var(--on-surface); overflow-wrap: anywhere; }
+.orb__sub { font-size: var(--t-micro); color: var(--on-surface-3); }
+/* Restore beside Delete, at the trailing edge. Wraps rather than compressing,
+   which is what keeps both reachable on a narrow window — the same reason
+   `.ohd` wraps its segmented control. */
+.orb__act { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }

@@ -36,6 +36,7 @@ from services import territory_routing
 # `tests/test_pin_boundaries.py`, which deliberately does not name this router —
 # see the note on that constant.
 from services import pin_boundaries
+from services import recycle_bin as bin_svc
 from services import digipin
 from utils import assert_file_url
 
@@ -4922,6 +4923,45 @@ async def delete_document(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+
+    # ── READ IT BEFORE DEACTIVATING IT, so the bin row can carry the key ────
+    # `is_active=FALSE` alone made the document invisible and left the R2 object
+    # in the bucket with nothing listing it — not orphaned in the strict sense,
+    # since the row kept the key, but unreachable through any screen and
+    # unrecoverable by the customer. Proposal 93 §B, migration 239: it goes to
+    # the org's recycle bin instead, restorable for 14 days, in the
+    # second-stage bin to 90.
+    doc = await pool.fetchrow(
+        "SELECT id, name, file_key, file_url, file_size FROM staging.graha_documents "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        doc_id, org_id,
+    )
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    try:
+        await bin_svc.bin_file(
+            org_id=org_id,
+            source_kind="graha_document",
+            source_id=str(doc["id"]),
+            file_name=doc["name"] or "document",
+            r2_key=doc["file_key"] or "",
+            file_url=doc["file_url"],
+            size_bytes=doc["file_size"] or 0,
+            deleted_by=user["user_id"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Refuse the delete rather than deactivate a document the bin does not
+        # know about. A bin that fails open tells the customer a file is
+        # recoverable when it is not, which is worse than not offering to
+        # recover it at all.
+        log.error("recycle_bin: refusing to remove document %s — %s", doc_id, exc)
+        raise HTTPException(
+            500,
+            "That document could not be moved to the recycle bin, so it has not "
+            "been removed. Please try again.",
+        )
+
     result = await pool.execute(
         # A CRM document is a contract or a proposal; "who removed it?" is the
         # question an argument turns on later, and the soft delete leaves no
@@ -4933,4 +4973,4 @@ async def delete_document(
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "Document not found")
-    return {"ok": True}
+    return {"ok": True, "recycle_bin": True}

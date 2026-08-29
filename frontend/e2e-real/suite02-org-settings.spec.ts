@@ -2258,20 +2258,52 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
     await memberView(page, 'List');
     const row = page.locator('.omt tbody tr').filter({ hasText: email });
     await expect(row).toBeVisible({ timeout: 30_000 });
-    await row.getByRole('button', { name: /Actions for/ }).click();
-    const menu = page.getByRole('menu');
-    await expect(menu).toBeVisible({ timeout: 10_000 });
-    const [res] = await Promise.all([
-      page.waitForResponse(
-        (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
-        { timeout: 30_000 },
-      ),
-      menu
-        .getByRole('menuitem', {
-          name: want === 'org_admin' ? /Make org admin/ : /Make org member/,
-        })
-        .click(),
-    ]);
+
+    /**
+     * ⚠ THROUGH `rowMenuItem`, AND IT USED NOT TO BE.
+     *
+     * This function opened the menu and clicked the item directly, because it
+     * was written BEFORE `rowMenuItem` existed and was never migrated to it.
+     * The wave1 run of 2026-08-29 caught up with that: 02.15 failed with
+     *
+     *     locator.click: element is not stable
+     *       ... element was detached from the DOM, retrying
+     *
+     * on `Make org admin` — the identical signature, the identical cause and
+     * the identical table as 02.14 on 28 Aug. `openTab`/`memberView` refetch
+     * `/org/members` and the response replaces `.omt tbody` while the menu
+     * opened over it is still animating, so the item the click resolved is a
+     * node in a discarded tree.
+     *
+     * TEST BUG, not a product one, and the same proof as last time: a human
+     * clicking a settled screen never meets this. It went unnoticed because the
+     * race only bites when the refetch lands inside the click's actionability
+     * window — 02.15 had passed on every prior run.
+     *
+     * ── THE `waitForResponse` IS ARMED BEFORE THE CLICK, NOT AROUND IT ──────
+     * `rowMenuItem` owns the click, so the old `Promise.all([...])` shape
+     * cannot wrap it. Creating the response promise FIRST is equivalent and is
+     * the reason this is safe: `waitForResponse` begins listening the moment it
+     * is constructed, so a PUT that lands during the click is still caught.
+     *
+     * A retry cannot double-fire the PUT: both signatures `rowMenuItem` retries
+     * on are raised by Playwright's actionability wait, which is BEFORE the
+     * click is dispatched. And the menu offers only the transition that applies
+     * (`MemberTable.jsx:123`), so a retry after a PUT that had somehow landed
+     * would fail to find its item and fail loudly rather than flip the role
+     * back.
+     */
+    const rolePut = page.waitForResponse(
+      (r) => /\/org\/members\/.*\/role/.test(r.url()) && r.request().method() === 'PUT',
+      { timeout: 30_000 },
+    );
+    await rowMenuItem(
+      page,
+      row,
+      want === 'org_admin' ? /Make org admin/ : /Make org member/,
+      `the row menu for ${email} offers no "Make ${want === 'org_admin' ? 'org admin' : 'org member'}"`,
+    );
+    const res = await rolePut;
     expect(res.status(), `PUT role -> ${res.status()}`).toBeLessThan(400);
 
     const after = await memberByEmail(page, email);

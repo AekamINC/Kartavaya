@@ -44,6 +44,15 @@ import '../../styles/storage.css';
  * deleting the object without the row produces exactly the failure this tab
  * exists to diagnose. Both belong to the module that owns the row.
  *
+ * That decision STANDS, and proposal 93 §B did not soften it: `recycle_bin.py`
+ * only ever reads and restores, and the two surfaces that bin a file are the
+ * ones that own the row (`TaskDrawer` and `graha/DocumentsTab`). What HAS
+ * changed is that a reader who lands here looking for a file somebody deleted
+ * is no longer at a dead end — **the Recycle bin tab is where it is**,
+ * recoverable for 14 days and in a second-stage bin to 90. The note below the
+ * allowance meter says so on screen, because "this tab has no delete" and "this
+ * product has no bin" are different sentences and only the first one is true.
+ *
  * ── AND ONE THING THIS TAB REPORTS RATHER THAN FIXES ───────────────────────
  *
  * Existing objects are NOT backfilled into the grammar. That is a separate
@@ -183,6 +192,21 @@ export default function TabStorage() {
             {overview.used_note && (
               <p className="of__h of__h--foot">{overview.used_note}</p>
             )}
+            {/* WHERE A DELETED FILE WENT. A sentence, not a control: this tab
+                is read-only by decision (see the header), and adding a delete
+                or a restore here would put the act on the screen that owns
+                neither the row nor the record. But a reader standing in front
+                of an allowance meter looking for a file a colleague deleted has
+                to be told the product HAS a bin — otherwise the honest absence
+                of a delete button reads as the absence of any recovery at all,
+                and the figure above stops making sense too: binned files count
+                against this allowance until they are erased. */}
+            <p className="of__h of__h--foot">
+              Deleted task attachments and CRM documents are not erased straight
+              away — they wait in the Recycle bin tab, restorable for 14 days and
+              then in a second-stage bin until day 90. They keep counting towards
+              the figure above until they are deleted permanently.
+            </p>
           </>
         )}
       </section>

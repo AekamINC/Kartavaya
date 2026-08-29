@@ -618,10 +618,104 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     }
   };
 
-  const removeAttachment = async idx => {
-    const updated = attachments.filter((_, i) => i !== idx);
-    setAttachments(updated);
-    await saveTask({ attachments: updated.map(f => ({ name: f.name, url: f.url, key: f.key || null, is_private: f.is_private || false, visible_to: f.visible_to || [] })) });
+  /**
+   * Remove an attachment — into the org's recycle bin, and only after asking.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⚠ THIS USED TO BE THE SILENT ORPHAN, AND IT WAS THE ONLY PATH THE WEB USED
+   * ══════════════════════════════════════════════════════════════════════════
+   * It filtered the array and called `saveTask`, which is `PUT /tasks/{id}` —
+   * a wholesale replace. The pointer went; the R2 object stayed in the bucket,
+   * billed forever, with the key gone from the row, so it was unreachable by
+   * anyone INCLUDING Aekam. One click on a bare trash icon, no confirmation,
+   * no undo, no record that the file had ever existed.
+   *
+   * ⚠ AND WIRING THE BIN INTO `DELETE /tasks/{id}/attachments/{key}` ALONE
+   * WOULD HAVE FIXED ALMOST NOTHING. That route existed already — and the web
+   * app never called it. Its only caller in the whole product is mobile
+   * (`mobile/src/api/tasks.ts:143`). Every deletion a customer makes in a
+   * browser came through here, so a bin behind the other door would have
+   * captured mobile deletions and quietly missed all the rest, while the
+   * feature reported itself built.
+   *
+   * So this now calls the same route mobile does. One door, one bin, and the
+   * server records what it kept before the pointer is dropped.
+   *
+   * ── THE CONFIRMATION IS NEW, AND IT IS THE OWNER'S FIRST DECISION ─────────
+   * "Delete asks for confirmation." It says the file is recoverable, because it
+   * now is, and for how long — a warning that overstates the consequence
+   * teaches people to click through it.
+   *
+   * ⚠ NO `confirmText` TYPED GUARD HERE, deliberately, and this is the one
+   * place this file departs from `ProjectsPage`. That guard scales with blast
+   * radius (`BulkBar.jsx:97` applies it past four rows); one recoverable
+   * attachment does not earn it, and a guard on a trivial act is how people
+   * learn to type past the guard on a serious one.
+   */
+  const removeAttachment = idx => {
+    const file = attachments[idx];
+    if (!file) return;
+    const label = file.name || 'this file';
+    setConfirmState({
+      title: 'Move to recycle bin?',
+      // ⚠ The wording differs by whether the file CAN be recovered. 16 of the
+      // attachment elements in this database carry no `key` at all — legacy
+      // pointers at something the product can no longer address — and for
+      // those there is genuinely nothing to put in a bin. Saying "you can
+      // restore it" over one of them would be a promise the server cannot keep.
+      message: file.key
+        ? `"${label}" moves to your organisation's recycle bin. An owner or admin can restore it for 14 days.`
+        : `"${label}" will be removed. This file has no stored reference, so it cannot be recovered.`,
+      confirmLabel: 'Move to bin',
+      intent: 'danger',
+      onConfirm: async () => {
+        try {
+          if (file.key) {
+            // The route that bins. The server writes the bin row BEFORE it
+            // drops the pointer, and refuses the whole delete if it cannot.
+            const res = await api.delete(
+              `/tasks/${taskId}/attachments/${encodeURIComponent(file.key)}`,
+            );
+            // The list comes back from the row that was actually written
+            // rather than from local optimism — the failure mode being
+            // repaired here is exactly a screen that showed a delete the
+            // database had not agreed to.
+            setTask(res.data);
+            setAttachments(res.data?.attachments || []);
+            onSaved?.(res.data);
+          } else {
+            // ⚠ NO KEY, SO THERE IS NOTHING TO BIN — and the delete route
+            // addresses attachments BY key, so it cannot reach this one at
+            // all. These are legacy pointers at something the product can no
+            // longer address; `deleted_files.r2_key` is NOT NULL precisely
+            // because a bin row without a key is an entry nobody can restore.
+            //
+            // The old array-replace path is CORRECT for these and only these.
+            // Routing them through it deliberately, rather than leaving them
+            // unremovable, which is what addressing everything by key alone
+            // would have done.
+            const updated = attachments.filter((_, i) => i !== idx);
+            setAttachments(updated);
+            await saveTask({
+              attachments: updated.map(f => ({
+                name: f.name, url: f.url, key: f.key || null,
+                is_private: f.is_private || false, visible_to: f.visible_to || [],
+              })),
+            });
+          }
+          pushToast({
+            type: 'success',
+            title: file.key ? `"${label}" moved to the recycle bin` : `"${label}" removed`,
+          });
+        } catch (e) {
+          logger.error('Remove attachment failed', e);
+          pushToast({
+            type: 'error',
+            title: e?.response?.data?.detail || 'Could not remove that file',
+          });
+        }
+      },
+    });
   };
 
   const handlePrivacyChange = async (idx, updatedFile) => {

@@ -95,7 +95,7 @@ _NAMES_ROUTER = re.compile(
 
 #: Writing routers with NO live-schema test, measured 2026-08-27. ONLY SHRINKS.
 UNCOVERED = {
-    "admin_orgs", "column_prefs", "esign", "ganit", "graha", "hub", "hub_chat",
+    "admin_orgs", "column_prefs", "esign", "ganit", "hub", "hub_chat",
     "hub_connectors", "hub_publish", "lead_sources", "me", "messaging",
     "niyam_rules", "org_members", "org_modules", "org_profile", "org_security",
     "pahchan_attendance", "pay", "prachar", "procurement", "products", "pulse",
@@ -132,7 +132,22 @@ UNCOVERED = {
     # by gaining a live-SQL test or by ceasing to write. This one did the
     # second. See `tests/test_report_retirement.py`.
     #
-    # 31 remain.
+    # ── AND `graha` LEFT BY THE FIRST ROUTE, 2026-08-29 ──────────────────────
+    #
+    # `tests/test_client_coordinates.py` PREPAREs `routers/graha.py`'s
+    # statements against the real catalogue, so graha had been covered for some
+    # time and nobody took the name off this list. `test_the_baseline_only_shrinks`
+    # had therefore been RED — found while adding `recycle_bin`'s live-SQL test,
+    # and proved pre-existing by stashing that work and watching it fail
+    # identically.
+    #
+    # Worth stating plainly because it is this file's own failure mode: a
+    # baseline that is red for a name nobody is working on is a baseline people
+    # learn to run with one expected failure, and an expected failure is a
+    # failure nobody reads. The list is the debt that remains, and it was
+    # overstating the debt by one.
+    #
+    # 30 remain.
 }
 
 
