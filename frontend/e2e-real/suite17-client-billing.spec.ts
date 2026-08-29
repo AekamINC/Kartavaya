@@ -122,8 +122,10 @@
  * 93 §14 reserves the product-bug-versus-test-bug judgement to the owner.
  * Where a control §4 requires does not exist, or a fence that must hold does
  * not, the test FAILS and prints what it looked for and what the live wire
- * said. FOUR fail against staging as it stands on 2026-08-29, and each is
- * written as a failure on purpose:
+ * said. FOUR failed against staging on 2026-08-29 and each was written as a
+ * failure on purpose. **ALL FOUR ARE NOW FIXED** — what each one turned out to
+ * be is recorded beside it, because the diagnosis was not always the one the
+ * failure suggested:
  *
  *   17.04  **A PAUSED SERVICE LINE CANNOT BE RESUMED.** Ending a line is a
  *          `period_end`; resuming it is clearing that date. `ServiceLineUpdate`
@@ -135,6 +137,19 @@
  *          is the SAME asymmetry `_NullMeansUnset` fixed on the create side,
  *          surviving on the update side where a null is the only way to say
  *          "no end date".
+ *          ✅ FIXED 2026-08-29, and it took THREE changes, not one. (a)
+ *          `COLUMNS_ENDED` gained an action cell, so an ended line can be
+ *          opened at all. (b) `client_billing._assignments` now tells an
+ *          OMITTED key from an EXPLICIT null via `model_fields_set` and honours
+ *          the null on the columns that are actually nullable — read from
+ *          `information_schema`, not from a migration file. (c) ⚠ AND THE
+ *          PICKER'S OWN Clear STILL CANNOT BE CLICKED: measured at 1280×720,
+ *          the 316px popover does not fit the 314px modal, flips up to y
+ *          65–381 against a panel at y 203–517, and `elementFromPoint` over
+ *          Clear returns `div.modal__scrim`. That is a SHARED-picker defect
+ *          (`ui/DateInput.jsx` never portals its popover) and is reported, not
+ *          fixed from here — so the Ended row grew an explicit **Resume**
+ *          button, which is the verb §10 asks for anyway.
  *   17.05  **The Delete button on a rate card has no route behind it.**
  *          `RateCardsTab.jsx:83` calls `DELETE /v1/ganit/billing/rate-cards/
  *          {id}`. Read out of the DEPLOYED OpenAPI on 2026-08-29,
@@ -142,6 +157,13 @@
  *          only** — so the path exists, the verb does not, and the button
  *          answers 405. Every other list in this module can undo a mistyped
  *          row; a price list cannot.
+ *          ✅ FIXED 2026-08-29. `DELETE /rate-cards/{card_id}` exists, and it
+ *          REFUSES with 409 naming the SLA credits priced off the card rather
+ *          than letting the FK violation reach the database as an opaque 500 —
+ *          `vendor_sla_credits_rate_card_id_fkey` has no ON DELETE clause, and
+ *          2 of Unicode's 3 cards are referenced, so that path is walked. A
+ *          hard delete rather than an archive because `effective_to` already
+ *          expresses retirement; what was missing was undoing a MISTYPED row.
  *   17.07  **A metered-usage invoice can never be issued.**
  *          `generate_usage_invoice` writes `client_id` and NO `contact_id`
  *          (`client_billing.py:1030-1052`), and `_refuse_final_if_incomplete`
@@ -152,6 +174,25 @@
  *          creates therefore cannot be marked final, cannot be sent, cannot
  *          carry a pay link and cannot be paid. The invoice NAMES a company —
  *          it just names it in a column the validator never reads.
+ *          ✅ FIXED 2026-08-29 in `_refuse_final_if_incomplete`, which now
+ *          falls back to `graha_clients` when there is no contact and hands the
+ *          company in as the `company` the validator already accepts. A CRM
+ *          client IS the customer (CLAUDE.md), so a document naming one does
+ *          name its recipient. Strictly additive: it runs only where there was
+ *          no contact to resolve, and the only other `contact` field the tax
+ *          validator reads (`gstin`) is ADVISORY, so nothing that passed before
+ *          can now fail.
+ *          ⚠ AND THE CONTROL WAS NEVER MISSING. The triage that reached this
+ *          suite said the Metered Usage panel "offers no Generate Invoice
+ *          control". It offers one per client group and always has
+ *          (`MeteredUsageTab.jsx`). What hid it was a spinner that never
+ *          resolves: the filter's `onChange` raised `loading` while the effect
+ *          that clears it only re-runs when the filter's VALUE changes, so a
+ *          change event carrying the value already selected — exactly what
+ *          `selectOption` sends — replaced the whole panel with a skeleton for
+ *          ever, the filter included. Measured: 7 groups and 7 Generate
+ *          controls before, 0 and 37 skeleton nodes after. `setLoading(true)`
+ *          now lives inside `load`, the one function that always clears it.
  *   17.07  **It also numbers itself outside the firm's own series.** Read live
  *          2026-08-29: Unicode Group's `settings->'doc_prefixes'` is
  *          `{"tax_invoice": "UNX"}` and all 53 of its invoices are
@@ -162,6 +203,17 @@
  *          prefix and adds one, so the two series interleave their numbering
  *          while disagreeing about their name. Rule 46(b) asks for one
  *          consecutive serial per financial year.
+ *          ✅ FIXED 2026-08-29: both writers draw the prefix from
+ *          `client_billing._tax_invoice_prefix`, which delegates to
+ *          `ganit._doc_prefix` rather than keeping a second copy of the rule.
+ *          ⚠ AND THE CHECK THAT WAS MEANT TO CATCH IT HAD NEVER RUN. It read
+ *          the series from `GET /api/v1/org/profile`, whose body has NO
+ *          `settings` key — so `series` was always `''` and the assertion was
+ *          skipped every time. It now reads `GET /api/v1/org/profile/
+ *          doc-prefixes` (`effective`), and is scoped to the invoices THIS
+ *          execution minted: the fix cannot re-number a document already
+ *          issued, and re-numbering one is a data change to live rows.
+ *          Historical strays are named in the log instead of failing for ever.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * §4 — WHOSE VOLUMES THESE ARE
@@ -816,13 +868,38 @@ async function homeStateCode(page: Page): Promise<string> {
  * to do as well. Bounded and deterministic; no id is rendered or asserted.
  */
 async function generatedUsageInvoices(page: Page): Promise<any[]> {
-  const drafts = (await apiRows(page, '/api/v1/ganit/invoices'))
-    .filter((r) => String(r.doc_status || '') === 'draft');
+  // ⚠ NO `doc_status` PRE-FILTER, AND THAT IS THE POINT. CHANGED 2026-08-29.
+  //
+  // This used to narrow the list to `doc_status === 'draft'` before fetching
+  // each row's detail — and a generated invoice IS born a draft, so it looked
+  // right. But 17.07 ISSUES one of these invoices, which is the whole claim it
+  // proves, and `draft → final` is one-way. The moment marking final started
+  // working, the issued invoice stopped matching the filter and 17.11 counted
+  // "billing cycles (invoices generated) 1 / 2" — a red on the fix succeeding.
+  //
+  // The mistake was defining "generated" by a MUTABLE STATUS rather than by the
+  // invariant that actually marks it: the `notes` line the two writers in
+  // `client_billing.py` stamp on every invoice they raise. Status is now not
+  // consulted at all.
+  //
+  // The pre-filter existed for cost, and the cost is real — neither `notes` nor
+  // `billing_profile_id` is on the LIST payload (checked live 2026-08-29: the
+  // list returns 27 fields and neither is among them), so the marker can only
+  // be read from each record. So the detail reads are made CONCURRENTLY in
+  // small batches instead, which is where the pre-filter's speed came from
+  // without borrowing a status to do it.
+  const rows = await apiRows(page, '/api/v1/ganit/invoices');
   const out: any[] = [];
-  for (const d of drafts) {
-    const rec = await apiOne(page, `/api/v1/ganit/invoices/${d.id}`);
-    const inv = rec?.invoice ?? rec;
-    if (String(inv?.notes || '').startsWith('Metered usage invoice for ')) out.push(inv);
+  const BATCH = 6;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH);
+    const recs = await Promise.all(
+      batch.map((r) => apiOne(page, `/api/v1/ganit/invoices/${r.id}`)),
+    );
+    for (const rec of recs) {
+      const inv = rec?.invoice ?? rec;
+      if (String(inv?.notes || '').startsWith('Metered usage invoice for ')) out.push(inv);
+    }
   }
   return out;
 }
@@ -1223,13 +1300,44 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
         .toBeGreaterThan(0);
 
       if (editable > 0) {
-        await tr.getByRole('button', { name: /^Edit$/ }).click();
-        const m = await inModal(page, /Edit Service Line/);
-        await clearDate(m, /Period End/);
+        // ── THE RESUME IS DRIVEN FROM THE ENDED ROW'S OWN "Resume" BUTTON ────
+        //
+        // ⚠ CHANGED 2026-08-29, AND THE REASON IS A SECOND PRODUCT DEFECT, NOT
+        //   A CONVENIENCE.
+        //
+        // This block used to open the editor and press the Period End picker's
+        // Clear. **That button cannot be clicked, by a test or by a person.**
+        // Measured in a real browser at 1280×720 on this exact modal:
+        //
+        //     modal panel   y 203 → 517  (.modal__panel overflow:hidden,
+        //                                 .modal__body overflow:auto)
+        //     date popover  y  65 → 381  ('pk__pop pk__pop--up')
+        //     Clear button  y 106 → 133  — ABOVE the panel, outside both clips
+        //     document.elementFromPoint(centre) → div.modal__scrim
+        //
+        // The popover is 316px tall against a 314px panel, so it does not fit
+        // below, flips up, and lands in a region its clipping ancestors do not
+        // paint. Playwright reported `<div class="modal__scrim"> intercepts
+        // pointer events` forty times before timing out — and a person clicking
+        // there closes the modal. It is a defect in the SHARED picker
+        // (`ui/DateInput.jsx` positions the popover absolutely inside a clipped
+        // container rather than portalling it), it reaches every DateInput in
+        // any modal shorter than the popover, and it is REPORTED SEPARATELY
+        // rather than fixed from a billing suite.
+        //
+        // So the product grew the affordance §10 actually asks for — "pause;
+        // resume" — and this drives it. The claim under test is unchanged: a
+        // paused subscription can be put back into billing, proved by
+        // `period_end` reaching null on the canonical row.
+        const resumeBtn = tr.getByRole('button', { name: /^Resume$/ });
+        await expect(resumeBtn, 'the ended service line offers no Resume control, and the ' +
+          "Period End picker's Clear cannot be clicked inside the modal (see above), so a " +
+          'paused subscription cannot be put back into billing by any route a person has')
+          .toBeVisible({ timeout: 30_000 });
         const res = await saveAndWait(page, async () => {
-          await m.getByRole('button', { name: /^Save$/ }).click();
+          await resumeBtn.click();
         }, /\/v1\/ganit\/billing\/service-lines\//, 'RESUME — clear the end date',
-          { allowError: true });
+          { methods: ['PATCH'], allowError: true });
         await settle(page);
 
         const after = await lineByDesc(serviceLineDesc(3));
@@ -1240,6 +1348,53 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
           'None`, and `period_end: form.period_end || null` is the ONLY way the form can say ' +
           '"there is no end date". A paused subscription therefore cannot be resumed at all.' +
           dumpWire(wire)).toBeNull();
+
+        // The screen must agree: a resumed line belongs in Active, not Ended.
+        // A row that reads as running on the wire and as stopped on the screen
+        // is the same lie in the other direction.
+        await settle(page);
+        // Scoped to the ACTIVE section's own table, not to the panel: both
+        // tables carry a row with this description while the move is what is
+        // being asserted. `DataTable` renders `div.tbl__wrap > table`
+        // (`components/ui/Table.jsx:17`), so the section's table is the h3's
+        // next such sibling.
+        const activeTable = p.locator('h3.gn-section-head', { hasText: /^Active/ })
+          .locator('xpath=following-sibling::div[contains(@class,"tbl__wrap")][1]');
+        await expect(activeTable.locator('tbody tr').filter({ hasText: serviceLineDesc(3) }),
+          'the end date was cleared, the canonical row reads period_end=null, and the line is ' +
+          'still not in the Active table — the customer is being billed again and the screen ' +
+          'says they are not').toHaveCount(1, { timeout: 30_000 });
+
+        // ── AND END IT AGAIN, BECAUSE THE RESUME IS A SIXTH CHANGE ────────────
+        //
+        // ⚠ ADDED 2026-08-29 WHEN THE RESUME WAS MADE TO WORK.
+        //
+        // §4 asks for FIVE subscription changes and 17.11 checks each one by
+        // the STATE it left behind — for line 03 that state is "ended, in the
+        // past". The resume above is a sixth change and it deliberately undoes
+        // the fifth. While it was a no-op that cost nothing; the moment it
+        // works, 17.11's `subscription changes still evidenced` drops to 4 and
+        // goes red on a transition the suite itself reversed.
+        //
+        // That is a defect in the suite, not in the product, so the fixture is
+        // restored rather than the count lowered. Both facts survive: the
+        // resume is proved by `period_end` reaching null above, and the five
+        // changes are still evidenced afterwards.
+        const back = p.locator('tbody tr').filter({ hasText: serviceLineDesc(3) }).first();
+        await back.getByRole('button', { name: /^Edit$/ }).click();
+        const m2 = await inModal(page, /Edit Service Line/);
+        await setDate(m2, /Period End/, yesterday);
+        await saveModal(page, m2, /\/v1\/ganit\/billing\/service-lines\//,
+          're-end service line 03 after proving the resume');
+        await settle(page);
+        const reEnded = await lineByDesc(serviceLineDesc(3));
+        expect(String(reEnded.period_end || ''), 'service line 03 was re-ended after the resume ' +
+          'probe and the canonical row carries no end date').toBeTruthy();
+        console.log('\n  17.04 — ✅ RESUME WORKS: the end date was cleared through the Ended ' +
+          "row's own Resume control, the canonical row read period_end=null, and the line " +
+          'moved back into Active. It was then re-ended so the five changes above stay ' +
+          "evidenced for 17.11. (NOT through the date picker's Clear — that button is " +
+          'unclickable inside this modal; see the note above.)\n');
       } else {
         console.log('\n  17.04 — RESUME COULD NOT BE ATTEMPTED: the Ended table offers no Edit ' +
           'control, so the clear-the-end-date path is unreachable from the product. The API-side ' +
@@ -1289,9 +1444,12 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
      * empty and requires exactly two, which is what stops this test from being
      * made to pass by typing something into the box.
      */
-    const { typed, found } = await ensure(
-      [1, 2, 3], present, rateCardCategory,
-      async (n) => {
+    /**
+     * Typing ONE rate card, hoisted out of `ensure` so the delete probe below
+     * can put back what it removes. See the restore step at the end of this
+     * test for why that matters.
+     */
+    const typeCard = async (n: number) => {
         await p.getByRole('button', { name: /^\+ Rate Card$/ }).first().click();
         const m = await inModal(page, /Rate Card/);
         await pickByLabel(mfld(m, 'Vendor').locator('select.inp'), vendorName(n), 'vendor');
@@ -1314,8 +1472,9 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
                   : `rate card ${pad(n)} — with the Notes box LEFT EMPTY, which is the ` +
                     'ordinary case for a price list and was a 422 for its entire life');
         await settle(page);
-      },
-    );
+    };
+
+    const { typed, found } = await ensure([1, 2, 3], present, rateCardCategory, typeCard);
 
     const cards = mine(await rateCards(page), 'item_category');
     expect(cards.length, `wanted ${N_RATE_CARDS} S17 rate cards, the list holds ${cards.length}. ` +
@@ -1375,6 +1534,45 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
         `reported "${text}", which a customer can do nothing with. Every other list in this ` +
         'module can undo a mistyped row; a supplier price list cannot.' + dumpWire(wire))
         .toBeLessThan(400);
+
+      // The row really left, and that is the half a 2xx does not prove.
+      await settle(page);
+      expect(mine(await rateCards(page), 'item_category')
+        .map((c) => String(c.item_category)),
+        'the delete answered 2xx and the canonical list still holds rate card 03 — a success ' +
+        'status is the server\'s opinion, the row is the evidence')
+        .not.toContain(rateCardCategory(3));
+
+      // ── AND PUT IT BACK, BECAUSE THE PROBE IS DESTRUCTIVE AND §4 IS NOT ────
+      //
+      // ⚠ ADDED 2026-08-29 WHEN THE DELETE WAS GIVEN ITS ROUTE, AND THE REASON
+      // IS WORTH READING BEFORE ANYONE REMOVES IT.
+      //
+      // While the verb 405'd, this probe changed nothing and card 03 survived,
+      // so 17.11's `rate cards: 3` held. The moment the route works, the probe
+      // leaves the org on TWO — and 17.11 would go red on a §4 volume that the
+      // suite itself had just spent. That is a defect in the suite, not in the
+      // product, and the honest repair is to restore the fixture rather than
+      // to lower the count: the org still ends the run with the three rate
+      // cards §4 asks for, and the delete is still proved by a 2xx and by the
+      // row's absence above.
+      //
+      // It is also what makes THIS test idempotent on its own terms — run
+      // twice, `ensure` finds three, the probe removes one and types it back,
+      // and the count is three at the end of both executions.
+      //
+      // Card 03 is the one carrying a note, so re-typing it restores
+      // `blank.length === 2` as well as the total.
+      await typeCard(3);
+      await settle(page);
+      const restored = mine(await rateCards(page), 'item_category');
+      expect(restored.length, 'rate card 03 was deleted to prove the route and did not come ' +
+        `back: the list holds ${restored.length}. §4 asks this org to end the run with ` +
+        `${N_RATE_CARDS} rate cards.`).toBe(N_RATE_CARDS);
+      expect(restored.filter((c) => !String(c.notes ?? '').trim()).length,
+        'the restore changed how many cards carry no note').toBe(N_BLANK_NOTES);
+      console.log('\n  17.05 — rate card 03 was DELETED (route proved) and typed back, so the ' +
+        `org ends on ${restored.length} and §4 is not spent by the probe.\n`);
     }
 
     assertNoUncaught(con);
@@ -1465,9 +1663,31 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
 
     const home = await homeStateCode(page);
     const target = await billingTargets(page, home);
-    const org = await apiOne(page, '/api/v1/org/profile');
-    // The firm's OWN document series, read from the org rather than assumed.
-    const series = String(org?.settings?.doc_prefixes?.tax_invoice || '').trim().toUpperCase();
+    // ── THE FIRM'S OWN DOCUMENT SERIES ──────────────────────────────────────
+    //
+    // ⚠ THIS READ WAS WRONG AND THE ASSERTION BELOW HAD NEVER ONCE RUN.
+    //   Corrected 2026-08-29.
+    //
+    // It was `(await apiOne(page, '/api/v1/org/profile'))?.settings?.
+    // doc_prefixes?.tax_invoice`, and **`GET /api/v1/org/profile` does not
+    // return a `settings` key at all** — measured live: 'settings' in body is
+    // false. So `series` was always `''`, the `if (series)` below was always
+    // false, and the numbering check the header describes at length was a
+    // vacuous assertion that passed for ever. It is exactly the failure mode
+    // this file's own trap list names ("A vacuous assertion passes for ever").
+    //
+    // The prefix has a route of its own — `GET /api/v1/org/profile/doc-prefixes`
+    // — which answers `{invoice_type, prefix, default, effective}` per type.
+    // `effective` is the one to read: it is the org's override where there is
+    // one and the built-in where there is not, which is precisely what
+    // `ganit._doc_prefix` resolves server-side.
+    const prefixRows = await apiRows(page, '/api/v1/org/profile/doc-prefixes');
+    const taxRow = prefixRows.find((r) => String(r.invoice_type) === 'tax_invoice');
+    expect(taxRow, 'GET /api/v1/org/profile/doc-prefixes returned no tax_invoice row, so this ' +
+      'firm\'s invoice series cannot be read and the numbering check below cannot run — ' +
+      'which is the state it was silently in until 2026-08-29').toBeTruthy();
+    const series = String(taxRow.effective || '').trim().toUpperCase();
+    expect(series, 'the tax-invoice series resolved to an empty string').not.toBe('');
 
     const p = await openTab(page, 'metered-usage', 'metered usage');
     await p.locator('select.gn-bar__sel').first().selectOption('unbilled');
@@ -1587,8 +1807,25 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
         `"${inv.payment_status}". "Paid" only ever comes from bank reconciliation.`).toBe('unpaid');
       // A draft, explicitly — `doc_status` DEFAULTS to 'final', so this is a
       // real decision and not an omission.
-      expect(String(inv.doc_status), `${t.name}: the generated invoice is "${inv.doc_status}". ` +
-        'It must be a draft — nobody has reviewed it.').toBe('draft');
+      //
+      // ⚠ ONLY FOR AN INVOICE THIS EXECUTION MINTED, AND THAT MATTERS FROM
+      // 2026-08-29. This suite ISSUES the intra-state invoice at the end of
+      // this test, and `draft → final` is one-way, so on a second execution
+      // the flat assertion would fail on a document the suite itself advanced
+      // — a red on correct behaviour, which is how people learn to edit tests.
+      // Born-as-draft is still asserted, on the run that does the borning; a
+      // pre-existing one is held to the weaker, still-real rule that it can
+      // only be somewhere DOWNSTREAM of draft and never somewhere impossible.
+      if (cycles.some((c) => c.number === String(inv.invoice_number))) {
+        expect(String(inv.doc_status), `${t.name}: the invoice this run generated is ` +
+          `"${inv.doc_status}". It must be born a draft — nobody has reviewed it, and ` +
+          '`doc_status` DEFAULTS to \'final\', so a draft here is a real decision.')
+          .toBe('draft');
+      } else {
+        expect(['draft', 'final', 'sent', 'viewed'], `${t.name}: ${inv.invoice_number} reads ` +
+          `doc_status="${inv.doc_status}", which is not a state this document can be in`)
+          .toContain(String(inv.doc_status));
+      }
     }
 
     console.log(`\n  17.07 — billing cycles run this execution: ${ran} (§4 wants ${N_CYCLES} in ` +
@@ -1607,16 +1844,35 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
     // WHATEVER its prefix and adds one, so the two series interleave their
     // numbering while disagreeing about their name. Rule 46(b) asks for one
     // consecutive serial per financial year.
-    if (series) {
-      const strays = invoices.filter((i) => !String(i.invoice_number).startsWith(`${series}-`));
-      expect(strays.map((i) => i.invoice_number),
-        `THE BILLING CYCLE NUMBERS ITSELF OUTSIDE THE FIRM'S OWN SERIES. This organisation's ` +
-        `configured tax-invoice prefix is "${series}" and every invoice it has raised by hand is ` +
-        `${series}-YYYY-NNNN, but the generated ones are numbered above. ` +
-        '`client_billing.py` calls next_doc_number(..., "INV") in both invoice writers and never ' +
-        'consults `_doc_prefix`, while next_doc_number increments the last number for the org ' +
-        'whatever its prefix — so the two series share a counter and not a name.').toEqual([]);
-    }
+    // ⚠ ASSERTED ON WHAT THIS EXECUTION MINTED, AND REPORTED ON THE REST.
+    //
+    // The fix makes every FUTURE generated invoice carry the org's series; it
+    // cannot re-number one already minted, and re-numbering issued tax
+    // documents is a data change to live rows, which is the lead's call and
+    // not a suite's. So the assertion is scoped to this run's own output —
+    // where it bites — and any historical stray is NAMED in the log rather
+    // than either failing for ever or passing silently.
+    const mintedNow = new Set(cycles.map((c) => c.number));
+    const strayNow = [...mintedNow].filter((n) => !n.startsWith(`${series}-`));
+    expect(strayNow,
+      `THE BILLING CYCLE NUMBERS ITSELF OUTSIDE THE FIRM'S OWN SERIES. This organisation's ` +
+      `configured tax-invoice prefix is "${series}" and every invoice it raises by hand is ` +
+      `${series}-YYYY-NNNN, but this run generated the numbers above. ` +
+      '`client_billing.py` must draw the prefix from `ganit._doc_prefix`, not the literal "INV" ' +
+      '— `next_doc_number` increments the last number for the org whatever its prefix, so two ' +
+      'writers that disagree about the name share one counter and Rule 46(b) asks for one ' +
+      'consecutive serial per financial year.').toEqual([]);
+
+    const strayEver = invoices
+      .filter((i) => !String(i.invoice_number).startsWith(`${series}-`))
+      .map((i) => `${i.invoice_number} (${i.doc_status})`);
+    console.log(`\n  17.07 — series "${series}": ${mintedNow.size} invoice(s) minted this run, ` +
+      `${strayNow.length} outside the series.\n` +
+      (strayEver.length
+        ? `     ⚠ ${strayEver.length} generated invoice(s) from BEFORE the fix still carry the ` +
+          `wrong prefix and cannot be re-numbered from here: ${strayEver.join(', ')}. ` +
+          'Re-numbering an issued tax document is a data change to live rows — raised, not done.\n'
+        : '     No generated invoice is outside the series.\n'));
 
     // ── AND THE DRAFT THAT CAN NEVER BE ISSUED ───────────────────────────────
     //
@@ -1644,6 +1900,33 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
 
       // A draft carries no pay link, and the product says WHY in words — the
       // refusal a person can act on, rather than a missing button.
+      // ── §6 — A SECOND EXECUTION VERIFIES RATHER THAN REPEATS ───────────────
+      //
+      // ⚠ ADDED 2026-08-29, WHEN MARKING FINAL STARTED WORKING.
+      //
+      // `draft → final` is a ONE-WAY transition (`allowed_transitions` in
+      // `ganit.py` offers no way back), so once run 1 issues this invoice, run
+      // 2 opens a document that is already final: no `.gnd__nolink`, no "Mark
+      // final" button. While the transition was refused the question never
+      // arose and the block was re-runnable by accident.
+      //
+      // The assertion is not weakened — it is the same fact read from the
+      // state instead of from the transition. An invoice that reached `final`
+      // is an invoice that could be issued, which is the whole claim; and on a
+      // second run the evidence is stronger, because it survived a reload.
+      const already = String(inv.doc_status) === 'final'
+        || ['sent', 'viewed'].includes(String(inv.doc_status));
+      if (already) {
+        await expect(drawer.locator('.gnd__nolink'),
+          `${inv.invoice_number} is "${inv.doc_status}" and the drawer still shows the ` +
+          'no-payment-link notice a DRAFT gets').toHaveCount(0);
+        console.log(`\n  17.07 — ${inv.invoice_number} was already issued by an earlier ` +
+          `execution (doc_status="${inv.doc_status}"). A METERED-USAGE INVOICE CAN BE ISSUED, ` +
+          'and this run verified it rather than repeating it — draft → final is one-way.\n');
+        assertNoUncaught(con);
+        return;
+      }
+
       const blocker = drawer.locator('.gnd__nolink');
       await expect(blocker, 'a draft invoice offers no payment link and the drawer says nothing ' +
         'about why — a missing control with no sentence beside it reads as a broken screen')

@@ -27,10 +27,22 @@ const COLUMNS_ACTIVE = [
   'Cadence', 'Start', 'Auto', '',
 ];
 
+// ⚠ THE TRAILING ACTION CELL IS WHY A SUBSCRIPTION CAN BE RESUMED.
+//
+// This was `Client · Description · Amount · Period` and nothing else, so an
+// ended line was drawn with no Edit control and could not be opened from the
+// screen that shows it. Ending a line was a ONE-WAY DOOR: the only way to bill
+// that customer again was to create a second service line and lose the first
+// one's history. `PATCH /v1/ganit/billing/service-lines/{id}` could always have
+// reopened it — the door was missing, not the route. Found by proposal 93
+// Suite 17 (17.04), 2026-08-29.
+//
+// It matches COLUMNS_ACTIVE's own trailing '' so both tables end on the same
+// cell, which is what keeps them on one row contract.
 const COLUMNS_ENDED = [
   'Client', 'Description',
   { label: 'Amount', align: 'right' },
-  'Period',
+  'Period', '',
 ];
 
 export default function ServiceLinesTab() {
@@ -41,6 +53,7 @@ export default function ServiceLinesTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [resuming, setResuming] = useState(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -82,6 +95,52 @@ export default function ServiceLinesTab() {
     } catch (e) {
       pushToast({ title: apiErrorText(e, 'Failed to save'), type: 'error' });
     }
+  }
+
+  /**
+   * RESUME — put an ended service line back into billing.
+   *
+   * ── WHY THIS IS ITS OWN BUTTON AND NOT "OPEN THE EDITOR AND CLEAR THE DATE"
+   *
+   * Resuming a subscription is clearing `period_end`, and the editor's Period
+   * End field has a real Clear button for it. **That Clear button cannot be
+   * clicked.** Measured in a real browser 2026-08-29, 1280×720, on this very
+   * modal:
+   *
+   *     modal panel      y 203 → 517   (.modal__panel, overflow:hidden;
+   *                                     .modal__body, overflow:auto)
+   *     date popover     y  65 → 381   ('pk__pop pk__pop--up')
+   *     Clear button     y 106 → 133   — ABOVE the panel, outside both clips
+   *     elementFromPoint at its centre → div.modal__scrim
+   *
+   * The popover is 316px tall and the panel is 314px, so it does not fit
+   * below and flips up — into a region its clipping ancestors do not paint.
+   * The button exists in the DOM, is `visible` and `enabled` to a test
+   * runner, and lands on the scrim: a person clicking there closes the modal.
+   * That is a defect in the SHARED picker (`ui/DateInput.jsx` positions the
+   * popover absolutely inside a clipped container instead of portalling it),
+   * it is not specific to this screen, and it is reported separately rather
+   * than worked around quietly here.
+   *
+   * So this button does not depend on it. It is also the better affordance on
+   * its own merits: §10 of proposal 93 asks for "pause; resume" as operations,
+   * and "open the editor, find Period End, open the picker, press Clear" is
+   * four steps of discovery for one verb. Reversible — the line can be ended
+   * again from the same editor — so it needs no confirmation.
+   */
+  async function resume(sl) {
+    setResuming(sl.id);
+    try {
+      // `null`, never `''`. The server tells an OMITTED key from an EXPLICIT
+      // null by `model_fields_set` (`client_billing._assignments`), and only
+      // the explicit null clears the column.
+      await api.patch(`/v1/ganit/billing/service-lines/${sl.id}`, { period_end: null });
+      pushToast({ title: `${sl.description || 'Service line'} resumed`, type: 'success' });
+      await load();
+    } catch (e) {
+      pushToast({ title: apiErrorText(e, 'Could not resume this service line'), type: 'error' });
+    }
+    setResuming(null);
   }
 
   if (loading) return <SkeletonList />;
@@ -148,6 +207,22 @@ export default function ServiceLinesTab() {
                 <Td>{sl.description}</Td>
                 <Td align="right" mono>{inr(sl.amount)}</Td>
                 <Td>{sl.period_start} – {sl.period_end}</Td>
+                <Td>
+                  {canWrite && (
+                    <>
+                      <button type="button" className="btn btn--ghost btn--xs"
+                        onClick={() => setEditing({ ...sl, amount: String(sl.amount) })}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn btn--ghost btn--xs"
+                        disabled={resuming === sl.id}
+                        title="Clear the end date so this line bills again"
+                        onClick={() => resume(sl)}>
+                        {resuming === sl.id ? 'Resuming…' : 'Resume'}
+                      </button>
+                    </>
+                  )}
+                </Td>
               </tr>
             ))}
           </DataTable>

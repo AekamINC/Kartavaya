@@ -119,6 +119,42 @@ from utils import next_doc_number
 NO_COST_BASIS = "none_service_revenue"
 
 
+async def _tax_invoice_prefix(pool, org_id: str) -> str:
+    """The serial prefix THIS firm numbers a tax invoice with.
+
+    ── WHY THIS IS A DELEGATION AND NOT A VALUE ──────────────────────────────
+
+    `ganit.py` resolves the prefix per organisation from
+    `organisations.settings->'doc_prefixes'` (`_doc_prefix`), which is why
+    every invoice Unicode Group has raised by hand is `UNX-2026-nnnn` — read
+    live 2026-08-29, `{"tax_invoice": "UNX", "purchase_order": "KRY"}` across
+    53 invoices. Both invoice writers in THIS file hardcoded `"INV"`.
+
+    That is not merely a cosmetic mismatch. `next_doc_number` takes the last
+    serial for the org **whatever its prefix** and adds one, so the two writers
+    shared one counter while disagreeing about its name: the firm's series
+    would have read UNX-2026-0053, INV-2026-0054, UNX-2026-0055. Rule 46(b)
+    asks for one consecutive serial per financial year, and a series that
+    changes its name halfway is not one series.
+
+    It calls `ganit._doc_prefix` rather than re-reading the jsonb, for the same
+    reason `_norm_state` above imports the state codelist instead of copying
+    it: a second implementation of one rule is a second thing to drift, and
+    this one already sanitises the value before it reaches a GST serial
+    (`next_doc_number` builds `PREFIX-YYYY-NNNN` by concatenation, so a prefix
+    carrying a hyphen or a digit makes the series unparseable by its own
+    reader).
+
+    Imported inside the function, not at module scope: `ganit.py` is a
+    3,500-line module that imports `routers.graha`, `routers.vikray` and
+    `routers.products` at import time, and this file is deliberately outside
+    that graph. A local import keeps it that way and cannot be broken by the
+    order `server.py` happens to mount routers in.
+    """
+    from routers.ganit import _doc_prefix
+    return await _doc_prefix(pool, org_id, "tax_invoice")
+
+
 async def _supplier_state(pool, org_id) -> str:
     """The state THIS firm supplies FROM, canonical, or '' if nobody has said.
 
@@ -210,6 +246,71 @@ def _as_date(value: str, field: str) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         raise HTTPException(400, f"{field} is not a date (expected YYYY-MM-DD).")
+
+
+def _assignments(body: BaseModel, fields, clearable: frozenset[str]):
+    """SET clauses for exactly the fields the caller SENT, nulls included.
+
+    ── WHY THIS EXISTS — `_NullMeansUnset`'S OTHER HALF ───────────────────────
+
+    Every update handler in this file was written as::
+
+        val = getattr(body, field)
+        if val is not None:
+            ...
+
+    which reads "skip what wasn't provided" and in fact means "**a null can
+    never clear a column**". On a create that asymmetry was the 422 that
+    `_NullMeansUnset` fixed. On an update it is worse, because it does not
+    refuse — it returns **200 and changes nothing**.
+
+    ⚠ **A PAUSED SUBSCRIPTION COULD NEVER BE RESUMED.** Ending a service line
+    writes `period_end`; resuming it means clearing that date, and `null` is
+    the only spelling the form has for "there is no end date"
+    (`ServiceLinesTab.save()` sends `period_end: form.period_end || null`). The
+    loop above dropped it, the toast said "Service line updated", and the row
+    stayed ended. The only way to bill that customer again was to create a
+    second line and lose the first one's history. Found by proposal 93 Suite 17
+    (17.04) on 2026-08-29.
+
+    ── OMITTED IS NOT THE SAME AS NULL, AND PYDANTIC ALREADY KNOWS WHICH ──────
+
+    `model_fields_set` holds the keys the request body actually carried, so
+    "the caller said nothing about `notes`" and "the caller said `notes` is
+    now empty" stop being the same input. That is the whole distinction the
+    `is not None` test could not express, and it needs no new model.
+
+    ── AND A NULL IS ONLY HONOURED WHERE THE COLUMN CAN HOLD ONE ─────────────
+
+    `clearable` is the set of columns that are genuinely `NULL`-able, read from
+    `information_schema.columns` on the live database 2026-08-29 rather than
+    from a migration file::
+
+        client_service_lines     period_end                     YES
+        client_billing_profiles  credit_limit, notes            YES
+        client_metered_usage     source_ref                     YES  (recorded_date NO)
+        vendor_rate_cards        effective_to, notes            YES  (effective_from NO)
+
+    A null against anything else stays dropped, exactly as today. Honouring it
+    would send `SET recorded_date=NULL` at a `NOT NULL` column and turn a typo
+    in a form into a 500 — and `RateCardsTab.save()` really does send
+    `effective_from: form.effective_from || null` on every PATCH, so that path
+    is walked, not hypothetical.
+    """
+    sent = body.model_fields_set
+    updates: list[str] = []
+    vals: list = []
+    for field, cast in fields:
+        if field not in sent:
+            continue
+        val = getattr(body, field)
+        if val is None and field not in clearable:
+            continue
+        if cast == "::date":
+            val = _as_date(val, field) if val else None
+        vals.append(val)
+        updates.append(f"{field}=${len(vals)}{cast}")
+    return updates, vals
 
 
 router = APIRouter(prefix="/api/v1/ganit/billing", tags=["client-billing"])
@@ -318,6 +419,30 @@ class SLACreditCreate(_NullMeansUnset):
 
 class SLACreditApply(BaseModel):
     bill_id: str
+
+
+# ── Which columns a PATCH may set back to NULL ───────────────────────────
+#
+# Read off the LIVE database 2026-08-29, not off a migration file:
+#
+#   SELECT table_name, column_name, is_nullable
+#     FROM information_schema.columns
+#    WHERE table_name IN ('client_service_lines','vendor_rate_cards',
+#                         'client_metered_usage','client_billing_profiles')
+#      AND table_schema IN ('staging','public');
+#
+# Both product schemas were asked and only `staging` holds these four tables —
+# a schema-qualified negative is a fact about that schema alone, and closing on
+# one is how `public.report_schedules` was declared missing while it had a CRUD
+# and an armed cron.
+#
+# These are the only columns where `null` from a form is a decision rather than
+# an empty box. Everything else stays NOT NULL and a null against it is still
+# dropped — see `_assignments`.
+_CLEARABLE_PROFILE = frozenset({"credit_limit", "notes"})
+_CLEARABLE_SERVICE_LINE = frozenset({"period_end"})
+_CLEARABLE_METERED_USAGE = frozenset({"source_ref"})
+_CLEARABLE_RATE_CARD = frozenset({"effective_to", "notes"})
 
 
 # ── Profiles CRUD ────────────────────────────────────────────────────────
@@ -432,14 +557,13 @@ async def update_profile(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    updates, vals = [], []
-    for field in ("billing_cycle", "anchor_day", "payment_terms_days",
-                  "currency", "gst_treatment", "credit_limit", "notes"):
-        val = getattr(body, field)
-        if val is not None:
-            vals.append(val)
-            cast = "::smallint" if field == "anchor_day" else "::int" if field == "payment_terms_days" else ""
-            updates.append(f"{field}=${len(vals)}{cast}")
+    updates, vals = _assignments(
+        body,
+        (("billing_cycle", ""), ("anchor_day", "::smallint"),
+         ("payment_terms_days", "::int"), ("currency", ""),
+         ("gst_treatment", ""), ("credit_limit", ""), ("notes", "")),
+        _CLEARABLE_PROFILE,
+    )
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
@@ -522,15 +646,15 @@ async def update_service_line(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    updates, vals = [], []
-    for field in ("description", "amount", "period_end", "auto_invoice"):
-        val = getattr(body, field)
-        if val is not None:
-            if field == "period_end":
-                val = _as_date(val, field)
-            vals.append(val)
-            cast = "::date" if field == "period_end" else ""
-            updates.append(f"{field}=${len(vals)}{cast}")
+    # `period_end` is in `_CLEARABLE_SERVICE_LINE`, and that is what RESUMES a
+    # paused subscription: clearing the end date is the only way the product
+    # has to say "this line is running again". See `_assignments`.
+    updates, vals = _assignments(
+        body,
+        (("description", ""), ("amount", ""),
+         ("period_end", "::date"), ("auto_invoice", "")),
+        _CLEARABLE_SERVICE_LINE,
+    )
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
@@ -603,8 +727,13 @@ async def sweep_client_auto_invoices(
     # sweep has no org of its own (the cron runs it for everybody), so the state
     # varies by row and a naive read would be a query per line.
     _supplier_states: dict[str, str] = {}
+    # The serial prefix is the same shape of fact — per org, constant for the
+    # run — so it is read alongside the state rather than once per invoice. See
+    # `_tax_invoice_prefix` for why it stopped being the literal "INV".
+    _prefixes: dict[str, str] = {}
     for _oid in {str(row["org_id"]) for row in lines}:
         _supplier_states[_oid] = await _supplier_state(pool, _oid)
+        _prefixes[_oid] = await _tax_invoice_prefix(pool, _oid)
 
     for sl in lines:
         anchor = sl["anchor_day"]
@@ -730,7 +859,8 @@ async def sweep_client_auto_invoices(
         # which both pass the str. Called outside the transaction below because
         # it acquires a connection of its own.
         invoice_number = await next_doc_number(
-            pool, str(sl["org_id"]), "ganit_invoices", "invoice_number", "INV")
+            pool, str(sl["org_id"]), "ganit_invoices", "invoice_number",
+            _prefixes.get(str(sl["org_id"]), "INV"))
 
         # THE LINE PARTICULARS. `ganit_invoices.line_items` is NOT NULL DEFAULT
         # '[]'::jsonb, so omitting it did not fail — it minted a tax invoice
@@ -883,15 +1013,12 @@ async def update_metered_usage(
         raise HTTPException(404, "Usage entry not found")
     if already:
         raise HTTPException(409, "Cannot edit usage that has already been invoiced")
-    updates, vals = [], []
-    for field in ("metric", "quantity", "unit", "rate", "recorded_date", "source_ref"):
-        val = getattr(body, field)
-        if val is not None:
-            if field == "recorded_date":
-                val = _as_date(val, field)
-            vals.append(val)
-            cast = "::date" if field == "recorded_date" else ""
-            updates.append(f"{field}=${len(vals)}{cast}")
+    updates, vals = _assignments(
+        body,
+        (("metric", ""), ("quantity", ""), ("unit", ""), ("rate", ""),
+         ("recorded_date", "::date"), ("source_ref", "")),
+        _CLEARABLE_METERED_USAGE,
+    )
     if not updates:
         raise HTTPException(400, "Nothing to update")
     vals.append(str(usage_id))
@@ -1033,7 +1160,8 @@ async def generate_usage_invoice(
     # the transaction: a serial spent on a call that then fails is a gap in the
     # sequence, and `next_doc_number` acquires its own connection.
     invoice_number = await next_doc_number(
-        pool, org_id, "ganit_invoices", "invoice_number", "INV")
+        pool, org_id, "ganit_invoices", "invoice_number",
+        await _tax_invoice_prefix(pool, org_id))
 
     invoice_id = uuid4()
     usage_ids = [u["id"] for u in usage_rows]
@@ -1161,16 +1289,13 @@ async def update_rate_card(
     _g=Depends(_vendor_gate),
 ):
     pool = await get_pool()
-    updates, vals = [], []
-    for field in ("item_category", "rate", "unit", "effective_from",
-                  "effective_to", "proration_clause", "notes"):
-        val = getattr(body, field)
-        if val is not None:
-            if field in ("effective_from", "effective_to"):
-                val = _as_date(val, field)
-            vals.append(val)
-            cast = "::date" if field in ("effective_from", "effective_to") else ""
-            updates.append(f"{field}=${len(vals)}{cast}")
+    updates, vals = _assignments(
+        body,
+        (("item_category", ""), ("rate", ""), ("unit", ""),
+         ("effective_from", "::date"), ("effective_to", "::date"),
+         ("proration_clause", ""), ("notes", "")),
+        _CLEARABLE_RATE_CARD,
+    )
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
@@ -1184,6 +1309,100 @@ async def update_rate_card(
     if not row:
         raise HTTPException(404, "Rate card not found")
     return dict(row)
+
+
+@router.delete("/rate-cards/{card_id}")
+async def delete_rate_card(
+    card_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_vendor_gate),
+):
+    """Remove a supplier price list — unless an SLA credit is priced off it.
+
+    ── WHY THIS ROUTE DID NOT EXIST, AND WHAT THE USER SAW INSTEAD ────────────
+
+    `RateCardsTab.jsx` has always rendered a Delete button and always called
+    `DELETE /v1/ganit/billing/rate-cards/{id}`. The path published **PATCH and
+    nothing else**, so FastAPI answered **405** and the screen showed the
+    customer the words "Method Not Allowed" — measured live 2026-08-29,
+    `DELETE …/1527e774-…` → `405 {"detail":"Method Not Allowed"}`. That is the
+    third instance in this module of one shape: *the API can do it and the
+    screen offers no way to ask*, or its mirror, *the screen asks and there is
+    no route behind it*. `routers/graha.py` records the other two by name in
+    its own comments — `territory_id` ("a territory could be defined and never
+    used") and `contact_id` ("The column was writable and unreachable").
+
+    ── A HARD DELETE, NOT AN ARCHIVE, AND WHY THAT IS THE RIGHT CALL ─────────
+
+    A price list that has been used to price something is history and must not
+    evaporate — but `effective_to` **already expresses retirement**, and the
+    form offers it. What the screen had no way to do was undo a *mistyped* row,
+    which is what every other list in this module can do. So the missing verb
+    is genuinely delete, and adding a second "archived" state would give this
+    table two ways to say retired and no way to say wrong.
+
+    ── THE FENCE, MEASURED RATHER THAN ASSUMED ──────────────────────────────
+
+    `pg_constraint`, live 2026-08-29 — one foreign key reaches this table::
+
+        vendor_sla_credits_rate_card_id_fkey
+            FOREIGN KEY (rate_card_id) REFERENCES staging.vendor_rate_cards(id)
+
+    No `ON DELETE` clause, so the default `NO ACTION` applies and the database
+    would raise a `ForeignKeyViolationError` — which FastAPI turns into an
+    opaque **500 with nothing on screen**, this repo's signature failure. It is
+    not hypothetical: of Unicode Group's three rate cards, **two are referenced
+    by an SLA credit** (measured the same day). So the check is walked on the
+    first real attempt, not held in reserve.
+
+    A 409 that NAMES the credits is what a person can act on, and it is the
+    module's own precedent — `delete_metered_usage` refuses in exactly this
+    shape when the usage has been invoiced. The credit is deleted or
+    re-pointed first, and then the card goes.
+    """
+    pool = await get_pool()
+    card = await pool.fetchrow(
+        "SELECT id, item_category FROM staging.vendor_rate_cards "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        card_id, org_id,
+    )
+    if not card:
+        raise HTTPException(404, "Rate card not found")
+
+    # Org-scoped on BOTH sides. The FK alone is not a tenancy check: it proves
+    # the credit points at this card, not that the credit belongs to the caller.
+    holders = await pool.fetch(
+        "SELECT sla_metric, period FROM staging.vendor_sla_credits "
+        "WHERE rate_card_id = $1::uuid AND org_id = $2::uuid "
+        "ORDER BY period DESC",
+        card_id, org_id,
+    )
+    if holders:
+        # Named, not counted: "2 SLA credits" sends somebody hunting. The first
+        # five are enough to find them and the tail is stated rather than
+        # dropped, so the sentence never under-reports what is in the way.
+        shown = holders[:5]
+        named = ", ".join(
+            f"{h['sla_metric'] or 'an SLA credit'} ({h['period']})" for h in shown
+        )
+        if len(holders) > len(shown):
+            named += f", and {len(holders) - len(shown)} more"
+        raise HTTPException(
+            409,
+            f"\"{card['item_category']}\" prices {len(holders)} SLA credit(s) — {named}. "
+            "Delete or re-point those credits first, or set an Effective To date "
+            "to retire the card without losing what it priced.",
+        )
+
+    await pool.execute(
+        "DELETE FROM staging.vendor_rate_cards "
+        "WHERE id = $1::uuid AND org_id = $2::uuid",
+        card_id, org_id,
+    )
+    logger.info("Rate card %s (%s) deleted by %s",
+                card_id, card["item_category"], user.get("user_id", ""))
+    return {"ok": True}
 
 
 # ── P5.4: SLA Credits ────────────────────────────────────────────────────

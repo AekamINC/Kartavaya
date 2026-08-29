@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { api, rows as asRows } from '../../lib/api';
+import { api, rows as asRows, body } from '../../lib/api';
 import { DataTable, Td } from '../../components/editorial';
 import { EmptyState } from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
@@ -36,7 +36,28 @@ export default function MeteredUsageTab() {
   const [filter, setFilter] = useState('unbilled');
   const [generating, setGenerating] = useState(null);
 
+  // ⚠ `setLoading(true)` LIVES HERE, AND ONLY HERE.
+  //
+  // It used to sit in the filter `<select>`'s own onChange:
+  //
+  //     onChange={e => { setFilter(e.target.value); setLoading(true); }}
+  //
+  // and `load` is memoised on `[filter]`, so the effect that clears the flag
+  // only re-runs when the filter's VALUE changes. A change event carrying the
+  // value the select already held therefore raised `loading` with nothing left
+  // to lower it: the whole panel became a skeleton — client headings, the
+  // Generate Invoice buttons, and the filter itself — and stayed one until the
+  // page was reloaded. Measured on staging 2026-08-29: 7 client groups and 7
+  // Generate Invoice controls before, 0 of each and 37 skeleton nodes after,
+  // with the select gone so there was no way back.
+  //
+  // That is the "spinner that never resolves" a new customer must never meet,
+  // and it read from outside as a MISSING CONTROL — proposal 93 Suite 17
+  // reported "no Generate Invoice control" for a button that was there all
+  // along. The state that can strand is now owned by the one function that
+  // always clears it, so raising it without lowering it is not expressible.
   const load = useCallback(async () => {
+    setLoading(true);
     setErr(null);
     try {
       const invoicedParam = filter === 'all' ? '' : filter === 'unbilled' ? 'false' : 'true';
@@ -102,10 +123,21 @@ export default function MeteredUsageTab() {
   async function generateInvoice(profileId) {
     setGenerating(profileId);
     try {
-      const res = await api.post('/v1/ganit/billing/metered-usage/generate-invoice', {
+      // ⚠ `body(...)`, NOT the axios response. `api` is a bare axios instance
+      // (`lib/api.js:18`), so the payload lives at `.data` — this read
+      // `res.entries` and `res.total` off the envelope, where neither exists.
+      // The toast therefore told a firm that had just raised a real tax
+      // invoice: "Invoice created: undefined entries, ₹0". `inr(undefined)`
+      // returns ₹0 rather than NaN (`lib/inr.js:13`), so it did not even read
+      // as broken — it read as a zero-rupee invoice. Found while fixing the
+      // control that made this line reachable at all, 2026-08-29.
+      const out = body(await api.post('/v1/ganit/billing/metered-usage/generate-invoice', {
         profile_id: profileId,
+      }));
+      pushToast({
+        title: `Invoice ${out.invoice_number || 'created'}: ${out.entries} entries, ${inr(out.total)}`,
+        type: 'success',
       });
-      pushToast({ title: `Invoice created: ${res.entries} entries, ${inr(res.total)}`, type: 'success' });
       load();
     } catch (e) {
       pushToast({ title: apiErrorText(e, 'Failed to generate invoice'), type: 'error' });
@@ -132,7 +164,7 @@ export default function MeteredUsageTab() {
           <select
             className="inp gn-bar__sel"
             value={filter}
-            onChange={e => { setFilter(e.target.value); setLoading(true); }}
+            onChange={e => setFilter(e.target.value)}
           >
             <option value="unbilled">Unbilled</option>
             <option value="invoiced">Invoiced</option>

@@ -423,6 +423,42 @@ async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_
             str(contact_id), org_id,
         )
 
+    # ── AND IF THE DOCUMENT NAMES A COMPANY RATHER THAN A PERSON ─────────────
+    #
+    # ⚠ THIS GATE USED TO READ `contact_id` AND NOTHING ELSE, AND THAT MADE A
+    # WHOLE CLASS OF INVOICE PERMANENTLY UNISSUABLE.
+    #
+    # `client_billing.generate_usage_invoice` writes `client_id` and no
+    # `contact_id` — correctly, because a CRM client IS the customer: contacts
+    # are people who come and go, the company stays, and metered usage is
+    # metered against the company's billing profile. The validator then saw
+    # `contact = None`, raised the Rule 46(e) "Recipient name" gap, which is
+    # BLOCKING, and the draft could never be marked final. It could not be
+    # sent, could not carry a pay link and could not be paid: the invoice named
+    # a company, in a column nothing here read. Found by proposal 93 Suite 17
+    # (17.07) on 2026-08-29; measured the same day, all 53 of Unicode Group's
+    # invoices carry a contact, so the metered-usage route would have minted
+    # the first row that could never leave draft.
+    #
+    # Rule 46(e) asks for the name of the RECIPIENT. A company is a recipient.
+    # So the fallback resolves `graha_clients` and hands its name in as the
+    # `company` the validator already accepts — `_blank(contact.name) and
+    # _blank(contact.company)` is the actual test, and this satisfies the half
+    # that is true. Nothing is invented: the name comes from the row the
+    # invoice already points at.
+    #
+    # Additive by construction. It runs ONLY when there is no contact to
+    # resolve, so every document that names a person validates exactly as
+    # before, and a document that names neither still raises the same gap.
+    if not contact and invoice.get("client_id"):
+        client = await pool.fetchrow(
+            "SELECT name, gstin FROM staging.graha_clients "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(invoice["client_id"]), org_id,
+        )
+        if client:
+            contact = {"name": None, "company": client["name"], "gstin": client["gstin"]}
+
     from services.compliance_settings import resolve_states
     compliance_states = await resolve_states(pool, org_id, "ganit")
     check = validate_tax_invoice(
@@ -702,6 +738,10 @@ async def create_invoice(
             "place_of_supply": body.place_of_supply,
             "line_items": computed["line_items"],
             "cgst": computed["cgst"], "sgst": computed["sgst"], "igst": computed["igst"],
+            # Resolved at line 673, above — the company this document is for.
+            # Same fallback as the mark-final path: an invoice raised for a
+            # company and no named person still names its recipient.
+            "client_id": client_id or "",
         }, body.contact_id)
         from services.compliance_settings import resolve_states
         compliance_snapshot = await resolve_states(pool, org_id, "ganit")
@@ -1584,8 +1624,12 @@ async def update_invoice_status(
     compliance_snapshot = None
     if body.doc_status == "final":
         row = await pool.fetchrow(
+            # `client_id` rides along so the Rule 46(e) fallback in
+            # `_refuse_final_if_incomplete` has a company to name when the
+            # document names no person — which is every invoice
+            # `client_billing.generate_usage_invoice` writes.
             "SELECT invoice_number, invoice_type, invoice_date, is_igst, is_export, "
-            "place_of_supply, line_items, cgst, sgst, igst, contact_id "
+            "place_of_supply, line_items, cgst, sgst, igst, contact_id, client_id "
             "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
             str(invoice_id), org_id,
         )
@@ -1604,6 +1648,7 @@ async def update_invoice_status(
             "place_of_supply": row["place_of_supply"],
             "line_items": items if isinstance(items, list) else [],
             "cgst": row["cgst"], "sgst": row["sgst"], "igst": row["igst"],
+            "client_id": str(row["client_id"]) if row["client_id"] else "",
         }, str(row["contact_id"]) if row["contact_id"] else None)
         from services.compliance_settings import resolve_states
         compliance_snapshot = await resolve_states(pool, org_id, "ganit")
@@ -1700,6 +1745,11 @@ async def convert_to_invoice(
         "place_of_supply": inv["place_of_supply"],
         "line_items": _items if isinstance(_items, list) else [],
         "cgst": inv["cgst"], "sgst": inv["sgst"], "igst": inv["igst"],
+        # The quotation's own company, read below as `inv["client_id"]`. The
+        # recurring-profile call site further down gets no such key on purpose:
+        # `staging.ganit_recurring` has NO client_id column (checked live
+        # 2026-08-29), so there is genuinely no company to fall back to there.
+        "client_id": str(inv["client_id"]) if inv["client_id"] else "",
     }, inv["contact_id"])
     from services.compliance_settings import resolve_states
     compliance_snapshot = await resolve_states(pool, org_id, "ganit")
