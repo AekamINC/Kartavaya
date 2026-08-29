@@ -69,7 +69,7 @@ STALE_CLAIM_MINUTES = 20
 
 _CLAIM_EVENTS = """
 SELECT event_id, org_id, event_type, entity_type, entity_id, actor_id, source, payload
-  FROM staging.niyam_events
+  FROM public.niyam_events
  WHERE processed_at IS NULL
    AND (claimed_at IS NULL
         OR claimed_at < NOW() - make_interval(mins => $2::int))
@@ -89,11 +89,11 @@ SELECT event_id, org_id, event_type, entity_type, entity_id, actor_id, source, p
 #: already had wake_at cleared by the time it gets the lock, so it updates
 #: nothing.
 _RESUME = """
-UPDATE staging.niyam_runs r
+UPDATE public.niyam_runs r
    SET wake_at = NULL
   FROM (
         SELECT run_id
-          FROM staging.niyam_runs
+          FROM public.niyam_runs
          WHERE wake_at IS NOT NULL AND wake_at <= NOW() AND finished_at IS NULL
          ORDER BY wake_at
          FOR UPDATE SKIP LOCKED
@@ -138,7 +138,7 @@ async def drain(pool, *, limit: int = DRAIN_LIMIT, now=None) -> dict:
                 # row claimed once at 09:00 stays permanently re-claimable and
                 # two ticks can fight over it for ever.
                 await conn.execute(
-                    "UPDATE staging.niyam_events SET claimed_at = NOW() "
+                    "UPDATE public.niyam_events SET claimed_at = NOW() "
                     "WHERE event_id = ANY($1::bigint[])",
                     [r["event_id"] for r in rows])
             events = [dict(r) for r in rows]
@@ -176,7 +176,7 @@ async def drain(pool, *, limit: int = DRAIN_LIMIT, now=None) -> dict:
             errors += 1
         async with pool.acquire() as conn:
             await conn.execute(
-                "UPDATE staging.niyam_events SET processed_at = NOW() "
+                "UPDATE public.niyam_events SET processed_at = NOW() "
                 "WHERE event_id = $1::bigint", event["event_id"])
 
     # `events_drained` counts what was actually PROCESSED, not what was claimed.
@@ -201,11 +201,11 @@ async def drain(pool, *, limit: int = DRAIN_LIMIT, now=None) -> dict:
 #: `cursor_for` and skips every step that already recorded an outcome — a
 #: resume-from-cursor that was built for exactly this and had no caller.
 _REAP_STRANDED = """
-UPDATE staging.niyam_runs r
+UPDATE public.niyam_runs r
    SET wake_at = NULL
   FROM (
         SELECT run_id
-          FROM staging.niyam_runs
+          FROM public.niyam_runs
          WHERE finished_at IS NULL
            AND wake_at IS NULL
            AND started_at < NOW() - make_interval(mins => $2::int)
@@ -255,13 +255,13 @@ async def resume_waits(pool, *, limit: int = RESUME_LIMIT, now=None) -> dict:
                 event = await conn.fetchrow(
                     "SELECT event_id, org_id, event_type, entity_type, entity_id, "
                     "       actor_id, source, payload "
-                    "  FROM staging.niyam_events WHERE event_id = $1::bigint",
+                    "  FROM public.niyam_events WHERE event_id = $1::bigint",
                     run["event_id"])
                 if event is None:
                     # The event aged out from under a long wait. The run is
                     # finished honestly rather than left asleep for ever.
                     await conn.execute(
-                        "UPDATE staging.niyam_runs SET finished_at = NOW() "
+                        "UPDATE public.niyam_runs SET finished_at = NOW() "
                         "WHERE run_id = $1::text", run["run_id"])
                     continue
                 ev = dict(event)
@@ -295,26 +295,26 @@ async def status(pool) -> dict:
     from .flags import describe
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT (SELECT count(*) FROM staging.niyam_events)                        AS events_total,
-                   (SELECT count(*) FROM staging.niyam_events WHERE processed_at IS NULL)
+            SELECT (SELECT count(*) FROM public.niyam_events)                        AS events_total,
+                   (SELECT count(*) FROM public.niyam_events WHERE processed_at IS NULL)
                                                                                       AS events_unprocessed,
-                   (SELECT max(occurred_at) FROM staging.niyam_events)                AS last_event_at,
-                   (SELECT count(*) FROM staging.niyam_rules WHERE enabled)           AS rules_enabled,
-                   (SELECT count(*) FROM staging.niyam_rules WHERE enabled AND is_armed)
+                   (SELECT max(occurred_at) FROM public.niyam_events)                AS last_event_at,
+                   (SELECT count(*) FROM public.niyam_rules WHERE enabled)           AS rules_enabled,
+                   (SELECT count(*) FROM public.niyam_rules WHERE enabled AND is_armed)
                                                                                       AS rules_armed,
-                   (SELECT count(*) FROM staging.niyam_runs
+                   (SELECT count(*) FROM public.niyam_runs
                      WHERE started_at > NOW() - INTERVAL '24 hours')                  AS runs_last_24h,
-                   (SELECT count(*) FROM staging.niyam_runs
+                   (SELECT count(*) FROM public.niyam_runs
                      WHERE wake_at IS NOT NULL AND finished_at IS NULL)               AS runs_waiting,
                    -- The heartbeat. Without it every count above reads the same
                    -- whether the engine is quiet or the cron has not fired in
                    -- three days.
-                   (SELECT tick_ended_at   FROM staging.niyam_engine_tick WHERE id)   AS last_tick_at,
-                   (SELECT tick_started_at FROM staging.niyam_engine_tick WHERE id)   AS tick_running_since,
-                   (SELECT last_result     FROM staging.niyam_engine_tick WHERE id)   AS last_tick_result,
+                   (SELECT tick_ended_at   FROM public.niyam_engine_tick WHERE id)   AS last_tick_at,
+                   (SELECT tick_started_at FROM public.niyam_engine_tick WHERE id)   AS tick_running_since,
+                   (SELECT last_result     FROM public.niyam_engine_tick WHERE id)   AS last_tick_result,
                    -- Runs no path can reach. Should be 0; a non-zero that does
                    -- not fall is a process dying mid-pipeline every tick.
-                   (SELECT count(*) FROM staging.niyam_runs
+                   (SELECT count(*) FROM public.niyam_runs
                      WHERE finished_at IS NULL AND wake_at IS NULL
                        AND started_at < NOW() - INTERVAL '20 minutes')                AS runs_stranded
         """)
@@ -414,7 +414,7 @@ async def _claim_tick(pool) -> bool:
     async with pool.acquire() as conn:
         got = await conn.fetchval(
             """
-            UPDATE staging.niyam_engine_tick
+            UPDATE public.niyam_engine_tick
                SET tick_started_at = NOW()
              WHERE id = TRUE
                AND (tick_started_at IS NULL
@@ -436,7 +436,7 @@ async def _release_tick(pool, *, result=None) -> None:
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                UPDATE staging.niyam_engine_tick
+                UPDATE public.niyam_engine_tick
                    SET tick_started_at = NULL,
                        tick_ended_at   = NOW(),
                        last_result     = COALESCE($1::jsonb, last_result)

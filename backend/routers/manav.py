@@ -367,7 +367,7 @@ async def _employee_in_org(pool, employee_id, org_id: str) -> bool:
         return False
     return bool(
         await pool.fetchval(
-            "SELECT 1 FROM staging.manav_employees "
+            "SELECT 1 FROM public.manav_employees "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(employee_id), org_id,
         )
@@ -385,7 +385,7 @@ async def _shift_in_org(pool, shift_id, org_id: str) -> bool:
         return False
     return bool(
         await pool.fetchval(
-            "SELECT 1 FROM staging.manav_shift_definitions "
+            "SELECT 1 FROM public.manav_shift_definitions "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(shift_id), org_id,
         )
@@ -421,7 +421,7 @@ async def _own_employee_id(pool, user, org_id: str) -> str | None:
     so it reads as a decision and not as a site somebody missed.
     """
     return await pool.fetchval(
-        "SELECT id::text FROM staging.manav_employees "
+        "SELECT id::text FROM public.manav_employees "
         "WHERE user_id=$1 AND org_id=$2::uuid AND is_active=TRUE LIMIT 1",
         user["user_id"], org_id,
     )
@@ -758,7 +758,7 @@ def account_options(
 #: `salt`, and a column list that widens by accident is how those travel.
 _ORG_MEMBER_SQL = (
     "SELECT DISTINCT u.user_id, u.email, COALESCE(u.full_name, u.name) AS full_name "
-    "FROM staging.user_roles ur "
+    "FROM public.user_roles ur "
     "JOIN users u ON u.user_id = ur.user_id "
     "WHERE ur.org_id=$1::uuid AND ur.role_code = ANY($2::text[]) "
 )
@@ -781,7 +781,7 @@ _ORG_ACCOUNT_SQL = (
     "SELECT ur.user_id, u.email, COALESCE(u.full_name, u.name) AS full_name, "
     "u.mobile_number, MIN(ur.granted_at) AS member_since, "
     "ARRAY_AGG(DISTINCT ur.role_code) AS role_codes "
-    "FROM staging.user_roles ur "
+    "FROM public.user_roles ur "
     "JOIN users u ON u.user_id = ur.user_id "
     "WHERE ur.org_id=$1::uuid AND ur.role_code = ANY($2::text[]) "
     "GROUP BY ur.user_id, u.email, u.full_name, u.name, u.mobile_number "
@@ -1066,7 +1066,7 @@ async def list_employees(
         # `user_id` in `_LINKED_FILTER_SQL` and the `name`/`email`/
         # `employee_code` the search filter names. Adding an alias is what the
         # predicate module asks for in place of inlining a variant of itself.
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
     )
     params: list = [org_id]
@@ -1322,7 +1322,7 @@ async def create_employee(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.manav_employees "
+                "INSERT INTO public.manav_employees "
                 "(org_id, user_id, employee_code, name, email, phone, department, designation, "
                 " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
                 " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
@@ -1458,7 +1458,7 @@ async def list_link_candidates(
     # produce a second row pointing at the same login, which is the collision
     # `link_refusal` exists to prevent.
     links = await pool.fetch(
-        "SELECT id, name, user_id FROM staging.manav_employees "
+        "SELECT id, name, user_id FROM public.manav_employees "
         "WHERE org_id=$1::uuid AND user_id IS NOT NULL",
         org_id,
     )
@@ -1513,7 +1513,7 @@ async def list_employees_awaiting_link(
     waiting_rows = await pool.fetch(
         "SELECT e.id, e.employee_code, e.name, e.email, e.department, "
         "e.designation, e.date_of_joining, e.status "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.user_id IS NULL"
         + still_on_the_rolls("e")
         + " ORDER BY e.name",
@@ -1532,7 +1532,7 @@ async def list_employees_awaiting_link(
     held_rows = await pool.fetch(
         "SELECT e.id, e.employee_code, e.name, e.department, e.designation, "
         "u.email AS account_email, COALESCE(u.full_name, u.name) AS account_name "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "LEFT JOIN users u ON u.user_id = e.user_id "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.user_id IS NOT NULL"
         + still_on_the_rolls("e")
@@ -1604,12 +1604,12 @@ async def list_link_options(
     # held by a terminated employee is still held, and offering it as free
     # produces the second row `link_refusal` exists to prevent.
     links = await pool.fetch(
-        "SELECT id, name, user_id FROM staging.manav_employees "
+        "SELECT id, name, user_id FROM public.manav_employees "
         "WHERE org_id=$1::uuid AND user_id IS NOT NULL",
         org_id,
     )
     grants = await pool.fetch(
-        "SELECT user_id, module_code FROM staging.org_member_modules "
+        "SELECT user_id, module_code FROM public.org_member_modules "
         "WHERE org_id=$1::uuid",
         org_id,
     )
@@ -1664,7 +1664,7 @@ async def link_employee_login(
 
     pool = await get_pool()
     employee = await pool.fetchrow(
-        "SELECT id, name, user_id, is_active FROM staging.manav_employees "
+        "SELECT id, name, user_id, is_active FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id,
     )
@@ -1685,7 +1685,7 @@ async def link_employee_login(
     holder = None
     if member:
         holder = await pool.fetchrow(
-            "SELECT id, name FROM staging.manav_employees "
+            "SELECT id, name FROM public.manav_employees "
             "WHERE org_id=$1::uuid AND user_id=$2 AND id <> $3::uuid",
             org_id, member["user_id"], str(employee_id),
         )
@@ -1703,7 +1703,7 @@ async def link_employee_login(
         # `$1`, the account being linked. Confusing the two would record the
         # employee as having granted themselves access to their own payslip —
         # the exact claim the audit line below exists to contradict.
-        "UPDATE staging.manav_employees SET user_id=$1, updated_at=NOW(), updated_by=$4 "
+        "UPDATE public.manav_employees SET user_id=$1, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid",
         member["user_id"], str(employee_id), org_id, user["user_id"],
     )
@@ -1751,7 +1751,7 @@ async def unlink_employee_login(
     _require(levels, ADMIN)
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT id, name, user_id FROM staging.manav_employees "
+        "SELECT id, name, user_id FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id,
     )
@@ -1766,7 +1766,7 @@ async def unlink_employee_login(
         # Unlinking removes somebody's self-service. `updated_by=$3` is the only
         # place the row itself records who did that; the audit line is a
         # separate table that a reader of this record does not have open.
-        "UPDATE staging.manav_employees SET user_id=NULL, updated_at=NOW(), updated_by=$3 "
+        "UPDATE public.manav_employees SET user_id=NULL, updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id, user["user_id"],
     )
@@ -1800,7 +1800,7 @@ async def get_employee(
     # leaking without someone editing this list.
     row = await pool.fetchrow(
         f"SELECT {_EMP_SAFE_COLS}, aadhaar, pan, bank_details "
-        "FROM staging.manav_employees "
+        "FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id,
     )
@@ -1815,8 +1815,8 @@ async def get_employee(
 
     leave_balances = await pool.fetch(
         "SELECT lb.*, lt.name as leave_name, lt.code as leave_code "
-        "FROM staging.manav_leave_balances lb "
-        "JOIN staging.manav_leave_types lt ON lt.id = lb.leave_type_id "
+        "FROM public.manav_leave_balances lb "
+        "JOIN public.manav_leave_types lt ON lt.id = lb.leave_type_id "
         "WHERE lb.employee_id=$1::uuid AND lb.year=EXTRACT(YEAR FROM CURRENT_DATE)::int",
         str(employee_id),
     )
@@ -1886,7 +1886,7 @@ async def get_employee_sensitive(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT id, name, employee_code, aadhaar, pan, bank_details "
-        "FROM staging.manav_employees "
+        "FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id,
     )
@@ -1931,7 +1931,7 @@ async def update_employee(
     # digits happens. One extra read on an admin-only path buys the check.
     if "uan" in updates:
         stored = await pool.fetchval(
-            "SELECT aadhaar FROM staging.manav_employees "
+            "SELECT aadhaar FROM public.manav_employees "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(employee_id), org_id,
         )
@@ -1995,7 +1995,7 @@ async def update_employee(
     idx += 1
 
     await pool.execute(
-        f"UPDATE staging.manav_employees SET {', '.join(sets)} "
+        f"UPDATE public.manav_employees SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -2015,7 +2015,7 @@ async def deactivate_employee(
     await pool.execute(
         # Terminating someone is the single most consequential write in this
         # router and it left no actor at all. `$3` is the admin who did it.
-        "UPDATE staging.manav_employees SET is_active=FALSE, status='terminated', "
+        "UPDATE public.manav_employees SET is_active=FALSE, status='terminated', "
         "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id, user["user_id"],
@@ -2190,10 +2190,10 @@ async def list_offboarding(
          "  AS created_by_name, "
          "(o.initiated_by IS NOT NULL) AS has_creator, "
          + actor_select("o", created=False, updated=True) +
-         "       (SELECT count(*) FROM staging.manav_exit_interviews i "
+         "       (SELECT count(*) FROM public.manav_exit_interviews i "
          "         WHERE i.employee_id = o.employee_id AND i.org_id = o.org_id) AS has_interview "
-         "FROM staging.manav_offboarding o "
-         "JOIN staging.manav_employees e ON e.id = o.employee_id "
+         "FROM public.manav_offboarding o "
+         "JOIN public.manav_employees e ON e.id = o.employee_id "
          # LEFT, like the shared joins: an exit whose initiator has since left
          # the firm is exactly the row this register exists to keep.
          "LEFT JOIN public.users _iu ON _iu.user_id = o.initiated_by "
@@ -2228,7 +2228,7 @@ async def start_offboarding(
 
     pool = await get_pool()
     emp = await pool.fetchrow(
-        "SELECT id, name, is_active FROM staging.manav_employees "
+        "SELECT id, name, is_active FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         body.employee_id, org_id,
     )
@@ -2236,7 +2236,7 @@ async def start_offboarding(
         raise HTTPException(404, "Employee not found")
 
     existing = await pool.fetchval(
-        "SELECT status FROM staging.manav_offboarding "
+        "SELECT status FROM public.manav_offboarding "
         "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND status <> 'cancelled'",
         org_id, body.employee_id,
     )
@@ -2248,7 +2248,7 @@ async def start_offboarding(
         )
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_offboarding "
+        "INSERT INTO public.manav_offboarding "
         "(org_id, employee_id, exit_type, reason, resignation_date, last_working_day, "
         " notice_period_days, notice_waived, clearance, rehire_eligible, notes, initiated_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5::date, $6::date, $7, $8, $9, $10, $11, $12) "
@@ -2302,7 +2302,7 @@ async def update_offboarding(
     idx += 1
 
     row = await pool.fetchrow(
-        f"UPDATE staging.manav_offboarding SET {', '.join(sets)} "
+        f"UPDATE public.manav_offboarding SET {', '.join(sets)} "
         "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
         *params,
     )
@@ -2327,8 +2327,8 @@ async def complete_offboarding(
     _require(levels, ADMIN)
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT o.*, e.name AS employee_name FROM staging.manav_offboarding o "
-        "JOIN staging.manav_employees e ON e.id = o.employee_id "
+        "SELECT o.*, e.name AS employee_name FROM public.manav_offboarding o "
+        "JOIN public.manav_employees e ON e.id = o.employee_id "
         "WHERE o.id=$1::uuid AND o.org_id=$2::uuid",
         str(offboarding_id), org_id,
     )
@@ -2352,7 +2352,7 @@ async def complete_offboarding(
             await conn.execute(
                 # Closing an exit is a decision with a person behind it — the
                 # one who accepted that clearance was complete. `$3`.
-                "UPDATE staging.manav_offboarding SET status='completed', "
+                "UPDATE public.manav_offboarding SET status='completed', "
                 "updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(offboarding_id), org_id, user["user_id"],
@@ -2361,7 +2361,7 @@ async def complete_offboarding(
             # user_id off the employee row it is about. Same connection, same
             # transaction: the event exists iff the deactivation committed.
             emp_row = await conn.fetchrow(
-                "UPDATE staging.manav_employees SET is_active=FALSE, status=$3, "
+                "UPDATE public.manav_employees SET is_active=FALSE, status=$3, "
                 # Same actor as the offboarding row above, and deliberately so:
                 # one action closed the exit and deactivated the person, so both
                 # rows must name the same hand. `$4` is appended after the
@@ -2394,8 +2394,8 @@ async def list_exit_interviews(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT i.*, e.name AS employee_name, e.employee_code, e.department, e.designation "
-        "FROM staging.manav_exit_interviews i "
-        "JOIN staging.manav_employees e ON e.id = i.employee_id "
+        "FROM public.manav_exit_interviews i "
+        "JOIN public.manav_employees e ON e.id = i.employee_id "
         "WHERE i.org_id=$1::uuid ORDER BY i.created_at DESC",
         org_id,
     )
@@ -2418,7 +2418,7 @@ async def exit_reason_summary(
         "SELECT primary_reason, count(*) AS leavers, "
         "       round(avg(overall_rating)::numeric, 2) AS avg_rating, "
         "       count(*) FILTER (WHERE would_recommend) AS would_recommend "
-        "FROM staging.manav_exit_interviews "
+        "FROM public.manav_exit_interviews "
         "WHERE org_id=$1::uuid AND primary_reason IS NOT NULL "
         "GROUP BY primary_reason ORDER BY leavers DESC",
         org_id,
@@ -2444,20 +2444,20 @@ async def record_exit_interview(
 
     pool = await get_pool()
     emp = await pool.fetchrow(
-        "SELECT id, name FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id, name FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         body.employee_id, org_id,
     )
     if not emp:
         raise HTTPException(404, "Employee not found")
 
     off_id = await pool.fetchval(
-        "SELECT id FROM staging.manav_offboarding "
+        "SELECT id FROM public.manav_offboarding "
         "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND status <> 'cancelled'",
         org_id, body.employee_id,
     )
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_exit_interviews "
+        "INSERT INTO public.manav_exit_interviews "
         "(org_id, employee_id, offboarding_id, conducted_by, conducted_at, primary_reason, "
         " overall_rating, would_recommend, would_return, responses, notes) "
         "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, NOW(), NULLIF($5,''), $6, $7, $8, $9, $10) "
@@ -2479,7 +2479,7 @@ async def record_exit_interview(
             # interviewer. Without `$2` this status hop is the one step of an
             # offboarding whose actor is only recoverable by joining the
             # interview back to it by employee and time.
-            "UPDATE staging.manav_offboarding SET status='interview_done', "
+            "UPDATE public.manav_offboarding SET status='interview_done', "
             "updated_at=NOW(), updated_by=$2 "
             "WHERE id=$1::uuid AND status IN ('initiated','in_clearance')",
             str(off_id), user["user_id"],
@@ -2506,12 +2506,12 @@ async def list_departments(
         # HEAD's row out in the outer query — the same alias in both scopes
         # would silently make this count the head's org instead of the
         # department's.
-        "(SELECT COUNT(*) FROM staging.manav_employees de "
+        "(SELECT COUNT(*) FROM public.manav_employees de "
         " WHERE de.department=d.name AND de.org_id=d.org_id AND de.is_active=TRUE"
         + still_on_the_rolls("de")
         + ") as employee_count "
-        "FROM staging.manav_departments d "
-        "LEFT JOIN staging.manav_employees e ON e.id = d.head_employee_id "
+        "FROM public.manav_departments d "
+        "LEFT JOIN public.manav_employees e ON e.id = d.head_employee_id "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE ORDER BY d.name",
         org_id,
     )
@@ -2528,7 +2528,7 @@ async def create_department(
     pool = await get_pool()
     _require(levels, ADMIN)
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_departments (org_id, name, head_employee_id) "
+        "INSERT INTO public.manav_departments (org_id, name, head_employee_id) "
         "VALUES ($1::uuid, $2, NULLIF($3,'')::uuid) RETURNING id, name",
         org_id, body.name, body.head_employee_id,
     )
@@ -2546,7 +2546,7 @@ async def update_department(
     pool = await get_pool()
     _require(levels, ADMIN)
     row = await pool.fetchrow(
-        "UPDATE staging.manav_departments SET name=$3, head_employee_id=NULLIF($4,'')::uuid "
+        "UPDATE public.manav_departments SET name=$3, head_employee_id=NULLIF($4,'')::uuid "
         "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING id, name",
         dept_id, org_id, body.name, body.head_employee_id,
     )
@@ -2569,8 +2569,8 @@ async def delete_department(
         # admin is told a department holds staff they cannot find in it. A
         # department every one of whose members has left must be closable; on
         # the flag alone it never would be.
-        "SELECT COUNT(*) FROM staging.manav_employees e "
-        "JOIN staging.manav_departments d ON d.name = e.department AND d.org_id = e.org_id "
+        "SELECT COUNT(*) FROM public.manav_employees e "
+        "JOIN public.manav_departments d ON d.name = e.department AND d.org_id = e.org_id "
         "WHERE d.id=$1::uuid AND d.org_id=$2::uuid AND e.is_active=TRUE"
         + still_on_the_rolls("e"),
         dept_id, org_id,
@@ -2578,7 +2578,7 @@ async def delete_department(
     if emp_count and emp_count > 0:
         raise HTTPException(400, f"Cannot delete — {emp_count} active employee(s) in this department")
     await pool.execute(
-        "UPDATE staging.manav_departments SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
+        "UPDATE public.manav_departments SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
         dept_id, org_id,
     )
     return {"status": "deleted"}
@@ -2603,8 +2603,8 @@ async def list_attendance(
         "SELECT a.id, a.date, a.check_in, a.check_out, a.status, "
         "a.work_hours, a.overtime_hours, a.marked_by, "
         "e.name as employee_name, e.employee_code "
-        "FROM staging.manav_attendance a "
-        "JOIN staging.manav_employees e ON e.id = a.employee_id "
+        "FROM public.manav_attendance a "
+        "JOIN public.manav_employees e ON e.id = a.employee_id "
         "WHERE a.org_id=$1::uuid AND a.date >= $2::date AND a.date <= $3::date "
     )
     params: list = [org_id, d_from, d_to]
@@ -2665,14 +2665,14 @@ async def mark_attendance(
         work_hours = round((co - ci).total_seconds() / 3600, 2)
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_attendance "
+        "INSERT INTO public.manav_attendance "
         "(org_id, employee_id, date, check_in, check_out, status, work_hours, notes, marked_by) "
         "VALUES ($1::uuid, $2::uuid, $3::date, NULLIF($4,'')::timestamptz, "
         " NULLIF($5,'')::timestamptz, $6, $7, $8, 'manual') "
         "ON CONFLICT (employee_id, date) DO UPDATE SET "
-        "check_in=COALESCE(NULLIF($4,'')::timestamptz, staging.manav_attendance.check_in), "
-        "check_out=COALESCE(NULLIF($5,'')::timestamptz, staging.manav_attendance.check_out), "
-        "status=$6, work_hours=COALESCE($7, staging.manav_attendance.work_hours), "
+        "check_in=COALESCE(NULLIF($4,'')::timestamptz, public.manav_attendance.check_in), "
+        "check_out=COALESCE(NULLIF($5,'')::timestamptz, public.manav_attendance.check_out), "
+        "status=$6, work_hours=COALESCE($7, public.manav_attendance.work_hours), "
         "notes=$8, marked_by='manual' "
         "RETURNING id, status",
         org_id, body.employee_id, att_date, body.check_in, body.check_out,
@@ -2710,8 +2710,8 @@ async def attendance_summary(
         "COUNT(*) FILTER (WHERE a.status='on_leave') as leave_days, "
         "COALESCE(SUM(a.work_hours),0) as total_hours, "
         "COALESCE(SUM(a.overtime_hours),0) as overtime_hours "
-        "FROM staging.manav_employees e "
-        "LEFT JOIN staging.manav_attendance a ON a.employee_id=e.id "
+        "FROM public.manav_employees e "
+        "LEFT JOIN public.manav_attendance a ON a.employee_id=e.id "
         "  AND a.date >= $2 AND a.date < $3 "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
     )
@@ -2742,7 +2742,7 @@ async def list_leave_types(
     # Reference data with no employee in it. Readable at self scope: an employee
     # cannot request leave against their own record without knowing the types.
     rows = await pool.fetch(
-        "SELECT * FROM staging.manav_leave_types WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY name",
+        "SELECT * FROM public.manav_leave_types WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY name",
         org_id,
     )
     return {"data": [dict(r) for r in rows]}
@@ -2759,7 +2759,7 @@ async def create_leave_type(
     # Leave policy is org configuration.
     _require(levels, ADMIN)
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_leave_types "
+        "INSERT INTO public.manav_leave_types "
         "(org_id, name, code, annual_quota, is_paid, carry_forward, max_carry_forward) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) RETURNING id, name, code",
         org_id, body.name, body.code, body.annual_quota,
@@ -2785,16 +2785,16 @@ async def list_leave_requests(
         "e.name as employee_name, e.employee_code, "
         "lt.name as leave_type_name, lt.code as leave_type_code, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.manav_leave_requests lr "
+        "FROM public.manav_leave_requests lr "
         # ON THE ORG AS WELL AS THE ID. `manav_employees` has no composite
         # (id, org_id) constraint, so a join on the employee id alone can read
         # another tenant's row and render THEIR name and code beside this
         # org's leave request. The org predicate on the REQUEST is not enough:
         # it scopes the request, not the person joined to it. Same shape
         # `graha_clients` was fixed for.
-        "JOIN staging.manav_employees e "
+        "JOIN public.manav_employees e "
         "  ON e.id = lr.employee_id AND e.org_id = lr.org_id "
-        "JOIN staging.manav_leave_types lt ON lt.id = lr.leave_type_id "
+        "JOIN public.manav_leave_types lt ON lt.id = lr.leave_type_id "
         "WHERE lr.org_id=$1::uuid "
     )
     params: list = [org_id]
@@ -2843,7 +2843,7 @@ async def create_leave_request(
     if body.employee_id:
         _require(levels, EDITOR)
         emp = await pool.fetchrow(
-            "SELECT id FROM staging.manav_employees "
+            "SELECT id FROM public.manav_employees "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             body.employee_id, org_id,
         )
@@ -2851,7 +2851,7 @@ async def create_leave_request(
             raise HTTPException(404, "Employee not found")
     else:
         emp = await pool.fetchrow(
-            "SELECT id FROM staging.manav_employees "
+            "SELECT id FROM public.manav_employees "
             "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
             org_id, user["user_id"],
         )
@@ -2859,7 +2859,7 @@ async def create_leave_request(
             raise HTTPException(403, "No employee record found for your account")
 
     bal = await pool.fetchrow(
-        "SELECT allocated, used, carried_forward FROM staging.manav_leave_balances "
+        "SELECT allocated, used, carried_forward FROM public.manav_leave_balances "
         "WHERE employee_id=$1::uuid AND leave_type_id=$2::uuid AND year=EXTRACT(YEAR FROM CURRENT_DATE)::int",
         str(emp["id"]), body.leave_type_id,
     )
@@ -2878,7 +2878,7 @@ async def create_leave_request(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.manav_leave_requests "
+                "INSERT INTO public.manav_leave_requests "
                 "(org_id, employee_id, leave_type_id, start_date, end_date, days, reason) "
                 "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::date, $6, $7) RETURNING *",
                 org_id, str(emp["id"]), body.leave_type_id,
@@ -2886,7 +2886,7 @@ async def create_leave_request(
                 body.days, body.reason,
             )
             _emp_user_id = await _conn.fetchval(
-                "SELECT user_id FROM staging.manav_employees "
+                "SELECT user_id FROM public.manav_employees "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(emp["id"]), org_id,
             )
@@ -2914,7 +2914,7 @@ async def action_leave_request(
         raise HTTPException(400, "Status must be 'approved' or 'rejected'")
 
     lr = await pool.fetchrow(
-        "SELECT employee_id, leave_type_id, days, status, start_date, end_date FROM staging.manav_leave_requests "
+        "SELECT employee_id, leave_type_id, days, status, start_date, end_date FROM public.manav_leave_requests "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(leave_id), org_id,
     )
@@ -2935,7 +2935,7 @@ async def action_leave_request(
             # the loser match zero rows — no write, no event, a 409 saying
             # what happened.
             _decided = await _conn.fetchrow(
-                "UPDATE staging.manav_leave_requests SET status=$1, approved_by=$2, "
+                "UPDATE public.manav_leave_requests SET status=$1, approved_by=$2, "
                 "approved_at=NOW(), rejection_reason=$3, updated_at=NOW() "
                 "WHERE id=$4::uuid AND org_id=$5::uuid AND status='pending' "
                 "RETURNING *",
@@ -2950,7 +2950,7 @@ async def action_leave_request(
                 # is about (the actor is the decider), resolved in the same
                 # transaction; NULL is legal.
                 _emp_user_id = await _conn.fetchval(
-                    "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid",
+                    "SELECT user_id FROM public.manav_employees WHERE id=$1::uuid",
                     str(lr["employee_id"]),
                 )
                 await leave_decided(
@@ -2962,23 +2962,23 @@ async def action_leave_request(
     if body.status == "approved":
         year = date.today().year
         existing = await pool.fetchrow(
-            "SELECT id FROM staging.manav_leave_balances "
+            "SELECT id FROM public.manav_leave_balances "
             "WHERE employee_id=$1::uuid AND leave_type_id=$2::uuid AND year=$3",
             str(lr["employee_id"]), str(lr["leave_type_id"]), year,
         )
         if existing:
             await pool.execute(
-                "UPDATE staging.manav_leave_balances SET used=used+$1 "
+                "UPDATE public.manav_leave_balances SET used=used+$1 "
                 "WHERE id=$2::uuid",
                 int(lr["days"]), existing["id"],
             )
         else:
             lt = await pool.fetchrow(
-                "SELECT annual_quota FROM staging.manav_leave_types WHERE id=$1::uuid",
+                "SELECT annual_quota FROM public.manav_leave_types WHERE id=$1::uuid",
                 str(lr["leave_type_id"]),
             )
             await pool.execute(
-                "INSERT INTO staging.manav_leave_balances "
+                "INSERT INTO public.manav_leave_balances "
                 "(org_id, employee_id, leave_type_id, year, allocated, used) "
                 "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)",
                 org_id, str(lr["employee_id"]), str(lr["leave_type_id"]),
@@ -2987,11 +2987,11 @@ async def action_leave_request(
 
     # ── Notify employee ──
     emp = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(lr["employee_id"]),
+        "SELECT name, email FROM public.manav_employees WHERE id=$1::uuid", str(lr["employee_id"]),
     )
     if emp and emp.get("email"):
         lt_row = await pool.fetchrow(
-            "SELECT name FROM staging.manav_leave_types WHERE id=$1::uuid", str(lr["leave_type_id"]),
+            "SELECT name FROM public.manav_leave_types WHERE id=$1::uuid", str(lr["leave_type_id"]),
         )
         from services.employee_email import send_leave_decision_email
         send_leave_decision_email(
@@ -3021,7 +3021,7 @@ async def list_holidays(
         # written to it was invisible to the only screen that could show it —
         # the column existed, the CHECK existed, and the calendar still read as
         # though every holiday closed the whole country.
-        "SELECT id, name, date, is_optional, state_code FROM staging.manav_holidays "
+        "SELECT id, name, date, is_optional, state_code FROM public.manav_holidays "
         "WHERE org_id=$1::uuid AND EXTRACT(YEAR FROM date)=$2 ORDER BY date",
         org_id, y,
     )
@@ -3052,7 +3052,7 @@ async def create_holiday(
     pool = await get_pool()
     _require(levels, ADMIN)
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_holidays (org_id, name, date, is_optional, state_code) "
+        "INSERT INTO public.manav_holidays (org_id, name, date, is_optional, state_code) "
         # `$5::text` rather than a bare `$5`: an untyped parameter expression is
         # the shape PgBouncer turns into an instant 500.
         "VALUES ($1::uuid, $2, $3, $4, $5::text) RETURNING id, name, date, state_code",
@@ -3073,7 +3073,7 @@ async def delete_holiday(
     pool = await get_pool()
     _require(levels, ADMIN)
     await pool.execute(
-        "DELETE FROM staging.manav_holidays WHERE id=$1::uuid AND org_id=$2::uuid",
+        "DELETE FROM public.manav_holidays WHERE id=$1::uuid AND org_id=$2::uuid",
         str(holiday_id), org_id,
     )
     return {"status": "deleted"}
@@ -3093,44 +3093,44 @@ async def hrms_stats(
     emp_count = await pool.fetchval(
         # The headcount tile. STOCK, and the number every other HR figure is
         # read against — E2E showed 83 against a true 73.
-        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "SELECT COUNT(*) FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active'"
         + still_on_the_rolls("e"),
         org_id,
     )
     dept_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_departments WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM public.manav_departments WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     pending_leaves = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_leave_requests WHERE org_id=$1::uuid AND status='pending'",
+        "SELECT COUNT(*) FROM public.manav_leave_requests WHERE org_id=$1::uuid AND status='pending'",
         org_id,
     )
     today_present = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_attendance "
+        "SELECT COUNT(*) FROM public.manav_attendance "
         "WHERE org_id=$1::uuid AND date=CURRENT_DATE AND status IN ('present','late')",
         org_id,
     )
     announcements_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_announcements "
+        "SELECT COUNT(*) FROM public.manav_announcements "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
         "AND (expires_at IS NULL OR expires_at > NOW())",
         org_id,
     )
     pending_leaves_today = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_leave_requests "
+        "SELECT COUNT(*) FROM public.manav_leave_requests "
         "WHERE org_id=$1::uuid AND status='pending' "
         "AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE",
         org_id,
     )
     clocked_in_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_attendance "
+        "SELECT COUNT(*) FROM public.manav_attendance "
         "WHERE org_id=$1::uuid AND date=CURRENT_DATE "
         "AND check_in IS NOT NULL AND check_out IS NULL",
         org_id,
     )
     on_leave_today = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_leave_requests "
+        "SELECT COUNT(*) FROM public.manav_leave_requests "
         "WHERE org_id=$1::uuid AND status='approved' "
         "AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE",
         org_id,
@@ -3169,8 +3169,8 @@ async def list_announcements(
         # screen already reading `creator_name` must not change meaning under it.
         + actor_select("a", updated=True)
         + "e.name as creator_name "
-        "FROM staging.manav_announcements a "
-        "LEFT JOIN staging.manav_employees e ON e.user_id = a.created_by AND e.org_id = a.org_id "
+        "FROM public.manav_announcements a "
+        "LEFT JOIN public.manav_employees e ON e.user_id = a.created_by AND e.org_id = a.org_id "
         + actor_joins("a", updated=True)
         + "WHERE a.org_id=$1::uuid AND a.is_active=TRUE "
         "AND (a.expires_at IS NULL OR a.expires_at > NOW()) "
@@ -3196,7 +3196,7 @@ async def create_announcement(
         raise HTTPException(400, f"priority must be one of: {', '.join(valid_priorities)}")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_announcements "
+        "INSERT INTO public.manav_announcements "
         "(org_id, title, body, priority, pinned, expires_at, published_at, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6,'')::timestamptz, NOW(), $7) "
         "RETURNING id, title",
@@ -3212,7 +3212,7 @@ async def create_announcement(
     # carries the guard. Somebody serving notice is still here and still gets
     # the announcement; that is what a FUTURE last working day means.
     employees = await pool.fetch(
-        "SELECT e.name, e.email FROM staging.manav_employees e "
+        "SELECT e.name, e.email FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
         "AND e.email IS NOT NULL AND e.email != ''"
         + still_on_the_rolls("e"),
@@ -3268,7 +3268,7 @@ async def update_announcement(
     idx += 1
 
     await pool.execute(
-        f"UPDATE staging.manav_announcements SET {', '.join(sets)} "
+        f"UPDATE public.manav_announcements SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         *params,
     )
@@ -3288,7 +3288,7 @@ async def delete_announcement(
         # A retraction is an edit, so it stamps both columns like the PATCH
         # above. Who pulled an announcement down is a question that gets asked
         # precisely because the notice is no longer there to be read.
-        "UPDATE staging.manav_announcements SET is_active=FALSE, "
+        "UPDATE public.manav_announcements SET is_active=FALSE, "
         "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(announcement_id), org_id, user["user_id"],
@@ -3312,7 +3312,7 @@ async def check_leave_conflicts(
     _require(levels, VIEWER)
 
     emp = await pool.fetchrow(
-        "SELECT id, department FROM staging.manav_employees "
+        "SELECT id, department FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         employee_id, org_id,
     )
@@ -3326,7 +3326,7 @@ async def check_leave_conflicts(
     # Live in E2E, Accounts and Payroll are each a quarter smaller than this
     # read them (8 → 6). STOCK: it is asked about a window in the future.
     dept_size = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "SELECT COUNT(*) FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.department=$2 AND e.is_active=TRUE "
         "AND e.status='active'"
         + still_on_the_rolls("e"),
@@ -3346,14 +3346,14 @@ async def check_leave_conflicts(
     conflicts = await pool.fetch(
         "SELECT lr.id, lr.start_date, lr.end_date, lr.days, lr.status, "
         "e.name as employee_name, e.employee_code "
-        "FROM staging.manav_leave_requests lr "
+        "FROM public.manav_leave_requests lr "
         # ON THE ORG AS WELL AS THE ID. `manav_employees` has no composite
         # (id, org_id) constraint, so a join on the employee id alone can read
         # another tenant's row and render THEIR name and code beside this
         # org's leave request. The org predicate on the REQUEST is not enough:
         # it scopes the request, not the person joined to it. Same shape
         # `graha_clients` was fixed for.
-        "JOIN staging.manav_employees e "
+        "JOIN public.manav_employees e "
         "  ON e.id = lr.employee_id AND e.org_id = lr.org_id "
         "WHERE lr.org_id=$1::uuid AND lr.status IN ('approved','pending') "
         "AND e.department=$2 AND e.is_active=TRUE "
@@ -3411,12 +3411,12 @@ async def performance_summary(
         "COALESCE(ROUND(AVG(a.work_hours)::numeric,2),0) as avg_work_hours, "
         "COALESCE(SUM(a.overtime_hours),0) as overtime_hours, "
         "COALESCE(("
-        "  SELECT SUM(lr.days) FROM staging.manav_leave_requests lr "
+        "  SELECT SUM(lr.days) FROM public.manav_leave_requests lr "
         "  WHERE lr.employee_id=e.id AND lr.status='approved' "
         "  AND lr.start_date >= $2::date AND lr.end_date <= $3::date"
         "),0) as leaves_taken "
-        "FROM staging.manav_employees e "
-        "LEFT JOIN staging.manav_attendance a ON a.employee_id=e.id "
+        "FROM public.manav_employees e "
+        "LEFT JOIN public.manav_attendance a ON a.employee_id=e.id "
         "  AND a.date >= $2::date AND a.date <= $3::date "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active' "
         "GROUP BY e.id, e.name, e.department ORDER BY e.name",
@@ -3450,7 +3450,7 @@ async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id), le
     # Shift definitions name nobody — they are the org's shift catalogue, and an
     # employee needs them to read their own roster. Readable at self scope.
     rows = await pool.fetch(
-        "SELECT * FROM staging.manav_shift_definitions "
+        "SELECT * FROM public.manav_shift_definitions "
         "WHERE org_id=$1::uuid ORDER BY start_time",
         org_id,
     )
@@ -3464,7 +3464,7 @@ async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Dep
     _require(levels, ADMIN)
     st, et = _parse_time(body.start_time), _parse_time(body.end_time)
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_shift_definitions "
+        "INSERT INTO public.manav_shift_definitions "
         "(org_id, name, start_time, end_time, break_minutes, color) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6) "
         "ON CONFLICT (org_id, name) DO UPDATE SET "
@@ -3493,7 +3493,7 @@ async def update_shift(shift_id: UUID, body: ShiftUpdate, user=Depends(require_u
         params.append(v)
         idx += 1
     await pool.execute(
-        f"UPDATE staging.manav_shift_definitions SET {', '.join(sets)} "
+        f"UPDATE public.manav_shift_definitions SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -3532,9 +3532,9 @@ async def list_schedules(
         # `e.name` above is the person ON the shift, a different question.
         + actor_select("s", updated=True)
         + "COUNT(*) OVER() AS _total "
-        "FROM staging.manav_schedules s "
-        "JOIN staging.manav_employees e ON e.id = s.employee_id "
-        "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
+        "FROM public.manav_schedules s "
+        "JOIN public.manav_employees e ON e.id = s.employee_id "
+        "JOIN public.manav_shift_definitions sd ON sd.id = s.shift_id "
         + actor_joins("s", updated=True)
         + "WHERE s.org_id=$1::uuid "
     )
@@ -3581,7 +3581,7 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
     if not await _shift_in_org(pool, body.shift_id, org_id):
         raise HTTPException(404, "Shift not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_schedules "
+        "INSERT INTO public.manav_schedules "
         "(org_id, employee_id, shift_id, date, notes, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6) "
         "ON CONFLICT (employee_id, date) DO UPDATE SET "
@@ -3591,10 +3591,10 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
     )
     # ── Notify employee ──
     emp = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", body.employee_id,
+        "SELECT name, email FROM public.manav_employees WHERE id=$1::uuid", body.employee_id,
     )
     shift = await pool.fetchrow(
-        "SELECT name, start_time, end_time FROM staging.manav_shift_definitions WHERE id=$1::uuid", body.shift_id,
+        "SELECT name, start_time, end_time FROM public.manav_shift_definitions WHERE id=$1::uuid", body.shift_id,
     )
     if emp and emp.get("email") and shift:
         from services.employee_email import send_shift_schedule_email
@@ -3622,7 +3622,7 @@ async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_
     created = 0
     for a in body.assignments:
         await pool.execute(
-            "INSERT INTO staging.manav_schedules "
+            "INSERT INTO public.manav_schedules "
             "(org_id, employee_id, shift_id, date, notes, created_by) "
             "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6) "
             "ON CONFLICT (employee_id, date) DO UPDATE SET "
@@ -3646,8 +3646,8 @@ async def schedule_coverage(
     rows = await pool.fetch(
         "SELECT s.date, sd.name AS shift_name, sd.id AS shift_id, "
         "COUNT(s.id) AS assigned_count "
-        "FROM staging.manav_schedules s "
-        "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
+        "FROM public.manav_schedules s "
+        "JOIN public.manav_shift_definitions sd ON sd.id = s.shift_id "
         "WHERE s.org_id=$1::uuid AND s.date >= $2 AND s.date <= $3 "
         "GROUP BY s.date, sd.id, sd.name ORDER BY s.date, sd.name",
         org_id, _parse_date(date_from), _parse_date(date_to),
@@ -3656,7 +3656,7 @@ async def schedule_coverage(
     # inflated one reports EVERY day as under-staffed — E2E's rota was short by
     # a phantom ten on every date in every range. STOCK.
     total_active = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "SELECT COUNT(*) FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active'"
         + still_on_the_rolls("e"),
         org_id,
@@ -3684,8 +3684,8 @@ async def list_availability(
 ):
     pool = await get_pool()
     query = "SELECT a.*, e.name AS employee_name, COUNT(*) OVER() AS _total " \
-            "FROM staging.manav_availability a " \
-            "JOIN staging.manav_employees e ON e.id = a.employee_id " \
+            "FROM public.manav_availability a " \
+            "JOIN public.manav_employees e ON e.id = a.employee_id " \
             "WHERE a.org_id=$1::uuid "
     params: list = [org_id]
     idx = 2
@@ -3723,13 +3723,13 @@ async def set_availability(body: AvailabilitySet, user=Depends(require_user), or
     # caller's own row and the body has no field to override it. Reachable at
     # self scope for that reason.
     emp = await pool.fetchval(
-        "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
+        "SELECT id FROM public.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
         org_id, user["user_id"],
     )
     if not emp:
         raise HTTPException(404, "Employee record not found for your account")
     await pool.execute(
-        "INSERT INTO staging.manav_availability "
+        "INSERT INTO public.manav_availability "
         "(org_id, employee_id, date, is_available, preferred_shift_id, notes) "
         "VALUES ($1::uuid, $2, $3, $4, NULLIF($5,'')::uuid, $6) "
         "ON CONFLICT (employee_id, date) DO UPDATE SET "
@@ -3764,9 +3764,9 @@ async def list_bids(
         # usually whoever awarded or closed it. Both names, never the ids in
         # `b.*`.
         + actor_select("b", updated=True)
-        + "(SELECT COUNT(*) FROM staging.manav_shift_bid_responses WHERE bid_id=b.id) AS responses "
-        "FROM staging.manav_shift_bids b "
-        "JOIN staging.manav_shift_definitions sd ON sd.id = b.shift_id "
+        + "(SELECT COUNT(*) FROM public.manav_shift_bid_responses WHERE bid_id=b.id) AS responses "
+        "FROM public.manav_shift_bids b "
+        "JOIN public.manav_shift_definitions sd ON sd.id = b.shift_id "
         + actor_joins("b", updated=True)
         + "WHERE b.org_id=$1::uuid AND b.status=$2 ORDER BY b.date",
         org_id, status,
@@ -3785,7 +3785,7 @@ async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=De
     if not await _shift_in_org(pool, body.shift_id, org_id):
         raise HTTPException(404, "Shift not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_shift_bids "
+        "INSERT INTO public.manav_shift_bids "
         "(org_id, shift_id, date, slots_needed, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5) RETURNING id",
         org_id, body.shift_id, _parse_date(body.date), body.slots_needed, user["user_id"],
@@ -3824,7 +3824,7 @@ async def list_bid_responses(
     _require(levels, VIEWER)
     bid = await pool.fetchrow(
         "SELECT id, shift_id, date, slots_needed, status "
-        "FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+        "FROM public.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bid_id), org_id,
     )
     if not bid:
@@ -3833,8 +3833,8 @@ async def list_bid_responses(
     rows = await pool.fetch(
         "SELECT r.id, r.employee_id, r.status, r.created_at, "
         "       e.name AS employee_name, e.employee_code "
-        "FROM staging.manav_shift_bid_responses r "
-        "JOIN staging.manav_employees e ON e.id = r.employee_id "
+        "FROM public.manav_shift_bid_responses r "
+        "JOIN public.manav_employees e ON e.id = r.employee_id "
         "WHERE r.bid_id=$1::uuid AND e.org_id=$2::uuid "
         "ORDER BY r.created_at",
         str(bid_id), org_id,
@@ -3854,7 +3854,7 @@ async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(
     # Applying is the employee volunteering for themselves — employee id from the
     # caller's own row, never from the path. Reachable at self scope.
     emp = await pool.fetchval(
-        "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
+        "SELECT id FROM public.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
         org_id, user["user_id"],
     )
     if not emp:
@@ -3862,7 +3862,7 @@ async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(
     # The bid must belong to this org. Without it a response row could be
     # attached to another tenant's bid by guessing a uuid.
     bid = await pool.fetchrow(
-        "SELECT status FROM staging.manav_shift_bids "
+        "SELECT status FROM public.manav_shift_bids "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bid_id), org_id,
     )
@@ -3880,7 +3880,7 @@ async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(
             else "Every slot on this shift has already been awarded.",
         )
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_shift_bid_responses (bid_id, employee_id) "
+        "INSERT INTO public.manav_shift_bid_responses (bid_id, employee_id) "
         "VALUES ($1::uuid, $2) "
         "ON CONFLICT (bid_id, employee_id) DO NOTHING RETURNING id",
         str(bid_id), emp,
@@ -3912,7 +3912,7 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Dep
     _require(levels, EDITOR)
     bid = await pool.fetchrow(
         "SELECT id, shift_id, date, slots_needed, status "
-        "FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+        "FROM public.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bid_id), org_id,
     )
     if not bid:
@@ -3929,7 +3929,7 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Dep
         raise HTTPException(404, "Employee not found")
 
     awarded = await pool.fetchrow(
-        "UPDATE staging.manav_shift_bid_responses SET status='accepted' "
+        "UPDATE public.manav_shift_bid_responses SET status='accepted' "
         "WHERE bid_id=$1::uuid AND employee_id=$2::uuid RETURNING id",
         str(bid_id), str(employee_id),
     )
@@ -3944,7 +3944,7 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Dep
         )
 
     accepted = int(await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_shift_bid_responses "
+        "SELECT COUNT(*) FROM public.manav_shift_bid_responses "
         "WHERE bid_id=$1::uuid AND status='accepted'",
         str(bid_id),
     ) or 0)
@@ -3952,7 +3952,7 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Dep
 
     # Auto-create schedule
     await pool.execute(
-        "INSERT INTO staging.manav_schedules "
+        "INSERT INTO public.manav_schedules "
         "(org_id, employee_id, shift_id, date, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5) "
         # The conflict arm REPLACES an existing roster row for that day, so it
@@ -3972,7 +3972,7 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Dep
             # `updated_by` only — `trg_touch_manav_shift_bids` (migration 201)
             # owns `updated_at` on this table, and a second writer of a column
             # that already has one is two things to keep in step for no gain.
-            "UPDATE staging.manav_shift_bids SET status='filled', updated_by=$3 "
+            "UPDATE public.manav_shift_bids SET status='filled', updated_by=$3 "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND status='open'",
             str(bid_id), org_id, user["user_id"],
         )
@@ -4019,8 +4019,8 @@ async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depen
     # another tenant could be attached to a row here, and `GET /swaps` joins
     # through it and would print that tenant's employee name.
     sched = await pool.fetchrow(
-        "SELECT s.id, e.user_id FROM staging.manav_schedules s "
-        "JOIN staging.manav_employees e ON e.id = s.employee_id "
+        "SELECT s.id, e.user_id FROM public.manav_schedules s "
+        "JOIN public.manav_employees e ON e.id = s.employee_id "
         "WHERE s.id=$1::uuid AND s.org_id=$2::uuid",
         body.requester_schedule_id, org_id,
     )
@@ -4029,12 +4029,12 @@ async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depen
     if sched["user_id"] != user["user_id"]:
         _require(levels, EDITOR)
     if body.target_employee_id and not await pool.fetchval(
-        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         body.target_employee_id, org_id,
     ):
         raise HTTPException(404, "Employee not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_swap_requests "
+        "INSERT INTO public.manav_swap_requests "
         "(org_id, requester_schedule_id, target_employee_id, reason) "
         "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4) RETURNING id",
         org_id, body.requester_schedule_id,
@@ -4052,11 +4052,11 @@ async def list_swaps(status: str = "pending", user=Depends(require_user), org_id
         "SELECT sw.*, "
         "e1.name AS requester_name, e2.name AS target_name, "
         "s1.date AS schedule_date, sd.name AS shift_name "
-        "FROM staging.manav_swap_requests sw "
-        "JOIN staging.manav_schedules s1 ON s1.id = sw.requester_schedule_id "
-        "JOIN staging.manav_employees e1 ON e1.id = s1.employee_id "
-        "JOIN staging.manav_shift_definitions sd ON sd.id = s1.shift_id "
-        "LEFT JOIN staging.manav_employees e2 ON e2.id = sw.target_employee_id "
+        "FROM public.manav_swap_requests sw "
+        "JOIN public.manav_schedules s1 ON s1.id = sw.requester_schedule_id "
+        "JOIN public.manav_employees e1 ON e1.id = s1.employee_id "
+        "JOIN public.manav_shift_definitions sd ON sd.id = s1.shift_id "
+        "LEFT JOIN public.manav_employees e2 ON e2.id = sw.target_employee_id "
         "WHERE sw.org_id=$1::uuid AND sw.status=$2 ORDER BY sw.created_at DESC",
         org_id, status,
     )
@@ -4071,23 +4071,23 @@ async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), or
     # Approving a swap moves two people's shifts.
     _require(levels, APPROVER)
     await pool.execute(
-        "UPDATE staging.manav_swap_requests SET status=$1, approved_by=$2 "
+        "UPDATE public.manav_swap_requests SET status=$1, approved_by=$2 "
         "WHERE id=$3::uuid AND org_id=$4::uuid",
         action, user["user_id"], str(swap_id), org_id,
     )
     if action == "approved":
         swap = await pool.fetchrow(
-            "SELECT * FROM staging.manav_swap_requests WHERE id=$1::uuid AND org_id=$2::uuid", str(swap_id), org_id
+            "SELECT * FROM public.manav_swap_requests WHERE id=$1::uuid AND org_id=$2::uuid", str(swap_id), org_id
         )
         if swap and swap["target_employee_id"]:
             sched = await pool.fetchrow(
-                "SELECT * FROM staging.manav_schedules WHERE id=$1",
+                "SELECT * FROM public.manav_schedules WHERE id=$1",
                 swap["requester_schedule_id"],
             )
             if sched:
                 # Swap shifts between requester and target
                 target_sched = await pool.fetchrow(
-                    "SELECT * FROM staging.manav_schedules "
+                    "SELECT * FROM public.manav_schedules "
                     "WHERE employee_id=$1 AND date=$2",
                     swap["target_employee_id"], sched["date"],
                 )
@@ -4100,12 +4100,12 @@ async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), or
                     # nobody appeared to have made.
                     # `trg_touch_manav_schedules` owns `updated_at`.
                     await pool.execute(
-                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped', "
+                        "UPDATE public.manav_schedules SET shift_id=$1, status='swapped', "
                         "updated_by=$3 WHERE id=$2",
                         target_sched["shift_id"], sched["id"], user["user_id"],
                     )
                     await pool.execute(
-                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped', "
+                        "UPDATE public.manav_schedules SET shift_id=$1, status='swapped', "
                         "updated_by=$3 WHERE id=$2",
                         sched["shift_id"], target_sched["id"], user["user_id"],
                     )
@@ -4135,8 +4135,8 @@ async def list_expense_claims(
     q = (
         "SELECT c.*, e.name AS employee_name, e.employee_code, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.manav_expense_claims c "
-        "JOIN staging.manav_employees e ON e.id = c.employee_id "
+        "FROM public.manav_expense_claims c "
+        "JOIN public.manav_employees e ON e.id = c.employee_id "
         "WHERE c.org_id=$1::uuid AND c.is_active=TRUE"
     )
     params: list = [org_id]
@@ -4164,7 +4164,7 @@ async def expense_claims_pending_count(
     # An org-wide count.
     _require(levels, VIEWER)
     count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_expense_claims "
+        "SELECT COUNT(*) FROM public.manav_expense_claims "
         "WHERE org_id=$1::uuid AND status='pending' AND is_active=TRUE",
         org_id,
     )
@@ -4191,12 +4191,12 @@ async def create_expense_claim(
         if not await _is_org_admin(pool, user, org_id):
             raise HTTPException(403, "Only admins can submit claims for other employees")
         emp = await pool.fetchrow(
-            "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            "SELECT id FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             body.employee_id, org_id,
         )
     else:
         emp = await pool.fetchrow(
-            "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
+            "SELECT id FROM public.manav_employees WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
             org_id, user["user_id"],
         )
     if not emp:
@@ -4209,7 +4209,7 @@ async def create_expense_claim(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.manav_expense_claims "
+                "INSERT INTO public.manav_expense_claims "
                 "(org_id, employee_id, category, expense_date, amount, description, receipt_urls) "
                 "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7::jsonb) RETURNING *",
                 org_id, str(emp["id"]), body.category,
@@ -4217,7 +4217,7 @@ async def create_expense_claim(
                 json.dumps(body.receipt_urls),
             )
             _emp_user_id = await _conn.fetchval(
-                "SELECT user_id FROM staging.manav_employees "
+                "SELECT user_id FROM public.manav_employees "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(emp["id"]), org_id,
             )
@@ -4246,7 +4246,7 @@ async def approve_expense_claim(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "UPDATE staging.manav_expense_claims SET status='approved', approved_by=$1, approved_at=NOW() "
+                "UPDATE public.manav_expense_claims SET status='approved', approved_by=$1, approved_at=NOW() "
                 "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
                 user["user_id"], str(claim_id), org_id,
             )
@@ -4255,7 +4255,7 @@ async def approve_expense_claim(
             # The claimant's login (manav_employees.user_id), resolved in the
             # same transaction; NULL is legal. The actor is the decider.
             _emp_user_id = await _conn.fetchval(
-                "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid",
+                "SELECT user_id FROM public.manav_employees WHERE id=$1::uuid",
                 str(row["employee_id"]),
             )
             await expense_decided(
@@ -4265,7 +4265,7 @@ async def approve_expense_claim(
             )
     # ── Notify employee ──
     emp = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
+        "SELECT name, email FROM public.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
     )
     if emp and emp.get("email"):
         from services.employee_email import send_expense_decision_email
@@ -4293,14 +4293,14 @@ async def reject_expense_claim(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "UPDATE staging.manav_expense_claims SET status='rejected', approved_by=$1, approved_at=NOW(), "
+                "UPDATE public.manav_expense_claims SET status='rejected', approved_by=$1, approved_at=NOW(), "
                 "rejection_reason=$2 WHERE id=$3::uuid AND org_id=$4::uuid AND status='pending' RETURNING *",
                 user["user_id"], body.rejection_reason, str(claim_id), org_id,
             )
             if not row:
                 raise HTTPException(404, "Pending claim not found")
             _emp_user_id = await _conn.fetchval(
-                "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid",
+                "SELECT user_id FROM public.manav_employees WHERE id=$1::uuid",
                 str(row["employee_id"]),
             )
             await expense_decided(
@@ -4310,7 +4310,7 @@ async def reject_expense_claim(
             )
     # ── Notify employee ──
     emp = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
+        "SELECT name, email FROM public.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
     )
     if emp and emp.get("email"):
         from services.employee_email import send_expense_decision_email
@@ -4338,9 +4338,9 @@ async def list_job_openings(
         # WHO opened the role and WHO last edited it — including the edit that
         # closes it, which is the one a hiring manager comes back asking about.
         + actor_select("j", updated=True)
-        + "(SELECT COUNT(*) FROM staging.manav_candidates c WHERE c.job_opening_id = j.id) AS candidate_count "
-        "FROM staging.manav_job_openings j "
-        "LEFT JOIN staging.manav_departments d ON d.id = j.department_id "
+        + "(SELECT COUNT(*) FROM public.manav_candidates c WHERE c.job_opening_id = j.id) AS candidate_count "
+        "FROM public.manav_job_openings j "
+        "LEFT JOIN public.manav_departments d ON d.id = j.department_id "
         + actor_joins("j", updated=True)
         + "WHERE j.org_id=$1::uuid"
     )
@@ -4363,7 +4363,7 @@ async def create_job_opening(
     pool = await get_pool()
     _require(levels, EDITOR)
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_job_openings (org_id, title, department_id, description, created_by) "
+        "INSERT INTO public.manav_job_openings (org_id, title, department_id, description, created_by) "
         "VALUES ($1::uuid, $2, NULLIF($3,'')::uuid, $4, $5) RETURNING *",
         org_id, body.title, body.department_id, body.description, user["user_id"],
     )
@@ -4399,7 +4399,7 @@ async def update_job_opening(
     updates.append(f"updated_by=${len(vals)}")
     vals += [str(opening_id), org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.manav_job_openings SET {', '.join(updates)} "
+        f"UPDATE public.manav_job_openings SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -4419,7 +4419,7 @@ async def list_candidates(
     pool = await get_pool()
     # Candidate name, email, phone and resume — outsiders' PII.
     _require(levels, VIEWER)
-    q = "SELECT * FROM staging.manav_candidates WHERE org_id=$1::uuid"
+    q = "SELECT * FROM public.manav_candidates WHERE org_id=$1::uuid"
     params: list = [org_id]
     if job_opening_id:
         params.append(job_opening_id)
@@ -4455,13 +4455,13 @@ async def create_candidate(
     pool = await get_pool()
     _require(levels, EDITOR)
     opening = await pool.fetchrow(
-        "SELECT id FROM staging.manav_job_openings WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id FROM public.manav_job_openings WHERE id=$1::uuid AND org_id=$2::uuid",
         body.job_opening_id, org_id,
     )
     if not opening:
         raise HTTPException(404, "Job opening not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_candidates "
+        "INSERT INTO public.manav_candidates "
         "(org_id, job_opening_id, full_name, email, phone, resume_url, resume_key, notes) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8) RETURNING *",
         org_id, body.job_opening_id, body.full_name, body.email, body.phone,
@@ -4484,7 +4484,7 @@ async def update_candidate_stage(
     if body.stage not in valid_stages:
         raise HTTPException(400, f"stage must be one of: {', '.join(valid_stages)}")
     row = await pool.fetchrow(
-        "UPDATE staging.manav_candidates SET stage=$1, rejection_reason=$2, updated_at=NOW() "
+        "UPDATE public.manav_candidates SET stage=$1, rejection_reason=$2, updated_at=NOW() "
         "WHERE id=$3::uuid AND org_id=$4::uuid RETURNING *",
         body.stage, body.rejection_reason if body.stage == "rejected" else None,
         str(candidate_id), org_id,
@@ -4505,7 +4505,7 @@ async def hire_candidate(
     # Creates a personnel record.
     _require(levels, ADMIN)
     candidate = await pool.fetchrow(
-        "SELECT * FROM staging.manav_candidates WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.manav_candidates WHERE id=$1::uuid AND org_id=$2::uuid",
         str(candidate_id), org_id,
     )
     if not candidate:
@@ -4522,14 +4522,14 @@ async def hire_candidate(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             emp = await _conn.fetchrow(
-                "INSERT INTO staging.manav_employees "
+                "INSERT INTO public.manav_employees "
                 "(org_id, name, email, phone, date_of_joining, employment_type, created_by) "
                 "VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE, 'full_time', $5) "
                 "RETURNING *",
                 org_id, candidate["full_name"], candidate["email"], candidate["phone"], user["user_id"],
             )
             await _conn.execute(
-                "UPDATE staging.manav_candidates SET stage='hired', converted_employee_id=$1, updated_at=NOW() "
+                "UPDATE public.manav_candidates SET stage='hired', converted_employee_id=$1, updated_at=NOW() "
                 "WHERE id=$2::uuid",
                 emp["id"], str(candidate_id),
             )
@@ -4585,8 +4585,8 @@ async def list_assets(
         # which are the movements a register of company property exists for.
         + actor_select("a", updated=True)
         + "e.name AS employee_name "
-        "FROM staging.manav_assets a "
-        "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+        "FROM public.manav_assets a "
+        "LEFT JOIN public.manav_employees e ON e.id = a.assigned_to "
         + actor_joins("a", updated=True)
         + "WHERE a.org_id=$1::uuid AND a.is_active=TRUE"
     )
@@ -4620,7 +4620,7 @@ async def create_asset(
         raise HTTPException(400, f"condition must be one of: {', '.join(valid_cond)}")
     p_date = date.fromisoformat(body.purchase_date) if body.purchase_date else None
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_assets "
+        "INSERT INTO public.manav_assets "
         "(org_id, asset_tag, name, category, serial_number, purchase_date, "
         "purchase_cost, condition, notes, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6::date, $7, $8, $9, $10) RETURNING *",
@@ -4645,8 +4645,8 @@ async def get_asset(
         # when the list made them ask the question.
         + actor_select("a", updated=True)
         + "e.name AS employee_name "
-        "FROM staging.manav_assets a "
-        "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+        "FROM public.manav_assets a "
+        "LEFT JOIN public.manav_employees e ON e.id = a.assigned_to "
         + actor_joins("a", updated=True)
         + "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
         asset_id, org_id,
@@ -4696,7 +4696,7 @@ async def update_asset(
     updates.append(f"updated_by=${len(vals)}")
     vals += [asset_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.manav_assets SET {', '.join(updates)} "
+        f"UPDATE public.manav_assets SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
         *vals,
     )
@@ -4717,7 +4717,7 @@ async def delete_asset(
     result = await pool.execute(
         # Retiring an asset is a write-off. `$3` is who did it — the question
         # asked when a laptop is missing from the register rather than the desk.
-        "UPDATE staging.manav_assets SET is_active=FALSE, updated_at=NOW(), updated_by=$3 "
+        "UPDATE public.manav_assets SET is_active=FALSE, updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         asset_id, org_id, user["user_id"],
     )
@@ -4742,7 +4742,7 @@ async def assign_asset(
     # what issued them. Checked BEFORE the UPDATE: a refusal raised afterwards
     # would leave the asset assigned and the caller told it was not.
     emp = await pool.fetchrow(
-        "SELECT e.id FROM staging.manav_employees e "
+        "SELECT e.id FROM public.manav_employees e "
         "WHERE e.id=$1::uuid AND e.org_id=$2::uuid AND e.is_active=TRUE"
         + still_on_the_rolls("e"),
         body.employee_id, org_id,
@@ -4753,7 +4753,7 @@ async def assign_asset(
         # `$4` is the ISSUER, not the holder: `assigned_to` already says who
         # has the asset, and handing custody of company property to somebody is
         # a decision with a second person behind it.
-        "UPDATE staging.manav_assets SET assigned_to=$1::uuid, assigned_date=CURRENT_DATE, "
+        "UPDATE public.manav_assets SET assigned_to=$1::uuid, assigned_date=CURRENT_DATE, "
         "returned_date=NULL, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid AND is_active=TRUE RETURNING *",
         body.employee_id, asset_id, org_id, user["user_id"],
@@ -4762,7 +4762,7 @@ async def assign_asset(
         raise HTTPException(404, "Asset not found")
     # ── Notify employee ──
     emp_info = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", body.employee_id,
+        "SELECT name, email FROM public.manav_employees WHERE id=$1::uuid", body.employee_id,
     )
     if emp_info and emp_info.get("email"):
         from services.employee_email import send_asset_email
@@ -4800,7 +4800,7 @@ async def return_asset(
         # ⚠ RETURNING AN ASSET HAS THEREFORE NEVER WORKED. Found by proposal 93
         # Suite 07 on 2026-08-29: 24 assets issued, 0 returnable.
         "SELECT a.assigned_to, a.name AS asset_name, a.category, e.name, e.email "
-        "FROM staging.manav_assets a LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+        "FROM public.manav_assets a LEFT JOIN public.manav_employees e ON e.id = a.assigned_to "
         "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
         asset_id, org_id,
     )
@@ -4808,7 +4808,7 @@ async def return_asset(
         # `assigned_to` is cleared by this write, so after it the row no longer
         # names anybody at all unless `updated_by` does. `$3` is who took the
         # asset back.
-        "UPDATE staging.manav_assets SET assigned_to=NULL, returned_date=CURRENT_DATE, "
+        "UPDATE public.manav_assets SET assigned_to=NULL, returned_date=CURRENT_DATE, "
         "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE RETURNING *",
         asset_id, org_id, user["user_id"],
@@ -4842,7 +4842,7 @@ async def employee_assets(
         if not own or str(employee_id) != own:
             raise HTTPException(403, "You can only view your own assets")
     rows = await pool.fetch(
-        "SELECT * FROM staging.manav_assets "
+        "SELECT * FROM public.manav_assets "
         "WHERE org_id=$1::uuid AND assigned_to=$2::uuid AND is_active=TRUE ORDER BY assigned_date DESC",
         org_id, employee_id,
     )
@@ -5013,7 +5013,7 @@ async def list_commission_schemes(
         # bug rather than as "this never changes".
         + actor_select("s", updated=False)
         + "s.* "
-        "  FROM staging.manav_commission_schemes s "
+        "  FROM public.manav_commission_schemes s "
         + actor_joins("s", updated=False)
         + " WHERE s.org_id=$1::uuid AND s.employee_id=$2::uuid "
         " ORDER BY s.period, s.effective_from DESC",
@@ -5023,7 +5023,7 @@ async def list_commission_schemes(
     for r in rows:
         bands = await pool.fetch(
             "SELECT from_amount, rate_percent "
-            "  FROM staging.manav_commission_bands "
+            "  FROM public.manav_commission_bands "
             " WHERE org_id=$1::uuid AND scheme_id=$2::uuid "
             " ORDER BY from_amount",
             org_id, r["id"],
@@ -5109,7 +5109,7 @@ async def create_commission_scheme(
                 # terms are the bands and nothing else, which is also what
                 # migration 190's trigger enforces at COMMIT.
                 row = await conn.fetchrow(
-                    "INSERT INTO staging.manav_commission_schemes "
+                    "INSERT INTO public.manav_commission_schemes "
                     "(org_id, employee_id, eligible, basis, revenue_scope, "
                     " period, effective_from, effective_to, notes, created_by) "
                     "VALUES ($1::uuid, $2::uuid, $3, $4, $5, "
@@ -5124,7 +5124,7 @@ async def create_commission_scheme(
                 # is what was validated.
                 for band in scheme.bands:
                     await conn.execute(
-                        "INSERT INTO staging.manav_commission_bands "
+                        "INSERT INTO public.manav_commission_bands "
                         "(org_id, scheme_id, from_amount, rate_percent, created_by) "
                         "VALUES ($1::uuid, $2::uuid, $3::numeric, $4::numeric, $5)",
                         org_id, row["id"], str(band.from_amount),
@@ -5152,7 +5152,7 @@ async def create_commission_scheme(
 
     bands = await pool.fetch(
         "SELECT from_amount, rate_percent "
-        "  FROM staging.manav_commission_bands "
+        "  FROM public.manav_commission_bands "
         " WHERE org_id=$1::uuid AND scheme_id=$2::uuid ORDER BY from_amount",
         org_id, row["id"],
     )
@@ -5193,7 +5193,7 @@ async def set_bonus_eligibility(
         # `$4` — a pay-adjacent flag flipped by an admin, on the row it is
         # flipped on. The audit line below records the same act, but a person
         # reading the employee record is not reading the audit table.
-        "UPDATE staging.manav_employees SET bonus_eligible=$3, updated_at=NOW(), "
+        "UPDATE public.manav_employees SET bonus_eligible=$3, updated_at=NOW(), "
         "updated_by=$4 "
         " WHERE id=$1::uuid AND org_id=$2::uuid "
         "RETURNING name, bonus_eligible",
@@ -5233,8 +5233,8 @@ async def list_bonus_awards(
     params = [org_id]
     q = ("SELECT a.id, a.amount, a.reason, a.pay_period, a.awarded_at, "
          "       a.notes, e.name AS employee_name "
-         "  FROM staging.manav_bonus_awards a "
-         "  JOIN staging.manav_employees e "
+         "  FROM public.manav_bonus_awards a "
+         "  JOIN public.manav_employees e "
          "    ON e.id = a.employee_id AND e.org_id = a.org_id "
          " WHERE a.org_id=$1::uuid")
     if employee_id:
@@ -5281,7 +5281,7 @@ async def create_bonus_award(
     pool = await get_pool()
 
     emp = await pool.fetchrow(
-        "SELECT name, bonus_eligible FROM staging.manav_employees "
+        "SELECT name, bonus_eligible FROM public.manav_employees "
         " WHERE id=$1::uuid AND org_id=$2::uuid",
         body.employee_id, org_id,
     )
@@ -5306,7 +5306,7 @@ async def create_bonus_award(
 
     try:
         row = await pool.fetchrow(
-            "INSERT INTO staging.manav_bonus_awards "
+            "INSERT INTO public.manav_bonus_awards "
             "(org_id, employee_id, amount, reason, pay_period, awarded_by, notes) "
             "VALUES ($1::uuid, $2::uuid, $3::numeric, $4, $5, $6, $7) "
             "RETURNING id, amount, reason, pay_period, awarded_at",

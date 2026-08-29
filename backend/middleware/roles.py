@@ -108,7 +108,7 @@ def require_platform_role(*allowed_roles: str):
     async def _check(user=Depends(require_user)):
         pool = await get_pool()
         role = await pool.fetchval(
-            "SELECT role_code FROM staging.user_roles "
+            "SELECT role_code FROM public.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
             user["user_id"], list(allowed_roles),
         )
@@ -190,14 +190,14 @@ def require_org_role(*allowed_roles: str):
         # the shape of the request. What changed is that the first one no longer
         # returns on its own.
         is_platform = await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL "
             "AND role_code = ANY($2::text[])",
             user["user_id"], list(GOD_MODE_ROLES),
         )
 
         role = await pool.fetchval(
-            "SELECT role_code FROM staging.user_roles "
+            "SELECT role_code FROM public.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
             user["user_id"], org_id, list(allowed_roles),
         )
@@ -215,7 +215,7 @@ def require_org_role(*allowed_roles: str):
         belongs = False
         if is_platform and not role:
             belongs = bool(await pool.fetchval(
-                "SELECT 1 FROM staging.user_roles "
+                "SELECT 1 FROM public.user_roles "
                 "WHERE user_id=$1 AND org_id=$2::uuid "
                 "AND role_code = ANY($3::text[]) LIMIT 1",
                 user["user_id"], org_id, list(ORG_ROLES),
@@ -253,7 +253,7 @@ async def is_platform_staff(user_id: str) -> bool:
     """
     pool = await get_pool()
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[])",
         user_id, list(ALL_PLATFORM_ROLES),
@@ -308,7 +308,7 @@ async def may_manage_project_membership(user_id: str) -> bool:
     """
     pool = await get_pool()
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[])",
         user_id, list(MEMBERSHIP_WRITE_ROLES),
@@ -372,7 +372,7 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
         # org_owner/org_admin ahead of a bare org_member when someone holds two
         # rows — the answer must not depend on which row was written first.
         org_role = await pool.fetchval(
-            "SELECT role_code FROM staging.user_roles "
+            "SELECT role_code FROM public.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) "
             "ORDER BY array_position($3::text[], role_code) LIMIT 1",
             user_id, org_id, list(ORG_ROLES),
@@ -388,7 +388,7 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
         return may_act_in_org(
             holds_org_role=False,
             holds_platform_role=bool(await pool.fetchval(
-                "SELECT 1 FROM staging.user_roles "
+                "SELECT 1 FROM public.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
                 "AND role_code = ANY($2::text[])",
                 user_id, platform,
@@ -396,7 +396,7 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
             belongs_to_org=True,
         )
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
+        "SELECT 1 FROM public.user_roles WHERE user_id=$1 AND ("
         "  (org_id IS NULL AND role_code = ANY($2::text[]))"
         "  OR (org_id IS NOT NULL AND role_code IN ('org_owner','org_admin'))"
         ")",
@@ -444,13 +444,13 @@ async def admin_org_id(user_id: str, org_id: str | None = None) -> str | None:
     pool = await get_pool()
     if org_id:
         return await pool.fetchval(
-            "SELECT org_id::text FROM staging.user_roles "
+            "SELECT org_id::text FROM public.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid "
             "AND role_code IN ('org_owner','org_admin') LIMIT 1",
             user_id, org_id,
         )
     return await pool.fetchval(
-        "SELECT org_id::text FROM staging.user_roles "
+        "SELECT org_id::text FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL "
         "AND role_code IN ('org_owner','org_admin') "
         "ORDER BY granted_at, org_id::text LIMIT 1",
@@ -463,13 +463,13 @@ async def get_user_roles(user_id: str, org_id: str = None) -> list[str]:
     pool = await get_pool()
     if org_id:
         rows = await pool.fetch(
-            "SELECT role_code FROM staging.user_roles "
+            "SELECT role_code FROM public.user_roles "
             "WHERE user_id=$1 AND (org_id IS NULL OR org_id=$2::uuid)",
             user_id, org_id,
         )
     else:
         rows = await pool.fetch(
-            "SELECT role_code FROM staging.user_roles WHERE user_id=$1",
+            "SELECT role_code FROM public.user_roles WHERE user_id=$1",
             user_id,
         )
     return [r["role_code"] for r in rows]
@@ -520,7 +520,7 @@ async def is_portal_client(user: dict) -> bool:
     pool = await get_pool()
     staff_side = list(ORG_ROLES + HR_ADMIN_ROLES + ALL_PLATFORM_ROLES)
     return not bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND role_code = ANY($2::text[]) LIMIT 1",
         user["user_id"], staff_side,
     ))

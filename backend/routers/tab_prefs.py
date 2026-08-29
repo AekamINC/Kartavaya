@@ -157,7 +157,7 @@ async def get_tab_prefs(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT module, tab_order, default_tab, user_id "
-        "  FROM staging.user_tab_prefs "
+        "  FROM public.user_tab_prefs "
         " WHERE user_id = $1::text "
         "    OR (user_id IS NULL AND org_id = $2::uuid)",
         user["user_id"], org_id,
@@ -185,7 +185,7 @@ async def put_my_tab_prefs(
     _checked(module, body)
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.user_tab_prefs (user_id, module, tab_order, default_tab) "
+        "INSERT INTO public.user_tab_prefs (user_id, module, tab_order, default_tab) "
         "VALUES ($1::text, $2::text, $3::text[], $4::text) "
         "ON CONFLICT (user_id, module) WHERE user_id IS NOT NULL "
         "DO UPDATE SET tab_order = EXCLUDED.tab_order, "
@@ -208,7 +208,7 @@ async def delete_my_tab_prefs(
     _known_module_or_422(module)
     pool = await get_pool()
     result = await pool.execute(
-        "DELETE FROM staging.user_tab_prefs "
+        "DELETE FROM public.user_tab_prefs "
         " WHERE user_id = $1::text AND module = $2::text",
         user["user_id"], module,
     )
@@ -233,7 +233,7 @@ async def put_org_tab_prefs(
         raise HTTPException(403, "Only an org admin can set the organisation's tab order")
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.user_tab_prefs (org_id, module, tab_order, default_tab) "
+        "INSERT INTO public.user_tab_prefs (org_id, module, tab_order, default_tab) "
         "VALUES ($1::uuid, $2::text, $3::text[], $4::text) "
         "ON CONFLICT (org_id, module) WHERE user_id IS NULL "
         "DO UPDATE SET tab_order = EXCLUDED.tab_order, "

@@ -477,9 +477,9 @@ _JOINS = """
       -- `r.org_id = $1` passes and `c.name` is the other practice's client.
       -- The leaking value is on the JOINED table, so no WHERE clause on `r`
       -- can catch it. dsc.py joins this same table the same way.
-      JOIN staging.graha_clients   c ON c.id = r.client_id
+      JOIN public.graha_clients   c ON c.id = r.client_id
                                     AND c.org_id = r.org_id
-      JOIN staging.notice_type     t ON t.id = r.notice_type_id
+      JOIN public.notice_type     t ON t.id = r.notice_type_id
       -- No org predicate is possible on public.users: it is a global table and
       -- org membership lives in user_roles, not on the user row. owner_user_id
       -- is an assignment this product makes rather than a value a client
@@ -497,7 +497,7 @@ _JOINS = """
     "      " + actor_joins("r", updated=True) + "\n"
 )
 
-_SELECT = _SELECT_COLUMNS + "      FROM staging.notice_register r\n" + _JOINS
+_SELECT = _SELECT_COLUMNS + "      FROM public.notice_register r\n" + _JOINS
 
 #: The same shape over the CTE a write feeds. `written` is the rows the INSERT
 #: or UPDATE just produced; everything else about the projection, including the
@@ -666,7 +666,7 @@ async def notice_types(pool, org_id: str) -> list[dict[str, Any]]:
                statute_key, reply_window_days, reply_window_months,
                window_basis, window_in_working_days, consequence, source_url,
                org_id IS NULL AS is_system
-          FROM staging.notice_type
+          FROM public.notice_type
          WHERE is_active
            AND (org_id IS NULL OR org_id = $1::uuid)
          ORDER BY authority, code
@@ -912,7 +912,7 @@ _FETCH_TYPE = """
            t.reply_window_months,
            t.window_in_working_days,
            t.consequence
-      FROM staging.notice_type t
+      FROM public.notice_type t
      WHERE t.is_active
        AND t.code = $2::text
        AND (t.org_id IS NULL OR t.org_id = $1::uuid)
@@ -936,7 +936,7 @@ _FETCH_TYPE = """
 #: user identifier out of the request body and out of every response.
 _INSERT_NOTICE = """
     WITH written AS (
-        INSERT INTO staging.notice_register
+        INSERT INTO public.notice_register
             (org_id, client_id, notice_type_id, reference_no, received_on,
              reply_window_days, reply_window_months, window_in_working_days,
              due_on_override, owner_user_id, status, notes, created_by)
@@ -949,11 +949,11 @@ _INSERT_NOTICE = """
                            WHERE u.user_id = $8::text)
                     ELSE NULL END,
                'open', $9::text, $10::text
-          FROM staging.notice_type t
+          FROM public.notice_type t
          WHERE t.id = $3::uuid
            AND t.is_active
            AND (t.org_id IS NULL OR t.org_id = $1::uuid)
-           AND EXISTS (SELECT 1 FROM staging.graha_clients c
+           AND EXISTS (SELECT 1 FROM public.graha_clients c
                         WHERE c.id = $2::uuid AND c.org_id = $1::uuid)
         RETURNING """ + _WRITE_RETURNING + """
     )
@@ -970,7 +970,7 @@ _FETCH_NOTICE = """
            r.status,
            r.replied_on,
            r.closed_on
-      FROM staging.notice_register r
+      FROM public.notice_register r
      WHERE r.org_id = $1::uuid
        AND r.id = $2::uuid
 """
@@ -983,7 +983,7 @@ _FETCH_NOTICE = """
 #: new value only ever lands in a column that was NULL.
 _UPDATE_STATUS = """
     WITH written AS (
-        UPDATE staging.notice_register r
+        UPDATE public.notice_register r
            SET status     = $3::text,
                -- WHO moved it, in the SAME statement that moves it. `updated_at`
                -- is stamped for this table too, and a timestamp that says a
@@ -1016,7 +1016,7 @@ _UPDATE_STATUS = """
 #: lost.
 _UPDATE_DUE_DATE = """
     WITH written AS (
-        UPDATE staging.notice_register r
+        UPDATE public.notice_register r
            SET due_on_override = $3::date,
                -- Moving a deadline is the change a partner is most likely to be
                -- asked to justify, so it is the last one that should be

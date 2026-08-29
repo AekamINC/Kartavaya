@@ -226,14 +226,14 @@ async def _doc_status_for(pool, org_id: str, rec, amounts: dict,
     from services.doc_validation import validate_tax_invoice
 
     org = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address FROM staging.organisations "
+        "SELECT name, gstin, pan, billing_address FROM public.organisations "
         "WHERE id=$1::uuid",
         org_id,
     )
     contact = None
     if rec["contact_id"]:
         contact = await pool.fetchrow(
-            "SELECT name, company, gstin FROM staging.graha_contacts "
+            "SELECT name, company, gstin FROM public.graha_contacts "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(rec["contact_id"]), org_id,
         )
@@ -300,7 +300,7 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
         """
         SELECT id, contact_id, template_items, subtotal, gst_rate, is_igst,
                frequency, next_date, end_date, auto_send, notes, terms, created_by
-          FROM staging.ganit_recurring
+          FROM public.ganit_recurring
          WHERE org_id = $1::uuid
            AND is_active = TRUE
            AND next_date <= $2
@@ -363,7 +363,7 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
 
             await pool.execute(
                 """
-                INSERT INTO staging.ganit_invoices
+                INSERT INTO public.ganit_invoices
                     (id, org_id, contact_id, invoice_number, invoice_type, invoice_date,
                      due_date, is_igst, line_items, subtotal,
                      cgst, sgst, igst, cess, discount, total,
@@ -398,7 +398,7 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
             # setting it is what would have raised on the way out even after the
             # SELECT was corrected.
             await pool.execute(
-                "UPDATE staging.ganit_recurring SET next_date = $2 WHERE id = $1::uuid",
+                "UPDATE public.ganit_recurring SET next_date = $2 WHERE id = $1::uuid",
                 rec["id"],
                 _advance(rec["next_date"], rec["frequency"]),
             )

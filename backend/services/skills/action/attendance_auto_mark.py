@@ -53,7 +53,7 @@ log = logging.getLogger(__name__)
 #: nobody would notice.
 _STILL_ON_THE_ROLLS = """
               AND NOT EXISTS (
-                SELECT 1 FROM staging.manav_offboarding x
+                SELECT 1 FROM public.manav_offboarding x
                 WHERE x.org_id = e.org_id AND x.employee_id = e.id
                   AND x.status <> 'cancelled'
                   AND x.last_working_day < $2::date)
@@ -183,7 +183,7 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
     # them decide the day for everybody.
     holidays = await pool.fetch(
         """
-        SELECT id, name, state_code FROM staging.manav_holidays
+        SELECT id, name, state_code FROM public.manav_holidays
         WHERE org_id = $1::uuid AND date = $2
           AND COALESCE(is_optional, FALSE) = FALSE
         """,
@@ -207,7 +207,7 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
     if state_aware:
         employees = await pool.fetch(
             """
-            SELECT id, state FROM staging.manav_employees e
+            SELECT id, state FROM public.manav_employees e
             WHERE e.org_id = $1::uuid AND e.status = 'active' AND e.is_active = true
             """ + _STILL_ON_THE_ROLLS,
             org_id, target_date,
@@ -215,7 +215,7 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
     else:
         employees = await pool.fetch(
             """
-            SELECT id FROM staging.manav_employees e
+            SELECT id FROM public.manav_employees e
             WHERE e.org_id = $1::uuid AND e.status = 'active' AND e.is_active = true
             """ + _STILL_ON_THE_ROLLS,
             org_id, target_date,
@@ -248,7 +248,7 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
 
         # Skip if attendance already exists
         existing = await pool.fetchrow(
-            "SELECT 1 FROM staging.manav_attendance WHERE employee_id = $1::uuid AND date = $2",
+            "SELECT 1 FROM public.manav_attendance WHERE employee_id = $1::uuid AND date = $2",
             emp["id"], target_date,
         )
         if existing:
@@ -256,7 +256,7 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
 
         await pool.execute(
             """
-            INSERT INTO staging.manav_attendance
+            INSERT INTO public.manav_attendance
                 (id, org_id, employee_id, date, status, work_hours, overtime_hours, marked_by)
             VALUES ($1, $2::uuid, $3::uuid, $4, $5, 0, 0, 'system')
             """,

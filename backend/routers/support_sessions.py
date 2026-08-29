@@ -119,7 +119,7 @@ def _fail(exc: svc.SupportSessionError) -> HTTPException:
 
 async def _platform_role(pool, user_id: str) -> str | None:
     return await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[]) LIMIT 1",
         user_id, list(ALL_PLATFORM_ROLES),
     )
@@ -158,7 +158,7 @@ async def _may_request(pool, user_id: str) -> bool:
     customer says yes — which is what makes the session meaningful.
     """
     return await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[]) LIMIT 1",
         user_id, list(SUPPORT_ROLES),
     ) is not None
@@ -176,7 +176,7 @@ async def _managed_orgs(pool, user_id: str) -> list[str]:
     whose remedy does not exist is an outage rather than a guard.
     """
     rows = await pool.fetch(
-        "SELECT DISTINCT org_id FROM staging.user_roles "
+        "SELECT DISTINCT org_id FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL AND role_code = ANY($2::text[])",
         user_id, list(ORG_MANAGEMENT_ROLES),
     )
@@ -186,7 +186,7 @@ async def _managed_orgs(pool, user_id: str) -> list[str]:
 async def _manages_org(pool, user_id: str, org_id: str) -> bool:
     """Is this person an org_owner or org_admin OF THIS ORGANISATION?"""
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
         user_id, org_id, list(ORG_MANAGEMENT_ROLES),
     ))
@@ -287,7 +287,7 @@ async def _may_read_the_queue(pool, user_id: str) -> bool:
     about.
     """
     return await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[]) LIMIT 1",
         user_id, list(_AEKAM_NOTIFY_ROLES),
     ) is not None

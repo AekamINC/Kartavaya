@@ -146,7 +146,7 @@ async def _chase_counts(pool, org_id: str, entity_type: str) -> dict[str, int]:
     rows = await pool.fetch(
         """
         SELECT entity_id::text AS entity_id, count(*) AS n
-        FROM staging.reminders
+        FROM public.reminders
         WHERE org_id = $1::uuid
           AND entity_type = $2::text
           AND status = ANY($3::text[])
@@ -187,7 +187,7 @@ async def check_chase_ladder(
         SELECT t.id, t.task_id, t.title, t.due_at, t.status, t.created_by_name,
                t.assignee_emails
         FROM public.tasks t
-        WHERE t.team_id = (SELECT team_id FROM staging.organisations
+        WHERE t.team_id = (SELECT team_id FROM public.organisations
                             WHERE id = $1::uuid)
           AND t.archived_at IS NULL
           AND t.status <> 'done'
@@ -207,7 +207,7 @@ async def check_chase_ladder(
                COALESCE(NULLIF(btrim(u.name), ''),
                         NULLIF(btrim(u.full_name), ''),
                         '(raised by someone no longer on the team)') AS raised_by
-        FROM staging.sign_documents d
+        FROM public.sign_documents d
         LEFT JOIN public.users u ON u.user_id = d.created_by
         WHERE d.org_id = $1::uuid
           AND d.status IN ('sent', 'partially_signed')

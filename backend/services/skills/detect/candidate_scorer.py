@@ -21,7 +21,7 @@ async def score_candidate(pool, candidate: dict) -> dict:
         opening = await pool.fetchrow(
             """
             SELECT title, department, description, requirements
-            FROM staging.manav_job_openings
+            FROM public.manav_job_openings
             WHERE id = $1::uuid AND org_id = $2::uuid AND is_active = true
             """,
             opening_id, org_id,

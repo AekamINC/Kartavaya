@@ -314,7 +314,7 @@ async def ask_sahayak(
         SELECT * FROM (
             SELECT m.id, m.parent_message_id, m.content, m.created_at,
                    u.full_name AS sender_name
-              FROM staging.samvada_messages m
+              FROM public.samvada_messages m
               LEFT JOIN users u ON u.user_id = m.sender_id
              WHERE m.channel_id = $1::uuid
                AND m.org_id = $2::uuid

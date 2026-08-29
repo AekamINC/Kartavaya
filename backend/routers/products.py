@@ -113,7 +113,7 @@ async def list_products(
         + "p.id, p.name, p.hsn_code, p.sac_code, p.unit, p.price, "
         "p.cost_price, p.margin, p.margin_pct, p.gst_rate, "
         "p.description, p.is_service, p.created_at, p.updated_at "
-        "FROM staging.ganit_products p "
+        "FROM public.ganit_products p "
         + actor_joins("p", updated=True)
         + "WHERE p.org_id=$1::uuid AND p.is_active=TRUE "
         "ORDER BY p.name",
@@ -131,7 +131,7 @@ async def create_product(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_products "
+        "INSERT INTO public.ganit_products "
         "(org_id, name, hsn_code, sac_code, unit, price, cost_price, gst_rate, "
         " description, is_service, created_by) "
         # `created_by` is stamped on the INSERT and nowhere else. The alternative
@@ -188,7 +188,7 @@ async def update_product(
     idx += 1
 
     await pool.execute(
-        f"UPDATE staging.ganit_products SET {', '.join(sets)} "
+        f"UPDATE public.ganit_products SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -204,7 +204,7 @@ async def delete_product(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.ganit_products SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
+        "UPDATE public.ganit_products SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
         str(product_id), org_id,
     )
     return {"status": "deleted"}

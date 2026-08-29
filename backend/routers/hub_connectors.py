@@ -176,7 +176,7 @@ async def _verify_client(pool, client_id: Optional[str], org_id: str) -> Optiona
     if not client_id:
         return None
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         client_id, org_id,
     )
     if not ok:
@@ -238,7 +238,7 @@ async def list_connectors(
         "SELECT id, client_id::text AS client_id, platform, public_fields, "
         "       secrets_encrypted, secret_hint, is_active, last_tested_at, "
         "       last_test_ok, last_test_detail "
-        "  FROM staging.hub_connector_credentials "
+        "  FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND (client_id IS NULL OR client_id=$2::uuid)",
         org_id, client_id,
     )
@@ -312,7 +312,7 @@ async def social_status(
 
     clients = await pool.fetch(
         "SELECT id::text AS id, name, is_internal "
-        "  FROM staging.hub_clients "
+        "  FROM public.hub_clients "
         " WHERE org_id=$1::uuid AND is_active=TRUE "
         " ORDER BY is_internal DESC, name",
         org_id,
@@ -336,7 +336,7 @@ async def social_status(
 
     cred_rows = await pool.fetch(
         "SELECT client_id::text AS client_id, platform, is_active "
-        "  FROM staging.hub_connector_credentials "
+        "  FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND (client_id IS NULL OR client_id=$2::uuid)",
         org_id, client_id,
     )
@@ -352,8 +352,8 @@ async def social_status(
         "SELECT sa.platform, sa.account_name, "
         "       (sa.token_expires_at IS NOT NULL "
         "        AND sa.token_expires_at < NOW()) AS expired "
-        "  FROM staging.hub_social_accounts sa "
-        "  JOIN staging.hub_clients c ON c.id = sa.client_id "
+        "  FROM public.hub_social_accounts sa "
+        "  JOIN public.hub_clients c ON c.id = sa.client_id "
         " WHERE sa.client_id=$1::uuid AND c.org_id=$2::uuid AND sa.is_active=TRUE "
         " ORDER BY sa.platform, sa.account_name",
         client_id, org_id,
@@ -478,7 +478,7 @@ async def save_connector(
     public, secrets = cc.split_values(body.platform, body.values)
 
     existing = await pool.fetchrow(
-        "SELECT id, public_fields, secrets_encrypted FROM staging.hub_connector_credentials "
+        "SELECT id, public_fields, secrets_encrypted FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND platform=$2 "
         "   AND client_id IS NOT DISTINCT FROM $3::uuid",
         org_id, body.platform, client_id,
@@ -506,28 +506,28 @@ async def save_connector(
 
     import json as _json
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_connector_credentials "
+        "INSERT INTO public.hub_connector_credentials "
         "  (org_id, client_id, platform, public_fields, secrets_encrypted, "
         "   secret_hint, is_active, created_by, updated_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5, $6, $7, $8, $8) "
         "ON CONFLICT (org_id, platform) WHERE client_id IS NULL DO UPDATE SET "
         "  public_fields=EXCLUDED.public_fields, "
         "  secrets_encrypted=COALESCE(EXCLUDED.secrets_encrypted, "
-        "                             staging.hub_connector_credentials.secrets_encrypted), "
+        "                             public.hub_connector_credentials.secrets_encrypted), "
         "  secret_hint=EXCLUDED.secret_hint, is_active=EXCLUDED.is_active, "
         "  updated_by=EXCLUDED.updated_by, updated_at=NOW() "
         "RETURNING id, client_id::text AS client_id, public_fields, "
         "          secrets_encrypted, secret_hint, is_active, last_tested_at, "
         "          last_test_ok, last_test_detail"
         if client_id is None else
-        "INSERT INTO staging.hub_connector_credentials "
+        "INSERT INTO public.hub_connector_credentials "
         "  (org_id, client_id, platform, public_fields, secrets_encrypted, "
         "   secret_hint, is_active, created_by, updated_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5, $6, $7, $8, $8) "
         "ON CONFLICT (client_id, platform) WHERE client_id IS NOT NULL DO UPDATE SET "
         "  public_fields=EXCLUDED.public_fields, "
         "  secrets_encrypted=COALESCE(EXCLUDED.secrets_encrypted, "
-        "                             staging.hub_connector_credentials.secrets_encrypted), "
+        "                             public.hub_connector_credentials.secrets_encrypted), "
         "  secret_hint=EXCLUDED.secret_hint, is_active=EXCLUDED.is_active, "
         "  updated_by=EXCLUDED.updated_by, updated_at=NOW() "
         "RETURNING id, client_id::text AS client_id, public_fields, "
@@ -574,7 +574,7 @@ async def clear_connector(
     pool = await get_pool()
     client_id = await _verify_client(pool, client_id, org_id)
     await pool.execute(
-        "DELETE FROM staging.hub_connector_credentials "
+        "DELETE FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND platform=$2 "
         "   AND client_id IS NOT DISTINCT FROM $3::uuid",
         org_id, platform, client_id,
@@ -734,7 +734,7 @@ def _meta_error(r) -> str:
 
 async def _record_test(pool, org_id, platform, client_id, ok, detail, source="") -> dict:
     await pool.execute(
-        "UPDATE staging.hub_connector_credentials "
+        "UPDATE public.hub_connector_credentials "
         "   SET last_tested_at=NOW(), last_test_ok=$4, last_test_detail=$5 "
         " WHERE org_id=$1::uuid AND platform=$2 "
         "   AND client_id IS NOT DISTINCT FROM $3::uuid",

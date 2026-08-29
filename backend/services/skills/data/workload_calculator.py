@@ -73,7 +73,7 @@ async def get_team_workload(pool, org_id: str, team_id: str | None = None) -> di
                                 AND t.due_at IS NOT NULL AND t.due_at < $2)       AS overdue
         FROM public.tasks t
         CROSS JOIN LATERAL unnest(t.assignee_user_ids) AS a(user_id)
-        LEFT JOIN staging.user_org_context c
+        LEFT JOIN public.user_org_context c
                ON c.user_id = a.user_id AND c.org_id = $1::uuid
         WHERE {_ORG_TEAMS}
           {team_clause}

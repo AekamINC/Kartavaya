@@ -118,10 +118,10 @@ MASTER_SQL = (
     "       e.status AS status, "
     "       e.is_active AS is_active, "
     "       o.last_working_day AS last_day "
-    "  FROM staging.manav_employees e "
+    "  FROM public.manav_employees e "
     "  LEFT JOIN LATERAL ("
     "    SELECT x.last_working_day "
-    "      FROM staging.manav_offboarding x "
+    "      FROM public.manav_offboarding x "
     # Scoped on org_id as well as employee_id — no composite FK exists, so
     # this predicate is the only thing stopping another org's exit record
     # from naming a date beside this org's employee.
@@ -258,7 +258,7 @@ LEAVE_SQL = (
     "       l.end_date AS ends, "
     "       COALESCE(l.days, 0)::float AS days, "
     "       l.status AS status "
-    "  FROM staging.manav_leave_requests l "
+    "  FROM public.manav_leave_requests l "
     # INNER on the employee: a leave request whose employee cannot be named
     # would print under a fallback label in a register whose whole subject is
     # who was away. All 242 live rows join, so this drops nothing today — and
@@ -266,11 +266,11 @@ LEAVE_SQL = (
     # of leave attributed to nobody. Org-scoped on BOTH sides: there is no
     # composite (id, org_id) FK and only this predicate can refuse a foreign
     # employee id.
-    "  JOIN staging.manav_employees e "
+    "  JOIN public.manav_employees e "
     "    ON e.id = l.employee_id AND e.org_id = l.org_id "
     # LEFT on the type: 242 of 242 join today, but an unnamed leave type is
     # not a reason to drop a day of absence off the register.
-    "  LEFT JOIN staging.manav_leave_types lt "
+    "  LEFT JOIN public.manav_leave_types lt "
     "    ON lt.id = l.leave_type_id AND lt.org_id = l.org_id "
     " WHERE l.org_id = $1::uuid "
     "   AND l.start_date BETWEEN $2::date AND $3::date "
@@ -362,12 +362,12 @@ ASSET_SQL = (
     "       a.returned_date AS returned_on, "
     "       a.condition AS condition, "
     "       COALESCE(a.purchase_cost, 0)::float AS purchase_cost "
-    "  FROM staging.manav_assets a "
+    "  FROM public.manav_assets a "
     # LEFT: 30 of 100 assets are assigned to nobody and an INNER join would
     # drop them, turning a 100-asset register into a 70-asset one and
     # understating what the firm owns by every item sitting in the cupboard.
     # Org-scoped on both sides — no composite (id, org_id) FK exists.
-    "  LEFT JOIN staging.manav_employees e "
+    "  LEFT JOIN public.manav_employees e "
     "    ON e.id = a.assigned_to AND e.org_id = a.org_id "
     " WHERE a.org_id = $1::uuid "
     " ORDER BY a.name, a.asset_tag "
@@ -489,10 +489,10 @@ HIRING_SQL = (
     "       c.stage AS stage, "
     "       c.created_at::date AS received, "
     "       c.rejection_reason AS rejection_reason "
-    "  FROM staging.manav_candidates c "
+    "  FROM public.manav_candidates c "
     # LEFT and org-scoped on both sides. 101 of 101 join today; a candidate
     # whose opening was closed and removed is still a candidate.
-    "  LEFT JOIN staging.manav_job_openings j "
+    "  LEFT JOIN public.manav_job_openings j "
     "    ON j.id = c.job_opening_id AND j.org_id = c.org_id "
     " WHERE c.org_id = $1::uuid "
     "   AND c.created_at::date BETWEEN $2::date AND $3::date "

@@ -100,10 +100,10 @@ OPEN_BILLS_SQL = (
     "       COALESCE(b.total, 0)::float AS bill_total, "
     "       COALESCE(b.amount_paid, 0)::float AS paid, "
     "       (COALESCE(b.total, 0) - COALESCE(b.amount_paid, 0))::float AS balance_due "
-    "  FROM staging.ganit_vendor_bills b "
+    "  FROM public.ganit_vendor_bills b "
     # LEFT and org-scoped: a bill whose vendor row was deleted is still owed,
     # and a join on `id` alone can print another org's vendor name.
-    "  LEFT JOIN staging.ganit_vendors v "
+    "  LEFT JOIN public.ganit_vendors v "
     "         ON v.id = b.vendor_id AND v.org_id = b.org_id "
     " WHERE b.org_id = $1::uuid "
     "   AND b.is_active = TRUE "

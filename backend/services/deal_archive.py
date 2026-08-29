@@ -73,7 +73,7 @@ async def sweep_org(pool, org_id: str, *, dry_run: bool = False) -> dict:
     if not await archive_ready(pool):
         return {"skipped": "migration"}
     sql = (
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND archived_at IS NULL "
         "  AND stage = ANY($2::text[]) "
         f" AND COALESCE(won_at, lost_at, updated_at) < NOW() - INTERVAL '{DEAL_ARCHIVE_DAYS} days'"
@@ -82,7 +82,7 @@ async def sweep_org(pool, org_id: str, *, dry_run: bool = False) -> dict:
         n = await pool.fetchval(f"SELECT COUNT(*) {sql}", org_id, list(CLOSED_STAGES))
         return {"dry_run": True, "would_archive": n or 0}
     rows = await pool.fetch(
-        f"UPDATE staging.graha_deals SET archived_at=NOW() "
+        f"UPDATE public.graha_deals SET archived_at=NOW() "
         f"WHERE id IN (SELECT id {sql}) RETURNING id",
         org_id, list(CLOSED_STAGES))
     if rows:

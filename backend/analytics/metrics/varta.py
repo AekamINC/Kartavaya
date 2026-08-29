@@ -61,7 +61,7 @@ from analytics.windowing import bucket_expr
 #: 'failed' rows stay — Meta rejected a real attempt, and delivery rate must
 #: feel it.
 _OUTBOUND = (
-    "FROM staging.varta_messages "
+    "FROM public.varta_messages "
     "WHERE org_id = $1::uuid AND direction = 'outbound' "
     "AND status <> 'suppressed' "
     "AND created_at::date BETWEEN $2::date AND $3::date "
@@ -183,12 +183,12 @@ def reply_rate(req: MetricRequest):
         "COUNT(*) AS sends "
         "FROM ("
         "SELECT m.created_at, "
-        "EXISTS (SELECT 1 FROM staging.varta_messages r "
+        "EXISTS (SELECT 1 FROM public.varta_messages r "
         "WHERE r.org_id = $1::uuid "
         "AND r.conversation_id = m.conversation_id "
         "AND r.direction = 'inbound' "
         "AND r.created_at > m.created_at) AS replied "
-        "FROM staging.varta_messages m "
+        "FROM public.varta_messages m "
         "WHERE m.org_id = $1::uuid AND m.direction = 'outbound' "
         "AND m.status <> 'suppressed' "
         "AND m.created_at::date BETWEEN $2::date AND $3::date"
@@ -231,7 +231,7 @@ absent_metric(
            "directly, and routers/whatsapp.py deliberately records no "
            "per-message charge — 'we sell the automation, never the "
            "messages'. "
-           "A RATE CARD DOES NOW EXIST — staging.varta_rate_card, migration "
+           "A RATE CARD DOES NOW EXIST — public.varta_rate_card, migration "
            "227 — so the old reason 'there is no pricing anywhere' is stale "
            "and is not repeated here. It still cannot answer this metric, for "
            "two reasons measured live on 2026-08-27 rather than assumed. "

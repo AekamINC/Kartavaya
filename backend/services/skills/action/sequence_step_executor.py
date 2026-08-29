@@ -81,10 +81,10 @@ async def execute_step(pool, enrollment_id: str) -> dict:
                s.org_id, s.name AS sequence_name, s.status AS sequence_status,
                o.name AS org_name,
                c.email, c.name AS contact_name, c.company AS contact_company
-        FROM staging.prachar_sequence_enrollments se
-        JOIN staging.prachar_sequences s ON s.id = se.sequence_id
-        JOIN staging.organisations o ON o.id = s.org_id
-        JOIN staging.graha_contacts c ON c.id = se.contact_id
+        FROM public.prachar_sequence_enrollments se
+        JOIN public.prachar_sequences s ON s.id = se.sequence_id
+        JOIN public.organisations o ON o.id = s.org_id
+        JOIN public.graha_contacts c ON c.id = se.contact_id
         WHERE se.id = $1::uuid AND se.status = 'active'
         """,
         enrollment_id,
@@ -108,7 +108,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
     steps = await pool.fetch(
         """
         SELECT id, step_order, channel, delay_days, subject, body_html, body_text
-        FROM staging.prachar_sequence_steps
+        FROM public.prachar_sequence_steps
         WHERE sequence_id = $1::uuid
         ORDER BY step_order
         """,
@@ -124,7 +124,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
         # 'active' with a due date in the past would make it a row this function
         # is handed again on every tick for the rest of time.
         await pool.execute(
-            "UPDATE staging.prachar_sequence_enrollments "
+            "UPDATE public.prachar_sequence_enrollments "
             "SET status = 'completed', completed_at = NOW(), next_step_at = NULL "
             "WHERE id = $1::uuid",
             enrollment_id,
@@ -141,13 +141,13 @@ async def execute_step(pool, enrollment_id: str) -> dict:
     contact_email = (enrollment["email"] or "").strip()
     if contact_email:
         unsub = await pool.fetchval(
-            "SELECT 1 FROM staging.prachar_unsubscribes "
+            "SELECT 1 FROM public.prachar_unsubscribes "
             "WHERE org_id = $1::uuid AND lower(email) = $2",
             org_id, contact_email.lower(),
         )
         if unsub:
             await pool.execute(
-                "UPDATE staging.prachar_sequence_enrollments "
+                "UPDATE public.prachar_sequence_enrollments "
                 "SET status = 'unsubscribed', completed_at = NOW(), next_step_at = NULL "
                 "WHERE id = $1::uuid",
                 enrollment_id,
@@ -214,7 +214,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
         async with conn.transaction():
             await conn.execute(
                 """
-                INSERT INTO staging.prachar_sequence_logs
+                INSERT INTO public.prachar_sequence_logs
                     (enrollment_id, step_id, channel, status, sent_at, org_id)
                 VALUES ($1::uuid, $2::uuid, $3, $4, NOW(), $5::uuid)
                 """,
@@ -234,7 +234,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
             )
             if following is None:
                 await conn.execute(
-                    "UPDATE staging.prachar_sequence_enrollments "
+                    "UPDATE public.prachar_sequence_enrollments "
                     "SET status = 'completed', completed_at = NOW(), "
                     "    current_step = $2, next_step_at = NULL "
                     "WHERE id = $1::uuid",
@@ -242,7 +242,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
                 )
             else:
                 await conn.execute(
-                    "UPDATE staging.prachar_sequence_enrollments "
+                    "UPDATE public.prachar_sequence_enrollments "
                     "SET current_step = $2, next_step_at = $3 "
                     "WHERE id = $1::uuid",
                     enrollment_id, following, when,

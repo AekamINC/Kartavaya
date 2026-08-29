@@ -427,7 +427,7 @@ api_router = APIRouter(prefix="/api")
 DEFAULT_ORIGINS = [
     "https://kartavya.com",
     "https://www.kartavya.com",
-    "https://staging.kartavya.com",
+    "https://public.kartavya.com",
     "https://kartavaya.com",
     "https://www.kartavaya.com",
     "https://staging.kartavaya.com",
@@ -669,7 +669,7 @@ async def _home_org_id(pool, user_id: str) -> str | None:
     costs a join on the hottest predicate in the product.
     """
     return await pool.fetchval(
-        "SELECT org_id::text FROM staging.user_roles "
+        "SELECT org_id::text FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL "
         "AND role_code IN ('org_owner','org_admin','org_member') "
         "ORDER BY granted_at, org_id::text LIMIT 1",
@@ -903,7 +903,7 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
                 (t.org_id = $2::uuid AND (
                     EXISTS (SELECT 1 FROM public.project_assignments pa
                              WHERE pa.team_id = t.team_id AND pa.user_id = $1)
-                    OR EXISTS (SELECT 1 FROM staging.user_roles ur
+                    OR EXISTS (SELECT 1 FROM public.user_roles ur
                                 WHERE ur.user_id = $1 AND ur.org_id = t.org_id
                                   AND ur.role_code IN ('org_owner','org_admin','org_member'))
                 ))
@@ -1117,7 +1117,7 @@ async def notify_org_owner_project_state(pool, team: dict, actor: dict, what: st
             return
         owners = await pool.fetch(
             "SELECT u.user_id, u.email, COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS name "
-            "FROM staging.user_roles r JOIN users u ON u.user_id = r.user_id "
+            "FROM public.user_roles r JOIN users u ON u.user_id = r.user_id "
             "WHERE r.org_id=$1 AND r.role_code='org_owner'",
             str(team["org_id"]))
         actor_name = (actor.get("full_name") or actor.get("name")
@@ -1909,7 +1909,7 @@ async def _assert_client_in_org(pool, client_id, org_id):
     except (ValueError, AttributeError, TypeError):
         raise HTTPException(422, f"client_id: '{client_id}' is not a valid client id.")
     found = await pool.fetchval(
-        "SELECT id FROM staging.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id FROM public.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         cid, str(org_id),
     )
     if not found:
@@ -2442,7 +2442,7 @@ async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
         WHERE t.deleted_at IS NULL AND (
             EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
             OR EXISTS (
-                SELECT 1 FROM staging.user_roles ur
+                SELECT 1 FROM public.user_roles ur
                 WHERE ur.user_id=$1 AND ur.org_id=t.org_id
                   AND ur.role_code IN ('org_owner','org_admin','org_member')
                   AND t.org_id IS NOT NULL
@@ -4025,8 +4025,8 @@ async def list_users(request:Request,pool=Depends(get_db),user=Depends(require_u
             "       COALESCE(ARRAY_AGG(DISTINCT o.name) FILTER (WHERE o.name IS NOT NULL), "
             "                '{}')::text[] AS orgs "
             "FROM users u "
-            "LEFT JOIN staging.user_roles ur ON ur.user_id = u.user_id "
-            "LEFT JOIN staging.organisations o ON o.id = ur.org_id "
+            "LEFT JOIN public.user_roles ur ON ur.user_id = u.user_id "
+            "LEFT JOIN public.organisations o ON o.id = ur.org_id "
             # The per-org Niyam automation accounts (migration 148) hold no
             # user_roles row, so every org-scoped list already misses them --
             # this LEFT JOIN over ALL of public.users is the one directory in
@@ -4060,7 +4060,7 @@ async def list_users(request:Request,pool=Depends(get_db),user=Depends(require_u
         "SELECT u.user_id,COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unnamed member') AS display_name,"
         "u.email,u.role,u.company_name "
         "FROM users u "
-        "JOIN staging.user_roles ur ON ur.user_id = u.user_id "
+        "JOIN public.user_roles ur ON ur.user_id = u.user_id "
         "WHERE ur.org_id=$1::uuid "
         "GROUP BY u.user_id,u.full_name,u.name,u.email,u.role,u.company_name "
         "ORDER BY display_name ASC",
@@ -5173,7 +5173,7 @@ async def task_is_in_org(pool, org: str | None, *, team_id: str | None,
         # paths below are unaffected and still reach it.
         return False
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles WHERE org_id=$2::uuid "
+        "SELECT 1 FROM public.user_roles WHERE org_id=$2::uuid "
         "AND user_id = ANY($1::text[]) LIMIT 1",
         ids, org))
 
@@ -6375,19 +6375,19 @@ async def _run_startup_migrations():
             )
         """)
         await pool.execute("ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS brand_settings JSONB NOT NULL DEFAULT '{\"colors\":[],\"fonts\":[]}'::jsonb")
-        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_name TEXT DEFAULT ''")
-        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_designation TEXT DEFAULT ''")
+        await pool.execute("ALTER TABLE public.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_name TEXT DEFAULT ''")
+        await pool.execute("ALTER TABLE public.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_designation TEXT DEFAULT ''")
         # Org credit tables (migration 052)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS staging.hub_org_credits (
-                org_id      UUID PRIMARY KEY REFERENCES staging.organisations(id) ON DELETE CASCADE,
+            CREATE TABLE IF NOT EXISTS public.hub_org_credits (
+                org_id      UUID PRIMARY KEY REFERENCES public.organisations(id) ON DELETE CASCADE,
                 balance     INTEGER NOT NULL DEFAULT 0,
                 updated_at  TIMESTAMPTZ DEFAULT NOW()
             )
         """)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS staging.hub_user_credits (
-                org_id      UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
+            CREATE TABLE IF NOT EXISTS public.hub_user_credits (
+                org_id      UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
                 user_id     TEXT NOT NULL,
                 allocated   INTEGER NOT NULL DEFAULT 0,
                 used        INTEGER NOT NULL DEFAULT 0,
@@ -6395,11 +6395,11 @@ async def _run_startup_migrations():
                 PRIMARY KEY (org_id, user_id)
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_user_credits_org ON staging.hub_user_credits(org_id)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_user_credits_org ON public.hub_user_credits(org_id)")
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS staging.hub_org_credit_transactions (
+            CREATE TABLE IF NOT EXISTS public.hub_org_credit_transactions (
                 id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
+                org_id          UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
                 user_id         TEXT,
                 amount          INTEGER NOT NULL,
                 balance_after   INTEGER NOT NULL,
@@ -6409,17 +6409,17 @@ async def _run_startup_migrations():
                 created_at      TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_org_credit_tx_org ON staging.hub_org_credit_transactions(org_id)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_org_credit_tx_org ON public.hub_org_credit_transactions(org_id)")
         # AI logs org_id column (migration 053)
-        await pool.execute("ALTER TABLE staging.hub_ai_logs ADD COLUMN IF NOT EXISTS org_id UUID")
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_ai_logs_org_id ON staging.hub_ai_logs(org_id)")
+        await pool.execute("ALTER TABLE public.hub_ai_logs ADD COLUMN IF NOT EXISTS org_id UUID")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_ai_logs_org_id ON public.hub_ai_logs(org_id)")
         # Per-org markup percentage (migration 054)
-        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS markup_pct NUMERIC(5,4) NOT NULL DEFAULT 0.30")
+        await pool.execute("ALTER TABLE public.organisations ADD COLUMN IF NOT EXISTS markup_pct NUMERIC(5,4) NOT NULL DEFAULT 0.30")
         # Plan default credits & monthly reset tracking (migration 055)
-        await pool.execute("ALTER TABLE staging.plans ADD COLUMN IF NOT EXISTS default_credits INTEGER NOT NULL DEFAULT 0")
-        await pool.execute("ALTER TABLE staging.hub_org_credits ADD COLUMN IF NOT EXISTS credits_reset_at TIMESTAMPTZ DEFAULT NOW()")
-        await pool.execute("ALTER TABLE staging.hub_scraper_runs ADD COLUMN IF NOT EXISTS credits_charged INTEGER DEFAULT 0")
-        await pool.execute("ALTER TABLE staging.hub_scraper_catalog ADD COLUMN IF NOT EXISTS credit_cost INTEGER NOT NULL DEFAULT 2")
+        await pool.execute("ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS default_credits INTEGER NOT NULL DEFAULT 0")
+        await pool.execute("ALTER TABLE public.hub_org_credits ADD COLUMN IF NOT EXISTS credits_reset_at TIMESTAMPTZ DEFAULT NOW()")
+        await pool.execute("ALTER TABLE public.hub_scraper_runs ADD COLUMN IF NOT EXISTS credits_charged INTEGER DEFAULT 0")
+        await pool.execute("ALTER TABLE public.hub_scraper_catalog ADD COLUMN IF NOT EXISTS credit_cost INTEGER NOT NULL DEFAULT 2")
         # REMOVED: the CASE backfill that derived credit_cost from cost_per_run
         # `WHERE credit_cost = 2`. 2 is that column's own DEFAULT, so the filter
         # could not tell a row nobody had priced from a row an operator had
@@ -6429,13 +6429,13 @@ async def _run_startup_migrations():
         # kind='scraper', so that was a boot job moving a live price.
         # The catalog has been through this backfill many times over; a row
         # added from here on is priced by whoever inserts it.
-        await pool.execute("UPDATE staging.plans SET default_credits=200 WHERE code='free' AND default_credits=0")
-        await pool.execute("UPDATE staging.plans SET default_credits=500 WHERE code='starter' AND default_credits=0")
-        await pool.execute("UPDATE staging.plans SET default_credits=1000 WHERE code='growth' AND default_credits=0")
-        await pool.execute("UPDATE staging.plans SET default_credits=2000 WHERE code='scale' AND default_credits=0")
+        await pool.execute("UPDATE public.plans SET default_credits=200 WHERE code='free' AND default_credits=0")
+        await pool.execute("UPDATE public.plans SET default_credits=500 WHERE code='starter' AND default_credits=0")
+        await pool.execute("UPDATE public.plans SET default_credits=1000 WHERE code='growth' AND default_credits=0")
+        await pool.execute("UPDATE public.plans SET default_credits=2000 WHERE code='scale' AND default_credits=0")
         # Per-org monthly_credits and monthly_price overrides
-        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS monthly_credits INTEGER NOT NULL DEFAULT 0")
-        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) NOT NULL DEFAULT 0")
+        await pool.execute("ALTER TABLE public.organisations ADD COLUMN IF NOT EXISTS monthly_credits INTEGER NOT NULL DEFAULT 0")
+        await pool.execute("ALTER TABLE public.organisations ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) NOT NULL DEFAULT 0")
         # REMOVED: the plan-default re-seed, which ran
         #     UPDATE organisations SET monthly_credits = plans.default_credits
         #      WHERE monthly_credits = 0 AND default_credits > 0
@@ -6464,7 +6464,7 @@ async def _run_startup_migrations():
         # disagree about the same row, which is the point of the exercise.
         # Ensure all users with role='admin' have platform_admin in user_roles
         await pool.execute("""
-            INSERT INTO staging.user_roles (user_id, org_id, role_code)
+            INSERT INTO public.user_roles (user_id, org_id, role_code)
             SELECT user_id, NULL, 'platform_admin'
             -- NOT is_system is belt-and-braces: Niyam accounts are seeded with
             -- role='member', but a system row must never be one UPDATE away

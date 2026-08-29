@@ -121,14 +121,14 @@ async def list_rules(org_id: str = Depends(get_org_id),
         """
         SELECT r.rule_id, r.name, r.event_type, r.enabled, r.is_armed,
                r.created_at, r.updated_at,
-               (SELECT count(*) FROM staging.niyam_runs n
+               (SELECT count(*) FROM public.niyam_runs n
                  WHERE n.rule_id = r.rule_id)                       AS runs_total,
-               (SELECT count(*) FROM staging.niyam_runs n
+               (SELECT count(*) FROM public.niyam_runs n
                  WHERE n.rule_id = r.rule_id
                    AND n.started_at > NOW() - INTERVAL '7 days')    AS runs_7d,
-               (SELECT max(started_at) FROM staging.niyam_runs n
+               (SELECT max(started_at) FROM public.niyam_runs n
                  WHERE n.rule_id = r.rule_id)                       AS last_run_at
-          FROM staging.niyam_rules r
+          FROM public.niyam_rules r
          WHERE r.org_id = $1::uuid
          ORDER BY r.created_at DESC
         """,
@@ -151,12 +151,12 @@ async def list_rules(org_id: str = Depends(get_org_id),
 
 async def _load(pool, org_id: str, rule_id: str):
     rule = await pool.fetchrow(
-        "SELECT * FROM staging.niyam_rules WHERE rule_id=$1::text AND org_id=$2::uuid",
+        "SELECT * FROM public.niyam_rules WHERE rule_id=$1::text AND org_id=$2::uuid",
         rule_id, org_id)
     if rule is None:
         raise HTTPException(404, "No such rule")
     steps = await pool.fetch(
-        "SELECT step_no, kind, config FROM staging.niyam_rule_steps "
+        "SELECT step_no, kind, config FROM public.niyam_rule_steps "
         "WHERE rule_id=$1::text ORDER BY step_no", rule_id)
     return rule, steps
 
@@ -191,11 +191,11 @@ async def _write_steps(conn, rule_id: str, steps: list) -> None:
     diff would have to reason about moves, and a half-applied reorder is a
     pipeline that does something nobody wrote.
     """
-    await conn.execute("DELETE FROM staging.niyam_rule_steps WHERE rule_id=$1::text",
+    await conn.execute("DELETE FROM public.niyam_rule_steps WHERE rule_id=$1::text",
                        rule_id)
     for s in steps:
         await conn.execute(
-            "INSERT INTO staging.niyam_rule_steps (step_id, rule_id, step_no, kind, config) "
+            "INSERT INTO public.niyam_rule_steps (step_id, rule_id, step_no, kind, config) "
             "VALUES ($1::text, $2::text, $3::int, $4::text, $5::jsonb)",
             f"nstep_{uuid.uuid4().hex[:12]}", rule_id, s["step_no"], s["kind"],
             json.dumps(s["config"]))
@@ -226,7 +226,7 @@ async def create_rule(body: RuleIn, org_id: str = Depends(get_org_id),
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO staging.niyam_rules "
+                "INSERT INTO public.niyam_rules "
                 "(rule_id, org_id, name, event_type, created_by) "
                 "VALUES ($1::text, $2::uuid, $3::text, $4::text, $5::text)",
                 rule_id, org_id, name, body.event_type,
@@ -256,7 +256,7 @@ async def patch_rule(rule_id: str, body: RulePatch,
         # design is "see it happen before you trust it" — and a rule that has
         # never matched anything is one whose author has seen nothing.
         seen = await pool.fetchval(
-            "SELECT count(*) FROM staging.niyam_runs WHERE rule_id=$1::text", rule_id)
+            "SELECT count(*) FROM public.niyam_runs WHERE rule_id=$1::text", rule_id)
         if not seen:
             raise HTTPException(422, detail={
                 "error": ("This rule has never run, so there is nothing to judge "
@@ -276,7 +276,7 @@ async def patch_rule(rule_id: str, body: RulePatch,
             if sets:
                 vals.extend([rule_id, org_id])
                 await conn.execute(
-                    f"UPDATE staging.niyam_rules SET {', '.join(sets)}, updated_at = NOW() "
+                    f"UPDATE public.niyam_rules SET {', '.join(sets)}, updated_at = NOW() "
                     f"WHERE rule_id = ${len(vals) - 1}::text AND org_id = ${len(vals)}::uuid",
                     *vals)
             if steps is not None:
@@ -295,7 +295,7 @@ async def delete_rule(rule_id: str, org_id: str = Depends(get_org_id),
     pool = await get_pool()
     await _load(pool, org_id, rule_id)
     await pool.execute(
-        "DELETE FROM staging.niyam_rules WHERE rule_id=$1::text AND org_id=$2::uuid",
+        "DELETE FROM public.niyam_rules WHERE rule_id=$1::text AND org_id=$2::uuid",
         rule_id, org_id)
     return {"deleted": rule_id}
 
@@ -332,7 +332,7 @@ async def preview(rule_id: str, org_id: str = Depends(get_org_id),
     events = await pool.fetch(
         """
         SELECT event_id, occurred_at, entity_id, payload
-          FROM staging.niyam_events
+          FROM public.niyam_events
          WHERE org_id = $1::uuid AND event_type = $2::text
          ORDER BY event_id DESC
          LIMIT $3::int
@@ -394,9 +394,9 @@ async def runs(rule_id: str, limit: int = 50,
                             'step_no', s.step_no, 'outcome', s.outcome,
                             'detail', s.detail, 'outbound_id', s.outbound_id)
                           ORDER BY s.step_no)
-                    FROM staging.niyam_run_steps s WHERE s.run_id = r.run_id),
+                    FROM public.niyam_run_steps s WHERE s.run_id = r.run_id),
                  '[]'::json) AS steps
-          FROM staging.niyam_runs r
+          FROM public.niyam_runs r
          WHERE r.rule_id = $1::text AND r.org_id = $2::uuid
          ORDER BY r.started_at DESC
          LIMIT $3::int

@@ -482,7 +482,7 @@ async def _assert_org(conn, org_id: str) -> str:
     """The org exists, or 404 — checked before any INSERT. See `UnknownOrg`."""
     org_id = _uuid(org_id, what="org", exc=UnknownOrg)
     found = await conn.fetchval(
-        "SELECT id FROM staging.organisations WHERE id=$1::uuid", org_id,
+        "SELECT id FROM public.organisations WHERE id=$1::uuid", org_id,
     )
     if found is None:
         raise UnknownOrg(f"No organisation {org_id}.", org_id=org_id)
@@ -493,7 +493,7 @@ async def _line_by_id(conn, line_id: str, org_id: str, *, for_update: bool = Fal
     """One line, scoped to its org. `UnknownLine` covers both "no such id" and
     "not yours" — see the exception."""
     sql = (
-        f"SELECT {_LINE_COLS} FROM staging.org_billing_lines "
+        f"SELECT {_LINE_COLS} FROM public.org_billing_lines "
         f"WHERE id=$1::uuid AND org_id=$2::uuid"
         + (" FOR UPDATE" if for_update else "")
     )
@@ -515,7 +515,7 @@ async def _open_line_of_kind(conn, org_id: str, kind: str, *, for_update: bool):
     else created it first" rather than as a failure.
     """
     sql = (
-        f"SELECT {_LINE_COLS} FROM staging.org_billing_lines "
+        f"SELECT {_LINE_COLS} FROM public.org_billing_lines "
         f"WHERE org_id=$1::uuid AND kind=$2 AND cadence='monthly' "
         f"  AND period_end IS NULL "
         f"ORDER BY period_start, created_at LIMIT 1"
@@ -543,7 +543,7 @@ async def _insert_line(conn, **cols) -> tuple[Any, str]:
     open platform line".
     """
     sql = (
-        "INSERT INTO staging.org_billing_lines "
+        "INSERT INTO public.org_billing_lines "
         "(org_id, kind, description, amount, currency, cadence, "
         " period_start, period_end, source_ref, created_by) "
         "VALUES ($1::uuid, $2, $3, $4::numeric, $5, $6, $7::date, $8::date, $9, $10) "
@@ -678,7 +678,7 @@ async def sync_platform_line(
         return _row_to_line(existing)
 
     row = await conn.fetchrow(
-        "UPDATE staging.org_billing_lines "
+        "UPDATE public.org_billing_lines "
         "SET amount=$1::numeric, updated_at=NOW() "
         "WHERE id=$2::uuid "
         f"RETURNING {_LINE_COLS}",
@@ -702,7 +702,7 @@ async def _end_row(conn, row, *, actor_id: Optional[str], period: date):
     """
     ends_on = max(period, row["period_start"])
     return await conn.fetchrow(
-        "UPDATE staging.org_billing_lines "
+        "UPDATE public.org_billing_lines "
         "SET period_end=$1::date, ended_by=$2, updated_at=NOW() "
         "WHERE id=$3::uuid AND period_end IS NULL "
         f"RETURNING {_LINE_COLS}",
@@ -836,7 +836,7 @@ async def create_line(
 
     if source_ref:
         existing = await conn.fetchrow(
-            f"SELECT {_LINE_COLS} FROM staging.org_billing_lines "
+            f"SELECT {_LINE_COLS} FROM public.org_billing_lines "
             f"WHERE source_ref=$1",
             source_ref,
         )
@@ -875,7 +875,7 @@ async def create_line(
         # `uq_obl_source_ref`: the racing request won. Its row is the answer —
         # this is the double-click, and one line is the correct outcome.
         existing = await conn.fetchrow(
-            f"SELECT {_LINE_COLS} FROM staging.org_billing_lines WHERE source_ref=$1",
+            f"SELECT {_LINE_COLS} FROM public.org_billing_lines WHERE source_ref=$1",
             source_ref,
         )
         if existing is not None:
@@ -1000,7 +1000,7 @@ async def update_line(
 
     params.append(line_id)
     updated = await conn.fetchrow(
-        f"UPDATE staging.org_billing_lines SET {', '.join(sets)}, updated_at=NOW() "
+        f"UPDATE public.org_billing_lines SET {', '.join(sets)}, updated_at=NOW() "
         f"WHERE id=${len(params)}::uuid "
         f"RETURNING {_LINE_COLS}",
         *params,
@@ -1147,7 +1147,7 @@ def _covering_line(period: str = "$2") -> str:
     """
     return (
         "SELECT e.id, e.description, e.amount, e.period_start, e.period_end "
-        "FROM staging.org_billing_lines e "
+        "FROM public.org_billing_lines e "
         "WHERE e.org_id = l.org_id AND e.kind = l.kind "
         "  AND e.cadence = 'monthly' "
         f"  AND e.period_start <= {period}::date "
@@ -1204,7 +1204,7 @@ _DUE_IN_PERIOD = _due_in_period()
 #: violation. Nothing sets 'refunded' today; this is the note for whoever adds
 #: the refund path.
 _NOT_YET_BILLED = (
-    "NOT EXISTS (SELECT 1 FROM staging.invoice_billing_lines b "
+    "NOT EXISTS (SELECT 1 FROM public.invoice_billing_lines b "
     "             WHERE b.line_id = l.id AND b.period_start = $2::date)"
 )
 
@@ -1266,7 +1266,7 @@ async def list_lines(
     period = _month_start(period) if period is not None else current_period()
 
     rows = await conn.fetch(
-        f"SELECT {_LINE_COLS} FROM staging.org_billing_lines l "
+        f"SELECT {_LINE_COLS} FROM public.org_billing_lines l "
         f"WHERE org_id=$1::uuid "
         # Newest period first, and `created_at` breaks the tie so two lines
         # opened in the same month keep a stable order between reloads.
@@ -1285,7 +1285,7 @@ async def list_lines(
         "SELECT "
         f"  COALESCE(SUM({_SIGNED_AMOUNT_SQL}) FILTER (WHERE l.cadence='monthly'), 0) AS monthly_total, "
         f"  COALESCE(SUM({_SIGNED_AMOUNT_SQL}) FILTER (WHERE l.cadence='one_off'), 0) AS one_off_total "
-        "FROM staging.org_billing_lines l "
+        "FROM public.org_billing_lines l "
         f"WHERE l.org_id=$1::uuid AND {_DUE_IN_PERIOD}",
         org_id, period,
     )
@@ -1335,7 +1335,7 @@ async def lines_due_in_period(conn, org_id: str, period: Any) -> dict:
     period = _month_start(period)
 
     due = await conn.fetch(
-        f"SELECT {_LINE_COLS} FROM staging.org_billing_lines l "
+        f"SELECT {_LINE_COLS} FROM public.org_billing_lines l "
         f"WHERE l.org_id=$1::uuid AND {_DUE_IN_PERIOD} AND {_NOT_YET_BILLED} "
         # Platform fee first, then the recurring services, then the one-offs and
         # the top-ups — the order the owner listed them, so an invoice reads the
@@ -1353,9 +1353,9 @@ async def lines_due_in_period(conn, org_id: str, period: Any) -> dict:
         "SELECT l.id AS line_id, l.kind, l.description, "
         "       b.amount AS amount, b.period_start AS period_start, "
         "       i.id AS invoice_id, i.invoice_number, i.payment_status "
-        "FROM staging.org_billing_lines l "
-        "JOIN staging.invoice_billing_lines b ON b.line_id = l.id "
-        "JOIN staging.subscription_invoices i ON i.id = b.invoice_id "
+        "FROM public.org_billing_lines l "
+        "JOIN public.invoice_billing_lines b ON b.line_id = l.id "
+        "JOIN public.subscription_invoices i ON i.id = b.invoice_id "
         "WHERE l.org_id=$1::uuid AND b.period_start=$2::date "
         "ORDER BY i.invoice_number, l.created_at",
         org_id, period,
@@ -1372,7 +1372,7 @@ async def lines_due_in_period(conn, org_id: str, period: Any) -> dict:
         "       l.period_start, l.period_end, "
         "       c.id AS covered_by_id, c.description AS covered_by_description, "
         "       c.amount AS covered_by_amount, c.period_end AS covered_by_period_end "
-        "FROM staging.org_billing_lines l "
+        "FROM public.org_billing_lines l "
         f"JOIN LATERAL ({_covering_line()}) c ON TRUE "
         "WHERE l.org_id=$1::uuid AND l.cadence='monthly' "
         "  AND l.period_start <= $2::date "
@@ -1583,7 +1583,7 @@ async def record_billed(
         kinds = {
             str(r["id"]): r["kind"]
             for r in await conn.fetch(
-                "SELECT id, kind FROM staging.org_billing_lines "
+                "SELECT id, kind FROM public.org_billing_lines "
                 "WHERE id = ANY($1::uuid[]) AND org_id = $2::uuid",
                 ids, org_id,
             )
@@ -1634,7 +1634,7 @@ async def record_billed(
         "       l.period_start, l.period_end, "
         "       c.description AS covered_by_description, "
         "       c.period_end AS covered_by_period_end "
-        "FROM staging.org_billing_lines l "
+        "FROM public.org_billing_lines l "
         f"LEFT JOIN LATERAL ({_covering_line()}) c ON TRUE "
         "WHERE l.id = ANY($1::uuid[]) AND l.org_id = $3::uuid "
         f"  AND NOT {_DUE_IN_PERIOD}",
@@ -1657,9 +1657,9 @@ async def record_billed(
     # say what is held is exactly what the money rules forbid.
     clash = await conn.fetch(
         "SELECT b.line_id, l.description, i.invoice_number "
-        "FROM staging.invoice_billing_lines b "
-        "JOIN staging.org_billing_lines l ON l.id = b.line_id "
-        "JOIN staging.subscription_invoices i ON i.id = b.invoice_id "
+        "FROM public.invoice_billing_lines b "
+        "JOIN public.org_billing_lines l ON l.id = b.line_id "
+        "JOIN public.subscription_invoices i ON i.id = b.invoice_id "
         "WHERE b.line_id = ANY($1::uuid[]) AND b.period_start = $2::date",
         ids, period,
     )
@@ -1678,7 +1678,7 @@ async def record_billed(
         )
 
     rows = await conn.fetch(
-        "INSERT INTO staging.invoice_billing_lines "
+        "INSERT INTO public.invoice_billing_lines "
         "(invoice_id, line_id, period_start, amount) "
         # WHAT THE CLIENT WAS CHARGED, frozen AT ISSUE TIME. The invoice's own
         # figure when the caller supplies one, the line's when it does not —
@@ -1692,7 +1692,7 @@ async def record_billed(
         # that proves what was billed. `_SIGNED_AMOUNT_SQL` is the same rule the
         # totals and the preview use.
         f"SELECT $1::uuid, l.id, $3::date, COALESCE(v.amount, {_SIGNED_AMOUNT_SQL}) "
-        "FROM staging.org_billing_lines l "
+        "FROM public.org_billing_lines l "
         # The two arrays are positional halves of one list: `charged[i]` is the
         # amount for `ids[i]`, NULL where the caller said nothing. LEFT, and the
         # id array still drives the WHERE, so the override is a lookup and never

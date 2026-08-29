@@ -201,7 +201,7 @@ def reset_caches() -> None:
 #: naming the router at all.
 CLAIMED_PINS_SQL = (
     "SELECT t.rules -> 'pincodes' AS pincodes "
-    "FROM staging.graha_territories t "
+    "FROM public.graha_territories t "
     "WHERE t.id = $1::uuid AND t.org_id = $2::uuid AND t.is_active = TRUE"
 )
 

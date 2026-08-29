@@ -167,8 +167,8 @@ async def download_quotation_pdf(
         "c.company AS contact_company, c.gstin AS contact_gstin, "
         "c.designation AS contact_designation, "
         "c.billing_address AS contact_billing_address "
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.id=$1::uuid AND i.org_id=$2::uuid AND i.is_active",
         str(invoice_id), org_id,
     )
@@ -266,7 +266,7 @@ async def download_statement_pdf(
     pool = await get_pool()
     contact_row = await pool.fetchrow(
         "SELECT name, company, email, gstin, billing_address "
-        "FROM staging.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid",
+        "FROM public.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contact_id), org_id,
     )
     if not contact_row:
@@ -318,7 +318,7 @@ async def download_statement_pdf(
     # before the window. Cancelled invoices are excluded — a cancelled tax
     # document is not a receivable.
     opening_invoiced = await pool.fetchval(
-        "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
+        "SELECT COALESCE(SUM(total), 0) FROM public.ganit_invoices "
         "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
         "AND cancelled_at IS NULL AND invoice_type IN ('tax_invoice','debit_note') "
         + _NOT_DRAFT +
@@ -326,7 +326,7 @@ async def download_statement_pdf(
         org_id, str(contact_id), period_start,
     ) or 0
     opening_credited = await pool.fetchval(
-        "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
+        "SELECT COALESCE(SUM(total), 0) FROM public.ganit_invoices "
         "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
         "AND cancelled_at IS NULL AND invoice_type = 'credit_note' "
         + _NOT_DRAFT +
@@ -334,8 +334,8 @@ async def download_statement_pdf(
         org_id, str(contact_id), period_start,
     ) or 0
     opening_paid = await pool.fetchval(
-        "SELECT COALESCE(SUM(p.amount), 0) FROM staging.ganit_payments p "
-        "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
+        "SELECT COALESCE(SUM(p.amount), 0) FROM public.ganit_payments p "
+        "JOIN public.ganit_invoices i ON i.id = p.invoice_id "
         "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid "
         + _NOT_DRAFT_I +
         "AND p.payment_date < $3::text::date",
@@ -345,7 +345,7 @@ async def download_statement_pdf(
 
     invoices = await pool.fetch(
         "SELECT invoice_number, invoice_type, invoice_date, due_date, total, "
-        "balance_due, notes FROM staging.ganit_invoices "
+        "balance_due, notes FROM public.ganit_invoices "
         "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
         "AND cancelled_at IS NULL "
         + _NOT_DRAFT +
@@ -355,8 +355,8 @@ async def download_statement_pdf(
     )
     payments = await pool.fetch(
         "SELECT p.payment_date, p.amount, p.payment_method, p.reference, "
-        "i.invoice_number FROM staging.ganit_payments p "
-        "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
+        "i.invoice_number FROM public.ganit_payments p "
+        "JOIN public.ganit_invoices i ON i.id = p.invoice_id "
         "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid "
         + _NOT_DRAFT_I +
         "AND p.payment_date BETWEEN $3::text::date AND $4::text::date "
@@ -616,7 +616,7 @@ async def download_tds_challan_pdf(
     if body.include_salary_tds:
         salary = await pool.fetchrow(
             "SELECT COALESCE(SUM(tds), 0) AS tds, COALESCE(SUM(gross), 0) AS gross, "
-            "COUNT(*) AS n FROM staging.vetana_payslips "
+            "COUNT(*) AS n FROM public.vetana_payslips "
             "WHERE org_id=$1::uuid AND month=$2 AND is_active AND tds > 0",
             org_id, period,
         )
@@ -717,8 +717,8 @@ async def download_agreement_pdf(
         "SELECT k.*, c.name AS contact_name, c.company AS contact_company, "
         "c.gstin AS contact_gstin, c.designation AS contact_designation, "
         "c.billing_address AS contact_billing_address "
-        "FROM staging.ganit_contracts k "
-        "LEFT JOIN staging.graha_contacts c ON c.id = k.contact_id "
+        "FROM public.ganit_contracts k "
+        "LEFT JOIN public.graha_contacts c ON c.id = k.contact_id "
         "WHERE k.id=$1::uuid AND k.org_id=$2::uuid AND k.is_active",
         str(contract_id), org_id,
     )
@@ -821,7 +821,7 @@ async def download_project_report_pdf(
 
     pool = await get_pool()
     team_id = await pool.fetchval(
-        "SELECT team_id FROM staging.organisations WHERE id=$1::uuid", org_id
+        "SELECT team_id FROM public.organisations WHERE id=$1::uuid", org_id
     )
     if not team_id:
         raise HTTPException(404, "Organisation has no team")
@@ -864,7 +864,7 @@ async def download_project_report_pdf(
     fee_invoiced = 0.0
     if body.client_contact_id:
         contact_row = await pool.fetchrow(
-            "SELECT name, company, designation FROM staging.graha_contacts "
+            "SELECT name, company, designation FROM public.graha_contacts "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             body.client_contact_id, org_id,
         )
@@ -876,7 +876,7 @@ async def download_project_report_pdf(
             # planned fee), and the same 79 rows / Rs 1,16,41,312.46 matched
             # this predicate live on 2026-08-25.
             fee_invoiced = float(await pool.fetchval(
-                "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
+                "SELECT COALESCE(SUM(total), 0) FROM public.ganit_invoices "
                 "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
                 "AND cancelled_at IS NULL AND invoice_type='tax_invoice' "
                 "AND COALESCE(doc_status, '') <> 'draft' "
@@ -1006,8 +1006,8 @@ async def _tally_rows(pool, org_id: str, start: str, end: str):
     """
     invoices = await pool.fetch(
         f"SELECT {_TALLY_INVOICE_COLS} "
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.org_id=$1::uuid AND i.is_active AND i.cancelled_at IS NULL "
         "AND COALESCE(i.payment_status, '') <> 'cancelled' "
         "AND COALESCE(i.doc_status, '') <> 'draft' "
@@ -1018,8 +1018,8 @@ async def _tally_rows(pool, org_id: str, start: str, end: str):
     )
     bills = await pool.fetch(
         f"SELECT {_TALLY_BILL_COLS} "
-        "FROM staging.ganit_vendor_bills b "
-        "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+        "FROM public.ganit_vendor_bills b "
+        "JOIN public.ganit_vendors v ON v.id = b.vendor_id "
         "WHERE b.org_id=$1::uuid AND b.is_active "
         "AND COALESCE(b.status, '') <> 'cancelled' "
         "AND b.bill_date >= $2::text::date AND b.bill_date < $3::text::date "
@@ -1140,8 +1140,8 @@ async def _build_gstr1(pool, org_id: str, period: str):
     start, end = _period_bounds(period)
     rows = await pool.fetch(
         f"SELECT {_GSTR1_COLS} "
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.org_id=$1::uuid AND i.is_active "
         "AND i.invoice_date >= $2::text::date AND i.invoice_date < $3::text::date "
         "ORDER BY i.invoice_date, i.invoice_number",

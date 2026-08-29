@@ -12,7 +12,7 @@ run_golden_evals.py — run the golden eval set and say whether anything regress
 
 It does not touch the database. Not to read the questions, not to log the run,
 not through `ai_router.generate` — which needs a pool, writes a row to
-`staging.hub_ai_logs` for every call, and would therefore make a CI run a
+`public.hub_ai_logs` for every call, and would therefore make a CI run a
 production write. Staging and production share one Supabase project.
 
 It does not call the Sahayak chat route either, for the same reason: that route

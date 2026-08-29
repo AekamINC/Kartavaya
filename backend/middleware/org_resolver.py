@@ -263,7 +263,7 @@ _SUPPORT_TABLE_ABSENT_LOGGED = False
 #: because no timestamp on this path was ever read into Python.
 _SUPPORT_SESSION_SQL = """
     SELECT s.id, s.ref, s.modules, s.access_level, s.expires_at, s.approved_by
-      FROM staging.v_active_support_sessions s
+      FROM public.v_active_support_sessions s
      WHERE s.org_id = $1::uuid
        AND s.requested_by = $2
      ORDER BY s.approved_at DESC
@@ -304,7 +304,7 @@ async def active_support_session(pool, user_id: str, org_id: str, request=None):
         if not _SUPPORT_TABLE_ABSENT_LOGGED:
             _SUPPORT_TABLE_ABSENT_LOGGED = True
             logger.warning(
-                "staging.v_active_support_sessions is absent — migration 111 is "
+                "public.v_active_support_sessions is absent — migration 111 is "
                 "unapplied, so no support session can be live. Logged once."
             )
         row = None
@@ -545,7 +545,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
         # `subscription.require_module`, which applies `refuse_module_for_org_roles`
         # and refuses a project-only holder all twelve.
         is_member = await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid "
             "AND role_code = ANY($3::text[])",
             user["user_id"], header_org, list(ORG_TENANT_ROLES),
@@ -567,7 +567,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
 
             if _cross_org_path_allowed(path):
                 is_platform = await pool.fetchval(
-                    "SELECT 1 FROM staging.user_roles "
+                    "SELECT 1 FROM public.user_roles "
                     "WHERE user_id=$1 AND org_id IS NULL "
                     "AND role_code = ANY($2::text[])",
                     user["user_id"], list(CROSS_ORG_HEADER_ROLES),
@@ -608,7 +608,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
                 )
                 raise HTTPException(403, "You do not belong to this organisation")
         org = await pool.fetchrow(
-            "SELECT id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE",
+            "SELECT id FROM public.organisations WHERE id=$1::uuid AND is_active=TRUE",
             header_org,
         )
         if not org:
@@ -629,7 +629,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
     # set: a client who sends no `X-Org-Id` would otherwise resolve no
     # organisation and be refused the one project they were invited to.
     org_role = await pool.fetchrow(
-        "SELECT org_id FROM staging.user_roles "
+        "SELECT org_id FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL "
         "AND role_code = ANY($2::text[]) "
         "ORDER BY granted_at LIMIT 1",
@@ -637,7 +637,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
     )
     if org_role:
         org = await pool.fetchrow(
-            "SELECT id FROM staging.organisations WHERE id=$1 AND is_active=TRUE",
+            "SELECT id FROM public.organisations WHERE id=$1 AND is_active=TRUE",
             org_role["org_id"],
         )
         if org:

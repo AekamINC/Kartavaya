@@ -146,7 +146,7 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
             org_id,
         )
         contacts = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE", org_id)
+            "SELECT COUNT(*) FROM public.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE", org_id)
         # The SAME guards as the `/overview` tile this block exports, for the
         # same reason the "revenue" branch below carries them: an export that
         # disagrees with the screen it was taken from is worse than either
@@ -158,7 +158,7 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
         # true Rs 25,33,330. E2E has no paid draft at all, so probing the
         # in-scope orgs one at a time would have certified this as clean.
         revenue = await pool.fetchval(
-            "SELECT COALESCE(SUM(total),0) FROM staging.ganit_invoices "
+            "SELECT COALESCE(SUM(total),0) FROM public.ganit_invoices "
             "WHERE org_id=$1::uuid AND payment_status='paid' AND is_active=TRUE "
             "AND COALESCE(doc_status, '') <> 'draft'"
             + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),
@@ -173,7 +173,7 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
         rows = await pool.fetch(
             "SELECT DATE_TRUNC('month', invoice_date) AS month, "
             "SUM(total) AS total, COUNT(*) AS count "
-            "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
+            "FROM public.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
             "AND COALESCE(doc_status, '') <> 'draft' "
             + ("AND invoice_date BETWEEN $2::date AND $3::date " if win else "")
             + "GROUP BY 1 ORDER BY 1 DESC LIMIT 12", org_id, *wargs)
@@ -181,7 +181,7 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
     elif report_type == "pipeline":
         rows = await pool.fetch(
             "SELECT stage, COUNT(*) AS count, SUM(value) AS value "
-            "FROM staging.graha_deals WHERE org_id=$1::uuid AND is_active=TRUE "
+            "FROM public.graha_deals WHERE org_id=$1::uuid AND is_active=TRUE "
             "GROUP BY stage", org_id)
         return {"stages": [dict(r) for r in rows]}
     elif report_type == "hr":
@@ -199,14 +199,14 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
         # Live 2026-08-26: E2E Test & Associates 83 -> 73; Unicode Group
         # records no exits and stays at 26.
         count = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.manav_employees e "
+            "SELECT COUNT(*) FROM public.manav_employees e "
             "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active'"
             + still_on_the_rolls("e"), org_id)
         return {"active_employees": count}
     elif report_type == "sales":
         rows = await pool.fetch(
             "SELECT status, COUNT(*) AS count, SUM(total) AS total "
-            "FROM staging.vikray_orders WHERE org_id=$1::uuid "
+            "FROM public.vikray_orders WHERE org_id=$1::uuid "
             + ("AND order_date BETWEEN $2::date AND $3::date " if win else "")
             + "GROUP BY status", org_id, *wargs)
         return {"orders_by_status": [dict(r) for r in rows]}
@@ -249,7 +249,7 @@ async def overview(
         "SELECT COUNT(*) AS total_contacts, "
         "COUNT(*) FILTER (WHERE contact_type='lead') AS leads, "
         "COUNT(*) FILTER (WHERE contact_type='customer') AS customers "
-        "FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
+        "FROM public.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
 
@@ -261,7 +261,7 @@ async def overview(
         "COUNT(*) FILTER (WHERE stage='Won') AS won_deals, "
         "COALESCE(SUM(value) FILTER (WHERE stage='Won'),0) AS won_value, "
         "COUNT(*) FILTER (WHERE stage='Lost') AS lost_deals "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid",
+        "FROM public.graha_deals WHERE org_id=$1::uuid",
         org_id,
     )
 
@@ -291,7 +291,7 @@ async def overview(
         "SELECT COALESCE(SUM(total),0) AS total_invoiced, "
         "COALESCE(SUM(amount_paid),0) AS total_collected, "
         "COALESCE(SUM(total - amount_paid) FILTER (WHERE payment_status NOT IN ('paid','cancelled')),0) AS outstanding "
-        "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
+        "FROM public.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
         "AND COALESCE(doc_status, '') <> 'draft'"
         + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),
         *([org_id, win.start, win.end] if win else [org_id]),
@@ -319,9 +319,9 @@ async def overview(
         # not a second one that drifts. Live: 83 before, 73 after.
         "SELECT COUNT(*) AS headcount, "
         "COUNT(*) FILTER (WHERE department IS NOT NULL AND department != '') AS in_departments "
-        "FROM staging.manav_employees e WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
+        "FROM public.manav_employees e WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
         "AND NOT EXISTS ("
-        "  SELECT 1 FROM staging.manav_offboarding x "
+        "  SELECT 1 FROM public.manav_offboarding x "
         "   WHERE x.org_id = e.org_id AND x.employee_id = e.id "
         "     AND x.status <> 'cancelled' "
         "     AND x.last_working_day < CURRENT_DATE)",
@@ -334,7 +334,7 @@ async def overview(
         "SELECT COUNT(*) AS total_orders, "
         "COALESCE(SUM(total),0) AS order_value, "
         "COUNT(*) FILTER (WHERE status='delivered' OR status='closed') AS fulfilled "
-        "FROM staging.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE"
+        "FROM public.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE"
         + (" AND order_date BETWEEN $2::date AND $3::date" if win else ""),
         *([org_id, win.start, win.end] if win else [org_id]),
     )
@@ -348,7 +348,7 @@ async def overview(
         # chronological one and the window needs no cast. The response keys stay
         # `ytd_*` because the frontend reads them by name; the `window` block
         # below is what tells the reader the span is no longer the year.
-        "FROM staging.vetana_payroll_runs "
+        "FROM public.vetana_payroll_runs "
         "WHERE org_id=$1::uuid AND month "
         + ("BETWEEN $2 AND $3" if win else "LIKE $2"),
         *([org_id, win.start.strftime("%Y-%m"), win.end.strftime("%Y-%m")] if win
@@ -425,7 +425,7 @@ async def revenue_trends(
     invoiced = await pool.fetch(
         "SELECT TO_CHAR(invoice_date, 'YYYY-MM') AS month, "
         "SUM(total) AS invoiced, SUM(amount_paid) AS collected, COUNT(*) AS count "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
         "AND COALESCE(doc_status, '') <> 'draft' AND "
         + ("invoice_date BETWEEN $2::date AND $3::date "
@@ -438,7 +438,7 @@ async def revenue_trends(
     expenses = await pool.fetch(
         "SELECT TO_CHAR(expense_date, 'YYYY-MM') AS month, "
         "SUM(total) AS total_expenses, COUNT(*) AS count "
-        "FROM staging.ganit_expenses "
+        "FROM public.ganit_expenses "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND "
         + ("expense_date BETWEEN $2::date AND $3::date "
            if win else "expense_date >= (CURRENT_DATE - INTERVAL '1 year') ")
@@ -498,7 +498,7 @@ async def pipeline_analytics(
 
     stages = await pool.fetch(
         "SELECT stage, COUNT(*) AS count, COALESCE(SUM(value),0) AS value "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid "
+        "FROM public.graha_deals WHERE org_id=$1::uuid "
         "GROUP BY stage ORDER BY CASE stage "
         "WHEN 'New' THEN 1 WHEN 'Qualified' THEN 2 WHEN 'Proposal' THEN 3 "
         "WHEN 'Negotiation' THEN 4 WHEN 'Won' THEN 5 WHEN 'Lost' THEN 6 ELSE 7 END",
@@ -508,7 +508,7 @@ async def pipeline_analytics(
     won_trend = await pool.fetch(
         "SELECT TO_CHAR(updated_at, 'YYYY-MM') AS month, "
         "COUNT(*) AS deals_won, COALESCE(SUM(value),0) AS value_won "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND stage='Won' AND "
         + ("updated_at::date BETWEEN $2::date AND $3::date "
            if win else "updated_at >= (CURRENT_DATE - INTERVAL '6 months') ")
@@ -524,14 +524,14 @@ async def pipeline_analytics(
         "CASE WHEN COUNT(*) > 0 THEN "
         "  ROUND(COUNT(*) FILTER (WHERE stage='Won')::numeric / COUNT(*) * 100, 1) "
         "ELSE 0 END AS win_rate "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid",
+        "FROM public.graha_deals WHERE org_id=$1::uuid",
         org_id,
     )
 
     top_contacts = await pool.fetch(
         "SELECT c.name, c.company, COUNT(d.id) AS deal_count, COALESCE(SUM(d.value),0) AS total_value "
-        "FROM staging.graha_deals d "
-        "JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "FROM public.graha_deals d "
+        "JOIN public.graha_contacts c ON c.id = d.contact_id "
         "WHERE d.org_id=$1::uuid AND d.stage='Won' "
         + ("AND d.updated_at::date BETWEEN $2::date AND $3::date " if win else "")
         + "GROUP BY c.id, c.name, c.company "
@@ -583,7 +583,7 @@ async def hr_analytics(
         # Taxation 8->7, Compliance 8->7, and Administration, Advisory, Audit
         # and IT 7->6 each. Unicode Group records no exits and does not move.
         "SELECT COALESCE(NULLIF(e.department,''), 'Unassigned') AS department, COUNT(*) AS count "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
         + still_on_the_rolls("e")
         + " GROUP BY e.department ORDER BY count DESC",
@@ -596,7 +596,7 @@ async def hr_analytics(
     if "vetana" in allowed:
         payroll_trend = await pool.fetch(
         "SELECT month, total_gross, total_net, total_pf, total_esi, total_tds, employee_count "
-        "FROM staging.vetana_payroll_runs "
+        "FROM public.vetana_payroll_runs "
         "WHERE org_id=$1::uuid "
         + ("AND month BETWEEN $2 AND $3 " if win else "")
         + "ORDER BY month DESC LIMIT 12",
@@ -608,7 +608,7 @@ async def hr_analytics(
         "COUNT(*) FILTER (WHERE status='approved') AS approved, "
         "COUNT(*) FILTER (WHERE status='pending') AS pending, "
         "COUNT(*) FILTER (WHERE status='rejected') AS rejected "
-        "FROM staging.manav_leave_requests WHERE org_id=$1::uuid AND "
+        "FROM public.manav_leave_requests WHERE org_id=$1::uuid AND "
         + ("start_date BETWEEN $2::date AND $3::date"
            if win else "start_date >= DATE_TRUNC('year', CURRENT_DATE)"),
         *([org_id, win.start, win.end] if win else [org_id]),
@@ -618,7 +618,7 @@ async def hr_analytics(
         "SELECT COUNT(DISTINCT employee_id) AS tracked, "
         "COUNT(*) FILTER (WHERE status='present') AS present_days, "
         "COUNT(*) FILTER (WHERE status='absent') AS absent_days "
-        "FROM staging.manav_attendance "
+        "FROM public.manav_attendance "
         "WHERE org_id=$1::uuid AND "
         + ("date BETWEEN $2::date AND $3::date"
            if win else "date >= (CURRENT_DATE - INTERVAL '30 days')"),
@@ -671,7 +671,7 @@ async def sales_analytics(
     order_trend = await pool.fetch(
         "SELECT TO_CHAR(order_date, 'YYYY-MM') AS month, "
         "COUNT(*) AS orders, COALESCE(SUM(total),0) AS value "
-        "FROM staging.vikray_orders "
+        "FROM public.vikray_orders "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND "
         + ("order_date BETWEEN $2::date AND $3::date "
            if win else "order_date >= (CURRENT_DATE - INTERVAL '6 months') ")
@@ -681,7 +681,7 @@ async def sales_analytics(
 
     status_split = await pool.fetch(
         "SELECT status, COUNT(*) AS count, COALESCE(SUM(total),0) AS value "
-        "FROM staging.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE "
+        "FROM public.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE "
         "GROUP BY status",
         org_id,
     )
@@ -712,10 +712,10 @@ async def sales_analytics(
         "CASE WHEN t.target_amount > 0 "
         "  THEN ROUND(COALESCE(d.won,0) / t.target_amount * 100, 1) "
         "  ELSE 0 END AS pct "
-        "FROM staging.vikray_targets t "
+        "FROM public.vikray_targets t "
         "LEFT JOIN users u ON u.user_id = t.salesperson_id "
         "LEFT JOIN LATERAL ("
-        "  SELECT COALESCE(SUM(value),0) AS won FROM staging.graha_deals "
+        "  SELECT COALESCE(SUM(value),0) AS won FROM public.graha_deals "
         "  WHERE org_id=$1::uuid AND stage='Won' AND owner_id::text = t.salesperson_id "
         "  AND updated_at >= t.period_start AND updated_at < t.period_end + 1"
         ") d ON TRUE "
@@ -746,7 +746,7 @@ async def list_dashboards(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.dristi_dashboards "
+        "SELECT * FROM public.dristi_dashboards "
         "WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY is_default DESC, name",
         org_id,
     )
@@ -763,11 +763,11 @@ async def create_dashboard(
     pool = await get_pool()
     if body.is_default:
         await pool.execute(
-            "UPDATE staging.dristi_dashboards SET is_default=FALSE WHERE org_id=$1::uuid",
+            "UPDATE public.dristi_dashboards SET is_default=FALSE WHERE org_id=$1::uuid",
             org_id,
         )
     row = await pool.fetchrow(
-        "INSERT INTO staging.dristi_dashboards (org_id, name, description, widgets, is_default, created_by) "
+        "INSERT INTO public.dristi_dashboards (org_id, name, description, widgets, is_default, created_by) "
         "VALUES ($1::uuid, $2, $3, $4::jsonb, $5, $6) RETURNING *",
         org_id, body.name, body.description, json.dumps(body.widgets), body.is_default, user["user_id"],
     )
@@ -792,14 +792,14 @@ async def update_dashboard(
         vals.append(json.dumps(body.widgets)); updates.append(f"widgets=${len(vals)}::jsonb")
     if body.is_default is not None:
         if body.is_default:
-            await pool.execute("UPDATE staging.dristi_dashboards SET is_default=FALSE WHERE org_id=$1::uuid", org_id)
+            await pool.execute("UPDATE public.dristi_dashboards SET is_default=FALSE WHERE org_id=$1::uuid", org_id)
         vals.append(body.is_default); updates.append(f"is_default=${len(vals)}")
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
     vals += [dash_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.dristi_dashboards SET {', '.join(updates)} "
+        f"UPDATE public.dristi_dashboards SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -817,7 +817,7 @@ async def delete_dashboard(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.dristi_dashboards SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.dristi_dashboards SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         dash_id, org_id,
     )
@@ -858,8 +858,8 @@ async def list_scheduled_reports(user=Depends(require_user), org_id=Depends(get_
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT sr.*, d.name AS dashboard_name "
-        "FROM staging.dristi_scheduled_reports sr "
-        "LEFT JOIN staging.dristi_dashboards d ON d.id = sr.dashboard_id "
+        "FROM public.dristi_scheduled_reports sr "
+        "LEFT JOIN public.dristi_dashboards d ON d.id = sr.dashboard_id "
         "WHERE sr.org_id=$1::uuid ORDER BY sr.created_at DESC",
         org_id,
     )
@@ -883,7 +883,7 @@ async def create_scheduled_report(
         raise HTTPException(400, "At least one recipient is required")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.dristi_scheduled_reports "
+        "INSERT INTO public.dristi_scheduled_reports "
         "(org_id, dashboard_id, name, report_type, frequency, day_of_week, "
         " day_of_month, time_utc, file_formats, recipients, filters, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12) "
@@ -922,7 +922,7 @@ async def update_scheduled_report(
         params.append(v)
         idx += 1
     await pool.execute(
-        f"UPDATE staging.dristi_scheduled_reports SET {', '.join(sets)} "
+        f"UPDATE public.dristi_scheduled_reports SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -937,7 +937,7 @@ async def delete_scheduled_report(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.dristi_scheduled_reports "
+        "DELETE FROM public.dristi_scheduled_reports "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         report_id, org_id,
     )
@@ -1016,10 +1016,86 @@ async def _deliver_scheduled_report(pool, report) -> int:
         html_doc = await _asyncio.to_thread(
             render_report_html, org, label, period_line, widgets)
 
-        # `send_email` is sync (it threads internally) and it is the single
-        # choke point that honours OUTBOUND_MODE, `_safe_subject` and
-        # `outbound_log` — going through it is what keeps dry runs dry.
-        from email_service import send_email
+        # ── THE REPORT NOW TRAVELS AS AN ENCRYPTED PDF ────────────────────
+        #
+        # It used to travel as the EMAIL BODY. `render_report_html`'s docstring
+        # said so — "report.send mails it as the body … and the HTML **is** the
+        # report" — so a firm's turnover, receivables and who-sold-what sat
+        # unencrypted in every mailbox the schedule named, for ever. The owner's
+        # instruction (2026-08-29) was "report email needs to be in pdf as this
+        # email is not secure", and, told that a plain PDF in a mailbox is no
+        # more private than a body, chose PASSWORD-PROTECTED PDF.
+        #
+        # Every decision below — encrypt or not, attach or link, and why — lives
+        # in `services/report_delivery`, deliberately: it is a PURE function
+        # over (pdf, note, passphrase, limit), so the branch that matters most
+        # ("too large, do not send") is reachable in a unit test without a
+        # database, a mail server or a 7 MB fixture.
+        from email_service import FRONTEND_URL
+        from services import report_delivery as rd
+
+        passphrase = await rd.load_passphrase(pool, org_id)
+
+        # WeasyPrint or nothing. `render_pdf` raises RuntimeError when the
+        # native stack is missing — which is a real host condition, not a
+        # hypothetical — and a dead schedule is the outcome the link fallback
+        # exists to avoid, so this degrades rather than raising.
+        def _pdf() -> bytes | None:
+            from services.doc_render import render_pdf
+            try:
+                return render_pdf(html_doc)
+            except Exception as exc:                    # noqa: BLE001
+                log.warning("Dristi report %s: PDF render failed (%s) — "
+                            "falling back to the link shape",
+                            report_id, type(exc).__name__)
+                return None
+
+        pdf_bytes = await _asyncio.to_thread(_pdf)
+
+        # ⚠ The note is built BEFORE the decision only in the sense that the
+        # decision needs its size. `decide()` measures the whole message —
+        # base64'd PDF plus the note plus the modelled MIME framing — against
+        # the ceiling, because the limit SES and every receiving server applies
+        # is to the message, not to the file. A first pass with an empty note
+        # would understate it.
+        note_probe = rd.covering_note(
+            org=org, report_name=report["name"], label=label,
+            period_line=period_line,
+            delivery=rd.Delivery(rd.MODE_ENCRYPTED_PDF, None, "", 0),
+            frontend_url=FRONTEND_URL, skipped_recipients=skipped)
+        delivery = rd.decide(pdf_bytes, note_probe, passphrase)
+
+        # The real note, which on a link branch carries the REASON — so a
+        # recipient who gets no attachment is told why in the mail rather than
+        # left to wonder whether the report is broken.
+        html_body = rd.covering_note(
+            org=org, report_name=report["name"], label=label,
+            period_line=period_line, delivery=delivery,
+            frontend_url=FRONTEND_URL, skipped_recipients=skipped)
+
+        # ⚠ `_safe_subject`, WHICH THIS CALL SITE DID NOT APPLY. The comment
+        # that used to sit here claimed `send_email` "honours OUTBOUND_MODE,
+        # `_safe_subject` and `outbound_log`". It honours two of those three:
+        # `send_email` assigns `mime["Subject"] = subject` untouched and every
+        # other caller in `email_service.py` sanitises for itself. A schedule's
+        # `name` is customer free text. Measured rather than assumed: Python's
+        # email package REFUSES to serialise a header containing a newline
+        # (`HeaderParseError`), so this was never SMTP header injection — it was
+        # a crash inside the sending thread that would file the report 'failed'
+        # and deliver nothing. Latent, and now closed.
+        from email_service import _safe_subject
+        subject = _safe_subject(f"{report['name']} — {label} report")
+
+        # WHICH SHAPE WENT OUT, ON THE OUTBOUND ROW ITSELF. `outbound_log`
+        # stores the whole `ref` in `detail.ref` (200 chars) and derives
+        # `purpose` from the head before the first colon — so appending the
+        # mode keeps `purpose='report'` exactly as before while making the row
+        # answer "was this an encrypted attachment or a bare link?". Without it
+        # the two branches are indistinguishable in the one table that is
+        # evidence of a send, which is the definition of a silent downgrade.
+        # `bytes` on the same row carries the true encoded size, because
+        # `send_pdf_email` measures through `_metered_bytes`.
+        ref = f"report:{report_id}:{delivery.mode}"
 
         # Scoped per report, not once around the sweep's loop. This helper is
         # called in a loop that walks EVERY org, so a scope set once outside it
@@ -1033,36 +1109,75 @@ async def _deliver_scheduled_report(pool, report) -> int:
 
         with org_scope(org_id):
             for recipient in members:
-                send_email(
-                    to_email=recipient,
-                    subject=f"{report['name']} — {label} report",
-                    html_content=html_doc,
-                    # 098 asks for the 'unclassified' bucket to be watched
-                    # falling; this sender was in it. It is also what tells
-                    # `services/email_senders.py` to send from the
-                    # notifications address rather than the default one.
-                    purpose="report",
-                    ref=f"report:{report_id}",
-                )
+                if delivery.attaches:
+                    # `send_pdf_email`, not a fifth hand-rolled MIME document.
+                    # Its own docstring records why: the two senders that each
+                    # grew their own attachment branch each missed the
+                    # `OUTBOUND_MODE=dry` guard, and staging shares production's
+                    # SES identity — so a report run mailed real reports to real
+                    # people. It also base64s through `encoders.encode_base64`,
+                    # which wraps at 76 characters; an unwrapped attachment is
+                    # the OTHER cause of a 552, and
+                    # `tests/test_pdf_attachments_are_line_wrapped.py` holds it.
+                    from services.pdf_email import send_pdf_email
 
+                    send_pdf_email(
+                        to_email=recipient,
+                        subject=subject,
+                        html_content=html_body,
+                        pdf_bytes=delivery.pdf,
+                        filename=rd.filename(label, win.start.isoformat(),
+                                             win.end.isoformat()),
+                        purpose="report",
+                        ref=ref,
+                        label="Scheduled report",
+                    )
+                else:
+                    # No figures leave the building on this branch — the body
+                    # is a covering note and a link behind login. That is
+                    # strictly less disclosure than the code this replaced,
+                    # which mailed the whole report either way.
+                    from email_service import send_email
+
+                    send_email(
+                        to_email=recipient,
+                        subject=subject,
+                        html_content=html_body,
+                        # 098 asks for the 'unclassified' bucket to be watched
+                        # falling; this sender was in it. It is also what tells
+                        # `services/email_senders.py` to send from the
+                        # notifications address rather than the default one.
+                        purpose="report",
+                        ref=ref,
+                    )
+
+        # WHAT ACTUALLY HAPPENED, ON THE ROW. `send_email` and `send_pdf_email`
+        # both hand off to a thread, so neither return value is evidence of
+        # anything — `staging.outbound_log` is. This row is the second record,
+        # and it now says WHICH SHAPE went out: a 'sent' row that does not
+        # distinguish an encrypted attachment from a bare link is the silent
+        # downgrade this design was chosen to avoid.
+        #
         # `org_id` on the log row was never populated, so every delivery record
         # this table holds is org-NULL and the per-org log view cannot find it.
+        detail = f"delivery={delivery.mode}; {delivery.reason}"
+        if skipped:
+            detail = (f"{skipped} recipient(s) skipped — not members of this "
+                      f"org. {detail}")
         await pool.execute(
-            "INSERT INTO staging.dristi_report_logs "
+            "INSERT INTO public.dristi_report_logs "
             "(scheduled_report_id, org_id, status, recipients_count, error) "
             "VALUES ($1::uuid, $2::uuid, 'sent', $3, $4)",
-            report_id, org_id, len(members),
-            (f"{skipped} recipient(s) skipped — not members of this org"
-             if skipped else None),
+            report_id, org_id, len(members), detail,
         )
         await pool.execute(
-            "UPDATE staging.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",
+            "UPDATE public.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",
             report_id,
         )
         return len(members)
     except Exception as e:
         await pool.execute(
-            "INSERT INTO staging.dristi_report_logs "
+            "INSERT INTO public.dristi_report_logs "
             "(scheduled_report_id, org_id, status, error) "
             "VALUES ($1::uuid, $2::uuid, 'failed', $3)",
             report_id, str(report["org_id"]), str(e),
@@ -1078,7 +1193,7 @@ async def run_report_now(
 ):
     pool = await get_pool()
     report = await pool.fetchrow(
-        "SELECT * FROM staging.dristi_scheduled_reports "
+        "SELECT * FROM public.dristi_scheduled_reports "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         report_id, org_id,
     )
@@ -1113,12 +1228,12 @@ async def get_report_logs(
     # Logs carry recipient addresses and failure reasons, and are keyed on the
     # report id alone — so any report id in any org returned its delivery history.
     if not await pool.fetchval(
-        "SELECT 1 FROM staging.dristi_scheduled_reports WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.dristi_scheduled_reports WHERE id=$1::uuid AND org_id=$2::uuid",
         report_id, org_id,
     ):
         raise HTTPException(404, "Scheduled report not found")
     rows = await pool.fetch(
-        "SELECT * FROM staging.dristi_report_logs "
+        "SELECT * FROM public.dristi_report_logs "
         "WHERE scheduled_report_id=$1::uuid ORDER BY sent_at DESC LIMIT 50",
         report_id,
     )
@@ -1204,7 +1319,7 @@ async def dispatch_scheduled_reports(
         "SELECT id, org_id, name, report_type, frequency, day_of_week, "
         "       day_of_month, time_utc, recipients, is_active, "
         "       last_sent_at, created_at, created_by "
-        "FROM staging.dristi_scheduled_reports WHERE is_active = TRUE"
+        "FROM public.dristi_scheduled_reports WHERE is_active = TRUE"
     )
 
     due, skipped = [], []
@@ -1269,7 +1384,7 @@ async def dispatch_scheduled_reports(
             # above is deliberately narrow so the due decision reads only what
             # it uses.
             full = await pool.fetchrow(
-                "SELECT * FROM staging.dristi_scheduled_reports WHERE id=$1::uuid", str(r["id"])
+                "SELECT * FROM public.dristi_scheduled_reports WHERE id=$1::uuid", str(r["id"])
             )
             if not full:
                 # Deleted between the two queries. Not an error.
@@ -1320,7 +1435,7 @@ async def dispatch_scheduled_reports(
             # fetch rather than before it is what keeps the window honest —
             # reversed, every report would cover a zero-length period.
             claimed = await pool.fetchval(
-                "UPDATE staging.dristi_scheduled_reports "
+                "UPDATE public.dristi_scheduled_reports "
                 "   SET last_sent_at = NOW() "
                 " WHERE id = $1::uuid "
                 "   AND last_sent_at IS NOT DISTINCT FROM $2::timestamptz "
@@ -1601,7 +1716,7 @@ async def export_report(
 # perfectly good widgets into 500s.
 _ALLOWED_QUERY_TABLES = {
     "invoices": {
-        "table": "staging.ganit_invoices",
+        "table": "public.ganit_invoices",
         "module": "ganit",
         "soft_delete": True,
         "not_draft": True,
@@ -1610,28 +1725,28 @@ _ALLOWED_QUERY_TABLES = {
         "date_col": "invoice_date",
     },
     "deals": {
-        "table": "staging.graha_deals",
+        "table": "public.graha_deals",
         "module": "graha",
         "soft_delete": True,
         "columns": ["stage", "value", "expected_close", "created_at", "updated_at"],
         "date_col": "created_at",
     },
     "contacts": {
-        "table": "staging.graha_contacts",
+        "table": "public.graha_contacts",
         "module": "graha",
         "soft_delete": True,
         "columns": ["contact_type", "source", "company", "lead_score", "created_at"],
         "date_col": "created_at",
     },
     "orders": {
-        "table": "staging.vikray_orders",
+        "table": "public.vikray_orders",
         "module": "vikray",
         "soft_delete": True,
         "columns": ["order_date", "status", "total", "subtotal", "created_at"],
         "date_col": "order_date",
     },
     "employees": {
-        "table": "staging.manav_employees",
+        "table": "public.manav_employees",
         "module": "manav",
         "soft_delete": True,
         "on_the_rolls": True,
@@ -1640,21 +1755,21 @@ _ALLOWED_QUERY_TABLES = {
         "date_col": "date_of_joining",
     },
     "expenses": {
-        "table": "staging.ganit_expenses",
+        "table": "public.ganit_expenses",
         "module": "ganit",
         "soft_delete": True,
         "columns": ["category", "amount", "total", "expense_date", "status", "created_at"],
         "date_col": "expense_date",
     },
     "tickets": {
-        "table": "staging.graha_tickets",
+        "table": "public.graha_tickets",
         "module": "graha",
         "soft_delete": True,
         "columns": ["priority", "status", "category", "created_at", "resolved_at"],
         "date_col": "created_at",
     },
     "events": {
-        "table": "staging.prachar_events",
+        "table": "public.prachar_events",
         "module": "prachar",
         "soft_delete": True,
         "columns": ["event_type", "status", "starts_at", "created_at"],

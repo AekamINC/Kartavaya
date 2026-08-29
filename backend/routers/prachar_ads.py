@@ -59,8 +59,8 @@ async def list_ad_accounts(user=Depends(require_user), org_id=Depends(get_org_id
     # and `account_name` is already populated by both OAuth callback paths.
     rows = await pool.fetch(
         "SELECT a.*, s.account_name AS social_name "
-        "FROM staging.prachar_ad_accounts a "
-        "LEFT JOIN staging.hub_social_accounts s ON s.id = a.social_account_id "
+        "FROM public.prachar_ad_accounts a "
+        "LEFT JOIN public.hub_social_accounts s ON s.id = a.social_account_id "
         "WHERE a.org_id=$1::uuid ORDER BY a.created_at DESC",
         org_id,
     )
@@ -106,8 +106,8 @@ async def list_syncable_social_accounts(user=Depends(require_user), org_id=Depen
     rows = await pool.fetch(
         "SELECT sa.id, sa.platform, sa.account_name, sa.connected_at, "
         "       c.name AS client_name "
-        "FROM staging.hub_social_accounts sa "
-        "JOIN staging.hub_clients c ON c.id = sa.client_id "
+        "FROM public.hub_social_accounts sa "
+        "JOIN public.hub_clients c ON c.id = sa.client_id "
         "WHERE c.org_id=$1::uuid AND sa.is_active=TRUE "
         "  AND sa.platform = ANY($2::text[]) "
         "ORDER BY c.name, sa.platform",
@@ -148,16 +148,16 @@ async def list_campaigns(
     pool = await get_pool()
     if account_id:
         rows = await pool.fetch(
-            "SELECT c.* FROM staging.prachar_ad_campaigns c "
-            "JOIN staging.prachar_ad_accounts a ON a.id = c.account_id "
+            "SELECT c.* FROM public.prachar_ad_campaigns c "
+            "JOIN public.prachar_ad_accounts a ON a.id = c.account_id "
             "WHERE a.org_id=$1::uuid AND c.account_id=$2::uuid "
             "ORDER BY c.updated_at DESC",
             org_id, account_id,
         )
     else:
         rows = await pool.fetch(
-            "SELECT c.* FROM staging.prachar_ad_campaigns c "
-            "JOIN staging.prachar_ad_accounts a ON a.id = c.account_id "
+            "SELECT c.* FROM public.prachar_ad_campaigns c "
+            "JOIN public.prachar_ad_accounts a ON a.id = c.account_id "
             "WHERE a.org_id=$1::uuid ORDER BY c.updated_at DESC",
             org_id,
         )
@@ -201,9 +201,9 @@ async def get_insights(
     where = " AND ".join(conditions)
     rows = await pool.fetch(
         f"SELECT i.*, c.name AS campaign_name, c.objective, c.status AS campaign_status "
-        f"FROM staging.prachar_ad_insights i "
-        f"JOIN staging.prachar_ad_campaigns c ON c.id = i.campaign_id "
-        f"JOIN staging.prachar_ad_accounts a ON a.id = c.account_id "
+        f"FROM public.prachar_ad_insights i "
+        f"JOIN public.prachar_ad_campaigns c ON c.id = i.campaign_id "
+        f"JOIN public.prachar_ad_accounts a ON a.id = c.account_id "
         f"WHERE {where} ORDER BY i.date DESC LIMIT 1000",
         *params,
     )
@@ -230,9 +230,9 @@ async def get_overview(
         "    THEN ROUND(SUM(i.spend) / SUM(i.clicks), 2) "
         "    ELSE 0 END AS avg_cpc, "
         "  COUNT(DISTINCT c.id) AS active_campaigns "
-        "FROM staging.prachar_ad_insights i "
-        "JOIN staging.prachar_ad_campaigns c ON c.id = i.campaign_id "
-        "JOIN staging.prachar_ad_accounts a ON a.id = c.account_id "
+        "FROM public.prachar_ad_insights i "
+        "JOIN public.prachar_ad_campaigns c ON c.id = i.campaign_id "
+        "JOIN public.prachar_ad_accounts a ON a.id = c.account_id "
         "WHERE a.org_id=$1::uuid AND i.date >= CURRENT_DATE - $2::int",
         org_id, days,
     )
@@ -292,9 +292,9 @@ async def analyse_ads(
         f"  SUM(i.spend) AS spend, SUM(i.impressions) AS impressions, "
         f"  SUM(i.clicks) AS clicks, SUM(i.conversions) AS conversions, "
         f"  AVG(i.ctr) AS ctr, AVG(i.cpc) AS cpc, AVG(i.roas) AS roas "
-        f"FROM staging.prachar_ad_insights i "
-        f"JOIN staging.prachar_ad_campaigns c ON c.id = i.campaign_id "
-        f"JOIN staging.prachar_ad_accounts a ON a.id = c.account_id "
+        f"FROM public.prachar_ad_insights i "
+        f"JOIN public.prachar_ad_campaigns c ON c.id = i.campaign_id "
+        f"JOIN public.prachar_ad_accounts a ON a.id = c.account_id "
         f"WHERE {where} "
         f"GROUP BY c.id, c.name, c.objective, c.status "
         f"ORDER BY SUM(i.spend) DESC LIMIT 50",

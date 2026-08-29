@@ -433,7 +433,7 @@ def require_module(module_code: str):
             # account_manager would be refused or admitted at random depending
             # on row order, and the audit row would name the wrong role.
             platform_role = await pool.fetchval(
-                "SELECT role_code FROM staging.user_roles "
+                "SELECT role_code FROM public.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
                 "AND role_code = ANY($2::text[]) "
                 "ORDER BY array_position($2::text[], role_code) LIMIT 1",
@@ -469,7 +469,7 @@ def require_module(module_code: str):
                 # "may they name this org" wants every tenant code, "have they
                 # already been vouched for" wants only the paid ones.
                 is_member = bool(await pool.fetchval(
-                    "SELECT 1 FROM staging.user_roles "
+                    "SELECT 1 FROM public.user_roles "
                     "WHERE user_id=$1 AND org_id=$2::uuid "
                     "AND role_code = ANY($3::text[])",
                     user.get("user_id"), org_id, list(ORG_ROLES),
@@ -617,7 +617,7 @@ def require_module(module_code: str):
             # answers None for every one of them and this branch behaves
             # identically to the `fetchval` it replaces.
             org_role_rows = await pool.fetch(
-                "SELECT role_code FROM staging.user_roles "
+                "SELECT role_code FROM public.user_roles "
                 "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
                 user_id, org_id, list(ALL_ORG_ROLES),
             )
@@ -654,7 +654,7 @@ def require_module(module_code: str):
                 # be wrong somewhere, and a rule that lives in one place cannot
                 # drift out of sync with the handlers.
                 held = await pool.fetchval(
-                    "SELECT role FROM staging.org_member_modules "
+                    "SELECT role FROM public.org_member_modules "
                     "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
                     user_id, org_id, module_code,
                 )
@@ -698,8 +698,8 @@ def require_module(module_code: str):
                 return
 
         sub = await pool.fetchrow(
-            "SELECT s.status, p.features FROM staging.subscriptions s "
-            "JOIN staging.plans p ON p.id = s.plan_id "
+            "SELECT s.status, p.features FROM public.subscriptions s "
+            "JOIN public.plans p ON p.id = s.plan_id "
             "WHERE s.org_id=$1::uuid",
             org_id,
         )
@@ -729,7 +729,7 @@ def require_module(module_code: str):
                 )
 
         mod = await pool.fetchval(
-            "SELECT 1 FROM staging.module_subscriptions "
+            "SELECT 1 FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
             org_id, module_code,
         )

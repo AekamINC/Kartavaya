@@ -480,7 +480,7 @@ async def list_templates(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.prachar_templates "
+        "SELECT * FROM public.prachar_templates "
         "WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY updated_at DESC",
         org_id,
     )
@@ -511,7 +511,7 @@ async def create_template(
         for i, c in enumerate(cols, start=1)
     )
     row = await pool.fetchrow(
-        f"INSERT INTO staging.prachar_templates ({', '.join(cols)}) "
+        f"INSERT INTO public.prachar_templates ({', '.join(cols)}) "
         f"VALUES ({placeholders}) RETURNING *",
         *vals,
     )
@@ -527,7 +527,7 @@ async def get_template(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.prachar_templates WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT * FROM public.prachar_templates WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         tmpl_id, org_id,
     )
     if not row:
@@ -560,7 +560,7 @@ async def update_template(
     updates.append("updated_at=NOW()")
     vals += [tmpl_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.prachar_templates SET {', '.join(updates)} "
+        f"UPDATE public.prachar_templates SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
         *vals,
     )
@@ -581,7 +581,7 @@ async def delete_template(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.prachar_templates SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.prachar_templates SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         tmpl_id, org_id,
     )
@@ -653,7 +653,7 @@ async def list_campaigns(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE"
+    q = "SELECT * FROM public.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE"
     params = [org_id]
     if status:
         params.append(status)
@@ -681,7 +681,7 @@ async def create_campaign(
     # statements because that is the readable shape, NOT because the column may
     # be absent — 183 is applied and it is always there.
     row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_campaigns "
+        "INSERT INTO public.prachar_campaigns "
         "(org_id, name, template_id, subject, body_html, channel, audience_filter, scheduled_at, created_by) "
         "VALUES ($1::uuid,$2,$3::uuid,$4,$5,$6,$7::jsonb,$8::timestamptz,$9) RETURNING *",
         org_id, body.name, body.template_id, body.subject, body.body_html,
@@ -693,7 +693,7 @@ async def create_campaign(
     )
     if body.compliance_class is not None:
         row = await pool.fetchrow(
-            "UPDATE staging.prachar_campaigns SET compliance_class=$1 "
+            "UPDATE public.prachar_campaigns SET compliance_class=$1 "
             "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
             body.compliance_class, str(row["id"]), org_id,
         ) or row
@@ -709,7 +709,7 @@ async def get_campaign(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT * FROM public.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
     )
     if not row:
@@ -727,7 +727,7 @@ async def update_campaign(
 ):
     pool = await get_pool()
     current = await pool.fetchrow(
-        "SELECT status FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT status FROM public.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
     )
     if not current:
@@ -757,7 +757,7 @@ async def update_campaign(
     updates.append("updated_at=NOW()")
     vals += [camp_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.prachar_campaigns SET {', '.join(updates)} "
+        f"UPDATE public.prachar_campaigns SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -773,7 +773,7 @@ async def delete_campaign(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.prachar_campaigns SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.prachar_campaigns SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND status IN ('draft','scheduled')",
         camp_id, org_id,
     )
@@ -803,7 +803,7 @@ async def preview_audience(
     # campaign is one nobody can open or send, so previewing its audience
     # answers a question about a campaign that no longer exists.
     campaign = await pool.fetchrow(
-        "SELECT audience_filter FROM staging.prachar_campaigns "
+        "SELECT audience_filter FROM public.prachar_campaigns "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
     )
@@ -833,13 +833,13 @@ async def audience_options(
     """
     pool = await get_pool()
     sources = await pool.fetch(
-        "SELECT DISTINCT source FROM staging.graha_contacts "
+        "SELECT DISTINCT source FROM public.graha_contacts "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
         "AND source IS NOT NULL AND btrim(source) <> '' ORDER BY 1 LIMIT 200",
         org_id,
     )
     companies = await pool.fetch(
-        "SELECT DISTINCT company FROM staging.graha_contacts "
+        "SELECT DISTINCT company FROM public.graha_contacts "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
         "AND company IS NOT NULL AND btrim(company) <> '' ORDER BY 1 LIMIT 200",
         org_id,
@@ -910,7 +910,7 @@ async def send_campaign(
     """
     pool = await get_pool()
     campaign = await pool.fetchrow(
-        "SELECT * FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT * FROM public.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
     )
     if not campaign:
@@ -954,7 +954,7 @@ async def send_campaign(
         raise HTTPException(400, "No contacts match the audience filter")
 
     unsubs = await pool.fetch(
-        "SELECT email FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid", org_id
+        "SELECT email FROM public.prachar_unsubscribes WHERE org_id=$1::uuid", org_id
     )
     unsub_set = {r["email"].lower() for r in unsubs}
     eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
@@ -972,7 +972,7 @@ async def send_campaign(
     tmpl = None
     if campaign["template_id"]:
         tmpl = await pool.fetchrow(
-            "SELECT * FROM staging.prachar_templates "
+            "SELECT * FROM public.prachar_templates "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             str(campaign["template_id"]), org_id,
         )
@@ -1042,7 +1042,7 @@ async def send_campaign(
                     raise HTTPException(
                         503,
                         "This send needs an override, and the override cannot "
-                        "be recorded: staging.prachar_icai_overrides is not "
+                        "be recorded: public.prachar_icai_overrides is not "
                         "reachable. An override that is not written down is "
                         "not an override. The table does exist on staging, so "
                         "this is a database or connection fault rather than "
@@ -1059,7 +1059,7 @@ async def send_campaign(
 
             for c in eligible:
                 await conn.execute(
-                    "INSERT INTO staging.prachar_campaign_contacts (campaign_id, contact_id, email) "
+                    "INSERT INTO public.prachar_campaign_contacts (campaign_id, contact_id, email) "
                     "VALUES ($1::uuid, $2::uuid, $3) ON CONFLICT DO NOTHING",
                     str(campaign["id"]), str(c["id"]), c["email"],
                 )
@@ -1079,7 +1079,7 @@ async def send_campaign(
             )
 
             await conn.execute(
-                "UPDATE staging.prachar_campaigns SET status='sending', "
+                "UPDATE public.prachar_campaigns SET status='sending', "
                 "total_recipients=$1, sent_at=NOW(), updated_at=NOW() "
                 "WHERE id=$2::uuid",
                 len(eligible), str(campaign["id"]),
@@ -1093,7 +1093,7 @@ async def send_campaign(
     # into a request object to find out who that was.
     actor_id = user["user_id"]
     org_name = await pool.fetchval(
-        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id) or ""
+        "SELECT name FROM public.organisations WHERE id=$1::uuid", org_id) or ""
 
     async def _dispatch():
         sent_count = 0
@@ -1148,7 +1148,7 @@ async def send_campaign(
                 if outbound.is_suppressed(org_id):
                     suppressed_count += 1
                     await pool.execute(
-                        "UPDATE staging.prachar_campaign_contacts "
+                        "UPDATE public.prachar_campaign_contacts "
                         "SET status='suppressed', error_message=$3 "
                         "WHERE campaign_id=$1::uuid AND email=$2",
                         campaign_id, contact_email,
@@ -1160,7 +1160,7 @@ async def send_campaign(
                 else:
                     sent_count += 1
                     await pool.execute(
-                        "UPDATE staging.prachar_campaign_contacts SET status='sent', sent_at=NOW() "
+                        "UPDATE public.prachar_campaign_contacts SET status='sent', sent_at=NOW() "
                         "WHERE campaign_id=$1::uuid AND email=$2",
                         campaign_id, contact_email,
                     )
@@ -1169,7 +1169,7 @@ async def send_campaign(
                 logger.error("Prachar campaign %s: failed to send to %s: %s",
                              campaign_name, contact_email, exc)
                 await pool.execute(
-                    "UPDATE staging.prachar_campaign_contacts SET status='failed' "
+                    "UPDATE public.prachar_campaign_contacts SET status='failed' "
                     "WHERE campaign_id=$1::uuid AND email=$2",
                     campaign_id, contact_email,
                 )
@@ -1191,7 +1191,7 @@ async def send_campaign(
         # produce — false on the one path that matters.
         if not sent_count:
             await pool.execute(
-                "UPDATE staging.prachar_campaigns SET status='suppressed', "
+                "UPDATE public.prachar_campaigns SET status='suppressed', "
                 "total_recipients=$1, total_sent=0, sent_at=NULL, updated_at=NOW() "
                 "WHERE id=$2::uuid",
                 len(eligible), campaign_id,
@@ -1215,7 +1215,7 @@ async def send_campaign(
             async with pool.acquire() as _conn:
                 async with _conn.transaction():
                     _row = await _conn.fetchrow(
-                        "UPDATE staging.prachar_campaigns SET status='sent', "
+                        "UPDATE public.prachar_campaigns SET status='sent', "
                         "total_recipients=$1, updated_at=NOW() "
                         "WHERE id=$2::uuid RETURNING *",
                         sent_count, campaign_id,
@@ -1271,7 +1271,7 @@ async def schedule_campaign(
     row = await pool.fetchrow(
         "SELECT status, scheduled_at, channel, subject, body_html, template_id, "
         "audience_filter "
-        "FROM staging.prachar_campaigns "
+        "FROM public.prachar_campaigns "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
     )
@@ -1321,7 +1321,7 @@ async def schedule_campaign(
         )
 
     await pool.execute(
-        "UPDATE staging.prachar_campaigns SET status='scheduled', updated_at=NOW() "
+        "UPDATE public.prachar_campaigns SET status='scheduled', updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         camp_id, org_id,
     )
@@ -1339,7 +1339,7 @@ async def campaign_stats(
     # `prachar_campaign_contacts` is keyed on campaign_id only, so without this
     # the counts came back for any campaign id in any org.
     if not await pool.fetchval(
-        "SELECT 1 FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid",
         camp_id, org_id,
     ):
         raise HTTPException(404, "Campaign not found")
@@ -1351,7 +1351,7 @@ async def campaign_stats(
         "COUNT(*) FILTER (WHERE status='clicked') AS clicked, "
         "COUNT(*) FILTER (WHERE status='bounced') AS bounced, "
         "COUNT(*) FILTER (WHERE status='failed') AS failed "
-        "FROM staging.prachar_campaign_contacts WHERE campaign_id=$1::uuid",
+        "FROM public.prachar_campaign_contacts WHERE campaign_id=$1::uuid",
         camp_id,
     )
     # `opened`, `clicked` and `bounced` count statuses nothing ever writes —
@@ -1427,7 +1427,7 @@ async def list_automations(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.prachar_automations WHERE org_id=$1::uuid AND is_active=TRUE "
+        "SELECT * FROM public.prachar_automations WHERE org_id=$1::uuid AND is_active=TRUE "
         "ORDER BY created_at DESC",
         org_id,
     )
@@ -1476,7 +1476,7 @@ async def update_automation(
     updates.append("updated_at=NOW()")
     vals += [auto_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.prachar_automations SET {', '.join(updates)} "
+        f"UPDATE public.prachar_automations SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -1494,7 +1494,7 @@ async def delete_automation(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.prachar_automations SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.prachar_automations SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         auto_id, org_id,
     )
@@ -1513,7 +1513,7 @@ async def list_unsubscribes(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid ORDER BY unsubscribed_at DESC",
+        "SELECT * FROM public.prachar_unsubscribes WHERE org_id=$1::uuid ORDER BY unsubscribed_at DESC",
         org_id,
     )
     return {"data": [dict(r) for r in rows]}
@@ -1537,7 +1537,7 @@ async def add_unsubscribe(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             _ins = await _conn.fetchrow(
-                "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
+                "INSERT INTO public.prachar_unsubscribes (org_id, email, reason) "
                 "VALUES ($1::uuid, $2, $3) ON CONFLICT (org_id, email) DO NOTHING "
                 "RETURNING *",
                 org_id, email_norm, reason,
@@ -1548,7 +1548,7 @@ async def add_unsubscribe(
                 # transaction — and honestly: an address the CRM has never heard
                 # of unsubscribes with no entity rather than an invented one.
                 _contact_id = await _conn.fetchval(
-                    "SELECT id FROM staging.graha_contacts "
+                    "SELECT id FROM public.graha_contacts "
                     "WHERE org_id=$1::uuid AND lower(email)=$2 AND is_active=TRUE "
                     "ORDER BY created_at DESC LIMIT 1",
                     org_id, email_norm,
@@ -1723,14 +1723,14 @@ async def _apply_unsubscribe(org_id: str, email: str) -> None:
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             _ins = await _conn.fetchrow(
-                "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
+                "INSERT INTO public.prachar_unsubscribes (org_id, email, reason) "
                 "VALUES ($1::uuid, $2, 'link') ON CONFLICT (org_id, email) DO NOTHING "
                 "RETURNING *",
                 org_id, email,
             )
             if _ins is not None:
                 _contact_id = await _conn.fetchval(
-                    "SELECT id FROM staging.graha_contacts "
+                    "SELECT id FROM public.graha_contacts "
                     "WHERE org_id=$1::uuid AND lower(email)=$2 AND is_active=TRUE "
                     "ORDER BY created_at DESC LIMIT 1",
                     org_id, email.lower(),
@@ -1749,9 +1749,9 @@ async def _apply_unsubscribe(org_id: str, email: str) -> None:
     # arrived. Someone who has just opted out should not still be queued.
     await pool.execute(
         """
-        UPDATE staging.prachar_sequence_enrollments e
+        UPDATE public.prachar_sequence_enrollments e
         SET status = 'unsubscribed', completed_at = NOW(), next_step_at = NULL
-        FROM staging.prachar_sequences s, staging.graha_contacts c
+        FROM public.prachar_sequences s, public.graha_contacts c
         WHERE s.id = e.sequence_id AND c.id = e.contact_id
           AND s.org_id = $1::uuid AND lower(c.email) = $2
           AND e.status = 'active'
@@ -1771,7 +1771,7 @@ async def remove_unsubscribe(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "DELETE FROM staging.prachar_unsubscribes WHERE id=$1::uuid AND org_id=$2::uuid",
+        "DELETE FROM public.prachar_unsubscribes WHERE id=$1::uuid AND org_id=$2::uuid",
         unsub_id, org_id,
     )
     if result == "DELETE 0":
@@ -1801,7 +1801,7 @@ async def dashboard(
         # campaign that exists nowhere. 'paused' is counted with it: nothing
         # writes it today, but the send route accepts it, so a row could exist.
         "COUNT(*) FILTER (WHERE status IN ('suppressed','paused')) AS suppressed "
-        "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE",
+        "FROM public.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
 
@@ -1818,28 +1818,28 @@ async def dashboard(
         "COALESCE(SUM(total_opened),0) AS total_opened, "
         "COALESCE(SUM(total_clicked),0) AS total_clicked, "
         "COALESCE(SUM(total_bounced),0) AS total_bounced "
-        "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND status='sent'",
+        "FROM public.prachar_campaigns WHERE org_id=$1::uuid AND status='sent'",
         org_id,
     )
 
     templates = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.prachar_templates WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM public.prachar_templates WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
 
     automations = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.prachar_automations WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM public.prachar_automations WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
 
     unsubs = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid",
+        "SELECT COUNT(*) FROM public.prachar_unsubscribes WHERE org_id=$1::uuid",
         org_id,
     )
 
     recent = await pool.fetch(
         "SELECT id, name, status, total_recipients, total_opened, total_clicked, sent_at "
-        "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE "
+        "FROM public.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE "
         "ORDER BY created_at DESC LIMIT 5",
         org_id,
     )
@@ -1912,7 +1912,7 @@ async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
     filters = normalise_audience_filter(filters) or {}
 
     q = ("SELECT id, name, email, contact_type AS type, company, client_id "
-         "FROM staging.graha_contacts "
+         "FROM public.graha_contacts "
          "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
          "AND email IS NOT NULL AND email != ''")
     params: list = [org_id]
@@ -2004,7 +2004,7 @@ async def _audience_preview_body(pool, org_id: str, filters: dict,
     per campaign for an answer it is about to compute anyway.
     """
     unsubs = await pool.fetch(
-        "SELECT email FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid", org_id
+        "SELECT email FROM public.prachar_unsubscribes WHERE org_id=$1::uuid", org_id
     )
     unsub_set = {r["email"].lower() for r in unsubs if r["email"]}
     eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
@@ -2085,9 +2085,9 @@ async def list_sequences(user=Depends(require_user), org_id=Depends(get_org_id))
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT s.*, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_steps WHERE sequence_id=s.id) AS step_count, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_enrollments WHERE sequence_id=s.id AND status='active') AS active_enrollments "
-        "FROM staging.prachar_sequences s WHERE s.org_id=$1::uuid ORDER BY s.created_at DESC",
+        "(SELECT COUNT(*) FROM public.prachar_sequence_steps WHERE sequence_id=s.id) AS step_count, "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_enrollments WHERE sequence_id=s.id AND status='active') AS active_enrollments "
+        "FROM public.prachar_sequences s WHERE s.org_id=$1::uuid ORDER BY s.created_at DESC",
         org_id,
     )
     return {"data": [dict(r) for r in rows]}
@@ -2097,7 +2097,7 @@ async def list_sequences(user=Depends(require_user), org_id=Depends(get_org_id))
 async def create_sequence(body: SequenceCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_sequences "
+        "INSERT INTO public.prachar_sequences "
         "(org_id, name, description, exit_on_reply, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5) RETURNING id, name, status",
         org_id, body.name, body.description, body.exit_on_reply, user["user_id"],
@@ -2109,20 +2109,20 @@ async def create_sequence(body: SequenceCreate, user=Depends(require_user), org_
 async def get_sequence(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
     seq = await pool.fetchrow(
-        "SELECT * FROM staging.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
         seq_id, org_id,
     )
     if not seq:
         raise HTTPException(404, "Sequence not found")
     steps = await pool.fetch(
-        "SELECT * FROM staging.prachar_sequence_steps WHERE sequence_id=$1::uuid ORDER BY step_order",
+        "SELECT * FROM public.prachar_sequence_steps WHERE sequence_id=$1::uuid ORDER BY step_order",
         seq_id,
     )
     enrollments = await pool.fetch(
         "SELECT e.*, c.name AS contact_name, c.email AS contact_email, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.prachar_sequence_enrollments e "
-        "JOIN staging.graha_contacts c ON c.id = e.contact_id "
+        "FROM public.prachar_sequence_enrollments e "
+        "JOIN public.graha_contacts c ON c.id = e.contact_id "
         "WHERE e.sequence_id=$1::uuid ORDER BY e.enrolled_at DESC LIMIT 100",
         seq_id,
     )
@@ -2167,7 +2167,7 @@ async def update_sequence(seq_id: str, body: SequenceUpdate, user=Depends(requir
         idx += 1
     sets.append("updated_at=NOW()")
     await pool.execute(
-        f"UPDATE staging.prachar_sequences SET {', '.join(sets)} "
+        f"UPDATE public.prachar_sequences SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -2181,7 +2181,7 @@ async def _require_sequence_in_org(pool, seq_id: str, org_id: str):
     company's outbound email sequence, which is content injection into mail
     their contacts receive over their name."""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
         seq_id, org_id,
     )
     if not ok:
@@ -2196,7 +2196,7 @@ async def add_step(seq_id: str, body: StepCreate, user=Depends(require_user), or
     if body.channel not in valid_channels:
         raise HTTPException(400, f"channel must be one of: {', '.join(valid_channels)}")
     row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_sequence_steps "
+        "INSERT INTO public.prachar_sequence_steps "
         "(sequence_id, step_order, channel, delay_days, subject, body_html, body_text, notes) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
         "ON CONFLICT (sequence_id, step_order) DO UPDATE SET "
@@ -2213,7 +2213,7 @@ async def delete_step(seq_id: str, step_order: int, user=Depends(require_user), 
     pool = await get_pool()
     await _require_sequence_in_org(pool, seq_id, org_id)
     await pool.execute(
-        "DELETE FROM staging.prachar_sequence_steps "
+        "DELETE FROM public.prachar_sequence_steps "
         "WHERE sequence_id=$1::uuid AND step_order=$2",
         seq_id, step_order,
     )
@@ -2224,14 +2224,14 @@ async def delete_step(seq_id: str, step_order: int, user=Depends(require_user), 
 async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
     seq = await pool.fetchrow(
-        "SELECT * FROM staging.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
         seq_id, org_id,
     )
     if not seq:
         raise HTTPException(404, "Sequence not found")
 
     first_step = await pool.fetchrow(
-        "SELECT step_order, delay_days FROM staging.prachar_sequence_steps "
+        "SELECT step_order, delay_days FROM public.prachar_sequence_steps "
         "WHERE sequence_id=$1::uuid ORDER BY step_order LIMIT 1",
         seq_id,
     )
@@ -2290,7 +2290,7 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
     # both. NO OVERRIDE: a drip has no single moment a person authorises, so
     # there is nothing for a basis to attach to.
     owned = await pool.fetch(
-        "SELECT id, client_id FROM staging.graha_contacts "
+        "SELECT id, client_id FROM public.graha_contacts "
         "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
         org_id, body.contact_ids,
     )
@@ -2318,7 +2318,7 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
             # nothing — an opted-out contact would have been mailed anyway. The
             # executor now takes the org from the sequence (NOT NULL) so it does
             # not depend on this, but the column should stop lying.
-            "INSERT INTO staging.prachar_sequence_enrollments "
+            "INSERT INTO public.prachar_sequence_enrollments "
             "(sequence_id, contact_id, current_step, next_step_at, org_id) "
             "VALUES ($1::uuid, $2::uuid, $4, NOW() + ($3 || ' days')::interval, $5::uuid) "
             "ON CONFLICT (sequence_id, contact_id) DO NOTHING RETURNING id",
@@ -2358,12 +2358,12 @@ async def pause_sequence(seq_id: str, user=Depends(require_user), org_id=Depends
     pool = await get_pool()
     await _require_sequence_in_org(pool, seq_id, org_id)
     await pool.execute(
-        "UPDATE staging.prachar_sequences SET status='paused', updated_at=NOW() "
+        "UPDATE public.prachar_sequences SET status='paused', updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         seq_id, org_id,
     )
     await pool.execute(
-        "UPDATE staging.prachar_sequence_enrollments SET status='paused' "
+        "UPDATE public.prachar_sequence_enrollments SET status='paused' "
         "WHERE sequence_id=$1::uuid AND status='active'",
         seq_id,
     )
@@ -2393,12 +2393,12 @@ async def resume_sequence(seq_id: str, user=Depends(require_user), org_id=Depend
     pool = await get_pool()
     await _require_sequence_in_org(pool, seq_id, org_id)
     await pool.execute(
-        "UPDATE staging.prachar_sequences SET status='active', updated_at=NOW() "
+        "UPDATE public.prachar_sequences SET status='active', updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         seq_id, org_id,
     )
     resumed = await pool.execute(
-        "UPDATE staging.prachar_sequence_enrollments SET status='active' "
+        "UPDATE public.prachar_sequence_enrollments SET status='active' "
         "WHERE sequence_id=$1::uuid AND status='paused'",
         seq_id,
     )
@@ -2425,14 +2425,14 @@ async def sequence_stats(seq_id: str, user=Depends(require_user), org_id=Depends
         # reported a full send. The executor now records what actually happened;
         # this is the other half, and without it the fix there changes nothing
         # a user can see.
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_logs l "
         "  WHERE l.step_id=st.id AND l.status='sent') AS total_sent, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='delivered') AS delivered, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='opened') AS opened, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='clicked') AS clicked, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='replied') AS replied, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='bounced') AS bounced "
-        "FROM staging.prachar_sequence_steps st "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='delivered') AS delivered, "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='opened') AS opened, "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='clicked') AS clicked, "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='replied') AS replied, "
+        "(SELECT COUNT(*) FROM public.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='bounced') AS bounced "
+        "FROM public.prachar_sequence_steps st "
         "WHERE st.sequence_id=$1::uuid ORDER BY st.step_order",
         seq_id,
     )
@@ -2444,7 +2444,7 @@ async def sequence_stats(seq_id: str, user=Depends(require_user), org_id=Depends
         "COUNT(*) FILTER (WHERE status='bounced') AS bounced, "
         "COUNT(*) FILTER (WHERE status='unsubscribed') AS unsubscribed, "
         "COUNT(*) AS total "
-        "FROM staging.prachar_sequence_enrollments WHERE sequence_id=$1::uuid",
+        "FROM public.prachar_sequence_enrollments WHERE sequence_id=$1::uuid",
         seq_id,
     )
     return {"steps": [dict(s) for s in steps], "totals": dict(totals)}
@@ -2496,8 +2496,8 @@ async def list_events(
     pool = await get_pool()
     q = (
         "SELECT e.*, "
-        "(SELECT COUNT(*) FROM staging.prachar_event_registrations r WHERE r.event_id=e.id AND r.status != 'cancelled') AS reg_count "
-        "FROM staging.prachar_events e WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
+        "(SELECT COUNT(*) FROM public.prachar_event_registrations r WHERE r.event_id=e.id AND r.status != 'cancelled') AS reg_count "
+        "FROM public.prachar_events e WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
     )
     params: list = [org_id]
     if status:
@@ -2520,7 +2520,7 @@ async def create_event(
     if body.event_type not in valid_types:
         raise HTTPException(400, f"event_type must be one of: {', '.join(valid_types)}")
     row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_events "
+        "INSERT INTO public.prachar_events "
         "(org_id, title, description, event_type, location, location_url, "
         "starts_at, ends_at, max_attendees, registration_open, tags, created_by) "
         # `NULLIF($8,'')` is GONE, and its removal is the point rather than
@@ -2551,8 +2551,8 @@ async def get_event(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT e.*, "
-        "(SELECT COUNT(*) FROM staging.prachar_event_registrations r WHERE r.event_id=e.id AND r.status != 'cancelled') AS reg_count "
-        "FROM staging.prachar_events e WHERE e.id=$1::uuid AND e.org_id=$2::uuid AND e.is_active=TRUE",
+        "(SELECT COUNT(*) FROM public.prachar_event_registrations r WHERE r.event_id=e.id AND r.status != 'cancelled') AS reg_count "
+        "FROM public.prachar_events e WHERE e.id=$1::uuid AND e.org_id=$2::uuid AND e.is_active=TRUE",
         event_id, org_id,
     )
     if not row:
@@ -2602,7 +2602,7 @@ async def update_event(
     updates.append("updated_at=NOW()")
     vals += [event_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.prachar_events SET {', '.join(updates)} "
+        f"UPDATE public.prachar_events SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
         *vals,
     )
@@ -2620,7 +2620,7 @@ async def delete_event(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.prachar_events SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.prachar_events SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         event_id, org_id,
     )
@@ -2639,7 +2639,7 @@ async def register_for_event(
 ):
     pool = await get_pool()
     event = await pool.fetchrow(
-        "SELECT id, registration_open, max_attendees FROM staging.prachar_events "
+        "SELECT id, registration_open, max_attendees FROM public.prachar_events "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         event_id, org_id,
     )
@@ -2650,7 +2650,7 @@ async def register_for_event(
 
     if event["max_attendees"]:
         current = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.prachar_event_registrations "
+            "SELECT COUNT(*) FROM public.prachar_event_registrations "
             "WHERE event_id=$1::uuid AND status != 'cancelled'",
             event_id,
         )
@@ -2658,7 +2658,7 @@ async def register_for_event(
             raise HTTPException(400, "Event is full")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_event_registrations "
+        "INSERT INTO public.prachar_event_registrations "
         "(event_id, org_id, name, email, phone, contact_id) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, NULLIF($6,'')::uuid) "
         "ON CONFLICT (event_id, email) DO UPDATE SET name=$3, phone=$5 "
@@ -2678,8 +2678,8 @@ async def list_registrations(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT r.*, c.name AS contact_name "
-        "FROM staging.prachar_event_registrations r "
-        "LEFT JOIN staging.graha_contacts c ON c.id = r.contact_id "
+        "FROM public.prachar_event_registrations r "
+        "LEFT JOIN public.graha_contacts c ON c.id = r.contact_id "
         "WHERE r.event_id=$1::uuid AND r.org_id=$2::uuid ORDER BY r.registered_at DESC",
         event_id, org_id,
     )
@@ -2700,7 +2700,7 @@ async def update_registration(
         raise HTTPException(400, f"status must be one of: {', '.join(valid)}")
     pool = await get_pool()
     row = await pool.fetchrow(
-        "UPDATE staging.prachar_event_registrations SET status=$1 "
+        "UPDATE public.prachar_event_registrations SET status=$1 "
         "WHERE id=$2::uuid AND event_id=$3::uuid AND org_id=$4::uuid RETURNING *",
         status, reg_id, event_id, org_id,
     )

@@ -184,7 +184,7 @@ async def find_duplicates(
 
     if email_norm:
         rows = await pool.fetch(
-            f"SELECT {base_cols} FROM staging.graha_contacts "
+            f"SELECT {base_cols} FROM public.graha_contacts "
             f"WHERE {live} AND email_norm=$2 LIMIT 25",
             org_id, email_norm,
         )
@@ -192,7 +192,7 @@ async def find_duplicates(
 
     if phone_norm:
         rows = await pool.fetch(
-            f"SELECT {base_cols} FROM staging.graha_contacts "
+            f"SELECT {base_cols} FROM public.graha_contacts "
             f"WHERE {live} AND phone_norm=$2 LIMIT 25",
             org_id, phone_norm,
         )
@@ -205,7 +205,7 @@ async def find_duplicates(
             f"SELECT {base_cols}, "
             f"  similarity(name, $2) AS name_sim, "
             f"  similarity(company, $3) AS company_sim "
-            f"FROM staging.graha_contacts "
+            f"FROM public.graha_contacts "
             f"WHERE {live} "
             f"  AND company IS NOT NULL AND company <> '' "
             f"  AND similarity(name, $2) > $4 "
@@ -306,7 +306,7 @@ async def merge_contacts(
         async with conn.transaction():
             # Lock the survivor to serialize concurrent merges of the same target.
             survivor = await conn.fetchrow(
-                "SELECT * FROM staging.graha_contacts "
+                "SELECT * FROM public.graha_contacts "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE "
                 "  AND merged_into_id IS NULL "
                 "FOR UPDATE",
@@ -319,7 +319,7 @@ async def merge_contacts(
 
             for loser_id in merged_ids:
                 loser = await conn.fetchrow(
-                    "SELECT * FROM staging.graha_contacts "
+                    "SELECT * FROM public.graha_contacts "
                     "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE "
                     "  AND merged_into_id IS NULL "
                     "FOR UPDATE",
@@ -433,18 +433,18 @@ async def merge_contacts(
                 if sets:
                     sets.append("updated_at=NOW()")
                     await conn.execute(
-                        f"UPDATE staging.graha_contacts SET {', '.join(sets)} "
+                        f"UPDATE public.graha_contacts SET {', '.join(sets)} "
                         f"WHERE id=$1::uuid",
                         *params,
                     )
                     survivor = await conn.fetchrow(
-                        "SELECT * FROM staging.graha_contacts WHERE id=$1::uuid",
+                        "SELECT * FROM public.graha_contacts WHERE id=$1::uuid",
                         survivor_id,
                     )
 
                 # ── 3. Soft-merge the loser ────────────────────────────
                 await conn.execute(
-                    "UPDATE staging.graha_contacts "
+                    "UPDATE public.graha_contacts "
                     "SET is_active=FALSE, merged_into_id=$1::uuid, updated_at=NOW() "
                     "WHERE id=$2::uuid",
                     survivor_id, loser_id,
@@ -452,7 +452,7 @@ async def merge_contacts(
 
                 # ── 4. Undo payload ───────────────────────────────────
                 merge_row = await conn.fetchrow(
-                    "INSERT INTO staging.graha_contact_merges "
+                    "INSERT INTO public.graha_contact_merges "
                     "(org_id, survivor_id, merged_id, moved_rows, field_updates, "
                     " dropped_rows, actor_id) "
                     "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::jsonb, "
@@ -490,7 +490,7 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
     async with pool.acquire() as conn:
         async with conn.transaction():
             m = await conn.fetchrow(
-                "SELECT * FROM staging.graha_contact_merges "
+                "SELECT * FROM public.graha_contact_merges "
                 "WHERE id=$1::uuid AND org_id=$2::uuid FOR UPDATE",
                 merge_id, org_id,
             )
@@ -594,19 +594,19 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
                     idx += 1
                 sets.append("updated_at=NOW()")
                 await conn.execute(
-                    f"UPDATE staging.graha_contacts SET {', '.join(sets)} "
+                    f"UPDATE public.graha_contacts SET {', '.join(sets)} "
                     f"WHERE id=$1::uuid",
                     *params,
                 )
 
             await conn.execute(
-                "UPDATE staging.graha_contacts "
+                "UPDATE public.graha_contacts "
                 "SET is_active=TRUE, merged_into_id=NULL, updated_at=NOW() "
                 "WHERE id=$1::uuid",
                 loser_id,
             )
             await conn.execute(
-                "UPDATE staging.graha_contact_merges "
+                "UPDATE public.graha_contact_merges "
                 "SET undone_at=NOW(), undone_by=NULLIF($2::text,'') WHERE id=$1::uuid",
                 merge_id, actor_id or "",
             )

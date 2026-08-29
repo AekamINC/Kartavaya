@@ -522,7 +522,7 @@ async def resolve(pool, org_id: str, platform: str, client_id: Optional[str] = N
 
     rows = await pool.fetch(
         "SELECT id, client_id::text AS client_id, public_fields, secrets_encrypted "
-        "  FROM staging.hub_connector_credentials "
+        "  FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND platform=$2 AND is_active=TRUE "
         "   AND (client_id IS NULL OR client_id=$3::uuid)",
         org_id, platform, client_id,

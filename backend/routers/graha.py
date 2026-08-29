@@ -358,8 +358,8 @@ async def list_clients(
     pool = await get_pool()
     query = (
         "SELECT cl.*, "
-        "(SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, "
-        "(SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count, "
+        "(SELECT COUNT(*) FROM public.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, "
+        "(SELECT COUNT(*) FROM public.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count, "
         # Who created this company and who last touched it, BY NAME. `cl.*`
         # above already ships `created_by`/`updated_by`, but those are
         # `users.user_id` TEXT — a member id, which is the one thing no screen
@@ -370,7 +370,7 @@ async def list_clients(
         # hand-written copy in `list_activities` below is what drifted into
         # printing an email address; see `services/audit_actors`.
         + actor_select("cl", updated=True) +
-        "COUNT(*) OVER() AS _total FROM staging.graha_clients cl "
+        "COUNT(*) OVER() AS _total FROM public.graha_clients cl "
         # After the FROM and before the WHERE. Neither fragment carries a `$n`,
         # so the `$1::uuid` below and every `${n}` appended after it keep the
         # numbering they had.
@@ -415,7 +415,7 @@ async def create_client(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.graha_clients "
+                "INSERT INTO public.graha_clients "
                 "(org_id, name, ref_no, gstin, address, website, notes, tags, created_by) "
                 "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''), $8, $9) "
                 "RETURNING *",
@@ -480,18 +480,18 @@ async def get_client(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         str(client_id), org_id,
     )
     if not row:
         raise HTTPException(404, "Client not found")
     contacts = await pool.fetch(
-        "SELECT id, name, email, phone, designation, contact_type FROM staging.graha_contacts "
+        "SELECT id, name, email, phone, designation, contact_type FROM public.graha_contacts "
         "WHERE client_id=$1::uuid AND is_active=TRUE ORDER BY name",
         str(client_id),
     )
     deals = await pool.fetch(
-        "SELECT id, title, value, stage FROM staging.graha_deals "
+        "SELECT id, title, value, stage FROM public.graha_deals "
         "WHERE client_id=$1::uuid AND is_active=TRUE ORDER BY created_at DESC LIMIT 50",
         str(client_id),
     )
@@ -536,7 +536,7 @@ async def update_client(
     sets.append(f"updated_by=${idx}")
     vals.append(user["user_id"])
     await pool.execute(
-        f"UPDATE staging.graha_clients SET {', '.join(sets)} "
+        f"UPDATE public.graha_clients SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=${idx + 1}::uuid",
         str(client_id), *vals, org_id,
     )
@@ -567,7 +567,7 @@ async def delete_client(
     # act. `$3` is appended at the END of the existing binds so the `$1`/`$2`
     # the WHERE clause already uses are undisturbed.
     tag = await pool.execute(
-        "UPDATE staging.graha_clients SET is_active=FALSE, updated_at=NOW(), "
+        "UPDATE public.graha_clients SET is_active=FALSE, updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(client_id), org_id, user["user_id"],
@@ -619,16 +619,16 @@ async def list_contacts(
         # the shape every list should have had.
         + actor_select("c", updated=True) +
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_contacts c "
+        "FROM public.graha_contacts c "
         # `AND cl2.org_id = c.org_id`: a join on the id alone would print
         # another organisation's company name against this org's contact if a
         # `client_id` ever crossed the boundary. The write paths now refuse
         # that, but the read must not depend on the write having been correct.
-        "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id AND cl2.org_id = c.org_id "
+        "LEFT JOIN public.graha_clients cl2 ON cl2.id = c.client_id AND cl2.org_id = c.org_id "
     )
 
     if label_id:
-        query += "JOIN staging.graha_contact_labels cl ON cl.contact_id = c.id "
+        query += "JOIN public.graha_contact_labels cl ON cl.contact_id = c.id "
 
     # LAST of the joins, so it cannot come between the optional label JOIN and
     # the FROM it attaches to. Both actor joins are LEFT: an inner join would
@@ -712,7 +712,7 @@ async def resolve_contact_company(pool, org_id: str, client_id: str,
     if not client_id:
         return ""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.graha_clients "
+        "SELECT 1 FROM public.graha_clients "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         client_id, org_id)
     if not ok:
@@ -755,7 +755,7 @@ async def resolve_contact_territory(pool, org_id: str, territory_id: str) -> str
     if not territory_id:
         return ""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.graha_territories "
+        "SELECT 1 FROM public.graha_territories "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         territory_id, org_id)
     if not ok:
@@ -808,7 +808,7 @@ async def resolve_deal_owner(pool, org_id: str, user_id: str) -> str:
     if not user_id:
         return ""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
+        "SELECT 1 FROM public.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
         user_id, org_id)
     if not ok:
         raise HTTPException(400, "That person is not a member of this organisation")
@@ -857,7 +857,7 @@ async def resolve_deal_contact(pool, org_id: str, contact_id: str) -> str:
     if not contact_id:
         return ""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.graha_contacts "
+        "SELECT 1 FROM public.graha_contacts "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         contact_id, org_id)
     if not ok:
@@ -897,7 +897,7 @@ async def resolve_deal_pipeline(pool, org_id: str, pipeline_id: str) -> str:
     if not pipeline_id:
         return ""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.graha_pipelines "
+        "SELECT 1 FROM public.graha_pipelines "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         pipeline_id, org_id)
     if not ok:
@@ -941,7 +941,7 @@ async def resolve_deal_id(pool, org_id: str, deal_id: str) -> str:
     if not deal_id:
         return ""
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.graha_deals "
+        "SELECT 1 FROM public.graha_deals "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         deal_id, org_id)
     if not ok:
@@ -982,7 +982,7 @@ async def create_contact(
         async with pool.acquire() as _conn:
             async with _conn.transaction():
                 row = await _conn.fetchrow(
-                    "INSERT INTO staging.graha_contacts "
+                    "INSERT INTO public.graha_contacts "
                     "(org_id, name, email, phone, company, designation, gstin, pan, "
                     " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id, "
                     " custom_data, territory_id) "
@@ -1052,7 +1052,7 @@ async def list_duplicate_groups(
     rows = await pool.fetch(
         """
         WITH live AS (
-            SELECT * FROM staging.graha_contacts
+            SELECT * FROM public.graha_contacts
             WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL
         ),
         groups AS (
@@ -1072,7 +1072,7 @@ async def list_duplicate_groups(
                     'contact_type', c.contact_type, 'lead_score', c.lead_score,
                     'source', c.source, 'created_at', c.created_at
                 ) ORDER BY c.created_at)
-                FROM staging.graha_contacts c WHERE c.id = ANY(g.ids)
+                FROM public.graha_contacts c WHERE c.id = ANY(g.ids)
                ) AS contacts
         FROM groups g
         ORDER BY g.n DESC, g.match_type
@@ -1106,9 +1106,9 @@ async def list_merges(
         "SELECT m.id, m.survivor_id, m.merged_id, m.moved_rows, m.field_updates, "
         "       m.actor_id, m.created_at, m.undone_at, "
         "       s.name AS survivor_name, l.name AS merged_name "
-        "FROM staging.graha_contact_merges m "
-        "JOIN staging.graha_contacts s ON s.id = m.survivor_id "
-        "JOIN staging.graha_contacts l ON l.id = m.merged_id "
+        "FROM public.graha_contact_merges m "
+        "JOIN public.graha_contacts s ON s.id = m.survivor_id "
+        "JOIN public.graha_contacts l ON l.id = m.merged_id "
         "WHERE m.org_id=$1::uuid "
         "ORDER BY m.created_at DESC LIMIT $2",
         org_id, limit,
@@ -1144,7 +1144,7 @@ async def contact_duplicates(
     """Candidate duplicates for one contact — exact and fuzzy."""
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT name, email, phone, company FROM staging.graha_contacts "
+        "SELECT name, email, phone, company FROM public.graha_contacts "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(contact_id), org_id,
     )
@@ -1212,16 +1212,16 @@ async def get_contact(
         "SELECT c.*, cl.name AS client_name, "
         f"       {_USER_NAME_SQL} AS assigned_to_name, "
         "       tr.name AS territory_name "
-        "FROM staging.graha_contacts c "
+        "FROM public.graha_contacts c "
         # Org-scoped join — see the note on the list route.
-        "LEFT JOIN staging.graha_clients cl ON cl.id = c.client_id AND cl.org_id = c.org_id "
+        "LEFT JOIN public.graha_clients cl ON cl.id = c.client_id AND cl.org_id = c.org_id "
         # And the territory join is org-scoped for the SAME reason the client
         # one is: `graha_territories.id` is unique table-wide, so joining on the
         # id alone would surface another organisation's territory name against
         # this contact. `memory/graha_clients_join_leak` counted nine of these
         # owed; this is one of them, closed at the point it was written rather
         # than after.
-        "LEFT JOIN staging.graha_territories tr ON tr.id = c.territory_id AND tr.org_id = c.org_id "
+        "LEFT JOIN public.graha_territories tr ON tr.id = c.territory_id AND tr.org_id = c.org_id "
         "LEFT JOIN users u ON u.user_id = c.assigned_to "
         "WHERE c.id=$1::uuid AND c.org_id=$2::uuid AND c.is_active=TRUE",
         str(contact_id), org_id,
@@ -1230,24 +1230,24 @@ async def get_contact(
         raise HTTPException(404, "Contact not found")
 
     deals = await pool.fetch(
-        "SELECT id, title, value, stage, created_at FROM staging.graha_deals "
+        "SELECT id, title, value, stage, created_at FROM public.graha_deals "
         "WHERE contact_id=$1::uuid AND is_active=TRUE ORDER BY created_at DESC",
         str(contact_id),
     )
     activities = await pool.fetch(
         "SELECT id, activity_type, title, scheduled_at, is_completed, created_at "
-        "FROM staging.graha_activities WHERE contact_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
+        "FROM public.graha_activities WHERE contact_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
         str(contact_id),
     )
     follow_ups = await pool.fetch(
         "SELECT id, title, description, due_at, remind_at, is_completed, completed_at, "
         "assigned_to, deal_id, created_at "
-        "FROM staging.graha_follow_ups WHERE contact_id=$1::uuid ORDER BY due_at ASC",
+        "FROM public.graha_follow_ups WHERE contact_id=$1::uuid ORDER BY due_at ASC",
         str(contact_id),
     )
     labels = await pool.fetch(
-        "SELECT l.id, l.name, l.color FROM staging.graha_labels l "
-        "JOIN staging.graha_contact_labels cl ON cl.label_id = l.id "
+        "SELECT l.id, l.name, l.color FROM public.graha_labels l "
+        "JOIN public.graha_contact_labels cl ON cl.label_id = l.id "
         "WHERE cl.contact_id=$1::uuid ORDER BY l.name",
         str(contact_id),
     )
@@ -1328,7 +1328,7 @@ async def update_contact(
     idx += 1
 
     await pool.execute(
-        f"UPDATE staging.graha_contacts SET {', '.join(sets)} "
+        f"UPDATE public.graha_contacts SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -1346,7 +1346,7 @@ async def delete_contact(
     await pool.execute(
         # Same reasoning as `delete_client`: the row survives the delete, so
         # `updated_by` is the only record that this person removed it.
-        "UPDATE staging.graha_contacts SET is_active=FALSE, updated_at=NOW(), "
+        "UPDATE public.graha_contacts SET is_active=FALSE, updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contact_id), org_id, user["user_id"],
@@ -1405,8 +1405,8 @@ GEO_SOURCES = ("user_pin", "device_gps", "manual_entry", "google_places", "impor
 #: server-side allowlist the SQL convention requires for any dynamic
 #: identifier.
 _COORD_TABLES = {
-    "clients": "staging.graha_clients",
-    "contacts": "staging.graha_contacts",
+    "clients": "public.graha_clients",
+    "contacts": "public.graha_contacts",
 }
 
 
@@ -1645,7 +1645,7 @@ async def list_pipelines(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT id, name, stages, is_default, created_at "
-        "FROM staging.graha_pipelines WHERE org_id=$1::uuid AND is_active=TRUE "
+        "FROM public.graha_pipelines WHERE org_id=$1::uuid AND is_active=TRUE "
         "ORDER BY is_default DESC, created_at",
         org_id,
     )
@@ -1661,11 +1661,11 @@ async def create_pipeline(
 ):
     pool = await get_pool()
     existing = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.graha_pipelines WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM public.graha_pipelines WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     row = await pool.fetchrow(
-        "INSERT INTO staging.graha_pipelines (org_id, name, stages, is_default) "
+        "INSERT INTO public.graha_pipelines (org_id, name, stages, is_default) "
         "VALUES ($1::uuid, $2, $3::jsonb, $4) RETURNING id, name",
         org_id, body.name, body.stages, existing == 0,
     )
@@ -1743,13 +1743,13 @@ async def list_deals(
         # denominator is wrong in a way that looks authoritative. COUNT(*) OVER()
         # cannot disagree with the rows it is counted alongside.
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "FROM public.graha_deals d "
+        "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
         # Scoped on `org_id` as well as `id`, the same way `get_deal` below
         # already does it: `graha_clients` has no composite (id, org_id)
         # constraint, so the join is the only thing enforcing tenancy on the
         # company NAME this list renders.
-        "LEFT JOIN staging.graha_clients cl "
+        "LEFT JOIN public.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         # Org-scoped on `org_id` as well as `id`, exactly like the client
         # join above it — and this line was NOT, until Phase 7.1a.
@@ -1760,7 +1760,7 @@ async def list_deals(
         # column was empty: 0 of 162 live deals carried a territory on
         # 2026-08-27, and 0 cross-org pairs existed. 7.1 is what fills the
         # column, so the leak closes in the commit that arms it.
-        "LEFT JOIN staging.graha_territories tr "
+        "LEFT JOIN public.graha_territories tr "
         "       ON tr.id = d.territory_id AND tr.org_id = d.org_id "
         # Two more LEFT JOINs and no new `$n` — every `${idx}` appended below
         # keeps the number it would have had before this line existed.
@@ -1806,7 +1806,7 @@ async def list_deals(
     if no_follow_up:
         query += (
             "AND d.stage NOT IN ('Won','Lost') "
-            "AND NOT EXISTS (SELECT 1 FROM staging.graha_follow_ups f "
+            "AND NOT EXISTS (SELECT 1 FROM public.graha_follow_ups f "
             "WHERE f.deal_id = d.id AND f.org_id = d.org_id "
             "AND f.is_completed = FALSE) "
         )
@@ -1857,7 +1857,7 @@ async def create_deal(
     pipeline_id = await resolve_deal_pipeline(pool, org_id, body.pipeline_id) or None
     if not pipeline_id:
         default = await pool.fetchval(
-            "SELECT id FROM staging.graha_pipelines "
+            "SELECT id FROM public.graha_pipelines "
             "WHERE org_id=$1::uuid AND is_default=TRUE AND is_active=TRUE",
             org_id,
         )
@@ -1865,7 +1865,7 @@ async def create_deal(
 
     if not pipeline_id:
         p = await pool.fetchrow(
-            "INSERT INTO staging.graha_pipelines (org_id, name, is_default) "
+            "INSERT INTO public.graha_pipelines (org_id, name, is_default) "
             "VALUES ($1::uuid, 'Default Pipeline', TRUE) RETURNING id",
             org_id,
         )
@@ -1918,7 +1918,7 @@ async def create_deal(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.graha_deals "
+                "INSERT INTO public.graha_deals "
                 "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
                 " expected_close_date, assigned_to, notes, tags, created_by, custom_data, territory_id) "
                 "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
@@ -1954,7 +1954,7 @@ async def deals_kanban(
     pid = pipeline_id
     if not pid:
         pid = await pool.fetchval(
-            "SELECT id::text FROM staging.graha_pipelines "
+            "SELECT id::text FROM public.graha_pipelines "
             "WHERE org_id=$1::uuid AND is_default=TRUE AND is_active=TRUE",
             org_id,
         )
@@ -1962,7 +1962,7 @@ async def deals_kanban(
         return {"stages": [], "columns": {}}
 
     pipeline = await pool.fetchrow(
-        "SELECT stages FROM staging.graha_pipelines "
+        "SELECT stages FROM public.graha_pipelines "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         pid, org_id,
     )
@@ -1993,18 +1993,18 @@ async def deals_kanban(
         # had parsed. `assigned_to` is TEXT, is what the product actually writes,
         # and is who a reader means by the deal's owner.
         "COALESCE(NULLIF(btrim(ow.full_name), ''), NULLIF(btrim(ow.name), ''), 'Unnamed member') AS owner_name "
-        "FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "FROM public.graha_deals d "
+        "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
         # Scoped on `org_id` as well as `id`, as in `list_deals` and
         # `get_deal`: the card renders `cl.name`, and a join on the uuid alone
         # reaches whichever organisation's company holds it.
-        "LEFT JOIN staging.graha_clients cl "
+        "LEFT JOIN public.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         # Org-scoped for the same reason as the client join above, and see
         # `list_deals`: `graha_territories.id` is unique table-wide, so the
         # id alone reaches another organisation's territory NAME. Phase
         # 7.1a — closed in the commit that puts values in the column.
-        "LEFT JOIN staging.graha_territories tr "
+        "LEFT JOIN public.graha_territories tr "
         "       ON tr.id = d.territory_id AND tr.org_id = d.org_id "
         "LEFT JOIN users ow ON ow.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
@@ -2045,9 +2045,9 @@ async def get_deal(
         "SELECT d.*, c.name as contact_name, c.email as contact_email, "
         "c.company as contact_company, c.gstin as contact_gstin, "
         "cl.name as client_name "
-        "FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
-        "LEFT JOIN staging.graha_clients cl "
+        "FROM public.graha_deals d "
+        "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
+        "LEFT JOIN public.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         "WHERE d.id=$1::uuid AND d.org_id=$2::uuid",
         str(deal_id), org_id,
@@ -2057,7 +2057,7 @@ async def get_deal(
 
     activities = await pool.fetch(
         "SELECT id, activity_type, title, scheduled_at, is_completed, created_at "
-        "FROM staging.graha_activities WHERE deal_id=$1::uuid ORDER BY created_at DESC LIMIT 30",
+        "FROM public.graha_activities WHERE deal_id=$1::uuid ORDER BY created_at DESC LIMIT 30",
         str(deal_id),
     )
     return {"deal": dict(row), "activities": [dict(a) for a in activities]}
@@ -2227,12 +2227,12 @@ async def update_deal(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             _before = await _conn.fetchrow(
-                "SELECT stage FROM staging.graha_deals "
+                "SELECT stage FROM public.graha_deals "
                 "WHERE id=$1::uuid AND org_id=$2::uuid FOR UPDATE",
                 str(deal_id), org_id,
             )
             _after = await _conn.fetchrow(
-                f"UPDATE staging.graha_deals SET {', '.join(sets)} "
+                f"UPDATE public.graha_deals SET {', '.join(sets)} "
                 f"WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
                 *params,
             )
@@ -2257,7 +2257,7 @@ async def delete_deal(
     await pool.execute(
         # Who deleted it. The row stays (revenue reporting still counts it), so
         # nothing else in the database would ever say.
-        "UPDATE staging.graha_deals SET is_active=FALSE, updated_at=NOW(), "
+        "UPDATE public.graha_deals SET is_active=FALSE, updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         deal_id, UUID(org_id), user["user_id"],
@@ -2285,7 +2285,7 @@ async def archive_deal(
                                  "migration 133 has not been applied "
                                  "to this database.")
     row = await pool.fetchrow(
-        "SELECT stage FROM staging.graha_deals "
+        "SELECT stage FROM public.graha_deals "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         deal_id, UUID(org_id))
     if not row:
@@ -2299,7 +2299,7 @@ async def archive_deal(
         # actor, which is the honest distinction: an archived deal with a NULL
         # `updated_by` was taken by the clock, one with a name was taken by a
         # person.
-        "UPDATE staging.graha_deals SET archived_at=NOW(), updated_at=NOW(), "
+        "UPDATE public.graha_deals SET archived_at=NOW(), updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND archived_at IS NULL",
         deal_id, UUID(org_id), user["user_id"])
@@ -2325,7 +2325,7 @@ async def unarchive_deal(
         # The mirror of the archive above: putting a deal back on the board is
         # the correction of somebody else's call, and both halves have to be
         # attributable or neither is.
-        "UPDATE staging.graha_deals SET archived_at=NULL, updated_at=NOW(), "
+        "UPDATE public.graha_deals SET archived_at=NULL, updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND archived_at IS NOT NULL",
         deal_id, UUID(org_id), user["user_id"])
@@ -2344,7 +2344,7 @@ async def pipeline_summary(
     pool = await get_pool()
     query = (
         "SELECT stage, COUNT(*) as count, COALESCE(SUM(value),0) as total_value "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
     )
     params: list = [org_id]
@@ -2379,7 +2379,7 @@ async def create_activity(
     contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.graha_activities "
+        "INSERT INTO public.graha_activities "
         "(org_id, deal_id, contact_id, activity_type, title, description, scheduled_at, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6, "
         " NULLIF($7,'')::timestamptz, $8) RETURNING id",
@@ -2450,7 +2450,7 @@ async def list_activities(
         "a.scheduled_at, a.completed_at, a.is_completed, a.created_by, a.created_at, a.updated_at, "
         + actor_select("a") +
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_activities a "
+        "FROM public.graha_activities a "
         + actor_joins("a") +
         "WHERE a.org_id=$1::uuid "
     )
@@ -2504,7 +2504,7 @@ async def complete_activity(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_activities SET is_completed=TRUE, completed_at=NOW() "
+        "UPDATE public.graha_activities SET is_completed=TRUE, completed_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(activity_id), org_id,
     )
@@ -2554,9 +2554,9 @@ async def list_follow_ups(
         # "no actor" distinct from "actor we cannot resolve".
         + actor_select("f", updated=True) +
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_follow_ups f "
-        "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
-        "LEFT JOIN staging.graha_deals d ON d.id = f.deal_id "
+        "FROM public.graha_follow_ups f "
+        "LEFT JOIN public.graha_contacts c ON c.id = f.contact_id "
+        "LEFT JOIN public.graha_deals d ON d.id = f.deal_id "
         + actor_joins("f", updated=True) +
         "WHERE f.org_id=$1::uuid "
     )
@@ -2617,7 +2617,7 @@ async def create_follow_up(
     due = datetime.fromisoformat(body.due_at) if body.due_at else None
     remind = datetime.fromisoformat(body.remind_at) if body.remind_at else None
     row = await pool.fetchrow(
-        "INSERT INTO staging.graha_follow_ups "
+        "INSERT INTO public.graha_follow_ups "
         "(org_id, contact_id, deal_id, title, description, due_at, remind_at, "
         " assigned_to, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, "
@@ -2646,7 +2646,7 @@ async def complete_follow_up(
         # title, so the row would confidently attribute the completion to the
         # wrong person. A trigger cannot know who is on the request; only this
         # statement does.
-        "UPDATE staging.graha_follow_ups SET is_completed=TRUE, completed_at=NOW(), "
+        "UPDATE public.graha_follow_ups SET is_completed=TRUE, completed_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(follow_up_id), org_id, user["user_id"],
@@ -2663,7 +2663,7 @@ async def delete_follow_up(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.graha_follow_ups WHERE id=$1::uuid AND org_id=$2::uuid",
+        "DELETE FROM public.graha_follow_ups WHERE id=$1::uuid AND org_id=$2::uuid",
         str(follow_up_id), org_id,
     )
     return {"status": "deleted"}
@@ -2679,7 +2679,7 @@ async def list_labels(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, name, color, created_at FROM staging.graha_labels "
+        "SELECT id, name, color, created_at FROM public.graha_labels "
         "WHERE org_id=$1::uuid ORDER BY name",
         org_id,
     )
@@ -2696,7 +2696,7 @@ async def create_label(
     pool = await get_pool()
     try:
         row = await pool.fetchrow(
-            "INSERT INTO staging.graha_labels (org_id, name, color) "
+            "INSERT INTO public.graha_labels (org_id, name, color) "
             "VALUES ($1::uuid, $2, $3) RETURNING id, name, color",
             org_id, body.name, body.color,
         )
@@ -2714,7 +2714,7 @@ async def delete_label(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.graha_labels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "DELETE FROM public.graha_labels WHERE id=$1::uuid AND org_id=$2::uuid",
         str(label_id), org_id,
     )
     return {"status": "deleted"}
@@ -2730,13 +2730,13 @@ async def add_contact_label(
 ):
     pool = await get_pool()
     contact = await pool.fetchval(
-        "SELECT id FROM staging.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT id FROM public.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(contact_id), org_id,
     )
     if not contact:
         raise HTTPException(404, "Contact not found")
     label = await pool.fetchval(
-        "SELECT id FROM staging.graha_labels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id FROM public.graha_labels WHERE id=$1::uuid AND org_id=$2::uuid",
         str(label_id), org_id,
     )
     if not label:
@@ -2744,7 +2744,7 @@ async def add_contact_label(
 
     try:
         await pool.execute(
-            "INSERT INTO staging.graha_contact_labels (contact_id, label_id) VALUES ($1::uuid, $2::uuid) "
+            "INSERT INTO public.graha_contact_labels (contact_id, label_id) VALUES ($1::uuid, $2::uuid) "
             "ON CONFLICT DO NOTHING",
             str(contact_id), str(label_id),
         )
@@ -2763,9 +2763,9 @@ async def remove_contact_label(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.graha_contact_labels "
+        "DELETE FROM public.graha_contact_labels "
         "WHERE contact_id=$1::uuid AND label_id=$2::uuid "
-        "AND contact_id IN (SELECT id FROM staging.graha_contacts WHERE org_id=$3::uuid)",
+        "AND contact_id IN (SELECT id FROM public.graha_contacts WHERE org_id=$3::uuid)",
         str(contact_id), str(label_id), org_id,
     )
     return {"status": "removed"}
@@ -2790,7 +2790,7 @@ async def convert_lead(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "SELECT id, contact_type FROM staging.graha_contacts "
+                "SELECT id, contact_type FROM public.graha_contacts "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE FOR UPDATE",
                 str(contact_id), org_id,
             )
@@ -2807,7 +2807,7 @@ async def convert_lead(
                 # column the contact itself still says whoever last edited a
                 # phone number was the last person to touch it, which is false
                 # from the moment the conversion commits.
-                "UPDATE staging.graha_contacts "
+                "UPDATE public.graha_contacts "
                 "SET contact_type='customer', converted_at=NOW(), "
                 "updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid "
@@ -2840,8 +2840,8 @@ async def crm_today(
     if is_admin:
         overdue_q = pool.fetch(
             "SELECT f.id, f.title, f.due_at, f.contact_id, c.name AS contact_name "
-            "FROM staging.graha_follow_ups f "
-            "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
+            "FROM public.graha_follow_ups f "
+            "LEFT JOIN public.graha_contacts c ON c.id = f.contact_id "
             "WHERE f.org_id=$1::uuid AND f.due_at < NOW() AND NOT f.is_completed "
             "ORDER BY f.due_at ASC LIMIT 20",
             org_id,
@@ -2849,8 +2849,8 @@ async def crm_today(
     else:
         overdue_q = pool.fetch(
             "SELECT f.id, f.title, f.due_at, f.contact_id, c.name AS contact_name "
-            "FROM staging.graha_follow_ups f "
-            "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
+            "FROM public.graha_follow_ups f "
+            "LEFT JOIN public.graha_contacts c ON c.id = f.contact_id "
             "WHERE f.org_id=$1::uuid AND f.due_at < NOW() AND NOT f.is_completed "
             "AND f.assigned_to=$2 "
             "ORDER BY f.due_at ASC LIMIT 20",
@@ -2861,10 +2861,10 @@ async def crm_today(
         stale_q = pool.fetch(
             "SELECT d.id, d.title, d.value, d.stage, d.probability, "
             "d.updated_at, c.name AS contact_name "
-            "FROM staging.graha_deals d "
-            "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+            "FROM public.graha_deals d "
+            "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
             "LEFT JOIN LATERAL ("
-            "  SELECT MAX(a.created_at) AS last_act FROM staging.graha_activities a "
+            "  SELECT MAX(a.created_at) AS last_act FROM public.graha_activities a "
             "  WHERE a.deal_id = d.id"
             ") la ON TRUE "
             "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
@@ -2877,10 +2877,10 @@ async def crm_today(
         stale_q = pool.fetch(
             "SELECT d.id, d.title, d.value, d.stage, d.probability, "
             "d.updated_at, c.name AS contact_name "
-            "FROM staging.graha_deals d "
-            "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+            "FROM public.graha_deals d "
+            "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
             "LEFT JOIN LATERAL ("
-            "  SELECT MAX(a.created_at) AS last_act FROM staging.graha_activities a "
+            "  SELECT MAX(a.created_at) AS last_act FROM public.graha_activities a "
             "  WHERE a.deal_id = d.id"
             ") la ON TRUE "
             "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
@@ -2893,7 +2893,7 @@ async def crm_today(
     if is_admin:
         new_leads_q = pool.fetch(
             "SELECT id, name, email, phone, company, source, created_at "
-            "FROM staging.graha_contacts "
+            "FROM public.graha_contacts "
             "WHERE org_id=$1::uuid AND is_active=TRUE AND contact_type='lead' "
             "AND created_at > NOW() - INTERVAL '24 hours' "
             "ORDER BY created_at DESC LIMIT 20",
@@ -2902,7 +2902,7 @@ async def crm_today(
     else:
         new_leads_q = pool.fetch(
             "SELECT id, name, email, phone, company, source, created_at "
-            "FROM staging.graha_contacts "
+            "FROM public.graha_contacts "
             "WHERE org_id=$1::uuid AND is_active=TRUE AND contact_type='lead' "
             "AND created_at > NOW() - INTERVAL '24 hours' AND assigned_to=$2 "
             "ORDER BY created_at DESC LIMIT 20",
@@ -2912,8 +2912,8 @@ async def crm_today(
     today_act_q = pool.fetch(
         "SELECT a.id, a.activity_type, a.title, a.scheduled_at, a.is_completed, "
         "a.deal_id, a.contact_id, c.name AS contact_name "
-        "FROM staging.graha_activities a "
-        "LEFT JOIN staging.graha_contacts c ON c.id = a.contact_id "
+        "FROM public.graha_activities a "
+        "LEFT JOIN public.graha_contacts c ON c.id = a.contact_id "
         "WHERE a.org_id=$1::uuid "
         "AND (DATE(a.scheduled_at) = CURRENT_DATE OR DATE(a.created_at) = CURRENT_DATE) "
         "ORDER BY COALESCE(a.scheduled_at, a.created_at) ASC LIMIT 30",
@@ -2922,8 +2922,8 @@ async def crm_today(
 
     closures_q = pool.fetch(
         "SELECT d.id, d.title, d.value, d.stage, d.updated_at, c.name AS contact_name "
-        "FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "FROM public.graha_deals d "
+        "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
         "WHERE d.org_id=$1::uuid AND d.stage IN ('Won','Lost') "
         "AND d.updated_at > NOW() - INTERVAL '7 days' "
         "ORDER BY d.updated_at DESC LIMIT 15",
@@ -2970,28 +2970,28 @@ async def contact_timeline(
     SELECT * FROM (
         SELECT id, 'activity' AS type, title, activity_type AS subtype,
             COALESCE(scheduled_at, created_at) AS ts, NULL::numeric AS amount, NULL AS stage
-        FROM staging.graha_activities
+        FROM public.graha_activities
         WHERE contact_id=$1::uuid AND org_id=$2::uuid
 
         UNION ALL
 
         SELECT id, 'followup' AS type, title, NULL AS subtype,
             due_at AS ts, NULL::numeric AS amount, NULL AS stage
-        FROM staging.graha_follow_ups
+        FROM public.graha_follow_ups
         WHERE contact_id=$1::uuid AND org_id=$2::uuid
 
         UNION ALL
 
         SELECT id, 'invoice' AS type, invoice_number AS title, payment_status AS subtype,
             created_at AS ts, total AS amount, NULL AS stage
-        FROM staging.ganit_invoices
+        FROM public.ganit_invoices
         WHERE contact_id=$1::uuid AND org_id=$2::uuid
 
         UNION ALL
 
         SELECT id, 'deal' AS type, title, NULL AS subtype,
             created_at AS ts, value AS amount, stage
-        FROM staging.graha_deals
+        FROM public.graha_deals
         WHERE contact_id=$1::uuid AND org_id=$2::uuid
     ) timeline
     WHERE 1=1{cursor_filter}
@@ -3019,7 +3019,7 @@ async def contact_projects(
     cid = str(contact_id)
     rows = await pool.fetch(
         "SELECT p.id, p.name, p.status, p.created_at "
-        "FROM staging.projects p "
+        "FROM public.projects p "
         "WHERE p.org_id=$1::uuid AND p.contact_id=$2::uuid AND p.is_active=TRUE "
         "ORDER BY p.created_at DESC LIMIT 20",
         org_id, cid,
@@ -3065,7 +3065,7 @@ async def inbound_leads(request: Request):
         # for a firm whose capture address sits behind one client's portal. It
         # is the ONLY company this path will accept — see the INSERT below.
         "SELECT o.id, o.settings->>'lead_capture_client_id' AS lead_capture_client_id "
-        "FROM staging.organisations o "
+        "FROM public.organisations o "
         "WHERE o.settings->>'lead_capture_email' = $1 AND o.is_active=TRUE",
         to_addr.lower().strip(),
     )
@@ -3076,7 +3076,7 @@ async def inbound_leads(request: Request):
     source, parsed = parse_lead_email(sender, subject, body_text)
 
     email_row = await pool.fetchrow(
-        "INSERT INTO staging.graha_inbound_emails "
+        "INSERT INTO public.graha_inbound_emails "
         "(org_id, sender, subject, body_text, parsed_data, status) "
         "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6) RETURNING id",
         org_id, _sanitize(sender, 200), _sanitize(subject, 300),
@@ -3102,7 +3102,7 @@ async def inbound_leads(request: Request):
 
     if existing:
         await pool.execute(
-            "INSERT INTO staging.graha_activities "
+            "INSERT INTO public.graha_activities "
             "(org_id, contact_id, activity_type, title, description, created_by) "
             "VALUES ($1::uuid, $2::uuid, 'note', $3, $4, $5)",
             org_id, str(existing["id"]),
@@ -3111,7 +3111,7 @@ async def inbound_leads(request: Request):
             "system",
         )
         await pool.execute(
-            "UPDATE staging.graha_inbound_emails SET status='duplicate', contact_id=$1::uuid WHERE id=$2::uuid",
+            "UPDATE public.graha_inbound_emails SET status='duplicate', contact_id=$1::uuid WHERE id=$2::uuid",
             str(existing["id"]), str(email_row["id"]),
         )
         return {"status": "duplicate", "contact_id": str(existing["id"]), "email_id": str(email_row["id"])}
@@ -3152,7 +3152,7 @@ async def inbound_leads(request: Request):
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             contact_row = await _conn.fetchrow(
-                "INSERT INTO staging.graha_contacts "
+                "INSERT INTO public.graha_contacts "
                 "(org_id, name, email, phone, company, contact_type, source, notes, client_id) "
                 "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7, NULLIF($8,'')::uuid) "
                 "RETURNING *",
@@ -3165,13 +3165,13 @@ async def inbound_leads(request: Request):
     contact_id = str(contact_row["id"])
 
     await pool.execute(
-        "UPDATE staging.graha_inbound_emails SET contact_id=$1::uuid WHERE id=$2::uuid",
+        "UPDATE public.graha_inbound_emails SET contact_id=$1::uuid WHERE id=$2::uuid",
         contact_id, str(email_row["id"]),
     )
 
     if product:
         await pool.execute(
-            "INSERT INTO staging.graha_activities "
+            "INSERT INTO public.graha_activities "
             "(org_id, contact_id, activity_type, title, description, created_by) "
             "VALUES ($1::uuid, $2::uuid, 'note', $3, $4, $5)",
             org_id, contact_id,
@@ -3181,7 +3181,7 @@ async def inbound_leads(request: Request):
         )
 
     await pool.execute(
-        "INSERT INTO staging.graha_follow_ups "
+        "INSERT INTO public.graha_follow_ups "
         "(org_id, contact_id, title, due_at, assigned_to, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $5)",
         org_id, contact_id,
@@ -3208,7 +3208,7 @@ async def list_inbound_emails(
     rows = await pool.fetch(
         "SELECT id, sender, subject, status, contact_id, created_at, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_inbound_emails "
+        "FROM public.graha_inbound_emails "
         "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 100",
         org_id,
     )
@@ -3226,7 +3226,7 @@ async def get_inbound_email(
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.graha_inbound_emails WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.graha_inbound_emails WHERE id=$1::uuid AND org_id=$2::uuid",
         str(email_id), org_id,
     )
     if not row:
@@ -3247,7 +3247,7 @@ SCORING_SIGNALS = {
 
 async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, list[str]]:
     rules = await pool.fetch(
-        "SELECT signal, points FROM staging.graha_scoring_rules "
+        "SELECT signal, points FROM public.graha_scoring_rules "
         "WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
@@ -3255,7 +3255,7 @@ async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, l
         return 0, []
 
     contact = await pool.fetchrow(
-        "SELECT * FROM staging.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid",
         contact_id, org_id,
     )
     if not contact:
@@ -3263,32 +3263,32 @@ async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, l
     c = dict(contact)
 
     deal_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.graha_deals WHERE contact_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM public.graha_deals WHERE contact_id=$1::uuid AND is_active=TRUE",
         contact_id,
     )
     best_stage = await pool.fetchval(
-        "SELECT stage FROM staging.graha_deals WHERE contact_id=$1::uuid AND is_active=TRUE "
+        "SELECT stage FROM public.graha_deals WHERE contact_id=$1::uuid AND is_active=TRUE "
         "ORDER BY CASE stage WHEN 'Negotiation' THEN 4 WHEN 'Proposal' THEN 3 "
         "WHEN 'Qualified' THEN 2 WHEN 'New' THEN 1 ELSE 0 END DESC LIMIT 1",
         contact_id,
     )
     has_high_value = await pool.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM staging.graha_deals WHERE contact_id=$1::uuid "
+        "SELECT EXISTS(SELECT 1 FROM public.graha_deals WHERE contact_id=$1::uuid "
         "AND is_active=TRUE AND value >= 100000)",
         contact_id,
     )
     recent_activity = await pool.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM staging.graha_activities WHERE contact_id=$1::uuid "
+        "SELECT EXISTS(SELECT 1 FROM public.graha_activities WHERE contact_id=$1::uuid "
         "AND created_at > NOW() - INTERVAL '7 days')",
         contact_id,
     )
     activity_types = await pool.fetch(
-        "SELECT DISTINCT activity_type FROM staging.graha_activities WHERE contact_id=$1::uuid",
+        "SELECT DISTINCT activity_type FROM public.graha_activities WHERE contact_id=$1::uuid",
         contact_id,
     )
     act_set = {r["activity_type"] for r in activity_types}
     overdue_fu = await pool.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM staging.graha_follow_ups WHERE contact_id=$1::uuid "
+        "SELECT EXISTS(SELECT 1 FROM public.graha_follow_ups WHERE contact_id=$1::uuid "
         "AND NOT is_completed AND due_at < NOW())",
         contact_id,
     )
@@ -3335,7 +3335,7 @@ async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, l
     # the row. `updated_at` still moves, which is correct — the row DID change
     # and the delta sync must ship it.
     await pool.execute(
-        "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
+        "UPDATE public.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
         "WHERE id=$3::uuid AND org_id=$4::uuid",
         score, json.dumps(reasons), contact_id, org_id,
     )
@@ -3364,7 +3364,7 @@ async def rescore_all_contacts(
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     contacts = await pool.fetch(
-        "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT id FROM public.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     count = 0
@@ -3477,7 +3477,7 @@ async def list_scoring_rules(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, signal, points, description, is_active FROM staging.graha_scoring_rules "
+        "SELECT id, signal, points, description, is_active FROM public.graha_scoring_rules "
         "WHERE org_id=$1::uuid ORDER BY points DESC",
         org_id,
     )
@@ -3512,7 +3512,7 @@ async def update_scoring_rule(
         params.append(v)
         idx += 1
     await pool.execute(
-        f"UPDATE staging.graha_scoring_rules SET {', '.join(sets)} "
+        f"UPDATE public.graha_scoring_rules SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -3535,7 +3535,7 @@ async def report_pipeline_velocity(
         "SELECT stage, COUNT(*) as count, COALESCE(SUM(value),0) as total_value, "
         "COALESCE(AVG(value),0) as avg_value, "
         "AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/86400)::int as avg_days_in_stage "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND created_at > NOW() - ($2 || ' days')::interval "
         "GROUP BY stage ORDER BY count DESC",
         org_id, str(days),
@@ -3584,7 +3584,7 @@ async def report_conversion(
         "  COUNT(*) FILTER (WHERE stage='Lost' AND lost_at IS NULL) AS lost_undated, "
         "  AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400)"
         "    FILTER (WHERE stage='Won' AND won_at > $2)::int AS avg_cycle_days "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid",
+        "FROM public.graha_deals WHERE org_id=$1::uuid",
         org_id, cutoff,
     )
     r = dict(row) if row else {}
@@ -3658,7 +3658,7 @@ async def report_rep_performance(
         # Average size of what was ROUTED in the window, not of what closed:
         # it is the allocation figure sitting beside the outcome figures.
         "COALESCE(AVG(d.value) FILTER (WHERE d.created_at > $2), 0) as avg_deal_value "
-        "FROM staging.graha_deals d "
+        "FROM public.graha_deals d "
         # LEFT, so a rep whose account has been removed still shows their
         # numbers under 'Unnamed member' rather than dropping out of the report
         # and quietly changing the totals.
@@ -3687,7 +3687,7 @@ async def report_forecast(
         "SELECT stage, COUNT(*) as count, "
         "COALESCE(SUM(value),0) as total_value, "
         "COALESCE(SUM(value * probability / 100.0),0) as weighted_value "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND stage NOT IN ('Won','Lost') "
         "GROUP BY stage ORDER BY weighted_value DESC",
         org_id,
@@ -3716,8 +3716,8 @@ async def report_source_analysis(
         "COUNT(d.id) as deals, "
         "COUNT(d.id) FILTER (WHERE d.stage='Won') as won, "
         "COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won'), 0) as won_value "
-        "FROM staging.graha_contacts c "
-        "LEFT JOIN staging.graha_deals d ON d.contact_id = c.id AND d.is_active=TRUE "
+        "FROM public.graha_contacts c "
+        "LEFT JOIN public.graha_deals d ON d.contact_id = c.id AND d.is_active=TRUE "
         "WHERE c.org_id=$1::uuid AND c.created_at > $2 AND c.is_active=TRUE "
         "GROUP BY COALESCE(c.source, 'unknown') ORDER BY leads DESC",
         org_id, cutoff,
@@ -3805,7 +3805,7 @@ async def list_territories(
         "         FROM users u WHERE u.user_id::text = ANY("
         "               SELECT unnest(t.assigned_users)::text)"
         "       ), '[]'::json) AS assigned "
-        "FROM staging.graha_territories t "
+        "FROM public.graha_territories t "
         "WHERE t.org_id=$1::uuid AND t.is_active=TRUE ORDER BY t.name",
         org_id,
     )
@@ -3830,7 +3830,7 @@ async def _validated_territory_users(pool, org_id: str, user_ids: list[str]) -> 
     if not user_ids:
         return []
     rows = await pool.fetch(
-        "SELECT DISTINCT user_id FROM staging.user_roles "
+        "SELECT DISTINCT user_id FROM public.user_roles "
         "WHERE org_id=$1::uuid AND user_id = ANY($2::text[])",
         org_id, list(user_ids))
     known = {r["user_id"] for r in rows}
@@ -3867,7 +3867,7 @@ async def create_territory(
     members = await _validated_territory_users(pool, org_id, body.assigned_users)
     try:
         row = await pool.fetchrow(
-            "INSERT INTO staging.graha_territories (org_id, name, description, assigned_users, rules) "
+            "INSERT INTO public.graha_territories (org_id, name, description, assigned_users, rules) "
             "VALUES ($1::uuid, $2, $3, $4, $5::jsonb) RETURNING id, name",
             org_id, body.name, body.description, members,
             json.dumps(body.rules),
@@ -3891,7 +3891,7 @@ async def update_territory(
     members = await _validated_territory_users(pool, org_id, body.assigned_users)
     try:
         await pool.execute(
-            "UPDATE staging.graha_territories SET name=$1, description=$2, assigned_users=$3, "
+            "UPDATE public.graha_territories SET name=$1, description=$2, assigned_users=$3, "
             "rules=$4::jsonb WHERE id=$5::uuid AND org_id=$6::uuid",
             body.name, body.description, members,
             json.dumps(body.rules), str(territory_id), org_id,
@@ -3912,7 +3912,7 @@ async def delete_territory(
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_territories SET is_active=FALSE "
+        "UPDATE public.graha_territories SET is_active=FALSE "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(territory_id), org_id,
     )
@@ -4061,7 +4061,7 @@ async def list_custom_fields(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.graha_custom_fields WHERE org_id=$1::uuid AND is_active=TRUE "
+    q = "SELECT * FROM public.graha_custom_fields WHERE org_id=$1::uuid AND is_active=TRUE "
     params: list = [org_id]
     if entity_type:
         params.append(entity_type)
@@ -4095,7 +4095,7 @@ async def create_custom_field(
     pool = await get_pool()
     try:
         row = await pool.fetchrow(
-            "INSERT INTO staging.graha_custom_fields "
+            "INSERT INTO public.graha_custom_fields "
             "(org_id, entity_type, field_name, field_type, options, is_required, sort_order) "
             "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7) RETURNING id, field_name",
             org_id, body.entity_type, body.field_name, body.field_type,
@@ -4117,7 +4117,7 @@ async def delete_custom_field(
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.graha_custom_fields SET is_active=FALSE "
+        "UPDATE public.graha_custom_fields SET is_active=FALSE "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(field_id), org_id,
     )
@@ -4154,7 +4154,7 @@ async def list_web_forms(
         # exactly that reason.
         + actor_select("w", updated=True) +
         "w.created_at, w.updated_at "
-        "FROM staging.graha_web_forms w "
+        "FROM public.graha_web_forms w "
         + actor_joins("w", updated=True) +
         "WHERE w.org_id=$1::uuid ORDER BY w.created_at DESC",
         org_id,
@@ -4187,7 +4187,7 @@ async def create_web_form(
             # 76 audit columns carry), and this INSERT became correct without
             # a line of it changing. Left as-is on purpose — the fix belonged
             # in the column, not here.
-            "INSERT INTO staging.graha_web_forms "
+            "INSERT INTO public.graha_web_forms "
             "(org_id, name, slug, fields, settings, auto_assign_to, auto_source, created_by) "
             "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6::text,''), $7, $8) "
             "RETURNING id, name, slug",
@@ -4217,7 +4217,7 @@ async def delete_web_form(
         # editor is an audit trail that points at the wrong person, which is
         # strictly worse than an empty one. `$3` is appended after the existing
         # binds so the WHERE clause keeps `$1`/`$2`.
-        "UPDATE staging.graha_web_forms SET is_active=FALSE, updated_by=$3 "
+        "UPDATE public.graha_web_forms SET is_active=FALSE, updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(form_id), org_id, user["user_id"],
     )
@@ -4235,8 +4235,8 @@ async def list_form_submissions(
     rows = await pool.fetch(
         "SELECT s.id, s.data, s.contact_id, s.status, s.created_at, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_web_form_submissions s "
-        "JOIN staging.graha_web_forms f ON f.id = s.form_id "
+        "FROM public.graha_web_form_submissions s "
+        "JOIN public.graha_web_forms f ON f.id = s.form_id "
         "WHERE s.form_id=$1::uuid AND f.org_id=$2::uuid "
         "ORDER BY s.created_at DESC LIMIT 200",
         str(form_id), org_id,
@@ -4254,7 +4254,7 @@ async def submit_web_form(
 ):
     pool = await get_pool()
     form = await pool.fetchrow(
-        "SELECT * FROM staging.graha_web_forms WHERE slug=$1 AND is_active=TRUE",
+        "SELECT * FROM public.graha_web_forms WHERE slug=$1 AND is_active=TRUE",
         slug,
     )
     if not form:
@@ -4272,12 +4272,12 @@ async def submit_web_form(
     existing = None
     if email:
         existing = await pool.fetchrow(
-            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND email=$2",
+            "SELECT id FROM public.graha_contacts WHERE org_id=$1::uuid AND email=$2",
             org_id, email,
         )
     if not existing and phone:
         existing = await pool.fetchrow(
-            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND phone=$2",
+            "SELECT id FROM public.graha_contacts WHERE org_id=$1::uuid AND phone=$2",
             org_id, phone,
         )
 
@@ -4329,7 +4329,7 @@ async def submit_web_form(
         async with pool.acquire() as _conn:
             async with _conn.transaction():
                 contact_row = await _conn.fetchrow(
-                    "INSERT INTO staging.graha_contacts "
+                    "INSERT INTO public.graha_contacts "
                     "(org_id, name, email, phone, company, contact_type, source, "
                     " assigned_to, notes, created_by, client_id) "
                     "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, "
@@ -4340,7 +4340,7 @@ async def submit_web_form(
                     # and change NOTHING. `client_id` is not in the SET list,
                     # so a repeat submission cannot re-point — or unlink — the
                     # company an existing contact already belongs to.
-                    "DO UPDATE SET notes = staging.graha_contacts.notes "
+                    "DO UPDATE SET notes = public.graha_contacts.notes "
                     "RETURNING *, (xmax = 0) AS _inserted",
                     org_id, name, email, phone, company,
                     form["auto_source"] or "web_form",
@@ -4356,7 +4356,7 @@ async def submit_web_form(
 
 
     sub = await pool.fetchrow(
-        "INSERT INTO staging.graha_web_form_submissions "
+        "INSERT INTO public.graha_web_form_submissions "
         "(org_id, form_id, data, contact_id, ip_address, status) "
         "VALUES ($1::uuid, $2::uuid, $3::jsonb, NULLIF($4,'')::uuid, $5, 'processed') "
         "RETURNING id",
@@ -4374,7 +4374,7 @@ async def submit_web_form(
         # is not an edit anyone made to the form's definition, so the form's
         # last editor stays whoever it was. `trg_touch_graha_web_forms` still
         # advances `updated_at`, which is honest: the row did change.
-        "UPDATE staging.graha_web_forms SET submission_count=submission_count+1 "
+        "UPDATE public.graha_web_forms SET submission_count=submission_count+1 "
         "WHERE id=$1::uuid",
         form_id,
     )
@@ -4418,7 +4418,7 @@ async def list_approval_rules(
     q = ("SELECT "
          + actor_select("r", updated=True)
          + "r.* "
-         "FROM staging.graha_approval_rules r "
+         "FROM public.graha_approval_rules r "
          + actor_joins("r", updated=True)
          + "WHERE r.org_id=$1::uuid AND r.is_active=TRUE")
     params: list = [org_id]
@@ -4449,7 +4449,7 @@ async def create_approval_rule(
         # TEXT member id, matching `public.users.user_id`; there is no uuid
         # cast because 202 typed the column TEXT deliberately (the same lesson
         # `graha_web_forms.created_by` cost).
-        "INSERT INTO staging.graha_approval_rules "
+        "INSERT INTO public.graha_approval_rules "
         "(org_id, entity_type, threshold_amount, approver_role, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5) RETURNING *",
         org_id, body.entity_type, body.threshold_amount, body.approver_role,
@@ -4484,7 +4484,7 @@ async def update_approval_rule(
     vals.append(user["user_id"]); updates.append(f"updated_by=${len(vals)}")
     vals += [rule_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.graha_approval_rules SET {', '.join(updates)} "
+        f"UPDATE public.graha_approval_rules SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
         *vals,
     )
@@ -4505,7 +4505,7 @@ async def delete_approval_rule(
         # Retiring a rule changes who has to approve a deal from that moment
         # on. That is the single most consequential write on this table and it
         # recorded no author at all.
-        "UPDATE staging.graha_approval_rules SET is_active=FALSE, updated_at=NOW(), "
+        "UPDATE public.graha_approval_rules SET is_active=FALSE, updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         rule_id, org_id, user["user_id"],
@@ -4553,8 +4553,8 @@ async def list_approval_requests(
         "  AS approved_by_name, "
         "(ar.approved_by IS NOT NULL) AS has_approver, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_approval_requests ar "
-        "JOIN staging.graha_approval_rules ru ON ru.id = ar.rule_id "
+        "FROM public.graha_approval_requests ar "
+        "JOIN public.graha_approval_rules ru ON ru.id = ar.rule_id "
         "LEFT JOIN public.users _rq ON _rq.user_id = ar.requested_by "
         "LEFT JOIN public.users _ap ON _ap.user_id = ar.approved_by "
         "WHERE ar.org_id=$1::uuid"
@@ -4580,7 +4580,7 @@ async def approve_request(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "UPDATE staging.graha_approval_requests "
+        "UPDATE public.graha_approval_requests "
         "SET status='approved', approved_by=$1, decided_at=NOW() "
         "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
         user["user_id"], req_id, org_id,
@@ -4599,7 +4599,7 @@ async def reject_request(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "UPDATE staging.graha_approval_requests "
+        "UPDATE public.graha_approval_requests "
         "SET status='rejected', approved_by=$1, decided_at=NOW() "
         "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
         user["user_id"], req_id, org_id,
@@ -4674,7 +4674,7 @@ async def list_documents(
          "(d.uploaded_by IS NOT NULL) AS has_creator, "
          + actor_select("d", created=False, updated=True) +
          "COUNT(*) OVER() AS _total "
-         "FROM staging.graha_documents d "
+         "FROM public.graha_documents d "
          # `_cu` is `audit_actors.CREATOR_ALIAS` by hand — the same alias the
          # generated half would have used, so the two never collide and a
          # reader sees one convention. `public.` is spelled out: migration 142
@@ -4814,7 +4814,7 @@ async def upload_document(
 
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.graha_documents "
+        "INSERT INTO public.graha_documents "
         "(org_id, name, file_url, file_key, file_size, mime_type, folder, tags, "
         "contact_id, deal_id, description, uploaded_by) "
         # `$8::text::jsonb` for the same reason as `create_document` below —
@@ -4837,7 +4837,7 @@ async def pool_client_check(client_id: str, org_id: str) -> bool:
     route is not the last thing that will need to ask."""
     pool = await get_pool()
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.graha_clients "
+        "SELECT 1 FROM public.graha_clients "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         client_id, org_id,
     ))
@@ -4865,7 +4865,7 @@ async def create_document(
     contact_id = await resolve_deal_contact(pool, org_id, body.contact_id)
     deal_id = await resolve_deal_id(pool, org_id, body.deal_id)
     row = await pool.fetchrow(
-        "INSERT INTO staging.graha_documents "
+        "INSERT INTO public.graha_documents "
         "(org_id, name, file_url, file_key, file_size, mime_type, folder, tags, "
         "contact_id, deal_id, description, uploaded_by) "
         # `$8::text::jsonb`, NOT `$8::jsonb`. `db.py` registers a jsonb codec
@@ -4899,7 +4899,7 @@ async def list_document_folders(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT folder, COUNT(*) AS count "
-        "FROM staging.graha_documents WHERE org_id=$1::uuid AND is_active=TRUE AND folder != '' "
+        "FROM public.graha_documents WHERE org_id=$1::uuid AND is_active=TRUE AND folder != '' "
         "GROUP BY folder ORDER BY folder",
         org_id,
     )
@@ -4916,8 +4916,8 @@ async def get_document(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT d.*, c.name AS contact_name "
-        "FROM staging.graha_documents d "
-        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "FROM public.graha_documents d "
+        "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
         "WHERE d.id=$1::uuid AND d.org_id=$2::uuid AND d.is_active=TRUE",
         doc_id, org_id,
     )
@@ -4969,7 +4969,7 @@ async def update_document(
     vals.append(user["user_id"]); updates.append(f"updated_by=${len(vals)}")
     vals += [doc_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.graha_documents SET {', '.join(updates)} "
+        f"UPDATE public.graha_documents SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
         *vals,
     )
@@ -4995,7 +4995,7 @@ async def delete_document(
     # the org's recycle bin instead, restorable for 14 days, in the
     # second-stage bin to 90.
     doc = await pool.fetchrow(
-        "SELECT id, name, file_key, file_url, file_size FROM staging.graha_documents "
+        "SELECT id, name, file_key, file_url, file_size FROM public.graha_documents "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         doc_id, org_id,
     )
@@ -5029,7 +5029,7 @@ async def delete_document(
         # A CRM document is a contract or a proposal; "who removed it?" is the
         # question an argument turns on later, and the soft delete leaves no
         # other trace of the act.
-        "UPDATE staging.graha_documents SET is_active=FALSE, updated_at=NOW(), "
+        "UPDATE public.graha_documents SET is_active=FALSE, updated_at=NOW(), "
         "updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         doc_id, org_id, user["user_id"],

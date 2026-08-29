@@ -199,12 +199,12 @@ async def brief_itc_reversal_risk(
                {heads_sql},
                COALESCE(NULLIF(btrim(b.currency), ''), 'INR') AS currency,
                b.status
-        FROM staging.ganit_vendor_bills b
+        FROM public.ganit_vendor_bills b
         -- LEFT, not the inner join `routers/ganit.py` uses: a bill whose vendor
         -- row was soft-deleted still carries the credit, and dropping it here
         -- would understate a statutory figure. Carrying `AND v.org_id = b.org_id`
         -- closes a cross-tenant name read if `vendor_id` is ever wrong.
-        LEFT JOIN staging.ganit_vendors v
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE
@@ -227,7 +227,7 @@ async def brief_itc_reversal_risk(
     reverse_charge_excluded = await pool.fetchval(
         f"""
         SELECT count(*)
-        FROM staging.ganit_vendor_bills b
+        FROM public.ganit_vendor_bills b
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE
           AND b.status <> 'cancelled'

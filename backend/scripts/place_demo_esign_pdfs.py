@@ -85,7 +85,7 @@ async def main() -> int:
 
         rows = await pool.fetch(
             """
-            SELECT id, title, file_hash FROM staging.sign_documents
+            SELECT id, title, file_hash FROM public.sign_documents
             WHERE org_id = $1::uuid AND title = ANY($2::text[])
             """,
             ORG_ID, titles,
@@ -112,7 +112,7 @@ async def main() -> int:
         for r in todo:
             await pool.execute(
                 """
-                UPDATE staging.sign_documents
+                UPDATE public.sign_documents
                 SET file_key = $1, file_url = $2, file_hash = $3, updated_at = NOW()
                 WHERE id = $4
                 """,
@@ -127,7 +127,7 @@ async def main() -> int:
     dupes = await pool.fetchval(
         """
         SELECT count(*) FROM (
-            SELECT file_key FROM staging.sign_documents
+            SELECT file_key FROM public.sign_documents
             WHERE org_id = $1::uuid AND file_key <> 'pending'
             GROUP BY file_key HAVING count(*) > 1
         ) q

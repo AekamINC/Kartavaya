@@ -464,7 +464,7 @@ async def fetch_ack_set(pool, org_id: str, skill: str) -> dict[str, Ack]:
                acknowledged_by,
                acknowledged_at,
                note
-        FROM staging.skill_finding_ack
+        FROM public.skill_finding_ack
         WHERE org_id = $1::uuid
           AND skill  = $2::text
         """,
@@ -612,7 +612,7 @@ async def record_ack(
     """
     await pool.execute(
         """
-        INSERT INTO staging.skill_finding_ack
+        INSERT INTO public.skill_finding_ack
             (org_id, skill, finding_key, state_hash, finding_label,
              acknowledged_by, snooze_until, note)
         VALUES ($1::uuid, $2::text, $3::text, $4::text, $5::text,
@@ -640,7 +640,7 @@ async def clear_ack(pool, org_id: str, skill: str, *, key: str) -> None:
     """
     await pool.execute(
         """
-        DELETE FROM staging.skill_finding_ack
+        DELETE FROM public.skill_finding_ack
         WHERE org_id = $1::uuid AND skill = $2::text AND finding_key = $3::text
         """,
         org_id, skill, key,

@@ -294,9 +294,9 @@ _CUSTOMER_NAME = """
                         '(customer not recorded)') AS customer"""
 
 _CUSTOMER_JOIN = """
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = i.client_id AND cl.org_id = i.org_id
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = i.contact_id AND ct.org_id = i.org_id"""
 
 _RECIPIENT_GSTIN = (
@@ -395,7 +395,7 @@ async def check_msme_payment_clock(
                count(*) FILTER (WHERE payment_terms_days IS NOT NULL) AS terms_recorded,
                count(*) FILTER (WHERE udyam_number IS NOT NULL
                                   AND btrim(udyam_number) <> '')     AS udyam_recorded
-        FROM staging.ganit_vendors
+        FROM public.ganit_vendors
         WHERE org_id = $1::uuid
         """,
         org_id, list(COVERED_CLASSES), EXCLUDED_KIND,
@@ -407,7 +407,7 @@ async def check_msme_payment_clock(
                COALESCE(SUM(b.total - COALESCE(b.amount_paid, 0)), 0) AS open_balance,
                count(*) FILTER (WHERE b.vendor_id IS NULL)           AS no_vendor,
                count(*) FILTER (WHERE b.acceptance_date IS NOT NULL) AS acceptance_recorded
-        FROM staging.ganit_vendor_bills b
+        FROM public.ganit_vendor_bills b
         WHERE b.org_id = $1::uuid
           AND b.is_active
           AND b.status = ANY($2::text[])
@@ -423,8 +423,8 @@ async def check_msme_payment_clock(
                v.id AS vendor_id, NULLIF(btrim(v.email), '') AS vendor_email,
                NULLIF(btrim(v.phone), '') AS vendor_phone,
                v.payment_terms_days, v.udyam_number, v.is_msme
-        FROM staging.ganit_vendor_bills b
-        JOIN staging.ganit_vendors v
+        FROM public.ganit_vendor_bills b
+        JOIN public.ganit_vendors v
           ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active
@@ -667,7 +667,7 @@ async def check_tds_thresholds(
         SELECT count(*) AS vendors_total,
                count(*) FILTER (WHERE tds_section IS NOT NULL
                                   AND btrim(tds_section) <> '') AS section_recorded
-        FROM staging.ganit_vendors
+        FROM public.ganit_vendors
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -679,7 +679,7 @@ async def check_tds_thresholds(
                count(*) FILTER (WHERE vendor_id IS NOT NULL)  AS linked_to_a_vendor,
                count(*) FILTER (WHERE tds_amount IS NOT NULL) AS tds_amount_recorded,
                COALESCE(SUM(tds_amount), 0)                   AS tds_recorded_total
-        FROM staging.ganit_expenses
+        FROM public.ganit_expenses
         WHERE org_id = $1::uuid
           AND is_active
           AND expense_date >= $2::date
@@ -695,7 +695,7 @@ async def check_tds_thresholds(
                    COALESCE(SUM(b.subtotal), 0) AS taxable,
                    COALESCE(SUM(b.total), 0)    AS gross,
                    count(*)                     AS documents
-            FROM staging.ganit_vendor_bills b
+            FROM public.ganit_vendor_bills b
             WHERE b.org_id = $1::uuid
               AND b.is_active
               AND b.vendor_id IS NOT NULL
@@ -710,7 +710,7 @@ async def check_tds_thresholds(
                    COALESCE(SUM(e.tds_amount), 0) AS tds,
                    count(*)                       AS documents,
                    count(*) FILTER (WHERE e.tds_amount IS NULL) AS tds_not_recorded
-            FROM staging.ganit_expenses e
+            FROM public.ganit_expenses e
             WHERE e.org_id = $1::uuid
               AND e.is_active
               AND e.vendor_id IS NOT NULL
@@ -720,8 +720,8 @@ async def check_tds_thresholds(
         ),
         settled AS (
             SELECT b.vendor_id, COALESCE(SUM(p.amount), 0) AS amount
-            FROM staging.ganit_vendor_payments p
-            JOIN staging.ganit_vendor_bills b
+            FROM public.ganit_vendor_payments p
+            JOIN public.ganit_vendor_bills b
               ON b.id = p.bill_id AND b.org_id = p.org_id
             WHERE p.org_id = $1::uuid
               AND b.vendor_id IS NOT NULL
@@ -738,7 +738,7 @@ async def check_tds_thresholds(
                COALESCE(spent.tds, 0)              AS tds_deducted,
                COALESCE(spent.tds_not_recorded, 0) AS tds_not_recorded,
                COALESCE(settled.amount, 0)         AS paid_in_year
-        FROM staging.ganit_vendors v
+        FROM public.ganit_vendors v
         LEFT JOIN billed  ON billed.vendor_id  = v.id
         LEFT JOIN spent   ON spent.vendor_id   = v.id
         LEFT JOIN settled ON settled.vendor_id = v.id
@@ -979,7 +979,7 @@ async def check_einvoice_window(
                         THEN -COALESCE(i.subtotal, 0)
                         ELSE  COALESCE(i.subtotal, 0) END) AS taxable_value,
                count(*) AS documents
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid
           AND i.is_active
           AND i.invoice_type IN ('tax_invoice', 'credit_note')
@@ -1015,7 +1015,7 @@ async def check_einvoice_window(
                count(*) FILTER (WHERE COALESCE(i.is_export, FALSE)) AS exports,
                count(*) FILTER (WHERE {_RECIPIENT_GSTIN} IS NULL
                                   AND NOT COALESCE(i.is_export, FALSE)) AS no_recipient_gstin
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         {_CUSTOMER_JOIN}
         WHERE i.org_id = $1::uuid
           AND i.is_active
@@ -1030,7 +1030,7 @@ async def check_einvoice_window(
                i.subtotal, i.doc_status, i.is_export, i.irn,
                {_RECIPIENT_GSTIN} AS recipient_gstin,
         {_CUSTOMER_NAME}
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         {_CUSTOMER_JOIN}
         WHERE i.org_id = $1::uuid
           AND i.is_active

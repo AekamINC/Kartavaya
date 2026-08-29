@@ -155,8 +155,8 @@ class DeadlineAgent(BaseAgent):
                     manager_id = await pool.fetchval(
                         """
                         SELECT me2.user_id
-                        FROM staging.manav_employees me
-                        JOIN staging.manav_employees me2 ON me2.id::text = me.reporting_to
+                        FROM public.manav_employees me
+                        JOIN public.manav_employees me2 ON me2.id::text = me.reporting_to
                         WHERE me.user_id = $1 AND me.org_id = $2::uuid
                         """,
                         uid, org_id,

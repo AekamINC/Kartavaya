@@ -121,7 +121,7 @@ async def visible_source_modules(pool, user_id: str, org_id: str) -> list[str]:
     allowed: list[str] = []
     for source, module_code in SOURCE_MODULE_OF.items():
         held = await pool.fetchval(
-            "SELECT 1 FROM staging.org_member_modules "
+            "SELECT 1 FROM public.org_member_modules "
             "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
             user_id, org_id, module_code,
         )
@@ -201,7 +201,7 @@ async def _document_for_contract(pool, contract_id: str):
     PDF — they are evidence of what happened and are not rewritten.
     """
     return await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents "
+        "SELECT * FROM public.sign_documents "
         "WHERE source_module=$1 AND source_id=$2::uuid "
         "ORDER BY created_at DESC LIMIT 1",
         SOURCE_GANIT_CONTRACT, contract_id,
@@ -245,7 +245,7 @@ async def send_for_signature(
     # again after either — that is why `_document_for_contract` is ordered
     # newest-first rather than assuming one exists.
     existing = await pool.fetchrow(
-        "SELECT id, status FROM staging.sign_documents "
+        "SELECT id, status FROM public.sign_documents "
         "WHERE source_module=$1 AND source_id=$2::uuid "
         "  AND status IN ('sent', 'opened', 'partially_signed') "
         "LIMIT 1",
@@ -283,7 +283,7 @@ async def send_for_signature(
 
     fields = contract_document_fields(contract, file_hash, len(signers), sent_by)
     doc = await pool.fetchrow(
-        "INSERT INTO staging.sign_documents "
+        "INSERT INTO public.sign_documents "
         "(org_id, title, description, file_key, file_url, file_hash, status, "
         " signers_total, expires_at, created_by, source_module, source_id) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid) "
@@ -310,7 +310,7 @@ async def send_for_signature(
         # the defect this file was rewritten for; `tests/test_signing_link_
         # resolves.py` asserts they still name the same table.
         row = await pool.fetchrow(
-            "INSERT INTO staging.sign_signers "
+            "INSERT INTO public.sign_signers "
             "(document_id, org_id, name, email, phone, sign_order, token, status) "
             "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'sent') "
             "RETURNING id, token",
@@ -329,7 +329,7 @@ async def send_for_signature(
                  {"signers_count": len(signers)})
 
     await pool.execute(
-        "UPDATE staging.ganit_contracts SET signature_status='pending', "
+        "UPDATE public.ganit_contracts SET signature_status='pending', "
         "updated_at=NOW() WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contract["id"]), org_id,
     )
@@ -395,7 +395,7 @@ async def signature_state(pool, contract_id: str, org_id: str) -> dict:
     source of truth moved.
     """
     ct = await pool.fetchrow(
-        "SELECT signature_status, signed_at FROM staging.ganit_contracts "
+        "SELECT signature_status, signed_at FROM public.ganit_contracts "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         contract_id, org_id,
     )
@@ -408,7 +408,7 @@ async def signature_state(pool, contract_id: str, org_id: str) -> dict:
         rows = await pool.fetch(
             "SELECT id, name, email, sign_order AS signing_order, status, "
             "created_at AS sent_at, signed_at, updated_at "
-            "FROM staging.sign_signers WHERE document_id=$1::uuid ORDER BY sign_order",
+            "FROM public.sign_signers WHERE document_id=$1::uuid ORDER BY sign_order",
             str(doc["id"]),
         )
         signers = [dict(r) for r in rows]
@@ -443,7 +443,7 @@ async def cancel_signature(pool, contract_id: str, org_id: str, cancelled_by: st
     without it would have been a withdrawal that the signing endpoint ignored.
     """
     if not await pool.fetchval(
-        "SELECT 1 FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
         contract_id, org_id,
     ):
         raise HTTPException(404, "Contract not found")
@@ -464,14 +464,14 @@ async def cancel_signature(pool, contract_id: str, org_id: str, cancelled_by: st
         )
 
     await pool.execute(
-        "UPDATE staging.ganit_contracts SET signature_status='cancelled', "
+        "UPDATE public.ganit_contracts SET signature_status='cancelled', "
         "updated_at=NOW() WHERE id=$1::uuid AND org_id=$2::uuid",
         contract_id, org_id,
     )
     if not doc:
         return
     await pool.execute(
-        "UPDATE staging.sign_documents SET status='cancelled', cancelled_at=NOW(), "
+        "UPDATE public.sign_documents SET status='cancelled', cancelled_at=NOW(), "
         "updated_at=NOW() WHERE id=$1::uuid AND status <> 'completed'",
         str(doc["id"]),
     )
@@ -496,8 +496,8 @@ async def get_audit_trail(pool, contract_id: str) -> list[dict]:
         "SELECT a.id, a.action AS event, a.actor_email, a.actor_ip AS ip_address, "
         "a.actor_user_agent AS user_agent, a.details AS metadata, "
         "a.created_at AS timestamp, s.name AS signer_name, s.email AS signer_email "
-        "FROM staging.sign_audit_log a "
-        "LEFT JOIN staging.sign_signers s ON s.id = a.signer_id "
+        "FROM public.sign_audit_log a "
+        "LEFT JOIN public.sign_signers s ON s.id = a.signer_id "
         "WHERE a.document_id=$1::uuid ORDER BY a.created_at",
         str(doc["id"]),
     )
@@ -516,14 +516,14 @@ async def mark_source_signed(pool, doc_id) -> None:
     no-op; that is the common case and it must stay cheap.
     """
     row = await pool.fetchrow(
-        "SELECT source_module, source_id FROM staging.sign_documents WHERE id=$1::uuid",
+        "SELECT source_module, source_id FROM public.sign_documents WHERE id=$1::uuid",
         str(doc_id),
     )
     if not row or not row["source_module"]:
         return
     if row["source_module"] == SOURCE_GANIT_CONTRACT:
         await pool.execute(
-            "UPDATE staging.ganit_contracts SET signature_status='signed', "
+            "UPDATE public.ganit_contracts SET signature_status='signed', "
             "signed_at=NOW(), updated_at=NOW() WHERE id=$1::uuid",
             str(row["source_id"]),
         )
@@ -539,7 +539,7 @@ async def _audit(pool, doc_id, signer_id, action: str, actor_email: str,
                  org_id: str | None = None, details: dict | None = None,
                  ip: str = None, ua: str = None):
     await pool.execute(
-        "INSERT INTO staging.sign_audit_log "
+        "INSERT INTO public.sign_audit_log "
         "(document_id, signer_id, org_id, action, actor_email, actor_ip, "
         " actor_user_agent, details) "
         "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb)",

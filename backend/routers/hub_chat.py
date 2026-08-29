@@ -115,14 +115,14 @@ async def list_kb_documents(
     cid = str(client_id)
 
     await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         cid, org_id,
     ) or (_ for _ in ()).throw(HTTPException(404, "Client not found"))
 
     docs = await pool.fetch(
         "SELECT d.id, d.title, d.source_type, d.source_url, d.is_active, d.created_at, "
-        "(SELECT COUNT(*) FROM staging.hub_kb_chunks WHERE document_id=d.id) as chunk_count "
-        "FROM staging.hub_kb_documents d "
+        "(SELECT COUNT(*) FROM public.hub_kb_chunks WHERE document_id=d.id) as chunk_count "
+        "FROM public.hub_kb_documents d "
         "WHERE d.client_id=$1::uuid AND d.is_active=TRUE "
         "ORDER BY d.created_at DESC",
         cid,
@@ -142,7 +142,7 @@ async def add_kb_document(
     pool = await get_pool()
 
     cl = await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         cid, org_id,
     )
     if not cl:
@@ -174,7 +174,7 @@ async def add_faq(
     cid = str(client_id)
     pool = await get_pool()
     cl = await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         cid, org_id,
     )
     if not cl:
@@ -201,7 +201,7 @@ async def remove_kb_document(
 ):
     pool = await get_pool()
     cl = await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         str(client_id), org_id,
     )
     if not cl:
@@ -221,7 +221,7 @@ async def search_kb(
 ):
     pool = await get_pool()
     cl = await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         str(client_id), org_id,
     )
     if not cl:
@@ -242,8 +242,8 @@ async def list_chat_sessions(
     pool = await get_pool()
     sessions = await pool.fetch(
         "SELECT s.id, s.title, s.session_type, s.created_at, "
-        "(SELECT COUNT(*) FROM staging.hub_chat_messages WHERE session_id=s.id) as message_count "
-        "FROM staging.hub_chat_sessions s "
+        "(SELECT COUNT(*) FROM public.hub_chat_messages WHERE session_id=s.id) as message_count "
+        "FROM public.hub_chat_sessions s "
         "WHERE s.client_id=$1::uuid AND s.org_id=$2::uuid AND s.is_active=TRUE "
         "ORDER BY s.updated_at DESC",
         str(client_id), org_id,
@@ -268,13 +268,13 @@ async def create_chat_session(
     # knowledge base. The org filter has to be here, at the point the link is
     # created, because after that the id looks legitimate.
     owns = await pool.fetchval(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         str(client_id), org_id,
     )
     if not owns:
         raise HTTPException(404, "Client not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_chat_sessions "
+        "INSERT INTO public.hub_chat_sessions "
         "(client_id, org_id, title, session_type, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5) RETURNING id, title",
         str(client_id), org_id, body.title, body.session_type, user["user_id"],
@@ -291,7 +291,7 @@ async def get_chat_messages(
 ):
     pool = await get_pool()
     session = await pool.fetchrow(
-        "SELECT client_id FROM staging.hub_chat_sessions "
+        "SELECT client_id FROM public.hub_chat_sessions "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(session_id), org_id,
     )
@@ -300,7 +300,7 @@ async def get_chat_messages(
 
     msgs = await pool.fetch(
         "SELECT id, role, content, sources, model_used, created_at "
-        "FROM staging.hub_chat_messages "
+        "FROM public.hub_chat_messages "
         "WHERE session_id=$1::uuid ORDER BY created_at",
         str(session_id),
     )
@@ -320,7 +320,7 @@ async def send_chat_message(
     sid = str(session_id)
 
     session = await pool.fetchrow(
-        "SELECT client_id FROM staging.hub_chat_sessions "
+        "SELECT client_id FROM public.hub_chat_sessions "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         sid, org_id,
     )
@@ -346,7 +346,7 @@ async def send_chat_message(
     async with pool.acquire() as conn:
         async with conn.transaction():
             msg_id = await conn.fetchval(
-                "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
+                "INSERT INTO public.hub_chat_messages (session_id, role, content) "
                 "VALUES ($1::uuid, 'user', $2) RETURNING id",
                 sid, body.message,
             )
@@ -393,7 +393,7 @@ async def send_chat_message(
     # Load brand profile for system prompt
     brand = await pool.fetchrow(
         "SELECT brand_voice, tone, target_audience, tagline "
-        "FROM staging.hub_brand_profiles WHERE client_id=$1::uuid",
+        "FROM public.hub_brand_profiles WHERE client_id=$1::uuid",
         client_id,
     )
 
@@ -487,7 +487,7 @@ async def send_chat_message(
 
     # Get recent conversation history (last 10 messages)
     history = await pool.fetch(
-        "SELECT role, content FROM staging.hub_chat_messages "
+        "SELECT role, content FROM public.hub_chat_messages "
         "WHERE session_id=$1::uuid ORDER BY created_at DESC LIMIT 10",
         sid,
     )
@@ -562,7 +562,7 @@ async def send_chat_message(
 
         # Store assistant message
         await pool.execute(
-            "INSERT INTO staging.hub_chat_messages "
+            "INSERT INTO public.hub_chat_messages "
             "(session_id, role, content, sources, model_used, cost_usd) "
             "VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4, $5)",
             sid, assistant_text, json.dumps(sources), model_used, cost,
@@ -571,18 +571,18 @@ async def send_chat_message(
         # Update session timestamp + auto-title from first message
         title_update = ""
         msg_count = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.hub_chat_messages WHERE session_id=$1::uuid",
+            "SELECT COUNT(*) FROM public.hub_chat_messages WHERE session_id=$1::uuid",
             sid,
         )
         if msg_count <= 2:
             auto_title = body.message[:60] + ("…" if len(body.message) > 60 else "")
             await pool.execute(
-                "UPDATE staging.hub_chat_sessions SET title=$1, updated_at=NOW() WHERE id=$2::uuid",
+                "UPDATE public.hub_chat_sessions SET title=$1, updated_at=NOW() WHERE id=$2::uuid",
                 auto_title, sid,
             )
         else:
             await pool.execute(
-                "UPDATE staging.hub_chat_sessions SET updated_at=NOW() WHERE id=$1::uuid",
+                "UPDATE public.hub_chat_sessions SET updated_at=NOW() WHERE id=$1::uuid",
                 sid,
             )
 
@@ -629,7 +629,7 @@ async def delete_chat_session(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.hub_chat_sessions SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
+        "UPDATE public.hub_chat_sessions SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
         str(session_id), org_id,
     )
     return {"status": "deleted"}

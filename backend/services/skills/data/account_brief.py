@@ -51,8 +51,8 @@ async def get_account_brief(
                c.contact_type, c.source, c.lead_score, c.assigned_to,
                c.last_contacted_at, c.converted_at, c.tags, c.notes,
                c.gstin, c.created_at, c.client_id, cl.name AS client_name
-        FROM staging.graha_contacts c
-        LEFT JOIN staging.graha_clients cl
+        FROM public.graha_contacts c
+        LEFT JOIN public.graha_clients cl
                ON cl.id = c.client_id AND cl.org_id = c.org_id
         WHERE c.id = $2::uuid AND c.org_id = $1::uuid AND c.is_active = TRUE
         """,
@@ -65,7 +65,7 @@ async def get_account_brief(
         """
         SELECT d.id, d.title, d.value, d.currency, d.stage, d.probability,
                d.expected_close_date, d.assigned_to, d.created_at, d.updated_at
-        FROM staging.graha_deals d
+        FROM public.graha_deals d
         WHERE d.org_id = $1::uuid AND d.contact_id = $2::uuid
           AND d.is_active = TRUE AND d.won_at IS NULL AND d.lost_at IS NULL
         ORDER BY COALESCE(d.value, 0) DESC, d.created_at DESC
@@ -78,12 +78,12 @@ async def get_account_brief(
         """
         (SELECT 'activity' AS kind, a.id, a.activity_type AS subtype, a.title,
                 a.is_completed, a.created_at AS at, a.scheduled_at AS due
-         FROM staging.graha_activities a
+         FROM public.graha_activities a
          WHERE a.org_id = $1::uuid AND a.contact_id = $2::uuid)
         UNION ALL
         (SELECT 'follow_up', f.id, NULL, f.title,
                 f.is_completed, f.created_at, f.due_at
-         FROM staging.graha_follow_ups f
+         FROM public.graha_follow_ups f
          WHERE f.org_id = $1::uuid AND f.contact_id = $2::uuid)
         ORDER BY at DESC
         LIMIT $3
@@ -96,7 +96,7 @@ async def get_account_brief(
         SELECT i.id, i.invoice_number, i.invoice_date, i.due_date,
                i.total, i.amount_paid, i.balance_due, i.payment_status,
                (COALESCE(i.payment_status,'unpaid') IN ('unpaid','partial','overdue')) AS is_open
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid AND i.contact_id = $2::uuid
           AND i.is_active = TRUE AND i.invoice_type = 'tax_invoice'
         ORDER BY is_open DESC, i.invoice_date DESC
@@ -109,7 +109,7 @@ async def get_account_brief(
         """
         SELECT o.id, o.order_number, o.order_date, o.expected_delivery,
                o.total, o.status, o.invoice_id
-        FROM staging.vikray_orders o
+        FROM public.vikray_orders o
         WHERE o.org_id = $1::uuid AND o.contact_id = $2::uuid AND o.is_active = TRUE
         ORDER BY o.order_date DESC
         LIMIT 200

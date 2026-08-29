@@ -91,7 +91,7 @@ EXPENSES_SQL = (
     "       COALESCE(e.amount, 0)::float AS amount, "
     "       COALESCE(e.tax_amount, 0)::float AS tax_amount, "
     "       COALESCE(e.total, 0)::float AS total "
-    "  FROM staging.ganit_expenses e "
+    "  FROM public.ganit_expenses e "
     " WHERE e.org_id = $1::uuid "
     "   AND e.is_active = TRUE "
     "   AND e.expense_date BETWEEN $2::date AND $3::date "

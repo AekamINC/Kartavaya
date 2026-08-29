@@ -74,9 +74,9 @@ async def score_deals(pool, org_id: str) -> list:
         SELECT d.id, d.title, d.value, d.stage, d.updated_at, d.created_at,
                d.expected_close_date, d.probability,
                (SELECT MAX(a.created_at)
-                FROM staging.graha_activities a
+                FROM public.graha_activities a
                 WHERE a.deal_id = d.id) AS last_activity
-        FROM staging.graha_deals d
+        FROM public.graha_deals d
         WHERE d.org_id = $1::uuid
           AND d.is_active = true
           AND d.won_at IS NULL AND d.lost_at IS NULL

@@ -129,7 +129,7 @@ class InviteCreated(OrgInviteOut):
 
 async def _caller_org_role(pool, user_id: str, org_id: str) -> Optional[str]:
     return await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) "
         "ORDER BY array_position($3::text[], role_code) LIMIT 1",
         user_id, org_id, list(SEAT_ROLES),
@@ -168,7 +168,7 @@ async def _validate_grants(pool, org_id: str, grants: List[GrantIn],
     active = {
         r["module_code"]
         for r in await pool.fetch(
-            "SELECT module_code FROM staging.module_subscriptions "
+            "SELECT module_code FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND is_active = TRUE",
             org_id,
         )
@@ -186,7 +186,7 @@ async def _validate_grants(pool, org_id: str, grants: List[GrantIn],
         for g in grants
     ):
         org_has_owner = bool(await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE org_id=$1::uuid AND role_code='org_owner' LIMIT 1",
             org_id,
         ))
@@ -301,19 +301,19 @@ async def count_seats(pool, org_id: str, *, exclude_email: Optional[str] = None)
     # never fail open.
     limit = await pool.fetchval(
         "SELECT COALESCE(o.max_users, p.max_users) "
-        "FROM staging.organisations o "
+        "FROM public.organisations o "
         "LEFT JOIN LATERAL ("
-        "  SELECT s.plan_id FROM staging.subscriptions s "
+        "  SELECT s.plan_id FROM public.subscriptions s "
         "  WHERE s.org_id = o.id "
         "  ORDER BY (s.status = 'active') DESC, s.created_at DESC LIMIT 1"
         ") s ON TRUE "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "LEFT JOIN public.plans p ON p.id = s.plan_id "
         "WHERE o.id=$1::uuid",
         org_id,
     )
 
     joined = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "SELECT COUNT(DISTINCT user_id) FROM public.user_roles "
         "WHERE org_id=$1::uuid AND role_code = ANY($2::text[])",
         org_id, list(SEAT_ROLES),
     ) or 0
@@ -367,7 +367,7 @@ async def assert_seat_available(
     """
     if user_id:
         already_in = await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
             user_id, org_id, list(SEAT_ROLES),
         )
@@ -548,7 +548,7 @@ async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
             full_name or None, org_role, org_id, json.dumps(grants),
         )
 
-    org_name = await pool.fetchval("SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id)
+    org_name = await pool.fetchval("SELECT name FROM public.organisations WHERE id=$1::uuid", org_id)
     invite_link = f"{FRONTEND_URL}/accept-invite?token={token}"
 
     try:

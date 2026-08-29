@@ -89,7 +89,7 @@ async def window_state(pool, conv_id: str, org_id: str) -> dict:
     row = await pool.fetchrow(
         """
         SELECT MAX(created_at) AS last_inbound
-        FROM staging.varta_messages
+        FROM public.varta_messages
         WHERE conversation_id = $1::uuid
           AND org_id = $2::uuid
           AND direction = 'inbound'

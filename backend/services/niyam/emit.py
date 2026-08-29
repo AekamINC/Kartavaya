@@ -62,7 +62,7 @@ SOURCES = frozenset({"app", "import", "sweep", "cron"})
 _BANNED_KEYS = frozenset({"body", "html", "text", "content", "message", "password", "token", "secret"})
 
 _INSERT = """
-INSERT INTO staging.niyam_events
+INSERT INTO public.niyam_events
     (org_id, event_type, entity_type, entity_id, actor_id, source, payload, dedupe_key)
 VALUES
     ($1::uuid, $2::text, $3::text, $4::text, $5::text, $6::text, $7::jsonb, $8::text)

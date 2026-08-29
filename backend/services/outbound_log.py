@@ -590,7 +590,7 @@ async def shutdown(timeout: float = 5.0) -> int:
         # Railway logs and in a Windows console.
         log.warning(
             "outbound_log: %d row(s) written this process, %d still buffered "
-            "at shutdown, %d dropped. Any figure taken from staging.outbound_log "
+            "at shutdown, %d dropped. Any figure taken from public.outbound_log "
             "for this window is a FLOOR.", _written, left, lost,
         )
     else:
@@ -625,7 +625,7 @@ def _at_exit() -> None:
             return
         log.warning(
             "outbound_log: %d row(s) were still buffered and %d dropped when "
-            "the process exited; they are not in staging.outbound_log. Call "
+            "the process exited; they are not in public.outbound_log. Call "
             "'await outbound_log.shutdown()' from the app shutdown hook, "
             "before close_pool(), to save the first number.", left, lost,
         )
@@ -872,7 +872,7 @@ def _take() -> tuple[list[dict], list[tuple[int, dict]]]:
 # `id` is absent because 098 makes it GENERATED ALWAYS — naming it is an error,
 # not an override.
 _INSERT = """
-INSERT INTO staging.outbound_log
+INSERT INTO public.outbound_log
     (ts, org_id, user_id, channel, purpose, recipient, subject_or_title,
      provider, provider_message_id, status, error, bytes, detail)
 SELECT * FROM UNNEST(
@@ -887,7 +887,7 @@ SELECT * FROM UNNEST(
 _INSERT_RETURNING = _INSERT + "RETURNING id, detail->>'event' AS event"
 
 _UPDATE = """
-UPDATE staging.outbound_log AS l
+UPDATE public.outbound_log AS l
    SET status              = u.status,
        provider            = COALESCE(u.provider, l.provider),
        provider_message_id = COALESCE(u.provider_message_id, l.provider_message_id),
@@ -1170,7 +1170,7 @@ def _went_dormant(exc, count: int) -> bool:
     # ASCII only, same rule as outbound.py's suppression line: these are read in
     # Railway logs and in a Windows console, where a nice dash becomes mojibake.
     log.warning(
-        "outbound_log: staging.outbound_log is not writable (%s). Outbound "
+        "outbound_log: public.outbound_log is not writable (%s). Outbound "
         "logging is OFF for this process, %d row(s) discarded. Apply migration "
         "098 and redeploy.",
         getattr(exc, "sqlstate", "?"), count + lost,

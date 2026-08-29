@@ -172,7 +172,7 @@ async def _for_each_org(pool, job: str, work) -> dict:
     rather than silently dropped from every sweep.
     """
     orgs = await pool.fetch(
-        "SELECT id FROM staging.organisations "
+        "SELECT id FROM public.organisations "
         "WHERE is_active IS NOT FALSE ORDER BY id"
     )
 
@@ -346,7 +346,7 @@ async def run_retention(x_cron_secret: str = Header("")):
     """
     await _verify_cron(x_cron_secret)
     pool = await get_pool()
-    rows = await pool.fetch("SELECT * FROM staging.cleanup_old_data()")
+    rows = await pool.fetch("SELECT * FROM public.cleanup_old_data()")
     cleaned = {r["table_name"]: r["rows_deleted"] for r in rows}
     log.info("Cron retention: %s", cleaned or "nothing to clean")
     return {"cleaned": cleaned}
@@ -703,7 +703,7 @@ async def run_leads(x_cron_secret: str = Header("")):
     from routers.lead_sources import PullResult, pull_indiamart_for_org
 
     rows = await pool.fetch(
-        "SELECT org_id::text AS org_id FROM staging.hub_connector_credentials "
+        "SELECT org_id::text AS org_id FROM public.hub_connector_credentials "
         " WHERE platform='indiamart' AND client_id IS NULL AND is_active=TRUE",
     )
 
@@ -886,7 +886,7 @@ async def run_reports(x_cron_secret: str = Header("")):
         "Do not rebuild it here, and do not resurrect POST /api/reports/dispatch "
         "— public.report_schedules is retired and that dispatcher is deleted. "
         "The one scheduled-report job is POST /api/v1/dristi/scheduled-reports/"
-        "dispatch over staging.dristi_scheduled_reports, which needs only a "
+        "dispatch over public.dristi_scheduled_reports, which needs only a "
         "Railway cron and DRISTI_REPORT_SWEEP_ARMED. One table, one dispatcher, "
         "one timer. Do not write a second.",
     )
@@ -1221,8 +1221,8 @@ async def run_skills(x_cron_secret: str = Header("")):
                cs.custom_config, cs.last_run_at, cs.assigned_by,
                t.id AS template_id, t.name, t.description, t.skill_type,
                t.scope, t.module, t.steps, t.trigger_config, t.is_system
-        FROM staging.hub_client_skills cs
-        JOIN staging.hub_skill_templates t ON t.id = cs.template_id
+        FROM public.hub_client_skills cs
+        JOIN public.hub_skill_templates t ON t.id = cs.template_id
         WHERE cs.is_active = TRUE
         {_DUE_PREDICATE.format(last_run="cs.last_run_at")}
     """)
@@ -1243,8 +1243,8 @@ async def run_skills(x_cron_secret: str = Header("")):
     org_rows = await pool.fetch(f"""
         SELECT os.id AS org_skill_id, os.org_id, os.assigned_by,
                os.custom_config, os.last_run_at, t.name
-        FROM staging.hub_org_skills os
-        JOIN staging.hub_skill_templates t ON t.id = os.template_id
+        FROM public.hub_org_skills os
+        JOIN public.hub_skill_templates t ON t.id = os.template_id
         WHERE os.is_active = TRUE
         {_DUE_PREDICATE.format(last_run="os.last_run_at")}
     """)
@@ -1391,7 +1391,7 @@ async def _run_and_update_org_skill(pool, org_skill_id, org_id, user_id,
                       org_skill_id, org_id, skill_name)
     finally:
         await pool.execute(
-            "UPDATE staging.hub_org_skills SET last_run_at = now() WHERE id = $1",
+            "UPDATE public.hub_org_skills SET last_run_at = now() WHERE id = $1",
             org_skill_id,
         )
 
@@ -1443,6 +1443,6 @@ async def _run_and_update_skill(pool, client_skill_id, template, variables, org_
         log.exception("Skill dispatch error: client_skill=%s", client_skill_id)
     finally:
         await pool.execute(
-            "UPDATE staging.hub_client_skills SET last_run_at = now() WHERE id = $1",
+            "UPDATE public.hub_client_skills SET last_run_at = now() WHERE id = $1",
             client_skill_id,
         )

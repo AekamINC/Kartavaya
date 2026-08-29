@@ -608,7 +608,7 @@ async def list_views(
     reachable = await _reachable(pool, user["user_id"], org_id)
     rows = await pool.fetch(
         "SELECT id, user_id, name, layout, is_default, updated_at "
-        "  FROM staging.analytics_views "
+        "  FROM public.analytics_views "
         " WHERE org_id = $1::uuid AND module = $2::text AND is_active "
         "   AND (user_id IS NULL OR user_id = $3::text) "
         " ORDER BY updated_at DESC",
@@ -657,12 +657,12 @@ async def create_view(
         owner = None
     if body.is_default:
         await pool.execute(
-            "UPDATE staging.analytics_views SET is_default = FALSE "
+            "UPDATE public.analytics_views SET is_default = FALSE "
             " WHERE org_id = $1::uuid AND module = $2::text "
             "   AND user_id IS NOT DISTINCT FROM $3::text",
             org_id, body.module, owner)
     row = await pool.fetchrow(
-        "INSERT INTO staging.analytics_views "
+        "INSERT INTO public.analytics_views "
         "    (org_id, user_id, module, name, layout, is_default, created_by) "
         "VALUES ($1::uuid, $2::text, $3::text, $4::text, $5::jsonb, $6, $7::text) "
         "RETURNING id, user_id, name, layout, is_default, updated_at",
@@ -677,7 +677,7 @@ async def _owned_view_or_404(pool, view_id: str, org_id: str, user) -> dict:
     nonexistent id gets — a view's existence is not theirs to probe."""
     row = await pool.fetchrow(
         "SELECT id, user_id, module, name, layout, is_default, updated_at "
-        "  FROM staging.analytics_views "
+        "  FROM public.analytics_views "
         " WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
         view_id, org_id)
     if row is None:
@@ -710,7 +710,7 @@ async def update_view(
     if body.is_default is not None:
         if body.is_default:
             await pool.execute(
-                "UPDATE staging.analytics_views SET is_default = FALSE "
+                "UPDATE public.analytics_views SET is_default = FALSE "
                 " WHERE org_id = $1::uuid AND module = $2::text "
                 "   AND user_id IS NOT DISTINCT FROM $3::text",
                 org_id, row["module"], row["user_id"])
@@ -721,7 +721,7 @@ async def update_view(
     updates.append("updated_at = NOW()")
     vals += [view_id, org_id]
     out = await pool.fetchrow(
-        f"UPDATE staging.analytics_views SET {', '.join(updates)} "
+        f"UPDATE public.analytics_views SET {', '.join(updates)} "
         f" WHERE id = ${len(vals) - 1}::uuid AND org_id = ${len(vals)}::uuid "
         f"RETURNING id, user_id, name, layout, is_default, updated_at",
         *vals)
@@ -737,7 +737,7 @@ async def delete_view(
     pool = await get_pool()
     await _owned_view_or_404(pool, view_id, org_id, user)
     await pool.execute(
-        "UPDATE staging.analytics_views SET is_active = FALSE, updated_at = NOW() "
+        "UPDATE public.analytics_views SET is_active = FALSE, updated_at = NOW() "
         " WHERE id = $1::uuid AND org_id = $2::uuid",
         view_id, org_id)
     return {"ok": True}
@@ -774,7 +774,7 @@ async def list_alerts(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT id, metric, operator, threshold, window_days, created_at "
-        "  FROM staging.analytics_alerts "
+        "  FROM public.analytics_alerts "
         " WHERE org_id = $1::uuid AND is_active ORDER BY created_at",
         org_id)
     out = []
@@ -819,7 +819,7 @@ async def create_alert(
     if not (1 <= body.window_days <= 366):
         raise HTTPException(422, "window_days is between 1 and 366")
     row = await pool.fetchrow(
-        "INSERT INTO staging.analytics_alerts "
+        "INSERT INTO public.analytics_alerts "
         "    (org_id, metric, operator, threshold, window_days, created_by) "
         "VALUES ($1::uuid, $2::text, $3::text, $4::float8, $5::int, $6::text) "
         "RETURNING id",
@@ -839,7 +839,7 @@ async def delete_alert(
     await _admin_or_403(user, org_id)
     pool = await get_pool()
     done = await pool.execute(
-        "UPDATE staging.analytics_alerts "
+        "UPDATE public.analytics_alerts "
         "   SET is_active = FALSE, updated_at = NOW() "
         " WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
         alert_id, org_id)
@@ -934,7 +934,7 @@ async def client_report(
         raise HTTPException(403, "The client report needs Graha or Ganit access")
 
     client = await pool.fetchrow(
-        "SELECT name, created_at FROM staging.graha_clients "
+        "SELECT name, created_at FROM public.graha_clients "
         " WHERE id = $1::uuid AND org_id = $2::uuid",
         client_id, org_id)
     if client is None:
@@ -958,7 +958,7 @@ async def client_report(
         rows = await pool.fetch(
             "SELECT COALESCE(NULLIF(TRIM(source), ''), 'No source') AS source, "
             "       COUNT(*)::int AS value "
-            "  FROM staging.graha_contacts "
+            "  FROM public.graha_contacts "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND is_active = TRUE "
             "   AND created_at::date BETWEEN $3::date AND $4::date "
@@ -975,7 +975,7 @@ async def client_report(
         won = await pool.fetchrow(
             "SELECT COUNT(*)::int AS won_count, "
             "       COALESCE(SUM(value), 0)::float AS won_value "
-            "  FROM staging.graha_deals "
+            "  FROM public.graha_deals "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND is_active = TRUE AND won_at IS NOT NULL "
             "   AND won_at::date BETWEEN $3::date AND $4::date",
@@ -985,7 +985,7 @@ async def client_report(
         # archived out, undecided only).
         pipeline = await pool.fetchval(
             "SELECT COALESCE(SUM(value), 0)::float "
-            "  FROM staging.graha_deals "
+            "  FROM public.graha_deals "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND is_active = TRUE "
             "   AND won_at IS NULL AND lost_at IS NULL AND archived_at IS NULL",
@@ -1003,7 +1003,7 @@ async def client_report(
             "SELECT COALESCE(SUM(CASE WHEN invoice_type = 'credit_note' "
             "                         THEN -total ELSE total END), 0)::float AS invoiced, "
             "       COUNT(*)::int AS invoice_count "
-            "  FROM staging.ganit_invoices "
+            "  FROM public.ganit_invoices "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND is_active = TRUE AND doc_status <> 'draft' "
             "   AND invoice_date BETWEEN $3::date AND $4::date",
@@ -1014,8 +1014,8 @@ async def client_report(
             # `i.org_id` is belt-and-braces on the joined row — fail-closed
             # beats trusting a foreign key one hop away (graha.py's rule).
             "SELECT COALESCE(SUM(p.amount), 0)::float "
-            "  FROM staging.ganit_payments p "
-            "  JOIN staging.ganit_invoices i "
+            "  FROM public.ganit_payments p "
+            "  JOIN public.ganit_invoices i "
             "    ON i.id = p.invoice_id AND i.org_id = $2::uuid "
             " WHERE i.client_id = $1::uuid AND p.org_id = $2::uuid "
             "   AND p.payment_date BETWEEN $3::date AND $4::date",
@@ -1027,7 +1027,7 @@ async def client_report(
             # to the client, so this figure and the dashboard's ageing widget
             # can never disagree about the same rows.
             "SELECT COALESCE(SUM(total - COALESCE(amount_paid, 0)), 0)::float "
-            "  FROM staging.ganit_invoices "
+            "  FROM public.ganit_invoices "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND is_active = TRUE AND doc_status <> 'draft' "
             "   AND invoice_type <> 'credit_note' "
@@ -1058,7 +1058,7 @@ async def client_report(
                                       "prachar or ganit module."}
             continue
         account = await pool.fetchrow(
-            "SELECT id, source, name FROM staging.analytics_accounts "
+            "SELECT id, source, name FROM public.analytics_accounts "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND source = $3::text AND is_active "
             " ORDER BY created_at LIMIT 1",
@@ -1071,7 +1071,7 @@ async def client_report(
         spine_accounts[section] = account
         total = await pool.fetchval(
             "SELECT COALESCE(SUM(value), 0)::float "
-            "  FROM staging.analytics_metrics_daily "
+            "  FROM public.analytics_metrics_daily "
             " WHERE account_id = $1::uuid AND org_id = $2::uuid "
             "   AND metric = $3::text AND date BETWEEN $4::date AND $5::date",
             str(account["id"]), org_id, metric_name, win.start, win.end)
@@ -1104,7 +1104,7 @@ async def client_report(
             "SELECT to_char(invoice_date, 'YYYY-MM') AS period, "
             "       SUM(CASE WHEN invoice_type = 'credit_note' "
             "                THEN -total ELSE total END)::float AS value "
-            "  FROM staging.ganit_invoices "
+            "  FROM public.ganit_invoices "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
             "   AND is_active = TRUE AND doc_status <> 'draft' "
             "   AND invoice_date BETWEEN $3::date AND $4::date "
@@ -1113,8 +1113,8 @@ async def client_report(
         _fold(await pool.fetch(
             "SELECT to_char(p.payment_date, 'YYYY-MM') AS period, "
             "       SUM(p.amount)::float AS value "
-            "  FROM staging.ganit_payments p "
-            "  JOIN staging.ganit_invoices i "
+            "  FROM public.ganit_payments p "
+            "  JOIN public.ganit_invoices i "
             "    ON i.id = p.invoice_id AND i.org_id = $2::uuid "
             " WHERE i.client_id = $1::uuid AND p.org_id = $2::uuid "
             "   AND p.payment_date BETWEEN $3::date AND $4::date "
@@ -1126,7 +1126,7 @@ async def client_report(
         _fold(await pool.fetch(
             "SELECT to_char(date, 'YYYY-MM') AS period, "
             "       SUM(value)::float AS value "
-            "  FROM staging.analytics_metrics_daily "
+            "  FROM public.analytics_metrics_daily "
             " WHERE account_id = $1::uuid AND org_id = $2::uuid "
             "   AND metric = 'spend' AND date BETWEEN $3::date AND $4::date "
             " GROUP BY 1 ORDER BY 1",

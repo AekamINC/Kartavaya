@@ -110,7 +110,7 @@ def _anti_join(pred: Predicate) -> str:
         "weekly": "$3::text || ':' || q_entity_id || ':' || to_char(NOW(), 'IYYY\"W\"IW')",
     }.get(pred.window,
           "$3::text || ':' || q_entity_id || ':' || to_char(NOW(), 'YYYY-MM-DD')")
-    return ("NOT EXISTS (SELECT 1 FROM staging.niyam_events e "
+    return ("NOT EXISTS (SELECT 1 FROM public.niyam_events e "
             f"WHERE e.dedupe_key = {key})")
 
 
@@ -255,7 +255,7 @@ PREDICATES: tuple = (
                    i.client_id::text               AS client_id,
                    i.created_by                    AS created_by,
                    (NOW()::date - i.due_date)::int AS days_overdue
-              FROM staging.ganit_invoices i
+              FROM public.ganit_invoices i
              WHERE {anti_join:i.id::text}
                AND i.due_date < NOW()::date
                AND i.due_date > (NOW() - ($1::int * INTERVAL '1 day'))::date
@@ -295,7 +295,7 @@ PREDICATES: tuple = (
                    c.client_id::text               AS client_id,
                    c.lead_score,
                    EXTRACT(DAY FROM NOW() - c.last_contacted_at)::int AS days_quiet
-              FROM staging.graha_contacts c
+              FROM public.graha_contacts c
              WHERE {anti_join:c.id::text}
                AND c.is_active
                AND c.contact_type IS DISTINCT FROM 'client'
@@ -326,8 +326,8 @@ PREDICATES: tuple = (
                    s.quantity_on_hand::float          AS quantity_on_hand,
                    s.low_stock_threshold::float       AS low_stock_threshold,
                    (s.low_stock_threshold - s.quantity_on_hand)::float AS shortfall
-              FROM staging.vikray_stock s
-              JOIN staging.ganit_products p
+              FROM public.vikray_stock s
+              JOIN public.ganit_products p
                 ON p.id = s.product_id AND p.org_id = s.org_id
              WHERE {anti_join:s.product_id::text}
                AND s.low_stock_threshold > 0
@@ -374,7 +374,7 @@ PREDICATES: tuple = (
                    COUNT(*) FILTER (WHERE a.status = 'late')::int     AS late_count,
                    COUNT(*) FILTER (WHERE a.status = 'half_day')::int AS half_day_count,
                    COUNT(*) FILTER (WHERE a.status = 'on_leave')::int AS on_leave_count
-              FROM staging.manav_attendance a
+              FROM public.manav_attendance a
              WHERE {anti_join:('att:' || substr(md5(a.org_id::text), 1, 12) || ':' || a.date::text)}
                -- complete days only: today's numbers move until midnight,
                -- and a summary that changes after it is sent is a wrong one.
@@ -411,8 +411,8 @@ PREDICATES: tuple = (
                    COUNT(s.id) FILTER (
                        WHERE s.status NOT IN ('signed', 'declined')
                    )::int                            AS pending_signers
-              FROM staging.sign_documents d
-              LEFT JOIN staging.sign_signers s ON s.document_id = d.id
+              FROM public.sign_documents d
+              LEFT JOIN public.sign_signers s ON s.document_id = d.id
              WHERE {anti_join:d.id::text}
                -- in flight only: draft has no clock running anybody cares
                -- about, completed/cancelled/expired are already over.
@@ -477,7 +477,7 @@ PREDICATES: tuple = (
               -- comma-LATERAL, not CROSS JOIN LATERAL: same semantics,
               -- but the schema-qualification ratchet reads `JOIN LATERAL`
               -- as a table reference named LATERAL.
-              FROM staging.dristi_scheduled_reports r,
+              FROM public.dristi_scheduled_reports r,
               LATERAL (
                   SELECT COALESCE(r.time_utc, '08:00'::time) AS t
               ) tt,

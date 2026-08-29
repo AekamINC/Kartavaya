@@ -234,7 +234,7 @@ async def _enrolment(pool, org_id: str) -> dict:
     everybody.
     """
     members = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "SELECT COUNT(DISTINCT user_id) FROM public.user_roles "
         "WHERE org_id=$1::uuid "
         "AND role_code IN ('org_owner','org_admin','org_member')",
         org_id,
@@ -259,7 +259,7 @@ async def _enrolment(pool, org_id: str) -> dict:
     # safe. Parameterising a table name is not possible in Postgres.
     enrolled = await pool.fetchval(
         f"SELECT COUNT(DISTINCT t.user_id) FROM {store} t "  # noqa: S608 - fixed allowlist
-        "JOIN staging.user_roles ur ON ur.user_id = t.user_id "
+        "JOIN public.user_roles ur ON ur.user_id = t.user_id "
         "WHERE ur.org_id=$1::uuid "
         "AND ur.role_code IN ('org_owner','org_admin','org_member')",
         org_id,
@@ -379,7 +379,7 @@ async def _load(pool, org_id: str) -> dict:
         return dict(DEFAULTS)
     row = await pool.fetchrow(
         "SELECT tfa_allowed, tfa_enforced, idle_timeout, ip_ranges, "
-        "password_policy FROM staging.org_security WHERE org_id=$1::uuid",
+        "password_policy FROM public.org_security WHERE org_id=$1::uuid",
         org_id,
     )
     if not row:
@@ -407,7 +407,7 @@ async def get_security(
         **settings,
         "storage_ready": ready,
         "storage_note": None if ready else (
-            "staging.org_security does not exist yet, so these are the "
+            "public.org_security does not exist yet, so these are the "
             "defaults and nothing can be saved. Apply "
             "migrations/207_org_security.sql."
         ),
@@ -469,7 +469,7 @@ async def patch_security(
     if not await _storage_ready(pool):
         raise HTTPException(
             503,
-            "Security settings cannot be saved yet: staging.org_security does "
+            "Security settings cannot be saved yet: public.org_security does "
             "not exist. Apply migrations/PROPOSED_069_org_security.sql, then "
             "retry. Nothing was saved.",
         )
@@ -533,7 +533,7 @@ async def patch_security(
 
     # ── Write ────────────────────────────────────────────────────────────────
     row = await pool.fetchrow(
-        "INSERT INTO staging.org_security "
+        "INSERT INTO public.org_security "
         "(org_id, tfa_allowed, tfa_enforced, idle_timeout, ip_ranges, "
         " password_policy, updated_by, updated_at) "
         "VALUES ($1::uuid, $2, $3, $4, $5::text[], $6, $7, NOW()) "

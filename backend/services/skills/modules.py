@@ -527,7 +527,7 @@ async def cross_tenant_withheld(
     # they drift apart; ordered by precedence so a user holding several rows
     # resolves to the strongest rather than to whichever row came back first.
     platform_role = await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[]) "
         "ORDER BY array_position($2::text[], role_code) LIMIT 1",
@@ -541,7 +541,7 @@ async def cross_tenant_withheld(
     # `ORG_ROLES` and not three literals, and the same predicate `org_resolver`
     # and `require_module` use, so "is a member" means one thing product-wide.
     is_member = bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
         user_id, org_id, list(ORG_ROLES),
     ))

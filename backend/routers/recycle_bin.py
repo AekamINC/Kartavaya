@@ -151,7 +151,7 @@ async def restore(
         # org_id as well as id, because a destructive-adjacent write may not be
         # one predicate short — the lesson `delete_task` records at length.
         done = await pool.execute(
-            "UPDATE staging.graha_documents "
+            "UPDATE public.graha_documents "
             "   SET is_active=TRUE, updated_at=NOW(), updated_by=$3 "
             " WHERE id=$1::uuid AND org_id=$2::uuid",
             row["source_id"], org_id, user["user_id"],

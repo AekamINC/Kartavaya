@@ -96,8 +96,8 @@ def message_volume(req: MetricRequest):
     if req.group_by == "channel":
         return (
             f"SELECT {_CHANNEL_LABEL} AS channel, COUNT(*) AS value "
-            "FROM staging.samvada_messages m "
-            "JOIN staging.samvada_channels c ON c.id = m.channel_id "
+            "FROM public.samvada_messages m "
+            "JOIN public.samvada_channels c ON c.id = m.channel_id "
             "WHERE m.org_id = $1::uuid AND " + _LIVE_HUMAN +
             "AND m.created_at::date BETWEEN $2::date AND $3::date "
             "GROUP BY 1 ORDER BY value DESC, channel",
@@ -106,7 +106,7 @@ def message_volume(req: MetricRequest):
     period = bucket_expr(req.bucket, "m.created_at")
     return (
         f"SELECT {period} AS period, COUNT(*) AS value "
-        "FROM staging.samvada_messages m "
+        "FROM public.samvada_messages m "
         "WHERE m.org_id = $1::uuid AND " + _LIVE_HUMAN +
         "AND m.created_at::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -134,8 +134,8 @@ def active_participants(req: MetricRequest):
         return (
             f"SELECT {_CHANNEL_LABEL} AS channel, "
             "COUNT(DISTINCT m.sender_id) AS value "
-            "FROM staging.samvada_messages m "
-            "JOIN staging.samvada_channels c ON c.id = m.channel_id "
+            "FROM public.samvada_messages m "
+            "JOIN public.samvada_channels c ON c.id = m.channel_id "
             "WHERE m.org_id = $1::uuid AND " + _LIVE_HUMAN +
             "AND m.created_at::date BETWEEN $2::date AND $3::date "
             "GROUP BY 1 ORDER BY value DESC, channel",
@@ -144,7 +144,7 @@ def active_participants(req: MetricRequest):
     period = bucket_expr(req.bucket, "m.created_at")
     return (
         f"SELECT {period} AS period, COUNT(DISTINCT m.sender_id) AS value "
-        "FROM staging.samvada_messages m "
+        "FROM public.samvada_messages m "
         "WHERE m.org_id = $1::uuid AND " + _LIVE_HUMAN +
         "AND m.created_at::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -181,8 +181,8 @@ def response_time(req: MetricRequest):
         "  SELECT m.created_at, m.sender_id, "
         "    LAG(m.sender_id) OVER w AS prev_sender, "
         "    EXTRACT(EPOCH FROM (m.created_at - LAG(m.created_at) OVER w)) / 3600.0 AS gap_hours "
-        "  FROM staging.samvada_messages m "
-        "  JOIN staging.samvada_channels c ON c.id = m.channel_id "
+        "  FROM public.samvada_messages m "
+        "  JOIN public.samvada_channels c ON c.id = m.channel_id "
         "  WHERE m.org_id = $1::uuid AND " + _LIVE_HUMAN +
         "  AND c.type <> 'dm' "
         "  WINDOW w AS (PARTITION BY m.channel_id ORDER BY m.created_at, m.id)"
@@ -203,7 +203,7 @@ absent_metric(
     unit="pct",
     grain="flow",
     absent="Computable but FORBIDDEN, which proposal 62 §10 says to state "
-           "rather than hide: staging.samvada_read_receipts and "
+           "rather than hide: public.samvada_read_receipts and "
            "samvada_channel_members.last_read_at hold per-person read state, "
            "and this module's governing rule is aggregate-only — read state "
            "is visible to no one but its owner, so no analytic SELECT may "

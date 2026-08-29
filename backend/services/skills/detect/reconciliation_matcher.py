@@ -21,8 +21,8 @@ async def fuzzy_match_transactions(pool, org_id: str, bank_txns: list) -> list:
         """
         SELECT id, invoice_number, total, balance_due, contact_id,
                c.name AS contact_name
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_contacts c ON c.id = i.contact_id
         WHERE i.org_id = $1::uuid
           AND i.payment_status IN ('unpaid', 'partial')
           AND i.invoice_type = 'tax_invoice'

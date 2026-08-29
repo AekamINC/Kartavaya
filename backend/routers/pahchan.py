@@ -87,7 +87,7 @@ async def _may_view_others_biometrics(pool, user_id: str, org_id: str) -> bool:
     """
     return bool(
         await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
+            "SELECT 1 FROM public.user_roles WHERE user_id=$1 AND ("
             "  (org_id IS NULL AND role_code = ANY($3::text[]))"
             "  OR (org_id=$2::uuid AND role_code IN ('org_owner','org_admin'))"
             ")",
@@ -315,7 +315,7 @@ async def _policy(pool, org_id: str) -> dict:
     able to punch — requiring setup before the first punch is a blocker, and §2
     says nothing blocks a punch."""
     row = await pool.fetchrow(
-        "SELECT * FROM staging.pahchan_policy WHERE org_id=$1::uuid", org_id
+        "SELECT * FROM public.pahchan_policy WHERE org_id=$1::uuid", org_id
     )
     return dict(row) if row else dict(DEFAULT_POLICY)
 
@@ -410,7 +410,7 @@ async def _resolve_policy(
     # three queries to answer a question that is nearly always "no overrides".
     rows = await pool.fetch(
         "SELECT scope_kind, scope_ref, overrides "
-        "FROM staging.pahchan_policy_overrides WHERE org_id=$1::uuid",
+        "FROM public.pahchan_policy_overrides WHERE org_id=$1::uuid",
         org_id,
     )
     if not rows:
@@ -489,7 +489,7 @@ async def _employee_for(pool, org_id: str, user_id: str) -> Optional[dict]:
     # punch path stays one employee lookup, and so a caller that has an employee
     # row always has enough to resolve their policy from it.
     return await pool.fetchrow(
-        "SELECT id, name, employment_type FROM staging.manav_employees "
+        "SELECT id, name, employment_type FROM public.manav_employees "
         "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
         org_id, user_id,
     )
@@ -562,7 +562,7 @@ async def _notice_ack(pool, org_id: str, user_id: str, version: str) -> Optional
     """
     try:
         return await pool.fetchval(
-            "SELECT MIN(acknowledged_at) FROM staging.pahchan_notice_acknowledgements "
+            "SELECT MIN(acknowledged_at) FROM public.pahchan_notice_acknowledgements "
             "WHERE org_id=$1::uuid AND user_id=$2 AND notice_version=$3",
             org_id, user_id, version,
         )
@@ -578,7 +578,7 @@ async def _nearest_site(pool, org_id: str, lat: float, lng: float):
     extension for a ten-row nearest-neighbour would be the wrong trade."""
     sites = await pool.fetch(
         "SELECT id, name, lat, lng, radius_m, altitude_m, altitude_tolerance_m "
-        "FROM staging.pahchan_sites "
+        "FROM public.pahchan_sites "
         "WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
@@ -822,7 +822,7 @@ async def create_punch(
     # any 8–64 character string, so "unlikely" was a property of the well-behaved
     # client rather than of this endpoint.
     existing = await pool.fetchrow(
-        "SELECT id, direction, captured_at, flags FROM staging.pahchan_punches "
+        "SELECT id, direction, captured_at, flags FROM public.pahchan_punches "
         "WHERE org_id=$1::uuid AND client_punch_id=$2 AND employee_id=$3::uuid",
         org_id, body.client_punch_id, str(employee["id"]),
     )
@@ -835,7 +835,7 @@ async def create_punch(
         if body.site_id:
             site = await pool.fetchrow(
                 "SELECT id, lat, lng, radius_m, altitude_m, altitude_tolerance_m "
-                "FROM staging.pahchan_sites "
+                "FROM public.pahchan_sites "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(body.site_id), org_id,
             )
@@ -862,7 +862,7 @@ async def create_punch(
     )
 
     ref_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.pahchan_enrollment_photos "
+        "SELECT COUNT(*) FROM public.pahchan_enrollment_photos "
         "WHERE employee_id=$1::uuid AND replaced_at IS NULL AND approved_at IS NOT NULL",
         str(employee["id"]),
     )
@@ -961,7 +961,7 @@ async def create_punch(
         # retrying with a stale key looks like. The human comparison is what
         # decides, and this is exactly the kind of thing it should be told about.
         reused = await pool.fetchval(
-            "SELECT 1 FROM staging.pahchan_punches "
+            "SELECT 1 FROM public.pahchan_punches "
             "WHERE org_id=$1::uuid AND photo_key=$2 AND client_punch_id <> $3 LIMIT 1",
             org_id, photo_key, body.client_punch_id,
         )
@@ -970,7 +970,7 @@ async def create_punch(
 
     try:
         row = await pool.fetchrow(
-            """INSERT INTO staging.pahchan_punches
+            """INSERT INTO public.pahchan_punches
                    (org_id, employee_id, direction, captured_at, synced_at, photo_key,
                     lat, lng, accuracy_m, distance_m, geofence_id, source,
                     mock_location, flags, client_punch_id,
@@ -1052,7 +1052,7 @@ async def _rules_for_employee(pool, org_id: str, policy: dict) -> dict:
     """
     sites = await pool.fetch(
         "SELECT name, radius_m, altitude_m, altitude_tolerance_m "
-        "FROM staging.pahchan_sites "
+        "FROM public.pahchan_sites "
         "WHERE org_id=$1::uuid AND is_active IS NOT FALSE ORDER BY name",
         org_id,
     )
@@ -1175,7 +1175,7 @@ async def my_punches(
         "SELECT id, direction, captured_at, received_at, source, flags, "
         "       accuracy_m, distance_m, altitude_m, altitude_accuracy_m, "
         "       review_verdict "
-        "FROM staging.pahchan_punches "
+        "FROM public.pahchan_punches "
         "WHERE employee_id=$1::uuid AND captured_at >= $2 "
         "ORDER BY captured_at DESC",
         str(employee["id"]), since,
@@ -1277,7 +1277,7 @@ async def acknowledge_notice(
     acknowledged_at = None
     try:
         acknowledged_at = await pool.fetchval(
-            "INSERT INTO staging.pahchan_notice_acknowledgements "
+            "INSERT INTO public.pahchan_notice_acknowledgements "
             "  (org_id, user_id, employee_id, notice_version, acknowledged_at, "
             "   source, was_offline) "
             "VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7) "
@@ -1357,14 +1357,14 @@ async def record_employee_consent(
         raise HTTPException(403, "Only an org admin can record consent for another person")
 
     emp = await pool.fetchrow(
-        "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         str(body.employee_id), org_id,
     )
     if not emp:
         raise HTTPException(404, "Employee not found")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.pahchan_employee_consents "
+        "INSERT INTO public.pahchan_employee_consents "
         "  (org_id, employee_id, notice_version, method, consented, recorded_by, note) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7) "
         "ON CONFLICT (org_id, employee_id, notice_version) DO UPDATE SET "
@@ -1396,8 +1396,8 @@ async def list_employee_consents(
     rows = await pool.fetch(
         "SELECT c.employee_id, e.name AS employee_name, c.notice_version, c.method, "
         "c.consented, c.recorded_by, c.recorded_at, c.note "
-        "FROM staging.pahchan_employee_consents c "
-        "JOIN staging.manav_employees e ON e.id = c.employee_id "
+        "FROM public.pahchan_employee_consents c "
+        "JOIN public.manav_employees e ON e.id = c.employee_id "
         "WHERE c.org_id=$1::uuid ORDER BY c.recorded_at DESC",
         org_id,
     )
@@ -1409,7 +1409,7 @@ async def _employee_opted_out(pool, employee_id: str) -> bool:
     version) declined. A newer opt-in supersedes an older opt-out, and vice
     versa — this is a live status, not a history."""
     latest = await pool.fetchval(
-        "SELECT consented FROM staging.pahchan_employee_consents "
+        "SELECT consented FROM public.pahchan_employee_consents "
         "WHERE employee_id=$1::uuid ORDER BY recorded_at DESC LIMIT 1",
         employee_id,
     )
@@ -1428,7 +1428,7 @@ async def _latest_consent(pool, employee_id: str) -> Optional[dict]:
     """
     row = await pool.fetchrow(
         "SELECT notice_version, method, consented, recorded_at, note "
-        "FROM staging.pahchan_employee_consents "
+        "FROM public.pahchan_employee_consents "
         "WHERE employee_id=$1::uuid ORDER BY recorded_at DESC LIMIT 1",
         employee_id,
     )
@@ -1496,7 +1496,7 @@ async def record_own_consent(
         )
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.pahchan_employee_consents "
+        "INSERT INTO public.pahchan_employee_consents "
         "  (org_id, employee_id, notice_version, method, consented, recorded_by, note) "
         "VALUES ($1::uuid, $2::uuid, $3, 'self_acknowledged', $4, $5, $6) "
         "ON CONFLICT (org_id, employee_id, notice_version) DO UPDATE SET "
@@ -1559,8 +1559,8 @@ async def consent_roster(
         "       c.notice_version, c.method, c.consented, c.recorded_at, c.note, "
         "       COALESCE(NULLIF(btrim(u.name), ''), NULLIF(btrim(u.full_name), '')) "
         "         AS recorded_by_name "
-        "FROM staging.manav_employees e "
-        "LEFT JOIN staging.pahchan_enrollment_photos r "
+        "FROM public.manav_employees e "
+        "LEFT JOIN public.pahchan_enrollment_photos r "
         "       ON r.employee_id = e.id AND r.replaced_at IS NULL "
         # The LIVE answer per employee, not every answer ever given. The unique
         # index is (org_id, employee_id, notice_version), so an employee who has
@@ -1568,7 +1568,7 @@ async def consent_roster(
         # their position today — the same rule `_employee_opted_out` applies.
         "LEFT JOIN LATERAL ("
         "  SELECT notice_version, method, consented, recorded_at, note, recorded_by "
-        "  FROM staging.pahchan_employee_consents "
+        "  FROM public.pahchan_employee_consents "
         "  WHERE employee_id = e.id AND org_id = e.org_id "
         "  ORDER BY recorded_at DESC LIMIT 1"
         ") c ON TRUE "
@@ -1689,7 +1689,7 @@ async def record_manual_attendance(
             403, "Only an org admin can record attendance for another person")
 
     emp = await pool.fetchrow(
-        "SELECT id, name FROM staging.manav_employees "
+        "SELECT id, name FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(body.employee_id), org_id,
     )
@@ -1723,7 +1723,7 @@ async def record_manual_attendance(
         note = f"{note} {body.note}"
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.manav_attendance "
+        "INSERT INTO public.manav_attendance "
         "  (org_id, employee_id, date, check_in, check_out, status, "
         "   work_hours, notes, marked_by) "
         "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9) "
@@ -1775,10 +1775,10 @@ async def list_manual_attendance(
     rows = await pool.fetch(
         "SELECT a.id, a.date, a.status, a.work_hours, a.check_in, a.check_out, "
         "       a.notes, e.name AS employee_name, e.employee_code "
-        "FROM staging.manav_attendance a "
-        "JOIN staging.manav_employees e ON e.id = a.employee_id "
+        "FROM public.manav_attendance a "
+        "JOIN public.manav_employees e ON e.id = a.employee_id "
         "JOIN LATERAL ("
-        "  SELECT consented FROM staging.pahchan_employee_consents "
+        "  SELECT consented FROM public.pahchan_employee_consents "
         "  WHERE employee_id = e.id AND org_id = e.org_id "
         "  ORDER BY recorded_at DESC LIMIT 1"
         ") c ON c.consented IS FALSE "
@@ -1848,13 +1848,13 @@ async def register(
                   e.id AS employee_id, e.name AS employee_name, e.employee_code,
                   s.name AS site_name,
                   (SELECT array_agg(r.id ORDER BY r.slot)
-                     FROM staging.pahchan_enrollment_photos r
+                     FROM public.pahchan_enrollment_photos r
                     WHERE r.employee_id = e.id
                       AND r.replaced_at IS NULL
                       AND r.approved_at IS NOT NULL) AS reference_ids
-             FROM staging.pahchan_punches p
-             JOIN staging.manav_employees e ON e.id = p.employee_id
-             LEFT JOIN staging.pahchan_sites s ON s.id = p.geofence_id
+             FROM public.pahchan_punches p
+             JOIN public.manav_employees e ON e.id = p.employee_id
+             LEFT JOIN public.pahchan_sites s ON s.id = p.geofence_id
             WHERE p.org_id = $1::uuid
               AND p.captured_at >= $2::date
               AND p.captured_at <  ($2::date + INTERVAL '1 day')
@@ -1879,7 +1879,7 @@ async def review_punch(
     about a person, and who made it has to survive."""
     pool = await get_pool()
     row = await pool.fetchrow(
-        """UPDATE staging.pahchan_punches
+        """UPDATE public.pahchan_punches
               SET review_verdict=$1, reviewed_by=$2, reviewed_at=NOW()
             WHERE id=$3::uuid AND org_id=$4::uuid
         RETURNING id, review_verdict, reviewed_at""",
@@ -1918,7 +1918,7 @@ async def punch_photo_url(
     """
     pool = await get_pool()
     key = await pool.fetchval(
-        "SELECT photo_key FROM staging.pahchan_punches WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT photo_key FROM public.pahchan_punches WHERE id=$1::uuid AND org_id=$2::uuid",
         str(punch_id), org_id,
     )
     if not key:
@@ -1954,7 +1954,7 @@ async def list_sites(
     rows = await pool.fetch(
         "SELECT id, name, lat, lng, radius_m, altitude_m, altitude_tolerance_m, "
         "       is_active "
-        "FROM staging.pahchan_sites "
+        "FROM public.pahchan_sites "
         "WHERE org_id=$1::uuid ORDER BY name",
         org_id,
     )
@@ -1971,7 +1971,7 @@ async def create_site(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.pahchan_sites "
+        "INSERT INTO public.pahchan_sites "
         "  (org_id, name, lat, lng, radius_m, altitude_m, altitude_tolerance_m) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) "
         "RETURNING id, name, radius_m, altitude_m, altitude_tolerance_m",
@@ -2060,7 +2060,7 @@ async def amend_site(
         resulting_altitude = updates.get("altitude_m")
         if resulting_altitude is None:
             resulting_altitude = await pool.fetchval(
-                "SELECT altitude_m FROM staging.pahchan_sites "
+                "SELECT altitude_m FROM public.pahchan_sites "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(site_id), org_id,
             )
@@ -2079,7 +2079,7 @@ async def amend_site(
         idx += 1
 
     row = await pool.fetchrow(
-        f"UPDATE staging.pahchan_sites SET {', '.join(sets)} "
+        f"UPDATE public.pahchan_sites SET {', '.join(sets)} "
         f" WHERE id=$1::uuid AND org_id=$2::uuid "
         f" RETURNING id, name, lat, lng, radius_m, altitude_m, "
         f"           altitude_tolerance_m, is_active",
@@ -2134,7 +2134,7 @@ async def get_enrollment(
 
     rows = await pool.fetch(
         "SELECT id, slot, object_key, source, captured_at, approved_at, approved_by "
-        "FROM staging.pahchan_enrollment_photos "
+        "FROM public.pahchan_enrollment_photos "
         "WHERE employee_id=$1::uuid AND org_id=$2::uuid AND replaced_at IS NULL "
         "ORDER BY slot",
         str(employee_id), org_id,
@@ -2183,7 +2183,7 @@ async def enrollment_photo_url(
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT object_key, employee_id FROM staging.pahchan_enrollment_photos "
+        "SELECT object_key, employee_id FROM public.pahchan_enrollment_photos "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(photo_id), org_id,
     )
@@ -2262,7 +2262,7 @@ async def enroll_photo(
     # LOGIN is for the event below, and a Record stays truthy when `user_id`
     # is NULL (not every employee has a login), so the 404 behaves as before.
     emp = await pool.fetchrow(
-        "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT user_id FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         str(body.employee_id), org_id,
     )
     if not emp:
@@ -2285,14 +2285,14 @@ async def enroll_photo(
             # Retire whatever is live in this slot. Same transaction as the insert,
             # so the unique-live index can never see two rows at once.
             await conn.execute(
-                "UPDATE staging.pahchan_enrollment_photos "
+                "UPDATE public.pahchan_enrollment_photos "
                 "SET replaced_at = NOW(), replaced_reason = $3 "
                 "WHERE employee_id=$1::uuid AND slot=$2 AND replaced_at IS NULL",
                 str(body.employee_id), body.slot,
                 body.replaces_reason or "replaced by a newer capture",
             )
             row = await conn.fetchrow(
-                """INSERT INTO staging.pahchan_enrollment_photos
+                """INSERT INTO public.pahchan_enrollment_photos
                        (org_id, employee_id, slot, object_key, source, uploaded_by,
                         approved_by, approved_at)
                    VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8)
@@ -2341,7 +2341,7 @@ async def approve_enrollment(
     rests on that."""
     pool = await get_pool()
     row = await pool.fetchrow(
-        """UPDATE staging.pahchan_enrollment_photos
+        """UPDATE public.pahchan_enrollment_photos
               SET approved_by=$1, approved_at=NOW()
             WHERE id=$2::uuid AND org_id=$3::uuid AND replaced_at IS NULL
         RETURNING id, employee_id, slot""",
@@ -2380,8 +2380,8 @@ async def enrollment_queue(
         # exchanging this id for a signed URL, never by being handed a storage path.
         "SELECT r.id, r.slot, r.captured_at, "
         "       e.id AS employee_id, e.name AS employee_name, e.employee_code "
-        "FROM staging.pahchan_enrollment_photos r "
-        "JOIN staging.manav_employees e ON e.id = r.employee_id "
+        "FROM public.pahchan_enrollment_photos r "
+        "JOIN public.manav_employees e ON e.id = r.employee_id "
         "WHERE r.org_id=$1::uuid AND r.approved_at IS NULL AND r.replaced_at IS NULL "
         "ORDER BY r.captured_at",
         org_id,
@@ -2411,8 +2411,8 @@ async def enrollment_queue(
         # photograph in storage that nobody sees until retention deletes it.
         "SELECT e.id AS employee_id, e.name AS employee_name, e.employee_code, "
         "       COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) AS approved_count "
-        "FROM staging.manav_employees e "
-        "LEFT JOIN staging.pahchan_enrollment_photos r "
+        "FROM public.manav_employees e "
+        "LEFT JOIN public.pahchan_enrollment_photos r "
         "       ON r.employee_id = e.id AND r.replaced_at IS NULL "
         "WHERE e.org_id=$1::uuid AND e.is_active = TRUE"
         + still_on_the_rolls("e") +
@@ -2493,12 +2493,12 @@ async def list_policy_scopes(
                        WHEN 'employee' THEN e.name
                        ELSE o.scope_ref
                   END AS scope_label
-             FROM staging.pahchan_policy_overrides o
-             LEFT JOIN staging.pahchan_sites s
+             FROM public.pahchan_policy_overrides o
+             LEFT JOIN public.pahchan_sites s
                     ON o.scope_kind = 'site'
                    AND s.org_id = o.org_id
                    AND s.id::text = o.scope_ref
-             LEFT JOIN staging.manav_employees e
+             LEFT JOIN public.manav_employees e
                     ON o.scope_kind = 'employee'
                    AND e.org_id = o.org_id
                    AND e.id::text = o.scope_ref
@@ -2552,14 +2552,14 @@ async def upsert_policy_scope(
 
     if body.scope_kind == "site":
         exists = await pool.fetchval(
-            "SELECT 1 FROM staging.pahchan_sites WHERE id=$1::uuid AND org_id=$2::uuid",
+            "SELECT 1 FROM public.pahchan_sites WHERE id=$1::uuid AND org_id=$2::uuid",
             body.scope_ref, org_id,
         )
         if not exists:
             raise HTTPException(404, "No such site in this organisation")
     elif body.scope_kind == "employee":
         exists = await pool.fetchval(
-            "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+            "SELECT 1 FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
             body.scope_ref, org_id,
         )
         if not exists:
@@ -2569,7 +2569,7 @@ async def upsert_policy_scope(
         # so "does it exist" means "does anybody in this org have it". Refusing
         # an unused category stops a typo becoming an override that never fires.
         exists = await pool.fetchval(
-            "SELECT 1 FROM staging.manav_employees "
+            "SELECT 1 FROM public.manav_employees "
             "WHERE org_id=$1::uuid AND employment_type=$2 LIMIT 1",
             org_id, body.scope_ref,
         )
@@ -2581,7 +2581,7 @@ async def upsert_policy_scope(
             )
 
     row = await pool.fetchrow(
-        """INSERT INTO staging.pahchan_policy_overrides
+        """INSERT INTO public.pahchan_policy_overrides
                (org_id, scope_kind, scope_ref, overrides, note, created_by, updated_by)
            VALUES ($1::uuid, $2, $3, $4::jsonb, $5, $6, $6)
            ON CONFLICT (org_id, scope_kind, scope_ref) DO UPDATE SET
@@ -2630,7 +2630,7 @@ async def delete_policy_scope(
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "DELETE FROM staging.pahchan_policy_overrides "
+        "DELETE FROM public.pahchan_policy_overrides "
         " WHERE id=$1::uuid AND org_id=$2::uuid "
         " RETURNING scope_kind, scope_ref",
         str(scope_id), org_id,
@@ -2670,7 +2670,7 @@ async def effective_policy(
     employee = None
     if employee_id:
         employee = await pool.fetchrow(
-            "SELECT id, name, employment_type FROM staging.manav_employees "
+            "SELECT id, name, employment_type FROM public.manav_employees "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(employee_id), org_id,
         )
@@ -2726,7 +2726,7 @@ async def update_policy(
 
     import json
     row = await pool.fetchrow(
-        """INSERT INTO staging.pahchan_policy
+        """INSERT INTO public.pahchan_policy
                (org_id, default_radius_m, grace_minutes, allow_outside_geofence,
                 accuracy_flag_threshold_m, punch_photo_retention_days,
                 reference_photo_grace_days, record_retention_years,

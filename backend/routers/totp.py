@@ -61,7 +61,7 @@ def _require_storage(ready: bool) -> None:
         raise HTTPException(
             503,
             "Two-factor authentication is not available yet: "
-            "staging.user_totp does not exist. Apply "
+            "public.user_totp does not exist. Apply "
             "migrations/208_user_totp.sql.",
         )
 
@@ -108,12 +108,12 @@ async def get_status(user=Depends(require_user)):
         return {"enabled": False, "storage_ready": False, "required_by_org": []}
 
     row = await pool.fetchrow(
-        "SELECT created_at FROM staging.user_totp WHERE user_id=$1", user["user_id"],
+        "SELECT created_at FROM public.user_totp WHERE user_id=$1", user["user_id"],
     )
     remaining = 0
     if row:
         remaining = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.user_totp_recovery_codes "
+            "SELECT COUNT(*) FROM public.user_totp_recovery_codes "
             "WHERE user_id=$1 AND used_at IS NULL",
             user["user_id"],
         ) or 0
@@ -123,9 +123,9 @@ async def get_status(user=Depends(require_user)):
     # though the product-wide default is.
     required_by = await pool.fetch(
         "SELECT o.id::text AS org_id, o.name AS org_name "
-        "FROM staging.user_roles ur "
-        "JOIN staging.organisations o ON o.id = ur.org_id "
-        "JOIN staging.org_security os ON os.org_id = ur.org_id "
+        "FROM public.user_roles ur "
+        "JOIN public.organisations o ON o.id = ur.org_id "
+        "JOIN public.org_security os ON os.org_id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.role_code IN ('org_owner','org_admin','org_member') "
         "AND os.tfa_enforced = TRUE",
         user["user_id"],
@@ -185,7 +185,7 @@ async def confirm(request: Request, body: ConfirmBody, user=Depends(require_user
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO staging.user_totp (user_id, secret, last_used_step, updated_at) "
+                "INSERT INTO public.user_totp (user_id, secret, last_used_step, updated_at) "
                 "VALUES ($1, $2, $3, NOW()) "
                 "ON CONFLICT (user_id) DO UPDATE SET "
                 "secret=EXCLUDED.secret, last_used_step=EXCLUDED.last_used_step, "
@@ -195,7 +195,7 @@ async def confirm(request: Request, body: ConfirmBody, user=Depends(require_user
             # A re-enrolment (lost device) must not leave the OLD device's
             # unused codes still redeemable against the new secret.
             await conn.execute(
-                "DELETE FROM staging.user_totp_recovery_codes "
+                "DELETE FROM public.user_totp_recovery_codes "
                 "WHERE user_id=$1 AND used_at IS NULL",
                 user["user_id"],
             )
@@ -204,7 +204,7 @@ async def confirm(request: Request, body: ConfirmBody, user=Depends(require_user
             # one transaction cost nothing extra here.
             for c in codes:
                 await conn.execute(
-                    "INSERT INTO staging.user_totp_recovery_codes (user_id, code_hash) "
+                    "INSERT INTO public.user_totp_recovery_codes (user_id, code_hash) "
                     "VALUES ($1, $2)",
                     user["user_id"], totp_service.hash_recovery_code(c),
                 )
@@ -242,9 +242,9 @@ async def disable(request: Request, body: DisableBody, user=Depends(require_user
         raise HTTPException(401, "Incorrect password.")
 
     blocking = await pool.fetch(
-        "SELECT o.name AS org_name FROM staging.user_roles ur "
-        "JOIN staging.organisations o ON o.id = ur.org_id "
-        "JOIN staging.org_security os ON os.org_id = ur.org_id "
+        "SELECT o.name AS org_name FROM public.user_roles ur "
+        "JOIN public.organisations o ON o.id = ur.org_id "
+        "JOIN public.org_security os ON os.org_id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.role_code IN ('org_owner','org_admin','org_member') "
         "AND os.tfa_enforced = TRUE",
         user["user_id"],
@@ -260,9 +260,9 @@ async def disable(request: Request, body: DisableBody, user=Depends(require_user
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM staging.user_totp WHERE user_id=$1", user["user_id"])
+            await conn.execute("DELETE FROM public.user_totp WHERE user_id=$1", user["user_id"])
             await conn.execute(
-                "DELETE FROM staging.user_totp_recovery_codes WHERE user_id=$1",
+                "DELETE FROM public.user_totp_recovery_codes WHERE user_id=$1",
                 user["user_id"],
             )
 
@@ -285,7 +285,7 @@ async def regenerate_recovery_codes(
     _require_storage(await _storage_ready(pool))
 
     row = await pool.fetchrow(
-        "SELECT secret, last_used_step FROM staging.user_totp WHERE user_id=$1",
+        "SELECT secret, last_used_step FROM public.user_totp WHERE user_id=$1",
         user["user_id"],
     )
     if not row:
@@ -300,11 +300,11 @@ async def regenerate_recovery_codes(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "UPDATE staging.user_totp SET last_used_step=$2, updated_at=NOW() "
+                "UPDATE public.user_totp SET last_used_step=$2, updated_at=NOW() "
                 "WHERE user_id=$1", user["user_id"], step,
             )
             await conn.execute(
-                "DELETE FROM staging.user_totp_recovery_codes "
+                "DELETE FROM public.user_totp_recovery_codes "
                 "WHERE user_id=$1 AND used_at IS NULL",
                 user["user_id"],
             )
@@ -313,7 +313,7 @@ async def regenerate_recovery_codes(
             # one transaction cost nothing extra here.
             for c in codes:
                 await conn.execute(
-                    "INSERT INTO staging.user_totp_recovery_codes (user_id, code_hash) "
+                    "INSERT INTO public.user_totp_recovery_codes (user_id, code_hash) "
                     "VALUES ($1, $2)",
                     user["user_id"], totp_service.hash_recovery_code(c),
                 )

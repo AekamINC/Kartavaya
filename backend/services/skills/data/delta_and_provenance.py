@@ -328,10 +328,10 @@ _MOVED_SQL = """
                     NULLIF(btrim(ct.company), ''),
                     NULLIF(btrim(ct.name), ''),
                     '(customer not recorded)') AS customer
-    FROM staging.ganit_invoices i
-    LEFT JOIN staging.graha_clients  cl
+    FROM public.ganit_invoices i
+    LEFT JOIN public.graha_clients  cl
            ON cl.id = i.client_id  AND cl.org_id = i.org_id
-    LEFT JOIN staging.graha_contacts ct
+    LEFT JOIN public.graha_contacts ct
            ON ct.id = i.contact_id AND ct.org_id = i.org_id
     WHERE i.org_id = $1::uuid
       AND i.invoice_date >= $2::date
@@ -479,7 +479,7 @@ async def check_books_moved_since_due(
 
     limitations = [
         "THE RUPEE CHANGE MADE BY AN EDIT IS NOT KNOWABLE HERE. Nothing in this "
-        "product keeps a document's previous value — staging.audit_log holds no "
+        "product keeps a document's previous value — public.audit_log holds no "
         "row of any kind against an invoice — so the edited figure is the sum "
         "of those documents' CURRENT totals. It is a CEILING on the exposure, "
         "it is not a delta, and it is deliberately excluded from the net.",
@@ -576,7 +576,7 @@ _YEAR_TOTALS_SQL = """
       count(*) FILTER (WHERE COALESCE(is_export, FALSE))                          AS n_export,
       count(*) FILTER (WHERE line_items IS NULL
                           OR jsonb_typeof(line_items) <> 'array')                 AS n_without_lines
-    FROM staging.ganit_invoices
+    FROM public.ganit_invoices
     WHERE org_id = $1::uuid
       AND is_active
       AND invoice_date >= $2::date
@@ -609,7 +609,7 @@ _RATEWISE_SQL = """
                          * COALESCE(NULLIF(e->>'quantity', ''),
                                     NULLIF(e->>'qty', ''), '1')::numeric END
              ) AS amount
-      FROM staging.ganit_invoices i,
+      FROM public.ganit_invoices i,
            LATERAL jsonb_array_elements(i.line_items) e
       WHERE i.org_id = $1::uuid
         AND i.is_active
@@ -632,7 +632,7 @@ _EXPENSE_HEADS_SQL = """
            count(*)                                     AS entries,
            COALESCE(SUM(COALESCE(e.amount, 0)), 0)      AS net_of_tax,
            COALESCE(SUM(COALESCE(e.tax_amount, 0)), 0)  AS tax_on_the_bill
-    FROM staging.ganit_expenses e
+    FROM public.ganit_expenses e
     WHERE e.org_id = $1::uuid
       AND e.is_active
       AND e.expense_date >= $2::date
@@ -904,16 +904,16 @@ _CONTENT_SQL = """
            t.name     AS template_name,
            t.module   AS template_module,
            t.category AS template_category
-    FROM staging.hub_content_items c
-    LEFT JOIN staging.hub_org_skill_runs r
+    FROM public.hub_content_items c
+    LEFT JOIN public.hub_org_skill_runs r
            ON r.id = CASE
                 WHEN c.metadata->>'skill_run_id' ~
                      '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
                 THEN (c.metadata->>'skill_run_id')::uuid END
           AND r.org_id = c.org_id
-    LEFT JOIN staging.hub_org_skills s
+    LEFT JOIN public.hub_org_skills s
            ON s.id = r.org_skill_id AND s.org_id = r.org_id
-    LEFT JOIN staging.hub_skill_templates t
+    LEFT JOIN public.hub_skill_templates t
            ON t.id = s.template_id
     WHERE c.org_id = $1::uuid
       AND c.created_at >= $2::date
@@ -926,7 +926,7 @@ _SPEND_SQL = """
            l.provider, l.model, l.status,
            count(*)                        AS calls,
            COALESCE(SUM(l.cost_usd), 0)    AS cost_usd
-    FROM staging.hub_ai_logs l
+    FROM public.hub_ai_logs l
     WHERE l.org_id = $1::uuid
       AND l.created_at >= $2::date
     GROUP BY 1, 2, 3, 4
@@ -939,8 +939,8 @@ _ASSIGNED_SQL = """
            (SELECT count(*) FROM jsonb_array_elements(t.steps) st
              WHERE lower(COALESCE(st->>'generate_image', '')) IN ('true', 't', '1'))
              AS steps_asking_for_an_image
-    FROM staging.hub_org_skills s
-    JOIN staging.hub_skill_templates t ON t.id = s.template_id
+    FROM public.hub_org_skills s
+    JOIN public.hub_skill_templates t ON t.id = s.template_id
     WHERE s.org_id = $1::uuid
       AND jsonb_typeof(t.steps) = 'array'
     ORDER BY t.name
@@ -948,7 +948,7 @@ _ASSIGNED_SQL = """
 """
 
 _IMAGE_PRICE_SQL = """
-    SELECT credits FROM staging.credit_prices
+    SELECT credits FROM public.credit_prices
     WHERE kind = 'image' AND is_active
     LIMIT 1
 """
@@ -1173,7 +1173,7 @@ async def brief_content_provenance(
 
     limitations = [
         "COST CANNOT BE ATTRIBUTED TO A SINGLE ITEM. "
-        "staging.hub_ai_logs.content_item_id is written on NO row anywhere in "
+        "public.hub_ai_logs.content_item_id is written on NO row anywhere in "
         "this product, so the content series and the spend series below share "
         "only a month. Dividing one by the other produces a figure that looks "
         "like a unit cost and is not one.",
@@ -1242,7 +1242,7 @@ async def brief_content_provenance(
         },
         "cost_attribution": {
             "content_items_with_a_cost_record": 0,
-            "why": ("staging.hub_ai_logs.content_item_id exists and is written "
+            "why": ("public.hub_ai_logs.content_item_id exists and is written "
                     "by nothing. Until the generation path sets it, cost can be "
                     "attributed to a month and a model but never to an item, a "
                     "template or a person."),

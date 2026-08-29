@@ -151,7 +151,7 @@ def _note_absent() -> None:
     if not _TABLE_ABSENT_LOGGED:
         _TABLE_ABSENT_LOGGED = True
         log.warning(
-            "staging.platform_support_sessions is absent — migration 111 is "
+            "public.platform_support_sessions is absent — migration 111 is "
             "unapplied, so there are no support sessions. Logged once."
         )
 
@@ -221,7 +221,7 @@ def validate_request(
 # ═════════════════════════════════════════════════════════════════════════════
 
 _AUDIT_SQL = """
-    INSERT INTO staging.audit_log
+    INSERT INTO public.audit_log
            (org_id, user_id, action, resource_type, resource_id, detail, severity)
     VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb, $7)
 """
@@ -289,7 +289,7 @@ async def resolve_owner_recipient(conn, org_id: str) -> tuple[str, str, bool]:
     here, before the grant.
     """
     owner = await conn.fetchrow(
-        "SELECT u.email, u.name FROM staging.user_roles ur "
+        "SELECT u.email, u.name FROM public.user_roles ur "
         "JOIN users u ON u.user_id = ur.user_id "
         "WHERE ur.org_id = $1::uuid AND ur.role_code = 'org_owner' "
         "  AND u.email IS NOT NULL AND u.email <> '' "
@@ -300,7 +300,7 @@ async def resolve_owner_recipient(conn, org_id: str) -> tuple[str, str, bool]:
         return owner["email"], (owner["name"] or owner["email"]), False
 
     org = await conn.fetchrow(
-        "SELECT name, email FROM staging.organisations WHERE id = $1::uuid", org_id
+        "SELECT name, email FROM public.organisations WHERE id = $1::uuid", org_id
     )
     if org and (org["email"] or "").strip():
         return org["email"].strip(), (org["name"] or org["email"]), True
@@ -447,7 +447,7 @@ def _note_requests_absent() -> None:
     if not _REQUESTS_TABLE_ABSENT_LOGGED:
         _REQUESTS_TABLE_ABSENT_LOGGED = True
         log.warning(
-            "staging.platform_support_requests is absent — migration 182 is "
+            "public.platform_support_requests is absent — migration 182 is "
             "unapplied, so no organisation has asked for help. Logged once."
         )
 
@@ -537,7 +537,7 @@ async def _aekam_recipients(conn, aekam_roles) -> list[dict]:
         "SELECT DISTINCT ON (u.user_id) u.user_id, "
         "       COALESCE(NULLIF(TRIM(u.full_name),''), NULLIF(TRIM(u.name),''), "
         "                'Name not on file') AS display_name "
-        "  FROM staging.user_roles ur "
+        "  FROM public.user_roles ur "
         "  JOIN users u ON u.user_id = ur.user_id "
         " WHERE ur.org_id IS NULL AND ur.role_code = ANY($1::text[]) "
         " ORDER BY u.user_id",
@@ -694,7 +694,7 @@ async def raise_help_request(
     async with pool.acquire() as conn:
         async with conn.transaction():
             org = await conn.fetchrow(
-                "SELECT id, name FROM staging.organisations "
+                "SELECT id, name FROM public.organisations "
                 "WHERE id = $1::uuid AND is_active = TRUE",
                 org_id,
             )
@@ -733,7 +733,7 @@ async def raise_help_request(
                 try:
                     async with conn.transaction():
                         row = await conn.fetchrow(
-                            "INSERT INTO staging.platform_support_requests "
+                            "INSERT INTO public.platform_support_requests "
                             "  (ref, org_id, raised_by, reason, modules, notified_to) "
                             "VALUES ($1, $2::uuid, $3, $4, $5::text[], $6::text[]) "
                             "RETURNING id, ref, raised_at",
@@ -868,7 +868,7 @@ async def request_session(
     )
 
     org = await pool.fetchrow(
-        "SELECT id, name FROM staging.organisations "
+        "SELECT id, name FROM public.organisations "
         "WHERE id = $1::uuid AND is_active = TRUE",
         org_id,
     )
@@ -882,7 +882,7 @@ async def request_session(
         ref = new_ref()
         try:
             row = await pool.fetchrow(
-                "INSERT INTO staging.platform_support_sessions "
+                "INSERT INTO public.platform_support_sessions "
                 "  (ref, org_id, requested_by, reason, modules, access_level, "
                 "   requested_ttl_hours) "
                 "VALUES ($1, $2::uuid, $3, $4, $5::text[], $6, $7) "
@@ -981,7 +981,7 @@ async def open_session(
                     "SELECT id, ref, org_id, requested_by, reason, modules, "
                     "       access_level, requested_ttl_hours, "
                     "       approved_at, denied_at "
-                    "  FROM staging.platform_support_sessions "
+                    "  FROM public.platform_support_sessions "
                     " WHERE id = $1::uuid AND org_id = $2::uuid "
                     "   FOR UPDATE",
                     session_id, org_id,
@@ -1041,7 +1041,7 @@ async def open_session(
             # `approved_at`. Never from a Python clock: a worker that has been up
             # for six hours must not get a vote in when a two-hour session ends.
             updated = await conn.fetchrow(
-                "UPDATE staging.platform_support_sessions "
+                "UPDATE public.platform_support_sessions "
                 "   SET approved_by = $2, "
                 "       approved_at = NOW(), "
                 "       owner_emailed_at = NOW(), "
@@ -1067,7 +1067,7 @@ async def open_session(
                 row["requested_by"],
             )
             org = await conn.fetchrow(
-                "SELECT name FROM staging.organisations WHERE id = $1::uuid", org_id
+                "SELECT name FROM public.organisations WHERE id = $1::uuid", org_id
             )
 
             # ── NOT BEST-EFFORT ─────────────────────────────────────────────
@@ -1195,7 +1195,7 @@ async def deny_session(
             try:
                 row = await conn.fetchrow(
                     "SELECT id, ref, requested_by, approved_at, denied_at "
-                    "  FROM staging.platform_support_sessions "
+                    "  FROM public.platform_support_sessions "
                     " WHERE id = $1::uuid AND org_id = $2::uuid FOR UPDATE",
                     session_id, org_id,
                 )
@@ -1215,7 +1215,7 @@ async def deny_session(
                 raise SupportSessionError(409, "This request was already declined")
 
             await conn.execute(
-                "UPDATE staging.platform_support_sessions "
+                "UPDATE public.platform_support_sessions "
                 "   SET denied_by = $2, denied_at = NOW(), denial_reason = $3 "
                 " WHERE id = $1::uuid AND approved_at IS NULL AND denied_at IS NULL",
                 session_id, decided_by, reason.strip(),
@@ -1265,7 +1265,7 @@ async def revoke_session(
             try:
                 row = await conn.fetchrow(
                     "SELECT id, ref, requested_by, approved_at, revoked_at "
-                    "  FROM staging.platform_support_sessions "
+                    "  FROM public.platform_support_sessions "
                     " WHERE id = $1::uuid AND org_id = $2::uuid FOR UPDATE",
                     session_id, org_id,
                 )
@@ -1286,7 +1286,7 @@ async def revoke_session(
                 raise SupportSessionError(409, "This session is already revoked")
 
             await conn.execute(
-                "UPDATE staging.platform_support_sessions "
+                "UPDATE public.platform_support_sessions "
                 "   SET revoked_by = $2, revoked_at = NOW(), revoked_by_party = $3 "
                 " WHERE id = $1::uuid AND revoked_at IS NULL",
                 session_id, revoked_by, party,
@@ -1326,8 +1326,8 @@ _LIST_COLUMNS = """
 #: the org owner deciding whether to let somebody in needs to be told WHO.
 #: LEFT JOIN, because a deleted user must not remove the row from the list.
 _LIST_FROM = """
-      FROM staging.platform_support_sessions s
-      JOIN staging.organisations o ON o.id = s.org_id
+      FROM public.platform_support_sessions s
+      JOIN public.organisations o ON o.id = s.org_id
  LEFT JOIN users ru ON ru.user_id = s.requested_by
  LEFT JOIN users au ON au.user_id = s.approved_by
 """
@@ -1422,7 +1422,7 @@ async def get_session(pool, session_id: str):
     try:
         return await pool.fetchrow(
             "SELECT s.id, s.ref, s.org_id, s.requested_by "
-            "  FROM staging.platform_support_sessions s WHERE s.id = $1::uuid",
+            "  FROM public.platform_support_sessions s WHERE s.id = $1::uuid",
             session_id,
         )
     except asyncpg.UndefinedTableError:
@@ -1495,7 +1495,7 @@ async def requestable_organisations(pool) -> list[dict]:
     would be customer data handed to an account with no session yet.
     """
     rows = await pool.fetch(
-        "SELECT id, name FROM staging.organisations "
+        "SELECT id, name FROM public.organisations "
         "WHERE is_active = TRUE ORDER BY name"
     )
     return [{"id": str(r["id"]), "name": r["name"]} for r in rows]
@@ -1518,7 +1518,7 @@ async def requestable_organisations(pool) -> list[dict]:
 #: the ask must not leave it sitting in the queue because two timestamps landed
 #: in the same instant.
 _ASK_ANSWERED = """
-    EXISTS (SELECT 1 FROM staging.platform_support_sessions s
+    EXISTS (SELECT 1 FROM public.platform_support_sessions s
              WHERE s.org_id = r.org_id
                AND s.requested_at >= r.raised_at)
 """
@@ -1539,8 +1539,8 @@ _ASK_COLUMNS = f"""
 """
 
 _ASK_FROM = """
-      FROM staging.platform_support_requests r
-      JOIN staging.organisations o ON o.id = r.org_id
+      FROM public.platform_support_requests r
+      JOIN public.organisations o ON o.id = r.org_id
  LEFT JOIN users u ON u.user_id = r.raised_by
 """
 

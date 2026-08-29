@@ -245,7 +245,7 @@ absent_metric(
            "membership table, re-checked 2026-08-22 — assignment_id, team_id, "
            "user_id, role, assigned_at, assigned_by, receives_approval_emails, "
            "full_name, position, company_name, member_role) or "
-           "staging.manav_employees. Hours worked are recorded; hours "
+           "public.manav_employees. Hours worked are recorded; hours "
            "available are not.",
 )
 
@@ -271,6 +271,6 @@ absent_metric(
     grain="flow",
     absent="public.boards has no due date, start date or budget; the "
            "milestone and baseline tables that would carry them "
-           "(staging.project_milestones, staging.project_baselines) are both "
+           "(public.project_milestones, public.project_baselines) are both "
            "empty; and only 343 of 734 tasks carry a board_id.",
 )

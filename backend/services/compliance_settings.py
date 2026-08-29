@@ -273,7 +273,7 @@ async def resolve(pool, org_id: str, module: str) -> dict[str, dict]:
     known = rules_for(module)
     rows = await pool.fetch(
         "SELECT rule_key, state, set_by, set_at, reason "
-        "FROM staging.module_compliance_settings "
+        "FROM public.module_compliance_settings "
         "WHERE org_id=$1::uuid AND module=$2",
         org_id, module,
     )
@@ -293,7 +293,7 @@ async def resolve_all(pool, org_id: str) -> list[dict]:
     """
     rows = await pool.fetch(
         "SELECT module, rule_key, state, set_by, set_at, reason "
-        "FROM staging.module_compliance_settings WHERE org_id=$1::uuid",
+        "FROM public.module_compliance_settings WHERE org_id=$1::uuid",
         org_id,
     )
     by_module: dict[str, dict[str, dict]] = {}
@@ -342,7 +342,7 @@ async def set_rule(
             f"applicable or not applicable instead."
         )
     row = await pool.fetchrow(
-        "INSERT INTO staging.module_compliance_settings "
+        "INSERT INTO public.module_compliance_settings "
         "  (org_id, module, rule_key, state, set_by, set_at, reason) "
         "VALUES ($1::uuid, $2, $3, $4, $5, NOW(), $6) "
         "ON CONFLICT (org_id, module, rule_key) DO UPDATE SET "

@@ -285,7 +285,7 @@ async def _channel_row(pool, channel_id, org_id: str):
     fetchrow and it is not worth trusting the caller for.
     """
     return await pool.fetchrow(
-        "SELECT id, name, type FROM staging.samvada_channels "
+        "SELECT id, name, type FROM public.samvada_channels "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
@@ -336,7 +336,7 @@ async def _readable_by(pool, channel_id, org_id: str, channel_type: str):
     """
     sql = f"""
         SELECT u.user_id, u.email, {display_name('u')} AS display
-          FROM staging.samvada_channel_members cm
+          FROM public.samvada_channel_members cm
           JOIN users u ON u.user_id = cm.user_id
          WHERE cm.channel_id = $1::uuid
     """
@@ -351,7 +351,7 @@ async def _readable_by(pool, channel_id, org_id: str, channel_type: str):
         sql += f"""
         UNION
         SELECT u.user_id, u.email, {display_name('u')} AS display
-          FROM staging.user_roles ur
+          FROM public.user_roles ur
           JOIN users u ON u.user_id = ur.user_id
          WHERE ur.org_id = $2::uuid
            AND ur.role_code IN ('org_owner','org_admin','org_member')
@@ -474,15 +474,15 @@ async def _broadcast_recipients(pool, channel_id, org_id: str, kind: str) -> lis
     """
     if kind == "channel":
         rows = await pool.fetch(
-            "SELECT user_id FROM staging.samvada_channel_members WHERE channel_id=$1::uuid",
+            "SELECT user_id FROM public.samvada_channel_members WHERE channel_id=$1::uuid",
             channel_id,
         )
     else:
         rows = await pool.fetch(
             """
             SELECT cm.user_id
-              FROM staging.samvada_channel_members cm
-              JOIN staging.samvada_presence p
+              FROM public.samvada_channel_members cm
+              JOIN public.samvada_presence p
                 ON p.user_id = cm.user_id AND p.org_id = $2::uuid
              WHERE cm.channel_id = $1::uuid
                AND p.status = 'online'
@@ -527,7 +527,7 @@ async def _resolve(pool, *, org_id, channel_id, channel, content, actor_id,
         allowed = sender_is_channel_admin
         if not allowed:
             member_count = await pool.fetchval(
-                "SELECT COUNT(*) FROM staging.samvada_channel_members WHERE channel_id=$1::uuid",
+                "SELECT COUNT(*) FROM public.samvada_channel_members WHERE channel_id=$1::uuid",
                 channel_id,
             )
             allowed = (member_count or 0) <= BROADCAST_FREE_FOR_ALL_MAX_MEMBERS
@@ -592,7 +592,7 @@ async def _thread_root(pool, message_id):
     knows it has an unmuted recipient to build a url for.
     """
     return await pool.fetchval(
-        "SELECT parent_message_id FROM staging.samvada_messages WHERE id=$1::uuid",
+        "SELECT parent_message_id FROM public.samvada_messages WHERE id=$1::uuid",
         message_id,
     )
 
@@ -808,7 +808,7 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
         return frozenset()
 
     mem = await pool.fetchrow(
-        "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        "SELECT role FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, actor_id,
     )
     sender_is_channel_admin = bool(mem and mem["role"] == "admin")
@@ -834,7 +834,7 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
         # and paying for this read on every send would be a query nobody reads.
         existing = {
             r["mentioned_user_id"] for r in await pool.fetch(
-                "SELECT mentioned_user_id FROM staging.samvada_mentions WHERE message_id=$1::uuid",
+                "SELECT mentioned_user_id FROM public.samvada_mentions WHERE message_id=$1::uuid",
                 message_id,
             )
         }
@@ -853,7 +853,7 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
     # retried request from writing a second row.
     await pool.execute(
         """
-        INSERT INTO staging.samvada_mentions
+        INSERT INTO public.samvada_mentions
             (org_id, channel_id, message_id, mentioned_user_id, kind)
         SELECT $1::uuid, $2::uuid, $3::uuid, x.uid, x.kind
           FROM unnest($4::text[], $5::text[]) AS x(uid, kind)
@@ -872,7 +872,7 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
     # they have never joined has no member row at all — absent is not muted, and
     # an unjoined public channel that says your name should still reach you.
     muted_rows = await pool.fetch(
-        "SELECT user_id, muted FROM staging.samvada_channel_members "
+        "SELECT user_id, muted FROM public.samvada_channel_members "
         "WHERE channel_id=$1::uuid AND user_id = ANY($2::text[])",
         channel_id, fresh,
     )

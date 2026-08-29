@@ -64,7 +64,7 @@ async def load_org(pool, org_id: str) -> dict:
     URL is not fetchable.
     """
     row = await pool.fetchrow(
-        f"SELECT {_ORG_COLS} FROM staging.organisations WHERE id=$1::uuid", org_id
+        f"SELECT {_ORG_COLS} FROM public.organisations WHERE id=$1::uuid", org_id
     )
     org = dict(row) if row else {}
     for field in ("billing_address", "bank_details", "settings"):
@@ -204,7 +204,7 @@ async def assemble_gstr3b(
     invoices = await pool.fetch(
         "SELECT invoice_number, invoice_type, is_igst, is_export, line_items, "
         "subtotal, cgst, sgst, igst, cess, total "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
         "AND COALESCE(doc_status, '') <> 'draft' "
         "AND COALESCE(payment_status, '') <> 'cancelled' "
@@ -260,7 +260,7 @@ async def assemble_gstr3b(
     bills = await pool.fetch(
         "SELECT COALESCE(SUM(igst),0) AS igst, COALESCE(SUM(cgst),0) AS cgst, "
         "COALESCE(SUM(sgst),0) AS sgst, COUNT(*) AS n "
-        "FROM staging.ganit_vendor_bills "
+        "FROM public.ganit_vendor_bills "
         "WHERE org_id=$1::uuid AND is_active "
         "AND bill_date >= $2::text::date AND bill_date < $3::text::date",
         org_id, start, end_exclusive.isoformat(),
@@ -390,8 +390,8 @@ async def prefiling_checks(
     # lost, and the illegitimate case can no longer arrive.
     parties = await pool.fetch(
         "SELECT DISTINCT c.name, c.company, c.gstin "
-        "FROM staging.ganit_invoices i "
-        "JOIN staging.graha_contacts c "
+        "FROM public.ganit_invoices i "
+        "JOIN public.graha_contacts c "
         "  ON c.id = i.contact_id AND c.org_id = i.org_id "
         "WHERE i.org_id=$1::uuid AND i.is_active AND i.cancelled_at IS NULL "
         "AND COALESCE(i.doc_status, '') <> 'draft' "
@@ -420,7 +420,7 @@ async def prefiling_checks(
     # Place of supply. The column exists; where it is blank the CGST/SGST vs
     # IGST split rests on the `is_igst` flag alone, which nothing cross-checks.
     no_pos = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.ganit_invoices "
+        "SELECT COUNT(*) FROM public.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
         "AND COALESCE(doc_status, '') <> 'draft' "
         "AND COALESCE(payment_status, '') <> 'cancelled' "

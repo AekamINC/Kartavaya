@@ -151,13 +151,13 @@ DOCUMENTS_SQL = (
     "       COALESCE(i.igst, 0)::float AS igst, "
     "       COALESCE(i.cess, 0)::float AS cess, "
     "       COALESCE(i.total, 0)::float AS total "
-    "  FROM staging.ganit_invoices i "
+    "  FROM public.ganit_invoices i "
     # LEFT, both of them, and both org-scoped on the JOIN: an INNER join drops
     # the 189 documents with no client, and a join on `id` alone can surface
     # another org's customer name (graha_clients_join_leak).
-    "  LEFT JOIN staging.graha_clients cl "
+    "  LEFT JOIN public.graha_clients cl "
     "         ON cl.id = i.client_id AND cl.org_id = i.org_id "
-    "  LEFT JOIN staging.graha_contacts ct "
+    "  LEFT JOIN public.graha_contacts ct "
     "         ON ct.id = i.contact_id AND ct.org_id = i.org_id "
     " WHERE i.org_id = $1::uuid "
     "   AND i.is_active = TRUE "

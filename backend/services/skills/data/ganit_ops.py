@@ -204,7 +204,7 @@ async def check_retainers_that_stopped_billing(
                         WHEN 'yearly'    THEN 365
                         ELSE 31
                    END AS cycle_days
-            FROM staging.ganit_recurring rec
+            FROM public.ganit_recurring rec
             WHERE rec.org_id = $1::uuid
               AND rec.is_active = TRUE
         )
@@ -233,7 +233,7 @@ async def check_retainers_that_stopped_billing(
                (jsonb_typeof(r.template_items) IS DISTINCT FROM 'array'
                 OR jsonb_array_length(r.template_items) = 0)    AS no_line_items,
                (SELECT count(*)
-                  FROM staging.ganit_invoices i
+                  FROM public.ganit_invoices i
                  WHERE i.org_id = r.org_id
                    AND i.recurring_id = r.id
                    AND i.is_active
@@ -241,7 +241,7 @@ async def check_retainers_that_stopped_billing(
                    AND i.invoice_date >= (r.next_date - r.cycle_days)
                    AND i.invoice_date <= $2::date)              AS invoiced_this_cycle,
                (SELECT max(i.invoice_date)
-                  FROM staging.ganit_invoices i
+                  FROM public.ganit_invoices i
                  WHERE i.org_id = r.org_id
                    AND i.recurring_id = r.id
                    AND i.is_active)                             AS last_invoice_date
@@ -249,9 +249,9 @@ async def check_retainers_that_stopped_billing(
         -- org_id on BOTH joins. The FK is on id alone, so without it a stale
         -- contact_id can surface another practice's contact and, through it,
         -- another practice's client name.
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = r.contact_id AND ct.org_id = r.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = ct.client_id AND cl.org_id = ct.org_id
         WHERE r.next_date <= ($2::date + $3::int)
         ORDER BY r.next_date, bill_to
@@ -449,7 +449,7 @@ async def check_retainers_that_stopped_billing(
                NULLIF(btrim(ct.email), '')                     AS bill_to_email,
                NULLIF(btrim(ct.phone), '')                     AS bill_to_phone,
                (SELECT count(*)
-                  FROM staging.ganit_invoices i
+                  FROM public.ganit_invoices i
                  WHERE i.org_id = k.org_id
                    AND i.contact_id = k.contact_id
                    AND i.is_active
@@ -458,7 +458,7 @@ async def check_retainers_that_stopped_billing(
                    AND i.invoice_date >= $2::date
                    AND i.invoice_date <= $3::date)              AS invoices_in_period,
                (SELECT COALESCE(sum(i.total), 0)
-                  FROM staging.ganit_invoices i
+                  FROM public.ganit_invoices i
                  WHERE i.org_id = k.org_id
                    AND i.contact_id = k.contact_id
                    AND i.is_active
@@ -466,10 +466,10 @@ async def check_retainers_that_stopped_billing(
                    AND i.invoice_type = 'tax_invoice'
                    AND (k.start_date IS NULL OR i.invoice_date >= k.start_date))
                                                                 AS billed_since_start
-        FROM staging.ganit_contracts k
-        LEFT JOIN staging.graha_contacts ct
+        FROM public.ganit_contracts k
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = k.contact_id AND ct.org_id = k.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = ct.client_id AND cl.org_id = ct.org_id
         WHERE k.org_id = $1::uuid
           AND k.is_active = TRUE
@@ -735,11 +735,11 @@ async def check_duplicate_vendor_bills(
                    -- alphanumerics only: INV/2026/117 == inv-2026-117
                    regexp_replace(lower(COALESCE(vb.bill_number, '')),
                                   '[^a-z0-9]', '', 'g')             AS number_key
-            FROM staging.ganit_vendor_bills vb
+            FROM public.ganit_vendor_bills vb
             -- LEFT and org-scoped: a bill whose vendor row was archived is still
             -- a bill that can be paid twice, and the org_id on the join stops a
             -- stale vendor_id naming another practice's supplier.
-            LEFT JOIN staging.ganit_vendors v
+            LEFT JOIN public.ganit_vendors v
                    ON v.id = vb.vendor_id AND v.org_id = vb.org_id
             WHERE vb.org_id = $1::uuid
               AND vb.is_active = TRUE
@@ -862,7 +862,7 @@ async def check_duplicate_vendor_bills(
         """
         SELECT COALESCE(NULLIF(btrim(v.name), ''), '(unnamed)') AS name,
                count(*) AS records
-        FROM staging.ganit_vendors v
+        FROM public.ganit_vendors v
         WHERE v.org_id = $1::uuid AND v.is_active = TRUE
         GROUP BY 1
         HAVING count(*) > 1
@@ -1015,7 +1015,7 @@ async def pack_collection_messages(
 
     org = await pool.fetchrow(
         "SELECT name, upi_vpa, upi_payee_name "
-        "  FROM staging.organisations WHERE id = $1::uuid",
+        "  FROM public.organisations WHERE id = $1::uuid",
         org_id,
     )
     org_name = (org["name"] if org else None) or "your supplier"
@@ -1032,7 +1032,7 @@ async def pack_collection_messages(
     if has_table:
         upi_rows = await pool.fetch(
             "SELECT platform, vpa, payee_name, is_default "
-            "  FROM staging.org_upi_accounts "
+            "  FROM public.org_upi_accounts "
             " WHERE org_id = $1::uuid AND is_active = TRUE "
             " ORDER BY is_default DESC, sort_order, platform",
             org_id,
@@ -1083,10 +1083,10 @@ async def pack_collection_messages(
                COALESCE(NULLIF(btrim(cl.name), ''),
                         NULLIF(btrim(ct.company), ''),
                         NULLIF(btrim(ct.name), ''), '')         AS bill_to
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_contacts ct
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = i.contact_id AND ct.org_id = i.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = ct.client_id AND cl.org_id = ct.org_id
         WHERE i.org_id = $1::uuid
           AND i.is_active = TRUE
@@ -1529,7 +1529,7 @@ async def check_invoice_series_and_splits(
 
     org = await pool.fetchrow(
         "SELECT name, gstin, state_code, billing_address "
-        "  FROM staging.organisations WHERE id = $1::uuid",
+        "  FROM public.organisations WHERE id = $1::uuid",
         org_id,
     )
     # GSTIN first — the first two characters of a registration ARE the state
@@ -1568,7 +1568,7 @@ async def check_invoice_series_and_splits(
                COALESCE(i.total, 0)                             AS total,
                (i.invoice_date >= $2::date
                 AND i.invoice_date <= $3::date)                 AS in_year
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid
           AND i.invoice_type = ANY($6::text[])
           AND i.invoice_date >= $4::date

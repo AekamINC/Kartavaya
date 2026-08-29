@@ -71,7 +71,7 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     org = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address FROM staging.organisations "
+        "SELECT name, gstin, pan, billing_address FROM public.organisations "
         "WHERE id=$1::uuid", org_id)
 
     # ── TWO COHORTS, NAMED, BECAUSE THEY ARE NOT THE SAME DEALS ─────────────
@@ -121,13 +121,13 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         "  COUNT(*) FILTER (WHERE stage='Lost' AND lost_at IS NULL) AS lost_undated, "
         "  AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400)"
         "    FILTER (WHERE stage='Won' AND won_at > $2)::int AS avg_cycle_days "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid",
+        "FROM public.graha_deals WHERE org_id=$1::uuid",
         org_id, cutoff)
 
     forecast = await pool.fetch(
         "SELECT stage, COUNT(*) AS count, COALESCE(SUM(value),0) AS total_value, "
         "  COALESCE(SUM(value * probability / 100.0),0) AS weighted_value "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND stage NOT IN ('Won','Lost') "
         "GROUP BY stage ORDER BY weighted_value DESC",
         org_id)
@@ -135,7 +135,7 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
     velocity = await pool.fetch(
         "SELECT stage, COUNT(*) AS count, COALESCE(SUM(value),0) AS total_value, "
         "  AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/86400)::int AS avg_days_in_stage "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND created_at > $2 "
         "GROUP BY stage ORDER BY count DESC",
         org_id, cutoff)
@@ -144,8 +144,8 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         "SELECT COALESCE(c.source, 'unknown') AS source, COUNT(*) AS leads, "
         "  COUNT(d.id) AS deals, COUNT(d.id) FILTER (WHERE d.stage='Won') AS won, "
         "  COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won'), 0) AS won_value "
-        "FROM staging.graha_contacts c "
-        "LEFT JOIN staging.graha_deals d ON d.contact_id = c.id AND d.is_active=TRUE "
+        "FROM public.graha_contacts c "
+        "LEFT JOIN public.graha_deals d ON d.contact_id = c.id AND d.is_active=TRUE "
         "WHERE c.org_id=$1::uuid AND c.created_at > $2 AND c.is_active=TRUE "
         "GROUP BY COALESCE(c.source, 'unknown') ORDER BY leads DESC",
         org_id, cutoff)
@@ -192,7 +192,7 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
             "  COUNT(*) FILTER (WHERE d.stage='Lost' AND d.lost_at > $2) AS lost, "
             "  COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won' AND d.won_at > $2), 0) "
             "    AS won_value "
-            "FROM staging.graha_deals d "
+            "FROM public.graha_deals d "
             "LEFT JOIN users u ON u.user_id = d.assigned_to "
             "WHERE d.org_id=$1::uuid AND d.assigned_to IS NOT NULL "
             # The other half of the pair — kept character-identical to the
@@ -221,13 +221,13 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         # every other unresolved column beside it is an empty cell too, and a
         # sudden prose label in one column would read as data. Email rung only.
         "  COALESCE(u.full_name, u.name, '') AS owner "
-        "FROM staging.graha_deals d "
-        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "FROM public.graha_deals d "
+        "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
         # Scoped on `org_id` as well as `id`, as the routers now are: this is
         # the sheet the whole report is auditable from, so a company name that
         # belongs to another organisation would be exported to a CSV, mailed
         # out, and re-read months later with nothing left to question it.
-        "LEFT JOIN staging.graha_clients cl "
+        "LEFT JOIN public.graha_clients cl "
         "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         # Org-scoped on `org_id` as well as `id`, like the client join
         # directly above — and this line was not, until Phase 7.1a. The
@@ -237,7 +237,7 @@ async def gather(pool, org_id: str, days: int, *, include_reps: bool) -> dict:
         # mailed out, and re-read months later with nothing left to
         # question it. `graha_territories.id` is unique table-wide and
         # migration 023 gave the column a non-composite foreign key.
-        "LEFT JOIN staging.graha_territories tr "
+        "LEFT JOIN public.graha_territories tr "
         "       ON tr.id = d.territory_id AND tr.org_id = d.org_id "
         "LEFT JOIN users u ON u.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE AND d.created_at > $2 "

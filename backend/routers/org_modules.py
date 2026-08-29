@@ -178,7 +178,7 @@ async def _log_event(pool, org_id: str, event_type: str, metadata: dict) -> None
     """
     try:
         await pool.execute(
-            "INSERT INTO staging.subscription_events (org_id, event_type, metadata) "
+            "INSERT INTO public.subscription_events (org_id, event_type, metadata) "
             "VALUES ($1::uuid, $2, $3::jsonb)",
             org_id, event_type, json.dumps(metadata),
         )
@@ -193,7 +193,7 @@ async def _subscription_ok(pool, org_id: str) -> bool:
     or paused. An org whose subscription has lapsed does not get to switch its
     modules back on from inside the product."""
     status = await pool.fetchval(
-        "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid", org_id,
+        "SELECT status FROM public.subscriptions WHERE org_id=$1::uuid", org_id,
     )
     return bool(status) and status not in ("cancelled", "paused")
 
@@ -206,8 +206,8 @@ async def _dependants(pool, org_id: str, ent_code: str) -> list[str]:
     product with no error anywhere.
     """
     rows = await pool.fetch(
-        "SELECT m.code FROM staging.add_on_modules m "
-        "JOIN staging.module_subscriptions s "
+        "SELECT m.code FROM public.add_on_modules m "
+        "JOIN public.module_subscriptions s "
         "  ON s.module_code = m.code AND s.org_id=$1::uuid AND s.is_active=TRUE "
         "WHERE $2 = ANY(m.requires_module)",
         org_id, ent_code,
@@ -244,7 +244,7 @@ async def get_modules(
         r["module_code"]: r
         for r in await pool.fetch(
             "SELECT module_code, is_active, activated_at, deactivated_at "
-            "FROM staging.module_subscriptions WHERE org_id=$1::uuid",
+            "FROM public.module_subscriptions WHERE org_id=$1::uuid",
             org_id,
         )
     }
@@ -254,7 +254,7 @@ async def get_modules(
     grants: dict[str, int] = {
         r["module_code"]: r["n"]
         for r in await pool.fetch(
-            "SELECT module_code, COUNT(*) AS n FROM staging.org_member_modules "
+            "SELECT module_code, COUNT(*) AS n FROM public.org_member_modules "
             "WHERE org_id=$1::uuid GROUP BY module_code",
             org_id,
         )
@@ -369,7 +369,7 @@ async def patch_modules(
     rows = {
         r["module_code"]: r
         for r in await pool.fetch(
-            "SELECT module_code, is_active FROM staging.module_subscriptions "
+            "SELECT module_code, is_active FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid",
             org_id,
         )
@@ -423,14 +423,14 @@ async def patch_modules(
                     continue  # already there; not an error, not an event
                 if want:
                     await conn.execute(
-                        "UPDATE staging.module_subscriptions "
+                        "UPDATE public.module_subscriptions "
                         "SET is_active=TRUE, activated_at=NOW(), deactivated_at=NULL "
                         "WHERE org_id=$1::uuid AND module_code=$2",
                         org_id, code,
                     )
                 else:
                     await conn.execute(
-                        "UPDATE staging.module_subscriptions "
+                        "UPDATE public.module_subscriptions "
                         "SET is_active=FALSE, deactivated_at=NOW() "
                         "WHERE org_id=$1::uuid AND module_code=$2",
                         org_id, code,

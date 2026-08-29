@@ -49,7 +49,7 @@ from analytics.windowing import bucket_expr
 #: robust to a lost 'view' insert (the endpoint is fire-and-forget).
 _FIRST_OPEN = (
     "SELECT s.invoice_id, MIN(s.created_at) AS first_open "
-    "FROM staging.ganit_pay_scans s "
+    "FROM public.ganit_pay_scans s "
     "WHERE s.org_id = $1::uuid "
     "GROUP BY s.invoice_id"
 )
@@ -80,7 +80,7 @@ def links_opened(req: MetricRequest):
         # state, as at today, for links opened in the bucket.
         "COUNT(*) FILTER (WHERE i.payment_status = 'paid') AS reconciled_paid "
         f"FROM ({_FIRST_OPEN}) fo "
-        "JOIN staging.ganit_invoices i ON i.id = fo.invoice_id "
+        "JOIN public.ganit_invoices i ON i.id = fo.invoice_id "
         "WHERE i.org_id = $1::uuid AND i.is_active = TRUE "
         "AND fo.first_open::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -112,7 +112,7 @@ def link_conversion(req: MetricRequest):
         "COUNT(*) FILTER (WHERE i.payment_status = 'paid') AS reconciled_paid, "
         "COUNT(*) AS opened "
         f"FROM ({_FIRST_OPEN}) fo "
-        "JOIN staging.ganit_invoices i ON i.id = fo.invoice_id "
+        "JOIN public.ganit_invoices i ON i.id = fo.invoice_id "
         "WHERE i.org_id = $1::uuid AND i.is_active = TRUE "
         "AND fo.first_open::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -144,7 +144,7 @@ def time_to_payment(req: MetricRequest):
         "percentile_cont(0.5) WITHIN GROUP "
         "(ORDER BY p.payment_date - fo.first_open::date)::float AS value, "
         "COUNT(*) AS payments "
-        "FROM staging.ganit_payments p "
+        "FROM public.ganit_payments p "
         f"JOIN ({_FIRST_OPEN}) fo ON fo.invoice_id = p.invoice_id "
         "WHERE p.org_id = $1::uuid "
         "AND p.payment_date >= fo.first_open::date "
@@ -181,8 +181,8 @@ def reconciliation_lag(req: MetricRequest):
         # reads ~0 by construction.
         "(ORDER BY p.created_at::date - l.statement_date)::float AS value, "
         "COUNT(*) AS lines "
-        "FROM staging.ganit_bank_statement_lines l "
-        "JOIN staging.ganit_payments p "
+        "FROM public.ganit_bank_statement_lines l "
+        "JOIN public.ganit_payments p "
         "ON p.id = l.matched_payment_id AND p.org_id = $1::uuid "
         "WHERE l.org_id = $1::uuid AND l.is_reconciled "
         # matched_type is a two-value CHECK (invoice_payment/vendor_payment);
@@ -209,7 +209,7 @@ absent_metric(
            "column DEFAULT at INSERT (migration 128), so every invoice holds "
            "a token from birth and a token's existence is not a send — and "
            "there is no sent_at column on ganit_invoices or any table near "
-           "it. staging.ganit_pay_scans records OPENS, which is what "
+           "it. public.ganit_pay_scans records OPENS, which is what "
            "ganit.pay_links_opened counts instead. Recording sends needs a "
            "column written by whichever channel actually shares the link.",
 )

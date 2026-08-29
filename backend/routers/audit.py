@@ -122,7 +122,7 @@ async def list_audit_events(
         "       COALESCE(NULLIF(TRIM(u.full_name), ''), NULLIF(TRIM(u.name), ''), "
         "                CASE WHEN a.user_id IS NULL THEN 'System' "
         "                     ELSE 'A removed account' END) AS actor_name "
-        "  FROM staging.audit_log a "
+        "  FROM public.audit_log a "
         "  LEFT JOIN users u ON u.user_id = a.user_id "
         f" WHERE {' AND '.join(where)} "
         f" ORDER BY a.id DESC LIMIT ${len(args)}",
@@ -153,7 +153,7 @@ async def audit_summary(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT action, severity, count(*) AS n, max(ts) AS last_at "
-        "  FROM staging.audit_log "
+        "  FROM public.audit_log "
         " WHERE org_id = $1::uuid AND ts > NOW() - ($2 || ' days')::interval "
         " GROUP BY action, severity "
         " ORDER BY n DESC",

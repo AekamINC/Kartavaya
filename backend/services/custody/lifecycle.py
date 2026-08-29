@@ -702,8 +702,8 @@ _EXIT_COLS = """
 # this predicate — a parameterised `= ANY($2::text[])` cannot use it.
 _SELECT_OPEN_ENGAGEMENTS = f"""
     SELECT {_ENGAGEMENT_COLS}
-      FROM staging.client_engagements e
-      JOIN staging.graha_clients c
+      FROM public.client_engagements e
+      JOIN public.graha_clients c
         ON c.id = e.client_id AND c.org_id = e.org_id
      WHERE e.org_id = $1::uuid
        AND e.status IN ('proposed', 'active')
@@ -726,8 +726,8 @@ _SELECT_OPEN_COMMS = """
            p.delivery_outcome  AS delivery_outcome,
            p.delivered_on      AS delivered_on,
            p.reply_received_on AS reply_received_on
-      FROM staging.client_engagement_predecessor_comms p
-      JOIN staging.client_engagements e
+      FROM public.client_engagement_predecessor_comms p
+      JOIN public.client_engagements e
         ON e.id = p.engagement_id AND e.org_id = p.org_id
      WHERE p.org_id = $1::uuid
        AND e.status IN ('proposed', 'active')
@@ -743,10 +743,10 @@ _SELECT_EXITING = f"""
            i.balance_due AS final_invoice_balance_due,
            i.doc_status  AS final_invoice_doc_status,
            i.payment_status AS final_invoice_payment_status
-      FROM staging.client_engagements e
-      JOIN staging.graha_clients c
+      FROM public.client_engagements e
+      JOIN public.graha_clients c
         ON c.id = e.client_id AND c.org_id = e.org_id
-      LEFT JOIN staging.ganit_invoices i
+      LEFT JOIN public.ganit_invoices i
         ON i.id = e.final_invoice_id AND i.org_id = e.org_id
      WHERE e.org_id = $1::uuid
        AND e.exit_initiated_on IS NOT NULL
@@ -761,8 +761,8 @@ _SELECT_EXITING = f"""
 _SELECT_RETENTION_DUE = f"""
     SELECT {_ENGAGEMENT_COLS},
            {_EXIT_COLS}
-      FROM staging.client_engagements e
-      JOIN staging.graha_clients c
+      FROM public.client_engagements e
+      JOIN public.graha_clients c
         ON c.id = e.client_id AND c.org_id = e.org_id
      WHERE e.org_id = $1::uuid
        AND e.retention_until IS NOT NULL
@@ -777,8 +777,8 @@ _SELECT_RETENTION_DUE = f"""
 _SELECT_RETENTION_UNSET = f"""
     SELECT {_ENGAGEMENT_COLS},
            {_EXIT_COLS}
-      FROM staging.client_engagements e
-      JOIN staging.graha_clients c
+      FROM public.client_engagements e
+      JOIN public.graha_clients c
         ON c.id = e.client_id AND c.org_id = e.org_id
      WHERE e.org_id = $1::uuid
        AND e.retention_until IS NULL

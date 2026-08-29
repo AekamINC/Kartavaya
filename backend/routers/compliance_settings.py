@@ -105,7 +105,7 @@ async def get_all_settings(
     names = await _setter_names(pool, [m["rules"] for m in modules])
     active = {
         r["module_code"] for r in await pool.fetch(
-            "SELECT module_code FROM staging.module_subscriptions "
+            "SELECT module_code FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND is_active=TRUE",
             org_id,
         )

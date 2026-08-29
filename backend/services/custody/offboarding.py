@@ -177,8 +177,8 @@ SELECT e.id            AS employee_ref,
        o.handover_completed_at   AS handover_completed_at,
        o.access_revoked_at       AS access_revoked_at,
        o.custody_scanned_at      AS custody_scanned_at
-FROM staging.manav_employees e
-LEFT JOIN staging.manav_offboarding o
+FROM public.manav_employees e
+LEFT JOIN public.manav_offboarding o
        ON o.employee_id = e.id
       AND o.org_id = e.org_id
       AND o.status <> 'cancelled'
@@ -214,9 +214,9 @@ LIMIT 1
 #: pending invite as a row plus a status. All 198 live team_members rows are
 #: 'active' anyway, so the filter it replaces was already a no-op.
 _REACHABLE_SQL = """
-SELECT EXISTS (SELECT 1 FROM staging.user_roles r
+SELECT EXISTS (SELECT 1 FROM public.user_roles r
                 WHERE r.org_id = $1::uuid AND r.user_id = $2::text)
-    OR EXISTS (SELECT 1 FROM staging.org_member_modules m
+    OR EXISTS (SELECT 1 FROM public.org_member_modules m
                 WHERE m.org_id = $1::uuid AND m.user_id = $2::text)
     OR EXISTS (SELECT 1 FROM public.project_assignments pa
                  JOIN public.teams t ON t.team_id = pa.team_id
@@ -341,7 +341,7 @@ SELECT c.id   AS client_ref,
        count(*) FILTER (WHERE s.src = 'contact') AS named_contacts
 FROM (
     SELECT d.client_id AS cid, 'deal'::text AS src
-      FROM staging.graha_deals d
+      FROM public.graha_deals d
      WHERE d.org_id = $1::uuid
        AND d.assigned_to = $2::text
        AND d.client_id IS NOT NULL
@@ -351,7 +351,7 @@ FROM (
        AND d.lost_at IS NULL
     UNION ALL
     SELECT ct.client_id, 'contact'::text
-      FROM staging.graha_contacts ct
+      FROM public.graha_contacts ct
      WHERE ct.org_id = $1::uuid
        AND ct.assigned_to = $2::text
        AND ct.client_id IS NOT NULL
@@ -360,7 +360,7 @@ FROM (
        -- another row. Counting it names the leaver to a client twice.
        AND ct.merged_into_id IS NULL
 ) s
-JOIN staging.graha_clients c ON c.id = s.cid AND c.org_id = $1::uuid
+JOIN public.graha_clients c ON c.id = s.cid AND c.org_id = $1::uuid
 GROUP BY c.id, c.name
 ORDER BY c.name ASC
 LIMIT $3::int
@@ -387,9 +387,9 @@ SELECT f.id     AS follow_up_ref,
        f.due_at AS due_at,
        c.name   AS client_name,
        ct.name  AS contact_name
-FROM staging.graha_follow_ups f
-LEFT JOIN staging.graha_contacts ct ON ct.id = f.contact_id AND ct.org_id = $1::uuid
-LEFT JOIN staging.graha_clients  c  ON c.id  = ct.client_id AND c.org_id  = $1::uuid
+FROM public.graha_follow_ups f
+LEFT JOIN public.graha_contacts ct ON ct.id = f.contact_id AND ct.org_id = $1::uuid
+LEFT JOIN public.graha_clients  c  ON c.id  = ct.client_id AND c.org_id  = $1::uuid
 WHERE f.org_id = $1::uuid
   AND f.assigned_to = $2::text
   AND f.is_completed = FALSE
@@ -445,11 +445,11 @@ SELECT 'role_grant'::text AS access_kind,
        r.role_code        AS label,
        r.role_code        AS access_ref,
        r.granted_at       AS granted_at
-  FROM staging.user_roles r
+  FROM public.user_roles r
  WHERE r.org_id = $1::uuid AND r.user_id = $2::text
 UNION ALL
 SELECT 'module_grant', m.module_code, m.module_code, m.granted_at
-  FROM staging.org_member_modules m
+  FROM public.org_member_modules m
  WHERE m.org_id = $1::uuid AND m.user_id = $2::text
 UNION ALL
 SELECT 'team_membership', t.name, t.team_id, pa.assigned_at
@@ -497,7 +497,7 @@ SELECT action, subject_type, subject_ref, subject_label,
        reassigned_to_name,
        revoked_at, revoked_by, status, waived_reason, note,
        recorded_by, created_at, updated_at
-FROM staging.manav_offboarding_custody
+FROM public.manav_offboarding_custody
 WHERE org_id = $1::uuid AND offboarding_id = $2::uuid
 ORDER BY action ASC, subject_type ASC, subject_label ASC
 """
@@ -644,8 +644,8 @@ async def inherited_by(pool, org_id: str, user_id: str) -> list[dict]:
         """
         SELECT c.subject_type, c.subject_label, c.status, c.created_at,
                e.name AS from_employee_name
-        FROM staging.manav_offboarding_custody c
-        LEFT JOIN staging.manav_employees e
+        FROM public.manav_offboarding_custody c
+        LEFT JOIN public.manav_employees e
                ON e.id = c.employee_id AND e.org_id = c.org_id
         WHERE c.org_id = $1::uuid
           AND c.action = 'reassign'
@@ -675,14 +675,14 @@ async def inherited_by(pool, org_id: str, user_id: str) -> list[dict]:
 #: any row exists to insert. A mismatched triple selects nothing, inserts
 #: nothing, and returns None — a refusal, not a misfiled row.
 _RECORD_SQL = """
-INSERT INTO staging.manav_offboarding_custody
+INSERT INTO public.manav_offboarding_custody
     (org_id, offboarding_id, employee_id, action, subject_type, subject_ref,
      subject_label, reassigned_to_user_id, reassigned_to_name,
      revoked_at, revoked_by, status, waived_reason, note, recorded_by)
 SELECT $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text,
        $7::text, $8::text, $9::text,
        $10::timestamptz, $11::text, $12::text, $13::text, $14::text, $15::text
-  FROM staging.manav_offboarding o
+  FROM public.manav_offboarding o
  WHERE o.id = $2::uuid
    AND o.org_id = $1::uuid
    AND o.employee_id = $3::uuid

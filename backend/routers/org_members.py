@@ -65,7 +65,7 @@ async def _org_has_owner(pool, org_id: str) -> bool:
     four admins and no owner, and no endpoint in this backend can give it one.
     """
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE org_id=$1::uuid AND role_code='org_owner' LIMIT 1",
         org_id,
     ))
@@ -205,7 +205,7 @@ async def list_members(
         SELECT ur.user_id, ur.role_code, ur.granted_at,
                u.email, COALESCE(u.full_name, u.name) AS full_name,
                u.avatar AS avatar_url, u.mobile_number
-        FROM staging.user_roles ur
+        FROM public.user_roles ur
         JOIN users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
           AND ur.role_code = ANY($2::text[])
@@ -215,7 +215,7 @@ async def list_members(
     members = []
     for r in rows:
         mods = await pool.fetch(
-            "SELECT module_code, role FROM staging.org_member_modules "
+            "SELECT module_code, role FROM public.org_member_modules "
             "WHERE user_id=$1 AND org_id=$2::uuid",
             r["user_id"], org_id,
         )
@@ -357,7 +357,7 @@ async def add_member(
         )
 
     existing = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
         target["user_id"], org_id, list(SEAT_ROLES),
     )
@@ -379,14 +379,14 @@ async def add_member(
     )
 
     await pool.execute(
-        "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+        "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
         "VALUES ($1, $2::uuid, $3, $4) "
         "ON CONFLICT (user_id, org_id, role_code) DO NOTHING",
         target["user_id"], org_id, body.role, user["user_id"],
     )
 
     org = await pool.fetchrow(
-        "SELECT team_id FROM staging.organisations WHERE id=$1::uuid", org_id,
+        "SELECT team_id FROM public.organisations WHERE id=$1::uuid", org_id,
     )
     if org and org["team_id"]:
         # ── BOTH membership tables, deliberately ────────────────────────────
@@ -453,7 +453,7 @@ async def add_member(
         grants = []
     else:
         enabled = await pool.fetch(
-            "SELECT module_code FROM staging.module_subscriptions "
+            "SELECT module_code FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND is_active=TRUE",
             org_id,
         )
@@ -470,7 +470,7 @@ async def add_member(
 
     for code, level in grants:
         await pool.execute(
-            "INSERT INTO staging.org_member_modules "
+            "INSERT INTO public.org_member_modules "
             "(user_id, org_id, module_code, role, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4, $5) "
             "ON CONFLICT (user_id, org_id, module_code) DO NOTHING",
@@ -506,7 +506,7 @@ async def remove_member(
     pool = await get_pool()
 
     is_owner = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code='org_owner'",
         target_user_id, org_id,
     )
@@ -514,16 +514,16 @@ async def remove_member(
         raise HTTPException(403, "Cannot remove an org owner")
 
     await pool.execute(
-        "DELETE FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
+        "DELETE FROM public.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
         target_user_id, org_id,
     )
     await pool.execute(
-        "DELETE FROM staging.org_member_modules WHERE user_id=$1 AND org_id=$2::uuid",
+        "DELETE FROM public.org_member_modules WHERE user_id=$1 AND org_id=$2::uuid",
         target_user_id, org_id,
     )
 
     org = await pool.fetchrow(
-        "SELECT team_id FROM staging.organisations WHERE id=$1::uuid", org_id,
+        "SELECT team_id FROM public.organisations WHERE id=$1::uuid", org_id,
     )
     if org and org["team_id"]:
         # BOTH tables, and this direction is the one that must not be missed.
@@ -573,7 +573,7 @@ async def update_member_role(
     # of the column. `updated_by` is the half no trigger can supply, because a
     # trigger cannot know who is holding the connection.
     await pool.execute(
-        "UPDATE staging.user_roles SET role_code=$1, updated_by=$4 "
+        "UPDATE public.user_roles SET role_code=$1, updated_by=$4 "
         "WHERE user_id=$2 AND org_id=$3::uuid "
         "AND role_code IN ('org_admin','org_member')",
         role, target_user_id, org_id, user["user_id"],
@@ -636,7 +636,7 @@ async def set_member_modules(
     before = {
         r["module_code"]: r["role"]
         for r in await pool.fetch(
-            "SELECT module_code, role FROM staging.org_member_modules "
+            "SELECT module_code, role FROM public.org_member_modules "
             "WHERE user_id=$1 AND org_id=$2::uuid",
             target_user_id, org_id,
         )
@@ -659,13 +659,13 @@ async def set_member_modules(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "DELETE FROM staging.org_member_modules "
+                "DELETE FROM public.org_member_modules "
                 "WHERE user_id=$1 AND org_id=$2::uuid",
                 target_user_id, org_id,
             )
             for code, level in grants:
                 await conn.execute(
-                    "INSERT INTO staging.org_member_modules "
+                    "INSERT INTO public.org_member_modules "
                     "(user_id, org_id, module_code, role, granted_by) "
                     "VALUES ($1, $2::uuid, $3, $4, $5)",
                     target_user_id, org_id, code, level, user["user_id"],

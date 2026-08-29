@@ -85,7 +85,7 @@ async def _aekam_has_a_live_session(pool, user_id: str, org_id: str) -> bool:
     """
     try:
         row = await pool.fetchrow(
-            "SELECT modules FROM staging.v_active_support_sessions "
+            "SELECT modules FROM public.v_active_support_sessions "
             "WHERE org_id = $1::uuid AND requested_by = $2 "
             "ORDER BY approved_at DESC LIMIT 1",
             org_id, user_id,
@@ -190,7 +190,7 @@ _require_publish_authority = _require_connect_authority
 async def _store_oauth_state(state: str, data: dict):
     pool = await get_pool()
     await pool.execute(
-        "INSERT INTO staging.hub_oauth_states (state, data) VALUES ($1, $2::jsonb) "
+        "INSERT INTO public.hub_oauth_states (state, data) VALUES ($1, $2::jsonb) "
         "ON CONFLICT (state) DO UPDATE SET data=$2::jsonb, created_at=NOW()",
         state, json.dumps(data),
     )
@@ -206,7 +206,7 @@ async def _require_client_in_org(pool, client_id: str, org_id: str):
     request had to be forged: the id was simply never checked.
     """
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         client_id, org_id,
     )
     if not ok:
@@ -216,7 +216,7 @@ async def _require_client_in_org(pool, client_id: str, org_id: str):
 async def _pop_oauth_state(state: str) -> dict | None:
     pool = await get_pool()
     row = await pool.fetchrow(
-        "DELETE FROM staging.hub_oauth_states "
+        "DELETE FROM public.hub_oauth_states "
         "WHERE state=$1 AND created_at > NOW() - INTERVAL '10 minutes' "
         "RETURNING data",
         state,
@@ -460,7 +460,7 @@ async def _store_pending_choice(token: str, payload: dict):
     """
     pool = await get_pool()
     await pool.execute(
-        "INSERT INTO staging.hub_oauth_states (state, data) VALUES ($1, $2::jsonb) "
+        "INSERT INTO public.hub_oauth_states (state, data) VALUES ($1, $2::jsonb) "
         "ON CONFLICT (state) DO UPDATE SET data=$2::jsonb, created_at=NOW()",
         token, json.dumps(payload),
     )
@@ -476,7 +476,7 @@ async def _read_pending_choice(token: str) -> dict | None:
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT data FROM staging.hub_oauth_states "
+        "SELECT data FROM public.hub_oauth_states "
         "WHERE state=$1 AND created_at > NOW() - ($2::int * INTERVAL '1 minute') "
         "LIMIT 1",
         token, PENDING_CHOICE_MINUTES,
@@ -496,7 +496,7 @@ async def _discard_pending_choice(token: str):
     """Forget a consent once its destinations are stored — tokens included."""
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.hub_oauth_states WHERE state=$1", token,
+        "DELETE FROM public.hub_oauth_states WHERE state=$1", token,
     )
 
 
@@ -809,7 +809,7 @@ async def _client_name(pool, client_id: str) -> str:
     """
     try:
         return await pool.fetchval(
-            "SELECT name FROM staging.hub_clients WHERE id=$1::uuid", client_id,
+            "SELECT name FROM public.hub_clients WHERE id=$1::uuid", client_id,
         ) or ""
     except Exception:
         log.warning("could not read client name for the picker", exc_info=True)
@@ -1444,7 +1444,7 @@ async def _store_chosen_destinations(
             except (TypeError, ValueError):
                 log.warning("unparseable token expiry parked for %s", platform)
         row = await pool.fetchrow(
-            "INSERT INTO staging.hub_social_accounts "
+            "INSERT INTO public.hub_social_accounts "
             "(client_id, org_id, platform, account_name, account_id, page_id, "
             " access_token, refresh_token, token_expires_at, scopes, metadata, "
             " connected_by) "
@@ -1455,7 +1455,7 @@ async def _store_chosen_destinations(
             "token_expires_at=EXCLUDED.token_expires_at, "
             "account_name=EXCLUDED.account_name, page_id=EXCLUDED.page_id, "
             "scopes=EXCLUDED.scopes, metadata=EXCLUDED.metadata, "
-            "org_id=COALESCE(EXCLUDED.org_id, staging.hub_social_accounts.org_id), "
+            "org_id=COALESCE(EXCLUDED.org_id, public.hub_social_accounts.org_id), "
             "is_active=TRUE, updated_at=NOW() "
             "RETURNING platform, account_name",
             cid, org_id or "", platform,
@@ -1501,7 +1501,7 @@ async def list_social_accounts(
         "SELECT id, platform, account_name, account_id, page_id, "
         "metadata->>'destination_kind' AS destination_kind, "
         "token_expires_at, is_active, connected_at "
-        "FROM staging.hub_social_accounts "
+        "FROM public.hub_social_accounts "
         "WHERE client_id=$1::uuid AND is_active=TRUE "
         "ORDER BY platform, account_name",
         cid,
@@ -1529,7 +1529,7 @@ async def connect_social_account(
     cid = str(client_id)
 
     cl = await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         cid, org_id,
     )
     if not cl:
@@ -1547,7 +1547,7 @@ async def connect_social_account(
         raise HTTPException(400, f"Invalid platform. Must be one of: {', '.join(ALL_PLATFORMS)}")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_social_accounts "
+        "INSERT INTO public.hub_social_accounts "
         "(client_id, org_id, platform, account_name, account_id, page_id, "
         " access_token, refresh_token, scopes, connected_by) "
         "VALUES ($1::uuid, NULLIF($10,'')::uuid, $2, $3, $4, $5, $6, $7, $8, $9) "
@@ -1584,8 +1584,8 @@ async def disconnect_social_account(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.hub_social_accounts sa SET is_active=FALSE, updated_at=NOW() "
-        "FROM staging.hub_clients c "
+        "UPDATE public.hub_social_accounts sa SET is_active=FALSE, updated_at=NOW() "
+        "FROM public.hub_clients c "
         "WHERE sa.id=$1::uuid AND sa.client_id=$2::uuid "
         "AND c.id = sa.client_id AND c.org_id=$3::uuid",
         str(account_id), str(client_id), org_id,
@@ -1615,7 +1615,7 @@ async def schedule_post(
     await _require_client_in_org(pool, cid, org_id)
 
     content = await pool.fetchrow(
-        "SELECT id, status FROM staging.hub_content_items WHERE id=$1::uuid AND client_id=$2::uuid",
+        "SELECT id, status FROM public.hub_content_items WHERE id=$1::uuid AND client_id=$2::uuid",
         body.content_id, cid,
     )
     if not content:
@@ -1624,7 +1624,7 @@ async def schedule_post(
         raise HTTPException(400, f"Content must be approved or draft to schedule (current: {content['status']})")
 
     account = await pool.fetchrow(
-        "SELECT id FROM staging.hub_social_accounts "
+        "SELECT id FROM public.hub_social_accounts "
         "WHERE id=$1::uuid AND client_id=$2::uuid AND is_active=TRUE",
         body.social_account_id, cid,
     )
@@ -1632,14 +1632,14 @@ async def schedule_post(
         raise HTTPException(404, "Social account not found")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_publish_queue "
+        "INSERT INTO public.hub_publish_queue "
         "(content_id, social_account_id, client_id, scheduled_for, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5) RETURNING id",
         body.content_id, body.social_account_id, cid, body.scheduled_for, user["user_id"],
     )
 
     await pool.execute(
-        "UPDATE staging.hub_content_items SET status='scheduled', scheduled_for=$1 "
+        "UPDATE public.hub_content_items SET status='scheduled', scheduled_for=$1 "
         "WHERE id=$2::uuid AND status IN ('draft', 'approved')",
         body.scheduled_for, body.content_id,
     )
@@ -1670,7 +1670,7 @@ async def bulk_schedule(
     # would publish that org's queue item to their real social account. The
     # single-post route checks both ids against the client; so does this one now.
     content = await pool.fetchval(
-        "SELECT id FROM staging.hub_content_items "
+        "SELECT id FROM public.hub_content_items "
         "WHERE id=$1::uuid AND client_id=$2::uuid",
         body.content_id, cid,
     )
@@ -1680,7 +1680,7 @@ async def bulk_schedule(
     results = []
     for acct_id in body.account_ids:
         owned = await pool.fetchval(
-            "SELECT 1 FROM staging.hub_social_accounts "
+            "SELECT 1 FROM public.hub_social_accounts "
             "WHERE id=$1::uuid AND client_id=$2::uuid AND is_active=TRUE",
             acct_id, cid,
         )
@@ -1690,7 +1690,7 @@ async def bulk_schedule(
             continue
         try:
             row = await pool.fetchrow(
-                "INSERT INTO staging.hub_publish_queue "
+                "INSERT INTO public.hub_publish_queue "
                 "(content_id, social_account_id, client_id, scheduled_for, created_by) "
                 "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5) RETURNING id",
                 body.content_id, acct_id, cid, body.scheduled_for, user["user_id"],
@@ -1713,8 +1713,8 @@ async def publish_now(
     """Immediately publish a scheduled post."""
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT q.id FROM staging.hub_publish_queue q "
-        "JOIN staging.hub_clients c ON c.id = q.client_id "
+        "SELECT q.id FROM public.hub_publish_queue q "
+        "JOIN public.hub_clients c ON c.id = q.client_id "
         "WHERE q.id=$1::uuid AND c.org_id=$2::uuid",
         str(queue_id), org_id,
     )
@@ -1733,8 +1733,8 @@ async def cancel_scheduled(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.hub_publish_queue q SET status='cancelled' "
-        "FROM staging.hub_clients c "
+        "UPDATE public.hub_publish_queue q SET status='cancelled' "
+        "FROM public.hub_clients c "
         "WHERE q.id=$1::uuid AND q.status='scheduled' "
         "AND c.id = q.client_id AND c.org_id=$2::uuid",
         str(queue_id), org_id,
@@ -1761,9 +1761,9 @@ async def list_publish_queue(
         "q.published_at, q.retry_count, "
         "c.title as content_title, c.body as content_body, "
         "sa.platform, sa.account_name "
-        "FROM staging.hub_publish_queue q "
-        "JOIN staging.hub_content_items c ON c.id = q.content_id "
-        "JOIN staging.hub_social_accounts sa ON sa.id = q.social_account_id "
+        "FROM public.hub_publish_queue q "
+        "JOIN public.hub_content_items c ON c.id = q.content_id "
+        "JOIN public.hub_social_accounts sa ON sa.id = q.social_account_id "
         "WHERE q.client_id=$1::uuid "
     )
     params = [cid]
@@ -1809,9 +1809,9 @@ async def content_calendar(
         "SELECT q.id, q.scheduled_for, q.status, q.published_at, "
         "c.title, c.agent_type, c.platform as content_platform, "
         "sa.platform, sa.account_name "
-        "FROM staging.hub_publish_queue q "
-        "JOIN staging.hub_content_items c ON c.id = q.content_id "
-        "JOIN staging.hub_social_accounts sa ON sa.id = q.social_account_id "
+        "FROM public.hub_publish_queue q "
+        "JOIN public.hub_content_items c ON c.id = q.content_id "
+        "JOIN public.hub_social_accounts sa ON sa.id = q.social_account_id "
         "WHERE q.client_id=$1::uuid "
         "AND q.scheduled_for >= $2::date AND q.scheduled_for < $3::date "
         "ORDER BY q.scheduled_for",
@@ -1868,7 +1868,7 @@ async def list_client_platforms(
     cid = str(client_id)
     await _require_client_in_org(pool, cid, org_id)
     rows = await pool.fetch(
-        "SELECT platform, enabled FROM staging.hub_client_platforms "
+        "SELECT platform, enabled FROM public.hub_client_platforms "
         "WHERE client_id=$1::uuid ORDER BY platform",
         cid,
     )
@@ -1890,7 +1890,7 @@ async def set_client_platforms(
     cid = str(client_id)
 
     cl = await pool.fetchrow(
-        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         cid, org_id,
     )
     if not cl:
@@ -1901,11 +1901,11 @@ async def set_client_platforms(
         raise HTTPException(400, f"Invalid platforms: {', '.join(invalid)}")
 
     await pool.execute(
-        "DELETE FROM staging.hub_client_platforms WHERE client_id=$1::uuid", cid,
+        "DELETE FROM public.hub_client_platforms WHERE client_id=$1::uuid", cid,
     )
     for p in body.platforms:
         await pool.execute(
-            "INSERT INTO staging.hub_client_platforms (client_id, platform, enabled, enabled_by, org_id) "
+            "INSERT INTO public.hub_client_platforms (client_id, platform, enabled, enabled_by, org_id) "
             "VALUES ($1::uuid, $2, TRUE, $3, $4::uuid)",
             cid, p, user["user_id"], org_id,
         )

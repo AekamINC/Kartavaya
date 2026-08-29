@@ -95,7 +95,7 @@ def pulse_absent(**kwargs) -> Metric:
 #: `at`: AT is a keyword and not worth arguing with the parser about.
 _USER_ACTS = (
     "SELECT a.user_id AS uid, a.ts AS happened_at "
-    "  FROM staging.audit_log a WHERE a.user_id IS NOT NULL "
+    "  FROM public.audit_log a WHERE a.user_id IS NOT NULL "
     "UNION ALL "
     "SELECT e.actor_id AS uid, e.created_at AS happened_at "
     "  FROM public.activity_events e WHERE e.actor_id IS NOT NULL "
@@ -105,7 +105,7 @@ _USER_ACTS = (
 #: whose people punch attendance every morning is an org using the product.
 _ORG_ACTS = (
     "SELECT a.org_id, a.ts AS happened_at "
-    "  FROM staging.audit_log a WHERE a.org_id IS NOT NULL "
+    "  FROM public.audit_log a WHERE a.org_id IS NOT NULL "
     "UNION ALL "
     "SELECT tm.org_id, e.created_at AS happened_at "
     "  FROM public.activity_events e "
@@ -113,7 +113,7 @@ _ORG_ACTS = (
     " WHERE tm.org_id IS NOT NULL "
     "UNION ALL "
     "SELECT p.org_id, p.captured_at AS happened_at "
-    "  FROM staging.pahchan_punches p WHERE p.org_id IS NOT NULL "
+    "  FROM public.pahchan_punches p WHERE p.org_id IS NOT NULL "
 )
 
 #: The customer-org filter, applied wherever orgs are listed or counted.
@@ -205,10 +205,10 @@ def active_orgs(req: MetricRequest):
     return (
         f"WITH acts AS ({_ORG_ACTS}) "
         "SELECT (SELECT COUNT(DISTINCT s.org_id) "
-        "          FROM acts s JOIN staging.organisations o ON o.id = s.org_id "
+        "          FROM acts s JOIN public.organisations o ON o.id = s.org_id "
         f"        WHERE {_CUSTOMER_ORG}"
         "           AND s.happened_at::date = CURRENT_DATE)::int AS value, "
-        "       (SELECT COUNT(*) FROM staging.organisations o "
+        "       (SELECT COUNT(*) FROM public.organisations o "
         f"        WHERE {_CUSTOMER_ORG})::int AS total",
         [],
     )
@@ -232,7 +232,7 @@ def quiet_orgs(req: MetricRequest):
         "       COALESCE(l.last_at::date::text, 'never') AS last_active, "
         "       COALESCE(CURRENT_DATE - l.last_at::date, "
         "                CURRENT_DATE - o.created_at::date)::int AS days_quiet "
-        "  FROM staging.organisations o "
+        "  FROM public.organisations o "
         "  LEFT JOIN last l ON l.org_id = o.id "
         f" WHERE {_CUSTOMER_ORG}"
         "   AND (l.last_at IS NULL OR l.last_at < now() - interval '7 days') "
@@ -262,7 +262,7 @@ def new_signups(req: MetricRequest):
         " GROUP BY 1 "
         "UNION ALL "
         f"SELECT {o_period} AS period, 0 AS users, COUNT(*) AS orgs "
-        "  FROM staging.organisations o "
+        "  FROM public.organisations o "
         " WHERE NOT COALESCE(o.is_platform_org, FALSE) "
         "   AND o.created_at::date BETWEEN $1::date AND $2::date "
         " GROUP BY 1"
@@ -348,25 +348,25 @@ def module_share(req: MetricRequest):
         "SELECT 'Tasks & projects' AS label, COUNT(*) AS n "
         f"  FROM public.activity_events e WHERE e.created_at{w}"
         "UNION ALL SELECT 'Attendance (Pahchan)', COUNT(*) "
-        f"  FROM staging.pahchan_punches p WHERE p.captured_at{w}"
+        f"  FROM public.pahchan_punches p WHERE p.captured_at{w}"
         "UNION ALL SELECT 'Finance (Ganit)', COUNT(*) "
-        f"  FROM staging.ganit_invoices i WHERE i.created_at{w}"
+        f"  FROM public.ganit_invoices i WHERE i.created_at{w}"
         "UNION ALL SELECT 'Finance (Ganit)', COUNT(*) "
-        f"  FROM staging.ganit_payments pay WHERE pay.created_at{w}"
+        f"  FROM public.ganit_payments pay WHERE pay.created_at{w}"
         "UNION ALL SELECT 'Chat (Sanvaad)', COUNT(*) "
-        f"  FROM staging.samvada_messages sm WHERE sm.created_at{w}"
+        f"  FROM public.samvada_messages sm WHERE sm.created_at{w}"
         "UNION ALL SELECT 'CRM (Graha)', COUNT(*) "
-        f"  FROM staging.graha_contacts gc WHERE gc.created_at{w}"
+        f"  FROM public.graha_contacts gc WHERE gc.created_at{w}"
         "UNION ALL SELECT 'CRM (Graha)', COUNT(*) "
-        f"  FROM staging.graha_deals gd WHERE gd.created_at{w}"
+        f"  FROM public.graha_deals gd WHERE gd.created_at{w}"
         "UNION ALL SELECT 'eSign', COUNT(*) "
-        f"  FROM staging.sign_documents sd WHERE sd.created_at{w}"
+        f"  FROM public.sign_documents sd WHERE sd.created_at{w}"
         "UNION ALL SELECT 'Marketing (Prachar)', COUNT(*) "
-        f"  FROM staging.prachar_campaigns pc WHERE pc.created_at{w}"
+        f"  FROM public.prachar_campaigns pc WHERE pc.created_at{w}"
         "UNION ALL SELECT 'Sales (Vikray)', COUNT(*) "
-        f"  FROM staging.vikray_orders vo WHERE vo.created_at{w}"
+        f"  FROM public.vikray_orders vo WHERE vo.created_at{w}"
         "UNION ALL SELECT 'WhatsApp (Varta)', COUNT(*) "
-        f"  FROM staging.varta_messages vm WHERE vm.created_at{w}"
+        f"  FROM public.varta_messages vm WHERE vm.created_at{w}"
         ") x GROUP BY 1 HAVING SUM(n) > 0 ORDER BY 2 DESC, 1",
         [req.window.start, req.window.end],
     )
@@ -385,7 +385,7 @@ def top_orgs(req: MetricRequest):
         f"WITH acts AS ({_ORG_ACTS}) "
         "SELECT o.name AS label, COUNT(*)::int AS value "
         "  FROM acts s "
-        "  JOIN staging.organisations o ON o.id = s.org_id "
+        "  JOIN public.organisations o ON o.id = s.org_id "
         f" WHERE {_CUSTOMER_ORG}"
         "   AND s.happened_at::date BETWEEN $1::date AND $2::date "
         " GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 25",
@@ -407,7 +407,7 @@ def clockins(req: MetricRequest):
     return (
         f"SELECT {period} AS period, COUNT(*)::int AS value, "
         "       COUNT(DISTINCT p.employee_id)::int AS punchers "
-        "  FROM staging.pahchan_punches p "
+        "  FROM public.pahchan_punches p "
         " WHERE p.captured_at::date BETWEEN $1::date AND $2::date "
         " GROUP BY 1 ORDER BY 1",
         [req.window.start, req.window.end],
@@ -436,7 +436,7 @@ def retention_cohorts(req: MetricRequest):
         f"       {week.format('28 days')} AS week_4, "
         f"       {week.format('56 days')} AS week_8, "
         f"       {week.format('84 days')} AS week_12 "
-        "  FROM staging.organisations o "
+        "  FROM public.organisations o "
         "  LEFT JOIN last l ON l.org_id = o.id "
         " WHERE NOT COALESCE(o.is_platform_org, FALSE) "
         " GROUP BY 1 ORDER BY 1",
@@ -468,7 +468,7 @@ def churn_risk(req: MetricRequest):
         "       w.prior::int AS prior_30d, "
         "       ROUND(100.0 * (w.prior - w.recent) / w.prior, 1)::float AS drop_pct "
         "  FROM w "
-        "  JOIN staging.organisations o ON o.id = w.org_id "
+        "  JOIN public.organisations o ON o.id = w.org_id "
         f" WHERE {_CUSTOMER_ORG}"
         "   AND w.prior > 0 AND w.recent < w.prior "
         " ORDER BY 4 DESC, 1",
@@ -482,7 +482,7 @@ def churn_risk(req: MetricRequest):
     unit="count",
     grain="flow",
     description="Outbound sends by purpose and status per period, from the "
-                "one outbound ledger (staging.outbound_log) — delivered "
+                "one outbound ledger (public.outbound_log) — delivered "
                 "beside suppressed beside failed, live now that sending is "
                 "real.",
 )
@@ -491,7 +491,7 @@ def outbound_health(req: MetricRequest):
     return (
         f"SELECT {period} AS period, l.purpose AS purpose, "
         "       l.status AS status, COUNT(*)::int AS value "
-        "  FROM staging.outbound_log l "
+        "  FROM public.outbound_log l "
         " WHERE l.ts::date BETWEEN $1::date AND $2::date "
         " GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
         [req.window.start, req.window.end],
@@ -513,15 +513,15 @@ def credit_burn(req: MetricRequest):
     # row is < 0), so spend is -SUM.
     return (
         "WITH spend AS (SELECT t.org_id, -SUM(t.amount) AS spent "
-        "                 FROM staging.hub_org_credit_transactions t "
+        "                 FROM public.hub_org_credit_transactions t "
         "                WHERE t.tx_type = 'debit' "
         "                  AND t.created_at >= now() - interval '30 days' "
         "                GROUP BY 1) "
         "SELECT o.name AS label, COALESCE(s.spent, 0)::int AS spent_30d, "
         "       COALESCE(c.balance, 0)::int AS balance, "
         "       (COALESCE(c.balance, 0) <= 10) AS near_zero "
-        "  FROM staging.organisations o "
-        "  LEFT JOIN staging.hub_org_credits c ON c.org_id = o.id "
+        "  FROM public.organisations o "
+        "  LEFT JOIN public.hub_org_credits c ON c.org_id = o.id "
         "  LEFT JOIN spend s ON s.org_id = o.id "
         f" WHERE {_CUSTOMER_ORG}"
         " ORDER BY 2 DESC, 1",
@@ -548,7 +548,7 @@ def storage(req: MetricRequest):
         "            THEN ROUND(100.0 * COALESCE(o.storage_used_bytes, 0) "
         "                       / o.storage_limit_bytes, 1)::float "
         "       END AS pct_of_limit "
-        "  FROM staging.organisations o "
+        "  FROM public.organisations o "
         f" WHERE {_CUSTOMER_ORG}"
         " ORDER BY COALESCE(o.storage_used_bytes, 0) DESC, o.name",
         [],
@@ -587,7 +587,7 @@ def surface_os(req: MetricRequest):
         "         WHEN 'web/linux' THEN 'Web · Linux' "
         "         ELSE 'Web · other' END AS label, "
         "       COUNT(*)::int AS value "
-        "  FROM staging.pulse_logins l "
+        "  FROM public.pulse_logins l "
         " WHERE l.occurred_at::date BETWEEN $1::date AND $2::date "
         " GROUP BY 1 ORDER BY 2 DESC, 1",
         [req.window.start, req.window.end],
@@ -608,7 +608,7 @@ def surface_os(req: MetricRequest):
 def app_versions(req: MetricRequest):
     return (
         "SELECT v.version AS label, COUNT(*)::int AS value "
-        "  FROM staging.pulse_app_versions v "
+        "  FROM public.pulse_app_versions v "
         " GROUP BY 1 ORDER BY 2 DESC, 1",
         [],
     )
@@ -791,7 +791,7 @@ async def record_login_pulse(pool, user_id: str,
     """
     surface, os_name = parse_user_agent(user_agent, app_version)
     await pool.execute(
-        "INSERT INTO staging.pulse_logins (user_id, surface, os) "
+        "INSERT INTO public.pulse_logins (user_id, surface, os) "
         "VALUES ($1::text, $2::text, $3::text)",
         user_id, surface, os_name,
     )
@@ -812,7 +812,7 @@ async def record_app_version(pool, user_id: str, version: str) -> None:
     if not version:
         return
     await pool.execute(
-        "INSERT INTO staging.pulse_app_versions (user_id, version) "
+        "INSERT INTO public.pulse_app_versions (user_id, version) "
         "VALUES ($1::text, $2::text) "
         "ON CONFLICT (user_id) DO UPDATE "
         "   SET version = EXCLUDED.version, updated_at = now()",

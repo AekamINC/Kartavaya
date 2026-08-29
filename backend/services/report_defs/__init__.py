@@ -114,6 +114,7 @@ def load_all() -> None:
         commission_reports,
         department_reports,
         expense_register,
+        member_activity,
         payables_ageing,
         people_reports,
         purchase_register,

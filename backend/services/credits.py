@@ -311,7 +311,7 @@ async def _load_prices(conn) -> dict[str, tuple[int, int, bool]]:
     if not _cache_disabled() and _price_cache_at and (time.time() - _price_cache_at) < _PRICE_CACHE_TTL:
         return _price_cache
     rows = await conn.fetch(
-        "SELECT kind, credits, unit_size, is_active FROM staging.credit_prices"
+        "SELECT kind, credits, unit_size, is_active FROM public.credit_prices"
     )
     table = {
         r["kind"]: (int(r["credits"]), int(r["unit_size"]), bool(r["is_active"]))
@@ -353,7 +353,7 @@ async def price_of(
         row = table.get(ref_id)
         if row is None:
             raise UnknownPrice(
-                f"No price for '{ref_id}'. Add a row to staging.credit_prices — "
+                f"No price for '{ref_id}'. Add a row to public.credit_prices — "
                 f"this work must not be billed a guessed amount.",
                 kind=kind, ref_id=ref_id,
             )
@@ -377,7 +377,7 @@ async def price_of(
         # `or 2` used to sit here (scrapers.py:276). A catalog row with no price
         # is a catalogue bug, not a 2-credit run.
         cost = await conn.fetchval(
-            "SELECT credit_cost FROM staging.hub_scraper_catalog WHERE id=$1",
+            "SELECT credit_cost FROM public.hub_scraper_catalog WHERE id=$1",
             ref_id,
         )
         if cost is None:
@@ -412,7 +412,7 @@ async def _org_markup(conn, org_id: str) -> float:
     """
     try:
         v = await conn.fetchval(
-            "SELECT markup_pct FROM staging.organisations WHERE id=$1::uuid", org_id
+            "SELECT markup_pct FROM public.organisations WHERE id=$1::uuid", org_id
         )
         if v is None:
             return SCRAPER_MARGIN
@@ -471,7 +471,7 @@ _WALLET_COLS = ("allowance_balance, purchased_balance, balance, period_start")
 async def _org_row(conn, org_id: str) -> dict:
     row = await conn.fetchrow(
         "SELECT id, monthly_credits, is_platform_org "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not row:
@@ -486,7 +486,7 @@ async def _org_row(conn, org_id: str) -> dict:
 
 async def _wallet_row(conn, org_id: str, for_update: bool) -> Optional[dict]:
     sql = (
-        f"SELECT {_WALLET_COLS} FROM staging.hub_org_credits WHERE org_id=$1::uuid"
+        f"SELECT {_WALLET_COLS} FROM public.hub_org_credits WHERE org_id=$1::uuid"
         + (" FOR UPDATE" if for_update else "")
     )
     row = await conn.fetchrow(sql, org_id)
@@ -522,7 +522,7 @@ async def balance_of(conn, org_id: str, *, for_update: bool = False) -> Balance:
     w = await _wallet_row(conn, org_id, for_update)
     if w is None:
         await conn.execute(
-            "INSERT INTO staging.hub_org_credits "
+            "INSERT INTO public.hub_org_credits "
             "(org_id, balance, allowance_balance, purchased_balance, period_start, credits_reset_at) "
             "VALUES ($1::uuid, 0, 0, 0, $2::date, NOW()) "
             "ON CONFLICT (org_id) DO NOTHING",
@@ -569,7 +569,7 @@ async def _write_buckets(conn, org_id: str, allowance: int, purchased: int) -> N
     # model was ever called, and so did anything else that debits credits.
     # Found 2026-08-07 from the staging traceback.
     await conn.execute(
-        "UPDATE staging.hub_org_credits "
+        "UPDATE public.hub_org_credits "
         "SET allowance_balance=$1::int, purchased_balance=$2::int, "
         "    balance=$1::int + $2::int, updated_at=NOW() "
         "WHERE org_id=$3::uuid",
@@ -616,7 +616,7 @@ async def roll_period(conn, org_id: str) -> Balance:
     purchased = bal.purchased
 
     await conn.execute(
-        "UPDATE staging.hub_org_credits "
+        "UPDATE public.hub_org_credits "
         # Same untyped-parameter bug as `_write_buckets` — see the note there.
         "SET allowance_balance=$1::int, purchased_balance=$2::int, "
         "    balance=$1::int + $2::int, "
@@ -654,12 +654,12 @@ async def roll_period(conn, org_id: str) -> Balance:
     # FOR this period wins, via DO NOTHING — that is what makes it possible to
     # set next month's ceiling without disturbing this month's.
     await conn.execute(
-        "INSERT INTO staging.org_member_credits "
+        "INSERT INTO public.org_member_credits "
         "(org_id, user_id, period_start, cap_credits, spent_credits, set_by) "
         "SELECT m.org_id, m.user_id, $2::date, m.cap_credits, 0, m.set_by "
-        "  FROM staging.org_member_credits m "
+        "  FROM public.org_member_credits m "
         " WHERE m.org_id=$1::uuid AND m.period_start = ("
-        "        SELECT MAX(p.period_start) FROM staging.org_member_credits p "
+        "        SELECT MAX(p.period_start) FROM public.org_member_credits p "
         "         WHERE p.org_id=$1::uuid AND p.period_start < $2::date) "
         "ON CONFLICT (org_id, user_id, period_start) DO NOTHING",
         org_id, now_period,
@@ -707,7 +707,7 @@ async def _write_ledger(
     caller then re-reads and answers `replayed`.
     """
     sql = (
-        "INSERT INTO staging.hub_org_credit_transactions "
+        "INSERT INTO public.hub_org_credit_transactions "
         "(org_id, user_id, amount, balance_after, tx_type, description, created_by, "
         " kind, ref_id, quantity, allowance_delta, purchased_delta, "
         " idempotency_key, reverses_tx_id, metered_only, period_start) "
@@ -751,7 +751,7 @@ def _row_to_receipt(row, *, replayed: bool) -> Receipt:
 
 async def _tx_by_key(conn, idempotency_key: str):
     return await conn.fetchrow(
-        f"SELECT {_LEDGER_COLS} FROM staging.hub_org_credit_transactions "
+        f"SELECT {_LEDGER_COLS} FROM public.hub_org_credit_transactions "
         f"WHERE idempotency_key=$1",
         idempotency_key,
     )
@@ -759,7 +759,7 @@ async def _tx_by_key(conn, idempotency_key: str):
 
 async def _tx_by_id(conn, tx_id: str):
     return await conn.fetchrow(
-        f"SELECT {_LEDGER_COLS} FROM staging.hub_org_credit_transactions "
+        f"SELECT {_LEDGER_COLS} FROM public.hub_org_credit_transactions "
         f"WHERE id=$1::uuid",
         tx_id,
     )
@@ -767,7 +767,7 @@ async def _tx_by_id(conn, tx_id: str):
 
 async def _reversal_of(conn, tx_id: str):
     return await conn.fetchrow(
-        f"SELECT {_LEDGER_COLS} FROM staging.hub_org_credit_transactions "
+        f"SELECT {_LEDGER_COLS} FROM public.hub_org_credit_transactions "
         f"WHERE reverses_tx_id=$1::uuid",
         tx_id,
     )
@@ -811,7 +811,7 @@ def _cap_row_to_dataclass(org_id, user_id, period, row) -> MemberCap:
 
 async def _member_row(conn, org_id: str, user_id: str, period: date, for_update: bool):
     sql = (
-        "SELECT cap_credits, spent_credits FROM staging.org_member_credits "
+        "SELECT cap_credits, spent_credits FROM public.org_member_credits "
         "WHERE org_id=$1::uuid AND user_id=$2 AND period_start=$3::date"
         + (" FOR UPDATE" if for_update else "")
     )
@@ -870,7 +870,7 @@ async def set_member_cap(
     # only a rule if it has no exceptions.
     await balance_of(conn, org_id, for_update=True)
     await conn.execute(
-        "INSERT INTO staging.org_member_credits "
+        "INSERT INTO public.org_member_credits "
         "(org_id, user_id, period_start, cap_credits, spent_credits, set_by) "
         "VALUES ($1::uuid, $2, $3::date, $4, 0, $5) "
         "ON CONFLICT (org_id, user_id, period_start) DO UPDATE "
@@ -892,7 +892,7 @@ async def org_member_caps(
     """
     period = period_start or current_period()
     rows = await conn.fetch(
-        "SELECT user_id, cap_credits, spent_credits FROM staging.org_member_credits "
+        "SELECT user_id, cap_credits, spent_credits FROM public.org_member_credits "
         "WHERE org_id=$1::uuid AND period_start=$2::date ORDER BY user_id",
         org_id, period,
     )
@@ -1101,7 +1101,7 @@ async def spend(
     #    uncapped and we still want that member's spend to be visible.
     if user_id:
         await conn.execute(
-            "INSERT INTO staging.org_member_credits "
+            "INSERT INTO public.org_member_credits "
             "(org_id, user_id, period_start, cap_credits, spent_credits, set_by) "
             "VALUES ($1::uuid, $2, $3::date, NULL, $4, NULL) "
             "ON CONFLICT (org_id, user_id, period_start) DO UPDATE "
@@ -1255,7 +1255,7 @@ async def refund(
         # GREATEST(…, 0): a refund must not drive the counter negative if the
         # matching debit predates the member row.
         await conn.execute(
-            "UPDATE staging.org_member_credits "
+            "UPDATE public.org_member_credits "
             "SET spent_credits = GREATEST(spent_credits - $1, 0), updated_at=NOW() "
             "WHERE org_id=$2::uuid AND user_id=$3 AND period_start=$4::date",
             amount, org_id, original["user_id"], orig_period,
@@ -1320,13 +1320,13 @@ async def latest_spend_id(
     "the last thing that looked like this" is not the same claim as "this".
     """
     rows = await conn.fetch(
-        f"SELECT {_LEDGER_COLS} FROM staging.hub_org_credit_transactions t "
+        f"SELECT {_LEDGER_COLS} FROM public.hub_org_credit_transactions t "
         f"WHERE t.org_id=$1::uuid AND t.tx_type='debit' "
         f"  AND ($2::text IS NULL OR t.user_id = $2) "
         f"  AND ($3::text IS NULL OR t.kind = $3) "
         f"  AND ($4::text IS NULL OR t.ref_id = $4) "
         f"  AND ($5::timestamptz IS NULL OR t.created_at >= $5) "
-        f"  AND NOT EXISTS (SELECT 1 FROM staging.hub_org_credit_transactions r "
+        f"  AND NOT EXISTS (SELECT 1 FROM public.hub_org_credit_transactions r "
         f"                   WHERE r.reverses_tx_id = t.id) "
         f"ORDER BY t.created_at DESC LIMIT 1",
         org_id, user_id, kind, ref_id, since,
@@ -1432,7 +1432,7 @@ async def ledger(
     """The transaction window every report reads. Uses
     idx_org_credit_tx_org_created."""
     rows = await conn.fetch(
-        f"SELECT {_LEDGER_COLS} FROM staging.hub_org_credit_transactions t "
+        f"SELECT {_LEDGER_COLS} FROM public.hub_org_credit_transactions t "
         f"WHERE t.org_id=$1::uuid "
         f"  AND ($2::timestamptz IS NULL OR t.created_at >= $2) "
         f"  AND ($3::timestamptz IS NULL OR t.created_at < $3) "
@@ -1508,7 +1508,7 @@ async def usage_summary(
         f"       t.metered_only AS metered_only, "
         f"       COALESCE(SUM(t.amount), 0)::bigint AS amount_sum, "
         f"       COUNT(*)::bigint AS row_count "
-        f"  FROM staging.hub_org_credit_transactions t "
+        f"  FROM public.hub_org_credit_transactions t "
         f" WHERE t.org_id=$1::uuid "
         f"   AND ($2::timestamptz IS NULL OR t.created_at >= $2) "
         f"   AND ($3::timestamptz IS NULL OR t.created_at < $3) "
@@ -1663,8 +1663,8 @@ _ATTRIBUTED_SQL = """
            COALESCE(o.ref_id,      t.ref_id)      AS a_ref_id,
            COALESCE(o.user_id,     t.user_id)     AS a_user_id,
            COALESCE(o.description, t.description) AS a_description
-      FROM staging.hub_org_credit_transactions t
-      LEFT JOIN staging.hub_org_credit_transactions o
+      FROM public.hub_org_credit_transactions t
+      LEFT JOIN public.hub_org_credit_transactions o
              ON o.id = t.reverses_tx_id AND o.org_id = t.org_id
      WHERE t.org_id = $1::uuid
        AND ($2::timestamptz IS NULL OR t.created_at >= $2)
@@ -1956,8 +1956,8 @@ async def usage_detail(
     limit = max(1, min(int(limit), 500))
     rows = await conn.fetch(
         f"SELECT {cols} "
-        f"  FROM staging.hub_org_credit_transactions t "
-        f"  LEFT JOIN staging.hub_org_credit_transactions o "
+        f"  FROM public.hub_org_credit_transactions t "
+        f"  LEFT JOIN public.hub_org_credit_transactions o "
         f"         ON o.id = t.reverses_tx_id AND o.org_id = t.org_id "
         f"  CROSS JOIN LATERAL (SELECT COALESCE(o.kind, t.kind)     AS a_kind, "
         f"                             COALESCE(o.ref_id, t.ref_id) AS a_ref_id) x "

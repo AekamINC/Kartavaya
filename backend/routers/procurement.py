@@ -215,7 +215,7 @@ async def _settings(pool, org_id: str) -> dict[str, Any]:
     """
     try:
         raw = await pool.fetchval(
-            "SELECT settings->'purchase_orders' FROM staging.organisations "
+            "SELECT settings->'purchase_orders' FROM public.organisations "
             "WHERE id = $1::uuid", org_id)
     except Exception:
         logger.warning("procurement: settings read failed for org %s", org_id)
@@ -311,7 +311,7 @@ async def put_settings(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "UPDATE staging.organisations "
+                "UPDATE public.organisations "
                 "SET settings = COALESCE(settings, '{}'::jsonb) "
                 "              || jsonb_build_object('purchase_orders', $2::jsonb), "
                 # WHO decided that these people approve spending above this
@@ -340,7 +340,7 @@ async def put_settings(
                         f"is read back as PREFIX-YYYY-NNNN. Nothing was saved.")
                 stored = await conn.fetchval(
                     "SELECT COALESCE(settings->'doc_prefixes', '{}'::jsonb) "
-                    "FROM staging.organisations WHERE id = $1::uuid", org_id)
+                    "FROM public.organisations WHERE id = $1::uuid", org_id)
                 merged: dict[str, Any] = {}
                 if stored:
                     try:
@@ -352,7 +352,7 @@ async def put_settings(
                 else:
                     merged.pop(PO_PREFIX_KEY, None)
                 await conn.execute(
-                    "UPDATE staging.organisations "
+                    "UPDATE public.organisations "
                     "SET settings = COALESCE(settings, '{}'::jsonb) "
                     "              || jsonb_build_object('doc_prefixes', $2::jsonb), "
                     # Same actor, second statement, same transaction: the two
@@ -369,7 +369,7 @@ async def put_settings(
 
 async def _member_ids(pool, org_id: str) -> set[str]:
     rows = await pool.fetch(
-        "SELECT user_id FROM staging.user_roles WHERE org_id = $1::uuid", org_id)
+        "SELECT user_id FROM public.user_roles WHERE org_id = $1::uuid", org_id)
     return {r["user_id"] for r in rows}
 
 
@@ -391,7 +391,7 @@ async def approver_candidates(
                COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''),
                         'Unnamed member') AS full_name,
                ur.role_code
-        FROM staging.user_roles ur
+        FROM public.user_roles ur
         JOIN public.users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
         ORDER BY 2
@@ -417,8 +417,8 @@ async def _load_po(pool, org_id: str, po_id: str) -> dict[str, Any]:
         + actor_select("po", updated=True)
         + "       v.name AS vendor_name, v.gstin AS vendor_gstin, "
         "       v.email AS vendor_email, v.phone AS vendor_phone "
-        "FROM staging.ganit_purchase_orders po "
-        "JOIN staging.ganit_vendors v ON v.id = po.vendor_id "
+        "FROM public.ganit_purchase_orders po "
+        "JOIN public.ganit_vendors v ON v.id = po.vendor_id "
         + actor_joins("po", updated=True)
         + "WHERE po.id = $1::uuid AND po.org_id = $2::uuid AND po.is_active",
         po_id, org_id)
@@ -437,10 +437,10 @@ async def _lines_with_quantities(pool, org_id: str, po_id: str) -> list[dict[str
     """
     rows = await pool.fetch("""
         SELECT l.*,
-               COALESCE((SELECT SUM(r.qty) FROM staging.ganit_po_receipts r
+               COALESCE((SELECT SUM(r.qty) FROM public.ganit_po_receipts r
                           WHERE r.po_line_id = l.id AND r.org_id = l.org_id), 0)
                    AS qty_received
-        FROM staging.ganit_po_lines l
+        FROM public.ganit_po_lines l
         WHERE l.po_id = $1::uuid AND l.org_id = $2::uuid AND l.is_active
         ORDER BY l.line_no
     """, po_id, org_id)
@@ -459,7 +459,7 @@ async def _linked_bills(pool, org_id: str, po_id: str) -> list[dict[str, Any]]:
     rows = await pool.fetch("""
         SELECT b.id, b.bill_number, b.internal_ref, b.bill_date, b.acceptance_date,
                b.total, b.amount_paid, b.status, b.line_items
-        FROM staging.ganit_vendor_bills b
+        FROM public.ganit_vendor_bills b
         WHERE b.po_id = $1::uuid AND b.org_id = $2::uuid AND b.is_active
         ORDER BY b.bill_date
     """, po_id, org_id)
@@ -515,8 +515,8 @@ async def list_purchase_orders(
         # since before 201 — it was simply never selected.
         + actor_select("po", updated=True)
         + "       COUNT(*) OVER() AS _total "
-        "FROM staging.ganit_purchase_orders po "
-        "JOIN staging.ganit_vendors v ON v.id = po.vendor_id "
+        "FROM public.ganit_purchase_orders po "
+        "JOIN public.ganit_vendors v ON v.id = po.vendor_id "
         + actor_joins("po", updated=True)
         + "WHERE po.org_id = $1::uuid AND po.is_active"
     )
@@ -562,7 +562,7 @@ def _as_date(value: str, field: str) -> date | None:
 
 async def _vendor(pool, org_id: str, vendor_id: str) -> dict[str, Any]:
     row = await pool.fetchrow(
-        "SELECT id, name, gstin FROM staging.ganit_vendors "
+        "SELECT id, name, gstin FROM public.ganit_vendors "
         "WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
         vendor_id, org_id)
     if not row:
@@ -572,7 +572,7 @@ async def _vendor(pool, org_id: str, vendor_id: str) -> dict[str, Any]:
 
 async def _org_state(pool, org_id: str) -> str | None:
     return await pool.fetchval(
-        "SELECT state_code FROM staging.organisations WHERE id = $1::uuid", org_id)
+        "SELECT state_code FROM public.organisations WHERE id = $1::uuid", org_id)
 
 
 async def _validate_products(pool, org_id: str, lines: list[dict[str, Any]]) -> None:
@@ -591,7 +591,7 @@ async def _validate_products(pool, org_id: str, lines: list[dict[str, Any]]) -> 
         return
     try:
         found = await pool.fetch(
-            "SELECT id::text AS id FROM staging.ganit_products "
+            "SELECT id::text AS id FROM public.ganit_products "
             "WHERE org_id = $1::uuid AND id = ANY($2::uuid[])",
             org_id, list(ids))
     except Exception:
@@ -634,7 +634,7 @@ async def create_purchase_order(
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow("""
-                INSERT INTO staging.ganit_purchase_orders
+                INSERT INTO public.ganit_purchase_orders
                     (org_id, vendor_id, status, po_date, expected_date,
                      department, category, currency, place_of_supply, is_igst,
                      subtotal, cgst, sgst, igst, total, terms, notes,
@@ -668,11 +668,11 @@ async def _write_lines(conn, org_id: str, po_id: str,
     so "what arrived against the line we removed" still has an answer.
     """
     await conn.execute(
-        "UPDATE staging.ganit_po_lines SET is_active = FALSE "
+        "UPDATE public.ganit_po_lines SET is_active = FALSE "
         "WHERE po_id = $1::uuid AND org_id = $2::uuid", po_id, org_id)
     for line in lines:
         await conn.execute("""
-            INSERT INTO staging.ganit_po_lines
+            INSERT INTO public.ganit_po_lines
                 (org_id, po_id, line_no, product_id, description, hsn_code,
                  sac_code, qty_ordered, unit, rate, gst_rate, discount_pct,
                  line_total, gst_amount)
@@ -702,7 +702,7 @@ async def get_purchase_order(
         SELECT r.id, r.po_line_id, r.qty, r.received_on, r.note, r.created_at,
                COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''),
                         'A member') AS received_by_name
-        FROM staging.ganit_po_receipts r
+        FROM public.ganit_po_receipts r
         LEFT JOIN public.users u ON u.user_id = r.received_by
         WHERE r.po_id = $1::uuid AND r.org_id = $2::uuid
         ORDER BY r.received_on, r.created_at
@@ -712,7 +712,7 @@ async def get_purchase_order(
         SELECT rv.revision, rv.changed_at, rv.diff, rv.reason, rv.re_approved,
                COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''),
                         'A member') AS changed_by_name
-        FROM staging.ganit_po_revisions rv
+        FROM public.ganit_po_revisions rv
         LEFT JOIN public.users u ON u.user_id = rv.changed_by
         WHERE rv.po_id = $1::uuid AND rv.org_id = $2::uuid
         ORDER BY rv.revision DESC
@@ -722,7 +722,7 @@ async def get_purchase_order(
         SELECT a.revision, a.decision, a.decided_at, a.note, a.approver_id,
                COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''),
                         'A member') AS approver_name
-        FROM staging.ganit_po_approvals a
+        FROM public.ganit_po_approvals a
         LEFT JOIN public.users u ON u.user_id = a.approver_id
         WHERE a.po_id = $1::uuid AND a.org_id = $2::uuid
         ORDER BY a.decided_at
@@ -892,7 +892,7 @@ async def update_purchase_order(
         async with conn.transaction():
             if not editable:
                 await conn.execute("""
-                    INSERT INTO staging.ganit_po_revisions
+                    INSERT INTO public.ganit_po_revisions
                         (org_id, po_id, revision, changed_by, diff, snapshot,
                          reason, re_approved)
                     VALUES ($1::uuid, $2::uuid, $3::int, $4, $5::jsonb,
@@ -904,7 +904,7 @@ async def update_purchase_order(
                     reason, re_approve)
 
             await conn.execute("""
-                UPDATE staging.ganit_purchase_orders
+                UPDATE public.ganit_purchase_orders
                    SET vendor_id = COALESCE(NULLIF($3,'')::uuid, vendor_id),
                        po_date = $4::date,
                        expected_date = $5::date,
@@ -1030,7 +1030,7 @@ async def delete_purchase_order(
         # transition after which nothing else in this module will ever touch the
         # row — so if this write does not say who discarded the order, nothing
         # ever will.
-        "UPDATE staging.ganit_purchase_orders SET is_active = FALSE, "
+        "UPDATE public.ganit_purchase_orders SET is_active = FALSE, "
         "updated_at = now(), updated_by = $3 "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         str(po_id), org_id, user["user_id"])
@@ -1072,7 +1072,7 @@ async def submit_purchase_order(
         return await _issue(pool, org_id, str(po_id), user, po)
 
     await pool.execute("""
-        UPDATE staging.ganit_purchase_orders
+        UPDATE public.ganit_purchase_orders
            SET status = 'awaiting_approval', approval_required = TRUE,
                approvers_required = $3::int, approval_rule = $4::jsonb,
                updated_at = now(),
@@ -1110,7 +1110,7 @@ async def _issue(pool, org_id: str, po_id: str, user, po: dict[str, Any]) -> dic
         pool, org_id, await po_prefix(pool, org_id))
     try:
         await pool.execute("""
-            UPDATE staging.ganit_purchase_orders
+            UPDATE public.ganit_purchase_orders
                SET status = 'issued', po_number = $3, issued_at = now(),
                    updated_at = now(),
                    -- Every caller of `_issue` is a person: `submit` with no rule
@@ -1154,7 +1154,7 @@ async def issue_purchase_order(
     rule = _stored_rule(po)
     if po["status"] == "awaiting_approval":
         approvals = await pool.fetch(
-            "SELECT approver_id, decision FROM staging.ganit_po_approvals "
+            "SELECT approver_id, decision FROM public.ganit_po_approvals "
             "WHERE po_id = $1::uuid AND org_id = $2::uuid AND revision = $3::int",
             str(po_id), org_id, po["revision"])
         if not approval_satisfied(rule, [dict(a) for a in approvals]):
@@ -1190,8 +1190,8 @@ async def approval_queue(
                po.department, po.category, po.po_date, po.expected_date,
                po.created_by, po.approval_rule, po.approvers_required,
                v.name AS vendor_name
-        FROM staging.ganit_purchase_orders po
-        JOIN staging.ganit_vendors v ON v.id = po.vendor_id
+        FROM public.ganit_purchase_orders po
+        JOIN public.ganit_vendors v ON v.id = po.vendor_id
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = 'awaiting_approval'
         ORDER BY po.updated_at
@@ -1203,7 +1203,7 @@ async def approval_queue(
         po = dict(r)
         rule = _stored_rule(po)
         decided = await pool.fetch(
-            "SELECT approver_id FROM staging.ganit_po_approvals "
+            "SELECT approver_id FROM public.ganit_po_approvals "
             "WHERE po_id = $1::uuid AND org_id = $2::uuid AND revision = $3::int",
             str(po["id"]), org_id, po["revision"])
         ok, why = may_approve(settings, rule, user["user_id"], po.get("created_by"),
@@ -1236,7 +1236,7 @@ async def _decide(pool, org_id: str, po_id: str, user, decision: str,
     rule = _stored_rule(po)
     settings = await _settings(pool, org_id)
     decided = await pool.fetch(
-        "SELECT approver_id, decision FROM staging.ganit_po_approvals "
+        "SELECT approver_id, decision FROM public.ganit_po_approvals "
         "WHERE po_id = $1::uuid AND org_id = $2::uuid AND revision = $3::int",
         po_id, org_id, po["revision"])
     ok, why = may_approve(settings, rule, user["user_id"], po.get("created_by"),
@@ -1247,7 +1247,7 @@ async def _decide(pool, org_id: str, po_id: str, user, decision: str,
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("""
-                INSERT INTO staging.ganit_po_approvals
+                INSERT INTO public.ganit_po_approvals
                     (org_id, po_id, revision, approver_id, decision, note)
                 VALUES ($1::uuid, $2::uuid, $3::int, $4, $5, NULLIF($6,''))
                 ON CONFLICT (po_id, revision, approver_id) DO NOTHING
@@ -1265,7 +1265,7 @@ async def _decide(pool, org_id: str, po_id: str, user, decision: str,
                     # 3"; this says "the last hand on this record was X's", which
                     # is what the list screen reads and what stays true after the
                     # approvals are archived.
-                    "UPDATE staging.ganit_purchase_orders SET status = 'rejected', "
+                    "UPDATE public.ganit_purchase_orders SET status = 'rejected', "
                     "updated_at = now(), updated_by = $3 "
                     "WHERE id = $1::uuid AND org_id = $2::uuid",
                     po_id, org_id, user["user_id"])
@@ -1274,7 +1274,7 @@ async def _decide(pool, org_id: str, po_id: str, user, decision: str,
         return {"data": await _load_po(pool, org_id, po_id), "status": "rejected"}
 
     approvals = await pool.fetch(
-        "SELECT approver_id, decision FROM staging.ganit_po_approvals "
+        "SELECT approver_id, decision FROM public.ganit_po_approvals "
         "WHERE po_id = $1::uuid AND org_id = $2::uuid AND revision = $3::int",
         po_id, org_id, po["revision"])
     if approval_satisfied(rule, [dict(a) for a in approvals]):
@@ -1363,7 +1363,7 @@ async def record_receipt(
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow("""
-                INSERT INTO staging.ganit_po_receipts
+                INSERT INTO public.ganit_po_receipts
                     (org_id, po_id, po_line_id, qty, received_on, received_by, note)
                 VALUES ($1::uuid, $2::uuid, $3::uuid, $4::numeric, $5::date,
                         $6, NULLIF($7,''))
@@ -1383,7 +1383,7 @@ async def record_receipt(
                 # author of the change, not a bystander to somebody else's. The
                 # bill sweep twelve lines below is the opposite case and is
                 # deliberately left unstamped; see the comment there.
-                "UPDATE staging.ganit_purchase_orders SET status = $3, "
+                "UPDATE public.ganit_purchase_orders SET status = $3, "
                 "updated_at = now(), updated_by = $4 "
                 "WHERE id = $1::uuid AND org_id = $2::uuid",
                 str(po_id), org_id, new_status, user["user_id"])
@@ -1392,7 +1392,7 @@ async def record_receipt(
             # statutory clock runs from — not this receipt, which may be a
             # later delivery being entered first.
             earliest = await conn.fetchval(
-                "SELECT MIN(received_on) FROM staging.ganit_po_receipts "
+                "SELECT MIN(received_on) FROM public.ganit_po_receipts "
                 "WHERE po_id = $1::uuid AND org_id = $2::uuid AND qty > 0",
                 str(po_id), org_id)
             stamped = 0
@@ -1416,7 +1416,7 @@ async def record_receipt(
                 # column and is true no matter who writes the row.
                 stamped = await conn.fetchval("""
                     WITH touched AS (
-                        UPDATE staging.ganit_vendor_bills
+                        UPDATE public.ganit_vendor_bills
                            SET acceptance_date = $3::date
                          WHERE po_id = $1::uuid AND org_id = $2::uuid
                            AND is_active AND acceptance_date IS NULL
@@ -1471,7 +1471,7 @@ async def close_purchase_order(
             "something a report can group by. Nothing was closed.")
 
     await pool.execute("""
-        UPDATE staging.ganit_purchase_orders
+        UPDATE public.ganit_purchase_orders
            SET status = 'closed', closed_at = now(), closed_by = $3,
                closed_reason = $4, updated_at = now(),
                -- Same person as `closed_by` on this path, and written anyway
@@ -1530,7 +1530,7 @@ async def link_bill(
     """
     pool = await get_pool()
     bill = await pool.fetchrow(
-        "SELECT id, vendor_id, po_id FROM staging.ganit_vendor_bills "
+        "SELECT id, vendor_id, po_id FROM public.ganit_vendor_bills "
         "WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
         str(bill_id), org_id)
     if not bill:
@@ -1550,7 +1550,7 @@ async def link_bill(
             # Unlinking changes what every three-way match on both documents
             # says, which makes "who unlinked it" the first question asked when
             # the match stops agreeing with the file.
-            "UPDATE staging.ganit_vendor_bills SET po_id = NULL, updated_by = $3 "
+            "UPDATE public.ganit_vendor_bills SET po_id = NULL, updated_by = $3 "
             "WHERE id = $1::uuid AND org_id = $2::uuid",
             str(bill_id), org_id, user["user_id"])
         return {"status": "unlinked"}
@@ -1570,7 +1570,7 @@ async def link_bill(
     await pool.execute(
         # `updated_by` only — the trigger owns `updated_at`. See the unlink
         # branch above for the whole argument.
-        "UPDATE staging.ganit_vendor_bills SET po_id = $3::uuid, updated_by = $4 "
+        "UPDATE public.ganit_vendor_bills SET po_id = $3::uuid, updated_by = $4 "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         str(bill_id), org_id, target, user["user_id"])
     return {"status": "linked", "po_number": po["po_number"]}
@@ -1600,7 +1600,7 @@ async def committed_spend(
                    AS department,
                count(*) AS orders,
                COALESCE(SUM(po.total), 0) AS committed
-        FROM staging.ganit_purchase_orders po
+        FROM public.ganit_purchase_orders po
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = ANY($2::text[])
         GROUP BY 1 ORDER BY 3 DESC
@@ -1641,8 +1641,8 @@ async def received_not_invoiced(
     orders = await pool.fetch("""
         SELECT po.id, po.po_number, po.po_date, po.total, po.currency,
                v.name AS vendor_name
-        FROM staging.ganit_purchase_orders po
-        JOIN staging.ganit_vendors v ON v.id = po.vendor_id
+        FROM public.ganit_purchase_orders po
+        JOIN public.ganit_vendors v ON v.id = po.vendor_id
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = ANY($2::text[])
         ORDER BY po.po_date
@@ -1696,8 +1696,8 @@ async def late_suppliers(
                v.name AS vendor_name,
                NULLIF(btrim(v.phone), '') AS vendor_phone,
                NULLIF(btrim(v.email), '') AS vendor_email
-        FROM staging.ganit_purchase_orders po
-        JOIN staging.ganit_vendors v ON v.id = po.vendor_id
+        FROM public.ganit_purchase_orders po
+        JOIN public.ganit_vendors v ON v.id = po.vendor_id
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = ANY($2::text[])
           AND po.expected_date IS NOT NULL
@@ -1754,17 +1754,17 @@ async def tds_194q(
 
     rows = await pool.fetch("""
         SELECT v.id, v.name,
-               COALESCE((SELECT SUM(b.total) FROM staging.ganit_vendor_bills b
+               COALESCE((SELECT SUM(b.total) FROM public.ganit_vendor_bills b
                           WHERE b.vendor_id = v.id AND b.org_id = v.org_id
                             AND b.is_active AND b.bill_date >= $2::date), 0)
                    AS purchased_ytd,
                COALESCE((SELECT SUM(po.total)
-                           FROM staging.ganit_purchase_orders po
+                           FROM public.ganit_purchase_orders po
                           WHERE po.vendor_id = v.id AND po.org_id = v.org_id
                             AND po.is_active
                             AND po.status = ANY($3::text[])), 0)
                    AS on_order
-        FROM staging.ganit_vendors v
+        FROM public.ganit_vendors v
         WHERE v.org_id = $1::uuid AND v.is_active
     """, org_id, start, list(OPEN_STATUSES))
 
@@ -1814,7 +1814,7 @@ async def budget_report(
         SELECT COALESCE(NULLIF(btrim(po.department), ''), '(no department)')
                    AS department,
                COALESCE(SUM(po.total), 0) AS committed
-        FROM staging.ganit_purchase_orders po
+        FROM public.ganit_purchase_orders po
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = ANY($2::text[])
         GROUP BY 1

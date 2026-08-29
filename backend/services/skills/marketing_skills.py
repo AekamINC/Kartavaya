@@ -85,8 +85,8 @@ async def process_sequence_steps(pool) -> dict:
     due = await pool.fetch(
         """
         SELECT e.id
-        FROM staging.prachar_sequence_enrollments e
-        JOIN staging.prachar_sequences s ON s.id = e.sequence_id
+        FROM public.prachar_sequence_enrollments e
+        JOIN public.prachar_sequences s ON s.id = e.sequence_id
         WHERE e.status = 'active'
           AND s.status = 'active'
           AND e.next_step_at IS NOT NULL
@@ -145,7 +145,7 @@ async def process_scheduled_campaigns(pool) -> dict:
     """
     due = await pool.fetch(
         """
-        SELECT id FROM staging.prachar_campaigns
+        SELECT id FROM public.prachar_campaigns
         WHERE status = 'scheduled'
           AND is_active = TRUE
           AND scheduled_at IS NOT NULL

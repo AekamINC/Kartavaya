@@ -150,8 +150,8 @@ async def _support_sessions(pool, user_id: str) -> list[dict]:
             # it emits no `$n`, so `$1` below is untouched.
             + display_name("u")
             + " AS approved_by_name "
-            "FROM staging.platform_support_sessions s "
-            "JOIN staging.organisations o ON o.id = s.org_id "
+            "FROM public.platform_support_sessions s "
+            "JOIN public.organisations o ON o.id = s.org_id "
             "LEFT JOIN users u ON u.user_id = s.approved_by "
             "WHERE s.requested_by = $1 "
             "  AND s.approved_at IS NOT NULL "
@@ -196,8 +196,8 @@ async def list_memberships(user=Depends(require_user)):
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT o.id, o.name, o.logo_url, ur.role_code, ur.granted_at "
-        "FROM staging.user_roles ur "
-        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "FROM public.user_roles ur "
+        "JOIN public.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id = $1 AND ur.org_id IS NOT NULL "
         "  AND ur.role_code = ANY($2::text[]) "
         "  AND o.is_active = TRUE "

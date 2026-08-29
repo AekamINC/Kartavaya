@@ -216,10 +216,10 @@ async def check_amendments_before_filing(
                         NULLIF(btrim(ct.company), ''),
                         NULLIF(btrim(ct.name), ''),
                         '(customer not recorded)') AS customer
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_clients cl
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_clients cl
                ON cl.id = i.client_id AND cl.org_id = i.org_id
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = i.contact_id AND ct.org_id = i.org_id
         WHERE i.org_id = $1::uuid
           AND i.is_active
@@ -324,7 +324,7 @@ async def brief_lut_expiry(
     exports = await pool.fetch(
         """
         SELECT i.id, i.invoice_number, i.invoice_date, i.total, i.currency
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid
           AND i.is_active
           AND COALESCE(i.is_export, FALSE)
@@ -434,7 +434,7 @@ async def brief_annual_return_books(
           COALESCE(SUM(total) FILTER (WHERE invoice_type = 'tax_invoice'
                              AND COALESCE(is_export, FALSE)), 0)              AS export_value,
           count(*) FILTER (WHERE doc_status = 'draft')                        AS n_draft
-        FROM staging.ganit_invoices
+        FROM public.ganit_invoices
         WHERE org_id = $1::uuid
           AND is_active
           AND invoice_date >= $2::date
@@ -583,7 +583,7 @@ async def check_thresholds_approaching(
           COALESCE(SUM(total) FILTER (WHERE invoice_type = 'credit_note'), 0)  AS credits,
           count(*) FILTER (WHERE invoice_type = 'tax_invoice')                 AS n,
           min(invoice_date) AS first_seen
-        FROM staging.ganit_invoices
+        FROM public.ganit_invoices
         WHERE org_id = $1::uuid
           AND is_active
           AND invoice_date > $2::date
@@ -702,7 +702,7 @@ async def brief_advance_tax_reserve(
     receipts = await pool.fetchval(
         """
         SELECT COALESCE(SUM(p.amount), 0)
-        FROM staging.ganit_payments p
+        FROM public.ganit_payments p
         WHERE p.org_id = $1::uuid
           AND p.payment_date >= $2::date
           AND p.payment_date <= $3::date
@@ -712,7 +712,7 @@ async def brief_advance_tax_reserve(
     spend = await pool.fetchval(
         """
         SELECT COALESCE(SUM(COALESCE(e.total, e.amount)), 0)
-        FROM staging.ganit_expenses e
+        FROM public.ganit_expenses e
         WHERE e.org_id = $1::uuid
           AND e.is_active
           AND e.expense_date >= $2::date

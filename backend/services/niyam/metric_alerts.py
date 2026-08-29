@@ -76,7 +76,7 @@ async def run_alerts(pool, *, now) -> dict:
     async with pool.acquire() as conn:
         alerts = await conn.fetch(
             "SELECT id, org_id, metric, operator, threshold, window_days "
-            "  FROM staging.analytics_alerts WHERE is_active "
+            "  FROM public.analytics_alerts WHERE is_active "
             " ORDER BY created_at LIMIT $1::int", PER_TICK)
 
     checked = breached = emitted = deduped = skipped = 0

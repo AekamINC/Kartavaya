@@ -43,19 +43,19 @@ async def triage_new_leads(pool, org_id: str, days: int = 30, limit: int = 200) 
                COALESCE(dl.pipeline_value, 0)      AS pipeline_value,
                COALESCE(ac.n_act, 0)               AS activity_count,
                COALESCE(fu.n_open_fu, 0)           AS open_follow_ups
-        FROM staging.graha_contacts c
+        FROM public.graha_contacts c
         LEFT JOIN LATERAL (
             SELECT count(*) AS n_deals, COALESCE(sum(d.value),0) AS pipeline_value
-            FROM staging.graha_deals d
+            FROM public.graha_deals d
             WHERE d.contact_id = c.id AND d.org_id = c.org_id
               AND d.is_active = TRUE AND d.won_at IS NULL AND d.lost_at IS NULL
         ) dl ON TRUE
         LEFT JOIN LATERAL (
-            SELECT count(*) AS n_act FROM staging.graha_activities a
+            SELECT count(*) AS n_act FROM public.graha_activities a
             WHERE a.contact_id = c.id AND a.org_id = c.org_id
         ) ac ON TRUE
         LEFT JOIN LATERAL (
-            SELECT count(*) AS n_open_fu FROM staging.graha_follow_ups f
+            SELECT count(*) AS n_open_fu FROM public.graha_follow_ups f
             WHERE f.contact_id = c.id AND f.org_id = c.org_id
               AND f.is_completed IS NOT TRUE
         ) fu ON TRUE

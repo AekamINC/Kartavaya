@@ -40,7 +40,7 @@ async def email_usage(pool, org_id: str) -> dict:
             WHERE ts >= date_trunc('month', NOW() AT TIME ZONE 'Asia/Kolkata')
                          AT TIME ZONE 'Asia/Kolkata'
           ) AS monthly
-        FROM staging.outbound_log
+        FROM public.outbound_log
         WHERE org_id = $1::uuid
           AND channel = 'email'
           AND status = 'sent'
@@ -57,7 +57,7 @@ async def check_email_cap(pool, org_id: str) -> CapVerdict:
     try:
         org = await pool.fetchrow(
             "SELECT email_cap_daily, email_cap_monthly, email_overage_rate "
-            "FROM staging.organisations WHERE id = $1::uuid",
+            "FROM public.organisations WHERE id = $1::uuid",
             org_id,
         )
         if not org:
@@ -116,7 +116,7 @@ async def record_alert(pool, org_id: str, cap_type: str, period_key: str) -> boo
     alert for this period (i.e. the INSERT succeeded, not a conflict)."""
     try:
         result = await pool.execute(
-            "INSERT INTO staging.email_cap_alerts (org_id, cap_type, period_key) "
+            "INSERT INTO public.email_cap_alerts (org_id, cap_type, period_key) "
             "VALUES ($1::uuid, $2, $3) "
             "ON CONFLICT (org_id, cap_type, period_key) DO NOTHING",
             org_id, cap_type, period_key,

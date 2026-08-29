@@ -296,7 +296,7 @@ async def brief_ims_expectations(
                count(*) FILTER (
                    WHERE COALESCE(NULLIF(btrim(b.currency), ''), 'INR') <> 'INR'
                )                                             AS non_inr_bills
-        FROM staging.ganit_vendor_bills b
+        FROM public.ganit_vendor_bills b
         -- LEFT, and carrying `v.org_id = b.org_id`. LEFT because a bill whose
         -- vendor row was soft-deleted still sat on the books that month and
         -- still has tax on it; an inner join would understate the headline. The
@@ -304,7 +304,7 @@ async def brief_ims_expectations(
         -- surface another practice's vendor name and GSTIN if vendor_id is ever
         -- wrong — and the vendor's GSTIN is the exact field this handler splits
         -- on, so a cross-tenant read here would move a bill into the wrong half.
-        LEFT JOIN staging.ganit_vendors v
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE
@@ -333,8 +333,8 @@ async def brief_ims_expectations(
                COALESCE(b.is_reverse_charge, FALSE)  AS is_reverse_charge,
                COALESCE(NULLIF(btrim(b.currency), ''), 'INR') AS currency,
                b.status
-        FROM staging.ganit_vendor_bills b
-        LEFT JOIN staging.ganit_vendors v
+        FROM public.ganit_vendor_bills b
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE
@@ -544,8 +544,8 @@ async def brief_itc_at_risk_of_lapse(
                count(*) FILTER (
                    WHERE COALESCE(NULLIF(btrim(v.gstin), ''), NULL) IS NULL
                )                                          AS bills_without_vendor_gstin
-        FROM staging.ganit_vendor_bills b
-        LEFT JOIN staging.ganit_vendors v
+        FROM public.ganit_vendor_bills b
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE
@@ -575,8 +575,8 @@ async def brief_itc_at_risk_of_lapse(
                COALESCE(b.is_reverse_charge, FALSE) AS is_reverse_charge,
                COALESCE(NULLIF(btrim(b.currency), ''), 'INR') AS currency,
                b.status
-        FROM staging.ganit_vendor_bills b
-        LEFT JOIN staging.ganit_vendors v
+        FROM public.ganit_vendor_bills b
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE
@@ -877,7 +877,7 @@ async def check_dead_gst_slabs(
                NULLIF(btrim(p.hsn_code), '') AS hsn_code,
                NULLIF(btrim(p.sac_code), '') AS sac_code,
                p.is_active
-        FROM staging.ganit_products p
+        FROM public.ganit_products p
         WHERE p.org_id = $1::uuid
           AND p.gst_rate IS NOT NULL
           AND NOT (p.gst_rate = ANY($2::numeric[]))
@@ -888,7 +888,7 @@ async def check_dead_gst_slabs(
     )
     product_total = await pool.fetchval(
         """
-        SELECT count(*) FROM staging.ganit_products p
+        SELECT count(*) FROM public.ganit_products p
         WHERE p.org_id = $1::uuid
           AND p.gst_rate IS NOT NULL
           AND NOT (p.gst_rate = ANY($2::numeric[]))
@@ -921,7 +921,7 @@ async def check_dead_gst_slabs(
                    li->>'description'                 AS description,
                    (li->>'gst_rate')::numeric         AS rate,
                    NULLIF(btrim(li->>'hsn_code'), '') AS hsn_code
-            FROM staging.ganit_invoices i
+            FROM public.ganit_invoices i
             CROSS JOIN LATERAL jsonb_array_elements(
                 CASE WHEN jsonb_typeof(i.line_items) = 'array'
                      THEN i.line_items ELSE '[]'::jsonb END) li
@@ -938,7 +938,7 @@ async def check_dead_gst_slabs(
                    li->>'description',
                    (li->>'gst_rate')::numeric,
                    NULLIF(btrim(li->>'hsn_code'), '')
-            FROM staging.ganit_vendor_bills b
+            FROM public.ganit_vendor_bills b
             CROSS JOIN LATERAL jsonb_array_elements(
                 CASE WHEN jsonb_typeof(b.line_items) = 'array'
                      THEN b.line_items ELSE '[]'::jsonb END) li
@@ -1000,7 +1000,7 @@ async def check_dead_gst_slabs(
             SELECT lower(btrim(p.name))       AS pname,
                    min(p.gst_rate)            AS master_rate,
                    count(DISTINCT p.gst_rate) AS n_rates
-            FROM staging.ganit_products p
+            FROM public.ganit_products p
             WHERE p.org_id = $1::uuid
               AND p.is_active = TRUE
               AND p.gst_rate IS NOT NULL
@@ -1012,7 +1012,7 @@ async def check_dead_gst_slabs(
                    li->>'description'                 AS description,
                    lower(btrim(li->>'description'))   AS lname,
                    (li->>'gst_rate')::numeric         AS line_rate
-            FROM staging.ganit_invoices i
+            FROM public.ganit_invoices i
             CROSS JOIN LATERAL jsonb_array_elements(
                 CASE WHEN jsonb_typeof(i.line_items) = 'array'
                      THEN i.line_items ELSE '[]'::jsonb END) li
@@ -1087,7 +1087,7 @@ async def check_dead_gst_slabs(
             WITH master AS (
                 SELECT lower(btrim(p.name))       AS pname,
                        count(DISTINCT p.gst_rate) AS n_rates
-                FROM staging.ganit_products p
+                FROM public.ganit_products p
                 WHERE p.org_id = $1::uuid
                   AND p.is_active = TRUE
                   AND p.gst_rate IS NOT NULL
@@ -1095,7 +1095,7 @@ async def check_dead_gst_slabs(
             ),
             lines AS (
                 SELECT lower(btrim(li->>'description')) AS lname
-                FROM staging.ganit_invoices i
+                FROM public.ganit_invoices i
                 CROSS JOIN LATERAL jsonb_array_elements(
                     CASE WHEN jsonb_typeof(i.line_items) = 'array'
                          THEN i.line_items ELSE '[]'::jsonb END) li
@@ -1136,7 +1136,7 @@ async def check_dead_gst_slabs(
     out = {
         "as_at": as_at_date.isoformat(),
         "live_slabs": live_set,
-        "live_slabs_source": "staging.statute_calendar via services/statute.py",
+        "live_slabs_source": "public.statute_calendar via services/statute.py",
         "findings": findings,
         "counts": {
             "products_on_a_dead_slab": int(product_total),

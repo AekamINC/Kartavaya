@@ -405,7 +405,7 @@ async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_
         return
 
     org = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address FROM staging.organisations WHERE id=$1::uuid",
+        "SELECT name, gstin, pan, billing_address FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     org_d = dict(org) if org else {}
@@ -418,7 +418,7 @@ async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_
     contact = None
     if contact_id:
         contact = await pool.fetchrow(
-            "SELECT name, company, gstin FROM staging.graha_contacts "
+            "SELECT name, company, gstin FROM public.graha_contacts "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(contact_id), org_id,
         )
@@ -452,7 +452,7 @@ async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_
     # before, and a document that names neither still raises the same gap.
     if not contact and invoice.get("client_id"):
         client = await pool.fetchrow(
-            "SELECT name, gstin FROM staging.graha_clients "
+            "SELECT name, gstin FROM public.graha_clients "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(invoice["client_id"]), org_id,
         )
@@ -501,7 +501,7 @@ async def _doc_prefix(pool, org_id: str, invoice_type: str) -> str:
     fallback = DEFAULT_DOC_PREFIXES.get(invoice_type, "INV")
     try:
         raw = await pool.fetchval(
-            "SELECT settings->'doc_prefixes'->>$2 FROM staging.organisations "
+            "SELECT settings->'doc_prefixes'->>$2 FROM public.organisations "
             "WHERE id = $1::uuid",
             org_id, invoice_type,
         )
@@ -640,8 +640,8 @@ async def list_invoices(
         # the question a disputed invoice actually raises.
         + actor_select("i", updated=True)
         + "COUNT(*) OVER() AS _total "
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
         # LEFT and never INNER: an invoice whose salesperson has since left
         # must still appear on the register. An inner join here would make
         # rows VANISH when somebody leaves the firm — data loss that looks
@@ -755,7 +755,7 @@ async def create_invoice(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.ganit_invoices "
+                "INSERT INTO public.ganit_invoices "
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
                 " balance_due, notes, terms, created_by, doc_status, client_id, "
@@ -863,7 +863,7 @@ async def update_invoice(
         # cost — see `_compute_invoice_costed`.
         "SELECT invoice_number, doc_status, total, balance_due, is_active, "
         "       sent_at, viewed_at, line_items "
-        "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
+        "FROM public.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
         str(invoice_id), org_id,
     )
     if not existing or not existing["is_active"]:
@@ -947,7 +947,7 @@ async def update_invoice(
         _sp_params = [body.salesperson_id or ""]
 
     row = await pool.fetchrow(
-        "UPDATE staging.ganit_invoices SET "
+        "UPDATE public.ganit_invoices SET "
         " contact_id=NULLIF($1,'')::uuid, invoice_date=$2::date, due_date=$3::date,"
         " place_of_supply=$4, is_igst=$5, is_export=$6, currency=$7,"
         " line_items=$8, subtotal=$9, cgst=$10, sgst=$11, igst=$12,"
@@ -998,8 +998,8 @@ async def get_invoice(
         "CASE WHEN i.salesperson_id IS NULL THEN NULL ELSE "
         + display_name("sp")
         + " END as salesperson_name "
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
         # ⚠ `public.users`, SCHEMA-QUALIFIED. This join said plain `users` and
         # resolved correctly only through `search_path`'s second entry. Measured
         # 2026-08-29: `users` exists in TWO schemas — `public` (the product's)
@@ -1017,7 +1017,7 @@ async def get_invoice(
 
     payments = await pool.fetch(
         "SELECT id, amount, payment_date, payment_method, reference, notes, created_at "
-        "FROM staging.ganit_payments WHERE invoice_id=$1::uuid ORDER BY payment_date",
+        "FROM public.ganit_payments WHERE invoice_id=$1::uuid ORDER BY payment_date",
         str(invoice_id),
     )
 
@@ -1036,7 +1036,7 @@ async def get_invoice(
         "gstin": inv.get("contact_gstin"),
     }
     org = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address FROM staging.organisations WHERE id=$1::uuid",
+        "SELECT name, gstin, pan, billing_address FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     org_d = dict(org) if org else {}
@@ -1086,8 +1086,8 @@ async def download_invoice_pdf(
     row = await pool.fetchrow(
         "SELECT i.*, c.name as contact_name, c.email as contact_email, c.company as contact_company, "
         "c.gstin as contact_gstin, c.billing_address as contact_billing_address "
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.id=$1::uuid AND i.org_id=$2::uuid",
         str(invoice_id), org_id,
     )
@@ -1116,7 +1116,7 @@ async def download_invoice_pdf(
     org = await pool.fetchrow(
         "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
         "bank_details, invoice_note, authorized_signatory_name, "
-        "authorized_signatory_designation FROM staging.organisations WHERE id=$1::uuid",
+        "authorized_signatory_designation FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
 
@@ -1225,9 +1225,9 @@ async def email_invoice(
         "       i.total, i.balance_due, i.doc_status, i.payment_status, i.pay_token, "
         "       c.name AS contact_name, c.email AS contact_email, "
         "       o.name AS org_name "
-        "  FROM staging.ganit_invoices i "
-        "  LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
-        "  JOIN staging.organisations o ON o.id = i.org_id "
+        "  FROM public.ganit_invoices i "
+        "  LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
+        "  JOIN public.organisations o ON o.id = i.org_id "
         " WHERE i.id=$1::uuid AND i.org_id=$2::uuid",
         str(invoice_id), org_id,
     )
@@ -1283,7 +1283,7 @@ async def cancel_invoice(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "UPDATE staging.ganit_invoices SET payment_status='cancelled', "
+                "UPDATE public.ganit_invoices SET payment_status='cancelled', "
                 "cancelled_at=NOW(), updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND payment_status NOT IN ('paid','cancelled') "
                 "RETURNING *",
@@ -1313,7 +1313,7 @@ async def record_payment(
         # can be made. Neither was read before, and both were reachable: the
         # unpaid list returns credit notes, so the pay screen offered one.
         "SELECT total, amount_paid, payment_status, invoice_type, doc_status "
-        "  FROM staging.ganit_invoices "
+        "  FROM public.ganit_invoices "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(invoice_id), org_id,
     )
@@ -1370,7 +1370,7 @@ async def record_payment(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             payment = await _conn.fetchrow(
-                "INSERT INTO staging.ganit_payments "
+                "INSERT INTO public.ganit_payments "
                 "(org_id, invoice_id, amount, payment_date, payment_method, reference, notes, recorded_by) "
                 "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7, $8) "
                 "RETURNING *",
@@ -1383,7 +1383,7 @@ async def record_payment(
                 # who took the money, the invoice records who last moved it. A
                 # later correction changes the second and must not rewrite the
                 # first.
-                "UPDATE staging.ganit_invoices SET amount_paid=$1, balance_due=$2, "
+                "UPDATE public.ganit_invoices SET amount_paid=$1, balance_due=$2, "
                 "payment_status=$3, updated_at=NOW(), updated_by=$6 "
                 "WHERE id=$4::uuid AND org_id=$5::uuid "
                 "RETURNING *",
@@ -1459,7 +1459,7 @@ async def invoice_stats(
         "  COALESCE(SUM(balance_due) FILTER (WHERE due_date < CURRENT_DATE "
         "                     AND payment_status IN ('unpaid','partial')),0) as overdue_amount, "
         "  COUNT(*) as total_invoices "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         # DRAFTS ARE NOT RECEIVABLES. An unissued document has not been sent to
         # anybody, so it cannot be outstanding, cannot be overdue and cannot
         # have been collected. `routers/dristi.py:158-165` already filters this
@@ -1534,7 +1534,7 @@ async def cash_position(
         inflow AS (
             SELECT p.idx, COALESCE(SUM(pay.amount), 0) AS amt
             FROM periods p
-            LEFT JOIN staging.ganit_payments pay
+            LEFT JOIN public.ganit_payments pay
                    ON pay.org_id = $1::uuid
                   AND pay.payment_date >= p.bucket_start
                   AND pay.payment_date <  p.bucket_end
@@ -1545,11 +1545,11 @@ async def cash_position(
             FROM periods p
             LEFT JOIN (
                 SELECT expense_date::date AS d, total AS amt
-                FROM staging.ganit_expenses
+                FROM public.ganit_expenses
                 WHERE org_id = $1::uuid AND is_active = TRUE
                 UNION ALL
                 SELECT payment_date::date AS d, amount AS amt
-                FROM staging.ganit_vendor_payments
+                FROM public.ganit_vendor_payments
                 WHERE org_id = $1::uuid
             ) o ON o.d >= p.bucket_start AND o.d < p.bucket_end
             GROUP BY p.idx
@@ -1601,7 +1601,7 @@ async def update_invoice_status(
         raise HTTPException(400, f"doc_status must be one of: {', '.join(valid)}")
 
     inv = await pool.fetchrow(
-        "SELECT doc_status FROM staging.ganit_invoices "
+        "SELECT doc_status FROM public.ganit_invoices "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(invoice_id), org_id,
     )
@@ -1630,7 +1630,7 @@ async def update_invoice_status(
             # `client_billing.generate_usage_invoice` writes.
             "SELECT invoice_number, invoice_type, invoice_date, is_igst, is_export, "
             "place_of_supply, line_items, cgst, sgst, igst, contact_id, client_id "
-            "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
+            "FROM public.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
             str(invoice_id), org_id,
         )
         items = row["line_items"]
@@ -1665,7 +1665,7 @@ async def update_invoice_status(
         params.append(json.dumps(compliance_snapshot))
 
     await pool.execute(
-        f"UPDATE staging.ganit_invoices SET doc_status=$1{extras}{snap_clause}, "
+        f"UPDATE public.ganit_invoices SET doc_status=$1{extras}{snap_clause}, "
         f"updated_at=NOW(), updated_by=$4 "
         f"WHERE id=$2::uuid AND org_id=$3::uuid",
         *params,
@@ -1684,7 +1684,7 @@ async def accept_estimate(
 ):
     pool = await get_pool()
     inv = await pool.fetchrow(
-        "SELECT invoice_type, estimate_status FROM staging.ganit_invoices "
+        "SELECT invoice_type, estimate_status FROM public.ganit_invoices "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(invoice_id), org_id,
     )
@@ -1696,7 +1696,7 @@ async def accept_estimate(
         raise HTTPException(400, "Estimate already converted to invoice")
 
     await pool.execute(
-        "UPDATE staging.ganit_invoices SET estimate_status='accepted', "
+        "UPDATE public.ganit_invoices SET estimate_status='accepted', "
         "updated_at=NOW(), updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(invoice_id), org_id, user["user_id"],
@@ -1713,7 +1713,7 @@ async def convert_to_invoice(
 ):
     pool = await get_pool()
     inv = await pool.fetchrow(
-        "SELECT * FROM staging.ganit_invoices "
+        "SELECT * FROM public.ganit_invoices "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(invoice_id), org_id,
     )
@@ -1788,7 +1788,7 @@ async def convert_to_invoice(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             new_row = await _conn.fetchrow(
-                "INSERT INTO staging.ganit_invoices "
+                "INSERT INTO public.ganit_invoices "
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
                 " balance_due, notes, terms, created_by, doc_status, client_id, compliance_snapshot) "
@@ -1811,7 +1811,7 @@ async def convert_to_invoice(
             )
 
     await pool.execute(
-        "UPDATE staging.ganit_invoices SET estimate_status='converted', "
+        "UPDATE public.ganit_invoices SET estimate_status='converted', "
         "converted_invoice_id=$1::uuid, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid",
         str(new_row["id"]), str(invoice_id), org_id, user["user_id"],
@@ -1846,8 +1846,8 @@ async def list_expenses(
         # `graha.py:1466` still does.
         + actor_select("e", updated=True)
         + "COUNT(*) OVER() AS _total "
-        "FROM staging.ganit_expenses e "
-        "LEFT JOIN staging.graha_contacts c ON c.id = e.contact_id "
+        "FROM public.ganit_expenses e "
+        "LEFT JOIN public.graha_contacts c ON c.id = e.contact_id "
         + actor_joins("e", updated=True)
         + "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
     )
@@ -1895,7 +1895,7 @@ async def create_expense(
     exp_date = date.fromisoformat(body.expense_date) if body.expense_date else date.today()
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_expenses "
+        "INSERT INTO public.ganit_expenses "
         "(org_id, title, category, amount, tax_amount, total, expense_date, "
         " vendor, reference, notes, receipt_urls, is_billable, contact_id, project_id, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::date, "
@@ -1950,7 +1950,7 @@ async def update_expense(
     idx += 1
 
     await pool.execute(
-        f"UPDATE staging.ganit_expenses SET {', '.join(sets)} "
+        f"UPDATE public.ganit_expenses SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -1966,7 +1966,7 @@ async def delete_expense(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.ganit_expenses SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
+        "UPDATE public.ganit_expenses SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
         str(expense_id), org_id,
     )
     return {"status": "deleted"}
@@ -2017,7 +2017,7 @@ async def list_expense_categories(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT id, name, icon, created_at "
-        "FROM staging.ganit_expense_categories WHERE org_id=$1::uuid AND is_active=TRUE "
+        "FROM public.ganit_expense_categories WHERE org_id=$1::uuid AND is_active=TRUE "
         "ORDER BY name",
         org_id,
     )
@@ -2043,7 +2043,7 @@ async def create_expense_category(
     pool = await get_pool()
     icon = body.icon or "📁"
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_expense_categories (org_id, name, icon) "
+        "INSERT INTO public.ganit_expense_categories (org_id, name, icon) "
         "VALUES ($1::uuid, $2, $3) "
         "ON CONFLICT (org_id, name) DO UPDATE SET is_active=TRUE, icon=EXCLUDED.icon "
         "RETURNING id, name, icon",
@@ -2067,8 +2067,8 @@ async def list_contracts(
         "ct.start_date, ct.end_date, ct.status, ct.renewal_reminder_days, "
         "ct.file_url, ct.file_key, ct.notes, ct.created_at, "
         "c.name as contact_name, COUNT(*) OVER() AS _total "
-        "FROM staging.ganit_contracts ct "
-        "LEFT JOIN staging.graha_contacts c ON c.id = ct.contact_id "
+        "FROM public.ganit_contracts ct "
+        "LEFT JOIN public.graha_contacts c ON c.id = ct.contact_id "
         "WHERE ct.org_id=$1::uuid AND ct.is_active=TRUE "
     )
     params: list = [org_id]
@@ -2117,7 +2117,7 @@ async def create_contract(
     end = date.fromisoformat(body.end_date) if body.end_date else None
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_contracts "
+        "INSERT INTO public.ganit_contracts "
         "(org_id, contact_id, title, description, contract_value, start_date, end_date, "
         " renewal_reminder_days, notes, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6::date, $7::date, $8, $9, $10) "
@@ -2177,7 +2177,7 @@ async def update_contract(
     idx += 1
 
     await pool.execute(
-        f"UPDATE staging.ganit_contracts SET {', '.join(sets)} "
+        f"UPDATE public.ganit_contracts SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
@@ -2195,8 +2195,8 @@ async def get_contract(
     row = await pool.fetchrow(
         "SELECT ct.*, c.name as contact_name, c.email as contact_email, "
         "c.company as contact_company "
-        "FROM staging.ganit_contracts ct "
-        "LEFT JOIN staging.graha_contacts c ON c.id = ct.contact_id "
+        "FROM public.ganit_contracts ct "
+        "LEFT JOIN public.graha_contacts c ON c.id = ct.contact_id "
         "WHERE ct.id=$1::uuid AND ct.org_id=$2::uuid",
         str(contract_id), org_id,
     )
@@ -2207,7 +2207,7 @@ async def get_contract(
     if row["contact_id"]:
         inv_rows = await pool.fetch(
             "SELECT id, invoice_number, invoice_type, invoice_date, total, payment_status "
-            "FROM staging.ganit_invoices "
+            "FROM public.ganit_invoices "
             "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active=TRUE "
             "ORDER BY invoice_date DESC LIMIT 50",
             org_id, str(row["contact_id"]),
@@ -2246,7 +2246,7 @@ async def send_for_signature(
     # rest inside the service would put the org scope in two places.
     ct = await pool.fetchrow(
         "SELECT id, org_id, title, description, file_key, file_url "
-        "FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
+        "FROM public.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contract_id), org_id,
     )
     if not ct:
@@ -2341,7 +2341,7 @@ async def get_audit_trail_endpoint(
     # for any contract id. The ownership question is asked here, of the contract,
     # because that is the only id the caller supplies.
     if not await pool.fetchval(
-        "SELECT 1 FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contract_id), org_id,
     ):
         raise HTTPException(404, "Contract not found")
@@ -2363,8 +2363,8 @@ async def list_recurring(
         "r.is_igst, r.frequency, r.next_date, r.end_date, r.auto_send, "
         "r.notes, r.terms, r.is_active, r.created_at, "
         "c.name as contact_name "
-        "FROM staging.ganit_recurring r "
-        "LEFT JOIN staging.graha_contacts c ON c.id = r.contact_id "
+        "FROM public.ganit_recurring r "
+        "LEFT JOIN public.graha_contacts c ON c.id = r.contact_id "
         "WHERE r.org_id=$1::uuid AND r.is_active=TRUE "
         "ORDER BY r.next_date",
         org_id,
@@ -2388,7 +2388,7 @@ async def create_recurring(
     next_dt = date.fromisoformat(body.next_date) if body.next_date else date.today()
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_recurring "
+        "INSERT INTO public.ganit_recurring "
         "(org_id, contact_id, template_items, subtotal, gst_rate, is_igst, "
         " frequency, next_date, end_date, auto_send, notes, terms, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3::jsonb, $4, $5, $6, "
@@ -2411,7 +2411,7 @@ async def generate_recurring_invoice(
 ):
     pool = await get_pool()
     rec = await pool.fetchrow(
-        "SELECT * FROM staging.ganit_recurring "
+        "SELECT * FROM public.ganit_recurring "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(recurring_id), org_id,
     )
@@ -2491,7 +2491,7 @@ async def generate_recurring_invoice(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             new_inv = await _conn.fetchrow(
-                "INSERT INTO staging.ganit_invoices "
+                "INSERT INTO public.ganit_invoices "
                 "(org_id, contact_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " is_igst, line_items, subtotal, cgst, sgst, igst, total, balance_due, "
                 " notes, terms, recurring_id, doc_status, created_by, client_id, compliance_snapshot) "
@@ -2535,13 +2535,13 @@ async def generate_recurring_invoice(
     # moves `updated_at`, which is true: the row did change.
     if rec["end_date"] and new_next > rec["end_date"]:
         await pool.execute(
-            "UPDATE staging.ganit_recurring SET is_active=FALSE, next_date=$3::date "
+            "UPDATE public.ganit_recurring SET is_active=FALSE, next_date=$3::date "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(recurring_id), org_id, new_next,
         )
     else:
         await pool.execute(
-            "UPDATE staging.ganit_recurring SET next_date=$3::date "
+            "UPDATE public.ganit_recurring SET next_date=$3::date "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(recurring_id), org_id, new_next,
         )
@@ -2564,7 +2564,7 @@ async def delete_recurring(
         # most worth having a name against — this is the write that silently
         # ends a customer's billing. `updated_at` is left to
         # `trg_touch_ganit_recurring` (migration 201).
-        "UPDATE staging.ganit_recurring SET is_active=FALSE, updated_by=$3 "
+        "UPDATE public.ganit_recurring SET is_active=FALSE, updated_by=$3 "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(recurring_id), org_id, user["user_id"],
     )
@@ -2588,7 +2588,7 @@ async def expense_stats(
         "COALESCE(SUM(amount),0) as total_amount, "
         "COALESCE(SUM(tax_amount),0) as total_tax, "
         "COALESCE(SUM(total),0) as total "
-        "FROM staging.ganit_expenses "
+        "FROM public.ganit_expenses "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
     )
     params: list = [org_id]
@@ -2634,7 +2634,7 @@ async def create_invoice_from_deal(
             # `client_id` joins the projection because the invoice this deal
             # becomes must carry the company forward. A deal already knows
             # which firm it is with; the invoice was throwing that away.
-            "SELECT id, title, value, contact_id, client_id FROM staging.graha_deals "
+            "SELECT id, title, value, contact_id, client_id FROM public.graha_deals "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             str(deal_id), org_id,
         )
@@ -2642,7 +2642,7 @@ async def create_invoice_from_deal(
             raise HTTPException(404, "Deal not found")
 
         existing = await pool.fetchrow(
-            "SELECT id FROM staging.ganit_invoices WHERE deal_id=$1::uuid AND org_id=$2::uuid LIMIT 1",
+            "SELECT id FROM public.ganit_invoices WHERE deal_id=$1::uuid AND org_id=$2::uuid LIMIT 1",
             str(deal_id), org_id,
         )
         if existing:
@@ -2679,7 +2679,7 @@ async def create_invoice_from_deal(
         async with pool.acquire() as _conn:
             async with _conn.transaction():
                 row = await _conn.fetchrow(
-                    "INSERT INTO staging.ganit_invoices "
+                    "INSERT INTO public.ganit_invoices "
                     "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
                     " cgst, sgst, total, balance_due, doc_status, created_by, client_id) "
                     "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $7, $8, $8, 'draft', $9, "
@@ -2799,7 +2799,7 @@ async def list_vendors(
     _g=Depends(_payables_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.ganit_vendors WHERE org_id=$1::uuid AND is_active=TRUE"
+    q = "SELECT * FROM public.ganit_vendors WHERE org_id=$1::uuid AND is_active=TRUE"
     params: list = [org_id]
     if search:
         params.append(search)
@@ -2819,7 +2819,7 @@ async def create_vendor(
     pool = await get_pool()
     gstin = _checked_gstin(body.gstin)
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_vendors "
+        "INSERT INTO public.ganit_vendors "
         "(org_id, name, gstin, email, phone, address, "
         " is_msme, enterprise_class, vendor_kind, udyam_number, tds_section, "
         " payment_terms_days) "
@@ -2900,7 +2900,7 @@ async def update_vendor(
     updates.append("updated_at=NOW()")
     vals += [str(vendor_id), org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.ganit_vendors SET {', '.join(updates)} "
+        f"UPDATE public.ganit_vendors SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -2920,8 +2920,8 @@ async def list_vendor_bills(
     pool = await get_pool()
     q = (
         "SELECT b.*, v.name AS vendor_name, COUNT(*) OVER() AS _total "
-        "FROM staging.ganit_vendor_bills b "
-        "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+        "FROM public.ganit_vendor_bills b "
+        "JOIN public.ganit_vendors v ON v.id = b.vendor_id "
         "WHERE b.org_id=$1::uuid AND b.is_active=TRUE"
     )
     params: list = [org_id]
@@ -2947,7 +2947,7 @@ async def payables_summary(
         "SELECT COALESCE(SUM(total - amount_paid), 0) AS outstanding, "
         "COALESCE(SUM(total - amount_paid) FILTER (WHERE due_date < CURRENT_DATE), 0) AS overdue, "
         "COUNT(*) FILTER (WHERE status != 'paid' AND status != 'cancelled') AS open_bills "
-        "FROM staging.ganit_vendor_bills WHERE org_id=$1::uuid AND is_active=TRUE",
+        "FROM public.ganit_vendor_bills WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     aging = await pool.fetch(
@@ -2958,7 +2958,7 @@ async def payables_summary(
         "  WHEN CURRENT_DATE - due_date <= 90 THEN '61-90' "
         "  ELSE '90+' END AS bucket, "
         "COALESCE(SUM(total - amount_paid), 0) AS amount "
-        "FROM staging.ganit_vendor_bills "
+        "FROM public.ganit_vendor_bills "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND status NOT IN ('paid', 'cancelled') "
         "GROUP BY bucket",
         org_id,
@@ -2976,15 +2976,15 @@ async def get_vendor_bill(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT b.*, v.name AS vendor_name, v.gstin AS vendor_gstin "
-        "FROM staging.ganit_vendor_bills b "
-        "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+        "FROM public.ganit_vendor_bills b "
+        "JOIN public.ganit_vendors v ON v.id = b.vendor_id "
         "WHERE b.id=$1::uuid AND b.org_id=$2::uuid",
         str(bill_id), org_id,
     )
     if not row:
         raise HTTPException(404, "Vendor bill not found")
     payments = await pool.fetch(
-        "SELECT * FROM staging.ganit_vendor_payments WHERE bill_id=$1::uuid ORDER BY payment_date",
+        "SELECT * FROM public.ganit_vendor_payments WHERE bill_id=$1::uuid ORDER BY payment_date",
         str(bill_id),
     )
     return {**dict(row), "payments": [dict(p) for p in payments]}
@@ -3007,7 +3007,7 @@ async def create_vendor_bill(
         raise HTTPException(400, "At least one line item is required")
 
     vendor = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_vendors WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        "SELECT id FROM public.ganit_vendors WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         body.vendor_id, org_id,
     )
     if not vendor:
@@ -3020,7 +3020,7 @@ async def create_vendor_bill(
     due = date.fromisoformat(body.due_date) if body.due_date else None
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_vendor_bills "
+        "INSERT INTO public.ganit_vendor_bills "
         "(org_id, vendor_id, bill_number, internal_ref, bill_date, due_date, line_items, "
         " subtotal, cgst, sgst, igst, total, attachment_url, notes, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5::date, $6::date, $7::jsonb, "
@@ -3045,7 +3045,7 @@ async def record_vendor_payment(
 ):
     pool = await get_pool()
     bill = await pool.fetchrow(
-        "SELECT total, amount_paid FROM staging.ganit_vendor_bills "
+        "SELECT total, amount_paid FROM public.ganit_vendor_bills "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bill_id), org_id,
     )
@@ -3056,7 +3056,7 @@ async def record_vendor_payment(
 
     pay_date = date.fromisoformat(body.payment_date) if body.payment_date else date.today()
     await pool.execute(
-        "INSERT INTO staging.ganit_vendor_payments (org_id, bill_id, amount, payment_date, method, reference, created_by) "
+        "INSERT INTO public.ganit_vendor_payments (org_id, bill_id, amount, payment_date, method, reference, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7)",
         org_id, str(bill_id), body.amount, pay_date, body.method, body.reference, user["user_id"],
     )
@@ -3068,7 +3068,7 @@ async def record_vendor_payment(
         # the timestamp is true whoever writes — including the procurement
         # paths that never set it. `updated_by` is the half no trigger can do,
         # because a trigger cannot know who is holding the connection.
-        "UPDATE staging.ganit_vendor_bills SET amount_paid=$1, status=$2, updated_by=$5 "
+        "UPDATE public.ganit_vendor_bills SET amount_paid=$1, status=$2, updated_by=$5 "
         "WHERE id=$3::uuid AND org_id=$4::uuid",
         new_paid, new_status, str(bill_id), org_id, user["user_id"],
     )
@@ -3247,7 +3247,7 @@ async def list_bank_formats(
         return {"data": [], "available": False}
     rows = await pool.fetch(
         "SELECT bank_name, mapping, has_header, updated_at "
-        "FROM staging.ganit_bank_formats WHERE org_id=$1::uuid ORDER BY bank_name",
+        "FROM public.ganit_bank_formats WHERE org_id=$1::uuid ORDER BY bank_name",
         org_id)
     out = []
     for r in rows:
@@ -3275,7 +3275,7 @@ async def save_bank_format(
                                  "migration 135 has not been applied to "
                                  "this database. The import itself still works.")
     await pool.execute(
-        "INSERT INTO staging.ganit_bank_formats "
+        "INSERT INTO public.ganit_bank_formats "
         "(org_id, bank_name, mapping, has_header, created_by) "
         "VALUES ($1::uuid, $2, $3::text::jsonb, $4, $5) "
         "ON CONFLICT (org_id, bank_name) DO UPDATE "
@@ -3327,7 +3327,7 @@ async def import_bank_statement(
                 f"the row reads: {line.description or line.reference or 'no description'}",
             )
         await pool.execute(
-            "INSERT INTO staging.ganit_bank_statement_lines "
+            "INSERT INTO public.ganit_bank_statement_lines "
             "(org_id, statement_date, description, reference, amount, running_balance, batch_id) "
             "VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7::uuid)",
             org_id, stmt_date, line.description, line.reference,
@@ -3337,7 +3337,7 @@ async def import_bank_statement(
 
     auto_matched = 0
     unmatched = await pool.fetch(
-        "SELECT id, amount, statement_date, reference FROM staging.ganit_bank_statement_lines "
+        "SELECT id, amount, statement_date, reference FROM public.ganit_bank_statement_lines "
         "WHERE org_id=$1::uuid AND batch_id=$2::uuid AND is_reconciled=FALSE",
         org_id, batch_id,
     )
@@ -3354,16 +3354,16 @@ async def import_bank_statement(
     vendor_payments: list = []
     if dates:
         receipts = list(await pool.fetch(
-            "SELECT id, amount, payment_date FROM staging.ganit_payments "
+            "SELECT id, amount, payment_date FROM public.ganit_payments "
             "WHERE org_id=$1::uuid AND payment_date = ANY($2::date[]) "
-            "AND id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "AND id NOT IN (SELECT matched_payment_id FROM public.ganit_bank_statement_lines "
             "               WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL)",
             org_id, dates,
         ))
         vendor_payments = list(await pool.fetch(
-            "SELECT id, amount, payment_date FROM staging.ganit_vendor_payments "
+            "SELECT id, amount, payment_date FROM public.ganit_vendor_payments "
             "WHERE org_id=$1::uuid AND payment_date = ANY($2::date[]) "
-            "AND id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "AND id NOT IN (SELECT matched_payment_id FROM public.ganit_bank_statement_lines "
             "               WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL)",
             org_id, dates,
         ))
@@ -3407,7 +3407,7 @@ async def import_bank_statement(
                 # reconciled between the batch's fetch and this write matches
                 # zero rows and emits nothing.
                 _matched = await _conn.fetchrow(
-                    "UPDATE staging.ganit_bank_statement_lines "
+                    "UPDATE public.ganit_bank_statement_lines "
                     "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
                     "WHERE id=$3::uuid AND is_reconciled=FALSE "
                     "RETURNING id",
@@ -3415,8 +3415,8 @@ async def import_bank_statement(
                 )
                 if _matched is not None and matched_type == "invoice_payment":
                     _inv = await _conn.fetchrow(
-                        "SELECT i.* FROM staging.ganit_invoices i "
-                        "JOIN staging.ganit_payments p ON p.invoice_id = i.id "
+                        "SELECT i.* FROM public.ganit_invoices i "
+                        "JOIN public.ganit_payments p ON p.invoice_id = i.id "
                         "WHERE p.id=$1::uuid AND i.org_id=$2::uuid",
                         payment_id, org_id,
                     )
@@ -3448,7 +3448,7 @@ async def list_bank_statements(
 ):
     pool = await get_pool()
     q = ("SELECT *, COUNT(*) OVER() AS _total "
-         "FROM staging.ganit_bank_statement_lines WHERE org_id=$1::uuid")
+         "FROM public.ganit_bank_statement_lines WHERE org_id=$1::uuid")
     params: list = [org_id]
     if reconciled == "true":
         q += " AND is_reconciled=TRUE"
@@ -3479,7 +3479,7 @@ async def bank_line_candidates(
     pool = await get_pool()
     line = await pool.fetchrow(
         "SELECT id, amount, statement_date, is_reconciled "
-        "FROM staging.ganit_bank_statement_lines WHERE id=$1::uuid AND org_id=$2::uuid",
+        "FROM public.ganit_bank_statement_lines WHERE id=$1::uuid AND org_id=$2::uuid",
         line_id, org_id,
     )
     if not line:
@@ -3489,11 +3489,11 @@ async def bank_line_candidates(
         rows = await pool.fetch(
             "SELECT p.id, p.amount, p.payment_date, p.reference, "
             "       i.invoice_number AS document, c.name AS party "
-            "FROM staging.ganit_payments p "
-            "LEFT JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
-            "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+            "FROM public.ganit_payments p "
+            "LEFT JOIN public.ganit_invoices i ON i.id = p.invoice_id "
+            "LEFT JOIN public.graha_contacts c ON c.id = i.contact_id "
             "WHERE p.org_id=$1::uuid "
-            "AND p.id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "AND p.id NOT IN (SELECT matched_payment_id FROM public.ganit_bank_statement_lines "
             "                 WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL) "
             "ORDER BY p.payment_date DESC LIMIT 200",
             org_id,
@@ -3503,11 +3503,11 @@ async def bank_line_candidates(
         rows = await pool.fetch(
             "SELECT p.id, p.amount, p.payment_date, p.reference, "
             "       b.bill_number AS document, v.name AS party "
-            "FROM staging.ganit_vendor_payments p "
-            "LEFT JOIN staging.ganit_vendor_bills b ON b.id = p.bill_id "
-            "LEFT JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+            "FROM public.ganit_vendor_payments p "
+            "LEFT JOIN public.ganit_vendor_bills b ON b.id = p.bill_id "
+            "LEFT JOIN public.ganit_vendors v ON v.id = b.vendor_id "
             "WHERE p.org_id=$1::uuid "
-            "AND p.id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "AND p.id NOT IN (SELECT matched_payment_id FROM public.ganit_bank_statement_lines "
             "                 WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL) "
             "ORDER BY p.payment_date DESC LIMIT 200",
             org_id,
@@ -3528,7 +3528,7 @@ async def match_bank_line(
 ):
     pool = await get_pool()
     line = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_bank_statement_lines "
+        "SELECT id FROM public.ganit_bank_statement_lines "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         line_id, org_id,
     )
@@ -3542,12 +3542,12 @@ async def match_bank_line(
     # the answer. Both lookups are org-scoped: a payment id from another org
     # must read as "not found", not as a match.
     if await pool.fetchval(
-        "SELECT 1 FROM staging.ganit_payments WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.ganit_payments WHERE id=$1::uuid AND org_id=$2::uuid",
         payment_id, org_id,
     ):
         matched_type = "invoice_payment"
     elif await pool.fetchval(
-        "SELECT 1 FROM staging.ganit_vendor_payments WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.ganit_vendor_payments WHERE id=$1::uuid AND org_id=$2::uuid",
         payment_id, org_id,
     ):
         matched_type = "vendor_payment"
@@ -3558,7 +3558,7 @@ async def match_bank_line(
     # mismatch matches the payment to the right line and leaves it on the wrong
     # one too, and the matched total counts the money twice.
     if await pool.fetchval(
-        "SELECT 1 FROM staging.ganit_bank_statement_lines "
+        "SELECT 1 FROM public.ganit_bank_statement_lines "
         "WHERE org_id=$1::uuid AND matched_payment_id=$2::uuid AND id <> $3::uuid",
         org_id, payment_id, line_id,
     ):
@@ -3582,7 +3582,7 @@ async def match_bank_line(
             # zero-row write emits nothing. Correcting a mismatch still goes
             # unmatch-then-match — the unmatch endpoint below exists for it.
             matched = await _conn.fetchrow(
-                "UPDATE staging.ganit_bank_statement_lines "
+                "UPDATE public.ganit_bank_statement_lines "
                 "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
                 "WHERE id=$3::uuid AND org_id=$4::uuid AND is_reconciled=FALSE "
                 "RETURNING id",
@@ -3593,8 +3593,8 @@ async def match_bank_line(
                     409, "That line is already reconciled. Unmatch it first.")
             if matched_type == "invoice_payment":
                 inv_row = await _conn.fetchrow(
-                    "SELECT i.* FROM staging.ganit_invoices i "
-                    "JOIN staging.ganit_payments p ON p.invoice_id = i.id "
+                    "SELECT i.* FROM public.ganit_invoices i "
+                    "JOIN public.ganit_payments p ON p.invoice_id = i.id "
                     "WHERE p.id=$1::uuid AND i.org_id=$2::uuid",
                     payment_id, org_id,
                 )
@@ -3627,7 +3627,7 @@ async def unmatch_bank_line(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE staging.ganit_bank_statement_lines "
+        "UPDATE public.ganit_bank_statement_lines "
         "SET matched_payment_id=NULL, matched_type=NULL, is_reconciled=FALSE "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         line_id, org_id,
@@ -3651,7 +3651,7 @@ async def bank_reconciliation_stats(
         "COUNT(*) FILTER (WHERE is_reconciled=FALSE) AS unmatched, "
         "COALESCE(SUM(amount) FILTER (WHERE is_reconciled=TRUE), 0) AS matched_amount, "
         "COALESCE(SUM(amount) FILTER (WHERE is_reconciled=FALSE), 0) AS unmatched_amount "
-        "FROM staging.ganit_bank_statement_lines WHERE org_id=$1::uuid",
+        "FROM public.ganit_bank_statement_lines WHERE org_id=$1::uuid",
         org_id,
     )
     return dict(row) if row else {}
@@ -3711,7 +3711,7 @@ async def create_invoice_from_time_entries(
         "FROM time_entries te "
         "JOIN tasks tk ON tk.task_id = te.task_id "
         "JOIN teams tm ON tm.team_id = tk.team_id "
-        "JOIN staging.manav_employees e "
+        "JOIN public.manav_employees e "
         "  ON e.user_id::text = te.user_id AND e.org_id = tm.org_id "
         "WHERE tm.org_id=$1::uuid AND te.is_billed=FALSE "
         "AND te.minutes IS NOT NULL AND te.minutes > 0"
@@ -3784,7 +3784,7 @@ async def create_invoice_from_time_entries(
     async with pool.acquire() as conn:
         async with conn.transaction():
             inv = await conn.fetchrow(
-                "INSERT INTO staging.ganit_invoices "
+                "INSERT INTO public.ganit_invoices "
                 "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
                 "is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
                 "balance_due, doc_status, notes, created_by, client_id) "
@@ -3880,16 +3880,16 @@ async def collections(
                i.total, i.balance_due, i.payment_status, i.doc_status,
                c.name AS contact_name, cl.name AS client_name,
                s.views, s.apps, s.last_seen, s.platforms
-          FROM staging.ganit_invoices i
-          LEFT JOIN staging.graha_contacts c  ON c.id  = i.contact_id
-          LEFT JOIN staging.graha_clients  cl ON cl.id = i.client_id
+          FROM public.ganit_invoices i
+          LEFT JOIN public.graha_contacts c  ON c.id  = i.contact_id
+          LEFT JOIN public.graha_clients  cl ON cl.id = i.client_id
                                              AND cl.org_id = i.org_id
           LEFT JOIN LATERAL (
               SELECT count(*) FILTER (WHERE outcome IN ('view','qr','invoice')) AS views,
                      count(*) FILTER (WHERE outcome = 'app')                    AS apps,
                      max(created_at)                                            AS last_seen,
                      array_remove(array_agg(DISTINCT platform), NULL)           AS platforms
-                FROM staging.ganit_pay_scans sc
+                FROM public.ganit_pay_scans sc
                WHERE sc.invoice_id = i.id
           ) s ON TRUE
          WHERE i.org_id = $1::uuid

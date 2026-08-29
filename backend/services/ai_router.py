@@ -271,7 +271,7 @@ async def _get_providers() -> dict[str, dict]:
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT code, api_base_url, default_model, priority, config "
-        "FROM staging.hub_ai_providers WHERE is_active=TRUE ORDER BY priority"
+        "FROM public.hub_ai_providers WHERE is_active=TRUE ORDER BY priority"
     )
     _providers_cache = {r["code"]: dict(r) for r in rows}
     return _providers_cache
@@ -967,7 +967,7 @@ async def _record_generation(
     report the images.
     """
     await pool.execute(
-        "INSERT INTO staging.hub_ai_logs "
+        "INSERT INTO public.hub_ai_logs "
         "(client_id, org_id, provider, model, prompt_tokens, completion_tokens, "
         " latency_ms, status, cost_usd, generation_id) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'success', $8, $9)",
@@ -977,14 +977,14 @@ async def _record_generation(
     )
     if client_id:
         _org_id = await pool.fetchval(
-            "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
+            "SELECT org_id FROM public.hub_clients WHERE id=$1::uuid", client_id
         )
         if _org_id:
             await pool.execute(
-                "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+                "INSERT INTO public.usage_tracking (org_id, metric, value, recorded_at) "
                 "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
                 "ON CONFLICT (org_id, metric, recorded_at) "
-                "DO UPDATE SET value = staging.usage_tracking.value + 1",
+                "DO UPDATE SET value = public.usage_tracking.value + 1",
                 _org_id,
             )
 
@@ -994,7 +994,7 @@ async def _record_failure(pool, *, code, model, client_id, org_id, latency_ms, e
     ahead of the working one in the chain charges every call its round trip.
     Two of them were 400ing on every request as of 2026-07-29."""
     await pool.execute(
-        "INSERT INTO staging.hub_ai_logs "
+        "INSERT INTO public.hub_ai_logs "
         "(client_id, org_id, provider, model, latency_ms, status, error_message) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'error', $6)",
         client_id, org_id, code, model, latency_ms, str(error)[:500],
@@ -2046,7 +2046,7 @@ async def _record_billed_failure(
     """
     try:
         await pool.execute(
-            "INSERT INTO staging.hub_ai_logs "
+            "INSERT INTO public.hub_ai_logs "
             "(org_id, provider, model, prompt_tokens, completion_tokens, "
             " latency_ms, status, cost_usd, error_message) "
             "VALUES ($1::uuid, $2, $3, 0, 0, $4, 'error', $5, $6)",
@@ -2196,7 +2196,7 @@ async def generate_image(
     result["mime"] = mime
 
     await pool.execute(
-        "INSERT INTO staging.hub_ai_logs "
+        "INSERT INTO public.hub_ai_logs "
         "(org_id, provider, model, prompt_tokens, completion_tokens, "
         " latency_ms, status, cost_usd) "
         "VALUES ($1::uuid, $2, $3, 0, 0, $4, 'success', $5)",
@@ -2204,10 +2204,10 @@ async def generate_image(
     )
     if org_id:
         await pool.execute(
-            "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+            "INSERT INTO public.usage_tracking (org_id, metric, value, recorded_at) "
             "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
             "ON CONFLICT (org_id, metric, recorded_at) "
-            "DO UPDATE SET value = staging.usage_tracking.value + 1",
+            "DO UPDATE SET value = public.usage_tracking.value + 1",
             org_id,
         )
     return result
@@ -2538,7 +2538,7 @@ async def generate_rich_content(
 
             pool = await get_pool()
             await pool.execute(
-                "INSERT INTO staging.hub_ai_logs "
+                "INSERT INTO public.hub_ai_logs "
                 "(org_id, provider, model, prompt_tokens, completion_tokens, "
                 " latency_ms, status, cost_usd, generation_id) "
                 "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'success', $7, $8)",
@@ -2548,10 +2548,10 @@ async def generate_rich_content(
             )
             if org_id:
                 await pool.execute(
-                    "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+                    "INSERT INTO public.usage_tracking (org_id, metric, value, recorded_at) "
                     "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
                     "ON CONFLICT (org_id, metric, recorded_at) "
-                    "DO UPDATE SET value = staging.usage_tracking.value + 1",
+                    "DO UPDATE SET value = public.usage_tracking.value + 1",
                     org_id,
                 )
 
@@ -2717,7 +2717,7 @@ async def deduct_credits(client_id: str, agent_type: str, user_id: str = None) -
 
     pool = await get_pool()
     org_id = await pool.fetchval(
-        "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
+        "SELECT org_id FROM public.hub_clients WHERE id=$1::uuid", client_id
     )
     if not org_id:
         # Was "Credit wallet not found", which named the wrong thing even before

@@ -108,7 +108,7 @@ async def _knowledge(pool, org_id, query=None, client_id=None, top_k=5):
 
     if not client_id:
         client_id = await pool.fetchval(
-            "SELECT id FROM staging.hub_clients "
+            "SELECT id FROM public.hub_clients "
             "WHERE org_id=$1::uuid AND is_internal=TRUE AND is_active=TRUE LIMIT 1",
             org_id,
         )

@@ -220,7 +220,7 @@ async def get_column_prefs(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT table_key, columns, user_id "
-        "  FROM staging.user_column_prefs "
+        "  FROM public.user_column_prefs "
         " WHERE user_id = $1::text "
         "    OR (user_id IS NULL AND org_id = $2::uuid)",
         user["user_id"], org_id,
@@ -250,7 +250,7 @@ async def put_my_column_prefs(
     import json
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.user_column_prefs (user_id, table_key, columns) "
+        "INSERT INTO public.user_column_prefs (user_id, table_key, columns) "
         "VALUES ($1::text, $2::text, $3::jsonb) "
         "ON CONFLICT (user_id, table_key) WHERE user_id IS NOT NULL "
         "DO UPDATE SET columns = EXCLUDED.columns, "
@@ -272,7 +272,7 @@ async def delete_my_column_prefs(
     _known_table_or_422(table_key)
     pool = await get_pool()
     result = await pool.execute(
-        "DELETE FROM staging.user_column_prefs "
+        "DELETE FROM public.user_column_prefs "
         " WHERE user_id = $1::text AND table_key = $2::text",
         user["user_id"], table_key,
     )
@@ -299,7 +299,7 @@ async def put_org_column_prefs(
     import json
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.user_column_prefs (org_id, table_key, columns) "
+        "INSERT INTO public.user_column_prefs (org_id, table_key, columns) "
         "VALUES ($1::uuid, $2::text, $3::jsonb) "
         "ON CONFLICT (org_id, table_key) WHERE user_id IS NULL "
         "DO UPDATE SET columns = EXCLUDED.columns, "

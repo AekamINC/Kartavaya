@@ -75,7 +75,7 @@ async def _log_event(pool, org_id: str, event_type: str, metadata: dict):
     passes its connection so the audit row lands or rolls back WITH the invoice
     rather than beside it."""
     await pool.execute(
-        "INSERT INTO staging.subscription_events (org_id, event_type, metadata) "
+        "INSERT INTO public.subscription_events (org_id, event_type, metadata) "
         "VALUES ($1::uuid, $2, $3::jsonb)",
         org_id, event_type, json.dumps(metadata),
     )
@@ -248,7 +248,7 @@ async def _platform_payee(pool) -> dict:
             "upi_vpa": None, "upi_payee_name": None,
             "why_missing": (
                 "Migration 096_billing_lines.sql has not been applied, so "
-                "staging.subscription_invoices has no upi_vpa column to carry a "
+                "public.subscription_invoices has no upi_vpa column to carry a "
                 "payee."
             ),
         }
@@ -264,7 +264,7 @@ async def _platform_payee(pool) -> dict:
             "  NULLIF(btrim(COALESCE(o.upi_payee_name, "
             "                        o.bank_details->>'account_name', o.name, '')), '') "
             "    AS upi_payee_name "
-            "FROM staging.organisations o "
+            "FROM public.organisations o "
             "WHERE o.is_platform_org "
             # 095 indexes this flag as "the one row that will ever be true" but
             # enforces no such thing, so the choice is made deterministically
@@ -285,7 +285,7 @@ async def _platform_payee(pool) -> dict:
         return {
             "upi_vpa": None, "upi_payee_name": None,
             "why_missing": (
-                "The payee could not be read from staging.organisations — the "
+                "The payee could not be read from public.organisations — the "
                 "columns it is kept in do not exist in this database."
             ),
         }
@@ -305,7 +305,7 @@ async def _platform_payee(pool) -> dict:
             "upi_vpa": None, "upi_payee_name": row["upi_payee_name"],
             "why_missing": (
                 "The platform organisation has no UPI address — both "
-                "staging.organisations.upi_vpa and bank_details.upi_id are "
+                "public.organisations.upi_vpa and bank_details.upi_id are "
                 "empty. Set the UPI ID under Settings → Organisation → Company "
                 "Profile."
             ),
@@ -398,9 +398,9 @@ async def _already_billed_detail(runner, line_ids: list[UUID], month: date) -> s
     """
     clash = await runner.fetch(
         "SELECT b.line_id, l.description, i.invoice_number "
-        "FROM staging.invoice_billing_lines b "
-        "JOIN staging.org_billing_lines l ON l.id = b.line_id "
-        "JOIN staging.subscription_invoices i ON i.id = b.invoice_id "
+        "FROM public.invoice_billing_lines b "
+        "JOIN public.org_billing_lines l ON l.id = b.line_id "
+        "JOIN public.subscription_invoices i ON i.id = b.invoice_id "
         "WHERE b.line_id = ANY($1::uuid[]) AND b.period_start = $2::date",
         line_ids, month,
     )
@@ -430,10 +430,10 @@ async def list_plans(user=Depends(require_user)):
     """List available plans. Pricing is only visible to admins."""
     pool = await get_pool()
     plans = await pool.fetch(
-        "SELECT * FROM staging.plans WHERE is_active=TRUE ORDER BY price_monthly"
+        "SELECT * FROM public.plans WHERE is_active=TRUE ORDER BY price_monthly"
     )
     modules = await pool.fetch(
-        "SELECT * FROM staging.add_on_modules WHERE is_active=TRUE ORDER BY price_per_user_monthly"
+        "SELECT * FROM public.add_on_modules WHERE is_active=TRUE ORDER BY price_per_user_monthly"
     )
 
     from middleware.roles import is_platform_staff
@@ -481,24 +481,24 @@ async def get_current(user=Depends(require_user), org_id: str = Depends(get_org_
         "s.cancelled_at, s.created_at, s.updated_at, "
         "p.name as plan_name, p.code as plan_code, "
         "p.max_users, p.features "
-        "FROM staging.subscriptions s "
-        "JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.subscriptions s "
+        "JOIN public.plans p ON p.id = s.plan_id "
         "WHERE s.org_id=$1::uuid",
         org_id,
     )
     modules = await pool.fetch(
-        "SELECT module_code FROM staging.module_subscriptions "
+        "SELECT module_code FROM public.module_subscriptions "
         "WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     user_count = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "SELECT COUNT(DISTINCT user_id) FROM public.user_roles "
         "WHERE org_id=$1::uuid "
         "AND role_code IN ('org_owner','org_admin','org_member')",
         org_id,
     )
     anchor = await pool.fetchval(
-        "SELECT billing_anchor_day FROM staging.organisations WHERE id=$1::uuid",
+        "SELECT billing_anchor_day FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     return {
@@ -520,7 +520,7 @@ async def admin_set_plan(
     pool = await get_pool()
 
     plan = await pool.fetchrow(
-        "SELECT id, code, price_monthly FROM staging.plans WHERE code=$1 AND is_active=TRUE",
+        "SELECT id, code, price_monthly FROM public.plans WHERE code=$1 AND is_active=TRUE",
         body.plan_code,
     )
     if not plan:
@@ -528,8 +528,8 @@ async def admin_set_plan(
 
     current = await pool.fetchrow(
         "SELECT p.code, p.price_monthly, s.current_period_start, s.current_period_end "
-        "FROM staging.subscriptions s "
-        "JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.subscriptions s "
+        "JOIN public.plans p ON p.id = s.plan_id "
         "WHERE s.org_id=$1::uuid",
         org_id,
     )
@@ -544,7 +544,7 @@ async def admin_set_plan(
     now = datetime.now(timezone.utc)
     today = date.today()
     anchor = await pool.fetchval(
-        "SELECT billing_anchor_day FROM staging.organisations WHERE id=$1::uuid",
+        "SELECT billing_anchor_day FROM public.organisations WHERE id=$1::uuid",
         org_id,
     ) or 1
     period_start = next_anchor(anchor, today)
@@ -572,7 +572,7 @@ async def admin_set_plan(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO staging.subscriptions "
+                "INSERT INTO public.subscriptions "
                 "(org_id, plan_id, billing_cycle, status, activated_by, notes, "
                 " current_period_start, current_period_end, next_billing_date, updated_at) "
                 "VALUES ($1::uuid, $2, $3, 'active', $4, $5, $6, $7, $7, $8) "
@@ -599,7 +599,7 @@ async def admin_set_plan(
 
     if body.plan_code == "free":
         await pool.execute(
-            "UPDATE staging.module_subscriptions SET is_active=FALSE, "
+            "UPDATE public.module_subscriptions SET is_active=FALSE, "
             "deactivated_at=NOW() WHERE org_id=$1::uuid AND is_active=TRUE",
             org_id,
         )
@@ -673,7 +673,7 @@ async def set_billing_anchor(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.organisations SET billing_anchor_day=$2 "
+        "UPDATE public.organisations SET billing_anchor_day=$2 "
         "WHERE id=$1::uuid",
         org_id, body.anchor_day,
     )
@@ -694,7 +694,7 @@ async def admin_pause_subscription(
     pool = await get_pool()
 
     sub = await pool.fetchrow(
-        "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid",
+        "SELECT status FROM public.subscriptions WHERE org_id=$1::uuid",
         org_id,
     )
     if not sub:
@@ -712,7 +712,7 @@ async def admin_pause_subscription(
         new_status = "active"
 
     await pool.execute(
-        "UPDATE staging.subscriptions SET status=$2, updated_at=NOW() "
+        "UPDATE public.subscriptions SET status=$2, updated_at=NOW() "
         "WHERE org_id=$1::uuid",
         org_id, new_status,
     )
@@ -778,7 +778,7 @@ async def proration_preview(
     pool = await get_pool()
 
     new_plan = await pool.fetchrow(
-        "SELECT code, price_monthly FROM staging.plans WHERE code=$1 AND is_active=TRUE",
+        "SELECT code, price_monthly FROM public.plans WHERE code=$1 AND is_active=TRUE",
         new_plan_code,
     )
     if not new_plan:
@@ -786,8 +786,8 @@ async def proration_preview(
 
     current = await pool.fetchrow(
         "SELECT p.code, p.price_monthly, s.current_period_start, s.current_period_end "
-        "FROM staging.subscriptions s "
-        "JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.subscriptions s "
+        "JOIN public.plans p ON p.id = s.plan_id "
         "WHERE s.org_id=$1::uuid",
         org_id,
     )
@@ -836,8 +836,8 @@ async def activate_module(
         raise HTTPException(400, f"'{body.module_code}' is bundled with every plan — no activation needed")
 
     sub = await pool.fetchrow(
-        "SELECT p.code FROM staging.subscriptions s "
-        "JOIN staging.plans p ON p.id = s.plan_id "
+        "SELECT p.code FROM public.subscriptions s "
+        "JOIN public.plans p ON p.id = s.plan_id "
         "WHERE s.org_id=$1::uuid",
         org_id,
     )
@@ -870,13 +870,13 @@ async def activate_module(
     # `requires_module` lives. A module with no catalogue row simply has no
     # declared dependency — it must not be an activation failure.
     mod = await pool.fetchrow(
-        "SELECT code, requires_module, price_per_user_monthly FROM staging.add_on_modules WHERE code=$1 AND is_active=TRUE",
+        "SELECT code, requires_module, price_per_user_monthly FROM public.add_on_modules WHERE code=$1 AND is_active=TRUE",
         body.module_code,
     )
 
     for dep in ((mod["requires_module"] if mod else None) or []):
         dep_active = await pool.fetchval(
-            "SELECT 1 FROM staging.module_subscriptions "
+            "SELECT 1 FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
             org_id, dep,
         )
@@ -884,7 +884,7 @@ async def activate_module(
             raise HTTPException(400, f"Module '{body.module_code}' requires '{dep}' to be active first")
 
     await pool.execute(
-        "INSERT INTO staging.module_subscriptions (org_id, module_code, is_active, activated_at) "
+        "INSERT INTO public.module_subscriptions (org_id, module_code, is_active, activated_at) "
         "VALUES ($1::uuid, $2, TRUE, NOW()) "
         "ON CONFLICT (org_id, module_code) DO UPDATE SET "
         "is_active=TRUE, activated_at=NOW(), deactivated_at=NULL",
@@ -897,13 +897,13 @@ async def activate_module(
     if module_price > 0:
         sub_row = await pool.fetchrow(
             "SELECT current_period_start, current_period_end "
-            "FROM staging.subscriptions WHERE org_id=$1::uuid AND status='active'",
+            "FROM public.subscriptions WHERE org_id=$1::uuid AND status='active'",
             org_id,
         )
         if (sub_row and sub_row["current_period_start"] and sub_row["current_period_end"]
                 and sub_row["current_period_start"] < date.today() < sub_row["current_period_end"]):
             user_count = await pool.fetchval(
-                "SELECT COUNT(*) FROM staging.user_roles WHERE org_id=$1::uuid",
+                "SELECT COUNT(*) FROM public.user_roles WHERE org_id=$1::uuid",
                 org_id,
             ) or 1
             monthly_rate = module_price * user_count
@@ -950,11 +950,11 @@ async def deactivate_module(
     pool = await get_pool()
 
     all_modules = await pool.fetch(
-        "SELECT code, requires_module FROM staging.add_on_modules"
+        "SELECT code, requires_module FROM public.add_on_modules"
     )
     active_codes = {
         r["module_code"] for r in await pool.fetch(
-            "SELECT module_code FROM staging.module_subscriptions "
+            "SELECT module_code FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND is_active=TRUE",
             org_id,
         )
@@ -969,7 +969,7 @@ async def deactivate_module(
             )
 
     await pool.execute(
-        "UPDATE staging.module_subscriptions SET is_active=FALSE, deactivated_at=NOW() "
+        "UPDATE public.module_subscriptions SET is_active=FALSE, deactivated_at=NOW() "
         "WHERE org_id=$1::uuid AND module_code=$2",
         org_id, body.module_code,
     )
@@ -1199,7 +1199,7 @@ async def create_invoice(
                 seq = await conn.fetchval(
                     "SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM "
                     "'KSUB-\\d{6}-(\\d+)') AS INT)), 0) + 1 "
-                    "FROM staging.subscription_invoices "
+                    "FROM public.subscription_invoices "
                     "WHERE invoice_number LIKE 'KSUB-' || $1 || '-%'",
                     month_str,
                 )
@@ -1238,7 +1238,7 @@ async def create_invoice(
                     params += [payee["upi_vpa"], payee["upi_payee_name"]]
 
                 row = await conn.fetchrow(
-                    "INSERT INTO staging.subscription_invoices "
+                    "INSERT INTO public.subscription_invoices "
                     "(org_id, invoice_number, period_start, period_end, "
                     " line_items, subtotal, gst, total, due_date, payment_status, "
                     # $11 sits between `approved_by` ($10) and the two optional
@@ -1382,7 +1382,7 @@ async def record_payment(
     pool = await get_pool()
 
     inv = await pool.fetchrow(
-        "SELECT * FROM staging.subscription_invoices WHERE id=$1",
+        "SELECT * FROM public.subscription_invoices WHERE id=$1",
         invoice_id,
     )
     if not inv:
@@ -1409,7 +1409,7 @@ async def record_payment(
         # `trg_touch_subscription_invoices` (BEFORE UPDATE), which owns that
         # column for every writer of this table, including the ones that are not
         # this router.
-        "UPDATE staging.subscription_invoices SET "
+        "UPDATE public.subscription_invoices SET "
         "payment_status='paid', payment_method=$1, payment_reference=$2, "
         "paid_at=$3, collected_by=$4, updated_by=$6 WHERE id=$5",
         body.payment_method, body.payment_reference,
@@ -1438,8 +1438,8 @@ async def list_overdue(user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES
         # (`GET /invoices` below) gets NO actor at all, by name or by id.
         + actor_select("i", updated=True)
         + "o.name as org_name "
-        "FROM staging.subscription_invoices i "
-        "JOIN staging.organisations o ON o.id = i.org_id "
+        "FROM public.subscription_invoices i "
+        "JOIN public.organisations o ON o.id = i.org_id "
         + actor_joins("i", updated=True)
         + "WHERE i.payment_status='pending' AND i.due_date < CURRENT_DATE "
         "ORDER BY i.due_date"
@@ -1477,7 +1477,7 @@ async def list_invoices(
     """
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.subscription_invoices "
+        "SELECT * FROM public.subscription_invoices "
         "WHERE org_id=$1::uuid ORDER BY created_at DESC",
         org_id,
     )
@@ -1490,7 +1490,7 @@ async def list_invoices(
 async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id)):
     pool = await get_pool()
     usage = await pool.fetch(
-        "SELECT metric, value FROM staging.usage_tracking "
+        "SELECT metric, value FROM public.usage_tracking "
         "WHERE org_id=$1::uuid AND recorded_at=CURRENT_DATE",
         org_id,
     )
@@ -1577,22 +1577,22 @@ async def cost_report(
 
     org = await pool.fetchrow(
         "SELECT o.name, o.monthly_credits, p.name as plan_name, p.default_credits "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.organisations o "
+        "LEFT JOIN public.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN public.plans p ON p.id = s.plan_id "
         "WHERE o.id = $1::uuid", org_id
     )
     plan_credits = (org["monthly_credits"] or org["default_credits"] or 0) if org else 0
 
     wallet = await pool.fetchrow(
-        "SELECT balance, credits_reset_at FROM staging.hub_org_credits WHERE org_id=$1::uuid",
+        "SELECT balance, credits_reset_at FROM public.hub_org_credits WHERE org_id=$1::uuid",
         org_id,
     )
 
     # Credit transactions in period
     transactions = await pool.fetch(
         "SELECT tx_type, amount, description "
-        "FROM staging.hub_org_credit_transactions "
+        "FROM public.hub_org_credit_transactions "
         "WHERE org_id=$1::uuid AND created_at >= $2 AND created_at < $3 "
         "ORDER BY created_at DESC",
         org_id, cutoff,
@@ -1682,20 +1682,20 @@ async def cost_report_pdf(
     org = await pool.fetchrow(
         "SELECT o.name, o.monthly_credits, o.authorized_signatory_name, o.authorized_signatory_designation, "
         "p.name as plan_name, p.default_credits "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.organisations o "
+        "LEFT JOIN public.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN public.plans p ON p.id = s.plan_id "
         "WHERE o.id = $1::uuid", org_id
     )
     plan_credits = (org["monthly_credits"] or org["default_credits"] or 0) if org else 0
 
     wallet = await pool.fetchrow(
-        "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid", org_id
+        "SELECT balance FROM public.hub_org_credits WHERE org_id=$1::uuid", org_id
     )
 
     transactions = await pool.fetch(
         "SELECT tx_type, amount, description, created_at "
-        "FROM staging.hub_org_credit_transactions "
+        "FROM public.hub_org_credit_transactions "
         "WHERE org_id=$1::uuid AND created_at >= $2 AND created_at < $3 "
         "ORDER BY created_at DESC",
         org_id, cutoff, cutoff_end,
@@ -1718,8 +1718,8 @@ async def cost_report_pdf(
 
     scraper_breakdown = await pool.fetch(
         "SELECT c.name, COUNT(r.id) as runs, COALESCE(SUM(r.credits_charged),0) as credits "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.org_id=$1::uuid AND r.created_at >= $2 AND r.created_at < $3 "
         "GROUP BY c.name ORDER BY credits DESC",
         org_id, cutoff, cutoff_end,
@@ -1763,8 +1763,8 @@ async def get_my_roles(user=Depends(require_user)):
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT ur.role_code, ur.org_id, o.name as org_name "
-        "FROM staging.user_roles ur "
-        "LEFT JOIN staging.organisations o ON o.id = ur.org_id "
+        "FROM public.user_roles ur "
+        "LEFT JOIN public.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id=$1",
         user["user_id"],
     )

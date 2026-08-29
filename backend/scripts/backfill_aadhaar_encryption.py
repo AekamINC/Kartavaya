@@ -46,7 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db import get_pool                              # noqa: E402
 from services.encryption import PREFIX, encrypt, key_source  # noqa: E402
 
-TABLE = "staging.manav_employees"
+TABLE = "public.manav_employees"
 COLUMN = "aadhaar"
 
 

@@ -133,8 +133,8 @@ async def _payable_row(token: str):
                o.upi_vpa        AS org_upi_vpa,
                o.upi_payee_name AS org_upi_payee_name,
                c.name           AS billed_to_name
-        FROM staging.ganit_invoices i
-        JOIN staging.organisations o ON o.id = i.org_id
+        FROM public.ganit_invoices i
+        JOIN public.organisations o ON o.id = i.org_id
         -- `AND c.org_id = i.org_id` IS LOAD-BEARING AND IS NOT DECORATION.
         --
         -- This is the PUBLIC, tokenless pay page. `c.name` is rendered to an
@@ -155,7 +155,7 @@ async def _payable_row(token: str):
         -- (`resolve_order_company`, routers/vikray.py:242-249), which is right
         -- and is not enough: this predicate also covers every other writer,
         -- every future one, and any row that predates the check.
-        LEFT JOIN staging.graha_clients c
+        LEFT JOIN public.graha_clients c
                ON c.id = i.client_id AND c.org_id = i.org_id
         WHERE i.pay_token = $1 AND i.is_active = TRUE
         """,
@@ -209,7 +209,7 @@ async def _upi_accounts(org_id, org_name: str, fallback_vpa: str,
     rows = []
     if _upi_table:
         rows = await pool.fetch(
-            "SELECT platform, vpa, payee_name FROM staging.org_upi_accounts "
+            "SELECT platform, vpa, payee_name FROM public.org_upi_accounts "
             " WHERE org_id=$1 AND is_active "
             " ORDER BY is_default DESC, sort_order, platform",
             org_id,
@@ -574,10 +574,10 @@ async def record_scan(request: Request, token: str, outcome: str = "view",
         pool = await get_pool()
         await pool.execute(
             """
-            INSERT INTO staging.ganit_pay_scans
+            INSERT INTO public.ganit_pay_scans
                 (invoice_id, org_id, platform, outcome, device, os, browser, ip_prefix)
             SELECT i.id, i.org_id, $2, $3, $4, $5, $6, $7
-              FROM staging.ganit_invoices i
+              FROM public.ganit_invoices i
              WHERE i.pay_token = $1
             """,
             token, want or None, outcome,

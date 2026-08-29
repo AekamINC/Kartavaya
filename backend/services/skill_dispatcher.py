@@ -488,7 +488,7 @@ async def _get_feedback_corrections(
     """Look up past corrections for this skill+org+input combo."""
     row = await pool.fetchrow(
         """
-        SELECT corrected FROM staging.hub_skill_feedback
+        SELECT corrected FROM public.hub_skill_feedback
         WHERE skill_template_id = $1 AND org_id = $2 AND input_hash = $3
           AND accepted = FALSE
         ORDER BY created_at DESC LIMIT 1
@@ -909,7 +909,7 @@ async def dispatch_skill(
     # on the path whose entire purpose is to run unattended.
     run_id = await pool.fetchval(
         """
-        INSERT INTO staging.hub_skill_runs
+        INSERT INTO public.hub_skill_runs
           (client_skill_id, client_id, status, steps_total, triggered_by)
         VALUES ($1, $2, 'running', $3, $4)
         RETURNING id
@@ -964,7 +964,7 @@ async def dispatch_skill(
         # Mark completed
         await pool.execute(
             """
-            UPDATE staging.hub_skill_runs
+            UPDATE public.hub_skill_runs
             SET status = 'completed', steps_completed = $2,
                 outputs = $3::jsonb, completed_at = now()
             WHERE id = $1
@@ -991,7 +991,7 @@ async def dispatch_skill(
         )
         await pool.execute(
             """
-            UPDATE staging.hub_skill_runs
+            UPDATE public.hub_skill_runs
             SET status = 'failed', steps_completed = $2,
                 error_message = $3, outputs = $4::jsonb, completed_at = now()
             WHERE id = $1
@@ -1015,7 +1015,7 @@ async def dispatch_skill(
         log.exception("Skill dispatch failed: template=%s", template_id)
         await pool.execute(
             """
-            UPDATE staging.hub_skill_runs
+            UPDATE public.hub_skill_runs
             SET status = 'failed', steps_completed = $2,
                 error_message = $3, completed_at = now()
             WHERE id = $1

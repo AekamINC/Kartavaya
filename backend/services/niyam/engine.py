@@ -58,14 +58,14 @@ DRAIN_LIMIT = 200
 FANOUT_LIMIT = 25
 
 _CLAIM = """
-INSERT INTO staging.niyam_runs (run_id, rule_id, event_id, org_id, dry_run)
+INSERT INTO public.niyam_runs (run_id, rule_id, event_id, org_id, dry_run)
 VALUES ($1::text, $2::text, $3::bigint, $4::uuid, $5::boolean)
 ON CONFLICT (rule_id, event_id) DO NOTHING
 RETURNING run_id
 """
 
 _RECORD_STEP = """
-INSERT INTO staging.niyam_run_steps
+INSERT INTO public.niyam_run_steps
     (run_step_id, run_id, step_no, outcome, detail, outbound_id)
 VALUES ($1::text, $2::text, $3::int, $4::text, $5::jsonb, $6::bigint)
 ON CONFLICT (run_id, step_no) DO NOTHING
@@ -86,7 +86,7 @@ async def rules_for(conn, *, org_id: str, event_type: str) -> list:
     return await conn.fetch(
         """
         SELECT rule_id, name, is_armed
-          FROM staging.niyam_rules
+          FROM public.niyam_rules
          WHERE org_id = $1::uuid AND event_type = $2::text AND enabled
          ORDER BY created_at, rule_id
          LIMIT $3::int
@@ -99,7 +99,7 @@ async def steps_for(conn, rule_id: str) -> list:
     return await conn.fetch(
         """
         SELECT step_no, kind, config
-          FROM staging.niyam_rule_steps
+          FROM public.niyam_rule_steps
          WHERE rule_id = $1::text
          ORDER BY step_no
         """,
@@ -153,7 +153,7 @@ async def cursor_for(conn, run_id: str) -> set:
     a double-resume.
     """
     rows = await conn.fetch(
-        "SELECT step_no FROM staging.niyam_run_steps WHERE run_id = $1::text",
+        "SELECT step_no FROM public.niyam_run_steps WHERE run_id = $1::text",
         run_id,
     )
     return {r["step_no"] for r in rows}
@@ -225,12 +225,12 @@ async def run_pipeline(conn, *, run_id: str, rule_id: str, event: dict,
             await conn.execute(
                 """
                 WITH slept AS (
-                    UPDATE staging.niyam_runs
+                    UPDATE public.niyam_runs
                        SET wake_at = NOW() + ($1::int * INTERVAL '1 minute')
                      WHERE run_id = $2::text
                  RETURNING run_id
                 )
-                INSERT INTO staging.niyam_run_steps
+                INSERT INTO public.niyam_run_steps
                     (run_step_id, run_id, step_no, outcome, detail)
                 SELECT $3::text, slept.run_id, $4::int, 'ok', $5::jsonb
                   FROM slept
@@ -303,7 +303,7 @@ async def run_pipeline(conn, *, run_id: str, rule_id: str, event: dict,
 
 async def _finish(conn, run_id: str) -> None:
     await conn.execute(
-        "UPDATE staging.niyam_runs SET finished_at = NOW(), wake_at = NULL "
+        "UPDATE public.niyam_runs SET finished_at = NOW(), wake_at = NULL "
         "WHERE run_id = $1::text AND finished_at IS NULL",
         run_id)
 

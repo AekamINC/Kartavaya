@@ -139,8 +139,8 @@ DEPT_SQL = (
     # The head, by NAME. `head_employee_id` is a uuid and never leaves this
     # query — names, not ids, on anything printed.
     "         min(COALESCE(btrim(h.name), '')) AS head_name "
-    "    FROM staging.manav_departments d "
-    "    LEFT JOIN staging.manav_employees h "
+    "    FROM public.manav_departments d "
+    "    LEFT JOIN public.manav_employees h "
     "           ON h.id = d.head_employee_id AND h.org_id = d.org_id "
     "   WHERE d.org_id = $1::uuid "
     "   GROUP BY 1"
@@ -159,16 +159,16 @@ DEPT_SQL = (
     "         COALESCE(SUM(lv.days), 0)::numeric(12,1) AS leave_days, "
     "         COALESCE(SUM(lv.reqs), 0)::int AS leave_reqs, "
     "         COUNT(*) FILTER (WHERE ex.employee_id IS NOT NULL)::int AS left_in "
-    "    FROM staging.manav_employees e "
+    "    FROM public.manav_employees e "
     "    LEFT JOIN LATERAL ("
     "        SELECT COALESCE(SUM(l.days), 0) AS days, COUNT(*) AS reqs "
-    "          FROM staging.manav_leave_requests l "
+    "          FROM public.manav_leave_requests l "
     "         WHERE l.employee_id = e.id AND l.org_id = e.org_id "
     "           AND lower(COALESCE(l.status, '')) = 'approved' "
     "           AND l.start_date BETWEEN $2::date AND $3::date"
     "    ) lv ON TRUE "
     "    LEFT JOIN LATERAL ("
-    "        SELECT 1 AS employee_id FROM staging.manav_offboarding o "
+    "        SELECT 1 AS employee_id FROM public.manav_offboarding o "
     "         WHERE o.employee_id = e.id AND o.org_id = e.org_id "
     "           AND o.last_working_day BETWEEN $2::date AND $3::date "
     "         LIMIT 1"
@@ -206,7 +206,7 @@ DEPT_SPREAD_SQL = (
     "           AS no_department, "
     "       COUNT(*) FILTER (WHERE COALESCE(btrim(e.user_id), '') <> '')::int "
     "           AS linked_to_login "
-    "  FROM staging.manav_employees e WHERE e.org_id = $1::uuid"
+    "  FROM public.manav_employees e WHERE e.org_id = $1::uuid"
 )
 
 

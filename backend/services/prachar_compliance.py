@@ -664,7 +664,7 @@ async def record_override(conn, *, org_id: str, campaign_id: str,
     """
     if not await table_exists(conn, "prachar_icai_overrides"):
         logger.error(
-            "ICAI OVERRIDE NOT RECORDED: staging.prachar_icai_overrides does "
+            "ICAI OVERRIDE NOT RECORDED: public.prachar_icai_overrides does "
             "not exist. It DOES exist on staging (checked 2026-08-27), so this "
             "is not the old unapplied-migration case and the database this "
             "process is connected to is not the one it should be. Campaign %s "
@@ -675,7 +675,7 @@ async def record_override(conn, *, org_id: str, campaign_id: str,
         return None
     cls = verdict.template_class
     row = await conn.fetchrow(
-        "INSERT INTO staging.prachar_icai_overrides "
+        "INSERT INTO public.prachar_icai_overrides "
         "(org_id, campaign_id, decided_by, basis, non_client_count, "
         " total_count, template_class, class_basis, rule_key) "
         "VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9) RETURNING id",
@@ -731,7 +731,7 @@ async def record_send_evidence(conn, *, org_id: str, campaign_id: str,
     if not await table_exists(conn, "prachar_send_evidence"):
         logger.error(
             "SEND EVIDENCE NOT RECORDED for campaign %s (%d recipients): "
-            "staging.prachar_send_evidence does not exist. It DOES exist on "
+            "public.prachar_send_evidence does not exist. It DOES exist on "
             "staging (checked 2026-08-27), so this is a wrong-database or "
             "wrong-search_path fault, not an unapplied migration. The send is "
             "proceeding; the firm has no stored proof of client linkage for it.",
@@ -756,7 +756,7 @@ async def record_send_evidence(conn, *, org_id: str, campaign_id: str,
         for c in contacts
     ]
     await conn.executemany(
-        "INSERT INTO staging.prachar_send_evidence "
+        "INSERT INTO public.prachar_send_evidence "
         "(org_id, campaign_id, contact_id, recipient_email, client_id, "
         " was_client, template_id, template_class, class_basis, rule_key, "
         " consent_basis, override_id) "

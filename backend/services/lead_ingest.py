@@ -292,7 +292,7 @@ async def _upsert(pool, org_id: str, lead: Lead) -> bool:
         # Scoped to the SOURCE as well as the id, because "JD-55512" and
         # IndiaMART query 55512 are not the same enquiry.
         existing = await pool.fetchrow(
-            "SELECT id FROM staging.graha_contacts "
+            "SELECT id FROM public.graha_contacts "
             " WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
             "   AND custom_data->>'external_id' = $2 "
             "   AND custom_data->>'source' = $3 "
@@ -321,7 +321,7 @@ async def _upsert(pool, org_id: str, lead: Lead) -> bool:
         # Appended as history, never replacing anything: the second enquiry is
         # the evidence that this lead is warm.
         await pool.execute(
-            "INSERT INTO staging.graha_activities "
+            "INSERT INTO public.graha_activities "
             "(org_id, contact_id, activity_type, title, description, created_by) "
             "VALUES ($1::uuid, $2::uuid, 'note', $3, $4, $5)",
             org_id, contact_id,
@@ -332,7 +332,7 @@ async def _upsert(pool, org_id: str, lead: Lead) -> bool:
         # inbound enquiry reset it would hide the lead from the overdue-
         # follow-up report that exists to surface exactly these.
         await pool.execute(
-            "UPDATE staging.graha_contacts "
+            "UPDATE public.graha_contacts "
             "   SET custom_data = COALESCE(custom_data,'{}'::jsonb) || $2::jsonb, "
             "       updated_at = NOW() "
             " WHERE id = $1::uuid",
@@ -350,7 +350,7 @@ async def _upsert(pool, org_id: str, lead: Lead) -> bool:
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
-                "INSERT INTO staging.graha_contacts "
+                "INSERT INTO public.graha_contacts "
                 "  (org_id, name, email, phone, company, notes, contact_type, source, "
                 "   created_by, custom_data) "
                 "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, "

@@ -1014,7 +1014,7 @@ async def held_module_levels(
     # here: this function is a pure resolution and several callers ask it the
     # same question more than once per request.
     platform_role = await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[]) "
         "ORDER BY array_position($2::text[], role_code) LIMIT 1",
@@ -1033,7 +1033,7 @@ async def held_module_levels(
     #   · the org half of this function is now one query for every shape of
     #     caller instead of one query plus an assumption about the other codes.
     org_role_rows = await pool.fetch(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
         user_id, org_id, list(ALL_ORG_ROLES),
     )
@@ -1075,7 +1075,7 @@ async def held_module_levels(
     # later "optimises" the filter away and reopens it.
     if not capped:
         rows = await pool.fetch(
-            "SELECT role FROM staging.org_member_modules "
+            "SELECT role FROM public.org_member_modules "
             "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
             user_id, org_id, module_code,
         )
@@ -1138,7 +1138,7 @@ def require_module_or_self(module_code: str):
         # is no own-row for them to fall back to, and `require_module` says no
         # in words worth keeping.
         is_platform = await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
             user.get("user_id"), list(ALL_PLATFORM_ROLES),
         )
@@ -1152,13 +1152,13 @@ def require_module_or_self(module_code: str):
         # Self scope still requires the org to actually have the module. Reading
         # your own payslip is not a way into a module the customer never bought.
         sub_status = await pool.fetchval(
-            "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid", org_id
+            "SELECT status FROM public.subscriptions WHERE org_id=$1::uuid", org_id
         )
         if not sub_status or sub_status in ("cancelled", "paused"):
             raise HTTPException(403, "Subscription is not active")
 
         active = await pool.fetchval(
-            "SELECT 1 FROM staging.module_subscriptions "
+            "SELECT 1 FROM public.module_subscriptions "
             "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
             org_id, module_code,
         )

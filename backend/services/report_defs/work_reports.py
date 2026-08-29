@@ -213,7 +213,7 @@ WORK_SQL = (
     "         COUNT(*) FILTER (WHERE f.is_completed = TRUE "
     "                 AND f.completed_at::date "
     "                 BETWEEN $2::date AND $3::date), 0, 0 "
-    "    FROM staging.graha_follow_ups f "
+    "    FROM public.graha_follow_ups f "
     "   WHERE f.org_id = $1::uuid "
     "     AND f.assigned_to IS NOT NULL "
     "   GROUP BY 1 "
@@ -223,7 +223,7 @@ WORK_SQL = (
     #     or the meeting, which is not necessarily the person who made it.
     #     Named in the description rather than dressed up as ownership.
     "  SELECT g.created_by, 0, 0, 0, 0, 0, 0, 0, 0, 0, COUNT(*), 0 "
-    "    FROM staging.graha_activities g "
+    "    FROM public.graha_activities g "
     "   WHERE g.org_id = $1::uuid "
     "     AND g.created_by IS NOT NULL "
     "     AND g.created_at::date BETWEEN $2::date AND $3::date "

@@ -440,7 +440,7 @@ def udin_syntax(
 # nothing, because the suite's pool is a MagicMock.
 _SELECT_WINDOWS = (
     "SELECT window_key, window_amount, window_unit, effective_from, effective_to "
-    "  FROM staging.udin_window "
+    "  FROM public.udin_window "
     " ORDER BY window_key, effective_from"
 )
 
@@ -572,7 +572,7 @@ _SELECT_OPEN = (
     # sending one without the other leaves a column that can only ever be an
     # em dash next to a name that is right there.
     "       r.created_at, r.updated_at "
-    "  FROM staging.udin_register r "
+    "  FROM public.udin_register r "
     + actor_joins("r", updated=True) +
     " WHERE r.org_id = $1::uuid "
     "   AND r.status = 'signed' "
@@ -728,7 +728,7 @@ _SELECT_REVOCABLE = (
     "       r.document_ref, r.financial_year, r.signed_on, r.signed_by_member, "
     "       r.signed_by_membership_no, r.udin, r.udin_generated_at, "
     "       r.created_at, r.updated_at "
-    "  FROM staging.udin_register r "
+    "  FROM public.udin_register r "
     + actor_joins("r", updated=True) +
     " WHERE r.org_id = $1::uuid "
     "   AND r.status = 'generated' "
@@ -810,7 +810,7 @@ async def revocable_now(
 
 _SELECT_STATUS_COUNTS = (
     "SELECT status, count(*) AS n "
-    "  FROM staging.udin_register "
+    "  FROM public.udin_register "
     " WHERE org_id = $1::uuid "
     " GROUP BY status"
 )
@@ -821,7 +821,7 @@ _SELECT_STATUS_COUNTS = (
 # `idx_udin_register_open`, whose predicate this WHERE clause is.
 _SELECT_OPEN_DATES = (
     "SELECT signed_on "
-    "  FROM staging.udin_register "
+    "  FROM public.udin_register "
     " WHERE org_id = $1::uuid AND status = 'signed'"
 )
 
@@ -1071,21 +1071,21 @@ _WRITE_RETURNING = (
 #: no parameter for it, and `udin_register_signed_ck` says the same thing in the
 #: database.
 _INSERT_SIGNING = (
-    "INSERT INTO staging.udin_register "
+    "INSERT INTO public.udin_register "
     "  (org_id, client_id, client_name, document_kind, document_title, "
     "   document_ref, financial_year, signed_on, signed_by_member, "
     "   signed_by_membership_no, signed_by_user_id, source_module, source_id, "
     "   notes, created_by, status) "
     "SELECT $1::uuid, $2::uuid, "
     "       COALESCE(NULLIF(btrim($3::text), ''), "
-    "                (SELECT c.name FROM staging.graha_clients c "
+    "                (SELECT c.name FROM public.graha_clients c "
     "                  WHERE c.id = $2::uuid AND c.org_id = $1::uuid)), "
     "       $4::text, $5::text, "
     "       $6::text, $7::text, $8::date, $9::text, "
     "       $10::text, $11::text, $12::text, $13::uuid, "
     "       $14::text, $15::text, 'signed' "
     " WHERE $2::uuid IS NULL "
-    "    OR EXISTS (SELECT 1 FROM staging.graha_clients c "
+    "    OR EXISTS (SELECT 1 FROM public.graha_clients c "
     "                WHERE c.id = $2::uuid AND c.org_id = $1::uuid) "
     "RETURNING " + _WRITE_RETURNING
 )
@@ -1104,7 +1104,7 @@ _SELECT_ROW_FOR_WRITE = (
     "       financial_year, signed_on, signed_by_member, "
     "       signed_by_membership_no, source_module, notes, "
     "       status, udin, udin_generated_at, revoked_at "
-    "  FROM staging.udin_register "
+    "  FROM public.udin_register "
     " WHERE org_id = $1::uuid AND id = $2::uuid"
 )
 
@@ -1127,7 +1127,7 @@ _SELECT_ROW_FOR_WRITE = (
 #: behind it — which the UI renders as `unknown`, i.e. "somebody did this and we
 #: have lost who". That is a different and worse claim than "nobody has".
 _UPDATE_GENERATION = (
-    "UPDATE staging.udin_register "
+    "UPDATE public.udin_register "
     "   SET status = 'generated', "
     "       updated_by = NULLIF(btrim($6::text), ''), "
     "       udin = $3::text, "
@@ -1147,7 +1147,7 @@ _UPDATE_GENERATION = (
 #: `updated_by` here for the reason `_UPDATE_GENERATION` gives at length — and
 #: more so: a revocation is the row this register is read for.
 _UPDATE_REVOCATION = (
-    "UPDATE staging.udin_register "
+    "UPDATE public.udin_register "
     "   SET status = 'revoked', "
     "       updated_by = NULLIF(btrim($7::text), ''), "
     "       revoked_at = $3::timestamptz, "
@@ -1170,7 +1170,7 @@ _UPDATE_REVOCATION = (
 #: the at-risk list without a number ever existing, so "who decided that" is
 #: precisely what a reviewer will ask six months later.
 _UPDATE_NOT_REQUIRED = (
-    "UPDATE staging.udin_register "
+    "UPDATE public.udin_register "
     "   SET status = 'not_required', "
     "       updated_by = NULLIF(btrim($4::text), ''), "
     "       notes = CASE WHEN $3::text = '' THEN notes "

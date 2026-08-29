@@ -302,7 +302,7 @@ async def get_view(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT layout, updated_at FROM staging.pulse_views "
+        "SELECT layout, updated_at FROM public.pulse_views "
         " WHERE user_id = $1::text",
         user["user_id"])
     if row is None:
@@ -327,7 +327,7 @@ async def put_view(
     layout = _clean_pulse_layout(body.layout)
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.pulse_views (user_id, layout, updated_at) "
+        "INSERT INTO public.pulse_views (user_id, layout, updated_at) "
         "VALUES ($1::text, $2::jsonb, NOW()) "
         "ON CONFLICT (user_id) DO UPDATE "
         "   SET layout = EXCLUDED.layout, updated_at = NOW() "
@@ -384,7 +384,7 @@ async def report(
 
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT layout FROM staging.pulse_views WHERE user_id = $1::text",
+        "SELECT layout FROM public.pulse_views WHERE user_id = $1::text",
         user["user_id"])
     if row is None:
         layout, source = DEFAULT_LAYOUT, "default"

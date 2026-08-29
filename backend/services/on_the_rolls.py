@@ -85,7 +85,7 @@ def still_on_the_rolls(alias: str = DEFAULT_ALIAS, as_at: str = "CURRENT_DATE") 
     """
     return (
         f" AND NOT EXISTS ("
-        f"SELECT 1 FROM staging.manav_offboarding x "
+        f"SELECT 1 FROM public.manav_offboarding x "
         f"WHERE x.org_id = {alias}.org_id AND x.employee_id = {alias}.id "
         f"AND x.status <> 'cancelled' "
         f"AND x.last_working_day < {as_at})"

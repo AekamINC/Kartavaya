@@ -490,7 +490,7 @@ _DORMANT_CODES = {
 
 _SELECT = """
 SELECT purpose, from_email, from_name, is_verified
-  FROM staging.org_email_senders
+  FROM public.org_email_senders
  WHERE org_id = $1::uuid
 """
 
@@ -704,7 +704,7 @@ async def load(org_id: str) -> dict[str, Sender]:
             # Railway logs and in a Windows console, where a nice arrow becomes
             # mojibake.
             log.warning(
-                "email_senders: staging.org_email_senders is not readable (%s). "
+                "email_senders: public.org_email_senders is not readable (%s). "
                 "Per-purpose From addresses are OFF for this process and every "
                 "message will be sent from FROM_EMAIL, which is what happened "
                 "before this feature existed. Apply migration 110 and redeploy.",

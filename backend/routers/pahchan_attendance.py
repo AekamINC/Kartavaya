@@ -68,7 +68,7 @@ async def _name_employees(pool, org_id: str, *lists) -> None:
     if not ids:
         return
     rows = await pool.fetch(
-        "SELECT id::text AS id, name FROM staging.manav_employees "
+        "SELECT id::text AS id, name FROM public.manav_employees "
         "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
         org_id, list(ids),
     )
@@ -122,13 +122,13 @@ async def request_regularisation(
     pool = await get_pool()
 
     own = await pool.fetchval(
-        "SELECT 1 FROM staging.manav_employees "
+        "SELECT 1 FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND user_id=$3",
         body.employee_id, org_id, user["user_id"],
     )
     if not own:
         is_reviewer = await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid "
             "AND role_code IN ('org_owner','org_admin')",
             user["user_id"], org_id,
@@ -183,7 +183,7 @@ async def request_regularisation(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "INSERT INTO staging.pahchan_regularisations "
+                "INSERT INTO public.pahchan_regularisations "
                 "    (org_id, employee_id, punch_id, for_date, requested_direction, "
                 "     requested_at_time, reason, evidence_key, status) "
                 "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::date, $5, "
@@ -194,7 +194,7 @@ async def request_regularisation(
                 body.evidence_key,
             )
             _emp_user_id = await _conn.fetchval(
-                "SELECT user_id FROM staging.manav_employees "
+                "SELECT user_id FROM public.manav_employees "
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 body.employee_id, org_id,
             )
@@ -228,8 +228,8 @@ async def list_regularisations(
         "SELECT r.id, r.employee_id, e.name AS employee_name, r.for_date, "
         "       r.requested_direction, r.requested_at_time, r.reason, "
         "       r.status, r.decided_by, r.decided_at, r.decision_note, r.created_at "
-        "  FROM staging.pahchan_regularisations r "
-        "  LEFT JOIN staging.manav_employees e ON e.id = r.employee_id "
+        "  FROM public.pahchan_regularisations r "
+        "  LEFT JOIN public.manav_employees e ON e.id = r.employee_id "
         " WHERE r.org_id=$1::uuid AND ($2 = 'all' OR r.status = $2) "
         " ORDER BY r.created_at DESC",
         org_id, status,
@@ -271,8 +271,8 @@ async def list_my_regularisations(
     rows = await pool.fetch(
         "SELECT r.id, r.for_date, r.requested_direction, r.requested_at_time, "
         "       r.reason, r.status, r.decided_at, r.decision_note, r.created_at "
-        "  FROM staging.pahchan_regularisations r "
-        "  JOIN staging.manav_employees e ON e.id = r.employee_id "
+        "  FROM public.pahchan_regularisations r "
+        "  JOIN public.manav_employees e ON e.id = r.employee_id "
         " WHERE r.org_id=$1::uuid AND e.user_id=$2 "
         " ORDER BY r.created_at DESC LIMIT 50",
         org_id, user["user_id"],
@@ -320,7 +320,7 @@ async def decide_regularisation(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "UPDATE staging.pahchan_regularisations "
+                "UPDATE public.pahchan_regularisations "
                 "   SET status=$1, decided_by=$2, decided_at=NOW(), decision_note=$3 "
                 " WHERE id=$4::uuid AND org_id=$5::uuid AND status='pending' "
                 "RETURNING *",
@@ -328,7 +328,7 @@ async def decide_regularisation(
             )
             if row is not None:
                 _emp_user_id = await _conn.fetchval(
-                    "SELECT user_id FROM staging.manav_employees "
+                    "SELECT user_id FROM public.manav_employees "
                     "WHERE id=$1::uuid AND org_id=$2::uuid",
                     row["employee_id"], org_id,
                 )
@@ -409,7 +409,7 @@ async def publish_attendance_to_payroll(
 
     punch_rows = await pool.fetch(
         "SELECT employee_id, direction, captured_at, flags, review_verdict "
-        "  FROM staging.pahchan_punches "
+        "  FROM public.pahchan_punches "
         " WHERE org_id=$1::uuid "
         "   AND captured_at >= $2::date "
         "   AND captured_at < ($3::date + INTERVAL '1 day') "
@@ -418,7 +418,7 @@ async def publish_attendance_to_payroll(
     )
     reg_rows = await pool.fetch(
         "SELECT employee_id, for_date, requested_direction, requested_at_time "
-        "  FROM staging.pahchan_regularisations "
+        "  FROM public.pahchan_regularisations "
         " WHERE org_id=$1::uuid AND status='approved' "
         "   AND for_date >= $2::date AND for_date <= $3::date",
         org_id, from_date, to_date,
@@ -432,7 +432,7 @@ async def publish_attendance_to_payroll(
         "       overtime_daily_threshold_hours, overtime_weekly_threshold_hours, "
         "       overtime_multiplier, week_starts_on, shift_start_time, "
         "       shift_end_time, overnight_shift "
-        "  FROM staging.pahchan_policy WHERE org_id=$1::uuid",
+        "  FROM public.pahchan_policy WHERE org_id=$1::uuid",
         org_id,
     )
     policy = ShiftPolicy(
@@ -479,7 +479,7 @@ async def publish_attendance_to_payroll(
             # keeps its values and returns nothing, so it lands in
             # skipped_manual instead of being silently reverted by a re-run.
             row = await pool.fetchrow(
-                "INSERT INTO staging.manav_attendance "
+                "INSERT INTO public.manav_attendance "
                 "    (org_id, employee_id, date, check_in, check_out, status, "
                 "     work_hours, overtime_hours, notes, marked_by) "
                 "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9, $10) "
@@ -493,10 +493,10 @@ async def publish_attendance_to_payroll(
                 # erase a figure somebody entered by hand. Not computed means
                 # leave it alone, not set it to nothing.
                 "    overtime_hours = COALESCE(EXCLUDED.overtime_hours, "
-                "                              staging.manav_attendance.overtime_hours), "
+                "                              public.manav_attendance.overtime_hours), "
                 "    notes      = EXCLUDED.notes, "
                 "    marked_by  = EXCLUDED.marked_by "
-                "  WHERE staging.manav_attendance.marked_by IS DISTINCT FROM $11 "
+                "  WHERE public.manav_attendance.marked_by IS DISTINCT FROM $11 "
                 "RETURNING employee_id",
                 org_id, rec.employee_id, rec.day, rec.check_in, rec.check_out,
                 rec.status, rec.work_hours, rec.overtime_hours, rec.notes,

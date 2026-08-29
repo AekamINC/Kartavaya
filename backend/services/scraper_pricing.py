@@ -309,7 +309,7 @@ async def run_price_watch(*, dry_run: bool = False) -> dict:
     rows = await pool.fetch(
         "SELECT id, name, apify_actor_id, max_results, credit_cost, price_inr, "
         "       cost_per_run, unit_price_usd, target_margin_pct, price_frozen, is_active "
-        "FROM staging.hub_scraper_catalog "
+        "FROM public.hub_scraper_catalog "
         "WHERE is_active = TRUE AND price_frozen = FALSE "
         "ORDER BY name"
     )
@@ -363,7 +363,7 @@ async def run_price_watch(*, dry_run: bool = False) -> dict:
             out["deactivated"] += 1
             if not dry_run:
                 await pool.execute(
-                    "UPDATE staging.hub_scraper_catalog SET is_active = FALSE, "
+                    "UPDATE public.hub_scraper_catalog SET is_active = FALSE, "
                     "price_checked_at = now() WHERE id = $1", row["id"])
                 await _history(pool, row, entry, "deactivated",
                                f"vendor price rose {ratio:.1f}x — needs a human")
@@ -380,7 +380,7 @@ async def run_price_watch(*, dry_run: bool = False) -> dict:
 
         if not dry_run:
             await pool.execute(
-                "UPDATE staging.hub_scraper_catalog SET "
+                "UPDATE public.hub_scraper_catalog SET "
                 "  unit_price_usd = $2, unit_label = $3, start_fee_usd = $4, "
                 "  pricing_model = $5, account_tier = $6, "
                 "  cost_per_run = $7, credit_cost = $8, "
@@ -406,7 +406,7 @@ async def run_price_watch(*, dry_run: bool = False) -> dict:
 
 async def _history(pool, row, entry: dict, action: str, note: Optional[str]) -> None:
     await pool.execute(
-        "INSERT INTO staging.hub_scraper_price_history "
+        "INSERT INTO public.hub_scraper_price_history "
         "(scraper_id, apify_actor_id, unit_price_usd, prev_unit_price_usd, "
         " cost_per_run, credit_cost, prev_credit_cost, change_ratio, action, note) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",

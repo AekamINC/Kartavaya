@@ -61,8 +61,8 @@ from analytics.windowing import bucket_expr
 #: honest path: the product's INSERT never writes the (seed-added) org_id
 #: column on prachar_campaign_contacts, so r.org_id is NULL on real rows.
 _ORG_SENDS = (
-    "FROM staging.prachar_campaign_contacts r "
-    "JOIN staging.prachar_campaigns c ON c.id = r.campaign_id "
+    "FROM public.prachar_campaign_contacts r "
+    "JOIN public.prachar_campaigns c ON c.id = r.campaign_id "
     "WHERE c.org_id = $1::uuid "
 )
 
@@ -134,13 +134,13 @@ def list_growth(req: MetricRequest):
         "SELECT period, SUM(added) - SUM(removed) AS value, "
         "SUM(added) AS added, SUM(removed) AS unsubscribed FROM ("
         f"  SELECT {added} AS period, 1 AS added, 0 AS removed "
-        "  FROM staging.graha_contacts g "
+        "  FROM public.graha_contacts g "
         "  WHERE g.org_id = $1::uuid AND g.merged_into_id IS NULL "
         "  AND COALESCE(g.email, '') <> '' "
         "  AND g.created_at::date BETWEEN $2::date AND $3::date "
         "  UNION ALL "
         f"  SELECT {removed} AS period, 0 AS added, 1 AS removed "
-        "  FROM staging.prachar_unsubscribes u "
+        "  FROM public.prachar_unsubscribes u "
         "  WHERE u.org_id = $1::uuid "
         "  AND u.unsubscribed_at::date BETWEEN $2::date AND $3::date"
         ") x GROUP BY period ORDER BY period",
@@ -171,7 +171,7 @@ def unsubscribe_rate(req: MetricRequest):
         "SUM(unsub)::float / NULLIF(SUM(send), 0)::float * 100 AS value, "
         "SUM(unsub) AS unsubscribes, SUM(send) AS sends FROM ("
         f"  SELECT {unsub} AS period, 1 AS unsub, 0 AS send "
-        "  FROM staging.prachar_unsubscribes u "
+        "  FROM public.prachar_unsubscribes u "
         "  WHERE u.org_id = $1::uuid "
         "  AND u.unsubscribed_at::date BETWEEN $2::date AND $3::date "
         "  UNION ALL "
@@ -214,8 +214,8 @@ def event_attendance(req: MetricRequest):
         "COUNT(r.id) FILTER (WHERE r.status = 'attended') AS attended "
     )
     base = (
-        "FROM staging.prachar_events e "
-        "LEFT JOIN staging.prachar_event_registrations r "
+        "FROM public.prachar_events e "
+        "LEFT JOIN public.prachar_event_registrations r "
         "ON r.event_id = e.id AND r.org_id = $1::uuid "
         "WHERE e.org_id = $1::uuid AND e.is_active = TRUE "
         "AND e.status <> 'cancelled' "
@@ -257,7 +257,7 @@ def leads_by_source(req: MetricRequest):
     # Merged duplicates excluded — the survivor carries the acquisition.
     # Vendors and partners are not acquisitions and stay out.
     base = (
-        "FROM staging.graha_contacts g "
+        "FROM public.graha_contacts g "
         "WHERE g.org_id = $1::uuid AND g.merged_into_id IS NULL "
         "AND g.contact_type IN ('lead', 'customer') "
         "AND g.created_at::date BETWEEN $2::date AND $3::date "
@@ -336,8 +336,8 @@ absent_metric(
     unit="inr",
     grain="flow",
     sensitivity="financial",
-    absent="Needs proposal 60's ingest spine: staging.analytics_metrics_daily "
-           "does not exist. staging.prachar_ad_insights (migration 026) does "
+    absent="Needs proposal 60's ingest spine: public.analytics_metrics_daily "
+           "does not exist. public.prachar_ad_insights (migration 026) does "
            "hold a per-day spend column written by the Meta sync "
            "(services/ad_insights.py), but it is per-connected-ad-account "
            "vendor-reported data, not the normalised daily spine this "
@@ -354,9 +354,9 @@ absent_metric(
     grain="flow",
     sensitivity="financial",
     absent="Blocked twice over. The cost side needs proposal 60's ingest "
-           "spine — staging.analytics_metrics_daily does not exist. And the "
+           "spine — public.analytics_metrics_daily does not exist. And the "
            "lead side has no attribution: graha_contacts.source is free text "
-           "with no foreign key to staging.prachar_ad_campaigns, so no lead "
+           "with no foreign key to public.prachar_ad_campaigns, so no lead "
            "can be tied to the campaign whose spend acquired it. Dividing "
            "all spend by all leads would charge every ad rupee to every "
            "walk-in.",
@@ -369,10 +369,10 @@ absent_metric(
     unit="pct",
     grain="flow",
     sensitivity="financial",
-    absent="Needs proposal 60's ingest spine (staging.analytics_metrics_daily "
+    absent="Needs proposal 60's ingest spine (public.analytics_metrics_daily "
            "does not exist) AND a revenue join that has no path: no order or "
            "invoice ties to an ad campaign anywhere in the schema. The roas "
-           "column on staging.prachar_ad_insights is Meta's self-reported "
+           "column on public.prachar_ad_insights is Meta's self-reported "
            "purchase_roas, measured against Meta's own conversion pixel — "
            "not Kartavya revenue — and serving it as ROAS would present the "
            "vendor's marketing claim as this product's measurement.",

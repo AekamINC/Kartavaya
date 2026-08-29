@@ -437,7 +437,7 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
         """
         SELECT count(*)::int AS total,
                count(*) FILTER (WHERE status = 'connected')::int AS connected
-        FROM staging.varta_business_accounts
+        FROM public.varta_business_accounts
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -460,7 +460,7 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
                count(opted_in_at)::int AS with_timestamp,
                count(DISTINCT opted_in_at)::int AS distinct_timestamps,
                count(graha_contact_id)::int AS linked_to_crm
-        FROM staging.varta_contacts
+        FROM public.varta_contacts
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -477,8 +477,8 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
         SELECT vc.id, vc.phone_number, vc.name AS wa_name, vc.opted_in,
                vc.opted_in_at, vc.last_message_at, vc.created_at,
                gc.name AS crm_name, gc.company AS crm_company
-        FROM staging.varta_contacts vc
-        LEFT JOIN staging.graha_contacts gc
+        FROM public.varta_contacts vc
+        LEFT JOIN public.graha_contacts gc
                ON gc.id = vc.graha_contact_id AND gc.org_id = vc.org_id
         WHERE vc.org_id = $1::uuid
         ORDER BY vc.opted_in ASC, vc.last_message_at DESC NULLS LAST
@@ -520,8 +520,8 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
             SELECT m.id AS message_id, m.created_at, m.content,
                    c.varta_contact_id,
                    btrim(regexp_replace(lower(m.content), '[[:space:][:punct:]]+', ' ', 'g')) AS norm
-            FROM staging.varta_messages m
-            JOIN staging.varta_conversations c
+            FROM public.varta_messages m
+            JOIN public.varta_conversations c
                    ON c.id = m.conversation_id AND c.org_id = m.org_id
             WHERE m.org_id = $1::uuid
               AND m.direction = 'inbound'
@@ -532,9 +532,9 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
                vc.opted_in, vc.opted_in_at,
                gc.name AS crm_name, gc.company AS crm_company
         FROM inbound i
-        JOIN staging.varta_contacts vc
+        JOIN public.varta_contacts vc
                ON vc.id = i.varta_contact_id AND vc.org_id = $1::uuid
-        LEFT JOIN staging.graha_contacts gc
+        LEFT JOIN public.graha_contacts gc
                ON gc.id = vc.graha_contact_id AND gc.org_id = vc.org_id
         WHERE i.norm = ANY($2::text[])
            OR EXISTS (SELECT 1 FROM unnest($3::text[]) p WHERE i.norm LIKE '%' || p || '%')
@@ -548,8 +548,8 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
         """
         SELECT count(*)::int AS inbound_messages,
                count(DISTINCT c.varta_contact_id)::int AS contacts_who_wrote
-        FROM staging.varta_messages m
-        JOIN staging.varta_conversations c
+        FROM public.varta_messages m
+        JOIN public.varta_conversations c
                ON c.id = m.conversation_id AND c.org_id = m.org_id
         WHERE m.org_id = $1::uuid AND m.direction = 'inbound'
         """,
@@ -641,22 +641,22 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
     missing_write_path = {
         "verified": (
             "No INSERT or UPDATE anywhere in this backend sets "
-            "staging.varta_contacts.opted_in. The inbound webhook creates a "
+            "public.varta_contacts.opted_in. The inbound webhook creates a "
             "contact and takes the column's DEFAULT of false; the send route "
             "never reads it. The column is a promise the schema makes and "
             "cannot keep."
         ),
         "columns_that_would_close_it": [
-            "staging.varta_contacts.opt_in_source — where the consent came from "
+            "public.varta_contacts.opt_in_source — where the consent came from "
             "(inbound message, web form, signed engagement letter, imported "
             "list). An opt-in with no source cannot be defended to anybody.",
-            "staging.varta_contacts.opt_in_notice — the EXACT notice text the "
+            "public.varta_contacts.opt_in_notice — the EXACT notice text the "
             "person was shown. The folio asks for this by name, and it is the "
             "one thing no report can ever reconstruct after the fact.",
-            "staging.varta_contacts.opted_out_at — a nullable timestamp. Today "
+            "public.varta_contacts.opted_out_at — a nullable timestamp. Today "
             "opted_in = false means BOTH 'never asked' and 'asked and refused', "
             "and those are not the same person.",
-            "staging.varta_contacts.opted_out_reason — 'stop keyword', "
+            "public.varta_contacts.opted_out_reason — 'stop keyword', "
             "'requested by phone', 'removed on request'. Without it every "
             "suppression looks the same and none can be reversed safely.",
         ],
@@ -665,7 +665,7 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
             "POST /conversations/{id}/messages: refuse a TEMPLATE send to a "
             "contact with no opt_in_source or with opted_out_at set, the way "
             "routers/prachar.py already filters the email audience against "
-            "staging.prachar_unsubscribes before a campaign goes out. The email "
+            "public.prachar_unsubscribes before a campaign goes out. The email "
             "side has the pattern and no column; the WhatsApp side has the "
             "column and no pattern."
         ),
@@ -673,7 +673,7 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
 
     limitations = [
         "THE OPT-IN COLUMN IS NEVER WRITTEN. No code path in this product sets "
-        "staging.varta_contacts.opted_in, so a true in that column is not "
+        "public.varta_contacts.opted_in, so a true in that column is not "
         "evidence that anyone consented and a false is not evidence that they "
         "refused. Every number in the opt-in section counts a flag, not a "
         "consent.",
@@ -701,7 +701,7 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
     if waba_total == 0:
         limitations.append(
             "NO WHATSAPP BUSINESS ACCOUNT IS CONNECTED for this org — "
-            "staging.varta_business_accounts holds no row. Nothing has ever been "
+            "public.varta_business_accounts holds no row. Nothing has ever been "
             "received from Meta, so every message counted here is seeded or "
             "imported data and a zero in the stop scan says nothing whatever "
             "about your customers."
@@ -891,7 +891,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
         """
         SELECT id, name, channel, status, total_recipients, audience_filter,
                scheduled_at, created_at
-        FROM staging.prachar_campaigns
+        FROM public.prachar_campaigns
         WHERE org_id = $1::uuid
           AND COALESCE(is_active, TRUE)
           AND COALESCE(status, 'draft') IN ('draft', 'scheduled', 'paused', 'suppressed')
@@ -905,7 +905,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
     # contact, which is also why an address that unsubscribed while attached to
     # a contact the CRM later deleted still suppresses correctly.
     unsub_rows = await pool.fetch(
-        "SELECT email FROM staging.prachar_unsubscribes WHERE org_id = $1::uuid",
+        "SELECT email FROM public.prachar_unsubscribes WHERE org_id = $1::uuid",
         org_id,
     )
     unsub_set = {_norm_email(r["email"]) for r in unsub_rows if r["email"]}
@@ -915,7 +915,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
     # column exists and is empty" are the same fact stated with and without its
     # denominator, and only one of them is actionable.
     wa_rows = await pool.fetch(
-        "SELECT phone_number, opted_in FROM staging.varta_contacts WHERE org_id = $1::uuid",
+        "SELECT phone_number, opted_in FROM public.varta_contacts WHERE org_id = $1::uuid",
         org_id,
     )
     wa_opted_in = {_norm_phone(r["phone_number"]) for r in wa_rows if r["opted_in"]}
@@ -941,7 +941,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
         rows = await pool.fetch(
             f"""
             SELECT gc.id, gc.name, gc.email, gc.phone, gc.company
-            FROM staging.graha_contacts gc
+            FROM public.graha_contacts gc
             WHERE gc.org_id = $1::uuid
               AND gc.is_active = TRUE
               AND gc.merged_into_id IS NULL
@@ -1016,7 +1016,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
                 suppressed = []
                 no_opt_in_count = sum(1 for a in seen if a not in wa_opted_in)
                 no_opt_in_basis = (
-                    "Matched against staging.varta_contacts.opted_in by the last "
+                    "Matched against public.varta_contacts.opted_in by the last "
                     "ten digits of the number. That column is never written by "
                     "any code path, so a miss here means 'no record' and never "
                     "'they refused'."
@@ -1051,11 +1051,11 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
                     "count": len(suppressed),
                     "measured": uses_email,
                     "note": (
-                        "Matched against staging.prachar_unsubscribes, which the "
+                        "Matched against public.prachar_unsubscribes, which the "
                         "email send path already applies before it dispatches."
                         if uses_email else
                         "NOT MEASURED on this channel. There is no unsubscribe "
-                        "list for WhatsApp or SMS — staging.prachar_unsubscribes "
+                        "list for WhatsApp or SMS — public.prachar_unsubscribes "
                         "is keyed by email address and holds nothing else."
                     ),
                 },
@@ -1069,7 +1069,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
                     "why": (
                         "Nothing in this product ingests a delivery event. There "
                         "is no bounce webhook, no suppression feed from the mail "
-                        "provider, and staging.outbound_log records only what "
+                        "provider, and public.outbound_log records only what "
                         "this server attempted. An empty bounce list here would "
                         "mean 'never looked', not 'clean'."
                     ),
@@ -1095,14 +1095,14 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
         "indistinguishable from a good one. Treat every list as unscreened for "
         "bounces however clean the rest of this report looks.",
         "No deliverability, quality or engagement figure is printed. Open and "
-        "click columns exist on staging.prachar_campaign_contacts but only a "
+        "click columns exist on public.prachar_campaign_contacts but only a "
         "send writes them, so a rate computed here would be a number about "
         "campaigns that never went out.",
         "EMAIL HAS NO OPT-IN RECORD IN THIS PRODUCT. The only email consent fact "
         "recorded is the unsubscribe list, which is an opt-OUT. So 'no recorded "
         "opt-in' on an email campaign counts the whole list by construction — a "
         "statement about the schema, not about the recipients.",
-        "The WhatsApp opt-in column (staging.varta_contacts.opted_in) is never "
+        "The WhatsApp opt-in column (public.varta_contacts.opted_in) is never "
         "written by any code path, so on a WhatsApp or SMS campaign a contact "
         "with no opt-in may well have given one verbally. See "
         "check_consent_ledger for the columns that would fix it.",
@@ -1260,7 +1260,7 @@ async def brief_whatsapp_cost(
         """
         SELECT id, name, language, category, status, body, header_type,
                header_content, footer, buttons
-        FROM staging.varta_templates
+        FROM public.varta_templates
         WHERE org_id = $1::uuid
         ORDER BY category, name
         LIMIT $2::int
@@ -1332,7 +1332,7 @@ async def brief_whatsapp_cost(
                count(*)::int AS messages,
                count(*) FILTER (WHERE m.status = 'failed')::int AS failed,
                count(*) FILTER (WHERE m.status = 'suppressed')::int AS suppressed
-        FROM staging.varta_messages m
+        FROM public.varta_messages m
         WHERE m.org_id = $1::uuid
           AND m.direction = 'outbound'
           AND m.created_at >= $2::date

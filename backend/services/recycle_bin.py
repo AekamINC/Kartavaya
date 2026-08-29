@@ -96,7 +96,7 @@ _SELECT = """
     SELECT id, org_id, source_kind, source_id, file_name, r2_key, file_url,
            size_bytes, deleted_by, deleted_at, stage2_at, restored_at,
            purged_at, purge_error
-      FROM staging.deleted_files
+      FROM public.deleted_files
 """
 
 #: The same name ladder `services/audit_actors` uses, and the same LEFT join.
@@ -113,7 +113,7 @@ _LIST_SELECT = """
            d.purged_at, d.purge_error,
            COALESCE(NULLIF(btrim(_du.name), ''), NULLIF(btrim(_du.full_name), ''))
              AS deleted_by_name
-      FROM staging.deleted_files d
+      FROM public.deleted_files d
       LEFT JOIN public.users _du ON _du.user_id = d.deleted_by
 """
 
@@ -166,7 +166,7 @@ async def bin_file(
     pool = await get_pool()
     row = await pool.fetchrow(
         """
-        INSERT INTO staging.deleted_files
+        INSERT INTO public.deleted_files
               (org_id, source_kind, source_id, file_name, r2_key, file_url,
                size_bytes, deleted_by)
         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::bigint, $8)
@@ -278,7 +278,7 @@ async def promote(*, org_id: str, bin_id: str) -> Optional[dict]:
     pool = await get_pool()
     row = await pool.fetchrow(
         """
-        UPDATE staging.deleted_files
+        UPDATE public.deleted_files
            SET stage2_at = now()
          WHERE id = $1::uuid AND org_id = $2::uuid
            AND purged_at IS NULL AND restored_at IS NULL
@@ -303,7 +303,7 @@ async def mark_restored(*, org_id: str, bin_id: str) -> Optional[dict]:
     pool = await get_pool()
     row = await pool.fetchrow(
         """
-        UPDATE staging.deleted_files
+        UPDATE public.deleted_files
            SET restored_at = now()
          WHERE id = $1::uuid AND org_id = $2::uuid
            AND purged_at IS NULL AND restored_at IS NULL
@@ -349,13 +349,13 @@ async def purge(*, org_id: Optional[str], bin_id: str) -> dict:
     ok = await delete_file(row["r2_key"], str(row["org_id"]))
     if not ok:
         await pool.execute(
-            "UPDATE staging.deleted_files SET purge_error=$2 WHERE id=$1::uuid",
+            "UPDATE public.deleted_files SET purge_error=$2 WHERE id=$1::uuid",
             bin_id, "R2 delete returned False",
         )
         return {"ok": False, "reason": "the object could not be deleted from storage"}
 
     await pool.execute(
-        "UPDATE staging.deleted_files SET purged_at=now(), purge_error=NULL "
+        "UPDATE public.deleted_files SET purged_at=now(), purge_error=NULL "
         "WHERE id=$1::uuid",
         bin_id,
     )

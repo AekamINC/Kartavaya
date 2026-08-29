@@ -165,7 +165,7 @@ async def _supplier_state(pool, org_id) -> str:
     and refusing there is the intended outcome, not a gap to close.
     """
     row = await pool.fetchrow(
-        "SELECT state_code FROM staging.organisations WHERE id = $1::uuid",
+        "SELECT state_code FROM public.organisations WHERE id = $1::uuid",
         str(org_id))
     return _norm_state(row["state_code"]) if row else ""
 
@@ -457,7 +457,7 @@ async def list_profiles(
     pool = await get_pool()
     q = (
         "SELECT p.*, c.name AS client_name "
-        "FROM staging.client_billing_profiles p "
+        "FROM public.client_billing_profiles p "
         # `AND c.org_id = p.org_id` is not belt-and-braces. A join on the id
         # ALONE is the documented cross-tenant leak shape in this repo: the
         # profile row is scoped by `p.org_id = $1`, but the client NAME it
@@ -465,7 +465,7 @@ async def list_profiles(
         # Every join to graha_clients in this file now carries the org
         # predicate; `create_profile` closes the other half by refusing to
         # store another org's client_id in the first place.
-        "JOIN staging.graha_clients c "
+        "JOIN public.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE p.org_id = $1::uuid"
     )
@@ -488,8 +488,8 @@ async def get_profile(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT p.*, c.name AS client_name "
-        "FROM staging.client_billing_profiles p "
-        "JOIN staging.graha_clients c "
+        "FROM public.client_billing_profiles p "
+        "JOIN public.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE p.id = $1::uuid AND p.org_id = $2::uuid",
         profile_id, org_id,
@@ -522,21 +522,21 @@ async def create_profile(
     # It runs BEFORE the 409 deliberately: a client this org cannot see is not
     # found, whatever else is true of it.
     client = await pool.fetchrow(
-        "SELECT id FROM staging.graha_clients "
+        "SELECT id FROM public.graha_clients "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         body.client_id, org_id,
     )
     if not client:
         raise HTTPException(404, "Client not found")
     existing = await pool.fetchval(
-        "SELECT id FROM staging.client_billing_profiles "
+        "SELECT id FROM public.client_billing_profiles "
         "WHERE org_id = $1::uuid AND client_id = $2::uuid",
         org_id, body.client_id,
     )
     if existing:
         raise HTTPException(409, "Billing profile already exists for this client")
     row = await pool.fetchrow(
-        "INSERT INTO staging.client_billing_profiles "
+        "INSERT INTO public.client_billing_profiles "
         "(org_id, client_id, billing_cycle, anchor_day, payment_terms_days, "
         " currency, gst_treatment, credit_limit, notes, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4::smallint, $5::int, $6, $7, $8, $9, $10) "
@@ -570,7 +570,7 @@ async def update_profile(
     vals.append(str(profile_id))
     vals.append(org_id)
     row = await pool.fetchrow(
-        f"UPDATE staging.client_billing_profiles SET {', '.join(updates)} "
+        f"UPDATE public.client_billing_profiles SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -591,9 +591,9 @@ async def list_service_lines(
     pool = await get_pool()
     q = (
         "SELECT sl.*, p.client_id, c.name AS client_name "
-        "FROM staging.client_service_lines sl "
-        "JOIN staging.client_billing_profiles p ON p.id = sl.profile_id "
-        "JOIN staging.graha_clients c "
+        "FROM public.client_service_lines sl "
+        "JOIN public.client_billing_profiles p ON p.id = sl.profile_id "
+        "JOIN public.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE sl.org_id = $1::uuid"
     )
@@ -615,14 +615,14 @@ async def create_service_line(
 ):
     pool = await get_pool()
     profile = await pool.fetchrow(
-        "SELECT id FROM staging.client_billing_profiles "
+        "SELECT id FROM public.client_billing_profiles "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         body.profile_id, org_id,
     )
     if not profile:
         raise HTTPException(404, "Billing profile not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.client_service_lines "
+        "INSERT INTO public.client_service_lines "
         "(org_id, profile_id, kind, description, amount, cadence, "
         " period_start, period_end, billing_direction, auto_invoice, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11) "
@@ -661,7 +661,7 @@ async def update_service_line(
     vals.append(str(line_id))
     vals.append(org_id)
     row = await pool.fetchrow(
-        f"UPDATE staging.client_service_lines SET {', '.join(updates)} "
+        f"UPDATE public.client_service_lines SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -706,14 +706,14 @@ async def sweep_client_auto_invoices(
         # per line: the sweep runs over every org's service lines at once.
         "       c.name AS client_name, c.gstin AS client_gstin, "
         "       c.address AS client_address "
-        "FROM staging.client_service_lines sl "
-        "JOIN staging.client_billing_profiles p ON p.id = sl.profile_id "
+        "FROM public.client_service_lines sl "
+        "JOIN public.client_billing_profiles p ON p.id = sl.profile_id "
         # This sweep runs for EVERY org at once (the cron has no org), so
         # `p.org_id` is the only anchor there is — and that makes the org
         # predicate load-bearing rather than defensive: without it the name
         # that lands in the invoice's `notes` and in the cron's log line is
         # whichever org's client shares that uuid.
-        "JOIN staging.graha_clients c "
+        "JOIN public.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE sl.auto_invoice = TRUE "
         "  AND sl.period_start <= $1::date "
@@ -777,7 +777,7 @@ async def sweep_client_auto_invoices(
             # once, unattended, with twelve serials drawn, is not a thing to do
             # to a customer's books without a person deciding it.
             last_billed = await pool.fetchval(
-                "SELECT MAX(period_start) FROM staging.client_invoice_lines "
+                "SELECT MAX(period_start) FROM public.client_invoice_lines "
                 "WHERE line_id = $1::uuid",
                 sl["id"],
             )
@@ -812,7 +812,7 @@ async def sweep_client_auto_invoices(
         period_end = period_end_for(period_start, cadence) if cadence != "one_off" else period_start
 
         already = await pool.fetchval(
-            "SELECT 1 FROM staging.client_invoice_lines "
+            "SELECT 1 FROM public.client_invoice_lines "
             "WHERE line_id = $1::uuid AND period_start = $2::date",
             sl["id"], period_start,
         )
@@ -899,7 +899,7 @@ async def sweep_client_auto_invoices(
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    "INSERT INTO staging.ganit_invoices "
+                    "INSERT INTO public.ganit_invoices "
                     "(id, org_id, client_id, billing_profile_id, invoice_number, "
                     " invoice_date, due_date, line_items, subtotal, "
                     " cgst, sgst, igst, total, balance_due, payment_status, "
@@ -973,7 +973,7 @@ async def sweep_client_auto_invoices(
                     is_igst, place_of_supply,
                 )
                 await conn.execute(
-                    "INSERT INTO staging.client_invoice_lines "
+                    "INSERT INTO public.client_invoice_lines "
                     "(invoice_id, line_id, period_start, amount) "
                     "VALUES ($1::uuid, $2::uuid, $3::date, $4)",
                     str(invoice_id), sl["id"], period_start, amount,
@@ -1005,9 +1005,9 @@ async def list_metered_usage(
     pool = await get_pool()
     q = (
         "SELECT u.*, p.client_id, c.name AS client_name "
-        "FROM staging.client_metered_usage u "
-        "JOIN staging.client_billing_profiles p ON p.id = u.profile_id "
-        "JOIN staging.graha_clients c "
+        "FROM public.client_metered_usage u "
+        "JOIN public.client_billing_profiles p ON p.id = u.profile_id "
+        "JOIN public.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE u.org_id = $1::uuid"
     )
@@ -1032,14 +1032,14 @@ async def create_metered_usage(
 ):
     pool = await get_pool()
     profile = await pool.fetchrow(
-        "SELECT id FROM staging.client_billing_profiles "
+        "SELECT id FROM public.client_billing_profiles "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         body.profile_id, org_id,
     )
     if not profile:
         raise HTTPException(404, "Billing profile not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.client_metered_usage "
+        "INSERT INTO public.client_metered_usage "
         "(org_id, profile_id, metric, quantity, unit, rate, "
         " recorded_date, source_ref, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, "
@@ -1063,7 +1063,7 @@ async def update_metered_usage(
 ):
     pool = await get_pool()
     already = await pool.fetchval(
-        "SELECT invoiced FROM staging.client_metered_usage "
+        "SELECT invoiced FROM public.client_metered_usage "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         usage_id, org_id,
     )
@@ -1082,7 +1082,7 @@ async def update_metered_usage(
     vals.append(str(usage_id))
     vals.append(org_id)
     row = await pool.fetchrow(
-        f"UPDATE staging.client_metered_usage SET {', '.join(updates)} "
+        f"UPDATE public.client_metered_usage SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -1100,7 +1100,7 @@ async def delete_metered_usage(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT invoiced FROM staging.client_metered_usage "
+        "SELECT invoiced FROM public.client_metered_usage "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         usage_id, org_id,
     )
@@ -1109,7 +1109,7 @@ async def delete_metered_usage(
     if row["invoiced"]:
         raise HTTPException(409, "Cannot delete usage that has already been invoiced")
     await pool.execute(
-        "DELETE FROM staging.client_metered_usage "
+        "DELETE FROM public.client_metered_usage "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         usage_id, org_id,
     )
@@ -1137,8 +1137,8 @@ async def generate_usage_invoice(
     profile = await pool.fetchrow(
         "SELECT p.*, c.name AS client_name, c.gstin AS client_gstin, "
         "       c.address AS client_address "
-        "FROM staging.client_billing_profiles p "
-        "JOIN staging.graha_clients c "
+        "FROM public.client_billing_profiles p "
+        "JOIN public.graha_clients c "
         "  ON c.id = p.client_id AND c.org_id = p.org_id "
         "WHERE p.id = $1::uuid AND p.org_id = $2::uuid",
         body.profile_id, org_id,
@@ -1149,7 +1149,7 @@ async def generate_usage_invoice(
     if body.usage_ids:
         placeholders = ", ".join(f"${i+3}::uuid" for i in range(len(body.usage_ids)))
         q = (
-            f"SELECT * FROM staging.client_metered_usage "
+            f"SELECT * FROM public.client_metered_usage "
             f"WHERE org_id = $1::uuid AND profile_id = $2::uuid "
             f"AND invoiced = FALSE AND id IN ({placeholders}) "
             f"ORDER BY recorded_date"
@@ -1157,7 +1157,7 @@ async def generate_usage_invoice(
         usage_rows = await pool.fetch(q, org_id, body.profile_id, *body.usage_ids)
     else:
         usage_rows = await pool.fetch(
-            "SELECT * FROM staging.client_metered_usage "
+            "SELECT * FROM public.client_metered_usage "
             "WHERE org_id = $1::uuid AND profile_id = $2::uuid AND invoiced = FALSE "
             "ORDER BY recorded_date",
             org_id, body.profile_id,
@@ -1228,7 +1228,7 @@ async def generate_usage_invoice(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO staging.ganit_invoices "
+                "INSERT INTO public.ganit_invoices "
                 "(id, org_id, client_id, billing_profile_id, invoice_number, "
                 " invoice_date, due_date, line_items, subtotal, "
                 " cgst, sgst, igst, total, balance_due, payment_status, "
@@ -1262,7 +1262,7 @@ async def generate_usage_invoice(
             )
             placeholders = ", ".join(f"${i+2}::uuid" for i in range(len(usage_ids)))
             await conn.execute(
-                f"UPDATE staging.client_metered_usage SET invoiced = TRUE "
+                f"UPDATE public.client_metered_usage SET invoiced = TRUE "
                 f"WHERE org_id = $1::uuid AND id IN ({placeholders})",
                 org_id, *[str(uid) for uid in usage_ids],
             )
@@ -1295,8 +1295,8 @@ async def list_rate_cards(
     pool = await get_pool()
     q = (
         "SELECT rc.*, v.name AS vendor_name "
-        "FROM staging.vendor_rate_cards rc "
-        "JOIN staging.ganit_vendors v ON v.id = rc.vendor_id "
+        "FROM public.vendor_rate_cards rc "
+        "JOIN public.ganit_vendors v ON v.id = rc.vendor_id "
         "WHERE rc.org_id = $1::uuid"
     )
     params: list = [org_id]
@@ -1317,13 +1317,13 @@ async def create_rate_card(
 ):
     pool = await get_pool()
     vendor = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_vendors WHERE id = $1::uuid AND org_id = $2::uuid",
+        "SELECT id FROM public.ganit_vendors WHERE id = $1::uuid AND org_id = $2::uuid",
         body.vendor_id, org_id,
     )
     if not vendor:
         raise HTTPException(404, "Vendor not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.vendor_rate_cards "
+        "INSERT INTO public.vendor_rate_cards "
         "(org_id, vendor_id, item_category, rate, unit, effective_from, "
         " effective_to, proration_clause, notes, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $5, "
@@ -1360,7 +1360,7 @@ async def update_rate_card(
     vals.append(str(card_id))
     vals.append(org_id)
     row = await pool.fetchrow(
-        f"UPDATE staging.vendor_rate_cards SET {', '.join(updates)} "
+        f"UPDATE public.vendor_rate_cards SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -1421,7 +1421,7 @@ async def delete_rate_card(
     """
     pool = await get_pool()
     card = await pool.fetchrow(
-        "SELECT id, item_category FROM staging.vendor_rate_cards "
+        "SELECT id, item_category FROM public.vendor_rate_cards "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         card_id, org_id,
     )
@@ -1431,7 +1431,7 @@ async def delete_rate_card(
     # Org-scoped on BOTH sides. The FK alone is not a tenancy check: it proves
     # the credit points at this card, not that the credit belongs to the caller.
     holders = await pool.fetch(
-        "SELECT sla_metric, period FROM staging.vendor_sla_credits "
+        "SELECT sla_metric, period FROM public.vendor_sla_credits "
         "WHERE rate_card_id = $1::uuid AND org_id = $2::uuid "
         "ORDER BY period DESC",
         card_id, org_id,
@@ -1454,7 +1454,7 @@ async def delete_rate_card(
         )
 
     await pool.execute(
-        "DELETE FROM staging.vendor_rate_cards "
+        "DELETE FROM public.vendor_rate_cards "
         "WHERE id = $1::uuid AND org_id = $2::uuid",
         card_id, org_id,
     )
@@ -1476,8 +1476,8 @@ async def list_sla_credits(
     pool = await get_pool()
     q = (
         "SELECT sc.*, v.name AS vendor_name "
-        "FROM staging.vendor_sla_credits sc "
-        "JOIN staging.ganit_vendors v ON v.id = sc.vendor_id "
+        "FROM public.vendor_sla_credits sc "
+        "JOIN public.ganit_vendors v ON v.id = sc.vendor_id "
         "WHERE sc.org_id = $1::uuid"
     )
     params: list = [org_id]
@@ -1501,13 +1501,13 @@ async def create_sla_credit(
 ):
     pool = await get_pool()
     vendor = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_vendors WHERE id = $1::uuid AND org_id = $2::uuid",
+        "SELECT id FROM public.ganit_vendors WHERE id = $1::uuid AND org_id = $2::uuid",
         body.vendor_id, org_id,
     )
     if not vendor:
         raise HTTPException(404, "Vendor not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.vendor_sla_credits "
+        "INSERT INTO public.vendor_sla_credits "
         "(org_id, vendor_id, rate_card_id, sla_metric, threshold, actual, "
         " credit_amount, period, status, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, "
@@ -1533,7 +1533,7 @@ async def apply_sla_credit(
     async with pool.acquire() as conn:
         async with conn.transaction():
             credit = await conn.fetchrow(
-                "SELECT * FROM staging.vendor_sla_credits "
+                "SELECT * FROM public.vendor_sla_credits "
                 "WHERE id = $1::uuid AND org_id = $2::uuid",
                 credit_id, org_id,
             )
@@ -1542,20 +1542,20 @@ async def apply_sla_credit(
             if credit["status"] != "pending":
                 raise HTTPException(409, "SLA credit is not pending")
             bill = await conn.fetchrow(
-                "SELECT id FROM staging.ganit_vendor_bills "
+                "SELECT id FROM public.ganit_vendor_bills "
                 "WHERE id = $1::uuid AND org_id = $2::uuid",
                 body.bill_id, org_id,
             )
             if not bill:
                 raise HTTPException(404, "Vendor bill not found")
             row = await conn.fetchrow(
-                "UPDATE staging.vendor_sla_credits "
+                "UPDATE public.vendor_sla_credits "
                 "SET status = 'applied', applied_to_bill = $1::uuid "
                 "WHERE id = $2::uuid AND org_id = $3::uuid RETURNING *",
                 body.bill_id, credit_id, org_id,
             )
             await conn.execute(
-                "UPDATE staging.ganit_vendor_bills "
+                "UPDATE public.ganit_vendor_bills "
                 "SET sla_credit_applied = COALESCE(sla_credit_applied, 0) + $1 "
                 "WHERE id = $2::uuid AND org_id = $3::uuid",
                 float(credit["credit_amount"]), body.bill_id, org_id,
@@ -1572,7 +1572,7 @@ async def waive_sla_credit(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "UPDATE staging.vendor_sla_credits SET status = 'waived' "
+        "UPDATE public.vendor_sla_credits SET status = 'waived' "
         "WHERE id = $1::uuid AND org_id = $2::uuid AND status = 'pending' "
         "RETURNING *",
         credit_id, org_id,
@@ -1614,8 +1614,8 @@ async def payment_ageing(
         rows = await pool.fetch(
             "SELECT i.id, i.total, i.amount_paid, i.due_date, "
             "       c.id AS party_id, c.name AS party_name "
-            "FROM staging.ganit_invoices i "
-            "JOIN staging.graha_clients c "
+            "FROM public.ganit_invoices i "
+            "JOIN public.graha_clients c "
             "  ON c.id = i.client_id AND c.org_id = i.org_id "
             "WHERE i.org_id = $1::uuid AND i.payment_status != 'paid'",
             org_id,
@@ -1624,8 +1624,8 @@ async def payment_ageing(
         rows = await pool.fetch(
             "SELECT b.id, b.total, b.amount_paid, b.due_date, "
             "       v.id AS party_id, v.name AS party_name "
-            "FROM staging.ganit_vendor_bills b "
-            "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+            "FROM public.ganit_vendor_bills b "
+            "JOIN public.ganit_vendors v ON v.id = b.vendor_id "
             "WHERE b.org_id = $1::uuid AND b.status != 'paid'",
             org_id,
         )

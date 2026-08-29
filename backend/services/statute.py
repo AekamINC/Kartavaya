@@ -69,7 +69,7 @@ _COLS: tuple[str, ...] = (
 #: `"$user", public, extensions` — measured 2026-08-19 — so `statute_calendar`
 #: unqualified resolves to nothing at all, and a shadow table in `public` has
 #: bitten this repo before (migration 142).
-_FROM = "FROM staging.statute_calendar"
+_FROM = "FROM public.statute_calendar"
 
 _SELECT_BY_KEY = (
     f"SELECT {', '.join(_COLS)} {_FROM} "

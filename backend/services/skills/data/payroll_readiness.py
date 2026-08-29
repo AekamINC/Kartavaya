@@ -91,10 +91,10 @@ async def check_payroll_readiness(
         emp AS (
             SELECT e.id, e.name, e.employee_code, e.bank_details,
                    e.email, e.phone
-            FROM staging.manav_employees e, bounds b
+            FROM public.manav_employees e, bounds b
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
               AND NOT EXISTS (
-                  SELECT 1 FROM staging.manav_offboarding x
+                  SELECT 1 FROM public.manav_offboarding x
                   WHERE x.org_id = e.org_id AND x.employee_id = e.id
                     AND x.status <> 'cancelled'
                     AND x.last_working_day < b.month_start)
@@ -109,7 +109,7 @@ async def check_payroll_readiness(
             SELECT s.employee_id, s.effective_from, s.updated_at, s.basic,
                    ROW_NUMBER() OVER (PARTITION BY s.employee_id ORDER BY s.effective_from DESC) AS rn,
                    COUNT(*)     OVER (PARTITION BY s.employee_id) AS n_candidates
-            FROM staging.vetana_salary_structures s, bounds b
+            FROM public.vetana_salary_structures s, bounds b
             WHERE s.org_id = $1::uuid AND s.is_active = TRUE AND s.effective_from <= b.month_end
         ),
         -- The nine branches, wrapped so the EMPLOYEE CODE can be joined on once
@@ -136,7 +136,7 @@ async def check_payroll_readiness(
                'no attendance row in the month; the run pays every day they were on the rolls without verification — the whole month for anyone employed throughout', NULL
         FROM emp e, bounds b
         WHERE EXISTS (SELECT 1 FROM struct_in_scope s WHERE s.employee_id = e.id)
-          AND NOT EXISTS (SELECT 1 FROM staging.manav_attendance a
+          AND NOT EXISTS (SELECT 1 FROM public.manav_attendance a
               WHERE a.org_id = $1::uuid AND a.employee_id = e.id
                 AND a.date >= b.month_start AND a.date <= b.month_end
                 AND a.status IN ('present','late','half_day','absent'))
@@ -145,14 +145,14 @@ async def check_payroll_readiness(
                'leave request still pending for '||lr.start_date::text||' to '||lr.end_date::text
                  ||'; the run treats it as neither paid nor unpaid leave', lr.days
         FROM emp e
-        JOIN staging.manav_leave_requests lr ON lr.employee_id = e.id AND lr.org_id = $1::uuid
+        JOIN public.manav_leave_requests lr ON lr.employee_id = e.id AND lr.org_id = $1::uuid
         CROSS JOIN bounds b
         WHERE lr.status = 'pending' AND lr.start_date <= b.month_end AND lr.end_date >= b.month_start
         UNION ALL
         SELECT 'blocker','run_already_locked', NULL, NULL::uuid, NULL, NULL,
                'payroll run for '||$2||' already exists with status '''||r.status
                  ||'''; process_payroll refuses anything other than draft', r.total_net
-        FROM staging.vetana_payroll_runs r
+        FROM public.vetana_payroll_runs r
         WHERE r.org_id = $1::uuid AND r.month = $2 AND r.status <> 'draft'
         UNION ALL
         SELECT 'warning','structure_effective_mid_month', e.name, e.id, e.email, e.phone,
@@ -177,13 +177,13 @@ async def check_payroll_readiness(
                'active advance, EMI '||l.emi_amount::text||' against balance '||l.balance_remaining::text
                  ||'; recovery stops at 50% of gross and the remainder carries forward',
                LEAST(l.emi_amount, l.balance_remaining)
-        FROM emp e JOIN staging.vetana_loans l ON l.employee_id = e.id AND l.org_id = $1::uuid
+        FROM emp e JOIN public.vetana_loans l ON l.employee_id = e.id AND l.org_id = $1::uuid
         WHERE l.status = 'active' AND l.balance_remaining > 0
         UNION ALL
         SELECT 'warning','unapproved_expense_claim', e.name, e.id, e.email, e.phone,
                'expense claim of '||c.amount::text||' dated '||c.expense_date::text
                  ||' still pending; it will not be reimbursed in this run', c.amount
-        FROM emp e JOIN staging.manav_expense_claims c ON c.employee_id = e.id AND c.org_id = $1::uuid
+        FROM emp e JOIN public.manav_expense_claims c ON c.employee_id = e.id AND c.org_id = $1::uuid
         CROSS JOIN bounds b
         WHERE c.status = 'pending' AND c.payslip_id IS NULL AND c.expense_date <= b.month_end
         )
@@ -193,7 +193,7 @@ async def check_payroll_readiness(
         -- that stops the whole run.
         SELECT f.*, e2.employee_code
         FROM findings f
-        LEFT JOIN staging.manav_employees e2
+        LEFT JOIN public.manav_employees e2
                ON e2.id = f.employee_id AND e2.org_id = $1::uuid
         ORDER BY f.severity, f.check_code, f.employee_name
         LIMIT $3

@@ -187,7 +187,7 @@ def _require(levels, required: str) -> None:
 async def _own_employee_id(pool, user, org_id: str) -> str | None:
     """The caller's own employee row in this org, if they have one."""
     return await pool.fetchval(
-        "SELECT id::text FROM staging.manav_employees "
+        "SELECT id::text FROM public.manav_employees "
         "WHERE user_id=$1 AND org_id=$2::uuid AND is_active=TRUE LIMIT 1",
         user["user_id"], org_id,
     )
@@ -288,8 +288,8 @@ async def list_structures(
         "SELECT s.*, "
         "e.name AS employee_name, "
         "e.employee_code "
-        "FROM staging.vetana_salary_structures s "
-        "JOIN staging.manav_employees e ON e.id = s.employee_id "
+        "FROM public.vetana_salary_structures s "
+        "JOIN public.manav_employees e ON e.id = s.employee_id "
         "WHERE s.org_id=$1::uuid AND s.is_active=TRUE"
     )
     params: list = [org_id]
@@ -326,12 +326,12 @@ async def create_structure(
     # The employee must be in THIS org. Without it the row references a foreign
     # employee id — the same cross-tenant hole already closed on /loans.
     if not await pool.fetchval(
-        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         body.employee_id, org_id,
     ):
         raise HTTPException(404, "Employee not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.vetana_salary_structures "
+        "INSERT INTO public.vetana_salary_structures "
         "(org_id, employee_id, effective_from, ctc_annual, basic, hra, da, "
         "special_allowance, conveyance, medical, other_allowances, "
         "pf_enabled, esi_enabled, pt_applicable, tds_regime, notes, created_by) "
@@ -360,8 +360,8 @@ async def get_structure(
     row = await pool.fetchrow(
         "SELECT s.*, "
         "e.name AS employee_name, e.user_id AS employee_user_id "
-        "FROM staging.vetana_salary_structures s "
-        "JOIN staging.manav_employees e ON e.id = s.employee_id "
+        "FROM public.vetana_salary_structures s "
+        "JOIN public.manav_employees e ON e.id = s.employee_id "
         "WHERE s.id=$1::uuid AND s.org_id=$2::uuid",
         sid, org_id,
     )
@@ -402,7 +402,7 @@ async def update_structure(
     updates.append(f"updated_at=NOW()")
     vals += [sid, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.vetana_salary_structures SET {', '.join(updates)} "
+        f"UPDATE public.vetana_salary_structures SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -421,7 +421,7 @@ async def delete_structure(
     pool = await get_pool()
     _require(levels, ADMIN)
     result = await pool.execute(
-        "UPDATE staging.vetana_salary_structures SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.vetana_salary_structures SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         sid, org_id,
     )
@@ -518,7 +518,7 @@ async def list_pt_slabs(
     rows = await pool.fetch(
         "SELECT id, state_code, state_name, slab_from, slab_to, monthly_tax, "
         "       effective_from, month, (org_id IS NOT NULL) AS is_own "
-        "  FROM staging.pay_professional_tax "
+        "  FROM public.pay_professional_tax "
         " WHERE org_id = $1::uuid OR org_id IS NULL "
         " ORDER BY state_code, month NULLS FIRST, slab_from",
         org_id,
@@ -538,7 +538,7 @@ async def create_pt_slab(
     _require(levels, ADMIN)
     _check_band(body.slab_from, body.slab_to, body.month)
     row = await pool.fetchrow(
-        "INSERT INTO staging.pay_professional_tax "
+        "INSERT INTO public.pay_professional_tax "
         "(org_id, state_code, state_name, slab_from, slab_to, monthly_tax, "
         " effective_from, month) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, "
@@ -578,7 +578,7 @@ async def update_pt_slab(
         raise HTTPException(400, "Nothing to change.")
 
     current = await pool.fetchrow(
-        "SELECT slab_from, slab_to, month FROM staging.pay_professional_tax "
+        "SELECT slab_from, slab_to, month FROM public.pay_professional_tax "
         " WHERE id=$1 AND org_id=$2::uuid",
         slab_id, org_id,
     )
@@ -606,7 +606,7 @@ async def update_pt_slab(
 
     params.extend([slab_id, org_id])
     row = await pool.fetchrow(
-        "UPDATE staging.pay_professional_tax SET " + ", ".join(sets) +
+        "UPDATE public.pay_professional_tax SET " + ", ".join(sets) +
         " WHERE id=$" + str(len(params) - 1) +
         " AND org_id=$" + str(len(params)) + "::uuid "
         "RETURNING id, state_code, state_name, slab_from, slab_to, monthly_tax, "
@@ -635,7 +635,7 @@ async def delete_pt_slab(
     pool = await get_pool()
     _require(levels, ADMIN)
     result = await pool.execute(
-        "DELETE FROM staging.pay_professional_tax WHERE id=$1 AND org_id=$2::uuid",
+        "DELETE FROM public.pay_professional_tax WHERE id=$1 AND org_id=$2::uuid",
         slab_id, org_id,
     )
     if result == "DELETE 0":
@@ -1035,7 +1035,7 @@ async def _pt_slabs(pool, org_id: str, as_at: date) -> list:
     return list(await pool.fetch(
         "SELECT state_code, state_name, slab_from, slab_to, monthly_tax, "
         "       effective_from, month, (org_id IS NOT NULL) AS is_own "
-        "  FROM staging.pay_professional_tax "
+        "  FROM public.pay_professional_tax "
         # A NULL `org_id` IS A SHARED LADDER, NOT A ROW TO IGNORE. The
         # column is nullable, and a professional-tax ladder is national
         # reference data — so seeding one row-set for every org, with no
@@ -1430,11 +1430,11 @@ _FIGURES_SQL = (
     "              THEN -(COALESCE(i.subtotal, 0) - COALESCE(i.discount, 0)) "
     "              ELSE  (COALESCE(i.subtotal, 0) - COALESCE(i.discount, 0)) "
     "         END AS taxable "
-    "    FROM staging.ganit_invoices i "
+    "    FROM public.ganit_invoices i "
     "    JOIN ("
     "       SELECT me.user_id AS user_id, "
     "              NULLIF(btrim(COALESCE(me.department, '')), '') AS department "
-    "         FROM staging.manav_employees me "
+    "         FROM public.manav_employees me "
     "        WHERE me.org_id = $1::uuid "
     "          AND me.user_id IS NOT NULL AND btrim(me.user_id) <> ''"
     "    ) de ON de.user_id = i.salesperson_id "
@@ -1477,7 +1477,7 @@ _SCOPE_MATCH = {
 #: line, because there is no money to pay.
 _ATTRIBUTED_SQL = (
     "SELECT COUNT(*) FILTER (WHERE i.salesperson_id IS NOT NULL)::int "
-    "  FROM staging.ganit_invoices i "
+    "  FROM public.ganit_invoices i "
     " WHERE i.org_id = $1::uuid "
     "   AND i.is_active = TRUE "
     "   AND i.doc_status <> 'draft' "
@@ -1533,7 +1533,7 @@ async def _variable_earnings(pool, org_id: str, employee_id: str,
     try:
         awards = await pool.fetch(
             "SELECT amount, reason, pay_period "
-            "  FROM staging.manav_bonus_awards "
+            "  FROM public.manav_bonus_awards "
             " WHERE org_id = $1::uuid AND employee_id = $2::uuid "
             "   AND pay_period = $3 "
             " ORDER BY awarded_at, id",
@@ -1544,7 +1544,7 @@ async def _variable_earnings(pool, org_id: str, employee_id: str,
         # owner's rule is "we dont block" — and a firm with no bonus table has
         # awarded no bonuses, so the honest answer is no lines.
         logging.warning(
-            "vetana: staging.manav_bonus_awards is unreadable (migration 190 "
+            "vetana: public.manav_bonus_awards is unreadable (migration 190 "
             "not applied?) — no bonus lines written for %s", month)
         awards = []
 
@@ -1560,7 +1560,7 @@ async def _variable_earnings(pool, org_id: str, employee_id: str,
         schemes = await pool.fetch(
             "SELECT eligible, basis, period, revenue_scope, "
             "       effective_from, effective_to, id "
-            "  FROM staging.manav_commission_schemes "
+            "  FROM public.manav_commission_schemes "
             " WHERE org_id = $1::uuid AND employee_id = $2::uuid "
             "   AND eligible IS TRUE "
             "   AND effective_from <= $3::date "
@@ -1578,7 +1578,7 @@ async def _variable_earnings(pool, org_id: str, employee_id: str,
             continue
         bands = await pool.fetch(
             "SELECT from_amount, rate_percent "
-            "  FROM staging.manav_commission_bands "
+            "  FROM public.manav_commission_bands "
             " WHERE org_id = $1::uuid AND scheme_id = $2::uuid "
             " ORDER BY from_amount",
             org_id, s["id"],
@@ -1691,7 +1691,7 @@ async def process_payroll(
     month_end = date(year, mon, days_in_month)
 
     existing = await pool.fetchrow(
-        "SELECT id, status FROM staging.vetana_payroll_runs "
+        "SELECT id, status FROM public.vetana_payroll_runs "
         "WHERE org_id=$1::uuid AND month=$2",
         org_id, month,
     )
@@ -1701,11 +1701,11 @@ async def process_payroll(
     run_id = existing["id"] if existing else None
     if existing:
         await pool.execute(
-            "DELETE FROM staging.vetana_payslips WHERE run_id=$1::uuid", run_id
+            "DELETE FROM public.vetana_payslips WHERE run_id=$1::uuid", run_id
         )
     else:
         run_row = await pool.fetchrow(
-            "INSERT INTO staging.vetana_payroll_runs (org_id, month, created_by) "
+            "INSERT INTO public.vetana_payroll_runs (org_id, month, created_by) "
             "VALUES ($1::uuid, $2, $3) RETURNING id",
             org_id, month, user["user_id"],
         )
@@ -1720,7 +1720,7 @@ async def process_payroll(
             "vetana: manav_employees carries no state column (migration 220 "
             "not applied?) — professional tax for %s falls back to the flat "
             "200-over-15000 rule for every employee instead of the state's "
-            "slab. staging.pay_professional_tax is not read.", month)
+            "slab. public.pay_professional_tax is not read.", month)
 
     # `e.user_id` comes along because commission attributes to a LOGIN
     # (ganit_invoices.salesperson_id) while the scheme is recorded against an
@@ -1769,18 +1769,18 @@ async def process_payroll(
     structures = await pool.fetch(
         "SELECT s.*, e.user_id AS employee_user_id, "
         "       e.date_of_joining AS employee_doj, "
-        "       (SELECT max(x.last_working_day) FROM staging.manav_offboarding x "
+        "       (SELECT max(x.last_working_day) FROM public.manav_offboarding x "
         "         WHERE x.org_id = e.org_id AND x.employee_id = e.id "
         "           AND x.status <> 'cancelled') AS employee_last_day, "
         "       NULLIF(btrim(COALESCE(e.department, '')), '') AS employee_department"
         + (f", NULLIF(btrim(COALESCE(e.{state_col}::text, '')), '') AS employee_state "
            if state_col else " ")
-        + "FROM staging.vetana_salary_structures s "
-        "JOIN staging.manav_employees e ON e.id = s.employee_id AND e.is_active=TRUE "
+        + "FROM public.vetana_salary_structures s "
+        "JOIN public.manav_employees e ON e.id = s.employee_id AND e.is_active=TRUE "
         "WHERE s.org_id=$1::uuid AND s.is_active=TRUE "
         "AND s.effective_from <= $2 "
         "AND NOT EXISTS ("
-        "  SELECT 1 FROM staging.manav_offboarding x "
+        "  SELECT 1 FROM public.manav_offboarding x "
         "  WHERE x.org_id = e.org_id AND x.employee_id = e.id "
         "  AND x.status <> 'cancelled' "
         "  AND x.last_working_day < $3::date) "
@@ -1857,7 +1857,7 @@ async def process_payroll(
             "COUNT(*) FILTER (WHERE status='half_day') AS half_day, "
             "COUNT(*) FILTER (WHERE status='absent') AS absent, "
             "COALESCE(SUM(overtime_hours),0) AS ot "
-            "FROM staging.manav_attendance "
+            "FROM public.manav_attendance "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
             "AND date >= $3 AND date <= $4",
             org_id, emp_id, month_start, month_end,
@@ -1930,12 +1930,12 @@ async def process_payroll(
             "    ((LEAST(lr.end_date, $4::date) - GREATEST(lr.start_date, $3::date)) + 1)::numeric"
             "    / NULLIF((lr.end_date - lr.start_date) + 1, 0)"
             "  )"
-            "), 0) FROM staging.manav_leave_requests lr "
+            "), 0) FROM public.manav_leave_requests lr "
             "WHERE lr.org_id=$1::uuid AND lr.employee_id=$2::uuid "
             "AND lr.status='approved' "
             "AND lr.start_date <= $4 AND lr.end_date >= $3 "
             "AND lr.leave_type_id IN ("
-            "  SELECT id FROM staging.manav_leave_types "
+            "  SELECT id FROM public.manav_leave_types "
             "  WHERE org_id=$1::uuid AND is_paid={is_paid}"
             ")"
         )
@@ -2023,7 +2023,7 @@ async def process_payroll(
         treatment = stat.pop("treatment")
 
         active_loans = await pool.fetch(
-            "SELECT id, emi_amount, balance_remaining FROM staging.vetana_loans "
+            "SELECT id, emi_amount, balance_remaining FROM public.vetana_loans "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND status='active' "
             "ORDER BY disbursed_date",
             org_id, emp_id,
@@ -2054,7 +2054,7 @@ async def process_payroll(
         # queries disagreeing is the kind of gap that only surfaces as a
         # payment nobody can account for.
         approved_claims = await pool.fetch(
-            "SELECT id, amount FROM staging.manav_expense_claims "
+            "SELECT id, amount FROM public.manav_expense_claims "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
             "AND status='approved' AND payslip_id IS NULL "
             "AND is_active=TRUE AND expense_date <= $3::date",
@@ -2203,7 +2203,7 @@ async def process_payroll(
             payslip_values.append(json.dumps(treatment))
 
         payslip_row = await pool.fetchrow(
-            "INSERT INTO staging.vetana_payslips "
+            "INSERT INTO public.vetana_payslips "
             "(org_id, run_id, employee_id, payslip_number, month, "
             "working_days, present_days, leaves_paid, leaves_unpaid, overtime_hours, "
             "basic, hra, da, special_allowance, conveyance, medical, overtime_pay, gross, "
@@ -2229,7 +2229,7 @@ async def process_payroll(
         )
         if claim_ids:
             await pool.execute(
-                "UPDATE staging.manav_expense_claims SET payslip_id=$1::uuid "
+                "UPDATE public.manav_expense_claims SET payslip_id=$1::uuid "
                 "WHERE id = ANY($2::uuid[])",
                 payslip_row["id"], claim_ids,
             )
@@ -2243,7 +2243,7 @@ async def process_payroll(
         totals["tds"] += stat["tds"]
 
     await pool.execute(
-        "UPDATE staging.vetana_payroll_runs SET "
+        "UPDATE public.vetana_payroll_runs SET "
         "status='processed', total_gross=$1, total_deductions=$2, total_net=$3, "
         "total_pf=$4, total_esi=$5, total_pt=$6, total_tds=$7, "
         "employee_count=$8, processed_at=NOW() "
@@ -2272,8 +2272,8 @@ async def process_payroll(
         # the join makes this a hard UndefinedColumnError, whereas `e.department`
         # is a column that exists either way and at worst reads empty.
         "COALESCE(e.department, '') AS department_name "
-        "FROM staging.vetana_payslips p "
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "FROM public.vetana_payslips p "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.run_id=$1::uuid AND e.email IS NOT NULL AND e.email != ''",
         run_id,
@@ -2283,7 +2283,7 @@ async def process_payroll(
             "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
             "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
             "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation "
-            "FROM staging.organisations WHERE id=$1::uuid", org_id,
+            "FROM public.organisations WHERE id=$1::uuid", org_id,
         )
         org_dict = dict(org_row) if org_row else {}
         if org_dict.get("logo_key"):
@@ -2358,7 +2358,7 @@ async def list_runs(
     # There is no self-scoped view of an org-wide total, so no fallback here.
     _require(levels, EDITOR)
     rows = await pool.fetch(
-        "SELECT * FROM staging.vetana_payroll_runs "
+        "SELECT * FROM public.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC",
         org_id,
     )
@@ -2376,7 +2376,7 @@ async def get_run(
     # Returns every payslip in the run — the entire org's pay in one response.
     _require(levels, EDITOR)
     run = await pool.fetchrow(
-        "SELECT * FROM staging.vetana_payroll_runs "
+        "SELECT * FROM public.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         run_id, org_id,
     )
@@ -2386,8 +2386,8 @@ async def get_run(
         "SELECT p.*, "
         "e.name AS employee_name, "
         "e.employee_code "
-        "FROM staging.vetana_payslips p "
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "FROM public.vetana_payslips p "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.run_id=$1::uuid ORDER BY employee_name",
         run_id,
@@ -2411,7 +2411,7 @@ async def approve_run(
     # Held at ADMIN until PROPOSED_071 backfills an approver; see _RELEASE_LEVEL.
     _require(levels, _RELEASE_LEVEL)
     run = await pool.fetchrow(
-        "SELECT status, created_by FROM staging.vetana_payroll_runs "
+        "SELECT status, created_by FROM public.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         run_id, org_id,
     )
@@ -2452,7 +2452,7 @@ async def approve_run(
     processed_by = run["created_by"] if "created_by" in run else None
     if processed_by and processed_by == user["user_id"]:
         other_approvers = await pool.fetchval(
-            "SELECT count(DISTINCT user_id) FROM staging.org_member_modules "
+            "SELECT count(DISTINCT user_id) FROM public.org_member_modules "
             "WHERE org_id=$1::uuid AND module_code=$2 AND role=$3 AND user_id <> $4",
             org_id, MODULE, APPROVER, user["user_id"],
         ) or 0
@@ -2495,7 +2495,7 @@ async def approve_run(
             # match zero rows — no write, no event, a 409 in words. This is
             # the same idiom cancel_invoice uses.
             _run_row = await _conn.fetchrow(
-                "UPDATE staging.vetana_payroll_runs SET status='approved', "
+                "UPDATE public.vetana_payroll_runs SET status='approved', "
                 "approved_by=$1, approved_at=NOW() "
                 "WHERE id=$2::uuid AND org_id=$3::uuid AND status='processed' "
                 "RETURNING *",
@@ -2505,7 +2505,7 @@ async def approve_run(
                 raise HTTPException(
                     409, "This run was approved by someone else a moment ago.")
             await _conn.execute(
-                "UPDATE staging.vetana_payslips SET status='approved' WHERE run_id=$1::uuid",
+                "UPDATE public.vetana_payslips SET status='approved' WHERE run_id=$1::uuid",
                 run_id,
             )
             await payroll_published(
@@ -2514,7 +2514,7 @@ async def approve_run(
             )
 
     payslip_loans = await pool.fetch(
-        "SELECT loan_deductions FROM staging.vetana_payslips "
+        "SELECT loan_deductions FROM public.vetana_payslips "
         "WHERE run_id=$1::uuid AND loan_deductions != '[]'::jsonb",
         run_id,
     )
@@ -2522,16 +2522,16 @@ async def approve_run(
         for entry in (row["loan_deductions"] or []):
             loan_id, amt = entry["loan_id"], entry["amount"]
             await pool.execute(
-                "UPDATE staging.vetana_loans SET balance_remaining = GREATEST(balance_remaining - $1, 0), "
+                "UPDATE public.vetana_loans SET balance_remaining = GREATEST(balance_remaining - $1, 0), "
                 "status = CASE WHEN balance_remaining - $1 <= 0 THEN 'closed' ELSE status END "
                 "WHERE id=$2::uuid AND org_id=$3::uuid",
                 amt, loan_id, org_id,
             )
 
     await pool.execute(
-        "UPDATE staging.manav_expense_claims SET status='paid' "
+        "UPDATE public.manav_expense_claims SET status='paid' "
         "WHERE org_id=$1::uuid AND status='approved' AND payslip_id IN "
-        "(SELECT id FROM staging.vetana_payslips WHERE run_id=$2::uuid)",
+        "(SELECT id FROM public.vetana_payslips WHERE run_id=$2::uuid)",
         org_id, run_id,
     )
     return {"ok": True}
@@ -2549,7 +2549,7 @@ async def revert_run(
     # it is the approver's authority, not the admin's. See _RELEASE_LEVEL.
     _require(levels, _RELEASE_LEVEL)
     run = await pool.fetchrow(
-        "SELECT status FROM staging.vetana_payroll_runs "
+        "SELECT status FROM public.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         run_id, org_id,
     )
@@ -2558,7 +2558,7 @@ async def revert_run(
     if run["status"] not in ("processed", "approved"):
         raise HTTPException(400, "Can only revert a processed or approved payroll run")
     await pool.execute(
-        "UPDATE staging.vetana_payroll_runs SET status='draft', "
+        "UPDATE public.vetana_payroll_runs SET status='draft', "
         "processed_at=NULL WHERE id=$1::uuid AND org_id=$2::uuid",
         run_id, org_id,
     )
@@ -2580,13 +2580,13 @@ async def list_payslips(
         "SELECT p.*, "
         "e.name AS employee_name, "
         "e.employee_code "
-        "FROM staging.vetana_payslips p "
+        "FROM public.vetana_payslips p "
         # `AND e.org_id = p.org_id` matches the tightening applied to
         # `vikray.py:648`. The payslip is already org-filtered, so this changes
         # nothing while referential integrity holds; it means a payslip whose
         # `employee_id` ever pointed across a tenant boundary yields no row
         # rather than another org's employee name and code.
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.is_active=TRUE"
     )
@@ -2626,8 +2626,8 @@ async def get_payslip(
         "e.name AS employee_name, "
         "e.employee_code, e.pan, e.uan, e.bank_details, "
         "e.user_id AS employee_user_id "
-        "FROM staging.vetana_payslips p "
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "FROM public.vetana_payslips p "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
         payslip_id, org_id,
@@ -2659,7 +2659,7 @@ async def disburse_payslip(
     # see _RELEASE_LEVEL for why this is still held at admin today.
     _require(levels, _RELEASE_LEVEL)
     ps = await pool.fetchrow(
-        "SELECT status, run_id FROM staging.vetana_payslips "
+        "SELECT status, run_id FROM public.vetana_payslips "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         payslip_id, org_id,
     )
@@ -2686,12 +2686,12 @@ async def disburse_payslip(
             # the run and the event never fired. The lock makes the second
             # transaction wait and see the first's commit.
             await _conn.fetchrow(
-                "SELECT id FROM staging.vetana_payroll_runs "
+                "SELECT id FROM public.vetana_payroll_runs "
                 "WHERE id=$1::uuid FOR UPDATE",
                 ps["run_id"],
             )
             _slip = await _conn.fetchrow(
-                "UPDATE staging.vetana_payslips SET status='disbursed', disbursed_at=NOW() "
+                "UPDATE public.vetana_payslips SET status='disbursed', disbursed_at=NOW() "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND status='approved' "
                 "RETURNING id",
                 payslip_id, org_id,
@@ -2700,19 +2700,19 @@ async def disburse_payslip(
                 raise HTTPException(
                     409, "This payslip was disbursed by someone else a moment ago.")
             undisbursed = await _conn.fetchval(
-                "SELECT COUNT(*) FROM staging.vetana_payslips "
+                "SELECT COUNT(*) FROM public.vetana_payslips "
                 "WHERE run_id=$1 AND status != 'disbursed'",
                 ps["run_id"],
             )
             if undisbursed == 0:
                 _run_row = await _conn.fetchrow(
-                    "UPDATE staging.vetana_payroll_runs SET status='disbursed' "
+                    "UPDATE public.vetana_payroll_runs SET status='disbursed' "
                     "WHERE id=$1 AND status != 'disbursed' "
                     "RETURNING *",
                     ps["run_id"],
                 )
                 _flipped = await _conn.fetchval(
-                    "SELECT COUNT(*) FROM staging.vetana_payslips "
+                    "SELECT COUNT(*) FROM public.vetana_payslips "
                     "WHERE run_id=$1 AND status='disbursed'",
                     ps["run_id"],
                 )
@@ -2756,8 +2756,8 @@ async def download_payslip_pdf(
         # See the payroll-run query above for why this reads `e.department`
         # rather than joining `staging.manav_departments` on `e.department_id`.
         "COALESCE(e.department, '') AS department_name "
-        "FROM staging.vetana_payslips p "
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "FROM public.vetana_payslips p "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
         payslip_id, org_id,
@@ -2795,7 +2795,7 @@ async def download_payslip_pdf(
         "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
         "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
         "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
 
@@ -2812,8 +2812,8 @@ async def download_payslip_pdf(
     emp_row_id = payslip.pop("emp_row_id", None)
     leave_rows = await pool.fetch(
         "SELECT lt.name AS leave_name, lb.allocated, lb.used, lb.carried_forward "
-        "FROM staging.manav_leave_balances lb "
-        "JOIN staging.manav_leave_types lt ON lt.id = lb.leave_type_id "
+        "FROM public.manav_leave_balances lb "
+        "JOIN public.manav_leave_types lt ON lt.id = lb.leave_type_id "
         "WHERE lb.employee_id=$1::uuid "
         "AND lb.year=EXTRACT(YEAR FROM CURRENT_DATE)::int "
         "ORDER BY lt.name",
@@ -2897,7 +2897,7 @@ async def dashboard(
     # self-scoped fallback.
     _require(levels, EDITOR)
     latest_run = await pool.fetchrow(
-        "SELECT * FROM staging.vetana_payroll_runs "
+        "SELECT * FROM public.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC LIMIT 1",
         org_id,
     )
@@ -2925,7 +2925,7 @@ async def dashboard(
     # the 3rd for the three days they worked. Making the two bounds agree
     # breaks whichever one you move.
     headcount = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "SELECT COUNT(*) FROM public.manav_employees e "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
         + still_on_the_rolls("e"),
         org_id,
@@ -2936,7 +2936,7 @@ async def dashboard(
         "COALESCE(SUM(total_pf),0) AS ytd_pf, "
         "COALESCE(SUM(total_esi),0) AS ytd_esi, "
         "COALESCE(SUM(total_tds),0) AS ytd_tds "
-        "FROM staging.vetana_payroll_runs "
+        "FROM public.vetana_payroll_runs "
         "WHERE org_id=$1::uuid AND month LIKE $2",
         org_id, f"{date.today().year}-%",
     )
@@ -2944,8 +2944,8 @@ async def dashboard(
         "SELECT COALESCE(e.department, 'Unassigned') AS department, "
         "COUNT(DISTINCT p.employee_id) AS employees, "
         "COALESCE(SUM(p.gross),0) AS dept_gross, COALESCE(SUM(p.net_pay),0) AS dept_net "
-        "FROM staging.vetana_payslips p "
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "FROM public.vetana_payslips p "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.month=$2 "
         "GROUP BY e.department ORDER BY dept_gross DESC",
@@ -2980,8 +2980,8 @@ async def statutory_summary(
         "e.employee_code, e.pan, e.uan, "
         "p.basic, p.gross, p.pf_employee, p.pf_employer, "
         "p.esi_employee, p.esi_employer, p.professional_tax, p.tds "
-        "FROM staging.vetana_payslips p "
-        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "FROM public.vetana_payslips p "
+        "JOIN public.manav_employees e ON e.id = p.employee_id "
         "AND e.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.month=$2 "
         "ORDER BY employee_name",
@@ -2994,7 +2994,7 @@ async def statutory_summary(
         "COALESCE(SUM(esi_employer),0) AS total_esi_employer, "
         "COALESCE(SUM(professional_tax),0) AS total_pt, "
         "COALESCE(SUM(tds),0) AS total_tds "
-        "FROM staging.vetana_payslips WHERE org_id=$1::uuid AND month=$2",
+        "FROM public.vetana_payslips WHERE org_id=$1::uuid AND month=$2",
         org_id, month,
     )
     return {
@@ -3017,8 +3017,8 @@ async def list_loans(
     pool = await get_pool()
     q = (
         "SELECT l.*, e.name AS employee_name, e.employee_code "
-        "FROM staging.vetana_loans l "
-        "JOIN staging.manav_employees e ON e.id = l.employee_id "
+        "FROM public.vetana_loans l "
+        "JOIN public.manav_employees e ON e.id = l.employee_id "
         "WHERE l.org_id=$1::uuid"
     )
     params: list = [org_id]
@@ -3059,12 +3059,12 @@ async def create_loan(
     # The employee must be in this org. Without this the row would reference a
     # foreign employee and the notification below would email a stranger.
     if not await pool.fetchval(
-        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         body.employee_id, org_id,
     ):
         raise HTTPException(404, "Employee not found")
     row = await pool.fetchrow(
-        "INSERT INTO staging.vetana_loans "
+        "INSERT INTO public.vetana_loans "
         "(org_id, employee_id, principal_amount, emi_amount, balance_remaining, "
         "disbursed_date, notes, created_by) "
         "VALUES ($1::uuid, $2::uuid, $3, $4, $3, "
@@ -3075,7 +3075,7 @@ async def create_loan(
     )
     # ── Notify employee ──
     emp = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees "
+        "SELECT name, email FROM public.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         body.employee_id, org_id,
     )
@@ -3108,7 +3108,7 @@ async def update_loan(
         raise HTTPException(400, "Nothing to update")
     vals += [loan_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.vetana_loans SET {', '.join(updates)} "
+        f"UPDATE public.vetana_loans SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )

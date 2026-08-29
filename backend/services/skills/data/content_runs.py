@@ -151,10 +151,10 @@ async def pack_engagement_letter_inputs(
         SELECT k.id, k.title, k.contract_value, k.start_date, k.end_date,
                k.status, k.signature_status, k.signed_at,
                {_customer_sql('cl', 'ct')} AS customer
-        FROM staging.ganit_contracts k
-        LEFT JOIN staging.graha_contacts ct
+        FROM public.ganit_contracts k
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = k.contact_id AND ct.org_id = k.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = ct.client_id AND cl.org_id = k.org_id
         WHERE k.org_id = $1::uuid
           AND k.is_active
@@ -169,8 +169,8 @@ async def pack_engagement_letter_inputs(
     awaiting = await pool.fetch(
         """
         SELECT c.name AS customer, count(o.id) AS obligations
-        FROM staging.client_obligations o
-        JOIN staging.graha_clients c
+        FROM public.client_obligations o
+        JOIN public.graha_clients c
           ON c.id = o.client_id AND c.org_id = o.org_id
         WHERE o.org_id = $1::uuid
           AND o.effective_to IS NULL
@@ -265,7 +265,7 @@ async def brief_vernacular_template_targets(
     templates = await pool.fetch(
         """
         SELECT id, name, language, category, body, header_content, footer, status
-        FROM staging.varta_templates
+        FROM public.varta_templates
         WHERE org_id = $1::uuid
         ORDER BY name
         LIMIT $2::int
@@ -371,8 +371,8 @@ async def check_event_followup_split(
         """
         SELECT e.id AS event_id, e.title, e.ends_at,
                r.status, count(r.id) AS n
-        FROM staging.prachar_events e
-        LEFT JOIN staging.prachar_event_registrations r
+        FROM public.prachar_events e
+        LEFT JOIN public.prachar_event_registrations r
                ON r.event_id = e.id AND r.org_id = e.org_id
         WHERE e.org_id = $1::uuid
           AND e.is_active

@@ -78,7 +78,7 @@ async def find_coverage_gaps(pool, org_id: str, week_start: date | None = None) 
             -- separate requests for people and the requirement is their sum.
             SELECT b.shift_id, b.date AS sdate,
                    SUM(b.slots_needed)::int AS slots_needed
-            FROM staging.manav_shift_bids b
+            FROM public.manav_shift_bids b
             WHERE b.org_id = $1::uuid
               AND b.date BETWEEN $2::date AND $3::date
               AND b.status = 'open'
@@ -86,7 +86,7 @@ async def find_coverage_gaps(pool, org_id: str, week_start: date | None = None) 
         ),
         rostered AS (
             SELECT s.shift_id, s.date AS sdate, COUNT(*)::int AS cnt
-            FROM staging.manav_schedules s
+            FROM public.manav_schedules s
             WHERE s.org_id = $1::uuid
               AND s.date BETWEEN $2::date AND $3::date
               AND s.status <> ALL($4::text[])
@@ -101,7 +101,7 @@ async def find_coverage_gaps(pool, org_id: str, week_start: date | None = None) 
         -- carries its own org_id, and re-stating it here means a shift name
         -- from another tenant cannot be printed even if a bid row were ever
         -- written pointing at one.
-        JOIN staging.manav_shift_definitions sd
+        JOIN public.manav_shift_definitions sd
           ON sd.id = a.shift_id AND sd.org_id = $1::uuid
         LEFT JOIN rostered r
           ON r.shift_id = a.shift_id AND r.sdate = a.sdate

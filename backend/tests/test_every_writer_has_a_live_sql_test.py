@@ -116,7 +116,10 @@ UNCOVERED = {
     # recorded here rather than absorbed. If a fourth name ever appears without
     # a paragraph like this one beside it, that is the rot this ratchet exists
     # to prevent.
-    "org_invites", "templates",
+    # `templates` removed 2026-08-29: ccc61a2c added
+    # tests/test_apply_template_is_idempotent.py, which carries 3 live tests
+    # executing apply_project_template's SQL against the real schema.
+    "org_invites",
     #
     # ── AND THE ONE THAT LEFT BY BEING DELETED, 2026-08-27 ───────────────────
     #

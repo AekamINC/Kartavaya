@@ -54,7 +54,7 @@ def invoiced(req: MetricRequest):
     return (
         f"SELECT {period} AS period{group}, "
         "SUM(CASE WHEN invoice_type = 'credit_note' THEN -total ELSE total END)::float AS value "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "AND invoice_date BETWEEN $2::date AND $3::date "
         f"GROUP BY 1{group and ', 2'} ORDER BY 1{group and ', 2'}",
@@ -76,7 +76,7 @@ def collected(req: MetricRequest):
     period = bucket_expr(req.bucket, "payment_date")
     return (
         f"SELECT {period} AS period, SUM(amount)::float AS value "
-        "FROM staging.ganit_payments "
+        "FROM public.ganit_payments "
         "WHERE org_id = $1::uuid "
         "AND payment_date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -104,7 +104,7 @@ def receivables_ageing(req: MetricRequest):
         "      WHEN CURRENT_DATE - COALESCE(due_date, invoice_date) <= 60 THEN '31-60' "
         "      WHEN CURRENT_DATE - COALESCE(due_date, invoice_date) <= 90 THEN '61-90' "
         "      ELSE '90+' END AS bucket "
-        "  FROM staging.ganit_invoices "
+        "  FROM public.ganit_invoices "
         "  WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "  AND invoice_type <> 'credit_note' "
         "  AND total - COALESCE(amount_paid, 0) > 0"
@@ -149,7 +149,7 @@ def dso(req: MetricRequest):
         f"  SELECT {period} AS period, "
         "    SUM(total - COALESCE(amount_paid, 0)) AS o, "
         "    SUM(total) AS t "
-        "  FROM staging.ganit_invoices "
+        "  FROM public.ganit_invoices "
         "  WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "  AND invoice_type <> 'credit_note' "
         "  AND invoice_date BETWEEN $2::date AND $3::date "
@@ -183,7 +183,7 @@ def collection_rate(req: MetricRequest):
         "SUM(COALESCE(amount_paid, 0))::float / NULLIF(SUM(total), 0)::float * 100 AS value, "
         "SUM(total)::float AS invoiced, "
         "SUM(COALESCE(amount_paid, 0))::float AS collected "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "AND invoice_type <> 'credit_note' "
         "AND invoice_date BETWEEN $2::date AND $3::date "
@@ -211,8 +211,8 @@ def payment_lag(req: MetricRequest):
         "percentile_cont(0.5) WITHIN GROUP "
         "(ORDER BY p.payment_date - i.invoice_date)::float AS value, "
         "COUNT(*) AS payments "
-        "FROM staging.ganit_payments p "
-        "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
+        "FROM public.ganit_payments p "
+        "JOIN public.ganit_invoices i ON i.id = p.invoice_id "
         "WHERE p.org_id = $1::uuid AND i.org_id = $1::uuid "
         "AND i.is_active = TRUE AND i.doc_status <> 'draft' AND i.invoice_type <> 'credit_note' "
         "AND p.payment_date BETWEEN $2::date AND $3::date "
@@ -247,7 +247,7 @@ def gst_output(req: MetricRequest):
         "THEN -(COALESCE(cgst,0) + COALESCE(sgst,0) + COALESCE(igst,0) + COALESCE(cess,0)) "
         "ELSE COALESCE(cgst,0) + COALESCE(sgst,0) + COALESCE(igst,0) + COALESCE(cess,0) "
         "END)::float AS value "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "AND invoice_date BETWEEN $2::date AND $3::date "
         f"GROUP BY 1{tax_col and ', 2'} ORDER BY 1{tax_col and ', 2'}",
@@ -275,7 +275,7 @@ def expense_by_category(req: MetricRequest):
     if req.group_by == "category":
         return (
             "SELECT category, SUM(total)::float AS value, COUNT(*) AS expenses "
-            "FROM staging.ganit_expenses "
+            "FROM public.ganit_expenses "
             "WHERE org_id = $1::uuid AND is_active = TRUE "
             "AND expense_date BETWEEN $2::date AND $3::date "
             "GROUP BY category ORDER BY value DESC",
@@ -284,7 +284,7 @@ def expense_by_category(req: MetricRequest):
     period = bucket_expr(req.bucket, "expense_date")
     return (
         f"SELECT {period} AS period, SUM(total)::float AS value "
-        "FROM staging.ganit_expenses "
+        "FROM public.ganit_expenses "
         "WHERE org_id = $1::uuid AND is_active = TRUE "
         "AND expense_date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -310,7 +310,7 @@ def reconciliation_rate(req: MetricRequest):
         "COUNT(*) FILTER (WHERE is_reconciled)::float / NULLIF(COUNT(*), 0)::float * 100 AS value, "
         "COUNT(*) FILTER (WHERE is_reconciled) AS matched, "
         "COUNT(*) AS total "
-        "FROM staging.ganit_bank_statement_lines "
+        "FROM public.ganit_bank_statement_lines "
         "WHERE org_id = $1::uuid "
         "AND statement_date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -343,12 +343,12 @@ def top_debtors(req: MetricRequest):
         "SUM(i.total - COALESCE(i.amount_paid, 0))::float AS value, "
         "COUNT(*) AS invoices, "
         "MIN(COALESCE(i.due_date, i.invoice_date)) AS oldest_due "
-        "FROM staging.ganit_invoices i "
+        "FROM public.ganit_invoices i "
         # Scoped on `org_id` as well as `id`. `ganit_invoices.client_id` has a
         # plain FK to `graha_clients(id)` with no composite (id, org_id)
         # constraint, so the schema cannot refuse a foreign company id — and
         # the product now WRITES this column, which it never used to.
-        "LEFT JOIN staging.graha_clients c ON c.id = i.client_id AND c.org_id = i.org_id "
+        "LEFT JOIN public.graha_clients c ON c.id = i.client_id AND c.org_id = i.org_id "
         "WHERE i.org_id = $1::uuid AND i.is_active = TRUE "
         "AND i.doc_status <> 'draft' "
         "AND i.invoice_type <> 'credit_note' "
@@ -375,7 +375,7 @@ def outstanding(req: MetricRequest):
     return (
         "SELECT SUM(total - COALESCE(amount_paid, 0))::float AS value, "
         "COUNT(*) AS invoices "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "AND invoice_type <> 'credit_note' "
         "AND total - COALESCE(amount_paid, 0) > 0 "
@@ -398,7 +398,7 @@ absent_metric(
     unit="inr",
     grain="flow",
     sensitivity="financial",
-    absent="staging.ganit_tds_challans holds 0 rows and has no section column; "
+    absent="public.ganit_tds_challans holds 0 rows and has no section column; "
            "sections would sit in its `deductions` jsonb, whose shape has never "
            "been exercised. The only populated TDS columns in the database "
            "belong to payroll (vetana_payslips), which is a different domain.",

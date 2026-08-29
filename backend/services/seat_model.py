@@ -266,19 +266,19 @@ def pahchan_seat_detail(seats: PahchanSeatCount) -> str:
 _SEAT_QUERY = f"""
 SELECT
     (to_jsonb(o) ->> 'max_pahchan_seats')::int AS seat_limit,
-    (SELECT COUNT(*) FROM staging.manav_employees e
+    (SELECT COUNT(*) FROM public.manav_employees e
       WHERE e.org_id = o.id AND e.is_active = TRUE
         {still_on_the_rolls("e")}) AS roster,
-    (SELECT COUNT(*) FROM staging.manav_employees e
+    (SELECT COUNT(*) FROM public.manav_employees e
       WHERE e.org_id = o.id AND e.is_active = TRUE AND e.user_id IS NOT NULL
         {still_on_the_rolls("e")}
-        AND EXISTS (SELECT 1 FROM staging.user_roles ur
+        AND EXISTS (SELECT 1 FROM public.user_roles ur
                      WHERE ur.org_id = o.id AND ur.user_id = e.user_id
                        AND ur.role_code = ANY($2::text[]))) AS exempt,
-    EXISTS (SELECT 1 FROM staging.module_subscriptions ms
+    EXISTS (SELECT 1 FROM public.module_subscriptions ms
              WHERE ms.org_id = o.id AND ms.module_code = 'pahchan'
                AND ms.is_active = TRUE) AS module_active
-FROM staging.organisations o
+FROM public.organisations o
 WHERE o.id = $1::uuid
 """
 

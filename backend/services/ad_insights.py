@@ -96,8 +96,8 @@ async def sync_meta_account(pool, org_id: str, social_account_id: str) -> dict:
 
     row = await pool.fetchrow(
         "SELECT sa.id, sa.access_token, sa.platform_data "
-        "FROM staging.hub_social_accounts sa "
-        "JOIN staging.hub_clients c ON c.id = sa.client_id "
+        "FROM public.hub_social_accounts sa "
+        "JOIN public.hub_clients c ON c.id = sa.client_id "
         "WHERE sa.id=$1::uuid AND c.org_id=$2::uuid",
         social_account_id, org_id,
     )
@@ -123,7 +123,7 @@ async def sync_meta_account(pool, org_id: str, social_account_id: str) -> dict:
 
         ext_id = acct["id"]
         acct_row = await pool.fetchrow(
-            "INSERT INTO staging.prachar_ad_accounts "
+            "INSERT INTO public.prachar_ad_accounts "
             "(org_id, platform, external_account_id, name, currency, social_account_id) "
             "VALUES ($1::uuid, 'meta', $2, $3, $4, $5::uuid) "
             "ON CONFLICT (org_id, platform, external_account_id) "
@@ -137,7 +137,7 @@ async def sync_meta_account(pool, org_id: str, social_account_id: str) -> dict:
         campaigns = await fetch_meta_campaigns(token, ext_id)
         for camp in campaigns:
             camp_row = await pool.fetchrow(
-                "INSERT INTO staging.prachar_ad_campaigns "
+                "INSERT INTO public.prachar_ad_campaigns "
                 "(account_id, external_campaign_id, name, status, objective, "
                 "daily_budget, lifetime_budget, platform_data) "
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
@@ -160,7 +160,7 @@ async def sync_meta_account(pool, org_id: str, social_account_id: str) -> dict:
                 continue
 
             camp_id = await pool.fetchval(
-                "SELECT id FROM staging.prachar_ad_campaigns "
+                "SELECT id FROM public.prachar_ad_campaigns "
                 "WHERE account_id=$1 AND external_campaign_id=$2",
                 account_id, camp_ext_id,
             )
@@ -172,7 +172,7 @@ async def sync_meta_account(pool, org_id: str, social_account_id: str) -> dict:
                 continue
 
             await pool.execute(
-                "INSERT INTO staging.prachar_ad_insights "
+                "INSERT INTO public.prachar_ad_insights "
                 "(campaign_id, date, spend, impressions, clicks, conversions, "
                 "ctr, cpc, cpm, roas, platform_data) "
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb) "

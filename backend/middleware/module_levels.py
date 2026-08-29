@@ -100,7 +100,7 @@ def reset_approver_table_cache() -> None:
 async def _platform_role(pool, user_id: str) -> str | None:
     """The caller's strongest platform role, or None. Mirrors subscription.py."""
     return await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[]) "
         "ORDER BY array_position($2::text[], role_code) LIMIT 1",
@@ -110,7 +110,7 @@ async def _platform_role(pool, user_id: str) -> str | None:
 
 async def _org_role(pool, user_id: str, org_id: str) -> str | None:
     return await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid "
         "AND role_code IN ('org_owner','org_admin')",
         user_id, org_id,
@@ -122,7 +122,7 @@ async def has_explicit_approver_grant(pool, user_id: str, org_id: str, module_co
     if not await approver_table_available(pool):
         return False
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.org_module_approvers "
+        "SELECT 1 FROM public.org_module_approvers "
         "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3 "
         "AND revoked_at IS NULL",
         user_id, org_id, module_code,
@@ -146,7 +146,7 @@ async def held_level(pool, user_id: str, org_id: str, module_code: str) -> str |
         return "admin"
 
     grant = await pool.fetchval(
-        "SELECT role FROM staging.org_member_modules "
+        "SELECT role FROM public.org_member_modules "
         "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
         user_id, org_id, module_code,
     )

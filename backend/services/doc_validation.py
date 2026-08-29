@@ -765,7 +765,7 @@ def validate_tds_challan(challan: dict, org: dict, computed: dict | None = None)
             "org.tan", "TAN",
             "Section 203A — the Tax Deduction Account Number is the deductor's "
             "identifier on ITNS-281 and on every quarterly return that quotes this "
-            "challan. The PAN is not a substitute. NOTE: staging.organisations has "
+            "challan. The PAN is not a substitute. NOTE: public.organisations has "
             "no `tan` column at all today — see backend/migrations/PROPOSED_documents.sql §1.",
             _ORG_PROFILE_FIX,
         ))

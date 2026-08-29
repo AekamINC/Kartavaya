@@ -125,7 +125,7 @@ _COLS: tuple[str, ...] = (
 #: and a shadow table in `public` has bitten this repo before (migration 142).
 _SELECT = (
     f"SELECT {', '.join(_COLS)}, (org_id IS NOT NULL) AS is_own "
-    "  FROM staging.pay_income_tax_slabs "
+    "  FROM public.pay_income_tax_slabs "
     #  A NULL `org_id` IS A SHARED LADDER, NOT A ROW TO IGNORE — the same
     #  reading `_pt_slabs` gives the same nullable column, and for the same
     #  reason: a Finance Act ladder is national reference data, seeded once,

@@ -91,7 +91,7 @@ async def pull_indiamart_for_org(pool, org_id: str, *, now=None) -> dict:
         )
 
     row = await pool.fetchrow(
-        "SELECT last_tested_at FROM staging.hub_connector_credentials "
+        "SELECT last_tested_at FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND platform='indiamart' AND client_id IS NULL",
         org_id,
     )
@@ -185,7 +185,7 @@ async def justdial_webhook(webhook_key: str, request: Request):
     # `public_fields->>'webhook_key'` — a public field, so this lookup needs no
     # decryption and cannot be turned into an oracle over the secret half.
     row = await pool.fetchrow(
-        "SELECT org_id::text AS org_id FROM staging.hub_connector_credentials "
+        "SELECT org_id::text AS org_id FROM public.hub_connector_credentials "
         " WHERE platform='justdial' AND is_active=TRUE "
         "   AND public_fields->>'webhook_key' = $1",
         webhook_key,
@@ -242,7 +242,7 @@ async def justdial_url(
     import os
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT public_fields FROM staging.hub_connector_credentials "
+        "SELECT public_fields FROM public.hub_connector_credentials "
         " WHERE org_id=$1::uuid AND platform='justdial' AND client_id IS NULL",
         org_id,
     )
@@ -258,7 +258,7 @@ async def justdial_url(
     if not key:
         key = lead_ingest.new_webhook_key()
         await pool.execute(
-            "UPDATE staging.hub_connector_credentials "
+            "UPDATE public.hub_connector_credentials "
             "   SET public_fields = COALESCE(public_fields,'{}'::jsonb) || $2::jsonb, "
             "       updated_at = NOW() "
             " WHERE org_id=$1::uuid AND platform='justdial' AND client_id IS NULL",
@@ -277,14 +277,14 @@ async def _stamp(pool, org_id: str, platform: str, *, ok: bool, detail: str,
     """
     if advance_watermark:
         await pool.execute(
-            "UPDATE staging.hub_connector_credentials "
+            "UPDATE public.hub_connector_credentials "
             "   SET last_tested_at=$4, last_test_ok=$3, last_test_detail=$5 "
             " WHERE org_id=$1::uuid AND platform=$2 AND client_id IS NULL",
             org_id, platform, ok, when or datetime.now(timezone.utc), detail[:500],
         )
     else:
         await pool.execute(
-            "UPDATE staging.hub_connector_credentials "
+            "UPDATE public.hub_connector_credentials "
             "   SET last_test_ok=$3, last_test_detail=$4 "
             " WHERE org_id=$1::uuid AND platform=$2 AND client_id IS NULL",
             org_id, platform, ok, detail[:500],

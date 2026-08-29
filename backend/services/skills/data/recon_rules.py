@@ -489,7 +489,7 @@ async def check_upi_reference_threading(
         """
         SELECT o.name AS org_name,
                COALESCE(NULLIF(btrim(o.upi_vpa), ''), '') AS fallback_vpa
-        FROM staging.organisations o
+        FROM public.organisations o
         WHERE o.id = $1::uuid
         """,
         org_id,
@@ -502,7 +502,7 @@ async def check_upi_reference_threading(
         row = await pool.fetchrow(
             """
             SELECT count(*)::int AS n
-            FROM staging.org_upi_accounts a
+            FROM public.org_upi_accounts a
             WHERE a.org_id = $1::uuid AND a.is_active
             """,
             org_id,
@@ -519,7 +519,7 @@ async def check_upi_reference_threading(
     total_row = await pool.fetchrow(
         """
         SELECT count(*)::int AS n
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid
           AND i.is_active
           AND i.cancelled_at IS NULL
@@ -538,10 +538,10 @@ async def check_upi_reference_threading(
                {_customer_sql('cl', 'ct')} AS customer,
                NULLIF(btrim(ct.email), '') AS customer_email,
                NULLIF(btrim(ct.phone), '') AS customer_phone
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_clients cl
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_clients cl
                ON cl.id = i.client_id AND cl.org_id = i.org_id
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = i.contact_id AND ct.org_id = i.org_id
         WHERE i.org_id = $1::uuid
           AND i.is_active
@@ -601,7 +601,7 @@ async def check_upi_reference_threading(
     numbers = await pool.fetch(
         """
         SELECT i.invoice_number
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid AND i.is_active
           AND COALESCE(btrim(i.invoice_number), '') <> ''
         """,
@@ -613,7 +613,7 @@ async def check_upi_reference_threading(
         """
         SELECT l.id, l.statement_date, l.amount, l.description, l.reference,
                COALESCE(l.is_reconciled, FALSE) AS is_reconciled
-        FROM staging.ganit_bank_statement_lines l
+        FROM public.ganit_bank_statement_lines l
         WHERE l.org_id = $1::uuid
           AND l.amount > 0
           AND l.statement_date >= $2::date
@@ -778,7 +778,7 @@ async def check_payment_proof_claims(
         """
         SELECT count(*)::int AS total,
                count(*) FILTER (WHERE b.status = 'active')::int AS active
-        FROM staging.varta_business_accounts b
+        FROM public.varta_business_accounts b
         WHERE b.org_id = $1::uuid
         """,
         org_id,
@@ -799,7 +799,7 @@ async def check_payment_proof_claims(
                    WHERE COALESCE(btrim(m.media_url), '') <> ''
                       OR m.type IN ('image', 'document')
                )::int AS with_media
-        FROM staging.varta_messages m
+        FROM public.varta_messages m
         WHERE m.org_id = $1::uuid
           AND m.direction = 'inbound'
           AND m.created_at >= $2::timestamptz
@@ -822,14 +822,14 @@ async def check_payment_proof_claims(
                         '(sender not recorded)') AS sender,
                {_customer_sql('cl', 'gc')} AS customer,
                cl.id AS client_id
-        FROM staging.varta_messages m
-        JOIN staging.varta_conversations cv
+        FROM public.varta_messages m
+        JOIN public.varta_conversations cv
              ON cv.id = m.conversation_id AND cv.org_id = m.org_id
-        LEFT JOIN staging.varta_contacts vc
+        LEFT JOIN public.varta_contacts vc
              ON vc.id = cv.varta_contact_id AND vc.org_id = m.org_id
-        LEFT JOIN staging.graha_contacts gc
+        LEFT JOIN public.graha_contacts gc
              ON gc.id = vc.graha_contact_id AND gc.org_id = m.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
              ON cl.id = gc.client_id AND cl.org_id = m.org_id
         WHERE m.org_id = $1::uuid
           AND m.direction = 'inbound'
@@ -848,10 +848,10 @@ async def check_payment_proof_claims(
             SELECT i.id, i.invoice_number, i.invoice_date, i.balance_due,
                    i.payment_status, i.client_id,
                    {_customer_sql('cl', 'ct')} AS customer
-            FROM staging.ganit_invoices i
-            LEFT JOIN staging.graha_clients cl
+            FROM public.ganit_invoices i
+            LEFT JOIN public.graha_clients cl
                    ON cl.id = i.client_id AND cl.org_id = i.org_id
-            LEFT JOIN staging.graha_contacts ct
+            LEFT JOIN public.graha_contacts ct
                    ON ct.id = i.contact_id AND ct.org_id = i.org_id
             WHERE i.org_id = $1::uuid
               AND i.is_active
@@ -863,7 +863,7 @@ async def check_payment_proof_claims(
         open_lines = await pool.fetch(
             """
             SELECT l.id, l.statement_date, l.amount, l.description, l.reference
-            FROM staging.ganit_bank_statement_lines l
+            FROM public.ganit_bank_statement_lines l
             WHERE l.org_id = $1::uuid
               AND l.amount > 0
               AND NOT COALESCE(l.is_reconciled, FALSE)
@@ -940,7 +940,7 @@ async def check_payment_proof_claims(
         "read, no amount is extracted from it, and a forged, edited or reused "
         "image is indistinguishable from a genuine one here.",
         "There is nowhere to FILE a claim. No table records one — "
-        "`staging.ganit_payments` has `attribution` and `received_on` columns and "
+        "`public.ganit_payments` has `attribution` and `received_on` columns and "
         "nothing has ever written either — and the payments ledger is the wrong "
         "home in any case, because a row there IS a receipt. A claims store is "
         "owed before this can be more than a screen.",
@@ -1069,7 +1069,7 @@ async def check_narration_rule_candidates(
         SELECT l.id, l.statement_date, l.amount, l.description, l.reference,
                l.matched_type, {category_select} AS category,
                COALESCE(l.is_reconciled, FALSE) AS is_reconciled
-        FROM staging.ganit_bank_statement_lines l
+        FROM public.ganit_bank_statement_lines l
         WHERE l.org_id = $1::uuid
           AND l.statement_date >= $2::date
         ORDER BY l.statement_date DESC
@@ -1148,7 +1148,7 @@ async def check_narration_rule_candidates(
         blocked = True
         blocker = (
             "NO COLUMN records that a narration was ASSIGNED a category. "
-            "`staging.ganit_bank_statement_lines` carries `matched_type`, "
+            "`public.ganit_bank_statement_lines` carries `matched_type`, "
             "`matched_payment_id`, `is_reconciled` and `batch_id` — a match to a "
             "payment, not a classification. The fix is a categorisation write "
             "path: a `category` column alongside a `category_source` ('human' or "
@@ -1348,10 +1348,10 @@ async def brief_working_paper_figures(
                i.balance_due, i.payment_status, i.doc_status,
                ROUND(i.total - i.amount_paid - i.balance_due, 2) AS gap,
                {_customer_sql('cl', 'ct')} AS customer
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_clients cl
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_clients cl
                ON cl.id = i.client_id AND cl.org_id = i.org_id
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = i.contact_id AND ct.org_id = i.org_id
         WHERE i.org_id = $1::uuid
           AND i.is_active
@@ -1367,7 +1367,7 @@ async def brief_working_paper_figures(
         SELECT count(*)::int AS n,
                COALESCE(SUM(ABS(ROUND(i.total - i.amount_paid - i.balance_due, 2))), 0)
                    AS gross
-        FROM staging.ganit_invoices i
+        FROM public.ganit_invoices i
         WHERE i.org_id = $1::uuid
           AND i.is_active
           AND i.invoice_date >= $2::date AND i.invoice_date < $3::date
@@ -1378,7 +1378,7 @@ async def brief_working_paper_figures(
     n_drift = int(drift_total["n"]) if drift_total else 0
     r1 = fig("invoices whose total, amount paid and balance do not add up",
              n_drift, "count", "ledger_identity",
-             "staging.ganit_invoices, invoices dated in the period")
+             "public.ganit_invoices, invoices dated in the period")
     r2 = fig("gross value of those differences",
              _f(drift_total["gross"]) if drift_total else 0.0,
              "money", "ledger_identity", "sum of the absolute gaps")
@@ -1418,7 +1418,7 @@ async def brief_working_paper_figures(
         SELECT count(*)::int AS in_period,
                count(*) FILTER (WHERE NOT COALESCE(l.is_reconciled, FALSE))::int
                    AS open_in_period
-        FROM staging.ganit_bank_statement_lines l
+        FROM public.ganit_bank_statement_lines l
         WHERE l.org_id = $1::uuid
           AND l.statement_date >= $2::date AND l.statement_date < $3::date
         """,
@@ -1428,7 +1428,7 @@ async def brief_working_paper_figures(
         """
         SELECT MIN(l.statement_date) AS lo, MAX(l.statement_date) AS hi,
                count(*)::int AS n
-        FROM staging.ganit_bank_statement_lines l
+        FROM public.ganit_bank_statement_lines l
         WHERE l.org_id = $1::uuid
         """,
         org_id,
@@ -1436,7 +1436,7 @@ async def brief_working_paper_figures(
     lines_in_period = int(cover["in_period"]) if cover else 0
     open_in_period = int(cover["open_in_period"]) if cover else 0
     r3 = fig("statement lines imported for the period", lines_in_period, "count",
-             "statement_coverage", "staging.ganit_bank_statement_lines")
+             "statement_coverage", "public.ganit_bank_statement_lines")
     r4 = fig("of those, still unreconciled", open_in_period, "count",
              "statement_coverage", "is_reconciled false or null")
     differences.append({
@@ -1466,7 +1466,7 @@ async def brief_working_paper_figures(
         SELECT COALESCE(NULLIF(btrim(p.payment_method), ''), '(not recorded)')
                    AS method,
                count(*)::int AS n, COALESCE(SUM(p.amount), 0) AS total
-        FROM staging.ganit_payments p
+        FROM public.ganit_payments p
         WHERE p.org_id = $1::uuid
           AND p.payment_date >= $2::date AND p.payment_date < $3::date
         GROUP BY 1
@@ -1481,7 +1481,7 @@ async def brief_working_paper_figures(
     credit_row = await pool.fetchrow(
         """
         SELECT count(*)::int AS n, COALESCE(SUM(l.amount), 0) AS total
-        FROM staging.ganit_bank_statement_lines l
+        FROM public.ganit_bank_statement_lines l
         WHERE l.org_id = $1::uuid
           AND l.amount > 0
           AND COALESCE(l.is_reconciled, FALSE)
@@ -1492,12 +1492,12 @@ async def brief_working_paper_figures(
     credits_total = _f(credit_row["total"]) if credit_row else 0.0
 
     r5 = fig("receipts recorded in the books for the period", round(books_total, 2),
-             "money", "receipts_vs_bank", "staging.ganit_payments by payment_date")
+             "money", "receipts_vs_bank", "public.ganit_payments by payment_date")
     r6 = fig("of those, received by UPI or bank transfer", round(books_electronic, 2),
              "money", "receipts_vs_bank", "payment_method in the electronic set")
     r7 = fig("credits on the statement reconciled to a receipt",
              round(credits_total, 2), "money", "receipts_vs_bank",
-             "staging.ganit_bank_statement_lines, credits, reconciled")
+             "public.ganit_bank_statement_lines, credits, reconciled")
     r8 = fig("difference between the two compared figures",
              round(books_electronic - credits_total, 2), "money",
              "receipts_vs_bank",

@@ -51,7 +51,7 @@ class BaseAgent(ABC):
             try:
                 await pool.execute(
                     """
-                    INSERT INTO staging.hub_skill_runs
+                    INSERT INTO public.hub_skill_runs
                         (run_id, org_id, skill_type, skill_name, status, result, elapsed_ms)
                     VALUES ($1, $2, 'agent', $3, $4, $5::jsonb, $6)
                     """,

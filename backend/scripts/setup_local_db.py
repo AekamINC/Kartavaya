@@ -370,7 +370,7 @@ async def _seed_data(conn):
     )
     if has_orgs:
         await conn.execute("""
-            INSERT INTO staging.organisations (id, name, team_id, is_active, owner_user_id,
+            INSERT INTO public.organisations (id, name, team_id, is_active, owner_user_id,
                 storage_limit_bytes, storage_used_bytes)
             VALUES ($1::uuid, $2, $3, TRUE, $4, 10737418240, 0)
             ON CONFLICT (id) DO NOTHING
@@ -424,7 +424,7 @@ async def _seed_data(conn):
     if has_roles:
         for role in ("platform_admin", "org_admin"):
             await conn.execute("""
-                INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by)
+                INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by)
                 VALUES ($1, $2::uuid, $3, $1)
                 ON CONFLICT DO NOTHING
             """, admin_id, org_id, role)
@@ -436,7 +436,7 @@ async def _seed_data(conn):
     )
     if has_plans:
         await conn.execute("""
-            INSERT INTO staging.plans (id, name, code, price_monthly, price_annual,
+            INSERT INTO public.plans (id, name, code, price_monthly, price_annual,
                 max_users, features, is_active, default_credits)
             VALUES
                 (gen_random_uuid(), 'Free', 'free', 0, 0, 3, '{"projects": true}', TRUE, 0),
@@ -451,10 +451,10 @@ async def _seed_data(conn):
         "SELECT 1 FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false)) AND table_name='subscriptions'"
     )
     if has_subs:
-        plan_id = await conn.fetchval("SELECT id FROM staging.plans WHERE code='professional' LIMIT 1")
+        plan_id = await conn.fetchval("SELECT id FROM public.plans WHERE code='professional' LIMIT 1")
         if plan_id:
             await conn.execute("""
-                INSERT INTO staging.subscriptions (org_id, plan_id, billing_cycle, status,
+                INSERT INTO public.subscriptions (org_id, plan_id, billing_cycle, status,
                     current_period_start, current_period_end)
                 VALUES ($1::uuid, $2, 'annual', 'active', NOW(), NOW() + INTERVAL '1 year')
                 ON CONFLICT (org_id) DO NOTHING

@@ -232,7 +232,7 @@ async def _closed_days(pool, org_id: str, start: date, end: date) -> set[date]:
     rows = await pool.fetch(
         """
         SELECT h.date
-        FROM staging.manav_holidays h
+        FROM public.manav_holidays h
         WHERE h.org_id = $1::uuid
           AND h.date >= $2::date AND h.date <= $3::date
           AND COALESCE(h.is_optional, FALSE) = FALSE
@@ -290,7 +290,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
             -- making this handler report a different answer on each run.
             SELECT DISTINCT ON (s.employee_id)
                    s.employee_id, s.pf_enabled, s.esi_enabled, s.effective_from
-            FROM staging.vetana_salary_structures s
+            FROM public.vetana_salary_structures s
             WHERE s.org_id = $1::uuid AND s.is_active = TRUE
             ORDER BY s.employee_id, s.effective_from DESC, s.updated_at DESC, s.id
         ),
@@ -300,7 +300,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
             -- and a back-dated correction run writes an older month after a
             -- newer one.
             SELECT DISTINCT ON (p.employee_id) p.employee_id, p.month, p.tds
-            FROM staging.vetana_payslips p
+            FROM public.vetana_payslips p
             WHERE p.org_id = $1::uuid AND p.is_active = TRUE
             ORDER BY p.employee_id, p.month DESC, p.created_at DESC
         ),
@@ -310,7 +310,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
                    NULLIF(btrim(e.uan), '')        AS uan,
                    NULLIF(btrim(e.esi_number), '') AS esi_number,
                    NULLIF(btrim(e.pan), '')        AS pan
-            FROM staging.manav_employees e
+            FROM public.manav_employees e
             -- STOCK. `as_at` above is TODAY and the whole handler is about a
             -- deduction somebody is ABOUT TO MAKE on the next run, so the
             -- population is who is on the rolls now. `is_active` alone does not
@@ -365,13 +365,13 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
         f"""
         WITH structure AS (
             SELECT DISTINCT ON (s.employee_id) s.employee_id, s.pf_enabled, s.esi_enabled
-            FROM staging.vetana_salary_structures s
+            FROM public.vetana_salary_structures s
             WHERE s.org_id = $1::uuid AND s.is_active = TRUE
             ORDER BY s.employee_id, s.effective_from DESC, s.updated_at DESC, s.id
         ),
         payslip AS (
             SELECT DISTINCT ON (p.employee_id) p.employee_id, p.tds
-            FROM staging.vetana_payslips p
+            FROM public.vetana_payslips p
             WHERE p.org_id = $1::uuid AND p.is_active = TRUE
             ORDER BY p.employee_id, p.month DESC, p.created_at DESC
         ),
@@ -380,7 +380,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
             -- These two numbers are printed against each other — "0 of 59" —
             -- and a numerator drawn from one roster over a denominator drawn
             -- from another is a worse answer than either number on its own.
-            SELECT e.id FROM staging.manav_employees e
+            SELECT e.id FROM public.manav_employees e
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
               {still_on_the_rolls("e")}
         )
@@ -508,7 +508,7 @@ async def brief_statutory_dues(pool, org_id: str, month: str | None = None,
                COALESCE(r.total_pt, 0)    AS total_pt,
                COALESCE(r.total_tds, 0)   AS total_tds,
                COALESCE(r.total_gross, 0) AS total_gross
-        FROM staging.vetana_payroll_runs r
+        FROM public.vetana_payroll_runs r
         WHERE r.org_id = $1::uuid
           -- $2 NULL means "the latest approved one". Written as an OR over one
           -- cast parameter rather than as two queries, so there is a single
@@ -543,7 +543,7 @@ async def brief_statutory_dues(pool, org_id: str, month: str | None = None,
                COALESCE(r.total_esi, 0) AS total_esi,
                COALESCE(r.total_pt, 0)  AS total_pt,
                COALESCE(r.total_tds, 0) AS total_tds
-        FROM staging.vetana_payroll_runs r
+        FROM public.vetana_payroll_runs r
         WHERE r.org_id = $1::uuid AND r.month = $2::text
         """,
         org_id, prior_month,
@@ -562,7 +562,7 @@ async def brief_statutory_dues(pool, org_id: str, month: str | None = None,
                  + COALESCE(r.total_pt, 0) + COALESCE(r.total_tds, 0)
                                                     AS statutory_total,
                r.approved_at IS NOT NULL            AS carries_stale_approval
-        FROM staging.vetana_payroll_runs r
+        FROM public.vetana_payroll_runs r
         WHERE r.org_id = $1::uuid AND r.status = 'processed'
         ORDER BY r.month DESC
         LIMIT $2
@@ -815,8 +815,8 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                a.date, a.status
-        FROM staging.manav_attendance a
-        JOIN staging.manav_employees e ON e.id = a.employee_id AND e.org_id = a.org_id
+        FROM public.manav_attendance a
+        JOIN public.manav_employees e ON e.id = a.employee_id AND e.org_id = a.org_id
         WHERE a.org_id = $1::uuid
           AND a.date >= $2::date AND a.date <= $3::date
           AND a.date < $4::date
@@ -857,13 +857,13 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                a.date
-        FROM staging.manav_attendance a
-        JOIN staging.manav_employees e ON e.id = a.employee_id AND e.org_id = a.org_id
+        FROM public.manav_attendance a
+        JOIN public.manav_employees e ON e.id = a.employee_id AND e.org_id = a.org_id
         WHERE a.org_id = $1::uuid
           AND a.date >= $2::date AND a.date <= $3::date
           AND a.status = 'absent'
           AND NOT EXISTS (
-              SELECT 1 FROM staging.manav_leave_requests lr
+              SELECT 1 FROM public.manav_leave_requests lr
               WHERE lr.org_id = a.org_id AND lr.employee_id = a.employee_id
                 AND lr.status = 'approved'
                 AND lr.start_date <= a.date AND lr.end_date >= a.date)
@@ -896,7 +896,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
         """
         SELECT count(*) AS rows_in_window,
                count(*) FILTER (WHERE a.check_in IS NOT NULL) AS rows_with_a_punch
-        FROM staging.manav_attendance a
+        FROM public.manav_attendance a
         WHERE a.org_id = $1::uuid AND a.date >= $2::date AND a.date <= $3::date
         """,
         org_id, month_start, window_end,
@@ -917,7 +917,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
             -- at 0, and this predicate would then keep every Sunday.
             WHERE EXTRACT(ISODOW FROM gs) < 6
               AND NOT EXISTS (
-                  SELECT 1 FROM staging.manav_holidays h
+                  SELECT 1 FROM public.manav_holidays h
                   WHERE h.org_id = $1::uuid AND h.date = gs::date
                     AND COALESCE(h.is_optional, FALSE) = FALSE)
         ),
@@ -927,7 +927,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
             SELECT e.id, e.org_id, e.name, e.employee_code, e.email, e.phone,
                    COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                    e.date_of_joining
-            FROM staging.manav_employees e
+            FROM public.manav_employees e
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
         )
         SELECT e.name AS employee_name, e.employee_code, e.department,
@@ -956,7 +956,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
           -- A NULL `last_working_day` still excludes nothing, on both sides.
           {still_on_the_rolls("e", "d.d")}
           AND NOT EXISTS (
-              SELECT 1 FROM staging.manav_attendance a
+              SELECT 1 FROM public.manav_attendance a
               WHERE a.org_id = $1::uuid AND a.employee_id = e.id AND a.date = d.d)
         -- GROUP BY e.id, NOT by e.name. This was written as a name grouping and
         -- the live data caught it inside a minute: the seeded org has two
@@ -1015,7 +1015,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
         """
         WITH taken AS (
             SELECT lr.employee_id, lr.leave_type_id, SUM(lr.days) AS days_taken
-            FROM staging.manav_leave_requests lr
+            FROM public.manav_leave_requests lr
             WHERE lr.org_id = $1::uuid AND lr.status = 'approved'
               AND EXTRACT(YEAR FROM lr.start_date)::int = $2::int
             GROUP BY lr.employee_id, lr.leave_type_id
@@ -1037,12 +1037,12 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                -- repo has been bitten by that twice.
                (b.allocated::numeric + b.carried_forward::numeric) AS entitlement
         FROM taken t
-        JOIN staging.manav_employees e
+        JOIN public.manav_employees e
           ON e.id = t.employee_id AND e.org_id = $1::uuid AND e.is_active = TRUE
-        JOIN staging.manav_leave_balances b
+        JOIN public.manav_leave_balances b
           ON b.org_id = $1::uuid AND b.employee_id = t.employee_id
          AND b.leave_type_id = t.leave_type_id AND b.year = $2::int
-        LEFT JOIN staging.manav_leave_types lt
+        LEFT JOIN public.manav_leave_types lt
           ON lt.id = t.leave_type_id AND lt.org_id = $1::uuid
         WHERE t.days_taken > (b.allocated::numeric + b.carried_forward::numeric)
         ORDER BY (t.days_taken - (b.allocated::numeric + b.carried_forward::numeric)) DESC,
@@ -1082,14 +1082,14 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
         """
         WITH taken AS (
             SELECT lr.employee_id, lr.leave_type_id
-            FROM staging.manav_leave_requests lr
+            FROM public.manav_leave_requests lr
             WHERE lr.org_id = $1::uuid AND lr.status = 'approved'
               AND EXTRACT(YEAR FROM lr.start_date)::int = $2::int
             GROUP BY lr.employee_id, lr.leave_type_id
         )
         SELECT count(*) FROM taken t
         WHERE NOT EXISTS (
-            SELECT 1 FROM staging.manav_leave_balances b
+            SELECT 1 FROM public.manav_leave_balances b
             WHERE b.org_id = $1::uuid AND b.employee_id = t.employee_id
               AND b.leave_type_id = t.leave_type_id AND b.year = $2::int)
         """,
@@ -1199,11 +1199,11 @@ async def brief_unpaid_reimbursements(pool, org_id: str, limit: int = 200) -> di
                -- place an unpaid claim must never be able to hide.
                ($2::date - COALESCE(c.approved_at::date, c.expense_date)) AS age_days,
                (c.approved_at IS NULL) AS aged_from_expense_date
-        FROM staging.manav_expense_claims c
+        FROM public.manav_expense_claims c
         -- `AND e.org_id = c.org_id` is not decoration. The FK is on id alone, so
         -- a join on id can surface another organisation's employee NAME against
         -- this org's claim.
-        JOIN staging.manav_employees e ON e.id = c.employee_id AND e.org_id = c.org_id
+        JOIN public.manav_employees e ON e.id = c.employee_id AND e.org_id = c.org_id
         WHERE c.org_id = $1::uuid
           AND c.is_active = TRUE
           AND c.status = 'approved'

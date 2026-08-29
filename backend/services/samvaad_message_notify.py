@@ -316,7 +316,7 @@ async def _thread_audience(pool, org_id: str, root_id) -> list[str]:
     rows = await pool.fetch(
         """
         SELECT DISTINCT sender_id
-          FROM staging.samvada_messages
+          FROM public.samvada_messages
          WHERE org_id = $1::uuid
            AND (id = $2::uuid OR parent_message_id = $2::uuid)
            AND is_deleted = FALSE
@@ -399,7 +399,7 @@ async def fan_out_message_notification(
         return 0
 
     channel = await pool.fetchrow(
-        "SELECT id, name, type FROM staging.samvada_channels "
+        "SELECT id, name, type FROM public.samvada_channels "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
@@ -486,7 +486,7 @@ async def fan_out_message_notification(
                   FROM users u WHERE u.user_id = $2::text) AS actor_name,
                CASE WHEN cm.last_read_at IS NULL THEN NULL ELSE (
                     SELECT COUNT(*)
-                      FROM staging.samvada_messages m
+                      FROM public.samvada_messages m
                      WHERE m.channel_id = cm.channel_id
                        AND m.is_deleted = FALSE
                        AND m.parent_message_id IS NULL
@@ -495,7 +495,7 @@ async def fan_out_message_notification(
                ) END AS unread,
                n.notification_id AS prev_id,
                (n.created_at < now() - make_interval(mins => $5::int)) AS prev_stale
-          FROM staging.samvada_channel_members cm
+          FROM public.samvada_channel_members cm
           LEFT JOIN LATERAL (
                SELECT notification_id, created_at
                  FROM notifications

@@ -84,7 +84,7 @@ _MODULE_KIND = {
 
 _MODULE_MAP = {
     "invoices": {
-        "table": "staging.ganit_invoices",
+        "table": "public.ganit_invoices",
         "date_col": "due_date",
         "date_is_date": True,
         "owner_col": "created_by",
@@ -100,7 +100,7 @@ _MODULE_MAP = {
         "money_expr": "e.balance_due",
     },
     "vendor_bills": {
-        "table": "staging.ganit_vendor_bills",
+        "table": "public.ganit_vendor_bills",
         "date_col": "due_date",
         "date_is_date": True,
         "owner_col": "created_by",
@@ -114,7 +114,7 @@ _MODULE_MAP = {
         "money_expr": "e.total - COALESCE(e.amount_paid, 0)",
     },
     "follow_ups": {
-        "table": "staging.graha_follow_ups",
+        "table": "public.graha_follow_ups",
         "date_col": "due_at",
         "date_is_date": False,
         "owner_col": "assigned_to",
@@ -127,7 +127,7 @@ _MODULE_MAP = {
         "money_expr": None,
     },
     "esign": {
-        "table": "staging.ganit_contracts",
+        "table": "public.ganit_contracts",
         # No explicit due date; "untouched since" is the signal.
         "date_col": "updated_at",
         "date_is_date": False,

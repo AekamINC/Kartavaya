@@ -215,7 +215,7 @@ async def _org_or_404(pool, org_id: str) -> dict:
     except (ValueError, AttributeError, TypeError):
         raise HTTPException(404, "Organisation not found")
     row = await pool.fetchrow(
-        "SELECT id, name, is_platform_org FROM staging.organisations WHERE id=$1::uuid",
+        "SELECT id, name, is_platform_org FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not row:
@@ -232,7 +232,7 @@ async def _assert_member(pool, org_id: str, user_id: str) -> None:
     hole; this one does not.
     """
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid LIMIT 1",
+        "SELECT 1 FROM public.user_roles WHERE user_id=$1 AND org_id=$2::uuid LIMIT 1",
         user_id, org_id,
     )
     if not ok:
@@ -1430,7 +1430,7 @@ async def org_invoice_preview(
 
 #: The table this section reads and never writes. Named once, here, so a schema
 #: change has one place to land. `services/outbound_log.py` is the only writer.
-_OUTBOUND = "staging.outbound_log"
+_OUTBOUND = "public.outbound_log"
 
 #: The status vocabulary. FOUR WORDS, and 098 makes them a CHECK named
 #: `outbound_log_status_ck` — `('queued','sent','suppressed','failed')` — so

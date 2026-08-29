@@ -37,7 +37,7 @@ async def check_dept_coverage(
     total_row = await pool.fetchrow(
         f"""
         SELECT COUNT(*) AS cnt
-        FROM staging.manav_employees e
+        FROM public.manav_employees e
         WHERE e.org_id = $1::uuid AND e.department = $2
           AND e.status = 'active' AND e.is_active = true
           {still_on_the_rolls("e")}
@@ -60,8 +60,8 @@ async def check_dept_coverage(
         # same shape.
         f"""
         SELECT COUNT(DISTINCT lr.employee_id) AS cnt
-        FROM staging.manav_leave_requests lr
-        JOIN staging.manav_employees e
+        FROM public.manav_leave_requests lr
+        JOIN public.manav_employees e
           ON e.id = lr.employee_id AND e.org_id = lr.org_id
         WHERE lr.org_id = $1::uuid
           AND e.department = $2

@@ -59,7 +59,7 @@ DELEGABLE_ACCOUNT_TYPES: frozenset[str] = frozenset({"client", "member"})
 async def _caller_platform_role(pool, user_id: str) -> str | None:
     """The caller's strongest platform role, or None."""
     rows = await pool.fetch(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
         user_id, list(ALL_PLATFORM_ROLES),
     )
@@ -140,7 +140,7 @@ async def _assert_target_not_platform(pool, caller: dict, target_user_id: str,
 async def _org_ids_for(pool, user_id: str) -> frozenset[str]:
     """Every org this user belongs to. Empty frozenset for an org-less account."""
     rows = await pool.fetch(
-        "SELECT DISTINCT org_id::text AS org_id FROM staging.user_roles "
+        "SELECT DISTINCT org_id::text AS org_id FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL",
         user_id,
     )
@@ -300,15 +300,15 @@ async def list_users(pool=Depends(get_pool), admin=Depends(_require_admin)):
            FROM users u
            LEFT JOIN LATERAL (
                SELECT r.org_id
-               FROM staging.user_roles r
+               FROM public.user_roles r
                WHERE r.user_id = u.user_id AND r.org_id IS NOT NULL
                LIMIT 1
            ) lr ON TRUE
-           LEFT JOIN staging.organisations o ON o.id = lr.org_id
-           WHERE EXISTS (SELECT 1 FROM staging.user_roles r
+           LEFT JOIN public.organisations o ON o.id = lr.org_id
+           WHERE EXISTS (SELECT 1 FROM public.user_roles r
                           WHERE r.user_id = u.user_id
                             AND r.org_id = ANY($1::uuid[]))
-              OR NOT EXISTS (SELECT 1 FROM staging.user_roles r2
+              OR NOT EXISTS (SELECT 1 FROM public.user_roles r2
                               WHERE r2.user_id = u.user_id
                                 AND r2.org_id IS NOT NULL)
            ORDER BY u.created_at DESC""",
@@ -611,8 +611,8 @@ async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depend
             # same way `org_resolver.get_org_id` orders its fallback so the two
             # cannot disagree about which org a person primarily belongs to.
             workspace_name = await pool.fetchval(
-                "SELECT o.name FROM staging.user_roles r "
-                "JOIN staging.organisations o ON o.id = r.org_id "
+                "SELECT o.name FROM public.user_roles r "
+                "JOIN public.organisations o ON o.id = r.org_id "
                 "WHERE r.user_id=$1 AND r.org_id IS NOT NULL "
                 "ORDER BY r.granted_at LIMIT 1",
                 admin["user_id"],

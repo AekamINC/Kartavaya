@@ -75,8 +75,8 @@ _MONTH = "to_date(p.month || '-01', 'YYYY-MM-DD')"
 #: Payslips that stand: live rows whose RUN is not draft. A reverted run drops
 #: back to 'draft' with its payslips still on file — the join is the guard.
 _SLIPS = (
-    "FROM staging.vetana_payslips p "
-    "JOIN staging.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id "
+    "FROM public.vetana_payslips p "
+    "JOIN public.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id "
     "WHERE p.org_id = $1::uuid AND p.is_active = TRUE AND r.status <> 'draft' "
 )
 
@@ -126,9 +126,9 @@ def payroll_cost(req: MetricRequest):
             "SUM(COALESCE(p.net_pay, 0))::float AS net, "
             "COUNT(DISTINCT p.employee_id) AS employees, "
             f"SUM({_COST})::float / NULLIF(COUNT(DISTINCT p.employee_id), 0)::float AS per_head "
-            "FROM staging.vetana_payslips p "
-            "JOIN staging.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id "
-            "JOIN staging.manav_employees e ON e.id = p.employee_id AND e.org_id = p.org_id "
+            "FROM public.vetana_payslips p "
+            "JOIN public.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id "
+            "JOIN public.manav_employees e ON e.id = p.employee_id AND e.org_id = p.org_id "
             "WHERE p.org_id = $1::uuid AND p.is_active = TRUE AND r.status <> 'draft' "
             + _WINDOW +
             "GROUP BY 1, 2 ORDER BY 1, 2",
@@ -170,8 +170,8 @@ def statutory(req: MetricRequest):
         # (none exists).
         return (
             f"SELECT {period} AS period, c.component, SUM(c.amount)::float AS value "
-            "FROM staging.vetana_payslips p "
-            "JOIN staging.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id "
+            "FROM public.vetana_payslips p "
+            "JOIN public.vetana_payroll_runs r ON r.id = p.run_id AND r.org_id = p.org_id "
             "CROSS JOIN LATERAL (VALUES "
             f"('PF', {_PF}), ('ESI', {_ESI}), ('PT', {_PT}), ('TDS', {_TDS})"
             ") AS c(component, amount) "
@@ -271,13 +271,13 @@ def salary_bands(req: MetricRequest):
         "         WHEN s.ctc_annual < 1200000 THEN '6-12L' "
         "         WHEN s.ctc_annual < 2400000 THEN '12-24L' "
         "         ELSE '24L+' END AS band "
-        "  FROM staging.vetana_salary_structures s "
-        "  JOIN staging.manav_employees e ON e.id = s.employee_id "
+        "  FROM public.vetana_salary_structures s "
+        "  JOIN public.manav_employees e ON e.id = s.employee_id "
         "  AND e.org_id = s.org_id AND e.is_active = TRUE "
         "  WHERE s.org_id = $1::uuid AND s.is_active = TRUE "
         "  AND s.effective_from <= CURRENT_DATE "
         "  AND NOT EXISTS ("
-        "    SELECT 1 FROM staging.manav_offboarding x "
+        "    SELECT 1 FROM public.manav_offboarding x "
         "    WHERE x.org_id = e.org_id AND x.employee_id = e.id "
         "    AND x.status <> 'cancelled' "
         "    AND x.last_working_day < CURRENT_DATE) "
@@ -322,7 +322,7 @@ def payroll_revenue_share(req: MetricRequest):
         # two modules cannot quietly grow two different revenues.
         f"  SELECT {period_rev} AS period, 0::numeric AS pay, "
         "SUM(CASE WHEN invoice_type = 'credit_note' THEN -total ELSE total END) AS rev "
-        "FROM staging.ganit_invoices "
+        "FROM public.ganit_invoices "
         "WHERE org_id = $1::uuid AND is_active = TRUE AND doc_status <> 'draft' "
         "AND invoice_date BETWEEN $2::date AND $3::date "
         "GROUP BY 1"
@@ -349,7 +349,7 @@ def payroll_revenue_share(req: MetricRequest):
 def run_status(req: MetricRequest):
     return (
         "SELECT r.status AS label, COUNT(*) AS value, MAX(r.month) AS latest_month "
-        "FROM staging.vetana_payroll_runs r "
+        "FROM public.vetana_payroll_runs r "
         "WHERE r.org_id = $1::uuid "
         "GROUP BY r.status "
         "ORDER BY CASE r.status WHEN 'draft' THEN 1 WHEN 'processed' THEN 2 "
@@ -369,7 +369,7 @@ absent_metric(
     grain="stock",
     sensitivity="financial",
     absent="No salary bands are configured anywhere: no migration creates a "
-           "bands or grades table, and staging.vetana_salary_structures "
+           "bands or grades table, and public.vetana_salary_structures "
            "carries no band, grade or midpoint column — ctc_annual is a bare "
            "number. Compa-ratio is pay over the band midpoint; without a "
            "stored midpoint the ratio has no denominator. Configuring bands "

@@ -70,7 +70,7 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         "revenue",
         """
         SELECT COALESCE(SUM(amount), 0) AS total
-        FROM staging.ganit_payments
+        FROM public.ganit_payments
         WHERE org_id = $1::uuid AND payment_date >= $2
         """,
         org_id, since,
@@ -82,7 +82,7 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         SELECT
             COUNT(*) FILTER (WHERE won_at IS NOT NULL AND won_at >= $2) AS won,
             COUNT(*) FILTER (WHERE lost_at IS NOT NULL AND lost_at >= $2) AS lost
-        FROM staging.graha_deals
+        FROM public.graha_deals
         WHERE org_id = $1::uuid AND is_active = true
         """,
         org_id, since,
@@ -107,7 +107,7 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         "invoices_sent",
         """
         SELECT COUNT(*) AS cnt
-        FROM staging.ganit_invoices
+        FROM public.ganit_invoices
         WHERE org_id = $1::uuid AND sent_at >= $2
           AND invoice_type = 'tax_invoice' AND is_active = true
         """,
@@ -118,7 +118,7 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         "new_leads",
         """
         SELECT COUNT(*) AS cnt
-        FROM staging.graha_contacts
+        FROM public.graha_contacts
         WHERE org_id = $1::uuid AND contact_type = 'lead'
           AND created_at >= $2 AND is_active = true
         """,
@@ -129,7 +129,7 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         "expenses",
         """
         SELECT COALESCE(SUM(total), 0) AS total
-        FROM staging.ganit_expenses
+        FROM public.ganit_expenses
         WHERE org_id = $1::uuid AND expense_date >= $2 AND is_active = true
         """,
         org_id, since,
@@ -152,7 +152,7 @@ async def aggregate_kpis(pool, org_id: str, period: str = "30d") -> dict:
         "employees_active",
         f"""
         SELECT COUNT(*) AS cnt
-        FROM staging.manav_employees e
+        FROM public.manav_employees e
         WHERE e.org_id = $1::uuid AND e.status = 'active' AND e.is_active = true
           {still_on_the_rolls("e")}
         """,

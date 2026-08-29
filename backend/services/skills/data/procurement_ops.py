@@ -96,7 +96,7 @@ async def check_late_suppliers(pool, org_id: str, as_at: str | None = None,
                count(*) FILTER (WHERE status = ANY($2::text[]))   AS orders_open,
                count(*) FILTER (WHERE status = ANY($2::text[])
                                   AND expected_date IS NULL)      AS open_undated
-        FROM staging.ganit_purchase_orders
+        FROM public.ganit_purchase_orders
         WHERE org_id = $1::uuid AND is_active
         """,
         org_id, list(OPEN_STATUSES),
@@ -108,14 +108,14 @@ async def check_late_suppliers(pool, org_id: str, as_at: str | None = None,
                v.id AS vendor_id, v.name AS vendor,
                NULLIF(btrim(v.email), '') AS vendor_email,
                NULLIF(btrim(v.phone), '') AS vendor_phone,
-               COALESCE((SELECT SUM(l.qty_ordered) FROM staging.ganit_po_lines l
+               COALESCE((SELECT SUM(l.qty_ordered) FROM public.ganit_po_lines l
                           WHERE l.po_id = po.id AND l.org_id = po.org_id
                             AND l.is_active), 0)                       AS qty_ordered,
-               COALESCE((SELECT SUM(r.qty) FROM staging.ganit_po_receipts r
+               COALESCE((SELECT SUM(r.qty) FROM public.ganit_po_receipts r
                           WHERE r.po_id = po.id AND r.org_id = po.org_id), 0)
                                                                         AS qty_received
-        FROM staging.ganit_purchase_orders po
-        JOIN staging.ganit_vendors v ON v.id = po.vendor_id
+        FROM public.ganit_purchase_orders po
+        JOIN public.ganit_vendors v ON v.id = po.vendor_id
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = ANY($2::text[])
           AND po.expected_date IS NOT NULL
@@ -228,8 +228,8 @@ async def check_received_not_invoiced(pool, org_id: str, as_at: str | None = Non
                v.id AS vendor_id, v.name AS vendor,
                NULLIF(btrim(v.email), '') AS vendor_email,
                NULLIF(btrim(v.phone), '') AS vendor_phone
-        FROM staging.ganit_purchase_orders po
-        JOIN staging.ganit_vendors v ON v.id = po.vendor_id
+        FROM public.ganit_purchase_orders po
+        JOIN public.ganit_vendors v ON v.id = po.vendor_id
         WHERE po.org_id = $1::uuid AND po.is_active
           AND po.status = ANY($2::text[])
         ORDER BY po.po_date
@@ -247,10 +247,10 @@ async def check_received_not_invoiced(pool, org_id: str, as_at: str | None = Non
             """
             SELECT l.id, l.line_no, l.product_id::text AS product_id,
                    l.description, l.unit, l.rate, l.qty_ordered,
-                   COALESCE((SELECT SUM(r.qty) FROM staging.ganit_po_receipts r
+                   COALESCE((SELECT SUM(r.qty) FROM public.ganit_po_receipts r
                               WHERE r.po_line_id = l.id AND r.org_id = l.org_id), 0)
                        AS qty_received
-            FROM staging.ganit_po_lines l
+            FROM public.ganit_po_lines l
             WHERE l.po_id = $1::uuid AND l.org_id = $2::uuid AND l.is_active
             ORDER BY l.line_no
             """,
@@ -262,7 +262,7 @@ async def check_received_not_invoiced(pool, org_id: str, as_at: str | None = Non
         orders_with_receipts += 1
 
         bills = await pool.fetch(
-            "SELECT line_items FROM staging.ganit_vendor_bills "
+            "SELECT line_items FROM public.ganit_vendor_bills "
             "WHERE po_id = $1::uuid AND org_id = $2::uuid AND is_active",
             str(o["id"]), org_id,
         )
@@ -366,17 +366,17 @@ async def check_194q_approaching(pool, org_id: str, fy_start: str | None = None,
         SELECT v.id, v.name, v.tds_section,
                NULLIF(btrim(v.email), '') AS vendor_email,
                NULLIF(btrim(v.phone), '') AS vendor_phone,
-               COALESCE((SELECT SUM(b.total) FROM staging.ganit_vendor_bills b
+               COALESCE((SELECT SUM(b.total) FROM public.ganit_vendor_bills b
                           WHERE b.vendor_id = v.id AND b.org_id = v.org_id
                             AND b.is_active AND b.bill_date >= $2::date), 0)
                    AS purchased_ytd,
                COALESCE((SELECT SUM(po.total)
-                           FROM staging.ganit_purchase_orders po
+                           FROM public.ganit_purchase_orders po
                           WHERE po.vendor_id = v.id AND po.org_id = v.org_id
                             AND po.is_active
                             AND po.status = ANY($3::text[])), 0)
                    AS on_order
-        FROM staging.ganit_vendors v
+        FROM public.ganit_vendors v
         WHERE v.org_id = $1::uuid AND v.is_active
         ORDER BY v.name
         LIMIT $4::int

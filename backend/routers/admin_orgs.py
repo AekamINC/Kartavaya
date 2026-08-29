@@ -390,7 +390,7 @@ async def _holds_platform_role(pool, user_id: str, roles: tuple[str, ...]) -> bo
     this asks the same question the same way.
     """
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
         user_id, list(roles),
     ))
@@ -635,7 +635,7 @@ async def create_org(
 
     if tm:
         existing = await pool.fetchrow(
-            "SELECT id FROM staging.organisations WHERE team_id=$1",
+            "SELECT id FROM public.organisations WHERE team_id=$1",
             tm["team_id"],
         )
         if existing:
@@ -648,7 +648,7 @@ async def create_org(
     team_id = tm["team_id"] if tm else f"team_{uuid.uuid4().hex[:12]}"
 
     plan = await pool.fetchrow(
-        "SELECT id, code, default_credits FROM staging.plans WHERE code=$1 AND is_active=TRUE",
+        "SELECT id, code, default_credits FROM public.plans WHERE code=$1 AND is_active=TRUE",
         body.plan_code,
     )
     if not plan:
@@ -676,7 +676,7 @@ async def create_org(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO staging.organisations "
+                "INSERT INTO public.organisations "
                 "(id, team_id, name, owner_user_id, email, r2_account_id, r2_access_key_id, "
                 " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
                 " monthly_credits, monthly_price, max_users, is_platform_org, is_active, "
@@ -780,7 +780,7 @@ async def create_org(
             )
 
             await conn.execute(
-                "INSERT INTO staging.subscriptions (org_id, plan_id, status) "
+                "INSERT INTO public.subscriptions (org_id, plan_id, status) "
                 "VALUES ($1, $2, 'active')",
                 org_id, plan["id"],
             )
@@ -856,7 +856,7 @@ async def create_org(
             # the two are compared, and every existing org_admin keeps their row.
             if owner:
                 await conn.execute(
-                    "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                    "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
                     "VALUES ($1, $2, 'org_owner', $3)",
                     owner["user_id"], org_id, user["user_id"],
                 )
@@ -927,7 +927,7 @@ async def create_org(
             try:
                 from email_service import send_org_owner_invite_email
                 enabled_rows = await pool.fetch(
-                    "SELECT module_code FROM staging.module_subscriptions "
+                    "SELECT module_code FROM public.module_subscriptions "
                     "WHERE org_id=$1::uuid AND is_active=TRUE",
                     str(org_id),
                 )
@@ -1032,7 +1032,7 @@ async def list_orgs(
     """
     pool = await get_pool()
     if count_only:
-        n = await pool.fetchval("SELECT COUNT(*) FROM staging.organisations")
+        n = await pool.fetchval("SELECT COUNT(*) FROM public.organisations")
         return {"count": n or 0}
     rows = await pool.fetch(
         # max_users and is_platform_org are returned because they are amendable
@@ -1079,9 +1079,9 @@ async def list_orgs(
         # console list.
         + actor_select("o", created=False, updated=True)
         + "o.updated_at "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.organisations o "
+        "LEFT JOIN public.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN public.plans p ON p.id = s.plan_id "
         "LEFT JOIN users u ON u.user_id = o.owner_user_id "
         + actor_joins("o", created=False, updated=True)
         + "ORDER BY o.created_at DESC"
@@ -1115,10 +1115,10 @@ async def platform_analytics(
     start = _period_start(period)
 
     total_orgs = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.organisations WHERE is_active=TRUE"
+        "SELECT COUNT(*) FROM public.organisations WHERE is_active=TRUE"
     )
     total_users = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "SELECT COUNT(DISTINCT user_id) FROM public.user_roles "
         "WHERE org_id IS NOT NULL"
     )
 
@@ -1126,16 +1126,16 @@ async def platform_analytics(
     margin_rows = await pool.fetch(
         "SELECT o.markup_pct, "
         "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd "
-        "FROM staging.organisations o "
+        "FROM public.organisations o "
         "LEFT JOIN LATERAL ("
         "  SELECT SUM(l.cost_usd) as cost "
-        "  FROM staging.hub_ai_logs l "
-        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  FROM public.hub_ai_logs l "
+        "  JOIN public.hub_clients c ON c.id = l.client_id "
         "  WHERE c.org_id = o.id AND l.created_at >= $1"
         ") ai ON TRUE "
         "LEFT JOIN LATERAL ("
         "  SELECT SUM(r.cost_usd) as cost "
-        "  FROM staging.hub_scraper_runs r "
+        "  FROM public.hub_scraper_runs r "
         "  WHERE r.org_id = o.id AND r.created_at >= $1"
         ") sc ON TRUE "
         "WHERE o.is_active=TRUE AND "
@@ -1154,13 +1154,13 @@ async def platform_analytics(
 
     ai_stats = await pool.fetchrow(
         "SELECT COALESCE(SUM(l.cost_usd), 0) as total_cost, COUNT(*) as total_calls "
-        "FROM staging.hub_ai_logs l "
+        "FROM public.hub_ai_logs l "
         "WHERE l.created_at >= $1",
         datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
     )
 
     total_scraper_cost = await pool.fetchval(
-        "SELECT COALESCE(SUM(cost_usd), 0) FROM staging.hub_scraper_runs "
+        "SELECT COALESCE(SUM(cost_usd), 0) FROM public.hub_scraper_runs "
         "WHERE created_at >= $1",
         datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
     ) or 0
@@ -1169,7 +1169,7 @@ async def platform_analytics(
         "SELECT l.provider, "
         "COALESCE(SUM(l.cost_usd), 0) as cost_usd, "
         "COUNT(*) as call_count "
-        "FROM staging.hub_ai_logs l "
+        "FROM public.hub_ai_logs l "
         "WHERE l.created_at >= $1 "
         "GROUP BY l.provider ORDER BY cost_usd DESC",
         datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
@@ -1180,16 +1180,16 @@ async def platform_analytics(
         "COALESCE(ai.cost, 0) as ai_cost_usd, "
         "COALESCE(sc.cost, 0) as scraper_cost_usd, "
         "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd "
-        "FROM staging.organisations o "
+        "FROM public.organisations o "
         "LEFT JOIN LATERAL ("
         "  SELECT SUM(l.cost_usd) as cost "
-        "  FROM staging.hub_ai_logs l "
-        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  FROM public.hub_ai_logs l "
+        "  JOIN public.hub_clients c ON c.id = l.client_id "
         "  WHERE c.org_id = o.id AND l.created_at >= $1"
         ") ai ON TRUE "
         "LEFT JOIN LATERAL ("
         "  SELECT SUM(r.cost_usd) as cost "
-        "  FROM staging.hub_scraper_runs r "
+        "  FROM public.hub_scraper_runs r "
         "  WHERE r.org_id = o.id AND r.created_at >= $1"
         ") sc ON TRUE "
         "WHERE o.is_active=TRUE "
@@ -1257,19 +1257,19 @@ async def all_orgs_cost_summary(
         "COALESCE(sc.cost, 0) as scraper_cost_usd, "
         "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd, "
         "GREATEST(ai.last_at, sc.last_at) as last_active "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.organisations o "
+        "LEFT JOIN public.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN public.plans p ON p.id = s.plan_id "
         "LEFT JOIN LATERAL ("
         "  SELECT SUM(l.cost_usd) as cost, COUNT(*) as calls, "
         "  MAX(l.created_at) as last_at "
-        "  FROM staging.hub_ai_logs l "
-        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  FROM public.hub_ai_logs l "
+        "  JOIN public.hub_clients c ON c.id = l.client_id "
         "  WHERE c.org_id = o.id AND l.created_at >= $1"
         ") ai ON TRUE "
         "LEFT JOIN LATERAL ("
         "  SELECT SUM(r.cost_usd) as cost, MAX(r.created_at) as last_at "
-        "  FROM staging.hub_scraper_runs r "
+        "  FROM public.hub_scraper_runs r "
         "  WHERE r.org_id = o.id AND r.created_at >= $1"
         ") sc ON TRUE "
         "WHERE o.is_active=TRUE "
@@ -1312,12 +1312,12 @@ async def provider_costs(
     # Tracked totals from internal logs (all-time)
     ai_by_provider = await pool.fetch(
         "SELECT provider, COALESCE(SUM(cost_usd), 0) as total "
-        "FROM staging.hub_ai_logs GROUP BY provider"
+        "FROM public.hub_ai_logs GROUP BY provider"
     )
     tracked_ai = {r["provider"]: float(r["total"]) for r in ai_by_provider}
 
     tracked_scraper = await pool.fetchval(
-        "SELECT COALESCE(SUM(cost_usd), 0) FROM staging.hub_scraper_runs"
+        "SELECT COALESCE(SUM(cost_usd), 0) FROM public.hub_scraper_runs"
     ) or 0
 
     # Map internal provider names to reconciliation buckets
@@ -1456,7 +1456,7 @@ async def get_org(
         # appear in a traceback and cannot be returned by a future edit that
         # forgets the serializer — the two belong together.
         "SELECT o.id, o.name, o.email, o.is_active, o.created_at, o.updated_at "
-        "FROM staging.organisations o WHERE o.id=$1::uuid",
+        "FROM public.organisations o WHERE o.id=$1::uuid",
         org_id,
     )
     if not org:
@@ -1479,7 +1479,7 @@ async def get_org(
     # member list with extra detail attached.
     modules = await pool.fetch(
         "SELECT module_code, is_active, activated_at "
-        "FROM staging.module_subscriptions WHERE org_id=$1::uuid",
+        "FROM public.module_subscriptions WHERE org_id=$1::uuid",
         org_id,
     )
 
@@ -1560,7 +1560,7 @@ async def set_org_contact_email(
                 # organisation is exactly the one whose contact address is most
                 # likely to need changing — that is who you write to about the
                 # suspension.
-                "SELECT name, email FROM staging.organisations "
+                "SELECT name, email FROM public.organisations "
                 "WHERE id=$1::uuid FOR UPDATE",
                 org_id,
             )
@@ -1584,7 +1584,7 @@ async def set_org_contact_email(
                 # last changed it without knowing to ask. 202 added the column
                 # for changes of exactly this kind — the firm's contact address,
                 # its GSTIN, its seat cap.
-                "UPDATE staging.organisations SET email=$1, updated_at=NOW(), "
+                "UPDATE public.organisations SET email=$1, updated_at=NOW(), "
                 "updated_by=$3 WHERE id=$2::uuid",
                 new_email, org_id, user["user_id"],
             )
@@ -1623,7 +1623,7 @@ async def deactivate_org(
         # column. `updated_by` is now that trace, and `updated_at` moves with it
         # because a name against a timestamp from some earlier edit dates the
         # suspension to the wrong day.
-        "UPDATE staging.organisations SET is_active=FALSE, updated_at=NOW(), "
+        "UPDATE public.organisations SET is_active=FALSE, updated_at=NOW(), "
         "updated_by=$2 WHERE id=$1::uuid",
         org_id, user["user_id"],
     )
@@ -1633,7 +1633,7 @@ async def deactivate_org(
     # organisation row above already records who suspended this customer, and
     # the cancellation is that same act reaching a second table.
     await pool.execute(
-        "UPDATE staging.subscriptions SET status='cancelled' WHERE org_id=$1::uuid",
+        "UPDATE public.subscriptions SET status='cancelled' WHERE org_id=$1::uuid",
         org_id,
     )
     return {"status": "deactivated"}
@@ -1831,7 +1831,7 @@ async def update_org_settings(
 
     params.append(org_id)
     sql = (
-        f"UPDATE staging.organisations SET {', '.join(updates)}, updated_at=NOW() "
+        f"UPDATE public.organisations SET {', '.join(updates)}, updated_at=NOW() "
         f"WHERE id=${idx}::uuid"
     )
 
@@ -1862,7 +1862,7 @@ async def update_org_settings(
     row = await pool.fetchrow(
         "SELECT markup_pct, monthly_credits, monthly_price, max_users, is_platform_org, "
         "       email_cap_daily, email_cap_monthly, email_overage_rate "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not row:
@@ -1903,7 +1903,7 @@ async def get_email_usage(
     usage = await email_usage(pool, org_id)
     org = await pool.fetchrow(
         "SELECT email_cap_daily, email_cap_monthly, email_overage_rate "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not org:
@@ -1969,7 +1969,7 @@ async def add_member(
     )
 
     org = await pool.fetchrow(
-        "SELECT id, team_id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE",
+        "SELECT id, team_id FROM public.organisations WHERE id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     if not org:
@@ -1997,7 +1997,7 @@ async def add_member(
         from routers.org_invites import issue_invite
 
         org_name = await pool.fetchval(
-            "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id,
+            "SELECT name FROM public.organisations WHERE id=$1::uuid", org_id,
         )
         invite = await issue_invite(
             pool, user, str(org_id), body.email.lower(), INVITABLE_ORG_ROLE,
@@ -2072,7 +2072,7 @@ async def add_member(
     )
 
     await pool.execute(
-        "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+        "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
         "VALUES ($1, $2::uuid, $3, $4) "
         "ON CONFLICT (user_id, org_id, role_code) DO NOTHING",
         target["user_id"], org_id, INVITABLE_ORG_ROLE, user["user_id"],
@@ -2101,7 +2101,7 @@ async def remove_member(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
+        "DELETE FROM public.user_roles WHERE user_id=$1 AND org_id=$2::uuid",
         user_id, org_id,
     )
     return {"status": "removed"}
@@ -2328,7 +2328,7 @@ async def list_platform_roles(
     rows = await pool.fetch(
         f"SELECT r.id, r.user_id, r.role_code, r.granted_at, "
         f"       {_console_name('u')} AS full_name "
-        f"FROM staging.user_roles r "
+        f"FROM public.user_roles r "
         f"JOIN users u ON u.user_id = r.user_id "
         f"WHERE r.org_id IS NULL "
         f"ORDER BY r.granted_at DESC"
@@ -2402,9 +2402,9 @@ async def list_org_roles(
         # two are indistinguishable here and neither is worth a second literal
         # on a column nothing branches on.
         f"       {_console_name('g')} AS granted_by_name "
-        f"FROM staging.user_roles r "
+        f"FROM public.user_roles r "
         f"JOIN users u ON u.user_id = r.user_id "
-        f"LEFT JOIN staging.organisations o ON o.id = r.org_id "
+        f"LEFT JOIN public.organisations o ON o.id = r.org_id "
         f"LEFT JOIN users g ON g.user_id = r.granted_by "
         f"WHERE r.org_id IS NOT NULL "
         f"AND ($1::uuid IS NULL OR r.org_id = $1::uuid) "
@@ -2482,7 +2482,7 @@ async def assign_role(
 
     if body.role_code in platform_roles:
         await pool.execute(
-            "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+            "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, NULL, $2, $3) "
             "ON CONFLICT DO NOTHING",
             body.user_id, body.role_code, user["user_id"],
@@ -2521,7 +2521,7 @@ async def assign_role(
         # the product is `org_members.update_member_role`, and that one sets
         # `updated_by`.
         await pool.execute(
-            "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+            "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4) "
             "ON CONFLICT DO NOTHING",
             body.user_id, body.org_id, body.role_code, user["user_id"],
@@ -2569,7 +2569,7 @@ async def revoke_role(
     # This is not a permission check. It is a refusal to let a correct
     # permission be used to destroy the permission.
     row = await pool.fetchrow(
-        "SELECT user_id, role_code FROM staging.user_roles WHERE id=$1::uuid",
+        "SELECT user_id, role_code FROM public.user_roles WHERE id=$1::uuid",
         role_id,
     )
     if not row:
@@ -2577,7 +2577,7 @@ async def revoke_role(
 
     if row["role_code"] in GOD_MODE_ROLES:
         remaining = await pool.fetchval(
-            "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+            "SELECT COUNT(DISTINCT user_id) FROM public.user_roles "
             "WHERE org_id IS NULL AND role_code = ANY($1::text[]) AND id != $2::uuid",
             list(GOD_MODE_ROLES), role_id,
         ) or 0
@@ -2589,7 +2589,7 @@ async def revoke_role(
                 "Grant god mode to someone else first.",
             )
 
-    await pool.execute("DELETE FROM staging.user_roles WHERE id=$1::uuid", role_id)
+    await pool.execute("DELETE FROM public.user_roles WHERE id=$1::uuid", role_id)
     return {"status": "revoked"}
 
 
@@ -2623,11 +2623,11 @@ async def enable_module(
         # process, which is miserable to search for in a log.
         raise HTTPException(400, f"Unknown module: {module_code}. Valid: {', '.join(sorted(ALL_MODULES))}")
     pool = await get_pool()
-    org = await pool.fetchval("SELECT id FROM staging.organisations WHERE id=$1::uuid", org_id)
+    org = await pool.fetchval("SELECT id FROM public.organisations WHERE id=$1::uuid", org_id)
     if not org:
         raise HTTPException(404, "Organisation not found")
     await pool.execute(
-        "INSERT INTO staging.module_subscriptions (org_id, module_code, is_active) "
+        "INSERT INTO public.module_subscriptions (org_id, module_code, is_active) "
         "VALUES ($1::uuid, $2, TRUE) "
         "ON CONFLICT (org_id, module_code) DO UPDATE SET is_active=TRUE, activated_at=NOW()",
         org_id, module_code,
@@ -2648,7 +2648,7 @@ async def disable_module(
         raise HTTPException(400, f"Unknown module: {module_code}")
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.module_subscriptions SET is_active=FALSE "
+        "UPDATE public.module_subscriptions SET is_active=FALSE "
         "WHERE org_id=$1::uuid AND module_code=$2",
         org_id, module_code,
     )
@@ -2726,7 +2726,7 @@ async def set_member_modules(
     held = {
         r["module_code"]: r["role"]
         for r in await pool.fetch(
-            "SELECT module_code, role FROM staging.org_member_modules "
+            "SELECT module_code, role FROM public.org_member_modules "
             "WHERE user_id=$1 AND org_id=$2::uuid",
             target_user_id, org_id,
         )
@@ -2740,14 +2740,14 @@ async def set_member_modules(
     # either — that is the org owner's decision, made at
     # `PUT /api/v1/org/members/{id}/modules`.
     await pool.execute(
-        "DELETE FROM staging.org_member_modules "
+        "DELETE FROM public.org_member_modules "
         "WHERE user_id=$1 AND org_id=$2::uuid "
         "AND NOT (module_code = ANY($3::text[]))",
         target_user_id, org_id, sorted(SENSITIVE_MODULES),
     )
     for mc in body.modules:
         await pool.execute(
-            "INSERT INTO staging.org_member_modules "
+            "INSERT INTO public.org_member_modules "
             "(user_id, org_id, module_code, role, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4, $5)",
             target_user_id, org_id, mc,
@@ -2772,7 +2772,7 @@ async def get_member_modules(
     """Get a member's module grants."""
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT module_code, granted_at FROM staging.org_member_modules "
+        "SELECT module_code, granted_at FROM public.org_member_modules "
         "WHERE user_id=$1 AND org_id=$2::uuid",
         target_user_id, org_id,
     )
@@ -2833,7 +2833,7 @@ async def nominate_org_owner(
     pool = await get_pool()
 
     org = await pool.fetchrow(
-        "SELECT id, name FROM staging.organisations WHERE id=$1::uuid", org_id,
+        "SELECT id, name FROM public.organisations WHERE id=$1::uuid", org_id,
     )
     if not org:
         raise HTTPException(404, "Organisation not found")
@@ -2842,7 +2842,7 @@ async def nominate_org_owner(
     # owner"; WHICH person that is belongs to the customer, and the console does
     # not need it to refuse.
     existing_owner = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE org_id=$1::uuid AND role_code='org_owner' LIMIT 1",
         org_id,
     )
@@ -2898,13 +2898,13 @@ async def nominate_org_owner(
 
     # If the target exists but isn't an org_admin yet, seat them as one first
     is_admin = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code='org_admin'",
         target["user_id"], org_id,
     )
     if not is_admin:
         org_row = await pool.fetchrow(
-            "SELECT id, team_id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE",
+            "SELECT id, team_id FROM public.organisations WHERE id=$1::uuid AND is_active=TRUE",
             org_id,
         )
         if org_row:
@@ -2931,7 +2931,7 @@ async def nominate_org_owner(
                 target["user_id"], user["user_id"], org_id,
             )
             await pool.execute(
-                "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
                 "VALUES ($1, $2::uuid, 'org_admin', $3) "
                 "ON CONFLICT (user_id, org_id, role_code) DO NOTHING",
                 target["user_id"], org_id, user["user_id"],
@@ -2940,7 +2940,7 @@ async def nominate_org_owner(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
                 "VALUES ($1, $2::uuid, 'org_owner', $3) "
                 "ON CONFLICT DO NOTHING",
                 target["user_id"], org_id, user["user_id"],
@@ -2953,7 +2953,7 @@ async def nominate_org_owner(
                 # `_audit_emit` below files it at severity warn for that reason.
                 # Confusing the two would make the row claim the new owner
                 # appointed themselves.
-                "UPDATE staging.organisations SET owner_user_id=$1, updated_at=NOW(), "
+                "UPDATE public.organisations SET owner_user_id=$1, updated_at=NOW(), "
                 "updated_by=$3 WHERE id=$2::uuid AND owner_user_id IS NULL",
                 target["user_id"], org_id, user["user_id"],
             )
@@ -3013,7 +3013,7 @@ async def set_org_r2(
         raise HTTPException(400, f"R2 credentials invalid: {result['error']}")
 
     await pool.execute(
-        "UPDATE staging.organisations SET "
+        "UPDATE public.organisations SET "
         "r2_account_id=$1, r2_access_key_id=$2, r2_secret_access_key=$3, "
         # Repointing an org's file storage decides where every document that
         # organisation owns is written from now on, and a mis-set bucket is
@@ -3070,7 +3070,7 @@ async def get_storage_usage(
     pool = await get_pool()
     org = await pool.fetchrow(
         "SELECT storage_used_bytes, storage_limit_bytes, r2_prefix "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not org:
@@ -3106,7 +3106,7 @@ async def org_cost_breakdown(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     org_row = await pool.fetchrow(
-        "SELECT id, markup_pct, monthly_credits, monthly_price FROM staging.organisations WHERE id=$1::uuid", org_id
+        "SELECT id, markup_pct, monthly_credits, monthly_price FROM public.organisations WHERE id=$1::uuid", org_id
     )
     if not org_row:
         raise HTTPException(404, "Organisation not found")
@@ -3118,8 +3118,8 @@ async def org_cost_breakdown(
         "COUNT(*) as call_count, "
         "COALESCE(SUM(l.prompt_tokens), 0) as prompt_tokens, "
         "COALESCE(SUM(l.completion_tokens), 0) as completion_tokens "
-        "FROM staging.hub_ai_logs l "
-        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "FROM public.hub_ai_logs l "
+        "JOIN public.hub_clients c ON c.id = l.client_id "
         "WHERE c.org_id = $1::uuid AND l.created_at >= $2 "
         "GROUP BY l.provider, l.model "
         "ORDER BY cost_usd DESC",
@@ -3131,7 +3131,7 @@ async def org_cost_breakdown(
         "COALESCE(SUM(r.cost_usd), 0) as cost_usd, "
         "COALESCE(SUM(r.billed_inr), 0) as billed_inr, "
         "COUNT(*) as run_count "
-        "FROM staging.hub_scraper_runs r "
+        "FROM public.hub_scraper_runs r "
         "WHERE r.org_id = $1::uuid AND r.created_at >= $2 "
         "GROUP BY r.scraper_id "
         "ORDER BY cost_usd DESC",
@@ -3146,8 +3146,8 @@ async def org_cost_breakdown(
         "SELECT c.id as client_id, c.name as client_name, "
         "COALESCE(SUM(l.cost_usd), 0) as ai_cost_usd, "
         "COUNT(l.id) as ai_calls "
-        "FROM staging.hub_clients c "
-        "LEFT JOIN staging.hub_ai_logs l ON l.client_id = c.id AND l.created_at >= $2 "
+        "FROM public.hub_clients c "
+        "LEFT JOIN public.hub_ai_logs l ON l.client_id = c.id AND l.created_at >= $2 "
         "WHERE c.org_id = $1::uuid "
         "GROUP BY c.id, c.name ORDER BY ai_cost_usd DESC",
         org_id, cutoff,
@@ -3182,13 +3182,13 @@ async def org_cost_breakdown(
         "  SELECT d::date as day FROM generate_series($2::date, CURRENT_DATE, '1 day') d"
         "), ai_daily AS ("
         "  SELECT l.created_at::date as day, SUM(l.cost_usd) as cost "
-        "  FROM staging.hub_ai_logs l "
-        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  FROM public.hub_ai_logs l "
+        "  JOIN public.hub_clients c ON c.id = l.client_id "
         "  WHERE c.org_id = $1::uuid AND l.created_at >= $2 "
         "  GROUP BY 1"
         "), sc_daily AS ("
         "  SELECT r.created_at::date as day, SUM(r.cost_usd) as cost "
-        "  FROM staging.hub_scraper_runs r "
+        "  FROM public.hub_scraper_runs r "
         "  WHERE r.org_id = $1::uuid AND r.created_at >= $2 "
         "  GROUP BY 1"
         ") "
@@ -3280,9 +3280,9 @@ async def admin_org_cost_report_pdf(
     org = await pool.fetchrow(
         "SELECT o.name, o.markup_pct, o.authorized_signatory_name, o.authorized_signatory_designation, "
         "p.name as plan_name "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "FROM public.organisations o "
+        "LEFT JOIN public.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN public.plans p ON p.id = s.plan_id "
         "WHERE o.id = $1::uuid", org_id
     )
     if not org:
@@ -3291,8 +3291,8 @@ async def admin_org_cost_report_pdf(
     ai_rows = await pool.fetch(
         "SELECT l.provider, l.model, "
         "COALESCE(SUM(l.cost_usd), 0) as cost_usd, COUNT(*) as calls "
-        "FROM staging.hub_ai_logs l "
-        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "FROM public.hub_ai_logs l "
+        "JOIN public.hub_clients c ON c.id = l.client_id "
         "WHERE c.org_id = $1::uuid AND l.created_at >= $2 "
         "GROUP BY l.provider, l.model ORDER BY cost_usd DESC",
         org_id, cutoff,
@@ -3301,7 +3301,7 @@ async def admin_org_cost_report_pdf(
     scraper_rows = await pool.fetch(
         "SELECT r.scraper_id, COALESCE(SUM(r.cost_usd), 0) as cost_usd, "
         "COUNT(*) as runs "
-        "FROM staging.hub_scraper_runs r "
+        "FROM public.hub_scraper_runs r "
         "WHERE r.org_id = $1::uuid AND r.created_at >= $2 "
         "GROUP BY r.scraper_id ORDER BY cost_usd DESC",
         org_id, cutoff,
@@ -3528,9 +3528,9 @@ async def admin_credit_usage(
 
     org = await pool.fetchrow(
         "SELECT o.name, o.monthly_credits, o.monthly_price, p.name as plan_name, p.default_credits "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions sub ON sub.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = sub.plan_id "
+        "FROM public.organisations o "
+        "LEFT JOIN public.subscriptions sub ON sub.org_id = o.id "
+        "LEFT JOIN public.plans p ON p.id = sub.plan_id "
         "WHERE o.id=$1::uuid", org_id,
     )
     # `usage_by_type` used to be built by string-surgery on the description —
@@ -3590,7 +3590,7 @@ async def _log_event(db, org_id: str, event_type: str, metadata: dict):
     an audit row that fails must not undo it.
     """
     await db.execute(
-        "INSERT INTO staging.subscription_events (org_id, event_type, metadata) "
+        "INSERT INTO public.subscription_events (org_id, event_type, metadata) "
         "VALUES ($1::uuid, $2, $3::jsonb)",
         org_id, event_type, json.dumps(metadata),
     )

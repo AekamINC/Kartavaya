@@ -19,8 +19,8 @@ async def detect_patterns(pool, org_id: str, lookback_days: int = 30) -> dict:
     chronic_late = await pool.fetch(
         """
         SELECT a.employee_id, e.name, COUNT(*) AS late_days
-        FROM staging.manav_attendance a
-        JOIN staging.manav_employees e ON e.id = a.employee_id
+        FROM public.manav_attendance a
+        JOIN public.manav_employees e ON e.id = a.employee_id
         WHERE a.org_id = $1::uuid AND a.date >= $2::date
           AND a.status = 'late'
         GROUP BY a.employee_id, e.name
@@ -34,8 +34,8 @@ async def detect_patterns(pool, org_id: str, lookback_days: int = 30) -> dict:
         """
         SELECT a.employee_id, e.name,
                COALESCE(SUM(a.overtime_hours), 0) AS total_ot
-        FROM staging.manav_attendance a
-        JOIN staging.manav_employees e ON e.id = a.employee_id
+        FROM public.manav_attendance a
+        JOIN public.manav_employees e ON e.id = a.employee_id
         WHERE a.org_id = $1::uuid AND a.date >= $2::date
           AND a.overtime_hours > 0
         GROUP BY a.employee_id, e.name
@@ -48,8 +48,8 @@ async def detect_patterns(pool, org_id: str, lookback_days: int = 30) -> dict:
     absenteeism = await pool.fetch(
         """
         SELECT a.employee_id, e.name, COUNT(*) AS absent_days
-        FROM staging.manav_attendance a
-        JOIN staging.manav_employees e ON e.id = a.employee_id
+        FROM public.manav_attendance a
+        JOIN public.manav_employees e ON e.id = a.employee_id
         WHERE a.org_id = $1::uuid AND a.date >= $2::date
           AND a.status = 'absent'
         GROUP BY a.employee_id, e.name

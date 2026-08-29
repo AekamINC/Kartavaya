@@ -343,7 +343,7 @@ async def check_wip_ageing(
     scope_sql = """
         FROM public.time_entries te
         JOIN public.tasks t          ON t.task_id = te.task_id
-        JOIN staging.organisations o ON o.team_id = t.team_id
+        JOIN public.organisations o ON o.team_id = t.team_id
         WHERE o.id = $1::uuid
     """
 
@@ -431,7 +431,7 @@ async def check_wip_ageing(
                max($2::date - te.started_at::date)         AS oldest_age_days
         FROM public.time_entries te
         JOIN public.tasks t          ON t.task_id = te.task_id
-        JOIN staging.organisations o ON o.team_id = t.team_id
+        JOIN public.organisations o ON o.team_id = t.team_id
         LEFT JOIN public.boards b    ON b.board_id = t.board_id AND b.team_id = t.team_id
         WHERE o.id = $1::uuid
           AND te.is_billed IS NOT TRUE
@@ -453,7 +453,7 @@ async def check_wip_ageing(
                max($2::date - te.started_at::date)         AS oldest_age_days
         FROM public.time_entries te
         JOIN public.tasks t          ON t.task_id = te.task_id
-        JOIN staging.organisations o ON o.team_id = t.team_id
+        JOIN public.organisations o ON o.team_id = t.team_id
         LEFT JOIN public.users u     ON u.user_id = te.user_id
         WHERE o.id = $1::uuid
           AND te.is_billed IS NOT TRUE
@@ -477,7 +477,7 @@ async def check_wip_ageing(
                         '(person not recorded)')           AS person
         FROM public.time_entries te
         JOIN public.tasks t          ON t.task_id = te.task_id
-        JOIN staging.organisations o ON o.team_id = t.team_id
+        JOIN public.organisations o ON o.team_id = t.team_id
         LEFT JOIN public.boards b    ON b.board_id = t.board_id AND b.team_id = t.team_id
         LEFT JOIN public.users u     ON u.user_id = te.user_id
         WHERE o.id = $1::uuid
@@ -549,7 +549,7 @@ async def check_wip_ageing(
         "NULL on every row that existed before it and no write path sets "
         "either, so an empty column here means 'nobody has said', never 'no'.",
         "THERE IS NO CLIENT GRAIN. public.tasks carries no project and no "
-        "client; staging.projects carries a contact_id, not a client_id, and no "
+        "client; public.projects carries a contact_id, not a client_id, and no "
         "task references a project. The only client-bearing path off a time "
         "entry runs through an invoice, which unbilled time does not have. This "
         "report is therefore aged by BOARD and by PERSON, and no client is "
@@ -772,7 +772,7 @@ async def check_quotation_expiry(
                count(*) FILTER (WHERE q.valid_until IS NULL)              AS without_validity,
                count(*) FILTER (WHERE q.status = ANY($2::text[])
                                   AND q.valid_until IS NULL)              AS open_without_validity
-        FROM staging.crm_quotations q
+        FROM public.crm_quotations q
         WHERE q.org_id = $1::uuid
         """,
         org_id, list(QUOTE_OPEN_STATES), list(QUOTE_NOT_YET_SENT_STATES),
@@ -793,9 +793,9 @@ async def check_quotation_expiry(
                q.created_at, q.updated_at,
                COALESCE(NULLIF(btrim(a.name), ''), '(customer not recorded)') AS customer,
                NULLIF(btrim(d.title), '')                                     AS deal
-        FROM staging.crm_quotations q
-        LEFT JOIN staging.crm_accounts a ON a.id = q.account_id AND a.org_id = q.org_id
-        LEFT JOIN staging.crm_deals    d ON d.id = q.deal_id    AND d.org_id = q.org_id
+        FROM public.crm_quotations q
+        LEFT JOIN public.crm_accounts a ON a.id = q.account_id AND a.org_id = q.org_id
+        LEFT JOIN public.crm_deals    d ON d.id = q.deal_id    AND d.org_id = q.org_id
         WHERE q.org_id = $1::uuid
           AND q.status = ANY($2::text[])
         ORDER BY q.valid_until NULLS LAST, q.quotation_number
@@ -857,7 +857,7 @@ async def check_quotation_expiry(
     validity_cover = _coverage(
         open_sent - _i(totals.get("open_without_validity")), open_sent,
         "open quotations carry a validity date",
-        "staging.crm_quotations.valid_until",
+        "public.crm_quotations.valid_until",
         "a quotation screen — the column exists and is ready; nothing fills it "
         "because nothing creates a quotation",
     )
@@ -865,7 +865,7 @@ async def check_quotation_expiry(
     could_not_check: list[str] = []
     if quotations == 0:
         could_not_check.append(
-            "THIS ORG HAS NO QUOTATIONS AT ALL — staging.crm_quotations holds 0 "
+            "THIS ORG HAS NO QUOTATIONS AT ALL — public.crm_quotations holds 0 "
             "rows. That is NOT 'nothing is expiring'. Nothing in this product "
             "creates a quotation: the table is referenced by no backend route "
             "and no service, so this skill returns an empty result by "
@@ -881,13 +881,13 @@ async def check_quotation_expiry(
             "chase day exists for them. They are listed, not silently dropped.")
 
     limitations = [
-        "NOTHING IN THE PRODUCT CREATES A QUOTATION. staging.crm_quotations "
+        "NOTHING IN THE PRODUCT CREATES A QUOTATION. public.crm_quotations "
         "appears in no backend Python file; there is no route and no writer. "
         "Until a quotation screen exists this skill is correct and empty, and "
         "an empty result here means 'no quotations recorded', never 'no "
         "quotations outstanding'.",
         "THE CATALOGUE ENTRY FOR THIS SKILL IS STALE: it says there is no "
-        "validity date. staging.crm_quotations.valid_until EXISTS and is used "
+        "validity date. public.crm_quotations.valid_until EXISTS and is used "
         "here. The blocker is the empty table, not the missing column.",
         "ganit_invoices.due_date is a PAYMENT term, not quote validity, and is "
         "deliberately never read — chasing on it would chase on the wrong day.",
@@ -899,7 +899,7 @@ async def check_quotation_expiry(
         "decision.",
         "Conversion and cancellation are read from `status` only. A quote "
         "accepted verbally and never marked accepted will still be chased.",
-        "staging.crm_accounts is also empty, so even once quotations exist the "
+        "public.crm_accounts is also empty, so even once quotations exist the "
         "customer name will be blank until accounts are recorded.",
     ]
     if len(rows) >= cap:
@@ -1036,7 +1036,7 @@ async def brief_free_entry_point_harvest(
                count(*) FILTER (WHERE m.direction = 'inbound'
                                   AND (m.referral IS NOT NULL
                                        OR m.entry_point IS NOT NULL))      AS inbound_ctwa
-        FROM staging.varta_messages m
+        FROM public.varta_messages m
         WHERE m.org_id = $1::uuid
         """,
         org_id, since,
@@ -1051,10 +1051,10 @@ async def brief_free_entry_point_harvest(
         SELECT m.id, m.created_at, m.entry_point, m.referral, m.content, m.type,
                COALESCE(NULLIF(btrim(ct.name), ''), '(contact not recorded)') AS contact,
                ct.phone_number, ct.opted_in, ct.opted_out_at, ct.consent_source
-        FROM staging.varta_messages m
-        JOIN staging.varta_conversations cv
+        FROM public.varta_messages m
+        JOIN public.varta_conversations cv
              ON cv.id = m.conversation_id AND cv.org_id = m.org_id
-        LEFT JOIN staging.varta_contacts ct
+        LEFT JOIN public.varta_contacts ct
              ON ct.id = cv.varta_contact_id AND ct.org_id = cv.org_id
         WHERE m.org_id = $1::uuid
           AND m.direction = 'inbound'
@@ -1106,7 +1106,7 @@ async def brief_free_entry_point_harvest(
     referral_cover = _coverage(
         _i(totals.get("with_referral")), inbound,
         "inbound messages carry a Click-to-WhatsApp referral block",
-        "staging.varta_messages.referral",
+        "public.varta_messages.referral",
         "the inbound webhook in backend/routers/whatsapp.py (~line 778), which "
         "today inserts org_id, conversation_id, direction, wa_message_id, "
         "content, type and status and DROPS the referral object Meta sends",
@@ -1114,7 +1114,7 @@ async def brief_free_entry_point_harvest(
     entry_point_cover = _coverage(
         _i(totals.get("with_entry_point")), inbound,
         "inbound messages carry an entry_point",
-        "staging.varta_messages.entry_point",
+        "public.varta_messages.entry_point",
         "the same inbound webhook",
     )
 

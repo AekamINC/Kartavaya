@@ -82,7 +82,7 @@ log = logging.getLogger(__name__)
 #: $4 entity_id UUID (NOT NULL), $5 recipient_user_id TEXT (nullable),
 #: $6 message TEXT. Migration 049 is the authority for every one of those.
 _INSERT_REMINDER = """
-INSERT INTO staging.reminders
+INSERT INTO public.reminders
     (org_id, reminder_type, entity_type, entity_id, remind_at, channel,
      recipient_user_id, message, created_by)
 VALUES ($1, $2, $3, $4, NOW(), 'email', $5, $6, 'system')
@@ -118,7 +118,7 @@ VALUES ($1, $2, $3, $4, NOW(), 'email', $5, $6, 'system')
 _INVOICE_SCAN = """
 SELECT i.id AS entity_id, i.org_id, i.invoice_number, i.balance_due,
        i.created_by AS recipient
-FROM staging.ganit_invoices i
+FROM public.ganit_invoices i
 WHERE i.payment_status NOT IN ('paid', 'void')
   AND i.due_date < NOW()
   AND i.is_active = TRUE
@@ -126,7 +126,7 @@ WHERE i.payment_status NOT IN ('paid', 'void')
   AND COALESCE(i.invoice_type, '') <> 'credit_note'
   AND i.balance_due > 0
   AND NOT EXISTS (
-      SELECT 1 FROM staging.reminders r
+      SELECT 1 FROM public.reminders r
       WHERE r.entity_id = i.id
         AND r.reminder_type = 'invoice_overdue'
         AND r.created_at > NOW() - INTERVAL '3 days'
@@ -153,11 +153,11 @@ WHERE i.payment_status NOT IN ('paid', 'void')
 _FOLLOW_UP_SCAN = """
 SELECT f.id AS entity_id, f.org_id, f.assigned_to AS recipient,
        COALESCE(NULLIF(f.title, ''), NULLIF(f.description, '')) AS subject
-FROM staging.graha_follow_ups f
+FROM public.graha_follow_ups f
 WHERE f.is_completed = FALSE
   AND f.due_at <= NOW() + INTERVAL '1 hour'
   AND NOT EXISTS (
-      SELECT 1 FROM staging.reminders r
+      SELECT 1 FROM public.reminders r
       WHERE r.entity_id = f.id
         AND r.reminder_type = 'follow_up_due'
         AND r.created_at > NOW() - INTERVAL '1 day'
@@ -173,11 +173,11 @@ WHERE f.is_completed = FALSE
 _APPROVAL_SCAN = """
 SELECT a.id AS entity_id, a.org_id, a.title,
        a.current_step_approver_id::text AS recipient
-FROM staging.approval_requests a
+FROM public.approval_requests a
 WHERE a.status = 'pending'
   AND a.created_at < NOW() - INTERVAL '24 hours'
   AND NOT EXISTS (
-      SELECT 1 FROM staging.reminders r
+      SELECT 1 FROM public.reminders r
       WHERE r.entity_id = a.id
         AND r.reminder_type = 'approval_pending'
         AND r.created_at > NOW() - INTERVAL '1 day'
@@ -239,7 +239,7 @@ WHERE t.status <> 'done'
   AND tm.org_id IS NOT NULL
   AND t.due_at BETWEEN NOW() AND NOW() + INTERVAL '24 hours'
   AND NOT EXISTS (
-      SELECT 1 FROM staging.reminders r
+      SELECT 1 FROM public.reminders r
       WHERE r.entity_id = t.id
         AND r.reminder_type = 'task_due'
         AND r.created_at > NOW() - INTERVAL '1 day'
@@ -438,7 +438,7 @@ async def process_pending_reminders():
     pool = await get_pool()
     pending = await pool.fetch(
         "SELECT r.*, u.email, u.mobile_number, u.full_name "
-        "FROM staging.reminders r "
+        "FROM public.reminders r "
         "LEFT JOIN users u ON u.user_id = r.recipient_user_id "
         "WHERE r.status = 'pending' AND r.remind_at <= NOW() "
         "ORDER BY r.remind_at "
@@ -538,7 +538,7 @@ async def process_pending_reminders():
                     log.info("Reminder %s held: %s", rem["id"], why)
                     continue
                 await pool.execute(
-                    "UPDATE staging.reminders SET status='suppressed', "
+                    "UPDATE public.reminders SET status='suppressed', "
                     "sent_at=NOW() WHERE id=$1", rem["id"])
                 log.info("Reminder %s suppressed: %s", rem["id"], why)
                 continue
@@ -585,14 +585,14 @@ async def process_pending_reminders():
             # so this asks the question `begin()` just answered.
             final = "suppressed" if outbound.is_suppressed(rem["org_id"]) else "sent"
             await pool.execute(
-                "UPDATE staging.reminders SET status=$2, sent_at=NOW() WHERE id=$1",
+                "UPDATE public.reminders SET status=$2, sent_at=NOW() WHERE id=$1",
                 rem["id"], final,
             )
             sent += 1
         except Exception as e:
             log.warning("Reminder %s failed: %s", rem["id"], e)
             await pool.execute(
-                "UPDATE staging.reminders SET status='failed', message=$2 WHERE id=$1",
+                "UPDATE public.reminders SET status='failed', message=$2 WHERE id=$1",
                 rem["id"], f"Error: {str(e)[:200]}",
             )
 

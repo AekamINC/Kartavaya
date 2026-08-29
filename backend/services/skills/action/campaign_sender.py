@@ -66,8 +66,8 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         """
         SELECT c.id, c.org_id, c.name, c.subject, c.body_html, c.channel,
                c.status, c.template_id, c.audience_filter, o.name AS org_name
-        FROM staging.prachar_campaigns c
-        JOIN staging.organisations o ON o.id = c.org_id
+        FROM public.prachar_campaigns c
+        JOIN public.organisations o ON o.id = c.org_id
         WHERE c.id = $1::uuid
         """,
         campaign_id,
@@ -117,7 +117,7 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     org_id = str(campaign["org_id"])
 
     await pool.execute(
-        "UPDATE staging.prachar_campaigns SET status = 'sending', updated_at = NOW() "
+        "UPDATE public.prachar_campaigns SET status = 'sending', updated_at = NOW() "
         "WHERE id = $1::uuid",
         campaign_id,
     )
@@ -134,9 +134,9 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         -- The composer has always offered that field; this path could not
         -- fill it because it never selected the column.
         SELECT cc.id, cc.contact_id, cc.email, c.name, c.company
-        FROM staging.prachar_campaign_contacts cc
-        JOIN staging.graha_contacts c ON c.id = cc.contact_id
-        LEFT JOIN staging.prachar_unsubscribes u
+        FROM public.prachar_campaign_contacts cc
+        JOIN public.graha_contacts c ON c.id = cc.contact_id
+        LEFT JOIN public.prachar_unsubscribes u
             ON u.org_id = $2::uuid AND lower(u.email) = lower(cc.email)
         WHERE cc.campaign_id = $1::uuid
           AND cc.status = 'pending'
@@ -169,8 +169,8 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     from services import prachar_compliance
     non_client = await pool.fetchval(
         """
-        SELECT COUNT(*) FROM staging.prachar_campaign_contacts cc
-        JOIN staging.graha_contacts gc ON gc.id = cc.contact_id
+        SELECT COUNT(*) FROM public.prachar_campaign_contacts cc
+        JOIN public.graha_contacts gc ON gc.id = cc.contact_id
         WHERE cc.campaign_id = $1::uuid
           AND cc.status = 'pending'
           AND gc.client_id IS NULL
@@ -185,7 +185,7 @@ async def send_campaign(pool, campaign_id: str) -> dict:
             prachar_compliance.CITATION_CLAUSE_6,
         )
         await pool.execute(
-            "UPDATE staging.prachar_campaigns SET status='draft', updated_at=NOW() "
+            "UPDATE public.prachar_campaigns SET status='draft', updated_at=NOW() "
             "WHERE id = $1::uuid",
             campaign_id,
         )
@@ -271,21 +271,21 @@ async def send_campaign(pool, campaign_id: str) -> dict:
             # under.
             if outbound.is_suppressed(org_id):
                 await pool.execute(
-                    "UPDATE staging.prachar_campaign_contacts "
+                    "UPDATE public.prachar_campaign_contacts "
                     "SET status = 'suppressed', error_message = $2 WHERE id = $1::uuid",
                     r["id"], _SUPPRESSED,
                 )
                 suppressed += 1
             else:
                 await pool.execute(
-                    "UPDATE staging.prachar_campaign_contacts "
+                    "UPDATE public.prachar_campaign_contacts "
                     "SET status = 'sent', sent_at = NOW() WHERE id = $1::uuid",
                     r["id"],
                 )
                 sent += 1
         except Exception as exc:                            # noqa: BLE001
             await pool.execute(
-                "UPDATE staging.prachar_campaign_contacts "
+                "UPDATE public.prachar_campaign_contacts "
                 "SET status = 'failed', error_message = $2 WHERE id = $1::uuid",
                 r["id"], f"{type(exc).__name__}: {exc}"[:500],
             )
@@ -304,7 +304,7 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     # delivered nothing either, and the narrower guard wrote 'sent' over it.
     if not sent:
         await pool.execute(
-            "UPDATE staging.prachar_campaigns "
+            "UPDATE public.prachar_campaigns "
             "SET status = 'suppressed', total_recipients = $2, total_sent = 0, "
             "    sent_at = NULL, updated_at = NOW() "
             "WHERE id = $1::uuid",
@@ -312,7 +312,7 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         )
     else:
         await pool.execute(
-            "UPDATE staging.prachar_campaigns "
+            "UPDATE public.prachar_campaigns "
             "SET status = 'sent', total_recipients = $2, total_sent = $2, updated_at = NOW() "
             "WHERE id = $1::uuid",
             campaign_id, sent,
@@ -332,7 +332,7 @@ async def _resolve_content(pool, campaign) -> tuple[str, str]:
     body_html = campaign["body_html"] or ""
     if campaign["template_id"] and (not subject or not body_html):
         tmpl = await pool.fetchrow(
-            "SELECT subject, body_html FROM staging.prachar_templates "
+            "SELECT subject, body_html FROM public.prachar_templates "
             "WHERE id = $1::uuid AND org_id = $2::uuid AND is_active = TRUE",
             str(campaign["template_id"]), str(campaign["org_id"]),
         )
@@ -356,7 +356,7 @@ async def _materialise_audience(pool, campaign) -> int:
     Pydantic models — into every process that merely imports the skill registry.
     """
     existing = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.prachar_campaign_contacts WHERE campaign_id = $1::uuid",
+        "SELECT COUNT(*) FROM public.prachar_campaign_contacts WHERE campaign_id = $1::uuid",
         str(campaign["id"]),
     )
     if existing:
@@ -371,7 +371,7 @@ async def _materialise_audience(pool, campaign) -> int:
         if not c.get("email"):
             continue
         await pool.execute(
-            "INSERT INTO staging.prachar_campaign_contacts "
+            "INSERT INTO public.prachar_campaign_contacts "
             "(campaign_id, contact_id, email, org_id) "
             "VALUES ($1::uuid, $2::uuid, $3, $4::uuid) ON CONFLICT DO NOTHING",
             str(campaign["id"]), str(c["id"]), c["email"], org_id,

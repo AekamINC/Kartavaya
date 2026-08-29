@@ -33,7 +33,7 @@ async def _platform_reach(pool, user_id: str) -> tuple[bool, bool]:
     a customer's modules, which means one customer at a time.
     """
     role = await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
+        "SELECT role_code FROM public.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
         "AND role_code = ANY($2::text[]) "
         "ORDER BY array_position($2::text[], role_code) LIMIT 1",

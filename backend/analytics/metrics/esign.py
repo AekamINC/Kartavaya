@@ -51,8 +51,8 @@ from analytics.windowing import bucket_expr
 #: sign_audit_log carries no org_id of its own. 'document_sent' is written
 #: exactly once per document, so COUNT(*) is a count of requests.
 _SENT_EVENTS = (
-    "FROM staging.sign_audit_log a "
-    "JOIN staging.sign_documents d ON d.id = a.document_id "
+    "FROM public.sign_audit_log a "
+    "JOIN public.sign_documents d ON d.id = a.document_id "
     "WHERE d.org_id = $1::uuid AND a.action = 'document_sent' "
     "AND a.created_at::date BETWEEN $2::date AND $3::date "
 )
@@ -130,12 +130,12 @@ def time_to_sign(req: MetricRequest):
         "(ORDER BY EXTRACT(EPOCH FROM (d.completed_at - s.sent_at)) / 86400.0)"
         "::float AS value, "
         "COUNT(*) AS documents "
-        "FROM staging.sign_documents d "
+        "FROM public.sign_documents d "
         # MIN() is defensive dedupe: 'document_sent' is written once today,
         # and if that invariant ever breaks the median must not double-weight
         # a document rather than fail loudly somewhere unrelated.
         "JOIN (SELECT document_id, MIN(created_at) AS sent_at "
-        "FROM staging.sign_audit_log WHERE action = 'document_sent' "
+        "FROM public.sign_audit_log WHERE action = 'document_sent' "
         "GROUP BY document_id) s ON s.document_id = d.id "
         "WHERE d.org_id = $1::uuid AND d.completed_at IS NOT NULL "
         "AND d.completed_at::date BETWEEN $2::date AND $3::date "
@@ -174,22 +174,22 @@ def abandoned(req: MetricRequest):
     # sender's later cleanup-cancellation, which outranks the clock.
     return (
         "SELECT CASE "
-        "WHEN EXISTS (SELECT 1 FROM staging.sign_signers sg "
+        "WHEN EXISTS (SELECT 1 FROM public.sign_signers sg "
         "WHERE sg.document_id = d.id AND sg.status = 'declined') "
         "THEN 'declined' "
         "WHEN d.status = 'cancelled' THEN 'cancelled' "
         "ELSE 'expired' END AS label, "
         "COUNT(*) AS value "
-        "FROM staging.sign_documents d "
+        "FROM public.sign_documents d "
         "WHERE d.org_id = $1::uuid "
         "AND d.completed_at IS NULL "
         "AND d.status <> 'draft' "
         "AND (d.status <> 'cancelled' OR EXISTS "
-        "(SELECT 1 FROM staging.sign_audit_log a "
+        "(SELECT 1 FROM public.sign_audit_log a "
         "WHERE a.document_id = d.id AND a.action = 'document_sent')) "
         "AND (d.status IN ('cancelled', 'expired') "
         "OR d.expires_at < NOW() "
-        "OR EXISTS (SELECT 1 FROM staging.sign_signers sg2 "
+        "OR EXISTS (SELECT 1 FROM public.sign_signers sg2 "
         "WHERE sg2.document_id = d.id AND sg2.status = 'declined')) "
         "GROUP BY 1 ORDER BY value DESC",
         [req.org_id],

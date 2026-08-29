@@ -164,10 +164,10 @@ def _is_id(name: str) -> bool:
 #: lookup must not be able to confirm another org's record exists. `id` and the
 #: name column are server-side constants here, never a caller string.
 _UUID_SOURCES = (
-    ("staging.sign_documents", "title", "eSign document"),
-    ("staging.graha_clients", "name", "Client"),
-    ("staging.manav_employees", "name", "Employee"),
-    ("staging.projects", "name", "Project"),
+    ("public.sign_documents", "title", "eSign document"),
+    ("public.graha_clients", "name", "Client"),
+    ("public.manav_employees", "name", "Employee"),
+    ("public.projects", "name", "Project"),
 )
 
 #: The top-level folder, said in words. `MODULES` is the machine list; this is
@@ -241,7 +241,7 @@ async def _folder_labels(org_id: str, names: Sequence[str]) -> dict:
                 # the scope here, not a filter applied afterwards.
                 "SELECT u.user_id AS ref, COALESCE(u.name, u.full_name) AS label "
                 "FROM public.users u "
-                "JOIN staging.user_roles r ON r.user_id = u.user_id "
+                "JOIN public.user_roles r ON r.user_id = u.user_id "
                 "WHERE r.org_id = $1::uuid AND u.user_id = ANY($2::text[])",
                 org_id, texts,
             )
@@ -338,7 +338,7 @@ async def storage_overview(
     row = await pool.fetchrow(
         "SELECT name, r2_bucket_name, storage_used_bytes, storage_limit_bytes, "
         "       (r2_account_id IS NOT NULL) AS own_account "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not row:
@@ -490,11 +490,11 @@ class ResolveBody(BaseModel):
 #: by how likely a pasted key is to be one of them, which is also roughly how
 #: often each is written.
 _KEY_COLUMNS = (
-    ("staging.pahchan_punches", "photo_key", "Attendance photograph"),
-    ("staging.sign_documents", "file_key", "eSign document"),
-    ("staging.sign_documents", "signed_file_key", "eSign document, executed"),
-    ("staging.sign_documents", "certificate_file_key", "eSign completion certificate"),
-    ("staging.graha_documents", "file_key", "CRM document"),
+    ("public.pahchan_punches", "photo_key", "Attendance photograph"),
+    ("public.sign_documents", "file_key", "eSign document"),
+    ("public.sign_documents", "signed_file_key", "eSign document, executed"),
+    ("public.sign_documents", "certificate_file_key", "eSign completion certificate"),
+    ("public.graha_documents", "file_key", "CRM document"),
 )
 
 

@@ -116,7 +116,7 @@ async def prune(keep_days: int = 180, x_cron_secret: str | None = Header(None)):
     pool = await get_pool()
     try:
         row = await pool.fetchrow(
-            "SELECT * FROM staging.niyam_prune_events($1::int)", keep_days)
+            "SELECT * FROM public.niyam_prune_events($1::int)", keep_days)
     except Exception as exc:
         # The floor is a deliberate refusal, not a fault: report it as a 422 the
         # caller can read rather than a 500 that says only "something broke".

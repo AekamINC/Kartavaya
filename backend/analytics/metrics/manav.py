@@ -105,11 +105,11 @@ def _headcount_asat(param: str) -> str:
     owner's call, not a side effect of a headcount fix.
     """
     return (
-        "(SELECT COUNT(*) FROM staging.manav_employees e "
+        "(SELECT COUNT(*) FROM public.manav_employees e "
         "WHERE e.org_id = $1::uuid AND e.date_of_joining IS NOT NULL "
         f"AND e.date_of_joining <= {param}::date "
         "AND (e.is_active = TRUE OR EXISTS ("
-        "SELECT 1 FROM staging.manav_offboarding x "
+        "SELECT 1 FROM public.manav_offboarding x "
         "WHERE x.org_id = e.org_id AND x.employee_id = e.id "
         "AND x.status <> 'cancelled' "
         f"AND x.last_working_day > {param}::date)))"
@@ -142,7 +142,7 @@ def headcount(req: MetricRequest):
     if req.group_by == "employment_type":
         return (
             "SELECT employment_type AS label, COUNT(*) AS value "
-            "FROM staging.manav_employees e "
+            "FROM public.manav_employees e "
             "WHERE org_id = $1::uuid AND is_active = TRUE"
             + still_on_the_rolls("e") +
             " GROUP BY employment_type ORDER BY value DESC, label",
@@ -151,7 +151,7 @@ def headcount(req: MetricRequest):
     return (
         "SELECT COUNT(*) AS value, "
         "COUNT(*) FILTER (WHERE status = 'on_notice') AS on_notice "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE org_id = $1::uuid AND is_active = TRUE"
         + still_on_the_rolls("e") +
         " HAVING COUNT(*) > 0",
@@ -181,12 +181,12 @@ def headcount_bridge(req: MetricRequest):
         "SELECT period, SUM(joined) AS joiners, SUM(departed) AS leavers, "
         "SUM(joined) - SUM(departed) AS value FROM ("
         f"SELECT {joined} AS period, 1 AS joined, 0 AS departed "
-        "FROM staging.manav_employees "
+        "FROM public.manav_employees "
         "WHERE org_id = $1::uuid "
         "AND date_of_joining BETWEEN $2::date AND $3::date "
         "UNION ALL "
         f"SELECT {departed} AS period, 0 AS joined, 1 AS departed "
-        "FROM staging.manav_offboarding o "
+        "FROM public.manav_offboarding o "
         "WHERE o.org_id = $1::uuid AND o.status <> 'cancelled' "
         "AND o.last_working_day BETWEEN $2::date AND $3::date"
         ") moves GROUP BY 1 ORDER BY 1",
@@ -225,7 +225,7 @@ def attrition(req: MetricRequest):
     class_col = f", {_EXIT_CLASS} AS exit_class" if grouped else ""
     lv = (
         f"lv AS (SELECT {period} AS period{class_col}, COUNT(*) AS leavers "
-        "FROM staging.manav_offboarding o "
+        "FROM public.manav_offboarding o "
         "WHERE o.org_id = $1::uuid AND o.status <> 'cancelled' "
         "AND o.last_working_day BETWEEN $2::date AND $3::date "
         f"GROUP BY 1{', 2' if grouped else ''})"
@@ -291,7 +291,7 @@ def tenure(req: MetricRequest):
             "WHEN CURRENT_DATE - date_of_joining < 1095 THEN '1-3 yrs' "
             "WHEN CURRENT_DATE - date_of_joining < 1825 THEN '3-5 yrs' "
             "ELSE '5+ yrs' END AS band, COUNT(*) AS value "
-            "FROM staging.manav_employees e "
+            "FROM public.manav_employees e "
             "WHERE org_id = $1::uuid AND is_active = TRUE "
             "AND date_of_joining IS NOT NULL"
             + still_on_the_rolls("e") +
@@ -303,7 +303,7 @@ def tenure(req: MetricRequest):
         "(ORDER BY CURRENT_DATE - date_of_joining)::float AS value, "
         "AVG(CURRENT_DATE - date_of_joining)::float AS mean_days, "
         "COUNT(*) AS employees "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE org_id = $1::uuid AND is_active = TRUE "
         "AND date_of_joining IS NOT NULL"
         + still_on_the_rolls("e") +
@@ -328,7 +328,7 @@ def department_mix(req: MetricRequest):
     return (
         "SELECT COALESCE(NULLIF(department, ''), 'Unassigned') AS label, "
         "COUNT(*) AS value "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE org_id = $1::uuid AND is_active = TRUE"
         + still_on_the_rolls("e") +
         " GROUP BY 1 ORDER BY value DESC, label",
@@ -351,7 +351,7 @@ def designation_mix(req: MetricRequest):
     return (
         "SELECT COALESCE(NULLIF(designation, ''), 'Unassigned') AS label, "
         "COUNT(*) AS value "
-        "FROM staging.manav_employees e "
+        "FROM public.manav_employees e "
         "WHERE org_id = $1::uuid AND is_active = TRUE"
         + still_on_the_rolls("e") +
         " GROUP BY 1 ORDER BY value DESC, label",
@@ -401,10 +401,10 @@ def leave_liability_days(req: MetricRequest):
         "SELECT SUM(GREATEST(b.allocated + COALESCE(b.carried_forward, 0) "
         "- b.used, 0))::float AS value, "
         "COUNT(DISTINCT b.employee_id) AS employees "
-        "FROM staging.manav_leave_balances b "
-        "JOIN staging.manav_employees e "
+        "FROM public.manav_leave_balances b "
+        "JOIN public.manav_employees e "
         "ON e.id = b.employee_id AND e.org_id = $1::uuid "
-        "JOIN staging.manav_leave_types t "
+        "JOIN public.manav_leave_types t "
         "ON t.id = b.leave_type_id AND t.org_id = $1::uuid "
         "AND t.is_paid = TRUE "
         "WHERE b.org_id = $1::uuid AND e.is_active = TRUE"
@@ -427,7 +427,7 @@ absent_metric(
     unit="days",
     grain="flow",
     absent="No requisition opened-at date is stored: "
-           "staging.manav_job_openings carries only created_at (row "
+           "public.manav_job_openings carries only created_at (row "
            "insertion, not when the requisition opened), and closing a role "
            "is a bare status flip to 'closed' with no timestamp — nor does a "
            "candidate's move to stage 'hired' write a dated event "
@@ -443,7 +443,7 @@ absent_metric(
     unit="count",
     grain="stock",
     absent="No probation or confirmation date exists anywhere in the schema: "
-           "staging.manav_employees has no confirmation-due or probation-end "
+           "public.manav_employees has no confirmation-due or probation-end "
            "column, its status CHECK (active / on_notice / terminated / "
            "resigned / absconding) has no probation state, and "
            "employment_type (full_time / part_time / contract / intern / "
@@ -460,7 +460,7 @@ absent_metric(
     sensitivity="financial",
     absent="The rupee conversion needs an encashment basis the schema does "
            "not store: no column says which salary component prices a leave "
-           "day (basic vs gross vs CTC — staging.vetana_salary_structures "
+           "day (basic vs gross vs CTC — public.vetana_salary_structures "
            "carries all three) or which divisor (26, 30 or 365) turns it "
            "into a day rate, and manav_employees.hourly_rate is unusable as "
            "a stand-in (DEFAULT 0; zero on 38 of 98 live rows, measured "

@@ -67,7 +67,7 @@ async def _mark_account_failed(pool, account_id) -> None:
     for value in (_STATUS_FAILED, "suspended"):
         try:
             await pool.execute(
-                "UPDATE staging.varta_business_accounts "
+                "UPDATE public.varta_business_accounts "
                 "SET status=$1, updated_at=NOW() WHERE id=$2",
                 value, account_id,
             )
@@ -136,7 +136,7 @@ async def list_accounts(
     pool = await get_pool()
     rows = await pool.fetch(f"""
         SELECT {_ACCOUNT_COLS}
-        FROM staging.varta_business_accounts WHERE org_id=$1::uuid
+        FROM public.varta_business_accounts WHERE org_id=$1::uuid
         ORDER BY created_at DESC
     """, org_id)
     return [dict(r) for r in rows]
@@ -175,7 +175,7 @@ async def create_account(
     # checked here — and the check is org-scoped, because two different
     # customers legitimately cannot share a number but the table does not say so.
     clash = await pool.fetchrow(
-        "SELECT id, status FROM staging.varta_business_accounts "
+        "SELECT id, status FROM public.varta_business_accounts "
         "WHERE org_id=$1::uuid AND phone_number_id=$2",
         org_id, body.phone_number_id.strip(),
     )
@@ -187,7 +187,7 @@ async def create_account(
         )
 
     row = await pool.fetchrow(f"""
-        INSERT INTO staging.varta_business_accounts
+        INSERT INTO public.varta_business_accounts
             (org_id, phone_number, display_name, waba_id, phone_number_id,
              access_token_enc, webhook_verify_token, status)
         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, '{_STATUS_PENDING}')
@@ -219,7 +219,7 @@ async def disconnect_account(
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT id FROM staging.varta_business_accounts "
+        "SELECT id FROM public.varta_business_accounts "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         account_id, org_id,
     )
@@ -227,7 +227,7 @@ async def disconnect_account(
         raise HTTPException(404, "That WhatsApp account is not connected to this organisation")
 
     await pool.execute(
-        "DELETE FROM staging.varta_business_accounts "
+        "DELETE FROM public.varta_business_accounts "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         account_id, org_id,
     )
@@ -255,10 +255,10 @@ async def list_conversations(
     rows = await pool.fetch(f"""
         SELECT c.*, vc.phone_number, vc.name AS contact_name,
                vc.graha_contact_id,
-               (SELECT content FROM staging.varta_messages vm
+               (SELECT content FROM public.varta_messages vm
                 WHERE vm.conversation_id = c.id ORDER BY vm.created_at DESC LIMIT 1) AS last_message
-        FROM staging.varta_conversations c
-        JOIN staging.varta_contacts vc ON vc.id = c.varta_contact_id
+        FROM public.varta_conversations c
+        JOIN public.varta_contacts vc ON vc.id = c.varta_contact_id
         WHERE {where}
         ORDER BY c.started_at DESC
         LIMIT ${len(params)+1} OFFSET ${len(params)+2}
@@ -277,7 +277,7 @@ async def conversation_messages(
 ):
     pool = await get_pool()
     conv = await pool.fetchrow(
-        "SELECT 1 FROM staging.varta_conversations WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.varta_conversations WHERE id=$1::uuid AND org_id=$2::uuid",
         conv_id, org_id,
     )
     if not conv:
@@ -285,14 +285,14 @@ async def conversation_messages(
 
     if before:
         rows = await pool.fetch("""
-            SELECT * FROM staging.varta_messages
+            SELECT * FROM public.varta_messages
             WHERE conversation_id=$1::uuid
-              AND created_at < (SELECT created_at FROM staging.varta_messages WHERE id=$3::uuid)
+              AND created_at < (SELECT created_at FROM public.varta_messages WHERE id=$3::uuid)
             ORDER BY created_at DESC LIMIT $2
         """, conv_id, limit, before)
     else:
         rows = await pool.fetch("""
-            SELECT * FROM staging.varta_messages
+            SELECT * FROM public.varta_messages
             WHERE conversation_id=$1::uuid
             ORDER BY created_at DESC LIMIT $2
         """, conv_id, limit)
@@ -316,7 +316,7 @@ async def conversation_window(
     """
     pool = await get_pool()
     conv = await pool.fetchrow(
-        "SELECT id FROM staging.varta_conversations WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id FROM public.varta_conversations WHERE id=$1::uuid AND org_id=$2::uuid",
         conv_id, org_id,
     )
     if not conv:
@@ -368,8 +368,8 @@ async def send_wa_message(
     pool = await get_pool()
     conv = await pool.fetchrow("""
         SELECT c.id, c.org_id, c.status, vc.phone_number
-        FROM staging.varta_conversations c
-        JOIN staging.varta_contacts vc ON vc.id = c.varta_contact_id
+        FROM public.varta_conversations c
+        JOIN public.varta_contacts vc ON vc.id = c.varta_contact_id
         WHERE c.id = $1::uuid AND c.org_id = $2::uuid
         LIMIT 1
     """, conv_id, org_id)
@@ -378,7 +378,7 @@ async def send_wa_message(
 
     account = await pool.fetchrow("""
         SELECT id, status, phone_number_id, access_token_enc
-        FROM staging.varta_business_accounts
+        FROM public.varta_business_accounts
         WHERE org_id=$1::uuid AND status='active'
         ORDER BY created_at DESC LIMIT 1
     """, org_id)
@@ -413,7 +413,7 @@ async def send_wa_message(
             raise HTTPException(409, _TEMPLATE_NEEDS_ID)
         template = await pool.fetchrow("""
             SELECT id, name, language, body, status
-            FROM staging.varta_templates
+            FROM public.varta_templates
             WHERE id=$1::uuid AND org_id=$2::uuid
         """, body.template_id, org_id)
         if not template:
@@ -526,7 +526,7 @@ async def send_wa_message(
             error_code = ("org_suppressed" if att.suppressed_by == "org"
                           else "outbound_mode_not_live")
             row = await pool.fetchrow("""
-                INSERT INTO staging.varta_messages
+                INSERT INTO public.varta_messages
                     (org_id, conversation_id, direction, content, type, status,
                      error_code, template_name, template_params)
                 VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'suppressed',
@@ -541,7 +541,7 @@ async def send_wa_message(
     # not the same as delivered. The `statuses` webhook moves it through
     # sent -> delivered -> read, or to failed, and now has a wamid to match on.
     row = await pool.fetchrow("""
-        INSERT INTO staging.varta_messages
+        INSERT INTO public.varta_messages
             (org_id, conversation_id, direction, content, type, status,
              template_name, template_params, wa_message_id)
         VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'pending', $5, $6::jsonb, $7)
@@ -562,7 +562,7 @@ async def list_templates(
 ):
     pool = await get_pool()
     rows = await pool.fetch("""
-        SELECT * FROM staging.varta_templates WHERE org_id=$1::uuid
+        SELECT * FROM public.varta_templates WHERE org_id=$1::uuid
         ORDER BY created_at DESC
     """, org_id)
     return [dict(r) for r in rows]
@@ -577,7 +577,7 @@ async def create_template(
 ):
     pool = await get_pool()
     row = await pool.fetchrow("""
-        INSERT INTO staging.varta_templates
+        INSERT INTO public.varta_templates
             (org_id, name, language, category, header_type, header_content, body, footer, buttons)
         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
         RETURNING *
@@ -596,7 +596,7 @@ async def delete_template(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.varta_templates WHERE id=$1::uuid AND org_id=$2::uuid",
+        "DELETE FROM public.varta_templates WHERE id=$1::uuid AND org_id=$2::uuid",
         template_id, org_id,
     )
     return {"ok": True}
@@ -665,7 +665,7 @@ _RATE_CARD_SQL = """
            rate_basis, estimate_note, source_url, source_read_on,
            billed_by, billed_to, effective_from, effective_to, notes,
            (org_id IS NOT NULL) AS org_specific
-      FROM staging.varta_rate_card
+      FROM public.varta_rate_card
      WHERE country_code = $1
        AND (org_id IS NULL OR org_id = $2::uuid)
        AND effective_from <= COALESCE($3::date, CURRENT_DATE)
@@ -806,7 +806,7 @@ async def webhook_verify(request: Request):
     # The verify token is itself the credential here — it is a value only the
     # org's admin and Meta hold — so matching on it alone is the check.
     acc = await pool.fetchrow(
-        "SELECT id, status FROM staging.varta_business_accounts "
+        "SELECT id, status FROM public.varta_business_accounts "
         "WHERE webhook_verify_token=$1 AND webhook_verify_token <> ''",
         token,
     )
@@ -817,7 +817,7 @@ async def webhook_verify(request: Request):
     # number's subscription, with a secret only this org gave it.
     if acc["status"] != _STATUS_ACTIVE:
         await pool.execute(
-            "UPDATE staging.varta_business_accounts "
+            "UPDATE public.varta_business_accounts "
             f"SET status='{_STATUS_ACTIVE}', updated_at=NOW() WHERE id=$1",
             acc["id"],
         )
@@ -880,7 +880,7 @@ async def webhook_receive(request: Request):
             phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
 
             acc = await pool.fetchrow(
-                "SELECT id, org_id FROM staging.varta_business_accounts WHERE phone_number_id=$1 AND status='active'",
+                "SELECT id, org_id FROM public.varta_business_accounts WHERE phone_number_id=$1 AND status='active'",
                 phone_number_id,
             )
             if not acc:
@@ -924,7 +924,7 @@ async def webhook_receive(request: Request):
                             # belt for a process that predates the index.)
                             if wa_msg_id:
                                 _seen = await _conn.fetchval(
-                                    "SELECT 1 FROM staging.varta_messages "
+                                    "SELECT 1 FROM public.varta_messages "
                                     "WHERE org_id=$1::uuid AND wa_message_id=$2 "
                                     "  AND direction='inbound'",
                                     org_id, wa_msg_id,
@@ -933,37 +933,37 @@ async def webhook_receive(request: Request):
                                     continue
                             # Find or create contact
                             contact = await _conn.fetchrow(
-                                "SELECT id FROM staging.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
+                                "SELECT id FROM public.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
                                 org_id, sender_phone,
                             )
                             is_new_contact = contact is None
                             if is_new_contact:
                                 contact = await _conn.fetchrow("""
-                                    INSERT INTO staging.varta_contacts (org_id, phone_number, name)
+                                    INSERT INTO public.varta_contacts (org_id, phone_number, name)
                                     VALUES ($1::uuid, $2, $3) RETURNING *
                                 """, org_id, sender_phone, msg.get("profile", {}).get("name", sender_phone))
 
                             # Find or create conversation
                             conv = await _conn.fetchrow("""
-                                SELECT id FROM staging.varta_conversations
+                                SELECT id FROM public.varta_conversations
                                 WHERE org_id=$1::uuid AND varta_contact_id=$2 AND status != 'resolved'
                                 ORDER BY started_at DESC LIMIT 1
                             """, org_id, contact["id"])
                             if not conv:
                                 conv = await _conn.fetchrow("""
-                                    INSERT INTO staging.varta_conversations (org_id, varta_contact_id, status)
+                                    INSERT INTO public.varta_conversations (org_id, varta_contact_id, status)
                                     VALUES ($1::uuid, $2, 'open') RETURNING id
                                 """, org_id, contact["id"])
 
                             msg_row = await _conn.fetchrow("""
-                                INSERT INTO staging.varta_messages
+                                INSERT INTO public.varta_messages
                                     (org_id, conversation_id, direction, wa_message_id, content, type, status)
                                 VALUES ($1::uuid, $2, 'inbound', $3, $4, $5, 'delivered')
                                 RETURNING id
                             """, org_id, conv["id"], wa_msg_id, content, msg_type)
 
                             await _conn.execute(
-                                "UPDATE staging.varta_contacts SET last_message_at=NOW() WHERE id=$1",
+                                "UPDATE public.varta_contacts SET last_message_at=NOW() WHERE id=$1",
                                 contact["id"],
                             )
 
@@ -1031,7 +1031,7 @@ async def webhook_receive(request: Request):
                 new_status = status_update.get("status", "")
                 if new_status in ("sent", "delivered", "read", "failed"):
                     await pool.execute("""
-                        UPDATE staging.varta_messages SET status=$1
+                        UPDATE public.varta_messages SET status=$1
                         WHERE wa_message_id=$2
                     """, new_status, wa_msg_id)
 

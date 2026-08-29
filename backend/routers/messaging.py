@@ -504,7 +504,7 @@ async def _channel_tones_in_use(conn, org_id: str) -> dict:
     DMs DO NOT COUNT. See C3.
     """
     rows = await conn.fetch(
-        "SELECT color, COUNT(*) AS n FROM staging.samvada_channels "
+        "SELECT color, COUNT(*) AS n FROM public.samvada_channels "
         "WHERE org_id = $1::uuid AND type <> 'dm' AND color IS NOT NULL "
         "GROUP BY color",
         org_id,
@@ -779,7 +779,7 @@ def _channel_label_sql(uid_param: int) -> str:
     # exists without a name.
     return f"""CASE WHEN c.type = 'dm' THEN COALESCE((
                         SELECT {display_name('u2')}
-                          FROM staging.samvada_channel_members cm2
+                          FROM public.samvada_channel_members cm2
                           JOIN users u2 ON u2.user_id = cm2.user_id
                          WHERE cm2.channel_id = c.id AND cm2.user_id <> ${uid_param}
                          LIMIT 1), 'Direct message')
@@ -824,7 +824,7 @@ async def _assert_channel_access(pool, channel_id, org_id: str, user_id: str) ->
     rule, one place, so the three cannot drift apart again.
     """
     ch = await pool.fetchrow(
-        "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT type FROM public.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
     if not ch:
@@ -832,7 +832,7 @@ async def _assert_channel_access(pool, channel_id, org_id: str, user_id: str) ->
     if ch["type"] == "public":
         return
     mem = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        "SELECT 1 FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user_id,
     )
     if not mem:
@@ -863,7 +863,7 @@ async def _assert_not_archived(pool, channel_id, org_id: str) -> None:
     see, which the caller's own org-scoped 404 has already refused.
     """
     archived = await pool.fetchval(
-        "SELECT is_archived FROM staging.samvada_channels "
+        "SELECT is_archived FROM public.samvada_channels "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
@@ -882,7 +882,7 @@ async def _assert_same_org(pool, target_user_id: str, org_id: str) -> None:
     kind of row that becomes a leak the moment a query forgets its org filter.
     """
     ok = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid "
         "AND role_code IN ('org_owner','org_admin','org_member')",
         target_user_id, org_id,
@@ -1066,7 +1066,7 @@ async def directory(
     if channel_id is None:
         rows = await pool.fetch("""
             SELECT DISTINCT u.user_id, u.full_name, u.avatar AS avatar_url
-            FROM staging.user_roles ur
+            FROM public.user_roles ur
             JOIN users u ON u.user_id = ur.user_id
             WHERE ur.org_id = $1::uuid
               AND ur.role_code IN ('org_owner','org_admin','org_member')
@@ -1080,7 +1080,7 @@ async def directory(
     if not _valid_uuid(channel_id):
         raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
-        "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT type FROM public.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
     if not ch:
@@ -1105,7 +1105,7 @@ async def directory(
             SELECT u.user_id,
                    {display_name('u')} AS full_name,
                    u.avatar AS avatar_url
-              FROM staging.user_roles ur
+              FROM public.user_roles ur
               JOIN users u ON u.user_id = ur.user_id
              WHERE ur.org_id = ${len(args)}::uuid
                AND ur.role_code IN ('org_owner','org_admin','org_member')
@@ -1123,7 +1123,7 @@ async def directory(
             SELECT u.user_id,
                    {display_name('u')} AS full_name,
                    u.avatar AS avatar_url
-              FROM staging.samvada_channel_members cm
+              FROM public.samvada_channel_members cm
               JOIN users u ON u.user_id = cm.user_id
              WHERE cm.channel_id = $1::uuid
             {org_arm}
@@ -1185,20 +1185,20 @@ async def list_channels(
     # to be present in the response either way; a row missing a key the client
     # spreads into a badge renders `undefined`, not zero.
     mention_count = (
-        """(SELECT COUNT(*) FROM staging.samvada_mentions mn
+        """(SELECT COUNT(*) FROM public.samvada_mentions mn
              WHERE mn.channel_id = c.id AND mn.mentioned_user_id = $2
                AND mn.read_at IS NULL)"""
         if await _parity_ready(pool) else "0"
     )
     rows = await pool.fetch(f"""
         SELECT c.*, (
-            SELECT COUNT(*) FROM staging.samvada_channel_members cm2 WHERE cm2.channel_id = c.id
+            SELECT COUNT(*) FROM public.samvada_channel_members cm2 WHERE cm2.channel_id = c.id
         ) AS member_count,
         cm_me.last_read_at AS my_last_read,
         COALESCE(cm_me.muted, FALSE) AS muted,
         {mention_count} AS mention_count,
         CASE WHEN cm_me.user_id IS NULL THEN 0 ELSE (
-            SELECT COUNT(*) FROM staging.samvada_messages m
+            SELECT COUNT(*) FROM public.samvada_messages m
             WHERE m.channel_id = c.id AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
               AND m.sender_id <> $2
@@ -1225,8 +1225,8 @@ async def list_channels(
                       COALESCE(cm_me.last_read_at, '-infinity'::timestamptz),
                       COALESCE(cm_me.joined_at,    '-infinity'::timestamptz))
         ) END AS unread_count
-        FROM staging.samvada_channels c
-        LEFT JOIN staging.samvada_channel_members cm_me
+        FROM public.samvada_channels c
+        LEFT JOIN public.samvada_channel_members cm_me
                ON cm_me.channel_id = c.id AND cm_me.user_id = $2
         WHERE c.org_id = $1::uuid AND c.is_archived = $3
           AND (c.type = 'public' OR cm_me.user_id IS NOT NULL)
@@ -1288,7 +1288,7 @@ async def create_channel(
                 await conn.execute(_TONE_LOCK_SQL, org_id)
                 tone = pick_channel_tone(await _channel_tones_in_use(conn, org_id))
                 row = await conn.fetchrow("""
-                    INSERT INTO staging.samvada_channels
+                    INSERT INTO public.samvada_channels
                                 (org_id, name, description, type, created_by, color)
                     VALUES ($1::uuid, $2, $3, $4, $5, $6)
                     RETURNING *
@@ -1297,7 +1297,7 @@ async def create_channel(
             else:
                 # Migration 100 is outstanding: the column cannot be named at all.
                 row = await conn.fetchrow("""
-                    INSERT INTO staging.samvada_channels
+                    INSERT INTO public.samvada_channels
                                 (org_id, name, description, type, created_by)
                     VALUES ($1::uuid, $2, $3, $4, $5)
                     RETURNING *
@@ -1313,7 +1313,7 @@ async def create_channel(
             # until they open it. Joining a room is not the same as having
             # missed everything said in it before you arrived.
             await conn.execute("""
-                INSERT INTO staging.samvada_channel_members (channel_id, user_id, role, last_read_at)
+                INSERT INTO public.samvada_channel_members (channel_id, user_id, role, last_read_at)
                 VALUES ($1, $2, 'admin', NOW())
             """, row["id"], user["user_id"])
     return _channel_row(row)
@@ -1355,7 +1355,7 @@ async def update_channel(
     if not _valid_uuid(channel_id):
         raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
-        "SELECT * FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
     if not ch:
@@ -1363,7 +1363,7 @@ async def update_channel(
     await _require_editor(pool, user["user_id"], org_id)
 
     mem = await pool.fetchrow(
-        "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        "SELECT role FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user["user_id"],
     )
     if not mem or mem["role"] != "admin":
@@ -1402,7 +1402,7 @@ async def update_channel(
     sets.append(f"updated_at=NOW()")
     vals.extend([channel_id, org_id])
     row = await pool.fetchrow(
-        f"UPDATE staging.samvada_channels SET {', '.join(sets)} "
+        f"UPDATE public.samvada_channels SET {', '.join(sets)} "
         f"WHERE id=${idx}::uuid AND org_id=${idx+1}::uuid RETURNING *",
         *vals,
     )
@@ -1420,11 +1420,11 @@ async def find_or_create_dm(
     await _require_editor(pool, user["user_id"], org_id)
     await _assert_same_org(pool, target_user_id, org_id)
     existing = await pool.fetchrow("""
-        SELECT c.* FROM staging.samvada_channels c
+        SELECT c.* FROM public.samvada_channels c
         WHERE c.org_id = $1::uuid AND c.type = 'dm'
-          AND EXISTS (SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=c.id AND user_id=$2)
-          AND EXISTS (SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=c.id AND user_id=$3)
-          AND (SELECT COUNT(*) FROM staging.samvada_channel_members WHERE channel_id=c.id) = 2
+          AND EXISTS (SELECT 1 FROM public.samvada_channel_members WHERE channel_id=c.id AND user_id=$2)
+          AND EXISTS (SELECT 1 FROM public.samvada_channel_members WHERE channel_id=c.id AND user_id=$3)
+          AND (SELECT COUNT(*) FROM public.samvada_channel_members WHERE channel_id=c.id) = 2
     """, org_id, user["user_id"], target_user_id)
     if existing:
         return _channel_row(existing)
@@ -1439,12 +1439,12 @@ async def find_or_create_dm(
             # eight tones sat invisible in private conversations. `_channel_row`
             # supplies the key as null on the way out.
             ch = await conn.fetchrow("""
-                INSERT INTO staging.samvada_channels (org_id, name, type, created_by)
+                INSERT INTO public.samvada_channels (org_id, name, type, created_by)
                 VALUES ($1::uuid, '', 'dm', $2) RETURNING *
             """, org_id, user["user_id"])
             for uid in (user["user_id"], target_user_id):
                 await conn.execute("""
-                    INSERT INTO staging.samvada_channel_members (channel_id, user_id, role, last_read_at)
+                    INSERT INTO public.samvada_channel_members (channel_id, user_id, role, last_read_at)
                     VALUES ($1, $2, 'member', NOW())
                 """, ch["id"], uid)
     return _channel_row(ch)
@@ -1471,7 +1471,7 @@ async def list_members(
     await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
     rows = await pool.fetch("""
         SELECT cm.*, u.full_name, u.email, u.avatar AS avatar_url
-        FROM staging.samvada_channel_members cm
+        FROM public.samvada_channel_members cm
         JOIN users u ON u.user_id = cm.user_id
         WHERE cm.channel_id = $1::uuid
     """, channel_id)
@@ -1519,7 +1519,7 @@ async def add_member(
     if not _valid_uuid(channel_id):
         raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
-        "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT type FROM public.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
     if not ch:
@@ -1529,7 +1529,7 @@ async def add_member(
     await _require_editor(pool, user["user_id"], org_id)
 
     mem = await pool.fetchrow(
-        "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        "SELECT role FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user["user_id"],
     )
     if not mem:
@@ -1554,7 +1554,7 @@ async def add_member(
     # one that matters — their `last_read_at`, exactly as `DO NOTHING` did.
     # Re-adding an existing member must not mark their channel read.
     await pool.execute("""
-        INSERT INTO staging.samvada_channel_members AS cm (channel_id, user_id, last_read_at)
+        INSERT INTO public.samvada_channel_members AS cm (channel_id, user_id, last_read_at)
         VALUES ($1::uuid, $2, NOW())
         ON CONFLICT (channel_id, user_id) DO UPDATE SET joined_at = NOW()
          WHERE cm.joined_at = '-infinity'::timestamptz
@@ -1598,7 +1598,7 @@ async def remove_member(
     if not _valid_uuid(channel_id):
         raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
     if not ch:
@@ -1606,14 +1606,14 @@ async def remove_member(
 
     if target_user_id != user["user_id"]:
         mem = await pool.fetchrow(
-            "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+            "SELECT role FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
             channel_id, user["user_id"],
         )
         if not mem or mem["role"] != "admin":
             raise HTTPException(403, "Only channel admins can remove other members")
 
     await pool.execute("""
-        DELETE FROM staging.samvada_channel_members
+        DELETE FROM public.samvada_channel_members
         WHERE channel_id=$1::uuid AND user_id=$2
     """, channel_id, target_user_id)
     return {"ok": True}
@@ -1643,11 +1643,11 @@ async def list_messages(
         return []
     # Verify membership
     mem = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        "SELECT 1 FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user["user_id"],
     )
     ch = await pool.fetchrow(
-        "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT type FROM public.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
     if not ch:
@@ -1669,7 +1669,7 @@ async def list_messages(
     _SEEN = """
                    (SELECT COALESCE(json_agg(x.full_name), '[]') FROM (
                         SELECT u2.full_name
-                        FROM staging.samvada_channel_members cm
+                        FROM public.samvada_channel_members cm
                         JOIN users u2 ON u2.user_id = cm.user_id
                         WHERE cm.channel_id = m.channel_id
                           AND cm.user_id <> m.sender_id
@@ -1677,7 +1677,7 @@ async def list_messages(
                           AND cm.last_read_at >= m.created_at
                         ORDER BY cm.last_read_at LIMIT 4
                    ) x) AS seen_by,
-                   (SELECT COUNT(*) FROM staging.samvada_channel_members cm2
+                   (SELECT COUNT(*) FROM public.samvada_channel_members cm2
                     WHERE cm2.channel_id = m.channel_id
                       AND cm2.user_id <> m.sender_id
                       AND cm2.last_read_at IS NOT NULL
@@ -1693,14 +1693,14 @@ async def list_messages(
     # closed now; this is what keeps a row already in the table from surfacing,
     # and what stops the two ends drifting apart again if one is ever relaxed.
     _COLS = """m.*, u.full_name AS sender_name, u.avatar AS sender_avatar,
-                   (SELECT COUNT(*) FROM staging.samvada_messages t
+                   (SELECT COUNT(*) FROM public.samvada_messages t
                     WHERE t.parent_message_id = m.id AND t.is_deleted = FALSE
                       AND t.channel_id = m.channel_id AND t.org_id = m.org_id) AS thread_count,
-                   (SELECT MAX(t2.created_at) FROM staging.samvada_messages t2
+                   (SELECT MAX(t2.created_at) FROM public.samvada_messages t2
                     WHERE t2.parent_message_id = m.id AND t2.is_deleted = FALSE
                       AND t2.channel_id = m.channel_id AND t2.org_id = m.org_id) AS last_reply_at,
                    (SELECT COALESCE(json_agg(json_build_object('emoji', r.emoji, 'user_id', r.user_id)), '[]')
-                    FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions,""" + _SEEN
+                    FROM public.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions,""" + _SEEN
 
     # ── `include_reply_counts`, and the one thing it may NOT gate ─────────────
     #
@@ -1768,7 +1768,7 @@ async def list_messages(
                                    u3.full_name AS full_name,
                                    u3.avatar    AS avatar,
                                    t3.created_at AS first_reply_at
-                            FROM staging.samvada_messages t3
+                            FROM public.samvada_messages t3
                             JOIN users u3 ON u3.user_id = t3.sender_id
                             WHERE t3.parent_message_id = m.id AND t3.is_deleted = FALSE
                               AND t3.channel_id = m.channel_id AND t3.org_id = m.org_id
@@ -1800,12 +1800,12 @@ async def list_messages(
         # one whose `org_id` differs from its channel's.
         rows = await pool.fetch(f"""
             SELECT {_COLS}
-            FROM staging.samvada_messages m
+            FROM public.samvada_messages m
             JOIN users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
               AND m.created_at < (SELECT cur.created_at
-                                    FROM staging.samvada_messages cur
+                                    FROM public.samvada_messages cur
                                    WHERE cur.id = $3::uuid
                                      AND cur.channel_id = $1::uuid)
             ORDER BY m.created_at DESC LIMIT $2
@@ -1813,7 +1813,7 @@ async def list_messages(
     else:
         rows = await pool.fetch(f"""
             SELECT {_COLS}
-            FROM staging.samvada_messages m
+            FROM public.samvada_messages m
             JOIN users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
@@ -1850,7 +1850,7 @@ async def send_message(
     # return archived rows a client can reach one, so the refusal has to be
     # here rather than implied by the row being absent.
     chan = await pool.fetchrow(
-        "SELECT type, is_archived FROM staging.samvada_channels "
+        "SELECT type, is_archived FROM public.samvada_channels "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
     )
@@ -1861,7 +1861,7 @@ async def send_message(
     await _require_editor(pool, user["user_id"], org_id)
 
     mem = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        "SELECT 1 FROM public.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user["user_id"],
     )
     if not mem and chan["type"] != "public":
@@ -1909,7 +1909,7 @@ async def send_message(
         if not _valid_uuid(raw_parent):
             raise HTTPException(400, no_such_parent)
         prow = await pool.fetchrow("""
-            SELECT parent_message_id FROM staging.samvada_messages
+            SELECT parent_message_id FROM public.samvada_messages
             WHERE id=$1::uuid AND channel_id=$2::uuid AND org_id=$3::uuid
               AND is_deleted = FALSE
         """, raw_parent, channel_id, org_id)
@@ -1927,13 +1927,13 @@ async def send_message(
         # in a public channel you had never joined used to show you its whole
         # history as unread until the `/read` throttle let a mark through.
         await pool.execute("""
-            INSERT INTO staging.samvada_channel_members (channel_id, user_id, last_read_at)
+            INSERT INTO public.samvada_channel_members (channel_id, user_id, last_read_at)
             VALUES ($1::uuid, $2, NOW())
         """, channel_id, user["user_id"])
 
     content = body.content.strip()
     row = await pool.fetchrow("""
-        INSERT INTO staging.samvada_messages
+        INSERT INTO public.samvada_messages
             (org_id, channel_id, sender_id, content, type, parent_message_id)
         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
         RETURNING *
@@ -1941,7 +1941,7 @@ async def send_message(
         body.type, parent)
 
     await pool.execute(
-        "UPDATE staging.samvada_channels SET updated_at=NOW() WHERE id=$1::uuid",
+        "UPDATE public.samvada_channels SET updated_at=NOW() WHERE id=$1::uuid",
         channel_id,
     )
 
@@ -2044,7 +2044,7 @@ async def edit_message(
     if not _valid_uuid(message_id):
         raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
-        "SELECT channel_id, sender_id FROM staging.samvada_messages "
+        "SELECT channel_id, sender_id FROM public.samvada_messages "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
@@ -2068,7 +2068,7 @@ async def edit_message(
 
     content = body.content.strip()
     row = await pool.fetchrow("""
-        UPDATE staging.samvada_messages
+        UPDATE public.samvada_messages
         SET content=$1, is_edited=TRUE, updated_at=NOW()
         WHERE id=$2::uuid RETURNING *
     """, content, message_id)
@@ -2115,7 +2115,7 @@ async def delete_message(
     if not _valid_uuid(message_id):
         raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
-        "SELECT channel_id, sender_id FROM staging.samvada_messages "
+        "SELECT channel_id, sender_id FROM public.samvada_messages "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
@@ -2141,7 +2141,7 @@ async def delete_message(
     await _require_editor(pool, user["user_id"], org_id)
 
     await pool.execute("""
-        UPDATE staging.samvada_messages SET is_deleted=TRUE, updated_at=NOW()
+        UPDATE public.samvada_messages SET is_deleted=TRUE, updated_at=NOW()
         WHERE id=$1::uuid
     """, message_id)
     return {"ok": True}
@@ -2160,7 +2160,7 @@ async def get_thread(
     if not _valid_uuid(message_id):
         raise HTTPException(404, "Message not found")
     parent = await pool.fetchrow(
-        "SELECT channel_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT channel_id FROM public.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
     if not parent:
@@ -2175,7 +2175,7 @@ async def get_thread(
     # ones already in the table, and one without the other is half a fix.
     rows = await pool.fetch("""
         SELECT m.*, u.full_name AS sender_name, u.avatar AS sender_avatar
-        FROM staging.samvada_messages m
+        FROM public.samvada_messages m
         JOIN users u ON u.user_id = m.sender_id
         WHERE m.parent_message_id = $1::uuid AND m.is_deleted = FALSE
           AND m.org_id = $2::uuid AND m.channel_id = $3::uuid
@@ -2198,7 +2198,7 @@ async def add_reaction(
     if not _valid_uuid(message_id):
         raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
-        "SELECT channel_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT channel_id FROM public.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
     if not msg:
@@ -2225,7 +2225,7 @@ async def add_reaction(
     # anything. Same ordering in edit, delete and send below.
     await _require_editor(pool, user["user_id"], org_id)
     await pool.execute("""
-        INSERT INTO staging.samvada_message_reactions (message_id, user_id, emoji)
+        INSERT INTO public.samvada_message_reactions (message_id, user_id, emoji)
         VALUES ($1::uuid, $2, $3) ON CONFLICT DO NOTHING
     """, message_id, user["user_id"], emoji)
     return {"ok": True}
@@ -2266,13 +2266,13 @@ async def remove_reaction(
     if not _valid_uuid(message_id):
         raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT 1 FROM public.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
     if not msg:
         raise HTTPException(404, "Message not found")
     await pool.execute("""
-        DELETE FROM staging.samvada_message_reactions
+        DELETE FROM public.samvada_message_reactions
         WHERE message_id=$1::uuid AND user_id=$2 AND emoji=$3
     """, message_id, user["user_id"], emoji)
     return {"ok": True}
@@ -2316,7 +2316,7 @@ async def mark_read(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("""
-                UPDATE staging.samvada_channel_members SET last_read_at=NOW()
+                UPDATE public.samvada_channel_members SET last_read_at=NOW()
                 WHERE channel_id=$1::uuid AND user_id=$2
             """, channel_id, user["user_id"])
             if ready:
@@ -2328,7 +2328,7 @@ async def mark_read(
                 # was singly scoped, and "the exception nobody wrote down" is
                 # how the scoped ones get copied from the wrong neighbour.
                 await conn.execute("""
-                    UPDATE staging.samvada_mentions
+                    UPDATE public.samvada_mentions
                        SET read_at = now()
                      WHERE channel_id = $1::uuid AND mentioned_user_id = $2
                        AND org_id = $3::uuid
@@ -2347,9 +2347,9 @@ async def unread_counts(
     rows = await pool.fetch("""
         SELECT cm.channel_id,
                COUNT(m.id) AS unread
-        FROM staging.samvada_channel_members cm
-        JOIN staging.samvada_channels c ON c.id = cm.channel_id
-        LEFT JOIN staging.samvada_messages m ON m.channel_id = cm.channel_id
+        FROM public.samvada_channel_members cm
+        JOIN public.samvada_channels c ON c.id = cm.channel_id
+        LEFT JOIN public.samvada_messages m ON m.channel_id = cm.channel_id
           AND m.is_deleted = FALSE AND m.parent_message_id IS NULL
           AND m.created_at > COALESCE(cm.last_read_at, '1970-01-01'::timestamptz)
           AND m.sender_id != $2
@@ -2433,7 +2433,7 @@ async def live(
         # `_parity_ready`. The same is true of every `if ready` below.)
         if ready:
             await conn.execute("""
-                INSERT INTO staging.samvada_presence (org_id, user_id, last_seen_at, status)
+                INSERT INTO public.samvada_presence (org_id, user_id, last_seen_at, status)
                 VALUES ($1::uuid, $2, now(), $3)
                 ON CONFLICT (org_id, user_id)
                 DO UPDATE SET last_seen_at = now(), status = EXCLUDED.status
@@ -2455,7 +2455,7 @@ async def live(
         if may_type:
             if typing:
                 await conn.execute("""
-                    INSERT INTO staging.samvada_typing (channel_id, user_id, updated_at)
+                    INSERT INTO public.samvada_typing (channel_id, user_id, updated_at)
                     VALUES ($1::uuid, $2, now())
                     ON CONFLICT (channel_id, user_id) DO UPDATE SET updated_at = now()
                 """, channel_id, me)
@@ -2464,7 +2464,7 @@ async def live(
                 # race. The 8-second read window below is the backstop for a tab
                 # that was closed mid-word, not the primary mechanism.
                 await conn.execute(
-                    "DELETE FROM staging.samvada_typing "
+                    "DELETE FROM public.samvada_typing "
                     "WHERE channel_id=$1::uuid AND user_id=$2",
                     channel_id, me,
                 )
@@ -2498,7 +2498,7 @@ async def live(
         # the caller is refused would be a write on behalf of a foreign room.
         if may_type:
             await conn.execute(
-                "DELETE FROM staging.samvada_typing "
+                "DELETE FROM public.samvada_typing "
                 "WHERE channel_id=$1::uuid "
                 "AND updated_at < now() - interval '15 seconds'",
                 channel_id,
@@ -2511,7 +2511,7 @@ async def live(
         # of and is the disagreement this replaces; it is left untouched because
         # nothing in the frontend calls it.
         mention_count = (
-            """(SELECT COUNT(*) FROM staging.samvada_mentions mn
+            """(SELECT COUNT(*) FROM public.samvada_mentions mn
                  WHERE mn.channel_id = c.id AND mn.mentioned_user_id = $2
                    AND mn.read_at IS NULL)"""
             if ready else "0"
@@ -2521,7 +2521,7 @@ async def live(
                    COALESCE(cm_me.muted, FALSE) AS muted,
                    {mention_count} AS mentions,
                    CASE WHEN cm_me.user_id IS NULL THEN 0 ELSE (
-                       SELECT COUNT(*) FROM staging.samvada_messages m
+                       SELECT COUNT(*) FROM public.samvada_messages m
                         WHERE m.channel_id = c.id AND m.is_deleted = FALSE
                           AND m.parent_message_id IS NULL
                           AND m.sender_id <> $2
@@ -2533,8 +2533,8 @@ async def live(
                                   COALESCE(cm_me.last_read_at, '-infinity'::timestamptz),
                                   COALESCE(cm_me.joined_at,    '-infinity'::timestamptz))
                    ) END AS unread
-            FROM staging.samvada_channels c
-            LEFT JOIN staging.samvada_channel_members cm_me
+            FROM public.samvada_channels c
+            LEFT JOIN public.samvada_channel_members cm_me
                    ON cm_me.channel_id = c.id AND cm_me.user_id = $2
             WHERE c.org_id = $1::uuid
               AND (c.type = 'public' OR cm_me.user_id IS NOT NULL)
@@ -2547,7 +2547,7 @@ async def live(
         if may_type:
             typing_rows = await conn.fetch(f"""
                 SELECT t.user_id, {display_name('u')} AS full_name
-                FROM staging.samvada_typing t
+                FROM public.samvada_typing t
                 LEFT JOIN users u ON u.user_id = t.user_id
                 WHERE t.channel_id = $1::uuid AND t.user_id <> $2
                   AND t.updated_at > now() - interval '8 seconds'
@@ -2569,7 +2569,7 @@ async def live(
                        CASE WHEN p.status = 'online'
                              AND p.last_seen_at > now() - interval '70 seconds'
                             THEN 'online' ELSE 'away' END AS state
-                FROM staging.samvada_presence p
+                FROM public.samvada_presence p
                 WHERE p.org_id = $1::uuid
                   AND p.last_seen_at > now() - interval '5 minutes'
             """, org_id)
@@ -2579,7 +2579,7 @@ async def live(
         # `created_at` values that Postgres stamped.
         if ready:
             tail = await conn.fetchrow("""
-                SELECT (SELECT COUNT(*) FROM staging.samvada_mentions
+                SELECT (SELECT COUNT(*) FROM public.samvada_mentions
                          WHERE org_id = $1::uuid AND mentioned_user_id = $2
                            AND read_at IS NULL) AS mention_unread,
                        now() AS server_time
@@ -2651,7 +2651,7 @@ async def list_mentions(
         args.append(before)
         where.append(
             f"(mn.created_at, mn.id) < (SELECT created_at, id "
-            f"FROM staging.samvada_mentions WHERE id = ${len(args)}::uuid "
+            f"FROM public.samvada_mentions WHERE id = ${len(args)}::uuid "
             f"AND mentioned_user_id = $2)"
         )
     args.append(limit)
@@ -2670,9 +2670,9 @@ async def list_mentions(
                m.parent_message_id,
                {display_name('u')} AS sender_name,
                u.avatar AS sender_avatar
-        FROM staging.samvada_mentions mn
-        JOIN staging.samvada_channels c ON c.id = mn.channel_id
-        JOIN staging.samvada_messages m ON m.id = mn.message_id
+        FROM public.samvada_mentions mn
+        JOIN public.samvada_channels c ON c.id = mn.channel_id
+        JOIN public.samvada_messages m ON m.id = mn.message_id
         LEFT JOIN users u ON u.user_id = m.sender_id
         WHERE {' AND '.join(where)}
         ORDER BY mn.created_at DESC, mn.id DESC
@@ -2710,7 +2710,7 @@ async def mark_mentions_read(
             args.append(body.channel_id)
             scope = f" AND channel_id = ${len(args)}::uuid"
         status = await pool.execute(
-            "UPDATE staging.samvada_mentions SET read_at = now() "
+            "UPDATE public.samvada_mentions SET read_at = now() "
             "WHERE org_id=$1::uuid AND mentioned_user_id=$2 AND read_at IS NULL" + scope,
             *args,
         )
@@ -2722,7 +2722,7 @@ async def mark_mentions_read(
         if not ids:
             return {"ok": True, "updated": 0}
         status = await pool.execute(
-            "UPDATE staging.samvada_mentions SET read_at = now() "
+            "UPDATE public.samvada_mentions SET read_at = now() "
             "WHERE org_id=$1::uuid AND mentioned_user_id=$2 AND read_at IS NULL "
             "AND id = ANY($3::uuid[])",
             org_id, user["user_id"], ids,
@@ -2836,7 +2836,7 @@ async def search_messages(
 
     where = [
         "m.is_deleted = FALSE",
-        "(c.type = 'public' OR EXISTS (SELECT 1 FROM staging.samvada_channel_members cm "
+        "(c.type = 'public' OR EXISTS (SELECT 1 FROM public.samvada_channel_members cm "
         " WHERE cm.channel_id = c.id AND cm.user_id = $1))",
         match,
     ]
@@ -2870,8 +2870,8 @@ async def search_messages(
                c.type AS channel_type,
                {display_name('u')} AS sender_name,
                u.avatar AS sender_avatar
-        FROM staging.samvada_messages m
-        JOIN staging.samvada_channels c ON c.id = m.channel_id AND c.org_id = $2::uuid
+        FROM public.samvada_messages m
+        JOIN public.samvada_channels c ON c.id = m.channel_id AND c.org_id = $2::uuid
         LEFT JOIN users u ON u.user_id = m.sender_id
         WHERE {' AND '.join(where)}
         ORDER BY m.created_at DESC
@@ -2917,8 +2917,8 @@ async def pin_message(
     # would be waste on a path a user clicks.
     msg = await pool.fetchrow("""
         SELECT m.channel_id, m.pinned_at, c.is_archived
-        FROM staging.samvada_messages m
-        JOIN staging.samvada_channels c ON c.id = m.channel_id
+        FROM public.samvada_messages m
+        JOIN public.samvada_channels c ON c.id = m.channel_id
         WHERE m.id=$1::uuid AND m.org_id=$2::uuid AND m.is_deleted = FALSE
     """, message_id, org_id)
     if not msg:
@@ -2932,7 +2932,7 @@ async def pin_message(
         return {"ok": True, "pinned_at": msg["pinned_at"]}
 
     n = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.samvada_messages "
+        "SELECT COUNT(*) FROM public.samvada_messages "
         "WHERE channel_id=$1::uuid AND pinned_at IS NOT NULL",
         msg["channel_id"],
     )
@@ -2943,7 +2943,7 @@ async def pin_message(
         )
 
     row = await pool.fetchrow("""
-        UPDATE staging.samvada_messages
+        UPDATE public.samvada_messages
            SET pinned_at = now(), pinned_by = $2
          WHERE id = $1::uuid AND pinned_at IS NULL
         RETURNING pinned_at
@@ -2952,7 +2952,7 @@ async def pin_message(
         # Lost the race to a concurrent pin. Report the winner's timestamp
         # rather than null, so the client renders the chip it just asked for.
         pinned_at = await pool.fetchval(
-            "SELECT pinned_at FROM staging.samvada_messages WHERE id=$1::uuid", message_id
+            "SELECT pinned_at FROM public.samvada_messages WHERE id=$1::uuid", message_id
         )
         return {"ok": True, "pinned_at": pinned_at}
     return {"ok": True, "pinned_at": row["pinned_at"]}
@@ -2979,7 +2979,7 @@ async def unpin_message(
         raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow("""
         SELECT channel_id, pinned_by
-        FROM staging.samvada_messages
+        FROM public.samvada_messages
         WHERE id=$1::uuid AND org_id=$2::uuid
     """, message_id, org_id)
     if not msg:
@@ -2988,7 +2988,7 @@ async def unpin_message(
 
     if msg["pinned_by"] != user["user_id"]:
         mem = await pool.fetchrow(
-            "SELECT role FROM staging.samvada_channel_members "
+            "SELECT role FROM public.samvada_channel_members "
             "WHERE channel_id=$1::uuid AND user_id=$2",
             msg["channel_id"], user["user_id"],
         )
@@ -2999,7 +2999,7 @@ async def unpin_message(
             )
 
     await pool.execute(
-        "UPDATE staging.samvada_messages SET pinned_at = NULL, pinned_by = NULL "
+        "UPDATE public.samvada_messages SET pinned_at = NULL, pinned_by = NULL "
         "WHERE id=$1::uuid",
         message_id,
     )
@@ -3042,7 +3042,7 @@ async def list_pins(
                {display_name('u')} AS sender_name,
                u.avatar AS sender_avatar,
                {display_name('p')} AS pinned_by_name
-        FROM staging.samvada_messages m
+        FROM public.samvada_messages m
         LEFT JOIN users u ON u.user_id = m.sender_id
         LEFT JOIN users p ON p.user_id = m.pinned_by
         WHERE m.channel_id = $1::uuid
@@ -3127,10 +3127,10 @@ async def set_channel_mute(
         # a date, the predicate is false, zero rows go, and the UPDATE below
         # does what it has always done.
         gone = await pool.execute("""
-            DELETE FROM staging.samvada_channel_members cm
+            DELETE FROM public.samvada_channel_members cm
              WHERE cm.channel_id = $1::uuid AND cm.user_id = $2
                AND cm.joined_at = '-infinity'::timestamptz
-               AND NOT EXISTS (SELECT 1 FROM staging.samvada_messages m
+               AND NOT EXISTS (SELECT 1 FROM public.samvada_messages m
                                 WHERE m.channel_id = cm.channel_id
                                   AND m.sender_id = cm.user_id)
         """, channel_id, user["user_id"])
@@ -3138,7 +3138,7 @@ async def set_channel_mute(
             return {"ok": True, "muted": False}
 
     status = await pool.execute(
-        "UPDATE staging.samvada_channel_members SET muted = $3 "
+        "UPDATE public.samvada_channel_members SET muted = $3 "
         "WHERE channel_id = $1::uuid AND user_id = $2",
         channel_id, user["user_id"], body.muted,
     )
@@ -3215,7 +3215,7 @@ async def set_channel_mute(
         if not body.muted:
             return {"ok": True, "muted": False}
         await pool.execute("""
-            INSERT INTO staging.samvada_channel_members
+            INSERT INTO public.samvada_channel_members
                 (channel_id, user_id, role, muted, last_read_at, joined_at)
             VALUES ($1::uuid, $2, 'member', $3, now(), '-infinity'::timestamptz)
             ON CONFLICT (channel_id, user_id) DO UPDATE SET muted = EXCLUDED.muted

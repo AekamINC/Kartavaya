@@ -357,7 +357,7 @@ async def _org_admins(conn, org_id) -> list:
         return []
     try:
         rows = await conn.fetch(
-            "SELECT DISTINCT user_id FROM staging.user_roles "
+            "SELECT DISTINCT user_id FROM public.user_roles "
             " WHERE org_id = $1::uuid AND role_code IN ('org_admin', 'org_owner')",
             str(org_id))
     except Exception:
@@ -424,7 +424,7 @@ async def _members_only(conn, user_ids: list, *, org_id) -> list:
         return []
     try:
         rows = await conn.fetch(
-            "SELECT DISTINCT user_id FROM staging.user_roles "
+            "SELECT DISTINCT user_id FROM public.user_roles "
             " WHERE org_id = $1::uuid AND user_id = ANY($2::text[])",
             str(org_id), list(user_ids))
     except Exception:
@@ -580,7 +580,7 @@ class InvoiceRemindCustomer:
                    payment_status, cancelled_at, is_active,
                    contact_id::text      AS contact_id,
                    client_id::text       AS client_id
-              FROM staging.ganit_invoices
+              FROM public.ganit_invoices
              WHERE id = $1::uuid AND org_id = $2::uuid
             """,
             invoice_id, str(org_id))
@@ -603,14 +603,14 @@ class InvoiceRemindCustomer:
         address, source = None, None
         if row["contact_id"]:
             address = await conn.fetchval(
-                "SELECT NULLIF(TRIM(email), '') FROM staging.graha_contacts "
+                "SELECT NULLIF(TRIM(email), '') FROM public.graha_contacts "
                 "WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
                 row["contact_id"], str(org_id))
             source = "the contact the invoice was raised to"
         if not address and row["client_id"]:
             candidates = await conn.fetch(
                 "SELECT NULLIF(TRIM(email), '') AS email "
-                "FROM staging.graha_contacts "
+                "FROM public.graha_contacts "
                 "WHERE client_id = $1::uuid AND org_id = $2::uuid "
                 "  AND is_active AND NULLIF(TRIM(email), '') IS NOT NULL",
                 row["client_id"], str(org_id))
@@ -723,7 +723,7 @@ class ReportSend:
             """
             SELECT org_id, name, report_type, frequency, recipients,
                    is_active, last_sent_at, created_by
-              FROM staging.dristi_scheduled_reports
+              FROM public.dristi_scheduled_reports
              WHERE id = $1::uuid AND org_id = $2::uuid
             """,
             schedule_id, str(org_id))
@@ -770,7 +770,7 @@ class ReportSend:
             reason = ("none of the schedule's recipients is a member of "
                       "this org — Niyam mails members only")
             await conn.execute(
-                "INSERT INTO staging.dristi_report_logs "
+                "INSERT INTO public.dristi_report_logs "
                 "(scheduled_report_id, org_id, status, recipients_count, error) "
                 "VALUES ($1::uuid, $2::uuid, 'skipped', 0, $3)",
                 schedule_id, str(org_id), reason)
@@ -821,7 +821,7 @@ class ReportSend:
         # trust problem. The transition guard makes a concurrent second run
         # lose here too, not just at the top re-check.
         _stamped = await conn.fetchrow(
-            "UPDATE staging.dristi_scheduled_reports "
+            "UPDATE public.dristi_scheduled_reports "
             "SET last_sent_at = NOW() "
             "WHERE id = $1::uuid "
             "  AND (last_sent_at IS NULL OR last_sent_at::date < NOW()::date) "
@@ -842,7 +842,7 @@ class ReportSend:
                 log.warning("niyam report.send: %s", d.reason)
         if sent == 0:
             await conn.execute(
-                "INSERT INTO staging.dristi_report_logs "
+                "INSERT INTO public.dristi_report_logs "
                 "(scheduled_report_id, org_id, status, recipients_count, error) "
                 "VALUES ($1::uuid, $2::uuid, 'failed', 0, $3)",
                 schedule_id, str(org_id), "the email layer refused every handover")
@@ -852,7 +852,7 @@ class ReportSend:
         note = (f"{skipped} recipient(s) skipped — not members of this org"
                 if skipped else None)
         await conn.execute(
-            "INSERT INTO staging.dristi_report_logs "
+            "INSERT INTO public.dristi_report_logs "
             "(scheduled_report_id, org_id, status, recipients_count, error) "
             "VALUES ($1::uuid, $2::uuid, 'sent', $3, $4)",
             schedule_id, str(org_id), sent, note)

@@ -161,7 +161,7 @@ async def _doc_for_reader(pool, doc_id: str, org_id: str, user_id: str):
     from services.esign_service import visible_source_modules
     allowed = await visible_source_modules(pool, user_id, org_id)
     return await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents "
+        "SELECT * FROM public.sign_documents "
         "WHERE id=$1::uuid AND org_id=$2::uuid "
         "  AND (source_module IS NULL OR source_module = ANY($3::text[]))",
         uuid.UUID(doc_id), org_id, allowed,
@@ -384,7 +384,7 @@ async def list_documents(
     from services.esign_service import visible_source_modules
     allowed_sources = await visible_source_modules(pool, user["user_id"], org_id)
 
-    q = ("SELECT * FROM staging.sign_documents "
+    q = ("SELECT * FROM public.sign_documents "
          "WHERE org_id=$1::uuid "
          "  AND (source_module IS NULL OR source_module = ANY($2::text[]))")
     args = [org_id, allowed_sources]
@@ -415,7 +415,7 @@ async def create_document(
     pool = await get_pool()
 
     doc = await pool.fetchrow(
-        "INSERT INTO staging.sign_documents "
+        "INSERT INTO public.sign_documents "
         "(org_id, title, description, file_key, file_url, file_hash, "
         " signers_total, expires_at, created_by) "
         "VALUES ($1::uuid, $2, $3, 'pending', 'pending', 'pending', "
@@ -429,7 +429,7 @@ async def create_document(
     for s in body.signers:
         token = secrets.token_hex(32)
         await pool.execute(
-            "INSERT INTO staging.sign_signers "
+            "INSERT INTO public.sign_signers "
             "(document_id, name, email, phone, sign_order, token) "
             "VALUES ($1, $2, $3, $4, $5, $6)",
             doc["id"], s.name, s.email, s.phone or None, s.sign_order, token,
@@ -493,7 +493,7 @@ async def upload_document_file(
     )
 
     await pool.execute(
-        "UPDATE staging.sign_documents SET file_key=$1, file_url=$2, file_hash=$3, "
+        "UPDATE public.sign_documents SET file_key=$1, file_url=$2, file_hash=$3, "
         "updated_at=NOW() WHERE id=$4",
         upload_result.get("key", ""), upload_result["url"], file_hash,
         uuid.UUID(doc_id),
@@ -519,7 +519,7 @@ async def get_document(
 
     signers = await pool.fetch(
         "SELECT id, name, email, phone, sign_order, status, signed_at, signature_type "
-        "FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order",
+        "FROM public.sign_signers WHERE document_id=$1 ORDER BY sign_order",
         uuid.UUID(doc_id),
     )
 
@@ -534,9 +534,9 @@ async def get_document(
     audit = await pool.fetch(
         "SELECT a.action, a.actor_email, a.details, a.created_at, "
         "       NULLIF(TRIM(COALESCE(s1.name, s2.name)), '') AS actor_name "
-        "FROM staging.sign_audit_log a "
-        "LEFT JOIN staging.sign_signers s1 ON s1.id = a.signer_id "
-        "LEFT JOIN staging.sign_signers s2 ON s2.document_id = a.document_id "
+        "FROM public.sign_audit_log a "
+        "LEFT JOIN public.sign_signers s1 ON s1.id = a.signer_id "
+        "LEFT JOIN public.sign_signers s2 ON s2.document_id = a.document_id "
         "                                 AND lower(s2.email) = lower(a.actor_email) "
         "WHERE a.document_id=$1 ORDER BY a.created_at",
         uuid.UUID(doc_id),
@@ -572,7 +572,7 @@ async def send_for_signing(
         raise HTTPException(400, "Document already sent")
 
     signers = await pool.fetch(
-        "SELECT * FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order",
+        "SELECT * FROM public.sign_signers WHERE document_id=$1 ORDER BY sign_order",
         uuid.UUID(doc_id),
     )
     if not signers:
@@ -598,7 +598,7 @@ async def send_for_signing(
                 ref=f"signature_request:{signer['id']}",
             )
             await pool.execute(
-                "UPDATE staging.sign_signers SET status='sent', updated_at=NOW() WHERE id=$1",
+                "UPDATE public.sign_signers SET status='sent', updated_at=NOW() WHERE id=$1",
                 signer["id"],
             )
         except Exception as e:
@@ -613,7 +613,7 @@ async def send_for_signing(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             _row = await _conn.fetchrow(
-                "UPDATE staging.sign_documents SET status='sent', updated_at=NOW() "
+                "UPDATE public.sign_documents SET status='sent', updated_at=NOW() "
                 "WHERE id=$1 RETURNING *",
                 uuid.UUID(doc_id),
             )
@@ -658,8 +658,8 @@ async def get_signing_page(token: str, request: Request):
     signer = await pool.fetchrow(
         "SELECT s.*, d.title, d.description, d.file_url, d.file_key, d.file_hash, d.status as doc_status, "
         "d.expires_at, d.org_id "
-        "FROM staging.sign_signers s "
-        "JOIN staging.sign_documents d ON d.id = s.document_id "
+        "FROM public.sign_signers s "
+        "JOIN public.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1",
         token,
     )
@@ -671,7 +671,7 @@ async def get_signing_page(token: str, request: Request):
     if (signer["doc_status"] not in ("cancelled", "expired")
             and signer["expires_at"] and signer["expires_at"] < datetime.now(timezone.utc)):
         await pool.execute(
-            "UPDATE staging.sign_documents SET status='expired' WHERE id=$1",
+            "UPDATE public.sign_documents SET status='expired' WHERE id=$1",
             signer["document_id"],
         )
     _doc_status_guard(signer["doc_status"], signer["expires_at"])
@@ -738,8 +738,8 @@ async def send_otp(token: str, request: Request):
         # without an `org_id` at all (only the Ganit path fills that column), so
         # `sign_signers.org_id` is NULL for every signer raised in this module.
         "SELECT s.*, d.title, d.status as doc_status, d.org_id AS doc_org_id "
-        "FROM staging.sign_signers s "
-        "JOIN staging.sign_documents d ON d.id = s.document_id "
+        "FROM public.sign_signers s "
+        "JOIN public.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1",
         token,
     )
@@ -767,7 +767,7 @@ async def send_otp(token: str, request: Request):
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await pool.execute(
-        "UPDATE staging.sign_signers SET otp_code=$1, otp_expires_at=$2, updated_at=NOW() WHERE id=$3",
+        "UPDATE public.sign_signers SET otp_code=$1, otp_expires_at=$2, updated_at=NOW() WHERE id=$3",
         otp, expires, signer["id"],
     )
 
@@ -819,7 +819,7 @@ async def send_otp(token: str, request: Request):
     # it. `WHERE status='sent'` keeps it to the first time, so a signer who asks
     # for a second code does not produce a second opening.
     await pool.execute(
-        "UPDATE staging.sign_signers SET status='opened', updated_at=NOW() "
+        "UPDATE public.sign_signers SET status='opened', updated_at=NOW() "
         "WHERE id=$1 AND status='sent'",
         signer["id"],
     )
@@ -839,7 +839,7 @@ async def verify_otp(token: str, body: OTPVerify, request: Request):
     pool = await get_pool()
 
     signer = await pool.fetchrow(
-        "SELECT * FROM staging.sign_signers WHERE token=$1", token,
+        "SELECT * FROM public.sign_signers WHERE token=$1", token,
     )
     if not signer:
         raise HTTPException(404, "Invalid signing link")
@@ -886,7 +886,7 @@ async def verify_otp(token: str, body: OTPVerify, request: Request):
         raise HTTPException(400, "Invalid OTP")
 
     await pool.execute(
-        "UPDATE staging.sign_signers SET otp_verified=TRUE, otp_code=NULL, updated_at=NOW() WHERE id=$1",
+        "UPDATE public.sign_signers SET otp_verified=TRUE, otp_code=NULL, updated_at=NOW() WHERE id=$1",
         signer["id"],
     )
 
@@ -905,8 +905,8 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     signer = await pool.fetchrow(
         "SELECT s.*, d.id as doc_id, d.signers_total, d.signers_completed, d.org_id, "
         "d.file_key, d.file_url, d.file_hash, d.status as doc_status, d.expires_at "
-        "FROM staging.sign_signers s "
-        "JOIN staging.sign_documents d ON d.id = s.document_id "
+        "FROM public.sign_signers s "
+        "JOIN public.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1",
         token,
     )
@@ -971,7 +971,7 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             _flipped = await _conn.fetchrow(
-                "UPDATE staging.sign_signers SET "
+                "UPDATE public.sign_signers SET "
                 "status='signed', signature_data=$1, signature_type=$2, "
                 "signed_at=$3, signed_ip=$4, updated_at=$3 "
                 "WHERE id=$5 AND status != 'signed' "
@@ -981,7 +981,7 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
             if _flipped is None:
                 raise HTTPException(400, "Already signed")
             _doc = await _conn.fetchrow(
-                "UPDATE staging.sign_documents SET "
+                "UPDATE public.sign_documents SET "
                 "signers_completed = signers_completed + 1, "
                 "status = CASE WHEN signers_completed + 1 >= signers_total "
                 "              THEN 'completed' ELSE 'partially_signed' END, "
@@ -1052,8 +1052,8 @@ async def decline_signing(token: str, request: Request):
 
     signer = await pool.fetchrow(
         "SELECT s.*, d.id as doc_id, d.status as doc_status, d.expires_at "
-        "FROM staging.sign_signers s "
-        "JOIN staging.sign_documents d ON d.id = s.document_id "
+        "FROM public.sign_signers s "
+        "JOIN public.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1", token,
     )
     if not signer:
@@ -1078,7 +1078,7 @@ async def decline_signing(token: str, request: Request):
             # Same transition rule as the sign path: a replayed decline
             # matched the row idempotently and re-emitted. Zero rows now.
             _declined_row = await _conn.fetchrow(
-                "UPDATE staging.sign_signers SET status='declined', declined_reason=$1, updated_at=NOW() "
+                "UPDATE public.sign_signers SET status='declined', declined_reason=$1, updated_at=NOW() "
                 "WHERE id=$2 AND status NOT IN ('signed', 'declined') "
                 "RETURNING id",
                 reason, signer["id"],
@@ -1086,7 +1086,7 @@ async def decline_signing(token: str, request: Request):
             if _declined_row is None:
                 raise HTTPException(400, "This signature request is already settled")
             _doc = await _conn.fetchrow(
-                "SELECT * FROM staging.sign_documents WHERE id=$1", signer["doc_id"],
+                "SELECT * FROM public.sign_documents WHERE id=$1", signer["doc_id"],
             )
             if _doc is not None:
                 await document_declined(
@@ -1122,7 +1122,7 @@ async def cancel_document(
         raise HTTPException(400, f"Cannot cancel a {doc['status']} document")
 
     await pool.execute(
-        "UPDATE staging.sign_documents SET status='cancelled', updated_at=NOW() WHERE id=$1",
+        "UPDATE public.sign_documents SET status='cancelled', updated_at=NOW() WHERE id=$1",
         uuid.UUID(doc_id),
     )
     await _audit(pool, uuid.UUID(doc_id), None, "document_cancelled", user["user_id"], None, None)
@@ -1144,7 +1144,7 @@ async def resend_to_signer(
         raise HTTPException(404, "Document not found")
 
     signer = await pool.fetchrow(
-        "SELECT * FROM staging.sign_signers WHERE id=$1::uuid AND document_id=$2::uuid",
+        "SELECT * FROM public.sign_signers WHERE id=$1::uuid AND document_id=$2::uuid",
         uuid.UUID(signer_id), uuid.UUID(doc_id),
     )
     if not signer:
@@ -1196,7 +1196,7 @@ async def rebuild_signed_document(
     """
     pool = await get_pool()
     doc = await pool.fetchrow(
-        "SELECT id, status, file_key FROM staging.sign_documents "
+        "SELECT id, status, file_key FROM public.sign_documents "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         uuid.UUID(doc_id), org_id,
     )
@@ -1226,7 +1226,7 @@ async def rebuild_signed_document(
 
     row = await pool.fetchrow(
         "SELECT signed_file_key, signed_file_url, signed_file_hash "
-        "FROM staging.sign_documents WHERE id=$1::uuid", uuid.UUID(doc_id),
+        "FROM public.sign_documents WHERE id=$1::uuid", uuid.UUID(doc_id),
     )
     out = await _refresh_artefact_urls(org_id, dict(row))
     out["appended_original"] = (result or {}).get("appended_original", False)
@@ -1250,8 +1250,8 @@ async def get_audit_trail(
 
     rows = await pool.fetch(
         "SELECT a.*, s.name as signer_name, s.email as signer_email "
-        "FROM staging.sign_audit_log a "
-        "LEFT JOIN staging.sign_signers s ON s.id = a.signer_id "
+        "FROM public.sign_audit_log a "
+        "LEFT JOIN public.sign_signers s ON s.id = a.signer_id "
         "WHERE a.document_id=$1 ORDER BY a.created_at",
         uuid.UUID(doc_id),
     )
@@ -1279,12 +1279,12 @@ async def get_audit_trail(
 
 async def _generate_signed_certificate(pool, doc_id, org_id: str):
     """Build and store the JSON audit certificate."""
-    doc = await pool.fetchrow("SELECT * FROM staging.sign_documents WHERE id=$1", doc_id)
+    doc = await pool.fetchrow("SELECT * FROM public.sign_documents WHERE id=$1", doc_id)
     signers = await pool.fetch(
-        "SELECT * FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
+        "SELECT * FROM public.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
     )
     audit = await pool.fetch(
-        "SELECT * FROM staging.sign_audit_log WHERE document_id=$1 ORDER BY created_at", doc_id,
+        "SELECT * FROM public.sign_audit_log WHERE document_id=$1 ORDER BY created_at", doc_id,
     )
 
     cert_data = {
@@ -1333,7 +1333,7 @@ async def _generate_signed_certificate(pool, doc_id, org_id: str):
     )
 
     await pool.execute(
-        "UPDATE staging.sign_documents SET certificate_file_key=$1, certificate_file_url=$2, "
+        "UPDATE public.sign_documents SET certificate_file_key=$1, certificate_file_url=$2, "
         "certificate_hash=$3, updated_at=NOW() WHERE id=$4",
         upload_result.get("key", ""), upload_result["url"], cert_hash, doc_id,
     )
@@ -1344,11 +1344,11 @@ async def _generate_signed_pdf(pool, doc_id, org_id: str):
     from services.esign_signed_doc import build_signed_pdf
     from services.storage import download_file
 
-    doc = await pool.fetchrow("SELECT * FROM staging.sign_documents WHERE id=$1", doc_id)
+    doc = await pool.fetchrow("SELECT * FROM public.sign_documents WHERE id=$1", doc_id)
     if not doc:
         return
     signers = [dict(s) for s in await pool.fetch(
-        "SELECT * FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
+        "SELECT * FROM public.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
     )]
     # The stored signatures come back inline for the render and for nothing
     # else — `build_signed_pdf` is synchronous and has neither a pool nor a
@@ -1357,7 +1357,7 @@ async def _generate_signed_pdf(pool, doc_id, org_id: str):
         s["signature_data"] = await _signature_for_render(s.get("signature_data"), org_id)
     org = await pool.fetchrow(
         "SELECT name, gstin, pan, logo_url, billing_address, email, phone, website "
-        "FROM staging.organisations WHERE id=$1::uuid", org_id,
+        "FROM public.organisations WHERE id=$1::uuid", org_id,
     )
 
     original = await download_file(doc["file_key"], org_id, doc["file_url"])
@@ -1385,7 +1385,7 @@ async def _generate_signed_pdf(pool, doc_id, org_id: str):
     )
 
     await pool.execute(
-        "UPDATE staging.sign_documents SET signed_file_key=$1, signed_file_url=$2, "
+        "UPDATE public.sign_documents SET signed_file_key=$1, signed_file_url=$2, "
         "signed_file_hash=$3, updated_at=NOW() WHERE id=$4",
         upload_result.get("key", ""), upload_result["url"], pdf_hash, doc_id,
     )
@@ -1411,7 +1411,7 @@ async def _generate_completion_artefacts(pool, doc_id, org_id: str):
 
 async def _audit(pool, doc_id, signer_id, action, actor_email, actor_ip, user_agent, details=None):
     await pool.execute(
-        "INSERT INTO staging.sign_audit_log "
+        "INSERT INTO public.sign_audit_log "
         "(document_id, signer_id, action, actor_email, actor_ip, actor_user_agent, details) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
         doc_id, signer_id, action, actor_email, actor_ip, user_agent,

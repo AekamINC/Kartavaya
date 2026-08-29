@@ -172,7 +172,7 @@ async def _refund_credits(pool, tx_id: Optional[str], run_id: Optional[str], why
                 )
                 if run_id:
                     await conn.execute(
-                        "UPDATE staging.hub_scraper_runs SET billed_inr=0 WHERE id=$1::uuid",
+                        "UPDATE public.hub_scraper_runs SET billed_inr=0 WHERE id=$1::uuid",
                         run_id,
                     )
         log.info("Refunded scraper run %s (%s), tx=%s", run_id, why, tx_id)
@@ -186,7 +186,7 @@ async def _fail_run(pool, run_id: str, error: str):
     is already handling a failure."""
     try:
         await pool.execute(
-            "UPDATE staging.hub_scraper_runs SET status='failed', error=$2, "
+            "UPDATE public.hub_scraper_runs SET status='failed', error=$2, "
             "finished_at=NOW() WHERE id=$1::uuid AND status IN ('pending','running')",
             run_id, error[:500],
         )
@@ -231,7 +231,7 @@ async def sweep_stranded_runs() -> dict:
     try:
         rows = await pool.fetch(
             "SELECT id, org_id, scraper_id, user_id, credits_charged "
-            "FROM staging.hub_scraper_runs "
+            "FROM public.hub_scraper_runs "
             "WHERE status IN ('pending','running') "
             "  AND started_at < NOW() - make_interval(mins := $1) "
             "ORDER BY started_at LIMIT 500",
@@ -266,7 +266,7 @@ async def sweep_stranded_runs() -> dict:
                         user_id=r["user_id"] or None,
                     )
                     await conn.execute(
-                        "UPDATE staging.hub_scraper_runs SET status='failed', "
+                        "UPDATE public.hub_scraper_runs SET status='failed', "
                         "error='The run was interrupted and never reported a result. "
                         "The credits have been returned.', billed_inr=0, finished_at=NOW() "
                         "WHERE id=$1::uuid AND status IN ('pending','running')",
@@ -324,7 +324,7 @@ async def list_scrapers(
     q = (
         "SELECT id, name, description, icon, category, input_schema, "
         "credit_cost, max_results, result_columns, is_active "
-        "FROM staging.hub_scraper_catalog WHERE is_active=TRUE "
+        "FROM public.hub_scraper_catalog WHERE is_active=TRUE "
     )
     params = []
     if category:
@@ -352,7 +352,7 @@ async def run_scraper(
     log.info("scraper/run: scraper_id=%s org=%s", body.scraper_id, org_id)
 
     scraper = await pool.fetchrow(
-        "SELECT * FROM staging.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
+        "SELECT * FROM public.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
         body.scraper_id,
     )
     if not scraper:
@@ -401,7 +401,7 @@ async def run_scraper(
     async with pool.acquire() as conn:
         async with conn.transaction():
             run_id = str(await conn.fetchval(
-                "INSERT INTO staging.hub_scraper_runs "
+                "INSERT INTO public.hub_scraper_runs "
                 "(org_id, scraper_id, user_id, inputs, status, billed_inr, credits_charged) "
                 "VALUES ($1::uuid, $2, $3, $4, 'pending', $5, 0) "
                 "RETURNING id",
@@ -425,7 +425,7 @@ async def run_scraper(
                 description=f"scraper:{body.scraper_id} (minimum upfront)",
             )
             await conn.execute(
-                "UPDATE staging.hub_scraper_runs SET credits_charged=$2 WHERE id=$1::uuid",
+                "UPDATE public.hub_scraper_runs SET credits_charged=$2 WHERE id=$1::uuid",
                 run_id, receipt.credits,
             )
 
@@ -457,7 +457,7 @@ async def run_scraper(
         raise HTTPException(502, f"Apify error: {msg}")
 
     await pool.execute(
-        "UPDATE staging.hub_scraper_runs SET apify_run_id=$2, status='running' "
+        "UPDATE public.hub_scraper_runs SET apify_run_id=$2, status='running' "
         "WHERE id=$1::uuid",
         run_id, run["run_id"],
     )
@@ -574,7 +574,7 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
             # true-up on top, so the customer pays for a run they were refunded
             # for and the ledger records both.
             settled = await pool.execute(
-                "UPDATE staging.hub_scraper_runs SET status='succeeded', "
+                "UPDATE public.hub_scraper_runs SET status='succeeded', "
                 "result_count=$2, cost_usd=$3, results_r2_key=$4, finished_at=NOW() "
                 "WHERE id=$1::uuid AND status IN ('pending','running')",
                 db_run_id, len(trimmed), actual_cost_usd, r2_key,
@@ -622,7 +622,7 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
                 return
 
             await pool.execute(
-                "UPDATE staging.hub_scraper_runs SET credits_charged=$2 WHERE id=$1::uuid",
+                "UPDATE public.hub_scraper_runs SET credits_charged=$2 WHERE id=$1::uuid",
                 db_run_id, actual_credits,
             )
             return
@@ -636,7 +636,7 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
             if detail:
                 msg = f"{msg} — {detail}"[:500]
             await pool.execute(
-                "UPDATE staging.hub_scraper_runs SET status='failed', "
+                "UPDATE public.hub_scraper_runs SET status='failed', "
                 "error=$2, cost_usd=$3, finished_at=NOW() WHERE id=$1::uuid",
                 db_run_id, msg, float(info.get("usage_usd", 0)),
             )
@@ -646,7 +646,7 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
 
     # Timed out polling
     await pool.execute(
-        "UPDATE staging.hub_scraper_runs SET status='failed', "
+        "UPDATE public.hub_scraper_runs SET status='failed', "
         "error='Polling timeout — the run did not report a result within 10 minutes', "
         "finished_at=NOW() WHERE id=$1::uuid",
         db_run_id,
@@ -782,8 +782,8 @@ async def get_run(
         "r.billed_inr, r.credits_charged, r.error, r.created_at, r.finished_at, "
         "r.graha_imported_count, r.graha_imported_at, r.results_r2_key, r.results, "
         "c.name as scraper_name, c.result_columns "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.id=$1::uuid AND r.org_id=$2::uuid",
         str(run_id), org_id,
     )
@@ -873,8 +873,8 @@ async def import_run_to_graha(
     run = await pool.fetchrow(
         "SELECT r.id, r.org_id, r.scraper_id, r.status, r.results_r2_key, r.results, "
         "c.graha_field_map, c.name as scraper_name "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.id=$1::uuid AND r.org_id=$2::uuid",
         str(run_id), org_id,
     )
@@ -916,7 +916,7 @@ async def import_run_to_graha(
         async with pool.acquire() as _conn:
             async with _conn.transaction():
                 row = await _conn.fetchrow(
-                    "INSERT INTO staging.graha_contacts "
+                    "INSERT INTO public.graha_contacts "
                     "(org_id, name, email, phone, company, designation, contact_type, source, created_by) "
                     "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'lead', $7, $8) "
                     "RETURNING *",
@@ -929,7 +929,7 @@ async def import_run_to_graha(
         imported += 1
 
     await pool.execute(
-        "UPDATE staging.hub_scraper_runs SET graha_imported_count=$2, graha_imported_at=NOW() "
+        "UPDATE public.hub_scraper_runs SET graha_imported_count=$2, graha_imported_at=NOW() "
         "WHERE id=$1::uuid",
         str(run_id), imported,
     )
@@ -962,8 +962,8 @@ async def list_runs(
         "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
         "r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.org_id=$1::uuid ORDER BY r.created_at DESC LIMIT 50",
         org_id,
     )
@@ -1007,8 +1007,8 @@ async def admin_usage(
         "COALESCE(SUM(r.cost_usd), 0) as total_cost_usd, "
         "COALESCE(SUM(r.billed_inr), 0) as total_billed_inr, "
         "COALESCE(SUM(r.result_count), 0) as total_results "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.organisations o ON o.id = r.org_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.organisations o ON o.id = r.org_id "
         "GROUP BY o.name, r.org_id "
         "ORDER BY total_billed_inr DESC",
     )
@@ -1027,9 +1027,9 @@ async def admin_runs(
         "r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
         "r.billed_inr, r.cost_usd, r.credits_charged, r.error, r.created_at, r.finished_at, "
         "c.name as scraper_name, c.icon, o.name as org_name "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
-        "JOIN staging.organisations o ON o.id = r.org_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "JOIN public.organisations o ON o.id = r.org_id "
     )
     params = []
     if org_id:

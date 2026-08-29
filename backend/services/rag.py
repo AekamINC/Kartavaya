@@ -276,7 +276,7 @@ async def ingest_document(client_id: str, title: str, content: str, source_type:
     pool = await get_pool()
 
     org_id = await pool.fetchval(
-        "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
+        "SELECT org_id FROM public.hub_clients WHERE id=$1::uuid", client_id
     )
     if not org_id:
         # The FK on hub_kb_documents would have caught this a statement later
@@ -295,7 +295,7 @@ async def ingest_document(client_id: str, title: str, content: str, source_type:
     async with pool.acquire() as conn:
         async with conn.transaction():
             doc_id = await conn.fetchval(
-                "INSERT INTO staging.hub_kb_documents "
+                "INSERT INTO public.hub_kb_documents "
                 "(client_id, title, source_type, source_url, raw_content, created_by) "
                 "VALUES ($1::uuid, $2, $3, $4, $5, $6) RETURNING id",
                 client_id, title, source_type, source_url, content, created_by,
@@ -325,14 +325,14 @@ async def ingest_document(client_id: str, title: str, content: str, source_type:
         if embedding and len(embedding) == EMBEDDING_DIM:
             embedding_str = f"[{','.join(str(v) for v in embedding)}]"
             await pool.execute(
-                "INSERT INTO staging.hub_kb_chunks "
+                "INSERT INTO public.hub_kb_chunks "
                 "(document_id, client_id, chunk_index, content, token_count, embedding) "
                 "VALUES ($1, $2::uuid, $3, $4, $5, $6::vector)",
                 doc_id, client_id, i, chunk, token_count, embedding_str,
             )
         else:
             await pool.execute(
-                "INSERT INTO staging.hub_kb_chunks "
+                "INSERT INTO public.hub_kb_chunks "
                 "(document_id, client_id, chunk_index, content, token_count) "
                 "VALUES ($1, $2::uuid, $3, $4, $5)",
                 doc_id, client_id, i, chunk, token_count,
@@ -437,8 +437,8 @@ async def search_hybrid(
             f"d.title as doc_title, d.id as document_id, d.source_type, "
             f"1 - (c.embedding <=> ${emb_idx}::vector) as vec_score, "
             f"ts_rank(v.tsv, qq.q_any, 32) as text_score "
-            f"FROM staging.hub_kb_chunks c "
-            f"JOIN staging.hub_kb_documents d ON d.id = c.document_id "
+            f"FROM public.hub_kb_chunks c "
+            f"JOIN public.hub_kb_documents d ON d.id = c.document_id "
             f"CROSS JOIN qq "
             f"CROSS JOIN LATERAL (SELECT {_KB_TSV} AS tsv) v "
             f"WHERE {where} AND c.embedding IS NOT NULL "
@@ -511,8 +511,8 @@ async def search_hybrid(
             f"d.title as doc_title, d.id as document_id, d.source_type, "
             f"ts_rank(v.tsv, qq.q_any, 32) as text_score, "
             f"(v.tsv @@ qq.q_all) as all_terms "
-            f"FROM staging.hub_kb_chunks c "
-            f"JOIN staging.hub_kb_documents d ON d.id = c.document_id "
+            f"FROM public.hub_kb_chunks c "
+            f"JOIN public.hub_kb_documents d ON d.id = c.document_id "
             f"CROSS JOIN qq "
             f"CROSS JOIN LATERAL (SELECT {_KB_TSV} AS tsv) v "
             f"WHERE {where} AND v.tsv @@ qq.q_any "
@@ -546,7 +546,7 @@ async def search_hybrid(
 async def delete_document(document_id: str) -> bool:
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.hub_kb_documents SET is_active=FALSE WHERE id=$1::uuid",
+        "UPDATE public.hub_kb_documents SET is_active=FALSE WHERE id=$1::uuid",
         document_id,
     )
     return True

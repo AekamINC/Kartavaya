@@ -190,7 +190,7 @@ async def check_unmatched_receipts(
         """
         SELECT l.id, l.statement_date, l.description, l.reference,
                l.amount, l.matched_type
-        FROM staging.ganit_bank_statement_lines l
+        FROM public.ganit_bank_statement_lines l
         WHERE l.org_id = $1::uuid
           AND l.amount > 0
           AND NOT COALESCE(l.is_reconciled, FALSE)
@@ -218,10 +218,10 @@ async def check_unmatched_receipts(
         SELECT i.id, i.invoice_number, i.invoice_date, i.due_date,
                i.total, i.balance_due, i.payment_status,
                {_customer_sql('cl', 'ct')} AS customer
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_clients cl
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_clients cl
                ON cl.id = i.client_id AND cl.org_id = i.org_id
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = i.contact_id AND ct.org_id = i.org_id
         WHERE i.org_id = $1::uuid
           AND i.is_active

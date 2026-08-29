@@ -69,8 +69,8 @@ async def propose_payment_run(
                     ELSE '90+' END                   AS ageing_bucket,
                CASE WHEN b.due_date IS NULL THEN NULL
                     ELSE ($2::date - b.due_date) END AS days_past_due
-        FROM staging.ganit_vendor_bills b
-        LEFT JOIN staging.ganit_vendors v
+        FROM public.ganit_vendor_bills b
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND b.is_active = TRUE

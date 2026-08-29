@@ -6,10 +6,10 @@ log = logging.getLogger(__name__)
 
 # Metric -> (table, value_col, date_col, extra_filter)
 _METRIC_MAP = {
-    "revenue": ("staging.ganit_payments", "amount", "payment_date", ""),
-    "expenses": ("staging.ganit_expenses", "total", "expense_date", "AND is_active = true"),
-    "deals_value": ("staging.graha_deals", "value", "created_at", "AND is_active = true"),
-    "new_leads": ("staging.graha_contacts", "1", "created_at", "AND contact_type = 'lead' AND is_active = true"),
+    "revenue": ("public.ganit_payments", "amount", "payment_date", ""),
+    "expenses": ("public.ganit_expenses", "total", "expense_date", "AND is_active = true"),
+    "deals_value": ("public.graha_deals", "value", "created_at", "AND is_active = true"),
+    "new_leads": ("public.graha_contacts", "1", "created_at", "AND contact_type = 'lead' AND is_active = true"),
 }
 
 DEVIATION_THRESHOLD = 40  # flag if >40% deviation from mean

@@ -69,8 +69,8 @@ async def advance_periods(pool, today: date | None = None) -> dict:
     rows = await pool.fetch(
         "SELECT s.org_id, s.billing_cycle, s.current_period_end, "
         "       o.billing_anchor_day "
-        "FROM staging.subscriptions s "
-        "JOIN staging.organisations o ON o.id = s.org_id "
+        "FROM public.subscriptions s "
+        "JOIN public.organisations o ON o.id = s.org_id "
         "WHERE s.status = 'active' "
         "  AND s.current_period_end IS NOT NULL "
         "  AND s.current_period_end <= $1",
@@ -85,7 +85,7 @@ async def advance_periods(pool, today: date | None = None) -> dict:
         new_end = period_end_for(new_start, r["billing_cycle"])
 
         await pool.execute(
-            "UPDATE staging.subscriptions SET "
+            "UPDATE public.subscriptions SET "
             "  current_period_start = $2, "
             "  current_period_end   = $3, "
             "  next_billing_date    = $3, "
@@ -107,14 +107,14 @@ async def expire_trials(pool, today: date | None = None) -> dict:
     today = today or date.today()
 
     free_plan = await pool.fetchval(
-        "SELECT id FROM staging.plans WHERE code = 'free' AND is_active = TRUE"
+        "SELECT id FROM public.plans WHERE code = 'free' AND is_active = TRUE"
     )
     if not free_plan:
         log.warning("No active free plan found — skipping trial expiry")
         return {"expired": 0}
 
     result = await pool.execute(
-        "UPDATE staging.subscriptions SET "
+        "UPDATE public.subscriptions SET "
         "  plan_id  = $1, "
         "  status   = 'active', "
         "  updated_at = NOW() "

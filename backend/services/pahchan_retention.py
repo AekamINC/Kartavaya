@@ -107,8 +107,8 @@ async def purge_punch_photos() -> dict:
     while deleted + failed < MAX_PER_RUN:
         rows = await pool.fetch(
             f"""SELECT p.id, p.org_id, p.photo_key
-                  FROM staging.pahchan_punches p
-                  LEFT JOIN staging.pahchan_policy pol ON pol.org_id = p.org_id
+                  FROM public.pahchan_punches p
+                  LEFT JOIN public.pahchan_policy pol ON pol.org_id = p.org_id
                  WHERE p.photo_key IS NOT NULL
                    AND p.captured_at < NOW() - (
                          COALESCE(pol.punch_photo_retention_days, {DEFAULTS['punch_photo_retention_days']})
@@ -134,7 +134,7 @@ async def purge_punch_photos() -> dict:
                 failed += 1
                 continue
             await pool.execute(
-                "UPDATE staging.pahchan_punches SET photo_key = NULL WHERE id = $1::uuid",
+                "UPDATE public.pahchan_punches SET photo_key = NULL WHERE id = $1::uuid",
                 str(row["id"]),
             )
             deleted += 1
@@ -169,9 +169,9 @@ async def purge_reference_photos() -> dict:
     while deleted + failed < MAX_PER_RUN:
         rows = await pool.fetch(
             f"""SELECT r.id, r.org_id, r.object_key
-                  FROM staging.pahchan_enrollment_photos r
-                  JOIN staging.manav_employees e ON e.id = r.employee_id
-                  LEFT JOIN staging.pahchan_policy pol ON pol.org_id = r.org_id
+                  FROM public.pahchan_enrollment_photos r
+                  JOIN public.manav_employees e ON e.id = r.employee_id
+                  LEFT JOIN public.pahchan_policy pol ON pol.org_id = r.org_id
                  WHERE e.status IN ('terminated', 'resigned', 'absconding')
                    AND e.updated_at < NOW() - (
                          COALESCE(pol.reference_photo_grace_days, {DEFAULTS['reference_photo_grace_days']})
@@ -188,7 +188,7 @@ async def purge_reference_photos() -> dict:
                 failed += 1
                 continue
             await pool.execute(
-                "DELETE FROM staging.pahchan_enrollment_photos WHERE id = $1::uuid",
+                "DELETE FROM public.pahchan_enrollment_photos WHERE id = $1::uuid",
                 str(row["id"]),
             )
             deleted += 1
@@ -221,8 +221,8 @@ async def purge_punch_records() -> dict:
     while deleted + blocked < MAX_PER_RUN:
         rows = await pool.fetch(
             f"""SELECT p.id, p.org_id, p.photo_key
-                  FROM staging.pahchan_punches p
-                  LEFT JOIN staging.pahchan_policy pol ON pol.org_id = p.org_id
+                  FROM public.pahchan_punches p
+                  LEFT JOIN public.pahchan_policy pol ON pol.org_id = p.org_id
                  WHERE p.captured_at < NOW() - (
                          COALESCE(pol.record_retention_years, {DEFAULTS['record_retention_years']})
                          * INTERVAL '1 year')
@@ -241,7 +241,7 @@ async def purge_punch_records() -> dict:
                 blocked += 1
                 continue
             await pool.execute(
-                "DELETE FROM staging.pahchan_punches WHERE id = $1::uuid", str(row["id"])
+                "DELETE FROM public.pahchan_punches WHERE id = $1::uuid", str(row["id"])
             )
             deleted += 1
 

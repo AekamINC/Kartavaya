@@ -411,7 +411,7 @@ async def check_inbound_triage(
         SELECT count(*)::int AS inbound_total,
                min(m.created_at) AS first_at,
                max(m.created_at) AS last_at
-        FROM staging.varta_messages m
+        FROM public.varta_messages m
         WHERE m.org_id = $1::uuid
           AND m.direction = 'inbound'
           AND m.created_at >= $2::timestamptz
@@ -436,10 +436,10 @@ async def check_inbound_triage(
                -- module grant -- the note above about needing no Graha grant
                -- still holds.
                NULLIF(btrim(vc.phone_number), '') AS sender_phone
-        FROM staging.varta_messages m
-        LEFT JOIN staging.varta_conversations c
+        FROM public.varta_messages m
+        LEFT JOIN public.varta_conversations c
                ON c.id = m.conversation_id AND c.org_id = m.org_id
-        LEFT JOIN staging.varta_contacts vc
+        LEFT JOIN public.varta_contacts vc
                ON vc.id = c.varta_contact_id AND vc.org_id = c.org_id
         WHERE m.org_id = $1::uuid
           AND m.direction = 'inbound'
@@ -551,8 +551,8 @@ async def check_inbound_triage(
         "reported as ambiguous rather than resolved, because a precedence order "
         "would shrink the residual figure without making one label more true — "
         "and the residual figure is what the model-tier decision rests on.",
-        "Only WhatsApp is read. `staging.graha_inbound_emails` and "
-        "`staging.graha_tickets` both hold zero rows across every org, so email "
+        "Only WhatsApp is read. `public.graha_inbound_emails` and "
+        "`public.graha_tickets` both hold zero rows across every org, so email "
         "and ticket inbound is NOT MEASURED here — not measured, not zero.",
         "The projected monthly figure is an extrapolation from the observed "
         "window and inherits every distortion in it: a week containing a "
@@ -570,7 +570,7 @@ async def check_inbound_triage(
         limitations.append(
             "No inbound messages at all in the window. This cannot tell an org "
             "with a quiet inbox from one that has never connected WhatsApp — "
-            "`staging.varta_business_accounts` holds zero rows in EVERY org on "
+            "`public.varta_business_accounts` holds zero rows in EVERY org on "
             "this database, so today the honest reading is that no WABA is "
             "connected and these figures describe seed data, not traffic."
         )
@@ -639,10 +639,10 @@ async def brief_reply_grounding(
                vc.phone_number, vc.graha_contact_id, vc.opted_in,
                max(m.created_at) FILTER (WHERE m.direction = 'inbound') AS last_inbound_at,
                count(*) FILTER (WHERE m.direction = 'inbound')::int AS inbound_count
-        FROM staging.varta_conversations c
-        JOIN staging.varta_contacts vc
+        FROM public.varta_conversations c
+        JOIN public.varta_contacts vc
           ON vc.id = c.varta_contact_id AND vc.org_id = c.org_id
-        LEFT JOIN staging.varta_messages m
+        LEFT JOIN public.varta_messages m
           ON m.conversation_id = c.id AND m.org_id = c.org_id
         WHERE c.org_id = $1::uuid
           AND ($2::uuid IS NULL OR c.id = $2::uuid)
@@ -671,7 +671,7 @@ async def brief_reply_grounding(
             "limitations": [
                 "Nothing was found to ground a reply on. That is an ABSENCE of a "
                 "conversation, not an absence of dues — no ledger was read.",
-                "`staging.varta_business_accounts` holds zero rows in every org "
+                "`public.varta_business_accounts` holds zero rows in every org "
                 "on this database, so no WhatsApp account is connected anywhere "
                 "and any conversation present is seed data.",
                 "This handler is PULL only. It must never be attached to an "
@@ -693,7 +693,7 @@ async def brief_reply_grounding(
     messages = await pool.fetch(
         """
         SELECT m.direction, m.content, m.created_at, m.type, m.template_name
-        FROM staging.varta_messages m
+        FROM public.varta_messages m
         WHERE m.org_id = $1::uuid
           AND m.conversation_id = $2::uuid
         ORDER BY m.created_at DESC
@@ -725,8 +725,8 @@ async def brief_reply_grounding(
             """
             SELECT gc.id, gc.name, gc.company, gc.email, gc.phone, gc.client_id,
                    cl.name AS client_name
-            FROM staging.graha_contacts gc
-            LEFT JOIN staging.graha_clients cl
+            FROM public.graha_contacts gc
+            LEFT JOIN public.graha_clients cl
                    ON cl.id = gc.client_id AND cl.org_id = gc.org_id
             WHERE gc.org_id = $1::uuid AND gc.id = $2::uuid
             """,
@@ -767,7 +767,7 @@ async def brief_reply_grounding(
                 """
                 SELECT i.id, i.invoice_number, i.invoice_date, i.due_date,
                        i.total, i.balance_due, i.payment_status
-                FROM staging.ganit_invoices i
+                FROM public.ganit_invoices i
                 WHERE i.org_id = $1::uuid
                   AND COALESCE(i.is_active, TRUE)
                   AND COALESCE(i.invoice_type, 'tax_invoice') <> 'credit_note'
@@ -793,8 +793,8 @@ async def brief_reply_grounding(
                 """
                 SELECT p.amount, p.payment_date, p.payment_method, p.reference,
                        i.invoice_number
-                FROM staging.ganit_payments p
-                JOIN staging.ganit_invoices i
+                FROM public.ganit_payments p
+                JOIN public.ganit_invoices i
                   ON i.id = p.invoice_id AND i.org_id = p.org_id
                 WHERE p.org_id = $1::uuid
                   AND (i.contact_id = $2::uuid OR i.client_id = $3::uuid)
@@ -818,7 +818,7 @@ async def brief_reply_grounding(
                 """
                 SELECT v.order_number, v.order_date, v.expected_delivery,
                        v.status, v.total, v.invoice_id
-                FROM staging.vikray_orders v
+                FROM public.vikray_orders v
                 WHERE v.org_id = $1::uuid
                   AND COALESCE(v.is_active, TRUE)
                   AND (v.contact_id = $2::uuid OR v.client_id = $3::uuid)
@@ -838,7 +838,7 @@ async def brief_reply_grounding(
         "messages on the live org — and that is the leak, not the model.",
         "It drafts nothing and sends nothing. A reply is written and pressed by "
         "a human; this handler returns facts for that human to check.",
-        "The language is NOT identified. `staging.varta_messages` has no "
+        "The language is NOT identified. `public.varta_messages` has no "
         "language column, so the output carries the SCRIPT (a certainty) and "
         "romanised marker words (a hint) and refuses to name a language.",
         "'Paid' arrives from bank reconciliation and from nothing else, so the "
@@ -973,8 +973,8 @@ async def brief_mismatch_schedule(
                NULLIF(btrim(v.email), '') AS vendor_email,
                NULLIF(btrim(v.phone), '') AS vendor_phone,
                NULLIF(btrim(v.gstin), '') AS vendor_gstin
-        FROM staging.ganit_vendor_bills b
-        LEFT JOIN staging.ganit_vendors v
+        FROM public.ganit_vendor_bills b
+        LEFT JOIN public.ganit_vendors v
                ON v.id = b.vendor_id AND v.org_id = b.org_id
         WHERE b.org_id = $1::uuid
           AND COALESCE(b.is_active, TRUE)

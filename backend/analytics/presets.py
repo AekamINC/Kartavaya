@@ -70,6 +70,20 @@ PRESETS: dict[str, dict] = {
             {"metric": "core.overdue", "viz": "kpi", "w": 1},
             {"metric": "core.throughput", "viz": "trend", "w": 1},
             {"metric": "ganit.receivables_ageing", "viz": "bars", "w": 3},
+            # WHO EARNED IT, not just how much. The owner, 2026-08-29:
+            # "finance, crm report needs members name who did what this weeks
+            # and how much total gp, deal etc etc."
+            #
+            # ⚠ IT IS IN `founder` AND NOT ONLY IN `finance` BECAUSE OF THE
+            # RESOLUTION ORDER, which is easy to get wrong and produces a
+            # feature that exists and never appears. `module_arrangement` walks
+            # `PRESETS` in insertion order and returns the FIRST preset naming
+            # the module — and `founder` names `ganit` and comes first. So a
+            # `ganit` page (and the emailed 'revenue' report, which resolves the
+            # same arrangement) lands on `founder`, never on `finance`, for any
+            # org that has not saved a default of its own. Adding it to
+            # `finance` alone would have shipped it invisible.
+            {"report": "ganit.member_activity"},
         ],
     },
     "finance": {
@@ -87,6 +101,10 @@ PRESETS: dict[str, dict] = {
             {"metric": "ganit.collection_rate", "viz": "kpi", "w": 1},
             {"metric": "ganit.payment_lag", "viz": "kpi", "w": 1},
             {"metric": "ganit.gst_output", "viz": "bars", "w": 1},
+            # Beside `founder`'s copy: a finance desk that has chosen this
+            # preset explicitly must not lose the attribution the default
+            # arrangement carries.
+            {"report": "ganit.member_activity"},
         ],
     },
     "delivery_lead": {
@@ -119,6 +137,16 @@ PRESETS: dict[str, dict] = {
             {"metric": "graha.avg_deal_size", "viz": "kpi", "w": 1},
             {"metric": "vikray.target_attainment", "viz": "bars", "w": 1},
             {"metric": "vikray.orders", "viz": "trend", "w": 3},
+            # The CRM half of the owner's ask. This is the preset a `graha`
+            # page resolves to — `founder` and `finance` do not name graha, so
+            # `sales_head` is genuinely first here — and therefore the one the
+            # emailed 'pipeline' report renders.
+            #
+            # ⚠ Most of the rows it prints will say "Unassigned", and that is
+            # the truth rather than a defect in the section: `assigned_to` only
+            # became settable from a screen on 2026-08-29, so 28 of Unicode's
+            # 33 deals carry no owner. The section says so on the page.
+            {"report": "graha.member_activity"},
         ],
     },
     "hr": {

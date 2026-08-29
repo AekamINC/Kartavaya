@@ -210,14 +210,14 @@ async def _apply_stock_moves(pool, org_id: str, order_id: str, line_items, sign:
             continue
         delta = sign * float(qty)
         await pool.execute(
-            "INSERT INTO staging.vikray_stock (org_id, product_id, quantity_on_hand) "
+            "INSERT INTO public.vikray_stock (org_id, product_id, quantity_on_hand) "
             "VALUES ($1::uuid, $2::uuid, $3) "
             "ON CONFLICT (org_id, product_id) DO UPDATE SET "
-            "quantity_on_hand = staging.vikray_stock.quantity_on_hand + $3, updated_at=NOW()",
+            "quantity_on_hand = public.vikray_stock.quantity_on_hand + $3, updated_at=NOW()",
             org_id, product_id, delta,
         )
         await pool.execute(
-            "INSERT INTO staging.vikray_stock_moves (org_id, product_id, order_id, quantity_delta, reason, created_by) "
+            "INSERT INTO public.vikray_stock_moves (org_id, product_id, order_id, quantity_delta, reason, created_by) "
             "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)",
             org_id, product_id, order_id, delta, reason, user_id,
         )
@@ -258,8 +258,8 @@ async def list_orders(
         # (`graha.py:1466`) falls through to the EMAIL.
         + actor_select("o", updated=True)
         + "COUNT(*) OVER() AS _total "
-        "FROM staging.vikray_orders o "
-        "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id "
+        "FROM public.vikray_orders o "
+        "LEFT JOIN public.graha_contacts c ON c.id = o.contact_id "
         + actor_joins("o", updated=True)
         + "WHERE o.org_id=$1::uuid"
         + ("" if since_dt is not None else " AND o.is_active=TRUE")
@@ -302,7 +302,7 @@ async def resolve_order_company(pool, org_id: str, client_id: str,
     """
     if client_id:
         ok = await pool.fetchval(
-            "SELECT 1 FROM staging.graha_clients "
+            "SELECT 1 FROM public.graha_clients "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             client_id, org_id)
         if not ok:
@@ -310,7 +310,7 @@ async def resolve_order_company(pool, org_id: str, client_id: str,
         return client_id
     if contact_id:
         return await pool.fetchval(
-            "SELECT client_id::text FROM staging.graha_contacts "
+            "SELECT client_id::text FROM public.graha_contacts "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             contact_id, org_id)
     return None
@@ -415,7 +415,7 @@ async def apply_line_costs(pool, org_id: str, items: list,
             # key, so an id from another organisation's catalogue would
             # otherwise resolve — and a cost is the one figure a competitor
             # would most like to read out of a neighbouring tenant.
-            "SELECT id::text AS id, cost_price FROM staging.ganit_products "
+            "SELECT id::text AS id, cost_price FROM public.ganit_products "
             "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
             org_id, list(canon_to_raw),
         )
@@ -463,12 +463,12 @@ async def create_order(
             is_first_order = False
             if client_id:
                 _prior = await _conn.fetchval(
-                    "SELECT COUNT(*) FROM staging.vikray_orders "
+                    "SELECT COUNT(*) FROM public.vikray_orders "
                     "WHERE org_id=$1::uuid AND client_id=$2::uuid",
                     org_id, client_id)
                 is_first_order = (_prior or 0) == 0
             row = await _conn.fetchrow(
-                "INSERT INTO staging.vikray_orders "
+                "INSERT INTO public.vikray_orders "
                 "(org_id, contact_id, client_id, deal_id, order_number, order_date, expected_delivery, "
                 "line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
                 "shipping_address, notes, created_by, salesperson_id) "
@@ -492,7 +492,7 @@ async def create_order(
             # report on an anniversary nobody chose.
             if client_id:
                 await _conn.execute(
-                    "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
+                    "UPDATE public.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
                     "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
                     client_id, org_id)
             await order_created(
@@ -534,7 +534,7 @@ async def create_order_from_deal(
     pool = await get_pool()
     deal = await pool.fetchrow(
         "SELECT id, title, value, stage, contact_id, client_id "
-        "FROM staging.graha_deals "
+        "FROM public.graha_deals "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         deal_id, org_id)
     if not deal:
@@ -544,7 +544,7 @@ async def create_order_from_deal(
                                  "deal is a forecast, not an agreement")
 
     existing = await pool.fetchrow(
-        "SELECT id, order_number FROM staging.vikray_orders "
+        "SELECT id, order_number FROM public.vikray_orders "
         "WHERE deal_id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE LIMIT 1",
         deal_id, org_id)
     if existing:
@@ -587,12 +587,12 @@ async def create_order_from_deal(
             is_first_order = False
             if client_id:
                 _prior = await _conn.fetchval(
-                    "SELECT COUNT(*) FROM staging.vikray_orders "
+                    "SELECT COUNT(*) FROM public.vikray_orders "
                     "WHERE org_id=$1::uuid AND client_id=$2::uuid",
                     org_id, client_id)
                 is_first_order = (_prior or 0) == 0
             row = await _conn.fetchrow(
-                "INSERT INTO staging.vikray_orders "
+                "INSERT INTO public.vikray_orders "
                 "(org_id, contact_id, client_id, deal_id, order_number, order_date, "
                 " line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
                 " notes, created_by) "
@@ -604,7 +604,7 @@ async def create_order_from_deal(
                 f"From deal: {deal['title']}", user["user_id"])
             if client_id:
                 await _conn.execute(
-                    "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
+                    "UPDATE public.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
                     "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
                     client_id, org_id)
             await order_created(
@@ -631,8 +631,8 @@ async def get_order(
         # columns follow it and the SELECT list never ends on a comma.
         + actor_select("o", updated=True)
         + "c.email AS contact_email, c.phone AS contact_phone "
-        "FROM staging.vikray_orders o "
-        "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id "
+        "FROM public.vikray_orders o "
+        "LEFT JOIN public.graha_contacts c ON c.id = o.contact_id "
         + actor_joins("o", updated=True)
         + "WHERE o.id=$1::uuid AND o.org_id=$2::uuid",
         order_id, org_id,
@@ -652,7 +652,7 @@ async def update_order(
 ):
     pool = await get_pool()
     existing = await pool.fetchrow(
-        "SELECT * FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not existing:
@@ -764,7 +764,7 @@ async def update_order(
     idx += 1
 
     row = await pool.fetchrow(
-        f"UPDATE staging.vikray_orders SET {', '.join(sets)} "
+        f"UPDATE public.vikray_orders SET {', '.join(sets)} "
         f"WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
         *params,
     )
@@ -781,7 +781,7 @@ async def update_order_status(
 ):
     pool = await get_pool()
     existing = await pool.fetchrow(
-        "SELECT status, deal_id, line_items FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT status, deal_id, line_items FROM public.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not existing:
@@ -801,7 +801,7 @@ async def update_order_status(
                 # never cover. Appended LAST in both the SET list and the params
                 # tuple so the existing $1-$4 numbering is untouched; renumbering
                 # an existing placeholder to make room is how this becomes a 500.
-                "UPDATE staging.vikray_orders SET status=$1, updated_at=NOW(), "
+                "UPDATE public.vikray_orders SET status=$1, updated_at=NOW(), "
                 "updated_by=$5 "
                 "WHERE id=$2::uuid AND org_id=$3::uuid AND status=$4 RETURNING *",
                 body.status, order_id, org_id, existing["status"],
@@ -851,10 +851,10 @@ async def update_order_status(
         async with pool.acquire() as _conn:
             async with _conn.transaction():
                 _before = await _conn.fetchrow(
-                    "SELECT * FROM staging.graha_deals WHERE id=$1::uuid AND org_id=$2::uuid",
+                    "SELECT * FROM public.graha_deals WHERE id=$1::uuid AND org_id=$2::uuid",
                     str(existing["deal_id"]), org_id)
                 _after = await _conn.fetchrow(
-                    "UPDATE staging.graha_deals "
+                    "UPDATE public.graha_deals "
                     "SET stage='Won', won_at=COALESCE(won_at, NOW()), updated_at=NOW() "
                     "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
                     str(existing["deal_id"]), org_id,
@@ -1038,7 +1038,7 @@ async def generate_invoice_from_order(
 ):
     pool = await get_pool()
     order = await pool.fetchrow(
-        "SELECT * FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not order:
@@ -1106,15 +1106,15 @@ async def generate_invoice_from_order(
         "       cl.gstin AS client_gstin, cl.address AS client_address, "
         "       ct.gstin AS contact_gstin, "
         "       ct.billing_address AS contact_address "
-        "FROM staging.organisations o "
+        "FROM public.organisations o "
         # EVERY PARAMETER CARRIES ITS CAST. An order with no company, or none
         # with no named person, binds NULL here — and an UNTYPED NULL through
         # PgBouncer is this repo's signature failure, the parse error that
         # arrives as an instant 500. `::uuid` on each one makes the NULL typed,
         # so the join simply matches nothing, which is the intended answer.
-        "LEFT JOIN staging.graha_clients cl "
+        "LEFT JOIN public.graha_clients cl "
         "  ON cl.id = $2::uuid AND cl.org_id = $1::uuid "
-        "LEFT JOIN staging.graha_contacts ct "
+        "LEFT JOIN public.graha_contacts ct "
         "  ON ct.id = $3::uuid AND ct.org_id = $1::uuid "
         "WHERE o.id = $1::uuid",
         org_id,
@@ -1201,7 +1201,7 @@ async def generate_invoice_from_order(
         # IT DOES NOT. Text on both sides, so no cast — and a cast here would be
         # the fingerprint of reaching for the wrong column, which is the note
         # `_ATTAINMENT_SQL` already carries about this same id.
-        "INSERT INTO staging.ganit_invoices "
+        "INSERT INTO public.ganit_invoices "
         "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
         "place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, "
         "discount, total, balance_due, notes, created_by, client_id, "
@@ -1239,7 +1239,7 @@ async def generate_invoice_from_order(
         # issued the invoice is the person who made it. Without `updated_by` the
         # order's last editor would read as whoever touched it before the
         # invoice — the wrong name, which is worse than no name.
-        "UPDATE staging.vikray_orders SET invoice_id=$1, updated_at=NOW(), updated_by=$4 "
+        "UPDATE public.vikray_orders SET invoice_id=$1, updated_at=NOW(), updated_by=$4 "
         "WHERE id=$2::uuid AND org_id=$3::uuid",
         inv["id"], order_id, org_id, user["user_id"],
     )
@@ -1255,7 +1255,7 @@ async def cancel_order(
 ):
     pool = await get_pool()
     existing = await pool.fetchrow(
-        "SELECT status, line_items FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT status, line_items FROM public.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not existing:
@@ -1284,7 +1284,7 @@ async def cancel_order(
                 # actor is the one row in the table nobody can explain later.
                 # `$4` is appended after the pre-read status so $1-$3 keep their
                 # meaning.
-                "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, "
+                "UPDATE public.vikray_orders SET status='cancelled', is_active=FALSE, "
                 "updated_at=NOW(), updated_by=$4 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND status=$3 "
                 "RETURNING *",
@@ -1371,7 +1371,7 @@ def _won_in_period(owner_predicate: str) -> str:
     """
     return (
         "  SELECT COALESCE(SUM(d.value), 0) AS amount, COUNT(*) AS deals "
-        "  FROM staging.graha_deals d "
+        "  FROM public.graha_deals d "
         "  WHERE d.org_id = $1::uuid "
         # Every deal-listing query in Graha filters this; the attainment join
         # did not, so a deleted deal kept paying into somebody's target forever.
@@ -1416,7 +1416,7 @@ async def create_target(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.vikray_targets "
+        "INSERT INTO public.vikray_targets "
         "(org_id, salesperson_id, period_start, period_end, target_amount, target_deals, notes, created_by) "
         "VALUES ($1::uuid, $2, $3::date, $4::date, $5, $6, $7, $8) "
         "ON CONFLICT (org_id, salesperson_id, period_start) DO UPDATE SET "
@@ -1476,7 +1476,7 @@ async def list_targets(
         "COALESCE(d.deals, 0) AS actual_deals, "
         "COALESCE(x.amount, 0) AS unattributed_amount, "
         "COALESCE(x.deals, 0) AS unattributed_deals "
-        "FROM staging.vikray_targets t "
+        "FROM public.vikray_targets t "
         "LEFT JOIN users u ON u.user_id = t.salesperson_id "
         + actor_joins("t", updated=True)
         + "LEFT JOIN LATERAL (" + _ATTAINMENT_SQL + ") d ON TRUE "
@@ -1508,7 +1508,7 @@ async def targets_leaderboard(
         "CASE WHEN t.target_amount > 0 "
         "  THEN ROUND(COALESCE(d.amount,0) / t.target_amount * 100, 1) "
         "  ELSE 0 END AS achievement_pct "
-        "FROM staging.vikray_targets t "
+        "FROM public.vikray_targets t "
         "LEFT JOIN users u ON u.user_id = t.salesperson_id "
         "LEFT JOIN LATERAL (" + _ATTAINMENT_SQL + ") d ON TRUE "
         "LEFT JOIN LATERAL (" + _UNATTRIBUTED_SQL + ") x ON TRUE "
@@ -1553,7 +1553,7 @@ async def update_target(
     updates.append(f"updated_by=${len(vals)}")
     vals += [target_id, org_id]
     row = await pool.fetchrow(
-        f"UPDATE staging.vikray_targets SET {', '.join(updates)} "
+        f"UPDATE public.vikray_targets SET {', '.join(updates)} "
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
@@ -1571,7 +1571,7 @@ async def delete_target(
 ):
     pool = await get_pool()
     result = await pool.execute(
-        "DELETE FROM staging.vikray_targets WHERE id=$1::uuid AND org_id=$2::uuid",
+        "DELETE FROM public.vikray_targets WHERE id=$1::uuid AND org_id=$2::uuid",
         target_id, org_id,
     )
     if result == "DELETE 0":
@@ -1596,18 +1596,18 @@ async def dashboard(
         "COUNT(*) FILTER (WHERE status='dispatched') AS dispatched_orders, "
         "COUNT(*) FILTER (WHERE status='delivered') AS delivered_orders, "
         "COALESCE(SUM(total) FILTER (WHERE status NOT IN ('cancelled','draft')), 0) AS order_value "
-        "FROM staging.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE",
+        "FROM public.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     pipeline = await pool.fetchrow(
         "SELECT COUNT(*) AS open_deals, COALESCE(SUM(value),0) AS pipeline_value "
-        "FROM staging.graha_deals WHERE org_id=$1::uuid AND stage NOT IN ('Won','Lost')",
+        "FROM public.graha_deals WHERE org_id=$1::uuid AND stage NOT IN ('Won','Lost')",
         org_id,
     )
     revenue = await pool.fetchrow(
         "SELECT COALESCE(SUM(total),0) AS total_revenue, "
         "COALESCE(SUM(amount_paid),0) AS collected "
-        "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND payment_status != 'cancelled'",
+        "FROM public.ganit_invoices WHERE org_id=$1::uuid AND payment_status != 'cancelled'",
         org_id,
     )
     return {
@@ -1662,7 +1662,7 @@ async def pipeline(
     # like a right one — and these are rupee figures somebody plans against.
     stage_rows = await pool.fetch(
         "SELECT status, COUNT(*) AS count, COALESCE(SUM(total), 0) AS value "
-        "FROM staging.vikray_orders "
+        "FROM public.vikray_orders "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
         "GROUP BY status",
         org_id,
@@ -1683,11 +1683,11 @@ async def pipeline(
         "c.company AS contact_company, c.name AS contact_name, "
         + display_name("u")
         + " AS owner_name "
-        "FROM staging.vikray_orders o "
+        "FROM public.vikray_orders o "
         # Org-scoped on both sides. `GET /orders` joins on `c.id` alone; a
         # contact_id that ever pointed outside the org would cross a tenant
         # boundary on a read, and the extra predicate costs nothing.
-        "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
+        "LEFT JOIN public.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
         "LEFT JOIN users u ON u.user_id = o.created_by "
         "WHERE o.org_id=$1::uuid AND o.is_active=TRUE "
         "ORDER BY o.order_date DESC, o.created_at DESC LIMIT 400",
@@ -1745,9 +1745,9 @@ async def list_customers(
         # which is the number this list is capped on. Getting that backwards
         # would report the order count as the customer count and look plausible.
         "COUNT(*) OVER() AS _total "
-        "FROM staging.vikray_orders o "
-        "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = o.client_id AND cl.org_id = o.org_id "
+        "FROM public.vikray_orders o "
+        "LEFT JOIN public.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
+        "LEFT JOIN public.graha_clients cl ON cl.id = o.client_id AND cl.org_id = o.org_id "
         "WHERE o.org_id=$1::uuid AND o.is_active=TRUE "
         "  AND (o.client_id IS NOT NULL OR o.contact_id IS NOT NULL)"
     )
@@ -1781,8 +1781,8 @@ async def list_stock(
         "SELECT p.id AS product_id, p.name, p.unit, "
         "COALESCE(s.quantity_on_hand, 0) AS quantity_on_hand, "
         "COALESCE(s.low_stock_threshold, 0) AS low_stock_threshold "
-        "FROM staging.ganit_products p "
-        "LEFT JOIN staging.vikray_stock s ON s.product_id = p.id AND s.org_id = p.org_id "
+        "FROM public.ganit_products p "
+        "LEFT JOIN public.vikray_stock s ON s.product_id = p.id AND s.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.is_active=TRUE"
     )
     if low_stock:
@@ -1802,7 +1802,7 @@ async def adjust_stock(
 ):
     pool = await get_pool()
     product = await pool.fetchrow(
-        "SELECT id, name FROM staging.ganit_products WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id, name FROM public.ganit_products WHERE id=$1::uuid AND org_id=$2::uuid",
         product_id, org_id,
     )
     if not product:
@@ -1811,10 +1811,10 @@ async def adjust_stock(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             await _conn.execute(
-                "INSERT INTO staging.vikray_stock (org_id, product_id, low_stock_threshold) "
+                "INSERT INTO public.vikray_stock (org_id, product_id, low_stock_threshold) "
                 "VALUES ($1::uuid, $2::uuid, COALESCE($3, 0)) "
                 "ON CONFLICT (org_id, product_id) DO UPDATE SET "
-                "low_stock_threshold = COALESCE($3, staging.vikray_stock.low_stock_threshold), updated_at=NOW()",
+                "low_stock_threshold = COALESCE($3, public.vikray_stock.low_stock_threshold), updated_at=NOW()",
                 org_id, product_id, body.low_stock_threshold,
             )
             if body.quantity_delta:
@@ -1826,17 +1826,17 @@ async def adjust_stock(
                 # after from the UPDATE's own RETURNING — never re-derived by
                 # arithmetic that could disagree with what was stored.
                 quantity_before = await _conn.fetchval(
-                    "SELECT quantity_on_hand FROM staging.vikray_stock "
+                    "SELECT quantity_on_hand FROM public.vikray_stock "
                     "WHERE org_id=$1::uuid AND product_id=$2::uuid FOR UPDATE",
                     org_id, product_id,
                 )
                 quantity_after = await _conn.fetchval(
-                    "UPDATE staging.vikray_stock SET quantity_on_hand = quantity_on_hand + $1, updated_at=NOW() "
+                    "UPDATE public.vikray_stock SET quantity_on_hand = quantity_on_hand + $1, updated_at=NOW() "
                     "WHERE org_id=$2::uuid AND product_id=$3::uuid RETURNING quantity_on_hand",
                     body.quantity_delta, org_id, product_id,
                 )
                 await _conn.execute(
-                    "INSERT INTO staging.vikray_stock_moves (org_id, product_id, quantity_delta, reason, created_by) "
+                    "INSERT INTO public.vikray_stock_moves (org_id, product_id, quantity_delta, reason, created_by) "
                     "VALUES ($1::uuid, $2::uuid, $3, $4, $5)",
                     org_id, product_id, body.quantity_delta, body.reason, user["user_id"],
                 )
@@ -1846,7 +1846,7 @@ async def adjust_stock(
                     quantity_before=quantity_before, quantity_after=quantity_after,
                 )
     row = await pool.fetchrow(
-        "SELECT * FROM staging.vikray_stock WHERE org_id=$1::uuid AND product_id=$2::uuid",
+        "SELECT * FROM public.vikray_stock WHERE org_id=$1::uuid AND product_id=$2::uuid",
         org_id, product_id,
     )
     return dict(row)
@@ -1868,7 +1868,7 @@ async def stock_moves(
         # the row, so there is no `updated_by` to resolve and adding one would
         # invite exactly the in-place edit the ledger exists to forbid.
         + actor_select("m", updated=False)
-        + "COUNT(*) OVER() AS _total FROM staging.vikray_stock_moves m "
+        + "COUNT(*) OVER() AS _total FROM public.vikray_stock_moves m "
         + actor_joins("m", updated=False)
         + "WHERE m.org_id=$1::uuid AND m.product_id=$2::uuid "
         "ORDER BY m.created_at DESC LIMIT 100",

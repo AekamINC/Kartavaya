@@ -58,7 +58,7 @@ from analytics.windowing import bucket_expr
 #: The ledger, org-scoped, debits only — the spend rows every credit metric
 #: starts from. metered_only is INCLUDED (usage, per migration 095's comment).
 _ORG_DEBITS = (
-    "FROM staging.hub_org_credit_transactions t "
+    "FROM public.hub_org_credit_transactions t "
     "WHERE t.org_id = $1::uuid AND t.tx_type = 'debit' "
     "AND t.created_at::date BETWEEN $2::date AND $3::date "
 )
@@ -107,7 +107,7 @@ def credits_spent(req: MetricRequest):
         return (
             f"SELECT {_MEMBER_LABEL} AS member, "
             "SUM(-t.amount)::float AS value, COUNT(*) AS spends "
-            "FROM staging.hub_org_credit_transactions t "
+            "FROM public.hub_org_credit_transactions t "
             "LEFT JOIN public.users u ON u.user_id = t.user_id "
             "WHERE t.org_id = $1::uuid AND t.tx_type = 'debit' "
             "AND t.created_at::date BETWEEN $2::date AND $3::date "
@@ -184,12 +184,12 @@ def failure_rate(req: MetricRequest):
         "COUNT(*) AS runs "
         "FROM ("
         "  SELECT r.started_at AS run_at, r.status = 'failed' AS failed "
-        "  FROM staging.hub_skill_runs r "
-        "  JOIN staging.hub_clients hc ON hc.id = r.client_id "
+        "  FROM public.hub_skill_runs r "
+        "  JOIN public.hub_clients hc ON hc.id = r.client_id "
         "  WHERE hc.org_id = $1::uuid AND r.status IN ('completed', 'failed') "
         "  UNION ALL "
         "  SELECT s.started_at AS run_at, s.status = 'failed' AS failed "
-        "  FROM staging.hub_scraper_runs s "
+        "  FROM public.hub_scraper_runs s "
         "  WHERE s.org_id = $1::uuid AND s.status IN ('succeeded', 'failed')"
         ") d "
         "WHERE d.run_at::date BETWEEN $2::date AND $3::date "
@@ -221,7 +221,7 @@ def refund_rate(req: MetricRequest):
         "/ NULLIF(SUM(-t.amount) FILTER (WHERE t.tx_type = 'debit'), 0)::float * 100 AS value, "
         "COALESCE(SUM(t.amount) FILTER (WHERE t.tx_type IN ('refund', 'credit')), 0)::float AS refunded, "
         "COALESCE(SUM(-t.amount) FILTER (WHERE t.tx_type = 'debit'), 0)::float AS spent "
-        "FROM staging.hub_org_credit_transactions t "
+        "FROM public.hub_org_credit_transactions t "
         "WHERE t.org_id = $1::uuid "
         "AND t.tx_type IN ('debit', 'refund', 'credit') "
         "AND t.created_at::date BETWEEN $2::date AND $3::date "
@@ -258,8 +258,8 @@ def scraper_spend(req: MetricRequest):
             "COUNT(*) AS runs, "
             "SUM(c.price_inr)::float AS list_inr, "
             "SUM(COALESCE(r.cost_usd, 0))::float AS cost_usd "
-            "FROM staging.hub_scraper_runs r "
-            "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+            "FROM public.hub_scraper_runs r "
+            "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
             "WHERE r.org_id = $1::uuid "
             "AND r.started_at::date BETWEEN $2::date AND $3::date "
             "GROUP BY c.id, c.name ORDER BY value DESC, scraper",
@@ -272,8 +272,8 @@ def scraper_spend(req: MetricRequest):
         "COUNT(*) AS runs, "
         "SUM(c.price_inr)::float AS list_inr, "
         "SUM(COALESCE(r.cost_usd, 0))::float AS cost_usd "
-        "FROM staging.hub_scraper_runs r "
-        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "FROM public.hub_scraper_runs r "
+        "JOIN public.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.org_id = $1::uuid "
         "AND r.started_at::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -290,7 +290,7 @@ absent_metric(
     unit="pct",
     grain="flow",
     sensitivity="financial",
-    absent="staging.hub_scraper_runs records cost_usd (USD) and billed_inr "
+    absent="public.hub_scraper_runs records cost_usd (USD) and billed_inr "
            "(INR) with NO usd_inr rate stored at run time; services/forex "
            "knows only today's rate, so a margin computed now would apply "
            "today's forex to last quarter's runs and drift retroactively as "

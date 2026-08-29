@@ -708,7 +708,7 @@ async def warm_email_caps(org_id: str) -> None:
         pool = await get_pool()
         row = await pool.fetchrow(
             "SELECT email_cap_daily, email_cap_monthly, email_overage_rate "
-            "FROM staging.organisations WHERE id = $1::uuid",
+            "FROM public.organisations WHERE id = $1::uuid",
             org_id,
         )
         if row:
@@ -780,7 +780,7 @@ async def _fire_cap_alert(org_id: str, cap_type: str, period_key: str) -> None:
 
         org = await pool.fetchrow(
             "SELECT name, email_cap_daily, email_cap_monthly, email_overage_rate "
-            "FROM staging.organisations WHERE id = $1::uuid",
+            "FROM public.organisations WHERE id = $1::uuid",
             org_id,
         )
         if not org:
@@ -830,8 +830,8 @@ async def _get_alert_recipients(pool, org_id: str) -> list[str]:
     recipients = []
     try:
         rows = await pool.fetch(
-            "SELECT DISTINCT u.email FROM staging.user_roles ur "
-            "JOIN staging.users u ON u.user_id = ur.user_id "
+            "SELECT DISTINCT u.email FROM public.user_roles ur "
+            "JOIN public.users u ON u.user_id = ur.user_id "
             "WHERE ur.org_id = $1::uuid AND ur.role IN ('org_owner', 'org_admin') "
             "AND u.email IS NOT NULL",
             org_id,

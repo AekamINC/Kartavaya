@@ -342,7 +342,7 @@ async def request_export(request: Request, user=Depends(require_user)):
 
     try:
         existing = await pool.fetchrow(
-            "SELECT request_id, status, requested_at FROM staging.account_requests "
+            "SELECT request_id, status, requested_at FROM public.account_requests "
             "WHERE user_id=$1 AND kind=$2 AND status = ANY($3::text[]) "
             "ORDER BY requested_at DESC LIMIT 1",
             uid, KIND_EXPORT, list(_OPEN_STATUSES),
@@ -359,7 +359,7 @@ async def request_export(request: Request, user=Depends(require_user)):
 
         request_id = f"areq_{uuid.uuid4().hex[:16]}"
         row = await pool.fetchrow(
-            "INSERT INTO staging.account_requests (request_id, user_id, kind, status) "
+            "INSERT INTO public.account_requests (request_id, user_id, kind, status) "
             "VALUES ($1, $2, $3, 'pending') RETURNING requested_at",
             request_id, uid, KIND_EXPORT,
         )
@@ -422,13 +422,13 @@ async def request_deletion(
 
     try:
         holds_god_mode = await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles "
+            "SELECT 1 FROM public.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
             uid, list(GOD_MODE_ROLES),
         )
         if holds_god_mode:
             remaining = await pool.fetchval(
-                "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+                "SELECT COUNT(DISTINCT user_id) FROM public.user_roles "
                 "WHERE org_id IS NULL AND role_code = ANY($1::text[]) AND user_id <> $2",
                 list(GOD_MODE_ROLES), uid,
             )
@@ -452,7 +452,7 @@ async def request_deletion(
     try:
         existing = await pool.fetchrow(
             "SELECT request_id, status, requested_at, scheduled_for "
-            "FROM staging.account_requests "
+            "FROM public.account_requests "
             "WHERE user_id=$1 AND kind=$2 AND status = ANY($3::text[]) "
             "ORDER BY requested_at DESC LIMIT 1",
             uid, KIND_DELETE, list(_OPEN_STATUSES),
@@ -471,7 +471,7 @@ async def request_deletion(
         request_id = f"areq_{uuid.uuid4().hex[:16]}"
         scheduled_for = datetime.now(timezone.utc) + timedelta(days=DELETION_GRACE_DAYS)
         row = await pool.fetchrow(
-            "INSERT INTO staging.account_requests "
+            "INSERT INTO public.account_requests "
             "(request_id, user_id, kind, status, scheduled_for, reason) "
             "VALUES ($1, $2, $3, 'pending', $4, $5) RETURNING requested_at",
             request_id, uid, KIND_DELETE, scheduled_for, payload.reason,
@@ -524,7 +524,7 @@ async def cancel_deletion(request: Request, user=Depends(require_user)):
 
     try:
         cancelled = await pool.fetchval(
-            "UPDATE staging.account_requests SET status='cancelled', cancelled_at=NOW() "
+            "UPDATE public.account_requests SET status='cancelled', cancelled_at=NOW() "
             "WHERE user_id=$1 AND kind=$2 AND status='pending' RETURNING request_id",
             uid, KIND_DELETE,
         )
@@ -548,7 +548,7 @@ async def list_requests(user=Depends(require_user)):
     try:
         rows = await pool.fetch(
             "SELECT request_id, kind, status, requested_at, scheduled_for, "
-            "cancelled_at, completed_at FROM staging.account_requests "
+            "cancelled_at, completed_at FROM public.account_requests "
             "WHERE user_id=$1 ORDER BY requested_at DESC LIMIT 50",
             user["user_id"],
         )

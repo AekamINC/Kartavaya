@@ -79,7 +79,7 @@ async def _state(conn) -> dict:
         "ON n.oid = p.pronamespace WHERE n.nspname = ANY(current_schemas(false)) "
         "AND p.proname = 'touch_updated_at'")
     out["crm_deals"] = await conn.fetchval(
-        "SELECT count(*) FROM staging.crm_deals") \
+        "SELECT count(*) FROM public.crm_deals") \
         if await conn.fetchval(
             "SELECT to_regclass('crm_deals') IS NOT NULL") else None
     return out
@@ -92,13 +92,13 @@ def _print_state(label: str, st: dict) -> None:
             print(f"    {q:34s} EXISTS   count(*) = {count}")
         else:
             print(f"    {q:34s} absent")
-    print(f"    trg_stg_deal_close_target on staging.crm_deals : "
+    print(f"    trg_stg_deal_close_target on public.crm_deals : "
           f"{st['trigger']}")
-    print(f"    staging.sales_update_target_on_deal_close()    : "
+    print(f"    public.sales_update_target_on_deal_close()    : "
           f"{st['function']}")
-    print(f"    staging.touch_updated_at()  [MUST STAY = 1]    : "
+    print(f"    public.touch_updated_at()  [MUST STAY = 1]    : "
           f"{st['touch_updated_at']}")
-    print(f"    staging.crm_deals count(*)  [MUST NOT CHANGE]  : "
+    print(f"    public.crm_deals count(*)  [MUST NOT CHANGE]  : "
           f"{st['crm_deals']}")
 
 

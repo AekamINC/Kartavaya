@@ -334,7 +334,7 @@ async def _search_tasks(pool, uid, teams, tsq, like, unaccent, limit):
 async def _search_clients(pool, org_id, tsq, like, unaccent, limit):
     where = _match_sql(["cl.name", "cl.ref_no", "cl.gstin"], 2, 3, unaccent)
     base = (
-        "FROM staging.graha_clients cl "
+        "FROM public.graha_clients cl "
         f"WHERE cl.org_id = $1::uuid AND cl.is_active = TRUE AND {where}"
     )
     rows = await pool.fetch(
@@ -353,8 +353,8 @@ async def _search_clients(pool, org_id, tsq, like, unaccent, limit):
 async def _search_invoices(pool, org_id, tsq, like, unaccent, limit):
     where = _match_sql(["i.invoice_number", "cl.name"], 2, 3, unaccent)
     base = (
-        "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = i.client_id AND cl.org_id = i.org_id "
+        "FROM public.ganit_invoices i "
+        "LEFT JOIN public.graha_clients cl ON cl.id = i.client_id AND cl.org_id = i.org_id "
         f"WHERE i.org_id = $1::uuid AND i.is_active = TRUE AND {where}"
     )
     rows = await pool.fetch(
@@ -395,11 +395,11 @@ async def _search_messages(pool, uid, org_id, tsq, like, unaccent, limit):
     # $1 uid · $2 org_id · $3 tsquery · $4 raw term · $5 limit.
     where = _match_sql(["m.content"], 3, 4, unaccent)
     base = (
-        "FROM staging.samvada_messages m "
-        "JOIN staging.samvada_channels c ON c.id = m.channel_id AND c.org_id = $2::uuid "
+        "FROM public.samvada_messages m "
+        "JOIN public.samvada_channels c ON c.id = m.channel_id AND c.org_id = $2::uuid "
         "LEFT JOIN users u ON u.user_id = m.sender_id "
         "WHERE m.is_deleted = FALSE "
-        "  AND (c.type = 'public' OR EXISTS (SELECT 1 FROM staging.samvada_channel_members cm "
+        "  AND (c.type = 'public' OR EXISTS (SELECT 1 FROM public.samvada_channel_members cm "
         "       WHERE cm.channel_id = c.id AND cm.user_id = $1)) "
         f"  AND {where}"
     )

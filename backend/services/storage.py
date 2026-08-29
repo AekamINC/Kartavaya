@@ -264,7 +264,7 @@ async def _get_org_r2(org_id: str) -> tuple[object, str] | tuple[None, None]:
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT r2_account_id, r2_access_key_id, r2_secret_access_key, r2_bucket_name "
-        "FROM staging.organisations WHERE id=$1::uuid",
+        "FROM public.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not row or not row["r2_account_id"] or not row["r2_access_key_id"]:
@@ -774,7 +774,7 @@ async def update_org_storage(org_id: str, size_delta: int):
         from db import get_pool
         pool = await get_pool()
         await pool.execute(
-            "UPDATE staging.organisations "
+            "UPDATE public.organisations "
             "SET storage_used_bytes = GREATEST(0, storage_used_bytes + $1) "
             "WHERE id=$2::uuid",
             size_delta, org_id,
@@ -790,7 +790,7 @@ async def check_storage_limit(org_id: str, file_size: int) -> bool:
         pool = await get_pool()
         row = await pool.fetchrow(
             "SELECT storage_used_bytes, storage_limit_bytes "
-            "FROM staging.organisations WHERE id=$1::uuid",
+            "FROM public.organisations WHERE id=$1::uuid",
             org_id,
         )
         if not row or row["storage_limit_bytes"] <= 0:

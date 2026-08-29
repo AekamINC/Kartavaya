@@ -193,7 +193,7 @@ _NO_CALENDAR_RULE: dict[str, str] = {
         "The statute calendar holds no GSTR-8 row (GST TCS, s.52).",
     "professional_tax":
         "Professional tax is a state levy and the statute calendar holds no row "
-        "for any state. `staging.pay_professional_tax` carries slabs for three "
+        "for any state. `public.pay_professional_tax` carries slabs for three "
         "states but no due date and no penalty, so nothing here can date it.",
     "audit.statutory":
         "The statute calendar holds no Companies Act audit row.",
@@ -380,7 +380,7 @@ async def _holidays(pool, org_id: str, start: date, end: date) -> dict:
         """
         SELECT h.date, h.name, h.state_code,
                COALESCE(h.is_optional, FALSE) AS is_optional
-        FROM staging.manav_holidays h
+        FROM public.manav_holidays h
         WHERE h.org_id = $1::uuid
           AND h.date >= $2::date
           AND h.date <= $3::date
@@ -672,7 +672,7 @@ async def _owner_names(pool, org_id: str, user_ids) -> dict[str, str]:
                COALESCE(NULLIF(btrim(u.name), ''),
                         NULLIF(btrim(u.full_name), ''),
                         '(name not recorded)') AS owner_name
-        FROM staging.user_roles ur
+        FROM public.user_roles ur
         JOIN public.users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
           AND ur.user_id = ANY($2::text[])
@@ -695,12 +695,12 @@ _REGISTER_SQL = """
            c.gstin AS client_gstin,
            COALESCE(c.is_active, TRUE) AS client_is_active,
            COALESCE(c.address->>'state_code', c.address->>'state') AS client_address_state
-    FROM staging.client_obligations co
+    FROM public.client_obligations co
     -- THE ORG PREDICATE ON THIS JOIN IS LOAD-BEARING. Migration 175 says so in
     -- its own comment: the FK points at graha_clients(id) ALONE, there is no
     -- UNIQUE (id, org_id) for a composite key to point at, and an id-only join
     -- has already been proved live to print another practice's client name.
-    LEFT JOIN staging.graha_clients c
+    LEFT JOIN public.graha_clients c
            ON c.id = co.client_id
           AND c.org_id = co.org_id
     WHERE co.org_id = $1::uuid
@@ -715,8 +715,8 @@ _REGISTER_TOTALS_SQL = """
            count(*) FILTER (WHERE c.id IS NULL) AS rows_with_no_client_in_this_firm,
            count(DISTINCT co.client_id) AS clients_named,
            count(*) FILTER (WHERE co.owner_user_id IS NULL) AS rows_with_no_owner
-    FROM staging.client_obligations co
-    LEFT JOIN staging.graha_clients c
+    FROM public.client_obligations co
+    LEFT JOIN public.graha_clients c
            ON c.id = co.client_id
           AND c.org_id = co.org_id
     WHERE co.org_id = $1::uuid
@@ -727,7 +727,7 @@ _REGISTER_TOTALS_SQL = """
 _CLIENT_BOOK_SQL = """
     SELECT count(*) AS clients,
            count(*) FILTER (WHERE COALESCE(is_active, TRUE)) AS active
-    FROM staging.graha_clients
+    FROM public.graha_clients
     WHERE org_id = $1::uuid
 """
 
@@ -754,12 +754,12 @@ def _register_data_state(totals, clients_total: int, clients_active: int,
         "could_not_check": live == 0,
         "no_findings": False if live == 0 else None,
         "why_empty": None if live else (
-            "staging.client_obligations was created by migration 175 and holds "
+            "public.client_obligations was created by migration 175 and holds "
             "NO ROWS. Nothing in the product writes it — there is no "
             "obligations screen, no import and no seed. Until one exists this "
             "register is empty, and an empty register MUST NOT be read as a "
             "firm with no statutory obligations."),
-        "column_that_needs_writing": "staging.client_obligations (the whole table)",
+        "column_that_needs_writing": "public.client_obligations (the whole table)",
         "screen_that_would_write_it": (
             "A per-client Obligations tab on the Graha client record — one row "
             "per obligation with a validity window, an owner and a "
@@ -885,11 +885,11 @@ async def brief_client_obligations_register(
         """
         SELECT c.id, COALESCE(NULLIF(btrim(c.name), ''), '(name not recorded)') AS name,
                c.gstin
-        FROM staging.graha_clients c
+        FROM public.graha_clients c
         WHERE c.org_id = $1::uuid
           AND COALESCE(c.is_active, TRUE)
           AND NOT EXISTS (
-              SELECT 1 FROM staging.client_obligations co
+              SELECT 1 FROM public.client_obligations co
                WHERE co.client_id = c.id
                  AND co.org_id = c.org_id
                  AND co.effective_from <= $2::date
@@ -1207,7 +1207,7 @@ _RECIPIENTS_SQL = """
            COALESCE(NULLIF(btrim(c.name), ''), '(name not recorded)') AS recipient,
            c.gstin,
            COALESCE(c.address->>'state_code', c.address->>'state') AS address_state
-    FROM staging.graha_clients c
+    FROM public.graha_clients c
     WHERE c.org_id = $1::uuid
       AND COALESCE(c.is_active, TRUE)
     UNION ALL
@@ -1221,7 +1221,7 @@ _RECIPIENTS_SQL = """
            ct.gstin,
            COALESCE(ct.billing_address->>'state_code',
                     ct.billing_address->>'state')
-    FROM staging.graha_contacts ct
+    FROM public.graha_contacts ct
     WHERE ct.org_id = $1::uuid
       AND COALESCE(ct.is_active, TRUE)
       AND ct.client_id IS NULL
@@ -1231,9 +1231,9 @@ _RECIPIENTS_SQL = """
 """
 
 _RECIPIENT_TOTAL_SQL = """
-    SELECT (SELECT count(*) FROM staging.graha_clients c
+    SELECT (SELECT count(*) FROM public.graha_clients c
              WHERE c.org_id = $1::uuid AND COALESCE(c.is_active, TRUE))
-         + (SELECT count(*) FROM staging.graha_contacts ct
+         + (SELECT count(*) FROM public.graha_contacts ct
              WHERE ct.org_id = $1::uuid AND COALESCE(ct.is_active, TRUE)
                AND ct.client_id IS NULL AND ct.merged_into_id IS NULL)
 """
@@ -1344,7 +1344,7 @@ async def check_regional_send_guard(
         "blocks nothing in this product. Every hold below is because the DAY is "
         "non-working, never because a recipient could not be identified.",
         "The only holiday source in this product is the firm's own HR holiday "
-        "list (staging.manav_holidays). There is no national calendar and no "
+        "list (public.manav_holidays). There is no national calendar and no "
         "per-state feed, so a regional holiday nobody has entered cannot be "
         "seen and this guard will pass a send straight through it.",
         "Optional holidays are working days here and do not hold a send.",

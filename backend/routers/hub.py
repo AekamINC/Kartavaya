@@ -595,7 +595,7 @@ async def sign_content_images(org_id: str, items: list[dict]) -> list[dict]:
 async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
     """Verify the client belongs to this org. Returns the client row."""
     client = await pool.fetchrow(
-        "SELECT * FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM public.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
         client_id, org_id,
     )
     if not client:
@@ -766,7 +766,7 @@ async def _assert_org_credit_admin(pool, user_id: str, org_id: str) -> None:
     out again; this file held the fourth copy of that pair.
     """
     is_admin = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
         user_id, org_id, list(ORG_MANAGEMENT_ROLES),
     )
@@ -791,31 +791,31 @@ async def get_or_create_org_client(
 
     row = await pool.fetchrow(
         "SELECT c.*, w.balance as credits, w.monthly_allocation "
-        "FROM staging.hub_clients c "
-        "LEFT JOIN staging.hub_credit_wallets w ON w.client_id = c.id "
+        "FROM public.hub_clients c "
+        "LEFT JOIN public.hub_credit_wallets w ON w.client_id = c.id "
         "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE AND c.is_active=TRUE",
         org_id,
     )
     if row:
         brand = await pool.fetchrow(
-            "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", str(row["id"])
+            "SELECT * FROM public.hub_brand_profiles WHERE client_id=$1::uuid", str(row["id"])
         )
         return {"client": dict(row), "brand": dict(brand) if brand else None}
 
     org = await pool.fetchrow(
-        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id
+        "SELECT name FROM public.organisations WHERE id=$1::uuid", org_id
     )
     org_name = org["name"] if org else "My Organisation"
     slug = org_name.lower().replace(" ", "-")[:50]
     import re
     slug = re.sub(r'[^a-z0-9-]', '', slug) or "org"
 
-    existing_slug = await pool.fetchval("SELECT 1 FROM staging.hub_clients WHERE slug=$1", slug)
+    existing_slug = await pool.fetchval("SELECT 1 FROM public.hub_clients WHERE slug=$1", slug)
     if existing_slug:
         slug = f"{slug}-{org_id[:8]}"
 
     client = await pool.fetchrow(
-        "INSERT INTO staging.hub_clients "
+        "INSERT INTO public.hub_clients "
         "(org_id, name, slug, is_internal) "
         "VALUES ($1::uuid, $2, $3, TRUE) RETURNING *",
         org_id, org_name, slug,
@@ -823,15 +823,15 @@ async def get_or_create_org_client(
     cid = str(client["id"])
 
     await pool.execute(
-        "INSERT INTO staging.hub_brand_profiles (client_id) VALUES ($1::uuid)", cid
+        "INSERT INTO public.hub_brand_profiles (client_id) VALUES ($1::uuid)", cid
     )
     await pool.execute(
-        "INSERT INTO staging.hub_credit_wallets (client_id, balance, monthly_allocation) "
+        "INSERT INTO public.hub_credit_wallets (client_id, balance, monthly_allocation) "
         "VALUES ($1::uuid, 100, 100)", cid
     )
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
+        "SELECT * FROM public.hub_brand_profiles WHERE client_id=$1::uuid", cid
     )
     return {"client": dict(client), "brand": dict(brand) if brand else None}
 
@@ -910,7 +910,7 @@ async def _caller_is_member(pool, user_id: str, org_id: str) -> bool:
     """
     from middleware.role_tiers import ORG_TENANT_ROLES
     return bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
+        "SELECT 1 FROM public.user_roles "
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) "
         "LIMIT 1",
         user_id, org_id, list(ORG_TENANT_ROLES),
@@ -965,8 +965,8 @@ async def list_clients(
     projection = ", ".join(f"c.{c}" for c in cols)
     rows = await pool.fetch(
         f"SELECT {projection}, w.balance as credits, w.monthly_allocation "
-        f"FROM staging.hub_clients c "
-        f"LEFT JOIN staging.hub_credit_wallets w ON w.client_id = c.id "
+        f"FROM public.hub_clients c "
+        f"LEFT JOIN public.hub_credit_wallets w ON w.client_id = c.id "
         f"WHERE c.org_id=$1::uuid ORDER BY c.name",
         org_id,
     )
@@ -992,13 +992,13 @@ async def create_client(
         raise HTTPException(400, "Slug must be 3-50 chars, lowercase alphanumeric and hyphens only")
 
     existing = await pool.fetchval(
-        "SELECT 1 FROM staging.hub_clients WHERE slug=$1", body.slug
+        "SELECT 1 FROM public.hub_clients WHERE slug=$1", body.slug
     )
     if existing:
         raise HTTPException(409, "Slug already taken")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_clients "
+        "INSERT INTO public.hub_clients "
         "(org_id, name, slug, industry, website, contact_name, contact_email, contact_phone) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
         org_id, body.name, body.slug, body.industry, body.website,
@@ -1007,10 +1007,10 @@ async def create_client(
     client_id = str(row["id"])
 
     await pool.execute(
-        "INSERT INTO staging.hub_brand_profiles (client_id) VALUES ($1::uuid)", client_id
+        "INSERT INTO public.hub_brand_profiles (client_id) VALUES ($1::uuid)", client_id
     )
     await pool.execute(
-        "INSERT INTO staging.hub_credit_wallets (client_id, balance, monthly_allocation) "
+        "INSERT INTO public.hub_credit_wallets (client_id, balance, monthly_allocation) "
         "VALUES ($1::uuid, 0, 0)", client_id
     )
 
@@ -1051,13 +1051,13 @@ async def get_client(
     member = await _caller_is_member(pool, user["user_id"], org_id)
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", str(client_id)
+        "SELECT * FROM public.hub_brand_profiles WHERE client_id=$1::uuid", str(client_id)
     )
     wallet = await pool.fetchrow(
-        "SELECT * FROM staging.hub_credit_wallets WHERE client_id=$1::uuid", str(client_id)
+        "SELECT * FROM public.hub_credit_wallets WHERE client_id=$1::uuid", str(client_id)
     )
     content_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.hub_content_items WHERE client_id=$1::uuid", str(client_id)
+        "SELECT COUNT(*) FROM public.hub_content_items WHERE client_id=$1::uuid", str(client_id)
     )
 
     client_out = dict(client)
@@ -1096,7 +1096,7 @@ async def update_client(
     values = [str(client_id)] + list(updates.values())
 
     await pool.execute(
-        f"UPDATE staging.hub_clients SET {set_clauses}, updated_at=NOW() WHERE id=$1::uuid",
+        f"UPDATE public.hub_clients SET {set_clauses}, updated_at=NOW() WHERE id=$1::uuid",
         *values,
     )
     return {"status": "updated"}
@@ -1115,7 +1115,7 @@ async def get_brand(
     await _verify_client_access(pool, str(client_id), org_id)
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", str(client_id)
+        "SELECT * FROM public.hub_brand_profiles WHERE client_id=$1::uuid", str(client_id)
     )
     return dict(brand) if brand else {}
 
@@ -1146,7 +1146,7 @@ async def update_brand(
     values = [str(client_id)] + list(updates.values())
 
     await pool.execute(
-        f"UPDATE staging.hub_brand_profiles SET {set_clauses}, updated_at=NOW() WHERE client_id=$1::uuid",
+        f"UPDATE public.hub_brand_profiles SET {set_clauses}, updated_at=NOW() WHERE client_id=$1::uuid",
         *values,
     )
     return {"status": "updated"}
@@ -1193,7 +1193,7 @@ async def generate_content(
     new_balance = receipt.balance_after
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
+        "SELECT * FROM public.hub_brand_profiles WHERE client_id=$1::uuid", cid
     )
     # No skill here — this is ad-hoc generation — so only the org layer and the
     # floor apply. The floor is the point: this used to send "" when no brand
@@ -1238,7 +1238,7 @@ async def generate_content(
         hashtags = re.findall(r'#\w+', result["text"])
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_content_items "
+        "INSERT INTO public.hub_content_items "
         "(client_id, agent_type, title, body, platform, hashtags, status, credits_used, "
         " metadata, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'draft', $7, $8::jsonb, $9) RETURNING *",
@@ -1292,7 +1292,7 @@ async def list_content(
             + actor_select("ci", updated=True)
             + "COUNT(*) OVER() AS _total ")
     query = (head
-             + "FROM staging.hub_content_items ci "
+             + "FROM public.hub_content_items ci "
              + actor_joins("ci", updated=True)
              + "WHERE ci.client_id=$1::uuid")
     params: list = [str(client_id)]
@@ -1354,13 +1354,13 @@ async def client_content_facets(
     rows = await pool.fetch(
         """
         SELECT 'agent_type' AS facet, coalesce(agent_type, '—') AS value, count(*) AS n
-          FROM staging.hub_content_items WHERE client_id=$1::uuid GROUP BY 2
+          FROM public.hub_content_items WHERE client_id=$1::uuid GROUP BY 2
         UNION ALL
         SELECT 'status', coalesce(status, '—'), count(*)
-          FROM staging.hub_content_items WHERE client_id=$1::uuid GROUP BY 2
+          FROM public.hub_content_items WHERE client_id=$1::uuid GROUP BY 2
         UNION ALL
         SELECT 'platform', coalesce(platform, '—'), count(*)
-          FROM staging.hub_content_items WHERE client_id=$1::uuid AND platform IS NOT NULL GROUP BY 2
+          FROM public.hub_content_items WHERE client_id=$1::uuid AND platform IS NOT NULL GROUP BY 2
         """,
         str(client_id),
     )
@@ -1382,7 +1382,7 @@ async def get_content(
     await _verify_client_access(pool, str(client_id), org_id)
 
     row = await pool.fetchrow(
-        "SELECT * FROM staging.hub_content_items WHERE id=$1::uuid AND client_id=$2::uuid",
+        "SELECT * FROM public.hub_content_items WHERE id=$1::uuid AND client_id=$2::uuid",
         content_id, str(client_id),
     )
     if not row:
@@ -1406,7 +1406,7 @@ async def review_content(
         raise HTTPException(400, "Status must be 'approved' or 'rejected'")
 
     result = await pool.execute(
-        "UPDATE staging.hub_content_items SET status=$1, reviewed_by=$2, "
+        "UPDATE public.hub_content_items SET status=$1, reviewed_by=$2, "
         "reviewed_at=NOW(), review_notes=$3, updated_at=NOW() "
         "WHERE id=$4::uuid AND client_id=$5::uuid AND status IN ('draft', 'pending_review')",
         body.status, user["user_id"], body.review_notes,
@@ -1416,7 +1416,7 @@ async def review_content(
         raise HTTPException(404, "Content not found or not in reviewable state")
 
     await pool.execute(
-        "INSERT INTO staging.hub_content_approvals "
+        "INSERT INTO public.hub_content_approvals "
         "(content_item_id, action, reviewer_id, notes) VALUES ($1, $2, $3, $4)",
         content_id, body.status, user["user_id"], body.review_notes,
     )
@@ -1436,10 +1436,10 @@ async def get_credits(
     await _verify_client_access(pool, str(client_id), org_id)
 
     wallet = await pool.fetchrow(
-        "SELECT * FROM staging.hub_credit_wallets WHERE client_id=$1::uuid", str(client_id)
+        "SELECT * FROM public.hub_credit_wallets WHERE client_id=$1::uuid", str(client_id)
     )
     recent_tx = await pool.fetch(
-        "SELECT * FROM staging.hub_credit_transactions "
+        "SELECT * FROM public.hub_credit_transactions "
         "WHERE client_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
         str(client_id),
     )
@@ -1466,7 +1466,7 @@ async def topup_credits(
         raise HTTPException(400, "Amount must be positive")
 
     wallet = await pool.fetchrow(
-        "SELECT balance FROM staging.hub_credit_wallets WHERE client_id=$1::uuid FOR UPDATE",
+        "SELECT balance FROM public.hub_credit_wallets WHERE client_id=$1::uuid FOR UPDATE",
         cid,
     )
     if not wallet:
@@ -1475,11 +1475,11 @@ async def topup_credits(
     new_balance = wallet["balance"] + body.amount
 
     await pool.execute(
-        "UPDATE staging.hub_credit_wallets SET balance=$1, updated_at=NOW() WHERE client_id=$2::uuid",
+        "UPDATE public.hub_credit_wallets SET balance=$1, updated_at=NOW() WHERE client_id=$2::uuid",
         new_balance, cid,
     )
     await pool.execute(
-        "INSERT INTO staging.hub_credit_transactions "
+        "INSERT INTO public.hub_credit_transactions "
         "(client_id, amount, balance_after, tx_type, description, created_by) "
         "VALUES ($1::uuid, $2, $3, 'topup', $4, $5)",
         cid, body.amount, new_balance,
@@ -1499,7 +1499,7 @@ async def hub_dashboard(
     pool = await get_pool()
 
     clients = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.hub_clients WHERE org_id=$1::uuid AND is_active=TRUE",
+        "SELECT COUNT(*) FROM public.hub_clients WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
     # The org's own spendable balance, not the sum of the per-client wallets.
@@ -1508,22 +1508,22 @@ async def hub_dashboard(
     # generation on the page was refused for an empty org balance.
     org_balance = await _current_balance(pool, org_id)
     content_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.hub_content_items ci "
-        "JOIN staging.hub_clients c ON c.id = ci.client_id "
+        "SELECT COUNT(*) FROM public.hub_content_items ci "
+        "JOIN public.hub_clients c ON c.id = ci.client_id "
         "WHERE c.org_id=$1::uuid",
         org_id,
     )
     pending_review = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.hub_content_items ci "
-        "JOIN staging.hub_clients c ON c.id = ci.client_id "
+        "SELECT COUNT(*) FROM public.hub_content_items ci "
+        "JOIN public.hub_clients c ON c.id = ci.client_id "
         "WHERE c.org_id=$1::uuid AND ci.status IN ('draft', 'pending_review')",
         org_id,
     )
 
     recent_content = await pool.fetch(
         "SELECT ci.id, ci.title, ci.agent_type, ci.status, ci.created_at, c.name as client_name "
-        "FROM staging.hub_content_items ci "
-        "JOIN staging.hub_clients c ON c.id = ci.client_id "
+        "FROM public.hub_content_items ci "
+        "JOIN public.hub_clients c ON c.id = ci.client_id "
         "WHERE c.org_id=$1::uuid ORDER BY ci.created_at DESC LIMIT 10",
         org_id,
     )
@@ -1551,7 +1551,7 @@ async def list_skill_templates(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.hub_skill_templates WHERE is_active=TRUE ORDER BY category, name"
+        "SELECT * FROM public.hub_skill_templates WHERE is_active=TRUE ORDER BY category, name"
     )
     return {"data": [dict(r) for r in rows]}
 
@@ -1593,7 +1593,7 @@ async def get_skill_template(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
+        "SELECT * FROM public.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
         template_id,
     )
     if not row:
@@ -1690,7 +1690,7 @@ async def _account_contacts(pool) -> list[dict]:
     """
     rows = await pool.fetch(
         "SELECT DISTINCT u.user_id, u.email, u.name "
-        "FROM staging.user_roles r "
+        "FROM public.user_roles r "
         "JOIN users u ON u.user_id = r.user_id "
         "WHERE r.org_id IS NULL AND r.role_code = ANY($1::text[]) "
         "AND u.email IS NOT NULL AND u.email <> ''",
@@ -1722,7 +1722,7 @@ async def _announce_skill_request(pool, org_id, template, row, user) -> list[str
     contacts = await _account_contacts(pool)
 
     org = await pool.fetchrow(
-        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id
+        "SELECT name FROM public.organisations WHERE id=$1::uuid", org_id
     )
     org_name = (org and org["name"]) or "an organisation"
     who = user.get("full_name") or user.get("name") or user.get("user_id") or "A user"
@@ -1811,7 +1811,7 @@ async def request_skill(
     pool = await get_pool()
 
     template = await pool.fetchrow(
-        "SELECT id, name FROM staging.hub_skill_templates "
+        "SELECT id, name FROM public.hub_skill_templates "
         "WHERE id=$1 AND is_active=TRUE",
         template_id,
     )
@@ -1830,7 +1830,7 @@ async def request_skill(
     for _attempt in range(2):
         try:
             row = await pool.fetchrow(
-                "INSERT INTO staging.hub_skill_requests "
+                "INSERT INTO public.hub_skill_requests "
                 "(org_id, template_id, requested_by, note) "
                 "VALUES ($1::uuid, $2, $3, $4) "
                 "ON CONFLICT DO NOTHING RETURNING *",
@@ -1844,7 +1844,7 @@ async def request_skill(
             created = True
             break
         row = await pool.fetchrow(
-            "SELECT * FROM staging.hub_skill_requests "
+            "SELECT * FROM public.hub_skill_requests "
             "WHERE org_id=$1::uuid AND template_id=$2 AND status='open'",
             org_id, template_id,
         )
@@ -1871,7 +1871,7 @@ async def request_skill(
         mailed = await _announce_skill_request(pool, org_id, template, row, user)
         if mailed:
             await pool.execute(
-                "UPDATE staging.hub_skill_requests "
+                "UPDATE public.hub_skill_requests "
                 "SET notified_to=$1::text[], updated_at=NOW() WHERE id=$2",
                 mailed, row["id"],
             )
@@ -2012,13 +2012,13 @@ async def list_skill_requests(
             "                'Name not on file') AS decided_by_name, "
             # LIVE, from the grant table. Never from r.status — see the note
             # above about `granted` being a record rather than the grant.
-            "       EXISTS(SELECT 1 FROM staging.hub_org_skills os "
+            "       EXISTS(SELECT 1 FROM public.hub_org_skills os "
             "               WHERE os.org_id = r.org_id "
             "                 AND os.template_id = r.template_id "
             "                 AND os.is_active = TRUE) AS already_active "
-            "FROM staging.hub_skill_requests r "
-            "JOIN staging.organisations o ON o.id = r.org_id "
-            "JOIN staging.hub_skill_templates t ON t.id = r.template_id "
+            "FROM public.hub_skill_requests r "
+            "JOIN public.organisations o ON o.id = r.org_id "
+            "JOIN public.hub_skill_templates t ON t.id = r.template_id "
             "LEFT JOIN users u ON u.user_id = r.requested_by "
             # LEFT, so an undecided request still appears. An INNER join here
             # would hide every PENDING row — the only rows this queue exists to
@@ -2201,7 +2201,7 @@ async def create_skill_template(
         raise HTTPException(400, str(bad))
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_skill_templates "
+        "INSERT INTO public.hub_skill_templates "
         "(name, description, category, steps, estimated_credits, icon, trigger_config) "
         "VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb) RETURNING *",
         body.name, body.description, body.category,
@@ -2247,7 +2247,7 @@ async def set_skill_template_schedule(
         raise HTTPException(400, str(bad))
 
     row = await pool.fetchrow(
-        "UPDATE staging.hub_skill_templates "
+        "UPDATE public.hub_skill_templates "
         "SET trigger_config = $2::jsonb, updated_at = NOW() "
         "WHERE id = $1 RETURNING id, name, trigger_config, is_active",
         template_id, json.dumps(trigger) if trigger else None,
@@ -2260,7 +2260,7 @@ async def set_skill_template_schedule(
     # and the person setting it is entitled to know which before they see the
     # credit line.
     grants = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.hub_org_skills "
+        "SELECT COUNT(*) FROM public.hub_org_skills "
         "WHERE template_id = $1 AND is_active = TRUE",
         template_id,
     )
@@ -2279,7 +2279,7 @@ async def delete_skill_template(
 ):
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.hub_skill_templates SET is_active=FALSE, updated_at=NOW() WHERE id=$1",
+        "UPDATE public.hub_skill_templates SET is_active=FALSE, updated_at=NOW() WHERE id=$1",
         template_id,
     )
     return {"status": "deactivated"}
@@ -2300,8 +2300,8 @@ async def list_client_skills(
     rows = await pool.fetch(
         "SELECT cs.*, t.name as template_name, t.description as template_description, "
         "t.category, t.estimated_credits, t.icon, t.steps "
-        "FROM staging.hub_client_skills cs "
-        "JOIN staging.hub_skill_templates t ON t.id = cs.template_id "
+        "FROM public.hub_client_skills cs "
+        "JOIN public.hub_skill_templates t ON t.id = cs.template_id "
         "WHERE cs.client_id=$1::uuid ORDER BY cs.created_at DESC",
         str(client_id),
     )
@@ -2321,14 +2321,14 @@ async def assign_skill(
     await _verify_client_access(pool, str(client_id), org_id)
 
     tmpl = await pool.fetchrow(
-        "SELECT id FROM staging.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
+        "SELECT id FROM public.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
         template_id,
     )
     if not tmpl:
         raise HTTPException(404, "Skill template not found")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_client_skills "
+        "INSERT INTO public.hub_client_skills "
         "(client_id, template_id, custom_config, schedule, assigned_by) "
         "VALUES ($1::uuid, $2, $3::jsonb, $4, $5) "
         "ON CONFLICT (client_id, template_id) DO UPDATE SET "
@@ -2352,7 +2352,7 @@ async def remove_skill(
     await _verify_client_access(pool, str(client_id), org_id)
 
     await pool.execute(
-        "UPDATE staging.hub_client_skills SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.hub_client_skills SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1 AND client_id=$2::uuid",
         skill_id, str(client_id),
     )
@@ -2378,8 +2378,8 @@ async def run_skill(
     cs = await pool.fetchrow(
         # `t.brand_instructions` — the SKILL's own voice. Migration 181.
         "SELECT cs.*, t.steps, t.name as template_name, t.brand_instructions "
-        "FROM staging.hub_client_skills cs "
-        "JOIN staging.hub_skill_templates t ON t.id = cs.template_id "
+        "FROM public.hub_client_skills cs "
+        "JOIN public.hub_skill_templates t ON t.id = cs.template_id "
         "WHERE cs.id=$1 AND cs.client_id=$2::uuid AND cs.is_active=TRUE",
         skill_id, cid,
     )
@@ -2390,7 +2390,7 @@ async def run_skill(
     custom_config = cs["custom_config"] if isinstance(cs["custom_config"], dict) else json.loads(cs["custom_config"] or "{}")
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
+        "SELECT * FROM public.hub_brand_profiles WHERE client_id=$1::uuid", cid
     )
     system_prompt = compose_system_prompt(
         dict(brand) if brand else None,
@@ -2413,7 +2413,7 @@ async def run_skill(
         raise HTTPException(403, str(denied))
 
     run = await pool.fetchrow(
-        "INSERT INTO staging.hub_skill_runs "
+        "INSERT INTO public.hub_skill_runs "
         "(client_skill_id, client_id, steps_total, triggered_by) "
         "VALUES ($1, $2::uuid, $3, $4) RETURNING *",
         skill_id, cid, len(steps), user["user_id"],
@@ -2519,7 +2519,7 @@ async def run_skill(
                 + _ground[:4000]
             )
             await pool.execute(
-                "UPDATE staging.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
+                "UPDATE public.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
                 len(outputs), run_id,
             )
             continue
@@ -2576,7 +2576,7 @@ async def run_skill(
             # what is held, which is already the right message. Anything else is
             # a fault and must read as one.
             await pool.execute(
-                "UPDATE staging.hub_skill_runs SET status='failed', "
+                "UPDATE public.hub_skill_runs SET status='failed', "
                 "error_message=$1, completed_at=NOW(), "
                 "steps_completed=$2, credits_used=$3, outputs=$4::jsonb, "
                 "content_item_ids=$5 WHERE id=$6",
@@ -2617,7 +2617,7 @@ async def run_skill(
         title = f"{cs['template_name']} — Step {step.get('order', 0)}"
 
         row = await pool.fetchrow(
-            "INSERT INTO staging.hub_content_items "
+            "INSERT INTO public.hub_content_items "
             "(client_id, agent_type, title, body, platform, status, credits_used, "
             " metadata, created_by) "
             "VALUES ($1::uuid, $2, $3, $4, $5, 'draft', $6, $7::jsonb, $8) RETURNING id",
@@ -2637,12 +2637,12 @@ async def run_skill(
         })
 
         await pool.execute(
-            "UPDATE staging.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
+            "UPDATE public.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
             len(outputs), run_id,
         )
 
     await pool.execute(
-        "UPDATE staging.hub_skill_runs SET status='completed', completed_at=NOW(), "
+        "UPDATE public.hub_skill_runs SET status='completed', completed_at=NOW(), "
         "credits_used=$1, outputs=$2::jsonb, content_item_ids=$3 WHERE id=$4",
         total_credits, json.dumps(outputs), content_ids, run_id,
     )
@@ -2674,7 +2674,7 @@ async def list_skill_runs(
     await _verify_client_access(pool, str(client_id), org_id)
 
     rows = await pool.fetch(
-        "SELECT * FROM staging.hub_skill_runs "
+        "SELECT * FROM public.hub_skill_runs "
         "WHERE client_skill_id=$1 AND client_id=$2::uuid ORDER BY started_at DESC LIMIT 20",
         skill_id, str(client_id),
     )
@@ -2705,8 +2705,8 @@ async def list_approvals(
     # (`review_content`) has always scoped its UPDATE with `AND client_id=`;
     # only this read was missing it.
     rows = await pool.fetch(
-        "SELECT a.* FROM staging.hub_content_approvals a "
-        "JOIN staging.hub_content_items ci ON ci.id = a.content_item_id "
+        "SELECT a.* FROM public.hub_content_approvals a "
+        "JOIN public.hub_content_items ci ON ci.id = a.content_item_id "
         "WHERE a.content_item_id=$1 AND ci.client_id=$2::uuid "
         "ORDER BY a.created_at DESC",
         content_id, str(client_id),
@@ -2732,8 +2732,8 @@ async def ai_spend_analytics(
         "SUM(l.completion_tokens) as total_completion_tokens, "
         "SUM(l.cost_usd) as total_cost_usd, "
         "AVG(l.latency_ms)::int as avg_latency_ms "
-        "FROM staging.hub_ai_logs l "
-        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "FROM public.hub_ai_logs l "
+        "JOIN public.hub_clients c ON c.id = l.client_id "
         "WHERE c.org_id=$1::uuid AND l.status='success' "
         "AND l.created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY l.provider, l.model ORDER BY total_cost_usd DESC",
@@ -2744,8 +2744,8 @@ async def ai_spend_analytics(
         "SELECT c.name as client_name, l.client_id, COUNT(*) as calls, "
         "SUM(l.cost_usd) as total_cost_usd, "
         "SUM(l.prompt_tokens + l.completion_tokens) as total_tokens "
-        "FROM staging.hub_ai_logs l "
-        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "FROM public.hub_ai_logs l "
+        "JOIN public.hub_clients c ON c.id = l.client_id "
         "WHERE c.org_id=$1::uuid AND l.status='success' "
         "AND l.created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY c.name, l.client_id ORDER BY total_cost_usd DESC",
@@ -2758,8 +2758,8 @@ async def ai_spend_analytics(
         "COALESCE(SUM(l.prompt_tokens), 0) as total_prompt_tokens, "
         "COALESCE(SUM(l.completion_tokens), 0) as total_completion_tokens, "
         "COUNT(*) FILTER (WHERE l.status='error') as failed_calls "
-        "FROM staging.hub_ai_logs l "
-        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "FROM public.hub_ai_logs l "
+        "JOIN public.hub_clients c ON c.id = l.client_id "
         "WHERE c.org_id=$1::uuid "
         "AND l.created_at >= NOW() - ($2 || ' days')::interval",
         org_id, str(days),
@@ -2791,8 +2791,8 @@ async def client_spend_analytics(
         "SUM(l.cost_usd) as total_cost_usd, "
         "SUM(l.prompt_tokens + l.completion_tokens) as total_tokens, "
         "AVG(l.latency_ms)::int as avg_latency_ms "
-        "FROM staging.hub_ai_logs l "
-        "JOIN staging.hub_content_items ci ON ci.client_id = l.client_id "
+        "FROM public.hub_ai_logs l "
+        "JOIN public.hub_content_items ci ON ci.client_id = l.client_id "
         "WHERE l.client_id=$1::uuid AND l.status='success' "
         "AND l.created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY ci.agent_type ORDER BY total_cost_usd DESC",
@@ -2805,7 +2805,7 @@ async def client_spend_analytics(
         "SUM(prompt_tokens) as total_prompt_tokens, "
         "SUM(completion_tokens) as total_completion_tokens, "
         "AVG(latency_ms)::int as avg_latency_ms "
-        "FROM staging.hub_ai_logs "
+        "FROM public.hub_ai_logs "
         "WHERE client_id=$1::uuid AND status='success' "
         "AND created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY provider, model ORDER BY total_cost_usd DESC",
@@ -2815,7 +2815,7 @@ async def client_spend_analytics(
     daily = await pool.fetch(
         "SELECT created_at::date as date, COUNT(*) as calls, "
         "SUM(cost_usd) as cost_usd "
-        "FROM staging.hub_ai_logs "
+        "FROM public.hub_ai_logs "
         "WHERE client_id=$1::uuid AND status='success' "
         "AND created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY created_at::date ORDER BY date",
@@ -2855,7 +2855,7 @@ async def record_ai_feedback(
         raise HTTPException(400, "action must be accept, edit, or reject")
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.ai_feedback "
+        "INSERT INTO public.ai_feedback "
         "(org_id, skill_type, context_type, action, ai_output, edited_output, "
         " model_used, tokens_used, cost_usd, user_id) "
         "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10::uuid) "
@@ -2887,7 +2887,7 @@ async def list_ai_feedback(
     query = (
         "SELECT id, skill_type, context_type, action, model_used, "
         "tokens_used, user_id, created_at "
-        "FROM staging.ai_feedback WHERE org_id=$1::uuid "
+        "FROM public.ai_feedback WHERE org_id=$1::uuid "
     )
     params: list = [org_id]
     idx = 2
@@ -2919,7 +2919,7 @@ async def ai_feedback_stats(
     rows = await pool.fetch(
         "SELECT skill_type, action, COUNT(*) as count, "
         "COALESCE(SUM(tokens_used), 0) as total_tokens "
-        "FROM staging.ai_feedback "
+        "FROM public.ai_feedback "
         "WHERE org_id=$1::uuid AND created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY skill_type, action ORDER BY count DESC",
         org_id, str(days),
@@ -2944,7 +2944,7 @@ async def get_ai_conversation(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT id, messages, updated_at FROM staging.ai_conversations "
+        "SELECT id, messages, updated_at FROM public.ai_conversations "
         "WHERE org_id=$1::uuid AND user_id=$2::uuid AND context_type=$3",
         org_id, user["user_id"], context_type,
     )
@@ -2966,7 +2966,7 @@ async def upsert_ai_conversation(
         raise HTTPException(400, "messages must be an array")
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO staging.ai_conversations (org_id, user_id, context_type, messages) "
+        "INSERT INTO public.ai_conversations (org_id, user_id, context_type, messages) "
         "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb) "
         "ON CONFLICT (org_id, user_id, context_type) "
         "DO UPDATE SET messages=$4::jsonb, updated_at=NOW() "
@@ -2985,7 +2985,7 @@ async def delete_ai_conversation(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.ai_conversations "
+        "DELETE FROM public.ai_conversations "
         "WHERE org_id=$1::uuid AND user_id=$2::uuid AND context_type=$3",
         org_id, user["user_id"], context_type,
     )
@@ -3038,8 +3038,8 @@ async def list_org_skills(
         # ASSIGNED list — the one a customer actually reads — did not.
         "t.module, t.skill_type, "
         "t.category, t.estimated_credits, t.icon, t.steps "
-        "FROM staging.hub_org_skills os "
-        "JOIN staging.hub_skill_templates t ON t.id = os.template_id "
+        "FROM public.hub_org_skills os "
+        "JOIN public.hub_skill_templates t ON t.id = os.template_id "
         "WHERE os.org_id=$1::uuid AND os.is_active=TRUE "
         "ORDER BY t.category, t.name",
         org_id,
@@ -3050,7 +3050,7 @@ async def list_org_skills(
         try:
             open_rows = await pool.fetch(
                 "SELECT id, template_id, status, requested_at, note "
-                "FROM staging.hub_skill_requests "
+                "FROM public.hub_skill_requests "
                 "WHERE org_id=$1::uuid AND status='open' "
                 "ORDER BY requested_at DESC",
                 org_id,
@@ -3077,14 +3077,14 @@ async def assign_skill_to_org(
     pool = await get_pool()
 
     tmpl = await pool.fetchrow(
-        "SELECT id FROM staging.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
+        "SELECT id FROM public.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
         template_id,
     )
     if not tmpl:
         raise HTTPException(404, "Skill template not found")
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_org_skills "
+        "INSERT INTO public.hub_org_skills "
         "(org_id, template_id, custom_config, assigned_by) "
         "VALUES ($1::uuid, $2, $3::jsonb, $4) "
         "ON CONFLICT (org_id, template_id) DO UPDATE SET "
@@ -3105,7 +3105,7 @@ async def remove_skill_from_org(
     """Aekam admin removes a skill from an org."""
     pool = await get_pool()
     await pool.execute(
-        "UPDATE staging.hub_org_skills SET is_active=FALSE, updated_at=NOW() "
+        "UPDATE public.hub_org_skills SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1 AND org_id=$2::uuid",
         skill_id, org_id,
     )
@@ -3269,8 +3269,8 @@ async def execute_org_skill(
         "SELECT os.*, t.steps, t.name as template_name, t.brand_instructions, "
         "       t.description as template_description, "
         "       t.category as template_category "
-        "FROM staging.hub_org_skills os "
-        "JOIN staging.hub_skill_templates t ON t.id = os.template_id "
+        "FROM public.hub_org_skills os "
+        "JOIN public.hub_skill_templates t ON t.id = os.template_id "
         "WHERE os.id=$1 AND os.org_id=$2::uuid AND os.is_active=TRUE",
         skill_id, org_id,
     )
@@ -3281,13 +3281,13 @@ async def execute_org_skill(
     custom_config = os_row["custom_config"] if isinstance(os_row["custom_config"], dict) else json.loads(os_row["custom_config"] or "{}")
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+        "SELECT * FROM public.hub_brand_profiles WHERE org_id=$1::uuid", org_id
     )
     if not brand:
         # Fallback to internal client brand
         brand = await pool.fetchrow(
-            "SELECT bp.* FROM staging.hub_brand_profiles bp "
-            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "SELECT bp.* FROM public.hub_brand_profiles bp "
+            "JOIN public.hub_clients c ON c.id = bp.client_id "
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
         )
     system_prompt = compose_system_prompt(
@@ -3315,7 +3315,7 @@ async def execute_org_skill(
         raise HTTPException(403, str(denied))
 
     run = await pool.fetchrow(
-        "INSERT INTO staging.hub_org_skill_runs "
+        "INSERT INTO public.hub_org_skill_runs "
         "(org_skill_id, org_id, steps_total, triggered_by) "
         "VALUES ($1, $2::uuid, $3, $4) RETURNING *",
         skill_id, org_id, len(steps), user_id,
@@ -3341,7 +3341,7 @@ async def execute_org_skill(
         and what is held; anything else is a fault and must read as one.
         """
         await pool.execute(
-            "UPDATE staging.hub_org_skill_runs SET status='failed', "
+            "UPDATE public.hub_org_skill_runs SET status='failed', "
             "error_message=$1, completed_at=NOW(), "
             "steps_completed=$2, credits_used=$3, outputs=$4::jsonb, "
             "content_item_ids=$5 WHERE id=$6",
@@ -3451,7 +3451,7 @@ async def execute_org_skill(
                 + _ground[:4000]
             )
             await pool.execute(
-                "UPDATE staging.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
+                "UPDATE public.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
                 len(outputs), run_id,
             )
             continue
@@ -3628,7 +3628,7 @@ async def execute_org_skill(
         hashtags = re.findall(r'#\w+', result["text"]) if agent_type == "social_media" else []
 
         row = await pool.fetchrow(
-            "INSERT INTO staging.hub_content_items "
+            "INSERT INTO public.hub_content_items "
             "(org_id, agent_type, title, body, platform, hashtags, "
             " image_url, image_key, status, credits_used, metadata, created_by) "
             "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10::jsonb, $11) "
@@ -3660,12 +3660,12 @@ async def execute_org_skill(
         })
 
         await pool.execute(
-            "UPDATE staging.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
+            "UPDATE public.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
             len(outputs), run_id,
         )
 
     await pool.execute(
-        "UPDATE staging.hub_org_skill_runs SET status='completed', completed_at=NOW(), "
+        "UPDATE public.hub_org_skill_runs SET status='completed', completed_at=NOW(), "
         "credits_used=$1, outputs=$2::jsonb, content_item_ids=$3 WHERE id=$4",
         total_credits, json.dumps(outputs), content_ids, run_id,
     )
@@ -3694,7 +3694,7 @@ async def list_org_skill_runs(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.hub_org_skill_runs "
+        "SELECT * FROM public.hub_org_skill_runs "
         "WHERE org_skill_id=$1 AND org_id=$2::uuid ORDER BY started_at DESC LIMIT 20",
         skill_id, org_id,
     )
@@ -3997,12 +3997,12 @@ async def generate_org_content(
     )
 
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+        "SELECT * FROM public.hub_brand_profiles WHERE org_id=$1::uuid", org_id
     )
     if not brand:
         brand = await pool.fetchrow(
-            "SELECT bp.* FROM staging.hub_brand_profiles bp "
-            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "SELECT bp.* FROM public.hub_brand_profiles bp "
+            "JOIN public.hub_clients c ON c.id = bp.client_id "
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
         )
     # No skill here — this is ad-hoc generation — so only the org layer and the
@@ -4113,7 +4113,7 @@ async def generate_org_content(
     hashtags = re.findall(r'#\w+', result["text"]) if body.agent_type == "social_media" else []
 
     row = await pool.fetchrow(
-        "INSERT INTO staging.hub_content_items "
+        "INSERT INTO public.hub_content_items "
         "(org_id, agent_type, title, body, platform, hashtags, image_url, image_key, "
         " status, credits_used, metadata, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10::jsonb, $11) RETURNING *",
@@ -4175,7 +4175,7 @@ async def list_org_content(
             + actor_select("ci", updated=True)
             + "COUNT(*) OVER() AS _total ")
     query = (head
-             + "FROM staging.hub_content_items ci "
+             + "FROM public.hub_content_items ci "
              + actor_joins("ci", updated=True)
              + "WHERE ci.org_id=$1::uuid")
     params: list = [org_id]
@@ -4252,13 +4252,13 @@ async def org_content_facets(
     rows = await pool.fetch(
         """
         SELECT 'agent_type' AS facet, coalesce(agent_type, '—') AS value, count(*) AS n
-          FROM staging.hub_content_items WHERE org_id=$1::uuid GROUP BY 2
+          FROM public.hub_content_items WHERE org_id=$1::uuid GROUP BY 2
         UNION ALL
         SELECT 'status', coalesce(status, '—'), count(*)
-          FROM staging.hub_content_items WHERE org_id=$1::uuid GROUP BY 2
+          FROM public.hub_content_items WHERE org_id=$1::uuid GROUP BY 2
         UNION ALL
         SELECT 'platform', coalesce(platform, '—'), count(*)
-          FROM staging.hub_content_items WHERE org_id=$1::uuid AND platform IS NOT NULL GROUP BY 2
+          FROM public.hub_content_items WHERE org_id=$1::uuid AND platform IS NOT NULL GROUP BY 2
         """,
         org_id,
     )
@@ -4278,12 +4278,12 @@ async def get_org_brand(
     """Get org-level brand profile."""
     pool = await get_pool()
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+        "SELECT * FROM public.hub_brand_profiles WHERE org_id=$1::uuid", org_id
     )
     if not brand:
         brand = await pool.fetchrow(
-            "SELECT bp.* FROM staging.hub_brand_profiles bp "
-            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "SELECT bp.* FROM public.hub_brand_profiles bp "
+            "JOIN public.hub_clients c ON c.id = bp.client_id "
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
         )
     return dict(brand) if brand else {}
@@ -4357,12 +4357,12 @@ async def update_org_brand(
     # with no brand context at all, silently.
     # ══════════════════════════════════════════════════════════════════════
     row = await pool.fetchrow(
-        "SELECT id FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+        "SELECT id FROM public.hub_brand_profiles WHERE org_id=$1::uuid", org_id
     )
     if not row:
         row = await pool.fetchrow(
-            "SELECT bp.id FROM staging.hub_brand_profiles bp "
-            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "SELECT bp.id FROM public.hub_brand_profiles bp "
+            "JOIN public.hub_clients c ON c.id = bp.client_id "
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE AND c.is_active=TRUE "
             "ORDER BY bp.created_at LIMIT 1",
             org_id,
@@ -4380,7 +4380,7 @@ async def update_org_brand(
     # $1 is the row, $2 the org; the updates start at $3.
     set_clauses = ", ".join(f"{k}=${i+3}" for i, k in enumerate(updates))
     await pool.execute(
-        f"UPDATE staging.hub_brand_profiles "
+        f"UPDATE public.hub_brand_profiles "
         f"SET org_id=$2::uuid, {set_clauses}, updated_at=NOW() "
         f"WHERE id=$1::uuid",
         row["id"], org_id, *list(updates.values()),
@@ -4591,7 +4591,7 @@ async def quick_generate(
 
     # Load brand profile for context
     brand = await pool.fetchrow(
-        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+        "SELECT * FROM public.hub_brand_profiles WHERE org_id=$1::uuid", org_id
     )
     brand_system = _build_system_prompt(dict(brand)) if brand else ""
     system = f"{brand_system}\n\n{skill_cfg['system']}" if brand_system else skill_cfg["system"]
@@ -4760,7 +4760,7 @@ async def quick_generate(
 
     # Save to content items
     content_row = await pool.fetchrow(
-        "INSERT INTO staging.hub_content_items "
+        "INSERT INTO public.hub_content_items "
         "(org_id, agent_type, title, body, platform, image_url, image_key, status, "
         " credits_used, metadata, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) RETURNING id",
@@ -4912,7 +4912,7 @@ async def _sahayak_store_answer(pool, session_id, text, sources, model, cost, an
         return None
     try:
         return await pool.fetchval(
-            "INSERT INTO staging.hub_chat_messages "
+            "INSERT INTO public.hub_chat_messages "
             "(session_id, role, content, sources, model_used, cost_usd, answer) "
             "VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4, $5, $6::jsonb) "
             "RETURNING id",
@@ -4920,7 +4920,7 @@ async def _sahayak_store_answer(pool, session_id, text, sources, model, cost, an
         )
     except asyncpg.UndefinedColumnError:
         return await pool.fetchval(
-            "INSERT INTO staging.hub_chat_messages "
+            "INSERT INTO public.hub_chat_messages "
             "(session_id, role, content, sources, model_used, cost_usd) "
             "VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4, $5) RETURNING id",
             session_id, text, json.dumps(sources), model, cost,
@@ -5139,7 +5139,7 @@ async def _sahayak_answer(
 
     if body.session_id:
         session = await pool.fetchrow(
-            "SELECT id, client_id FROM staging.hub_chat_sessions "
+            "SELECT id, client_id FROM public.hub_chat_sessions "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             body.session_id, org_id,
         )
@@ -5152,7 +5152,7 @@ async def _sahayak_answer(
         client_id = str(client["id"])
     else:
         found = await pool.fetchval(
-            "SELECT id FROM staging.hub_clients "
+            "SELECT id FROM public.hub_clients "
             "WHERE org_id=$1::uuid AND is_internal=TRUE AND is_active=TRUE LIMIT 1",
             org_id,
         )
@@ -5196,7 +5196,7 @@ async def _sahayak_answer(
     # ── 2b · now, and only now, open a conversation ──────────────────────────
     if not session_id and client_id:
         opened = await pool.fetchrow(
-            "INSERT INTO staging.hub_chat_sessions "
+            "INSERT INTO public.hub_chat_sessions "
             "(client_id, org_id, title, session_type, created_by) "
             "VALUES ($1::uuid, $2::uuid, $3, 'internal', $4) RETURNING id",
             client_id, org_id,
@@ -5270,7 +5270,7 @@ async def _sahayak_answer(
             msg_id = None
             if session_id:
                 msg_id = await conn.fetchval(
-                    "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
+                    "INSERT INTO public.hub_chat_messages (session_id, role, content) "
                     "VALUES ($1::uuid, 'user', $2) RETURNING id",
                     session_id, question,
                 )
@@ -5308,19 +5308,19 @@ async def _sahayak_answer(
         lang_name = LANGUAGE_NAMES.get(lang, "English")
 
         brand = await pool.fetchrow(
-            "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
+            "SELECT brand_voice, tone FROM public.hub_brand_profiles "
             "WHERE org_id=$1::uuid", org_id,
         )
         if not brand and client_id:
             brand = await pool.fetchrow(
-                "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
+                "SELECT brand_voice, tone FROM public.hub_brand_profiles "
                 "WHERE client_id=$1::uuid", client_id,
             )
 
         history_text = ""
         if session_id:
             history = await pool.fetch(
-                "SELECT role, content FROM staging.hub_chat_messages "
+                "SELECT role, content FROM public.hub_chat_messages "
                 "WHERE session_id=$1::uuid ORDER BY created_at DESC LIMIT 10",
                 session_id,
             )
@@ -5560,7 +5560,7 @@ async def _sahayak_answer(
 
     if session_id:
         await pool.execute(
-            "UPDATE staging.hub_chat_sessions SET updated_at=NOW() WHERE id=$1::uuid",
+            "UPDATE public.hub_chat_sessions SET updated_at=NOW() WHERE id=$1::uuid",
             session_id,
         )
     # THE LAST EVENT, AND THE AUTHORITATIVE ONE. `answer_text` above is what
@@ -5583,7 +5583,7 @@ async def _sahayak_record_turn(pool, session_id, question, text, payload) -> Opt
     if not session_id:
         return None
     await pool.execute(
-        "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
+        "INSERT INTO public.hub_chat_messages (session_id, role, content) "
         "VALUES ($1::uuid, 'user', $2)",
         session_id, question,
     )
@@ -5661,7 +5661,7 @@ async def sahayak_chat_history(
     """
     pool = await get_pool()
     session = await pool.fetchrow(
-        "SELECT client_id FROM staging.hub_chat_sessions "
+        "SELECT client_id FROM public.hub_chat_sessions "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(session_id), org_id,
     )
@@ -5675,7 +5675,7 @@ async def sahayak_chat_history(
         # of the fallback below is that it cannot tell which one it got.
         msgs = await pool.fetch(
             "SELECT id, role, content, sources, model_used, answer, created_at "
-            "FROM staging.hub_chat_messages "
+            "FROM public.hub_chat_messages "
             "WHERE session_id=$1::uuid ORDER BY created_at",
             str(session_id),
         )
@@ -5686,7 +5686,7 @@ async def sahayak_chat_history(
         # before this route existed rather than 500ing.
         msgs = await pool.fetch(
             "SELECT id, role, content, sources, model_used, created_at "
-            "FROM staging.hub_chat_messages "
+            "FROM public.hub_chat_messages "
             "WHERE session_id=$1::uuid ORDER BY created_at",
             str(session_id),
         )
@@ -5728,14 +5728,14 @@ async def record_skill_feedback(
         # Org skills first, then the per-client assignment — both are org-scoped
         # rows and either can be what the reader pressed the button on.
         resolved = await pool.fetchval(
-            "SELECT template_id FROM staging.hub_org_skills "
+            "SELECT template_id FROM public.hub_org_skills "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             body.skill_id, org_id,
         )
         if not resolved:
             resolved = await pool.fetchval(
-                "SELECT cs.template_id FROM staging.hub_client_skills cs "
-                "LEFT JOIN staging.hub_clients c ON c.id = cs.client_id "
+                "SELECT cs.template_id FROM public.hub_client_skills cs "
+                "LEFT JOIN public.hub_clients c ON c.id = cs.client_id "
                 "WHERE cs.id=$1::uuid AND (cs.org_id=$2::uuid OR c.org_id=$2::uuid)",
                 body.skill_id, org_id,
             )
@@ -5745,7 +5745,7 @@ async def record_skill_feedback(
 
     if template_id:
         known = await pool.fetchval(
-            "SELECT 1 FROM staging.hub_skill_templates WHERE id=$1::uuid",
+            "SELECT 1 FROM public.hub_skill_templates WHERE id=$1::uuid",
             template_id,
         )
         if not known:
@@ -5753,7 +5753,7 @@ async def record_skill_feedback(
 
     if body.run_id:
         owns_run = await pool.fetchval(
-            "SELECT 1 FROM staging.hub_org_skill_runs "
+            "SELECT 1 FROM public.hub_org_skill_runs "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             body.run_id, org_id,
         )
@@ -5766,8 +5766,8 @@ async def record_skill_feedback(
         # the message alone would confirm the existence of — and accept feedback
         # on — another tenant's answer.
         owns_msg = await pool.fetchval(
-            "SELECT 1 FROM staging.hub_chat_messages m "
-            "JOIN staging.hub_chat_sessions s ON s.id = m.session_id "
+            "SELECT 1 FROM public.hub_chat_messages m "
+            "JOIN public.hub_chat_sessions s ON s.id = m.session_id "
             "WHERE m.id=$1::uuid AND s.org_id=$2::uuid",
             body.message_id, org_id,
         )
@@ -5778,7 +5778,7 @@ async def record_skill_feedback(
 
     try:
         row = await pool.fetchrow(
-            "INSERT INTO staging.hub_skill_feedback "
+            "INSERT INTO public.hub_skill_feedback "
             "(skill_template_id, org_id, input_hash, predicted, corrected, accepted, "
             " run_id, message_id, note, created_by) "
             "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5::jsonb, $6, "
@@ -5795,7 +5795,7 @@ async def record_skill_feedback(
         # older than this endpoint and lands either way; what is lost is the
         # provenance, not the signal.
         row = await pool.fetchrow(
-            "INSERT INTO staging.hub_skill_feedback "
+            "INSERT INTO public.hub_skill_feedback "
             "(skill_template_id, org_id, input_hash, predicted, corrected, accepted) "
             "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5::jsonb, $6) RETURNING id",
             template_id, org_id, input_hash,

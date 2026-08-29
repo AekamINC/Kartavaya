@@ -213,7 +213,7 @@ async def upload(
     org_id = None
     if team_id:
         org_row = await pool.fetchrow(
-            "SELECT id FROM staging.organisations "
+            "SELECT id FROM public.organisations "
             "WHERE team_id=$1 AND is_active=TRUE",
             team_id,
         )

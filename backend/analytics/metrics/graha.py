@@ -94,7 +94,7 @@ def pipeline_by_stage(req: MetricRequest):
         "SELECT d.stage AS label, "
         "SUM(COALESCE(d.value, 0))::float AS value, "
         "COUNT(*) AS deals "
-        "FROM staging.graha_deals d "
+        "FROM public.graha_deals d "
         "WHERE d.org_id = $1::uuid AND d.is_active = TRUE "
         "AND d.won_at IS NULL AND d.lost_at IS NULL "
         "AND d.archived_at IS NULL "
@@ -141,7 +141,7 @@ def win_rate(req: MetricRequest):
         return (
             "SELECT COALESCE(NULLIF(btrim(u.full_name), ''), NULLIF(btrim(u.name), ''), 'Unassigned') AS rep, "
             + rate +
-            "FROM staging.graha_deals d "
+            "FROM public.graha_deals d "
             "LEFT JOIN public.users u ON u.user_id = d.assigned_to "
             + scope +
             "GROUP BY 1 ORDER BY value DESC, 1",
@@ -151,8 +151,8 @@ def win_rate(req: MetricRequest):
         return (
             "SELECT COALESCE(NULLIF(c.source, ''), 'No source') AS source, "
             + rate +
-            "FROM staging.graha_deals d "
-            "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+            "FROM public.graha_deals d "
+            "LEFT JOIN public.graha_contacts c ON c.id = d.contact_id "
             + scope +
             "GROUP BY 1 ORDER BY value DESC, 1",
             params,
@@ -163,7 +163,7 @@ def win_rate(req: MetricRequest):
         return (
             f"SELECT {_SIZE_BAND} AS size_band, "
             + rate +
-            "FROM staging.graha_deals d "
+            "FROM public.graha_deals d "
             + scope +
             "GROUP BY 1 ORDER BY MIN(COALESCE(d.value, 0))",
             params,
@@ -172,7 +172,7 @@ def win_rate(req: MetricRequest):
     return (
         f"SELECT {period} AS period, "
         + rate +
-        "FROM staging.graha_deals d "
+        "FROM public.graha_deals d "
         + scope +
         "GROUP BY 1 ORDER BY 1",
         params,
@@ -198,7 +198,7 @@ def sales_cycle(req: MetricRequest):
         f"SELECT {period} AS period, "
         f"percentile_cont(0.5) WITHIN GROUP (ORDER BY {days})::float AS value, "
         "COUNT(*) AS deals "
-        "FROM staging.graha_deals d "
+        "FROM public.graha_deals d "
         "WHERE d.org_id = $1::uuid AND d.is_active = TRUE "
         "AND d.won_at IS NOT NULL "
         "AND d.won_at::date BETWEEN $2::date AND $3::date "
@@ -234,10 +234,10 @@ def deal_aging(req: MetricRequest):
         f"    CASE WHEN {idle} <= 60 THEN '31-60' "
         f"    WHEN {idle} <= 90 THEN '61-90' "
         "    ELSE '90+' END AS bucket "
-        "  FROM staging.graha_deals d "
+        "  FROM public.graha_deals d "
         "  LEFT JOIN LATERAL ("
         "    SELECT MAX(a.created_at) AS last_at "
-        "    FROM staging.graha_activities a "
+        "    FROM public.graha_activities a "
         "    WHERE a.deal_id = d.id AND a.org_id = $1::uuid"
         "  ) la ON TRUE "
         "  WHERE d.org_id = $1::uuid AND d.is_active = TRUE "
@@ -273,7 +273,7 @@ def lead_conversion(req: MetricRequest):
     # even though contact_id is already org-scoped — fail-closed beats
     # trusting a foreign key two tables away.
     has_deal = (
-        "EXISTS (SELECT 1 FROM staging.graha_deals d "
+        "EXISTS (SELECT 1 FROM public.graha_deals d "
         "WHERE d.contact_id = c.id AND d.org_id = $1::uuid)"
     )
     rate = (
@@ -283,7 +283,7 @@ def lead_conversion(req: MetricRequest):
         "COUNT(*) AS contacts "
     )
     scope = (
-        "FROM staging.graha_contacts c "
+        "FROM public.graha_contacts c "
         "WHERE c.org_id = $1::uuid AND c.is_active = TRUE "
         "AND c.contact_type NOT IN ('vendor', 'partner') "
         "AND c.created_at::date BETWEEN $2::date AND $3::date "
@@ -334,7 +334,7 @@ def avg_deal_size(req: MetricRequest):
         "SUM(COALESCE(d.value, 0))::float / NULLIF(COUNT(*), 0)::float AS value, "
         "SUM(COALESCE(d.value, 0))::float AS won_value, "
         "COUNT(*) AS deals "
-        "FROM staging.graha_deals d "
+        "FROM public.graha_deals d "
         "WHERE d.org_id = $1::uuid AND d.is_active = TRUE "
         "AND d.won_at IS NOT NULL "
         "AND d.won_at::date BETWEEN $2::date AND $3::date "
@@ -368,7 +368,7 @@ def client_concentration(req: MetricRequest):
         "WITH bucketed AS ("
         f"  SELECT {period} AS period, d.client_id, "
         "    SUM(COALESCE(d.value, 0)) AS v "
-        "  FROM staging.graha_deals d "
+        "  FROM public.graha_deals d "
         "  WHERE d.org_id = $1::uuid AND d.is_active = TRUE "
         "  AND d.won_at IS NOT NULL "
         "  AND d.won_at::date BETWEEN $2::date AND $3::date "
@@ -409,7 +409,7 @@ def contacts_added(req: MetricRequest):
     group = ", contact_type" if req.group_by == "contact_type" else ""
     return (
         f"SELECT {period} AS period{group}, COUNT(*) AS value "
-        "FROM staging.graha_contacts "
+        "FROM public.graha_contacts "
         "WHERE org_id = $1::uuid AND is_active = TRUE "
         "AND created_at::date BETWEEN $2::date AND $3::date "
         f"GROUP BY 1{group and ', 2'} ORDER BY 1{group and ', 2'}",
@@ -427,8 +427,8 @@ absent_metric(
     label="Stage-to-stage conversion",
     unit="pct",
     grain="flow",
-    absent="No stage-transition history exists: staging.graha_deals stores "
-           "only the CURRENT stage text, and staging.niyam_events began "
+    absent="No stage-transition history exists: public.graha_deals stores "
+           "only the CURRENT stage text, and public.niyam_events began "
            "receiving deal.stage_changed (migration 141, emitted from the one "
            "deal PATCH path since 2026-08-16) far too recently to reconstruct "
            "any window — a conversion rate over days of partial capture would "
@@ -442,7 +442,7 @@ absent_metric(
     unit="count",
     grain="flow",
     absent="The helpdesk was removed by migration 048_drop_helpdesk.sql; "
-           "staging.graha_tickets exists again only as the empty stub catchup "
+           "public.graha_tickets exists again only as the empty stub catchup "
            "081 created so the Dristi report source stops 500ing. No router "
            "can write a ticket row, so a volume by priority and category "
            "would render as a convincing zero for every org.",
@@ -454,7 +454,7 @@ absent_metric(
     label="Ticket resolution time",
     unit="days",
     grain="flow",
-    absent="resolved_at and created_at live only on staging.graha_tickets — "
+    absent="resolved_at and created_at live only on public.graha_tickets — "
            "the empty stub catchup 081 recreated after migration 048 dropped "
            "the helpdesk feature. With no write path anywhere in the product "
            "there is no ticket to measure, and a median over rows that can "

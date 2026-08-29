@@ -189,7 +189,7 @@ async def _latest_approved_run(pool, org_id: str, month: str | None):
             """
             SELECT id, month, status, total_gross, total_pf, total_esi,
                    total_pt, total_tds, employee_count, approved_at, processed_at
-            FROM staging.vetana_payroll_runs
+            FROM public.vetana_payroll_runs
             WHERE org_id = $1::uuid AND month = $2::text
               AND status = ANY($3::text[])
             ORDER BY month DESC LIMIT 1
@@ -200,7 +200,7 @@ async def _latest_approved_run(pool, org_id: str, month: str | None):
         """
         SELECT id, month, status, total_gross, total_pf, total_esi,
                total_pt, total_tds, employee_count, approved_at, processed_at
-        FROM staging.vetana_payroll_runs
+        FROM public.vetana_payroll_runs
         WHERE org_id = $1::uuid AND status = ANY($2::text[])
         ORDER BY month DESC LIMIT 1
         """,
@@ -289,7 +289,7 @@ async def check_pf_esi_debit_missing(
         candidates = await pool.fetch(
             """
             SELECT id, statement_date, description, reference, amount
-            FROM staging.ganit_bank_statement_lines
+            FROM public.ganit_bank_statement_lines
             WHERE org_id = $1::uuid
               AND amount < 0
               AND statement_date >= $2::date
@@ -413,8 +413,8 @@ async def pack_form130_annexure(
                COALESCE(SUM(p.pf_employee), 0)               AS pf_employee,
                COALESCE(SUM(p.professional_tax), 0)          AS professional_tax,
                COALESCE(SUM(p.tds), 0)                       AS tds
-        FROM staging.vetana_payslips p
-        JOIN staging.manav_employees e
+        FROM public.vetana_payslips p
+        JOIN public.manav_employees e
           ON e.id = p.employee_id AND e.org_id = p.org_id
         -- LEFT LATERAL, and both halves matter. LEFT so a payslip with an empty
         -- array (which is 1,092 of the 1,095 live rows) still contributes its
@@ -554,8 +554,8 @@ async def pack_quarterly_deductees(
         SELECT e.id AS employee_id, e.name, e.employee_code, e.pan,
                e.email, e.phone,
                p.month, p.gross, p.tds
-        FROM staging.vetana_payslips p
-        JOIN staging.manav_employees e
+        FROM public.vetana_payslips p
+        JOIN public.manav_employees e
           ON e.id = p.employee_id AND e.org_id = p.org_id
         WHERE p.org_id = $1::uuid
           AND p.is_active
@@ -652,7 +652,7 @@ async def check_esi_ceiling_crossings(
     if not month:
         month = await pool.fetchval(
             """
-            SELECT max(month) FROM staging.vetana_payslips
+            SELECT max(month) FROM public.vetana_payslips
             WHERE org_id = $1::uuid AND is_active
             """,
             org_id,
@@ -702,8 +702,8 @@ async def check_esi_ceiling_crossings(
         SELECT e.id AS employee_id, e.name, e.employee_code, e.esi_number,
                e.email, e.phone,
                p.month, p.gross, p.esi_employee, p.esi_employer
-        FROM staging.vetana_payslips p
-        JOIN staging.manav_employees e
+        FROM public.vetana_payslips p
+        JOIN public.manav_employees e
           ON e.id = p.employee_id AND e.org_id = p.org_id
         WHERE p.org_id = $1::uuid
           AND p.is_active
@@ -830,8 +830,8 @@ async def brief_professional_tax(
                -- _employee_state_column`, because that probe exists for code
                -- that deploys BEFORE its migration and this code deploys after.
                NULLIF(btrim(COALESCE(e.state::text, '')), '') AS state
-        FROM staging.vetana_payslips p
-        JOIN staging.manav_employees e
+        FROM public.vetana_payslips p
+        JOIN public.manav_employees e
           ON e.id = p.employee_id AND e.org_id = p.org_id
         WHERE p.org_id = $1::uuid
           AND p.is_active
@@ -854,7 +854,7 @@ async def brief_professional_tax(
     slabs = await pool.fetch(
         """
         SELECT state_code, state_name, slab_from, slab_to, monthly_tax, effective_from
-        FROM staging.pay_professional_tax
+        FROM public.pay_professional_tax
         WHERE org_id = $1::uuid OR org_id IS NULL
         ORDER BY state_name, slab_from
         """,

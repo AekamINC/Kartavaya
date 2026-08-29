@@ -116,8 +116,8 @@ async def _resolve_mentions(pool, body: str, team_id, actor_id: str | None = Non
         members = await pool.fetch(
             f"""
             SELECT DISTINCT u.user_id, u.email, {display_name('u')} AS display
-            FROM staging.user_roles mine
-            JOIN staging.user_roles theirs ON theirs.org_id = mine.org_id
+            FROM public.user_roles mine
+            JOIN public.user_roles theirs ON theirs.org_id = mine.org_id
             JOIN public.users u ON u.user_id = theirs.user_id
             WHERE mine.user_id = $1
               AND mine.org_id IS NOT NULL

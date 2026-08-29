@@ -112,8 +112,8 @@ _PUBLIC: tuple[str, ...] = (
 #: firm's client would be printed on this firm's screen — a leak that no WHERE
 #: clause on `d` can catch, because the leaking value is on `c`.
 _FROM = (
-    " FROM staging.dsc_register d "
-    " LEFT JOIN staging.graha_clients c "
+    " FROM public.dsc_register d "
+    " LEFT JOIN public.graha_clients c "
     "        ON c.id = d.client_id AND c.org_id = d.org_id "
 )
 
@@ -1004,7 +1004,7 @@ _SELECT_WRITTEN = (
         for c in _PUBLIC
     )
     + " FROM written d "
-    " LEFT JOIN staging.graha_clients c "
+    " LEFT JOIN public.graha_clients c "
     "        ON c.id = d.client_id AND c.org_id = d.org_id "
     + _ACTOR_JOINS
 )
@@ -1025,7 +1025,7 @@ _SELECT_WRITTEN = (
 #: somewhere else.
 _INSERT_CERTIFICATE = (
     "WITH written AS ( "
-    "  INSERT INTO staging.dsc_register "
+    "  INSERT INTO public.dsc_register "
     "    (org_id, client_id, holder_name, holder_kind, holder_designation, "
     "     holder_pan, holder_din, certificate_class, certificate_type, "
     "     issuing_authority, serial_number, valid_from, valid_to, "
@@ -1039,7 +1039,7 @@ _INSERT_CERTIFICATE = (
     "         $17::date, $18::text, $19::text, $20::text[], "
     "         $21::text, $22::text "
     "   WHERE $2::uuid IS NULL "
-    "      OR EXISTS (SELECT 1 FROM staging.graha_clients c "
+    "      OR EXISTS (SELECT 1 FROM public.graha_clients c "
     "                  WHERE c.id = $2::uuid AND c.org_id = $1::uuid) "
     "  RETURNING " + _WRITE_RETURNING + " ) "
     + _SELECT_WRITTEN
@@ -1051,7 +1051,7 @@ _INSERT_CERTIFICATE = (
 _FETCH_ONE = (
     "SELECT " + ", ".join(f"d.{c}" for c in _INTERNAL)
     + ", " + ", ".join(f"d.{c}" for c in _PUBLIC if c != "client_name")
-    + " FROM staging.dsc_register d "
+    + " FROM public.dsc_register d "
     " WHERE d.org_id = $1::uuid AND d.id = $2::uuid"
 )
 
@@ -1074,7 +1074,7 @@ _FETCH_ONE = (
 #: turns an untyped parameter into a parse error and an instant 500.
 _UPDATE_REVOCATION = (
     "WITH written AS ( "
-    "  UPDATE staging.dsc_register d "
+    "  UPDATE public.dsc_register d "
     "     SET revoked_on = $3::date, "
     "         updated_by = $5::text, "
     "         notes = CASE WHEN $4::text = '' THEN d.notes "
@@ -1098,7 +1098,7 @@ _UPDATE_REVOCATION = (
 #: is not a question the `updated_at` timestamp can answer.
 _UPDATE_CUSTODY = (
     "WITH written AS ( "
-    "  UPDATE staging.dsc_register d "
+    "  UPDATE public.dsc_register d "
     "     SET custody_status = $3::text, "
     "         updated_by = $8::text, "
     "         custody_location = $4::text, "
@@ -1126,7 +1126,7 @@ _UPDATE_CUSTODY = (
 #: editor bar as the writes it feeds.
 _SELECT_CLIENT_OPTIONS = (
     "SELECT c.id, c.name "
-    "  FROM staging.graha_clients c "
+    "  FROM public.graha_clients c "
     " WHERE c.org_id = $1::uuid "
     "   AND c.is_active "
     " ORDER BY c.name ASC "

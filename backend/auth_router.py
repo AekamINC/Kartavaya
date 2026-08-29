@@ -512,7 +512,7 @@ async def _org_for(pool, org_roles: list[dict], header_org: str | None = None) -
         if await _onboarding_column_exists(pool):
             row = await pool.fetchrow(
                 "SELECT id::text AS id, name, onboarding_complete "
-                "FROM staging.organisations WHERE id=$1::uuid",
+                "FROM public.organisations WHERE id=$1::uuid",
                 org_id,
             )
             if not row:
@@ -523,7 +523,7 @@ async def _org_for(pool, org_roles: list[dict], header_org: str | None = None) -
                 "onboarding_complete": bool(row["onboarding_complete"]),
             }
         row = await pool.fetchrow(
-            "SELECT id::text AS id, name FROM staging.organisations WHERE id=$1::uuid",
+            "SELECT id::text AS id, name FROM public.organisations WHERE id=$1::uuid",
             org_id,
         )
         if not row:
@@ -582,7 +582,7 @@ async def _module_levels(
         return None
 
     rows = await pool.fetch(
-        "SELECT module_code, role FROM staging.org_member_modules "
+        "SELECT module_code, role FROM public.org_member_modules "
         "WHERE user_id=$1 AND org_id=$2::uuid",
         user_id,
         primary["org_id"],
@@ -645,7 +645,7 @@ async def _module_grants(
         return None
 
     rows = await pool.fetch(
-        "SELECT module_code FROM staging.org_member_modules "
+        "SELECT module_code FROM public.org_member_modules "
         "WHERE user_id=$1 AND org_id=$2::uuid",
         user_id,
         primary["org_id"],
@@ -722,7 +722,7 @@ async def preview_invite(request: Request, token: str):
     org_seats_pending = None
     if org_id:
         org_name = await pool.fetchval(
-            "SELECT name FROM staging.organisations WHERE id=$1::uuid", str(org_id)
+            "SELECT name FROM public.organisations WHERE id=$1::uuid", str(org_id)
         )
         # The member count used to be returned on its own, with no ceiling
         # beside it — "6 people" and no way to know whether that was 6 of 5.
@@ -762,7 +762,7 @@ async def preview_invite(request: Request, token: str):
         active = {
             r["module_code"]
             for r in await pool.fetch(
-                "SELECT module_code FROM staging.module_subscriptions "
+                "SELECT module_code FROM public.module_subscriptions "
                 "WHERE org_id=$1::uuid AND is_active = TRUE",
                 str(org_id),
             )
@@ -913,7 +913,7 @@ async def claim_invite(request: Request, token: str, user=Depends(require_user))
     )
 
     org_name = await pool.fetchval(
-        "SELECT name FROM staging.organisations WHERE id=$1::uuid", str(invite_org_id),
+        "SELECT name FROM public.organisations WHERE id=$1::uuid", str(invite_org_id),
     )
     audit(
         "auth.invite_claimed", request, org_id=str(invite_org_id),
@@ -955,7 +955,7 @@ async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
         org_role = "org_member"
 
     await pool.execute(
-        "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+        "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
         "VALUES ($1, $2::uuid, $3, $4) "
         "ON CONFLICT DO NOTHING",
         user_id, str(invite_org_id), org_role, invite["invited_by"],
@@ -976,7 +976,7 @@ async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
     # owners, but `owner_user_id` records the founder.
     if org_role == "org_owner":
         claimed = await pool.fetchval(
-            "UPDATE staging.organisations SET owner_user_id=$1, updated_at=NOW() "
+            "UPDATE public.organisations SET owner_user_id=$1, updated_at=NOW() "
             " WHERE id=$2::uuid AND owner_user_id IS NULL "
             " RETURNING team_id",
             user_id, str(invite_org_id),
@@ -1023,7 +1023,7 @@ async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
         active = {
             r["module_code"]
             for r in await pool.fetch(
-                "SELECT module_code FROM staging.module_subscriptions "
+                "SELECT module_code FROM public.module_subscriptions "
                 "WHERE org_id=$1::uuid AND is_active = TRUE",
                 str(invite_org_id),
             )
@@ -1052,7 +1052,7 @@ async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
             if refuse_grant_shape(code, level) is not None:
                 continue
             await pool.execute(
-                "INSERT INTO staging.org_member_modules "
+                "INSERT INTO public.org_member_modules "
                 "    (user_id, org_id, module_code, role, granted_by) "
                 "VALUES ($1, $2::uuid, $3, $4, $5) "
                 "ON CONFLICT DO NOTHING",
@@ -1100,7 +1100,7 @@ async def _apply_org_invite(pool, request, invite, user_id: str) -> None:
     if employee_id:
         try:
             linked = await pool.fetchval(
-                "UPDATE staging.manav_employees "
+                "UPDATE public.manav_employees "
                 "   SET user_id=$1, updated_at=NOW() "
                 " WHERE id=$2::uuid AND org_id=$3::uuid AND user_id IS NULL "
                 " RETURNING id",
@@ -1374,7 +1374,7 @@ async def login(request: Request, body: LoginBody):
     enrolled = False
     if _totp_present:
         enrolled = bool(await pool.fetchval(
-            "SELECT 1 FROM staging.user_totp WHERE user_id=$1", user["user_id"],
+            "SELECT 1 FROM public.user_totp WHERE user_id=$1", user["user_id"],
         ))
 
     if enrolled:
@@ -1394,9 +1394,9 @@ async def login(request: Request, body: LoginBody):
         # Platform accounts are unaffected: their `user_roles` rows carry
         # `org_id IS NULL` (platform scope) and never match this join.
         blocking_org = await pool.fetchval(
-            "SELECT o.name FROM staging.user_roles ur "
-            "JOIN staging.organisations o ON o.id = ur.org_id "
-            "JOIN staging.org_security os ON os.org_id = ur.org_id "
+            "SELECT o.name FROM public.user_roles ur "
+            "JOIN public.organisations o ON o.id = ur.org_id "
+            "JOIN public.org_security os ON os.org_id = ur.org_id "
             "WHERE ur.user_id=$1 AND ur.role_code IN ('org_owner','org_admin','org_member') "
             "AND os.tfa_enforced = TRUE "
             "LIMIT 1",
@@ -1422,7 +1422,7 @@ async def _finish_login(pool, request: Request, user, remember: bool) -> JSONRes
     shared by `login()` (no 2FA owed) and `verify_2fa()` (2FA just passed).
     """
     pr = await pool.fetch(
-        "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
+        "SELECT role_code FROM public.user_roles WHERE user_id=$1 AND org_id IS NULL",
         user["user_id"],
     )
     platform_roles = [r["role_code"] for r in pr]
@@ -1433,8 +1433,8 @@ async def _finish_login(pool, request: Request, user, remember: bool) -> JSONRes
     # another. Without the clause the row order is whatever the planner returns.
     or_rows = await pool.fetch(
         "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
-        "FROM staging.user_roles ur "
-        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "FROM public.user_roles ur "
+        "JOIN public.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
         "AND ur.role_code IN ('org_owner','org_admin','org_member') "
         "ORDER BY ur.granted_at",
@@ -1493,7 +1493,7 @@ async def verify_2fa(request: Request, body: Verify2FABody):
 
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT secret, last_used_step FROM staging.user_totp WHERE user_id=$1", user_id,
+        "SELECT secret, last_used_step FROM public.user_totp WHERE user_id=$1", user_id,
     )
     if not row:
         # Disabled between /login and /verify-2fa (a real, if narrow, race).
@@ -1506,13 +1506,13 @@ async def verify_2fa(request: Request, body: Verify2FABody):
     new_step = None
     if totp_service.looks_like_recovery_code(body.code):
         codes = await pool.fetch(
-            "SELECT id, code_hash FROM staging.user_totp_recovery_codes "
+            "SELECT id, code_hash FROM public.user_totp_recovery_codes "
             "WHERE user_id=$1 AND used_at IS NULL", user_id,
         )
         for c in codes:
             if totp_service.recovery_code_matches(body.code, c["code_hash"]):
                 await pool.execute(
-                    "UPDATE staging.user_totp_recovery_codes SET used_at=NOW() WHERE id=$1",
+                    "UPDATE public.user_totp_recovery_codes SET used_at=NOW() WHERE id=$1",
                     c["id"],
                 )
                 ok = True
@@ -1522,7 +1522,7 @@ async def verify_2fa(request: Request, body: Verify2FABody):
         ok, new_step = totp_service.verify_code(secret, body.code, row["last_used_step"])
         if ok:
             await pool.execute(
-                "UPDATE staging.user_totp SET last_used_step=$2, updated_at=NOW() "
+                "UPDATE public.user_totp SET last_used_step=$2, updated_at=NOW() "
                 "WHERE user_id=$1", user_id, new_step,
             )
 
@@ -1562,7 +1562,7 @@ async def refresh(request: Request, current_user: dict = Depends(require_user)):
     pool = await get_pool()
     user_id = current_user["user_id"]
     pr = await pool.fetch(
-        "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
+        "SELECT role_code FROM public.user_roles WHERE user_id=$1 AND org_id IS NULL",
         user_id,
     )
     # ORDER BY granted_at for the same reason `me` does: `or_rows[0]` has to be
@@ -1570,8 +1570,8 @@ async def refresh(request: Request, current_user: dict = Depends(require_user)):
     # against one org while the requests are scoped to another.
     or_rows = await pool.fetch(
         "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
-        "FROM staging.user_roles ur "
-        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "FROM public.user_roles ur "
+        "JOIN public.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
         "AND ur.role_code IN ('org_owner','org_admin','org_member') "
         "ORDER BY ur.granted_at",
@@ -1842,7 +1842,7 @@ async def me(request: Request, current_user: dict = Depends(require_user)):
     """Return the authenticated user's public profile."""
     pool = await get_pool()
     pr = await pool.fetch(
-        "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
+        "SELECT role_code FROM public.user_roles WHERE user_id=$1 AND org_id IS NULL",
         current_user["user_id"],
     )
     # ORDER BY granted_at, so `or_rows[0]` is the SAME org
@@ -1852,8 +1852,8 @@ async def me(request: Request, current_user: dict = Depends(require_user)):
     # request the nav fires is scoped to another.
     or_rows = await pool.fetch(
         "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
-        "FROM staging.user_roles ur "
-        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "FROM public.user_roles ur "
+        "JOIN public.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
         "AND ur.role_code IN ('org_owner','org_admin','org_member') "
         "ORDER BY ur.granted_at",

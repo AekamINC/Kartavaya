@@ -12,8 +12,8 @@ async def find_low_stock(pool, org_id: str) -> list:
         """
         SELECT s.product_id, p.name AS product_name,
                s.quantity_on_hand, s.low_stock_threshold
-        FROM staging.vikray_stock s
-        JOIN staging.ganit_products p ON p.id = s.product_id
+        FROM public.vikray_stock s
+        JOIN public.ganit_products p ON p.id = s.product_id
         WHERE s.org_id = $1::uuid
           AND s.low_stock_threshold IS NOT NULL
           AND s.quantity_on_hand <= s.low_stock_threshold

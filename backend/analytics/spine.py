@@ -101,7 +101,7 @@ async def register_catalogue(conn, adapter: SourceAdapter) -> None:
     """
     for metric in adapter.metrics:
         await conn.execute(
-            "INSERT INTO staging.analytics_source_metrics "
+            "INSERT INTO public.analytics_source_metrics "
             "    (source, metric, label, is_money) "
             "VALUES ($1::text, $2::text, $3::text, $4::boolean) "
             "ON CONFLICT (source, metric) "
@@ -122,7 +122,7 @@ async def _refresh_entities(conn, adapter, creds, account_row) -> dict[str, str]
     ids: dict[str, str] = {}
     for ref in refs:
         row = await conn.fetchrow(
-            "INSERT INTO staging.analytics_entities "
+            "INSERT INTO public.analytics_entities "
             "    (account_id, entity_type, external_id, name, attrs) "
             "VALUES ($1::uuid, $2::text, $3::text, $4::text, $5::jsonb) "
             "ON CONFLICT (account_id, entity_type, external_id) "
@@ -134,7 +134,7 @@ async def _refresh_entities(conn, adapter, creds, account_row) -> dict[str, str]
     for ref in refs:
         if ref.parent_external_id and ref.parent_external_id in ids:
             await conn.execute(
-                "UPDATE staging.analytics_entities SET parent_id = $1::uuid "
+                "UPDATE public.analytics_entities SET parent_id = $1::uuid "
                 " WHERE id = $2::uuid",
                 ids[ref.parent_external_id], ids[ref.external_id])
     return ids
@@ -154,7 +154,7 @@ async def upsert_facts(conn, account_row, facts, entity_ids) -> int:
                         account_row["source"], f.entity_external_id)
             continue
         await conn.execute(
-            "INSERT INTO staging.analytics_metrics_daily "
+            "INSERT INTO public.analytics_metrics_daily "
             "    (org_id, account_id, entity_id, date, metric, value, currency, synced_at) "
             "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::text, "
             "        $6::numeric, $7::text, NOW()) "
@@ -197,7 +197,7 @@ async def sync_account(pool, account_row, *, creds, today: date) -> dict:
                                 account_row["id"])
                     break
             await conn.execute(
-                "UPDATE staging.analytics_accounts "
+                "UPDATE public.analytics_accounts "
                 "   SET cursor_date = $1::date, last_ok_at = NOW(), "
                 "       last_error = NULL, consecutive_failures = 0 "
                 " WHERE id = $2::uuid",
@@ -212,7 +212,7 @@ async def sync_account(pool, account_row, *, creds, today: date) -> dict:
         try:
             async with pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE staging.analytics_accounts "
+                    "UPDATE public.analytics_accounts "
                     "   SET last_error = $1::text, "
                     "       consecutive_failures = consecutive_failures + 1 "
                     " WHERE id = $2::uuid",
@@ -227,7 +227,7 @@ async def sync_all(pool, *, today: date) -> dict:
     the other nine clients' numbers arriving."""
     async with pool.acquire() as conn:
         accounts = await conn.fetch(
-            "SELECT * FROM staging.analytics_accounts "
+            "SELECT * FROM public.analytics_accounts "
             " WHERE is_active ORDER BY last_ok_at NULLS FIRST")
     out = {}
     for a in accounts:

@@ -75,11 +75,11 @@ def rules_fired(req: MetricRequest):
         f"SELECT {period} AS period, COUNT(*) AS value, "
         "COUNT(*) FILTER (WHERE r.dry_run) AS dry_runs, "
         "COUNT(*) FILTER (WHERE ref.refused) AS refused_runs "
-        "FROM staging.niyam_runs r "
+        "FROM public.niyam_runs r "
         # One probe row per run, not a join fan-out: a run with three refused
         # condition steps must still count as ONE refused run.
         "LEFT JOIN LATERAL ("
-        "  SELECT TRUE AS refused FROM staging.niyam_run_steps s "
+        "  SELECT TRUE AS refused FROM public.niyam_run_steps s "
         "  WHERE s.run_id = r.run_id AND s.outcome = 'refused' LIMIT 1"
         ") ref ON TRUE "
         "WHERE r.org_id = $1::uuid "
@@ -108,8 +108,8 @@ def actions(req: MetricRequest):
     period = bucket_expr(req.bucket, "s.created_at")
     # niyam_run_steps carries NO org_id — the org scope is the run's, always.
     base = (
-        "FROM staging.niyam_run_steps s "
-        "JOIN staging.niyam_runs r ON r.run_id = s.run_id "
+        "FROM public.niyam_run_steps s "
+        "JOIN public.niyam_runs r ON r.run_id = s.run_id "
         "WHERE r.org_id = $1::uuid "
         f"AND {_ACTION_STEP} "
         "AND s.created_at::date BETWEEN $2::date AND $3::date "
@@ -154,11 +154,11 @@ def failure_rate(req: MetricRequest):
         "COUNT(*) FILTER (WHERE f.failed)::float / NULLIF(COUNT(*), 0)::float * 100 AS value, "
         "COUNT(*) FILTER (WHERE f.failed) AS failed, "
         "COUNT(*) AS runs "
-        "FROM staging.niyam_runs r "
+        "FROM public.niyam_runs r "
         # LIMIT 1 keeps this one row per run: a pipeline that failed twice is
         # still one failed run, and a fan-out here would inflate BOTH counts.
         "LEFT JOIN LATERAL ("
-        "  SELECT TRUE AS failed FROM staging.niyam_run_steps s "
+        "  SELECT TRUE AS failed FROM public.niyam_run_steps s "
         "  WHERE s.run_id = r.run_id AND s.outcome = 'failed' LIMIT 1"
         ") f ON TRUE "
         "WHERE r.org_id = $1::uuid "
@@ -191,10 +191,10 @@ def never_fired(req: MetricRequest):
         "SELECT ru.name AS label, "
         "(CURRENT_DATE - ru.created_at::date) AS value, "
         "ru.event_type AS event_type "
-        "FROM staging.niyam_rules ru "
+        "FROM public.niyam_rules ru "
         "WHERE ru.org_id = $1::uuid AND ru.enabled "
         "AND NOT EXISTS ("
-        "  SELECT 1 FROM staging.niyam_runs r WHERE r.rule_id = ru.rule_id"
+        "  SELECT 1 FROM public.niyam_runs r WHERE r.rule_id = ru.rule_id"
         ") "
         "ORDER BY value DESC, label",
         [req.org_id],

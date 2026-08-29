@@ -19,7 +19,7 @@ half is why the shape is still different:
 
   · **That route rewrites the CALLING ORG'S OWN contacts.** An org admin
     triggering work scoped to their own tenant is exactly who should hold that
-    button. `staging.pin_directory` has NO `org_id` — it is one national
+    button. `public.pin_directory` has NO `org_id` — it is one national
     dataset every tenant reads — so an `is_org_admin` route would let any one
     customer's admin reload platform-wide reference data underneath every other
     customer. That is not the same permission; it is a tenancy inversion.
@@ -65,7 +65,7 @@ EXPECT_PINS = 18839
 
 
 def _table_missing_message() -> str:
-    return ("staging.pin_directory does not exist. Apply "
+    return ("public.pin_directory does not exist. Apply "
             "backend/migrations/233_pin_directory.sql first:\n"
             "    the migration creates the table, this script fills it, and "
             "they are deliberately separate -- see the migration header.")

@@ -76,7 +76,7 @@ _TEAM = "COALESCE(NULLIF(e.department, ''), 'No department') AS team"
 #: The join that resolves an attendance row to its department. employee_id
 #: appears here and NOWHERE else — never in a SELECT list, never in a
 #: GROUP BY (the DPDP pin counts on exactly this text).
-_TEAM_JOIN = "JOIN staging.manav_employees e ON e.id = a.employee_id "
+_TEAM_JOIN = "JOIN public.manav_employees e ON e.id = a.employee_id "
 
 #: Payroll's own present-day formula (routers/vetana.py payslip builder):
 #: present + late count 1, half_day counts 0.5. Reused verbatim so the
@@ -124,7 +124,7 @@ def attendance_rate(req: MetricRequest):
         f"({_ATTENDED})::float / NULLIF({_MARKED}, 0)::float * 100 AS value, "
         f"({_ATTENDED})::float AS attended, "
         f"{_MARKED} AS marked "
-        "FROM staging.manav_attendance a "
+        "FROM public.manav_attendance a "
         + join +
         "WHERE a.org_id = $1::uuid "
         "AND a.date BETWEEN $2::date AND $3::date "
@@ -159,7 +159,7 @@ def absenteeism(req: MetricRequest):
         "COUNT(*) FILTER (WHERE a.status IN ('absent', 'on_leave')) AS value, "
         "COUNT(*) FILTER (WHERE a.status = 'absent') AS unplanned, "
         "COUNT(*) FILTER (WHERE a.status = 'on_leave') AS approved "
-        "FROM staging.manav_attendance a "
+        "FROM public.manav_attendance a "
         + join +
         "WHERE a.org_id = $1::uuid "
         "AND a.date BETWEEN $2::date AND $3::date "
@@ -189,7 +189,7 @@ def hours_worked(req: MetricRequest):
         "SUM(a.work_hours)::float AS value, "
         "SUM(COALESCE(a.overtime_hours, 0))::float AS overtime, "
         "COUNT(*) FILTER (WHERE a.work_hours IS NOT NULL) AS recorded_days "
-        "FROM staging.manav_attendance a "
+        "FROM public.manav_attendance a "
         + join +
         "WHERE a.org_id = $1::uuid "
         "AND a.date BETWEEN $2::date AND $3::date "
@@ -236,12 +236,12 @@ def vetana_reconciliation(req: MetricRequest):
         "attendance_days, vetana_days FROM ("
         "  SELECT COALESCE(SUM(att), 0)::float AS attendance_days, "
         "    (SELECT COALESCE(SUM(p.present_days), 0)::float "
-        "     FROM staging.vetana_payslips p "
+        "     FROM public.vetana_payslips p "
         f"     WHERE {_VETANA_MONTHS}) AS vetana_days "
         "  FROM ("
         f"    SELECT {period} AS period, "
         f"      {_ATTENDED} AS att "
-        "    FROM staging.manav_attendance a "
+        "    FROM public.manav_attendance a "
         "    WHERE a.org_id = $1::uuid "
         "    AND a.date BETWEEN $2::date AND $3::date "
         "    GROUP BY 1"
@@ -251,7 +251,7 @@ def vetana_reconciliation(req: MetricRequest):
         # metric exists to show. An org with neither — including an org that
         # is not yours — returns no rows, never a {value: null} shape.
         "  HAVING COUNT(*) > 0 OR EXISTS ("
-        "    SELECT 1 FROM staging.vetana_payslips p "
+        "    SELECT 1 FROM public.vetana_payslips p "
         f"    WHERE {_VETANA_MONTHS})"
         ") r",
         [req.org_id, req.window.start, req.window.end],
@@ -293,11 +293,11 @@ def geofence_exceptions(req: MetricRequest):
         "COUNT(*) FILTER (WHERE p.distance_m > s.radius_m) AS beyond_radius, "
         "COUNT(*) FILTER (WHERE p.geofence_id IS NULL) AS unresolved, "
         "MAX(p.distance_m)::float AS max_distance_m "
-        "FROM staging.pahchan_punches p "
+        "FROM public.pahchan_punches p "
         # LEFT, not inner: a punch whose site was deleted must still be
         # counted and must still show in `unresolved` — an inner join would
         # delete the exception along with the site.
-        "LEFT JOIN staging.pahchan_sites s ON s.id = p.geofence_id "
+        "LEFT JOIN public.pahchan_sites s ON s.id = p.geofence_id "
         "WHERE p.org_id = $1::uuid "
         f"AND {local}::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 ORDER BY 1",
@@ -337,7 +337,7 @@ def offline_reconciliation(req: MetricRequest):
         f"COUNT(*) FILTER (WHERE {offline} AND NOT ({inside})) AS late_sync, "
         "MAX(EXTRACT(EPOCH FROM (p.received_at - p.captured_at)) / 3600.0)"
         f" FILTER (WHERE {offline})::float AS max_lag_hours "
-        "FROM staging.pahchan_punches p "
+        "FROM public.pahchan_punches p "
         "WHERE p.org_id = $1::uuid "
         f"AND {local}::date BETWEEN $2::date AND $3::date "
         "GROUP BY 1 "
@@ -363,13 +363,13 @@ absent_metric(
     unit="pct",
     grain="flow",
     absent="Nothing records which shift a day was worked on. Verified live "
-           "2026-08-25: staging.manav_attendance has no shift_id column, and "
-           "staging.pahchan_punches has no shift column either; "
+           "2026-08-25: public.manav_attendance has no shift_id column, and "
+           "public.pahchan_punches has no shift column either; "
            "manav_employees.shift is free text defaulting to 'general' with "
-           "no FK into staging.manav_shift_definitions (027, 12 rows live); "
-           "and joining a same-day staging.manav_schedules row would silently "
+           "no FK into public.manav_shift_definitions (027, 12 rows live); "
+           "and joining a same-day public.manav_schedules row would silently "
            "drop every attendance day the optional scheduler never covered — "
-           "a convincing partial answer. staging.pahchan_policy IS applied "
+           "a convincing partial answer. public.pahchan_policy IS applied "
            "and does carry shift_start_time, but it holds ONE shift per org, "
            "so it yields a single bucket rather than a shift dimension. "
            "Closing this needs a shift stamped on the attendance or punch "
@@ -383,7 +383,7 @@ absent_metric(
     unit="count",
     grain="flow",
     absent="The policy now exists — verified live 2026-08-25, "
-           "staging.pahchan_policy carries grace_minutes and shift_start_time "
+           "public.pahchan_policy carries grace_minutes and shift_start_time "
            "on every row — but an ARRIVAL does not. An arrival is the first "
            "'in' punch of a person's day, and isolating it needs a per-person "
            "grouping that the DPDP boundary at the top of this file forbids "

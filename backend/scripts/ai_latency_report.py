@@ -67,7 +67,7 @@ SELECT provider,
        percentile_disc(0.95) WITHIN GROUP (ORDER BY latency_ms)       AS p95,
        max(latency_ms)                                                AS worst,
        sum(coalesce(cost_usd, 0))                                     AS spend
-  FROM staging.hub_ai_logs
+  FROM public.hub_ai_logs
  WHERE status = 'success'
    AND latency_ms IS NOT NULL
    AND created_at >= now() - make_interval(days => $1::int)
@@ -85,7 +85,7 @@ SELECT provider,
        percentile_disc(0.50) WITHIN GROUP (ORDER BY latency_ms)
            FILTER (WHERE completion_tokens > 400)                      AS p50_long,
        percentile_disc(0.50) WITHIN GROUP (ORDER BY completion_tokens) AS med_out
-  FROM staging.hub_ai_logs
+  FROM public.hub_ai_logs
  WHERE status = 'success'
    AND latency_ms IS NOT NULL
    AND coalesce(completion_tokens, 0) > 0
@@ -100,7 +100,7 @@ SELECT provider,
        max(created_at)::date                                          AS last_seen,
        (array_agg(left(coalesce(error_message, ''), 110)
                   ORDER BY created_at DESC))[1]                       AS latest
-  FROM staging.hub_ai_logs
+  FROM public.hub_ai_logs
  WHERE status <> 'success'
    AND created_at >= now() - make_interval(days => $1::int)
  GROUP BY provider
@@ -108,7 +108,7 @@ SELECT provider,
 
 _MODELS = """
 SELECT provider, model, status, count(*) AS n, max(created_at)::date AS last_seen
-  FROM staging.hub_ai_logs
+  FROM public.hub_ai_logs
  WHERE created_at >= now() - make_interval(days => $1::int)
  GROUP BY 1, 2, 3
 """
@@ -117,7 +117,7 @@ _WINDOW = """
 SELECT count(*)        AS rows,
        min(created_at) AS first_seen,
        max(created_at) AS last_seen
-  FROM staging.hub_ai_logs
+  FROM public.hub_ai_logs
  WHERE created_at >= now() - make_interval(days => $1::int)
 """
 
@@ -147,7 +147,7 @@ async def run(days: int) -> int:
     failures = {r["provider"]: r for r in await pool.fetch(_FAILURES, days)}
     models = await pool.fetch(_MODELS, days)
 
-    print(f"staging.hub_ai_logs — last {days} days")
+    print(f"public.hub_ai_logs — last {days} days")
     print(f"  {window['rows']:,} rows, {window['first_seen']:%Y-%m-%d} to "
           f"{window['last_seen']:%Y-%m-%d}\n")
 

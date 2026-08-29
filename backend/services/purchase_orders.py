@@ -417,7 +417,7 @@ async def po_prefix(pool, org_id: str) -> str:
     """
     try:
         raw = await pool.fetchval(
-            "SELECT settings->'doc_prefixes'->>$2 FROM staging.organisations "
+            "SELECT settings->'doc_prefixes'->>$2 FROM public.organisations "
             "WHERE id = $1::uuid",
             org_id, PO_PREFIX_KEY,
         )
@@ -482,7 +482,7 @@ async def next_po_number(pool, org_id: str, prefix: str) -> str:
             lock_key = hash((org_id, "ganit_purchase_orders")) & 0x7FFFFFFF
             await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
             rows = await conn.fetch(
-                "SELECT po_number FROM staging.ganit_purchase_orders "
+                "SELECT po_number FROM public.ganit_purchase_orders "
                 "WHERE org_id=$1::uuid AND po_number IS NOT NULL",
                 org_id,
             )

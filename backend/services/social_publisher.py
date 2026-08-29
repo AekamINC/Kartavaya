@@ -181,7 +181,7 @@ def with_plain_tokens(row) -> dict:
 async def _get_account(account_id: str) -> dict | None:
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.hub_social_accounts WHERE id=$1::uuid AND is_active=TRUE",
+        "SELECT * FROM public.hub_social_accounts WHERE id=$1::uuid AND is_active=TRUE",
         account_id,
     )
     if not row:
@@ -212,7 +212,7 @@ async def _refresh_token_if_needed(account: dict) -> dict:
 
         pool = await get_pool()
         await pool.execute(
-            "UPDATE staging.hub_social_accounts SET access_token=$1, updated_at=NOW() "
+            "UPDATE public.hub_social_accounts SET access_token=$1, updated_at=NOW() "
             "WHERE id=$2::uuid",
             # Re-encrypted on write. A refresh that stored plaintext would
             # silently undo the encryption for the busiest accounts first.
@@ -744,10 +744,10 @@ async def publish_content(queue_id: str) -> dict:
         "sa.platform, sa.access_token, sa.refresh_token, sa.token_expires_at, "
         "sa.page_id, sa.account_id, sa.metadata as acct_meta, "
         "cl.org_id AS client_org_id "
-        "FROM staging.hub_publish_queue q "
-        "JOIN staging.hub_content_items c ON c.id = q.content_id "
-        "JOIN staging.hub_social_accounts sa ON sa.id = q.social_account_id "
-        "JOIN staging.hub_clients cl ON cl.id = q.client_id "
+        "FROM public.hub_publish_queue q "
+        "JOIN public.hub_content_items c ON c.id = q.content_id "
+        "JOIN public.hub_social_accounts sa ON sa.id = q.social_account_id "
+        "JOIN public.hub_clients cl ON cl.id = q.client_id "
         "WHERE q.id=$1::uuid",
         queue_id,
     )
@@ -755,7 +755,7 @@ async def publish_content(queue_id: str) -> dict:
         return {"error": "Queue item not found"}
 
     await pool.execute(
-        "UPDATE staging.hub_publish_queue SET status='publishing' WHERE id=$1::uuid",
+        "UPDATE public.hub_publish_queue SET status='publishing' WHERE id=$1::uuid",
         queue_id,
     )
 
@@ -772,7 +772,7 @@ async def publish_content(queue_id: str) -> dict:
 
     if account.get("_token_expired"):
         await pool.execute(
-            "UPDATE staging.hub_publish_queue SET status='failed', "
+            "UPDATE public.hub_publish_queue SET status='failed', "
             "error_message='Token expired — please reconnect this social account', "
             "retry_count=retry_count+1 WHERE id=$1::uuid",
             queue_id,
@@ -801,14 +801,14 @@ async def publish_content(queue_id: str) -> dict:
 
         now = datetime.now(timezone.utc)
         await pool.execute(
-            "UPDATE staging.hub_publish_queue SET "
+            "UPDATE public.hub_publish_queue SET "
             "status='published', platform_post_id=$1, platform_url=$2, published_at=$3 "
             "WHERE id=$4::uuid",
             result.get("platform_post_id"), result.get("platform_url"), now, queue_id,
         )
 
         await pool.execute(
-            "UPDATE staging.hub_content_items SET "
+            "UPDATE public.hub_content_items SET "
             "status='published', published_at=$1, published_url=$2, published_platform_id=$3 "
             "WHERE id=$4::uuid",
             now, result.get("platform_url"), result.get("platform_post_id"), item["content_id"],
@@ -820,7 +820,7 @@ async def publish_content(queue_id: str) -> dict:
     except Exception as exc:
         log.error("Publish failed for queue %s: %s", queue_id, exc)
         await pool.execute(
-            "UPDATE staging.hub_publish_queue SET "
+            "UPDATE public.hub_publish_queue SET "
             "status='failed', error_message=$1, retry_count=retry_count+1 "
             "WHERE id=$2::uuid",
             str(exc)[:500], queue_id,
@@ -991,7 +991,7 @@ async def _claim_for_publish(pool, queue_id: str) -> bool:
     directly with no claim — so it stays.
     """
     return await pool.fetchval(
-        "UPDATE staging.hub_publish_queue SET status='publishing' "
+        "UPDATE public.hub_publish_queue SET status='publishing' "
         "WHERE id=$1::uuid AND status='scheduled' RETURNING id::text",
         queue_id,
     ) is not None
@@ -1023,9 +1023,9 @@ async def sweep_scheduled_posts() -> dict:
         "       o.name AS org_name, "
         "       count(*)::int AS due, "
         "       o.settings->>$1::text AS raw_limit "
-        "  FROM staging.hub_publish_queue q "
-        "  JOIN staging.hub_clients cl ON cl.id = q.client_id "
-        "  JOIN staging.organisations o ON o.id = cl.org_id "
+        "  FROM public.hub_publish_queue q "
+        "  JOIN public.hub_clients cl ON cl.id = q.client_id "
+        "  JOIN public.organisations o ON o.id = cl.org_id "
         " WHERE q.status='scheduled' AND q.scheduled_for <= NOW() "
         " GROUP BY cl.org_id, o.name, o.settings->>$1::text "
         " ORDER BY cl.org_id",
@@ -1051,8 +1051,8 @@ async def sweep_scheduled_posts() -> dict:
         # a post gets starved for ever behind a cap it keeps just missing.
         candidates = await pool.fetch(
             "SELECT q.id::text AS id "
-            "  FROM staging.hub_publish_queue q "
-            "  JOIN staging.hub_clients cl ON cl.id = q.client_id "
+            "  FROM public.hub_publish_queue q "
+            "  JOIN public.hub_clients cl ON cl.id = q.client_id "
             " WHERE q.status='scheduled' AND q.scheduled_for <= NOW() "
             "   AND cl.org_id = $1::uuid "
             " ORDER BY q.scheduled_for, q.id "

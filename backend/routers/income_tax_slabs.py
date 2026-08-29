@@ -164,7 +164,7 @@ async def list_it_slabs(
 
     pool = await get_pool()
     rows = await pool.fetch(
-        f"SELECT {_COLS} FROM staging.pay_income_tax_slabs "
+        f"SELECT {_COLS} FROM public.pay_income_tax_slabs "
         " WHERE org_id = $1::uuid OR org_id IS NULL "
         " ORDER BY regime, effective_from NULLS FIRST, slab_from",
         org_id,
@@ -206,7 +206,7 @@ async def create_it_slab(
     _require_admin(levels)
     _check_band(body.regime, body.slab_from, body.slab_to, body.rate_percent)
     row = await pool.fetchrow(
-        "INSERT INTO staging.pay_income_tax_slabs "
+        "INSERT INTO public.pay_income_tax_slabs "
         "(org_id, regime, slab_from, slab_to, rate_percent, effective_from, "
         " assessment_year, source_ref, notes, created_by) "
         # `::text::date`, never a bare `::date` on an ISO string — that bind is
@@ -250,7 +250,7 @@ async def update_it_slab(
 
     current = await pool.fetchrow(
         "SELECT regime, slab_from, slab_to, rate_percent "
-        "  FROM staging.pay_income_tax_slabs WHERE id=$1 AND org_id=$2::uuid",
+        "  FROM public.pay_income_tax_slabs WHERE id=$1 AND org_id=$2::uuid",
         slab_id, org_id,
     )
     # 404, not 403 — the same answer a row that does not exist gets, because a
@@ -288,7 +288,7 @@ async def update_it_slab(
 
     params.extend([slab_id, org_id])
     row = await pool.fetchrow(
-        "UPDATE staging.pay_income_tax_slabs SET " + ", ".join(sets) +
+        "UPDATE public.pay_income_tax_slabs SET " + ", ".join(sets) +
         " WHERE id=$" + str(len(params) - 1) +
         " AND org_id=$" + str(len(params)) + "::uuid "
         f"RETURNING {_COLS}",
@@ -319,7 +319,7 @@ async def delete_it_slab(
     pool = await get_pool()
     _require_admin(levels)
     result = await pool.execute(
-        "DELETE FROM staging.pay_income_tax_slabs "
+        "DELETE FROM public.pay_income_tax_slabs "
         " WHERE id=$1 AND org_id=$2::uuid",
         slab_id, org_id,
     )

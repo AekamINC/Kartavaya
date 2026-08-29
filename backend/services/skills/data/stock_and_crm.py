@@ -162,7 +162,7 @@ async def check_impossible_stock(pool, org_id: str, limit: int = 200) -> dict:
                    count(*)                                                  AS moves,
                    min(m.created_at)::date                                   AS first_move,
                    max(m.created_at)::date                                   AS last_move
-            FROM staging.vikray_stock_moves m
+            FROM public.vikray_stock_moves m
             WHERE m.org_id = $1::uuid
             GROUP BY m.product_id
         ),
@@ -178,7 +178,7 @@ async def check_impossible_stock(pool, org_id: str, limit: int = 200) -> dict:
                        PARTITION BY m.product_id
                        ORDER BY m.created_at, m.id
                        ROWS UNBOUNDED PRECEDING) AS running
-            FROM staging.vikray_stock_moves m
+            FROM public.vikray_stock_moves m
             WHERE m.org_id = $1::uuid
         ),
         dip AS (
@@ -204,11 +204,11 @@ async def check_impossible_stock(pool, org_id: str, limit: int = 200) -> dict:
                dip.lowest_running,
                dip.first_negative_date,
                count(*) OVER ()                           AS _total
-        FROM staging.ganit_products p
+        FROM public.ganit_products p
         -- Every join to a per-org table carries org_id as well as the id. The
         -- foreign key is on the id alone, so an id join by itself can surface
         -- another practice's row.
-        LEFT JOIN staging.vikray_stock s
+        LEFT JOIN public.vikray_stock s
                ON s.product_id = p.id AND s.org_id = p.org_id
         LEFT JOIN led ON led.product_id = p.id
         LEFT JOIN dip ON dip.product_id = p.id
@@ -231,13 +231,13 @@ async def check_impossible_stock(pool, org_id: str, limit: int = 200) -> dict:
 
     coverage = await pool.fetchrow(
         """
-        SELECT (SELECT count(*) FROM staging.vikray_stock
+        SELECT (SELECT count(*) FROM public.vikray_stock
                  WHERE org_id = $1::uuid)                        AS stock_rows,
-               (SELECT count(*) FROM staging.vikray_stock_moves
+               (SELECT count(*) FROM public.vikray_stock_moves
                  WHERE org_id = $1::uuid)                        AS movement_rows,
-               (SELECT count(*) FROM staging.ganit_products
+               (SELECT count(*) FROM public.ganit_products
                  WHERE org_id = $1::uuid AND is_active)          AS active_products,
-               (SELECT count(*) FROM staging.ganit_products
+               (SELECT count(*) FROM public.ganit_products
                  WHERE org_id = $1::uuid AND is_active
                    AND cost_price IS NULL)                       AS products_without_cost_price
         """,
@@ -481,15 +481,15 @@ async def check_unfillable_orders(pool, org_id: str, limit: int = 400) -> dict:
                    {_QTY_SQL}                                   AS qty,
                    COALESCE(NULLIF(btrim(l->>'description'), ''),
                             '(line carries no description)')    AS line_description
-            FROM staging.vikray_orders o
+            FROM public.vikray_orders o
             CROSS JOIN LATERAL {_LINES_SQL}
             -- The company first, the contact only as the fallback. Both ON
             -- clauses carry org_id: the FK is on the id alone, so an id-only
             -- join can print another practice's client name against this
             -- practice's order.
-            LEFT JOIN staging.graha_clients cl
+            LEFT JOIN public.graha_clients cl
                    ON cl.id = o.client_id AND cl.org_id = o.org_id
-            LEFT JOIN staging.graha_contacts ct
+            LEFT JOIN public.graha_contacts ct
                    ON ct.id = o.contact_id AND ct.org_id = o.org_id
             WHERE o.org_id = $1::uuid
               AND o.is_active
@@ -499,7 +499,7 @@ async def check_unfillable_orders(pool, org_id: str, limit: int = 400) -> dict:
             -- One row per (order, product) whose stock has demonstrably
             -- already been taken off the balance.
             SELECT DISTINCT m.order_id, m.product_id
-            FROM staging.vikray_stock_moves m
+            FROM public.vikray_stock_moves m
             WHERE m.org_id = $1::uuid
               AND m.order_id IS NOT NULL
               AND m.quantity_delta < 0
@@ -519,9 +519,9 @@ async def check_unfillable_orders(pool, org_id: str, limit: int = 400) -> dict:
                (d.order_id IS NOT NULL)                AS deduction_recorded,
                count(*) OVER ()                        AS _total
         FROM line li
-        JOIN staging.ganit_products p
+        JOIN public.ganit_products p
           ON p.id = li.product_id AND p.org_id = $1::uuid
-        LEFT JOIN staging.vikray_stock s
+        LEFT JOIN public.vikray_stock s
                ON s.product_id = li.product_id AND s.org_id = $1::uuid
         LEFT JOIN deducted d
                ON d.order_id = li.order_id AND d.product_id = li.product_id
@@ -549,7 +549,7 @@ async def check_unfillable_orders(pool, org_id: str, limit: int = 400) -> dict:
                                                                    AS lines_naming_a_product,
                count(*) FILTER (WHERE {_QTY_SQL} IS NULL)          AS lines_with_no_readable_quantity,
                count(DISTINCT o.id)                                AS open_orders
-        FROM staging.vikray_orders o
+        FROM public.vikray_orders o
         CROSS JOIN LATERAL {_LINES_SQL}
         WHERE o.org_id = $1::uuid
           AND o.is_active
@@ -823,14 +823,14 @@ async def check_stale_retainer_rates(
                NULLIF(btrim(ct.email), '')              AS client_email,
                NULLIF(btrim(ct.phone), '')              AS client_phone,
                count(*) OVER ()                         AS _total
-        FROM staging.ganit_contracts k
+        FROM public.ganit_contracts k
         -- Contracts hang off a CONTACT, not off a client: there is no
         -- `client_id` on this table. The company is one hop further, through
         -- the contact, and BOTH hops carry org_id — the FK is on the id alone,
         -- so an id-only join can print another practice's client name.
-        LEFT JOIN staging.graha_contacts ct
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = k.contact_id AND ct.org_id = k.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = ct.client_id AND cl.org_id = k.org_id
         WHERE k.org_id = $1::uuid
           AND k.is_active
@@ -862,7 +862,7 @@ async def check_stale_retainer_rates(
     reminder_rows = await pool.fetch(
         """
         SELECT COALESCE(k.renewal_reminder_days, 30) AS days, count(*) AS n
-        FROM staging.ganit_contracts k
+        FROM public.ganit_contracts k
         WHERE k.org_id = $1::uuid AND k.is_active
         GROUP BY 1 ORDER BY n DESC, 1
         """,
@@ -881,20 +881,20 @@ async def check_stale_retainer_rates(
                {_customer_sql('cl', 'ct')}              AS client,
                NULLIF(btrim(ct.email), '')              AS client_email,
                NULLIF(btrim(ct.phone), '')              AS client_phone,
-               (SELECT count(*) FROM staging.ganit_invoices i
+               (SELECT count(*) FROM public.ganit_invoices i
                  WHERE i.org_id = r.org_id AND i.recurring_id = r.id)
                                                         AS invoices_raised,
-               (SELECT count(DISTINCT i.subtotal) FROM staging.ganit_invoices i
+               (SELECT count(DISTINCT i.subtotal) FROM public.ganit_invoices i
                  WHERE i.org_id = r.org_id AND i.recurring_id = r.id)
                                                         AS distinct_amounts_billed,
-               (SELECT min(i.invoice_date) FROM staging.ganit_invoices i
+               (SELECT min(i.invoice_date) FROM public.ganit_invoices i
                  WHERE i.org_id = r.org_id AND i.recurring_id = r.id)
                                                         AS first_billed,
                count(*) OVER ()                         AS _total
-        FROM staging.ganit_recurring r
-        LEFT JOIN staging.graha_contacts ct
+        FROM public.ganit_recurring r
+        LEFT JOIN public.graha_contacts ct
                ON ct.id = r.contact_id AND ct.org_id = r.org_id
-        LEFT JOIN staging.graha_clients cl
+        LEFT JOIN public.graha_clients cl
                ON cl.id = ct.client_id AND cl.org_id = r.org_id
         WHERE r.org_id = $1::uuid
           AND r.is_active

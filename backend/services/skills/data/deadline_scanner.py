@@ -64,7 +64,7 @@ async def scan_upcoming_deadlines(
         SELECT t.id, t.title, t.due_at, t.priority, t.status,
                t.assignee_user_ids,
                (SELECT string_agg(DISTINCT c.name, ', ')
-                  FROM staging.user_org_context c
+                  FROM public.user_org_context c
                  WHERE c.user_id = ANY(t.assignee_user_ids)) AS assignee_names
         FROM public.tasks t
         WHERE {_ORG_TEAMS}

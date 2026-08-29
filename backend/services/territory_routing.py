@@ -125,7 +125,7 @@ class Territory(NamedTuple):
 #: deleted last month, must not claim a PIN.
 TERRITORIES_SQL = (
     "SELECT t.id::text AS id, t.name, t.rules "
-    "FROM staging.graha_territories t "
+    "FROM public.graha_territories t "
     "WHERE t.org_id = $1::uuid AND t.is_active = TRUE "
     "ORDER BY t.name"
 )
@@ -279,8 +279,8 @@ PIN_LADDER_SELECT = (
     "       c.billing_address->>'pincode'  AS billing, "
     "       c.shipping_address->>'pincode' AS shipping, "
     "       cl.address->>'pincode'         AS client "
-    "FROM staging.graha_contacts c "
-    "LEFT JOIN staging.graha_clients cl "
+    "FROM public.graha_contacts c "
+    "LEFT JOIN public.graha_clients cl "
     "       ON cl.id = c.client_id AND cl.org_id = c.org_id "
     "WHERE c.org_id = $1::uuid AND c.is_active = TRUE "
 )
@@ -323,7 +323,7 @@ NO_TERRITORY = "no_territory"
 NO_MEMBERS = "no_members"
 
 _ROUND_ROBIN_READ = (
-    "SELECT assigned_users, round_robin_index FROM staging.graha_territories "
+    "SELECT assigned_users, round_robin_index FROM public.graha_territories "
     "WHERE id = $1::uuid AND org_id = $2::uuid AND is_active = TRUE"
 )
 
@@ -333,7 +333,7 @@ _ROUND_ROBIN_READ = (
 #: weaker than the read that authorised it is one refactor away from being the
 #: bug. Identical outcome, one fewer thing to reason about.
 _ROUND_ROBIN_ADVANCE = (
-    "UPDATE staging.graha_territories SET round_robin_index = $1 "
+    "UPDATE public.graha_territories SET round_robin_index = $1 "
     "WHERE id = $2::uuid AND org_id = $3::uuid"
 )
 
@@ -397,7 +397,7 @@ async def assign_next_user(conn, org_id: str, territory_id: str) -> dict:
 #: they never opened would put a false answer in the only column that records
 #: who changed a row.
 _ROUTE_WRITE = (
-    "UPDATE staging.graha_contacts "
+    "UPDATE public.graha_contacts "
     "SET territory_id = NULLIF($3,'')::uuid, "
     "    assigned_to  = COALESCE(NULLIF(assigned_to, ''), NULLIF($4,'')), "
     "    updated_at   = NOW() "

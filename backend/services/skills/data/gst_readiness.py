@@ -87,8 +87,8 @@ async def check_gstr1_readiness(
                                           NULLIF(btrim(li->>'sac_code'), '')) IS NULL))
                                                                  AS hsn_missing,
                COALESCE(i.total, 0)                              AS total
-        FROM staging.ganit_invoices i
-        LEFT JOIN staging.graha_contacts c
+        FROM public.ganit_invoices i
+        LEFT JOIN public.graha_contacts c
                ON c.id = i.contact_id AND c.org_id = i.org_id
         WHERE i.org_id = $1::uuid
           AND i.is_active

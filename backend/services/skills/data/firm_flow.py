@@ -361,7 +361,7 @@ async def brief_firm_filing_calendar(
         """
         SELECT o.name, o.state_code, o.gst_filing_scheme,
                (o.tan IS NOT NULL AND btrim(o.tan) <> '') AS has_tan
-        FROM staging.organisations o
+        FROM public.organisations o
         WHERE o.id = $1::uuid
         """,
         org_id,
@@ -387,7 +387,7 @@ async def brief_firm_filing_calendar(
     holidays = await pool.fetch(
         """
         SELECT h.date, h.name, COALESCE(h.is_optional, FALSE) AS is_optional
-        FROM staging.manav_holidays h
+        FROM public.manav_holidays h
         WHERE h.org_id = $1::uuid
           AND h.date BETWEEN $2::date AND $3::date
         ORDER BY h.date
@@ -665,7 +665,7 @@ _ORG_TEAMS = """
      WHERE t.org_id = $1::uuid
     UNION
     SELECT o.team_id, o.name, FALSE
-      FROM staging.organisations o
+      FROM public.organisations o
      WHERE o.id = $1::uuid
        AND NOT EXISTS (SELECT 1 FROM public.teams t2 WHERE t2.team_id = o.team_id)
 """
@@ -813,7 +813,7 @@ async def check_approvals_that_sit(
         SELECT ur.role_code,
                COALESCE(NULLIF(btrim(u.full_name), ''),
                         NULLIF(btrim(u.name), '')) AS person
-        FROM staging.user_roles ur
+        FROM public.user_roles ur
         LEFT JOIN public.users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
           AND ur.role_code = ANY($2::text[])
@@ -899,7 +899,7 @@ async def check_approvals_that_sit(
         "It does not record a chase either — recording one nobody sent is worse "
         "than sending none.",
         "THIS LADDER CANNOT SUBTRACT WHAT WAS ALREADY SENT. "
-        "`staging.reminders.entity_id` is a uuid and `public.approvals."
+        "`public.reminders.entity_id` is a uuid and `public.approvals."
         "approval_id` is text, so an approval chase cannot be recorded there at "
         "all, and `outbound_log` carries no entity reference. Every row shows "
         "`chases_delivered: 0` because no chase can ever have been recorded — "
@@ -1128,7 +1128,7 @@ async def pack_lead_first_touch(
     cap = max(1, int(limit))
 
     org = await pool.fetchrow(
-        "SELECT o.name FROM staging.organisations o WHERE o.id = $1::uuid",
+        "SELECT o.name FROM public.organisations o WHERE o.id = $1::uuid",
         org_id,
     )
     firm = (org["name"] if org else None) or "our firm"
@@ -1145,8 +1145,8 @@ async def pack_lead_first_touch(
                c.custom_data->>'occurred_at' AS feed_time,
                COALESCE(NULLIF(btrim(cl.name), ''),
                         NULLIF(btrim(c.company), '')) AS company_name
-        FROM staging.graha_contacts c
-        LEFT JOIN staging.graha_clients cl
+        FROM public.graha_contacts c
+        LEFT JOIN public.graha_clients cl
                ON cl.id = c.client_id AND cl.org_id = c.org_id
         WHERE c.org_id = $1::uuid
           AND c.is_active
@@ -1166,7 +1166,7 @@ async def pack_lead_first_touch(
         """
         SELECT v.graha_contact_id::text AS contact_id, v.phone_number,
                COALESCE(v.opted_in, FALSE) AS opted_in, v.opted_in_at
-        FROM staging.varta_contacts v
+        FROM public.varta_contacts v
         WHERE v.org_id = $1::uuid
         """,
         org_id,

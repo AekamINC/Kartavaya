@@ -28,7 +28,7 @@ async def _write(
     try:
         pool = await get_pool()
         await pool.execute(
-            """INSERT INTO staging.audit_log
+            """INSERT INTO public.audit_log
                    (org_id, user_id, action, resource_type, resource_id,
                     ip, user_agent, detail, severity)
                VALUES ($1::uuid, $2, $3, $4, $5, $6::inet, $7, $8::jsonb, $9)""",

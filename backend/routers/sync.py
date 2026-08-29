@@ -100,7 +100,7 @@ async def list_tombstones(
         log_recorder_failure("sync", exc)
 
     rows = await pool.fetch(
-        "SELECT entity, entity_id, deleted_at FROM staging.sync_tombstones "
+        "SELECT entity, entity_id, deleted_at FROM public.sync_tombstones "
         "WHERE deleted_at > $1 AND (org_id = $2::uuid OR org_id IS NULL) "
         "ORDER BY deleted_at LIMIT $3",
         when, org_id, TOMBSTONE_LIMIT)

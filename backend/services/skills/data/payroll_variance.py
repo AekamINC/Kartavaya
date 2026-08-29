@@ -59,7 +59,7 @@ async def compare_payroll_months(
     if not month:
         month = await pool.fetchval(
             """
-            SELECT max(month) FROM staging.vetana_payslips
+            SELECT max(month) FROM public.vetana_payslips
             WHERE org_id = $1::uuid AND is_active = TRUE
             """,
             org_id,
@@ -77,7 +77,7 @@ async def compare_payroll_months(
     # "dropped out of the run" is a claim we are entitled to make.
     current_count = await pool.fetchval(
         """
-        SELECT count(*) FROM staging.vetana_payslips
+        SELECT count(*) FROM public.vetana_payslips
         WHERE org_id = $1::uuid AND is_active = TRUE AND month = $2
         """,
         org_id, month,
@@ -97,8 +97,8 @@ async def compare_payroll_months(
                    p2.gross, p2.net_pay, p2.total_deductions, p2.loan_deduction,
                    p2.reimbursements, p2.overtime_pay,
                    p2.present_days, p2.leaves_unpaid
-            FROM staging.vetana_payslips p2
-            JOIN staging.manav_employees e ON e.id = p2.employee_id AND e.org_id = p2.org_id
+            FROM public.vetana_payslips p2
+            JOIN public.manav_employees e ON e.id = p2.employee_id AND e.org_id = p2.org_id
             WHERE p2.org_id = $1::uuid AND p2.is_active = TRUE AND p2.month = $2
         ),
         pri AS (
@@ -106,8 +106,8 @@ async def compare_payroll_months(
                    e.email AS employee_email, e.phone AS employee_phone,
                    p3.gross, p3.net_pay, p3.total_deductions, p3.loan_deduction,
                    p3.reimbursements, p3.overtime_pay, p3.present_days, p3.leaves_unpaid
-            FROM staging.vetana_payslips p3
-            JOIN staging.manav_employees e ON e.id = p3.employee_id AND e.org_id = p3.org_id
+            FROM public.vetana_payslips p3
+            JOIN public.manav_employees e ON e.id = p3.employee_id AND e.org_id = p3.org_id
             WHERE p3.org_id = $1::uuid AND p3.is_active = TRUE AND p3.month = (SELECT pm FROM prev)
         )
         SELECT

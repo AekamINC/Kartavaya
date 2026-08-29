@@ -376,7 +376,7 @@ async def fetch_csv(vintage: str = VINTAGE) -> tuple[str, str, int]:
 #: `IS DISTINCT FROM` and not `<>`, because `<>` is NULL when either side is and
 #: a NULL comparison would skip the update instead of performing it.
 UPSERT_SQL = """
-INSERT INTO staging.pin_directory AS d
+INSERT INTO public.pin_directory AS d
        (pincode, state, district, blocks, state_lgd, district_lgd,
         source_vintage)
 SELECT t.pincode, t.state, t.district, t.blocks::jsonb, t.state_lgd,
@@ -406,14 +406,14 @@ SUMMARY_SQL = """
 SELECT count(*)                                        AS row_count,
        count(DISTINCT pincode)                         AS pin_count,
        count(*) FILTER (WHERE pincode = '110003')      AS pin_110003,
-       (SELECT count(DISTINCT state) FROM staging.pin_directory
+       (SELECT count(DISTINCT state) FROM public.pin_directory
          WHERE pincode = '110025')                     AS states_for_110025,
-       (SELECT min(state_lgd) FROM staging.pin_directory
+       (SELECT min(state_lgd) FROM public.pin_directory
          WHERE state = 'DELHI')                        AS delhi_state_lgd,
-       (SELECT min(district_lgd) FROM staging.pin_directory
+       (SELECT min(district_lgd) FROM public.pin_directory
          WHERE pincode = '110001')                     AS newdelhi_district_lgd,
        count(*) FILTER (WHERE source_vintage <> $1::text) AS other_vintage
-  FROM staging.pin_directory
+  FROM public.pin_directory
 """
 
 #: ── The read. `routers/pincodes.py`, and PREPAREd by the same test ──────────
@@ -435,7 +435,7 @@ SELECT count(*)                                        AS row_count,
 LOOKUP_SQL = """
 SELECT pincode, state, district, blocks, state_lgd, district_lgd,
        source_vintage
-  FROM staging.pin_directory
+  FROM public.pin_directory
  WHERE pincode = $1::text
  ORDER BY state, district
 """
@@ -493,7 +493,7 @@ async def load(conn, rows, vintage: str = VINTAGE) -> LoadResult:
     and `before`/`after` counts answer the same question from facts.
     """
     rows = list(rows)
-    before = await conn.fetchval("SELECT count(*) FROM staging.pin_directory")
+    before = await conn.fetchval("SELECT count(*) FROM public.pin_directory")
 
     touched = 0
     async with conn.transaction():
@@ -516,7 +516,7 @@ async def load(conn, rows, vintage: str = VINTAGE) -> LoadResult:
                 raise RuntimeError(f"unexpected command status {status!r}")
             touched += int(parts[2])
 
-    after = await conn.fetchval("SELECT count(*) FROM staging.pin_directory")
+    after = await conn.fetchval("SELECT count(*) FROM public.pin_directory")
     inserted = after - before
     return LoadResult(before=before, after=after, touched=touched,
                       inserted=inserted, updated=touched - inserted,

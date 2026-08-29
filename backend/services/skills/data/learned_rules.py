@@ -479,7 +479,7 @@ async def brief_learned_categorisation(
                count(DISTINCT matched_type)                        AS distinct_matched_types,
                min(statement_date)                                 AS first_line,
                max(statement_date)                                 AS last_line
-          FROM staging.ganit_bank_statement_lines
+          FROM public.ganit_bank_statement_lines
          WHERE org_id = $1::uuid
         """,
         org_id, window_start,
@@ -507,7 +507,7 @@ async def brief_learned_categorisation(
                                  NULLIF(btrim(u.full_name), ''),
                                  '(someone no longer on the team)')
                    END AS decided_by
-              FROM staging.ganit_bank_statement_lines l
+              FROM public.ganit_bank_statement_lines l
               LEFT JOIN public.users u ON u.user_id = l.categorised_by
              WHERE l.org_id = $1::uuid
                AND l.statement_date >= $2::date
@@ -694,9 +694,9 @@ async def brief_learned_categorisation(
         "write_path": {
             "columns_added_by": "migration 175_later_tier_unblock.sql",
             "columns": [
-                "staging.ganit_bank_statement_lines.category",
-                "staging.ganit_bank_statement_lines.categorised_by",
-                "staging.ganit_bank_statement_lines.categorised_at",
+                "public.ganit_bank_statement_lines.category",
+                "public.ganit_bank_statement_lines.categorised_by",
+                "public.ganit_bank_statement_lines.categorised_at",
             ],
             "written_by_anything_today": False,
             "the_one_change": (

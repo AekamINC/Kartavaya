@@ -185,7 +185,7 @@ SLA_PREREQUISITES = (
     "records what response time was promised to whom.",
     "A write path. No router, service or job in this repository INSERTs a "
     "ticket row, so the table cannot fill even by accident.",
-    "A first-response clock. `staging.graha_ticket_messages` does not exist, "
+    "A first-response clock. `public.graha_ticket_messages` does not exist, "
     "so 'time to first reply' — the number an SLA watch is actually about — "
     "has no rows to compute from.",
     "A decision about which inbox a ticket even comes from: WhatsApp "
@@ -276,7 +276,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
                count(*) FILTER (WHERE channel = 'whatsapp') AS whatsapp,
                count(*) FILTER (WHERE channel = 'email')    AS email,
                count(*) FILTER (WHERE channel = 'push')     AS push
-        FROM staging.outbound_log
+        FROM public.outbound_log
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -286,7 +286,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
         """
         SELECT count(*) AS total,
                count(*) FILTER (WHERE COALESCE(status, '') = 'active') AS active
-        FROM staging.varta_business_accounts
+        FROM public.varta_business_accounts
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -311,7 +311,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
         SELECT count(*) AS rows_for_this_org
         FROM public.task_clients tc
         JOIN public.tasks t ON t.task_id = tc.task_id
-        WHERE t.team_id = (SELECT team_id FROM staging.organisations
+        WHERE t.team_id = (SELECT team_id FROM public.organisations
                             WHERE id = $1::uuid)
         """,
         org_id,
@@ -322,7 +322,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
         """
         SELECT t.id, t.task_id, t.title, t.due_at, t.created_by_name
         FROM public.tasks t
-        WHERE t.team_id = (SELECT team_id FROM staging.organisations
+        WHERE t.team_id = (SELECT team_id FROM public.organisations
                             WHERE id = $1::uuid)
           AND t.archived_at IS NULL
           AND t.status <> 'done'
@@ -343,7 +343,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
         for r in await pool.fetch(
             """
             SELECT entity_id::text AS entity_id, count(*) AS n
-            FROM staging.reminders
+            FROM public.reminders
             WHERE org_id = $1::uuid
               AND entity_type = 'tasks'
               AND status = 'sent'
@@ -426,7 +426,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
             "what_would_unblock_it": "a whatsapp entry in "
                                      "`services/niyam/send.CHANNELS` with a verb "
                                      "behind it, and one row in "
-                                     "`staging.varta_business_accounts`",
+                                     "`public.varta_business_accounts`",
         },
         {
             "blocker": "There is no per-client document checklist",
@@ -453,7 +453,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
                     "company, and a CRM client is the company. It grants read "
                     "access; it does not say whose work this is.",
             "what_would_unblock_it": "a client_id on the work, or a join table "
-                                     "from a task to `staging.graha_clients`",
+                                     "from a task to `public.graha_clients`",
         },
     ]
 
@@ -591,12 +591,12 @@ async def check_template_required_soon(
                    AS last_inbound,
                count(m.*) FILTER (WHERE m.direction = 'outbound')
                    AS replies_sent
-        FROM staging.varta_conversations c
-        JOIN staging.varta_contacts vc
+        FROM public.varta_conversations c
+        JOIN public.varta_contacts vc
           ON vc.id = c.varta_contact_id
          AND vc.org_id = c.org_id
         LEFT JOIN public.users u ON u.user_id = c.assigned_to
-        LEFT JOIN staging.varta_messages m
+        LEFT JOIN public.varta_messages m
           ON m.conversation_id = c.id
          AND m.org_id = c.org_id
         WHERE c.org_id = $1::uuid
@@ -619,7 +619,7 @@ async def check_template_required_soon(
                count(*) FILTER (WHERE status = 'approved'
                                   AND upper(category) = 'UTILITY') AS utility,
                count(*) FILTER (WHERE status = 'pending') AS pending
-        FROM staging.varta_templates
+        FROM public.varta_templates
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -628,7 +628,7 @@ async def check_template_required_soon(
     waba = await pool.fetchrow(
         """
         SELECT count(*) AS n
-        FROM staging.varta_business_accounts
+        FROM public.varta_business_accounts
         WHERE org_id = $1::uuid
         """,
         org_id,
@@ -775,7 +775,7 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
         row = await pool.fetchrow(
             """
             SELECT count(*) AS n
-            FROM staging.graha_tickets
+            FROM public.graha_tickets
             WHERE org_id = $1::uuid
             """,
             org_id,
@@ -784,7 +784,7 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
 
     correction = (
         "The folio says 'missing is not a column but the entire feature'. Half "
-        "of that is stale: `staging.graha_tickets` EXISTS — catchup 081 "
+        "of that is stale: `public.graha_tickets` EXISTS — catchup 081 "
         "recreated it as an empty stub so the Dristi report source stops "
         "500ing, and `routers/dristi.py` still lists it as the 'tickets' pivot "
         "source. A reader who greps for a ticket table finds one. What is "
@@ -803,10 +803,10 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
                    "behind a card that would report zero for ever.",
         "folio_finding_correction": correction,
         "what_exists": {
-            "staging.graha_tickets": has_tickets,
+            "public.graha_tickets": has_tickets,
             "its_columns": columns,
             "ticket_rows_in_this_org": rows_here,
-            "staging.graha_ticket_messages": has_messages,
+            "public.graha_ticket_messages": has_messages,
             "any_sla_column": sla_column,
         },
         "what_would_have_to_exist": list(SLA_PREREQUISITES),
@@ -829,7 +829,7 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
             "outside this repository writing to the table would not be seen "
             "here — though the row count above would then not be zero.",
             "Client questions DO arrive in this product, through "
-            "`staging.varta_conversations` and `staging.graha_inbound_emails`. "
+            "`public.varta_conversations` and `public.graha_inbound_emails`. "
             "An SLA watch over one of THOSE is a buildable skill; an SLA watch "
             "over tickets is not, and the two must not be confused.",
         ],

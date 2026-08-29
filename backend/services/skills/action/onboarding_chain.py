@@ -22,7 +22,7 @@ async def execute_onboarding(pool, employee_id: str, org_id: str) -> dict:
     emp = await pool.fetchrow(
         """
         SELECT id, name, email, department, user_id, date_of_joining
-        FROM staging.manav_employees
+        FROM public.manav_employees
         WHERE id = $1::uuid AND org_id = $2::uuid
         """,
         employee_id, org_id,
@@ -56,7 +56,7 @@ async def execute_onboarding(pool, employee_id: str, org_id: str) -> dict:
     # 2. Ensure user_roles entry exists
     if emp["user_id"]:
         existing = await pool.fetchrow(
-            "SELECT 1 FROM staging.user_roles WHERE user_id = $1::uuid AND org_id = $2::uuid",
+            "SELECT 1 FROM public.user_roles WHERE user_id = $1::uuid AND org_id = $2::uuid",
             emp["user_id"], org_id,
         )
         if existing:
@@ -71,7 +71,7 @@ async def execute_onboarding(pool, employee_id: str, org_id: str) -> dict:
 
     # 5. Setup payroll - create salary structure stub if missing
     existing_sal = await pool.fetchrow(
-        "SELECT 1 FROM staging.vetana_salary_structures WHERE employee_id = $1::uuid AND org_id = $2::uuid",
+        "SELECT 1 FROM public.vetana_salary_structures WHERE employee_id = $1::uuid AND org_id = $2::uuid",
         employee_id, org_id,
     )
     if existing_sal:
