@@ -540,6 +540,25 @@ export function useChannelMessages(channelId, meId, me = null) {
     // Added, never renamed. `ChatPane` is the only caller and it destructures
     // by name, so every existing key still means exactly what it meant.
     pin, unpin, pins, reloadPins, members,
+    /**
+     * ⚠ EXPOSED BECAUSE ADDING A MEMBER DID NOT REFRESH ANYTHING IN THE PANE.
+     *
+     * `reloadMembers` was called in exactly one place — the mount effect keyed
+     * on `channelId` — so `members` was fixed for the life of the open
+     * conversation. `ChannelDetails` signals a change with
+     * `onChanged(null, { members: true })`, and `ChannelsTab.channelChanged`
+     * answers it with `loadChannels()`, which reloads the RAIL and never this.
+     *
+     * Three things went stale together and the third is the one that bites:
+     * the header's member count, the face stack, and — because
+     * `MentionInput.people` IS this array — THE @MENTION VOCABULARY. So a
+     * person added to a private channel could not be mentioned in it until the
+     * channel was navigated away from and re-opened, which is precisely the
+     * thing somebody adds a colleague in order to do. Measured 2026-08-29 by
+     * Suite 13.05: four members added through the sheet, and `@Ana` opened no
+     * picker for fifteen seconds afterwards.
+     */
+    reloadMembers,
   };
 }
 

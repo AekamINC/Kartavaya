@@ -204,7 +204,7 @@ export default function ChatPane({
    */
   const {
     messages, loading, error, send, react, edit, remove, loadOlder, more, older,
-    pin: pinMsg, unpin: unpinMsg, pins, members,
+    pin: pinMsg, unpin: unpinMsg, pins, members, reloadMembers,
   } = useChannelMessages(channel.id, meId, me);
   const [replyTo, setReplyTo] = useState(null);
   const [settings, setSettings] = useState(false);
@@ -672,10 +672,29 @@ export default function ChatPane({
    * sit under a title. A DM has no member count worth printing — there are two
    * of you — so it carries the description instead, and falls back to the same
    * honest sentence when there is none.
+   *
+   * ⚠ AND A CHANNEL'S TOPIC NOW SHOWS HERE TOO, because until this line it
+   * showed NOWHERE AT ALL.
+   *
+   * `ChannelDetails` offers a Topic field whose own hint reads *"Shown beside
+   * the name in the header."* `PATCH /channels/{id}` stores it, `list_channels`
+   * returns it as `description` — and the only reader in the whole module was
+   * the `dm` arm above. Measured 2026-08-29: `grep '\.description'` across
+   * `pages/sanvaad/**` and `components/sanvaad/**` found the form that writes it
+   * and this one branch, and nothing else; the rail row prints the member count
+   * in the same slot. So a channel topic was captured, persisted, promised a
+   * location by its own label, and rendered by nothing — a column with a writer
+   * and no reader, which is the same defect class as a route with no caller.
+   *
+   * The member count is NOT lost by this: the header's own
+   * `aria-label="N members — open channel settings"` button sits four pixels
+   * away and carries the number visibly. The sub-line was spending its width
+   * saying the same thing twice, which is why the topic had nowhere to go.
    */
   const sub = dm
     ? (channel.description || 'Direct message · updates every few seconds')
-    : `${memberCount || 0} member${memberCount === 1 ? '' : 's'} · updates every few seconds`;
+    : (channel.description
+      || `${memberCount || 0} member${memberCount === 1 ? '' : 's'} · updates every few seconds`);
 
   /**
    * The face stack. Four, then `+n`.
@@ -1039,7 +1058,21 @@ export default function ChatPane({
           canPost={canPost}
           presence={presence}
           onClose={() => setSettings(false)}
-          onChanged={onChannelChanged}
+          /**
+           * ⚠ THE MEMBER SIGNAL IS HANDLED HERE AS WELL AS PASSED ON, and it
+           * has to be both. `ChannelsTab.channelChanged` answers
+           * `{ members: true }` with `loadChannels()` — the RAIL — which is
+           * correct for the rail's own member count and does nothing for this
+           * pane. The pane owns `members`, so the pane refetches it.
+           *
+           * Without this the header count, the face stack and the `@` picker
+           * all stayed on whatever the membership was when the conversation was
+           * opened. See `useChannelMessages`'s note on `reloadMembers`.
+           */
+          onChanged={(row, opts) => {
+            if (opts?.members) reloadMembers();
+            onChannelChanged?.(row, opts);
+          }}
         />
       )}
     </div>
