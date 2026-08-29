@@ -98,7 +98,7 @@ UNCOVERED = {
     "admin_orgs", "column_prefs", "esign", "hub", "hub_chat",
     "hub_connectors", "hub_publish", "lead_sources", "me", "messaging",
     "niyam_rules", "org_members", "org_modules", "org_security",
-    "pay", "prachar", "procurement", "products", "pulse",
+    "pay", "procurement", "products", "pulse",
     "scheduler", "scrapers", "subscription", "tab_prefs", "totp", "vikray",
     # `whatsapp` left this list on 2026-08-27 — the first name to, and the
     # ratchet is what noticed.
@@ -190,7 +190,25 @@ UNCOVERED = {
     # the failure mode the `graha` note above describes: a baseline red for a
     # name nobody is working on is one people learn to run past.
     #
-    # 27 remain.
+    # ── AND `prachar` LEFT BY GAINING ONE, 2026-08-29 ────────────────────────
+    #
+    # `tests/test_prachar_temporal_binds_live_sql.py` PREPAREs the router's four
+    # `::timestamptz` statements against the real catalogue and asserts the
+    # PARAMETER TYPES the server infers for them.
+    #
+    # It exists because proposal 93 Suite 11 found the fifth shipped instance of
+    # this repo's signature failure inside it: `create_campaign`,
+    # `update_campaign`, `create_event` and `update_event` all bound a `str`
+    # into a `::timestamptz`, so a campaign carrying a date and an event of any
+    # kind had never once been creatable, by anybody, in any organisation.
+    # `staging.prachar_campaigns` held ONE row in the whole database and
+    # `staging.prachar_events` held ZERO — which is the consequence rather than
+    # a coincidence beside it.
+    #
+    # This name leaves the list on a REAL `await conn.prepare(sql)` call, not on
+    # a docstring, which is the hole in `_PREPARES` recorded immediately above.
+    #
+    # 26 remain.
 }
 
 

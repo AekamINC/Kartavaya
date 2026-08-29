@@ -178,6 +178,43 @@ presents as "the button does nothing", or as a CORS error in the console — the
 - Backend tests run **from `backend/`**, never the repo root. The full local run
   HANGS after a heavy session — run targeted files.
 
+### ⚠ Reading a run, and not destroying somebody else's — added 2026-08-29
+
+- **NEVER pipe Playwright through `tail`.** It truncates the failure blocks, and
+  because a pipeline exits with the LAST command's status it **masks the exit
+  code**: a 12-failure run reported `exit 0` this morning and read as green.
+  Redirect to a file, or read the JSON reporter's `report.json`.
+- **Force `PYTHONIOENCODING=utf-8`** if you parse anything with Python. Windows
+  `cp1252` breaks on this repo's prose and on Devanagari.
+- ⚠⚠ **NEVER kill processes by wildcard.** An agent cleared its own stragglers
+  with a pattern matching `*playwright*test*` and took another agent's suite
+  with it — that run reported "the tab strip never rendered" and a worker abort
+  (`code=3221225794`), which reads exactly like a product defect and is not one.
+  **Several agents share this machine.** Kill the specific PID you started, or
+  leave it and say so in your report. A false red costs more than a stray
+  process.
+- **Do not delete or reuse an `outputDir` that is not yours.** Playwright
+  EMPTIES it at the start of a run; two agents sharing one delete each other's
+  in-flight traces.
+- ⚠⚠ **"THE CODE ALREADY DOES X" MUST BE CHECKED AGAINST `HEAD`, NOT THE
+  WORKING TREE.** Several agents edit this tree at once, so the file you read
+  may contain *another agent's uncommitted work*, and staging runs only what is
+  COMMITTED AND PUSHED. This cost a real, confident, wrong conclusion on
+  2026-08-29: an agent fixing `generate_invoice_from_order` reported that
+  `_refuse_final_if_incomplete` "already carries the company fallback" and
+  verified it against a LOCAL backend serving the working tree. The fallback was
+  another agent's uncommitted edit, minutes old. `git show HEAD:<path>` had
+  **zero** occurrences of it; the working tree had one. Deployed staging kept
+  answering 422 and the test stayed red for a reason nobody could see.
+  **Before writing "already", run `git show HEAD:backend/routers/foo.py | grep
+  …` — and if you verify against a local backend, say so, because a local
+  backend serves the working tree and staging does not.**
+- ⚠ **You cannot deploy, so a backend fix cannot go green from inside an agent.**
+  You are told not to commit, and staging runs what is committed and pushed. If
+  your suite needs a backend change, expect the tests that depend on it to stay
+  red, say exactly which ones and why, and hand the deploy to the lead — do not
+  chase it, and do not weaken the assertion to get a green.
+
 ## Report back
 
 - The spec path, test count, pass/fail, and the second-run idempotence numbers.

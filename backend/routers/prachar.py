@@ -75,6 +75,82 @@ def client_only(filters: dict | None) -> bool:
     return bool(filters.get("client_only", CLIENT_ONLY_DEFAULT))
 
 
+def _ts(value, field: str):
+    """A timestamp the driver will accept, from the string the browser sends.
+
+    ── THE FIFTH SHIPPED INSTANCE OF THIS REPO'S SIGNATURE FAILURE ─────────
+
+        asyncpg.exceptions.DataError: invalid input for query argument $8:
+          '2026-08-30T08:00:00.000Z' (expected a datetime.date or
+          datetime.datetime instance, got 'str')
+
+    asyncpg infers the PYTHON type from the SQL cast: `$n::timestamptz` wants a
+    `datetime`, and it refuses a `str` **before the statement ever reaches
+    Postgres**. The 500 escapes before the CORS headers, so the browser reports
+    `net::ERR_FAILED` and the console blames CORS — which is why this family
+    keeps being mis-diagnosed as "the button does nothing".
+
+    `backend/tests/test_date_params_are_parsed_not_bound_as_str.py` documents
+    the first four — the bank statement import (`2b864aa8`), the sales target
+    (`eae0b912`), `publish_attendance_to_payroll`, and `request_regularisation`
+    found 200 lines below its own documented fix. **That ratchet names two
+    handlers in `routers/pahchan_attendance` and cannot see this file**, which
+    is how four call sites in one router survived: `create_campaign`,
+    `update_campaign`, `create_event` and `update_event` all bound a `str`
+    straight into a `::timestamptz`.
+
+    ── WHAT IT COST, MEASURED RATHER THAN INFERRED ────────────────────────
+
+    Every one of them 500s whenever the field is set, and `CampaignsTab.jsx`
+    always sends `scheduled_at` and `EventsTab.jsx` requires `starts_at` — so
+    **a campaign with a date and an event of any kind have never once been
+    creatable through this product**, by anybody, in any organisation. Live on
+    2026-08-29 before the fix: `staging.prachar_campaigns` held ONE row across
+    the whole database and `staging.prachar_events` held ZERO. That is the
+    consequence, not a coincidence beside it — and it is why the calendar this
+    module is built around has never had a pill on it.
+
+    It also makes the comment at the head of `CampaignsTab.jsx` false: it says
+    "`PATCH /campaigns/{id}` has always accepted a new `scheduled_at`", and the
+    drag-to-reschedule it describes raised the same DataError on every drop.
+
+    ── ONE PARSER, NOT SIX EDITS ──────────────────────────────────────────
+
+    Widening the six binds by hand is what leaves the seventh, and the fourth
+    instance of this family was reintroduced directly beneath the paragraph
+    explaining it. So the tolerance lives in one function that every temporal
+    field in this router goes through, and a bad value is a **400 that quotes
+    it** rather than an opaque 500: a date chosen in a form is ordinary human
+    input, and the person who typed it is the one who can fix it.
+
+    `None` and `''` both mean "no date" and both return None, which binds as
+    SQL NULL. The frontend sends `null` for an unset campaign date and `''` for
+    an unset event end, and neither is an error.
+
+    The trailing `Z` is normalised explicitly. `datetime.fromisoformat` accepts
+    it from Python 3.11, and the container runs 3.13 — but this repo has
+    already lost a day to a bug that existed only on the container's version
+    (`from __future__ import annotations` plus `@limiter.limit`, invisible on
+    3.14), so a two-character normalisation that removes the version dependency
+    is worth more than the line it costs.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z") or text.endswith("z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise HTTPException(
+            400,
+            f"'{value}' is not a date and time this can read for {field}. Use an "
+            "ISO timestamp, for example 2026-08-30T09:00:00.",
+        ) from exc
+
+
 def _col(row, name):
     """One column off a row that may not have it.
 
@@ -609,7 +685,11 @@ async def create_campaign(
         "(org_id, name, template_id, subject, body_html, channel, audience_filter, scheduled_at, created_by) "
         "VALUES ($1::uuid,$2,$3::uuid,$4,$5,$6,$7::jsonb,$8::timestamptz,$9) RETURNING *",
         org_id, body.name, body.template_id, body.subject, body.body_html,
-        body.channel, json.dumps(body.audience_filter), body.scheduled_at, user["user_id"],
+        body.channel, json.dumps(body.audience_filter),
+        # ⚠ `$8::timestamptz` — see `_ts`. A bare `body.scheduled_at` here 500'd
+        # every campaign that carried a date, which `CampaignsTab.jsx` always
+        # sends.
+        _ts(body.scheduled_at, "the send date"), user["user_id"],
     )
     if body.compliance_class is not None:
         row = await pool.fetchrow(
@@ -665,7 +745,10 @@ async def update_campaign(
     if body.audience_filter is not None:
         vals.append(json.dumps(body.audience_filter)); updates.append(f"audience_filter=${len(vals)}::jsonb")
     if body.scheduled_at is not None:
-        vals.append(body.scheduled_at); updates.append(f"scheduled_at=${len(vals)}::timestamptz")
+        # ⚠ `::timestamptz` — see `_ts`. This is the bind the drag-to-reschedule
+        # on the campaign calendar goes through, and it raised on every drop.
+        vals.append(_ts(body.scheduled_at, "the send date"))
+        updates.append(f"scheduled_at=${len(vals)}::timestamptz")
     if body.compliance_class is not None:
         vals.append(body.compliance_class)
         updates.append(f"compliance_class=${len(vals)}")
@@ -2440,11 +2523,19 @@ async def create_event(
         "INSERT INTO staging.prachar_events "
         "(org_id, title, description, event_type, location, location_url, "
         "starts_at, ends_at, max_attendees, registration_open, tags, created_by) "
+        # `NULLIF($8,'')` is GONE, and its removal is the point rather than
+        # tidying. That spelling made asyncpg infer $8 as TEXT — comparing it to
+        # a text literal — so `ends_at` was the ONE temporal bind in this router
+        # that a string did not break, while `$7::timestamptz` beside it broke
+        # on every single call. Two adjacent parameters behaving differently for
+        # a reason invisible at the call site is exactly how the next author
+        # copies the wrong one. `_ts` returns None for '' and None alike, which
+        # binds as SQL NULL and is what NULLIF was there to produce.
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::timestamptz, "
-        "NULLIF($8,'')::timestamptz, $9, $10, $11::jsonb, $12) RETURNING *",
+        "$8::timestamptz, $9, $10, $11::jsonb, $12) RETURNING *",
         org_id, body.title, body.description, body.event_type,
-        body.location, body.location_url, body.starts_at,
-        body.ends_at, body.max_attendees, body.registration_open,
+        body.location, body.location_url, _ts(body.starts_at, "the start time"),
+        _ts(body.ends_at, "the end time"), body.max_attendees, body.registration_open,
         json.dumps(body.tags), user["user_id"],
     )
     return dict(row)
@@ -2494,9 +2585,12 @@ async def update_event(
             raise HTTPException(400, "Invalid status")
         vals.append(body.status); updates.append(f"status=${len(vals)}")
     if body.starts_at is not None:
-        vals.append(body.starts_at); updates.append(f"starts_at=${len(vals)}::timestamptz")
+        # ⚠ `::timestamptz` on both — see `_ts`.
+        vals.append(_ts(body.starts_at, "the start time"))
+        updates.append(f"starts_at=${len(vals)}::timestamptz")
     if body.ends_at is not None:
-        vals.append(body.ends_at); updates.append(f"ends_at=${len(vals)}::timestamptz")
+        vals.append(_ts(body.ends_at, "the end time"))
+        updates.append(f"ends_at=${len(vals)}::timestamptz")
     if body.max_attendees is not None:
         vals.append(body.max_attendees); updates.append(f"max_attendees=${len(vals)}")
     if body.registration_open is not None:
