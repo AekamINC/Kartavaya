@@ -419,6 +419,57 @@ unicodegroup.com          2                          real</pre>
 pre-flight is what stops a seeded typo becoming an incident.</p>
 </div>
 
+<h4>⚠ AND THE OTHER HALF OF THE QUESTION, WHICH §0.11 DID NOT ASK</h4>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">The recipient scheme asks whether the addresses we send TO are
+safe. Nothing asked whether the domains we send FROM can deliver.</span> Read live from the zone file on
+2026-08-30 — and the answer is no, for all three:</p>
+<table style="margin:0">
+<thead><tr><th>Domain</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>MX</th></tr></thead>
+<tbody>
+<tr><td><code>aekaminc.com</code><br><span class="small">the DEFAULT — <code>email_service.py:13</code></span></td>
+<td>🔴 <code>include:_spf.google.com ~all</code><br><span class="small">Google only — <span class="k">SES not authorised</span></span></td>
+<td>🔴 none (OA-12)</td><td>🟡 <code>p=none</code></td><td>✅ Google</td></tr>
+<tr><td><code>kartavaya.com</code></td>
+<td>🔴 <code>v=spf1 -all</code><br><span class="small"><span class="k">authorises NOBODY</span></span></td>
+<td>✅ 3 SES selectors, all resolve</td>
+<td>🔴 <span class="k">TWO records</span> → RFC 7489 §6.6.3 treats the domain as having <span class="k">NO DMARC AT ALL</span></td>
+<td>🟡 none — cannot receive a reply or a bounce</td></tr>
+<tr><td><code>unicodegroup.com</code></td>
+<td>🔴 <code>include:_spf-eu.ionos.com ~all</code><br><span class="small">IONOS only — <span class="k">SES not authorised</span></span></td>
+<td>—</td><td>🟡 <code>p=none</code></td><td>✅ IONOS</td></tr>
+</tbody>
+</table>
+<p style="margin:12px 0 0"><span class="k">So the default sender fails BOTH authentication legs.</span>
+`no-reply@aekaminc.com` through SES has no DKIM and an SPF record that names Google, not Amazon.
+<code>kartavaya.com</code> is the only domain with working DKIM — and it carries the harshest possible
+SPF and a DMARC that is void because there are two of them.</p>
+<p style="margin:12px 0 0"><span class="k">At <code>live</code>, repeated authentication failures from one
+identity are how SES throttles and then suspends it</span> — and this product has no bounce webhook
+(OA-13), so it <em>cannot learn it happened</em>. Same asymmetry as the recipient scheme, same
+conclusion: a gate, not a report.</p>
+</div>
+
+<h4>The DNS changes this needs — owner actions, and the order matters</h4>
+<ol>
+<li><span class="k">SPF first, on whichever domain will send.</span>
+<code>aekaminc.com</code> → <code>v=spf1 include:_spf.google.com include:amazonses.com ~all</code>;
+<code>unicodegroup.com</code> → add <code>include:amazonses.com</code> to the existing record;
+<code>kartavaya.com</code> → <code>v=spf1 include:amazonses.com -all</code> (or leave it non-sending and
+keep it out of every From: header).</li>
+<li><span class="k">Then delete ONE of the two <code>_dmarc.kartavaya.com</code> records.</span> ⚠ Do not
+resolve it by keeping <code>p=reject</code> while SPF is still broken — that would make the domain reject
+its own mail. Keep <code>p=none</code> until a send is observed passing, then tighten.</li>
+<li><span class="k">DKIM for <code>aekaminc.com</code></span> — three SES easy-DKIM CNAMEs, exactly as
+<code>kartavaya.com</code> already has (OA-12, still open).</li>
+<li><span class="small">Unrelated to mail but found in the same zone: <code>api.kartavaya.com</code> now
+CNAMEs to Railway (the old Vercel misdirection is fixed) but <span class="k">HTTPS fails with
+<code>SEC_E_WRONG_PRINCIPAL</code></span> — the certificate does not match, so the custom domain is still
+unusable. The run is unaffected because <code>.env.e2e</code> uses the <code>.up.railway.app</code>
+hostname directly.</span></li>
+</ol>
+
 <h4>What the decision changes elsewhere</h4>
 <ul>
 <li><code>.env.e2e</code> carries a note reading <span class="k">"Set dry on production 2026-08-30 for the
@@ -448,7 +499,7 @@ delete. Every email that escapes the fence reaches a real inbox.</p>
 the gates below are stricter than v4's, and the reason volumes come down rather than coverage.</p>
 </div>
 
-<h3>The six production-only gates, each blocking</h3>
+<h3>The seven production-only gates, each blocking</h3>
 
 <div class="card card--stop">
 <p style="margin:0 0 10px"><span class="k">⚠ P0 EXISTS BECAUSE THE MISTAKE WAS ALREADY MADE, TWICE, IN ONE AFTERNOON.</span></p>
@@ -465,6 +516,7 @@ the gates below are stricter than v4's, and the reason volumes come down rather 
 <tr><td class="n">P1</td><td><span class="k">Three-system inventory</span> — Supabase · Railway · Cloudflare, read before anything is touched. Output: a written TOUCH list and NEVER-TOUCH list, each row carrying the query that produced it.</td><td>Stage 1, first</td><td>everything</td></tr>
 <tr><td class="n">P2</td><td><span class="k">Blast radius.</span> Per-table <code>org_id</code> distinct-count across every base table in <code>public</code> — 300 today, not the 42 the old argument was measured over. A single third-party org row turns R4′ from a reseed into an incident.</td><td>Stage 1</td><td>any DELETE</td></tr>
 <tr><td class="n">P3</td><td><span class="k">The recipient pre-flight.</span> ⚠ REWRITTEN — the owner has decided <code>OUTBOUND_MODE=live</code> and <code>suppressed_orgs_digest</code> reads <code>"0"</code>, the EMPTY set, so the digest guard <span class="k">is not in force and cannot be the gate</span>. P3 is now a check on the DATA: <span class="k">zero recipient addresses outside the three approved shapes</span> (§0.11), asserted at seed and again immediately before send. <code>/api/health</code> is still read for the mode the PROCESS booted with, because a dashboard variable is not evidence.</td><td>before every wave that sends</td><td>Suites 02, 05, 08, 11, 12, 15, 17</td></tr>
+<tr><td class="n">P3b</td><td><span class="k">THE SENDER DOMAINS CAN ACTUALLY AUTHENTICATE.</span> ⚠ Added 2026-08-30 from the zone file. §0.11 asked whether the addresses we send TO are safe and never asked whether the domains we send FROM can deliver. <span class="k">Read live: none of the three authorises SES.</span> <code>node scripts/check-sender-dns.mjs</code></td><td>Stage 1, and before every wave that mails</td><td>Suites 02, 05, 08, 11, 12, 15, 17</td></tr>
 <tr><td class="n">P4</td><td><span class="k">Recovery is verified before the first delete, not after.</span> <code>backend/scripts/check_backup_coverage.py</code>, and the answer to the question in §9 about what the reversal path actually covers.</td><td>Stage 1</td><td>R4′</td></tr>
 <tr><td class="n">P5</td><td><span class="k">Deploy identity.</span> <code>meta.branch</code>, the SHA, and <code>current_schema()</code> read from <code>/api/health</code> on both services before every wave. A deploy 33 commits stale has already read as verification here.</td><td>every wave</td><td>the wave's verdict</td></tr>
 </tbody>

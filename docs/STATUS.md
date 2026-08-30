@@ -34,6 +34,45 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — 🔴 NO SENDER DOMAIN AUTHORISES SES, AND kartavaya.com HAS TWO DMARC RECORDS
+
+**Found from the zone file the owner supplied, verified live over DoH.** The
+outbound analysis had asked whether the addresses we send TO are safe. It never
+asked whether the domains we send FROM can deliver.
+
+| Domain | SPF | DKIM | DMARC | MX |
+|---|---|---|---|---|
+| `aekaminc.com` — **the default**, `email_service.py:13` | 🔴 `include:_spf.google.com ~all` — **SES not authorised** | 🔴 none (OA-12) | 🟡 `p=none` | ✅ Google |
+| `kartavaya.com` | 🔴 `v=spf1 -all` — **authorises nobody** | ✅ 3 SES selectors, all resolve | 🔴 **TWO records** | 🟡 none |
+| `unicodegroup.com` | 🔴 `include:_spf-eu.ionos.com ~all` — **SES not authorised** | — | 🟡 `p=none` | ✅ IONOS |
+
+**The default sender fails BOTH authentication legs.** `no-reply@aekaminc.com`
+through SES has no DKIM and an SPF record naming Google, not Amazon.
+
+⚠ **`kartavaya.com` has two `_dmarc` TXT records** — `p=none` and
+`p=reject; sp=reject; adkim=s; aspf=s`. **RFC 7489 §6.6.3: when more than one is
+found the domain is treated as having NO DMARC RECORD AT ALL.** So the strict
+policy somebody published is not in force, and neither is the permissive one.
+
+**Why this is a blocker at `OUTBOUND_MODE=live` and not a spam-folder problem:**
+repeated authentication failures from one identity are how SES throttles and then
+suspends it — and this product has **no bounce webhook** (OA-13, a recorded
+decision), so it cannot learn it happened. Same asymmetry as the recipient
+scheme. Gate **P3b** (`scripts/check-sender-dns.mjs`) now blocks every wave that
+mails.
+
+**Owner DNS actions, and the order matters:** SPF first on whichever domain will
+send; **then** delete one of the two `_dmarc.kartavaya.com` records — ⚠ *not* by
+keeping `p=reject` while SPF is still broken, which would make the domain reject
+its own mail; then DKIM for `aekaminc.com`.
+
+Also in the same zone: `api.kartavaya.com` now CNAMEs to Railway (the Vercel
+misdirection is fixed) but **HTTPS fails `SEC_E_WRONG_PRINCIPAL`** — the
+certificate does not match, so the custom domain is still unusable. The run is
+unaffected; `.env.e2e` uses the `.up.railway.app` hostname directly.
+
+---
+
 ## 2026-08-30 — OWNER DECISION: OUTBOUND_MODE = **LIVE**, and what now guards the run
 
 **Real mail leaves the building during the 93 v5 production run.** Read live the

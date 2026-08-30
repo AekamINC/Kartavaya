@@ -86,7 +86,7 @@ reason*.
 
 ---
 
-## The six production gates — every one blocking
+## The seven production gates — every one blocking
 
 ⚠ **P0 was added on the owner's instruction: nothing in this run touches staging,
 at all.** It exists because the mistake was already made twice in one afternoon —
@@ -100,6 +100,7 @@ production profile sits in `eas.json`, which `build-apk.sh` never reads.
 | **P1** | Three-system inventory (Supabase · Railway · Cloudflare) → a written TOUCH and NEVER-TOUCH list, each row carrying its query | everything |
 | **P2** | Blast radius — per-table `org_id` distinct-count across **300** base tables, not the 42 the old argument was measured over | any DELETE |
 | **P3** | Outbound fence attested at runtime from `/api/health`, not from the dashboard variable | every wave that sends |
+| **P3b** | **The sender domains can authenticate** — `node scripts/check-sender-dns.mjs`. ⚠ Read live 2026-08-30: **none of the three authorises SES**, and `kartavaya.com` has TWO DMARC records, which RFC 7489 §6.6.3 treats as none | every wave that mails |
 | **P4** | Recovery verified **before** the first delete — `check_backup_coverage.py` | R4′ |
 | **P5** | Deploy identity — `meta.branch`, SHA and `current_schema()` on both services | every wave's verdict |
 
