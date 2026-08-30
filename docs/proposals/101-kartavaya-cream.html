@@ -1,0 +1,654 @@
+<title>Kartavaya Cream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   KARTAVAYA CREAM — bold, on the ground you already own.
+
+   The previous concept went dark. That was the wrong lever: the cream is the
+   most differentiated thing about this product and every competitor is on
+   white or slate. Bold does not mean dark. It means SCALE, one VIVID ZONE,
+   and the accent doing real work.
+
+   The accent is the weapon. Twelve presets ship in CustomizePanel.jsx, and
+   `deriveAccentColors` in lib/accent.js turns each into a four-stop family:
+
+     mid   = hsl(h, s+5,  l-10)      ← --primary in light
+     deep  = hsl(h, s+10, l-20)      ← --primary-hover
+     light = hsl(h, s,    l+12)
+     --k-grad = linear-gradient(135deg, deep, mid 55%, color)
+
+   That maths is reproduced here exactly. Pick any accent in the top bar and
+   the hero band, the glass, the charts, the rail, the mesh and every shadow
+   retint together — which means every client org gets its own identity from
+   one setting they already have.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── The cream, widened per the audit (§05) so elevation reads ────────── */
+  --s-lowest:    #FFFEFB;
+  --surface:     #F8F6EF;
+  --s-low:       #F1EDE3;
+  --bg:          #EAE5D8;
+  --s-container: #E4DECD;
+  --s-high:      #DDD6C2;
+
+  --ink:   #1B1D1A;
+  --ink-2: #4A4E48;
+  --ink-3: #5E625A;
+  --line:  #CFC6AE;
+  --line-2:#DDD5C0;
+
+  /* Accent family — JS overwrites these from the picker. Teal is the default,
+     matching ACCENTS[0] in CustomizePanel.jsx. */
+  --acc:       #05b7aa;
+  --acc-mid:   #04a99d;
+  --acc-deep:  #038c82;
+  --acc-light: #3ad6ca;
+  --on-acc:    #FFFFFF;
+  --k-grad: linear-gradient(135deg, var(--acc-deep), var(--acc-mid) 55%, var(--acc));
+
+  --ok: #126B36; --warn: #8B5206; --danger: #B42318;
+
+  /* Warm shadows, accent-tinted — never pure black on a cream ground */
+  --sh-1: 0 1px 2px rgba(30,28,22,.09);
+  --sh-2: 0 2px 4px rgba(30,28,22,.07), 0 10px 28px -8px rgba(30,28,22,.17);
+  --sh-3: 0 4px 8px rgba(30,28,22,.08), 0 22px 52px -18px rgba(30,28,22,.26);
+  --sh-acc: 0 6px 22px -6px color-mix(in srgb, var(--acc) 52%, transparent);
+
+  /* Motion — Kartavaya's five rungs, untouched */
+  --ix-user: 1; --ix: var(--ix-user);
+  --motion-scale-user: 1; --motion-scale: var(--motion-scale-user);
+  --dur-instant: calc( 90ms * var(--ix));
+  --dur-fast:    calc(140ms * var(--ix));
+  --dur-base:    calc(220ms * var(--ix));
+  --dur-slow:    calc(360ms * var(--ix));
+  --dur-xslow:   calc(520ms * var(--ix));
+  --ease-standard: cubic-bezier(.2,0,0,1);
+  --ease-emph:     cubic-bezier(.16,1,.3,1);
+  --ease-enter:    cubic-bezier(0,0,.2,1);
+  --ease-exit:     cubic-bezier(.4,0,1,1);
+  --ease-spring:   cubic-bezier(.34,1.36,.64,1);
+  --ease-fill:     cubic-bezier(.25,.8,.25,1);
+
+  --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-xl: 26px; --r-pill: 999px;
+  --f-d: 'Newsreader', Georgia, serif;
+  --f-u: 'Inter', system-ui, sans-serif;
+  --f-m: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --row-h: 54px;
+
+  /* Glass ON the vivid band — white tint, because the band is the ground */
+  --g-blur: 15px; --g-alpha: .17; --g-rim: .48;
+  --g-inset:
+    inset 0  1px 0 rgba(255,255,255, var(--g-rim)),
+    inset 0 -1px 0 rgba(255,255,255, calc(var(--g-rim) * .34)),
+    inset  1px 0 0 rgba(255,255,255, calc(var(--g-rim) * .28)),
+    inset -1px 0 0 rgba(255,255,255, calc(var(--g-rim) * .28));
+}
+
+/* ── SHIPPING — today's language, same markup ───────────────────────────── */
+:root[data-design="ship"] {
+  --s-lowest: #FFFEFB; --surface: #FAF7F0; --s-low: #F5F1E7;
+  --bg: #F3EFE6; --s-container: #EEE9DC; --s-high: #E7E1D1;
+  --line: #D8D1BE; --line-2: #E4DECD;
+  --sh-1: 0 1px 2px rgba(30,28,22,.07);
+  --sh-2: 0 1px 2px rgba(28,24,16,.07), 0 4px 12px -5px rgba(28,24,16,.12);
+  --sh-3: 0 4px 16px -6px rgba(30,28,22,.16);
+  --sh-acc: 0 1px 2px rgba(30,28,22,.07);
+  --k-grad: none;
+  --g-alpha: 1; --g-blur: 0px; --g-rim: 0;
+  --g-inset: none;
+}
+
+@media (prefers-reduced-motion: reduce) { :root { --ix: .001; --motion-scale: 0 } }
+@media (prefers-reduced-transparency: reduce) { :root { --g-blur: 0px; --g-alpha: .92 } }
+
+* { box-sizing: border-box }
+html, body { height: 100% }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--f-u); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--dur-slow) var(--ease-standard);
+}
+/* The cream, given life — accent radials at 5–8% keep it warm without going dark */
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(1200px 660px at 6% -10%, color-mix(in srgb, var(--acc) 13%, transparent), transparent 62%),
+    radial-gradient(900px 520px at 96% 4%,  color-mix(in srgb, var(--acc-deep) 9%, transparent), transparent 58%);
+  transition: opacity var(--dur-slow) var(--ease-standard);
+}
+:root[data-design="ship"] body::before { opacity: 0 }
+
+/* ══ TOP BAR ═════════════════════════════════════════════════════════════ */
+.bar {
+  position: sticky; top: 0; z-index: 90;
+  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between;
+  padding: 10px clamp(14px,3vw,26px);
+  background: color-mix(in srgb, var(--s-lowest) 82%, transparent);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+.bar__t { font-family: var(--f-m); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3) }
+.bar__g { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center }
+.sgl { font-family: var(--f-m); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin-right: 6px }
+.sg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--s-lowest) }
+.sg button { font-family: var(--f-m); font-size: 10px; background: none; border: 0; cursor: pointer; padding: 5px 10px; color: var(--ink-3); transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard) }
+.sg button + button { border-left: 1px solid var(--line) }
+.sg button[aria-pressed="true"] { background: color-mix(in srgb, var(--acc) 20%, transparent); color: var(--ink); font-weight: 600 }
+.sg button:focus-visible { outline: 2px solid var(--acc-mid); outline-offset: -2px }
+
+/* The accent picker — the twelve presets that already ship */
+.acc { display: inline-flex; gap: 4px; flex-wrap: wrap }
+.acc button {
+  width: 19px; height: 19px; border-radius: 50%; cursor: pointer; padding: 0;
+  border: 1.5px solid transparent; background: var(--c);
+  transition: transform var(--dur-fast) var(--ease-spring), border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.acc button:hover { transform: scale(calc(1 + .16 * var(--motion-scale))) }
+.acc button[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--s-lowest) inset; transform: scale(calc(1 + .1 * var(--motion-scale))) }
+.acc button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px }
+
+/* ══ SHELL ═══════════════════════════════════════════════════════════════ */
+.app { position: relative; z-index: 1; display: grid; grid-template-columns: 234px minmax(0,1fr); min-height: 100vh }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr } .side { display: none } }
+
+.side { padding: 20px 14px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 20px }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px }
+.brand__m { width: 32px; height: 32px; border-radius: 10px; background: var(--k-grad); display: grid; place-items: center; flex: none; box-shadow: var(--sh-acc); transition: background var(--dur-slow) var(--ease-standard), box-shadow var(--dur-slow) var(--ease-standard) }
+:root[data-design="ship"] .brand__m { background: var(--acc-mid) }
+.brand__m svg { width: 18px; height: 18px; stroke: var(--on-acc); fill: none; stroke-width: 2.2 }
+.brand__n { font-family: var(--f-d); font-size: 20px; font-weight: 400; letter-spacing: -.012em }
+.brand__n b { font-weight: 300; font-style: italic; color: var(--acc-deep) }
+
+.nav { display: flex; flex-direction: column; gap: 2px }
+.nav__l { font-family: var(--f-m); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); padding: 0 10px; margin: 12px 0 5px }
+.nav__i {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm);
+  color: var(--ink-2); font-size: 13.5px; font-weight: 500; cursor: pointer; border: 0; background: none;
+  width: 100%; text-align: left; position: relative;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.nav__i svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.9; flex: none }
+.nav__i:hover { background: var(--s-low); color: var(--ink) }
+.nav__i.on { color: var(--acc-deep); background: color-mix(in srgb, var(--acc) 15%, transparent); font-weight: 600 }
+.nav__i.on::before {
+  content: ''; position: absolute; left: -14px; top: 50%; width: 3px; height: 22px;
+  border-radius: 0 3px 3px 0; background: var(--acc-mid); transform: translateY(-50%);
+  animation: rail var(--dur-base) var(--ease-emph) backwards;
+}
+@keyframes rail { from { transform: translateY(-50%) scaleY(calc(1 - .999 * var(--motion-scale))); opacity: 0 } }
+.nav__i:focus-visible { outline: 2px solid var(--acc-mid); outline-offset: -2px }
+.nav__c { margin-left: auto; font-family: var(--f-m); font-size: 10.5px; color: var(--ink-3) }
+
+.seat { margin-top: auto; padding: 14px; border-radius: var(--r-lg); background: var(--s-lowest); border: 1px solid var(--line); box-shadow: var(--sh-1) }
+.seat p { margin: 0 0 10px; font-size: 12px; color: var(--ink-2); line-height: 1.45 }
+.seat b { color: var(--ink) }
+.seat__t { height: 5px; border-radius: 99px; background: var(--s-container); overflow: hidden }
+.seat__t i { display: block; height: 100%; border-radius: 99px; background: var(--k-grad); width: 0; animation: fill var(--dur-xslow) var(--ease-fill) forwards; animation-delay: calc(320ms * var(--ix)) }
+:root[data-design="ship"] .seat__t i { background: var(--acc-mid) }
+@keyframes fill { to { width: var(--w, 0%) } }
+
+/* ══ MAIN ════════════════════════════════════════════════════════════════ */
+.main { padding: 0 clamp(14px,3vw,34px) 60px; min-width: 0 }
+.top { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; justify-content: space-between; padding: 18px 0 6px }
+.search { display: flex; align-items: center; gap: 9px; padding: 9px 15px; border-radius: var(--r-pill); min-width: 210px; flex: 1 1 210px; max-width: 350px; background: var(--s-lowest); border: 1px solid var(--line); box-shadow: var(--sh-1); transition: box-shadow var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard) }
+.search:focus-within { border-color: var(--acc-mid); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent) }
+.search svg { width: 15px; height: 15px; stroke: var(--ink-3); fill: none; stroke-width: 2; flex: none }
+.search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--ink); font-family: var(--f-u); font-size: 13.5px }
+.search input::placeholder { color: var(--ink-3) }
+.search kbd { font-family: var(--f-m); font-size: 10px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px }
+.tops { display: flex; gap: 9px; align-items: center }
+.ib { width: 37px; height: 37px; border-radius: var(--r-pill); display: grid; place-items: center; cursor: pointer; color: var(--ink-2); position: relative; background: var(--s-lowest); border: 1px solid var(--line); box-shadow: var(--sh-1); transition: transform var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard) }
+.ib svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.9 }
+.ib:hover { color: var(--acc-deep); border-color: var(--acc-mid); transform: translateY(calc(-1px * var(--motion-scale))) }
+.ib:focus-visible { outline: 2px solid var(--acc-mid); outline-offset: 2px }
+.ib__d { position: absolute; top: 6px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); border: 2px solid var(--s-lowest) }
+.av { width: 37px; height: 37px; border-radius: var(--r-pill); background: var(--k-grad); display: grid; place-items: center; font-family: var(--f-m); font-size: 12px; font-weight: 600; color: var(--on-acc); cursor: pointer; flex: none; border: 0; box-shadow: var(--sh-acc) }
+:root[data-design="ship"] .av { background: var(--acc-mid) }
+
+/* ── HERO — big editorial type on the cream ─────────────────────────────── */
+.hero { padding: 26px 0 20px }
+.hero__k { font-family: var(--f-m); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--acc-deep); margin: 0 0 12px }
+.hero__h { font-family: var(--f-d); font-weight: 200; font-size: clamp(34px, 6vw, 72px); line-height: .99; letter-spacing: -.035em; margin: 0 0 12px; max-width: 17ch }
+.hero__h em { font-style: italic; font-weight: 300; color: var(--acc-deep) }
+:root[data-design="ship"] .hero__h { font-weight: 400; font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -.017em }
+.hero__s { font-size: 14.5px; color: var(--ink-2); max-width: 54ch; margin: 0 }
+
+/* ── THE VIVID BAND — one per screen, glass lives here ──────────────────── */
+.band {
+  position: relative; border-radius: var(--r-xl); padding: 22px 22px 24px; margin: 22px 0 16px;
+  background: var(--k-grad); box-shadow: var(--sh-3), var(--sh-acc); overflow: hidden;
+  transition: background var(--dur-slow) var(--ease-standard), box-shadow var(--dur-slow) var(--ease-standard);
+}
+:root[data-design="ship"] .band { background: var(--s-lowest); border: 1px solid var(--line); box-shadow: var(--sh-2) }
+.band::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(700px 300px at 82% -30%, rgba(255,255,255,.26), transparent 62%) }
+:root[data-design="ship"] .band::before { display: none }
+.band__l { position: relative; z-index: 1; font-family: var(--f-m); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--on-acc) 76%, transparent); margin: 0 0 16px }
+:root[data-design="ship"] .band__l { color: var(--ink-3) }
+.kpis { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(auto-fit,minmax(178px,1fr)); gap: 12px }
+.kpi {
+  padding: 15px 16px 17px; border-radius: var(--r-lg); cursor: pointer; color: var(--on-acc);
+  background: rgba(255,255,255, var(--g-alpha));
+  border: 1px solid rgba(255,255,255, calc(var(--g-rim) * .62));
+  backdrop-filter: blur(var(--g-blur)) saturate(1.5); -webkit-backdrop-filter: blur(var(--g-blur)) saturate(1.5);
+  box-shadow: var(--g-inset), 0 4px 16px -6px rgba(0,0,0,.22);
+  animation: rise var(--dur-slow) var(--ease-emph) backwards; animation-delay: calc(var(--i, 0) * 60ms * var(--ix));
+  transition: transform var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+  position: relative; isolation: isolate;
+}
+:root[data-design="ship"] .kpi { color: var(--ink); background: var(--s-low); border-color: var(--line); box-shadow: none }
+.kpi::after { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:2; opacity:0; transition: opacity var(--dur-base) var(--ease-standard); background: radial-gradient(200px circle at var(--mx,50%) var(--my,0%), rgba(255,255,255,.26), transparent 66%) }
+.kpi:hover::after { opacity: 1 }
+:root[data-design="ship"] .kpi::after { display: none }
+.kpi:hover { transform: translateY(calc(-3px * var(--motion-scale))) }
+@keyframes rise { from { opacity: 0; transform: translateY(calc(14px * var(--motion-scale))) } }
+.kpi__l { font-family: var(--f-m); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; opacity: .78 }
+.kpi__v { font-family: var(--f-m); font-size: clamp(25px,3.2vw,34px); font-weight: 500; letter-spacing: -.035em; margin: 10px 0 0; font-variant-numeric: tabular-nums; line-height: 1 }
+:root[data-design="ship"] .kpi__v { font-size: clamp(20px,2.2vw,25px); font-weight: 500; letter-spacing: -.02em }
+.kpi__d { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11.5px; opacity: .84 }
+.kpi__t { font-family: var(--f-m); font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; background: rgba(255,255,255,.22) }
+:root[data-design="ship"] .kpi__t--up { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok) }
+:root[data-design="ship"] .kpi__t--dn { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger) }
+.kpi__s { display: flex; align-items: flex-end; gap: 3px; height: 28px; margin-top: 12px }
+.kpi__s i { flex: 1; border-radius: 2px 2px 0 0; height: var(--h,0%); background: rgba(255,255,255,.42); transform-origin: bottom; animation: gy var(--dur-slow) var(--ease-fill) backwards; animation-delay: calc((var(--i,0) * 60ms + var(--j,0) * 30ms + 170ms) * var(--ix)) }
+.kpi__s i:last-child { background: rgba(255,255,255,.95) }
+:root[data-design="ship"] .kpi__s i { background: color-mix(in srgb, var(--acc) 32%, transparent) }
+:root[data-design="ship"] .kpi__s i:last-child { background: var(--acc-mid) }
+@keyframes gy { from { transform: scaleY(0) } }
+
+/* ── PANELS — calm cream, where the data lives ──────────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap: 14px; align-items: start }
+.panel { background: var(--s-lowest); border: 1px solid var(--line); border-radius: var(--r-xl); overflow: hidden; box-shadow: var(--sh-2); animation: rise var(--dur-slow) var(--ease-emph) backwards; animation-delay: calc(var(--i, 0) * 70ms * var(--ix)); transition: box-shadow var(--dur-slow) var(--ease-standard), background var(--dur-slow) var(--ease-standard) }
+.panel__h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 0 }
+.panel__t { font-family: var(--f-d); font-size: 18px; font-weight: 400; letter-spacing: -.012em }
+.panel__m { font-family: var(--f-m); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3) }
+.panel__b { padding: 16px 18px 20px }
+.panel--wide { grid-column: 1 / -1 }
+
+.bars { display: flex; align-items: flex-end; gap: 8px; height: 168px }
+.bars__c { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; min-width: 0 }
+.bars__v { font-family: var(--f-m); font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; animation: vin var(--dur-base) var(--ease-enter) backwards; animation-delay: calc((var(--i, 0) * 38ms + 150ms) * var(--ix)) }
+@keyframes vin { from { opacity: 0; transform: translateY(calc(4px * var(--motion-scale))) } }
+.bars__t { flex: 1; min-height: 0; width: 100%; display: flex; align-items: flex-end }
+.bars__b { width: 100%; height: var(--h,0%); min-height: 3px; border-radius: 5px 5px 2px 2px; background: color-mix(in srgb, var(--acc) 34%, transparent); transform-origin: bottom; animation: gy var(--dur-slow) var(--ease-fill) backwards; animation-delay: calc(var(--i, 0) * 38ms * var(--ix)); transition: background var(--dur-slow) var(--ease-standard) }
+.bars__c:last-child .bars__b { background: var(--k-grad); box-shadow: var(--sh-acc) }
+:root[data-design="ship"] .bars__c:last-child .bars__b { background: var(--acc-mid); box-shadow: none }
+.bars__x { font-family: var(--f-m); font-size: 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
+
+.pipe { display: flex; flex-direction: column; gap: 11px }
+.pipe__r { display: grid; grid-template-columns: 96px minmax(0,1fr) auto; gap: 11px; align-items: center }
+.pipe__l { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pipe__t { height: 26px; border-radius: var(--r-sm); background: var(--s-container); overflow: hidden }
+.pipe__f { display: block; height: 100%; border-radius: var(--r-sm); width: 0; background: var(--k-grad); animation: fill var(--dur-xslow) var(--ease-fill) forwards; animation-delay: calc(var(--i, 0) * 60ms * var(--ix)); transition: background var(--dur-slow) var(--ease-standard) }
+:root[data-design="ship"] .pipe__f { background: var(--acc-mid) }
+.pipe__v { font-family: var(--f-m); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
+
+/* Table — no glass, no gradient. Data stays calm. */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px }
+.tbl th { font-family: var(--f-m); font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; text-align: left; padding: 0 14px 10px; border-bottom: 1px solid var(--line) }
+.tbl td { padding: 0 14px; height: var(--row-h); border-bottom: 1px solid var(--line-2); color: var(--ink-2) }
+.tbl tbody tr { animation: rowin var(--dur-base) var(--ease-enter) backwards; animation-delay: calc((var(--i, 0) * 34ms + 230ms) * var(--ix)); transition: background var(--dur-fast) var(--ease-standard) }
+@keyframes rowin { from { opacity: 0 } }
+.tbl tbody tr:hover { background: var(--s-low) }
+.tbl tbody tr:last-child td { border-bottom: 0 }
+.tbl .nm { color: var(--ink); font-weight: 500 }
+.tbl .num { text-align: right; font-family: var(--f-m); font-variant-numeric: tabular-nums; color: var(--ink) }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--f-m); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: var(--r-pill); font-weight: 500 }
+.pill i { width: 5px; height: 5px; border-radius: 50%; background: currentColor }
+.pill--ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent) }
+.pill--warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent) }
+.pill--dan { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent) }
+
+.btn { display: inline-flex; align-items: center; gap: 7px; font-family: var(--f-u); font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: var(--r-pill); cursor: pointer; color: var(--ink); border: 1px solid var(--line); background: var(--s-lowest); box-shadow: var(--sh-1); transition: transform var(--dur-instant) var(--ease-spring), border-radius var(--dur-base) var(--ease-spring), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard) }
+.btn:hover { border-color: var(--acc-mid); color: var(--acc-deep); transform: translateY(calc(-1px * var(--motion-scale))) }
+.btn:active { transform: scale(calc(1 - .035 * var(--motion-scale))); border-radius: 10px }
+.btn:focus-visible { outline: 2px solid var(--acc-mid); outline-offset: 2px }
+.btn--go { background: var(--k-grad); color: var(--on-acc); border-color: transparent; box-shadow: var(--sh-acc) }
+:root[data-design="ship"] .btn--go { background: var(--acc-mid); box-shadow: var(--sh-1) }
+.btn--go:hover { color: var(--on-acc) }
+.btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2 }
+
+.toasts { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 10px; width: min(330px, calc(100vw - 36px)) }
+/* Vivid semantic toasts — the tint IS the meaning. A toast is the floating
+   layer over a cream page, so this is the one place vivid costs nothing. */
+.toast {
+  display: grid; grid-template-columns: auto minmax(0,1fr); gap: 12px;
+  padding: 14px 15px 15px; border-radius: var(--r-lg);
+  /* Defaults to the accent, so an unclassed toast is still vivid and still
+     follows whatever colour the org picked. */
+  --t-a: var(--acc); --t-b: var(--acc-deep);
+  background: linear-gradient(135deg, var(--t-b), var(--t-a) 62%);
+  border: 1px solid rgba(255,255,255,.26); color: #fff;
+  box-shadow: 0 4px 10px rgba(30,28,22,.14),
+              0 18px 44px -14px color-mix(in srgb, var(--t-a) 60%, rgba(30,28,22,.4)),
+              inset 0 1px 0 rgba(255,255,255,.42),
+              inset 0 -1px 0 rgba(255,255,255,.13);
+  animation: tin var(--dur-base) var(--ease-emph) backwards;
+}
+.toast--ok  { --t-a: #1FA35A; --t-b: #0E7A46 }
+.toast--dan { --t-a: #E0544A; --t-b: #B0261F }
+.toast--acc { --t-a: var(--acc); --t-b: var(--acc-deep) }
+@keyframes tin { from { opacity: 0; transform: translateY(calc(14px * var(--motion-scale))) scale(calc(1 - .03 * var(--motion-scale))) } }
+.toast.out { animation: tout calc(var(--dur-base)*.8) var(--ease-exit) forwards }
+@keyframes tout { to { opacity: 0; transform: translateY(calc(10px * var(--motion-scale))) } }
+.toast__i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.24) }
+.toast__i svg { width: 15px; height: 15px; stroke: #fff; fill: none; stroke-width: 2.4 }
+/* Both are <span>, so they need display:block or the title and the message
+   run together on one line. */
+.toast__t { display: block; font-size: 13.5px; font-weight: 600; line-height: 1.35 }
+.toast__m { display: block; font-size: 12.5px; opacity: .88; margin-top: 3px; line-height: 1.42 }
+.toast__r { grid-column: 1/-1; height: 2px; border-radius: 2px; background: rgba(255,255,255,.26); overflow: hidden; margin-top: 5px }
+.toast__r i { display: block; height: 100%; background: rgba(255,255,255,.92); transform-origin: left; animation: drain linear forwards }
+@keyframes drain { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+
+.note { margin: 30px 0 0; padding: 16px 19px; border-radius: var(--r-lg); background: var(--s-lowest); border: 1px solid var(--line); border-left: 3px solid var(--acc-mid); box-shadow: var(--sh-1) }
+.note p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.55 }
+.note p + p { margin-top: .6em }
+.note b { color: var(--ink); font-weight: 600 }
+.foot { padding: 34px 0 0; font-size: 12px; color: var(--ink-3); max-width: 84ch; line-height: 1.62 }
+.foot p { margin: 0 0 .6em }
+.foot code { font-family: var(--f-m); background: var(--s-container); padding: 1px 5px; border-radius: 3px }
+</style>
+
+<div class="bar">
+  <span class="bar__t">Kartavaya · Dristi · cream, bold</span>
+  <div class="bar__g">
+    <span><span class="sgl">Accent</span><span class="acc" id="acc" role="group" aria-label="Accent colour"></span></span>
+    <span><span class="sgl">Design</span>
+      <span class="sg" role="group" aria-label="Design">
+        <button type="button" data-design="bold" aria-pressed="true">Bold</button>
+        <button type="button" data-design="ship" aria-pressed="false">Shipping</button>
+      </span></span>
+    <span><span class="sgl">Motion</span>
+      <span class="sg" role="group" aria-label="Animations">
+        <button type="button" data-ix="1" aria-pressed="true">Full</button>
+        <button type="button" data-ix=".5" aria-pressed="false">Red.</button>
+        <button type="button" data-ix="0" aria-pressed="false">None</button>
+      </span></span>
+    <button class="btn" id="replay" type="button">Replay</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <span class="brand__m"><svg viewBox="0 0 20 20"><path d="M10 2.6c2.4 2 3.6 4.4 3.6 7.4S12.4 15.4 10 17.4C7.6 15.4 6.4 13 6.4 10S7.6 4.6 10 2.6Z"/></svg></span>
+      <span class="brand__n">Kartav<b>aya</b></span>
+    </div>
+    <nav class="nav">
+      <span class="nav__l">Today</span>
+      <button class="nav__i on"><svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="7" rx="1.6"/><rect x="11" y="3" width="6" height="4" rx="1.6"/><rect x="3" y="12" width="6" height="5" rx="1.6"/><rect x="11" y="9" width="6" height="8" rx="1.6"/></svg>Dristi</button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><path d="M4 16V8M10 16V4M16 16v-5"/></svg>Ganit<span class="nav__c">12</span></button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>Graha<span class="nav__c">47</span></button>
+      <span class="nav__l">Operations</span>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="12" rx="2"/><path d="M3 9h14M8 3v3M12 3v3"/></svg>Vetana</button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg>Approvals<span class="nav__c">6</span></button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 9h6M7 13h4"/></svg>Prachar</button>
+    </nav>
+    <div class="seat">
+      <p><b>18 of 25 seats</b> used on the Aekam plan.</p>
+      <span class="seat__t"><i style="--w:72%"></i></span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <span class="search">
+        <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 17 17"/></svg>
+        <input type="text" placeholder="Search clients, invoices, people…" aria-label="Search">
+        <kbd>⌘K</kbd>
+      </span>
+      <div class="tops">
+        <button class="ib" aria-label="Notifications"><svg viewBox="0 0 20 20"><path d="M10 3a4.5 4.5 0 0 0-4.5 4.5c0 3.4-1 4.6-1.7 5.4h12.4c-.7-.8-1.7-2-1.7-5.4A4.5 4.5 0 0 0 10 3Z"/><path d="M8.5 16a1.5 1.5 0 0 0 3 0"/></svg><span class="ib__d"></span></button>
+        <button class="ib" aria-label="Settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2 4.8 4.8"/></svg></button>
+        <button class="av" aria-label="Keval Shah">KS</button>
+      </div>
+    </div>
+
+    <div class="hero">
+      <p class="hero__k">Quarter to date · 29 August 2026</p>
+      <h1 class="hero__h">You have invoiced <em>₹18.4L</em> and collected <em>66%</em> of it.</h1>
+      <p class="hero__s">Six approvals are waiting on you, and Nandan &amp; Co crossed ninety days this morning.</p>
+    </div>
+
+    <section class="band">
+      <p class="band__l">This quarter · the one vivid zone</p>
+      <div class="kpis" id="kpis"></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel" style="--i:0">
+        <header class="panel__h"><h2 class="panel__t">Invoiced vs collected</h2><span class="panel__m">6 months</span></header>
+        <div class="panel__b"><div class="bars" id="bars"></div></div>
+      </section>
+      <section class="panel" style="--i:1">
+        <header class="panel__h"><h2 class="panel__t">Pipeline</h2><span class="panel__m">₹96.2L open</span></header>
+        <div class="panel__b"><div class="pipe" id="pipe"></div></div>
+      </section>
+      <section class="panel panel--wide" style="--i:2">
+        <header class="panel__h">
+          <h2 class="panel__t">Receivables</h2>
+          <span style="display:flex;gap:8px">
+            <button class="btn" type="button">Export</button>
+            <button class="btn btn--go" type="button" id="remind"><svg viewBox="0 0 20 20"><path d="M3 5.5 10 11l7-5.5M3 5h14v10H3z"/></svg>Send reminders</button>
+          </span>
+        </header>
+        <div class="panel__b" style="padding-left:4px;padding-right:4px">
+          <table class="tbl"><thead><tr><th>Client</th><th>Status</th><th>Due</th><th style="text-align:right">Outstanding</th></tr></thead><tbody id="rows"></tbody></table>
+        </div>
+      </section>
+    </div>
+
+    <div class="note">
+      <p><b>The accent is doing the work.</b> Pick any of the twelve swatches in the top bar. The hero band, the glass tiles, the brand mark, the bars, the pipeline, the rail, the mesh behind the cream and every accent-tinted shadow retint together — from <code>deriveAccentColors()</code>, the function that already ships in <code>lib/accent.js</code>.</p>
+      <p>That is the part that makes this more than a paint job: <b>every client org already picks an accent, so every org gets its own identity for free.</b> Saffron for a firm in Ahmedabad, Indigo for one in Bengaluru — same product, same code, one setting.</p>
+      <p>And <b>Design → Shipping</b> renders the identical markup in today's language. Nothing here is a one-way door.</p>
+    </div>
+
+    <div class="foot">
+      <p><b>What makes it bold without going dark.</b> Three things, none of which is a new colour system. <b>Scale</b> — the hero is Newsreader 200 at 72px with −.035em tracking; the shipping build never goes above 40px, and scale is most of what reads as premium. <b>One vivid zone</b> — the KPI band carries <code>--k-grad</code> and everything else stays cream, so glass finally has a ground worth blurring and the eye has one clear destination. <b>The widened ramp</b> — surfaces run #FFFEFB to #DDD6C2 instead of collapsing at 1.017:1 between <code>--bg</code> and <code>--s-low</code>, so elevation actually reads.</p>
+      <p><b>What deliberately stayed calm.</b> The receivables table has no glass, no gradient and no blur — flat cream, tabular numerals, semantic pills in their own hues, <code>--row-h</code> intact. Ninety rupee figures each landing on a different contrast ratio is unfixable, and holding the data quiet is exactly what lets the band be loud.</p>
+      <p>Companions: <em>Motion and Material</em> (the audit and the measurements), <em>Glass Kit</em> (components and the four OS dialects), <em>Kartavaya Dark</em> (the same screen if you ever want a dark-first theme).</p>
+    </div>
+  </main>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+
+  /* ── The accent maths, copied from lib/accent.js:209 ─────────────────── */
+  function hexToHsl(hex) {
+    var r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, h = 0, s = 0, l = (mx + mn) / 2;
+    if (d) {
+      s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+      if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0));
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return [h, s * 100, l * 100];
+  }
+  function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, r, g, b;
+    if (h < 60)       { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else              { r = c; g = 0; b = x; }
+    return '#' + [r, g, b].map(function (v) {
+      return Math.round((v + m) * 255).toString(16).padStart(2, '0');
+    }).join('');
+  }
+  function lin(v) { return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }
+  function lum(hex) {
+    var c = [1, 3, 5].map(function (i) { return lin(parseInt(hex.slice(i, i + 2), 16) / 255); });
+    return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+  }
+  function ratio(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }
+
+  function derive(hex) {
+    var p = hexToHsl(hex), h = p[0], s = p[1], l = p[2];
+    var mid  = hslToHex(h, Math.min(s + 5, 100),  Math.max(l - 10, 10));
+    var deep = hslToHex(h, Math.min(s + 10, 100), Math.max(l - 20, 10));
+    var light = hslToHex(h, s, Math.min(l + 12, 92));
+    // Amber and Saffron cannot carry white. Measured, not assumed — the same
+    // reasoning deriveOnAccent uses in lib/accent.js.
+    var onAcc = ratio('#FFFFFF', mid) >= 4.0 ? '#FFFFFF' : '#1B1D1A';
+    return { color: hex, mid: mid, deep: deep, light: light, on: onAcc };
+  }
+
+  /* The twelve presets, verbatim from CustomizePanel.jsx:21 */
+  var ACCENTS = [
+    { id: 'teal', label: 'Teal', color: '#05b7aa' },
+    { id: 'blue', label: 'Blue', color: '#3b82f6' },
+    { id: 'saffro', label: 'Saffron', color: '#f59e0b' },
+    { id: 'indigo', label: 'Indigo', color: '#6366f1' },
+    { id: 'rose', label: 'Rose', color: '#e11d63' },
+    { id: 'emerald', label: 'Emerald', color: '#059669' },
+    { id: 'amber', label: 'Amber', color: '#d97706' },
+    { id: 'violet', label: 'Violet', color: '#7c3aed' },
+    { id: 'coral', label: 'Coral', color: '#f2643c' },
+    { id: 'slate', label: 'Slate', color: '#64748b' },
+    { id: 'crimson', label: 'Crimson', color: '#be123c' },
+    { id: 'forest', label: 'Forest', color: '#3f6212' }
+  ];
+
+  var accBox = document.getElementById('acc');
+  accBox.innerHTML = ACCENTS.map(function (a, i) {
+    return '<button type="button" data-acc="' + a.color + '" title="' + a.label + '" aria-label="' + a.label +
+           '" aria-pressed="' + (i === 0) + '" style="--c:' + a.color + '"></button>';
+  }).join('');
+
+  function applyAccent(hex) {
+    var d = derive(hex);
+    root.style.setProperty('--acc', d.color);
+    root.style.setProperty('--acc-mid', d.mid);
+    root.style.setProperty('--acc-deep', d.deep);
+    root.style.setProperty('--acc-light', d.light);
+    root.style.setProperty('--on-acc', d.on);
+    root.style.setProperty('--k-grad', 'linear-gradient(135deg, ' + d.deep + ', ' + d.mid + ' 55%, ' + d.color + ')');
+  }
+  var accBtns = [].slice.call(accBox.querySelectorAll('button'));
+  accBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      accBtns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      applyAccent(b.getAttribute('data-acc'));
+    });
+  });
+  applyAccent(ACCENTS[0].color);
+
+  function seg(attr, apply) {
+    var b = [].slice.call(document.querySelectorAll('.bar [data-' + attr + ']'));
+    b.forEach(function (x) {
+      x.addEventListener('click', function () {
+        b.forEach(function (o) { o.setAttribute('aria-pressed', String(o === x)); });
+        apply(x.getAttribute('data-' + attr));
+      });
+    });
+  }
+  seg('design', function (v) { if (v === 'bold') root.removeAttribute('data-design'); else root.setAttribute('data-design', v); });
+  seg('ix', function (v) {
+    root.style.setProperty('--ix-user', v === '0' ? '0.001' : v);
+    root.style.setProperty('--motion-scale-user', v === '0' ? '0' : v);
+  });
+
+  function track(el) {
+    el.addEventListener('pointermove', function (e) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+      el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+    });
+  }
+
+  var KPI = [
+    { l: 'Invoiced', v: '₹18.4L', d: 'vs ₹16.4L in Q2', t: '+12%', up: 1, s: [38,52,44,61,55,78] },
+    { l: 'Collected', v: '₹12.1L', d: '66% of raised', t: '+8%', up: 1, s: [30,41,39,48,44,62] },
+    { l: 'Overdue', v: '₹4.2L', d: 'across 9 clients', t: '+22%', up: 0, s: [18,24,29,33,38,47] },
+    { l: 'Median cycle', v: '6.2d', d: 'invoice to payment', t: '−1.4d', up: 1, s: [58,51,47,44,40,34] }
+  ];
+  document.getElementById('kpis').innerHTML = KPI.map(function (c, i) {
+    var mx = Math.max.apply(null, c.s);
+    return '<div class="kpi" style="--i:' + i + '">' +
+      '<div class="kpi__l">' + c.l + '</div><div class="kpi__v">' + c.v + '</div>' +
+      '<div class="kpi__d"><span class="kpi__t kpi__t--' + (c.up ? 'up' : 'dn') + '">' + c.t + '</span>' + c.d + '</div>' +
+      '<div class="kpi__s">' + c.s.map(function (v, j) {
+        return '<i style="--h:' + Math.round(v / mx * 100) + '%;--j:' + j + '"></i>';
+      }).join('') + '</div></div>';
+  }).join('');
+
+  var M = [{x:'Mar',v:42},{x:'Apr',v:58},{x:'May',v:51},{x:'Jun',v:73},{x:'Jul',v:66},{x:'Aug',v:88}];
+  var bmax = Math.max.apply(null, M.map(function (m) { return m.v; }));
+  document.getElementById('bars').innerHTML = M.map(function (m, i) {
+    return '<div class="bars__c" style="--i:' + i + '"><span class="bars__v">' + m.v + 'L</span>' +
+      '<span class="bars__t"><span class="bars__b" style="--h:' + Math.round(m.v / bmax * 100) + '%"></span></span>' +
+      '<span class="bars__x">' + m.x + '</span></div>';
+  }).join('');
+
+  var S = [{l:'Enquiry',v:'₹96.2L',w:100},{l:'Proposal',v:'₹61.4L',w:64},{l:'Negotiation',v:'₹38.8L',w:40},{l:'Won',v:'₹19.1L',w:20}];
+  document.getElementById('pipe').innerHTML = S.map(function (s, i) {
+    return '<div class="pipe__r" style="--i:' + i + '"><span class="pipe__l">' + s.l + '</span>' +
+      '<span class="pipe__t"><i class="pipe__f" style="--w:' + s.w + '%"></i></span>' +
+      '<span class="pipe__v">' + s.v + '</span></div>';
+  }).join('');
+
+  var ROWS = [
+    ['Unicode Systems','ok','Net 30 · 12 Sep','₹4,20,000'],
+    ['Nandan &amp; Co','dan','92 days overdue','₹1,85,500'],
+    ['AekamINC UK','warn','14 days overdue','₹96,200'],
+    ['Sedani Traders','ok','Net 45 · 28 Sep','₹74,800'],
+    ['Vora Associates','warn','6 days overdue','₹52,300'],
+    ['Bhatt &amp; Sons','ok','Net 30 · 04 Oct','₹41,900']
+  ];
+  var W = { ok: 'On terms', warn: 'Overdue', dan: 'Critical' };
+  document.getElementById('rows').innerHTML = ROWS.map(function (r, i) {
+    return '<tr style="--i:' + i + '"><td class="nm">' + r[0] + '</td>' +
+      '<td><span class="pill pill--' + r[1] + '"><i></i>' + W[r[1]] + '</span></td>' +
+      '<td>' + r[2] + '</td><td class="num">' + r[3] + '</td></tr>';
+  }).join('');
+
+  var items = [].slice.call(document.querySelectorAll('.nav__i'));
+  items.forEach(function (b) {
+    b.addEventListener('click', function () {
+      items.forEach(function (o) { o.classList.remove('on'); });
+      b.classList.add('on');
+    });
+  });
+
+  var DWELL = 5000, box = document.getElementById('toasts');
+  function toast(kind, t, m) {
+    var el = document.createElement('div');
+    el.className = 'toast toast--' + kind;
+    el.innerHTML = '<span class="toast__i"><svg viewBox="0 0 20 20">' +
+      (kind === 'ok' ? '<path d="M4 10.5l4 4 8-9"/>' : '<path d="M10 6v5M10 14h.01"/><circle cx="10" cy="10" r="7.5"/>') +
+      '</svg></span><span><span class="toast__t">' + t + '</span><span class="toast__m">' + m + '</span></span>' +
+      '<span class="toast__r"><i style="animation-duration:' + DWELL + 'ms"></i></span>';
+    box.appendChild(el);
+    var timer = setTimeout(close, DWELL);
+    function close() { clearTimeout(timer); el.classList.add('out'); el.addEventListener('animationend', function () { el.remove(); }, { once: true }); }
+    while (box.children.length > 3) box.firstChild.remove();
+  }
+  document.getElementById('remind').addEventListener('click', function () {
+    toast('ok', 'Reminders queued', '9 clients · sending over the next hour.');
+  });
+
+  document.getElementById('replay').addEventListener('click', function () {
+    [].forEach.call(document.querySelectorAll('.kpi, .panel, .bars__b, .bars__v, .pipe__f, .tbl tbody tr, .seat__t i, .kpi__s i'), function (el) {
+      var a = el.style.animation; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = a || '';
+    });
+  });
+
+  [].forEach.call(document.querySelectorAll('.kpi'), track);
+  setTimeout(function () { toast('dan', 'Nandan & Co crossed 90 days', '₹1,85,500 is now in the critical band.'); }, 1500);
+})();
+</script>

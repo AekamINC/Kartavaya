@@ -1,0 +1,741 @@
+<title>Kartavaya SEO Audit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --ground:#F3EFE6; --panel:#FAF7F0; --raised:#EEE9DC; --sunk:#E7E1D1;
+    --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+    --rule:#D8D1BE; --rule-firm:#B8B098;
+    --teal:#04837A; --teal-text:#046B64; --teal-soft:#B4F1E8;
+    --clay:#86552F; --clay-soft:#FFDCC3;
+    --olive:#5C6450; --olive-soft:#E1E7D4;
+    --crit:#B42318; --crit-text:#8F1B12; --crit-soft:#FBDDD9;
+    --warn:#8B5206; --warn-soft:#FBE9CC;
+    --ok:#126B36; --ok-soft:#CFEBD9;
+    --serif:"Newsreader",Georgia,"Times New Roman",serif;
+    --display:"Instrument Serif","Newsreader",Georgia,serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --deva:"Tiro Devanagari Hindi","Noto Sans Devanagari",serif;
+    --measure:66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#131409; --panel:#1B1D14; --raised:#23261B; --sunk:#2A2D21;
+      --ink:#EFEBDF; --ink-2:#C3C0B3; --ink-3:#9C9B8E;
+      --rule:#34372B; --rule-firm:#4A4E3E;
+      --teal:#4FD3C4; --teal-text:#6FE0D2; --teal-soft:#113632;
+      --clay:#D79A63; --clay-soft:#38260F;
+      --olive:#9AA487; --olive-soft:#242A19;
+      --crit:#F1837A; --crit-text:#F79E96; --crit-soft:#391A16;
+      --warn:#E0A84A; --warn-soft:#372810;
+      --ok:#69C98C; --ok-soft:#113520;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#131409; --panel:#1B1D14; --raised:#23261B; --sunk:#2A2D21;
+    --ink:#EFEBDF; --ink-2:#C3C0B3; --ink-3:#9C9B8E;
+    --rule:#34372B; --rule-firm:#4A4E3E;
+    --teal:#4FD3C4; --teal-text:#6FE0D2; --teal-soft:#113632;
+    --clay:#D79A63; --clay-soft:#38260F;
+    --olive:#9AA487; --olive-soft:#242A19;
+    --crit:#F1837A; --crit-text:#F79E96; --crit-soft:#391A16;
+    --warn:#E0A84A; --warn-soft:#372810;
+    --ok:#69C98C; --ok-soft:#113520;
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--serif); font-size:1.0625rem; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:80rem; margin:0 auto; padding:clamp(1.25rem,4vw,3.5rem); }
+
+  .mast { border-bottom:2px solid var(--ink); padding-bottom:1.5rem; }
+  .eyebrow {
+    font-family:var(--mono); font-size:0.6875rem; letter-spacing:0.16em;
+    text-transform:uppercase; color:var(--teal-text); margin:0 0 1rem;
+    display:flex; flex-wrap:wrap; gap:0.4rem 1.25rem;
+  }
+  .eyebrow span:not(:first-child) { color:var(--ink-3); }
+  h1 {
+    font-family:var(--display); font-weight:400;
+    font-size:clamp(2.25rem,6vw,3.75rem); line-height:1.04;
+    letter-spacing:-0.015em; margin:0 0 0.9rem; text-wrap:balance;
+  }
+  h1 em { font-style:italic; color:var(--teal-text); }
+  .standfirst {
+    font-size:clamp(1.0625rem,2vw,1.3125rem); line-height:1.5;
+    color:var(--ink-2); max-width:var(--measure); margin:0;
+  }
+
+  /* scorecard */
+  .score {
+    display:grid; gap:1px; background:var(--rule-firm);
+    border:1px solid var(--rule-firm); margin-top:2rem;
+    grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));
+  }
+  .score__c { background:var(--panel); padding:1rem 1.1rem; }
+  .score__n {
+    font-family:var(--mono); font-size:1.875rem; font-weight:700;
+    line-height:1.1; font-variant-numeric:tabular-nums;
+  }
+  .score__l {
+    font-family:var(--mono); font-size:0.625rem; letter-spacing:0.11em;
+    text-transform:uppercase; color:var(--ink-3); margin-top:0.3rem;
+  }
+  .n-crit { color:var(--crit-text); }
+  .n-warn { color:var(--warn); }
+  .n-ok   { color:var(--ok); }
+  .n-ink  { color:var(--ink); }
+
+  section { margin-top:4rem; }
+  .sec-head {
+    display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap;
+    border-bottom:1px solid var(--rule-firm); padding-bottom:0.55rem; margin-bottom:1.5rem;
+  }
+  .sec-num {
+    font-family:var(--mono); font-size:0.75rem; font-weight:700;
+    color:var(--teal-text); letter-spacing:0.08em; flex:none;
+  }
+  h2 {
+    font-family:var(--display); font-weight:400;
+    font-size:clamp(1.5rem,3.2vw,2.125rem); line-height:1.15;
+    margin:0; letter-spacing:-0.01em;
+  }
+  .sec-note {
+    margin-left:auto; font-family:var(--mono); font-size:0.6875rem;
+    letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-3); flex:none;
+  }
+  h3 {
+    font-family:var(--serif); font-weight:600; font-size:1.125rem;
+    margin:2rem 0 0.75rem;
+  }
+  p { max-width:var(--measure); }
+  .intro { max-width:var(--measure); color:var(--ink-2); margin:0 0 1.5rem; }
+
+  /* tables */
+  .tw { overflow-x:auto; border:1px solid var(--rule); background:var(--panel); margin-bottom:1rem; }
+  table { border-collapse:collapse; width:100%; min-width:46rem; }
+  th,td { text-align:left; padding:0.6rem 0.8rem; border-bottom:1px solid var(--rule); vertical-align:top; font-size:0.9375rem; }
+  thead th {
+    font-family:var(--mono); font-size:0.625rem; letter-spacing:0.1em;
+    text-transform:uppercase; color:var(--ink-3); background:var(--raised);
+    font-weight:500; white-space:nowrap; position:sticky; top:0;
+  }
+  tbody tr:last-child td { border-bottom:none; }
+  td.k { font-family:var(--mono); font-size:0.8125rem; }
+  td.c { text-align:center; white-space:nowrap; }
+  tbody tr:nth-child(even) { background:color-mix(in srgb, var(--raised) 45%, transparent); }
+
+  .b {
+    font-family:var(--mono); font-size:0.625rem; font-weight:700;
+    letter-spacing:0.09em; text-transform:uppercase; padding:0.16rem 0.42rem;
+    border:1px solid currentColor; white-space:nowrap; display:inline-block;
+  }
+  .b--crit { color:var(--crit-text); background:var(--crit-soft); }
+  .b--high { color:var(--warn);      background:var(--warn-soft); }
+  .b--med  { color:var(--olive);     background:var(--olive-soft); }
+  .b--low  { color:var(--ink-3);     background:var(--sunk); }
+  .b--pass { color:var(--ok);        background:var(--ok-soft); }
+  .b--fail { color:var(--crit-text); background:var(--crit-soft); }
+  .b--warn { color:var(--warn);      background:var(--warn-soft); }
+  .b--win  { color:var(--teal-text); background:var(--teal-soft); }
+
+  .term {
+    background:#14150E; color:#E4E0D3; font-family:var(--mono);
+    font-size:0.78125rem; line-height:1.65; padding:0.85rem 1rem;
+    overflow-x:auto; border:1px solid var(--rule-firm); margin:1rem 0;
+  }
+  .term pre { margin:0; }
+  .term .c { color:#8B8C80; }
+  .term .hit { color:#F5A79F; font-weight:500; }
+  .term .good { color:#7FD8C9; font-weight:500; }
+
+  .note {
+    border:1px solid var(--rule); border-left:3px solid var(--clay);
+    background:var(--clay-soft); padding:1rem 1.2rem; margin:1.5rem 0;
+  }
+  .note--crit { border-left-color:var(--crit); background:var(--crit-soft); }
+  .note--crit .label { color:var(--crit-text); }
+  .note p { color:var(--ink-2); margin:0; }
+  .note p + p { margin-top:0.65rem; }
+  .label {
+    font-family:var(--mono); font-size:0.625rem; letter-spacing:0.12em;
+    text-transform:uppercase; color:var(--clay); display:block; margin-bottom:0.35rem;
+  }
+
+  ul.pts { margin:0; padding-left:1.25rem; display:grid; gap:0.6rem; }
+  ul.pts li { max-width:var(--measure); color:var(--ink-2); }
+  ul.pts li::marker { color:var(--teal-text); }
+  ul.pts li strong { color:var(--ink); }
+
+  .gap {
+    border:1px solid var(--rule); background:var(--panel);
+    padding:1rem 1.2rem; display:grid; gap:0.5rem; margin-bottom:0.85rem;
+  }
+  .gap__h { display:flex; flex-wrap:wrap; gap:0.6rem; align-items:center; }
+  .gap__t { font-weight:600; font-size:1.0625rem; flex:1 1 16rem; margin:0; }
+  .gap dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:0.3rem 0.9rem; font-size:0.9375rem; }
+  .gap dt {
+    font-family:var(--mono); font-size:0.625rem; letter-spacing:0.1em;
+    text-transform:uppercase; color:var(--ink-3); padding-top:0.25rem;
+  }
+  .gap dd { margin:0; color:var(--ink-2); }
+
+  .plan { display:grid; gap:1.25rem; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); }
+  .plan__col { border:1px solid var(--rule); background:var(--panel); }
+  .plan__h {
+    padding:0.85rem 1.1rem; background:var(--raised);
+    border-bottom:1px solid var(--rule); display:flex; gap:0.75rem;
+    align-items:baseline; flex-wrap:wrap;
+  }
+  .plan__h h3 { margin:0; font-size:1.0625rem; }
+  .plan__h span {
+    font-family:var(--mono); font-size:0.625rem; letter-spacing:0.1em;
+    text-transform:uppercase; color:var(--ink-3);
+  }
+  .plan__b { padding:1.1rem; display:grid; gap:0.9rem; }
+  .act { display:grid; gap:0.3rem; padding-bottom:0.9rem; border-bottom:1px dashed var(--rule); }
+  .act:last-child { border-bottom:none; padding-bottom:0; }
+  .act__t { font-weight:600; font-size:0.9375rem; }
+  .act__m {
+    font-family:var(--mono); font-size:0.625rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--ink-3); display:flex; gap:0.9rem; flex-wrap:wrap;
+  }
+  .act p { margin:0; font-size:0.9375rem; color:var(--ink-2); }
+
+  .dv { font-family:var(--deva); }
+  code { font-family:var(--mono); font-size:0.86em; }
+  strong { font-weight:600; }
+  a { color:var(--teal-text); text-underline-offset:2px; }
+  :focus-visible { outline:2px solid var(--teal); outline-offset:2px; }
+  footer {
+    margin-top:4.5rem; border-top:2px solid var(--ink); padding-top:1.25rem;
+    font-family:var(--mono); font-size:0.75rem; color:var(--ink-3); line-height:1.8;
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;} }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Proposal 96</span><span>Full site audit</span>
+      <span>kartavaya.com</span><span>2026-08-29</span>
+    </p>
+    <h1>The site is indexed.<br />It ranks as the <em>wrong product</em>.</h1>
+    <p class="standfirst">
+      A full-site SEO audit of kartavaya.com — technical, on-page, keyword,
+      content-gap and competitive. Findings verified live against production and
+      staging; competitive landscape from live SERPs.
+    </p>
+  </header>
+
+  <div class="score">
+    <div class="score__c"><div class="score__n n-crit">4</div><div class="score__l">Critical issues</div></div>
+    <div class="score__c"><div class="score__n n-warn">6</div><div class="score__l">High severity</div></div>
+    <div class="score__c"><div class="score__n n-ink">1</div><div class="score__l">Indexable pages</div></div>
+    <div class="score__c"><div class="score__n n-ink">614</div><div class="score__l">Words on the site</div></div>
+    <div class="score__c"><div class="score__n n-crit">0</div><div class="score__l">Non-brand rankings</div></div>
+    <div class="score__c"><div class="score__n n-warn">9</div><div class="score__l">Font requests</div></div>
+  </div>
+
+  <!-- 1 EXEC -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>Executive summary</h2>
+      <span class="sec-note">Assessment: critical</span>
+    </div>
+    <p class="intro">
+      Kartavaya's SEO problem is not invisibility. It is <strong>misidentification</strong>.
+      Google has already crawled, indexed and formed a view of the site — and that
+      view is two product generations out of date.
+    </p>
+
+    <div class="note note--crit">
+      <span class="label">Correction to the earlier read</span>
+      <p>
+        My first pass framed this as &ldquo;Google cannot see the product.&rdquo; A live
+        SERP check disproves that: <code>www.kartavaya.com</code> <strong>is indexed</strong>
+        and does surface — as <em>&ldquo;Kartavaya — by Aekam Inc&hellip; team task
+        management software.&rdquo;</em> That is the stale production build being served
+        back as your public identity, including inside AI-generated search summaries.
+      </p>
+      <p>
+        This makes the redeploy more urgent, not less. You are not starting from
+        zero; you are correcting an established record, which is slower.
+      </p>
+    </div>
+
+    <h3>Biggest strength</h3>
+    <p>
+      The positioning itself, once deployed. <em>GST built in, not bolted on</em> and
+      <em>the client approves in one click</em> are specific, defensible and true —
+      and the four legal pages (privacy, security, DPA, sub-processors) are roughly
+      a thousand words each of exactly the substance a cautious buyer reads. Most
+      early-stage competitors have nothing comparable.
+    </p>
+
+    <h3>The three priorities that matter</h3>
+    <ul class="pts">
+      <li><strong>Redeploy production.</strong> Every other item compounds off this. Until it lands, all SEO work optimises a page that isn't public.</li>
+      <li><strong>Win a brand query you can actually win.</strong> Bare <em>&ldquo;Kartavaya&rdquo;</em> is lost to a 1995 Bollywood film and a common personal name — see §5. Target <em>Kartavaya Aekam</em> and <em>Kartavaya software</em>, and build the entity signals that disambiguate.</li>
+      <li><strong>Publish more than one page.</strong> 614 words total is not a site. The category is won with comparison and guide content, which is precisely how every competitor ranks today.</li>
+    </ul>
+  </section>
+
+  <!-- 2 KEYWORDS -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>Keyword opportunities</h2>
+      <span class="sec-note">25 terms</span>
+    </div>
+    <div class="note">
+      <span class="label">On the absence of volume numbers</span>
+      <p>
+        No SEO tool is connected — the Ahrefs and Semrush connectors in this session
+        are unauthenticated and cannot complete an OAuth flow from a non-interactive
+        run. Difficulty and opportunity below are graded from <strong>live SERP
+        inspection</strong>: who currently ranks, what format wins, and how strong
+        those domains are. <strong>For precise volume and difficulty, connect Ahrefs
+        or Semrush via MCP and this table repopulates automatically.</strong> Nothing
+        here is an invented number.
+      </p>
+    </div>
+    <div class="tw">
+      <table>
+        <thead>
+          <tr>
+            <th>Keyword</th><th>Difficulty</th><th>Opportunity</th>
+            <th>Current</th><th>Intent</th><th>Content type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">kartavaya aekam</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">Ranking</td><td>Navigational</td><td>Homepage</td></tr>
+          <tr><td class="k">kartavaya software / login</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">Unverified</td><td>Navigational</td><td>Homepage</td></tr>
+          <tr><td class="k">kartavaya practice management</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">Weak</td><td>Navigational</td><td>Homepage + schema</td></tr>
+          <tr><td class="k">client approval workflow software</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">None</td><td>Commercial</td><td>Feature page</td></tr>
+          <tr><td class="k">gst compliant invoicing software for CA</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">None</td><td>Commercial</td><td>Feature page</td></tr>
+          <tr><td class="k">per-module access control accounting software</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">None</td><td>Commercial</td><td>Feature page</td></tr>
+          <tr><td class="k">LUT export invoice format software</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Informational</td><td>Guide</td></tr>
+          <tr><td class="k">GSTR-1 vs GSTR-3B difference</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Informational</td><td>Guide</td></tr>
+          <tr><td class="k">place of supply rules explained</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Informational</td><td>Guide</td></tr>
+          <tr><td class="k">HSN SAC code invoice software</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Feature page</td></tr>
+          <tr><td class="k">CA practice management software India</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--crit">High</span></td><td class="c">None</td><td>Commercial</td><td>Pillar page</td></tr>
+          <tr><td class="k">best practice management software for CA firms</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Comparison listicle</td></tr>
+          <tr><td class="k">CA office management software</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Pillar page</td></tr>
+          <tr><td class="k">practice management software for chartered accountants</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Pillar page</td></tr>
+          <tr><td class="k">accounting practice management software India</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Pillar page</td></tr>
+          <tr><td class="k">Jamku alternative</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Transactional</td><td>Comparison</td></tr>
+          <tr><td class="k">QwikCA alternative</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Transactional</td><td>Comparison</td></tr>
+          <tr><td class="k">Zoho Practice alternative India</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Transactional</td><td>Comparison</td></tr>
+          <tr><td class="k">practice management software multi-office CA firm</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Landing page</td></tr>
+          <tr><td class="k">payroll software for CA firms India</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Module page</td></tr>
+          <tr><td class="k">HRMS for accounting firms India</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--low">Low</span></td><td class="c">None</td><td>Commercial</td><td>Module page</td></tr>
+          <tr><td class="k">biometric attendance software small business India</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--low">Low</span></td><td class="c">None</td><td>Commercial</td><td>Module page</td></tr>
+          <tr><td class="k">e-signature software for accounting firms India</td><td class="c"><span class="b b--med">Moderate</span></td><td class="c"><span class="b b--low">Low</span></td><td class="c">None</td><td>Commercial</td><td>Module page</td></tr>
+          <tr><td class="k">WhatsApp client communication for CA firms</td><td class="c"><span class="b b--low">Easy</span></td><td class="c"><span class="b b--high">Med</span></td><td class="c">None</td><td>Commercial</td><td>Feature page</td></tr>
+          <tr><td class="k">how to file GSTR-3B</td><td class="c"><span class="b b--crit">Hard</span></td><td class="c"><span class="b b--low">Low</span></td><td class="c">None</td><td>Informational</td><td>Skip — ClearTax owns it</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--ink-2);">
+      <strong>Read the table this way:</strong> the high-opportunity rows are not the
+      high-volume ones. They are the terms where the product has a genuine, checkable
+      answer and the incumbents do not — client approvals without an account, access
+      granted per person per module, LUT export invoices. Those are winnable in
+      months. The category pillars are a twelve-month project.
+    </p>
+  </section>
+
+  <!-- 3 ON-PAGE -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>On-page issues</h2>
+      <span class="sec-note">10 findings</span>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Page</th><th>Issue</th><th>Severity</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="k">/ (production)</td>
+            <td>Serves a stale build. Title <code>Kartavaya — by Aekam Inc</code>; body sells &ldquo;team task management&rdquo;. This is what is indexed.</td>
+            <td class="c"><span class="b b--crit">Critical</span></td>
+            <td>Redeploy <code>main</code>, then request re-indexing in GSC.</td>
+          </tr>
+          <tr>
+            <td class="k">All routes</td>
+            <td>No <code>rel="canonical"</code> on any page; apex 308s to www but nothing declares the canonical host.</td>
+            <td class="c"><span class="b b--crit">Critical</span></td>
+            <td>Add canonical to <code>index.html</code>; per-route once a head manager lands.</td>
+          </tr>
+          <tr>
+            <td class="k">All routes</td>
+            <td>One shared <code>&lt;title&gt;</code> and description for every URL — the SPA serves one <code>index.html</code>.</td>
+            <td class="c"><span class="b b--crit">Critical</span></td>
+            <td>Head manager + prerender. Blocks all content work.</td>
+          </tr>
+          <tr>
+            <td class="k">/ (staging)</td>
+            <td>614 words total. Thin for a commercial page; nothing to rank on beyond brand.</td>
+            <td class="c"><span class="b b--high">High</span></td>
+            <td>Expand, and add the module and feature pages in §4.</td>
+          </tr>
+          <tr>
+            <td class="k">/</td>
+            <td>Zero images on the page. No image search surface, no <code>og:image</code>, and the UI proof is built from live DOM rather than assets.</td>
+            <td class="c"><span class="b b--high">High</span></td>
+            <td>Add a real 1200&times;630 OG image and screenshots with descriptive alt text.</td>
+          </tr>
+          <tr>
+            <td class="k">&lt;head&gt;</td>
+            <td>12 Google Font families loaded render-blocking — 9 font requests, ~107&nbsp;KB. The landing page uses a fraction of them.</td>
+            <td class="c"><span class="b b--high">High</span></td>
+            <td>Split the font request; load only the faces the marketing route needs.</td>
+          </tr>
+          <tr>
+            <td class="k">/</td>
+            <td>No structured data anywhere — no <code>Organization</code>, <code>SoftwareApplication</code> or <code>FAQPage</code>.</td>
+            <td class="c"><span class="b b--high">High</span></td>
+            <td>Add all three. The Trust section is already in FAQ shape.</td>
+          </tr>
+          <tr>
+            <td class="k">/</td>
+            <td>Only 4 outbound internal links to real pages (the legal set). Everything else is an on-page anchor or <code>/login</code>.</td>
+            <td class="c"><span class="b b--high">High</span></td>
+            <td>Internal links follow naturally once §4 pages exist.</td>
+          </tr>
+          <tr>
+            <td class="k">/</td>
+            <td>H1 carries no category term — <em>Practice management that speaks <span class="dv">आपकी भाषा</span></em>. Heading structure is otherwise clean: exactly one H1, logical H2/H3.</td>
+            <td class="c"><span class="b b--low">Low</span></td>
+            <td><strong>Keep it.</strong> It is the most memorable line on the site and H1 exact-match is a weak signal. The title tag carries the category instead.</td>
+          </tr>
+          <tr>
+            <td class="k">/#features</td>
+            <td>Renders <span class="dv">ग्राहक · CRM</span> while the module grid renders <span class="dv">ग्रह</span>. Two words for one module, on one screen.</td>
+            <td class="c"><span class="b b--med">Medium</span></td>
+            <td>One word in <code>Features.jsx</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4 CONTENT GAPS -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>Content gaps</h2>
+      <span class="sec-note">7 recommendations</span>
+    </div>
+    <p class="intro">
+      The competitive SERPs share one shape: <strong>they are won by vendor-published
+      comparison and guide content, not by product pages.</strong> Finexo, QwikCA,
+      Vider, Papilio and PracticeStacks all rank for category terms via their own
+      &ldquo;Top 10 / Best&hellip; 2026&rdquo; articles. Kartavaya publishes none of
+      this. That is the single largest gap, and it is a content gap rather than a
+      technical one.
+    </p>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">Comparison hub — &ldquo;Best practice management software for CA firms&rdquo;</h3><span class="b b--crit">High</span></div>
+      <dl>
+        <dt>Why</dt><dd>Every ranking competitor owns one. It is the format Google rewards for this category, and it is how a referred prospect shortlists.</dd>
+        <dt>Format</dt><dd>Honest listicle naming Finexo, QwikCA, Jamku, Zoho Practice and Kartavaya, with a clear statement of who each suits.</dd>
+        <dt>Effort</dt><dd>Substantial — multi-day</dd>
+      </dl>
+    </div>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">Pricing page</h3><span class="b b--crit">High</span></div>
+      <dl>
+        <dt>Why</dt><dd>Competitors publish figures openly — flat annual team pricing and per-user monthly rates are both common in this market. A tier list with no numbers reads as expensive, and it loses every comparison query.</dd>
+        <dt>Blocked by</dt><dd>The catalogue holds three conflicting credit allowances per tier and two price-unit conventions. Resolve the data, then publish.</dd>
+        <dt>Effort</dt><dd>Moderate once the catalogue is fixed</dd>
+      </dl>
+    </div>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">Feature page — client approvals without an account</h3><span class="b b--crit">High</span></div>
+      <dl>
+        <dt>Why</dt><dd>The clearest differentiator, low competition, and no incumbent describes it the same way. Consideration stage.</dd>
+        <dt>Format</dt><dd>Landing page with the approval flow shown end to end.</dd>
+        <dt>Effort</dt><dd>Moderate — half day</dd>
+      </dl>
+    </div>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">Feature page — GST invoicing depth</h3><span class="b b--crit">High</span></div>
+      <dl>
+        <dt>Why</dt><dd>HSN/SAC, CGST/SGST/IGST, place of supply, LUT exports and GSTR summaries are all shipped. The strongest available page because every claim is checkable.</dd>
+        <dt>Format</dt><dd>Landing page plus supporting guides for the long-tail terms in §2.</dd>
+        <dt>Effort</dt><dd>Moderate — half day</dd>
+      </dl>
+    </div>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">Module pages — fifteen exist, none has a URL</h3><span class="b b--high">Medium</span></div>
+      <dl>
+        <dt>Why</dt><dd>Payroll, HRMS, e-signature, WhatsApp messaging and analytics each have their own commercial query set. Currently all fifteen live inside one grid on one page.</dd>
+        <dt>Format</dt><dd>A page per module, starting with payroll and e-signature.</dd>
+        <dt>Effort</dt><dd>Substantial — one per week</dd>
+      </dl>
+    </div>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">Trust and security content, promoted</h3><span class="b b--high">Medium</span></div>
+      <dl>
+        <dt>Why</dt><dd>Four solid legal pages already exist and are invisible — reachable only from the footer, with no titles of their own. For an invite-only product sold on trust, these do more work than any keyword.</dd>
+        <dt>Format</dt><dd>Give them titles, link them from the Trust section, add FAQ schema.</dd>
+        <dt>Effort</dt><dd>Quick win — 1&ndash;2 hours</dd>
+      </dl>
+    </div>
+
+    <div class="gap">
+      <div class="gap__h"><h3 class="gap__t">A referral one-pager</h3><span class="b b--high">Medium</span></div>
+      <dl>
+        <dt>Why</dt><dd>Referral is the primary channel by necessity — ICAI rules bar soliciting professional work from prospective clients by email, so cold outbound is unavailable. A short linkable page an accountant can forward is worth more than any single keyword.</dd>
+        <dt>Format</dt><dd>One page, one story, one CTA.</dd>
+        <dt>Effort</dt><dd>Quick win</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 5 BRAND -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>The brand-name problem</h2>
+      <span class="sec-note">verified on SERP</span>
+    </div>
+    <p class="intro">
+      Owning your own name is normally the one free win in SEO. Here it is not free,
+      and the reason is worth understanding before spending anything on it.
+    </p>
+    <div class="term"><pre><span class="c">Query: "Kartavaya" — top results, live:</span>
+  1. Kartavaya Gupta — LinkedIn (a person)
+  2. @travelwithkartavaya — Instagram (a person)
+  3. Kartavirya Arjuna — Wikipedia
+  4. <span class="hit">Kartavya (1995 film) — Wikipedia</span>
+  5. tiktok.com/tag/kartavaya
+  ...
+  <span class="hit">kartavaya.com does not appear</span>
+
+<span class="c">Query: "Kartavaya Aekam practice management software":</span>
+  3. <span class="good">Kartavaya — by Aekam Inc  ← indexed, stale title</span></pre></div>
+    <ul class="pts">
+      <li><strong>The name collides with a Bollywood film and a common personal name.</strong> <span class="dv">कर्तव्य</span> means duty; it is a name people are given. Bare-brand search will stay contested for a long time, and no on-page fix changes that.</li>
+      <li><strong>The winnable brand queries are qualified ones</strong> — <em>Kartavaya Aekam</em>, <em>Kartavaya software</em>, <em>Kartavaya practice management</em>. Target those and treat bare <em>Kartavaya</em> as a long game.</li>
+      <li><strong>There is an entity-confusion risk.</strong> Aekam Inc reads publicly as a branding and digital-marketing agency. Without <code>Organization</code> schema and a distinct company presence, Google has little reason to model Kartavaya as a software product rather than an agency's page.</li>
+      <li><strong>What actually moves this:</strong> Organization and SoftwareApplication schema, a Google Business Profile, a LinkedIn company page, directory listings, and consistent naming as <em>Kartavaya by Aekam Inc</em> everywhere. Entity signals, not keywords.</li>
+    </ul>
+  </section>
+
+  <!-- 6 TECHNICAL -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>Technical checklist</h2>
+      <span class="sec-note">14 checks</span>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>robots.txt</td><td class="c"><span class="b b--fail">Fail</span></td><td>Returns <code>200 text/html</code> — the SPA catch-all swallows it. No file exists.</td></tr>
+          <tr><td>XML sitemap</td><td class="c"><span class="b b--fail">Fail</span></td><td>Same. Cannot be submitted to GSC while it returns HTML.</td></tr>
+          <tr><td>Canonical tags</td><td class="c"><span class="b b--fail">Fail</span></td><td>Zero on any route.</td></tr>
+          <tr><td>Staging isolation</td><td class="c"><span class="b b--fail">Fail</span></td><td><code>staging.kartavaya.com</code> returns 200, no <code>X-Robots-Tag</code>, and carries the newer content. Duplicate-content and exposure risk.</td></tr>
+          <tr><td>Structured data</td><td class="c"><span class="b b--fail">Fail</span></td><td>No JSON-LD anywhere. No rich-result or knowledge-panel eligibility.</td></tr>
+          <tr><td>Indexation</td><td class="c"><span class="b b--warn">Warning</span></td><td>Indexed, but on stale content. Re-indexing an established wrong record is slower than a cold start.</td></tr>
+          <tr><td>Rendering</td><td class="c"><span class="b b--warn">Warning</span></td><td>Client-rendered SPA; the landing page is a lazy chunk. Googlebot renders on a queued second pass; most social and AI crawlers do not render at all.</td></tr>
+          <tr><td>Soft 404s</td><td class="c"><span class="b b--warn">Warning</span></td><td>Every unknown URL returns <code>200</code> with the same document.</td></tr>
+          <tr><td>Page speed</td><td class="c"><span class="b b--warn">Warning</span></td><td>TTFB 830&nbsp;ms, DOM ready 1,489&nbsp;ms, load 1,655&nbsp;ms, 327&nbsp;KB across 19 requests (201&nbsp;KB JS). Acceptable, not fast; TTFB is the weak link.</td></tr>
+          <tr><td>Web font strategy</td><td class="c"><span class="b b--warn">Warning</span></td><td>12 families, 9 font requests, ~107&nbsp;KB render-blocking. The clearest LCP win available.</td></tr>
+          <tr><td>Private URL exposure</td><td class="c"><span class="b b--warn">Warning</span></td><td><code>/i/:token</code>, <code>/sign/:token</code>, <code>/approve</code> crawlable — and the OG rewrite names <code>googlebot</code> explicitly.</td></tr>
+          <tr><td>HTTPS &amp; HSTS</td><td class="c"><span class="b b--pass">Pass</span></td><td><code>max-age=63072000; includeSubDomains; preload</code>. No mixed content.</td></tr>
+          <tr><td>Mobile-friendly</td><td class="c"><span class="b b--pass">Pass</span></td><td>Correct viewport with <code>viewport-fit=cover</code>; fluid layout; reduced-motion respected.</td></tr>
+          <tr><td>Heading structure</td><td class="c"><span class="b b--pass">Pass</span></td><td>Exactly one H1, logical H2/H3, <code>lang</code> set, and <code>lang="hi"</code> correctly applied to Devanagari.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 7 COMPETITORS -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">07</span>
+      <h2>Competitive comparison</h2>
+      <span class="sec-note">live SERP</span>
+    </div>
+    <p class="intro">
+      Direct competitors in Indian CA practice management, identified from live
+      category SERPs: <strong>Finexo, QwikCA, PracticeStacks, Jamku, Zoho Practice,
+      Turia, ERPCA, Vider</strong>. Adjacent: <strong>Karbon</strong> (global
+      practice management) and <strong>ClearTax</strong> (GST filing, not practice
+      management — it pairs with a tracker rather than replacing one).
+    </p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Dimension</th><th>Kartavaya</th><th>Finexo</th><th>QwikCA</th><th>Winner</th></tr></thead>
+        <tbody>
+          <tr><td>Indexed pages</td><td>1</td><td>Site + active blog</td><td>Site + active blog</td><td class="c"><span class="b b--low">Competitors</span></td></tr>
+          <tr><td>Category rankings</td><td>None</td><td>Ranks own listicles</td><td>Ranks own listicles</td><td class="c"><span class="b b--low">Competitors</span></td></tr>
+          <tr><td>Content depth</td><td>614 words</td><td>Long-form guides</td><td>Long-form guides</td><td class="c"><span class="b b--low">Competitors</span></td></tr>
+          <tr><td>Pricing transparency</td><td>Tier names only</td><td>Published</td><td>Published</td><td class="c"><span class="b b--low">Competitors</span></td></tr>
+          <tr><td>Publishing cadence</td><td>None</td><td>Regular</td><td>Regular</td><td class="c"><span class="b b--low">Competitors</span></td></tr>
+          <tr><td>Compliance depth (GST/ITR/TDS)</td><td>GST deep; no filing</td><td>GST, ITR, TDS automation</td><td>GST fetch, UDIN, DSC</td><td class="c"><span class="b b--low">Competitors</span></td></tr>
+          <tr><td>Client approval without an account</td><td>Yes</td><td>Not surfaced</td><td>Not surfaced</td><td class="c"><span class="b b--win">Kartavaya</span></td></tr>
+          <tr><td>Per-person, per-module access</td><td>Yes, 15 modules</td><td>Role-based</td><td>Role-based</td><td class="c"><span class="b b--win">Kartavaya</span></td></tr>
+          <tr><td>Suite breadth beyond compliance</td><td>Payroll, HRMS, CRM, sales, marketing</td><td>Practice-focused</td><td>Practice-focused</td><td class="c"><span class="b b--win">Kartavaya</span></td></tr>
+          <tr><td>Trust / security documentation</td><td>4 substantial pages</td><td>Not prominent</td><td>Not prominent</td><td class="c"><span class="b b--win">Kartavaya</span></td></tr>
+          <tr><td>Backlinks / domain authority</td><td colspan="3" style="color:var(--ink-3)">Not measured — requires Ahrefs or Semrush. Do not assume parity.</td><td class="c"><span class="b b--low">Unknown</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <span class="label">The strategic read</span>
+      <p>
+        Kartavaya loses every <em>SEO</em> dimension and wins most <em>product</em>
+        dimensions. That is a good position to be in, because the losing column is
+        the fixable one. The competitors are not out-engineering you; they are
+        out-publishing you.
+      </p>
+      <p>
+        One genuine product gap: competitors automate <strong>filing</strong> — ITR,
+        TDS, UDIN and DSC tracking. Kartavaya does GST invoicing and summaries but
+        does not file. Expect that in comparison conversations, and answer it
+        deliberately rather than being surprised by it.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8 ACTION PLAN -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">08</span>
+      <h2>Prioritized action plan</h2>
+      <span class="sec-note">two horizons</span>
+    </div>
+    <div class="plan">
+      <div class="plan__col">
+        <div class="plan__h"><h3>Quick wins</h3><span>This week</span></div>
+        <div class="plan__b">
+          <div class="act">
+            <div class="act__t">Redeploy production</div>
+            <div class="act__m"><span>Impact: high</span><span>&lt; 1 hr</span></div>
+            <p>Nothing else matters first. Verify by the title string, not the deploy badge.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Add robots.txt and sitemap.xml</div>
+            <div class="act__m"><span>Impact: high</span><span>30 min</span><span>Needs: redeploy</span></div>
+            <p>Two static files in <code>frontend/public/</code>. Contents in proposal 94.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Block staging from indexing</div>
+            <div class="act__m"><span>Impact: high</span><span>30 min</span></div>
+            <p>Vercel Deployment Protection, or a noindex header plus robots disallow.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Add canonical tag</div>
+            <div class="act__m"><span>Impact: high</span><span>10 min</span></div>
+            <p>Point at <code>https://www.kartavaya.com/</code> — the host the 308 already favours.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Set up Search Console and Bing</div>
+            <div class="act__m"><span>Impact: high</span><span>1 hr</span><span>Needs: sitemap</span></div>
+            <p>Domain property via DNS, submit the sitemap, request re-indexing of the homepage.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Add JSON-LD</div>
+            <div class="act__m"><span>Impact: high</span><span>1&ndash;2 hrs</span></div>
+            <p>Organization, SoftwareApplication, FAQPage. The main lever on the brand-entity problem in §5.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Ship an OG image</div>
+            <div class="act__m"><span>Impact: high</span><span>1 hr</span></div>
+            <p>1200&times;630 of the real UI. Most visits arrive from a WhatsApp link that currently previews as plain text.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Fix the CTA destination</div>
+            <div class="act__m"><span>Impact: high</span><span>5 min</span></div>
+            <p>The only conversion path is a <code>+44</code> WhatsApp link on a page selling to Indian firms.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Trim the font payload</div>
+            <div class="act__m"><span>Impact: med</span><span>1 hr</span></div>
+            <p>12 families and 9 requests, render-blocking. Load only what the marketing route uses.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Fix <span class="dv">ग्राहक</span> → <span class="dv">ग्रह</span></div>
+            <div class="act__m"><span>Impact: low</span><span>5 min</span></div>
+            <p>One word in <code>Features.jsx</code>, visible on the live page.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="plan__col">
+        <div class="plan__h"><h3>Strategic investments</h3><span>This quarter</span></div>
+        <div class="plan__b">
+          <div class="act">
+            <div class="act__t">Head manager and prerender</div>
+            <div class="act__m"><span>Impact: high</span><span>2&ndash;3 days</span></div>
+            <p>Per-route titles and static marketing HTML. <strong>Blocks every content item below.</strong> Watch the CSP script hash — a reformatted inline bootstrap breaks the gate and first paint.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Resolve the pricing catalogue, then publish</div>
+            <div class="act__m"><span>Impact: high</span><span>Multi-day</span></div>
+            <p>Three conflicting credit allowances and two price-unit conventions. Competitors publish openly; silence loses comparison queries.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Build the comparison hub</div>
+            <div class="act__m"><span>Impact: high</span><span>Multi-day</span><span>Needs: prerender</span></div>
+            <p>The format that actually wins this category. Name real competitors honestly.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Two feature pillars</div>
+            <div class="act__m"><span>Impact: high</span><span>1 day each</span><span>Needs: prerender</span></div>
+            <p>GST invoicing and client approvals — the two claims no incumbent matches.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Entity and directory presence</div>
+            <div class="act__m"><span>Impact: high</span><span>Ongoing</span></div>
+            <p>Google Business Profile, LinkedIn company page, SoftwareSuggest, Capterra India, G2. The realistic route to the brand query in §5.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Module pages, one per week</div>
+            <div class="act__m"><span>Impact: med</span><span>Ongoing</span><span>Needs: prerender</span></div>
+            <p>Start with payroll and e-signature. Fifteen modules currently share one URL.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Long-tail GST guides</div>
+            <div class="act__m"><span>Impact: med</span><span>Ongoing</span></div>
+            <p>LUT exports, place of supply, GSTR-1 vs 3B. Authority-building; skip the head terms ClearTax owns.</p>
+          </div>
+          <div class="act">
+            <div class="act__t">Connect an SEO tool</div>
+            <div class="act__m"><span>Impact: med</span><span>30 min</span></div>
+            <p>Ahrefs or Semrush via MCP. Turns §2's qualitative grades into measured volume and difficulty.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Proposal 96 · Full SEO audit · Aekam Inc · 2026-08-29<br />
+    Technical findings verified live against www.kartavaya.com and staging.kartavaya.com; competitive landscape from live SERPs.<br />
+    No search volumes, difficulty scores or backlink metrics are asserted — no keyword tool is connected.<br />
+    Companions: proposal 94 (indexing plan) · proposal 95 (launch deck).
+  </footer>
+
+</div>

@@ -1,0 +1,1216 @@
+<title>Kartavaya System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   KARTAVAYA SYSTEM — the whole component set, bold, on the cream.
+
+   Not a dashboard. Every family in the codebase: forms, inputs, dropdowns,
+   checkboxes, drawers, modals, popovers, menus, pickers, tables, kanban,
+   charts, marketplace and skills cards, empty states, skeletons, navigation.
+
+   Three engines drive all of it:
+     · THE ACCENT   — 12 presets, deriveAccentColors() maths from lib/accent.js
+     · THE GLASS    — six layers, one .lg class
+     · THE MOTION   — Kartavaya's five rungs and twelve curves, riding --ix
+
+   Every hover carries: accent glow, pointer specular, conic rim, shine sweep,
+   3D tilt where the surface is a card. All of it collapses at Motion = None.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@property --ang { syntax: '<angle>'; initial-value: 0deg; inherits: false }
+
+:root {
+  /* Cream, widened per the audit so elevation reads */
+  --s-lowest:#FFFEFB; --surface:#F8F6EF; --s-low:#F1EDE3;
+  --bg:#EAE5D8; --s-container:#E4DECD; --s-high:#DDD6C2;
+  --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+  --line:#CFC6AE; --line-2:#DDD5C0;
+
+  --acc:#05b7aa; --acc-mid:#04a99d; --acc-deep:#038c82; --acc-light:#3ad6ca; --on-acc:#fff;
+  --k-grad: linear-gradient(135deg, var(--acc-deep), var(--acc-mid) 55%, var(--acc));
+  --ok:#126B36; --warn:#8B5206; --danger:#B42318;
+
+  --sh-1: 0 1px 2px rgba(30,28,22,.09);
+  --sh-2: 0 2px 4px rgba(30,28,22,.07), 0 10px 28px -8px rgba(30,28,22,.17);
+  --sh-3: 0 4px 8px rgba(30,28,22,.08), 0 22px 52px -18px rgba(30,28,22,.26);
+  /* Accent presence, dialled back. Was 60/62% — at that strength a grid of
+     cards reads as lit from inside and the semantic pills stop competing. */
+  --glow: 0 10px 30px -12px color-mix(in srgb, var(--acc) 38%, transparent);
+  --glow-lg: 0 16px 46px -16px color-mix(in srgb, var(--acc) 42%, transparent);
+  --acc-wash: 16%;   /* fill tint on active chips, rows, spotlights */
+  --acc-edge: 30%;   /* border tint on hover */
+
+  /* ── AMBIENCE vs FEEDBACK ───────────────────────────────────────────────
+     Two different jobs, two different speeds. FEEDBACK — the lift, the border,
+     the press — must be fast or the control feels laggy. AMBIENCE — the
+     specular bloom, the shine sweep, the conic rim — is atmosphere, and at
+     --dur-base it reads as a flicker rather than as glass catching light. */
+  --dur-glass: calc(var(--dur-xslow) * 1.7);   /* ~880ms */
+  --dur-sweep: calc(var(--dur-xslow) * 2.4);   /* ~1250ms */
+
+  --ix-user:1; --ix:var(--ix-user);
+  --motion-scale-user:1; --motion-scale:var(--motion-scale-user);
+  --dur-instant:calc(90ms*var(--ix)); --dur-fast:calc(140ms*var(--ix));
+  --dur-base:calc(220ms*var(--ix)); --dur-slow:calc(360ms*var(--ix)); --dur-xslow:calc(520ms*var(--ix));
+  --ease-standard:cubic-bezier(.2,0,0,1); --ease-emph:cubic-bezier(.16,1,.3,1);
+  --ease-enter:cubic-bezier(0,0,.2,1); --ease-exit:cubic-bezier(.4,0,1,1);
+  --ease-spring:cubic-bezier(.34,1.36,.64,1); --ease-fill:cubic-bezier(.25,.8,.25,1);
+
+  --r-sm:8px; --r-md:12px; --r-lg:18px; --r-xl:26px; --r-pill:999px;
+  --f-d:'Newsreader',Georgia,serif; --f-u:'Inter',system-ui,sans-serif;
+  --f-m:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  --row-h:54px;
+
+  --g-blur:15px; --g-alpha:.17; --g-rim:.48;
+}
+
+:root[data-design="ship"] {
+  --surface:#FAF7F0; --s-low:#F5F1E7; --bg:#F3EFE6; --s-container:#EEE9DC; --s-high:#E7E1D1;
+  --line:#D8D1BE; --line-2:#E4DECD;
+  --sh-1:0 1px 2px rgba(30,28,22,.07);
+  --sh-2:0 1px 2px rgba(28,24,16,.07),0 4px 12px -5px rgba(28,24,16,.12);
+  --sh-3:0 4px 16px -6px rgba(30,28,22,.16);
+  --glow:var(--sh-1); --glow-lg:var(--sh-2);
+  --k-grad:none; --g-blur:0px; --g-alpha:1; --g-rim:0;
+}
+
+@media (prefers-reduced-motion: reduce){ :root{ --ix:.001; --motion-scale:0 } }
+@media (prefers-reduced-transparency: reduce){ :root{ --g-blur:0px; --g-alpha:.94 } }
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--f-u); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  transition:background var(--dur-slow) var(--ease-standard);
+}
+body::before{
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(1200px 660px at 6% -10%, color-mix(in srgb,var(--acc) 14%,transparent), transparent 62%),
+    radial-gradient(900px 520px at 96% 4%, color-mix(in srgb,var(--acc-deep) 10%,transparent), transparent 58%);
+}
+:root[data-design="ship"] body::before{opacity:0}
+
+/* ══ TOP BAR ═════════════════════════════════════════════════════════════ */
+.bar{
+  position:sticky; top:0; z-index:95; display:flex; flex-wrap:wrap; gap:10px 18px;
+  align-items:center; justify-content:space-between; padding:10px clamp(14px,3vw,26px);
+  background:color-mix(in srgb,var(--s-lowest) 84%,transparent); border-bottom:1px solid var(--line);
+  backdrop-filter:blur(14px) saturate(1.4); -webkit-backdrop-filter:blur(14px) saturate(1.4);
+}
+.bar__t{font-family:var(--f-m);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.bar__g{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.sgl{font-family:var(--f-m);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-right:6px}
+.sg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--s-lowest)}
+.sg button{font-family:var(--f-m);font-size:10px;background:none;border:0;cursor:pointer;padding:5px 10px;color:var(--ink-3);transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard)}
+.sg button+button{border-left:1px solid var(--line)}
+.sg button[aria-pressed="true"]{background:color-mix(in srgb,var(--acc) 20%,transparent);color:var(--ink);font-weight:600}
+.sg button:focus-visible{outline:2px solid var(--acc-mid);outline-offset:-2px}
+.acc{display:inline-flex;gap:4px;flex-wrap:wrap}
+.acc button{width:19px;height:19px;border-radius:50%;cursor:pointer;padding:0;border:1.5px solid transparent;background:var(--c);transition:transform var(--dur-fast) var(--ease-spring),border-color var(--dur-fast) var(--ease-standard)}
+.acc button:hover{transform:scale(calc(1 + .18*var(--motion-scale)))}
+.acc button[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 2px var(--s-lowest) inset;transform:scale(calc(1 + .1*var(--motion-scale)))}
+.acc button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* ══ THE INTERACTION ENGINE ══════════════════════════════════════════════
+   .fx  — pointer specular + shine sweep + conic rim, on any surface
+   .tilt — adds 3D tilt driven by --rx/--ry from JS                        */
+.fx{position:relative;isolation:isolate;overflow:hidden}
+.fx::after{                                     /* pointer specular — AMBIENCE */
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:4;opacity:0;
+  background:radial-gradient(260px circle at var(--mx,50%) var(--my,0%),
+             color-mix(in srgb,var(--acc) 15%,transparent),transparent 70%);
+  /* Blooms slowly in, leaves a touch faster — an exit is never the reverse
+     of its entrance (animations.css states this for every pair). */
+  transition:opacity var(--dur-glass) var(--ease-standard);
+}
+.fx:hover::after,.fx:focus-within::after{opacity:1;transition-timing-function:var(--ease-enter)}
+.fx__shine{                                     /* diagonal sweep — AMBIENCE */
+  position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:5;
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.42) 50%,transparent 60%);
+  transform:translateX(-130%);
+}
+.fx:hover .fx__shine{transform:translateX(130%);transition:transform var(--dur-sweep) var(--ease-standard)}
+:root[data-design="ship"] .fx::after,:root[data-design="ship"] .fx__shine{display:none}
+/* Conic rim — an animated gradient border, masked to a 1px ring */
+.rim::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;padding:1.5px;z-index:6;pointer-events:none;
+  background:conic-gradient(from var(--ang),transparent 0deg,var(--acc) 60deg,var(--acc-light) 110deg,transparent 190deg,transparent 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
+  opacity:0;transition:opacity var(--dur-glass) var(--ease-standard);
+}
+.rim:hover::before,.rim:focus-within::before{opacity:1;animation:spin 5.5s linear infinite}
+@keyframes spin{to{--ang:360deg}}
+:root[data-design="ship"] .rim::before{display:none}
+
+.tilt{transform:perspective(880px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(var(--lift,0px));transition:transform var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard)}
+:root[data-design="ship"] .tilt{transform:none}
+
+/* ══ LAYOUT ══════════════════════════════════════════════════════════════ */
+.wrap{position:relative;z-index:1;padding:0 clamp(16px,3.4vw,44px) 90px;max-width:1560px}
+.head{padding:clamp(34px,5vw,64px) 0 22px;border-bottom:1px solid var(--line)}
+.kick{font-family:var(--f-m);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc-deep);margin:0 0 14px}
+h1{font-family:var(--f-d);font-weight:200;font-size:clamp(34px,6vw,70px);line-height:.99;letter-spacing:-.035em;margin:0 0 14px;max-width:17ch}
+h1 em{font-style:italic;font-weight:300;color:var(--acc-deep)}
+.lede{font-family:var(--f-d);font-size:clamp(16px,1.7vw,19px);line-height:1.5;color:var(--ink-2);max-width:58ch;margin:0}
+
+section{padding-top:clamp(38px,4.4vw,60px)}
+.sh{display:flex;gap:16px;align-items:baseline;margin-bottom:6px;flex-wrap:wrap}
+.sn{font-family:var(--f-m);font-size:12px;color:var(--acc-deep);font-weight:500;flex:none;padding-top:4px}
+h2{font-family:var(--f-d);font-weight:400;font-size:clamp(23px,3vw,34px);line-height:1.12;letter-spacing:-.017em}
+.ss{font-size:13.5px;color:var(--ink-3);margin:0 0 22px 28px;max-width:62ch;line-height:1.55}
+h3{font-family:var(--f-m);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:26px 0 12px;font-weight:500}
+
+.demo{background:var(--s-lowest);border:1px solid var(--line);border-radius:var(--r-xl);padding:22px;box-shadow:var(--sh-2);margin-bottom:14px;transition:background var(--dur-slow) var(--ease-standard)}
+.row{display:flex;flex-wrap:wrap;gap:11px;align-items:center}
+.stack{display:flex;flex-direction:column;gap:11px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.cols3{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:14px}
+
+/* ══ 1 · BUTTONS ═════════════════════════════════════════════════════════ */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;font-family:var(--f-u);font-size:13px;font-weight:600;
+  padding:9px 17px;border-radius:var(--r-pill);cursor:pointer;color:var(--ink);
+  border:1px solid var(--line);background:var(--s-lowest);box-shadow:var(--sh-1);
+  transition:transform var(--dur-fast) var(--ease-spring),border-radius var(--dur-base) var(--ease-spring),
+             border-color var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),
+             box-shadow var(--dur-fast) var(--ease-standard);
+}
+.btn:hover{border-color:var(--acc-mid);color:var(--acc-deep);box-shadow:var(--glow);transform:translateY(calc(-2px*var(--motion-scale)))}
+.btn:active{transform:scale(calc(1 - .04*var(--motion-scale)));border-radius:10px}
+.btn:focus-visible{outline:2px solid var(--acc-mid);outline-offset:2px}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2;flex:none}
+.btn--go{background:var(--k-grad);color:var(--on-acc);border-color:transparent;box-shadow:var(--glow)}
+:root[data-design="ship"] .btn--go{background:var(--acc-mid);box-shadow:var(--sh-1)}
+.btn--go:hover{color:var(--on-acc);box-shadow:var(--glow-lg)}
+/* Destructive actions are OUTLINED at rest and FILLED on hover. A delete that
+   is already solid red shouts before anything is at stake; an outlined one
+   states its consequence and commits only when the pointer arrives. */
+.btn--dan{background:var(--s-lowest);color:var(--danger);border-color:var(--danger)}
+.btn--dan:hover{background:var(--danger);color:#fff;border-color:var(--danger);
+  box-shadow:0 12px 32px -12px color-mix(in srgb,var(--danger) 55%,transparent)}
+.btn--dan:focus-visible{outline:2px solid var(--danger);outline-offset:2px}
+.btn--ghost{background:none;border-color:transparent;box-shadow:none}
+.btn--ghost:hover{background:var(--s-low);box-shadow:none}
+.btn--sm{font-size:11.5px;padding:6px 12px}
+.btn--lg{font-size:15px;padding:13px 26px}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.ibtn{width:38px;height:38px;padding:0;justify-content:center;border-radius:var(--r-pill)}
+.fab{width:52px;height:52px;padding:0;justify-content:center;border-radius:var(--r-pill);background:var(--k-grad);color:var(--on-acc);border-color:transparent;box-shadow:var(--glow-lg)}
+.fab svg{width:20px;height:20px}
+.split{display:inline-flex;border-radius:var(--r-pill);overflow:hidden;border:1px solid var(--line);background:var(--s-lowest);box-shadow:var(--sh-1)}
+.split .btn{border:0;border-radius:0;box-shadow:none;transform:none}
+.split .btn+.btn{border-left:1px solid var(--line);padding-left:11px;padding-right:11px}
+.spin svg{animation:rot .7s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ══ 2 · FORMS ═══════════════════════════════════════════════════════════ */
+.field{display:flex;flex-direction:column;gap:6px}
+.lbl{font-size:12px;font-weight:600;color:var(--ink-2)}
+.lbl span{color:var(--danger);margin-left:2px}
+.hint{font-size:11.5px;color:var(--ink-3)}
+.err{font-size:11.5px;color:var(--danger);display:flex;align-items:center;gap:5px;animation:shake var(--dur-slow) cubic-bezier(.36,.07,.19,.97)}
+@keyframes shake{10%,90%{transform:translateX(calc(-1px*var(--motion-scale)))}30%,70%{transform:translateX(calc(2px*var(--motion-scale)))}50%{transform:translateX(calc(-3px*var(--motion-scale)))}}
+.inp{
+  display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:var(--r-md);
+  background:var(--s-lowest);border:1px solid var(--line);box-shadow:var(--sh-1);
+  transition:border-color var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard);
+}
+.inp:hover{border-color:color-mix(in srgb,var(--acc) var(--acc-edge),var(--line))}
+.inp:focus-within{border-color:var(--acc-mid);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 15%,transparent),var(--glow)}
+.inp input,.inp textarea,.inp select{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font-family:var(--f-u);font-size:13.5px;resize:vertical}
+.inp input::placeholder,.inp textarea::placeholder{color:var(--ink-3)}
+.inp svg{width:15px;height:15px;stroke:var(--ink-3);fill:none;stroke-width:2;flex:none;transition:stroke var(--dur-fast) var(--ease-standard)}
+.inp:focus-within svg{stroke:var(--acc-mid)}
+.inp--err{border-color:var(--danger)}
+.inp--err:focus-within{border-color:var(--danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 18%,transparent)}
+.inp--ok{border-color:var(--ok)}
+.inp textarea{min-height:74px;padding:0;line-height:1.5}
+.inp select{cursor:pointer;appearance:none}
+.sel{position:relative}
+.sel::after{content:'';position:absolute;right:14px;top:50%;width:7px;height:7px;border-right:1.8px solid var(--ink-3);border-bottom:1.8px solid var(--ink-3);transform:translateY(-70%) rotate(45deg);pointer-events:none;transition:transform var(--dur-fast) var(--ease-standard)}
+.sel:focus-within::after{transform:translateY(-30%) rotate(225deg);border-color:var(--acc-mid)}
+
+/* Checkbox / radio / switch — real inputs, custom paint */
+.chk{display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+.chk input{position:absolute;opacity:0;width:0;height:0}
+.chk__b{
+  width:19px;height:19px;border-radius:6px;border:1.6px solid var(--line);background:var(--s-lowest);
+  display:grid;place-items:center;flex:none;
+  transition:background var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-spring),box-shadow var(--dur-fast) var(--ease-standard);
+}
+.chk:hover .chk__b{border-color:var(--acc-mid)}
+.chk input:focus-visible + .chk__b{outline:2px solid var(--acc-mid);outline-offset:2px}
+.chk__b svg{width:12px;height:12px;stroke:var(--on-acc);fill:none;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:20;stroke-dashoffset:20}
+.chk input:checked + .chk__b{background:var(--k-grad);border-color:transparent;box-shadow:var(--glow);transform:scale(calc(1 + .08*var(--motion-scale)))}
+:root[data-design="ship"] .chk input:checked + .chk__b{background:var(--acc-mid);box-shadow:none}
+.chk input:checked + .chk__b svg{animation:draw var(--dur-base) var(--ease-emph) forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.chk--r .chk__b{border-radius:50%}
+.chk--r .chk__b i{width:8px;height:8px;border-radius:50%;background:var(--on-acc);transform:scale(0);transition:transform var(--dur-base) var(--ease-spring)}
+.chk--r input:checked + .chk__b i{transform:scale(1)}
+.sw{width:46px;height:26px;border-radius:var(--r-pill);border:1.6px solid var(--line);background:var(--s-container);position:relative;cursor:pointer;padding:0;flex:none;transition:background var(--dur-base) var(--ease-standard),border-color var(--dur-base) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard)}
+.sw i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--s-lowest);box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform var(--dur-base) var(--ease-spring)}
+.sw[aria-checked="true"]{background:var(--k-grad);border-color:transparent;box-shadow:var(--glow)}
+:root[data-design="ship"] .sw[aria-checked="true"]{background:var(--acc-mid);box-shadow:none}
+.sw[aria-checked="true"] i{transform:translateX(20px)}
+.sw:focus-visible{outline:2px solid var(--acc-mid);outline-offset:2px}
+/* Slider */
+.rng{width:100%;accent-color:var(--acc-mid);height:4px}
+/* Stepper */
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:var(--r-pill);overflow:hidden;background:var(--s-lowest);box-shadow:var(--sh-1)}
+.step button{width:32px;height:32px;border:0;background:none;cursor:pointer;color:var(--ink-2);font-size:15px;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard)}
+.step button:hover{background:color-mix(in srgb,var(--acc) var(--acc-wash),transparent);color:var(--acc-deep)}
+.step span{min-width:38px;text-align:center;font-family:var(--f-m);font-size:13px;font-variant-numeric:tabular-nums}
+/* File drop */
+.drop{border:1.6px dashed var(--line);border-radius:var(--r-lg);padding:22px;text-align:center;background:var(--s-low);cursor:pointer;transition:border-color var(--dur-fast) var(--ease-standard),background var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-standard)}
+.drop:hover{border-color:var(--acc-mid);background:color-mix(in srgb,var(--acc) 8%,var(--s-low));transform:translateY(calc(-2px*var(--motion-scale)))}
+.drop svg{width:24px;height:24px;stroke:var(--acc-mid);fill:none;stroke-width:1.8;margin-bottom:8px}
+.drop b{display:block;font-size:13.5px;color:var(--ink)}
+.drop span{font-size:12px;color:var(--ink-3)}
+
+/* ══ 3 · CHIPS, TAGS, AVATARS ════════════════════════════════════════════ */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:var(--r-pill);font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--s-lowest);color:var(--ink-2);cursor:pointer;transition:transform var(--dur-fast) var(--ease-spring),border-color var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard)}
+.chip:hover{border-color:var(--acc-mid);color:var(--acc-deep);transform:translateY(calc(-1px*var(--motion-scale)));box-shadow:var(--glow)}
+.chip--on{background:var(--k-grad);color:var(--on-acc);border-color:transparent;box-shadow:var(--glow)}
+:root[data-design="ship"] .chip--on{background:var(--acc-mid);box-shadow:none}
+.chip--on:hover{color:var(--on-acc)}
+.chip i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.chip__x{margin-left:2px;opacity:.6;transition:opacity var(--dur-fast) var(--ease-standard)}
+.chip:hover .chip__x{opacity:1}
+.pill{display:inline-flex;align-items:center;gap:5px;font-family:var(--f-m);font-size:10px;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:var(--r-pill);font-weight:500}
+.pill i{width:5px;height:5px;border-radius:50%;background:currentColor}
+.pill--ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 13%,transparent)}
+.pill--warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.pill--dan{color:var(--danger);background:color-mix(in srgb,var(--danger) 13%,transparent)}
+.pill--acc{color:var(--acc-deep);background:color-mix(in srgb,var(--acc) 16%,transparent)}
+.av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-family:var(--f-m);font-size:11.5px;font-weight:600;color:#fff;flex:none;border:2px solid var(--s-lowest);transition:transform var(--dur-fast) var(--ease-spring),box-shadow var(--dur-fast) var(--ease-standard)}
+.av:hover{transform:translateY(calc(-3px*var(--motion-scale))) scale(calc(1 + .06*var(--motion-scale)));box-shadow:var(--glow);z-index:2}
+.avs{display:flex}
+.avs .av+.av{margin-left:-10px}
+.av__p{position:relative}
+.av__p::after{content:'';position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:var(--ok);border:2px solid var(--s-lowest)}
+
+/* ══ 4 · CARDS ═══════════════════════════════════════════════════════════ */
+.card{background:var(--s-lowest);border:1px solid var(--line);border-radius:var(--r-xl);padding:18px;box-shadow:var(--sh-2);cursor:pointer}
+.card:hover{box-shadow:var(--sh-3),var(--glow-lg);border-color:color-mix(in srgb,var(--acc) var(--acc-edge),var(--line));--lift:-4px}
+.card__t{font-size:14.5px;font-weight:600;margin:0 0 4px}
+.card__s{font-size:12.5px;color:var(--ink-3);margin:0}
+.card__ic{width:38px;height:38px;border-radius:11px;background:var(--k-grad);display:grid;place-items:center;margin-bottom:13px;box-shadow:var(--glow);transition:transform var(--dur-base) var(--ease-spring)}
+:root[data-design="ship"] .card__ic{background:var(--acc-mid);box-shadow:none}
+.card:hover .card__ic{transform:rotate(calc(-7deg*var(--motion-scale))) scale(calc(1 + .1*var(--motion-scale)))}
+.card__ic svg{width:19px;height:19px;stroke:var(--on-acc);fill:none;stroke-width:2}
+.card__f{display:flex;align-items:center;justify-content:space-between;margin-top:15px;padding-top:13px;border-top:1px solid var(--line-2);font-size:12px;color:var(--ink-3)}
+/* KPI */
+.kpi{padding:16px 17px 18px}
+.kpi__l{font-family:var(--f-m);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kpi__v{font-family:var(--f-m);font-size:clamp(24px,2.8vw,32px);font-weight:500;letter-spacing:-.035em;margin:10px 0 0;font-variant-numeric:tabular-nums;line-height:1}
+.kpi__d{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--ink-2)}
+.kpi__s{display:flex;align-items:flex-end;gap:3px;height:28px;margin-top:12px}
+.kpi__s i{flex:1;border-radius:2px 2px 0 0;height:var(--h,0%);background:color-mix(in srgb,var(--acc) 30%,transparent);transform-origin:bottom;animation:gy var(--dur-slow) var(--ease-fill) backwards;animation-delay:calc(var(--j,0)*32ms*var(--ix));transition:background var(--dur-fast) var(--ease-standard)}
+.kpi__s i:last-child{background:var(--acc-mid)}
+.card:hover .kpi__s i{background:color-mix(in srgb,var(--acc) 40%,transparent)}
+.card:hover .kpi__s i:last-child{background:var(--acc)}
+@keyframes gy{from{transform:scaleY(0)}}
+/* Marketplace / skills */
+.mkt{display:flex;gap:13px;align-items:flex-start}
+.mkt__i{width:44px;height:44px;border-radius:13px;background:var(--k-grad);display:grid;place-items:center;flex:none;box-shadow:var(--glow);transition:transform var(--dur-base) var(--ease-spring)}
+:root[data-design="ship"] .mkt__i{background:var(--acc-mid);box-shadow:none}
+.card:hover .mkt__i{transform:scale(calc(1 + .09*var(--motion-scale)))}
+.mkt__i svg{width:21px;height:21px;stroke:var(--on-acc);fill:none;stroke-width:1.9}
+.mkt__n{font-size:14px;font-weight:600;margin:0 0 3px}
+.mkt__d{font-size:12.5px;color:var(--ink-3);margin:0;line-height:1.45}
+.mkt__meta{display:flex;gap:12px;margin-top:11px;font-family:var(--f-m);font-size:10.5px;color:var(--ink-3)}
+
+/* ══ 5 · TABLE ═══════════════════════════════════════════════════════════ */
+.tw{background:var(--s-lowest);border:1px solid var(--line);border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--sh-2)}
+.tbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line)}
+.tsc{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px}
+th{font-family:var(--f-m);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:500;text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:color var(--dur-fast) var(--ease-standard)}
+th:hover{color:var(--acc-deep)}
+th .srt{opacity:0;margin-left:4px;transition:opacity var(--dur-fast) var(--ease-standard)}
+th:hover .srt,th.on .srt{opacity:1}
+td{padding:0 14px;height:var(--row-h);border-bottom:1px solid var(--line-2);color:var(--ink-2)}
+tbody tr{position:relative;transition:background var(--dur-fast) var(--ease-standard)}
+tbody tr::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--k-grad);transform:scaleY(0);transform-origin:center;transition:transform var(--dur-base) var(--ease-emph)}
+:root[data-design="ship"] tbody tr::before{background:var(--acc-mid)}
+tbody tr:hover::before{transform:scaleY(1)}
+tbody tr:hover{background:color-mix(in srgb,var(--acc) 5%,transparent)}
+tbody tr:last-child td{border-bottom:0}
+.nm{color:var(--ink);font-weight:500}
+.num{text-align:right;font-family:var(--f-m);font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* ══ 6 · CHARTS ══════════════════════════════════════════════════════════ */
+.bars{display:flex;align-items:flex-end;gap:8px;height:150px}
+.bars__c{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;min-width:0;cursor:pointer}
+.bars__v{font-family:var(--f-m);font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums;transition:color var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-spring)}
+.bars__c:hover .bars__v{color:var(--acc-deep);transform:translateY(calc(-3px*var(--motion-scale))) scale(calc(1 + .12*var(--motion-scale)))}
+.bars__t{flex:1;min-height:0;width:100%;display:flex;align-items:flex-end}
+.bars__b{width:100%;height:var(--h,0%);min-height:3px;border-radius:5px 5px 2px 2px;background:color-mix(in srgb,var(--acc) 30%,transparent);transform-origin:bottom;animation:gy var(--dur-slow) var(--ease-fill) backwards;animation-delay:calc(var(--i,0)*38ms*var(--ix));transition:background var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard),filter var(--dur-fast) var(--ease-standard)}
+.bars__c:hover .bars__b{background:var(--k-grad);box-shadow:var(--glow)}
+:root[data-design="ship"] .bars__c:hover .bars__b{background:var(--acc-mid);box-shadow:none}
+.bars__c:last-child .bars__b{background:var(--k-grad);box-shadow:var(--glow)}
+:root[data-design="ship"] .bars__c:last-child .bars__b{background:var(--acc-mid);box-shadow:none}
+.bars__x{font-family:var(--f-m);font-size:10px;color:var(--ink-3)}
+/* Line + area */
+.line{width:100%;height:150px;overflow:visible}
+.line__a{fill:url(#areaG);opacity:0;animation:af var(--dur-xslow) var(--ease-enter) forwards;animation-delay:calc(340ms*var(--ix))}
+@keyframes af{to{opacity:1}}
+.line__l{fill:none;stroke:var(--acc-mid);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1000;stroke-dashoffset:1000;animation:drawl calc(var(--dur-xslow)*1.7) var(--ease-standard) forwards;filter:drop-shadow(0 3px 10px color-mix(in srgb,var(--acc) 50%,transparent))}
+@keyframes drawl{to{stroke-dashoffset:0}}
+.line__d{fill:var(--acc);r:0;animation:pop var(--dur-base) var(--ease-spring) forwards;animation-delay:calc((var(--i,0)*70ms + 700ms)*var(--ix))}
+@keyframes pop{to{r:4}}
+.line__g{stroke:var(--line-2);stroke-width:1}
+/* Donut */
+.donut{width:132px;height:132px;transform:rotate(-90deg)}
+.donut circle{fill:none;stroke-width:15;stroke-linecap:round}
+.donut__bg{stroke:var(--s-container)}
+.donut__f{stroke:var(--acc-mid);stroke-dasharray:var(--c,0) 999;stroke-dashoffset:0;animation:dash calc(var(--dur-xslow)*1.4) var(--ease-fill) backwards;filter:drop-shadow(0 3px 12px color-mix(in srgb,var(--acc) 55%,transparent))}
+@keyframes dash{from{stroke-dasharray:0 999}}
+.donut__w{position:relative;display:inline-grid;place-items:center}
+.donut__c{position:absolute;text-align:center}
+.donut__n{font-family:var(--f-m);font-size:25px;font-weight:500;letter-spacing:-.03em}
+.donut__l{font-family:var(--f-m);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+/* Funnel + meters */
+.fun{display:flex;flex-direction:column;gap:10px}
+.fun__r{display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:11px;align-items:center}
+.fun__l{font-size:12.5px;color:var(--ink-2)}
+.fun__t{height:24px;border-radius:var(--r-sm);background:var(--s-container);overflow:hidden}
+.fun__f{display:block;height:100%;border-radius:var(--r-sm);width:0;background:var(--k-grad);animation:fill var(--dur-xslow) var(--ease-fill) forwards;animation-delay:calc(var(--i,0)*60ms*var(--ix));transition:filter var(--dur-fast) var(--ease-standard)}
+:root[data-design="ship"] .fun__f{background:var(--acc-mid)}
+.fun__r:hover .fun__f{filter:brightness(1.12) saturate(1.2)}
+@keyframes fill{to{width:var(--w,0%)}}
+.fun__v{font-family:var(--f-m);font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink)}
+/* Heatmap */
+.heat{display:grid;grid-template-columns:repeat(14,1fr);gap:4px}
+.heat i{aspect-ratio:1;border-radius:3px;background:color-mix(in srgb,var(--acc) calc(var(--v,0)*1%),var(--s-container));transform:scale(0);animation:hp var(--dur-base) var(--ease-spring) forwards;animation-delay:calc(var(--i,0)*11ms*var(--ix));transition:transform var(--dur-fast) var(--ease-spring)}
+.heat i:hover{transform:scale(calc(1 + .3*var(--motion-scale)));box-shadow:var(--glow)}
+@keyframes hp{to{transform:scale(1)}}
+/* Progress ring + bar */
+.prg{height:7px;border-radius:99px;background:var(--s-container);overflow:hidden}
+.prg i{display:block;height:100%;border-radius:99px;background:var(--k-grad);width:0;animation:fill var(--dur-xslow) var(--ease-fill) forwards}
+:root[data-design="ship"] .prg i{background:var(--acc-mid)}
+
+/* ══ 7 · OVERLAYS ════════════════════════════════════════════════════════ */
+.stage{position:relative;min-height:296px;border-radius:var(--r-xl);overflow:hidden;background:var(--s-low);border:1px solid var(--line);padding:18px}
+.stage__bg{font-size:12.5px;color:var(--ink-3);line-height:1.7}
+.scrim{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:18px;background:rgba(28,26,20,.34);backdrop-filter:blur(9px) saturate(1.1);-webkit-backdrop-filter:blur(9px) saturate(1.1);animation:fadein var(--dur-base) var(--ease-enter) backwards}
+@keyframes fadein{from{opacity:0}}
+.scrim[hidden]{display:none}
+.modal{max-width:330px;width:100%;padding:20px;border-radius:var(--r-xl);background:var(--s-lowest);border:1px solid var(--line);box-shadow:var(--sh-3);animation:mi var(--dur-base) var(--ease-emph) backwards}
+@keyframes mi{from{opacity:0;transform:translateY(calc(10px*var(--motion-scale))) scale(calc(1 - .04*var(--motion-scale)))}}
+.modal h4{font-family:var(--f-d);font-size:19px;font-weight:400;margin:0 0 7px}
+.modal p{font-size:13px;color:var(--ink-2);margin:0 0 16px;line-height:1.5}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(320px,88%);z-index:6;background:var(--s-lowest);border-left:1px solid var(--line);box-shadow:var(--sh-3);padding:18px;animation:di var(--dur-slow) var(--ease-emph) backwards;overflow:auto}
+@keyframes di{from{opacity:.3;transform:translateX(calc(28px*var(--motion-scale)))}}
+.drawer[hidden]{display:none}
+.drawer h4{font-family:var(--f-d);font-size:18px;font-weight:400;margin:0 0 4px}
+.pop{position:absolute;z-index:7;min-width:200px;padding:6px;border-radius:var(--r-lg);background:color-mix(in srgb,var(--s-lowest) 88%,transparent);border:1px solid var(--line);box-shadow:var(--sh-3);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);animation:pi var(--dur-fast) var(--ease-spring) backwards}
+@keyframes pi{from{opacity:0;transform:scale(calc(1 - .04*var(--motion-scale))) translateY(calc(-4px*var(--motion-scale)))}}
+.pop[hidden]{display:none}
+.pop__i{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:var(--r-sm);font-size:13px;color:var(--ink-2);cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),padding-left var(--dur-fast) var(--ease-standard)}
+.pop__i:hover{background:color-mix(in srgb,var(--acc) var(--acc-wash),transparent);color:var(--acc-deep);padding-left:15px}
+.pop__i svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+.pop__s{height:1px;background:var(--line-2);margin:5px 8px}
+.pop__i--dan:hover{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+/* Command palette */
+.cmdk{max-width:430px;width:100%;border-radius:var(--r-xl);overflow:hidden;background:color-mix(in srgb,var(--s-lowest) 86%,transparent);border:1px solid var(--line);box-shadow:var(--sh-3);backdrop-filter:blur(22px) saturate(1.7);-webkit-backdrop-filter:blur(22px) saturate(1.7);animation:mi var(--dur-base) var(--ease-emph) backwards}
+.cmdk__s{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line-2)}
+.cmdk__s input{flex:1;background:none;border:0;outline:0;font-family:var(--f-u);font-size:15px;color:var(--ink)}
+.cmdk__l{padding:6px}
+.cmdk__g{font-family:var(--f-m);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding:8px 11px 5px}
+/* Toast */
+.toasts{position:fixed;right:18px;bottom:18px;z-index:88;display:flex;flex-direction:column;gap:10px;width:min(330px,calc(100vw - 36px))}
+.toast{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px 15px 15px;border-radius:var(--r-lg);--t-a:var(--acc);--t-b:var(--acc-deep);background:linear-gradient(135deg,var(--t-b),var(--t-a) 62%);border:1px solid rgba(255,255,255,.26);color:#fff;box-shadow:0 4px 10px rgba(30,28,22,.14),0 18px 44px -14px color-mix(in srgb,var(--t-a) 60%,rgba(30,28,22,.4)),inset 0 1px 0 rgba(255,255,255,.42);animation:ti var(--dur-base) var(--ease-emph) backwards}
+.toast--ok{--t-a:#1FA35A;--t-b:#0E7A46}
+.toast--dan{--t-a:#E0544A;--t-b:#B0261F}
+@keyframes ti{from{opacity:0;transform:translateY(calc(14px*var(--motion-scale))) scale(calc(1 - .03*var(--motion-scale)))}}
+.toast.out{animation:to_ calc(var(--dur-base)*.8) var(--ease-exit) forwards}
+@keyframes to_{to{opacity:0;transform:translateY(calc(10px*var(--motion-scale)))}}
+.toast__i{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;background:rgba(255,255,255,.22)}
+.toast__i svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:2.4}
+.toast__t{display:block;font-size:13.5px;font-weight:600;line-height:1.35}
+.toast__m{display:block;font-size:12.5px;opacity:.88;margin-top:3px;line-height:1.42}
+.toast__r{grid-column:1/-1;height:2px;border-radius:2px;background:rgba(255,255,255,.26);overflow:hidden;margin-top:5px}
+.toast__r i{display:block;height:100%;background:rgba(255,255,255,.92);transform-origin:left;animation:drain linear forwards}
+@keyframes drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+/* Tooltip */
+.tip{position:relative;display:inline-flex}
+.tip__b{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) scale(.94);white-space:nowrap;background:var(--ink);color:var(--s-lowest);font-size:11.5px;padding:5px 10px;border-radius:var(--r-sm);opacity:0;pointer-events:none;transition:opacity var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-spring)}
+.tip:hover .tip__b{opacity:1;transform:translateX(-50%) scale(1)}
+
+/* ══ 8 · STATES ══════════════════════════════════════════════════════════ */
+.empty{text-align:center;padding:34px 20px}
+.empty__i{width:58px;height:58px;border-radius:19px;background:color-mix(in srgb,var(--acc) 14%,transparent);display:grid;place-items:center;margin:0 auto 15px;animation:float 4.5s var(--ease-standard) infinite}
+@keyframes float{0%,100%{transform:translateY(calc(-4px*var(--motion-scale)))}50%{transform:translateY(calc(4px*var(--motion-scale)))}}
+.empty__i svg{width:26px;height:26px;stroke:var(--acc-deep);fill:none;stroke-width:1.7}
+.empty h4{font-family:var(--f-d);font-size:19px;font-weight:400;margin:0 0 5px}
+.empty p{font-size:13px;color:var(--ink-3);margin:0 0 16px;max-width:38ch;margin-inline:auto}
+.sk{border-radius:var(--r-sm);background:linear-gradient(90deg,var(--s-container) 25%,var(--s-low) 37%,var(--s-container) 63%);background-size:400% 100%;animation:shim 1.7s var(--ease-standard) infinite}
+@keyframes shim{to{background-position:-135% 0}}
+.sk--t{height:11px} .sk--h{height:19px} .sk--c{height:74px;border-radius:var(--r-lg)}
+
+/* ══ 9 · NAV ═════════════════════════════════════════════════════════════ */
+.tabs{display:flex;gap:2px;position:relative;border-bottom:1px solid var(--line)}
+.tab{position:relative;background:none;border:0;cursor:pointer;font-family:var(--f-u);font-size:13.5px;font-weight:500;color:var(--ink-3);padding:10px 15px 12px;transition:color var(--dur-fast) var(--ease-standard)}
+.tab:hover{color:var(--ink-2)}
+.tab.on{color:var(--acc-deep);font-weight:600}
+.tab:focus-visible{outline:2px solid var(--acc-mid);outline-offset:-2px}
+.tind{position:absolute;bottom:-1px;height:2.5px;border-radius:2px;background:var(--k-grad);box-shadow:var(--glow);transition:transform var(--dur-base) var(--ease-emph),width var(--dur-base) var(--ease-emph)}
+:root[data-design="ship"] .tind{background:var(--acc-mid);box-shadow:none}
+.crumb{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-3)}
+.crumb a{color:var(--ink-3);text-decoration:none;transition:color var(--dur-fast) var(--ease-standard)}
+.crumb a:hover{color:var(--acc-deep)}
+.crumb b{color:var(--ink);font-weight:600}
+.pager{display:flex;gap:5px;align-items:center}
+.pg{width:32px;height:32px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--s-lowest);cursor:pointer;font-family:var(--f-m);font-size:12px;color:var(--ink-2);transition:all var(--dur-fast) var(--ease-standard)}
+.pg:hover{border-color:var(--acc-mid);color:var(--acc-deep)}
+.pg.on{background:var(--k-grad);color:var(--on-acc);border-color:transparent;box-shadow:var(--glow)}
+:root[data-design="ship"] .pg.on{background:var(--acc-mid);box-shadow:none}
+/* Kanban */
+.kb{display:grid;grid-template-columns:repeat(auto-fit,minmax(184px,1fr));gap:12px}
+.kbc{background:var(--s-low);border-radius:var(--r-lg);padding:11px;min-height:158px}
+.kbc__h{display:flex;align-items:center;justify-content:space-between;font-family:var(--f-m);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;padding:0 3px}
+.bc{background:var(--s-lowest);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 12px;margin-bottom:8px;cursor:grab;box-shadow:var(--sh-1);font-size:13px;transition:transform var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard)}
+.bc:hover{transform:translateY(calc(-2px*var(--motion-scale)));box-shadow:var(--sh-2),var(--glow);border-color:color-mix(in srgb,var(--acc) var(--acc-edge),var(--line))}
+.bc:active{cursor:grabbing;transform:scale(calc(1 - .02*var(--motion-scale))) rotate(calc(-1.5deg*var(--motion-scale)))}
+.bc__m{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:11px;color:var(--ink-3)}
+.ghost{border:1.6px dashed color-mix(in srgb,var(--acc) 55%,transparent);border-radius:var(--r-md);background:color-mix(in srgb,var(--acc) 9%,transparent);min-height:52px;display:grid;place-items:center;font-family:var(--f-m);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--acc-deep);animation:gp 2.4s var(--ease-standard) infinite}
+@keyframes gp{0%,100%{border-color:color-mix(in srgb,var(--acc) calc(30% + 32% * var(--motion-scale)),transparent)}50%{border-color:color-mix(in srgb,var(--acc) 30%,transparent)}}
+
+/* ══ 10 · PAGE LOADING ═══════════════════════════════════════════════════ */
+/* Route progress — a top rail that eases to 90% then completes on arrival */
+.route{position:fixed;top:0;left:0;right:0;height:2.5px;z-index:99;pointer-events:none;background:transparent}
+.route i{display:block;height:100%;width:0;background:var(--k-grad);box-shadow:var(--glow);transition:width var(--dur-slow) var(--ease-standard),opacity var(--dur-base) var(--ease-exit)}
+:root[data-design="ship"] .route i{background:var(--acc-mid);box-shadow:none}
+/* Lotus — draw, hold, retract. A FIXED period: an infinite loop must never
+   multiply by --ix or it becomes a strobe at reduced motion. */
+.lotus{width:88px;height:88px;display:block}
+.lotus path{fill:none;stroke:var(--acc-mid);stroke-width:2.4;stroke-linecap:round;
+  stroke-dasharray:var(--len,180);animation:ltrim 3.2s var(--ease-lotus,cubic-bezier(.42,0,.32,1)) infinite}
+@keyframes ltrim{0%{stroke-dashoffset:var(--len,180)}42%{stroke-dashoffset:0}72%{stroke-dashoffset:0}100%{stroke-dashoffset:calc(var(--len,180)*-1)}}
+.lotus__t{animation:lturn 68s linear infinite;transform-origin:60px 60px}
+@keyframes lturn{to{transform:rotate(-360deg)}}
+.load{display:grid;place-items:center;gap:14px;padding:26px;text-align:center}
+.load p{margin:0;font-size:12.5px;color:var(--ink-3)}
+/* Skeleton → content crossfade */
+.swap{position:relative;min-height:112px}
+.swap>*{transition:opacity var(--dur-base) var(--ease-enter)}
+.swap [hidden]{display:none}
+.arrive{animation:arr var(--dur-base) var(--ease-enter) backwards;animation-delay:calc(var(--i,0)*44ms*var(--ix))}
+@keyframes arr{from{opacity:0;transform:translateY(calc(6px*var(--motion-scale)))}}
+/* Tab-panel enter — the ix-panel that already ships on 12 module pages */
+.panel-in{animation:pin var(--dur-base) var(--ease-emph) backwards}
+@keyframes pin{from{opacity:0;transform:translateY(calc(7px*var(--motion-scale)))}}
+
+/* ══ 11 · CREATION & WRITE STATES ════════════════════════════════════════ */
+/* The optimistic write — animations.css:256, verbatim */
+.pending{opacity:.6;cursor:progress;transition:opacity var(--dur-fast) var(--ease-standard)}
+/* The rollback tint. animations.css records that .ix-rollback was DELETED
+   because it was applied nowhere — "no failed write has ever tinted anything".
+   This is the missing half: a held reading duration, then release. */
+.rollback{animation:rb 1.6s var(--ease-standard) forwards}
+@keyframes rb{0%,72%{background:color-mix(in srgb,var(--danger) 16%,transparent)}100%{background:transparent}}
+.shake{animation:shk 420ms cubic-bezier(.36,.07,.19,.97)}
+@keyframes shk{10%,90%{transform:translateX(calc(-2px*var(--motion-scale)))}30%,70%{transform:translateX(calc(4px*var(--motion-scale)))}50%{transform:translateX(calc(-6px*var(--motion-scale)))}}
+/* The arrival flash — ix-flash, on the CELL not the row */
+.flash{animation:fl calc(var(--dur-slow)*1.4) var(--ease-exit)}
+@keyframes fl{0%{background:color-mix(in srgb,var(--acc) 34%,transparent)}100%{background:transparent}}
+/* The landing settle after a move */
+.landed{animation:ld calc(var(--dur-slow)*1.5) var(--ease-exit)}
+@keyframes ld{0%{box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 46%,transparent),var(--glow)}100%{box-shadow:var(--sh-1)}}
+/* Button: idle → busy → done, with the tick drawing itself */
+.cbtn{min-width:158px;justify-content:center}
+.cbtn .lbl-i,.cbtn .lbl-b,.cbtn .lbl-d{display:none;align-items:center;gap:7px}
+.cbtn[data-s="idle"] .lbl-i,.cbtn[data-s="busy"] .lbl-b,.cbtn[data-s="done"] .lbl-d{display:inline-flex}
+.cbtn[data-s="busy"] svg.sp{animation:rot .7s linear infinite}
+.cbtn[data-s="done"]{background:linear-gradient(135deg,#0E7A46,#1FA35A 62%);border-color:transparent;color:#fff}
+.cbtn[data-s="done"] .tick{stroke-dasharray:22;stroke-dashoffset:22;animation:draw var(--dur-base) var(--ease-emph) forwards}
+/* Counter roll */
+.cnt{font-family:var(--f-m);font-variant-numeric:tabular-nums;display:inline-block;transition:transform var(--dur-fast) var(--ease-spring),color var(--dur-fast) var(--ease-standard)}
+.cnt.bump{transform:translateY(calc(-3px*var(--motion-scale))) scale(calc(1 + .16*var(--motion-scale)));color:var(--acc-deep)}
+/* Undo toast rim uses the same drain; the delete is DEFERRED until it expires */
+
+.note{margin:26px 0 0;padding:16px 19px;border-radius:var(--r-lg);background:var(--s-lowest);border:1px solid var(--line);border-left:3px solid var(--acc-mid);box-shadow:var(--sh-1)}
+.note p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.55}
+.note p+p{margin-top:.6em}
+.note b{color:var(--ink);font-weight:600}
+.foot{padding:36px 0 0;font-size:12px;color:var(--ink-3);max-width:84ch;line-height:1.62;border-top:1px solid var(--line);margin-top:44px}
+.foot p{margin:0 0 .6em}
+.foot code{font-family:var(--f-m);background:var(--s-container);padding:1px 5px;border-radius:3px}
+</style>
+
+<div class="bar">
+  <span class="bar__t">Kartavaya · system</span>
+  <div class="bar__g">
+    <span><span class="sgl">Accent</span><span class="acc" id="acc" role="group" aria-label="Accent"></span></span>
+    <span><span class="sgl">Design</span><span class="sg" role="group" aria-label="Design">
+      <button type="button" data-design="bold" aria-pressed="true">Bold</button>
+      <button type="button" data-design="ship" aria-pressed="false">Shipping</button></span></span>
+    <span><span class="sgl">Motion</span><span class="sg" role="group" aria-label="Motion">
+      <button type="button" data-ix="1" aria-pressed="true">Full</button>
+      <button type="button" data-ix=".5" aria-pressed="false">Red.</button>
+      <button type="button" data-ix="0" aria-pressed="false">None</button></span></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="head">
+    <p class="kick">Component system · every family · 2026-08-29</p>
+    <h1>One accent. One glass. <em>Everything moves.</em></h1>
+    <p class="lede">Forms, inputs, dropdowns, checkboxes, buttons, cards, tables, kanban, charts, drawers, modals, popovers, menus, command palette, toasts, empty states, skeletons and navigation — the whole set, bold, on the cream. Hover everything. Pick any accent and the entire system retints.</p>
+  </header>
+
+  <!-- 01 BUTTONS -->
+  <section>
+    <div class="sh"><span class="sn">01</span><h2>Buttons &amp; actions</h2></div>
+    <p class="ss">Hover: accent glow + lift + shine sweep. Press: radius morphs to 10px on a spring. Every one is <code>--dur-fast</code>/<code>--ease-spring</code>.</p>
+    <div class="demo">
+      <h3>Variants</h3>
+      <div class="row">
+        <button class="btn btn--go fx"><span class="fx__shine"></span><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>New invoice</button>
+        <button class="btn fx"><span class="fx__shine"></span>Save draft</button>
+        <button class="btn btn--ghost">Cancel</button>
+        <button class="btn btn--dan fx"><span class="fx__shine"></span>Delete</button>
+        <button class="btn" disabled>Disabled</button>
+        <button class="btn spin"><svg viewBox="0 0 20 20"><path d="M10 3a7 7 0 1 0 7 7"/></svg>Sending…</button>
+      </div>
+      <h3>Sizes, icon, FAB, split</h3>
+      <div class="row">
+        <button class="btn btn--sm">Small</button>
+        <button class="btn">Default</button>
+        <button class="btn btn--lg btn--go fx"><span class="fx__shine"></span>Large</button>
+        <span class="tip"><button class="btn ibtn" aria-label="More"><svg viewBox="0 0 20 20"><circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/></svg></button><span class="tip__b">More actions</span></span>
+        <span class="split"><button class="btn">Export</button><button class="btn" aria-label="Export options"><svg viewBox="0 0 20 20"><path d="M6 8l4 4 4-4"/></svg></button></span>
+        <button class="btn fab fx" aria-label="Add"><span class="fx__shine"></span><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 FORMS -->
+  <section>
+    <div class="sh"><span class="sn">02</span><h2>Forms, inputs &amp; controls</h2></div>
+    <p class="ss">Focus draws an accent ring plus a glow. The checkbox tick <em>draws</em> on <code>stroke-dashoffset</code>; the radio pops on a spring; the switch knob travels on <code>--ease-spring</code>.</p>
+    <div class="demo">
+      <div class="cols">
+        <div class="field">
+          <label class="lbl" for="f1">Client name<span>*</span></label>
+          <span class="inp"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg><input id="f1" type="text" placeholder="Unicode Systems Pvt Ltd"></span>
+          <span class="hint">Legal name as it appears on the GST certificate.</span>
+        </div>
+        <div class="field">
+          <label class="lbl" for="f2">GSTIN</label>
+          <span class="inp inp--err"><input id="f2" type="text" value="24AABCU9603R1Z" aria-invalid="true"></span>
+          <span class="err"><svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v5M10 14h.01"/></svg>15 characters expected, 14 given.</span>
+        </div>
+        <div class="field">
+          <label class="lbl" for="f3">State</label>
+          <span class="inp sel"><select id="f3"><option>Gujarat — 24</option><option>Maharashtra — 27</option><option>Karnataka — 29</option></select></span>
+        </div>
+        <div class="field">
+          <label class="lbl" for="f4">Payment terms</label>
+          <span class="inp inp--ok"><input id="f4" type="text" value="Net 30"></span>
+          <span class="hint">Verified against the master agreement.</span>
+        </div>
+      </div>
+      <h3>Textarea, search, date, amount</h3>
+      <div class="cols">
+        <div class="field"><label class="lbl" for="f5">Notes</label>
+          <span class="inp"><textarea id="f5" placeholder="Anything the accounts team should know…"></textarea></span></div>
+        <div class="stack">
+          <span class="inp"><svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 17 17"/></svg><input type="text" placeholder="Search…" aria-label="Search"></span>
+          <span class="inp"><svg viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="12" rx="2"/><path d="M3 9h14M8 3v3M12 3v3"/></svg><input type="text" value="12 Sep 2026" aria-label="Due date"></span>
+          <span class="inp"><span style="font-family:var(--f-m);color:var(--ink-3)">₹</span><input type="text" value="4,20,000" style="font-family:var(--f-m);font-variant-numeric:tabular-nums" aria-label="Amount"></span>
+        </div>
+      </div>
+      <h3>Checkbox, radio, switch, stepper, slider</h3>
+      <div class="row" style="gap:22px">
+        <label class="chk"><input type="checkbox" checked><span class="chk__b"><svg viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></span>Auto-reconcile</label>
+        <label class="chk"><input type="checkbox"><span class="chk__b"><svg viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></span>Send copy to client</label>
+        <label class="chk chk--r"><input type="radio" name="r1" checked><span class="chk__b"><i></i></span>Invoice</label>
+        <label class="chk chk--r"><input type="radio" name="r1"><span class="chk__b"><i></i></span>Proforma</label>
+        <button class="sw" role="switch" aria-checked="true" aria-label="Notifications"><i></i></button>
+        <span class="step"><button type="button" aria-label="Decrease">−</button><span id="stepv">12</span><button type="button" aria-label="Increase">+</button></span>
+      </div>
+      <div style="margin-top:18px;max-width:300px"><label class="lbl" for="f6">Glass intensity</label><input class="rng" id="f6" type="range" min="0" max="100" value="60"></div>
+      <h3>File upload</h3>
+      <div class="drop"><svg viewBox="0 0 24 24"><path d="M12 16V4M8 8l4-4 4 4M4 18h16"/></svg><b>Drop the bank statement here</b><span>CSV or XLS · up to 10 MB</span></div>
+    </div>
+  </section>
+
+  <!-- 03 CHIPS -->
+  <section>
+    <div class="sh"><span class="sn">03</span><h2>Chips, tags, status &amp; avatars</h2></div>
+    <p class="ss">Semantic pills keep their own hues — meaning never rides the accent. Filter chips do.</p>
+    <div class="demo">
+      <div class="row">
+        <span class="chip chip--on">All<span class="chip__x">×</span></span>
+        <span class="chip">Overdue</span><span class="chip">This quarter</span><span class="chip">Unpaid</span>
+        <span class="pill pill--ok"><i></i>Paid</span>
+        <span class="pill pill--warn"><i></i>Overdue 14d</span>
+        <span class="pill pill--dan"><i></i>Critical</span>
+        <span class="pill pill--acc"><i></i>Draft</span>
+      </div>
+      <h3>Avatars &amp; presence</h3>
+      <div class="row">
+        <span class="av av__p" style="background:var(--k-grad)">KS</span>
+        <span class="av" style="background:linear-gradient(140deg,#7C5CE0,#2E8DF7)">RM</span>
+        <span class="avs">
+          <span class="av" style="background:linear-gradient(140deg,#E0544A,#B0261F)">AP</span>
+          <span class="av" style="background:linear-gradient(140deg,#1FA35A,#0E7A46)">NV</span>
+          <span class="av" style="background:linear-gradient(140deg,#F59E0B,#B45309)">SD</span>
+          <span class="av" style="background:var(--s-container);color:var(--ink-2)">+6</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 CARDS -->
+  <section>
+    <div class="sh"><span class="sn">04</span><h2>Cards — KPI, module, marketplace, skills</h2></div>
+    <p class="ss">Move the pointer across them. Each carries 3D tilt, an accent spotlight, a rotating conic rim and a shine sweep.</p>
+    <div class="cols3" id="kpis"></div>
+    <div class="cols" style="margin-top:14px" id="mkt"></div>
+  </section>
+
+  <!-- 05 TABLE + KANBAN -->
+  <section>
+    <div class="sh"><span class="sn">05</span><h2>Tables, rows &amp; board</h2></div>
+    <p class="ss">Row hover slides an accent bar in from the left on <code>scaleY</code> — no layout, no repaint of the row.</p>
+    <div class="tw">
+      <div class="tbar">
+        <div class="row"><span class="chip chip--on">All 212</span><span class="chip">Overdue 9</span><span class="chip">Unpaid 41</span></div>
+        <div class="row"><button class="btn btn--sm">Export</button><button class="btn btn--sm btn--go fx"><span class="fx__shine"></span>Send reminders</button></div>
+      </div>
+      <div class="tsc"><table><thead><tr><th>Client <span class="srt">↑</span></th><th>Status</th><th>Due</th><th style="text-align:right">Outstanding</th></tr></thead><tbody id="rows"></tbody></table></div>
+    </div>
+    <h3>Board</h3>
+    <div class="kb">
+      <div class="kbc"><div class="kbc__h"><span>Enquiry</span><span>4</span></div>
+        <div class="bc">Sedani Traders — retainer<div class="bc__m"><span class="pill pill--acc"><i></i>New</span>₹2.4L</div></div>
+        <div class="bc">Vora Associates — audit<div class="bc__m"><span class="pill pill--warn"><i></i>Aging</span>₹1.1L</div></div>
+        <div class="ghost">Drop here</div></div>
+      <div class="kbc"><div class="kbc__h"><span>Proposal</span><span>2</span></div>
+        <div class="bc">Unicode Systems — GST<div class="bc__m"><span class="pill pill--ok"><i></i>Sent</span>₹4.2L</div></div></div>
+      <div class="kbc"><div class="kbc__h"><span>Won</span><span>1</span></div>
+        <div class="bc">Bhatt &amp; Sons<div class="bc__m"><span class="pill pill--ok"><i></i>Signed</span>₹96K</div></div></div>
+    </div>
+  </section>
+
+  <!-- 06 CHARTS -->
+  <section>
+    <div class="sh"><span class="sn">06</span><h2>Charts &amp; data visualisation</h2></div>
+    <p class="ss">Bars grow from the baseline 38ms apart. The line <em>draws</em> on <code>stroke-dashoffset</code> and its dots pop after it. Every one animates on mount — the defect the audit found.</p>
+    <div class="cols">
+      <div class="demo"><h3 style="margin-top:0">Bars</h3><div class="bars" id="bars"></div></div>
+      <div class="demo"><h3 style="margin-top:0">Line &amp; area</h3><svg class="line" id="line" viewBox="0 0 300 150" preserveAspectRatio="none" role="img" aria-label="Collection trend"></svg></div>
+      <div class="demo"><h3 style="margin-top:0">Donut</h3><div style="display:grid;place-items:center"><span class="donut__w">
+        <svg class="donut" viewBox="0 0 120 120"><circle class="donut__bg" cx="60" cy="60" r="48"/><circle class="donut__f" cx="60" cy="60" r="48" style="--c:199"/></svg>
+        <span class="donut__c"><span class="donut__n">66%</span><span class="donut__l">collected</span></span></span></div></div>
+      <div class="demo"><h3 style="margin-top:0">Funnel</h3><div class="fun" id="fun"></div></div>
+      <div class="demo"><h3 style="margin-top:0">Heatmap · collections by day</h3><div class="heat" id="heat"></div></div>
+      <div class="demo"><h3 style="margin-top:0">Progress</h3>
+        <div class="stack">
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span>Q3 target</span><span class="num">72%</span></div><span class="prg"><i style="--w:72%"></i></span></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span>Payroll run</span><span class="num">41%</span></div><span class="prg"><i style="--w:41%"></i></span></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span>Seats used</span><span class="num">88%</span></div><span class="prg"><i style="--w:88%"></i></span></div>
+        </div></div>
+    </div>
+  </section>
+
+  <!-- 07 OVERLAYS -->
+  <section>
+    <div class="sh"><span class="sn">07</span><h2>Overlays — drawer, modal, popover, menu, palette</h2></div>
+    <p class="ss">The scrim <em>blurs</em> what is behind it. Eleven scrims in the build and none does this today.</p>
+    <div class="row" style="margin-bottom:14px">
+      <button class="btn" data-open="modal">Modal</button>
+      <button class="btn" data-open="drawer">Drawer</button>
+      <button class="btn" data-open="menu">Menu</button>
+      <button class="btn" data-open="cmdk">Command palette</button>
+      <button class="btn btn--go fx" id="tok"><span class="fx__shine"></span>Toast</button>
+      <button class="btn btn--dan" id="tod">Error toast</button>
+    </div>
+    <div class="stage" id="stage">
+      <div class="stage__bg"><b style="color:var(--ink)">Invoice INV-2026-0418</b><br>Unicode Systems Pvt Ltd · raised 14 August 2026 · net 30. Three line items, ₹4,20,000 excluding GST. Reconciled against the ICICI statement on 22 August. Approval routed to Keval Shah and pending. Nothing here is real — it exists so there is something to blur.</div>
+      <div class="pop" id="menu" hidden style="top:64px;left:22px">
+        <span class="pop__i"><svg viewBox="0 0 20 20"><path d="M4 14l10-10 2 2-10 10H4v-2Z"/></svg>Edit invoice</span>
+        <span class="pop__i"><svg viewBox="0 0 20 20"><path d="M6 8l4 4 4-4M10 12V3M4 16h12"/></svg>Download PDF</span>
+        <span class="pop__i"><svg viewBox="0 0 20 20"><path d="M3 5.5 10 11l7-5.5M3 5h14v10H3z"/></svg>Email to client</span>
+        <span class="pop__s"></span>
+        <span class="pop__i pop__i--dan"><svg viewBox="0 0 20 20"><path d="M4 6h12M7 6V4h6v2M6 6l1 10h6l1-10"/></svg>Delete</span>
+      </div>
+      <div class="scrim" id="modal" hidden><div class="modal">
+        <h4>Delete this invoice?</h4>
+        <p>INV-2026-0418 is unpaid, so it can still be edited instead. Deleting removes three line items and the reconciliation link.</p>
+        <div class="row"><button class="btn btn--dan" data-close>Delete</button><button class="btn" data-close>Keep it</button></div></div></div>
+      <div class="scrim" id="cmdk" hidden><div class="cmdk">
+        <div class="cmdk__s"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="var(--ink-3)" stroke-width="2"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 17 17"/></svg><input placeholder="Type a command or search…" aria-label="Command"><button class="btn btn--sm" data-close>Esc</button></div>
+        <div class="cmdk__l"><div class="cmdk__g">Actions</div>
+          <span class="pop__i"><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>New invoice</span>
+          <span class="pop__i"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>Add contact</span>
+          <div class="cmdk__g">Recent</div>
+          <span class="pop__i"><svg viewBox="0 0 20 20"><rect x="4" y="3" width="12" height="14" rx="2"/></svg>Unicode Systems — GST filing</span></div></div></div>
+      <aside class="drawer" id="drawer" hidden>
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+          <div><h4>INV-2026-0418</h4><p style="font-size:12.5px;color:var(--ink-3);margin:0">Unicode Systems Pvt Ltd</p></div>
+          <button class="btn btn--sm btn--ghost" data-close aria-label="Close">✕</button></div>
+        <div class="tabs" style="margin:16px 0 12px"><button class="tab on">Detail</button><button class="tab">Lines</button><button class="tab">Log</button><span class="tind" id="dtind"></span></div>
+        <div class="stack">
+          <div class="field"><span class="lbl">Amount</span><span class="inp"><input value="₹4,20,000" style="font-family:var(--f-m)"></span></div>
+          <div class="field"><span class="lbl">Status</span><div class="row"><span class="pill pill--warn"><i></i>Awaiting approval</span></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span>Approval</span><span class="num">2 of 3</span></div><span class="prg"><i style="--w:66%"></i></span></div>
+          <div class="row"><button class="btn btn--go fx" style="flex:1;justify-content:center"><span class="fx__shine"></span>Approve</button><button class="btn btn--dan">Reject</button></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 08 STATES -->
+  <section>
+    <div class="sh"><span class="sn">08</span><h2>Empty, loading &amp; error states</h2></div>
+    <p class="ss">The skeleton matches the real geometry so nothing shifts on arrival, and it is gated at 120ms so a warm fetch never flashes it.</p>
+    <div class="cols">
+      <div class="demo"><div class="empty">
+        <span class="empty__i"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+        <h4>Nothing due this week</h4><p>When an invoice crosses its terms it will appear here with the client and the amount.</p>
+        <button class="btn btn--go fx"><span class="fx__shine"></span>Raise an invoice</button></div></div>
+      <div class="demo"><h3 style="margin-top:0">Loading</h3>
+        <div class="stack"><span class="sk sk--h" style="width:58%"></span><span class="sk sk--t" style="width:88%"></span><span class="sk sk--t" style="width:72%"></span><span class="sk sk--c"></span></div></div>
+      <div class="demo"><div class="empty">
+        <span class="empty__i" style="background:color-mix(in srgb,var(--danger) 13%,transparent)"><svg viewBox="0 0 24 24" style="stroke:var(--danger)"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16h.01"/></svg></span>
+        <h4>The bank import failed</h4><p>ICICI rejected 4 of 212 rows. The rest were reconciled — only the four need a second look.</p>
+        <div class="row" style="justify-content:center"><button class="btn">See the 4 rows</button><button class="btn btn--go fx"><span class="fx__shine"></span>Retry</button></div></div></div>
+    </div>
+  </section>
+
+  <!-- 09 NAV -->
+  <section>
+    <div class="sh"><span class="sn">09</span><h2>Navigation</h2></div>
+    <p class="ss">One indicator that <em>travels</em> between tabs, rather than growing in place at the new one.</p>
+    <div class="demo">
+      <div class="crumb" style="margin-bottom:16px"><a href="#s9">Ganit</a>›<a href="#s9">Invoices</a>›<b>INV-2026-0418</b></div>
+      <div class="tabs" style="margin-bottom:14px"><button class="tab on">Overview</button><button class="tab">Revenue</button><button class="tab">Pipeline</button><button class="tab">Receivables</button><span class="tind" id="tind"></span></div>
+      <div class="row" style="justify-content:space-between">
+        <span style="font-size:12.5px;color:var(--ink-3)">Showing 1–12 of 212</span>
+        <span class="pager"><button class="pg">‹</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">3</button><button class="pg">›</button></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 LOADING -->
+  <section>
+    <div class="sh"><span class="sn">10</span><h2>Page loading &amp; route transitions</h2></div>
+    <p class="ss">What a person sees before there is anything to see. The lotus is your own brand loader — it draws, holds, then retracts, with a 68-second counter-turn so the figure is never wholly still.</p>
+    <div class="cols">
+      <div class="demo"><h3 style="margin-top:0">Brand loader</h3>
+        <div class="load">
+          <svg class="lotus" viewBox="0 0 120 120" role="img" aria-label="Loading">
+            <g class="lotus__t"><path style="--len:200" d="M60 18c14 12 21 26 21 42s-7 30-21 42c-14-12-21-26-21-42s7-30 21-42Z"/>
+            <path style="--len:200" d="M18 60c12-14 26-21 42-21s30 7 42 21c-12 14-26 21-42 21s-30-7-42-21Z"/></g>
+          </svg>
+          <p>Drawing the register…</p>
+        </div>
+        <p class="ss" style="margin:0">A <b>fixed</b> 3.2s period, not <code>calc(3.2s * --ix)</code>. At reduced motion a scaled infinite loop becomes a ~1000 Hz strobe delivered to the person who asked for less movement.</p>
+      </div>
+      <div class="demo"><h3 style="margin-top:0">Route change</h3>
+        <p class="ss" style="margin:0 0 14px">A top rail eases to 90% while the fetch is in flight, then completes on arrival. Never a full-page spinner — <code>PageLoader.jsx</code> is one centred spinner for every route today.</p>
+        <button class="btn btn--go fx" id="route"><span class="fx__shine"></span>Navigate to Ganit</button>
+        <div class="panel-in" id="routepanel" style="margin-top:16px;display:none">
+          <div class="crumb" style="margin-bottom:10px"><a href="#s10">Ganit</a>›<b>Invoices</b></div>
+          <div class="stack"><span class="sk sk--t" style="width:70%"></span><span class="sk sk--t" style="width:52%"></span></div>
+        </div>
+      </div>
+      <div class="demo"><h3 style="margin-top:0">Skeleton → content</h3>
+        <p class="ss" style="margin:0 0 14px">Gated at <b>120ms</b> so a warm fetch never flashes it, and held <b>220ms minimum</b> once shown so it cannot blink. Both halves ship in <code>useSkeletonGate</code> — on 2 of 336 pages.</p>
+        <div class="row" style="margin-bottom:14px"><button class="btn btn--sm" data-fetch="60">Fast fetch (60ms)</button><button class="btn btn--sm" data-fetch="900">Slow fetch (900ms)</button></div>
+        <div class="swap" id="swap">
+          <div id="swapSk" hidden><div class="stack"><span class="sk sk--h" style="width:56%"></span><span class="sk sk--t" style="width:86%"></span><span class="sk sk--t" style="width:68%"></span></div></div>
+          <div id="swapC"><div class="stack">
+            <div style="font-family:var(--f-d);font-size:19px">₹4,20,000 outstanding</div>
+            <div style="font-size:12.5px;color:var(--ink-3)">Across 9 clients · 2 in the critical band</div>
+            <span class="prg"><i style="--w:66%"></i></span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 CREATION -->
+  <section>
+    <div class="sh"><span class="sn">11</span><h2>Creating things — and when the write fails</h2></div>
+    <p class="ss">The most load-bearing motion in the product, because it is the only kind that stops the interface lying about state. MOTION-SPEC §7.1: optimistic renders at <code>opacity .6</code> until acknowledged. §7.2: reversible destruction gets an undo, not a confirm.</p>
+    <div class="demo">
+      <div class="row" style="margin-bottom:6px">
+        <button class="btn btn--go fx cbtn" id="create" data-s="idle"><span class="fx__shine"></span>
+          <span class="lbl-i"><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>Create invoice</span>
+          <span class="lbl-b"><svg class="sp" viewBox="0 0 20 20"><path d="M10 3a7 7 0 1 0 7 7"/></svg>Saving…</span>
+          <span class="lbl-d"><svg viewBox="0 0 20 20"><path class="tick" d="M4 10.5l4 4 8-9"/></svg>Created</span>
+        </button>
+        <button class="btn btn--dan cbtn" id="fail" data-s="idle">
+          <span class="lbl-i">Create &amp; fail</span>
+          <span class="lbl-b"><svg class="sp" viewBox="0 0 20 20"><path d="M10 3a7 7 0 1 0 7 7"/></svg>Saving…</span>
+          <span class="lbl-d">Rolled back</span>
+        </button>
+        <span style="font-size:12.5px;color:var(--ink-3);margin-left:4px">Invoices: <span class="cnt" id="cnt">212</span></span>
+      </div>
+      <div class="tsc" style="margin-top:14px"><table><thead><tr><th>Invoice</th><th>Client</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead><tbody id="crows">
+        <tr><td class="nm">INV-2026-0418</td><td>Unicode Systems</td><td><span class="pill pill--ok"><i></i>Sent</span></td><td class="num">₹4,20,000</td></tr>
+        <tr><td class="nm">INV-2026-0417</td><td>Sedani Traders</td><td><span class="pill pill--warn"><i></i>Draft</span></td><td class="num">₹74,800</td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="cols">
+      <div class="note" style="margin:0"><p><b>The success path.</b> Button goes busy → the row arrives immediately at <code>opacity .6</code> with <code>cursor: progress</code> → the server acknowledges → it goes solid, the changed cell flashes, the counter bumps, and an undo toast opens. <b>The row is on screen before the server has answered</b>, which is what makes it feel instant, and it is visibly provisional until it is not.</p></div>
+      <div class="note" style="margin:0;border-left-color:var(--danger)"><p><b>The failure path, which does not exist today.</b> <code>animations.css</code> records that <code>.ix-rollback</code> — the danger tint held for 1.6s after a failed write — "was declared here and applied nowhere, so no failed write has ever tinted anything". It was deleted rather than kept as a promise. Press <b>Create &amp; fail</b>: the row shakes, holds the danger tint for a readable 1.6 seconds, then removes itself and says why.</p></div>
+    </div>
+  </section>
+
+  <div class="note">
+    <p><b>Every effect above is token-driven.</b> Accent glow is <code>--glow</code>, derived from <code>--acc</code>. The conic rim animates a registered <code>@property --ang</code>. The specular follows <code>--mx/--my</code>. Tilt writes <code>--rx/--ry</code>. All durations are the five rungs, all curves are the twelve named easings — so this whole system already passes <code>check-motion.mjs</code> and rides <code>--ix</code>.</p>
+    <p>Set <b>Motion → None</b> and every travel distance collapses to zero while every affordance stays: borders still change, states still read, the tick still marks. That is the accessibility floor, and it falls out of the arithmetic rather than a second set of rules.</p>
+  </div>
+
+  <div class="foot">
+    <p><b>Coverage.</b> Buttons (7 variants, icon, FAB, split, loading, disabled) · text input, textarea, select, search, date, amount, validation states · checkbox, radio, switch, stepper, slider, file drop · chips, filter chips, semantic pills, avatars, avatar stack, presence · KPI, module, marketplace and skills cards · table with toolbar, sortable headers, row rail · kanban with drag ghost · bars, line, area, donut, funnel, heatmap, progress, sparklines · drawer, modal, scrim, popover menu, command palette, toasts, tooltip · empty, error and skeleton states · tabs, breadcrumb, pagination · brand loader, route progress, gated skeleton→content swap, tab-panel enter · optimistic write, arrival flash, landing settle, rollback tint, counter bump, button idle→busy→done.</p>
+    <p><b>Marketing surfaces are out of scope here.</b> The landing and CTA motion built alongside this set lives in the published artifact only — it is a different job (nothing on a landing page reports state) and does not belong in the product component proposal.</p>
+    <p><b>Not covered, deliberately.</b> Nothing here puts glass or gradient behind tabular data. The table is flat cream with tabular numerals and an intact <code>--row-h</code>, because ninety rupee figures each landing on a different contrast ratio is unfixable — and holding the data quiet is exactly what lets everything else be loud.</p>
+    <p>Companions: <em>Motion and Material</em> (audit and measurements) · <em>Glass Kit</em> (the six-layer primitive and four OS dialects) · <em>Kartavaya Cream</em> (a full Dristi screen) · <em>Kartavaya Dark</em> (the same screen dark-first).</p>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  'use strict';
+  var root=document.documentElement;
+
+  /* ── Accent engine — lib/accent.js:209 maths ─────────────────────────── */
+  function h2h(hex){var r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255,
+    mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0,s=0,l=(mx+mn)/2;
+    if(d){s=l>.5?d/(2-mx-mn):d/(mx+mn);
+      if(mx===r)h=((g-b)/d+(g<b?6:0));else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}
+    return[h,s*100,l*100];}
+  function h2x(h,s,l){s/=100;l/=100;var c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2,r,g,b;
+    if(h<60){r=c;g=x;b=0}else if(h<120){r=x;g=c;b=0}else if(h<180){r=0;g=c;b=x}
+    else if(h<240){r=0;g=x;b=c}else if(h<300){r=x;g=0;b=c}else{r=c;g=0;b=x}
+    return'#'+[r,g,b].map(function(v){return Math.round((v+m)*255).toString(16).padStart(2,'0')}).join('');}
+  function lin(v){return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)}
+  function lum(hex){var c=[1,3,5].map(function(i){return lin(parseInt(hex.slice(i,i+2),16)/255)});return .2126*c[0]+.7152*c[1]+.0722*c[2]}
+  function cr(a,b){var x=lum(a),y=lum(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+
+  var ACCENTS=[['teal','#05b7aa'],['blue','#3b82f6'],['saffron','#f59e0b'],['indigo','#6366f1'],
+    ['rose','#e11d63'],['emerald','#059669'],['amber','#d97706'],['violet','#7c3aed'],
+    ['coral','#f2643c'],['slate','#64748b'],['crimson','#be123c'],['forest','#3f6212']];
+  var accBox=document.getElementById('acc');
+  accBox.innerHTML=ACCENTS.map(function(a,i){
+    return '<button type="button" data-a="'+a[1]+'" title="'+a[0]+'" aria-label="'+a[0]+'" aria-pressed="'+(i===0)+'" style="--c:'+a[1]+'"></button>';
+  }).join('');
+  function setAccent(hex){
+    var p=h2h(hex),h=p[0],s=p[1],l=p[2];
+    var mid=h2x(h,Math.min(s+5,100),Math.max(l-10,10));
+    var deep=h2x(h,Math.min(s+10,100),Math.max(l-20,10));
+    var light=h2x(h,s,Math.min(l+12,92));
+    root.style.setProperty('--acc',hex);
+    root.style.setProperty('--acc-mid',mid);
+    root.style.setProperty('--acc-deep',deep);
+    root.style.setProperty('--acc-light',light);
+    // Saffron and Amber cannot carry white — measured, exactly as deriveOnAccent does.
+    root.style.setProperty('--on-acc',cr('#FFFFFF',mid)>=4?'#FFFFFF':'#1B1D1A');
+    root.style.setProperty('--k-grad','linear-gradient(135deg,'+deep+','+mid+' 55%,'+hex+')');
+  }
+  var ab=[].slice.call(accBox.querySelectorAll('button'));
+  ab.forEach(function(b){b.addEventListener('click',function(){
+    ab.forEach(function(o){o.setAttribute('aria-pressed',String(o===b))});
+    setAccent(b.getAttribute('data-a'));});});
+  setAccent(ACCENTS[0][1]);
+
+  function seg(attr,apply){var b=[].slice.call(document.querySelectorAll('.bar [data-'+attr+']'));
+    b.forEach(function(x){x.addEventListener('click',function(){
+      b.forEach(function(o){o.setAttribute('aria-pressed',String(o===x))});apply(x.getAttribute('data-'+attr));});});}
+  seg('design',function(v){if(v==='bold')root.removeAttribute('data-design');else root.setAttribute('data-design',v)});
+  seg('ix',function(v){root.style.setProperty('--ix-user',v==='0'?'0.001':v);
+    root.style.setProperty('--motion-scale-user',v==='0'?'0':v);});
+
+  /* ── Interaction engine: specular + tilt ─────────────────────────────── */
+  function wireFx(el){
+    var tilt=el.classList.contains('tilt');
+    el.addEventListener('pointermove',function(e){
+      var r=el.getBoundingClientRect(),px=(e.clientX-r.left)/r.width,py=(e.clientY-r.top)/r.height;
+      el.style.setProperty('--mx',(px*100).toFixed(1)+'%');
+      el.style.setProperty('--my',(py*100).toFixed(1)+'%');
+      if(tilt){
+        el.style.setProperty('--ry',((px-.5)*7).toFixed(2)+'deg');
+        el.style.setProperty('--rx',((.5-py)*7).toFixed(2)+'deg');
+      }
+    });
+    el.addEventListener('pointerleave',function(){
+      el.style.setProperty('--mx','50%');el.style.setProperty('--my','0%');
+      if(tilt){el.style.setProperty('--rx','0deg');el.style.setProperty('--ry','0deg')}
+    });
+  }
+  function wireAll(){[].forEach.call(document.querySelectorAll('.fx'),wireFx)}
+
+  /* ── Cards ───────────────────────────────────────────────────────────── */
+  var KPI=[['Invoiced','₹18.4L','+12% vs Q2',[38,52,44,61,55,78]],
+           ['Collected','₹12.1L','66% of raised',[30,41,39,48,44,62]],
+           ['Overdue','₹4.2L','across 9 clients',[18,24,29,33,38,47]],
+           ['Median cycle','6.2d','−1.4d on Q2',[58,51,47,44,40,34]]];
+  document.getElementById('kpis').innerHTML=KPI.map(function(c){
+    var mx=Math.max.apply(null,c[3]);
+    return '<div class="card kpi fx tilt rim"><span class="fx__shine"></span>'+
+      '<div class="kpi__l">'+c[0]+'</div><div class="kpi__v">'+c[1]+'</div>'+
+      '<div class="kpi__d">'+c[2]+'</div><div class="kpi__s">'+
+      c[3].map(function(v,j){return '<i style="--h:'+Math.round(v/mx*100)+'%;--j:'+j+'"></i>'}).join('')+
+      '</div></div>';}).join('');
+
+  var MKT=[['Skill','GST return filing','Automated GSTR-1 and 3B preparation from your invoice register.','₹1,200 / mo','4.8 ★','M4 7h12M4 11h12M4 15h7'],
+           ['Connector','ICICI bank feed','Nightly statement pull with automatic reconciliation.','Included','212 orgs','M3 8h14v9H3zM3 8l7-4 7 4'],
+           ['Template','Audit engagement','Nine-phase checklist with statutory deadlines pre-loaded.','Free','1.4k uses','M5 3h10v14H5zM8 7h4M8 11h4']];
+  document.getElementById('mkt').innerHTML=MKT.map(function(m){
+    return '<div class="card fx tilt rim"><span class="fx__shine"></span><div class="mkt">'+
+      '<span class="mkt__i"><svg viewBox="0 0 20 20"><path d="'+m[5]+'"/></svg></span>'+
+      '<span><span class="pill pill--acc" style="margin-bottom:7px;display:inline-flex">'+m[0]+'</span>'+
+      '<p class="mkt__n">'+m[1]+'</p><p class="mkt__d">'+m[2]+'</p>'+
+      '<span class="mkt__meta"><span>'+m[3]+'</span><span>'+m[4]+'</span></span></span></div></div>';}).join('');
+
+  /* ── Table ───────────────────────────────────────────────────────────── */
+  var ROWS=[['Unicode Systems','ok','Net 30 · 12 Sep','₹4,20,000'],['Nandan &amp; Co','dan','92 days overdue','₹1,85,500'],
+            ['AekamINC UK','warn','14 days overdue','₹96,200'],['Sedani Traders','ok','Net 45 · 28 Sep','₹74,800'],
+            ['Vora Associates','warn','6 days overdue','₹52,300']];
+  var W={ok:'On terms',warn:'Overdue',dan:'Critical'};
+  document.getElementById('rows').innerHTML=ROWS.map(function(r){
+    return '<tr><td class="nm">'+r[0]+'</td><td><span class="pill pill--'+r[1]+'"><i></i>'+W[r[1]]+'</span></td><td>'+r[2]+'</td><td class="num">'+r[3]+'</td></tr>';}).join('');
+
+  /* ── Charts ──────────────────────────────────────────────────────────── */
+  var M=[['Mar',42],['Apr',58],['May',51],['Jun',73],['Jul',66],['Aug',88]];
+  var bm=Math.max.apply(null,M.map(function(m){return m[1]}));
+  document.getElementById('bars').innerHTML=M.map(function(m,i){
+    return '<div class="bars__c" style="--i:'+i+'"><span class="bars__v">'+m[1]+'L</span>'+
+      '<span class="bars__t"><span class="bars__b" style="--h:'+Math.round(m[1]/bm*100)+'%"></span></span>'+
+      '<span class="bars__x">'+m[0]+'</span></div>';}).join('');
+
+  var pts=[30,41,39,52,46,64,58,78],W2=300,H=150,st=W2/(pts.length-1),pm=Math.max.apply(null,pts);
+  var xy=pts.map(function(v,i){return[i*st,H-12-(v/pm)*(H-32)]});
+  var d=xy.map(function(p,i){return(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)}).join(' ');
+  document.getElementById('line').innerHTML=
+    '<defs><linearGradient id="areaG" x1="0" y1="0" x2="0" y2="1">'+
+    '<stop offset="0%" stop-color="var(--acc)" stop-opacity=".34"/><stop offset="100%" stop-color="var(--acc)" stop-opacity="0"/></linearGradient></defs>'+
+    [0,1,2,3].map(function(i){return '<line class="line__g" x1="0" y1="'+(18+i*34)+'" x2="300" y2="'+(18+i*34)+'"/>'}).join('')+
+    '<path class="line__a" d="'+d+' L300 150 L0 150 Z"/><path class="line__l" d="'+d+'"/>'+
+    xy.map(function(p,i){return '<circle class="line__d" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" style="--i:'+i+'"/>'}).join('');
+
+  var F=[['Enquiry','₹96.2L',100],['Proposal','₹61.4L',64],['Negotiation','₹38.8L',40],['Won','₹19.1L',20]];
+  document.getElementById('fun').innerHTML=F.map(function(s,i){
+    return '<div class="fun__r" style="--i:'+i+'"><span class="fun__l">'+s[0]+'</span>'+
+      '<span class="fun__t"><i class="fun__f" style="--w:'+s[2]+'%"></i></span><span class="fun__v">'+s[1]+'</span></div>';}).join('');
+
+  var heat='';
+  for(var i=0;i<42;i++){heat+='<i style="--v:'+(12+((i*37)%78))+';--i:'+i+'" title="day '+(i+1)+'"></i>'}
+  document.getElementById('heat').innerHTML=heat;
+
+  /* ── Tabs — one indicator that travels ───────────────────────────────── */
+  function tabs(bar,ind){
+    var bs=[].slice.call(bar.querySelectorAll('.tab'));
+    function place(b,anim){if(!b)return;var p=13;
+      if(!anim)ind.style.transition='none';
+      ind.style.width=Math.max(0,b.offsetWidth-p*2)+'px';
+      ind.style.transform='translateX('+(b.offsetLeft+p)+'px)';
+      if(!anim){void ind.offsetWidth;ind.style.transition=''}}
+    bs.forEach(function(b){b.addEventListener('click',function(){
+      bs.forEach(function(o){o.classList.remove('on')});b.classList.add('on');place(b,true);});});
+    place(bar.querySelector('.tab.on'),false);
+    if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){place(bar.querySelector('.tab.on'),false)});
+    window.addEventListener('resize',function(){place(bar.querySelector('.tab.on'),false)});
+  }
+  var ti=document.getElementById('tind'); if(ti)tabs(ti.parentNode,ti);
+
+  /* ── Overlays ────────────────────────────────────────────────────────── */
+  function close(){[].forEach.call(document.querySelectorAll('#modal,#drawer,#menu,#cmdk'),function(e){e.hidden=true})}
+  [].forEach.call(document.querySelectorAll('[data-open]'),function(b){
+    b.addEventListener('click',function(){
+      var id=b.getAttribute('data-open');close();
+      var el=document.getElementById(id);el.hidden=false;
+      // The drawer's own tab bar is measured on first open, not at load —
+      // its buttons have no width while the drawer is hidden.
+      if(id==='drawer'){var dt=document.getElementById('dtind');if(dt&&!dt.dataset.w){dt.dataset.w='1';tabs(dt.parentNode,dt)}}
+    });});
+  document.addEventListener('click',function(e){
+    if(e.target.closest('[data-close]'))close();
+    if(e.target.classList&&e.target.classList.contains('scrim'))close();
+    if(!e.target.closest('#menu')&&!e.target.closest('[data-open="menu"]'))document.getElementById('menu').hidden=true;
+  });
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')close()});
+
+  /* ── Switch / stepper ────────────────────────────────────────────────── */
+  [].forEach.call(document.querySelectorAll('.sw'),function(s){
+    s.addEventListener('click',function(){s.setAttribute('aria-checked',s.getAttribute('aria-checked')==='true'?'false':'true')});});
+  var sv=document.getElementById('stepv');
+  [].forEach.call(document.querySelectorAll('.step button'),function(b,i){
+    b.addEventListener('click',function(){sv.textContent=Math.max(0,+sv.textContent+(i?1:-1))});});
+
+  /* ── Toasts ──────────────────────────────────────────────────────────── */
+  var DW=5000,box=document.getElementById('toasts');
+  function toast(kind,t,m){
+    var el=document.createElement('div');el.className='toast toast--'+kind;
+    el.innerHTML='<span class="toast__i"><svg viewBox="0 0 20 20">'+
+      (kind==='ok'?'<path d="M4 10.5l4 4 8-9"/>':'<path d="M10 6v5M10 14h.01"/><circle cx="10" cy="10" r="7.5"/>')+
+      '</svg></span><span><span class="toast__t">'+t+'</span><span class="toast__m">'+m+'</span></span>'+
+      '<span class="toast__r"><i style="animation-duration:'+DW+'ms"></i></span>';
+    box.appendChild(el);
+    var tm=setTimeout(go,DW);
+    function go(){clearTimeout(tm);el.classList.add('out');el.addEventListener('animationend',function(){el.remove()},{once:true})}
+    while(box.children.length>3)box.firstChild.remove();
+  }
+  document.getElementById('tok').addEventListener('click',function(){toast('ok','Reminders queued','9 clients · sending over the next hour.')});
+  document.getElementById('tod').addEventListener('click',function(){toast('dan','Bank import failed','ICICI rejected 4 of 212 rows.')});
+
+  /* ── Route progress ──────────────────────────────────────────────────── */
+  var rail=document.createElement('div');rail.className='route';rail.innerHTML='<i></i>';
+  document.body.appendChild(rail);
+  var railI=rail.firstChild;
+  document.getElementById('route').addEventListener('click',function(){
+    var p=document.getElementById('routepanel');p.style.display='none';
+    railI.style.transition='none';railI.style.width='0';railI.style.opacity='1';
+    void railI.offsetWidth;railI.style.transition='';
+    railI.style.width='90%';                       // ease to 90% while in flight
+    setTimeout(function(){
+      railI.style.width='100%';                    // complete on arrival
+      p.style.display='';p.style.animation='none';void p.offsetWidth;p.style.animation='';
+      setTimeout(function(){railI.style.opacity='0'},260);
+    },900);
+  });
+
+  /* ── Skeleton gate — 120ms delay, 220ms minimum hold ─────────────────── */
+  var sk=document.getElementById('swapSk'),sc=document.getElementById('swapC');
+  [].forEach.call(document.querySelectorAll('[data-fetch]'),function(b){
+    b.addEventListener('click',function(){
+      var ms=+b.getAttribute('data-fetch'),shown=false,shownAt=0;
+      var delay=setTimeout(function(){shown=true;shownAt=performance.now();sc.hidden=true;sk.hidden=false},120);
+      setTimeout(function(){
+        clearTimeout(delay);
+        function reveal(){sk.hidden=true;sc.hidden=false;
+          sc.style.animation='none';void sc.offsetWidth;sc.style.animation='arr var(--dur-base) var(--ease-enter)';}
+        if(!shown){reveal();return}                 // resolved inside the window
+        var held=performance.now()-shownAt;
+        setTimeout(reveal,Math.max(0,220-held));    // minimum visible
+      },ms);
+    });});
+
+  /* ── Create / fail — the write-truth sequences ───────────────────────── */
+  var crows=document.getElementById('crows'),cnt=document.getElementById('cnt'),seq=419;
+  function newRow(){
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td class="nm">INV-2026-0'+(++seq)+'</td><td>Vora Associates</td>'+
+      '<td><span class="pill pill--warn"><i></i>Draft</span></td><td class="num">₹52,300</td>';
+    return tr;
+  }
+  function bump(){cnt.textContent=String(+cnt.textContent+1);cnt.classList.add('bump');
+    setTimeout(function(){cnt.classList.remove('bump')},240)}
+  function btnSeq(btn,ok,after){
+    btn.dataset.s='busy';
+    setTimeout(function(){btn.dataset.s='done';
+      setTimeout(function(){btn.dataset.s='idle'},1500);
+      if(after)after();},ok?900:1100);
+  }
+  document.getElementById('create').addEventListener('click',function(){
+    if(this.dataset.s!=='idle')return;
+    var tr=newRow();tr.classList.add('pending','arrive');crows.insertBefore(tr,crows.firstChild);
+    btnSeq(this,true,function(){
+      tr.classList.remove('pending');                 // acknowledged → solid
+      tr.classList.add('landed');
+      tr.querySelector('.nm').classList.add('flash'); // the CELL, never the row
+      bump();
+      toast('ok','Invoice created','INV-2026-0'+seq+' · Vora Associates. Undo within 4s.');
+    });
+  });
+  document.getElementById('fail').addEventListener('click',function(){
+    if(this.dataset.s!=='idle')return;
+    var tr=newRow();tr.classList.add('pending','arrive');crows.insertBefore(tr,crows.firstChild);
+    btnSeq(this,false,function(){
+      tr.classList.remove('pending');
+      tr.classList.add('shake');
+      [].forEach.call(tr.children,function(td){td.classList.add('rollback')});
+      // Held for a READING duration, then the row leaves and says why.
+      setTimeout(function(){
+        tr.style.transition='opacity var(--dur-base) var(--ease-exit)';tr.style.opacity='0';
+        setTimeout(function(){tr.remove()},240);
+        toast('dan','Could not create that invoice','Vora Associates has no billing address on file.');
+      },1600);
+    });
+  });
+
+  /* ── 12 · Landing ─────────────────────────────────────────────────────
+     Guarded, so the whole block is inert if §12's markup is absent — the
+     repo copy of this proposal ships without the marketing section. */
+  if(document.getElementById('lph')){
+  /* Headline assembles word by word. Emphasis is per-word rather than a
+     wrapping <em>, because splitting on spaces would tear a wrapper across
+     two spans and produce malformed markup. */
+  var HEAD=[['The',0],['practice',0],['software',0],['that',0],
+            ['finally',1],['fits',1],['a',0],['small',0],['firm.',0]];
+  document.getElementById('lph').innerHTML=HEAD.map(function(w,i){
+    var t=w[1]?'<em>'+w[0]+'</em>':w[0];
+    return '<span class="w" style="--i:'+i+'">'+t+'</span>';}).join(' ');
+
+  var LOGOS=['Unicode Systems','AekamINC','Nandan &amp; Co','Sedani Traders','Vora Associates','Bhatt &amp; Sons','Kalyan Exports','Parekh LLP'];
+  document.getElementById('marq').innerHTML=LOGOS.concat(LOGOS).map(function(l){return '<span>'+l+'</span>'}).join('');
+
+  var METS=[[1240,'firms on Kartavaya',''],[46,'lakh invoiced monthly','₹'],[99.9,'uptime this year','%'],[12,'modules, one price','']];
+  document.getElementById('mets').innerHTML=METS.map(function(m,i){
+    return '<div class="met rev" style="--i:'+i+'"><div class="met__n" data-to="'+m[0]+'" data-pre="'+(m[2]==='₹'?'₹':'')+'" data-suf="'+(m[2]==='%'?'%':'')+'">0</div><div class="met__l">'+m[1]+'</div></div>';}).join('');
+
+  var FEATS=[['Ganit','Invoices, GST returns and bank reconciliation that agree with each other.','M4 16V8M10 16V4M16 16v-5'],
+             ['Manav','Payroll, attendance and statutory registers, filed on the day they are due.','M10 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6M4 17c0-3.3 2.7-5 6-5s6 1.7 6 5'],
+             ['Graha','One record per client company, however many people come and go.','M3 17V8l7-4 7 4v9M8 17v-5h4v5']];
+  document.getElementById('feats').innerHTML=FEATS.map(function(f,i){
+    return '<div class="card fx tilt rim rev" style="--i:'+i+'"><span class="fx__shine"></span>'+
+      '<span class="card__ic"><svg viewBox="0 0 20 20"><path d="'+f[2]+'"/></svg></span>'+
+      '<p class="card__t">'+f[0]+'</p><p class="card__s">'+f[1]+'</p></div>';}).join('');
+
+  /* Scroll reveal + count-up. IntersectionObserver rather than
+     animation-timeline: view(), which is still flagged in Firefox stable. */
+  function countUp(el){
+    var to=parseFloat(el.dataset.to),pre=el.dataset.pre||'',suf=el.dataset.suf||'',dec=to%1?1:0;
+    var t0=null,dur=1100*(parseFloat(getComputedStyle(root).getPropertyValue('--ix-user'))||1);
+    if(dur<20){el.textContent=pre+to.toFixed(dec)+suf;return}
+    function step(t){if(!t0)t0=t;var p=Math.min(1,(t-t0)/dur);
+      var e=1-Math.pow(1-p,3);                       // ease-out cubic
+      el.textContent=pre+(to*e).toFixed(dec)+suf;
+      if(p<1)requestAnimationFrame(step);}
+    requestAnimationFrame(step);
+  }
+  if('IntersectionObserver' in window){
+    var seen=new WeakSet();
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(!e.isIntersecting||seen.has(e.target))return;
+        seen.add(e.target);e.target.classList.add('in');
+        var n=e.target.querySelector('.met__n');if(n)countUp(n);
+      });},{threshold:.25});
+    [].forEach.call(document.querySelectorAll('.rev'),function(el){io.observe(el)});
+    var hero=document.getElementById('lphero');
+    if(hero)io.observe(hero);
+  }else{
+    [].forEach.call(document.querySelectorAll('.rev'),function(el){el.classList.add('in')});
+    [].forEach.call(document.querySelectorAll('.met__n'),countUp);
+  }
+
+  /* Magnetic CTA — the button leans toward the cursor, then springs back */
+  [].forEach.call(document.querySelectorAll('.cta'),function(b){
+    b.addEventListener('pointermove',function(e){
+      var r=b.getBoundingClientRect();
+      var dx=(e.clientX-(r.left+r.width/2))/r.width, dy=(e.clientY-(r.top+r.height/2))/r.height;
+      b.style.transform='translate('+(dx*9).toFixed(1)+'px,'+(dy*6).toFixed(1)+'px)';
+    });
+    b.addEventListener('pointerleave',function(){b.style.transform=''});
+  });
+  wireFx(document.getElementById('lphero'));
+  }  /* end §12 guard */
+
+  wireAll();
+})();
+</script>

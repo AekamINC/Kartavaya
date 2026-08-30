@@ -1,0 +1,1268 @@
+<title>Motion and Material</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Motion and Material — Kartavaya, 2026-08-29.
+
+   This page is rendered in the PRODUCT'S OWN tokens, copied from
+   kartavaya-design.css §7 and §5 — the same cream, the same ink ramp, the
+   same teal primary, the same five-rung duration ladder, the same twelve
+   easings. Nothing here is an approximation of the design system; it is the
+   design system, so every claim below can be judged on the ground it is about.
+
+   Two switches in the header re-declare the surface and shadow tokens for the
+   whole document, so the proposals can be seen rather than described.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* ── Surfaces — kartavaya-design.css:371-377, verbatim ────────────────── */
+  --bg:          #F3EFE6;
+  --s-lowest:    #FFFEFB;
+  --surface:     #FAF7F0;
+  --s-low:       #F5F1E7;
+  --s-container: #EEE9DC;
+  --s-high:      #E7E1D1;
+  --s-highest:   #DFD8C5;
+
+  /* ── Ink — :379-381 ───────────────────────────────────────────────────── */
+  --on-surface:   #1B1D1A;
+  --on-surface-2: #4A4E48;
+  --on-surface-3: #5E625A;
+
+  --outline-variant: #D8D1BE;
+  --outline:         #78725F;
+
+  /* ── Primary — :421-441. The product's accent is already a teal. ───────── */
+  --primary:           #04837A;
+  --primary-hover:     #026B64;
+  --primary-text:      #046B64;
+  --primary-container: #B4F1E8;
+  --primary-vivid:     #05B7AA;
+
+  --ok:     #126B36;  --ok-container:     #C6EFD2;
+  --warn:   #8B5206;  --warn-container:   #FBE3BE;
+  --danger: #B42318;  --danger-container: #FBDAD5;
+
+  /* ── Shadow — :483-486 and :813-816 ───────────────────────────────────── */
+  --shadow-1: 0 1px 2px rgba(30, 28, 22, .07);
+  --shadow-2: 0 4px 16px -6px rgba(30, 28, 22, .16);
+  --shadow-3: 0 18px 44px -18px rgba(30, 28, 22, .3);
+  --shadow-card: 0 1px 2px rgba(28, 24, 16, .07), 0 4px 12px -5px rgba(28, 24, 16, .12);
+
+  /* ── Motion — :161-207, the ladder and the curves ─────────────────────── */
+  --ix-user: 1;
+  --ix: var(--ix-user);
+  --motion-scale-user: 1;
+  --motion-scale: var(--motion-scale-user);
+
+  --dur-instant: calc( 90ms * var(--ix));
+  --dur-fast:    calc(140ms * var(--ix));
+  --dur-base:    calc(220ms * var(--ix));
+  --dur-slow:    calc(360ms * var(--ix));
+  --dur-xslow:   calc(520ms * var(--ix));
+
+  --ease-standard:    cubic-bezier(.2, 0, 0, 1);
+  --ease-emph:        cubic-bezier(.16, 1, .3, 1);
+  --ease-enter:       cubic-bezier(0, 0, .2, 1);
+  --ease-exit:        cubic-bezier(.4, 0, 1, 1);
+  --ease-emph-in:     cubic-bezier(.05, .7, .1, 1);
+  --ease-emph-out:    cubic-bezier(.3, 0, .8, .15);
+  --ease-spring:      cubic-bezier(.34, 1.36, .64, 1);
+  --ease-spring-soft: cubic-bezier(.32, 1.14, .68, 1);
+  --ease-shake:       cubic-bezier(.36, .07, .19, .97);
+  --ease-lotus:       cubic-bezier(.42, 0, .32, 1);
+  --ease-fill:        cubic-bezier(.25, .8, .25, 1);
+  --ease-inout:       cubic-bezier(.42, 0, .58, 1);
+
+  --step: 38ms;
+
+  /* ── Radius / type — §3 and §2 ────────────────────────────────────────── */
+  --radius-base: 10px;
+  --r-sm:  calc(var(--radius-base) * .58);
+  --r-md:  var(--radius-base);
+  --r-lg:  calc(var(--radius-base) * 1.45);
+  --r-pill: 999px;
+
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-ui:      'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) { :root { --ix: .001; --motion-scale: 0 } }
+
+/* ── The proposed ramp, solved for even 1.075:1 steps in the product's own
+      cream hue. Toggled from the header; re-declares only the surfaces. ──── */
+:root[data-ramp="proposed"] {
+  --s-lowest:    #FFFEFB;
+  --surface:     #F8F6EF;
+  --s-low:       #F1EDE3;
+  --bg:          #EAE5D8;
+  --s-container: #E4DECD;
+  --s-high:      #DDD6C2;
+  --s-highest:   #D7CFB8;
+  --outline-variant: #CFC6AE;
+}
+:root[data-shadow="proposed"] {
+  --shadow-1: 0 1px 2px rgba(30, 28, 22, .10);
+  --shadow-2: 0 6px 20px -6px rgba(30, 28, 22, .20);
+  --shadow-card: 0 1px 2px rgba(30, 28, 22, .09), 0 8px 24px -6px rgba(30, 28, 22, .16);
+}
+
+/* ── Dark arm — kartavaya-design.css:533-604 ──────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0C0E11; --s-lowest: #080A0C; --surface: #12151A;
+    --s-low: #171B21; --s-container: #1D2229; --s-high: #252B33; --s-highest: #2E353E;
+    --on-surface: #E9E7E1; --on-surface-2: #BFBDB6; --on-surface-3: #8E8D87;
+    --outline-variant: #333A43; --outline: #7E8590;
+    --primary: #4FD8CB; --primary-hover: #6FE6DA; --primary-text: #4FD8CB; --primary-container: #00514B; --primary-vivid: #05B7AA;
+    --ok: #5BD98A; --ok-container: #14432A;
+    --warn: #E8B45C; --warn-container: #4A3312;
+    --danger: #F2867A; --danger-container: #55201B;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-2: 0 4px 16px -6px rgba(0,0,0,.6);
+    --shadow-3: 0 18px 44px -18px rgba(0,0,0,.8);
+    --shadow-card: 0 1px 2px rgba(0,0,0,.5), 0 4px 12px -5px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0C0E11; --s-lowest: #080A0C; --surface: #12151A;
+  --s-low: #171B21; --s-container: #1D2229; --s-high: #252B33; --s-highest: #2E353E;
+  --on-surface: #E9E7E1; --on-surface-2: #BFBDB6; --on-surface-3: #8E8D87;
+  --outline-variant: #333A43; --outline: #7E8590;
+  --primary: #4FD8CB; --primary-hover: #6FE6DA; --primary-text: #4FD8CB; --primary-container: #00514B; --primary-vivid: #05B7AA;
+  --ok: #5BD98A; --ok-container: #14432A;
+  --warn: #E8B45C; --warn-container: #4A3312;
+  --danger: #F2867A; --danger-container: #55201B;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.5);
+  --shadow-2: 0 4px 16px -6px rgba(0,0,0,.6);
+  --shadow-3: 0 18px 44px -18px rgba(0,0,0,.8);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.5), 0 4px 12px -5px rgba(0,0,0,.6);
+}
+
+* { box-sizing: border-box }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--on-surface);
+  font-family: var(--font-ui);
+  font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--dur-slow) var(--ease-standard),
+              color var(--dur-slow) var(--ease-standard);
+}
+
+/* Fluid and left-aligned — the product's own layout rule, no centred column. */
+.wrap { padding: 0 clamp(20px, 4.5vw, 64px) 120px; max-width: 1560px }
+.rail { max-width: 74ch }
+.rail p, .rail li { color: var(--on-surface-2) }
+.rail p { margin: 0 0 1.05em }
+h1, h2, h3, h4 { text-wrap: balance; margin: 0 }
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+.top {
+  display: flex; flex-wrap: wrap; gap: 26px 44px;
+  align-items: flex-end; justify-content: space-between;
+  padding: clamp(40px, 6vw, 78px) 0 26px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.kick {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--primary-text); margin: 0 0 16px;
+}
+h1 {
+  font-family: var(--font-display); font-weight: 300;
+  font-size: clamp(36px, 5.8vw, 68px); line-height: 1.04;
+  letter-spacing: -.022em; margin: 0 0 18px; max-width: 19ch;
+}
+h1 em { font-style: italic; color: var(--primary-text) }
+.lede {
+  font-family: var(--font-display); font-size: clamp(16.5px, 1.8vw, 20px);
+  line-height: 1.5; color: var(--on-surface-2); max-width: 60ch; margin: 0;
+}
+
+/* ── The switchboard ─────────────────────────────────────────────────── */
+.sw {
+  position: sticky; top: 12px; z-index: 30;
+  background: var(--s-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  padding: 13px 15px 15px; min-width: 254px;
+  box-shadow: var(--shadow-2);
+  transition: background var(--dur-slow) var(--ease-standard),
+              box-shadow var(--dur-slow) var(--ease-standard),
+              border-color var(--dur-slow) var(--ease-standard);
+}
+.sw__t {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--on-surface-3); margin: 0 0 10px;
+}
+.sw__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px }
+.sw__row:last-of-type { margin-bottom: 0 }
+.sw__l { font-size: 12.5px; color: var(--on-surface-2) }
+.seg { display: inline-flex; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); overflow: hidden; flex: none }
+.seg button {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em;
+  background: none; border: 0; cursor: pointer; padding: 4px 9px;
+  color: var(--on-surface-3);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.seg button + button { border-left: 1px solid var(--outline-variant) }
+.seg button:hover { color: var(--on-surface) }
+.seg button[aria-pressed="true"] { background: var(--primary-container); color: var(--primary-text); font-weight: 500 }
+.seg button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px }
+.sw__note { font-size: 11px; color: var(--on-surface-3); margin: 11px 0 0; line-height: 1.45 }
+
+/* ── Parts and sections ──────────────────────────────────────────────── */
+.part {
+  margin-top: clamp(56px, 7vw, 96px); padding-top: 14px;
+  border-top: 2px solid var(--on-surface);
+  display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap;
+}
+.part__n { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--primary-text) }
+.part__t { font-family: var(--font-display); font-size: clamp(19px, 2.1vw, 25px); font-weight: 400; letter-spacing: -.01em }
+.part__d { font-size: 13px; color: var(--on-surface-3); flex: 1 1 24ch; min-width: 0 }
+
+section { padding-top: clamp(40px, 5vw, 66px) }
+.sec__h { display: flex; gap: 18px; align-items: baseline; margin-bottom: 7px }
+.sec__n { font-family: var(--font-mono); font-size: 12px; color: var(--primary-text); font-weight: 500; flex: none; padding-top: 5px }
+h2 {
+  font-family: var(--font-display); font-weight: 400;
+  font-size: clamp(25px, 3.3vw, 37px); line-height: 1.12; letter-spacing: -.017em;
+}
+.sec__s { font-size: 14px; color: var(--on-surface-3); margin: 0 0 28px 30px; max-width: 62ch; line-height: 1.55 }
+h3 { font-family: var(--font-ui); font-size: 14.5px; font-weight: 600; margin: 34px 0 10px }
+h3:first-child { margin-top: 0 }
+
+/* ── Cards / panels — on the product's own card recipe ───────────────── */
+.card {
+  background: var(--s-lowest); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg); margin: 24px 0; overflow: hidden;
+  box-shadow: var(--shadow-card);
+  transition: background var(--dur-slow) var(--ease-standard),
+              box-shadow var(--dur-slow) var(--ease-standard),
+              border-color var(--dur-slow) var(--ease-standard);
+}
+.card__h {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+  padding: 11px 17px; border-bottom: 1px solid var(--outline-variant); background: var(--s-low);
+}
+.card__t { font-family: var(--font-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-2); font-weight: 500 }
+.card__b { padding: 20px 17px 22px }
+
+.btn {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .05em;
+  text-transform: uppercase; background: var(--s-lowest); color: var(--on-surface);
+  cursor: pointer; border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
+  padding: 6px 12px;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard),
+              transform var(--dur-instant) var(--ease-standard);
+}
+.btn:hover { border-color: var(--primary); color: var(--primary-text) }
+.btn:active { transform: translateY(1px) }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px }
+
+/* ── Figures strip ───────────────────────────────────────────────────── */
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); gap: 1px; background: var(--outline-variant); border: 1px solid var(--outline-variant); border-radius: var(--r-md); overflow: hidden; margin: 28px 0 }
+.fig { background: var(--s-lowest); padding: 16px 16px 18px; transition: background var(--dur-slow) var(--ease-standard) }
+.fig__n { font-family: var(--font-mono); font-size: clamp(23px, 2.9vw, 31px); font-weight: 500; line-height: 1; letter-spacing: -.02em; display: block; margin-bottom: 8px; font-variant-numeric: tabular-nums }
+.fig__n--bad { color: var(--danger) } .fig__n--mid { color: var(--warn) } .fig__n--ok { color: var(--ok) }
+.fig__c { font-size: 12px; line-height: 1.42; color: var(--on-surface-2) }
+
+/* ── The ramp ────────────────────────────────────────────────────────── */
+.ramp { display: grid; gap: 0; margin: 6px 0 0 }
+.rung {
+  display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px; align-items: center;
+  padding: 12px 15px; color: var(--on-surface);
+  transition: background var(--dur-slow) var(--ease-standard);
+}
+.rung__n { font-family: var(--font-mono); font-size: 11.5px }
+.rung__v { font-family: var(--font-mono); font-size: 11px; opacity: .68; font-variant-numeric: tabular-nums }
+.rung__r { font-family: var(--font-mono); font-size: 10.5px; text-align: right; font-variant-numeric: tabular-nums; min-width: 8ch }
+.rung--0 { background: var(--s-lowest) } .rung--1 { background: var(--surface) }
+.rung--2 { background: var(--s-low) }    .rung--3 { background: var(--bg) }
+.rung--4 { background: var(--s-container) } .rung--5 { background: var(--s-high) }
+.rung--6 { background: var(--s-highest) }
+.tight { color: var(--danger); font-weight: 500 }
+.fine  { color: var(--ok) }
+
+/* ── Depth demo ──────────────────────────────────────────────────────── */
+.depth { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; padding: 32px 20px; background: var(--bg); transition: background var(--dur-slow) var(--ease-standard) }
+.dc { background: var(--surface); border-radius: var(--r-lg); padding: 16px 17px 18px; transition: background var(--dur-slow) var(--ease-standard) }
+.dc--off   { box-shadow: var(--shadow-1) }
+.dc--on    { box-shadow: 0 1px 4px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.035),
+             inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(255,255,255,.16),
+             inset 1px 0 0 rgba(255,255,255,.12), inset -1px 0 0 rgba(255,255,255,.12) }
+.dc--fix   { box-shadow: 0 1px 2px rgba(30,28,22,.09), 0 8px 24px -6px rgba(30,28,22,.16),
+             inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(255,255,255,.18),
+             inset 1px 0 0 rgba(255,255,255,.14), inset -1px 0 0 rgba(255,255,255,.14) }
+.dc__l { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 8px }
+.dc__k { font-family: var(--font-mono); font-size: 23px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums }
+.dc__c { font-size: 12px; color: var(--on-surface-3); margin-top: 3px }
+.dc__f { font-family: var(--font-mono); font-size: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--outline-variant) }
+
+/* ── Chart A/B ───────────────────────────────────────────────────────── */
+.ab { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 1px; background: var(--outline-variant) }
+.ab__s { background: var(--s-lowest); padding: 18px 18px 20px; transition: background var(--dur-slow) var(--ease-standard) }
+.ab__l { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; font-weight: 500; margin-bottom: 3px }
+.ab__l--a { color: var(--danger) } .ab__l--b { color: var(--ok) }
+.ab__d { font-size: 12px; color: var(--on-surface-3); margin: 0 0 18px; min-height: 2.9em; line-height: 1.45 }
+.chart { display: flex; align-items: flex-end; gap: 7px; height: 138px }
+.chart__c { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100% }
+.chart__v { font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-3); font-variant-numeric: tabular-nums }
+.chart__t { flex: 1; min-height: 0; width: 100%; display: flex; align-items: flex-end }
+.chart__b { width: 100%; height: var(--h, 0%); min-height: 2px; background: var(--primary-container); border-radius: 3px 3px 0 0; transform-origin: bottom }
+.chart__c:last-child .chart__b { background: var(--primary) }
+.chart__x { font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-3) }
+.chart--fix.go .chart__b { animation: grow var(--dur-slow) var(--ease-fill) backwards; animation-delay: calc(var(--i) * var(--step) * var(--ix)) }
+@keyframes grow { from { transform: scaleY(0) } }
+.chart--fix.go .chart__v { animation: vin var(--dur-base) var(--ease-enter) backwards; animation-delay: calc((var(--i) * var(--step) + 120ms) * var(--ix)) }
+@keyframes vin { from { opacity: 0; transform: translateY(calc(4px * var(--motion-scale))) } }
+
+/* ── Glass demo ──────────────────────────────────────────────────────── */
+.g2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1px; background: var(--outline-variant) }
+.g { position: relative; min-height: 232px; padding: 24px; display: grid; place-items: center; overflow: hidden }
+.g--vivid { background: radial-gradient(circle at 20% 24%, #22B3A6 0%, transparent 46%), radial-gradient(circle at 80% 30%, #0E7C9B 0%, transparent 44%), radial-gradient(circle at 60% 88%, #04837A 0%, transparent 50%), linear-gradient(140deg, #036F68, #0A5E72) }
+.g--flat { background: var(--bg); transition: background var(--dur-slow) var(--ease-standard) }
+.gc {
+  position: relative; width: 100%; max-width: 310px; padding: 17px 19px 19px;
+  border-radius: var(--r-lg);
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.34);
+  backdrop-filter: blur(14px) saturate(1.5); -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  box-shadow: 0 6px 26px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(255,255,255,.14);
+  color: #0B1512;
+  transition: background var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard);
+}
+.g--flat .gc { color: var(--on-surface) }
+.g2.solid .gc { background: rgba(255,255,255,.94); backdrop-filter: none; -webkit-backdrop-filter: none; border-color: rgba(0,0,0,.12); color: #0B1512 }
+.g2.solid .g--flat .gc { background: var(--s-lowest); border-color: var(--outline-variant); color: var(--on-surface) }
+.gc__p { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 7px; border-radius: var(--r-pill); margin-bottom: 13px; background: rgba(255,255,255,.3); border: 1px solid rgba(255,255,255,.4); font-size: 11.5px; font-weight: 500 }
+.g2.solid .gc__p { background: rgba(0,0,0,.05); border-color: rgba(0,0,0,.09) }
+.gc__d { width: 14px; height: 14px; border-radius: 50%; background: currentColor; opacity: .5; flex: none }
+.gc__h { font-size: 18.5px; font-weight: 600; letter-spacing: -.015em; line-height: 1.2; margin: 0 0 5px }
+.gc__b { font-size: 13px; line-height: 1.45; margin: 0; opacity: .82 }
+.g__cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 7px 13px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; background: rgba(0,0,0,.46); color: #fff }
+.tog { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; color: var(--on-surface-2) }
+.tog input { accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer }
+
+/* ── Tabs demo ───────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 2px; position: relative; border-bottom: 1px solid var(--outline-variant); margin-bottom: 4px }
+.tb { position: relative; background: none; border: 0; cursor: pointer; font-family: var(--font-ui); font-size: 13px; font-weight: 500; color: var(--on-surface-3); padding: 9px 14px 11px; transition: color var(--dur-fast) var(--ease-standard) }
+.tb:hover { color: var(--on-surface-2) }
+.tb.on { color: var(--on-surface) }
+.tb:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px }
+.tabs--pop .tb.on::after { content: ''; position: absolute; left: 11px; right: 11px; bottom: -1px; height: 2px; background: var(--primary); transform-origin: center; animation: tpop var(--dur-base) var(--ease-emph) backwards }
+@keyframes tpop { from { transform: scaleX(calc(1 - .999 * var(--motion-scale, 1))); opacity: 0 } }
+.tabs--slide .tind { position: absolute; bottom: -1px; height: 2px; background: var(--primary); transition: transform var(--dur-base) var(--ease-emph), width var(--dur-base) var(--ease-emph) }
+.tpanel { font-size: 13px; color: var(--on-surface-2); padding: 13px 3px 2px; min-height: 3em }
+
+/* ── Tables ──────────────────────────────────────────────────────────── */
+.scroll { overflow-x: auto; margin: 24px 0; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--s-lowest); transition: background var(--dur-slow) var(--ease-standard) }
+table { border-collapse: collapse; width: 100%; min-width: 660px; font-size: 13px }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--outline-variant); vertical-align: top }
+thead th { font-family: var(--font-mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 500; background: var(--s-low) }
+tbody tr:last-child td { border-bottom: 0 }
+td.num { text-align: right; font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums }
+.mono { font-family: var(--font-mono); font-size: 11.5px; color: var(--on-surface) }
+
+.tag { display: inline-block; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; padding: 2.5px 7px; border-radius: var(--r-sm); font-weight: 500; white-space: nowrap }
+.tag--bad { background: var(--danger-container); color: var(--danger) }
+.tag--mid { background: var(--warn-container); color: var(--warn) }
+.tag--ok  { background: var(--ok-container); color: var(--ok) }
+.tag--go  { background: var(--primary-container); color: var(--primary-text) }
+:root[data-theme="dark"] .tag--bad, :root[data-theme="dark"] .tag--mid, :root[data-theme="dark"] .tag--ok, :root[data-theme="dark"] .tag--go { color: var(--on-surface) }
+
+pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.65; background: var(--s-container); border: 1px solid var(--outline-variant); border-radius: var(--r-md); padding: 14px 16px; overflow-x: auto; margin: 15px 0; color: var(--on-surface); transition: background var(--dur-slow) var(--ease-standard) }
+code { font-family: var(--font-mono); font-size: .89em }
+.rail p code, li code, td code { background: var(--s-container); padding: 1.5px 5px; border-radius: 3px }
+.c { color: var(--on-surface-3) } .k { color: var(--primary-text) }
+.del { color: var(--danger) } .add { color: var(--ok) }
+
+ul, ol { padding-left: 21px; margin: 0 0 1.05em }
+li { margin-bottom: .48em }
+li::marker { color: var(--on-surface-3) }
+
+.note { border-left: 3px solid var(--primary); background: var(--primary-container); padding: 14px 18px; margin: 22px 0; border-radius: 0 var(--r-md) var(--r-md) 0 }
+.note p { margin: 0; font-size: 14px; color: var(--on-surface) }
+.note p + p { margin-top: .7em }
+.note strong { font-weight: 600 }
+
+.rx { display: grid; grid-template-columns: repeat(auto-fit, minmax(262px, 1fr)); gap: 1px; background: var(--outline-variant); border: 1px solid var(--outline-variant); border-radius: var(--r-md); overflow: hidden; margin: 24px 0 }
+.rx__c { background: var(--s-lowest); padding: 17px 18px 19px; transition: background var(--dur-slow) var(--ease-standard) }
+.rx__t { font-size: 14px; font-weight: 600; margin: 0 0 3px }
+.rx__m { font-family: var(--font-mono); font-size: 10.5px; color: var(--primary-text); margin-bottom: 10px }
+.rx__c p { font-size: 13px; margin: 0; color: var(--on-surface-2); line-height: 1.55 }
+.rx__c ul { margin: 8px 0 0; padding-left: 16px }
+.rx__c li { font-size: 12.5px; color: var(--on-surface-2); margin-bottom: .32em }
+
+/* Hover-lift, on the product's own tokens */
+.lift { background: var(--s-lowest); border: 1px solid var(--outline-variant); border-radius: var(--r-lg); padding: 16px 17px; cursor: pointer; box-shadow: var(--shadow-card); transition: transform var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard), background var(--dur-slow) var(--ease-standard) }
+.lift:hover { transform: translateY(calc(-2px * var(--motion-scale))); border-color: var(--primary) }
+.lift__k { font-family: var(--font-mono); font-size: clamp(20px, 2.2vw, 25px); font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums }
+.lift__c { font-size: 12px; color: var(--on-surface-3); margin-top: 4px }
+
+/* ── The vivid tier ──────────────────────────────────────────────────── */
+:root {
+  /* Existing, accent-derived — kartavaya-design.css:990. Fails white text
+     past its 55% stop (2.51:1 at --primary-vivid), which is correct for a
+     6px bar and disqualifying for a surface. */
+  --k-grad: linear-gradient(135deg, var(--primary-hover), var(--primary) 55%, var(--primary-vivid));
+  /* Proposed sibling: the same hue family, deepened until white clears AA
+     across every stop. Worst measured stop 4.62:1. */
+  --k-grad-surface: linear-gradient(135deg, #01554F, #046B64 55%, #05837C);
+}
+:root[data-theme="dark"] { --k-grad-surface: linear-gradient(135deg, #014742, #045C56 55%, #036E68) }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --k-grad-surface: linear-gradient(135deg, #014742, #045C56 55%, #036E68) } }
+
+.vv { padding: 22px 20px; background: var(--k-grad-surface); position: relative }
+.vv__l { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.72); margin: 0 0 14px }
+.vv__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 12px }
+.vk {
+  padding: 13px 14px 15px; border-radius: var(--r-lg); color: #fff;
+  background: rgba(255,255,255,.13);
+  border: 1px solid rgba(255,255,255,.24);
+  backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.34), 0 4px 16px rgba(0,0,0,.14);
+  transition: transform var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+}
+.vk:hover { transform: translateY(calc(-2px * var(--motion-scale))); background: rgba(255,255,255,.19) }
+.vk__k { font-family: var(--font-mono); font-size: 21px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums }
+.vk__c { font-size: 11.5px; color: rgba(255,255,255,.8); margin-top: 3px }
+/* The calm half: data stays on the cream, as it must. */
+.vv-calm { padding: 18px 20px 20px; background: var(--s-lowest); transition: background var(--dur-slow) var(--ease-standard) }
+.vv-calm table { min-width: 0 }
+.vv-calm th, .vv-calm td { padding: 7px 10px }
+
+/* The failure case: vivid everywhere, so no layer can be told from another. */
+.vv--all { background: var(--k-grad-surface) }
+.vv--all .vk {
+  background: linear-gradient(140deg, rgba(5,183,170,.5), rgba(2,107,100,.5));
+  border-color: rgba(255,255,255,.2);
+}
+.vv--all .vv-calm { background: linear-gradient(140deg, #046B64, #05837C); color: #fff }
+.vv--all .vv-calm th { background: rgba(255,255,255,.1); color: rgba(255,255,255,.7) }
+.vv--all .vv-calm td, .vv--all .vv-calm th { border-bottom-color: rgba(255,255,255,.16); color: #fff }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 1px; background: var(--outline-variant) }
+.two__c { background: var(--s-lowest); transition: background var(--dur-slow) var(--ease-standard) }
+.two__h { padding: 11px 15px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; font-weight: 500; border-bottom: 1px solid var(--outline-variant) }
+.two__h--y { color: var(--ok) } .two__h--n { color: var(--danger) }
+.two__f { padding: 12px 15px 14px; font-size: 12.5px; color: var(--on-surface-2); border-top: 1px solid var(--outline-variant); line-height: 1.5 }
+
+footer { margin-top: clamp(60px, 7vw, 96px); padding-top: 24px; border-top: 1px solid var(--outline-variant) }
+footer p { font-size: 12px; color: var(--on-surface-3); max-width: 76ch; margin: 0 0 .7em }
+footer a { color: var(--primary-text) }
+
+@media (max-width: 760px) { .sec__s { margin-left: 0 } .sec__h { gap: 11px } .sw { position: static; width: 100% } }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="kick">Kartavaya · read-only audit · 2026-08-29 · staging</p>
+      <h1>The system is built. It is <em>not wired up.</em></h1>
+      <p class="lede">This page is rendered in Kartavaya's own tokens — <code>--bg: #F3EFE6</code>, the real ink ramp, <code>--primary: #04837A</code>, the five-rung duration ladder. It opens on the cream light theme whatever your viewer is set to, because that is the theme every figure here measures. The switches change the product's own tokens for this whole document.</p>
+    </div>
+
+    <div class="sw">
+      <p class="sw__t">Live token switches</p>
+      <div class="sw__row">
+        <span class="sw__l">Theme</span>
+        <span class="seg" role="group" aria-label="Theme">
+          <button type="button" data-theme="light" aria-pressed="true">Cream</button>
+          <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+        </span>
+      </div>
+      <div class="sw__row">
+        <span class="sw__l">Surface ramp</span>
+        <span class="seg" role="group" aria-label="Surface ramp">
+          <button type="button" data-ramp="current" aria-pressed="true">Current</button>
+          <button type="button" data-ramp="proposed" aria-pressed="false">Proposed</button>
+        </span>
+      </div>
+      <div class="sw__row">
+        <span class="sw__l">Shadow strength</span>
+        <span class="seg" role="group" aria-label="Shadow strength">
+          <button type="button" data-shadow="current" aria-pressed="true">Current</button>
+          <button type="button" data-shadow="proposed" aria-pressed="false">Proposed</button>
+        </span>
+      </div>
+      <div class="sw__row">
+        <span class="sw__l">Animations</span>
+        <span class="seg" role="group" aria-label="Animations">
+          <button type="button" data-ix="1" aria-pressed="true">Full</button>
+          <button type="button" data-ix=".5" aria-pressed="false">Reduced</button>
+          <button type="button" data-ix="0" aria-pressed="false">None</button>
+        </span>
+      </div>
+      <p class="sw__note">Opens on Cream whatever your viewer is set to, because that is the theme this document measures. Ramp and Shadow re-declare <code>--s-*</code> and <code>--shadow-*</code>; Animations writes <code>--ix-user</code>, never <code>--ix</code> — the product's own rule.</p>
+    </div>
+  </header>
+
+  <div class="figs">
+    <div class="fig"><span class="fig__n fig__n--bad">3</span><span class="fig__c">Analytics chart primitives with no motion declaration of any kind</span></div>
+    <div class="fig"><span class="fig__n fig__n--mid">24</span><span class="fig__c">Fills that declare a transition which cannot fire on mount</span></div>
+    <div class="fig"><span class="fig__n fig__n--bad">1.017</span><span class="fig__c">Contrast ratio between <code>--bg</code> and <code>--s-low</code>, the most-used elevation step</span></div>
+    <div class="fig"><span class="fig__n fig__n--bad">5</span><span class="fig__c">Of 56 floating surfaces that carry the glass material</span></div>
+    <div class="fig"><span class="fig__n fig__n--mid">1</span><span class="fig__c">Motion declaration in 902 lines of <code>pahchan.css</code></span></div>
+    <div class="fig"><span class="fig__n fig__n--ok">12</span><span class="fig__c">Named easing curves, tokenised, gated, correct</span></div>
+  </div>
+
+  <!-- ══════════════════ PART I ══════════════════ -->
+  <div class="part">
+    <span class="part__n">Part I</span>
+    <span class="part__t">Motion — what moves</span>
+    <span class="part__d">A rigorous token system with almost no call sites.</span>
+  </div>
+
+  <section id="s1">
+    <div class="sec__h"><span class="sec__n">01</span><h2>What you already have is better than most of the market</h2></div>
+    <p class="sec__s">This has to come first, because everything recommended later is small.</p>
+    <div class="rail">
+      <p>Five duration rungs, twelve named easing curves, and a build gate — <code>check-motion.mjs</code> — that fails on a raw <code>cubic-bezier()</code>, a bare time literal, a keyword easing, and all three again inside JSX <code>style={{}}</code> objects.</p>
+      <p>The real insight is the <strong>two-scalar split</strong>. <code>--ix</code> scales duration and bottoms out at <code>.001</code>; <code>--motion-scale</code> scales distance and bottoms out at <code>0</code>. That is why infinite animations here do not strobe — scaling a 700ms spinner by <code>.001</code> gives a ~1400 Hz flicker delivered to the person who asked for <em>less</em> motion. The reference spec mandates exactly that bug in its own worked example; this build refuses it.</p>
+      <p>Set <strong>Animations</strong> to None in the switchboard and watch the demos below go still rather than fast. That is the architecture working.</p>
+    </div>
+  </section>
+
+  <section id="s2">
+    <div class="sec__h"><span class="sec__n">02</span><h2>Why the bars do not move when you open Analytics</h2></div>
+    <p class="sec__s">Two defects, one root cause, and the CSS looks correct in both cases — which is why they survived review.</p>
+    <div class="rail">
+      <p><strong>Defect A.</strong> <code>Bars</code>, <code>Funnel</code> and <code>Meters</code> in <code>pages/dristi/_shared.jsx</code> are the primitives behind every analytics tab. Their fills — <code>.dbars__b</code>, <code>.dfun__f</code>, <code>.dmet__f</code> — carry a height or width and <strong>nothing else</strong>. No transition, no animation.</p>
+      <p><strong>Defect B.</strong> Everywhere else — the KPI tile, the ageing meters, the workload bars — the CSS reads correctly and still never runs:</p>
+      <pre><span class="c">/* editorial.css:1734 */</span>
+.k-stat__bar-fill { <span class="k">transition</span>: width var(--dur-xslow) var(--ease-fill) }</pre>
+      <p>A transition interpolates from an <em>old</em> value. On mount there is none: React renders <code>style={{'--w':'73%'}}</code> and the browser paints 73% as the first computed style. Nothing changed, so nothing transitions. <strong>24 fills across nine stylesheets animate only on filter change — never on arrival.</strong></p>
+    </div>
+
+    <div class="card">
+      <div class="card__h"><span class="card__t">Staging today vs. one property changed</span><button class="btn" id="replay">Replay</button></div>
+      <div class="ab">
+        <div class="ab__s">
+          <div class="ab__l ab__l--a">Staging today</div>
+          <p class="ab__d">Final height on the first frame. The page assembles with no sign a number was read.</p>
+          <div class="chart" id="c1"></div>
+        </div>
+        <div class="ab__s">
+          <div class="ab__l ab__l--b">With a mount animation</div>
+          <p class="ab__d">Grows from the baseline on <code>--ease-fill</code>, 38ms apart. The eye follows the shape and reads the trend.</p>
+          <div class="chart chart--fix" id="c2"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail">
+      <pre><span class="c">/* module.css — the analytics bar, corrected */</span>
+.dbars__b {
+  height: var(--h, 0%); min-height: 2px;
+  <span class="add">transform-origin: bottom;
+  animation: dmGrowY var(--dur-slow) var(--ease-fill) backwards;
+  animation-delay: calc(min(var(--i), 11) * 38ms * var(--ix));</span>
+}
+<span class="add">@keyframes dmGrowY { from { transform: scaleY(0) } }</span></pre>
+      <p><code>scaleY</code> not <code>height</code>, because the compositor animates a transform without a layout pass — the invariant <code>animations.css</code> already states for every keyframe in its registry. <code>backwards</code>, so a delayed bar holds at zero instead of flashing full. <code>min(var(--i), 11)</code>, so a 40-bar chart does not take 1.5 seconds to draw.</p>
+      <div class="note"><p><strong>No library for this.</strong> The charts are hand-rolled divs on purpose — <code>_shared.jsx</code> says why: they inherit theme, density and type scale, and a canvas would inherit none of it. Four CSS lines against ~31 KB gzipped.</p></div>
+    </div>
+  </section>
+
+  <section id="s3">
+    <div class="sec__h"><span class="sec__n">03</span><h2>The stagger that was specified, built, and never called</h2></div>
+    <p class="sec__s">One orphaned keyframe, and a structural reason no gate can see it.</p>
+    <div class="rail">
+      <p><code>animations.css</code> carries a reconciled motion table whose last row reads <code>| list stagger | ixFadeUp | --dur-base, 38ms step, capped at 11 steps |</code>. The keyframe is defined at line 178. Across the entire frontend — CSS, JSX and JS — it has <strong>zero call sites</strong>.</p>
+      <p><code>check-orphan-selectors.mjs</code> explicitly skips inside <code>@keyframes</code> blocks, because a keyframe's <code>from</code>/<code>to</code> are not selectors. So an orphaned <em>rule</em> is caught and an orphaned <em>animation</em> is not. The build is green and the animation has never run. The other five <code>ix-*</code> utilities all landed; this is the one that would have covered every list in the product.</p>
+      <p>The fix is a ~30-line <code>check-orphan-keyframes.mjs</code>, both directions: a keyframe with no consumer, and an <code>animation:</code> naming a keyframe that does not exist — the second fails silently and takes a working surface with it.</p>
+    </div>
+  </section>
+
+  <section id="s4">
+    <div class="sec__h"><span class="sec__n">04</span><h2>Where the motion actually is</h2></div>
+    <p class="sec__s">Declarations of <code>animation</code> or <code>transition</code> per file, across the 55 stylesheets in <code>src/styles</code>.</p>
+    <div class="rail"><p>Motion concentrates in the chrome — shell, overlays, auth, chat — and thins to nothing across the business modules. That is the inverse of where people spend the day.</p></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Stylesheet</th><th class="num">Motion</th><th class="num">Lines</th><th>Surface</th><th>Reading</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">editorial.css</td><td class="num">52</td><td class="num">4,892</td><td>Shell, cards, KPI tiles</td><td><span class="tag tag--ok">Covered</span></td></tr>
+          <tr><td class="mono">components.css</td><td class="num">34</td><td class="num">2,222</td><td>Primitives, keyframe registry</td><td><span class="tag tag--ok">Covered</span></td></tr>
+          <tr><td class="mono">auth.css</td><td class="num">18</td><td class="num">867</td><td>Login, invite acceptance</td><td><span class="tag tag--ok">Covered</span></td></tr>
+          <tr><td class="mono">boards.css</td><td class="num">15</td><td class="num">809</td><td>Kanban, drop targets</td><td><span class="tag tag--ok">Covered</span></td></tr>
+          <tr><td class="mono">analytics.css</td><td class="num">6</td><td class="num">480</td><td>Dristi charts</td><td><span class="tag tag--mid">Dead on mount</span></td></tr>
+          <tr><td class="mono">ganit.css</td><td class="num">1</td><td class="num">1,051</td><td>Finance, invoicing</td><td><span class="tag tag--bad">Bare</span></td></tr>
+          <tr><td class="mono">pahchan.css</td><td class="num">1</td><td class="num">902</td><td>Attendance, employee onboarding</td><td><span class="tag tag--bad">Bare</span></td></tr>
+          <tr><td class="mono">connectors.css</td><td class="num">0</td><td class="num">858</td><td>Integrations</td><td><span class="tag tag--bad">Bare</span></td></tr>
+          <tr><td class="mono">prachar.css</td><td class="num">0</td><td class="num">709</td><td>Marketing</td><td><span class="tag tag--bad">Bare</span></td></tr>
+          <tr><td class="mono">graha.css</td><td class="num">0</td><td class="num">554</td><td>CRM</td><td><span class="tag tag--bad">Bare</span></td></tr>
+          <tr><td class="mono">vetana.css</td><td class="num">0</td><td class="num">402</td><td>Payroll</td><td><span class="tag tag--bad">Bare</span></td></tr>
+          <tr><td class="mono">today.css</td><td class="num">0</td><td class="num">318</td><td>The daily home screen</td><td><span class="tag tag--bad">Bare</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rail"><div class="note"><p><strong>One caveat, because it changes the number.</strong> Zero in a stylesheet does not prove the page is inert — shared classes carry motion in. <code>GrahaPage</code> pulls <code>ix-panel</code> and <code>k-btn</code>, so its tab panels animate and its buttons have hover. But that is the whole inheritance: a panel fade and a button hover. The CRM's own pipeline, cards and lists have nothing.</p></div></div>
+  </section>
+
+  <!-- ══════════════════ PART II ══════════════════ -->
+  <div class="part">
+    <span class="part__n">Part II</span>
+    <span class="part__t">Material — what it moves on</span>
+    <span class="part__d">Depth cannot read on a ground with no separation in it.</span>
+  </div>
+
+  <section id="s5">
+    <div class="sec__h"><span class="sec__n">05</span><h2>The ground: seven surfaces, and one collapsed step</h2></div>
+    <p class="sec__s">Relative luminance and WCAG ratios computed from the hex literals in <code>kartavaya-design.css</code> §7. Flip the Ramp switch to see the proposal applied to this entire page.</p>
+
+    <div class="card">
+      <div class="card__h"><span class="card__t">The live surface ramp · every band below is the real token</span></div>
+      <div class="ramp" id="ramp"></div>
+    </div>
+
+    <div class="rail">
+      <p>The whole light ramp spans <strong>1.410:1</strong>. The dark arm spans <strong>1.600:1</strong> — 40% more separation, which is why the product reads with depth in dark and flat in light.</p>
+      <p>But the sharper finding is one step, not the whole ramp. <code>--bg</code> (#F3EFE6, L=.865) to <code>--s-low</code> (#F5F1E7, L=.881) is <strong>1.017:1</strong> — the two are the same colour to any eye. That step is page-ground meeting the first raised surface: <strong>the most-used elevation change in the product, and it is invisible.</strong> Its neighbours are 1.05–1.09, so this is an outlier in an otherwise reasonable ramp, not a systemic failure.</p>
+      <p>The proposed ramp solves for even 1.075:1 steps in the product's own cream hue, anchored to the existing endpoints. Full range 1.543:1 — close to the dark arm's — with ink contrast between <strong>10.9:1 and 16.8:1</strong> on all seven, so nothing goes near the 4.5:1 floor.</p>
+      <pre><span class="c">/* kartavaya-design.css §7 — seven hex values */</span>
+--s-lowest:    #FFFEFB;   <span class="c">/* unchanged — white pins the top */</span>
+--surface:     <span class="del">#FAF7F0</span> <span class="add">#F8F6EF</span>;
+--s-low:       <span class="del">#F5F1E7</span> <span class="add">#F1EDE3</span>;
+--bg:          <span class="del">#F3EFE6</span> <span class="add">#EAE5D8</span>;
+--s-container: <span class="del">#EEE9DC</span> <span class="add">#E4DECD</span>;
+--s-high:      <span class="del">#E7E1D1</span> <span class="add">#DDD6C2</span>;
+--s-highest:   <span class="del">#DFD8C5</span> <span class="add">#D7CFB8</span>;</pre>
+      <div class="note">
+        <p><strong>The ceiling is real, and it is arithmetic.</strong> <code>--s-lowest</code> is already effectively white, so there is no headroom upward — separation can only be bought by darkening the ground. Even taken as far as taste allows, the ramp reaches 1.543:1.</p>
+        <p>So the conclusion is not "abandon the cream". It is: <strong>stop expecting value to carry depth on a light ground, and fix the channel that actually can.</strong></p>
+      </div>
+
+      <h3>My verdict on the cream: keep it</h3>
+      <ol>
+        <li><strong>It is differentiated, and that is rare.</strong> Every B2B competitor renders on white or slate. A warm paper ground reads as considered, and for firms whose mental model is registers and ledgers it is thematically right. It is the most distinctive thing about the product's surface.</li>
+        <li><strong>It is kind to read on for eight hours</strong>, while keeping ink near 15:1.</li>
+        <li><strong>Changing it is not one decision, it is 55 stylesheets</strong> — every shadow alpha, border and <code>color-mix</code> was tuned against this ground.</li>
+      </ol>
+      <p>But make three changes: widen the ramp above; raise the light-arm shadows (§06); and <strong>introduce one vivid zone</strong> — an accent-gradient KPI strip or a tinted sidebar. Not a theme change. It is the one thing every glass reference has that this product does not: a ground worth blurring. That is §08, and it turns out you already have the token for it.</p>
+    </div>
+  </section>
+
+  <section id="s6">
+    <div class="sec__h"><span class="sec__n">06</span><h2>Liquid glass looks weak because it <em>is</em> weaker</h2></div>
+    <p class="sec__s">You said it is not visible enough and needs more depth. Correct, and the cause is one declaration.</p>
+    <div class="rail">
+      <p>A <code>.k-card</code> paints <code>box-shadow: var(--shadow-1)</code>. The glass rule outranks it at (0,2,0) and <strong>replaces</strong> the whole property with <code>var(--lg-shadow), var(--lg-inset), var(--lg-shine)</code>. Compare what goes in and what comes out:</p>
+      <pre><span class="c">/* the house token being overridden — warm, heavier */</span>
+--shadow-1:  0 1px 2px rgba(<span class="k">30, 28, 22</span>, <span class="add">.07</span>);
+
+<span class="c">/* what glass replaces it with — pure black, lighter */</span>
+--lg-shadow: 0 1px 4px rgba(<span class="k">0,0,0</span>, <span class="del">.04</span>),
+             0 6px 20px rgba(<span class="k">0,0,0</span>, <span class="del">.035</span>);</pre>
+      <ul>
+        <li><strong>The drop shadow gets lighter</strong> — <code>.04</code>/<code>.035</code> against <code>.07</code>. On a ground with 1.41:1 of value range, halving the one channel that carries depth is why the effect reads as nothing.</li>
+        <li><strong>The shadow turns cold.</strong> Every house token is a warm near-black chosen for cream. <code>liquid-glass.css</code> uses pure <code>rgba(0,0,0)</code> at all 26 of its light-arm sites. Pure black over cream desaturates it toward grey — it reads as dirt, not shadow.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card__h"><span class="card__t">Same card, three shadow recipes, on the live <code>--bg</code></span></div>
+      <div class="depth">
+        <div class="dc dc--off"><div class="dc__l">Glass OFF</div><div class="dc__k">₹18.4L</div><div class="dc__c">Invoiced this quarter</div><div class="dc__f">--shadow-1 · warm · .07</div></div>
+        <div class="dc dc--on"><div class="dc__l">Glass ON — today</div><div class="dc__k">₹18.4L</div><div class="dc__c">Invoiced this quarter</div><div class="dc__f" style="color:var(--danger)">--lg-shadow · black · .04/.035</div></div>
+        <div class="dc dc--fix"><div class="dc__l">Glass ON — proposed</div><div class="dc__k">₹18.4L</div><div class="dc__c">Invoiced this quarter</div><div class="dc__f" style="color:var(--ok)">warm · .09/.16 + brighter rim</div></div>
+      </div>
+    </div>
+
+    <div class="rail">
+      <p>The middle card is what a user sees when they turn the feature on. It is flatter than the default on its left.</p>
+      <pre><span class="c">/* liquid-glass.css :root — warm the colour, raise the ambient layer */</span>
+--lg-shadow: 0 1px 2px rgba(<span class="add">30,28,22</span>, <span class="add">.09</span>),
+             0 8px 24px -6px rgba(<span class="add">30,28,22</span>, <span class="add">.16</span>);
+--lg-inset:  inset 0 1px 0 rgba(255,255,255, <span class="add">.55</span>), <span class="c">/* was .42 */</span>
+             inset 0 -1px 0 rgba(255,255,255,.18), …</pre>
+      <div class="note"><p><strong>Do not reach for more blur.</strong> The instinct is to raise <code>--glass-mix</code>. That makes it slower, not deeper — you are already at 22px + 8px = 30px against a 2026 guideline that 8px delivers most of the effect. Blur is the translucency channel; on an opaque cream card there is nothing behind it to reveal. <strong>Depth here is a shadow problem.</strong></p></div>
+
+      <h3>A second defect, in the same file</h3>
+      <p><code>liquid-glass.css</code> contains <strong>zero occurrences of <code>--ix</code> and zero of <code>--motion-scale</code></strong>. Its motion runs on <code>--lg-dur: .3s</code> — a literal, on no rung of the ladder — consumed by six transitions. So the OS <code>prefers-reduced-motion</code> path is honoured by a media query, but the <strong>in-app Animations = Reduced/None preference is ignored entirely</strong>: it writes <code>--ix-user</code>, and nothing here reads it. <code>check-motion.mjs</code> cannot see this, correctly — a value inside a custom-property declaration is its documented exemption.</p>
+      <pre>--lg-dur:  <span class="del">.3s</span> <span class="add">var(--dur-slow)</span>;
+--lg-lift: <span class="del">-2px</span> <span class="add">calc(-2px * var(--motion-scale))</span>;</pre>
+      <p>With those two, the <code>prefers-reduced-motion</code> block becomes redundant and can be deleted — the same "token flips, not a parallel selector list" argument proposal 89 already makes.</p>
+    </div>
+  </section>
+
+  <section id="s7">
+    <div class="sec__h"><span class="sec__n">07</span><h2>Where glass goes next</h2></div>
+    <p class="sec__s">Derived, not guessed. In CSS the floating layer has a definition — <code>position: sticky</code> or <code>fixed</code> — so I parsed all 55 stylesheets for rules whose own block declares one.</p>
+    <div class="rail">
+      <p><strong>56 surfaces float. Five are glassed.</strong> That is where the room is — and it means "more glass" and proposal 89's "mostly subtraction" are not in conflict. 89 said take it off 22 content cards. This says put it on the floating surfaces that never got it. Same rule, two directions.</p>
+      <p>Glass needs something behind it worth blurring. Below, the identical card on a vivid ground and on the product's real <code>--bg</code>:</p>
+    </div>
+
+    <div class="card">
+      <div class="card__h"><span class="card__t">Identical card · two grounds</span><label class="tog"><input type="checkbox" id="solid"> Reduce transparency</label></div>
+      <div class="g2" id="g2">
+        <div class="g g--vivid">
+          <div class="gc"><span class="gc__p"><span class="gc__d"></span>New this month</span><p class="gc__h">Refer &amp; earn credit</p><p class="gc__b">Invite a firm to Kartavaya and you both get a month of Pro.</p></div>
+          <div class="g__cap">Over a vivid ground — the material reads</div>
+        </div>
+        <div class="g g--flat">
+          <div class="gc"><span class="gc__p"><span class="gc__d"></span>New this month</span><p class="gc__h">Refer &amp; earn credit</p><p class="gc__b">Invite a firm to Kartavaya and you both get a month of Pro.</p></div>
+          <div class="g__cap">Over the live --bg — a slightly grey box</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-left:0">Three levers, before adding a single selector</h3>
+    <div class="rx">
+      <div class="rx__c">
+        <p class="rx__t">1 · Raise the translucency ceiling</p>
+        <p class="rx__m">one coefficient</p>
+        <p>Why frost reads as barely-there:</p>
+        <ul>
+          <li><code>--glass-mix</code> defaults to <strong>.6</strong></li>
+          <li><code>--glass-alpha: calc(1 - (.28 * var(--glass-mix)))</code> = <strong>.832</strong></li>
+          <li>The topbar is 83% opaque — only <strong>17% shows through</strong>; at the slider's maximum, 28%</li>
+        </ul>
+        <p style="margin-top:8px">Raising <code>.28</code> → <code>.45</code> gives 27% at default, 45% at max — visible, still short of the 40% floor that broke iOS 26 for text.</p>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">2 · Blur the scrims</p>
+        <p class="rx__m">11 scrims · none currently blur</p>
+        <p>The most recognisable liquid-glass moment in any Apple OS: a sheet opens and the world behind it goes soft. You have eleven scrims — <code>.modal__scrim</code>, <code>.dr__scrim</code>, <code>.sheet__scrim</code>, <code>.k-modal-scrim</code>, <code>.kv__scrim</code> and six more — and not one blurs its backdrop. They only dim.</p>
+        <p style="margin-top:8px"><strong>One rule, eleven surfaces, no background changes, no contrast risk</strong> — a scrim carries no text. Highest impression per line in this document.</p>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">3 · Tokenise the nine strays</p>
+        <p class="rx__m">9 hard-coded blur literals</p>
+        <p>Of 35 <code>backdrop-filter</code> declarations across 12 stylesheets, <strong>25 are token-driven and 9 are pixel literals</strong> that ignore the Glass intensity slider entirely.</p>
+        <p style="margin-top:8px"><code>.k-cmdk</code> sets <code>blur(20px)</code> itself; the layer computes 13.2 + 4 = <strong>17.2px</strong> and overwrites it at higher specificity. Turning glass on makes the command palette <em>less</em> blurred.</p>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Tier</th><th class="num">n</th><th>Surfaces</th><th>Treatment</th></tr></thead>
+        <tbody>
+          <tr><td><strong>A · Scrims</strong></td><td class="num">11</td><td class="mono">.modal__scrim · .dr__scrim · .sheet__scrim · .bsh__scrim · .k-modal-scrim · .k-dr-scrim · .k-drawer-overlay · .adm__scrim · .aso__scrim · .mk-dr__scrim · .kv__scrim</td><td><span class="tag tag--go">Blur the backdrop</span> Already translucent — this one is free</td></tr>
+          <tr><td><strong>B · Floating panels</strong></td><td class="num">19</td><td class="mono">.sheet · .bsh · .k-modal · .k-dr · .mk-dr · .sr-modal · .aso · .adm__side · .k-cust · .k-dock__root · .k-toasts · .k-notif · .k-onboard · .k-offline · .dr__lb · .sr-lb · .kv__ask · .k-pager</td><td><span class="tag tag--go">Full material</span> Make translucent, then frost. <code>.sheet</code>/<code>.bsh</code> are 89's named inconsistency</td></tr>
+          <tr><td><strong>C · Sticky rails</strong></td><td class="num">18</td><td class="mono">.gr__side · .dr__sticky-top · .layout-header · .layout-sidebar · .tl__days · .tl__months · .tbv · .lgl__nav · .lnav · .cmp__mn · .emo__cat · .amx · .osc · .omt · .gn-coll · .bl--full</td><td><span class="tag tag--ok">Frost, selectively</span> Content visibly moves beneath. Cap the count — each is a live compositing layer</td></tr>
+          <tr><td><strong>D · Floating + glassed</strong></td><td class="num">5</td><td class="mono">.dr · .pop · .menu--float · .pk__pop · .tbl</td><td><span class="tag tag--ok">Correct</span> Leave alone</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rail">
+      <div class="note"><p><strong>Tier A is the recommendation if you do one thing.</strong> Eleven scrims, one shared rule, no background changes, no contrast risk. It is the change that makes someone say the product feels different, and it is an hour of work.</p></div>
+
+      <h3>Dashboards and analytics</h3>
+      <p>Mostly no. <code>.anx-card</code>, <code>.vgw</code> and <code>.vgw-kpi</code> are already glassed, and two of the three are non-surfaces from 89's P8 — <code>.vgw</code> is <code>flex</code> plus <code>overflow:hidden</code>, which <em>clips</em> the hover lift the layer gives it. Those come off; they do not get more.</p>
+      <p>But ViewGrid is a drag-and-drop dashboard, and drag creates a genuine floating layer with no material at all:</p>
+      <ul>
+        <li><strong><code>.vgw-ghost</code> — the drop target.</strong> Already translucent (<code>color-mix(--primary 10%, transparent)</code>), already floating, sitting directly over the grid it will land in. The most correct frost surface in the module, and currently the flattest.</li>
+        <li><strong>The carried card.</strong> A tile lifted off the grid is the one moment a KPI genuinely belongs to the floating layer — gain the material on grab, lose it on drop.</li>
+      </ul>
+      <p><strong>Glass belongs to the editing state, not the reading state.</strong> A dashboard being read should be flat and legible; a dashboard being rearranged should feel like moving physical cards.</p>
+
+      <h3>Reports</h3>
+      <ul>
+        <li><strong><code>.gr__side</code> — yes.</strong> <code>position: sticky; top: 24px</code> with its own scroll, holding still while the report body moves under it. Textbook frost.</li>
+        <li><strong><code>.gr__preview-paper</code> — never.</strong> It carries <code>0 30px 60px -50px</code>, a wide nearly-spreadless shadow that reads as a sheet lying on a surface. That is a paper metaphor, well executed. Translucent paper destroys the only thing it is saying.</li>
+        <li><strong><code>.gr__export</code>, <code>.gr__history</code>, <code>.gr__reg</code> — depth only.</strong> All <code>background: var(--surface)</code>, in-flow content cards. Warm shadow, no filter.</li>
+      </ul>
+
+      <h3>The guardrail</h3>
+      <ul>
+        <li><strong>Count simultaneous layers, not radius.</strong> Each <code>backdrop-filter</code> element re-samples every frame anything beneath it moves. A frosted sticky header over a 90-row table is one layer; all 18 Tier C surfaces at once on a 1366×768 integrated-graphics laptop is not. Pick six.</li>
+        <li><strong>Anything bearing text needs a barrier layer</strong> — a solid low-opacity fill beneath, so contrast is a property of the component rather than of whatever scrolled behind. Precisely what Apple added in iOS 27 after the AFB letter.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="s8">
+    <div class="sec__h"><span class="sec__n">08</span><h2>The vivid tier — yes, and you already own it</h2></div>
+    <p class="sec__s">"If glass needs a vivid ground, make the elements vivid." Correct. This section is that idea, costed and bounded.</p>
+
+    <div class="rail">
+      <p>The instinct is right and it is already half-built. <code>kartavaya-design.css:990</code> declares:</p>
+      <pre>--k-grad: linear-gradient(135deg,
+            var(--primary-hover), var(--primary) 55%, var(--primary-vivid));</pre>
+      <p>A brand gradient, <strong>derived from the user's own accent</strong>, so it follows whatever colour they pick with no extra work. It exists in both themes. It is used in <strong>twelve places — and every one of them is a fill between 4 and 8 pixels tall</strong>: progress bars, meter fills, bar-chart columns, the load bar.</p>
+      <p><strong>You have a vivid tier. It has simply never been allowed to be a surface.</strong> That is the whole change.</p>
+
+      <h3>One constraint, and it has a number</h3>
+      <p>Promoting it needs one fix first. Measured against white:</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Stop</th><th class="mono">Colour</th><th class="num">White text</th><th class="num">Ink text</th><th>Verdict as a surface</th></tr></thead>
+        <tbody>
+          <tr><td><code>--primary-hover</code> · 0%</td><td class="mono">#026B64</td><td class="num">6.38:1</td><td class="num">2.66:1</td><td><span class="tag tag--ok">White passes</span></td></tr>
+          <tr><td><code>--primary</code> · 55%</td><td class="mono">#04837A</td><td class="num">4.63:1</td><td class="num">3.66:1</td><td><span class="tag tag--ok">White passes, just</span></td></tr>
+          <tr><td><code>--primary-vivid</code> · 100%</td><td class="mono">#05B7AA</td><td class="num">2.51:1</td><td class="num">6.76:1</td><td><span class="tag tag--bad">White fails AA</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rail">
+      <p>So <code>--k-grad</code> cannot carry white text past its midpoint — which is <em>correct</em> for a 6px bar with no text on it, and disqualifying for a surface. <code>check-contrast.mjs</code> already records the sibling case in its own header: "<code>--primary</code> is a FILL at 4.04:1. Used as body-text colour it fails AA by a margin too small to notice by eye."</p>
+      <p>The answer is not to abandon the gradient. It is to add a second one, same hue family, deepened until white clears AA on every stop:</p>
+      <pre><span class="c">/* keep --k-grad exactly as it is — the 12 fills are correct */</span>
+<span class="add">--k-grad-surface: linear-gradient(135deg, #01554F, #046B64 55%, #05837C);</span>
+<span class="c">/* worst white stop 4.62:1 — clears AA body text across the whole sweep */</span></pre>
+
+      <h3>The rule that decides how much vivid</h3>
+      <p>Look again at every reference you sent. iOS Control Center: vivid <em>wallpaper</em>, glass controls on top. Windows 11 Start: vivid <em>desktop</em>, acrylic menu on top. The referral card: vivid card — but <strong>one</strong> card on a page.</p>
+      <p>In all three the vivid thing is the <em>ground</em> and the glass is a <em>smaller thing sitting on it</em>. Never the reverse, and never everything at once. That is not a style preference; it is the mechanism. <strong>Glass works by contrast between two layers. If every layer is vivid and translucent, there are no layers</strong> — which is precisely how iOS 26 earned "Liquid Glass Is Cracked".</p>
+      <p>Here is the same screen built both ways, in your real tokens:</p>
+    </div>
+
+    <div class="card">
+      <div class="card__h"><span class="card__t">One vivid zone vs. vivid everywhere</span></div>
+      <div class="two">
+        <div class="two__c">
+          <div class="two__h two__h--y">Vivid as a zone — glass reads</div>
+          <div class="vv">
+            <p class="vv__l">This quarter</p>
+            <div class="vv__row">
+              <div class="vk"><div class="vk__k">₹18.4L</div><div class="vk__c">Invoiced</div></div>
+              <div class="vk"><div class="vk__k">₹12.1L</div><div class="vk__c">Collected</div></div>
+              <div class="vk"><div class="vk__k">47</div><div class="vk__c">Open deals</div></div>
+            </div>
+          </div>
+          <div class="vv-calm">
+            <table>
+              <thead><tr><th>Client</th><th class="num">Outstanding</th></tr></thead>
+              <tbody>
+                <tr><td>Unicode Systems</td><td class="num">₹4,20,000</td></tr>
+                <tr><td>AekamINC UK</td><td class="num">₹1,85,500</td></tr>
+                <tr><td>Nandan &amp; Co</td><td class="num">₹96,200</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="two__f">The KPI strip is the ground; the three tiles are real glass on it. Below the fold the data returns to cream, where ninety rows of tabular numerals belong. Two layers, clearly ordered.</p>
+        </div>
+        <div class="two__c">
+          <div class="two__h two__h--n">Vivid everywhere — glass disappears</div>
+          <div class="vv vv--all">
+            <p class="vv__l">This quarter</p>
+            <div class="vv__row">
+              <div class="vk"><div class="vk__k">₹18.4L</div><div class="vk__c">Invoiced</div></div>
+              <div class="vk"><div class="vk__k">₹12.1L</div><div class="vk__c">Collected</div></div>
+              <div class="vk"><div class="vk__k">47</div><div class="vk__c">Open deals</div></div>
+            </div>
+            <div class="vv-calm">
+              <table>
+                <thead><tr><th>Client</th><th class="num">Outstanding</th></tr></thead>
+                <tbody>
+                  <tr><td>Unicode Systems</td><td class="num">₹4,20,000</td></tr>
+                  <tr><td>AekamINC UK</td><td class="num">₹1,85,500</td></tr>
+                  <tr><td>Nandan &amp; Co</td><td class="num">₹96,200</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p class="two__f">Same gradient, same glass recipe, applied to everything. The tiles stop reading as objects on a surface and become patches of the surface. Nothing is above anything. This is the failure mode, and it gets worse as real data density arrives.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail">
+      <div class="note">
+        <p><strong>The budget: one vivid zone per screen.</strong> Not one per card, not one per module — one per screen. It is a scarce resource and its whole value is that it is the brightest thing present.</p>
+      </div>
+
+      <h3>Where the vivid tier goes</h3>
+      <p>Ranked by how much each earns it. All use <code>--k-grad-surface</code>, so all follow the user's accent automatically.</p>
+    </div>
+
+    <div class="rx">
+      <div class="rx__c">
+        <p class="rx__t">The Today hero strip</p>
+        <p class="rx__m">--k-grad-surface · the first screen</p>
+        <p>The KPI band at the top of Today — the four figures everyone reads first. Vivid ground, glass tiles on it, everything below stays cream.</p>
+        <ul><li>Solves the "glass has nowhere to live" problem in one stroke</li><li>Gives <code>ixFadeUp</code> its most visible call site</li><li>Also fixes the flattest thing on the first screen</li></ul>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">Feature and announcement cards</p>
+        <p class="rx__m">exactly your reference image</p>
+        <p>The referral card you sent. Ephemeral, floating, over content — the overlay layer, where Apple's rule and proposal 89's role table both say glass belongs.</p>
+        <ul><li>One at a time, never a wall of them</li><li>Barrier layer under the text regardless of the gradient</li></ul>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">Module header icon tiles</p>
+        <p class="rx__m">.mh__ic — already gradient-filled</p>
+        <p>Precedent already exists: <code>liquid-glass.css</code> describes <code>.mh__ic</code> as "a small tinted glyph… the same rim reads correctly on its gradient fill". That is the vivid tier, already shipped, at 32px.</p>
+        <ul><li>The pattern is proven; it just needs to be allowed to grow</li></ul>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">Auth, onboarding, empty states</p>
+        <p class="rx__m">no data on screen = no contrast risk</p>
+        <p>Screens with nothing to read carefully are free real estate for the material. Auth already has <code>auWmDrift</code>; the onboarding wizard and every empty state can carry the full treatment at no cost.</p>
+        <ul><li>These are also the screens that set first impressions</li></ul>
+      </div>
+    </div>
+
+    <div class="rail">
+      <h3>Where it must not go, and why that is not timidity</h3>
+      <ul>
+        <li><strong>Behind tabular data.</strong> Ninety rows of rupee figures at <code>--row-h: 66px</code> need a calm ground and a working <code>--on-surface-3</code>. A gradient behind them puts every cell at a different contrast ratio, which is unfixable rather than merely ugly.</li>
+        <li><strong>Anywhere semantic colour has to survive.</strong> <code>--ok</code>, <code>--warn</code> and <code>--danger</code> carry meaning on this data. An amber warn chip on a vivid teal card stops reading as a warning and starts reading as decoration — and that is a correctness bug, not an aesthetic one.</li>
+        <li><strong>More than once per screen.</strong> See the right-hand panel above.</li>
+      </ul>
+      <div class="note">
+        <p><strong>So the answer to your question is yes — with a budget.</strong> Add one token, promote the tier you already have from a 6px bar to a surface, and spend it on one zone per screen. That is roughly the same amount of work as the first four items in §13, and it is the change that makes everything else in this document visible: glass gets a ground, depth gets contrast, and the cream stays exactly where it is good — under the data.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ PART III ══════════════════ -->
+  <div class="part">
+    <span class="part__n">Part III</span>
+    <span class="part__t">Surfaces — where it lands</span>
+    <span class="part__d">The screens people actually open.</span>
+  </div>
+
+  <section id="s9">
+    <div class="sec__h"><span class="sec__n">09</span><h2>Today, control by control</h2></div>
+    <p class="sec__s">Ten components, 22 interactive controls, and <code>today.css</code> declares zero motion.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Component</th><th class="num">Controls</th><th>What they do</th><th>Motion it should carry</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">ApprovalsCard</td><td class="num">11</td><td>Approve / reject each pending item inline, retry a failed load, open the queue</td><td><span class="tag tag--go">Highest value</span> Row collapses on decide; undo toast; optimistic <code>opacity .6</code></td></tr>
+          <tr><td class="mono">CashPosition</td><td class="num">3</td><td>Switch the cash window, drill to Ganit</td><td>Figure re-counts on change; bars re-fill on <code>--ease-fill</code></td></tr>
+          <tr><td class="mono">QuickActions</td><td class="num">2</td><td>New task, invoice, contact, log time</td><td>Icon nudge on hover; press-squish; stagger in on arrival</td></tr>
+          <tr><td class="mono">TaskListCard</td><td class="num">2</td><td>Tick a task, open the list</td><td><code>dmTickPop</code> + <code>bcTickDraw</code> — both already exist in boards.css</td></tr>
+          <tr><td class="mono">TeamPulse</td><td class="num">2</td><td>Presence, drill to team</td><td>Avatar stagger; presence dot pulses on state change only</td></tr>
+          <tr><td class="mono">ProjectStatus</td><td class="num">1</td><td>Open the project</td><td>Progress meters fill on mount — currently a transition, so dead</td></tr>
+          <tr><td class="mono">ReceivablesKPI · StatRow</td><td class="num">0</td><td>Display only — the first thing anyone reads</td><td><span class="tag tag--go">Do first</span> <code>ixFadeUp</code> stagger + count-up on changed figures</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rail">
+      <p><strong>ApprovalsCard carries half the screen's interactivity</strong> — eleven of twenty-two controls, and the only place on Today where a user changes state rather than navigates. An approve should feel decisive: the row collapses its height, the count above it decrements. And it must be undoable per MOTION-SPEC §7.2, not confirmed.</p>
+      <p><strong>QuickActions is glassed but is not a surface.</strong> <code>.k-quickacts</code> is <code>display:flex; flex-wrap; gap</code> — no background, no border, no radius. The layer paints a full drop shadow and inset shine around empty space, on the first screen a user sees.</p>
+    </div>
+    <div class="card"><div class="card__b">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px">
+        <div class="lift"><div class="lift__k">₹18.4L</div><div class="lift__c">Invoiced this quarter</div></div>
+        <div class="lift"><div class="lift__k">₹12.1L</div><div class="lift__c">Collected</div></div>
+        <div class="lift"><div class="lift__k">47</div><div class="lift__c">Open deals</div></div>
+        <div class="lift"><div class="lift__k">6.2d</div><div class="lift__c">Median cycle</div></div>
+      </div>
+    </div></div>
+    <div class="rail"><p>Hover those — the lift is <code>translateY(-2px)</code> multiplied by <code>--motion-scale</code>, so at <strong>Reduced</strong> it halves and at <strong>None</strong> it flattens while the border still responds. The affordance survives; the movement does not.</p></div>
+  </section>
+
+  <section id="s10">
+    <div class="sec__h"><span class="sec__n">10</span><h2>Onboarding — the two flows a recipient sees</h2></div>
+    <p class="sec__s">Not the founder's setup wizard and not the HR admin's queue. The two flows a person being onboarded actually meets — and they are chained.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Flow</th><th>Where it lives</th><th>Shape</th><th class="num">Motion</th></tr></thead>
+        <tbody>
+          <tr><td><strong>A · Member seat</strong><br><span style="color:var(--on-surface-3);font-size:12px">setting up a login</span></td><td class="mono">/accept-invite → AcceptInvitePage<br>(inside LoginPage.jsx) · auth.css</td><td>One screen, four states</td><td class="num"><span class="tag tag--ok">18</span></td></tr>
+          <tr><td><strong>B · Employee, via Pahchan</strong><br><span style="color:var(--on-surface-3);font-size:12px">consent, then a face</span></td><td class="mono">pahchan/Consent.jsx · Clock.jsx<br>EnrollQueue.jsx · pahchan.css</td><td>Three stages, two apps, one blocked wait</td><td class="num"><span class="tag tag--bad">1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rail">
+      <p><strong>One motion declaration in 902 lines of <code>pahchan.css</code></strong> against eighteen in <code>auth.css</code>. The flow that asks a person for their face and their consent is the least animated surface in the product.</p>
+      <p><strong>Flow A</strong> is a single screen holding <code>{name, password, confirm}</code> resolving into four states: checking, link incomplete, no longer valid, and the form. <code>auth.css</code> gives it real craft — <code>auShake</code>, <code>auFldE</code>, <code>auBannerIn</code>. The gap is <em>between</em> states: <code>invite === undefined</code> swaps to the form on a frame boundary, so the most anxious moment in the flow resolves with no transition. Crossfade it, and let the password rules resolve as they are met rather than appearing as a block on error.</p>
+      <p><strong>Flow B:</strong> <code>EmployeesTab</code> fires the same <code>POST /api/v1/org/invites</code>, so an employee does Flow A first, then consent (a genuine DPDP decision) → reference photo through <code>Clock.jsx</code> → admin approval in <code>EnrollQueue</code>.</p>
+      <div class="note">
+        <p><strong>The structural finding, ahead of any animation.</strong> That chain crosses three separate state stores — the invite, the consent record, the enrolment queue — and <strong>nothing shows either the employee or the HR admin how far along a person is</strong>. The employee finishes consent with no indication a photo is still owed; the admin sees a queue, not a progress state.</p>
+        <p><code>EnrollQueue</code> already answers <code>{pending_approval, incomplete}</code>. The data exists. The view does not. Build a four-step header — Invite → Consent → Photo → Approved — before animating anything.</p>
+      </div>
+    </div>
+    <div class="rx">
+      <div class="rx__c">
+        <p class="rx__t">The camera phases</p>
+        <p class="rx__m">--dur-base · --ease-emph · directional</p>
+        <p><code>Clock.jsx</code> is a five-phase state machine — <code>ready → framing → review → sending → done</code> — and every phase change is an instant DOM swap.</p>
+        <ul>
+          <li><code>ready → framing</code>: the viewfinder opens — scale from centre, not a fade</li>
+          <li><code>framing → review</code>: a shutter beat on <code>--dur-instant</code> is the one place a hard cut is right</li>
+          <li><code>review → framing</code> on retake: reverse the entrance, as <code>obBack</code> already does in the org wizard</li>
+          <li><code>sending</code>: needs determinate feedback — <code>compressCapture</code> walks a quality ladder to a 600 KB budget and that takes real time</li>
+        </ul>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">The blocked wait</p>
+        <p class="rx__m">the strongest motion case you have</p>
+        <p>After submitting a photo the employee can do nothing until an admin approves. The one state where a person is genuinely stuck and the interface owes them evidence the system is alive.</p>
+        <ul><li>Not a spinner — a stated status with the pending item shown</li><li>Approval should arrive with <code>ix-flash</code>, not on the next refresh</li></ul>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">Consent — deliberately quiet</p>
+        <p class="rx__m">--dur-fast · --ease-standard only</p>
+        <p>The exception to everything else here. A legal decision under DPDP, and motion that makes one option feel lighter than the other is a dark pattern whatever the intent.</p>
+        <ul><li>Agree and decline get identical duration, curve and weight</li><li>No celebration on agree. Ever.</li></ul>
+      </div>
+      <div class="rx__c">
+        <p class="rx__t">And the third flow, worth keeping</p>
+        <p class="rx__m">obIn / obBack — already correct</p>
+        <p>The founder's wizard in <code>pages/onboarding/</code> runs <code>obIn</code> forward and <code>obBack</code> in reverse, so direction of travel is expressed. Most products never do this — and it is exactly what Pahchan's retake needs. Borrow it.</p>
+        <ul><li>If a celebration is added anywhere it belongs on <code>StepDone</code> and nowhere else — confetti on the eleventh win is noise, and by the twelfth it reads as condescending</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="s11">
+    <div class="sec__h"><span class="sec__n">11</span><h2>Tabs and icons — what "modern" actually means</h2></div>
+    <p class="sec__s">The cheapest change that reads as a generational upgrade.</p>
+    <div class="rail">
+      <p>Your module tabs <em>do</em> animate — <code>.mt__b.on::after</code> runs <code>ixTabInd</code>, a <code>scaleX</code> grow from centre, correctly avoiding a width animation. But it grows <strong>in place</strong>: the old underline vanishes, a new one inflates at the new tab. The modern pattern is <strong>one indicator that travels</strong>. Same frame budget; the eye is led from where it was to where it is.</p>
+    </div>
+    <div class="card">
+      <div class="card__h"><span class="card__t">Grow-in-place vs. travel</span></div>
+      <div class="card__b">
+        <p style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--danger);margin:0 0 7px">Today — ixTabInd</p>
+        <div class="tabs tabs--pop" id="t1" role="tablist">
+          <button class="tb on" role="tab" aria-selected="true">Overview</button>
+          <button class="tb" role="tab" aria-selected="false">Revenue</button>
+          <button class="tb" role="tab" aria-selected="false">Pipeline</button>
+          <button class="tb" role="tab" aria-selected="false">HR</button>
+        </div>
+        <p class="tpanel">The underline at the old tab disappears; a new one inflates at the new tab. Nothing connects the two.</p>
+        <p style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ok);margin:24px 0 7px">Proposed — one indicator, travelling</p>
+        <div class="tabs tabs--slide" id="t2" role="tablist">
+          <button class="tb on" role="tab" aria-selected="true">Overview</button>
+          <button class="tb" role="tab" aria-selected="false">Revenue</button>
+          <button class="tb" role="tab" aria-selected="false">Pipeline</button>
+          <button class="tb" role="tab" aria-selected="false">HR</button>
+          <span class="tind" id="tind" aria-hidden="true"></span>
+        </div>
+        <p class="tpanel">The same indicator moves, so the relationship between the two tabs is expressed rather than implied.</p>
+      </div>
+    </div>
+    <div class="rail">
+      <p>Roughly fifteen lines: one shared <code>&lt;span&gt;</code>, a <code>transform: translateX()</code> and <code>width</code> read off the active button's <code>offsetLeft</code>/<code>offsetWidth</code>, on <code>--dur-base</code>/<code>--ease-emph</code>. It replaces <code>ixTabInd</code> rather than adding to it.</p>
+      <h3>Icons</h3>
+      <p>You are on <code>lucide-react</code> with a consistent 16px stroke set in <code>navIcons.jsx</code> — the right foundation. Drop-in animated wrappers exist (Motion Icons, lucide-animated, Lucide React Motion), but <strong>copy rather than depend</strong>: they pull in <code>motion/react</code>, which puts their durations and easings outside <code>check-motion.mjs</code> — the exact blindness the JSX half of that gate was written to close. Take the three or four that earn their place — a check that draws, a bell that tilts on a new notification, a refresh that spins while fetching — and author them against your own tokens. And keep it rare: an icon that animates on hover everywhere is a page that fidgets.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ PART IV ══════════════════ -->
+  <div class="part">
+    <span class="part__n">Part IV</span>
+    <span class="part__t">Decisions</span>
+    <span class="part__d">What to adopt, what to refuse, and in what order.</span>
+  </div>
+
+  <section id="s12">
+    <div class="sec__h"><span class="sec__n">12</span><h2>The library question</h2></div>
+    <p class="sec__s">Still mostly no — but for a more specific reason than bundle size.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Option</th><th class="num">Bundle</th><th>Gain</th><th>Lose</th><th>Verdict</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Hand-rolled divs<br>(today)</td><td class="num">0 kB</td><td>Inherits theme, density, type scale, accent, both themes</td><td>Bars, funnels, meters only — no line, area or donut</td><td><span class="tag tag--ok">Keep</span></td></tr>
+          <tr><td class="mono">Recharts</td><td class="num">~150 kB</td><td>Ecosystem default — 48.9M weekly downloads</td><td>Own theming model; motion outside your gate</td><td><span class="tag tag--bad">No</span></td></tr>
+          <tr><td class="mono">Tremor</td><td class="num">~200 kB</td><td>Pre-styled SaaS dashboard components</td><td>Opinionated shadcn aesthetic — fights the cream directly</td><td><span class="tag tag--bad">No</span></td></tr>
+          <tr><td class="mono">Nivo</td><td class="num">500 kB+</td><td>30+ chart types; only one meeting WCAG 2.1 AA out of the box</td><td>Bundle, and an SSR model you do not need</td><td><span class="tag tag--bad">No</span></td></tr>
+          <tr><td class="mono">visx</td><td class="num">modular</td><td>D3 primitives, tree-shakes, you own the rendering</td><td>2–3× longer to build the first chart without D3 experience</td><td><span class="tag tag--mid">Only if</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rail">
+      <p>The honest gap is <strong>chart vocabulary, not chart quality</strong>. Dristi has <code>.vgw-spark</code> and <code>.vgw-trend</code>, but both render as micro-<em>bars</em> — the component name exists, the line does not. A finance product without a time series is missing the shape its users think in. But a sparkline is an SVG <code>polyline</code> and about twenty lines; a line chart with a grid and axis, maybe eighty. That is materially less work than adopting, theming and gating a 150 kB dependency.</p>
+      <p>Reconsider only if you commit to heatmaps, treemaps or geographic plots. Then <strong>visx</strong> is the right door.</p>
+    </div>
+  </section>
+
+  <section id="s13">
+    <div class="sec__h"><span class="sec__n">13</span><h2>Sequencing</h2></div>
+    <p class="sec__s">Ordered by visible change per unit of risk. The first four total about a dozen lines.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th class="num">#</th><th>Change</th><th>Where</th><th>Effort</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td>Warm and strengthen <code>--lg-shadow</code> / <code>--lg-inset</code></td><td class="mono">liquid-glass.css</td><td>3 lines</td><td><span class="tag tag--go">Glass becomes visible</span></td></tr>
+          <tr><td class="num">2</td><td>Blur all 11 scrims</td><td class="mono">components · drawer · editorial</td><td>1 rule</td><td><span class="tag tag--go">Biggest impression per line</span></td></tr>
+          <tr><td class="num">3</td><td>Raise <code>--glass-alpha</code> coefficient .28 → .45</td><td class="mono">kartavaya-design.css</td><td>1 number</td><td><span class="tag tag--go">Frost becomes visible</span></td></tr>
+          <tr><td class="num">4</td><td><code>--lg-dur</code> onto <code>--ix</code>; <code>--lg-lift</code> onto <code>--motion-scale</code></td><td class="mono">liquid-glass.css</td><td>2 lines</td><td><span class="tag tag--ok">A11y correctness</span></td></tr>
+          <tr><td class="num">5</td><td>Mount animation on the three chart primitives</td><td class="mono">module.css · _shared.jsx</td><td>1 afternoon</td><td><span class="tag tag--go">13 tabs at once</span></td></tr>
+          <tr><td class="num">6</td><td>Add <code>--k-grad-surface</code> and put the Today hero strip on it</td><td class="mono">kartavaya-design.css · today.css</td><td>1 token + ½ day</td><td><span class="tag tag--go">Glass gets a ground</span></td></tr>
+          <tr><td class="num">7</td><td>Widen the surface ramp — the seven hex values in §05</td><td class="mono">kartavaya-design.css</td><td>7 values</td><td><span class="tag tag--go">Elevation reads</span></td></tr>
+          <tr><td class="num">8</td><td>Give <code>ixFadeUp</code> its call sites — KPI rows, card grids</td><td class="mono">editorial.css</td><td>½ day</td><td><span class="tag tag--go">Product-wide</span></td></tr>
+          <tr><td class="num">9</td><td>Drop the 8 non-surfaces from the glass list</td><td class="mono">liquid-glass.css</td><td>8 identifiers</td><td><span class="tag tag--ok">Removes artefacts</span></td></tr>
+          <tr><td class="num">10</td><td>Motion pass on Today — stat row, approvals, quick actions</td><td class="mono">today.css</td><td>1 day</td><td><span class="tag tag--go">First screen</span></td></tr>
+          <tr><td class="num">11</td><td>Onboarding progress header + Pahchan camera phases</td><td class="mono">pahchan.css · Clock.jsx</td><td>1–2 days</td><td><span class="tag tag--go">Least-served flow</span></td></tr>
+          <tr><td class="num">12</td><td>Sliding tab indicator</td><td class="mono">module.css</td><td>~15 lines</td><td><span class="tag tag--go">Reads as modern</span></td></tr>
+          <tr><td class="num">13</td><td>Sparklines beside the KPIs</td><td class="mono">_shared.jsx</td><td>~20 lines</td><td><span class="tag tag--ok">New vocabulary</span></td></tr>
+          <tr><td class="num">14</td><td><code>check-orphan-keyframes.mjs</code> into the gate suite</td><td class="mono">scripts/</td><td>~30 lines</td><td><span class="tag tag--ok">Prevents recurrence</span></td></tr>
+          <tr><td class="num">15</td><td>Extend the vivid tier — feature cards, auth, empty states</td><td class="mono">per surface</td><td>Design work</td><td><span class="tag tag--mid">Needs your call</span></td></tr>
+          <tr><td class="num">16</td><td>Apply proposal 89's role table in full</td><td class="mono">liquid-glass.css</td><td>1 day</td><td><span class="tag tag--ok">Closes 89</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rail">
+      <p>Items 1–4 are roughly a dozen lines across three files and will change how the whole product feels. Ship those, look at it for a day, then decide how much of the rest you want. Item 6 is the one that gives glass somewhere to live, and it is a single token plus half a day. Item 15 is the only entry needing a design decision rather than an implementation; item 14 is what stops this being re-derived in six months.</p>
+      <div class="note"><p><strong>What I would not do:</strong> replace the cream, adopt a chart library, adopt an animation library, or add neumorphism. Your own slide already gives the verdict on the last one — <em>beautiful in a mockup, brutal in a contrast audit</em>. It encodes state purely in soft shadow, fails WCAG 1.4.11 almost by construction, and cannot render a focus ring because the ring and the extrusion are the same device. You ship <code>check-contrast.mjs</code>; neumorphism is what that ratchet exists to stop.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>Method.</strong> Read-only sweep of <code>frontend/src</code> at branch <code>staging</code>, 2026-08-29 — 55 stylesheets under <code>src/styles</code> (58 CSS files, 35,325 lines), 336 page components. Counts are direct greps of declaration sites. Luminance and contrast figures use the WCAG 2.x relative-luminance formula on the hex literals in <code>kartavaya-design.css</code> §7. The floating-layer set was produced by parsing every stylesheet for rules whose own block declares <code>position: sticky|fixed</code>. No repository file was modified.</p>
+    <p><strong>Prior art.</strong> §06 and §07 build on <code>docs/proposals/88-liquid-glass.html</code> and <code>89-liquid-glass-rescope.html</code> rather than re-deriving them; the role table referenced in §07 is 89's, endorsed unchanged, and the P-number statuses are measured against <code>liquid-glass.css</code> as it stands today — 334 lines against the 194 that 89 audited.</p>
+    <p><strong>Corrections carried into this merge.</strong> An earlier draft put the light ramp at 1.202:1; that was five of seven surfaces — the correct figure is <strong>1.410:1</strong>. An earlier draft implied <code>ixTabInd</code> was unused; it is applied to <code>.mt__b.on::after</code>. An earlier draft said there was no sparkline anywhere; <code>.vgw-spark</code> exists but renders as bars. And §09 originally described the founder's wizard and the HR queue rather than the two recipient flows.</p>
+    <p><strong>Sources.</strong>
+      <a href="https://www.nngroup.com/articles/animation-purpose-ux/">NN/g — Animation and Motion in UX</a> ·
+      <a href="https://www.nngroup.com/articles/liquid-glass/">NN/g — Liquid Glass Is Cracked</a> ·
+      <a href="https://web.dev/blog/baseline-entry-animations">web.dev — Baseline entry animations</a> ·
+      <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@starting-style">MDN — @starting-style</a> ·
+      <a href="https://developer.mozilla.org/en-US/docs/Web/API/View_Transition_API/Using">MDN — View Transitions</a> ·
+      <a href="https://m3.material.io/styles/motion/overview/specs">Material 3 — Motion specs</a> ·
+      <a href="https://axesslab.com/glassmorphism-meets-accessibility-can-frosted-glass-be-inclusive/">Axess Lab — Can frosted glass be inclusive?</a> ·
+      <a href="https://blog.logrocket.com/best-react-chart-libraries-2026/">LogRocket — React chart libraries 2026</a> ·
+      <a href="https://kompassify.com/blog/onboarding-gamification-guide">Onboarding gamification — what backfires</a>
+    </p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+
+  /* ── Segmented switches ─────────────────────────────────────────────────
+     Scoped to the switchboard. These same attribute names get written onto
+     <html> to drive the tokens, so an unscoped query would match the root
+     element itself once a switch had been used. */
+  function seg(attr, apply) {
+    var btns = Array.prototype.slice.call(document.querySelectorAll('.sw [data-' + attr + ']'));
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+        apply(b.getAttribute('data-' + attr));
+      });
+    });
+  }
+
+  /* This document exists to show the cream design system, and every figure in
+     it — the 1.410:1 ramp, the warm shadows, the light-arm glass — is about the
+     light theme. So it opens on Cream regardless of the viewer's own setting,
+     with the switch right there to go back to dark. */
+  seg('theme', function (v) { root.setAttribute('data-theme', v); paintRamp(); });
+  root.setAttribute('data-theme', 'light');
+  seg('ramp',   function (v) { if (v === 'current') root.removeAttribute('data-ramp'); else root.setAttribute('data-ramp', v); paintRamp(); });
+  seg('shadow', function (v) { if (v === 'current') root.removeAttribute('data-shadow'); else root.setAttribute('data-shadow', v); });
+  seg('ix', function (v) {
+    // Writes --ix-user and --motion-scale-user, never --ix. An inline style on
+    // the root outranks a media query, so writing --ix here would silently
+    // override a user's OS reduced-motion setting. The product's own rule.
+    var ix = v === '0' ? 0.001 : Number(v);
+    root.style.setProperty('--ix-user', String(ix));
+    root.style.setProperty('--motion-scale-user', v === '0' ? '0' : String(Number(v)));
+    restart(c2);
+  });
+
+  /* ── The ramp table, recomputed from the live tokens ─────────────────── */
+  var NAMES = ['--s-lowest', '--surface', '--s-low', '--bg', '--s-container', '--s-high', '--s-highest'];
+
+  function lin(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+  function lum(rgb) { return 0.2126 * lin(rgb[0] / 255) + 0.7152 * lin(rgb[1] / 255) + 0.0722 * lin(rgb[2] / 255); }
+  function ratio(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function parse(s) {
+    s = s.trim();
+    var m = s.match(/^#([0-9a-f]{6})$/i);
+    if (m) return [0, 2, 4].map(function (i) { return parseInt(m[1].substr(i, 2), 16); });
+    m = s.match(/rgba?\(([^)]+)\)/);
+    if (m) return m[1].split(',').slice(0, 3).map(function (n) { return parseInt(n, 10); });
+    return [255, 255, 255];
+  }
+  function hex(rgb) { return '#' + rgb.map(function (v) { return v.toString(16).padStart(2, '0').toUpperCase(); }).join(''); }
+
+  var rampEl = document.getElementById('ramp');
+  function paintRamp() {
+    var cs = getComputedStyle(root);
+    var rows = NAMES.map(function (n) { return { n: n, c: parse(cs.getPropertyValue(n)) }; });
+    rampEl.innerHTML = rows.map(function (r, i) {
+      var next = rows[i + 1];
+      var step = next ? ratio(r.c, next.c) : null;
+      var cls = step === null ? '' : (step < 1.03 ? 'tight' : 'fine');
+      return '<div class="rung rung--' + i + '">' +
+               '<span class="rung__n">' + r.n + '</span>' +
+               '<span class="rung__v">' + hex(r.c) + '</span>' +
+               '<span class="rung__r ' + cls + '">' + (step ? '↕ ' + step.toFixed(3) : '') + '</span>' +
+             '</div>';
+    }).join('');
+  }
+
+  /* ── Chart A/B ──────────────────────────────────────────────────────── */
+  var DATA = [{ x: 'Mar', v: 42 }, { x: 'Apr', v: 58 }, { x: 'May', v: 51 },
+              { x: 'Jun', v: 73 }, { x: 'Jul', v: 66 }, { x: 'Aug', v: 88 }];
+  var max = DATA.reduce(function (m, d) { return Math.max(m, d.v); }, 0);
+  function build(el) {
+    el.innerHTML = DATA.map(function (d, n) {
+      return '<div class="chart__c" style="--i:' + n + '">' +
+               '<span class="chart__v">' + d.v + '</span>' +
+               '<span class="chart__t"><span class="chart__b" style="--h:' + Math.round(d.v / max * 100) + '%"></span></span>' +
+               '<span class="chart__x">' + d.x + '</span></div>';
+    }).join('');
+  }
+  var c1 = document.getElementById('c1'), c2 = document.getElementById('c2');
+  build(c1); build(c2);
+
+  function restart(el) { if (!el) return; el.classList.remove('go'); void el.offsetWidth; el.classList.add('go'); }
+  document.getElementById('replay').addEventListener('click', function () { restart(c2); });
+
+  if ('IntersectionObserver' in window) {
+    var seen = new WeakSet();
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting || seen.has(e.target)) return;
+        seen.add(e.target); restart(e.target);
+      });
+    }, { threshold: 0.35 });
+    io.observe(c2);
+  } else { restart(c2); }
+
+  /* ── Reduce-transparency toggle ─────────────────────────────────────── */
+  document.getElementById('solid').addEventListener('change', function () {
+    document.getElementById('g2').classList.toggle('solid', this.checked);
+  });
+
+  /* ── Tab demos ──────────────────────────────────────────────────────── */
+  function wire(root_, onChange) {
+    var btns = Array.prototype.slice.call(root_.querySelectorAll('.tb'));
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        btns.forEach(function (o) { o.classList.remove('on'); o.setAttribute('aria-selected', 'false'); });
+        b.classList.add('on'); b.setAttribute('aria-selected', 'true');
+        if (onChange) onChange(b);
+      });
+    });
+  }
+  wire(document.getElementById('t1'));
+  var t2 = document.getElementById('t2'), tind = document.getElementById('tind');
+  function place(btn, animate) {
+    if (!btn) return;
+    var pad = 11;
+    if (!animate) tind.style.transition = 'none';
+    tind.style.width = Math.max(0, btn.offsetWidth - pad * 2) + 'px';
+    tind.style.transform = 'translateX(' + (btn.offsetLeft + pad) + 'px)';
+    if (!animate) { void tind.offsetWidth; tind.style.transition = ''; }
+  }
+  wire(t2, function (b) { place(b, true); });
+  place(t2.querySelector('.tb.on'), false);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { place(t2.querySelector('.tb.on'), false); paintRamp(); });
+  }
+  window.addEventListener('resize', function () { place(t2.querySelector('.tb.on'), false); });
+
+  paintRamp();
+})();
+</script>

@@ -1,0 +1,745 @@
+<title>Kartavaya Launch Deck</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --ground:    #F3EFE6;
+    --slide:     #FAF7F0;
+    --raised:    #EEE9DC;
+    --sunk:      #E7E1D1;
+    --ink:       #1B1D1A;
+    --ink-2:     #4A4E48;
+    --ink-3:     #5E625A;
+    --rule:      #D8D1BE;
+    --rule-firm: #B8B098;
+    --teal:      #04837A;
+    --teal-text: #046B64;
+    --teal-soft: #B4F1E8;
+    --clay:      #86552F;
+    --clay-soft: #FFDCC3;
+    --olive:     #5C6450;
+    --olive-soft:#E1E7D4;
+    --crit:      #B42318;
+    --crit-text: #8F1B12;
+    --crit-soft: #FBDDD9;
+    --warn:      #8B5206;
+    --warn-soft: #FBE9CC;
+    --ok:        #126B36;
+    --ok-soft:   #CFEBD9;
+    --dark:      #16180F;
+    --dark-ink:  #F1EDE1;
+    --dark-dim:  #A3A395;
+    --dark-rule: #34372A;
+
+    --serif:   "Newsreader", Georgia, "Times New Roman", serif;
+    --display: "Instrument Serif", "Newsreader", Georgia, serif;
+    --mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --deva:    "Tiro Devanagari Hindi", "Noto Sans Devanagari", serif;
+
+    --measure: 62ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:    #101109;
+      --slide:     #1A1C14;
+      --raised:    #22241B;
+      --sunk:      #2A2D22;
+      --ink:       #EFEBDF;
+      --ink-2:     #C3C0B3;
+      --ink-3:     #9C9B8E;
+      --rule:      #33362A;
+      --rule-firm: #4A4E3E;
+      --teal:      #4FD3C4;
+      --teal-text: #6FE0D2;
+      --teal-soft: #103430;
+      --clay:      #D79A63;
+      --clay-soft: #37260F;
+      --olive:     #9AA487;
+      --olive-soft:#242A19;
+      --crit:      #F1837A;
+      --crit-text: #F79E96;
+      --crit-soft: #381915;
+      --warn:      #E0A84A;
+      --warn-soft: #362710;
+      --ok:        #69C98C;
+      --ok-soft:   #10331F;
+      --dark:      #0A0B06;
+      --dark-ink:  #F1EDE1;
+      --dark-dim:  #9A9A8C;
+      --dark-rule: #2B2E22;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:    #101109;
+    --slide:     #1A1C14;
+    --raised:    #22241B;
+    --sunk:      #2A2D22;
+    --ink:       #EFEBDF;
+    --ink-2:     #C3C0B3;
+    --ink-3:     #9C9B8E;
+    --rule:      #33362A;
+    --rule-firm: #4A4E3E;
+    --teal:      #4FD3C4;
+    --teal-text: #6FE0D2;
+    --teal-soft: #103430;
+    --clay:      #D79A63;
+    --clay-soft: #37260F;
+    --olive:     #9AA487;
+    --olive-soft:#242A19;
+    --crit:      #F1837A;
+    --crit-text: #F79E96;
+    --crit-soft: #381915;
+    --warn:      #E0A84A;
+    --warn-soft: #362710;
+    --ok:        #69C98C;
+    --ok-soft:   #10331F;
+    --dark:      #0A0B06;
+    --dark-ink:  #F1EDE1;
+    --dark-dim:  #9A9A8C;
+    --dark-rule: #2B2E22;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .deck {
+    max-width: 74rem;
+    margin: 0 auto;
+    padding: clamp(1rem, 3vw, 2.5rem);
+    display: grid;
+    gap: clamp(1rem, 2.5vw, 1.75rem);
+  }
+
+  /* ---------- slide shell ---------- */
+
+  .slide {
+    background: var(--slide);
+    border: 1px solid var(--rule-firm);
+    padding: clamp(1.75rem, 4.5vw, 3.5rem);
+    display: grid;
+    gap: 1.5rem;
+    align-content: start;
+  }
+  .slide--dark {
+    background: var(--dark);
+    border-color: var(--dark-rule);
+    color: var(--dark-ink);
+  }
+  .slide--dark .kicker { color: var(--teal); }
+  .slide--dark .num    { color: var(--dark-dim); }
+  .slide--dark p       { color: var(--dark-dim); }
+  .slide--dark h2, .slide--dark h3, .slide--dark strong { color: var(--dark-ink); }
+
+  .slide__top {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.75rem;
+  }
+  .slide--dark .slide__top { border-color: var(--dark-rule); }
+
+  .num {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+    flex: none;
+  }
+  .kicker {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--teal-text);
+    flex: 1 1 auto;
+  }
+  .aud {
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border: 1px solid var(--rule-firm);
+    padding: 0.15rem 0.45rem;
+    flex: none;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(1.875rem, 4.6vw, 3.125rem);
+    line-height: 1.08;
+    letter-spacing: -0.012em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h2 em { font-style: italic; color: var(--teal-text); }
+  .slide--dark h2 em { color: var(--teal); }
+
+  h3 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1.0625rem;
+    line-height: 1.35;
+    margin: 0 0 0.4rem;
+  }
+
+  .slide p { margin: 0; max-width: var(--measure); color: var(--ink-2); }
+  .slide p.lead {
+    font-size: clamp(1.125rem, 2.1vw, 1.3125rem);
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .slide--dark p.lead { color: var(--dark-ink); }
+
+  /* ---------- cover ---------- */
+
+  .cover { padding: clamp(2.5rem, 7vw, 5.5rem) clamp(1.75rem, 5vw, 4rem); gap: 2rem; }
+  .cover h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(3rem, 9vw, 6rem);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    margin: 0;
+    color: var(--dark-ink);
+    text-wrap: balance;
+  }
+  .cover h1 .dv { display: block; font-family: var(--deva); font-size: 0.62em; line-height: 1.25; color: var(--teal); margin-top: 0.35rem; }
+  .cover .sub { font-size: clamp(1.0625rem, 2vw, 1.3125rem); color: var(--dark-dim); max-width: 54ch; }
+  .cover__foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dark-dim);
+    border-top: 1px solid var(--dark-rule);
+    padding-top: 1.25rem;
+  }
+  .cover__foot b { color: var(--teal); font-weight: 500; }
+
+  /* ---------- generic grids ---------- */
+
+  .cols {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+  .cell {
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    padding: 1.1rem 1.2rem;
+  }
+  .slide--dark .cell { background: #14160E; border-color: var(--dark-rule); }
+  .cell p { font-size: 0.9375rem; }
+
+  .cell--hi { background: var(--teal-soft); border-color: var(--teal); }
+
+  /* ---------- module grid ---------- */
+
+  .mods {
+    display: grid;
+    gap: 1px;
+    background: var(--rule-firm);
+    border: 1px solid var(--rule-firm);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  }
+  .mod {
+    background: var(--slide);
+    padding: 0.9rem 0.75rem;
+    text-align: center;
+  }
+  .mod__hi {
+    font-family: var(--deva);
+    font-size: 1.375rem;
+    line-height: 1.35;
+    color: var(--ink);
+  }
+  .mod__en {
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-top: 0.25rem;
+  }
+
+  /* ---------- tiers ---------- */
+
+  .tier {
+    border: 1px solid var(--rule);
+    background: var(--raised);
+    padding: 1.1rem 1.2rem;
+    display: grid;
+    gap: 0.4rem;
+    align-content: start;
+  }
+  .tier--hi { border-color: var(--teal); background: var(--teal-soft); }
+  .tier__n {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--teal-text);
+    font-weight: 700;
+  }
+  .tier p { font-size: 0.9375rem; }
+
+  /* ---------- lists ---------- */
+
+  ul.pts { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.7rem; }
+  ul.pts li { max-width: var(--measure); color: var(--ink-2); }
+  ul.pts li::marker { color: var(--teal-text); }
+  .slide--dark ul.pts li { color: var(--dark-dim); }
+  ul.pts li strong { color: var(--ink); }
+  .slide--dark ul.pts li strong { color: var(--dark-ink); }
+
+  /* ---------- status chips ---------- */
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .chip--live  { color: var(--ok);        background: var(--ok-soft); }
+  .chip--block { color: var(--crit-text); background: var(--crit-soft); }
+  .chip--open  { color: var(--warn);      background: var(--warn-soft); }
+
+  .tw { overflow-x: auto; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; background: var(--slide); }
+  th, td { text-align: left; padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--raised);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.who { font-family: var(--mono); font-size: 0.75rem; white-space: nowrap; color: var(--ink-2); }
+
+  /* ---------- fill-in marker ---------- */
+
+  .fill {
+    font-family: var(--mono);
+    font-size: 0.8125rem;
+    color: var(--clay);
+    background: var(--clay-soft);
+    border: 1px dashed var(--clay);
+    padding: 0.15rem 0.45rem;
+    white-space: nowrap;
+  }
+
+  .note {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--clay);
+    background: var(--clay-soft);
+    padding: 1rem 1.2rem;
+  }
+  .note p { color: var(--ink-2); }
+  .note .label {
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--clay);
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+
+  .dv { font-family: var(--deva); }
+  code { font-family: var(--mono); font-size: 0.86em; }
+  strong { font-weight: 600; color: var(--ink); }
+  a { color: var(--teal-text); text-underline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  .deckfoot {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    line-height: 1.9;
+    color: var(--ink-3);
+    text-align: center;
+    padding: 1rem 0 2rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="deck">
+
+  <!-- 01 COVER -->
+  <section class="slide slide--dark cover">
+    <h1>Kartavaya<span class="dv">आपकी भाषा</span></h1>
+    <p class="sub">
+      Practice management for Indian firms. Tasks, CRM, invoicing, procurement,
+      payroll and attendance in one place — with GST built in rather than bolted on.
+    </p>
+    <div class="cover__foot">
+      <span><b>Aekam Inc</b></span>
+      <span>kartavaya.com</span>
+      <span>Launch deck</span>
+      <span>August 2026</span>
+    </div>
+  </section>
+
+  <!-- 02 PROBLEM -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">02</span>
+      <span class="kicker">The problem</span>
+    </div>
+    <h2>An Indian firm runs on six tools and a WhatsApp group.</h2>
+    <p class="lead">
+      Tasks in one place, invoices in another, payroll in a spreadsheet, client
+      approvals in a thread nobody can find six months later. The compliance work
+      that defines the practice — GST returns, HSN codes, place of supply — lives
+      in whichever tool was cheapest, bolted on as an afterthought by a vendor who
+      has never filed a GSTR-3B.
+    </p>
+    <div class="cols">
+      <div class="cell">
+        <h3>Nothing joins up</h3>
+        <p>The invoice does not know about the task. The task does not know the client approved. Someone re-keys it.</p>
+      </div>
+      <div class="cell">
+        <h3>Everyone sees everything</h3>
+        <p>Payroll and partner billing sit in the same shared drive as the intern's task list, because access control was never the tool's job.</p>
+      </div>
+      <div class="cell">
+        <h3>The client is outside it</h3>
+        <p>Approvals happen over email and WhatsApp, so there is no record of who agreed to what, or when.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 WHY GLOBAL TOOLS DON'T FIT -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">03</span>
+      <span class="kicker">Why the obvious answer fails</span>
+    </div>
+    <h2>The global tools are excellent, and they are the <em>wrong shape</em>.</h2>
+    <p>
+      Asana, Trello, ClickUp and Monday solve project management beautifully for a
+      software team in San Francisco. Dropped into a chartered accountancy practice
+      in Ahmedabad, three things break, and no amount of configuration fixes them.
+    </p>
+    <div class="cols">
+      <div class="cell">
+        <h3>GST is not a plugin</h3>
+        <p>CGST/SGST/IGST splits, place of supply, HSN and SAC, LUT export invoices and GSTR summaries are not custom fields. They are the work.</p>
+      </div>
+      <div class="cell">
+        <h3>The client has no seat</h3>
+        <p>A practice serves clients who must approve things but must never see internal comments, rates or time entries.</p>
+      </div>
+      <div class="cell">
+        <h3>Modules, not workspaces</h3>
+        <p>Payroll and invoicing must be closed to most of the firm. Workspace permissions are too coarse to express that.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 THE WEDGE -->
+  <section class="slide slide--dark">
+    <div class="slide__top">
+      <span class="num">04</span>
+      <span class="kicker">The wedge</span>
+    </div>
+    <h2>GST built in, not bolted on. And the client approves in <em>one click</em>.</h2>
+    <p class="lead">
+      Two things a global tool structurally cannot copy without becoming an Indian
+      product, and two things a domestic accounting package cannot copy without
+      becoming a project manager. Kartavaya is the overlap.
+    </p>
+    <div class="cols">
+      <div class="cell">
+        <h3>Compliance is native</h3>
+        <p>
+          HSN and SAC codes, the CGST/SGST/IGST split, place of supply, export
+          invoices under LUT, GSTR-1 and GSTR-3B summaries. A tax invoice missing
+          its GSTIN is flagged before it can be sent.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>The client needs no account</h3>
+        <p>
+          Send a deliverable for approval and the client gets a link — no signup, no
+          software. They approve or decline with a reason and it lands back on the
+          task. Internal comments stay internal.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 THE PRODUCT -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">05</span>
+      <span class="kicker">The product</span>
+    </div>
+    <h2>Fifteen modules, one login.</h2>
+    <p>
+      Enable what the firm uses and leave the rest off. The names are Sanskrit
+      because the product was built for an Indian practice by people who name things
+      that way — <span class="dv">गणित</span> is arithmetic, <span class="dv">वेतन</span>
+      is wages, <span class="dv">कर्तव्य</span> is duty.
+    </p>
+    <div class="mods">
+      <div class="mod"><div class="mod__hi">ग्रह</div><div class="mod__en">CRM</div></div>
+      <div class="mod"><div class="mod__hi">गणित</div><div class="mod__en">Invoicing &amp; GST</div></div>
+      <div class="mod"><div class="mod__hi">मानव</div><div class="mod__en">HRMS</div></div>
+      <div class="mod"><div class="mod__hi">वेतन</div><div class="mod__en">Payroll</div></div>
+      <div class="mod"><div class="mod__hi">विक्रय</div><div class="mod__en">Sales</div></div>
+      <div class="mod"><div class="mod__hi">दृष्टि</div><div class="mod__en">Analytics</div></div>
+      <div class="mod"><div class="mod__hi">प्रचार</div><div class="mod__en">Marketing</div></div>
+      <div class="mod"><div class="mod__hi">प्रमाण</div><div class="mod__en">E-signatures</div></div>
+      <div class="mod"><div class="mod__hi">संवाद</div><div class="mod__en">Messaging</div></div>
+      <div class="mod"><div class="mod__hi">सहायक</div><div class="mod__en">AI assistant</div></div>
+      <div class="mod"><div class="mod__hi">कर्तव्य</div><div class="mod__en">Tasks</div></div>
+      <div class="mod"><div class="mod__hi">फ़लक</div><div class="mod__en">Boards</div></div>
+      <div class="mod"><div class="mod__hi">सम्मति</div><div class="mod__en">Approvals</div></div>
+      <div class="mod"><div class="mod__hi">प्रतिवेदन</div><div class="mod__en">Reports</div></div>
+      <div class="mod"><div class="mod__hi">स्वचालन</div><div class="mod__en">Automations</div></div>
+    </div>
+  </section>
+
+  <!-- 06 ACCESS -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">06</span>
+      <span class="kicker">How access works</span>
+    </div>
+    <h2>Payroll stays closed to the people who don't run it.</h2>
+    <p>
+      Access is granted per person, per module — and the sensitive ones are marked
+      as such. Turning a module off revokes access without destroying the history
+      behind it, so a departure or a role change is a switch, not a data problem.
+    </p>
+    <div class="cols">
+      <div class="cell"><h3><span class="dv">गणित</span> · Invoicing</h3><p><span class="chip chip--live">Granted</span></p></div>
+      <div class="cell"><h3><span class="dv">वेतन</span> · Payroll</h3><p><span class="chip chip--block">No access</span></p></div>
+      <div class="cell"><h3><span class="dv">ग्रह</span> · CRM</h3><p><span class="chip chip--live">Granted</span></p></div>
+    </div>
+  </section>
+
+  <!-- 07 TRUST -->
+  <section class="slide slide--dark">
+    <div class="slide__top">
+      <span class="num">07</span>
+      <span class="kicker">Trust</span>
+    </div>
+    <h2>What we can <em>actually</em> promise.</h2>
+    <p class="lead">
+      Four things that are true today and that a firm can check inside the product
+      on its first afternoon. Not a roadmap.
+    </p>
+    <div class="cols">
+      <div class="cell">
+        <h3>GST-compliant invoicing</h3>
+        <p>HSN and SAC, CGST/SGST/IGST, place of supply, export invoices, GSTR-1 and GSTR-3B summaries.</p>
+      </div>
+      <div class="cell">
+        <h3>Every action is logged</h3>
+        <p>Who changed what and when — including platform support access to your workspace. The audit trail is readable by your admins, not only by us.</p>
+      </div>
+      <div class="cell">
+        <h3>One client cannot see another</h3>
+        <p>Client accounts see only the projects shared with them. Internal comments, time entries and rates are never exposed.</p>
+      </div>
+      <div class="cell">
+        <h3>Access is per person, per module</h3>
+        <p>Sensitive modules are granted individually, and revoking one preserves its history.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 PRICING -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">08</span>
+      <span class="kicker">Commercial model</span>
+    </div>
+    <h2>Four tiers, priced per firm.</h2>
+    <p>
+      Tiers differ by how much AI a firm uses. A credit is one AI request against
+      your own data — drafting a reply, summarising a ledger, pulling a lead out of
+      an email. <strong>Everything else is unmetered:</strong> tasks, invoices,
+      payroll runs, client approvals and users are not counted.
+    </p>
+    <div class="cols">
+      <div class="tier"><div class="tier__n">Basic</div><p>A small practice getting off spreadsheets. Priced per user.</p></div>
+      <div class="tier"><div class="tier__n">Starter</div><p>A single-office firm running tasks, invoicing and approvals.</p></div>
+      <div class="tier tier--hi"><div class="tier__n">Growth</div><p>Multiple partners, client portal in daily use, payroll on.</p></div>
+      <div class="tier"><div class="tier__n">Scale</div><p>Several offices, heavier AI use, higher document volume.</p></div>
+    </div>
+    <div class="note">
+      <span class="label">Figures are deliberately absent</span>
+      <p>
+        No rupee prices and no credit allowances appear in this deck, matching the
+        standing rule on the landing page. The reason is not secrecy: the live
+        catalogue currently holds <strong>three different credit allowances for the
+        same tier</strong> in three tables, and the price column mixes two
+        incompatible unit conventions. Publishing a precise figure to the audience
+        most likely to hold you to it is the one thing worth avoiding. Resolve the
+        catalogue, then quote. Until then: <em>priced per firm against headcount and volume.</em>
+      </p>
+    </div>
+  </section>
+
+  <!-- 09 WHO IT'S FOR -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">09</span>
+      <span class="kicker">Market</span>
+    </div>
+    <h2>Indian practices first. Indian businesses next.</h2>
+    <div class="cols">
+      <div class="cell cell--hi">
+        <h3>Beachhead — CA and accounting firms</h3>
+        <p>Where GST, client approvals and per-module access all bind at once. The sharpest fit, and the market that refers within itself.</p>
+      </div>
+      <div class="cell">
+        <h3>Adjacent — agencies and consultancies</h3>
+        <p>Same client-approval and invoicing shape, less compliance depth.</p>
+      </div>
+      <div class="cell">
+        <h3>Later — SMEs running operations</h3>
+        <p>Procurement, sales orders, payroll and attendance, where the suite competes with an ERP rather than a task tool.</p>
+      </div>
+    </div>
+    <div class="note">
+      <span class="label">Supply the numbers before this goes to anyone external</span>
+      <p>
+        Market sizing is not asserted here because no verified figure exists in the
+        repository, and an invented TAM is worse than a blank.
+        Fill in: <span class="fill">registered CA firms in India</span>
+        <span class="fill">target firm size</span>
+        <span class="fill">firms live today</span>
+        <span class="fill">named reference customers</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- 10 GTM -->
+  <section class="slide slide--dark">
+    <div class="slide__top">
+      <span class="num">10</span>
+      <span class="kicker">Go to market</span>
+    </div>
+    <h2>Invite-only, and referral-led by <em>necessity</em>.</h2>
+    <p class="lead">
+      There is no public sign-up, and that is a decision rather than a gap. It also
+      happens to be the only lawful shape for this market.
+    </p>
+    <ul class="pts">
+      <li><strong>ICAI rules bar soliciting professional work from prospective clients by email.</strong> The audience is largely chartered accountants, so cold outbound is not a channel available to this product. Anyone promising an email-led pipeline into this market has not read the rules.</li>
+      <li><strong>That leaves three channels:</strong> referral from firms already using it, organic search for the moment a referred prospect checks you are real, and directory presence for comparison queries.</li>
+      <li><strong>Which makes the website load-bearing.</strong> A referral that ends at a search result for the wrong product, or at a demo button with no destination, is a referral lost at the last step.</li>
+    </ul>
+  </section>
+
+  <!-- 11 BLOCKERS -->
+  <section class="slide">
+    <div class="slide__top">
+      <span class="num">11</span>
+      <span class="kicker">Before launch</span>
+      <span class="aud">Internal</span>
+    </div>
+    <h2>Four things stand between this deck and a launch.</h2>
+    <p>
+      Verified live against production and staging on 29 August 2026. Full detail
+      and the fixes are in the companion indexing plan.
+    </p>
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>What</th><th>State today</th><th>Effort</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Production runs a stale build</strong><br />The public site still says &ldquo;team task management&rdquo;. None of this deck is on the internet.</td>
+            <td><span class="chip chip--block">Blocker</span></td>
+            <td class="who">Redeploy</td>
+          </tr>
+          <tr>
+            <td><strong>The demo button goes to a UK number</strong><br />A <code>+44</code> WhatsApp link is the only conversion path on a page arguing it was built in India.</td>
+            <td><span class="chip chip--block">Blocker</span></td>
+            <td class="who">Config</td>
+          </tr>
+          <tr>
+            <td><strong>Google cannot crawl the site</strong><br />No robots.txt, no sitemap, and staging is publicly indexable with the better content.</td>
+            <td><span class="chip chip--block">Blocker</span></td>
+            <td class="who">Half a day</td>
+          </tr>
+          <tr>
+            <td><strong>No share image</strong><br />Most visits arrive from a WhatsApp link, and that link currently previews as plain text.</td>
+            <td><span class="chip chip--open">Open</span></td>
+            <td class="who">One asset</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 12 CLOSE -->
+  <section class="slide slide--dark">
+    <div class="slide__top">
+      <span class="num">12</span>
+      <span class="kicker">Next step</span>
+    </div>
+    <h2>Ship the site that already exists.</h2>
+    <p class="lead">
+      The product is built. Fifteen modules, GST that works, client approvals in one
+      click, and a landing page that says all of it well. It is running on staging,
+      behind a hostname nobody was meant to find, while production advertises a task
+      manager.
+    </p>
+    <p>
+      The launch is not a build. It is a deploy, a phone number, two text files, and
+      one image.
+    </p>
+    <div class="cover__foot" style="margin-top:0.5rem;">
+      <span><b>Aekam Inc</b></span>
+      <span>kartavaya.com</span>
+      <span>Companion: Kartavaya Indexing Plan</span>
+    </div>
+  </section>
+
+  <p class="deckfoot">
+    Proposal 95 · Launch deck · Aekam Inc · 2026-08-29<br />
+    Product claims taken from the shipped landing page and verified against the running app.<br />
+    No pricing figures, market sizes or customer counts are asserted; placeholders mark what must be supplied.
+  </p>
+
+</div>

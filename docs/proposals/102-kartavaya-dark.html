@@ -1,0 +1,540 @@
+<title>Kartavaya Dark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;1,6..72,300&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   KARTAVAYA DARK — a whole screen, not a swatch.
+
+   Every previous deliverable showed components in boxes. This is the argument
+   made at full size: one real Dristi screen, dark-first, mesh ground, glass
+   chrome, big type, real Indian figures. The DESIGN switch at the top flips
+   the same markup back to the shipping cream language, so nothing here is a
+   one-way door — that is the point.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── BOLD (default) ──────────────────────────────────────────────────── */
+  --void:    #07080B;
+  --ground:  #0A0C10;
+  --raised:  #10131A;
+  --ink:     #F2F0EA;
+  --ink-2:   #A7AEB8;
+  --ink-3:   #6B7280;
+  --line:    rgba(255,255,255,.09);
+  --line-2:  rgba(255,255,255,.05);
+
+  --accent:  #06D6C4;
+  --accent-2:#7C5CE0;
+  --accent-3:#2E8DF7;
+  --ok:      #4ADE80;
+  --warn:    #FBBF24;
+  --danger:  #FB7185;
+
+  --mesh:
+    radial-gradient(1100px 620px at 8% -8%,  rgba(6,214,196,.20), transparent 62%),
+    radial-gradient(900px 520px at 92% 2%,   rgba(124,92,224,.19), transparent 60%),
+    radial-gradient(760px 620px at 62% 108%, rgba(46,141,247,.14), transparent 58%);
+
+  --g-blur: 20px; --g-alpha: .045; --g-rim: .10;
+  --g-bg: rgba(255,255,255, var(--g-alpha));
+  --g-line: rgba(255,255,255,.10);
+  --g-inset:
+    inset 0  1px 0 rgba(255,255,255, var(--g-rim)),
+    inset 0 -1px 0 rgba(255,255,255, calc(var(--g-rim) * .28)),
+    inset  1px 0 0 rgba(255,255,255, calc(var(--g-rim) * .22)),
+    inset -1px 0 0 rgba(255,255,255, calc(var(--g-rim) * .22));
+  --g-drop: 0 2px 6px rgba(0,0,0,.34), 0 14px 42px -14px rgba(0,0,0,.6);
+
+  /* Motion — Kartavaya's ladder, unchanged */
+  --ix-user: 1; --ix: var(--ix-user);
+  --motion-scale-user: 1; --motion-scale: var(--motion-scale-user);
+  --dur-instant: calc( 90ms * var(--ix));
+  --dur-fast:    calc(140ms * var(--ix));
+  --dur-base:    calc(220ms * var(--ix));
+  --dur-slow:    calc(360ms * var(--ix));
+  --dur-xslow:   calc(520ms * var(--ix));
+  --ease-standard: cubic-bezier(.2,0,0,1);
+  --ease-emph:     cubic-bezier(.16,1,.3,1);
+  --ease-enter:    cubic-bezier(0,0,.2,1);
+  --ease-exit:     cubic-bezier(.4,0,1,1);
+  --ease-spring:   cubic-bezier(.34,1.36,.64,1);
+  --ease-fill:     cubic-bezier(.25,.8,.25,1);
+
+  --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-xl: 26px; --r-pill: 999px;
+  --f-d: 'Newsreader', Georgia, serif;
+  --f-u: 'Inter', system-ui, sans-serif;
+  --f-m: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --row-h: 52px;
+}
+
+/* ── CREAM — the shipping language, same markup ─────────────────────────── */
+:root[data-design="cream"] {
+  --void:   #EEE9DC;
+  --ground: #F3EFE6;
+  --raised: #FAF7F0;
+  --ink:    #1B1D1A;
+  --ink-2:  #4A4E48;
+  --ink-3:  #5E625A;
+  --line:   #D8D1BE;
+  --line-2: #E4DECD;
+  --accent: #04837A; --accent-2: #6B4FC7; --accent-3: #1D5FA6;
+  --ok: #126B36; --warn: #8B5206; --danger: #B42318;
+  --mesh: none;
+  --g-alpha: .55; --g-rim: .8; --g-blur: 0px;
+  --g-bg: #FAF7F0;
+  --g-line: #D8D1BE;
+  --g-inset: none;
+  --g-drop: 0 1px 2px rgba(30,28,22,.07);
+}
+
+@media (prefers-reduced-motion: reduce) { :root { --ix: .001; --motion-scale: 0 } }
+@media (prefers-reduced-transparency: reduce) { :root { --g-blur: 0px; --g-alpha: .1 } }
+
+* { box-sizing: border-box }
+html, body { height: 100% }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font-family: var(--f-u); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--dur-slow) var(--ease-standard), color var(--dur-slow) var(--ease-standard);
+}
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: var(--mesh);
+  transition: opacity var(--dur-slow) var(--ease-standard);
+}
+:root[data-design="cream"] body::before { opacity: 0 }
+
+/* ══ THE SWITCHBOARD ═════════════════════════════════════════════════════ */
+.bar {
+  position: sticky; top: 0; z-index: 90;
+  display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between;
+  padding: 11px clamp(14px,3vw,26px);
+  background: var(--g-bg); border-bottom: 1px solid var(--g-line);
+  backdrop-filter: blur(var(--g-blur)) saturate(1.5); -webkit-backdrop-filter: blur(var(--g-blur)) saturate(1.5);
+}
+.bar__t { font-family: var(--f-m); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3) }
+.bar__g { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center }
+.sg { display: inline-flex; border: 1px solid var(--g-line); border-radius: var(--r-sm); overflow: hidden }
+.sg button {
+  font-family: var(--f-m); font-size: 10px; letter-spacing: .05em; background: none; border: 0;
+  cursor: pointer; padding: 5px 10px; color: var(--ink-3);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.sg button + button { border-left: 1px solid var(--g-line) }
+.sg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--ink) }
+.sg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px }
+.sg__l { font-family: var(--f-m); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin-right: 7px }
+
+/* ══ THE GLASS PRIMITIVE ═════════════════════════════════════════════════ */
+.g {
+  position: relative; isolation: isolate;
+  background: var(--g-bg);
+  border: 1px solid var(--g-line);
+  backdrop-filter: blur(var(--g-blur)) saturate(1.6) brightness(1.04);
+  -webkit-backdrop-filter: blur(var(--g-blur)) saturate(1.6) brightness(1.04);
+  box-shadow: var(--g-drop), var(--g-inset);
+  transition: transform var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.g::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity var(--dur-base) var(--ease-standard);
+  background: radial-gradient(220px circle at var(--mx,50%) var(--my,0%),
+              rgba(255,255,255,.13), rgba(255,255,255,.03) 44%, transparent 70%);
+}
+.g:hover::after { opacity: 1 }
+:root[data-design="cream"] .g::after { display: none }
+
+/* ══ APP SHELL ═══════════════════════════════════════════════════════════ */
+.app { position: relative; z-index: 1; display: grid; grid-template-columns: 232px minmax(0,1fr); min-height: 100vh }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr } .side { display: none } }
+
+.side { padding: 20px 14px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 22px }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px }
+.brand__m { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; flex: none; box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--accent) 60%, transparent) }
+.brand__m svg { width: 17px; height: 17px; stroke: #06131A; fill: none; stroke-width: 2.2 }
+.brand__n { font-family: var(--f-d); font-size: 19px; font-weight: 400; letter-spacing: -.01em }
+.brand__n b { font-weight: 300; font-style: italic; color: var(--accent) }
+
+.nav { display: flex; flex-direction: column; gap: 2px }
+.nav__l { font-family: var(--f-m); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); padding: 0 10px; margin: 10px 0 6px }
+.nav__i {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-sm);
+  color: var(--ink-2); font-size: 13.5px; font-weight: 500; cursor: pointer; border: 0; background: none;
+  width: 100%; text-align: left; position: relative;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.nav__i svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.9; flex: none }
+.nav__i:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink) }
+.nav__i.on { color: var(--ink); background: color-mix(in srgb, var(--accent) 16%, transparent) }
+.nav__i.on::before {
+  content: ''; position: absolute; left: -14px; top: 50%; width: 3px; height: 20px;
+  border-radius: 0 3px 3px 0; background: var(--accent); transform: translateY(-50%);
+  animation: railIn var(--dur-base) var(--ease-emph) backwards;
+}
+@keyframes railIn { from { transform: translateY(-50%) scaleY(calc(1 - .999 * var(--motion-scale))); opacity: 0 } }
+.nav__i:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px }
+.nav__c { margin-left: auto; font-family: var(--f-m); font-size: 10.5px; color: var(--ink-3) }
+
+.side__f { margin-top: auto; padding: 12px; border-radius: var(--r-lg) }
+.side__f p { margin: 0 0 9px; font-size: 12px; color: var(--ink-2); line-height: 1.45 }
+.side__bar { height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 12%, transparent); overflow: hidden }
+.side__bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); width: 0; animation: fill var(--dur-xslow) var(--ease-fill) forwards; animation-delay: calc(300ms * var(--ix)) }
+@keyframes fill { to { width: var(--w, 0%) } }
+
+/* ══ MAIN ════════════════════════════════════════════════════════════════ */
+.main { padding: 0 clamp(14px,3vw,34px) 60px; min-width: 0 }
+.top { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center; justify-content: space-between; padding: 20px 0 8px }
+.search { display: flex; align-items: center; gap: 9px; padding: 9px 15px; border-radius: var(--r-pill); min-width: 210px; flex: 1 1 210px; max-width: 340px }
+.search svg { width: 15px; height: 15px; stroke: var(--ink-3); fill: none; stroke-width: 2; flex: none }
+.search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--ink); font-family: var(--f-u); font-size: 13.5px }
+.search input::placeholder { color: var(--ink-3) }
+.search kbd { font-family: var(--f-m); font-size: 10px; color: var(--ink-3); border: 1px solid var(--g-line); border-radius: 5px; padding: 2px 6px }
+.tops { display: flex; gap: 9px; align-items: center }
+.ib { width: 36px; height: 36px; border-radius: var(--r-pill); display: grid; place-items: center; cursor: pointer; color: var(--ink-2); position: relative }
+.ib svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.9 }
+.ib:hover { color: var(--ink); transform: translateY(calc(-1px * var(--motion-scale))) }
+.ib:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.ib__d { position: absolute; top: 7px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); border: 2px solid var(--ground) }
+.av { width: 36px; height: 36px; border-radius: var(--r-pill); background: linear-gradient(140deg, var(--accent-2), var(--accent-3)); display: grid; place-items: center; font-family: var(--f-m); font-size: 12px; font-weight: 600; color: #fff; cursor: pointer; flex: none }
+
+/* ── The hero ───────────────────────────────────────────────────────────── */
+.hero { padding: 26px 0 22px }
+.hero__k { font-family: var(--f-m); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px }
+.hero__h {
+  font-family: var(--f-d); font-weight: 200; font-size: clamp(34px, 6.2vw, 74px);
+  line-height: .98; letter-spacing: -.035em; margin: 0 0 10px; max-width: 16ch;
+}
+.hero__h em { font-style: italic; font-weight: 300; color: var(--accent) }
+.hero__s { font-size: 14.5px; color: var(--ink-2); max-width: 54ch; margin: 0 }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(184px,1fr)); gap: 12px; margin: 26px 0 }
+.kpi { padding: 17px 18px 19px; border-radius: var(--r-xl); cursor: pointer; animation: rise var(--dur-slow) var(--ease-emph) backwards; animation-delay: calc(var(--i, 0) * 60ms * var(--ix)) }
+@keyframes rise { from { opacity: 0; transform: translateY(calc(14px * var(--motion-scale))) } }
+.kpi:hover { transform: translateY(calc(-4px * var(--motion-scale))); border-color: color-mix(in srgb, var(--accent) 45%, var(--g-line)) }
+.kpi__l { font-family: var(--f-m); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3) }
+.kpi__v { font-family: var(--f-m); font-size: clamp(26px,3.4vw,36px); font-weight: 500; letter-spacing: -.035em; margin: 11px 0 0; font-variant-numeric: tabular-nums; line-height: 1 }
+.kpi__d { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 12px; color: var(--ink-2) }
+.kpi__t { font-family: var(--f-m); font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px }
+.kpi__t--up { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent) }
+.kpi__t--dn { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent) }
+.kpi__s { display: flex; align-items: flex-end; gap: 3px; height: 30px; margin-top: 14px }
+.kpi__s i { flex: 1; border-radius: 2px 2px 0 0; height: var(--h,0%); background: color-mix(in srgb, var(--accent) 34%, transparent); transform-origin: bottom; animation: gy var(--dur-slow) var(--ease-fill) backwards; animation-delay: calc((var(--i,0) * 60ms + var(--j,0) * 32ms + 180ms) * var(--ix)) }
+.kpi__s i:last-child { background: var(--accent) }
+@keyframes gy { from { transform: scaleY(0) } }
+
+/* ── Grid ───────────────────────────────────────────────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px,1fr)); gap: 14px; align-items: start }
+.panel { border-radius: var(--r-xl); overflow: hidden; animation: rise var(--dur-slow) var(--ease-emph) backwards; animation-delay: calc(var(--i, 0) * 70ms * var(--ix)) }
+.panel__h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px 0 }
+.panel__t { font-family: var(--f-d); font-size: 17px; font-weight: 400; letter-spacing: -.01em }
+.panel__m { font-family: var(--f-m); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3) }
+.panel__b { padding: 16px 18px 20px }
+.panel--wide { grid-column: 1 / -1 }
+@media (min-width: 1180px) { .panel--half { grid-column: span 1 } }
+
+/* Bars — the fix from the audit: a mount ANIMATION, staggered */
+.bars { display: flex; align-items: flex-end; gap: 8px; height: 168px }
+.bars__c { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; min-width: 0 }
+.bars__v { font-family: var(--f-m); font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; animation: vin var(--dur-base) var(--ease-enter) backwards; animation-delay: calc((var(--i, 0) * 38ms + 160ms) * var(--ix)) }
+@keyframes vin { from { opacity: 0; transform: translateY(calc(4px * var(--motion-scale))) } }
+.bars__t { flex: 1; min-height: 0; width: 100%; display: flex; align-items: flex-end }
+.bars__b {
+  width: 100%; height: var(--h,0%); min-height: 3px; border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 62%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+  transform-origin: bottom; animation: gy var(--dur-slow) var(--ease-fill) backwards;
+  animation-delay: calc(var(--i, 0) * 38ms * var(--ix));
+}
+.bars__c:last-child .bars__b { background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 34%, transparent)); box-shadow: 0 0 26px -4px color-mix(in srgb, var(--accent) 60%, transparent) }
+.bars__x { font-family: var(--f-m); font-size: 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
+
+/* Pipeline */
+.pipe { display: flex; flex-direction: column; gap: 11px }
+.pipe__r { display: grid; grid-template-columns: 96px minmax(0,1fr) auto; gap: 11px; align-items: center }
+.pipe__l { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pipe__t { height: 26px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--ink) 6%, transparent); overflow: hidden }
+.pipe__f { display: block; height: 100%; border-radius: var(--r-sm); width: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, transparent), color-mix(in srgb, var(--accent-2) 70%, transparent)); animation: fill var(--dur-xslow) var(--ease-fill) forwards; animation-delay: calc(var(--i, 0) * 60ms * var(--ix)) }
+.pipe__v { font-family: var(--f-m); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
+
+/* Table — deliberately calm. Data does not get the glass. */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px }
+.tbl th { font-family: var(--f-m); font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; text-align: left; padding: 0 14px 10px; border-bottom: 1px solid var(--line) }
+.tbl td { padding: 0 14px; height: var(--row-h); border-bottom: 1px solid var(--line-2); color: var(--ink-2) }
+.tbl tbody tr { animation: rowin var(--dur-base) var(--ease-enter) backwards; animation-delay: calc((var(--i, 0) * 34ms + 240ms) * var(--ix)); transition: background var(--dur-fast) var(--ease-standard) }
+@keyframes rowin { from { opacity: 0 } }
+.tbl tbody tr:hover { background: color-mix(in srgb, var(--ink) 4%, transparent) }
+.tbl tbody tr:last-child td { border-bottom: 0 }
+.tbl .nm { color: var(--ink); font-weight: 500 }
+.tbl .num { text-align: right; font-family: var(--f-m); font-variant-numeric: tabular-nums; color: var(--ink) }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--f-m); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: var(--r-pill); font-weight: 500 }
+.pill i { width: 5px; height: 5px; border-radius: 50%; background: currentColor }
+.pill--ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent) }
+.pill--warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent) }
+.pill--dan { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent) }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px; font-family: var(--f-u); font-size: 13px;
+  font-weight: 600; padding: 9px 16px; border-radius: var(--r-pill); cursor: pointer; color: var(--ink);
+  border: 1px solid var(--g-line); background: var(--g-bg);
+  backdrop-filter: blur(var(--g-blur)); -webkit-backdrop-filter: blur(var(--g-blur));
+  box-shadow: var(--g-inset);
+  transition: transform var(--dur-instant) var(--ease-spring), background var(--dur-fast) var(--ease-standard), border-radius var(--dur-base) var(--ease-spring), border-color var(--dur-fast) var(--ease-standard);
+}
+.btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--g-line)); transform: translateY(calc(-1px * var(--motion-scale))) }
+.btn:active { transform: scale(calc(1 - .035 * var(--motion-scale))); border-radius: 10px }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.btn--go { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-2) 70%, var(--accent))); color: #05121A; border-color: transparent; box-shadow: 0 5px 18px -5px color-mix(in srgb, var(--accent) 70%, transparent) }
+:root[data-design="cream"] .btn--go { color: #fff }
+.btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2 }
+
+/* Toast */
+.toasts { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 10px; width: min(330px, calc(100vw - 36px)) }
+.toast { display: grid; grid-template-columns: auto 1fr; gap: 11px; padding: 13px 14px 14px; border-radius: var(--r-lg); animation: tin var(--dur-base) var(--ease-emph) backwards }
+@keyframes tin { from { opacity: 0; transform: translateY(calc(14px * var(--motion-scale))) scale(calc(1 - .03 * var(--motion-scale))) } }
+.toast.out { animation: tout calc(var(--dur-base)*.8) var(--ease-exit) forwards }
+@keyframes tout { to { opacity: 0; transform: translateY(calc(10px * var(--motion-scale))) } }
+.toast__i { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none }
+.toast__i svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.4 }
+.toast--ok .toast__i { color: var(--ok); background: color-mix(in srgb, var(--ok) 18%, transparent) }
+.toast--dan .toast__i { color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, transparent) }
+.toast__t { font-size: 13px; font-weight: 600; color: var(--ink) }
+.toast__m { font-size: 12px; color: var(--ink-2); margin-top: 2px }
+.toast__r { grid-column: 1/-1; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 12%, transparent); overflow: hidden; margin-top: 3px }
+.toast__r i { display: block; height: 100%; background: var(--accent); transform-origin: left; animation: drain linear forwards }
+@keyframes drain { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+
+.note { margin: 34px 0 0; padding: 15px 18px; border-radius: var(--r-lg); border-left: 3px solid var(--accent) }
+.note p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.55 }
+.note p + p { margin-top: .6em }
+.note b { color: var(--ink); font-weight: 600 }
+.foot { padding: 40px 0 0; font-size: 12px; color: var(--ink-3); max-width: 82ch; line-height: 1.6 }
+.foot a { color: var(--accent) }
+.foot p { margin: 0 0 .6em }
+</style>
+
+<div class="bar">
+  <span class="bar__t">Kartavaya · Dristi · concept</span>
+  <div class="bar__g">
+    <span><span class="sg__l">Design</span>
+      <span class="sg" role="group" aria-label="Design language">
+        <button type="button" data-design="bold" aria-pressed="true">Bold</button>
+        <button type="button" data-design="cream" aria-pressed="false">Shipping</button>
+      </span></span>
+    <span><span class="sg__l">Motion</span>
+      <span class="sg" role="group" aria-label="Animations">
+        <button type="button" data-ix="1" aria-pressed="true">Full</button>
+        <button type="button" data-ix=".5" aria-pressed="false">Red.</button>
+        <button type="button" data-ix="0" aria-pressed="false">None</button>
+      </span></span>
+    <button class="btn" id="replay" type="button">Replay</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <span class="brand__m"><svg viewBox="0 0 20 20"><path d="M10 2.6c2.4 2 3.6 4.4 3.6 7.4S12.4 15.4 10 17.4C7.6 15.4 6.4 13 6.4 10S7.6 4.6 10 2.6Z"/></svg></span>
+      <span class="brand__n">Kartav<b>aya</b></span>
+    </div>
+    <nav class="nav" id="nav">
+      <span class="nav__l">Today</span>
+      <button class="nav__i on"><svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="7" rx="1.6"/><rect x="11" y="3" width="6" height="4" rx="1.6"/><rect x="3" y="12" width="6" height="5" rx="1.6"/><rect x="11" y="9" width="6" height="8" rx="1.6"/></svg>Dristi<span class="nav__c">·</span></button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><path d="M4 16V8M10 16V4M16 16v-5"/></svg>Ganit<span class="nav__c">12</span></button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>Graha<span class="nav__c">47</span></button>
+      <span class="nav__l">Operations</span>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="12" rx="2"/><path d="M3 9h14M8 3v3M12 3v3"/></svg>Vetana</button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg>Approvals<span class="nav__c">6</span></button>
+      <button class="nav__i"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 9h6M7 13h4"/></svg>Prachar</button>
+    </nav>
+    <div class="g side__f">
+      <p><b style="color:var(--ink)">18 of 25 seats</b> used on the Aekam plan.</p>
+      <span class="side__bar"><i style="--w:72%"></i></span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <span class="g search">
+        <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 17 17"/></svg>
+        <input type="text" placeholder="Search clients, invoices, people…" aria-label="Search">
+        <kbd>⌘K</kbd>
+      </span>
+      <div class="tops">
+        <button class="g ib" aria-label="Notifications"><svg viewBox="0 0 20 20"><path d="M10 3a4.5 4.5 0 0 0-4.5 4.5c0 3.4-1 4.6-1.7 5.4h12.4c-.7-.8-1.7-2-1.7-5.4A4.5 4.5 0 0 0 10 3Z"/><path d="M8.5 16a1.5 1.5 0 0 0 3 0"/></svg><span class="ib__d"></span></button>
+        <button class="g ib" aria-label="Settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2 4.8 4.8"/></svg></button>
+        <button class="av" aria-label="Keval Shah">KS</button>
+      </div>
+    </div>
+
+    <div class="hero">
+      <p class="hero__k">Quarter to date · 29 August 2026</p>
+      <h1 class="hero__h">You have invoiced <em>₹18.4L</em> and collected <em>66%</em> of it.</h1>
+      <p class="hero__s">Six approvals are waiting on you, and Nandan &amp; Co crossed ninety days this morning.</p>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid">
+      <section class="g panel panel--half" style="--i:0">
+        <header class="panel__h"><h2 class="panel__t">Invoiced vs collected</h2><span class="panel__m">6 months</span></header>
+        <div class="panel__b"><div class="bars" id="bars"></div></div>
+      </section>
+
+      <section class="g panel panel--half" style="--i:1">
+        <header class="panel__h"><h2 class="panel__t">Pipeline</h2><span class="panel__m">₹96.2L open</span></header>
+        <div class="panel__b"><div class="pipe" id="pipe"></div></div>
+      </section>
+
+      <section class="g panel panel--wide" style="--i:2">
+        <header class="panel__h">
+          <h2 class="panel__t">Receivables</h2>
+          <span style="display:flex;gap:8px">
+            <button class="btn" type="button">Export</button>
+            <button class="btn btn--go" type="button" id="remind"><svg viewBox="0 0 20 20"><path d="M3 5.5 10 11l7-5.5M3 5h14v10H3z"/></svg>Send reminders</button>
+          </span>
+        </header>
+        <div class="panel__b" style="padding-left:4px;padding-right:4px">
+          <table class="tbl"><thead><tr><th>Client</th><th>Status</th><th>Due</th><th style="text-align:right">Outstanding</th></tr></thead><tbody id="rows"></tbody></table>
+        </div>
+      </section>
+    </div>
+
+    <div class="g note">
+      <p><b>Everything here is the same markup.</b> Flip <b>Design → Shipping</b> in the top bar and the identical screen renders in the cream language that is live today — no mesh, no glass, house shadows, the current palette. Flip back and forth a few times.</p>
+      <p>That switch is the argument. The bold direction is a <b>token layer</b>, not a rewrite: one ground, one mesh, one glass primitive, one accent pair. Reverting is changing <code>data-design</code>, which is exactly the reversibility you asked for.</p>
+    </div>
+
+    <div class="foot">
+      <p><b>What changed, and why.</b> The ground went dark so glass has something to refract and so the accent can actually glow. Display type went to Newsreader 200 at 74px with −.035em tracking — the shipping build never goes above 40px, and scale is most of what reads as premium. Numbers are mono with tabular figures at 36px. The KPI row stagger is 60ms; bars are 38ms apart on <code>--ease-fill</code>; rows fade at 34ms. All on Kartavaya's five-rung ladder, all riding <code>--ix</code> — set Motion to None and the screen goes still, not fast.</p>
+      <p><b>What deliberately did not change.</b> The receivables table has no glass, no gradient and no blur behind it. Data stays on a calm ground with a working <code>--row-h</code> and tabular numerals, because ninety rupee figures each landing on a different contrast ratio is unfixable. Semantic pills keep their own hues. That restraint is what lets the rest be loud.</p>
+      <p>Companion pieces: <em>Motion and Material</em> (the audit and the measurements) and <em>Glass Kit</em> (the components and the four OS dialects).</p>
+    </div>
+  </main>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+
+  function seg(attr, apply) {
+    var b = [].slice.call(document.querySelectorAll('.bar [data-' + attr + ']'));
+    b.forEach(function (x) {
+      x.addEventListener('click', function () {
+        b.forEach(function (o) { o.setAttribute('aria-pressed', String(o === x)); });
+        apply(x.getAttribute('data-' + attr));
+      });
+    });
+  }
+  seg('design', function (v) { if (v === 'bold') root.removeAttribute('data-design'); else root.setAttribute('data-design', v); });
+  seg('ix', function (v) {
+    root.style.setProperty('--ix-user', v === '0' ? '0.001' : v);
+    root.style.setProperty('--motion-scale-user', v === '0' ? '0' : v);
+  });
+
+  /* Pointer-tracked specular — layer six */
+  function track(el) {
+    el.addEventListener('pointermove', function (e) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+      el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+    });
+  }
+
+  var KPI = [
+    { l: 'Invoiced',   v: '₹18.4L', d: 'vs ₹16.4L in Q2', t: '+12%', up: 1, s: [38,52,44,61,55,78] },
+    { l: 'Collected',  v: '₹12.1L', d: '66% of raised',   t: '+8%',  up: 1, s: [30,41,39,48,44,62] },
+    { l: 'Overdue',    v: '₹4.2L',  d: 'across 9 clients', t: '+22%', up: 0, s: [18,24,29,33,38,47] },
+    { l: 'Median cycle', v: '6.2d', d: 'invoice to payment', t: '−1.4d', up: 1, s: [58,51,47,44,40,34] }
+  ];
+  document.getElementById('kpis').innerHTML = KPI.map(function (c, i) {
+    var mx = Math.max.apply(null, c.s);
+    return '<div class="g kpi" style="--i:' + i + '">' +
+      '<div class="kpi__l">' + c.l + '</div>' +
+      '<div class="kpi__v">' + c.v + '</div>' +
+      '<div class="kpi__d"><span class="kpi__t kpi__t--' + (c.up ? 'up' : 'dn') + '">' + c.t + '</span>' + c.d + '</div>' +
+      '<div class="kpi__s">' + c.s.map(function (v, j) {
+        return '<i style="--h:' + Math.round(v / mx * 100) + '%;--j:' + j + '"></i>';
+      }).join('') + '</div></div>';
+  }).join('');
+
+  var MONTHS = [{ x: 'Mar', v: 42 }, { x: 'Apr', v: 58 }, { x: 'May', v: 51 },
+                { x: 'Jun', v: 73 }, { x: 'Jul', v: 66 }, { x: 'Aug', v: 88 }];
+  var bmax = Math.max.apply(null, MONTHS.map(function (m) { return m.v; }));
+  document.getElementById('bars').innerHTML = MONTHS.map(function (m, i) {
+    return '<div class="bars__c" style="--i:' + i + '">' +
+      '<span class="bars__v">' + m.v + 'L</span>' +
+      '<span class="bars__t"><span class="bars__b" style="--h:' + Math.round(m.v / bmax * 100) + '%"></span></span>' +
+      '<span class="bars__x">' + m.x + '</span></div>';
+  }).join('');
+
+  var STAGES = [{ l: 'Enquiry', v: '₹96.2L', w: 100 }, { l: 'Proposal', v: '₹61.4L', w: 64 },
+                { l: 'Negotiation', v: '₹38.8L', w: 40 }, { l: 'Won', v: '₹19.1L', w: 20 }];
+  document.getElementById('pipe').innerHTML = STAGES.map(function (s, i) {
+    return '<div class="pipe__r" style="--i:' + i + '">' +
+      '<span class="pipe__l">' + s.l + '</span>' +
+      '<span class="pipe__t"><i class="pipe__f" style="--w:' + s.w + '%"></i></span>' +
+      '<span class="pipe__v">' + s.v + '</span></div>';
+  }).join('');
+
+  var ROWS = [
+    ['Unicode Systems', 'ok', 'Net 30 · 12 Sep', '₹4,20,000'],
+    ['Nandan &amp; Co', 'dan', '92 days overdue', '₹1,85,500'],
+    ['AekamINC UK', 'warn', '14 days overdue', '₹96,200'],
+    ['Sedani Traders', 'ok', 'Net 45 · 28 Sep', '₹74,800'],
+    ['Vora Associates', 'warn', '6 days overdue', '₹52,300'],
+    ['Bhatt &amp; Sons', 'ok', 'Net 30 · 04 Oct', '₹41,900']
+  ];
+  var WORD = { ok: 'On terms', warn: 'Overdue', dan: 'Critical' };
+  document.getElementById('rows').innerHTML = ROWS.map(function (r, i) {
+    return '<tr style="--i:' + i + '"><td class="nm">' + r[0] + '</td>' +
+      '<td><span class="pill pill--' + r[1] + '"><i></i>' + WORD[r[1]] + '</span></td>' +
+      '<td>' + r[2] + '</td><td class="num">' + r[3] + '</td></tr>';
+  }).join('');
+
+  /* Sidebar nav — the accent rail travels */
+  var items = [].slice.call(document.querySelectorAll('.nav__i'));
+  items.forEach(function (b) {
+    b.addEventListener('click', function () {
+      items.forEach(function (o) { o.classList.remove('on'); });
+      b.classList.add('on');
+    });
+  });
+
+  /* Toasts */
+  var DWELL = 5000, box = document.getElementById('toasts');
+  function toast(kind, t, m) {
+    var el = document.createElement('div');
+    el.className = 'g toast toast--' + kind;
+    el.innerHTML = '<span class="toast__i"><svg viewBox="0 0 20 20">' +
+      (kind === 'ok' ? '<path d="M4 10.5l4 4 8-9"/>' : '<path d="M10 6v5M10 14h.01"/><circle cx="10" cy="10" r="7.5"/>') +
+      '</svg></span><span><span class="toast__t">' + t + '</span><span class="toast__m">' + m + '</span></span>' +
+      '<span class="toast__r"><i style="animation-duration:' + DWELL + 'ms"></i></span>';
+    box.appendChild(el); track(el);
+    var timer = setTimeout(close, DWELL);
+    function close() { clearTimeout(timer); el.classList.add('out'); el.addEventListener('animationend', function () { el.remove(); }, { once: true }); }
+    while (box.children.length > 3) box.firstChild.remove();
+  }
+  document.getElementById('remind').addEventListener('click', function () {
+    toast('ok', 'Reminders queued', '9 clients · sending over the next hour.');
+  });
+
+  /* Replay every entrance */
+  document.getElementById('replay').addEventListener('click', function () {
+    [].forEach.call(document.querySelectorAll('.kpi, .panel, .bars__b, .bars__v, .pipe__f, .tbl tbody tr, .side__bar i, .kpi__s i'), function (el) {
+      var a = el.style.animation; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = a || '';
+    });
+  });
+
+  [].forEach.call(document.querySelectorAll('.g'), track);
+  setTimeout(function () { toast('dan', 'Nandan & Co crossed 90 days', '₹1,85,500 is now in the critical band.'); }, 1400);
+})();
+</script>

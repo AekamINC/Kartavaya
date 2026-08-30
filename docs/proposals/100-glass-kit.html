@@ -1,0 +1,856 @@
+<title>Glass Kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   GLASS KIT — working liquid-glass components in Kartavaya's own tokens.
+
+   Everything here is real CSS you can lift. No library, no canvas, no WebGL.
+   Every duration is a --dur-* rung and every curve a named --ease-*, so the
+   whole kit already passes check-motion.mjs and already rides --ix.
+
+   THE SIX LAYERS OF A GLASS SURFACE (§01 explains each):
+     1  backdrop-filter: blur + saturate + brightness   the refraction
+     2  a translucent tint                               the material's colour
+     3  inset top highlight                              the specular rim
+     4  inset side + bottom rims                         the fresnel falloff
+     5  an outer drop shadow                             elevation
+     6  a pointer-tracked gloss                          the "liquid"
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* Kartavaya tokens — kartavaya-design.css §7 */
+  --bg: #F3EFE6; --s-lowest: #FFFEFB; --surface: #FAF7F0;
+  --s-low: #F5F1E7; --s-container: #EEE9DC; --s-high: #E7E1D1;
+  --on-surface: #1B1D1A; --on-surface-2: #4A4E48; --on-surface-3: #5E625A;
+  --outline-variant: #D8D1BE; --outline: #78725F;
+  --primary: #04837A; --primary-hover: #026B64; --primary-text: #046B64;
+  --primary-container: #B4F1E8; --primary-vivid: #05B7AA;
+  --ok: #126B36; --warn: #8B5206; --danger: #B42318;
+  --shadow-1: 0 1px 2px rgba(30,28,22,.07);
+  --shadow-2: 0 4px 16px -6px rgba(30,28,22,.16);
+
+  /* Motion — §5, the five rungs and the named curves */
+  --ix-user: 1; --ix: var(--ix-user);
+  --motion-scale-user: 1; --motion-scale: var(--motion-scale-user);
+  --dur-instant: calc( 90ms * var(--ix));
+  --dur-fast:    calc(140ms * var(--ix));
+  --dur-base:    calc(220ms * var(--ix));
+  --dur-slow:    calc(360ms * var(--ix));
+  --dur-xslow:   calc(520ms * var(--ix));
+  --ease-standard: cubic-bezier(.2,0,0,1);
+  --ease-emph:     cubic-bezier(.16,1,.3,1);
+  --ease-enter:    cubic-bezier(0,0,.2,1);
+  --ease-exit:     cubic-bezier(.4,0,1,1);
+  --ease-spring:   cubic-bezier(.34,1.36,.64,1);
+  --ease-fill:     cubic-bezier(.25,.8,.25,1);
+
+  --radius-base: 10px;
+  --r-sm: calc(var(--radius-base) * .58);
+  --r-md: var(--radius-base);
+  --r-lg: calc(var(--radius-base) * 1.45);
+  --r-xl: calc(var(--radius-base) * 2.1);
+  --r-pill: 999px;
+
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* ── THE GLASS TOKENS ──────────────────────────────────────────────────
+     One set, tuned once. Every component below reads these, so the whole kit
+     retunes from four values. --g-tint is overridden per semantic variant. */
+  --g-blur:   16px;
+  --g-sat:    1.6;
+  --g-bright: 1.06;
+  --g-tint:   255, 255, 255;
+  --g-alpha:  .14;
+  --g-rim:    .46;   /* top specular strength */
+  --g-fres:   .16;   /* side/bottom fresnel   */
+
+  --g-bg: rgba(var(--g-tint), var(--g-alpha));
+  --g-shadow:
+    0 1px 2px rgba(12,18,16,.10),
+    0 8px 28px -8px rgba(12,18,16,.28),
+    0 24px 56px -24px rgba(12,18,16,.32);
+  --g-inset:
+    inset 0  1px 0 rgba(255,255,255, var(--g-rim)),
+    inset 0 -1px 0 rgba(255,255,255, var(--g-fres)),
+    inset  1px 0 0 rgba(255,255,255, calc(var(--g-fres) * .85)),
+    inset -1px 0 0 rgba(255,255,255, calc(var(--g-fres) * .85));
+
+  /* The vivid grounds — accent-derived, so they follow --primary */
+  --k-grad-surface: linear-gradient(135deg, #01554F, #046B64 55%, #05837C);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) { :root { --ix: .001; --motion-scale: 0 } }
+@media (prefers-reduced-transparency: reduce) {
+  :root { --g-blur: 0px; --g-alpha: .96; --g-tint: 250,247,240 }
+  .lg::after { display: none }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0C0E11; --s-lowest: #080A0C; --surface: #12151A;
+  --s-low: #171B21; --s-container: #1D2229; --s-high: #252B33;
+  --on-surface: #E9E7E1; --on-surface-2: #BFBDB6; --on-surface-3: #8E8D87;
+  --outline-variant: #333A43; --outline: #7E8590;
+  --primary: #4FD8CB; --primary-hover: #6FE6DA; --primary-text: #4FD8CB;
+  --primary-container: #00514B; --primary-vivid: #05B7AA;
+  --ok: #5BD98A; --warn: #E8B45C; --danger: #F2867A;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.5);
+  --shadow-2: 0 4px 16px -6px rgba(0,0,0,.6);
+  --g-alpha: .10; --g-rim: .22; --g-fres: .07;
+  --k-grad-surface: linear-gradient(135deg, #014742, #045C56 55%, #036E68);
+}
+
+* { box-sizing: border-box }
+body {
+  margin: 0; background: var(--bg); color: var(--on-surface);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--dur-slow) var(--ease-standard), color var(--dur-slow) var(--ease-standard);
+}
+.wrap { padding: 0 clamp(18px,4vw,56px) 110px; max-width: 1500px }
+.rail { max-width: 72ch }
+.rail p { color: var(--on-surface-2); margin: 0 0 1em }
+h1,h2,h3 { text-wrap: balance; margin: 0 }
+
+/* ══ THE GLASS PRIMITIVE ══════════════════════════════════════════════════
+   Add `.lg` to anything. Six layers, all from the tokens above. */
+.lg {
+  position: relative; isolation: isolate;
+  background: var(--g-bg);
+  border: 1px solid rgba(255,255,255, calc(var(--g-rim) * .62));
+  backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat)) brightness(var(--g-bright));
+  -webkit-backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat)) brightness(var(--g-bright));
+  box-shadow: var(--g-shadow), var(--g-inset);
+  transition:
+    transform   var(--dur-fast)    var(--ease-standard),
+    box-shadow  var(--dur-fast)    var(--ease-standard),
+    background  var(--dur-fast)    var(--ease-standard),
+    border-color var(--dur-fast)   var(--ease-standard);
+}
+/* Layer 6 — the pointer-tracked gloss. This is what reads as "liquid":
+   a specular highlight that follows the cursor instead of sitting still. */
+.lg::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 2; opacity: 0;
+  background: radial-gradient(180px circle at var(--mx,50%) var(--my,0%),
+              rgba(255,255,255,.30), rgba(255,255,255,.06) 42%, transparent 68%);
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.lg:hover::after, .lg:focus-visible::after, .lg:focus-within::after { opacity: 1 }
+/* Optional grain — kills the plastic look at large sizes. */
+.lg--grain::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 1; opacity: .05; mix-blend-mode: overlay;
+  background-image: var(--grain);
+}
+
+/* ══ GROUNDS ═════════════════════════════════════════════════════════════ */
+.stage { position: relative; padding: 30px 22px; overflow: hidden; border-radius: var(--r-lg) }
+.stage--vivid { background: var(--k-grad-surface) }
+.stage--photo {
+  background:
+    radial-gradient(circle at 14% 22%, #14C4B4 0%, transparent 46%),
+    radial-gradient(circle at 84% 18%, #0E88B8 0%, transparent 44%),
+    radial-gradient(circle at 64% 92%, #7C5CE0 0%, transparent 48%),
+    linear-gradient(150deg, #036F68, #0A4E72 60%, #2E2A6B);
+}
+.stage--cream { background: var(--bg); transition: background var(--dur-slow) var(--ease-standard) }
+.stage--cream .lg { color: var(--on-surface) }
+.stage--vivid, .stage--photo { color: #fff }
+.stage--vivid .g-note, .stage--photo .g-note { color: rgba(255,255,255,.74) }
+.g-note { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); margin: 0 0 16px }
+
+/* ══ 1 · BUTTONS ═════════════════════════════════════════════════════════ */
+.gbtn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-ui); font-size: 13.5px; font-weight: 600;
+  padding: 9px 17px; border-radius: var(--r-pill); cursor: pointer;
+  color: inherit; overflow: hidden;
+}
+.gbtn:hover  { transform: translateY(calc(-1px * var(--motion-scale))); --g-alpha: .22 }
+.gbtn:active { transform: scale(calc(1 - .022 * var(--motion-scale))); --g-alpha: .30 }
+.gbtn:focus-visible { outline: 2px solid currentColor; outline-offset: 3px }
+.gbtn--lg { font-size: 15px; padding: 12px 24px }
+/* Semantic buttons: the tint IS the meaning. */
+.gbtn--primary { --g-tint: 5,183,170;  --g-alpha: .30; --g-rim: .58 }
+.gbtn--ok      { --g-tint: 60,220,130; --g-alpha: .26; --g-rim: .52 }
+.gbtn--warn    { --g-tint: 245,180,70; --g-alpha: .28; --g-rim: .54 }
+/* Destructive: outlined at rest, filled on hover. */
+.gbtn--danger  { --g-tint: 250,110,95; --g-alpha: .10; --g-rim: .30;
+                 border-color: rgba(250,110,95,.85) }
+.gbtn--danger:hover { --g-alpha: .82; --g-rim: .5; color: #fff }
+.gbtn__ic { width: 15px; height: 15px; flex: none; display: inline-flex }
+.gbtn__ic svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+/* The spinner state — fixed period, amplitude on --motion-scale (never --ix). */
+.gbtn.is-busy .gbtn__ic svg { animation: gspin .7s linear infinite }
+@keyframes gspin { to { transform: rotate(360deg) } }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
+
+/* ══ 2 · TOASTS — semantic vivid ═════════════════════════════════════════ */
+.gtoasts { display: flex; flex-direction: column; gap: 11px; max-width: 400px }
+.gtoast {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
+  padding: 13px 14px 15px; border-radius: var(--r-lg); color: #fff;
+  animation: tin var(--dur-base) var(--ease-emph) backwards;
+}
+@keyframes tin { from { opacity: 0; transform: translateX(calc(18px * var(--motion-scale))) } }
+.gtoast.out { animation: tout calc(var(--dur-base) * .82) var(--ease-exit) forwards }
+@keyframes tout { to { opacity: 0; transform: translateX(calc(14px * var(--motion-scale))) } }
+.gtoast--ok     { --g-tint: 60,220,130;  --g-alpha: .26 }
+.gtoast--warn   { --g-tint: 245,180,70;  --g-alpha: .28 }
+.gtoast--danger { --g-tint: 250,110,95;  --g-alpha: .28 }
+.gtoast--info   { --g-tint: 90,200,255;  --g-alpha: .24 }
+.gtoast__ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.22); flex: none }
+.gtoast__ic svg { width: 15px; height: 15px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round }
+.gtoast__t { font-size: 13.5px; font-weight: 600; line-height: 1.35 }
+.gtoast__m { font-size: 12.5px; opacity: .84; margin-top: 2px; line-height: 1.4 }
+.gtoast__a { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3); color: #fff; font-family: var(--font-ui); font-size: 11.5px; font-weight: 600; padding: 4px 11px; border-radius: var(--r-pill); cursor: pointer; transition: background var(--dur-fast) var(--ease-standard) }
+.gtoast__a:hover { background: rgba(255,255,255,.32) }
+/* The glass progress rim — the interpolated duration is deliberate: the bar
+   and the dismiss timer must agree or the bar lies. */
+.gtoast__rim { grid-column: 1 / -1; height: 2px; border-radius: 2px; background: rgba(255,255,255,.24); overflow: hidden; margin-top: 4px }
+.gtoast__rim i { display: block; height: 100%; background: rgba(255,255,255,.85); transform-origin: left; animation: drain linear forwards }
+@keyframes drain { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+
+/* ══ 3 · CARDS ═══════════════════════════════════════════════════════════ */
+.gcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px,1fr)); gap: 14px }
+.gcard { padding: 15px 16px 17px; border-radius: var(--r-xl); color: inherit; cursor: pointer }
+.gcard:hover { transform: translateY(calc(-3px * var(--motion-scale))); --g-alpha: .2 }
+.gcard__l { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; opacity: .68 }
+.gcard__k { font-family: var(--font-mono); font-size: 25px; font-weight: 500; letter-spacing: -.025em; margin-top: 9px; font-variant-numeric: tabular-nums }
+.gcard__d { font-size: 11.5px; opacity: .76; margin-top: 3px; display: flex; align-items: center; gap: 5px }
+.gcard__spark { display: flex; align-items: flex-end; gap: 3px; height: 26px; margin-top: 11px }
+.gcard__spark i { flex: 1; background: currentColor; opacity: .38; border-radius: 1.5px; height: var(--h, 0%); transform-origin: bottom; animation: sgrow var(--dur-slow) var(--ease-fill) backwards; animation-delay: calc(var(--i, 0) * 34ms * var(--ix)) }
+.gcard__spark i:last-child { opacity: .95 }
+@keyframes sgrow { from { transform: scaleY(0) } }
+
+/* ══ 4 · SEGMENTED CONTROL ═══════════════════════════════════════════════ */
+.gseg { position: relative; display: inline-flex; padding: 3px; border-radius: var(--r-pill) }
+.gseg__b { position: relative; z-index: 3; background: none; border: 0; cursor: pointer; font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; padding: 7px 15px; border-radius: var(--r-pill); color: inherit; opacity: .66; transition: opacity var(--dur-fast) var(--ease-standard) }
+.gseg__b.on { opacity: 1 }
+.gseg__b:focus-visible { outline: 2px solid currentColor; outline-offset: -2px }
+.gseg__pill { position: absolute; z-index: 1; top: 3px; bottom: 3px; border-radius: var(--r-pill); background: rgba(255,255,255,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 2px 8px rgba(0,0,0,.14); transition: transform var(--dur-base) var(--ease-emph), width var(--dur-base) var(--ease-emph) }
+
+/* ══ 5 · FIELD + SWITCH ══════════════════════════════════════════════════ */
+.gfield { display: flex; align-items: center; gap: 9px; padding: 9px 14px; border-radius: var(--r-pill); min-width: 220px }
+.gfield:focus-within { --g-alpha: .24; box-shadow: var(--g-shadow), var(--g-inset), 0 0 0 3px rgba(255,255,255,.22) }
+.gfield input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: inherit; font-family: var(--font-ui); font-size: 13.5px }
+.gfield input::placeholder { color: currentColor; opacity: .55 }
+.gsw { width: 46px; height: 27px; border-radius: var(--r-pill); padding: 0; cursor: pointer; position: relative; flex: none }
+.gsw i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.94); box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform var(--dur-base) var(--ease-spring) }
+.gsw.on { --g-tint: 5,183,170; --g-alpha: .42 }
+.gsw.on i { transform: translateX(19px) }
+
+/* ══ 6 · DOCK ════════════════════════════════════════════════════════════ */
+.gdock { display: inline-flex; gap: 4px; padding: 6px; border-radius: var(--r-pill) }
+.gdock__b { width: 38px; height: 38px; border-radius: 50%; border: 0; background: none; cursor: pointer; color: inherit; display: grid; place-items: center; transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-spring) }
+.gdock__b svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+.gdock__b:hover { background: rgba(255,255,255,.2); transform: translateY(calc(-3px * var(--motion-scale))) scale(calc(1 + .06 * var(--motion-scale))) }
+.gdock__b:active { transform: scale(calc(1 - .06 * var(--motion-scale))) }
+.gdock__b:focus-visible { outline: 2px solid currentColor; outline-offset: 2px }
+
+/* ══ 7 · CHIPS ═══════════════════════════════════════════════════════════ */
+.gchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 600; color: inherit }
+.gchip__d { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none }
+.gchip--ok { --g-tint: 60,220,130; --g-alpha: .3 }
+.gchip--warn { --g-tint: 245,180,70; --g-alpha: .32 }
+.gchip--danger { --g-tint: 250,110,95; --g-alpha: .32 }
+
+/* ══ 8 · MODAL + BLURRED SCRIM ═══════════════════════════════════════════ */
+.mstage { position: relative; min-height: 300px; border-radius: var(--r-lg); overflow: hidden; padding: 20px }
+.mstage__bg { font-size: 13px; line-height: 1.7; color: var(--on-surface-2) }
+.mstage__bg h4 { font-family: var(--font-display); font-size: 19px; font-weight: 400; margin: 0 0 8px; color: var(--on-surface) }
+.gscrim {
+  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px;
+  background: rgba(20,26,24,.34);
+  backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  animation: sin var(--dur-base) var(--ease-enter) backwards;
+}
+@keyframes sin { from { opacity: 0 } }
+.gscrim[hidden] { display: none }
+.gmodal { max-width: 330px; padding: 20px 21px 21px; border-radius: var(--r-xl); color: #fff; animation: min var(--dur-base) var(--ease-emph) backwards }
+@keyframes min { from { opacity: 0; transform: translateY(calc(10px * var(--motion-scale))) scale(calc(1 - .04 * var(--motion-scale))) } }
+.gmodal h4 { font-size: 17px; font-weight: 600; margin: 0 0 6px }
+.gmodal p { font-size: 13px; opacity: .84; margin: 0 0 16px; line-height: 1.5 }
+
+/* ══ 9 · STICKY GLASS HEADER ═════════════════════════════════════════════ */
+.sticky-demo { height: 240px; overflow-y: auto; border-radius: var(--r-lg); position: relative; background: var(--k-grad-surface) }
+.sticky-demo__h { position: sticky; top: 0; z-index: 4; padding: 11px 15px; border-radius: 0; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #fff; border-left: 0; border-right: 0; border-top: 0 }
+.sticky-demo__row { display: flex; justify-content: space-between; padding: 11px 15px; color: #fff; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.12) }
+.sticky-demo__row span:last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; opacity: .82 }
+
+/* ══ 10 · DRAG GHOST ═════════════════════════════════════════════════════ */
+.ghosts { display: grid; grid-template-columns: repeat(auto-fit,minmax(120px,1fr)); gap: 12px }
+.gghost { border: 1.5px dashed rgba(255,255,255,.6); border-radius: var(--r-xl); min-height: 88px; display: grid; place-items: center; font-family: var(--font-mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: rgba(255,255,255,.8); --g-tint: 255,255,255; --g-alpha: .10; animation: gpulse 2.4s var(--ease-standard) infinite }
+@keyframes gpulse { 0%,100% { border-color: rgba(255,255,255, calc(.32 + .28 * var(--motion-scale))) } 50% { border-color: rgba(255,255,255,.32) } }
+.gcarry { transform: rotate(calc(-2.5deg * var(--motion-scale))) scale(calc(1 + .03 * var(--motion-scale))); --g-alpha: .26 }
+
+/* ══ 11 · THE FOUR DIALECTS ══════════════════════════════════════════════
+   Same primitive, same accent, four design languages. Each is a token
+   override and nothing else — no component is rewritten. */
+.dialects { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px,1fr)); gap: 1px; background: rgba(255,255,255,.14); border-radius: var(--r-lg); overflow: hidden }
+.dl { padding: 20px 18px 22px; display: flex; flex-direction: column; gap: 14px }
+.dl__h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px }
+.dl__n { font-size: 13px; font-weight: 700; color: #fff; letter-spacing: -.01em }
+.dl__t { font-family: var(--font-mono); font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: rgba(255,255,255,.6) }
+.dl__f { font-size: 11.5px; line-height: 1.45; color: rgba(255,255,255,.72); margin: 2px 0 0 }
+
+/* ── Apple · iOS 26–27 Liquid Glass ─────────────────────────────────────
+   High blur, strong specular rim, pill geometry, generous translucency —
+   with iOS 27's correction: text sits on a denser backdrop. */
+.dl--apple { background: linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.02)) }
+.dl--apple .lg { --g-blur: 26px; --g-alpha: .17; --g-rim: .62; --g-fres: .2; --g-sat: 1.8 }
+.dl--apple .gcard { border-radius: 22px }
+.dl--apple .gbtn { border-radius: var(--r-pill); font-weight: 600 }
+
+/* ── Samsung · One UI 8.5 Glass UI ──────────────────────────────────────
+   Samsung deliberately holds transparency DOWN for readability and lets a
+   visible outline define the glass instead. The most directly borrowable
+   dialect for a data product. */
+.dl--samsung { background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.01)) }
+.dl--samsung .lg {
+  --g-blur: 10px; --g-alpha: .34; --g-rim: .3; --g-fres: .1; --g-sat: 1.2;
+  border-width: 1.5px; border-color: rgba(255,255,255,.52);
+}
+.dl--samsung .gcard { border-radius: 24px }
+/* The "pop-top" button — an extruded lower edge that flattens on press. */
+.dl--samsung .gbtn {
+  border-radius: var(--r-pill);
+  box-shadow: var(--g-shadow), var(--g-inset), inset 0 -3px 0 rgba(0,0,0,.16);
+}
+.dl--samsung .gbtn:active {
+  box-shadow: var(--g-shadow), var(--g-inset), inset 0 -1px 0 rgba(0,0,0,.16);
+  transform: translateY(calc(1.5px * var(--motion-scale)));
+}
+
+/* ── Google · Material 3 Expressive ─────────────────────────────────────
+   Spring physics and shape morphing: the corner radius itself animates on
+   press. Bold fill, large radii, heavier type. */
+.dl--google { background: linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.01)) }
+.dl--google .lg { --g-blur: 6px; --g-alpha: .42; --g-rim: .24; --g-fres: .06; --g-sat: 1.1 }
+.dl--google .gcard { border-radius: 28px; transition: border-radius var(--dur-base) var(--ease-spring), transform var(--dur-base) var(--ease-spring), background var(--dur-fast) var(--ease-standard) }
+.dl--google .gcard:hover { border-radius: 14px }
+.dl--google .gbtn {
+  border-radius: 20px; font-weight: 700; letter-spacing: -.005em;
+  transition: border-radius var(--dur-base) var(--ease-spring), transform var(--dur-fast) var(--ease-spring), background var(--dur-fast) var(--ease-standard);
+}
+.dl--google .gbtn:active { border-radius: 9px; transform: scale(calc(1 - .04 * var(--motion-scale))) }
+.dl--google .gchip { border-radius: 9px; font-weight: 700 }
+
+/* ── Nothing · Nothing OS ───────────────────────────────────────────────
+   Monochrome, industrial, dot-matrix. Transparency without colour: the only
+   hue permitted is the alert red. Hard geometry, mono type, a dot grid. */
+.dl--nothing {
+  background:
+    radial-gradient(rgba(255,255,255,.14) .9px, transparent .9px) 0 0 / 9px 9px,
+    rgba(0,0,0,.30);
+}
+.dl--nothing .lg {
+  --g-blur: 5px; --g-alpha: .09; --g-rim: .2; --g-fres: .05; --g-sat: .1;
+  border-color: rgba(255,255,255,.34); border-radius: 4px !important;
+  box-shadow: var(--g-inset);   /* no drop shadow — Nothing sits flat on purpose */
+}
+.dl--nothing .lg::after { display: none }
+.dl--nothing .gcard__l, .dl--nothing .gcard__d,
+.dl--nothing .gbtn, .dl--nothing .gchip {
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .09em; font-weight: 500;
+}
+.dl--nothing .gbtn { font-size: 10.5px; padding: 9px 15px }
+.dl--nothing .gchip { font-size: 9.5px }
+.dl--nothing .gcard__k { font-family: var(--font-mono); font-weight: 400 }
+.dl--nothing .gcard__spark i { border-radius: 0 }
+.dl--nothing .gbtn--danger,
+.dl--nothing .gchip--danger { --g-tint: 214,48,49; --g-alpha: .5; color: #fff }
+.dl--nothing .gbtn--ok, .dl--nothing .gbtn--warn, .dl--nothing .gbtn--primary,
+.dl--nothing .gchip--ok, .dl--nothing .gchip--warn { --g-tint: 255,255,255; --g-alpha: .12 }
+
+/* ══ PAGE CHROME ═════════════════════════════════════════════════════════ */
+.top { padding: clamp(38px,5.5vw,70px) 0 24px; border-bottom: 1px solid var(--outline-variant); display: flex; flex-wrap: wrap; gap: 24px 40px; align-items: flex-end; justify-content: space-between }
+.kick { font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--primary-text); margin: 0 0 15px }
+h1 { font-family: var(--font-display); font-weight: 300; font-size: clamp(34px,5.4vw,62px); line-height: 1.04; letter-spacing: -.022em; margin: 0 0 16px; max-width: 17ch }
+h1 em { font-style: italic; color: var(--primary-text) }
+.lede { font-family: var(--font-display); font-size: clamp(16px,1.7vw,19px); line-height: 1.5; color: var(--on-surface-2); max-width: 58ch; margin: 0 }
+
+.sw { position: sticky; top: 12px; z-index: 40; background: var(--s-lowest); border: 1px solid var(--outline-variant); border-radius: var(--r-md); padding: 12px 14px 14px; min-width: 244px; box-shadow: var(--shadow-2) }
+.sw__t { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); margin: 0 0 9px }
+.sw__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px }
+.sw__row:last-of-type { margin-bottom: 0 }
+.sw__l { font-size: 12.5px; color: var(--on-surface-2) }
+.seg2 { display: inline-flex; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); overflow: hidden; flex: none }
+.seg2 button { font-family: var(--font-mono); font-size: 10px; background: none; border: 0; cursor: pointer; padding: 4px 8px; color: var(--on-surface-3); transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard) }
+.seg2 button + button { border-left: 1px solid var(--outline-variant) }
+.seg2 button[aria-pressed="true"] { background: var(--primary-container); color: var(--primary-text); font-weight: 500 }
+.seg2 button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px }
+
+section { padding-top: clamp(38px,4.6vw,62px) }
+.sh { display: flex; gap: 16px; align-items: baseline; margin-bottom: 6px }
+.sn { font-family: var(--font-mono); font-size: 12px; color: var(--primary-text); font-weight: 500; flex: none; padding-top: 4px }
+h2 { font-family: var(--font-display); font-weight: 400; font-size: clamp(23px,3vw,34px); line-height: 1.12; letter-spacing: -.017em }
+.ss { font-size: 13.5px; color: var(--on-surface-3); margin: 0 0 24px 28px; max-width: 60ch; line-height: 1.55 }
+h3 { font-size: 14px; font-weight: 600; margin: 28px 0 10px }
+
+pre { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.62; background: var(--s-container); border: 1px solid var(--outline-variant); border-radius: var(--r-md); padding: 13px 15px; overflow-x: auto; margin: 14px 0; color: var(--on-surface) }
+code { font-family: var(--font-mono); font-size: .89em }
+.rail p code, li code { background: var(--s-container); padding: 1.5px 5px; border-radius: 3px }
+.c { color: var(--on-surface-3) } .k { color: var(--primary-text) }
+ul { padding-left: 20px; margin: 0 0 1em } li { margin-bottom: .45em; color: var(--on-surface-2) }
+li::marker { color: var(--on-surface-3) }
+.note { border-left: 3px solid var(--primary); background: var(--primary-container); padding: 13px 17px; margin: 20px 0; border-radius: 0 var(--r-md) var(--r-md) 0 }
+.note p { margin: 0; font-size: 13.5px; color: var(--on-surface) }
+.note p + p { margin-top: .6em }
+footer { margin-top: 70px; padding-top: 22px; border-top: 1px solid var(--outline-variant) }
+footer p { font-size: 12px; color: var(--on-surface-3); max-width: 76ch; margin: 0 0 .6em }
+footer a { color: var(--primary-text) }
+@media (max-width: 760px) { .ss { margin-left: 0 } .sw { position: static; width: 100% } }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="kick">Kartavaya · component kit · 2026-08-29</p>
+      <h1>Glass that <em>actually reads.</em></h1>
+      <p class="lede">Working components in Kartavaya's own tokens — buttons, semantic toasts, KPI cards, dock, drag ghost, blurred scrim, sticky frost — plus the same card built in four OS dialects: Apple, Samsung, Google and Nothing. Every duration is a <code>--dur-*</code> rung and every curve a named <code>--ease-*</code>, so the kit passes <code>check-motion.mjs</code> and rides <code>--ix</code> as written. No library, no canvas, no WebGL. Hover and press everything.</p>
+    </div>
+    <div class="sw">
+      <p class="sw__t">Switches</p>
+      <div class="sw__row"><span class="sw__l">Ground</span>
+        <span class="seg2" role="group" aria-label="Ground">
+          <button type="button" data-ground="vivid" aria-pressed="true">Vivid</button>
+          <button type="button" data-ground="photo" aria-pressed="false">Rich</button>
+          <button type="button" data-ground="cream" aria-pressed="false">Cream</button>
+        </span></div>
+      <div class="sw__row"><span class="sw__l">Theme</span>
+        <span class="seg2" role="group" aria-label="Theme">
+          <button type="button" data-theme="light" aria-pressed="true">Cream</button>
+          <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+        </span></div>
+      <div class="sw__row"><span class="sw__l">Blur</span>
+        <span class="seg2" role="group" aria-label="Blur">
+          <button type="button" data-blur="8" aria-pressed="false">8px</button>
+          <button type="button" data-blur="16" aria-pressed="true">16px</button>
+          <button type="button" data-blur="28" aria-pressed="false">28px</button>
+        </span></div>
+      <div class="sw__row"><span class="sw__l">Animations</span>
+        <span class="seg2" role="group" aria-label="Animations">
+          <button type="button" data-ix="1" aria-pressed="true">Full</button>
+          <button type="button" data-ix=".5" aria-pressed="false">Red.</button>
+          <button type="button" data-ix="0" aria-pressed="false">None</button>
+        </span></div>
+    </div>
+  </header>
+
+  <!-- ═══════════════ 01 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">01</span><h2>The primitive — six layers</h2></div>
+    <p class="ss">One class, <code>.lg</code>, on the tokens below. Everything after this section is that class plus a shape.</p>
+    <div class="rail">
+      <p>Most "glassmorphism" is two layers — a translucent background and a blur — which is why it reads as a grey rectangle. Real depth needs six, and the last one is what makes it feel liquid rather than frozen.</p>
+      <pre><span class="c">/* 1  refraction   */</span> backdrop-filter: blur(16px) saturate(1.6) brightness(1.06);
+<span class="c">/* 2  tint         */</span> background: rgba(var(--g-tint), var(--g-alpha));
+<span class="c">/* 3  specular rim */</span> inset 0  1px 0 rgba(255,255,255,.46)
+<span class="c">/* 4  fresnel      */</span> inset 0 -1px 0 rgba(255,255,255,.16)
+                  inset ±1px 0 0 rgba(255,255,255,.14)
+<span class="c">/* 5  elevation    */</span> 0 8px 28px -8px rgba(12,18,16,.28),
+                  0 24px 56px -24px rgba(12,18,16,.32)
+<span class="c">/* 6  the liquid   */</span> ::after — a radial gloss at var(--mx) var(--my)</pre>
+      <p><strong>Layer 6 is the whole trick.</strong> A fixed highlight is frozen glass; a highlight that tracks the pointer is <em>liquid</em> glass. It is a pseudo-element with a radial gradient positioned by two custom properties, and about eight lines of JavaScript to write them:</p>
+      <pre><span class="k">el</span>.addEventListener('pointermove', e =&gt; {
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', (e.clientX - r.left) / r.width  * 100 + '%');
+  el.style.setProperty('--my', (e.clientY - r.top)  / r.height * 100 + '%');
+});</pre>
+      <p>Layer 5's negative spread matters: <code>-8px</code> and <code>-24px</code> pull the shadow under the element instead of haloing it, which is what separates elevation from a smudge. And <code>brightness(1.06)</code> in layer 1 is the difference between glass and a grey filter — it lifts what is behind rather than only blurring it.</p>
+      <div class="note"><p><strong>Everything here retunes from four values</strong> — <code>--g-blur</code>, <code>--g-alpha</code>, <code>--g-rim</code>, <code>--g-fres</code>. The Blur switch above writes the first one live. <code>prefers-reduced-transparency</code> flips them to an opaque fill and drops layer 6 entirely.</p></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 02 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">02</span><h2>Buttons</h2></div>
+    <p class="ss">Press them. Hover-rise, press-squish, pointer gloss — all on the ladder.</p>
+    <div class="stage stage--vivid" data-stage>
+      <p class="g-note">Glass buttons · the tint carries the meaning</p>
+      <div class="row">
+        <button class="lg gbtn gbtn--primary gbtn--lg"><span class="gbtn__ic"><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg></span>New invoice</button>
+        <button class="lg gbtn">Save draft</button>
+        <button class="lg gbtn gbtn--ok"><span class="gbtn__ic"><svg viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></span>Approve</button>
+        <button class="lg gbtn gbtn--warn">Hold</button>
+        <button class="lg gbtn gbtn--danger">Reject</button>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="lg gbtn is-busy" id="busy"><span class="gbtn__ic"><svg viewBox="0 0 20 20"><path d="M10 3a7 7 0 1 0 7 7" /></svg></span>Sending…</button>
+        <span class="lg gchip gchip--ok"><span class="gchip__d"></span>Paid</span>
+        <span class="lg gchip gchip--warn"><span class="gchip__d"></span>Overdue 14d</span>
+        <span class="lg gchip gchip--danger"><span class="gchip__d"></span>Failed</span>
+        <button class="lg gsw on" id="sw1" role="switch" aria-checked="true" aria-label="Auto-reconcile"><i></i></button>
+      </div>
+    </div>
+    <div class="rail">
+      <p>The semantic variants are one line each — they override <code>--g-tint</code> and nothing else:</p>
+      <pre>.gbtn--danger { --g-tint: 250,110,95; --g-alpha: .28; --g-rim: .54 }</pre>
+      <p>This is the correction to something I got wrong earlier. I said vivid colour and semantic colour compete. <strong>They do not — the tint can carry the meaning.</strong> A danger action in vivid red glass is more legible than a red outline on cream, not less, because the material and the meaning agree instead of arguing.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 03 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">03</span><h2>Toasts — semantic vivid</h2></div>
+    <p class="ss">Your idea, built. Each toast tinted by what it means, with a glass rim that drains in step with the dismiss timer.</p>
+    <div class="stage stage--photo" data-stage>
+      <p class="g-note">Fire one — they stack, drain and exit faster than they entered</p>
+      <div class="row" style="margin-bottom:18px">
+        <button class="lg gbtn gbtn--ok" data-toast="ok">Success</button>
+        <button class="lg gbtn gbtn--warn" data-toast="warn">Warning</button>
+        <button class="lg gbtn gbtn--danger" data-toast="danger">Error</button>
+        <button class="lg gbtn" data-toast="info">Info</button>
+      </div>
+      <div class="gtoasts" id="toasts" role="status" aria-live="polite"></div>
+    </div>
+    <div class="rail">
+      <p>Three things this does that a normal toast does not. The <strong>rim drains on the same timer that dismisses it</strong>, so the bar cannot lie — its duration is interpolated from JS rather than tokenised, which is the documented exemption in <code>check-motion.mjs</code> for exactly this case. The <strong>exit is faster than the entrance</strong> and travels less, per <code>animations.css</code>. And an <strong>Undo slot</strong> is built in, because MOTION-SPEC §7.2 says reversible destructive actions get a four-second undo rather than a confirm dialog.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 04 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">04</span><h2>KPI cards with sparklines</h2></div>
+    <p class="ss">The vivid hero strip from the audit, built. Bars grow from the baseline, 34ms apart.</p>
+    <div class="stage stage--vivid" data-stage>
+      <p class="g-note">This quarter · hover a card</p>
+      <div class="gcards" id="kpis"></div>
+      <div class="row" style="margin-top:20px; justify-content:space-between">
+        <span class="lg gseg" id="seg" role="tablist">
+          <span class="gseg__pill" id="segpill" aria-hidden="true"></span>
+          <button class="gseg__b on" role="tab" aria-selected="true">Quarter</button>
+          <button class="gseg__b" role="tab" aria-selected="false">Half</button>
+          <button class="gseg__b" role="tab" aria-selected="false">Year</button>
+        </span>
+        <span class="lg gfield">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5L17 17"/></svg>
+          <input type="text" placeholder="Search clients…" aria-label="Search clients">
+        </span>
+      </div>
+    </div>
+    <div class="rail"><p>The sparkline is an SVG-free micro bar chart — six <code>&lt;i&gt;</code> elements with a <code>--h</code> and a staggered <code>scaleY</code> mount animation. That is the entire "new chart vocabulary" item from the audit, and it is about twenty lines.</p></div>
+  </section>
+
+  <!-- ═══════════════ 05 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">05</span><h2>Dock, drag ghost, and the carried card</h2></div>
+    <p class="ss">Glass belongs to the editing state. A tile lifted off the grid is the one moment a KPI genuinely floats.</p>
+    <div class="stage stage--photo" data-stage>
+      <p class="g-note">Floating toolbar · drop target · card in flight</p>
+      <div class="row" style="margin-bottom:20px">
+        <span class="lg gdock">
+          <button class="gdock__b" aria-label="Add"><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg></button>
+          <button class="gdock__b" aria-label="Layout"><svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="14" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/></svg></button>
+          <button class="gdock__b" aria-label="Filter"><svg viewBox="0 0 20 20"><path d="M3 5h14M6 10h8M8 15h4"/></svg></button>
+          <button class="gdock__b" aria-label="Export"><svg viewBox="0 0 20 20"><path d="M10 13V3M6 7l4-4 4 4M4 15h12"/></svg></button>
+        </span>
+      </div>
+      <div class="ghosts">
+        <div class="lg gghost">Drop here</div>
+        <div class="lg gcard gcarry lg--grain">
+          <div class="gcard__l">In flight</div>
+          <div class="gcard__k">₹4.2L</div>
+          <div class="gcard__d">Receivables</div>
+        </div>
+        <div class="lg gghost">Drop here</div>
+      </div>
+    </div>
+    <div class="rail"><p><code>.vgw-ghost</code> already exists in <code>analytics.css</code> as a dashed border over a 10% accent tint — already translucent, already floating, already over the grid it will land in. It is the most correct frost surface in the analytics module and currently the flattest. This is the same element with the primitive applied, plus a slow border pulse whose amplitude rides <code>--motion-scale</code> so it stops rather than speeds up at reduced motion.</p></div>
+  </section>
+
+  <!-- ═══════════════ 06 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">06</span><h2>The blurred scrim</h2></div>
+    <p class="ss">Eleven scrims in the build; none blurs. This is what the other eleven should do.</p>
+    <div class="mstage lg--x" style="background:var(--s-low)">
+      <div class="mstage__bg">
+        <h4>Invoice INV-2026-0418</h4>
+        <p>Unicode Systems Pvt Ltd · raised 14 August 2026 · net 30<br>
+        Three line items, ₹4,20,000 excluding GST. Reconciled against the ICICI statement on 22 August.
+        Approval was routed to Keval Shah and is pending. Nothing here is real; it is here so there is
+        something to blur.</p>
+      </div>
+      <div class="gscrim" id="scrim" hidden>
+        <div class="lg gmodal lg--grain">
+          <h4>Delete this invoice?</h4>
+          <p>INV-2026-0418 is unpaid, so it can still be edited instead. Deleting removes three line items and the reconciliation link.</p>
+          <div class="row">
+            <button class="lg gbtn gbtn--danger" data-close>Delete</button>
+            <button class="lg gbtn" data-close>Keep it</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px"><button class="lg gbtn" id="openm" style="--g-tint:5,183,170;--g-alpha:.22">Open the dialog</button></div>
+    <div class="rail"><p>The scrim carries no text, so there is no contrast risk — which is why this is the single highest-impression change available. One rule applied to all eleven, and every overlay in the product gains the moment people recognise from iOS and Windows.</p></div>
+  </section>
+
+  <!-- ═══════════════ 07 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">07</span><h2>The sticky header — frost that means something</h2></div>
+    <p class="ss">Scroll inside the panel. This is the one case where frost carries information rather than decoration.</p>
+    <div class="sticky-demo">
+      <div class="lg sticky-demo__h">Client · Outstanding</div>
+      <div id="rows"></div>
+    </div>
+    <div class="rail"><p>Content visibly moving <em>through</em> the header is what tells you the header is a layer above the list rather than part of it. On an opaque header that information is thrown away — which is why proposal 89 found six <code>backdrop-filter</code> rules producing zero pixels: the elements behind them were opaque hex. The fix was never to delete the blur; it was to make the surface translucent so the blur has something to do.</p></div>
+  </section>
+
+  <!-- ═══════════════ 08 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">08</span><h2>Four dialects, one primitive</h2></div>
+    <p class="ss">Apple, Samsung, Google and Nothing all shipped a glass language. Each panel below is the <em>same</em> card, button and chip — only the tokens change. Hover and press each one; they behave differently on purpose.</p>
+
+    <div class="stage stage--photo" data-stage style="padding:22px 18px">
+      <div class="dialects" id="dialects"></div>
+    </div>
+
+    <div class="rail">
+      <h3>What each one is actually doing</h3>
+      <ul>
+        <li><strong>Apple — iOS 26/27.</strong> The maximal position: 26px blur, the strongest specular rim, pill geometry, high translucency. It is the most beautiful and the most fragile — iOS 26 shipped a 40% transparency floor, took an American Foundation for the Blind letter in December 2025, and iOS 27 answered in June 2026 by halving the blur radius and pinning text on a denser backdrop. The version here is the corrected one.</li>
+        <li><strong>Samsung — One UI 8.5.</strong> The most useful dialect for you, and the one I would actually borrow. Samsung deliberately holds transparency <em>down</em> for readability and lets <strong>a visible 1.5px outline define the glass instead of the blur</strong>. Their own coverage describes it as turning frosted UI into a dynamic glass effect "with just an outline". Note the button: an extruded lower edge — the "pop-top" — that flattens when pressed. On a data product this reads as glass while keeping text on a 34% fill instead of a 17% one.</li>
+        <li><strong>Google — Material 3 Expressive.</strong> Barely translucent at all; its signature is <strong>shape morphing</strong>. Hover a card and the corner radius animates 28px → 14px on a spring; press a button and it goes 20px → 9px. That is M3's spring motion model doing what a cubic-bezier cannot fake — and it is the one idea here that a CSS transition genuinely can express, because <code>border-radius</code> is animatable.</li>
+        <li><strong>Nothing — Nothing OS.</strong> The opposite thesis: transparency without colour. Monochrome, dot-matrix grid, mono type uppercased and letterspaced, 4px hard corners, no specular gloss at all, and <strong>red is the only hue permitted</strong> — reserved for the destructive action, so colour itself becomes semantic. Desaturating the backdrop (<code>saturate(.1)</code>) is what makes it feel industrial rather than merely grey.</li>
+      </ul>
+
+      <div class="note">
+        <p><strong>My recommendation for Kartavaya: Samsung's mechanism, Apple's polish, Google's press.</strong></p>
+        <p>Take the <strong>outline-defined glass</strong> from One UI — it is the only one of the four that survives a contrast audit on a data product, and it is the answer to "bold frozen glass": the boldness comes from the rim, not from the transparency. Keep Apple's <strong>pointer-tracked specular</strong>, because that is what reads as liquid rather than frosted. Take M3's <strong>radius morph on press</strong>, because it costs one transitioned property and makes every button feel physical. Leave Nothing's monochrome, but steal its discipline: <strong>one hue, reserved for meaning.</strong></p>
+      </div>
+      <p>Flip the Ground switch to Cream and watch all four collapse toward each other. Glass dialects are distinguishable only over a ground worth blurring — which is, again, the whole argument.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 09 ═══════════════ -->
+  <section>
+    <div class="sh"><span class="sn">09</span><h2>What to hold to</h2></div>
+    <div class="rail">
+      <ul>
+        <li><strong>Glass never goes behind tabular data.</strong> Ninety rupee figures at <code>--row-h: 66px</code> each landing on a different contrast ratio is unfixable. Everything in this kit is chrome, overlay or hero — never the register.</li>
+        <li><strong>One vivid ground per screen.</strong> Flip the Ground switch to Cream and watch every component here lose most of its depth. That is not a bug in the components; it is the mechanism. Glass is a relationship between two layers.</li>
+        <li><strong>Text on glass needs a barrier.</strong> Every tinted component here keeps its alpha high enough that white clears AA on the tint. Raise transparency past that and you rebuild iOS 26's problem.</li>
+        <li><strong>Count layers, not radius.</strong> Set Blur to 28px and the page will still be smooth, because at most a dozen blurred elements exist at once. Eighteen frosted sticky rails on a 1366×768 integrated-graphics laptop is a different story.</li>
+        <li><strong>Infinite animations keep a fixed period.</strong> The spinner and the ghost pulse do not multiply by <code>--ix</code> — they put their amplitude on <code>--motion-scale</code>, so at None they go still instead of becoming a strobe.</li>
+      </ul>
+      <div class="note">
+        <p><strong>Set Animations to None and Ground to Cream.</strong> Everything stays legible, every affordance still reads, nothing moves. That is the accessibility floor, and it is the reason this kit is built on the tokens rather than on hard-coded values.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>What this is.</strong> A working component kit, not a mockup — every effect above is CSS in this page's stylesheet, built on Kartavaya's tokens as read from <code>kartavaya-design.css</code> §5 and §7. Lift the <code>.lg</code> primitive and the four <code>--g-*</code> values and the rest follows. Nothing was written to the repository.</p>
+    <p><strong>Companion:</strong> the audit that argues for all of this is <em>Motion and Material</em> — the measurements, the coverage map and the sequencing live there; this page is the part you can press.</p>
+    <p><strong>Technique sources.</strong>
+      <a href="https://kube.io/blog/liquid-glass-css-svg/">kube.io — Refraction with CSS and SVG</a> ·
+      <a href="https://blog.logrocket.com/how-create-liquid-glass-effects-css-and-svg/">LogRocket — Liquid Glass effects</a> ·
+      <a href="https://gridlok.co/blog/liquid-glass-button-webgl-css/">Anatomy of a Liquid Glass Button</a> ·
+      <a href="https://atlaspuplabs.com/blog/liquid-glass-but-in-css">Atlas Pup Labs — Liquid Glass in CSS</a> ·
+      <a href="https://www.nngroup.com/articles/liquid-glass/">NN/g — Liquid Glass Is Cracked</a> ·
+      <a href="https://uxpilot.ai/blogs/glassmorphism-ui">Glassmorphism best practices</a>
+    </p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+
+  /* ── Switches ───────────────────────────────────────────────────────── */
+  function seg(attr, apply) {
+    var btns = [].slice.call(document.querySelectorAll('.sw [data-' + attr + ']'));
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+        apply(b.getAttribute('data-' + attr));
+      });
+    });
+  }
+  seg('theme',  function (v) { root.setAttribute('data-theme', v); });
+  seg('blur',   function (v) { root.style.setProperty('--g-blur', v + 'px'); });
+  seg('ground', function (v) {
+    [].forEach.call(document.querySelectorAll('[data-stage]'), function (s) {
+      s.classList.remove('stage--vivid', 'stage--photo', 'stage--cream');
+      s.classList.add('stage--' + v);
+    });
+  });
+  seg('ix', function (v) {
+    // --ix-user, never --ix: an inline style on the root outranks a media
+    // query, so writing --ix would override the OS reduced-motion setting.
+    root.style.setProperty('--ix-user', v === '0' ? '0.001' : v);
+    root.style.setProperty('--motion-scale-user', v === '0' ? '0' : v);
+  });
+  root.setAttribute('data-theme', 'light');
+
+  /* ── Layer 6: the pointer-tracked specular gloss ────────────────────── */
+  function track(el) {
+    el.addEventListener('pointermove', function (e) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+      el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+    });
+    el.addEventListener('pointerleave', function () {
+      el.style.setProperty('--mx', '50%'); el.style.setProperty('--my', '0%');
+    });
+  }
+  function trackAll(scope) { [].forEach.call((scope || document).querySelectorAll('.lg'), track); }
+
+  /* ── KPI cards ──────────────────────────────────────────────────────── */
+  var KPI = [
+    { l: 'Invoiced',  k: '₹18.4L', d: '+12% on Q2', s: [38, 52, 44, 61, 55, 78] },
+    { l: 'Collected', k: '₹12.1L', d: '66% of raised', s: [30, 41, 39, 48, 44, 62] },
+    { l: 'Open deals', k: '47',    d: '9 closing this week', s: [22, 31, 28, 36, 41, 47] },
+    { l: 'Median cycle', k: '6.2d', d: '−1.4d on Q2', s: [58, 51, 47, 44, 40, 34] }
+  ];
+  document.getElementById('kpis').innerHTML = KPI.map(function (c) {
+    var mx = Math.max.apply(null, c.s);
+    return '<div class="lg gcard">' +
+      '<div class="gcard__l">' + c.l + '</div>' +
+      '<div class="gcard__k">' + c.k + '</div>' +
+      '<div class="gcard__d">' + c.d + '</div>' +
+      '<div class="gcard__spark">' + c.s.map(function (v, i) {
+        return '<i style="--h:' + Math.round(v / mx * 100) + '%;--i:' + i + '"></i>';
+      }).join('') + '</div></div>';
+  }).join('');
+
+  /* ── The four dialects — same markup, four token sets ───────────────── */
+  var DIALECTS = [
+    { k: 'apple',   n: 'Apple',   t: 'iOS 26 · 27',   f: '26px blur, strongest rim, pill geometry. Beautiful, and the one that needed an accessibility correction.' },
+    { k: 'samsung', n: 'Samsung', t: 'One UI 8.5',    f: 'Low transparency, glass defined by a 1.5px outline. Press the button — the extruded edge flattens.' },
+    { k: 'google',  n: 'Google',  t: 'M3 Expressive', f: 'Barely translucent. Its signature is shape: hover the card, press the button, watch the radius morph.' },
+    { k: 'nothing', n: 'Nothing', t: 'Nothing OS',    f: 'Transparency without colour. Dot grid, mono type, hard 4px corners, red reserved for destruction.' }
+  ];
+  var SPARK = [38, 52, 44, 61, 55, 78];
+  document.getElementById('dialects').innerHTML = DIALECTS.map(function (d) {
+    return '<div class="dl dl--' + d.k + '">' +
+      '<div class="dl__h"><span class="dl__n">' + d.n + '</span><span class="dl__t">' + d.t + '</span></div>' +
+      '<div class="lg gcard">' +
+        '<div class="gcard__l">Invoiced</div>' +
+        '<div class="gcard__k">₹18.4L</div>' +
+        '<div class="gcard__d">+12% on Q2</div>' +
+        '<div class="gcard__spark">' + SPARK.map(function (v, i) {
+          return '<i style="--h:' + Math.round(v / 78 * 100) + '%;--i:' + i + '"></i>';
+        }).join('') + '</div>' +
+      '</div>' +
+      '<div class="row">' +
+        '<button class="lg gbtn gbtn--primary">Approve</button>' +
+        '<button class="lg gbtn gbtn--danger">Reject</button>' +
+      '</div>' +
+      '<div class="row"><span class="lg gchip gchip--warn"><span class="gchip__d"></span>Overdue</span></div>' +
+      '<p class="dl__f">' + d.f + '</p>' +
+    '</div>';
+  }).join('');
+
+  /* ── Sticky-header demo rows ────────────────────────────────────────── */
+  var NAMES = ['Unicode Systems', 'AekamINC UK', 'Nandan & Co', 'Sedani Traders', 'Vora Associates',
+               'Bhatt & Sons', 'Kalyan Exports', 'Mehta Consulting', 'Rathod Industries', 'Parekh LLP'];
+  document.getElementById('rows').innerHTML = NAMES.map(function (n, i) {
+    var v = (420000 - i * 34500).toLocaleString('en-IN');
+    return '<div class="sticky-demo__row"><span>' + n + '</span><span>₹' + v + '</span></div>';
+  }).join('');
+
+  /* ── Toasts ─────────────────────────────────────────────────────────── */
+  var DWELL = 5200;
+  var COPY = {
+    ok:     { t: 'Invoice sent',      m: 'INV-2026-0418 delivered to Unicode Systems.', a: 'Undo' },
+    warn:   { t: 'Two invoices overdue', m: 'Nandan & Co is 14 days past net-30.',      a: 'Review' },
+    danger: { t: 'Bank import failed', m: 'ICICI statement rejected 4 of 212 rows.',    a: 'Retry' },
+    info:   { t: 'Payroll run open',   m: 'August run is ready for 98 employees.',      a: 'Open' }
+  };
+  var ICON = {
+    ok: '<path d="M4 10.5l4 4 8-9"/>',
+    warn: '<path d="M10 6v5M10 14h.01"/><path d="M10 3l7 13H3z"/>',
+    danger: '<path d="M6 6l8 8M14 6l-8 8"/>',
+    info: '<path d="M10 9v5M10 6h.01"/><circle cx="10" cy="10" r="7.5"/>'
+  };
+  var box = document.getElementById('toasts');
+
+  function toast(kind) {
+    var c = COPY[kind];
+    var el = document.createElement('div');
+    el.className = 'lg gtoast gtoast--' + kind;
+    el.innerHTML =
+      '<span class="gtoast__ic"><svg viewBox="0 0 20 20">' + ICON[kind] + '</svg></span>' +
+      '<span><span class="gtoast__t">' + c.t + '</span><span class="gtoast__m">' + c.m + '</span></span>' +
+      '<button class="gtoast__a" type="button">' + c.a + '</button>' +
+      // The bar's duration is interpolated, NOT tokenised: it must match the
+      // JS dismiss timer exactly or the bar lies about how long is left.
+      '<span class="gtoast__rim"><i style="animation-duration:' + DWELL + 'ms"></i></span>';
+    box.appendChild(el);
+    track(el);
+
+    var timer = setTimeout(close, DWELL);
+    function close() {
+      clearTimeout(timer);
+      el.classList.add('out');
+      el.addEventListener('animationend', function () { el.remove(); }, { once: true });
+    }
+    el.querySelector('.gtoast__a').addEventListener('click', close);
+    // Hover pauses both the timer and the bar, so they never disagree.
+    el.addEventListener('pointerenter', function () {
+      clearTimeout(timer);
+      el.querySelector('.gtoast__rim i').style.animationPlayState = 'paused';
+    });
+    el.addEventListener('pointerleave', function () {
+      el.querySelector('.gtoast__rim i').style.animationPlayState = 'running';
+      timer = setTimeout(close, 1600);
+    });
+    while (box.children.length > 4) box.firstChild.remove();
+  }
+  [].forEach.call(document.querySelectorAll('[data-toast]'), function (b) {
+    b.addEventListener('click', function () { toast(b.getAttribute('data-toast')); });
+  });
+
+  /* ── Segmented pill ─────────────────────────────────────────────────── */
+  var segEl = document.getElementById('seg'), pill = document.getElementById('segpill');
+  var sbtns = [].slice.call(segEl.querySelectorAll('.gseg__b'));
+  function movePill(b, animate) {
+    if (!animate) pill.style.transition = 'none';
+    pill.style.width = b.offsetWidth + 'px';
+    pill.style.transform = 'translateX(' + (b.offsetLeft - 3) + 'px)';
+    if (!animate) { void pill.offsetWidth; pill.style.transition = ''; }
+  }
+  sbtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      sbtns.forEach(function (o) { o.classList.remove('on'); o.setAttribute('aria-selected', 'false'); });
+      b.classList.add('on'); b.setAttribute('aria-selected', 'true');
+      movePill(b, true);
+    });
+  });
+  movePill(segEl.querySelector('.gseg__b.on'), false);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { movePill(segEl.querySelector('.gseg__b.on'), false); });
+  }
+  window.addEventListener('resize', function () { movePill(segEl.querySelector('.gseg__b.on'), false); });
+
+  /* ── Switch, modal ──────────────────────────────────────────────────── */
+  var sw1 = document.getElementById('sw1');
+  sw1.addEventListener('click', function () {
+    var on = sw1.classList.toggle('on');
+    sw1.setAttribute('aria-checked', String(on));
+  });
+  var scrim = document.getElementById('scrim');
+  document.getElementById('openm').addEventListener('click', function () { scrim.hidden = false; });
+  [].forEach.call(scrim.querySelectorAll('[data-close]'), function (b) {
+    b.addEventListener('click', function () { scrim.hidden = true; });
+  });
+  scrim.addEventListener('click', function (e) { if (e.target === scrim) scrim.hidden = true; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') scrim.hidden = true; });
+
+  trackAll();
+})();
+</script>

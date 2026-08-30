@@ -1,0 +1,1222 @@
+<title>Kartavaya Indexing Plan</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --ground:      #F3EFE6;
+    --surface:     #FAF7F0;
+    --raised:      #EEE9DC;
+    --sunk:        #E7E1D1;
+    --ink:         #1B1D1A;
+    --ink-2:       #4A4E48;
+    --ink-3:       #5E625A;
+    --rule:        #D8D1BE;
+    --rule-firm:   #B8B098;
+    --teal:        #04837A;
+    --teal-text:   #046B64;
+    --teal-soft:   #B4F1E8;
+    --clay:        #86552F;
+    --clay-soft:   #FFDCC3;
+    --olive:       #5C6450;
+    --crit:        #B42318;
+    --crit-text:   #8F1B12;
+    --crit-soft:   #FBDDD9;
+    --warn:        #8B5206;
+    --warn-soft:   #FBE9CC;
+    --ok:          #126B36;
+    --ok-soft:     #CFEBD9;
+    --term-bg:     #1B1D1A;
+    --term-ink:    #E4E0D3;
+    --term-dim:    #8E8F84;
+    --term-hit:    #7FD8C9;
+
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --display: "Instrument Serif", "Newsreader", Georgia, serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --deva: "Tiro Devanagari Hindi", "Noto Sans Devanagari", serif;
+
+    --measure: 68ch;
+    --pad: clamp(1.25rem, 4vw, 3.5rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:    #141510;
+      --surface:   #1C1E17;
+      --raised:    #24261E;
+      --sunk:      #2B2E24;
+      --ink:       #EFEBDF;
+      --ink-2:     #C3C0B3;
+      --ink-3:     #9C9B8E;
+      --rule:      #35382C;
+      --rule-firm: #4A4E3E;
+      --teal:      #4FD3C4;
+      --teal-text: #6FE0D2;
+      --teal-soft: #123832;
+      --clay:      #D79A63;
+      --clay-soft: #3A2716;
+      --olive:     #9AA487;
+      --crit:      #F1837A;
+      --crit-text: #F79E96;
+      --crit-soft: #3B1A16;
+      --warn:      #E0A84A;
+      --warn-soft: #3A2A0E;
+      --ok:        #69C98C;
+      --ok-soft:   #123724;
+      --term-bg:   #0E0F0B;
+      --term-ink:  #E4E0D3;
+      --term-dim:  #7C7D71;
+      --term-hit:  #7FD8C9;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:    #141510;
+    --surface:   #1C1E17;
+    --raised:    #24261E;
+    --sunk:      #2B2E24;
+    --ink:       #EFEBDF;
+    --ink-2:     #C3C0B3;
+    --ink-3:     #9C9B8E;
+    --rule:      #35382C;
+    --rule-firm: #4A4E3E;
+    --teal:      #4FD3C4;
+    --teal-text: #6FE0D2;
+    --teal-soft: #123832;
+    --clay:      #D79A63;
+    --clay-soft: #3A2716;
+    --olive:     #9AA487;
+    --crit:      #F1837A;
+    --crit-text: #F79E96;
+    --crit-soft: #3B1A16;
+    --warn:      #E0A84A;
+    --warn-soft: #3A2A0E;
+    --ok:        #69C98C;
+    --ok-soft:   #123724;
+    --term-bg:   #0E0F0B;
+    --term-ink:  #E4E0D3;
+    --term-dim:  #7C7D71;
+    --term-hit:  #7FD8C9;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.0625rem;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 78rem;
+    margin: 0 auto;
+    padding: var(--pad);
+  }
+
+  /* ---------- masthead ---------- */
+
+  .mast { border-bottom: 2px solid var(--ink); padding-bottom: 1.75rem; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--teal-text);
+    margin: 0 0 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    align-items: baseline;
+  }
+  .eyebrow span:not(:first-child) { color: var(--ink-3); }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(2.5rem, 6.5vw, 4.25rem);
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+  h1 em { font-style: italic; color: var(--teal-text); }
+
+  .standfirst {
+    font-size: clamp(1.125rem, 2.1vw, 1.375rem);
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: var(--measure);
+    margin: 0;
+  }
+
+  .stamp {
+    margin-top: 1.75rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    line-height: 1.7;
+    color: var(--ink-3);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.5rem;
+  }
+  .stamp b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---------- thesis ---------- */
+
+  .thesis {
+    margin: 3rem 0 0;
+    padding: 1.75rem 2rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--crit);
+    display: grid;
+    gap: 1rem;
+  }
+  .thesis p { margin: 0; max-width: var(--measure); }
+  .thesis .lede {
+    font-family: var(--display);
+    font-size: clamp(1.375rem, 3vw, 1.875rem);
+    line-height: 1.25;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
+  /* ---------- section headings ---------- */
+
+  section { margin-top: 4.5rem; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    border-bottom: 1px solid var(--rule-firm);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1.75rem;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--teal-text);
+    letter-spacing: 0.08em;
+    flex: none;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(1.625rem, 3.4vw, 2.25rem);
+    line-height: 1.15;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .sec-note {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    flex: none;
+  }
+
+  .intro { max-width: var(--measure); color: var(--ink-2); margin: 0 0 2rem; }
+
+  /* ---------- findings ---------- */
+
+  .finding {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    margin-bottom: 1.25rem;
+  }
+  .finding__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--raised);
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid currentColor;
+    flex: none;
+  }
+  .chip--p0 { color: var(--crit-text); background: var(--crit-soft); }
+  .chip--p1 { color: var(--warn);      background: var(--warn-soft); }
+  .chip--p2 { color: var(--ink-2);     background: var(--sunk); }
+
+  .finding__id {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-3);
+    flex: none;
+  }
+  .finding__t {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1.125rem;
+    line-height: 1.3;
+    margin: 0;
+    flex: 1 1 18rem;
+  }
+  .finding__body { padding: 1.25rem; display: grid; gap: 1rem; }
+  .finding__body > p { margin: 0; max-width: var(--measure); }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+
+  .fix {
+    border-top: 1px dashed var(--rule-firm);
+    padding-top: 0.9rem;
+  }
+  .fix p { margin: 0; max-width: var(--measure); }
+
+  /* ---------- terminal evidence ---------- */
+
+  .term {
+    background: var(--term-bg);
+    color: var(--term-ink);
+    font-family: var(--mono);
+    font-size: 0.78125rem;
+    line-height: 1.65;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--rule-firm);
+  }
+  .term pre { margin: 0; }
+  .term .c { color: var(--term-dim); }
+  .term .p { color: var(--term-hit); }
+  .term .hit { color: #F5A79F; font-weight: 500; }
+  .term .good { color: var(--term-hit); font-weight: 500; }
+
+  /* ---------- phases ---------- */
+
+  .phase {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    margin-bottom: 1.25rem;
+  }
+  .phase__head {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.25rem;
+    background: var(--raised);
+    border-bottom: 1px solid var(--rule);
+  }
+  .phase__n {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--teal-text);
+  }
+  .phase__t { font-weight: 600; font-size: 1.125rem; margin: 0; flex: 1 1 14rem; }
+  .phase__when {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
+  }
+  .phase__body { padding: 1.25rem; }
+
+  ol.tasks, ul.tasks { margin: 0; padding-left: 1.35rem; display: grid; gap: 0.6rem; }
+  ol.tasks li, ul.tasks li { max-width: var(--measure); }
+  ol.tasks li::marker, ul.tasks li::marker { color: var(--teal-text); font-family: var(--mono); font-size: 0.85em; }
+
+  .exit {
+    margin-top: 1.25rem;
+    padding: 0.85rem 1rem;
+    background: var(--ok-soft);
+    border-left: 3px solid var(--ok);
+  }
+  .exit .label { color: var(--ok); }
+  .exit p { margin: 0; font-size: 0.9375rem; }
+  .exit code { font-family: var(--mono); font-size: 0.85em; background: var(--surface); padding: 0.1rem 0.3rem; border: 1px solid var(--rule); }
+
+  /* ---------- tables ---------- */
+
+  .tw { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 40rem; }
+  th, td { text-align: left; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--raised);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-family: var(--mono); font-size: 0.8125rem; color: var(--ink); }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .tag--now  { color: var(--crit-text); background: var(--crit-soft); }
+  .tag--next { color: var(--warn); background: var(--warn-soft); }
+  .tag--late { color: var(--ink-2); background: var(--sunk); }
+
+  /* ---------- code blocks ---------- */
+
+  .file {
+    border: 1px solid var(--rule-firm);
+    background: var(--surface);
+    margin: 0;
+  }
+  .file__n {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    padding: 0.45rem 0.9rem;
+    background: var(--sunk);
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--rule-firm);
+  }
+  .file pre {
+    margin: 0;
+    padding: 0.9rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.78125rem;
+    line-height: 1.65;
+    color: var(--ink);
+  }
+  .file .cm { color: var(--ink-3); }
+
+  .grid2 { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+
+  /* ---------- callout ---------- */
+
+  .note {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--clay);
+    background: var(--clay-soft);
+    padding: 1.1rem 1.25rem;
+    margin: 1.5rem 0 0;
+  }
+  .note p { margin: 0; max-width: var(--measure); }
+  .note p + p { margin-top: 0.7rem; }
+  .note .label { color: var(--clay); }
+
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.86em; }
+  .dv { font-family: var(--deva); }
+
+  a { color: var(--teal-text); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  footer {
+    margin-top: 5rem;
+    border-top: 2px solid var(--ink);
+    padding-top: 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-3);
+    line-height: 1.8;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Proposal 94</span>
+      <span>Aekam Inc · Kartavaya</span>
+      <span>2026-08-29</span>
+    </p>
+    <h1>Google cannot see<br />the <em>real</em> product.</h1>
+    <p class="standfirst">
+      Kartavaya is not un-indexed because of a ranking problem. It is un-indexed
+      because production serves a two-generation-old build, the crawler files do
+      not exist, and the only host carrying the correct page is the one nobody
+      meant to publish.
+    </p>
+    <p class="stamp">
+      <span><b>Method:</b> live HTTP against production, staging and apex</span>
+      <span><b>Rendered:</b> headless browser, anonymous</span>
+      <span><b>Source:</b> working tree @ <code>b3c70134</code></span>
+    </p>
+  </header>
+
+  <div class="thesis">
+    <p class="lede">
+      Every fix below is worthless until one thing happens: production is
+      redeployed. Everything Google indexes today describes a product Kartavaya
+      stopped being.
+    </p>
+    <p>
+      <code>www.kartavaya.com</code> currently tells the world it is
+      <em>&ldquo;team task management built for agencies and founders&rdquo;</em> —
+      a category owned by Asana, Trello and ClickUp, where a new entrant ranks
+      nowhere. The build in <code>main</code> says something no global tool can
+      say: practice management for Indian firms with GST built in. That page is
+      live only on staging.
+    </p>
+  </div>
+
+  <!-- ============ 1 · FINDINGS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>What is actually live</h2>
+      <span class="sec-note">11 findings · verified</span>
+    </div>
+    <p class="intro">
+      Nothing below is inferred from the repository. Each finding carries the
+      command that produced it, in keeping with the house rule that a route or a
+      file is never called missing without a live check.
+    </p>
+
+    <!-- F1 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p0">P0</span>
+        <span class="finding__id">F1</span>
+        <h3 class="finding__t">Production serves a stale build with the wrong positioning</h3>
+      </div>
+      <div class="finding__body">
+        <div>
+          <span class="label">Evidence</span>
+          <div class="term"><pre><span class="c">$</span> curl -sL https://www.kartavaya.com/ | grep -o '&lt;title&gt;[^&lt;]*'
+<span class="hit">&lt;title&gt;Kartavaya — by Aekam Inc</span>
+
+<span class="c"># frontend/index.html in main says:</span>
+<span class="good">&lt;title&gt;Kartavaya — one place to run an Indian business&lt;/title&gt;</span>
+
+<span class="c">$</span> curl -sI https://www.kartavaya.com/ | grep -i permissions
+Permissions-Policy: geolocation=(), microphone=(), <span class="hit">camera=()</span>
+<span class="c"># vercel.json says camera=(self) — the Pahchan fix is not deployed</span>
+
+<span class="c"># live CSP names the RENAMED, now-dead Railway host:</span>
+connect-src ... https://<span class="hit">kartavya</span>-production.up.railway.app</pre></div>
+        </div>
+        <p>
+          The rendered page is the old split login screen — <em>&ldquo;Do what must be
+          done.&rdquo;</em> — with four bullets about Kanban columns. No modules, no
+          GST, no pricing tiers, no <span class="dv">आपकी भाषा</span>. Three
+          independent signals agree that this deploy predates the landing page,
+          the Railway rename and this morning's camera fix.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            Redeploy <code>main</code> on Vercel. Railway de-duplicates same-SHA
+            deploys, so if the dashboard shows the head SHA already built, force a
+            rebuild rather than trusting the badge. Verify by the title string, not
+            by the deployment status.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F2 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p0">P0</span>
+        <span class="finding__id">F2</span>
+        <h3 class="finding__t">robots.txt and sitemap.xml do not exist — they return HTML</h3>
+      </div>
+      <div class="finding__body">
+        <div>
+          <span class="label">Evidence</span>
+          <div class="term"><pre><span class="c">$</span> curl -so /dev/null -w '%{http_code} %{content_type}\n' \
+       https://www.kartavaya.com/robots.txt
+<span class="hit">200 text/html; charset=utf-8</span>
+
+<span class="c">$</span> ... /sitemap.xml   → <span class="hit">200 text/html; charset=utf-8</span>
+<span class="c">$</span> ... apex + staging → same</pre></div>
+        </div>
+        <p>
+          The SPA catch-all in <code>vercel.json</code> —
+          <code>{ "source": "/((?!api/).*)", "destination": "/index.html" }</code>
+          — swallows both. Search Console will reject a sitemap that returns HTML,
+          so the sitemap cannot even be submitted, and there is no way to keep a
+          crawler out of anything.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            Add real files to <code>frontend/public/</code>. Vite copies
+            <code>public/*</code> into <code>dist/</code> verbatim and Vercel serves a
+            matching static file before it evaluates rewrites, so the catch-all
+            stops swallowing them the moment the files exist. Contents in §3.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F3 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p0">P0</span>
+        <span class="finding__id">F3</span>
+        <h3 class="finding__t">Staging is fully crawlable — and it is the better copy</h3>
+      </div>
+      <div class="finding__body">
+        <div>
+          <span class="label">Evidence</span>
+          <div class="term"><pre><span class="c">$</span> curl -sI https://staging.kartavaya.com/ | head -1
+HTTP/1.1 <span class="hit">200 OK</span>          <span class="c"># no auth, no X-Robots-Tag</span>
+
+<span class="c">$</span> curl -sL https://staging.kartavaya.com/ | grep -o '&lt;title&gt;[^&lt;]*'
+&lt;title&gt;Kartavaya — <span class="hit">one place to run an Indian business</span></pre></div>
+        </div>
+        <p>
+          Staging is a publicly reachable duplicate of the site, and it currently
+          carries the <em>correct</em> content while production carries the stale
+          one. If Google finds it first — a single shared link is enough — the
+          canonical version of Kartavaya on the internet becomes a hostname that
+          runs against the production database, sits at
+          <code>OUTBOUND_MODE=dry</code>, and holds the reseed test orgs.
+        </p>
+        <div class="fix">
+          <span class="label">Fix — two layers, in this order</span>
+          <p>
+            <strong>Preferred:</strong> turn on Vercel Deployment Protection for the
+            staging project. Authenticated deploys cannot be crawled at all, and it
+            closes the exposure as well as the SEO hole.
+            <strong>Minimum:</strong> serve <code>X-Robots-Tag: noindex, nofollow</code>
+            on staging plus a <code>Disallow: /</code> robots.txt. Because
+            <code>vercel.json</code> is shared between environments, generate the
+            robots file per build mode — the repo already runs
+            <code>vite build --mode staging</code> and already substitutes
+            <code>%VITE_*%</code> into <code>index.html</code>, so a
+            <code>%VITE_ROBOTS%</code> meta tag fits the existing mechanism with no
+            new machinery. A header beats a robots rule here: <code>Disallow</code>
+            stops crawling, not indexing.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F4 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p1">P1</span>
+        <span class="finding__id">F4</span>
+        <h3 class="finding__t">No canonical tag, and the hostname is split</h3>
+      </div>
+      <div class="finding__body">
+        <div>
+          <span class="label">Evidence</span>
+          <div class="term"><pre><span class="c">$</span> curl -sI https://kartavaya.com/ | head -2
+HTTP/1.1 <span class="good">308 Permanent Redirect</span>
+Location: https://www.kartavaya.com/
+
+<span class="c">$</span> curl -sL ... | grep -c 'rel="canonical"'
+<span class="hit">0</span></pre></div>
+        </div>
+        <p>
+          The edge already decides in favour of <code>www</code>, which is the right
+          call and should simply be made official. But no page declares a canonical
+          URL, and because every route serves the same <code>index.html</code>, the
+          moment content pages exist they will all be indistinguishable to a crawler.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            Add <code>&lt;link rel="canonical" href="https://www.kartavaya.com/"&gt;</code>
+            to <code>index.html</code> now, and make it per-route when a head manager
+            lands (§5). Use the <strong>Domain property</strong> in Search Console so
+            apex, www and staging are all covered by one DNS verification.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F5 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p1">P1</span>
+        <span class="finding__id">F5</span>
+        <h3 class="finding__t">The marketing page is client-rendered and lazy-loaded</h3>
+      </div>
+      <div class="finding__body">
+        <div>
+          <span class="label">Evidence</span>
+          <div class="term"><pre><span class="c">$</span> grep -iE 'prerender|ssg|helmet|react-snap|sitemap' package.json
+<span class="hit">(no matches)</span>
+
+<span class="c">// App.jsx:112</span>
+const LandingPage = <span class="hit">lazyPage</span>(() =&gt; import('./pages/marketing/LandingPage'));</pre></div>
+        </div>
+        <p>
+          Every word of the marketing copy — the headline, fifteen modules, the GST
+          claims, the four trust promises — exists only after JavaScript executes
+          <em>and</em> a second chunk is fetched. Googlebot does render JS, but on a
+          queued, budgeted second pass. Bing renders far less, and the WhatsApp,
+          LinkedIn and AI crawlers that matter for a referral-led product mostly do
+          not render at all — which for this product is the more expensive half.
+        </p>
+        <div class="fix">
+          <span class="label">Fix — and the trap inside it</span>
+          <p>
+            Prerender the marketing route to static HTML at build time.
+            <strong>The constraint:</strong> <code>vercel.json</code> pins a
+            <code>sha256</code> of the inline theme-bootstrap script in
+            <code>index.html</code>, and <code>scripts/check-csp-hash.mjs</code>
+            enforces it against <code>public/_headers</code>. Any prerenderer that
+            reformats that inline script by a single byte changes the hash, breaks
+            the gate, and — if it were forced through — would block the pre-paint
+            bootstrap on the live site. Preserve the script verbatim, or regenerate
+            the hash in the same commit.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F6 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p1">P1</span>
+        <span class="finding__id">F6</span>
+        <h3 class="finding__t">Every unknown URL returns 200 — soft 404s at scale</h3>
+      </div>
+      <div class="finding__body">
+        <p>
+          The catch-all rewrite means <code>/anything-at-all</code> answers
+          <code>200 OK</code> with the same document. Google classifies these as soft
+          404s, which burns crawl budget and can suppress the pages that matter. It
+          is harmless at a five-page site and becomes a real drag the moment content
+          pages exist.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            Ship alongside the head manager in §5: an unmatched route renders a 404
+            view carrying <code>&lt;meta name="robots" content="noindex"&gt;</code>.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F7 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p1">P1</span>
+        <span class="finding__id">F7</span>
+        <h3 class="finding__t">No share image and no structured data</h3>
+      </div>
+      <div class="finding__body">
+        <p>
+          <code>og:image</code> is deliberately absent, and the reasoning in
+          <code>index.html</code> is sound — a broken preview is worse than none. But
+          the same comment records that most visits arrive from a WhatsApp link,
+          which makes this the highest-leverage single asset on the site and the one
+          piece of the funnel that has no substitute. There is also no JSON-LD
+          anywhere, so Kartavaya is not eligible for an organisation knowledge panel
+          or sitelinks.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            A real 1200&times;630 of the product — the actual task board or an
+            invoice, not a logo on a gradient — at <code>/og-kartavaya.png</code>, then
+            uncomment the tag. Add <code>Organization</code>,
+            <code>SoftwareApplication</code> and a <code>FAQPage</code> block; the four
+            Trust claims are already written in question-and-answer shape.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F8 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p2">P2</span>
+        <span class="finding__id">F8</span>
+        <h3 class="finding__t">Payment and signing links are crawlable — and Googlebot is named explicitly</h3>
+      </div>
+      <div class="finding__body">
+        <div>
+          <span class="label">Evidence — vercel.json</span>
+          <div class="term"><pre>"source": "/i/:token",
+"has": [{ "key": "user-agent", "value":
+  ".*(whatsapp|facebookexternalhit|...|<span class="hit">googlebot</span>).*" }],
+"destination": "/api/og?token=:token"</pre></div>
+        </div>
+        <p>
+          <code>/i/:token</code> (payment), <code>/sign/:token</code> (eSign),
+          <code>/approve</code>, <code>/accept-invite</code> and
+          <code>/reset-password</code> are all public, token-bearing URLs, and the OG
+          rewrite deliberately hands Googlebot a card for payment links. Low
+          probability, high embarrassment: one such URL pasted into an indexed page
+          is enough.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            <code>Disallow</code> each prefix in robots.txt, and drop
+            <code>googlebot</code> from that user-agent list — it is a social-preview
+            rewrite, and a search crawler has no business there.
+          </p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F9 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p2">P2</span>
+        <span class="finding__id">F9</span>
+        <h3 class="finding__t">/glass-demo is a public, unauthenticated route</h3>
+      </div>
+      <div class="finding__body">
+        <p>
+          Declared in <code>App.jsx:189</code> above the protected tree. A design
+          demo page is not something to rank for, and it dilutes a five-page site.
+          Disallow it, or move it behind auth.
+        </p>
+      </div>
+    </article>
+
+    <!-- F10 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p2">P2</span>
+        <span class="finding__id">F10</span>
+        <h3 class="finding__t">The live landing page contradicts itself in Devanagari</h3>
+      </div>
+      <div class="finding__body">
+        <p>
+          <code>Modules.jsx</code> carries a long comment establishing that CRM is
+          <span class="dv">ग्रह</span> and explicitly not <span class="dv">ग्राहक</span>
+          — which means <em>customer</em> and is already spent on a different sidebar
+          heading. The rendered page obeys it in the module grid and then breaks it
+          about four hundred pixels lower, where the access-control fragment in
+          <code>Features.jsx</code> renders <span class="dv">ग्राहक · CRM</span>. Both
+          are visible on staging right now, on one screen.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>One word in <code>Features.jsx</code>. Worth doing before the page is advertised.</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- F11 -->
+    <article class="finding">
+      <div class="finding__head">
+        <span class="chip chip--p2">P2</span>
+        <span class="finding__id">F11</span>
+        <h3 class="finding__t">The only conversion path is a WhatsApp link to a UK number</h3>
+      </div>
+      <div class="finding__body">
+        <p>
+          <code>VITE_LEAD_CTA_HREF</code> resolves to
+          <code>https://wa.me/44&hellip;</code> on staging — a <strong>+44</strong>
+          number, on a page whose entire argument is that it was built in India for
+          Indian firms. It is also the sole destination: hero, pricing and footer all
+          point at it. Traffic from every phase below lands here.
+        </p>
+        <div class="fix">
+          <span class="label">Fix</span>
+          <p>
+            An Indian number, or the lead form described in <code>cta.js</code> option
+            2. Whichever is chosen, it has to exist before any of this drives
+            traffic — otherwise indexing succeeds and the funnel still ends nowhere.
+          </p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ============ 2 · SEQUENCE ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>The sequence</h2>
+      <span class="sec-note">order matters</span>
+    </div>
+    <p class="intro">
+      These phases are strictly ordered. Submitting a sitemap before the redeploy
+      would ask Google to index the wrong product faster, and a first impression
+      of the index is expensive to correct.
+    </p>
+
+    <div class="phase">
+      <div class="phase__head">
+        <span class="phase__n">PHASE 0</span>
+        <h3 class="phase__t">Make the site truthful and crawlable</h3>
+        <span class="phase__when">Day 1 · half a day</span>
+      </div>
+      <div class="phase__body">
+        <ol class="tasks">
+          <li><strong>Redeploy <code>main</code> to production.</strong> Nothing else in this document may start before this lands.</li>
+          <li>Add <code>frontend/public/robots.txt</code> and <code>frontend/public/sitemap.xml</code> (§3).</li>
+          <li>Add the canonical tag to <code>index.html</code>.</li>
+          <li>Block staging — protection, or noindex header plus robots (F3).</li>
+          <li>Drop <code>googlebot</code> from the <code>/i/:token</code> user-agent list.</li>
+          <li>Fix the <span class="dv">ग्राहक</span> → <span class="dv">ग्रह</span> word, and point the CTA at a destination that suits the audience.</li>
+        </ol>
+        <div class="exit">
+          <span class="label">Exit test</span>
+          <p>
+            <code>curl -sI https://www.kartavaya.com/robots.txt</code> returns
+            <code>content-type: text/plain</code>, and the homepage title reads
+            <em>one place to run an Indian business</em>. Both, or the phase is not done.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__head">
+        <span class="phase__n">PHASE 1</span>
+        <h3 class="phase__t">Register and ask to be crawled</h3>
+        <span class="phase__when">Day 1, after Phase 0 · 1 hour</span>
+      </div>
+      <div class="phase__body">
+        <ol class="tasks">
+          <li>Google Search Console, <strong>Domain property</strong> for <code>kartavaya.com</code>, verified by DNS TXT in Vercel DNS. This covers apex, www and staging together — a URL-prefix property would miss the redirect target.</li>
+          <li>Submit <code>https://www.kartavaya.com/sitemap.xml</code>.</li>
+          <li>URL Inspection → <em>Request indexing</em> on the homepage. This is the one manual nudge worth spending.</li>
+          <li>Bing Webmaster Tools — import the GSC property rather than re-verifying. Bing feeds ChatGPT and Copilot answers, which for a B2B product is no longer a rounding error.</li>
+          <li>Confirm in GSC that staging is reported as excluded by noindex. That is the proof F3 is closed, not the absence of a staging result.</li>
+        </ol>
+        <div class="exit">
+          <span class="label">Exit test</span>
+          <p>Sitemap status <em>Success</em> with 5 URLs discovered, and the homepage returns <em>URL is on Google</em> within roughly a week.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__head">
+        <span class="phase__n">PHASE 2</span>
+        <h3 class="phase__t">Make the one page worth ranking</h3>
+        <span class="phase__when">Week 1 · 1&ndash;2 days</span>
+      </div>
+      <div class="phase__body">
+        <ul class="tasks">
+          <li>
+            <strong>Title.</strong> The current one is 52 characters and reads
+            well, but carries no category term. Keep the voice, add the noun:
+            <code>Kartavaya — practice management for Indian firms</code>. Resist
+            stuffing; a title a human would say out loud outperforms a keyword list.
+          </li>
+          <li>
+            <strong>H1 stays as it is.</strong> <em>Practice management that speaks
+            <span class="dv">आपकी भाषा</span></em> already carries the category term
+            and is the most memorable line on the site. It does not need editing for
+            a crawler.
+          </li>
+          <li><strong>og:image</strong> at 1200&times;630, then uncomment the tag (F7).</li>
+          <li><strong>JSON-LD:</strong> <code>Organization</code>, <code>SoftwareApplication</code>, <code>FAQPage</code> built from the four Trust claims.</li>
+          <li>Give the four legal pages — privacy, security, DPA, sub-processors — their own titles once the head manager lands. They are around a thousand words each of genuine, specific content, and they are the pages a cautious buyer reads before trusting anyone with a client's GSTIN.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__head">
+        <span class="phase__n">PHASE 3</span>
+        <h3 class="phase__t">Build pages that can rank at all</h3>
+        <span class="phase__when">Week 2 onward · continuous</span>
+      </div>
+      <div class="phase__body">
+        <p style="margin:0 0 1rem; max-width:var(--measure);">
+          A single page ranks for one thing: the brand. Every non-brand query in §4
+          needs a page pointed at it. This phase has a hard technical prerequisite —
+          per-route titles and descriptions, which means the head manager and
+          prerender from F5. Do not write content before that exists; it would all
+          share one title.
+        </p>
+        <ul class="tasks">
+          <li><code>/gst-invoicing</code> — HSN and SAC, CGST/SGST/IGST, place of supply, LUT export invoices, GSTR-1 and GSTR-3B summaries. The strongest page available, because the product genuinely does this.</li>
+          <li><code>/client-approvals</code> — approval by link, no account, no software, decline with a reason. Nothing in the global category does this the same way.</li>
+          <li><code>/practice-management</code> — the category page the title now claims.</li>
+          <li><code>/payroll</code> and <code>/attendance</code> — Vetana and Pahchan, including biometric attendance.</li>
+          <li>Comparison pages only once the above rank. They attract the highest intent and the most scrutiny; a thin one damages trust.</li>
+        </ul>
+        <div class="note">
+          <span class="label">Write only what is shipped</span>
+          <p>
+            The house rule that a feature is done only when a customer completed the
+            flow applies with more force here than anywhere in the codebase. An
+            unshipped claim in the product is a bug; on an indexed page it is a
+            promise to a stranger, cached by Google, quoted back by an AI assistant,
+            and read by someone deciding whether to trust you with bank details.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__head">
+        <span class="phase__n">PHASE 4</span>
+        <h3 class="phase__t">Off-page, within the rules that bind this market</h3>
+        <span class="phase__when">Month 2 onward</span>
+      </div>
+      <div class="phase__body">
+        <ul class="tasks">
+          <li>Google Business Profile for Aekam Inc, and a LinkedIn company page. Both are entity signals that support a knowledge panel; both are free and neither is optional for a firm asking to be trusted.</li>
+          <li>India-relevant software directories — SoftwareSuggest, Capterra India, G2. These rank for comparison queries the site will not touch for a year.</li>
+          <li>Referral is already the channel; give it a surface. A short, linkable page a referring accountant can send is worth more than any keyword on this list.</li>
+        </ul>
+        <div class="note">
+          <span class="label">The constraint that rules this phase out of outbound</span>
+          <p>
+            ICAI rules bar soliciting professional work from prospective clients by
+            email, and the audience here is largely chartered accountants. Off-page
+            work must be inbound, directory and referral-shaped. Cold prospect email
+            is not a channel available to this product, which is precisely why
+            organic search matters more than it would elsewhere.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 · FILES ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>The two files</h2>
+      <span class="sec-note">drop into frontend/public/</span>
+    </div>
+    <div class="grid2">
+      <div class="file">
+        <div class="file__n">frontend/public/robots.txt</div>
+<pre>User-agent: *
+Allow: /
+
+<span class="cm"># Token-bearing and transactional routes.
+# Private links, not pages. (F8)</span>
+Disallow: /i/
+Disallow: /sign/
+Disallow: /approve
+Disallow: /accept-invite
+Disallow: /reset-password
+Disallow: /forgot-password
+
+<span class="cm"># Not products.</span>
+Disallow: /glass-demo
+
+<span class="cm"># Authenticated app. Unreachable to a crawler
+# anyway; stated so crawl budget goes to the
+# five pages that matter.</span>
+Disallow: /dashboard
+Disallow: /client/
+Disallow: /settings/
+
+Sitemap: https://www.kartavaya.com/sitemap.xml</pre>
+      </div>
+
+      <div class="file">
+        <div class="file__n">frontend/public/sitemap.xml</div>
+<pre>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;urlset xmlns="http://www.sitemaps.org/
+        schemas/sitemap/0.9"&gt;
+  &lt;url&gt;
+    &lt;loc&gt;https://www.kartavaya.com/&lt;/loc&gt;
+    &lt;changefreq&gt;weekly&lt;/changefreq&gt;
+    &lt;priority&gt;1.0&lt;/priority&gt;
+  &lt;/url&gt;
+  &lt;url&gt;&lt;loc&gt;https://www.kartavaya.com/security&lt;/loc&gt;&lt;/url&gt;
+  &lt;url&gt;&lt;loc&gt;https://www.kartavaya.com/privacy&lt;/loc&gt;&lt;/url&gt;
+  &lt;url&gt;&lt;loc&gt;https://www.kartavaya.com/dpa&lt;/loc&gt;&lt;/url&gt;
+  &lt;url&gt;&lt;loc&gt;https://www.kartavaya.com/subprocessors&lt;/loc&gt;&lt;/url&gt;
+&lt;/urlset&gt;
+
+<span class="cm">&lt;!-- /login is deliberately absent: it is a
+     door, not a destination, and it competes
+     with the homepage for the brand query. --&gt;</span></pre>
+      </div>
+    </div>
+    <div class="note">
+      <span class="label">Do not hand-edit public/_headers</span>
+      <p>
+        It is generated from <code>vercel.json</code> and enforced directive-by-directive
+        by <code>scripts/check-csp-hash.mjs</code>. If Phase 0 adds a header, change
+        <code>vercel.json</code> and regenerate. The file's own comments record four
+        separate defects that a hand-edit introduced last time, including switching
+        the Pahchan camera back off.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 4 · KEYWORDS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>What to rank for</h2>
+      <span class="sec-note">5 clusters</span>
+    </div>
+    <p class="intro">
+      <strong>There are no search volumes in this table, deliberately.</strong> No
+      keyword tool is authorised in this session, and an invented volume would be
+      indistinguishable from a measured one to everyone downstream. Pull the real
+      figures from Search Console once data exists, or from Ahrefs before committing
+      budget to a cluster. The clusters, intent and ordering stand on their own.
+    </p>
+    <div class="tw">
+      <table>
+        <thead>
+          <tr>
+            <th>Cluster</th>
+            <th>Representative queries</th>
+            <th>Intent</th>
+            <th>Lands on</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">Brand</td>
+            <td>kartavaya · kartavaya aekam · kartavaya login</td>
+            <td>Navigational. A referred prospect checking you are real.</td>
+            <td class="k">/</td>
+            <td><span class="tag tag--now">Phase 0</span></td>
+          </tr>
+          <tr>
+            <td class="k">Category</td>
+            <td>practice management software for CA firms · accounting practice management India · CA office management software</td>
+            <td>Commercial. The buyer already knows the category exists.</td>
+            <td class="k">/practice-management</td>
+            <td><span class="tag tag--next">Phase 3</span></td>
+          </tr>
+          <tr>
+            <td class="k">Job to be done</td>
+            <td>GST invoicing software · GSTR-3B tracking · LUT export invoice format · client approval workflow</td>
+            <td>Commercial and problem-led. The sharpest fit to what is built.</td>
+            <td class="k">/gst-invoicing · /client-approvals</td>
+            <td><span class="tag tag--next">Phase 3</span></td>
+          </tr>
+          <tr>
+            <td class="k">Comparison</td>
+            <td>&hellip; alternative · best practice management software for chartered accountants</td>
+            <td>Highest intent, highest scrutiny, hardest to win.</td>
+            <td class="k">comparison pages</td>
+            <td><span class="tag tag--late">Month 3+</span></td>
+          </tr>
+          <tr>
+            <td class="k">Informational</td>
+            <td>HSN code invoice format · GSTR-1 vs GSTR-3B · place of supply rules</td>
+            <td>Authority-building. Brings accountants, not buyers.</td>
+            <td class="k">guides</td>
+            <td><span class="tag tag--late">Month 4+</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="label">Be honest about what SEO is for here</span>
+      <p>
+        Kartavaya is invite-only. There is no public sign-up route, no sign-up
+        endpoint, and that is a settled decision rather than a gap. So organic
+        search is not a volume lead-gen channel and should not be resourced as one.
+      </p>
+      <p>
+        Its three real jobs: <strong>own the brand name</strong>, so a referral does
+        not lose the prospect at the moment they search; <strong>survive
+        diligence</strong>, because the security, privacy and DPA pages are what a
+        firm reads before handing over client GSTINs; and <strong>capture the
+        category</strong> over twelve months, in a niche where global tools cannot
+        credibly compete on GST. Judge it on the first two for at least two quarters.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 5 · MEASUREMENT ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>What good looks like, and when</h2>
+      <span class="sec-note">expectations</span>
+    </div>
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>Horizon</th><th>Expect</th><th>Measured by</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k num">Week 1</td>
+            <td>Homepage indexed. Sitemap accepted, 5 URLs discovered. Staging reported as excluded by noindex.</td>
+            <td>GSC · Pages · URL Inspection</td>
+          </tr>
+          <tr>
+            <td class="k num">Week 2&ndash;4</td>
+            <td>Brand queries rank first. Legal pages indexed. First non-brand impressions appear.</td>
+            <td>GSC · Performance, brand filter</td>
+          </tr>
+          <tr>
+            <td class="k num">Month 2&ndash;3</td>
+            <td>Content pages live and indexed; long-tail GST queries begin surfacing. Directory listings live.</td>
+            <td>Indexed count vs sitemap count</td>
+          </tr>
+          <tr>
+            <td class="k num">Month 6&ndash;12</td>
+            <td>Category queries on page one. This is the realistic horizon for a new domain in a competitive niche — anyone promising it sooner is selling something.</td>
+            <td>Position for the §4 category cluster</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="max-width:var(--measure); margin-top:1.5rem; color:var(--ink-2);">
+      The single number to watch first is not traffic. It is <strong>indexed pages
+      versus sitemap pages</strong>. Until those match, ranking work is premature,
+      and a gap between them is the earliest signal that F2, F3 or F5 has quietly
+      come back.
+    </p>
+  </section>
+
+  <!-- ============ 6 · SCOPE ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>What this document did not do</h2>
+      <span class="sec-note">scope</span>
+    </div>
+    <ul class="tasks" style="max-width:var(--measure);">
+      <li><strong>Nothing was changed.</strong> No file was written to <code>frontend/</code>, no deploy was triggered, no DNS record touched. This is a plan; Phase 0 is roughly half a day's work whenever you want it.</li>
+      <li><strong>No search volumes were estimated.</strong> See §4.</li>
+      <li><strong>Competitor rankings were not measured.</strong> That needs a keyword tool; the marketing connectors in this session are unauthenticated and cannot be reached from a non-interactive run.</li>
+      <li><strong>The stale production build was diagnosed, not explained.</strong> Three signals establish that production is behind. Which SHA it is actually running, and why the Vercel project did not follow <code>main</code>, is a separate question worth answering before the redeploy so it does not recur.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Proposal 94 · SEO and indexing · Aekam Inc · 2026-08-29<br />
+    Findings verified live against www.kartavaya.com, kartavaya.com and staging.kartavaya.com.<br />
+    Companion: Kartavaya Launch Deck.
+  </footer>
+
+</div>
