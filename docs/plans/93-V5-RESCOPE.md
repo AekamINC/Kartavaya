@@ -447,3 +447,38 @@ before writing it, so a stale one can never be silently reused.
 **Owed:** a password or bearer token for `kevalvshah03+e2e-owner@gmail.com`, as
 `E2E_OWNER_PASSWORD` (with `E2E_OWNER_EMAIL`) or `E2E_OWNER_TOKEN`.
 
+### ✅ Redis provisioned — rate limits are now shared across workers
+
+Provisioned 2026-08-30 on the **Kartavaya Production** project, production
+environment, service `redis` (`redis:7-alpine`, id `68747d2f`).
+
+    redis-server --bind :: --protected-mode no --maxmemory 128mb                  --maxmemory-policy allkeys-lru --save ""
+
+Four deliberate choices:
+
+- **`--bind ::`** — Railway's private network is IPv6-only. Redis binds IPv4 by
+  default, so without this the service starts, looks healthy, and is unreachable
+  at `redis.railway.internal`.
+- **`--save ""`** — no persistence. These are rate-limit counters; losing them on
+  restart costs one window, and a disk write per change costs on every request.
+- **`allkeys-lru` at 128mb** — the counter set is bounded by callers, but an
+  eviction policy means a traffic spike degrades instead of erroring.
+- **no password, private network only** — the service has no public domain. The
+  data is IP-to-count, and adding auth would put the password in the start
+  command, which Railway does not shell-interpret.
+
+⚠ **The start command needed a VARIABLE WRITE to take effect.** The first deploy
+succeeded with the DEFAULT command; `redeploy` reuses the old config snapshot.
+This is the same trap that left the crons armed and dead — see
+`cron_stale_snapshot_trap`.
+
+`REDIS_URL=redis://redis.railway.internal:6379` is set on the API service.
+
+**In the code:** `REDIS_URL` is optional. Unset, the limiter falls back to the
+in-process store and the product still runs rather than refusing to boot —
+verified that an unreachable `REDIS_URL` still imports cleanly. `swallow_errors`
+is a deliberate fail-open: without it a Redis blip makes every rate-limited
+endpoint answer 500, an outage caused by the thing meant to prevent one. Because
+silent fail-open is this codebase's dominant bug class, the store in use is
+logged at start-up — INFO when shared, WARNING when per-worker.
+
