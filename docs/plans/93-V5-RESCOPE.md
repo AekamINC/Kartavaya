@@ -482,3 +482,26 @@ endpoint answer 500, an outage caused by the thing meant to prevent one. Because
 silent fail-open is this codebase's dominant bug class, the store in use is
 logged at start-up — INFO when shared, WARNING when per-worker.
 
+### ⚠ Redis is provisioned but NOT CONNECTED — measured 2026-08-30
+
+`REDIS_URL` is set on the API service and `redis==5.2.1` is in the deployed
+image, but the Redis service's **network counters read zero**: the app has never
+dialled it. The API service has `ipv6EgressEnabled: false` and Railway's private
+network is IPv6-only, so `redis.railway.internal` cannot be reached.
+
+**Next action:** enable IPv6 egress on the Kartavaya service (a dashboard
+toggle — not exposed by the Railway API), then re-measure.
+
+⚠ **And "two workers" was asserted before it was measured.** `numReplicas` is 1
+and `test_pdf_offloaded.py` records `WEB_CONCURRENCY` as 1, yet two independent
+counters are observable. The cause is not established. What IS established:
+
+- A **parallel burst is a bad instrument** — a window roll mid-burst looks
+  exactly like a second counter, which sent this diagnosis both ways today.
+- **Sequential, after 90s quiet**, the first `429` lands at #48 and #51 across
+  two runs. One shared counter would fail at #31 every time.
+
+The security half — counting the CALLER rather than Cloudflare — is fixed and
+deployed (`0e066d9c`). Limits being ~2× is coarse, not inverted, so this is a
+refinement rather than a blocker.
+
