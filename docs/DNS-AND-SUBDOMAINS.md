@@ -243,3 +243,70 @@ staging reference during a production run.
 3. **Read `FRONTEND_URL` and `PAY_URL` in Railway** and make them match what you created.
 4. **`api.` custom domain on Railway** so the certificate issues.
 5. **Staging pair** — `staging.` and `api-staging.` — before the staging half of anything.
+
+---
+
+## Mail — measured 2026-08-30, after the Cloudflare Email Routing setup
+
+    node scripts/check-sender-dns.mjs
+
+| Leg | State | Notes |
+|---|---|---|
+| **SPF** | ✅ | `v=spf1 include:amazonses.com include:_spf.mx.cloudflare.net -all` |
+| **DMARC** | ✅ | `p=none; rua=mailto:kevalvshah03@gmail.com` |
+| **MX** | ✅ | 3 × `route{1,2,3}.mx.cloudflare.net` |
+| **DKIM** | 🟡 | **1 of 3 SES selectors publishes a key** |
+
+### ⚠ The SPF record had to be MERGED, not added
+
+Cloudflare Email Routing offers to "Add missing records", which would have
+written a **second** SPF TXT. RFC 7208 §3.2: more than one SPF record is a
+`permerror`, and a permerror is a *fail* — it would have taken SES authorisation
+down while appearing to fix something. The live record is one string carrying
+both includes. **Cloudflare's Email Routing page may keep showing
+"Misconfigured" because it string-matches its own exact value. That is cosmetic;
+the gate is the authority.**
+
+### 🟡 Two of the three DKIM selectors have no key — and it is not ours to fix
+
+| Selector | Our CNAME | What Amazon serves |
+|---|---|---|
+| `ody3xdzxnqda…` | ✅ correct | **empty TXT** |
+| `xupbuue3mpqb…` | ✅ correct | ✅ 2048-bit key |
+| `zp4yebqf6x7c…` | ✅ correct | **empty TXT** |
+
+All three CNAMEs in this zone are right and resolve to
+`<selector>.dkim.amazonses.com`. Amazon serves nothing at two of them, so no DNS
+edit here changes it — it is an SES-side state (re-verify the identity in the SES
+console if it persists).
+
+⚠ **Do not blame the `*._domainkey` wildcard.** RFC 4592 §2.2.1: a wildcard is
+not synthesised when an exact match for the name exists, of any type. The
+selectors each have their own CNAME, so the wildcard never applies to them — the
+gate proves this every run with a control probe for a selector that cannot exist.
+The wildcard is a deliberate catch-all revoking everything *else*, which is an
+anti-spoofing measure, not a fault. An earlier version of the gate got this
+wrong and would have sent someone hunting the wrong record.
+
+**Impact:** SES rotates among its selectors, so an unknown share of mail signs
+with a dead one and fails DKIM. Under `p=none` nothing is rejected, but Gmail's
+bulk-sender rules want DKIM to pass. **The decisive test is one real send with
+the headers read** — `Authentication-Results` is ground truth and DNS is not.
+
+### Receiving — Email Routing is enabled but routes NOTHING yet
+
+Measured from the dashboard: **Status Enabled**, DNS records **Locked**,
+destination `kevalvshah03@gmail.com` **Verified** — and the only rule is
+**Catch-all → Drop → Disabled**.
+
+So the MX records accept mail and then nothing forwards it. **One rule is still
+owed:** Routing rules → *Create routing rule* → custom address
+`no-reply@kartavaya.com` → *Send to* → `kevalvshah03@gmail.com`.
+
+Prefer that specific rule over enabling the catch-all: a catch-all accepts mail
+for every address that has ever been guessed at the domain, which is how a new
+domain acquires a spam problem. Leaving the catch-all on *Drop* means anything
+unmatched is refused at SMTP rather than silently swallowed.
+
+⚠ `no-reply@` still needs to *receive*, despite the name — it is where bounces
+and human replies land. Without the rule they hard-bounce.
