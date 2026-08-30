@@ -14,6 +14,7 @@ import TabSecurity from './org/TabSecurity';
 import TabSenders from './org/TabSenders';
 import TabUpi from './org/TabUpi';
 import TabStorage from './org/TabStorage';
+import TabReports from './org/TabReports';
 import TabRecycleBin from './org/TabRecycleBin';
 import TabDanger from './org/TabDanger';
 
@@ -161,6 +162,17 @@ export default function OrgSettingsPage() {
     // what this org pays Aekam, this is what its own customers pay it.
     { value: 'upi',      label: <>UPI IDs{hi('यूपीआई')}</>,  content: <TabUpi /> },
     { value: 'security', label: <>Security{hi('सुरक्षा')}</>, content: <TabSecurity /> },
+    // Beside Security, and deliberately NOT a row inside it. The report
+    // passphrase is the thing that makes a scheduled Finance or CRM report
+    // safe to email — the report travels as a password-protected PDF and the
+    // passphrase is never in the mail, so this screen is the only place a
+    // recipient can be told what it is, and the report email names it by this
+    // path. It is its own tab because `TabSecurity` gates every control on a
+    // probe for `staging.org_security`, and hiding the passphrase behind an
+    // unrelated table's existence is how one missing migration breaks two
+    // features. Read and write are both org_admin/org_owner, where
+    // TabSecurity's writes are owner-only.
+    { value: 'reports',  label: <>Reports{hi('प्रतिवेदन')}</>, content: <TabReports /> },
     // Beside Security rather than under Profile: this is what the organisation
     // is paying for and where its documents physically are, which is
     // administration rather than a company detail. `storage_browser.py` gates
