@@ -89,18 +89,20 @@ old order most of Suite 14's volume is structurally unreachable. Wave 6 now runs
 
 ---
 
-## Before Stage 1 opens — five things, and three are owner actions
+## Before Stage 1 opens — five things, and only ONE is an owner action
 
-1. **Bump `pyjwt` to 2.13.0** and run the backend suite. It signs every session
-   this programme creates; five known vulnerabilities, fix published.
-2. **Answer the recovery question** — Supabase backup retention and whether PITR
-   is on. The only full-database path, and its parameters are unknown.
-3. **Build the x86_64 APK** — `ARCHS=x86_64 bash mobile/scripts/build-apk.sh
-   release`. Stage 5 has been blocked on this since 28 Aug.
-4. **Decide `OUTBOUND_MODE` for the window** deliberately. On production,
-   discovering it is not the same as choosing it.
-5. **Fix O-13 before relying on D1** — the live-SQL ratchet counts a string, not
-   a behaviour, so the discipline it enforces is currently unsound.
+⚠ **This list said "three are owner actions" and that was wrong.** Two of the
+three were checked and turned out to be mine. Recording the correction rather
+than editing it away, because "owner-blocked" and "nobody has tried" are
+different sentences and collapsing them is how work sits still.
+
+| # | Item | Whose | Why |
+|---|---|---|---|
+| 1 | **Bump `pyjwt` to 2.13.0** and run the backend suite | **dev** | A `requirements.txt` edit. It signs every session this programme creates; five known vulnerabilities, fix published. Only the DEPLOY is the owner's. |
+| 2 | **Confirm backup retention and PITR** | **split** | Measured 2026-08-30: the org is on the **Pro** plan, which carries 7-day daily backups by default; PITR is a paid add-on. **Whether that add-on is enabled is not readable through the API** — that half is a look at the dashboard. |
+| 3 | **Build the x86_64 APK** — `ARCHS=x86_64 bash mobile/scripts/build-apk.sh release` | **dev** | ⚠ Was listed as owner-blocked (OA-8) and is not. The script takes `ARCHS`; the Android SDK is present; and Android Studio ships a **JBR 21** that runs gradle. `android_e2e.py`'s "there is no Java on the PATH here" is true and is a different statement from "there is no Java". |
+| 4 | **Decide `OUTBOUND_MODE` for the window** | **OWNER** | The only genuine owner action of the five. Whether real mail leaves the building during a production run is a decision, not a task, and on production discovering it is not the same as choosing it. |
+| 5 | **Fix O-13 before relying on D1** | **dev** | The live-SQL ratchet counts a string, not a behaviour, so the discipline it enforces is currently unsound. |
 
 ---
 

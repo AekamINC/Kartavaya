@@ -62,10 +62,23 @@ finding 14 is NOT a tenancy hole** — the one unscoped `is_org_admin` at
 already a member of, and membership is org-bounded. Reclassified, and recorded
 so the next sweep does not re-file it.
 
-**Owed before Stage 1 opens:** `pyjwt` → 2.13.0; the Supabase retention/PITR
-answer; an x86_64 APK (Stage 5 has been blocked on this since 28 Aug); a
-deliberate `OUTBOUND_MODE` decision; and a fix for O-13, whose ratchet counts a
-string rather than a behaviour and so makes discipline D1's gate unsound.
+**Owed before Stage 1 opens — five, and only ONE is an owner action.** The
+rescope first said three were, and that was wrong; two were checked and turned
+out to be dev work.
+
+- **dev:** `pyjwt` → 2.13.0 · the x86_64 APK · the O-13 fix
+- **split:** backup retention is answered — the org is on the **Pro** plan, so
+  7-day daily backups by default and PITR is a paid add-on. **Whether the add-on
+  is enabled is not readable through the API**; that half is one look at the
+  dashboard, and it decides the real RPO.
+- **OWNER:** the `OUTBOUND_MODE` decision for the window. Whether real mail
+  leaves the building during a production run is a decision, not a task.
+
+⚠ **The APK had been listed owner-blocked (OA-8) and is not.** The build script
+takes `ARCHS`, the Android SDK is present, and Android Studio ships a JBR 21 that
+runs gradle. `android_e2e.py`'s "there is no Java on the PATH here" is true and
+is a different statement from "there is no Java" — which is how it had been read.
+**Stage 5 has been blocked since 28 Aug on something nobody had attempted.**
 
 ---
 

@@ -536,14 +536,56 @@ load-bearing.</p>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ 9 -->
-<h2><span class="n">9</span>What must happen before Stage 1 opens</h2>
-<ol>
-<li><span class="k">Bump <code>pyjwt</code> to 2.13.0</span> and run the backend suite. It signs every session this programme creates, and it has five known vulnerabilities with a published fix. <span class="k">Q1.</span></li>
-<li><span class="k">Answer the recovery question.</span> Confirm the Supabase project's backup retention and whether PITR is enabled. It is the only full-database path and its parameters are unknown. One look at the dashboard. <span class="k">Q2 / D18.</span></li>
-<li><span class="k">Build the x86_64 APK.</span> <code>ARCHS=x86_64 bash mobile/scripts/build-apk.sh release</code>. Without it Stage 5 cannot run, and that has been true since 28 Aug. <span class="k">OA-8.</span></li>
-<li><span class="k">Decide OUTBOUND_MODE for the window</span>, deliberately, and record it. On production, discovering it is not the same as choosing it. <span class="k">P3.</span></li>
-<li><span class="k">Fix O-13 before relying on D1.</span> The live-SQL ratchet counts a string, so the discipline it enforces is currently unsound.</li>
-</ol>
+<h2><span class="n">9</span>What must happen before Stage 1 opens — and whose it is</h2>
+
+<div class="card card--warn">
+<p style="margin:0 0 8px"><span class="k">⚠ This section said "three are owner actions". That was wrong,
+and the correction is recorded rather than edited away.</span></p>
+<p style="margin:0">Two of the three were checked and turned out to be dev work. One had been carried
+from <code>OWNER-ACTIONS.md</code> OA-8 without anyone testing whether it was actually blocked.
+<span class="k">"Owner-blocked" and "nobody has tried" are different sentences</span>, and collapsing
+them is how an item sits still for two days while each side waits for the other — which is judgement 4
+applied to the plan itself rather than to a defect.</p>
+</div>
+
+<table>
+<thead><tr><th class="n">#</th><th>Item</th><th>Whose</th><th>What was actually checked</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td><span class="k">Bump <code>pyjwt</code> to 2.13.0</span> and run the backend suite</td>
+<td><span class="pill p-has">DEV</span></td>
+<td>A <code>requirements.txt</code> edit. It signs every session this programme creates; five known
+vulnerabilities, fix published. <span class="k">Only the DEPLOY is the owner's</span>, because the
+deploy is production.</td></tr>
+
+<tr><td class="n">2</td><td><span class="k">Confirm backup retention and PITR</span></td>
+<td><span class="pill p-part">SPLIT</span></td>
+<td>Measured 2026-08-30: the organisation is on the <span class="k">Pro</span> plan, which carries
+<span class="k">7-day daily backups by default</span>; PITR is a paid add-on. So the retention half is
+answered. <span class="k">Whether the PITR add-on is enabled is not readable through the API</span> —
+that half is one look at the dashboard, and it decides the real RPO.</td></tr>
+
+<tr><td class="n">3</td><td><span class="k">Build the x86_64 APK</span> — <code>ARCHS=x86_64 bash mobile/scripts/build-apk.sh release</code></td>
+<td><span class="pill p-has">DEV</span></td>
+<td>⚠ <span class="k">Listed as owner-blocked (OA-8), and it is not.</span> The script takes
+<code>ARCHS</code> (line 68); the Android SDK is present; and Android Studio ships a
+<span class="k">JBR 21</span> that runs gradle. <code>android_e2e.py</code>'s "there is no Java on the
+PATH here" is true, and is a different statement from "there is no Java" — which is what it had been
+read as. <span class="k">Stage 5 has been blocked since 28 Aug on something nobody had attempted.</span></td></tr>
+
+<tr><td class="n">4</td><td><span class="k">Decide <code>OUTBOUND_MODE</code> for the window</span></td>
+<td><span class="pill p-gap">OWNER</span></td>
+<td><span class="k">The only genuine owner action of the five.</span> Whether real mail leaves the
+building during a production run is a decision, not a task — and on production, <span class="k">discovering
+it is not the same as choosing it</span>. The suppression list is empty, so <code>dry</code> is the only
+mechanical guard.</td></tr>
+
+<tr><td class="n">5</td><td><span class="k">Fix O-13 before relying on D1</span></td>
+<td><span class="pill p-has">DEV</span></td>
+<td>The live-SQL ratchet counts a STRING, not a behaviour — a test that merely mentions
+<code>prepare()</code> in prose credits its router with coverage it does not have. The discipline it
+enforces is currently unsound.</td></tr>
+</tbody>
+</table>
 
 <div class="card card--stop">
 <p style="margin:0"><span class="k">Execution is held until you say start.</span> Unchanged from every

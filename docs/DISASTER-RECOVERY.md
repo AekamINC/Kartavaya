@@ -73,10 +73,18 @@ worst possible way to find out.
 | 4 | `ledger_repair_20260826` (13 tables), `dead_tables_20260822` (2), `payroll_smallrun_20260827` (1), `tenancy_195_backup` (2) | single, dated repairs | n/a — not general recovery |
 | 5 | **R2 object storage** — every file byte lives here, never in the DB | uploaded documents | 🔴 never |
 
-**Path 1 is the only full-database answer, and it is the only one nobody has
-looked at.** Confirm its retention window and whether point-in-time recovery is
-enabled on this plan — that single fact decides the real RPO, and it is
-currently unknown.
+**Path 1 is the only full-database answer.** Half of it is now measured and half
+is not:
+
+- **Plan: `Pro`** (org `AekamINC`, project `kartavya-sg`, ap-southeast-1), read
+  2026-08-30. Pro carries **daily backups with 7-day retention by default**.
+- **PITR is a paid add-on on this plan, and whether it is enabled is NOT
+  readable through the management API.** That is one look at the dashboard, and
+  it is the fact that decides the real RPO.
+
+⚠ **If PITR is off, the recovery story is: 7 days of daily snapshots, plus a
+consolidation-reversal schema that excludes every task, user and team.** That is
+worth knowing before a production run begins, not during one.
 
 ---
 
@@ -149,9 +157,10 @@ Restore one table at a time, verifying counts after each. Never a loop over
 
 ## What is owed, in priority order
 
-1. **Confirm the Supabase backup retention and PITR status.** It is the only
-   full-database path and its parameters are unknown. Owner action; one look at
-   the dashboard.
+1. **Confirm whether the PITR add-on is enabled.** Retention is answered — the
+   org is on `Pro`, so 7-day daily backups by default. PITR is a paid add-on and
+   its state is not readable through the management API. **Owner action, one look
+   at the dashboard, and it decides the real RPO.**
 2. **Rehearse a restore.** Into a fresh dated schema, never over `public`, one
    table, verified by row count. Until this happens every row above stays 🔴 —
    "the code shipped" and "a customer completed the flow" are different claims,
