@@ -2,38 +2,13 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
-import { inject } from "@vercel/analytics";
 
-/* Vercel Web Analytics reports `location.pathname` verbatim. Two public routes
-   carry a BEARER TOKEN in that path — `/sign/:token` (SigningPage) and the
-   invite/reset links — and `/sign/:token` is the whole authority to apply a
-   legally binding signature under the IT Act, 2000. Sending it here would hand
-   every signing link to a third party and park it in the analytics dashboard,
-   where it is readable by anyone with project access and outlives the document.
-   Aggregate page counts are the only thing this call is for, so the token is
-   replaced before the event leaves the browser rather than the route being
-   dropped: `/sign/[token]` still counts as a pageview.
-
-   `beforeSend` runs on every event; returning the event unchanged is the
-   no-op path, so an unrecognised route is unaffected. */
-const TOKEN_ROUTES = /^\/(sign|approve|accept-invite|reset-password)\/[^/]+/;
-
-inject({
-  beforeSend: (event) => {
-    try {
-      const u = new URL(event.url);
-      if (TOKEN_ROUTES.test(u.pathname)) {
-        u.pathname = u.pathname.replace(TOKEN_ROUTES, '/$1/[token]');
-      }
-      // A token can also arrive as ?token=… on the invite/reset links.
-      if (u.searchParams.has('token')) u.searchParams.set('token', '[redacted]');
-      return { ...event, url: u.toString() };
-    } catch {
-      // A URL we cannot parse is a URL we cannot prove is safe to send.
-      return null;
-    }
-  },
-});
+// No web analytics is loaded here. `@vercel/analytics` used to be injected at
+// this point; the site is served from Cloudflare Pages, whose SPA fallback
+// answers /_vercel/insights/script.js with index.html and Content-Type
+// text/html, so every page load logged a refused-to-execute console error and
+// nothing was ever recorded. It also had to redact bearer tokens out of
+// `/sign/:token` before events left the browser. Dropped 2026-08-30.
 
 // Auto-reload on stale chunks after deploy — lazy imports fail with
 // "Failed to fetch dynamically imported module" when old chunk hashes

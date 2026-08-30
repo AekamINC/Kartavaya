@@ -310,3 +310,40 @@ unmatched is refused at SMTP rather than silently swallowed.
 
 ⚠ `no-reply@` still needs to *receive*, despite the name — it is where bounces
 and human replies land. Without the rule they hard-bounce.
+
+---
+
+## ⚠ Correction — `api.` did NOT need to be DNS-only
+
+Earlier in this document (§2 and "How to create them") the API host is told to
+stay ⚪ **DNS only**, on the reasoning that behind Cloudflare's proxy Railway
+cannot complete its ACME challenge. **That reasoning is sound and the conclusion
+was still wrong**, because it assumed Railway's certificate is the one that
+matters. It is not: when the record is proxied, *Cloudflare* terminates TLS with
+its own Universal SSL certificate and Railway never needs to issue one.
+
+Measured 2026-08-30 15:00, with the record 🟠 **proxied**:
+
+    api.kartavaya.com  ->  HTTP 200
+    subject=CN=kartavaya.com
+    issuer=C=US, O=Google Trust Services, CN=WE1        <- Cloudflare Universal SSL
+    {"environment":"production","schema":"public","outbound_mode":"live"}
+
+Railway's own dashboard shows the domain with **"Cloudflare proxy detected"**, so
+it recognises the arrangement rather than fighting it.
+
+**Both configurations work.** Proxied is the better default here — it hides the
+origin, and it is what the rest of the zone already does. Two consequences to
+keep in mind rather than rediscover:
+
+- **Cloudflare's request timeout applies** (100s on the free plan). Any endpoint
+  that legitimately runs longer must move to a job, not a request.
+- **The client IP now arrives via `CF-Connecting-IP` / an extra
+  `X-Forwarded-For` hop.** Rate limiting keys on the LAST forwarded IP — a
+  recorded incident. Login is `5/min`; if it were to key on Cloudflare's edge IP
+  instead of the visitor's, one abusive client would lock out everyone. **Worth a
+  live probe before the v5 auth waves**, not an assumption either way.
+
+Verified that the proxy does not interfere with app traffic: `POST
+/api/auth/login` with an `okhttp` user agent returns a real FastAPI `422`, not a
+challenge page.

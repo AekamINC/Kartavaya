@@ -6317,3 +6317,39 @@ occurrence of `kartavaya-staging`, zero of the dead spelling.
 
 ⚠ Recorded and not resolved: `mobile/app.json` says `2.0.4`,
 `mobile/package.json` says `2.0.2`.
+
+### 2026-08-30 · the production link map, and a 404 inside every campaign email
+
+Swept every URL that reaches a customer and wrote the result into proposal 105
+(§1.4–1.7) and `93-V5-RESCOPE.md`. Three findings, one of them a live blocker.
+
+- 🔴 **`BACKEND_URL` pointed at a host that 404s.** `kartavya-production…` — the
+  same missing `a` that shipped inside the 29 Aug APK. It is not a health check:
+  it builds the **unsubscribe link in every Prachar campaign and sequence mail**,
+  plus connector OAuth redirect URIs and lead-source webhooks. With
+  `OUTBOUND_MODE=live` that ships to real recipients on the first wave.
+- 🔴 **`mail.kartavaya.com` has an MX but no TXT.** SES custom MAIL FROM needs
+  both; without the TXT it stays *Pending* and SPF never becomes DMARC-aligned —
+  which matters more than usual because DKIM is only 1 of 3 selectors.
+- 🟡 **DKIM: Amazon serves an empty TXT at two of three selectors.** The CNAMEs
+  in the zone are correct; no DNS edit here changes it.
+
+**The DKIM gate was lying.** It blamed a `*._domainkey` wildcard for revoking the
+SES selectors. RFC 4592 §2.2.1: a wildcard is never synthesised when an exact
+match exists, so it cannot shadow them — the gate now proves that every run with
+a control probe for a selector that cannot exist. It also had a false-negative
+parser: a 2048-bit key always spans two 255-byte TXT chunks, and reading one
+chunk reports an empty key that is not empty. **A gate naming the wrong record is
+worse than no gate — it sends someone to edit a record that is already correct.**
+
+**Mobile repointed to `api.kartavaya.com`.** Expo inlines `EXPO_PUBLIC_API_URL`
+at bundle time, so the APK cannot be corrected at runtime — and the Railway
+hostname has already moved once. Changed in `mobile/.env` *and* `eas.json`
+(the local script reads only the first, EAS only the second). The cached JS
+bundle is deleted before building, because Gradle will otherwise reuse one with
+the old URL inlined and the build will succeed shipping the wrong host.
+
+**`check-production-targets.mjs` now resolves all three email link bases** and
+carries an anti-vacuity control probing the dead spelling. Proved to bite:
+pointed at `kartavya-production` it fails with the consequence named.
+

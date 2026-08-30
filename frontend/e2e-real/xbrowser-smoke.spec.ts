@@ -111,21 +111,9 @@ const IGNORED_CONSOLE = [
  * baseline that stops being a to-do list and becomes a permanent exemption.
  */
 const KNOWN_DEFECTS: { re: RegExp; why: string }[] = [
-  {
-    re: /_vercel\/insights\/script\.js/,
-    why:
-      'Vercel Analytics on a Cloudflare Pages origin. `@vercel/analytics` (frontend/' +
-      'package.json) requests /_vercel/insights/script.js; on kartavaya.pages.dev — ' +
-      'which is the origin E2E_BASE_URL actually points this whole suite at — ' +
-      "Cloudflare's SPA fallback answers 200 with index.html and Content-Type " +
-      'text/html, so the browser refuses to execute it. MEASURED 2026-08-30 on all ' +
-      'six engines that launched, and with curl: pages.dev returns text/html, while ' +
-      'staging.kartavaya.com (Server: Vercel) returns application/javascript and a ' +
-      'clean console. So it is HOST-specific, not engine-specific, and analytics has ' +
-      'never worked on the Pages origin. The fix is a product decision — drop ' +
-      '@vercel/analytics now the site is on Cloudflare Pages, or stop shipping it to ' +
-      'that origin — not a test change.',
-  },
+  // Empty by design: the one entry this list ever held (Vercel Analytics
+  // requesting /_vercel/insights/script.js against the Cloudflare Pages SPA
+  // fallback) was fixed on 2026-08-30 by dropping `@vercel/analytics`.
 ];
 
 function watchConsole(page: Page) {

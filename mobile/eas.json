@@ -58,7 +58,7 @@
       },
       "env": {
         "APP_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://kartavaya-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://api.kartavaya.com"
       }
     }
   },

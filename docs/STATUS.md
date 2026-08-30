@@ -1940,3 +1940,77 @@ figure in this table as "last measured when its row says", not as current.
    complete the flow end to end**, proven by a row appearing where there were
    zero. Otherwise it is 🟡.
 3. Verify status claims against the live DB, not the migration folder.
+
+## Production link map — 2026-08-30
+
+Every URL that reaches a customer, and the host it must point at. Enforced by
+`scripts/check-production-targets.mjs`, which resolves each base live.
+
+| Base | Points at | Carries | State |
+|---|---|---|---|
+| `FRONTEND_URL` | `app.kartavaya.com` | invites, approvals, resets, `/tasks/{id}` | ✅ |
+| `PAY_URL` | `pay.kartavaya.com` | the public invoice `/i/{token}` | ✅ |
+| `BACKEND_URL` | `api.kartavaya.com` | **the unsubscribe link in every campaign mail** | 🔴 set to a 404 host |
+| `EXPO_PUBLIC_API_URL` | `api.kartavaya.com` | the APK's compiled-in backend | ✅ repointed |
+
+🔴 **`BACKEND_URL` is `kartavya-production…`** — the missing `a` again, 404 on
+every call. It is the unsubscribe link in bulk mail, so with `OUTBOUND_MODE=live`
+it ships on the first campaign wave. Fix:
+`railway variables --set "BACKEND_URL=https://api.kartavaya.com"`.
+
+🔴 **`mail.kartavaya.com` TXT missing** — SES custom MAIL FROM needs the MX *and*
+`v=spf1 include:amazonses.com ~all`. Until both exist SPF is not DMARC-aligned.
+
+🟡 **DKIM is 1 of 3 selectors** — Amazon serves an empty TXT at two; the zone is
+correct. See `docs/DNS-AND-SUBDOMAINS.md`.
+
+✅ **All four web hosts + `api.` serve 200.** `api.kartavaya.com` runs behind the
+Cloudflare proxy on Universal SSL; POSTs pass unchallenged.
+
+### 🔴 Rate limiting keys on CLOUDFLARE, not the caller — found 2026-08-30
+
+Proxying `api.kartavaya.com` through Cloudflare **broke the rate limiter**, and
+it fails open in the direction that hurts real users.
+
+`limiter.py:56` takes `x-forwarded-for.split(",")[-1]` — the LAST entry, on the
+reasoning that "the nearest trusted proxy appends its view of the caller last."
+That was right with one hop. With Cloudflare in front there are two: Cloudflare
+sets `X-Forwarded-For: <caller>`, Railway appends Cloudflare's edge IP, and the
+last entry is now **Cloudflare's address**.
+
+**Measured, not inferred.** Saturating the limit through `api.kartavaya.com` and
+then calling the Railway host directly in the same window:
+
+    via api.kartavaya.com   -> 429   (saturated)
+    direct to Railway  x5   -> 404   (fresh counter)
+    via api.kartavaya.com   -> 429   (control: window still open)
+
+Different keys. If the limiter were keyed on the caller's address, both paths
+would share one counter and the direct calls would also have been 429.
+
+**Consequence:** every visitor arriving through one Cloudflare edge node shares a
+single bucket. Login is `5/min`, so a handful of sign-ins from one city exhausts
+it for everyone behind that edge — and one abusive client can lock out real
+users deliberately. **Real users arrive 31 Aug 09:00 IST.**
+
+⚠ **The obvious fix is wrong.** Trusting `CF-Connecting-IP` unconditionally is
+worse than the bug: the Railway hostname is still publicly reachable, so an
+attacker who calls it directly can forge that header and get a private bucket per
+forged value — bypassing rate limiting entirely. Any fix has to establish that
+the request actually arrived via Cloudflare before believing a Cloudflare header,
+e.g. take `parts[-2]` only when `parts[-1]` is inside Cloudflare's published
+ranges, and otherwise keep `parts[-1]`.
+
+### 🟡 Limits are 2× their configured value — same measurement
+
+200 requests in 12s against a `30/minute` route: **60 allowed, 140 blocked**.
+Sixty allowed against a limit of thirty means **two independent counters** —
+slowapi's default storage is in-process, and production runs more than one
+worker, so each keeps its own count. `backend/railway.toml:2` carries the
+intended command as a COMMENT (`gunicorn --workers 4`), which is why the live
+worker count has to be measured rather than read.
+
+Every configured limit is therefore effectively doubled and non-deterministic:
+login's `5/min` is `10/min`, and which counter a request lands on is chance. A
+shared store (Redis) is the real fix; until then no limit means what it says.
+

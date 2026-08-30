@@ -532,6 +532,127 @@ the gates below are stricter than v4's, and the reason volumes come down rather 
 </ul>
 
 <!-- ═══════════════════════════════════════════════════════════ 2 -->
+<h3>1.4 · Every production link, and which host it must point at</h3>
+
+<p>Measured live <span class="mono">2026-08-30 15:00</span>. With
+<span class="mono">OUTBOUND_MODE=live</span> every link below is one a real person clicks.
+<span class="k">A wrong base raises no error anywhere</span> — it produces a 404 in somebody else's
+inbox, days later, with nothing logged and nothing retried.</p>
+
+<table>
+<thead><tr><th>Variable</th><th>Must be</th><th>Live value</th><th>State</th></tr></thead>
+<tbody>
+<tr><td class="mono">FRONTEND_URL</td><td class="mono">https://app.kartavaya.com</td><td class="mono">app.kartavaya.com</td><td><span class="pill p-has">✓</span></td></tr>
+<tr><td class="mono">PAY_URL</td><td class="mono">https://pay.kartavaya.com</td><td class="mono">pay.kartavaya.com</td><td><span class="pill p-has">✓</span></td></tr>
+<tr><td class="mono">FROM_EMAIL</td><td class="mono">no-reply@kartavaya.com</td><td class="mono">no-reply@kartavaya.com</td><td><span class="pill p-has">✓</span></td></tr>
+<tr><td class="mono">CORS_ORIGINS</td><td>all web origins</td><td>apex, www, app, pay, staging, pages.dev</td><td><span class="pill p-has">✓</span></td></tr>
+<tr><td class="mono">BACKEND_URL</td><td class="mono">https://api.kartavaya.com</td><td class="mono">kartavya-production…</td><td><span class="pill p-gap">404</span></td></tr>
+</tbody>
+</table>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">⚠ BACKEND_URL resolved to nothing.</span> It is the
+<span class="mono">kartavya-</span> / <span class="mono">kartavaya-</span> spelling again — the same
+missing <span class="mono">a</span> that put a dead host inside the 29 Aug APK.</p>
+<p style="margin:0 0 10px" class="mono small">kartavya-production.up.railway.app/api/health &nbsp;→&nbsp; 404<br>
+kartavaya-production.up.railway.app/api/health &nbsp;→&nbsp; 200<br>
+api.kartavaya.com/api/health &nbsp;→&nbsp; 200</p>
+<p style="margin:0">This one is worse than the APK, because <span class="mono">BACKEND_URL</span> is
+not a health check: it builds the <span class="k">unsubscribe link in every Prachar campaign and
+sequence email</span> (<span class="mono">prachar.py:1578</span>,
+<span class="mono">campaign_sender.py:428</span>,
+<span class="mono">sequence_step_executor.py:297</span>), plus connector OAuth redirect URIs and
+lead-source webhook URLs. <span class="k">A 404 unsubscribe in bulk mail is the one link a recipient
+is entitled to have work</span>, and mailbox providers score it.</p>
+</div>
+
+<p><span class="k">⚠ Moving it to api.kartavaya.com moves the OAuth redirect_uri.</span> Any connector
+app whose allowed-callback list names the Railway host starts failing at consent. Connectors are
+largely not live (migration 127 unapplied), so the risk is small — but it is the reason to make this
+change deliberately rather than as a typo fix.</p>
+
+<h3>1.5 · What link goes in which email — the three audiences</h3>
+
+<p>Audience decides the host, and there are exactly three.</p>
+
+<p><span class="k">① The product</span> — <span class="mono">FRONTEND_URL</span> →
+<span class="mono">app.kartavaya.com</span>. The recipient has an account, or is being given one.</p>
+
+<table>
+<thead><tr><th>Email</th><th>Path</th><th>Auth</th></tr></thead>
+<tbody>
+<tr><td class="mono">send_invite_email · send_team_invite_email</td><td class="mono">/accept-invite?token=</td><td><span class="k">token, logged out</span></td></tr>
+<tr><td class="mono">send_org_owner_invite_email</td><td class="mono">/accept-invite?token=</td><td><span class="k">token, logged out</span></td></tr>
+<tr><td class="mono">send_password_reset_email</td><td class="mono">/reset-password?token=</td><td><span class="k">token, logged out</span></td></tr>
+<tr><td class="mono">send_approval_request_email</td><td class="mono">/approve?token= · &amp;action=reject · /approvals</td><td><span class="k">token, logged out</span></td></tr>
+<tr><td class="mono">send_task_done_email</td><td class="mono">/approve?token= · /client/projects</td><td><span class="k">token, logged out</span></td></tr>
+<tr><td class="mono">send_welcome_email · send_report_email</td><td class="mono">/dashboard</td><td>session</td></tr>
+<tr><td class="mono">_task_assignment_ · _comment_ · _mention_ · _task_reminder_ · _team_sync_ · _approval_decision_</td><td class="mono">/tasks/{task_id}</td><td>session</td></tr>
+<tr><td class="mono">send_request_approved_email</td><td class="mono">/client/projects</td><td>session</td></tr>
+<tr><td class="mono">send_project_state_email</td><td class="mono">/projects</td><td>session</td></tr>
+<tr><td class="mono">send_status_changed_email</td><td class="mono">/tasks</td><td>session</td></tr>
+</tbody>
+</table>
+
+<div class="card card--warn">
+<p style="margin:0"><span class="k">⚠ The session rows are why app. had to stop showing the landing
+page.</span> A logged-out recipient clicking <span class="mono">/tasks/{id}</span> used to land on
+marketing copy — <span class="mono">RootGate</span> renders
+<span class="mono">&lt;LandingPage/&gt;</span> when there is no user, and one build serves both faces.
+<span class="mono">isAppHost()</span> sends <span class="mono">app.*</span> to
+<span class="mono">/login</span> instead. Without that fix <span class="k">every deep link in the
+table above is a dead end for exactly the person the mail was written for.</span></p>
+</div>
+
+<p><span class="k">② The public invoice</span> — <span class="mono">PAY_URL</span> →
+<span class="mono">pay.kartavaya.com/i/{token}</span>
+(<span class="mono">services/invoice_email.py:53</span>), unauthenticated. The recipient is a customer
+of the customer: no account here, and never will have one. Served by a Pages Function on the same
+project, so it costs one Custom Domain, not a second build.</p>
+
+<p><span class="k">③ Outbound marketing</span> — <span class="mono">BACKEND_URL</span> →
+<span class="mono">api.kartavaya.com</span>. The recipient may never have consented; the unsubscribe
+link and <span class="mono">List-Unsubscribe</span> header are the legal surface.</p>
+
+<p><span class="k">Nothing mails a link to www.kartavaya.com.</span> It is the landing page and where
+the CTA lands — inbound only. A link to <span class="mono">www.</span> in any template is a defect:
+somebody who already has an account should never be sent to the front door to find their way in.</p>
+
+<h3>1.6 · The mobile app is a link surface too</h3>
+
+<p>Expo <span class="k">INLINES</span> <span class="mono">EXPO_PUBLIC_API_URL</span> at bundle time,
+so the APK carries its backend hostname compiled in and no runtime setting can correct it. That is
+why the app now targets <span class="mono">api.kartavaya.com</span> rather than the Railway hostname:
+<span class="k">the Railway name has already moved once</span>, and the 29 Aug APK shipped pointing at
+a host that answered 404. A name we own does not move when the platform renames a service.</p>
+
+<p>Verified before the rebuild that the Cloudflare proxy does not break app traffic — a
+<span class="mono">POST /api/auth/login</span> with an <span class="mono">okhttp</span> user agent
+returns a real FastAPI <span class="mono">422</span>, not a challenge.</p>
+
+<h3>1.7 · Still owed on the mail path</h3>
+
+<ul>
+<li><span class="k">🔴 mail.kartavaya.com TXT is missing.</span> The MX
+(<span class="mono">10 feedback-smtp.ap-south-1.amazonses.com</span>) was added; SES needs
+<span class="k">both</span>. Add TXT <span class="mono">mail</span> →
+<span class="mono">v=spf1 include:amazonses.com ~all</span>. Until then the custom MAIL FROM stays
+<em>Pending</em>, SES falls back to <span class="mono">amazonses.com</span>, and SPF is not
+DMARC-aligned.</li>
+<li><span class="k">🟡 DKIM is 1 of 3 selectors.</span> Amazon serves an empty TXT at two; the CNAMEs
+in the zone are correct, so no DNS edit here changes it. DMARC therefore rests on a DKIM leg that
+works part of the time — which is what makes the TXT record above load-bearing rather than tidy.</li>
+<li><span class="pill p-has">✓</span> <span class="mono">api.kartavaya.com</span> is live —
+<span class="mono">environment=production</span>, <span class="mono">schema=public</span>, on
+Cloudflare Universal SSL. It did <span class="k">not</span> need to be DNS-only; the earlier note
+saying so was wrong and is corrected.</li>
+</ul>
+
+<p class="small">All of this is enforced, not merely written down:
+<span class="mono">scripts/check-production-targets.mjs</span> resolves each of the three email link
+bases and carries an anti-vacuity control that probes the dead spelling. Proved to bite — pointed at
+<span class="mono">kartavya-production</span> it fails with the consequence named.</p>
+
 <h2><span class="n">2</span>The scale rule — and the three things it must not touch</h2>
 
 <p>Owner's instruction: <span class="k">30% where the set is large, 50% where it is not.</span>

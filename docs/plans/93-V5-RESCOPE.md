@@ -153,6 +153,131 @@ them is how work sits still.
 
 ---
 
+## Every production link, and which host it must point at
+
+**Measured live 2026-08-30 15:00.** v5 runs on production with
+`OUTBOUND_MODE=live`, so every link in this table is one a real person clicks.
+A wrong base does not raise an error anywhere — it produces a 404 in someone
+else's inbox, which is the failure mode this programme exists to stop.
+
+### The four bases
+
+| Variable | Must be | Live value | State |
+|---|---|---|---|
+| `FRONTEND_URL` | `https://app.kartavaya.com` | `https://app.kartavaya.com` | ✅ |
+| `PAY_URL` | `https://pay.kartavaya.com` | `https://pay.kartavaya.com` | ✅ |
+| `CORS_ORIGINS` | all five web origins | apex, www, app, pay, staging, pages.dev | ✅ |
+| `FROM_EMAIL` | `no-reply@kartavaya.com` | `no-reply@kartavaya.com` | ✅ |
+| **`BACKEND_URL`** | **`https://api.kartavaya.com`** | `https://kartavya-production…` | 🔴 **404** |
+
+### 🔴 `BACKEND_URL` resolves to nothing
+
+    https://kartavya-production.up.railway.app/api/health   -> 404   <- Railway has this
+    https://kartavaya-production.up.railway.app/api/health  -> 200
+    https://api.kartavaya.com/api/health                    -> 200
+
+It is the **`kartavya-` / `kartavaya-`** spelling again — the same missing `a`
+that put a dead host inside the 29 Aug APK. This one is worse, because
+`BACKEND_URL` is not a health check: it builds the **unsubscribe link in every
+Prachar campaign and sequence email** (`prachar.py:1578`,
+`campaign_sender.py:428`, `sequence_step_executor.py:297`), plus connector OAuth
+redirect URIs (`connector_credentials.py:380`) and lead-source webhook URLs
+(`lead_sources.py:267`).
+
+⚠ **A 404 unsubscribe link in bulk mail is not cosmetic.** It is the one link a
+recipient is entitled to have work, and mailbox providers score it. With
+`OUTBOUND_MODE=live` this ships on the first campaign wave.
+
+⚠ **Changing it to `api.kartavaya.com` moves the OAuth `redirect_uri`.** Any
+connector app whose allowed-callback list names the Railway host will start
+failing at consent. Connectors are largely not live (migration 127 unapplied),
+so the risk is small — but it is the reason to make this change deliberately
+rather than as a typo fix.
+
+### What link goes in which email
+
+Every sender in `email_service.py`, mapped to the base it builds from. Audience
+is what decides the host, and there are exactly three audiences.
+
+**① The product — `FRONTEND_URL` → `app.kartavaya.com`.** Recipient has an
+account, or is being given one.
+
+| Email | Path | Auth |
+|---|---|---|
+| `send_invite_email` · `send_team_invite_email` | `/accept-invite?token=` | **token, logged out** |
+| `send_org_owner_invite_email` | `/accept-invite?token=` | **token, logged out** |
+| `send_password_reset_email` | `/reset-password?token=` | **token, logged out** |
+| `send_approval_request_email` | `/approve?token=` · `&action=reject` · `/approvals` | **token, logged out** |
+| `send_task_done_email` | `/approve?token=` · `/client/projects` | **token, logged out** |
+| `send_welcome_email` · `send_report_email` | `/dashboard` | session |
+| `send_task_assignment_email` · `_comment_` · `_mention_` · `_task_reminder_` · `_team_sync_` · `_approval_decision_` | `/tasks/{task_id}` | session |
+| `send_request_approved_email` | `/client/projects` | session |
+| `send_project_state_email` | `/projects` | session |
+| `send_status_changed_email` | `/tasks` | session |
+
+⚠ **The session rows are why `app.` had to stop showing the landing page.** A
+logged-out recipient clicking `/tasks/{id}` used to land on marketing copy —
+`RootGate` renders `<LandingPage/>` when there is no user, and one build serves
+both faces. `isAppHost()` (`frontend/src/lib/platform.js`) sends `app.*` to
+`/login` instead. **Without that fix every deep link in the table above is a
+dead end for exactly the person the mail was written for.**
+
+**② The public invoice — `PAY_URL` → `pay.kartavaya.com`.** Recipient is the
+customer's customer: no account, never will have one.
+
+| Email | Path | Auth |
+|---|---|---|
+| invoice mail (`services/invoice_email.py:53`) | `/i/{token}` | **token, unauthenticated** |
+
+Served by a Pages Function (`frontend/functions/i/[token].js`) on the same Pages
+project, so `pay.` costs one Custom Domain, not a second build.
+
+**③ Outbound marketing — `BACKEND_URL` → `api.kartavaya.com`.** Recipient may
+never have consented; the unsubscribe link is the legal surface.
+
+| Email | Path | Auth |
+|---|---|---|
+| Prachar campaign · sequence step | unsubscribe link + `List-Unsubscribe` header | **token, unauthenticated** |
+
+**Nothing mails a link to `www.kartavaya.com`.** It is the landing page and where
+the CTA lands — inbound only. If a link to `www.` ever appears in a template it
+is a mistake: a recipient who already has an account should never be sent to the
+front door to find their way in.
+
+### The mobile app is a link surface too
+
+Expo **INLINES** `EXPO_PUBLIC_API_URL` at bundle time, so the APK carries its
+backend hostname compiled in and no runtime setting can correct it. The app now
+targets **`api.kartavaya.com`** rather than the Railway hostname, because **the
+Railway name has already moved once** — that is how the 29 Aug APK shipped
+pointing at a host answering 404. A name we own does not move when the platform
+renames a service.
+
+Verified before rebuilding that the Cloudflare proxy does not break app traffic:
+`POST /api/auth/login` with an `okhttp` user agent returns a real FastAPI `422`,
+not a challenge. Changed in `mobile/.env` **and** `mobile/eas.json` (production
+profile) — the local script reads only the former, EAS only the latter, and
+leaving them disagreeing is how the two build paths quietly diverge.
+
+⚠ Gradle will reuse a **cached JS bundle** whose inlined URL is the old one, so
+the generated-assets directory is deleted before the build. Otherwise the build
+succeeds and ships the wrong host, with no warning.
+
+### Also owed on the mail path
+
+- 🔴 **`mail.kartavaya.com` TXT is missing.** The MX
+  (`10 feedback-smtp.ap-south-1.amazonses.com`) was added; SES needs **both**.
+  Add TXT `mail` → `v=spf1 include:amazonses.com ~all`. Until then the custom
+  MAIL FROM stays *Pending*, SES falls back to `amazonses.com`, and SPF is not
+  DMARC-aligned.
+- 🟡 **DKIM is 1 of 3 selectors.** Amazon serves an empty TXT at two of them;
+  the CNAMEs in the zone are correct. See `docs/DNS-AND-SUBDOMAINS.md`.
+- ✅ **`api.kartavaya.com` is live** — 200, `environment=production`,
+  `schema=public`, on Cloudflare's Universal SSL. It did **not** need to be
+  DNS-only; the earlier note saying so was wrong and is corrected.
+
+---
+
 ## The outstanding estate, swept 2026-08-30
 
 Every open item across **105 proposals and 27 plans**, consolidated in §7 of the
@@ -198,3 +323,51 @@ that is still "open" in a ledger is how a plan re-does work it already did.
 - Recovery: `docs/DISASTER-RECOVERY.md`
 - The QA tooling that landed 2026-08-30: `docs/STATUS.md`, the entry headed
   "THE QA GAP AUDIT"
+
+### 🔴 Rate limiting keys on CLOUDFLARE, not the caller — found 2026-08-30
+
+Proxying `api.kartavaya.com` through Cloudflare **broke the rate limiter**, and
+it fails open in the direction that hurts real users.
+
+`limiter.py:56` takes `x-forwarded-for.split(",")[-1]` — the LAST entry, on the
+reasoning that "the nearest trusted proxy appends its view of the caller last."
+That was right with one hop. With Cloudflare in front there are two: Cloudflare
+sets `X-Forwarded-For: <caller>`, Railway appends Cloudflare's edge IP, and the
+last entry is now **Cloudflare's address**.
+
+**Measured, not inferred.** Saturating the limit through `api.kartavaya.com` and
+then calling the Railway host directly in the same window:
+
+    via api.kartavaya.com   -> 429   (saturated)
+    direct to Railway  x5   -> 404   (fresh counter)
+    via api.kartavaya.com   -> 429   (control: window still open)
+
+Different keys. If the limiter were keyed on the caller's address, both paths
+would share one counter and the direct calls would also have been 429.
+
+**Consequence:** every visitor arriving through one Cloudflare edge node shares a
+single bucket. Login is `5/min`, so a handful of sign-ins from one city exhausts
+it for everyone behind that edge — and one abusive client can lock out real
+users deliberately. **Real users arrive 31 Aug 09:00 IST.**
+
+⚠ **The obvious fix is wrong.** Trusting `CF-Connecting-IP` unconditionally is
+worse than the bug: the Railway hostname is still publicly reachable, so an
+attacker who calls it directly can forge that header and get a private bucket per
+forged value — bypassing rate limiting entirely. Any fix has to establish that
+the request actually arrived via Cloudflare before believing a Cloudflare header,
+e.g. take `parts[-2]` only when `parts[-1]` is inside Cloudflare's published
+ranges, and otherwise keep `parts[-1]`.
+
+### 🟡 Limits are 2× their configured value — same measurement
+
+200 requests in 12s against a `30/minute` route: **60 allowed, 140 blocked**.
+Sixty allowed against a limit of thirty means **two independent counters** —
+slowapi's default storage is in-process, and production runs more than one
+worker, so each keeps its own count. `backend/railway.toml:2` carries the
+intended command as a COMMENT (`gunicorn --workers 4`), which is why the live
+worker count has to be measured rather than read.
+
+Every configured limit is therefore effectively doubled and non-deterministic:
+login's `5/min` is `10/min`, and which counter a request lands on is chance. A
+shared store (Redis) is the real fix; until then no limit means what it says.
+
