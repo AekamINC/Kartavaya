@@ -74,18 +74,17 @@ for i in $(seq 1 70); do curl -4 -s -o /dev/null -w '%{http_code}\n' \
 First `429` at **#31** = one shared counter, Redis working. Around **#48–55** =
 two counters. Leave 90s quiet before running so no window is in flight.
 
-### 4 🟡 DKIM is 1 of 3 selectors
+### 4 ✅ DKIM — RESOLVED, it was never broken
 
-Amazon serves an empty TXT at two of three; the CNAMEs in the zone are correct,
-so no DNS edit here fixes it. Re-verify the identity in the SES console. The
-custom MAIL FROM now gives SPF a second, independent path to DMARC, which is why
-this is amber rather than red.
+SES console: DKIM configuration **Successful**, signatures **Enabled**, custom
+MAIL FROM **Successful**. SES holds two of the three selectors empty for
+rotation; one live selector is normal. The gate warned per-empty-selector and
+has been corrected to fail only at ZERO live keys.
 
-### 5 🟡 One routing rule owed
+### 5 ✅ Mail routing — ENABLED
 
-Cloudflare Email Routing is enabled with a verified destination but only a
-disabled `Catch-all → Drop`. Add: `no-reply@kartavaya.com` → *Send to* →
-`kevalvshah03@gmail.com`. Without it, replies and bounces are dropped.
+Cloudflare Email Routing catch-all is active and forwards to
+`kevalvshah03@gmail.com`. Replies and bounces land in an inbox.
 
 ---
 

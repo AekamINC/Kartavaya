@@ -2155,3 +2155,32 @@ The security half — counting the CALLER rather than Cloudflare — is fixed an
 deployed (`0e066d9c`). Limits being ~2× is coarse, not inverted, so this is a
 refinement rather than a blocker.
 
+### ✅ Mail is GREEN — DKIM was never broken
+
+Confirmed in the SES console 2026-08-30: **DKIM configuration `Successful`, DKIM
+signatures `Enabled`**, Easy DKIM RSA_2048, and **Custom MAIL FROM `Successful`**
+on `mail.kartavaya.com` with *Use default MAIL FROM domain* on MX failure.
+
+⚠ **The earlier 🟡 "DKIM is 1 of 3 selectors" was a FALSE ALARM, and the gate
+caused it.** SES publishes three CNAMEs so it can rotate keys without a DNS
+change, and serves an **empty TXT at the slots it is not currently signing
+with**. One live selector alongside two empty ones is normal operation, not a
+fault. The gate warned once per empty selector, which meant two warnings against
+a healthy domain — and *a gate that fires on a healthy domain gets ignored on an
+unhealthy one*.
+
+`check-sender-dns.mjs` now fails only when **zero** selectors publish a key,
+which is the state that actually breaks every signature. Mutation-proved: point
+all three selectors at names that cannot publish and it fails with
+`0 of 3 selectors publish a key — every signature FAILS`.
+
+Current, all green:
+
+    ✓ SPF   v=spf1 include:amazonses.com include:_spf.mx.cloudflare.net -all
+    ✓ DMARC v=DMARC1; p=none; rua=mailto:kevalvshah03@gmail.com
+    ✓ DKIM  1 of 3 live, 2 held for rotation
+    ✓ MX    3 hosts · Cloudflare Email Routing catch-all ENABLED
+
+⚠ A separate reading earlier reported the DMARC `rua` as missing. It is present;
+that was a stale lookup, not a change to the zone.
+
