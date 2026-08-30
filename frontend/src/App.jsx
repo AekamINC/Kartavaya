@@ -39,7 +39,7 @@ import { navContext }                  from './components/layout/navConfig';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
 import ErrorBoundary from './components/ErrorBoundary';
-import { isInstalledApp } from './lib/platform';
+import { isInstalledApp, isAppHost } from './lib/platform';
 
 // ── Auth pages (lazy — no reason to block the bundle for these) ────────────────
 const LoginPage           = lazyPage(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -153,7 +153,9 @@ function RootGate() {
   // there is no public sign-up — so the landing page's whole job, explaining
   // the product to a stranger, is already done. It opens on the sign-in form,
   // which is the only thing they came here to use.
-  if (!user) return isInstalledApp() ? <Navigate to="/login" replace /> : <LandingPage />;
+  // `app.` joins the installed app for the same reason: it is the sign-in host.
+  // `www.` and the apex keep the landing page — that is where the CTA lands.
+  if (!user) return (isInstalledApp() || isAppHost()) ? <Navigate to="/login" replace /> : <LandingPage />;
   // A client's product is the portal. Sending them to /dashboard first only for
   // `Protected` to bounce them back costs a render of a shell they may not see.
   return <Navigate to={navContext(user).isClient ? '/client' : '/dashboard'} replace />;

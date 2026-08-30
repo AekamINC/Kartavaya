@@ -62,3 +62,30 @@ export function isInstalledApp() {
   } catch { /* matchMedia is absent in some embedded webviews */ }
   return window.navigator?.standalone === true;
 }
+
+/**
+ * True on the APP host — the one whose whole job is signing in.
+ *
+ * ── Why a hostname decides this ─────────────────────────────────────────────
+ *
+ * `www.` is the landing page and where the CTA lands. `app.` is login and the
+ * product behind it. They are ONE Cloudflare Pages project and one build —
+ * `RootGate` picks a face from whether there is a user — so without this a
+ * logged-out visitor to `app.kartavaya.com` gets marketing copy rather than the
+ * sign-in form they came for.
+ *
+ * It is the same judgement `isInstalledApp()` above already makes, for the same
+ * reason: someone arriving at `app.` was sent there by an invite, an approval
+ * mail or a bookmark. The landing page's job — explaining the product to a
+ * stranger — is already done by the time they get there.
+ *
+ * ⚠ Prefix-matched on `app.`, not an equality test against one FQDN, so it holds
+ * on `app.kartavaya.com` and on any future `app.<something>` without another
+ * edit. Deliberately does NOT match `staging.` or a preview deployment: those
+ * are whole-product hosts where the landing page is still worth seeing.
+ */
+export function isAppHost() {
+  if (typeof window === 'undefined') return false;
+  const host = window.location?.hostname;
+  return typeof host === 'string' && host.startsWith('app.');
+}

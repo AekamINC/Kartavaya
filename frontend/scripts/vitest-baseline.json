@@ -1,8 +1,5 @@
 {
-  "note": "Known-failing vitest tests, accepted deliberately. A NEW failure fails CI. Shrink this file; do not grow it.",
+  "note": "Known-failing vitest tests, accepted deliberately. A NEW failure fails CI. Shrink this file; do not grow it. | 2026-08-30: both entries now PASS and were removed. The file may shrink, never grow.",
   "generated": "2026-08-17",
-  "failures": [
-    "src/__tests__/labelShape.test.jsx :: the label sites, discovered from source pins the leaking remainder so it can only shrink",
-    "src/__tests__/sanvaadLegacyVocabulary.test.jsx :: sanvaad v2 · what is still on the old vocabulary is an inventory pages/sanvaad/varta/WAChat.jsx renders exactly its listed pre-v2 classes"
-  ]
+  "failures": []
 }

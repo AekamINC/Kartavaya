@@ -34,6 +34,69 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — ✅ THE DOMAIN IS BACK UP, AND THE FIVE-HOST TOPOLOGY IS LIVE
+
+    kartavaya.com       HTTP 200   CNAME -> kartavaya.pages.dev  (proxied)
+    www.kartavaya.com   HTTP 200   CNAME -> kartavaya.pages.dev  (proxied)
+    app.kartavaya.com   HTTP 200   CNAME -> kartavaya.pages.dev  (proxied)
+    pay.kartavaya.com   HTTP 200   CNAME -> kartavaya.pages.dev  (proxied)
+    api.kartavaya.com   HTTP 000   CNAME -> Railway (DNS only) — STILL NO CERT
+
+**Gate P0 (`check-production-targets.mjs`) is fully green.** The 530/1016 and the
+Vercel `DEPLOYMENT_NOT_FOUND` before it are both closed.
+
+**And the sender DNS for `kartavaya.com` is fixed:**
+
+    SPF     v=spf1 include:amazonses.com -all                      ✓
+    DMARC   v=DMARC1; p=none; rua=mailto:kevalvshah03@gmail.com    ✓
+
+`aekaminc.com` and `unicodegroup.com` still fail the SES check — which stops
+mattering the moment `FROM_EMAIL` moves to `kartavaya.com`, the only
+SES-verified domain.
+
+### Still owed
+
+- ⚠ **`api.kartavaya.com` has no certificate.** The CNAME and `_railway-verify`
+  TXT are right; the custom domain was never added on the Railway service, so it
+  serves `CN=*.up.railway.app` and `api.` is not in the SAN.
+- ⚠ **`FRONTEND_URL` / `PAY_URL` / `FROM_EMAIL` / `CORS_ORIGINS`** on Railway —
+  the hosts exist now, but nothing has confirmed the variables point at them.
+  **`PAY_URL` is in every invoice.**
+- `staging.` and `api-staging.` — not created yet.
+
+---
+
+## 2026-08-30 — `app.` NOW LANDS ON LOGIN, AND THE CSP KNOWS THE NEW HOSTS
+
+**CSP.** `app.kartavaya.com` and `pay.kartavaya.com` added to `connect-src` in
+**both** `frontend/public/_headers` (the live one on Pages) and
+`frontend/vercel.json`, so the two cannot drift. `check-csp-hash` confirms one
+inline script still allowed by both files — **the `sha256-` was not touched.**
+
+**The login redirect.** `www.` and `app.` are one Pages project and one build, so
+`RootGate` was showing the landing page to a logged-out visitor at `app.` —
+marketing copy to someone who came to sign in. `isAppHost()` in
+`lib/platform.js` now joins the `isInstalledApp()` branch that already made
+exactly this call for the APK.
+
+**Verified against the real build**, with Chromium's host resolver mapping the
+genuine hostnames — because `location.hostname` cannot be redefined, and the
+first attempt at this test monkey-patched it, silently measured `127.0.0.1` and
+reported a false negative:
+
+    www.kartavaya.com  ->  /        password field: no
+    app.kartavaya.com  ->  /login   password field: YES
+    pay.kartavaya.com  ->  /        password field: no
+
+11 tests in `src/lib/__tests__/appHost.test.js`, **proved to bite** — changing
+`startsWith('app.')` to `includes('app.')` turns one red.
+
+⚠ **The frontend vitest baseline is now EMPTY.** Its two entries had been fixed
+by earlier work and the file had gone stale; both now pass, so they were removed.
+It may shrink, never grow.
+
+---
+
 ## 2026-08-30 — ⚠ THE DOMAIN IS STILL DOWN: 404 BECAME 530. STEP 1 OF 3 IS DONE.
 
 The four Vercel A records and the `*` wildcard were deleted — correct, and the
