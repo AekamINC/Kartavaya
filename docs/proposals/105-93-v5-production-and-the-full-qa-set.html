@@ -448,10 +448,20 @@ delete. Every email that escapes the fence reaches a real inbox.</p>
 the gates below are stricter than v4's, and the reason volumes come down rather than coverage.</p>
 </div>
 
-<h3>The five production-only gates, each blocking</h3>
+<h3>The six production-only gates, each blocking</h3>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">⚠ P0 EXISTS BECAUSE THE MISTAKE WAS ALREADY MADE, TWICE, IN ONE AFTERNOON.</span></p>
+<ol style="margin:0">
+<li>An x86_64 APK was built, <span class="k">verified to carry the corrected hostname <code>kartavaya-</code>, and reported as good.</span> It carried <code>kartavaya-<span style="color:#B3261E">STAGING</span></code>. Checking the spelling and not the ENVIRONMENT is "verifying the wrong thing" — a named failure in this repo — wearing a new coat.</li>
+<li><code>mobile/.env</code> pins <code>EXPO_PUBLIC_API_URL</code> to staging, and <code>build-apk.sh</code> is a plain gradle build that <span class="k">never reads <code>eas.json</code></span>, where the only production-targeting profile lives. So <span class="k">the default local build is a staging build, silently</span> — and Expo INLINES that URL, so nothing at runtime can correct it.</li>
+</ol>
+<p style="margin:10px 0 0"><span class="k">A wrong target does not throw.</span> The app boots, the login form appears, and the rows land in the wrong database. That is why this is a gate and not a checklist line.</p>
+</div>
 <table>
 <thead><tr><th class="n">#</th><th>Gate</th><th>Runs</th><th>Blocks</th></tr></thead>
 <tbody>
+<tr><td class="n">P0</td><td><span class="k">EVERY SURFACE POINTS AT PRODUCTION.</span> ⚠ Added 2026-08-30 on the owner's instruction — <span class="k">nothing in this run touches staging, at all.</span> The browser, the harness and the phone must all talk to one backend, or the run measures two systems and reports one verdict. <code>node scripts/check-production-targets.mjs</code> reads <code>.env.e2e</code>, <code>mobile/.env</code>, <span class="k">the inlined URL inside the built APK</span>, and <code>/api/health</code> on both services.</td><td>Stage 1, before P1</td><td>EVERYTHING</td></tr>
 <tr><td class="n">P1</td><td><span class="k">Three-system inventory</span> — Supabase · Railway · Cloudflare, read before anything is touched. Output: a written TOUCH list and NEVER-TOUCH list, each row carrying the query that produced it.</td><td>Stage 1, first</td><td>everything</td></tr>
 <tr><td class="n">P2</td><td><span class="k">Blast radius.</span> Per-table <code>org_id</code> distinct-count across every base table in <code>public</code> — 300 today, not the 42 the old argument was measured over. A single third-party org row turns R4′ from a reseed into an incident.</td><td>Stage 1</td><td>any DELETE</td></tr>
 <tr><td class="n">P3</td><td><span class="k">The recipient pre-flight.</span> ⚠ REWRITTEN — the owner has decided <code>OUTBOUND_MODE=live</code> and <code>suppressed_orgs_digest</code> reads <code>"0"</code>, the EMPTY set, so the digest guard <span class="k">is not in force and cannot be the gate</span>. P3 is now a check on the DATA: <span class="k">zero recipient addresses outside the three approved shapes</span> (§0.11), asserted at seed and again immediately before send. <code>/api/health</code> is still read for the mode the PROCESS booted with, because a dashboard variable is not evidence.</td><td>before every wave that sends</td><td>Suites 02, 05, 08, 11, 12, 15, 17</td></tr>

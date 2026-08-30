@@ -86,10 +86,17 @@ reason*.
 
 ---
 
-## The five production gates — every one blocking
+## The six production gates — every one blocking
+
+⚠ **P0 was added on the owner's instruction: nothing in this run touches staging,
+at all.** It exists because the mistake was already made twice in one afternoon —
+an APK verified for the right *spelling* and not the right *environment*, and a
+`mobile/.env` that silently pins every local build to staging while the only
+production profile sits in `eas.json`, which `build-apk.sh` never reads.
 
 | | Gate | Blocks |
 |---|---|---|
+| **P0** | **Every surface points at PRODUCTION** — `node scripts/check-production-targets.mjs` reads `.env.e2e`, `mobile/.env`, **the URL inlined inside the built APK**, and `/api/health` on both services | **everything** |
 | **P1** | Three-system inventory (Supabase · Railway · Cloudflare) → a written TOUCH and NEVER-TOUCH list, each row carrying its query | everything |
 | **P2** | Blast radius — per-table `org_id` distinct-count across **300** base tables, not the 42 the old argument was measured over | any DELETE |
 | **P3** | Outbound fence attested at runtime from `/api/health`, not from the dashboard variable | every wave that sends |
