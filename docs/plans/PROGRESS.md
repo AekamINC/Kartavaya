@@ -6386,3 +6386,29 @@ the list shrank, the gate did not.
 ⚠ Two console errors on `app.kartavaya.com` are **untouched by this** and still
 open: the CSP block on the inline script at `login:113`, and a `408 (Offline)`
 on `dashboard`.
+
+### 2026-08-30 · the rate limiter, after Cloudflare moved the goalposts
+
+`limiter.py`'s own docstring predicted this: *"If a second proxy is ever put in
+front of this app, that assumption changes and this function must change with
+it."* Proxying `api.kartavaya.com` put one there, and the rightmost
+`X-Forwarded-For` entry stopped being the caller.
+
+Fixed by testing the HOP rather than the header — `CF-Connecting-IP` counts as
+evidence only when the address Railway observed is inside Cloudflare's published
+ranges. The ranges are hardcoded on purpose: a limiter whose correctness depends
+on an outbound HTTP call fails open the first time that call is slow, and if
+Cloudflare adds a range the symptom is a return to the OLD behaviour for it —
+degraded, never bypassed.
+
+Both failure modes mutation-proved: reverting to the old behaviour fails 3 tests,
+and the tempting wrong fix (trusting `CF-Connecting-IP` outright, which would
+open a full bypass via the still-public origin) fails 2 others.
+
+**Not yet deployed** — and the 2× per-worker half is still open, because there is
+no Redis on the service to share counters through.
+
+Also live now: `mail.kartavaya.com` has BOTH the MX and the SPF TXT, so the SES
+custom MAIL FROM can verify and SPF finally aligns with the From: domain — which
+matters more than usual while DKIM is only 1 of 3 selectors.
+

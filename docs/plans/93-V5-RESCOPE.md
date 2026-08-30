@@ -371,3 +371,42 @@ Every configured limit is therefore effectively doubled and non-deterministic:
 login's `5/min` is `10/min`, and which counter a request lands on is chance. A
 shared store (Redis) is the real fix; until then no limit means what it says.
 
+### ✅ Rate limiter FIXED in code 2026-08-30 — not yet deployed
+
+`backend/limiter.py` now tests the **hop**, not the header: `CF-Connecting-IP`
+is believed only when the address Railway itself observed (the rightmost
+`X-Forwarded-For` entry, the one nobody upstream can forge) is inside
+Cloudflare's published ranges. Otherwise nothing changes and the rightmost entry
+is still the key.
+
+⚠ **Trusting `CF-Connecting-IP` unconditionally would be worse than the bug** —
+the origin stays publicly reachable, so anyone calling it directly could set that
+header and mint a private bucket per forged value, removing rate limiting
+altogether. `test_a_forged_cloudflare_header_on_the_direct_path_is_ignored` is
+the test that says so and must never be deleted.
+
+Eight tests added, and both failure modes mutation-proved:
+
+| Mutation | Caught by |
+|---|---|
+| never detect the Cloudflare hop (the shipped bug) | 3 tests fail |
+| trust `CF-Connecting-IP` outright (the tempting wrong fix) | 2 tests fail |
+
+116 passed across the rate-limit, auth, OAuth-security and separated-duty files.
+
+**🔴 This is a CODE fix. It changes nothing until the service is deployed.**
+
+### 🟡 Still open — limits remain 2× because storage is per-worker
+
+slowapi's default store is in-process and production runs two workers, so each
+keeps its own count: measured 60 allowed against a `30/minute` limit. **No Redis
+is provisioned** (no `REDIS_URL` on the service, `redis` absent from
+`requirements.txt`), so closing this needs infrastructure, not a code change.
+
+| Option | Effect |
+|---|---|
+| **Provision Redis and point slowapi at it** | limits become exact and shared — the real fix |
+| Run a single worker | exact, at the cost of throughput |
+| Halve the configured numbers | ⚠ crude AND still non-deterministic — a caller can hit the same worker twice |
+| Accept and document | limits mean 2× what they say |
+

@@ -27,6 +27,20 @@ is the one that hop wrote, and it is the only value nobody upstream could forge.
 
 That "one hop" is an ASSUMPTION about the deployment, stated here so that adding
 a second proxy fails a test rather than quietly restoring the hole.
+
+AND ON 2026-08-30 THE SECOND PROXY ARRIVED
+------------------------------------------
+`api.kartavaya.com` went behind Cloudflare. Two hops now: Cloudflare sets
+`X-Forwarded-For: <caller>` and Railway appends Cloudflare's edge address, so
+the rightmost entry became CLOUDFLARE and every visitor behind one edge shared
+a bucket again — the same inverted control, one layer up.
+
+The fix tests the HOP, not the header. `CF-Connecting-IP` is believed only when
+the address Railway itself observed is inside Cloudflare's published ranges.
+Trusting that header unconditionally would be WORSE than the bug: the origin
+stays publicly reachable, so anyone could set it directly and mint a private
+bucket per forged value. `test_a_forged_cloudflare_header_on_the_direct_path_is_ignored`
+is the test that says so, and it is the one that must never be deleted.
 """
 from __future__ import annotations
 
@@ -110,3 +124,78 @@ def test_the_global_write_middleware_uses_it_too():
         "the global write limiter still keys on the proxy address, so the "
         "product shares one 120/minute write budget")
     assert "client_ip" in called or "_client_ip" in called
+
+
+# ── the Cloudflare hop ──────────────────────────────────────────────────────
+#
+# 172.71.4.9 is inside 172.64.0.0/13, a real Cloudflare range. 203.0.113.x is
+# TEST-NET-3 and is deliberately NOT Cloudflare, so it exercises the ordinary
+# single-hop path unchanged.
+_CF_EDGE = "172.71.4.9"
+
+
+def test_a_caller_behind_cloudflare_is_not_keyed_on_cloudflare():
+    """The production bug, in one assertion."""
+    req = _req({
+        "x-forwarded-for": f"203.0.113.7, {_CF_EDGE}",
+        "cf-connecting-ip": "203.0.113.7",
+    })
+    assert client_ip(req) == "203.0.113.7"
+    assert client_ip(req) != _CF_EDGE, (
+        "every visitor behind one Cloudflare edge is sharing a rate-limit bucket"
+    )
+
+
+def test_two_callers_behind_cloudflare_get_different_keys():
+    a = client_ip(_req({"x-forwarded-for": f"203.0.113.7, {_CF_EDGE}",
+                        "cf-connecting-ip": "203.0.113.7"}))
+    b = client_ip(_req({"x-forwarded-for": f"198.51.100.4, {_CF_EDGE}",
+                        "cf-connecting-ip": "198.51.100.4"}))
+    assert a != b, "two different people still share one bucket behind Cloudflare"
+
+
+def test_a_forged_cloudflare_header_on_the_direct_path_is_ignored():
+    """The reason the fix tests the HOP and not the header.
+
+    The origin is still publicly reachable. If `CF-Connecting-IP` were trusted
+    on its own, anyone calling it directly could mint a fresh bucket per forged
+    value and remove rate limiting entirely — worse than the bug it fixes.
+    """
+    req = _req({
+        "x-forwarded-for": "203.0.113.7",          # last hop is NOT Cloudflare
+        "cf-connecting-ip": "9.9.9.9",             # ...so this is a stranger talking
+    })
+    assert client_ip(req) == "203.0.113.7"
+    assert client_ip(req) != "9.9.9.9"
+
+
+def test_a_forged_cloudflare_header_cannot_mint_a_new_bucket_per_request():
+    keys = {
+        client_ip(_req({"x-forwarded-for": "203.0.113.7",
+                        "cf-connecting-ip": f"9.9.9.{n}"}))
+        for n in range(1, 20)
+    }
+    assert keys == {"203.0.113.7"}, "a forged header is still buying separate buckets"
+
+
+def test_behind_cloudflare_without_the_header_the_entry_before_the_edge_wins():
+    req = _req({"x-forwarded-for": f"9.9.9.9, 203.0.113.7, {_CF_EDGE}"})
+    assert client_ip(req) == "203.0.113.7"
+
+
+def test_cloudflare_with_nothing_before_it_keys_on_the_edge_rather_than_inventing_one():
+    # Coarse, and identical to the pre-fix behaviour — but never unsafe.
+    assert client_ip(_req({"x-forwarded-for": _CF_EDGE})) == _CF_EDGE
+
+
+def test_an_unparseable_last_entry_is_not_mistaken_for_a_trusted_hop():
+    assert client_ip(_req({"x-forwarded-for": "203.0.113.7, not-an-ip"})) == "not-an-ip"
+
+
+def test_the_cloudflare_range_list_is_actually_populated():
+    """Anti-vacuity: an empty list would make every test above pass trivially."""
+    from limiter import _CLOUDFLARE_NETS, _is_cloudflare
+    assert len(_CLOUDFLARE_NETS) >= 15
+    assert _is_cloudflare(_CF_EDGE), "the fixture is not in any configured range"
+    assert _is_cloudflare("2606:4700::1"), "IPv6 edges are not covered"
+    assert not _is_cloudflare("203.0.113.7")
