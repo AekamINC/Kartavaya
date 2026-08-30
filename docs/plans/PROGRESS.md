@@ -6353,3 +6353,36 @@ the old URL inlined and the build will succeed shipping the wrong host.
 carries an anti-vacuity control probing the dead spelling. Proved to bite:
 pointed at `kartavya-production` it fails with the consequence named.
 
+
+### 2026-08-30 · `@vercel/analytics` dropped — it never recorded a pageview
+
+The cross-browser smoke found it on 30 Aug and recorded it in `KNOWN_DEFECTS`
+with the note that **the fix was a product decision, not a test change**. Taken:
+the package is gone.
+
+`@vercel/analytics` requested `/_vercel/insights/script.js`. The site serves from
+Cloudflare Pages, whose SPA fallback answers that path `200 text/html`, so the
+browser refused to execute it — a console error on every page load, in all six
+engines, and **not one pageview was ever recorded from the Pages origin.** It
+worked only on the Vercel-served host, which is not where the product lives.
+
+Removed the `inject()` call from `frontend/src/index.jsx`, the dependency from
+`frontend/package.json`, and regenerated `package-lock.json` and `yarn.lock`.
+**Verified by grepping the build, not the source:** `grep _vercel/insights dist/`
+is empty after `npm run build`, so the request is gone from the shipped bundle
+rather than merely unreferenced. `npm run check` exits 0 across all 20 gates.
+
+The `TOKEN_ROUTES` `beforeSend` redaction went with it. It existed for one
+reason — `/sign/:token` is the entire authority to apply a binding signature
+under the IT Act, 2000, and the pathname was going to a third party verbatim.
+With no third party there is nothing to redact for. **If analytics is ever
+re-added, that redaction has to come back with it**; the comment left in
+`index.jsx` says so at the point where the code would go.
+
+`KNOWN_DEFECTS` in `xbrowser-smoke.spec.ts` held exactly this one entry and is
+now empty, with a note saying why. A new console error still fails the run —
+the list shrank, the gate did not.
+
+⚠ Two console errors on `app.kartavaya.com` are **untouched by this** and still
+open: the CSP block on the inline script at `login:113`, and a `408 (Offline)`
+on `dashboard`.

@@ -621,10 +621,10 @@ ones the Rule 46 danger note stays up:
 A Safari user saving a draft is still shown a red "gaps" alert for a save that
 succeeded.
 
-### 🟡 NEW — `@vercel/analytics` is broken on the Cloudflare Pages origin
+### ✅ RESOLVED — `@vercel/analytics` removed; it never worked on Pages
 
 Found by `e2e-real/xbrowser-smoke.spec.ts` on its first run, in **all six
-engines that launched**. `@vercel/analytics` requests
+engines that launched**. `@vercel/analytics` requested
 `/_vercel/insights/script.js`; on **`kartavaya.pages.dev`** — which is where
 `E2E_BASE_URL` in `.env.e2e` actually points the whole e2e-real suite —
 Cloudflare's SPA fallback answers `200 text/html`, and the browser refuses to
@@ -634,10 +634,17 @@ hosts:
     kartavaya.pages.dev/_vercel/insights/script.js  -> 200  text/html
     staging.kartavaya.com/... (Server: Vercel)      -> 200  application/javascript
 
-So it is **host-specific, not engine-specific**, and analytics has never worked
-on the Pages origin. Recorded in `KNOWN_DEFECTS` in that spec — new console
-errors still fail. The fix is a product decision (drop the package now the site
-is on Pages), not a test change.
+So it was **host-specific, not engine-specific**, and analytics never worked on
+the Pages origin — no pageview was ever recorded from it.
+
+**Dropped 2026-08-30.** The `inject()` call and the package are gone from
+`frontend/src/index.jsx` and `frontend/package.json`; both lockfiles
+regenerated. `grep _vercel/insights dist/` is empty after a build, so the
+request is gone from the bundle rather than silenced. The `TOKEN_ROUTES`
+redaction went with it — it existed only to keep `/sign/:token` bearer tokens
+out of a third-party dashboard, and there is now no third party to keep them
+from. `KNOWN_DEFECTS` in that spec held this one entry and is now empty; a new
+console error still fails the run.
 
 ### ⚠ The harness fault that would have made every WebKit run look like a product failure
 
