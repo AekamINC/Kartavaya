@@ -48,40 +48,28 @@ Only `emp001` and `emp002` have a `users` row; `manav_employees` holds **0
 rows**. `DUMMY_03`–`12` need creating before any role-matrix wave. No password
 will ever work for them.
 
-### 3 🟡 Rate limits are ~2× and Redis is not connected
+### 3 ✅ Redis connected — and the "2×" claim was WRONG
 
-Redis is provisioned (`redis:7-alpine`, service `68747d2f`, `REDIS_URL` set on
-the API) but **its network counters read zero — the app has never reached it.**
+`/api/health` reports `"rate_limit_store": "redis"`, proved by a ping. Counters
+are shared.
 
-⚠ **The cause is NOT the IPv6 toggle.** Read from the Railway API: the `redis`
-service config has **no `networking` block at all**, i.e. no private endpoint was
-ever created for it, so `redis.railway.internal` resolves to nothing. The
-Kartavaya service has one (`kartavya.railway.internal`); redis does not.
+🔴 **The earlier "limits are 2×" line is retracted — it was asserted, not
+measured.** Five probes gave first-429 at #48, #51, #44, #53, and *none at all*
+for 45 requests aligned inside one window. One counter fails at #31 every time;
+two fail near #55. Neither fits, so no multiplier was established.
 
-**Next action, in the dashboard** (the API exposes no field for this):
+Most likely cause is the deliberate `swallow_errors=True` fail-open: a storage
+error ALLOWS the request, so an intermittently slow store gives a variable
+ceiling. That is the accepted cost of not answering 500 on every rate-limited
+endpoint during a Redis blip.
 
-1. `redis` service → **Settings → Private Networking** → give it an endpoint
-   name. Railway then serves `<name>.railway.internal`.
-2. If that name is not `redis`, update `REDIS_URL` on the Kartavaya service to
-   match — it is currently `redis://redis.railway.internal:6379`.
-3. Redeploy Kartavaya, then re-run the threshold probe below.
+**If this needs closing, do it with server-side visibility** — log each limiter
+decision, or count swallowed storage errors and expose them on `/api/health`.
+Four probes today produced four answers and two wrong diagnoses. A fifth will
+not help.
 
-Until then the limiter runs on in-process storage.
-
-⚠ **This is a refinement, not a blocker.** The security half — counting the
-CALLER rather than Cloudflare — is fixed and deployed. Limits being 2× is
-coarse, not inverted.
-
-**How to measure it** (parallel bursts mislead; a window roll looks like a
-second counter):
-
-```bash
-for i in $(seq 1 70); do curl -4 -s -o /dev/null -w '%{http_code}\n' \
-  https://api.kartavaya.com/api/v1/pay/zzq7x-nonexistent-probe; done | grep -n 429 | head -1
-```
-
-First `429` at **#31** = one shared counter, Redis working. Around **#48–55** =
-two counters. Leave 90s quiet before running so no window is in flight.
+⚠ Not a blocker. The security half — counting the CALLER, not Cloudflare — is
+fixed and deployed.
 
 ### 4 ✅ DKIM — RESOLVED, it was never broken
 

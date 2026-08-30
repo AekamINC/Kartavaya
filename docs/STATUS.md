@@ -2184,3 +2184,48 @@ Current, all green:
 ⚠ A separate reading earlier reported the DMARC `rua` as missing. It is present;
 that was a stale lookup, not a change to the zone.
 
+### ✅ Redis is CONNECTED — and the "limits are 2×" claim is RETRACTED
+
+`/api/health` now reports the store, proved by a real ping rather than by
+reading `REDIS_URL`:
+
+    "rate_limit_store": "redis"
+
+**So Redis is live and the counters are shared.** It distinguishes the two
+faults that need different fixes — `memory` (the URI never reached the process)
+from `redis-unreachable` (it did, and the host did not answer).
+
+🔴 **Retracting the 2× finding.** It was reported as measured; it was not. The
+evidence was "60 allowed against a 30/minute route", which was read as two
+in-process counters. It does not hold:
+
+| Probe | First 429 |
+|---|---|
+| sequential, quiet | #48 |
+| sequential, quiet | #51 |
+| after IPv6 egress | #44 |
+| with redis CONFIRMED live | #53 |
+| **45 requests aligned inside one window** | **none at all** |
+
+One shared counter of 30 would fail at #31 every time. Two counters would fail
+consistently around #55. Neither matches, and 45 requests passing untouched
+inside a single window rules out a 30-per-window ceiling entirely. **The
+threshold is not stable, so no multiplier was ever established.**
+
+⚠ **The most likely explanation is the fail-open I chose deliberately.**
+`swallow_errors=True` means any storage error ALLOWS the request. A store that
+is reachable but intermittently slow would produce exactly this: a variable,
+higher-than-configured ceiling with no pattern. That is the known cost of not
+letting a Redis blip answer 500 on every rate-limited endpoint — but it means
+**the limits cannot be characterised from outside the container.**
+
+**Next step is server-side visibility, not more black-box probing.** Log each
+limiter decision (key, route, allowed/blocked, store latency) at DEBUG, or count
+swallowed storage errors and expose the counter on `/api/health`. Four probes
+today produced four different answers and two wrong diagnoses; a fifth probe
+would not have helped.
+
+**Unaffected:** the security defect — counting Cloudflare instead of the caller —
+is fixed, unit-tested, mutation-proved and deployed. That was the part that could
+lock real users out.
+
