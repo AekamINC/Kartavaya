@@ -52,12 +52,21 @@ will ever work for them.
 
 Redis is provisioned (`redis:7-alpine`, service `68747d2f`, `REDIS_URL` set on
 the API) but **its network counters read zero — the app has never reached it.**
-The API service has `ipv6EgressEnabled: false` and Railway's private network is
-IPv6-only, so `redis.railway.internal` cannot be dialled.
 
-**Next action:** enable IPv6 egress on the Kartavaya service (dashboard toggle,
-not exposed by the API), then re-run the threshold probe below. Until then the
-limiter runs on in-process storage and limits are per-worker.
+⚠ **The cause is NOT the IPv6 toggle.** Read from the Railway API: the `redis`
+service config has **no `networking` block at all**, i.e. no private endpoint was
+ever created for it, so `redis.railway.internal` resolves to nothing. The
+Kartavaya service has one (`kartavya.railway.internal`); redis does not.
+
+**Next action, in the dashboard** (the API exposes no field for this):
+
+1. `redis` service → **Settings → Private Networking** → give it an endpoint
+   name. Railway then serves `<name>.railway.internal`.
+2. If that name is not `redis`, update `REDIS_URL` on the Kartavaya service to
+   match — it is currently `redis://redis.railway.internal:6379`.
+3. Redeploy Kartavaya, then re-run the threshold probe below.
+
+Until then the limiter runs on in-process storage.
 
 ⚠ **This is a refinement, not a blocker.** The security half — counting the
 CALLER rather than Cloudflare — is fixed and deployed. Limits being 2× is
@@ -94,7 +103,7 @@ Cloudflare Email Routing catch-all is active and forwards to
 2. **`node scripts/check-production-targets.mjs`** — must be green before any
    wave. It is the gate that caught the `BACKEND_URL` 404 and the `.env.e2e`
    typo today.
-3. **`node scripts/check-sender-dns.mjs`** — expect one amber (DKIM).
+3. **`node scripts/check-sender-dns.mjs`** — `kartavaya.com` must be all ✓.
 4. **Setup states:** `npx playwright test --config=e2e-real/real.config.ts
    --project=setup`. All three must pass. A failure here is a credential
    problem, never a product one.
