@@ -5791,3 +5791,45 @@ landing. The deployed sweep reads `public.hub_scraper_runs`.
 Consolidated to three, on the owner's instruction: `main`, `staging`,
 `main-backup-20260724`. `schema-consolidation` deleted after verifying it was
 fully merged. Work continues on `main`.
+
+## 2026-08-30 — Org settings gains a Reports tab, and it has no user yet
+
+Shipped on `main` at `8eeebc23`, with both deploys verified by artifact rather
+than by a green deploy badge: Railway production came up on the commit and
+answered `/api/health` on `public`, and Cloudflare Pages rebuilt
+`index-Cb2qbtpl.js` → `index-Dxmt9ulU.js` with the tab's own label present in
+the bundle. "The deploy succeeded" is not evidence that a feature shipped; the
+bundle containing the string is.
+
+**What it is.** Scheduled Finance and CRM reports travel as password-protected
+PDFs, and the passphrase is deliberately never in the mail. This tab is the only
+surface where a recipient can be told what it is, and the report email names it
+by this exact path. It sits beside Security rather than inside it: `TabSecurity`
+gates every one of its controls on a probe for `org_security`, so putting the
+passphrase there would let one missing migration take down two unrelated
+features.
+
+**It is 🟡, not ✅, and the number is the reason.** Measured 30 Aug against the
+live database:
+
+    organisations                              5
+    with a `reports` key in settings           0
+    with a report passphrase set               0
+
+`load_passphrase` therefore returns `''` for every org, and every scheduled
+report still goes out in the link shape. The route exists, the screen exists,
+the SQL is tested against the real schema — and nobody has completed the flow
+once. That is exactly the distinction this file exists to hold: the code
+shipping and a customer finishing the journey are different claims, and only the
+second is ✅.
+
+**What was checked before committing, not after.** Frontend `npm run check` exit
+0 with all 16 gates confirmed also running in CI; `npm run build` clean, because
+`check` exits 0 on unparseable CSS; mobile 846 pass / 0 fail; and a secret scan
+across every file in the commit — zero hits. Roughly 2,000 lines of the raw
+diff were whitespace; the real change was +1,518 / −135.
+
+**Next measurable step.** Set a passphrase through the deployed screen for one
+org and confirm `settings->'reports'->>'passphrase'` moves 0 → 1, then send one
+scheduled report and confirm it arrives as an encrypted PDF. Until that row
+exists this stays 🟡.
