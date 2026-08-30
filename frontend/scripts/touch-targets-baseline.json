@@ -1,0 +1,16 @@
+{
+  "_comment": "Interactive controls declared under 44px. SHRINK ONLY — see check-touch-targets.mjs.",
+  "_recorded": "2026-08-30",
+  "under44": [
+    ".cat-swatch | height",
+    ".cat-swatch | width",
+    ".gr__swatch | height",
+    ".gr__swatch | width",
+    ".m2cp textarea | min-height",
+    ".mnavpick__cell.is-fab | min-width",
+    ".sh__fb button | height",
+    ".sh__fb button | width",
+    ".tpl-ico__btn | height",
+    ".tpl-ico__btn | width"
+  ]
+}

@@ -34,6 +34,278 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — THE QA GAP AUDIT: NINE DISCIPLINES CLOSED, TWO OWED TO PEOPLE
+
+A survey of the twenty-one standard QA disciplines against this repo found ten
+either absent or present-but-toothless. Nine are now closed in code; two — user
+acceptance and usability — cannot be, and are specified in
+`docs/proposals/104-uat-and-usability.html` instead.
+
+**Every gate below was proved to bite before it landed.** A gate that cannot
+fail is the failure mode this repository has already met four times (contrast,
+CSP, Mappls, touch targets), and a new one that has never been shown to go red
+is just the fifth.
+
+| Discipline | Was | Now |
+|---|---|---|
+| Cross-browser / platform | 1 engine, 1 viewport | **7 projects**, matrix + read-only deployed smoke |
+| Accessibility | 2 gates that ran nowhere; 1 of them report-only | 9 rendered rules + both gates armed, one ratcheted |
+| Performance | nothing, ever | brotli bundle budget + CLS/DOM/API-call budgets |
+| Visual regression | script existed, wired nowhere | computed-style contract, 15 selectors, committed |
+| i18n | 1 jsdom assertion | 5 rules across all 4 languages, in a browser |
+| Mutation testing | by hand, when remembered | `scripts/mutate.py`, 4 operators |
+| Dependency scanning | `|| true` on both suites | two ratchets, 41 advisories recorded |
+| Disaster recovery | one sentence, never re-read | measured, ratcheted, runbook written |
+| UAT / usability | never done | specified, owner-blocked |
+
+### 🔴 THE TWO AUDITS WERE SWALLOWING 41 ADVISORIES
+
+Both dependency audits ran with `|| true`, so neither could ever fail. They were
+hiding:
+
+- **Backend, 24 vulnerabilities in 6 shipped packages** — `starlette` 7,
+  `cryptography` 6, **`pyjwt` 5**, `python-multipart` 3, `pypdf` 2,
+  `weasyprint` 1 (no fix available). `pyjwt` is what signs and verifies every
+  session in this product. Fixes exist for all but weasyprint.
+- **Frontend, 17 advisories, 4 High** — all in `axios` (10), `react-router` (6)
+  and `form-data` (1, transitive under axios). Patched in `axios >=1.18.0` and
+  `react-router >=7.18.2`.
+
+Both are now ratchets — the known set recorded by name, the next one fails the
+build. **They are not fixed.** The frontend upgrade regenerates `yarn.lock`,
+which from Windows rewrites esbuild `linux-x64` to `win32-x64` and breaks the
+deploy, so it must come from a Linux checkout. The backend bump needs the full
+suite behind it. **`pyjwt` first.**
+
+### 🔴 THE REVERSAL PATH IS NOT A DATABASE BACKUP
+
+`premerge_backup_20260829` was recorded as "258 tables, 29,608 rows, the
+reversal path for the consolidation" and never re-read. Measured read-only:
+**265 tables, 30,364 rows** — and **42 `public` tables are not in it at all**,
+24 of them holding **5,887 rows**: `tasks` (364), `users` (30), `teams` (41),
+`team_members` (206), `notifications` (2,850), `activity_events` (1,254) — the
+entire core PM domain.
+
+**The backup is correct and is described as bigger than it is.** It snapshots
+the pre-merge `staging` schema; tables that already lived in `public` were never
+in it. As a consolidation reversal it is complete. As "the backup" it is not,
+and in an incident nobody re-reads a migration note — a restore from it would
+*succeed* and silently recover no tasks, users or teams.
+
+Full account and runbook: **`docs/DISASTER-RECOVERY.md`**. Repeatable check:
+`backend/scripts/check_backup_coverage.py` (read-only; refuses to run without a
+DSN rather than skipping). **No restore has ever been rehearsed**, and the
+Supabase project's own retention and PITR status — the only full-database path —
+is still unknown.
+
+### 🟡 MUTATION TESTING FOUND A CROSS-TENANT GUARD WITH NO TEST BEHIND IT
+
+`backend/scripts/mutate.py` disables a guard and asks whether anything notices.
+Against `approvals_router.py` and all five approvals test files: **3 killed, 8
+survived.** The one that mattered was line 461 — the fix whose own comment reads
+*"THE ADMIN HATCH IS NOW SCOPED TO THIS ORG, AND TO THIS TASK. It was
+`is_org_admin(...)`, which is True for an admin row in ANY organisation."*
+Disabling that guard entirely left the whole suite green.
+
+So the fix for a cross-tenant hole had nothing pinning it, and anyone
+simplifying that line back would have reopened it against a green suite —
+exactly how it got in the first time. **Two tests added, both directions; the
+mutant now dies (4 killed, 7 survived).** The remaining 7 survivors are listed
+by line and are open questions, not confirmed bugs.
+
+### 🟡 PERFORMANCE: `/api/teams` IS FETCHED FOUR TIMES PER PAGE
+
+The first measurement of anything performance-shaped in this repo.
+
+- **Bundle**, brotli — ENTRY **161.1 KB**, largest lazy chunk 41.0 KB, TOTAL
+  3.05 MB across 345 files. Budgeted with 5% tolerance.
+- **Layout stability is good**: CLS 0.0003–0.009 against a 0.1 threshold.
+- **Over-fetching is not.** StrictMode doubles effects in dev, so 2× is an
+  artefact and **3× or more cannot be**: `/tasks` requests `/api/teams` **8
+  times** (four real callers in production), `/api/tasks` 6×, `/api/categories`
+  4×; every page fetches `/api/auth/me` 3×. Baselined by page; a new one fails.
+
+Two earlier versions of this budget were wrong and are recorded in the spec:
+gating on total requests measured *Vite's dev module graph* (226–269 per page),
+and gating on total API calls measured *StrictMode*.
+
+### 🟡 ACCESSIBILITY: 9 RULES, ONE REAL FIX, TEN BASELINED
+
+Nine rendered rules — image alt, accessible names, label association, ARIA
+reference integrity, id uniqueness, heading order, positive tabindex, landmarks
+and `lang`, and a keyboard/focus-visibility pass. Written against the DOM
+directly rather than adding `@axe-core/playwright`, for the same lockfile reason
+as above.
+
+- **Fixed**: the `/tasks` search field was named only by its placeholder — the
+  only unlabelled field in a ten-page sweep. Now `aria-label="Search tasks"`.
+- **Baselined**: all ten module pages jump **h1 → h3**, so a screen-reader user
+  cannot navigate by structure.
+- **Not a finding**: 53 `aria-controls` on inactive tabs. That is the standard
+  lazy-panel pattern (`ModuleTabs.jsx` sets `aria-selected`; pages render only
+  the active panel). The rule was narrowed to the shape that *is* a bug — a
+  SELECTED tab whose panel is missing.
+- **Armed**: `check-touch-targets.mjs` was **report-only and ran nowhere** — it
+  exited 0 no matter what it found. Now ratcheted at 10 known controls under
+  44px. `check-accent-contrast.mjs` also ran nowhere. Both are now in
+  `npm run check` (20 gates) and in CI.
+
+### 🟡 i18n: ENGLISH IS NOT ENGLISH-ONLY, AND GUJARATI IS HINDI
+
+`src/lib/i18n.js` states the defect by count — *"five of the six are covered and
+77 leak, so a user who chose English is reading three scripts"* — and nothing
+tested it. Now measured in a browser with `innerText`, which is the load-bearing
+choice: it reports **rendered** text, so it can tell the six CSS-hidden class
+names from the 77 that are not. jsdom cannot; `textContent` cannot.
+
+- **EN leaks on `/dashboard`**: the Vikram Samvat date, the Sanskrit greeting
+  and the Gita verse.
+- **EN+GU renders DEVANAGARI on `/dashboard`**, weekday names included —
+  `lib/labels.js` predicted exactly this.
+- The brand wordmark is exempted **by exact string**: it is the logo, not a
+  translation leak.
+- Baselined **by surface, not by word** — the weekday strip and the verse rotate
+  daily, and a baseline that changes by the day gets deleted.
+
+### ⚠ THE HARNESS BUG THAT WOULD HAVE PRODUCED THREE FALSE FINDINGS
+
+All three new browser suites were seeded with `{data: [], total: 0, …}`, copied
+from `f32-write-gating.spec.ts` where it is correct. It is not correct on
+`/dashboard`, which reads `/api/tasks` as what its own comment says it is — *"a
+bare array"* — and throws `{} is not iterable` into the ErrorBoundary. **The
+ErrorBoundary leaves the shell standing**, so a character-count floor passed and
+every rule measured a sidebar:
+
+    engine    stub          rendered text
+    chromium  envelope       1,255 chars     <- shell only
+    chromium  bare-array     2,323 chars
+    webkit    envelope         955 chars     <- looked like a WebKit crash
+    webkit    bare-array     2,019 chars
+
+Caught before anything was written up. All three suites now use a bare array and
+assert **no ErrorBoundary marker**, not merely a length. The first a11y run had
+also reported "no `<main>` landmark" on all ten pages and "the page is
+unreachable by keyboard" — both the same class of error: measuring before React
+had mounted.
+
+---
+
+## 2026-08-30 — CROSS-BROWSER AND CROSS-PLATFORM COVERAGE NOW EXISTS
+
+**Until today every browser-driven test in this repository ran on one engine at
+one viewport.** All three Playwright configs declared a single project, `Desktop
+Chrome` at 1280×720 — 69 specs against deployed staging, 4 against a stubbed
+local build. So "does Kartavaya work in Safari?" and "does it work on a phone?"
+were not answered *no*; they were **UNKNOWN, under a green suite**. That is the
+same shape as the contrast, CSP and Mappls gates: absence reading as coverage.
+
+`frontend/playwright.matrix.ts` is now the single definition of the matrix —
+**seven projects**: Chromium, Firefox, WebKit, an Android phone (Pixel 7, which
+is also the Capacitor WebView the APK ships), an iPhone, an iPad and an Android
+tablet at the `Tab_A11_Plus` geometry the native Suite 21 already drives.
+`PW_BROWSERS` selects (`all`, `desktop`, `mobile`, `tablet`, or names); an
+unknown name **throws at config load**, because a typo that silently ran zero
+projects would report green over nothing.
+
+**Where it runs, and the blast-radius rule that decides it.** The stubbed suite
+(`frontend/playwright.config.ts`) defaults to the whole matrix — it writes
+nothing, stubs every `/api/**` and drives a local vite. The two suites that
+WRITE stay on `chromium`: staging and production share one database, and seven
+passes of real rows to learn something about CSS is not a trade worth making.
+
+### The first run: 150 pass, 44 fail, and 41 of the 44 are real
+
+| | |
+|---|---|
+| Tests, matrix | **233** (was 35 on one project) |
+| Pass | 150 |
+| Baselined failures | **44** — `frontend/scripts/playwright-baseline.json` |
+| — already failing in Chromium | 3 (proved by `PW_BROWSERS=chromium`, which reproduces the old behaviour exactly) |
+| — NEW, Safari or phone-width only | **41**, across 8 distinct tests |
+| Firefox | **could not launch on this Windows desk** — 33× `browserType.launch: spawn UNKNOWN`, the same fault `real.config.ts` records for `channel: 'chromium'`. NOT baselined: a browser that will not start is missing coverage, not a known failure. It launches on the ubuntu runner. |
+
+Baselined on the `run-vitest-baselined` contract — a NEW failure fails the
+build, a FIXED one is printed, **the file may shrink and never grow**. Runs
+nightly (`nightly.yml` → `cross-browser`), not per push: 233 tests every push
+against a free org's 2,000-minute month is the largest line on the bill.
+
+### 🔴 NEW — the Skill-pack step editor does not work in Safari, or at phone width
+
+`skill-data-steps.spec.ts` — **7 of its 8 tests** pass on Desktop Chrome and
+fail on `webkit`, `ios-safari`, `ipad-safari` and `android-chrome`. The first
+one to break says what the rest are downstream of:
+
+    locator('.sk-step').first().getByLabel(/What to read/)
+      .locator('optgroup[label="Read your data"]')
+    Expected: 1   Received: 0
+
+The grouped function list renders **zero `<optgroup>` elements** in WebKit, so
+nothing after it can pick a function and six further tests time out. Not
+investigated further today — recorded, not fixed.
+
+### 🔴 NEW — the invoice gate banner does not clear on "Save as draft", in Safari
+
+`invoice-form-gate.spec.ts` → *"Save as draft instead" posts the same form with
+doc_status=draft*. Passes on all three Chromium projects; on all three WebKit
+ones the Rule 46 danger note stays up:
+
+    locator('.gn-gaps')  Expected: hidden   Received: visible
+    <div role="alert" class="note note--danger gn-gaps">
+
+A Safari user saving a draft is still shown a red "gaps" alert for a save that
+succeeded.
+
+### 🟡 NEW — `@vercel/analytics` is broken on the Cloudflare Pages origin
+
+Found by `e2e-real/xbrowser-smoke.spec.ts` on its first run, in **all six
+engines that launched**. `@vercel/analytics` requests
+`/_vercel/insights/script.js`; on **`kartavaya.pages.dev`** — which is where
+`E2E_BASE_URL` in `.env.e2e` actually points the whole e2e-real suite —
+Cloudflare's SPA fallback answers `200 text/html`, and the browser refuses to
+execute it. One console error on every page load. Measured with curl on both
+hosts:
+
+    kartavaya.pages.dev/_vercel/insights/script.js  -> 200  text/html
+    staging.kartavaya.com/... (Server: Vercel)      -> 200  application/javascript
+
+So it is **host-specific, not engine-specific**, and analytics has never worked
+on the Pages origin. Recorded in `KNOWN_DEFECTS` in that spec — new console
+errors still fail. The fix is a product decision (drop the package now the site
+is on Pages), not a test change.
+
+### ⚠ The harness fault that would have made every WebKit run look like a product failure
+
+`frontend/playwright.config.ts` pointed `VITE_BACKEND_URL` at
+`http://127.0.0.1:9` — port 9 is discard, so an escaped request dies loudly.
+**WebKit refuses port 9 in the network layer, before Playwright's `page.route`
+interception sees the request:**
+
+    Not allowed to use restricted network port 9: http://127.0.0.1:9/api/auth/me
+
+The stub never fired, `/auth/me` never resolved, and the app correctly rendered
+"Could not reach Kartavaya". **That alone was 94 of the first run's 142
+failures, and not one of them was a product defect.** Chromium hides the
+difference because its own bad-port check runs after interception. Now
+`59999` — unassigned, above the bad-ports list, closed. 142 → 77 on that one
+line. Do not tidy it back to a low port.
+
+### What cross-browser answered that was previously open
+
+`real.config.ts` records at length that Vercel bot mitigation returned
+`403 / x-vercel-mitigated: deny` to `chromium-headless-shell`, fixed with
+`channel: 'chrome'`, and leaves open whether Firefox and WebKit would get
+through. **They do.** Every engine that launched got `HTTP 200` with the header
+absent — including WebKit and both mobile Safaris, which have no such channel.
+The read-only smoke prints that header on every run, so it stays measured.
+
+Also proven for the first time, on the deployed app: the bundle boots in WebKit,
+no page scrolls sideways at 390/412/1080/1138px, and the sign-in controls clear
+the 44px tap minimum — the rendered rectangle, not the CSS declaration
+`check-touch-targets.mjs` reasons about (a gate which, separately, runs in
+neither `npm run check` nor CI).
+
+---
+
 ## 2026-08-29, third session — the deploy line, re-read
 
 ⚠ **The two lines above are STALE and are kept only as the record of how that

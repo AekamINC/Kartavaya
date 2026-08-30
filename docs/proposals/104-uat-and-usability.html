@@ -1,0 +1,273 @@
+<title>UAT & Usability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   104 — USER ACCEPTANCE TESTING AND USABILITY TESTING
+
+   The two QA disciplines that CANNOT be automated, written as the artefacts a
+   person runs rather than as a description of what ought to happen.
+
+   Everything else in the 2026-08-30 testing pass shipped as code: the
+   cross-browser matrix, the accessibility rules, the performance budgets, the
+   mutation runner, the dependency ratchets. These two cannot. UAT needs a
+   customer; usability testing needs somebody who has never seen the product.
+   No amount of Playwright substitutes for either, and pretending otherwise is
+   the exact overclaim `docs/STATUS.md` exists to prevent.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --s-lowest:#FFFEFB; --surface:#F8F6EF; --s-low:#F1EDE3;
+  --bg:#EAE5D8; --s-container:#E4DECD; --s-high:#DDD6C2;
+  --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+  --line:#CFC6AE; --line-2:#DDD5C0;
+  --accent:#00897f; --danger:#B3261E; --warn:#8A6A0F; --ok:#2E6B3E;
+  --r:14px; --pad:22px;
+}
+* { box-sizing:border-box }
+body {
+  margin:0; background:var(--bg); color:var(--ink);
+  font:400 16px/1.62 Inter, system-ui, sans-serif;
+  padding:56px 40px 120px;
+}
+.wrap { max-width:1180px }
+h1 {
+  font:300 46px/1.1 Newsreader, Georgia, serif; letter-spacing:-.02em;
+  margin:0 0 6px;
+}
+.sub { color:var(--ink-3); font-size:15px; margin:0 0 40px; max-width:70ch }
+h2 {
+  font:400 27px/1.2 Newsreader, Georgia, serif; margin:52px 0 8px;
+  padding-bottom:9px; border-bottom:1px solid var(--line);
+}
+h3 { font:600 14px/1.4 Inter, sans-serif; letter-spacing:.1em; text-transform:uppercase;
+     color:var(--ink-3); margin:30px 0 10px }
+p { max-width:78ch }
+.lead { font-size:17px; color:var(--ink-2) }
+code, .mono { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:13.5px }
+.card {
+  background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r);
+  padding:var(--pad); margin:18px 0;
+}
+.card--warn { border-left:4px solid var(--warn); background:#FBF6E7 }
+.card--stop { border-left:4px solid var(--danger); background:#FCF0EF }
+table { border-collapse:collapse; width:100%; margin:16px 0; font-size:14.5px }
+th, td { text-align:left; padding:11px 13px; border-bottom:1px solid var(--line-2); vertical-align:top }
+th { font-weight:600; font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3);
+     background:var(--s-low); border-bottom:1px solid var(--line) }
+tbody tr:hover { background:var(--s-lowest) }
+td.n { width:52px; color:var(--ink-3); font-family:'JetBrains Mono',monospace; font-size:13px }
+.pill {
+  display:inline-block; padding:2px 9px; border-radius:99px; font-size:11.5px;
+  font-weight:600; letter-spacing:.04em; border:1px solid transparent; white-space:nowrap;
+}
+.pill--must { background:#FCF0EF; color:var(--danger); border-color:#E8C5C2 }
+.pill--should { background:#FBF6E7; color:var(--warn); border-color:#E5D6A8 }
+.pill--auto { background:#EAF3EC; color:var(--ok); border-color:#BFD9C6 }
+.sig { border:1px dashed var(--line); border-radius:var(--r); padding:18px 22px; background:var(--s-lowest); margin-top:14px }
+ul, ol { max-width:78ch } li { margin:5px 0 }
+.k { font-weight:600 }
+.small { font-size:13.5px; color:var(--ink-3) }
+</style>
+
+<div class="wrap">
+
+<h1>UAT &amp; usability testing</h1>
+<p class="sub">Proposal 104 · 2026-08-30 · the two disciplines the testing pass could not automate,
+written as artefacts to run rather than plans to admire.</p>
+
+<div class="card card--stop">
+  <p style="margin:0"><span class="k">Neither of these has ever been done.</span> The QA audit of
+  2026-08-30 closed nine gaps in code — cross-browser and cross-platform, accessibility,
+  performance budgets, visual/style regression, i18n, mutation testing, dependency
+  scanning, and disaster-recovery verification. It could not close these two, because
+  <span class="k">UAT needs a customer and usability testing needs a stranger.</span> Every
+  row in the product's status ledger that says ✅ today was signed off by the people who
+  built it.</p>
+</div>
+
+<h2>Why this matters more here than it usually does</h2>
+
+<p class="lead">
+  <code>CLAUDE.md</code> already carries the rule: <span class="k">✅ means a customer can
+  complete the flow end to end, proven by a row appearing where there were zero — not "the
+  code shipped".</span> That rule was written after proposals 84–90 kept re-deriving the
+  same status because code-without-data had been marked done.
+</p>
+<p>
+  UAT is that rule applied to a <span class="k">person</span> rather than a row. A seeded
+  row proves the write path works. It does not prove a chartered accountant in Ahmedabad
+  can find the button, understands what it will do, and trusts the result enough to send it
+  to a client. Only a customer doing it proves that, and today the E2E suite drives
+  <em>our own</em> test orgs — "E2E Test &amp; Associates", "Unicode Group",
+  "UK AekamINC" — all of which we created, seeded and know the shape of.
+</p>
+
+<h2>Part A — User acceptance testing</h2>
+
+<h3>Who signs</h3>
+<p>
+  One practising customer per module family, not an employee and not the owner. The
+  minimum credible panel is <span class="k">three firms</span>: one CA practice (Ganit,
+  Vetana, compliance), one services firm using the PM core (Tasks, Boards, Graha), and one
+  firm with field staff (Pahchan attendance, Vikray orders). Each signs only for what they
+  actually use — a signature over a module nobody touched is worse than no signature,
+  because it reads as coverage.
+</p>
+
+<h3>The rule for every row below</h3>
+<div class="card">
+  <p style="margin:0">A row passes when <span class="k">the customer completed it unaided,
+  on their own data, on their own device</span>, and the resulting row exists in the
+  database. Not "we showed them". Not "it worked when we tried it". If they asked how, the
+  row is a <span class="pill pill--should">PARTIAL</span> and the question is the finding.</p>
+</div>
+
+<h3>A · Core PM &amp; onboarding</h3>
+<table>
+  <thead><tr><th class="n">#</th><th>The customer can…</th><th>Proven by</th><th>Weight</th></tr></thead>
+  <tbody>
+    <tr><td class="n">A1</td><td>Sign up, verify email, and reach a working workspace without being told anything</td><td>a row in <code>users</code> + first login</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">A2</td><td>Invite a colleague, who accepts and can see the right projects and only those</td><td><code>invites</code> accepted + <code>user_roles</code></td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">A3</td><td>Create a project, add columns, move a task through to done</td><td><code>tasks.column_id</code> moved</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">A4</td><td>Find a task they created three weeks ago, without knowing its id</td><td>observed, timed</td><td><span class="pill pill--should">SHOULD</span></td></tr>
+    <tr><td class="n">A5</td><td>Switch organisation and be confident which one they are in</td><td>observed — ask them to say it aloud</td><td><span class="pill pill--must">MUST</span></td></tr>
+  </tbody>
+</table>
+
+<h3>B · Money — the rows that leave the building</h3>
+<div class="card card--warn">
+  <p style="margin:0"><span class="k">B-rows are the ones that reach a third party.</span>
+  An invoice with the wrong GST goes to a customer's customer. Run these on real data and
+  with the customer's own eyes on the output, never on seeded values — and note that
+  <code>OUTBOUND_MODE</code> must be deliberately chosen before B4 or B5, not discovered.</p>
+</div>
+<table>
+  <thead><tr><th class="n">#</th><th>The customer can…</th><th>Proven by</th><th>Weight</th></tr></thead>
+  <tbody>
+    <tr><td class="n">B1</td><td>Raise an invoice for a real client and agree every number on it</td><td><code>ganit</code> invoice row + their sign-off on the total</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">B2</td><td>Edit an unpaid invoice and see the change reflected</td><td>updated row — <span class="small">unpaid invoices are editable; <code>doc_status</code> defaults to <code>'final'</code> and does not mean locked</span></td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">B3</td><td>Raise an invoice for a client with no GSTIN, PAN or TAN</td><td>row created — <span class="small">these three are non-mandatory and must block nothing; the rule has regressed more than once</span></td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">B4</td><td>Import a bank statement and reconcile a payment against an invoice</td><td>invoice moves to paid — <span class="small">"paid" only ever comes from reconciliation; there is no gateway</span></td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">B5</td><td>Email that invoice to their client and confirm it arrived, correct, in the inbox</td><td>the client's own confirmation</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">B6</td><td>Run one payroll cycle and have an employee agree their payslip</td><td>the employee's sign-off, not the admin's</td><td><span class="pill pill--must">MUST</span></td></tr>
+  </tbody>
+</table>
+
+<h3>C · Trust, privacy and the things that end a contract</h3>
+<table>
+  <thead><tr><th class="n">#</th><th>The customer can…</th><th>Proven by</th><th>Weight</th></tr></thead>
+  <tbody>
+    <tr><td class="n">C1</td><td>Confirm a second firm's data is never visible from their account</td><td>they try, with a second login we provide, and fail</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">C2</td><td>Delete something, find it in the bin, and restore it</td><td>row restored</td><td><span class="pill pill--should">SHOULD</span></td></tr>
+    <tr><td class="n">C3</td><td>Export their own data and open it</td><td>the file, opened by them</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">C4</td><td>Understand what Aekam can and cannot see, and be right</td><td>ask them to state it; compare to <code>tests/test_platform_privacy.py</code></td><td><span class="pill pill--must">MUST</span></td></tr>
+  </tbody>
+</table>
+
+<h3>D · Mobile and field</h3>
+<p class="small">
+  eSign is web-only and is not a mobile destination; mobile invoices are read-only. Both
+  are deliberate. A tester finding them "missing" on the phone is a
+  <span class="k">documentation</span> finding, not a defect — record it as such.
+</p>
+<table>
+  <thead><tr><th class="n">#</th><th>The customer can…</th><th>Proven by</th><th>Weight</th></tr></thead>
+  <tbody>
+    <tr><td class="n">D1</td><td>Install the app on their own phone and sign in</td><td>a session from their device</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">D2</td><td>Punch attendance at the site, and be refused off-site</td><td>both rows, with the geofence outcome</td><td><span class="pill pill--must">MUST</span></td></tr>
+    <tr><td class="n">D3</td><td>Work through a dead spot and have it sync afterwards</td><td>queued row lands — <span class="small">turn the phone's data off; hot reload lies, use a cold start</span></td><td><span class="pill pill--must">MUST</span></td></tr>
+  </tbody>
+</table>
+
+<div class="sig">
+  <p style="margin:0 0 8px"><span class="k">Sign-off block</span> — one per firm, kept with the run.</p>
+  <p class="mono small" style="margin:0">
+    Firm ________________________  Signed ________________________  Role ______________<br><br>
+    Date __________  Modules covered ______________________________________________<br><br>
+    MUST rows passed ____ / ____ &nbsp;&nbsp; PARTIAL ____ &nbsp;&nbsp; FAILED ____<br><br>
+    Rows NOT attempted, and why ___________________________________________________
+  </p>
+</div>
+
+<h2>Part B — Usability testing</h2>
+
+<p class="lead">
+  UAT asks <span class="k">"can it be done?"</span>. Usability testing asks
+  <span class="k">"can it be done by someone who has never seen it, without help, and
+  would they do it again?"</span>. The second question has never been asked about this
+  product.
+</p>
+
+<h3>Method</h3>
+<ul>
+  <li><span class="k">Five participants.</span> Five finds the large majority of severe
+      issues; the sixth mostly re-finds what the first five already showed.</li>
+  <li><span class="k">None of them have seen Kartavaya.</span> Anyone who has watched a demo
+      is spent.</li>
+  <li><span class="k">Their own device, their own browser.</span> The cross-browser matrix
+      now covers seven engines mechanically — this is where the human half of that lands.</li>
+  <li><span class="k">Think aloud. Do not help.</span> The silence when someone is stuck is
+      the finding. Time to first success, and every point of hesitation, are the measures.</li>
+  <li><span class="k">45 minutes, recorded with consent.</span></li>
+</ul>
+
+<h3>The five tasks</h3>
+<table>
+  <thead><tr><th class="n">#</th><th>Given only this instruction…</th><th>What it is really measuring</th></tr></thead>
+  <tbody>
+    <tr><td class="n">U1</td><td>"Set up your firm here and add one colleague."</td><td>Whether onboarding is self-service at all. Where they stop is the drop-off point in the real funnel.</td></tr>
+    <tr><td class="n">U2</td><td>"Raise an invoice for ₹40,000 to a client called Mehta &amp; Co, and send it."</td><td>The single most valuable path in the product. Count every hesitation before the send.</td></tr>
+    <tr><td class="n">U3</td><td>"Find out which of your invoices are unpaid and how much you are owed."</td><td>Whether the numbers are findable, and whether they believe them.</td></tr>
+    <tr><td class="n">U4</td><td>"Someone new is joining on Monday. Give them access to the Mehta project and nothing else."</td><td>Permissions comprehensibility. The 4-tier role model is correct and has never been explained to a stranger.</td></tr>
+    <tr><td class="n">U5</td><td>"Do U2 again on your phone."</td><td>The mobile story, with a real thumb. Invoices are read-only on mobile — watch whether that reads as a limit or as broken.</td></tr>
+  </tbody>
+</table>
+
+<h3>What gets recorded, per task</h3>
+<table>
+  <thead><tr><th>Measure</th><th>How</th><th>Threshold worth acting on</th></tr></thead>
+  <tbody>
+    <tr><td>Completed unaided</td><td>yes / no / gave up</td><td>any "no" on U1 or U2 is a launch blocker</td></tr>
+    <tr><td>Time to first success</td><td>stopwatch, from instruction to the row existing</td><td>U2 over 5 minutes</td></tr>
+    <tr><td>Wrong turns</td><td>count of clicks into a dead end</td><td>≥3 on one task</td></tr>
+    <tr><td>Points of hesitation</td><td>every pause &gt;5s, with what was on screen</td><td>the same pause in 3 of 5 participants</td></tr>
+    <tr><td>Asked for help</td><td>the exact question</td><td>the question <em>is</em> the finding — record it verbatim</td></tr>
+    <tr><td>Would use again</td><td>asked at the end, unprompted first</td><td>anything short of yes</td></tr>
+  </tbody>
+</table>
+
+<h3>What is already known, and must not be re-discovered by a participant</h3>
+<p class="small">
+  Wasting a participant on a defect we already have on record is wasting one of five.
+  Fix or flag these before the sessions:
+</p>
+<ul class="small">
+  <li>The <span class="k">Skill-pack step editor does not work in Safari or at phone width</span>
+      — do not schedule a Safari participant on a skills task.</li>
+  <li><span class="k">"Save as draft instead" leaves the gate banner up in Safari.</span></li>
+  <li>The <span class="k">dashboard shows Sanskrit and Hindi to a user who chose English</span>,
+      and Hindi to one who chose Gujarati.</li>
+  <li>Every module page <span class="k">jumps from h1 to h3</span>, so a screen-reader
+      participant cannot navigate by structure.</li>
+  <li><code>/api/teams</code> is fetched up to <span class="k">four times per page load</span>
+      — U3 and U5 will feel it on a slow connection.</li>
+</ul>
+
+<h2>What this proposal asks for</h2>
+<ol>
+  <li><span class="k">Three customer firms</span> willing to sign Part A, and a date.</li>
+  <li><span class="k">Five strangers</span> for Part B, and someone other than the builder to run it.</li>
+  <li>Agreement that until Part A is signed, <span class="k">no row in
+      <code>docs/STATUS.md</code> claims customer acceptance</span> — ✅ there continues to
+      mean "a row exists", which is a real and different claim, honestly stated.</li>
+</ol>
+
+<p class="small" style="margin-top:34px; padding-top:16px; border-top:1px solid var(--line)">
+  Companion to the 2026-08-30 testing pass. The automated half is in
+  <code>docs/STATUS.md</code>; recovery is in <code>docs/DISASTER-RECOVERY.md</code>.
+</p>
+
+</div>

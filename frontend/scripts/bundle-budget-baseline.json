@@ -1,0 +1,10 @@
+{
+  "_comment": "Brotli-compressed bundle budget. Recorded from a real `yarn build`. Growth beyond 5% fails check-bundle-budget.mjs. Re-record only for a deliberate, explained increase — never to make a red build green.",
+  "_recorded": "2026-08-30",
+  "_units": "bytes, brotli quality 11",
+  "budget": {
+    "entry": 164990,
+    "largestChunk": 42024,
+    "total": 3195467
+  }
+}

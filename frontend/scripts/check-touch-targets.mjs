@@ -30,7 +30,7 @@
  *
  * Usage: node scripts/check-touch-targets.mjs      (from frontend/)
  */
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 const STYLE_DIR = 'src/styles';
@@ -209,14 +209,71 @@ for (const f of findings) {
 const rows = [...seen.values()].sort((a, b) => a.value - b.value);
 
 console.log(`check-touch-targets: ${rules.length} rules · ${raised.size} element/axis pairs raised to >=44px by a mobile rule\n`);
-if (!rows.length) {
-  console.log('no interactive control declared under 44px without a mobile rule raising it');
-} else {
+
+if (rows.length) {
   console.log(`${rows.length} interactive control(s) under 44px with no mobile rule raising that axis:\n`);
   for (const f of rows) {
     console.log(`  ${String(f.value).padStart(5)}px  ${f.prop.padEnd(10)}  ${f.sel}`);
     console.log(`           ${f.at}`);
   }
-  console.log(`\nReports only — padding and flex centring can reach 44px without a size\n` +
-    `declaration, so verify before changing anything.`);
+  console.log('\nA size-only scan cannot see padding or flex centring reaching 44px, so\n' +
+    'verify before changing anything — but a NEW one still fails, see below.');
+} else {
+  console.log('no interactive control declared under 44px without a mobile rule raising it');
 }
+
+/* ── RATCHET, added 2026-08-30 ──────────────────────────────────────────────
+ *
+ * THIS GATE WAS REPORT-ONLY AND RAN IN NEITHER `npm run check` NOR CI. Those
+ * two facts together are the exact condition the contrast gate's comment warns
+ * about — a check whose presence reads as coverage while it can never fail. It
+ * has been finding these controls for weeks with nobody being told.
+ *
+ * It stays advisory ABOUT ITS BASELINE, because its own header is honest that a
+ * size-only scan cannot see padding, flex centring or a pseudo-element overlay
+ * reaching 44px. So what it finds today is recorded BY NAME and the next one
+ * fails the build. The list may shrink; it may never grow.
+ *
+ * The rendered counterpart — measuring the box a finger actually hits, at a
+ * real phone viewport, where none of that inference is needed — is
+ * `e2e-real/xbrowser-smoke.spec.ts`. Two checks of one rule from opposite ends;
+ * when they disagree, this one was guessing.
+ *
+ * Re-record after a genuine fix:  node scripts/check-touch-targets.mjs --write
+ */
+const BASELINE_URL = new URL('touch-targets-baseline.json', import.meta.url);
+const idOf = (f) => `${f.sel} | ${f.prop}`;
+const current = rows.map(idOf).sort();
+
+if (process.argv.includes('--write')) {
+  writeFileSync(BASELINE_URL, `${JSON.stringify({
+    _comment: 'Interactive controls declared under 44px. SHRINK ONLY — see check-touch-targets.mjs.',
+    _recorded: new Date().toISOString().slice(0, 10),
+    under44: current,
+  }, null, 2)}\n`);
+  console.log(`\nrecorded ${current.length} known finding(s) to scripts/touch-targets-baseline.json`);
+  process.exit(0);
+}
+
+if (!existsSync(BASELINE_URL)) {
+  console.error('\ncheck-touch-targets: no baseline file. Create it with --write.');
+  process.exit(1);
+}
+
+const baseline = new Set(JSON.parse(readFileSync(BASELINE_URL, 'utf8')).under44);
+const fresh = current.filter((k) => !baseline.has(k));
+const fixed = [...baseline].filter((k) => !current.includes(k)).sort();
+
+if (fixed.length) {
+  console.log(`\n✓ ${fixed.length} baselined finding(s) are gone. Shrink the baseline (--write):`);
+  for (const k of fixed) console.log(`    ${k}`);
+}
+if (fresh.length) {
+  console.error(`\n✘ ${fresh.length} NEW control(s) under 44px, not in the baseline:`);
+  for (const k of fresh) console.error(`    ${k}`);
+  console.error('\n  design-handover/15-mobile-web.md §Hit targets: "44px minimum, no exceptions."');
+  console.error('  Reach 44 with padding if the visual size must stay small — that is what the');
+  console.error('  baselined ones are assumed to do. Do NOT add a line to the baseline to go green.');
+  process.exit(1);
+}
+console.log(`\ncheck-touch-targets: no new findings; ${baseline.size} held at baseline.`);

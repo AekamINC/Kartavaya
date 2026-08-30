@@ -5865,3 +5865,245 @@ writing them died on a `print()` containing an emoji under cp1252 stdout, after
 writing STATUS.md and before PROGRESS.md, and the commit ran anyway because the
 shell had no `set -e`. The claim was false for one commit. **Never let a commit
 message assert something a later step in the same script was still going to do.**
+
+---
+
+## 2026-08-30 · Cross-browser and cross-platform testing — the capability, and what it found
+
+**What was missing.** Every Playwright config in the repo declared one project,
+`Desktop Chrome` at 1280×720. 69 deployed specs, 4 stubbed ones, one engine, one
+viewport. Two whole categories of defect — engine-specific CSS/JS, and
+responsive layout — had no test that could see them, while the suite reported
+green. jsdom performs no layout, so vitest cannot cover either.
+
+**What landed.**
+
+- `frontend/playwright.matrix.ts` — one definition of seven projects, shared by
+  all three configs. Chromium / Firefox / WebKit for engines; Pixel 7, iPhone 14,
+  iPad and a Galaxy Tab for platforms. The Android phone project doubles as the
+  **Capacitor WebView** the APK ships, and the Android tablet matches the
+  `Tab_A11_Plus` AVD `mobile/e2e/android_e2e.py` already drives, so the web and
+  native tablet stories are measured at comparable geometry.
+- `PW_BROWSERS` (`all` | `desktop` | `mobile` | `tablet` | names). An unknown
+  name **throws at config load** — a typo that ran zero projects would report a
+  green run over nothing.
+- The stubbed suite defaults to the whole matrix; **the two suites that WRITE
+  default to `chromium`.** Staging and production share one database and seven
+  passes of real rows to learn something about CSS is not a trade worth making.
+- `e2e-real/xbrowser-smoke.spec.ts` — read-only, stops at the public sign-in
+  page, types nothing, submits nothing, so it costs no rows. Its projects **do
+  not exist unless `PW_BROWSERS` is set**, which is a mechanical opt-in rather
+  than a comment asking to be respected (the neighbouring `send` project claims
+  to be opt-in and is not: a declared project runs on a bare invocation).
+- `scripts/run-playwright-baselined.mjs` + `playwright-baseline.json`, on the
+  `run-vitest-baselined` contract.
+- Two nightly jobs. Not per-push: 233 tests × every push against a free org's
+  2,000-minute month is the largest line on the bill.
+
+**THE NUMBER: 233 tests where there were 35. 150 pass, 44 baselined, Firefox
+unlaunchable on this desk.**
+
+Of the 44: **3 were already failing in Chromium** — proved, not assumed, by
+running `PW_BROWSERS=chromium`, which reproduces the old single-project
+behaviour exactly and returns the identical three. This suite runs in no CI job
+today, which is why nobody was looking. The other **41 are real** and cluster
+into two defects, both recorded in `docs/STATUS.md` and neither fixed here:
+
+- the **Skill-pack step editor** renders zero `<optgroup>` elements in WebKit —
+  7 of its 8 tests fail on Safari and at phone width;
+- **"Save as draft instead"** leaves the Rule 46 danger note visible in WebKit
+  on all three viewports.
+
+Firefox's 33 are `browserType.launch: spawn UNKNOWN` — this Windows desk cannot
+start the binary, the same fault `real.config.ts` records for
+`channel: 'chromium'`. They are **deliberately not baselined**: a browser that
+will not launch is missing coverage, not a known failure, and the runner fails
+on it unless `--allow-unlaunchable` is passed. CI never passes it.
+
+**The measurement that mattered most was of the harness, not the product.**
+`VITE_BACKEND_URL` was `http://127.0.0.1:9` — a dead port, deliberately, so an
+escaped request fails loudly. WebKit refuses port 9 **in the network layer,
+before `page.route` interception**:
+
+    Not allowed to use restricted network port 9: http://127.0.0.1:9/api/auth/me
+
+so the stub never fired, `/auth/me` never resolved, and the app correctly showed
+"Could not reach Kartavaya" while every assertion hunted a module header that
+was never going to exist. **94 of the first run's 142 failures, none of them
+product.** Chromium hides it because its bad-port check runs after interception.
+One line to `59999` took the run from 142 failures to 77. Had that not been
+chased down, the honest report would have been "Safari is broken" — and it would
+have been wrong.
+
+**And one open question closed.** `real.config.ts` records that Vercel bot
+mitigation refused `chromium-headless-shell` with
+`403 / x-vercel-mitigated: deny`, fixed by `channel: 'chrome'`, and leaves open
+whether Gecko and WebKit — which have no equivalent channel — would get through.
+**They do:** every engine that launched got `HTTP 200`, header absent. The smoke
+prints it on every run so it stays measured rather than assumed.
+
+**Third finding, from the deployed smoke's first run:** `@vercel/analytics`
+requests `/_vercel/insights/script.js`, and on `kartavaya.pages.dev` —
+where `E2E_BASE_URL` actually points this whole suite — Cloudflare's SPA
+fallback answers `200 text/html`, so the browser refuses it. A console error on
+every page load in all six engines. Confirmed host-specific with curl:
+`staging.kartavaya.com` (Server: Vercel) serves `application/javascript` and a
+clean console. Analytics has never worked on the Pages origin.
+
+**What was checked before committing.** `npm run check` exit 0, all 18 gates,
+including `check-e2e-no-bypass` over 99 spec files (the new spec adds no SQL and
+no direct-API write) and `check-ci-runs-every-gate`. `nightly.yml` parses. The
+default `e2e-real` project set is **unchanged at 348 tests across the same seven
+projects** — verified with `--list` before and after, because the one thing this
+change must not do is alter what the suites that write actually write.
+
+**Next measurable step.** Let one nightly run finish on ubuntu and read the
+Firefox column — it is the only one of the seven this desk has never executed,
+so its 33 tests are still UNKNOWN, not passing. Then shrink the baseline by
+fixing the WebKit `<optgroup>` defect, which is 7 of the 41 on its own.
+
+---
+
+## 2026-08-30 · The QA gap audit — nine disciplines closed, two owed to people
+
+**What prompted it.** A survey of the twenty-one standard QA disciplines against
+this repository. Ten came back absent or present-but-toothless. The pattern in
+the ten was not "we forgot to write tests" — the unit, integration, E2E and
+tenancy coverage here is genuinely strong, at 490 backend test files and 201
+frontend ones. It was that **the entire non-functional half had nothing**, and
+that four separate checks existed, ran nowhere, and read as coverage anyway.
+
+**The rule the whole pass was written under.** Every gate had to be shown to go
+RED before it was allowed to land. This repository has met the alternative four
+times — the contrast gate, the CSP gate, the Mappls gate and `check-touch-targets`
+all existed while being structurally incapable of failing — and a new gate that
+has never been seen to fail is just the fifth one waiting to be discovered.
+
+### What landed
+
+| # | Discipline | Deliverable |
+|---|---|---|
+| 8 | Dependency scanning | `check-dependency-audit.mjs` + `check_dependency_audit.py`, both ratcheted, both replacing a `\|\| true` |
+| 9 | Mutation testing | `backend/scripts/mutate.py` — 4 operators, guard-first |
+| 14 | Accessibility | `e2e/a11y.spec.ts` (9 rules) + two orphaned gates armed |
+| 15 | Cross-browser | (landed earlier the same day — 7 projects) |
+| 16 | Performance | `check-bundle-budget.mjs` + `e2e/web-vitals.spec.ts` |
+| 17 | Visual regression | `e2e/style-contract.spec.ts` + committed baseline |
+| 18/19 | UAT + usability | `docs/proposals/104-uat-and-usability.html` |
+| 20 | i18n | `e2e/i18n.spec.ts` — 5 rules, 4 languages |
+| 21 | Disaster recovery | `check_backup_coverage.py` + `docs/DISASTER-RECOVERY.md` |
+
+`npm run check` is now **20 gates**, all of them confirmed running in CI by
+`check-ci-runs-every-gate.mjs`.
+
+### The four findings that matter
+
+**1 · Both dependency audits were swallowing 41 advisories.** `pip-audit
+--strict --desc || true` and `yarn audit --groups dependencies || true`. Neither
+step could ever fail. Backend: 24 vulnerabilities in 6 shipped packages,
+including **five against `pyjwt`**, which signs and verifies every session in
+this product, and six against `cryptography` beneath it. Frontend: 17, four of
+them High, all in `axios`, `react-router` and `form-data`. Now ratcheted and
+recorded by name; **not fixed** — the frontend fix regenerates `yarn.lock` and
+must come from a Linux checkout, and the backend fix needs the full suite behind
+it. `pyjwt` is the one to do first.
+
+**2 · The reversal path is not a database backup.** `premerge_backup_20260829`
+had been cited as "258 tables, 29,608 rows" since the evening it was made.
+Re-measured read-only: 265 tables, 30,364 rows — and **42 `public` tables are
+not in it at all**, 24 of them holding 5,887 rows including every task, user,
+team and notification in the product. It is not a corrupt backup; it is a
+correct snapshot of the pre-merge `staging` schema being described as something
+larger. In an incident a restore from it would *succeed* and recover none of the
+core PM domain. Runbook written; **no restore has ever been rehearsed**, and the
+Supabase project's own retention and PITR status is still unknown.
+
+**3 · Mutation testing found a cross-tenant guard with nothing behind it.**
+`approvals_router.py:461` is the fix for an org admin of one company being able
+to approve another company's task. Disabling that guard entirely left all five
+approvals test files GREEN. Two tests added; the mutant now dies, verified by
+re-running the tool (3 killed → 4 killed). Seven other survivors are recorded by
+line as open questions.
+
+**4 · `/api/teams` is fetched four times on every page load.** Once StrictMode's
+dev-only doubling is accounted for — it caps at 2×, so 3× or more cannot be it —
+`/tasks` asks for `/api/teams` eight times in dev, meaning four real components
+each fetch the same roster independently. `/api/auth/me` is 3× everywhere.
+
+### And one finding about the work itself
+
+**Three of the new suites were measuring a sidebar.** All three were seeded with
+the `{data: [], total: 0}` envelope copied from `f32-write-gating.spec.ts`. That
+is correct there and wrong on `/dashboard`, which reads `/api/tasks` as the bare
+array its own comment describes, throws `{} is not iterable`, and error-boundaries
+— **leaving the shell standing**, so a character-count floor passes and every
+rule scans a navigation bar.
+
+It produced three plausible, entirely false findings before it was caught: "no
+`<main>` landmark on all ten pages", "the page is unreachable by keyboard", and
+a WebKit-only crash that was going to be written up as a cross-browser defect.
+All three were the harness. Measured both stub shapes in both engines rather
+than guessing:
+
+    chromium  envelope   1,255 chars   |  bare-array  2,323 chars
+    webkit    envelope     955 chars   |  bare-array  2,019 chars
+
+Every suite now asserts **no ErrorBoundary marker**, not merely a length. This
+is the `static_ratchets_are_not_coverage` lesson in its browser form, and it is
+the reason the anti-vacuity floors in every new gate here are not decoration:
+`check-dependency-audit` refuses a run with no summary record,
+`check-bundle-budget` refuses a `dist/` under 50 files, `check_backup_coverage`
+refuses a zero-table schema, `mutate.py` refuses to score against a red
+baseline, and the a11y sweep refuses to judge a rule that scanned zero elements.
+
+### What was checked before committing
+
+`npm run check` exit 0 with all 20 gates and `check-ci-runs-every-gate` green;
+`yarn build` clean; `backend` targeted suites green including the two new
+authorisation tests (14 passed, was 12); `ci.yml` and `nightly.yml` both parse;
+every new ratchet proved to fail on an injected violation and then pass again
+after it was removed. `git status` clean on `approvals_router.py` after the
+mutation runs — verified, because the first version of `mutate.py` restored
+files through Windows newline translation and left a 955-line file entirely
+dirty.
+
+### Next measurable step
+
+Bump `pyjwt` to 2.13.0 and run the backend suite. It is the highest-value item
+this audit produced: five known vulnerabilities in the library that authenticates
+every request, with a fix already published, and now a ratchet that will notice
+if a sixth arrives.
+
+### Addendum — a second scoping bug in this same pass, and the number it moved
+
+The four new chromium-only suites were scoped with
+`test.skip(({ browserName }) => browserName !== 'chromium')`, which is wrong in
+this matrix: **three of the seven projects run on chromium** — `chromium`,
+`android-chrome` (Pixel 7) and `android-tablet` (Galaxy Tab). `browserName` is
+`chromium` for all three, so the phone and the tablet ran suites whose baselines
+were recorded at 1280×720 and failed against them.
+
+**Eleven entries reached `playwright-baseline.json` before that was noticed** —
+a baseline quietly absorbing a scoping bug, which is the one thing a baseline
+must never be allowed to do, and the second time in one session that a plausible
+set of failures turned out to be the harness rather than the product.
+
+Now gated on `testInfo.project.name`, and the matrix baseline is back to
+**exactly 44** — the same set as before any of these suites existed. All four
+new suites contribute **zero** baselined failures: 19 tests, all green on
+desktop chromium, all skipped elsewhere with the reason stated in the skip.
+
+### Final verification, run after everything above
+
+| Check | Result |
+|---|---|
+| `npm run check` | exit 0, **20 gates**, `check-ci-runs-every-gate` green |
+| `yarn build` | clean, 12.0s |
+| `check-bundle-budget` against that build | all three budgets met, unchanged |
+| `check-dependency-audit` (frontend) | 17 held at baseline, no new |
+| `check_dependency_audit` (backend) | 24 held at baseline, no new |
+| `check-e2e-no-bypass` | 103 spec files, no new SQL or direct-API writes |
+| Playwright matrix baseline | **44**, unchanged from before this work |
+| Backend approvals suites | 23 passed (was 21 — two new authorisation tests) |
+| `ci.yml` / `nightly.yml` | both parse; 5 and 3 jobs |
+| `git status` on every mutated source file | clean |

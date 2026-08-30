@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
+import { browserProjects, announceSelection } from '../playwright.matrix';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,84 @@ export const GODMODE_STATE = path.join(STATE_DIR, 'godmode.json');
 export const DL_DIR = path.join(os.tmpdir(), 'kartavya-e2e-downloads');
 for (const d of [STATE_DIR, DL_DIR]) fs.mkdirSync(d, { recursive: true });
 
+/**
+ * ── REAL CHROME, NOT THE BUNDLED HEADLESS SHELL ─────────────────────────────
+ *
+ * Measured 2026-08-26: EVERY spec in this directory was failing on its first
+ * navigation with a Vercel page reading "403: Forbidden", and the response
+ * carried `x-vercel-mitigated: deny`. That is Vercel's bot mitigation on
+ * staging.kartavaya.com refusing the request outright.
+ *
+ * It is not the user agent — curl sending the identical HeadlessChrome UA gets
+ * 200. It is the client fingerprint: Playwright's default download for
+ * `chromium` is `chromium-headless-shell`, which mitigation classifies as a
+ * bot. Launching the SAME url with `channel: 'chrome'` — the real Chrome on
+ * this machine, still headless — answers 200 with no mitigation header.
+ *
+ * So this is one line, and without it the whole suite reports a product failure
+ * for an infrastructure reason: the page under test never loads and every
+ * assertion fails on an element that was never served. `channel: 'chromium'` is
+ * NOT the alternative — it needs a separate download this environment cannot
+ * spawn ("spawn UNKNOWN", the same fault that keeps these runs headless).
+ *
+ * The remedy on the Vercel side is an allow rule for the suite; until there is
+ * one, this is what makes the specs able to see the app at all.
+ *
+ * ⚠ IT IS SET PER PROJECT, NOT IN THE SHARED `use`, AND THAT IS LOAD-BEARING.
+ * It lived in the top-level `use` until the cross-browser projects arrived, and
+ * `channel` is a CHROMIUM-ONLY option: a firefox or webkit project inheriting
+ * it dies at launch with `Unsupported webkit channel "chrome"`. Setting
+ * `channel: undefined` on the project does NOT clear it — measured, that is the
+ * exact error above — because Playwright's `use` merge keeps the config value
+ * for an explicitly-undefined key. The only thing that works is not putting it
+ * there in the first place. Every Desktop Chrome project below names it.
+ */
+const CHROME_CHANNEL = 'chrome';
+
+/**
+ * ── CROSS-BROWSER / CROSS-PLATFORM, AND WHY IT IS NOT ON BY DEFAULT ─────────
+ *
+ * Every project below this comment drives real journeys that WRITE, against a
+ * deployed service whose database staging and production SHARE. Multiplying
+ * those by seven engines would be seven passes of real rows through real
+ * customer data to learn something about CSS, which is not a trade worth
+ * making. The default set is unchanged: Desktop Chrome, exactly as before.
+ *
+ * What the matrix gets instead is `xbrowser-*` — one READ-ONLY spec
+ * (`xbrowser-smoke.spec.ts`) that stops at the public sign-in page and asks the
+ * three questions only an engine can answer: is the app served to this
+ * fingerprint, does the bundle boot, and does the page fit the viewport. It
+ * types nothing and submits nothing, so it costs no rows.
+ *
+ * THE OPT-IN IS MECHANICAL, not a comment asking to be respected. These
+ * projects do not exist unless `PW_BROWSERS` is set, so a bare
+ * `npx playwright test` cannot pick them up:
+ *
+ *     PW_BROWSERS=all     npx playwright test --config e2e-real/real.config.ts --grep @xbrowser
+ *     PW_BROWSERS=desktop npx playwright test --config e2e-real/real.config.ts --grep @xbrowser
+ *
+ * (`send` above claims to be opt-in and is not — a declared project runs on a
+ *  bare invocation. That is why this one is gated on the environment instead.)
+ *
+ * The chromium-engine projects here take `CHROME_CHANNEL` for the mitigation
+ * reason above; firefox and webkit take nothing, because there is no equivalent
+ * channel for them. Whether mitigation then lets Gecko and WebKit through is
+ * the open question that comment leaves; the smoke spec prints
+ * `x-vercel-mitigated` on every run so the answer is measured, not assumed.
+ */
+const XBROWSER = process.env.PW_BROWSERS
+  ? (announceSelection('all'),
+    browserProjects({
+      fallback: 'all',
+      prefix: 'xbrowser',
+      testMatch: /xbrowser-smoke\.spec\.ts/,
+      // No `setup` dependency, and none is possible: this spec never signs in.
+      // Same shape as `tonight` and `skills`, for a stronger reason.
+      dependencies: [],
+      usePerBrowser: (b) => (b.engine === 'chromium' ? { channel: CHROME_CHANNEL } : {}),
+    }))
+  : [];
+
 export default defineConfig({
   testDir: __dirname,
   timeout: 90_000,
@@ -50,29 +129,10 @@ export default defineConfig({
   outputDir: path.join(DL_DIR, 'artifacts'),
   use: {
     baseURL: process.env.E2E_BASE_URL || 'https://staging.kartavaya.com',
-    // ── REAL CHROME, NOT THE BUNDLED HEADLESS SHELL ──────────────────────────
-    //
-    // Measured 2026-08-26: EVERY spec in this directory was failing on its first
-    // navigation with a Vercel page reading "403: Forbidden", and the response
-    // carried `x-vercel-mitigated: deny`. That is Vercel's bot mitigation on
-    // staging.kartavaya.com refusing the request outright.
-    //
-    // It is not the user agent — curl sending the identical HeadlessChrome UA
-    // gets 200. It is the client fingerprint: Playwright's default download for
-    // `chromium` is `chromium-headless-shell`, which mitigation classifies as a
-    // bot. Launching the SAME url with `channel: 'chrome'` — the real Chrome on
-    // this machine, still headless — answers 200 with no mitigation header.
-    //
-    // So this is one line, and without it the whole suite reports a product
-    // failure for an infrastructure reason: the page under test never loads and
-    // every assertion fails on an element that was never served. `channel:
-    // 'chromium'` is NOT the alternative — it needs a separate download this
-    // environment cannot spawn ("spawn UNKNOWN", the same fault that keeps these
-    // runs headless).
-    //
-    // The remedy on the Vercel side is an allow rule for the suite; until there
-    // is one, this is what makes the specs able to see the app at all.
-    channel: 'chrome',
+    // `channel: 'chrome'` is NOT here on purpose — it is chromium-only and would
+    // break the firefox/webkit projects. It is set per project as
+    // `CHROME_CHANNEL`; the whole reason it is needed at all, and the measured
+    // reason it cannot live here, are at that constant.
     trace: 'on',
     screenshot: 'on',
     video: 'on',
@@ -80,7 +140,7 @@ export default defineConfig({
     navigationTimeout: 45_000,
   },
   projects: [
-    { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
+    { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL } },
     {
       // Phase 7.6 · does Mappls answer a BROWSER on a whitelisted origin?
       //
@@ -97,7 +157,7 @@ export default defineConfig({
       // writes is all this needs, and it is written before that failure.
       // Same reasoning the `tonight` project below records.
       dependencies: [],
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL },
     },
     {
       name: 'real-user',
@@ -106,7 +166,7 @@ export default defineConfig({
       // as part of a normal `npx playwright test`.
       testMatch: /(real-user|full-journey|phase0|ganit|graha|vikray|vetana|manav|pahchan|corepm|reach|org|sanvaad|audience-segment)\.spec\.ts/,
       dependencies: ['setup'],
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL },
     },
     {
       // Tonight's work, driven against the deployed service. NO `setup`
@@ -115,7 +175,7 @@ export default defineConfig({
       // state `mint-state.mjs` writes from E2E_ADMIN_TOKEN instead.
       name: 'tonight',
       testMatch: /(tonight|phase75-territory-map)\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL },
     },
     {
       // Layout regressions that ONLY a real browser can see.
@@ -132,7 +192,7 @@ export default defineConfig({
       // owner signs in with Google and has no password for auth.setup.ts.
       name: 'ui',
       testMatch: /(drawerpickers|createdcolumn)\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL },
     },
     {
       // The skill shelf and the corner dock, driven as a person drives them.
@@ -149,7 +209,7 @@ export default defineConfig({
       // own.
       name: 'skills',
       testMatch: /skills\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL },
     },
     {
       // Opt-in only — nothing here runs unless you name the project:
@@ -157,7 +217,11 @@ export default defineConfig({
       name: 'send',
       testMatch: /campaign-send\.spec\.ts/,
       dependencies: ['setup'],
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], channel: CHROME_CHANNEL },
     },
+
+    // Firefox, WebKit, a phone and a tablet — read-only, and present only when
+    // PW_BROWSERS is set. See the XBROWSER block above.
+    ...XBROWSER,
   ],
 });

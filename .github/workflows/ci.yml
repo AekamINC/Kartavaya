@@ -226,7 +226,21 @@ jobs:
       - name: Dependency security audit
         # `pip audit` (with a space) is not a pip subcommand — the old spelling
         # failed on every run and `|| true` swallowed it. The binary is pip-audit.
-        run: pip-audit --strict --desc || true
+        #
+        # ⚠ `|| true` IS GONE, 2026-08-30. It was hiding 24 known vulnerabilities
+        # across 6 SHIPPED packages — including FIVE against `pyjwt`, which is
+        # what signs and verifies every session in this product, and six against
+        # `cryptography` underneath it. A green tick over `|| true` is
+        # indistinguishable from a green tick over a clean audit, which is how
+        # that sat unreported.
+        #
+        # It is a RATCHET, not a wall: the 24 are recorded by name in
+        # `scripts/dependency_audit_baseline.json` and a 25th fails this job.
+        # Clearing them means bumping pinned versions in requirements.txt, which
+        # needs the full suite and a deploy behind it — an owner action, and
+        # `weasyprint` has no fix at all, so "fail on any advisory" would be
+        # permanently red and therefore permanently ignored.
+        run: python scripts/check_dependency_audit.py
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -399,6 +413,28 @@ jobs:
       - name: One index.html gate (nothing shadows the Vite entry)
         run: node scripts/check-one-index-html.mjs
 
+      # ── ACCESSIBILITY, armed 2026-08-30 ──────────────────────────────────
+      #
+      # BOTH OF THESE EXISTED AND RAN NOWHERE. Not in `npm run check`, not
+      # here — the same condition that let five failing contrast pairs through
+      # two audits, and the same one the CSP and Mappls gates were in until
+      # 27 Aug. A gate nobody runs is worse than no gate: its presence reads as
+      # coverage.
+      #
+      # `check-touch-targets` was additionally REPORT-ONLY — it printed its
+      # findings and exited 0, so even wiring it up would have gated nothing.
+      # It now carries a baseline: the 10 controls it finds today are recorded
+      # by name in `scripts/touch-targets-baseline.json` and an ELEVENTH fails
+      # here. Proved to bite before it landed, with a 22px probe rule.
+      #
+      # The rendered counterpart to both — the box a finger actually hits, at a
+      # real phone viewport — is the cross-browser suite, which runs nightly.
+      - name: Touch target gate (44px minimum, ratcheted)
+        run: node scripts/check-touch-targets.mjs
+
+      - name: Accent contrast gate (the 24 derived accent pairs)
+        run: node scripts/check-accent-contrast.mjs
+
       # And the one that stops this list drifting again: it fails if any gate in
       # `npm run check` has no step in this file. Enumerating gates one per step
       # is deliberate — a red build should name the gate — but a hand-maintained
@@ -411,6 +447,25 @@ jobs:
       # output is discarded, only the exit code matters.
       - name: Production build
         run: yarn build
+
+      # ── PERFORMANCE BUDGET, armed 2026-08-30 ─────────────────────────────
+      #
+      # Nothing in this repository had ever measured how much JavaScript the
+      # product ships. No Lighthouse, no bundle analyser; `yarn build` prints
+      # its sizes and throws them away. So a 300KB date library could land and
+      # the only way anyone would notice is by looking at `dist/` by hand.
+      #
+      # Measured in BROTLI, not raw bytes — Vercel and Cloudflare Pages both
+      # serve `content-encoding: br`, so brotli is the number a user on an
+      # Indian mobile network actually waits for, and the two do not move
+      # together. Recorded from a real build: ENTRY 161.1 KB, largest lazy
+      # chunk 41.0 KB, TOTAL 3.05 MB across 345 files. 5% tolerance — about one
+      # meaningful import — because a budget with no tolerance fails on
+      # whitespace and gets deleted in a week.
+      #
+      # It runs HERE, immediately after the build, because it needs `dist/`.
+      - name: Bundle size budget
+        run: node scripts/check-bundle-budget.mjs
 
       - name: Type check
         run: npx tsc --noEmit --skipLibCheck
@@ -432,8 +487,16 @@ jobs:
       - name: Tests — unit and end-to-end
         run: node scripts/run-vitest-baselined.mjs
 
-      - name: Dependency security audit
-        run: yarn audit --groups dependencies || true
+      # ⚠ `|| true` IS GONE HERE TOO, and for the same reason: it was hiding 17
+      # advisories against SHIPPED dependencies — 4 High — all of them in
+      # `axios` (10), `react-router` (6) and `form-data` (1, transitive under
+      # axios). Ratcheted, not walled: clearing them means bumping axios to
+      # >=1.18.0 and react-router to >=7.18.2, which regenerates `yarn.lock`,
+      # and a lockfile regenerated on Windows rewrites esbuild `linux-x64` to
+      # `win32-x64` and breaks the Vercel and Railway builds. That upgrade
+      # belongs in its own change, from a Linux checkout.
+      - name: Dependency security audit (ratcheted)
+        run: node scripts/check-dependency-audit.mjs
 
   # ── Mobile: types AND the unit suite ─────────────────────────────────────────
   mobile-types:

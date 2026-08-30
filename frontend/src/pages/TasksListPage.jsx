@@ -398,7 +398,17 @@ export default function TasksListPage() {
               text field, so it now has its own name. */}
           <div className="k-searchpill" style={{ maxWidth: 220 }}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" />
+            {/* `aria-label`, because the only thing naming this field was its
+                placeholder — and a placeholder is not a label: it vanishes the
+                moment anyone types, and several screen readers do not announce
+                it at all. Found by `e2e/a11y.spec.ts` on its first run; it was
+                the only unlabelled field in the whole ten-page sweep. */}
+            <input
+              aria-label="Search tasks"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search…"
+            />
           </div>
         </div>
       </div>

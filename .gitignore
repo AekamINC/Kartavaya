@@ -130,6 +130,13 @@ frontend/public/__runbuild.js
 /playwright-report/
 frontend/test-results/
 frontend/playwright-report/
+
+# `scripts/visual-baseline.mjs` states in its header that "`visual-baselines/`
+# is gitignored. If you find PNGs in a diff, something has gone wrong." It was
+# not, and had never been — the pattern simply did not exist. Nothing had leaked
+# only because nobody had run the script since. Added 2026-08-30.
+visual-baselines/
+frontend/visual-baselines/
 module-facts.json
 
 # Firebase / Google service-account private keys. NEVER commit these.

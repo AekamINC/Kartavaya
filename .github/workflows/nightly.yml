@@ -82,3 +82,149 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
           retention-days: 14
+
+  # ── Cross-browser and cross-platform ────────────────────────────────────────
+  #
+  # WHY IT IS HERE AND NOT IN ci.yml.
+  #
+  # Same argument as coverage above: worth knowing, not worth paying for on
+  # every push. `frontend/playwright.config.ts` runs its four specs across SEVEN
+  # projects (Chromium, Firefox, WebKit, an Android phone, an iPhone, an iPad and
+  # an Android tablet) — 233 tests where there were 35. Multiplied by every push
+  # against a free organisation's 2,000-minute month, that is the largest line on
+  # the bill; once a night on `main` it is a number waiting at 08:00 IST.
+  #
+  # WHAT IT ACTUALLY COVERS, and what nothing covered before it: whether the
+  # bundle runs in an engine that is not Chromium, and whether the pages fit a
+  # phone. Both were UNKNOWN — not "no", unknown, under a green suite. jsdom
+  # performs no layout, so vitest cannot see either; every other Playwright
+  # project in this repo was Desktop Chrome at 1280x720.
+  #
+  # NO SECRETS, NO NETWORK TO THE PRODUCT. This is the stubbed suite: it drives a
+  # local vite, answers every /api/** from a fixture, and points VITE_BACKEND_URL
+  # at a dead port. It cannot reach the database staging and production share.
+  # The deployed read-only smoke is the job after this one.
+  cross-browser:
+    name: Cross-browser (stubbed, 7 projects)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 24, matching ci.yml's frontend job and the machine this is developed
+          # on. @capacitor/cli declares engines.node >=22 and yarn v1 enforces it.
+          node-version: "24"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - run: yarn install --frozen-lockfile
+
+      # `--with-deps` is load-bearing on ubuntu: WebKit needs system libraries
+      # the runner image does not carry, and without them it fails at LAUNCH,
+      # which reads like a product failure and is not one.
+      - name: Install the engines
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      # PW_BROWSERS is deliberately unset: this config's own default is `all`.
+      # See frontend/playwright.matrix.ts for the grammar and for why the two
+      # suites that WRITE default to chromium instead.
+      #
+      # BASELINED, same contract as the contrast gate and `run-vitest-baselined`.
+      # The matrix landed 150 pass / 44 fail — 3 of those were already failing in
+      # Chromium before it existed (this suite ran in no CI job, so nobody was
+      # looking) and 41 are the real Safari and phone-width defects it was built
+      # to find. A job that is red on day one is a job that is ignored by the
+      # second week, so the 44 are recorded BY NAME in
+      # `scripts/playwright-baseline.json`; a NEW failure fails this job and a
+      # FIXED one is printed so the file can shrink. It may never grow.
+      #
+      # ⚠ NO `--allow-unlaunchable` HERE, EVER. That flag downgrades "this
+      # browser would not start" to a warning, which is right on the Windows desk
+      # where Firefox cannot spawn and wrong here: proving all seven engines
+      # actually launch is most of the reason this runs on ubuntu.
+      - name: Run the matrix
+        run: node scripts/run-playwright-baselined.mjs
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-browser-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 14
+
+  # ── The same question, against what is actually deployed ────────────────────
+  #
+  # The job above proves the bundle runs in seven engines. It cannot prove the
+  # DEPLOYED site does, because it never touches it: a CDN rewrite, a missing
+  # MIME type or a bot-mitigation rule is invisible to a local vite. This job is
+  # one spec, `e2e-real/xbrowser-smoke.spec.ts`, and it stops at the public
+  # sign-in page — it types nothing and submits nothing, so it writes NO ROWS to
+  # the database staging and production share. That is the whole reason it is
+  # allowed to exist while the 348 real-journey tests stay on one engine.
+  #
+  # It has already earned its place: on its first run it found that
+  # `@vercel/analytics` is broken on the Cloudflare Pages origin (the SPA
+  # fallback answers /_vercel/insights/script.js with index.html), a console
+  # error on every page load in all six engines that nothing else was looking
+  # for. That one is recorded in KNOWN_DEFECTS in the spec; NEW errors fail.
+  #
+  # ⚠ `continue-on-error` is NOT set. If staging is unreachable at 02:30 UTC,
+  # this job goes red and that is the correct signal, not noise to be muted.
+  deployed-cross-browser:
+    name: Cross-browser (deployed, read-only)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Install the engines
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      # PW_BROWSERS is what BRINGS THE PROJECTS INTO EXISTENCE here — the
+      # xbrowser projects are absent from real.config.ts unless it is set, which
+      # is what stops a bare `npx playwright test` from picking them up. The
+      # `--grep` is belt and braces.
+      #
+      # E2E_BASE_URL: the repo-root .env.e2e is gitignored and absent in CI, so
+      # without this the config falls back to https://staging.kartavaya.com.
+      # Set the repository variable to point it elsewhere; on a developer's
+      # machine .env.e2e wins, and today that file names kartavaya.pages.dev.
+      - name: Sign-in page, every engine and viewport
+        run: npx playwright test --config e2e-real/real.config.ts --grep "@xbrowser"
+        env:
+          PW_BROWSERS: all
+          E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'https://staging.kartavaya.com' }}
+
+      # ⚠ NOT `frontend/test-results`. `real.config.ts` deliberately writes its
+      # artefacts OUTSIDE the repo — `os.tmpdir()/kartavya-e2e-downloads` — so
+      # that videos and traces of a real session never land in a working tree
+      # that might be committed. On ubuntu that is /tmp. Point the upload at
+      # where the files actually are, or this step silently uploads nothing and
+      # the report reads as "no failures to look at".
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-cross-browser-report
+          path: /tmp/kartavya-e2e-downloads
+          retention-days: 14
+          if-no-files-found: error

@@ -204,3 +204,69 @@ def test_the_helper_no_longer_claims_to_check_a_permission():
     """The NAME is what a reader at a call site sees, and it lied for six calls."""
     assert not hasattr(A, "get_task_with_permission")
     assert hasattr(A, "fetch_task_or_404")
+
+
+# ── The cross-org approve hatch — FOUND BY MUTATION TESTING, 2026-08-30 ──────
+#
+# `scripts/mutate.py` disabled the guard on `approvals_router.py:461` — the one
+# whose own comment reads "AND THE ADMIN HATCH IS NOW SCOPED TO THIS ORG, AND TO
+# THIS TASK. It was `is_org_admin(user["user_id"])`, which is True for an admin
+# row in ANY organisation" — and ALL FIVE approvals test files stayed GREEN.
+#
+# So the fix for a cross-tenant hole had nothing pinning it. Whoever next
+# simplified that line back to `is_org_admin(...)` would have reopened the hole
+# against a fully green suite, which is precisely how it got in the first time.
+#
+# Two tests, one per direction. The refusal is the one that kills the mutant;
+# the admission is what stops the refusal being satisfied by a function that
+# always raises.
+
+@pytest.mark.asyncio
+async def test_an_admin_of_ANOTHER_org_cannot_approve(monkeypatch):
+    """The mutant `if False:` on line 461 makes this test, and only this test, fail."""
+    monkeypatch.setattr(A, "fetch_task_or_404", lambda *a, **k: _async(_task()))
+    monkeypatch.setattr(A, "is_project_owner", lambda *a, **k: _async(False))
+    # An org admin — but of a different company, so the scoped probe says no.
+    monkeypatch.setattr(A, "org_admin_may_reach_task", lambda *a, **k: _async(False))
+
+    with pytest.raises(HTTPException) as e:
+        await A.approve_task(
+            "task_abc123def456", _ApprovalPayload(),
+            pool=_Pool(), user=_user("user_admin_of_other_co"), org="org_other",
+        )
+    assert e.value.status_code == 403
+    assert "owner or admin" in str(e.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_an_admin_of_THIS_org_is_not_stopped_by_that_guard(monkeypatch):
+    """
+    The other direction. Without it, a guard that raised unconditionally would
+    satisfy the test above and lock every legitimate admin out — a refusal test
+    on its own cannot tell "correctly scoped" from "broken shut".
+    """
+    monkeypatch.setattr(A, "fetch_task_or_404", lambda *a, **k: _async(_task()))
+    monkeypatch.setattr(A, "is_project_owner", lambda *a, **k: _async(False))
+    monkeypatch.setattr(A, "org_admin_may_reach_task", lambda *a, **k: _async(True))
+
+    # It proceeds past the guard and then fails on the mocked pool's column
+    # query, which is fine: what is asserted is that the 403 did NOT fire.
+    with pytest.raises(Exception) as e:
+        await A.approve_task(
+            "task_abc123def456", _ApprovalPayload(),
+            pool=_Pool(), user=_user("user_admin_of_this_co"), org="org_this",
+        )
+    assert not (isinstance(e.value, HTTPException) and e.value.status_code == 403), (
+        "an admin of the task's OWN org was refused — the guard is scoped too tightly"
+    )
+
+
+async def _async(value):
+    """`monkeypatch.setattr` needs a coroutine function; this makes one inline."""
+    return value
+
+
+class _ApprovalPayload:
+    """The two fields `approve_task` reads off its payload."""
+    notes = None
+    column_id = None

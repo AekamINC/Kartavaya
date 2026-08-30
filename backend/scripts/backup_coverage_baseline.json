@@ -1,0 +1,41 @@
+{
+  "_comment": "Disaster-recovery coverage. Coverage may IMPROVE; a drop fails check_backup_coverage.py. See that file for what these numbers mean.",
+  "_recorded": "2026-08-30",
+  "_how": "Measured read-only against kartavya-sg (toacecaewujfxjfrjwco) via the Supabase MCP, not asserted. Every statement was a SELECT; nothing was written to the database staging and production share.",
+  "_schema": "premerge_backup_20260829",
+  "measured": {
+    "backup_tables": 265,
+    "backup_rows": 30364,
+    "backup_tables_with_rows": 170,
+    "public_tables": 300,
+    "uncovered_tables": 42,
+    "uncovered_tables_with_rows": 24,
+    "uncovered_rows": 5887
+  },
+  "uncovered_with_rows": {
+    "notifications": 2850,
+    "activity_events": 1254,
+    "task_reminders": 372,
+    "tasks": 364,
+    "project_columns": 274,
+    "team_members": 206,
+    "project_assignments": 195,
+    "task_comments": 91,
+    "time_entries": 58,
+    "invites": 44,
+    "teams": 41,
+    "users": 30,
+    "mentions": 22,
+    "categories": 17,
+    "push_web_subscriptions": 17,
+    "channel_members": 16,
+    "channels": 8,
+    "approvals": 5,
+    "push_tokens": 5,
+    "saved_views": 5,
+    "notification_prefs": 4,
+    "task_templates": 4,
+    "project_templates": 3,
+    "task_clients": 2
+  }
+}
