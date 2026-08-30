@@ -396,7 +396,12 @@ test('ACCEPTANCE 5 — Pahchan capture shows no rail, drawer or bottom bar', () 
   // chrome is decided — ClockScreen cannot suppress something it does not render.
   const shell = readCode('nav/ShellFrame.tsx');
   assert.match(shell, /const immersive = !!routeName && IMMERSIVE_ROUTES\.has\(routeName\)/);
-  assert.match(shell, /const chrome = !immersive &&/, 'immersive does not suppress the chrome');
+  // ⚠ Was `/const chrome = !immersive &&/` — the line's exact PREFIX rather
+  // than the rule. A second, correct condition in front of it (`!!user &&`,
+  // so a signed-out tablet gets no rail beside the login form) turned this
+  // red for a fix that leaves §5 fully satisfied. Assert that `!immersive`
+  // participates in `chrome`, wherever in the expression it sits.
+  assert.match(shell, /const chrome = [^;]*!immersive/, 'immersive does not suppress the chrome');
 
   // And both capture routes are in the set. Enroll is the face-enrolment camera;
   // it is the same full-bleed capture as the clock and needs the same treatment.

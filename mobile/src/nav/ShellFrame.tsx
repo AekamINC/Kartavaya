@@ -93,7 +93,34 @@ export default function ShellFrame({ platform, routeName, tabName, onAdd, childr
   const immersive = !!routeName && IMMERSIVE_ROUTES.has(routeName);
   const showRail   = cls === 'medium' || cls === 'expanded';
   const showDrawer = cls === 'large';
-  const chrome = !immersive && (showRail || showDrawer);
+
+  /**
+   * ⚠ SIGNED OUT MEANS NO NAVIGATION, AND THIS SHELL DID NOT KNOW THAT.
+   *
+   * `RootStack` mounts `<ShellFrame>` OUTSIDE `Stack.Navigator` — it has to,
+   * because the rail addresses stack routes the tab navigator knows nothing
+   * about (`RootStack.tsx:336`). The auth gate is INSIDE that navigator
+   * (`{!user ? <Login/> : …}`), so the shell was rendered whether or not there
+   * was a user.
+   *
+   * On a phone this is invisible: `compact` shows no rail, so there is nothing
+   * to see. On a TABLET it drew the full nineteen-destination rail — Today,
+   * Tasks, Messages, Boards, Inbox, Mentions, Approvals, Attendance, Time,
+   * Reminders, CRM, Invoicing, HR, Payslips, Analytics, Content, More — plus
+   * the Create button and a "SYNCED" status dot, in a column beside the SIGN IN
+   * FORM. Screenshotted on `Tab_A11_Plus` by Suite 21, 2026-08-29.
+   *
+   * It is not an auth bypass: the stack holds only `Login` at that point, so
+   * the taps go nowhere. It is worse in a quieter way — the sign-in screen of a
+   * product that gates modules per organisation was listing every module, to
+   * anybody holding the tablet, before they proved who they were. And it is
+   * exactly the class of defect §11 predicted: "the tablet has a separate
+   * layout and NOTHING has ever exercised it."
+   *
+   * `user` was already in scope and already read three lines below, for the
+   * name on the rail — the shell knew who was signed in and drew itself anyway.
+   */
+  const chrome = !!user && !immersive && (showRail || showDrawer);
 
   const go = (d: Destination) => {
     // `isReady` because the rail can only be pressed after the container has

@@ -345,10 +345,37 @@ const PROJECT_PALETTE = [
   '#10b981','#6366f1','#ef4444','#14b8a6',
   '#f97316','#3E5C8A',
 ];
-export function projectColor(teamId: string, override?: string | null): string {
+/**
+ * ⚠ `teamId` IS NULLABLE, AND THE TYPE SAID IT WAS NOT.
+ *
+ * A task with no project is a first-class row: `TaskCreate.team_id` is
+ * `Optional[str] = None` on the server (`server.py:1668`), `NewTaskSheet` only
+ * sends it `if (projectId)` (`NewTaskSheet.tsx:203`), and a brand-new org has
+ * no projects to pick — so on a new customer's first day the ONLY task the
+ * phone can create is one with no team. Live 2026-08-29: `public.tasks` holds
+ * 41 of 364 rows with `team_id IS NULL`.
+ *
+ * `TaskCard.tsx:44` passes that straight in, and `teamId.length` threw
+ * `Cannot read property 'length' of null` inside `TaskCardInner` — a RENDER
+ * crash, so `CrashGuard` replaced the entire signed-in app with "Something
+ * broke" and the only way out was Try again. Not the card, not the list: the
+ * app. Found by Suite 21 on the emulator, 2026-08-29.
+ *
+ * The declared parameter type was `string`, which is why nothing caught it:
+ * `api/types.ts:36` also declares `Task.team_id: string`, so TypeScript agreed
+ * with itself all the way down while the wire said otherwise. The signature is
+ * widened rather than the call site patched, because there are four call sites
+ * and the next one added would repeat the bug.
+ *
+ * An absent team hashes as the empty string, which lands on a stable palette
+ * entry — every unassigned task shares one colour, which is honest: they are
+ * all in the same non-project.
+ */
+export function projectColor(teamId: string | null | undefined, override?: string | null): string {
   if (override) return override;
+  const id = teamId ?? '';
   let hash = 0;
-  for (let i = 0; i < teamId.length; i++) hash = teamId.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
   return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
 }
 

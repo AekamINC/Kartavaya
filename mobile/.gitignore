@@ -30,3 +30,9 @@ google-service-account.json
 
 # macOS
 .DS_Store
+
+# Suite 21 run artefacts. `_shots/` holds the framebuffer captures
+# `viewfinder_is_live` compares; they are evidence for ONE run and are worthless
+# a minute later, so they stay out of the history. Point SUITE21_SHOTS elsewhere
+# to keep them.
+e2e/_shots/

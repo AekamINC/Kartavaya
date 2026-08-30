@@ -235,9 +235,55 @@ test('§5 — Pahchan capture gets no rail and no drawer at any class', () => {
   // "No rail, no drawer, no panes, in any class, in either orientation."
   const code = readCode('nav/ShellFrame.tsx');
   assert.match(code, /IMMERSIVE_ROUTES\.has\(routeName\)/, 'nothing suppresses the chrome');
-  assert.match(code, /const chrome = !immersive &&/, 'immersive does not gate the chrome');
+  // ⚠ The pattern was `/const chrome = !immersive &&/` — the exact PREFIX of
+  // the line rather than the rule the test is about. Adding a second, correct
+  // condition in front of it (`!!user &&`, so a signed-out tablet gets no rail)
+  // turned this red for a fix that satisfies §5 completely. A test that fails
+  // on a correct fix is a defect in the test, so it now asserts that
+  // `!immersive` PARTICIPATES in `chrome`, wherever in the expression it sits.
+  assert.match(code, /const chrome = [^;\n]*!immersive/,
+    'immersive does not gate the chrome');
 
   const dest = readCode('nav/destinations.ts');
   assert.match(dest, /IMMERSIVE_ROUTES = new Set\(\['Clock', 'Enroll'\]\)/,
     'the capture routes are no longer immersive');
+});
+
+// ── The shell must not exist before there is a user ──────────────────────────
+
+test('a signed-out window gets NO rail and NO drawer', () => {
+  /**
+   * Suite 21 screenshotted `Tab_A11_Plus` on 2026-08-29 and found the full
+   * nineteen-destination rail — Today, Tasks, Messages, Boards, Inbox,
+   * Mentions, Approvals, Attendance, Time, Reminders, CRM, Invoicing, HR,
+   * Payslips, Analytics, Content, More — plus the Create button and a "SYNCED"
+   * dot, drawn in a column beside the SIGN IN FORM.
+   *
+   * The cause is a boundary, not a component: `RootStack` mounts `ShellFrame`
+   * OUTSIDE `Stack.Navigator` because the rail addresses stack routes the tab
+   * navigator does not know about, while the auth gate (`{!user ? <Login/> :
+   * …}`) is INSIDE it. So the shell rendered for a logged-out window, and on a
+   * phone that was invisible because `compact` shows no rail at all.
+   *
+   * Not an auth bypass — the stack holds only `Login`, so the taps go nowhere.
+   * The harm is that the sign-in screen of a product which gates modules per
+   * organisation was listing every module to whoever was holding the tablet.
+   *
+   * Pinned here rather than in `RootStack` because the fix belongs to the
+   * shell: `user` was already in scope there, read for the name on the rail.
+   */
+  const code = readCode('nav/ShellFrame.tsx');
+  assert.match(
+    code, /const chrome = !!user &&/,
+    'ShellFrame draws its navigation without checking that anyone is signed in',
+  );
+});
+
+test('the rail and the drawer are BOTH behind that gate, not just the rail', () => {
+  // One flag, two consumers. A fix applied to `showRail` alone would leave the
+  // 280-wide drawer beside the login form at `large`, which is the wider of the
+  // two and the one with the org name in its footer.
+  const code = readCode('nav/ShellFrame.tsx');
+  assert.match(code, /\{chrome && showRail && \(/, 'the rail is not behind `chrome`');
+  assert.match(code, /\{chrome && showDrawer && \(/, 'the drawer is not behind `chrome`');
 });
