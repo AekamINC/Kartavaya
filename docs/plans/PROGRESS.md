@@ -6412,3 +6412,41 @@ Also live now: `mail.kartavaya.com` has BOTH the MX and the SPF TXT, so the SES
 custom MAIL FROM can verify and SPF finally aligns with the From: domain — which
 matters more than usual while DKIM is only 1 of 3 selectors.
 
+### e2e credentials — audited live 2026-08-30
+
+`.env.e2e` moved from passwords to **tokens** for the org accounts. The suite now
+supports both: `auth.setup.ts` prefers a password (it exercises the real login
+form) and falls back to seeding `auth_token` + `Kartavaya_user` from a bearer
+token, fetching the user object from `GET /api/auth/me` so the fixture cannot
+drift from what a real login produces.
+
+| Credential | Result |
+|---|---|
+| 5 bearer tokens | ✅ all valid, expiring 2026-09-04 / 09-06 |
+| `E2E_APPROVER_PASSWORD` | ✅ 200 |
+| `E2E_DUMMY_01/02_PASSWORD` | ✅ 200 |
+| `E2E_DUMMY_03…12_PASSWORD` | ❌ **the accounts do not exist** |
+| **`OWNER`** | 🔴 **no credential of any kind** |
+
+⚠ **The ten DUMMY failures are not wrong passwords.** Only `emp001` and `emp002`
+have a `users` row; `manav_employees` holds **0 rows**. No password will ever
+work for the other ten — they need creating. Three of them first reported `429`
+rather than `401`, which was my own rate limiting, not a result.
+
+🔴 **`OWNER_STATE` is used by 55 specs and has no credential.**
+`E2E_UID_OWNER` is `kevalvshah03+e2e-owner@gmail.com`, and `.env.e2e` carries no
+email, password or token for it. The expired `EXPO_PUBLIC_DEV_TOKEN` in
+`mobile/.env` belongs to that account and returns 401.
+
+⚠ **And the state file on disk was the WRONG ACCOUNT.** `owner.json` was two days
+old with a token for `kevalvshah03@gmail.com` — the GODMODE admin — so 55 specs
+labelled "owner" were running as godmode, and any test assuming those are
+different privileges proved nothing. `auth.setup.ts` now deletes the state file
+before writing it, so a stale one can never be silently reused.
+
+⚠ **`GODMODE_STATE` had no producer at all** while 19 specs used it. Added.
+
+**Owed:** a password or bearer token for `kevalvshah03+e2e-owner@gmail.com`, as
+`E2E_OWNER_PASSWORD` (with `E2E_OWNER_EMAIL`) or `E2E_OWNER_TOKEN`.
+
+
