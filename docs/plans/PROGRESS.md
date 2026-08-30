@@ -5833,3 +5833,35 @@ diff were whitespace; the real change was +1,518 / −135.
 org and confirm `settings->'reports'->>'passphrase'` moves 0 → 1, then send one
 scheduled report and confirm it arrives as an encrypted PDF. Until that row
 exists this stays 🟡.
+
+### 2026-08-30, later — the Reports tab has its first row
+
+The owner set a passphrase through the deployed screen. Measured immediately
+afterwards, without ever selecting the value:
+
+    org UK AekamINC   settings->'reports' present   passphrase len 105
+    first 6 chars     enc::g        -> `enc::` + a Fernet token
+    reports keys      passphrase    -> nothing else written
+
+So it is **encrypted at rest**, and the tab moves from code-without-data to done
+on the strength of a row existing where there were zero — the only thing that
+has ever meant here.
+
+**It landed on UK AekamINC, not Unicode Group as intended, and that is not a
+bug.** `get_org_id` prefers the `X-Org-Id` header the org switcher sets; the
+`cached` branch above it reads `request.state._org_id`, which is PER-REQUEST and
+empty on every fresh request, so it cannot leak a stale org across requests. The
+route also validates `user_roles` membership before honouring the header. The
+switcher was simply on UK AekamINC. Recorded because "the write went to the
+wrong org" is worth ruling out in writing rather than assuming twice.
+
+**Still unproven underneath: DELIVERY.** No scheduled report has arrived as an
+encrypted PDF yet, and the other four organisations have no passphrase, so their
+reports still leave in the link shape.
+
+**A process note worth more than the feature.** The commit that moved STATUS.md
+(`8ab27cf0`) claimed both documents moved together. They did not: the script
+writing them died on a `print()` containing an emoji under cp1252 stdout, after
+writing STATUS.md and before PROGRESS.md, and the commit ran anyway because the
+shell had no `set -e`. The claim was false for one commit. **Never let a commit
+message assert something a later step in the same script was still going to do.**
