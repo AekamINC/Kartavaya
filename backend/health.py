@@ -42,6 +42,36 @@ def suppressed_orgs_digest(orgs) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
+def _rate_limit_store() -> str:
+    """Which store the limiter is ACTUALLY using, proved by a round trip.
+
+    Same reasoning as `current_schema()` below: reporting `REDIS_URL` would
+    report an INTENTION. This reports the fact, and it is the only thing that
+    settles the question from outside the container.
+
+    ⚠ It exists because three separate outside-in inferences got this wrong on
+    2026-08-30 — blaming worker count, then IPv6 egress, then a missing private
+    endpoint — while the one honest signal (a rate-limit threshold probe) kept
+    saying the counters were not shared. Railway's network metrics do not appear
+    to count private-network traffic, so "zero bytes" proved nothing either.
+
+    `check()` on a limits storage is a real ping, so `redis-unreachable` means
+    the URI is set and the host did not answer — which is a DIFFERENT fault from
+    the URI never being set at all, and the two need different fixes.
+    """
+    try:
+        from limiter import _STORAGE_URI, limiter
+        if not _STORAGE_URI.startswith("redis"):
+            return "memory"
+        storage = getattr(limiter, "_storage", None)
+        if storage is None:
+            return "unknown"
+        return "redis" if storage.check() else "redis-unreachable"
+    except Exception:
+        # Never let a diagnostic take the health endpoint down with it.
+        return "unknown"
+
+
 @router.get("/api/health")
 async def health():
     db_ok = False
@@ -67,6 +97,9 @@ async def health():
         # trusting that a var set yesterday reached the service.
         "outbound_mode": outbound.MODE,
         "suppressed_orgs_digest": suppressed_orgs_digest(outbound.SUPPRESSED_ORGS),
+        # "memory" means every limit is multiplied by the process count and is
+        # non-deterministic; "redis" means a limit means what it says.
+        "rate_limit_store": _rate_limit_store(),
         "app": "Kartavaya",
         "by": "Aekam Inc",
         "time": datetime.now(timezone.utc).isoformat()
