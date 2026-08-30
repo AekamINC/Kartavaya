@@ -34,6 +34,71 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — 🔴🔴 THE CUSTOMER-FACING DOMAIN IS DOWN. EVERY HOSTNAME 404s.
+
+**Found from the owner's Cloudflare zone export, confirmed live.**
+
+    kartavaya.com          404   x-vercel-error: DEPLOYMENT_NOT_FOUND
+    www.kartavaya.com      404   x-vercel-error: DEPLOYMENT_NOT_FOUND
+    staging.kartavaya.com  404   x-vercel-error: DEPLOYMENT_NOT_FOUND
+    app.kartavaya.com      404   x-vercel-error: DEPLOYMENT_NOT_FOUND
+    kartavaya.pages.dev    200   <- the app is ONLY here
+
+**Cause.** The apex, `www` and the `*.kartavaya.com` wildcard are A records to
+**Vercel** (`64.29.17.65`, `216.198.79.65` — Vercel's anycast range), proxied
+through Cloudflare. The site moved to **Cloudflare Pages** and the Vercel
+deployment is gone, so Vercel answers `DEPLOYMENT_NOT_FOUND` for every hostname
+the wildcard covers. Cloudflare faithfully proxies the 404.
+
+⚠ **This is why `.env.e2e` names `kartavaya.pages.dev`** — and it is exactly the
+trap that makes it worth stating: **proposal 93 v5 would run entirely green
+against an origin that works, while the domain a customer types is dead.** A
+green run against the wrong hostname is the most expensive kind of pass, so the
+public-domain check is now part of gate **P0**.
+
+**The fix — owner action in Cloudflare:**
+1. **Delete** the four Vercel A records: `kartavaya.com` ×2, `www.kartavaya.com` ×2.
+2. **Delete or repoint** the two `*.kartavaya.com` A records — they are what makes
+   *every* subdomain 404, `staging.` included.
+3. **Add `kartavaya.com` and `www.kartavaya.com` as Custom Domains on the
+   Cloudflare Pages project.** Cloudflare creates the correct proxied record
+   itself; do not hand-write a CNAME at the apex.
+
+### And the answer to "this proxy?"
+
+**The proxy setting is not the bug, and `api` is set correctly.**
+
+- **Apex / `www` / wildcard — Proxied (orange).** Correct *once they point at
+  Pages*. Today the orange cloud is faithfully proxying a Vercel 404; it is
+  neither causing nor hiding the fault.
+- **`api.kartavaya.com` — DNS only (grey). This is RIGHT and must stay grey.**
+  Railway completes an ACME challenge to issue the certificate; behind
+  Cloudflare's proxy it cannot, and would never issue one.
+  ⚠ **But no certificate exists yet.** Measured with `openssl s_client`: the
+  host serves `CN=*.up.railway.app`, SAN `*.up.railway.app, up.railway.app` —
+  `api.kartavaya.com` is **not in the SAN**, which is the
+  `SEC_E_WRONG_PRINCIPAL` error. The `_railway-verify` TXT record shows the flow
+  was started and never finished. **Add `api.kartavaya.com` as a custom domain
+  on the Railway service** and it will issue. CAA already permits
+  `letsencrypt.org`, so nothing blocks it.
+
+---
+
+## 2026-08-30 — ✅ THE DUPLICATE DMARC IS FIXED
+
+`_dmarc.kartavaya.com` now carries one record, `v=DMARC1; p=none;` — the correct
+one to keep while SPF is still broken, since `p=reject` would have made the
+domain reject its own mail.
+
+⚠ **The `rua=mailto:` reporting address went with the deleted record.** Without
+it there are no DMARC aggregate reports, which are the only way to *see* whether
+the SPF fix worked before tightening to `p=reject`. Suggest:
+`v=DMARC1; p=none; rua=mailto:kevalvshah03@gmail.com`
+
+**Still open on SPF — none of the three sender domains authorises SES.**
+
+---
+
 ## 2026-08-30 — 🔴 NO SENDER DOMAIN AUTHORISES SES, AND kartavaya.com HAS TWO DMARC RECORDS
 
 **Found from the zone file the owner supplied, verified live over DoH.** The
