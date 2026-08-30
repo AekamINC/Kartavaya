@@ -34,6 +34,41 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — ⚠ THE DOMAIN IS STILL DOWN: 404 BECAME 530. STEP 1 OF 3 IS DONE.
+
+The four Vercel A records and the `*` wildcard were deleted — correct, and the
+right first move. **But nothing replaced them**, so Cloudflare now proxies a
+hostname with no origin behind it:
+
+    kartavaya.com          HTTP 530   error code: 1016  (Origin DNS error)
+    www.kartavaya.com      HTTP 530   error code: 1016
+    staging.kartavaya.com  HTTP 530
+    zzz-probe.kartavaya.com  does not resolve  <- the wildcard is correctly gone
+    kartavaya.pages.dev    HTTP 200   <- the app, still fine
+
+**1016 means Cloudflare has a proxied record and cannot resolve an origin for
+it.** The domain is no better off than at 404 — it is differently broken, and
+still not serving customers.
+
+### The two steps that remain — and DO NOT hand-write a DNS record
+
+1. Cloudflare dashboard → **Workers &amp; Pages** → the Pages project serving
+   `kartavaya.pages.dev` → **Custom domains** → **Set up a custom domain** →
+   `kartavaya.com`. Repeat for `www.kartavaya.com`.
+2. Cloudflare writes the routing itself and issues the certificate, usually
+   inside a minute.
+
+⚠ **Adding an A or CNAME by hand is what produced both failure modes so far.**
+The apex cannot legally hold a CNAME, and a hand-written proxied record with no
+Pages binding is exactly the 1016 above. The Custom Domain flow is the only
+supported path.
+
+⚠ `staging.kartavaya.com` still answers 530, so a record for it survives the
+wildcard deletion. Decide what it should be — attached to Pages, or removed —
+rather than leaving a hostname the docs still reference in a broken state.
+
+---
+
 ## 2026-08-30 — 🔴🔴 THE CUSTOMER-FACING DOMAIN IS DOWN. EVERY HOSTNAME 404s.
 
 **Found from the owner's Cloudflare zone export, confirmed live.**
