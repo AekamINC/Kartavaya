@@ -34,6 +34,122 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — OWNER DECISION: OUTBOUND_MODE = **LIVE**, and what now guards the run
+
+**Real mail leaves the building during the 93 v5 production run.** Read live the
+same day, and production is already in that state:
+
+    production   outbound_mode = "live"   suppressed_orgs_digest = "0"
+    staging      outbound_mode = "dry"    suppressed_orgs_digest = "0"
+
+⚠ **`"0"` is the EMPTY SET.** No org is shielded. `OUTBOUND_SUPPRESSED_ORGS` is
+**not a guard and must not be cited as one** — which is a change of substance,
+because gate P3 was written to lean on that digest.
+
+**P3 is rewritten as a check on the DATA:** before any wave that sends, assert
+that zero recipient addresses fall outside the three approved shapes —
+
+| Share | Address | Why safe |
+|---|---|---|
+| 45% | `…@simulator.amazonses.com` | never leaves AWS; its bounce/complaint addresses exercise those paths without touching reputation |
+| 50% | `kevalvshah03+<tag>@gmail.com`, `kelisweet+<tag>@gmail.com` | real inboxes the owner controls; gmail honours plus tags, proven 18 Aug |
+| 5% | `test@unicodegroup.com` — **plain** | ⚠ the `test+<tag>@` form **BOUNCES**; IONOS rejects the plus tag. One probe cost one bounce; the assumption would have cost ~550 |
+
+**Why the pre-flight is mandatory rather than advisory.** Read live across the 30
+accounts that exist today: `gmail.com` 18 · `system.kartavaya.invalid` 5 ·
+`aekaminc.com` 3 · **`example.com` 2** · `unicodegroup.com` 2. At `live`, a
+single mail to `@example.com` (IANA-reserved) or `.invalid` is a hard bounce
+against the verified sender domain — and **this product cannot learn that it
+happened**, because there is no bounce webhook (OA-13, a decision not a bug). The
+run can only avoid causing one. That asymmetry is why it is a gate.
+
+`.env.e2e` carried a superseded note reading *"set dry on production for the 93
+rerun, OWED BACK AFTER: live"*. **Replaced** — the tree should not hold two
+instructions that disagree.
+
+---
+
+## 2026-08-30 — THE HARNESS IS NOW DOCUMENTED, AND ONE ACCOUNT CANNOT SIGN IN
+
+Proposal 105 §0.9–§0.11 now carry what was missing: the Playwright configs and
+projects, the accounts and how each authenticates, the two AVDs and how mobile is
+driven, and every interaction class with what counts as proof.
+
+**Verified live 2026-08-30:**
+
+- ✅ **`E2E_ADMIN_TOKEN` still works** — `GET /api/auth/me` returns KEVAL SHAH,
+  role `admin`, `module_levels` present.
+- ⚠ **and it resolves `org_id: (none)`** — the unscoped platform credential that
+  on 2026-08-28 renamed **Aekam Inc** through `platform_bypass`, wrote a UPI row
+  into it, and **left the suite green because the save genuinely succeeded**. It
+  is Suite 19 and nothing else. This account is why Rule 3 exists.
+- 🔴 **`E2E_ADMIN_PASSWORD` does not exist and cannot** — the owner account signs
+  in with Google. So `auth.setup.ts` **always fails on the owner**, and that is
+  why four projects carry `dependencies: []`. Not a bug to fix; a shape to know.
+  `mint-state.mjs` is the documented way round it.
+- ✅ `E2E_APPROVER_PASSWORD` present — the half of `setup` that does succeed.
+
+---
+
+## 2026-08-30 — ⚠ THE x86_64 APK EXISTS AND POINTS AT A DEAD HOST
+
+**A new mobile build is needed, and the reason is worse than "it is stale".**
+
+Two corrections to what was said earlier today, both from reading the artefacts
+rather than the ledger:
+
+1. **"Stage 5 has been blocked since 28 Aug on something nobody had attempted"
+   is WRONG.** `build/Kartavaya-2.0.4-release-x86_64.apk` was built **29 Aug
+   15:50**. Somebody did attempt it, and it worked.
+2. **That APK cannot reach the backend.** Commit `22b970c9` — *"the Railway
+   hostnames were corrected and 58 files still named the dead ones"* — landed
+   **29 Aug 16:09**, nineteen minutes after the build, and changed
+   `mobile/src/config.js` and `mobile/src/api/client.ts`:
+
+       - 'https://kartavya-staging.up.railway.app'
+       + 'https://kartavaya-staging.up.railway.app'
+
+   The missing "a". `config.js` states in its own header that Expo **INLINES**
+   `EXPO_PUBLIC_API_URL` into the bundle at build time, so **the shipped APK
+   carries the dead hostname**. It is not a stale build; it is a build that 404s
+   on every request.
+
+**And a second commit landed after it too:** `e039ce38` (30 Aug 08:35) rewrote
+`mobile/src/nav/ShellFrame.tsx` and `mobile/src/theme/tokens.ts` — 1,466 lines
+changed across five files. Neither the shell frame nor the theme tokens are in
+the shipped APK.
+
+⚠ **Consequence for proposal 93 Stage 5, stated because it changes what a run
+would mean:** any mobile assertion made against that APK was made against a
+build that could not talk to the API. A green Suite 21 on it would have been a
+green run over nothing.
+
+⚠ **Version numbers disagree** — `mobile/app.json` says `2.0.4`,
+`mobile/package.json` says `2.0.2`. Not resolved here; recorded so a build is not
+named from the wrong one.
+
+---
+
+## 2026-08-30 — PROPOSAL 93 v5 §0: THE RULES ARE NOW IN THE DOCUMENT
+
+**The first cut of v5 said "carried verbatim: the seat, the four judgements, the
+operating standards, Rules 1–3, the seven suite rules" — and then POINTED at them
+instead of carrying them.** A pointer is a summary. The document warned against
+planning from a summary on its first page while being one on its second.
+
+§0 now writes out, in full: **why** the programme exists (the owner's words and
+the three consequences), **the seat** and what each of the seven hats prevents,
+**the seven operating standards**, **the four judgements**, **Rules 1–3**, **the
+eight suite rules** each with the false finding that produced it, **the
+interaction vocabulary** that defines what "driven as a user" means, and **the
+five organisations**. An agent holding only that file now has the whole contract.
+
+The governing line, carried verbatim rather than described: *a row landing in a
+table proves the write path and says nothing about whether the drawer opened, the
+drag persisted, the tooltip appeared, or the button was reachable by keyboard.*
+
+---
+
 ## 2026-08-30 — PROPOSAL 93 v5: THE PRODUCTION RUN, RESCOPED
 
 **`docs/proposals/105-93-v5-production-and-the-full-qa-set.html`**, route file

@@ -96,10 +96,345 @@ summary and silently losing most of the scope.</p>
 </tbody>
 </table>
 
-<p><span class="k">Unchanged and carried verbatim:</span> the seat (all seven hats), the four judgements,
-the operating standards, Rules 1–3, the seven suite rules, the five organisations and their
-dispositions, all six stages, all nine waves, all 22 suites, R0–R9, §12 (Aekam Inc untouched) and
-§13 (excluded by decision, never <em>blocked</em>).</p>
+<p><span class="k">Unchanged, and written out IN FULL in §0 rather than pointed at:</span> the purpose
+and the owner's words, the seat (all seven hats), the seven operating standards, the four judgements,
+Rules 1–3, the eight suite rules, the interaction vocabulary that defines what "driven as a user" means,
+and the five organisations with their dispositions. Also unchanged and carried: all six stages, all nine
+waves, all 22 suites, R0–R9, §12 (Aekam Inc untouched) and §13 (excluded by decision, never
+<em>blocked</em>).</p>
+
+<!-- ═══════════════════════════════════════════════════════════ 0 -->
+<h2><span class="n">0</span>Why this runs at all, what the rules are, and how a row gets typed</h2>
+
+<div class="card card--warn">
+<p style="margin:0 0 8px"><span class="k">⚠ This section was missing from the first cut of v5, and its absence
+was the exact failure this programme exists to stop.</span></p>
+<p style="margin:0">v5 opened by saying "unchanged and carried verbatim: the seat, the four judgements,
+the operating standards, Rules 1–3, the seven suite rules" — and then <em>pointed</em> at them instead of
+carrying them. <span class="k">A pointer is a summary.</span> The document warned against planning from a
+summary on its first page while being one on its second. Everything below is now written out, so an agent
+holding only this file has the whole contract.</p>
+</div>
+
+<h3>0.1 · Why — and it is not "does the product work"</h3>
+
+<div class="card">
+<p style="margin:0 0 10px;font:300 20px/1.45 Newsreader,Georgia,serif">
+"Imagine giving a client a completely new org, and then they start using it and things break and they
+are not happy. <span class="k">Start from thinking that you are the client who will be using this.</span>"</p>
+<p style="margin:0"><span class="k">"Every function works" and "a new customer's first week works" are
+different questions</span> — and the second is the one that loses customers.</p>
+</div>
+
+<p>Three consequences, unchanged by any rescope:</p>
+<ol>
+<li><span class="k">Delete first, then build from zero.</span> A suite written against a populated org can
+silently depend on rows it did not create. It passes, and nobody knows whether the code works or a client
+simply happened to already exist.</li>
+<li><span class="k">An emptied org is not a new org.</span> Unicode keeps its profile, GSTIN, state, R2,
+senders and series — the <em>configured</em> lane. UK AekamINC has its configuration cleared too and is
+built from nothing — the <em>brand-new</em> lane. Two fidelities, and no sixth organisation.</li>
+<li><span class="k">A new customer does not work in dependency order.</span> They try payroll on day one
+with no employees, and open Reports before anything exists. <span class="k">That disorder is where the ugly
+failures live</span>, which is why Suite 00 drives the cold start in the wrong order on purpose.</li>
+</ol>
+
+<p><span class="k">And what v5 adds to the why:</span> this run happens on production, so the question
+becomes sharper again — not "would a new customer's first week work", but <span class="k">"is a real
+customer's data safe while we find out"</span>. Every gate in §1 exists for that second half.</p>
+
+<h3>0.2 · The seat — all seven hats, no reduced variant</h3>
+
+<p><span class="k">Lead QA &amp; Test Architect · Lead Systems Architect · Integrations and Multi-Tenant
+SaaS Engineer · Data &amp; Migration Engineer · Application Security and Privacy Reviewer · Release
+Engineer · Indian Statutory-Domain Analyst.</span></p>
+
+<p class="small">Why the breadth: it is the minimum to CLOSE a finding rather than file one. A tester who
+cannot change the system files defects; an architect who never runs the product ships plausible ones; an
+engineer with no statutory grounding writes an assertion that is green and wrong.</p>
+
+<table>
+<thead><tr><th>Discipline</th><th>What it prevents — every one of these already happened here</th></tr></thead>
+<tbody>
+<tr><td>Test architecture</td><td>Tests that cannot fail. Every check <span class="k">proved to bite</span> — mutate it, watch it go red, restore.</td></tr>
+<tr><td>Systems architecture</td><td>Fixing the symptom and leaving the shape. One unchecked id was filed; the sweep found five more routes.</td></tr>
+<tr><td>Multi-tenancy</td><td>Cross-tenant reads and writes. Ten FKs reach four tables from request bodies, <span class="k">none composite with <code>org_id</code></span>.</td></tr>
+<tr><td>Data &amp; migrations</td><td>The untyped <code>$n</code> that PgBouncer turns into an instant 500. Verify from <code>pg_constraint</code>, never from the migration file.</td></tr>
+<tr><td>Integrations</td><td>Believing a vendor. Mappls minted a perfect token that was refused for 18 days; SES accepts and then bounces.</td></tr>
+<tr><td>Security &amp; privacy</td><td>A repair that opens a hole — the email fix that became a <code>user_id</code> → email oracle. Plus DPDP.</td></tr>
+<tr><td>Release engineering</td><td>Verifying the wrong thing. A deploy 33 commits stale reads exactly like verification.</td></tr>
+<tr><td>Frontend / interaction</td><td>Defects invisible to the database — a map that drew nothing, a drag that animates without saving, a mouse-only control.</td></tr>
+<tr><td>Indian statutory domain</td><td>Assertions green and wrong. PT varies by state AND gender; GST splits on state pairs; <span class="k">GSTIN/PAN/TAN block nothing</span>.</td></tr>
+</tbody>
+</table>
+
+<h3>0.3 · Operating standards — non-negotiable, and each one is a scar</h3>
+<ul>
+<li><span class="k">Never call anything missing without a live query</span> — and a schema-qualified negative is a fact about THAT SCHEMA ONLY.</li>
+<li><span class="k">Prove the check fails before trusting it.</span> Mutations need UNIQUE anchors: a <code>replace(…, 1)</code> that hits an identical block in the wrong function is a false green <em>in the proof itself</em>.</li>
+<li><span class="k">Measure live exposure before fixing</span> — latent and active need different urgency and different reports.</li>
+<li><span class="k">Never infer an outcome from a return value.</span> <code>send_email</code> returns True when the gate suppresses; 1,562 rows read <code>sent</code> against 1,562 suppressed. <span class="k">The row is the evidence.</span></li>
+<li><span class="k">Code shipped is 🟡. A customer completing the flow is ✅.</span></li>
+<li><span class="k">A test that fails on a correct fix is a defect in the test</span> — it teaches people to edit tests, which is how a real bug gets buried.</li>
+<li><span class="k">Report faithfully</span> — blocked, skipped and partial included. A silent cap reads as full coverage.</li>
+</ul>
+
+<h3>0.4 · The four judgements this seat owns and may not delegate</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Judgement</th><th>Why it cannot be handed off</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td><span class="k">Product bug or test bug?</span></td><td>The axis stop-and-fix stands on. Get it wrong and you either edit a test to hide a defect, or fix code that was never broken.</td></tr>
+<tr><td class="n">2</td><td><span class="k">Latent or active?</span></td><td>Has the hole been walked through yet. Different urgency, different report, different disclosure.</td></tr>
+<tr><td class="n">3</td><td><span class="k">Reversible or not?</span></td><td>Decides whether it needs confirming first. On production this is the judgement that matters most.</td></tr>
+<tr><td class="n">4</td><td><span class="k">Broken, blocked, or excluded by decision?</span></td><td>Three different sentences. Collapsing them makes a plan look finished when it is not — and it is how an item sits still while each side waits for the other.</td></tr>
+</tbody>
+</table>
+
+<h3>0.5 · The three rules of this programme</h3>
+
+<div class="card card--stop">
+<h4 style="margin-top:0">Rule 1 — every row is typed by a user</h4>
+<p style="margin:0 0 10px">Playwright fills the real form and clicks the real button.
+<span class="k">No SQL seeding. No API shortcut.</span></p>
+<p style="margin:0" class="small">It is the easiest rule to break quietly, because posting to the API is
+far faster than driving a form and the suite still goes green — reporting coverage it does not have.
+Enforced by <code>scripts/check-e2e-no-bypass.mjs</code>, which holds at 5 named baseline violations and
+may shrink, never grow.</p>
+</div>
+
+<div class="card card--stop">
+<h4 style="margin-top:0">Rule 2 — stop and fix, and prove which it was first</h4>
+<p style="margin:0 0 10px">Read the wire, the page context, or the Railway deploy log
+<span class="k">before</span> writing the words "product bug".</p>
+<p style="margin:0" class="small">Applied so it does not deadlock: a finding that blocks the suite is
+fixed now; one that does not is filed with evidence and the suite continues. What is never allowed is
+continuing <em>and</em> not filing.</p>
+</div>
+
+<div class="card card--stop">
+<h4 style="margin-top:0">Rule 3 — never write without asserting the org first</h4>
+<p style="margin:0 0 10px"><code>assertOrg()</code> asserts the <span class="k">org ID</span>, never the name.</p>
+<p style="margin:0" class="small">The name is what got corrupted: a <code>platform_admin</code> credential
+resolved every request into Aekam Inc through <code>platform_bypass</code>, the save genuinely succeeded,
+and the suite went green <span class="k">while renaming the one org this programme guarantees is
+untouched</span>. Write suites use org-scoped accounts only. God mode is Suite 19 and nothing else.</p>
+</div>
+
+<h3>0.6 · The seven suite rules — each learned from a FALSE finding</h3>
+<p class="small">Every one of these blamed the product for something that was the test's own fault.</p>
+<table>
+<thead><tr><th class="n">#</th><th>Rule</th><th>What it cost when it was not followed</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td><span class="k">A missing control is a FAILURE, never <code>test.skip</code>.</span></td><td><code>test.skip(!opened)</code> is how the e-sign journey reported green for weeks while the whole module returned 403.</td></tr>
+<tr><td class="n">2</td><td><span class="k">Read the WRITE RESPONSE, not the list.</span></td><td>Lists are date-ordered and a new row is not on page one. The test said "not created" while the screen said "Invoice created".</td></tr>
+<tr><td class="n">3</td><td><span class="k">Then fetch the CANONICAL row.</span></td><td>A POST echoes only a few fields; asserting on the response turns every other field into <code>NaN</code>, and <code>expect(NaN).toBe(0)</code> fails with a message that sounds like a tax bug.</td></tr>
+<tr><td class="n">4</td><td><span class="k">List endpoints CAP AT 200 ROWS</span> whatever limit is asked. Assert a DELTA, never a sum.</td><td>Summing a list gave ₹1.06 Cr against a true ₹3.58 Cr.</td></tr>
+<tr><td class="n">5</td><td><span class="k">Poll selects that a fetch populates</span> (<code>pickOption</code>), and wait for the REFETCH after a write, not just the write.</td><td>A value picked before the options arrived selected nothing, silently.</td></tr>
+<tr><td class="n">6</td><td><span class="k">Scope lookups to the open form or tabpanel.</span></td><td><code>getByLabel</code> is substring-matched and module headers duplicate the tab's own buttons.</td></tr>
+<tr><td class="n">7</td><td><span class="k">One button can make TWO requests.</span></td><td>The e-sign form creates the document and then uploads the file.</td></tr>
+<tr><td class="n">8</td><td><span class="k">Added 2026-08-29: <code>getByRole(name)</code> matches the ACCESSIBLE name</span> (<code>aria-label</code>), not the visible text.</td><td>A locator written against visible text fails on a control whose aria-label differs — and reads as a missing feature.</td></tr>
+</tbody>
+</table>
+
+<h3>0.7 · How it is driven — the interaction vocabulary IS the deliverable</h3>
+
+<p>A row landing in a table proves the write path and says nothing about whether the drawer opened, the
+drag persisted, the tooltip appeared, or the button was reachable by keyboard.
+<span class="k">Every defect this product has shipped in those classes was invisible to the database.</span></p>
+
+<p><span class="k">Each interaction asserts its own observable consequence — never merely that it did not
+throw.</span></p>
+
+<table>
+<thead><tr><th>Event</th><th>Driven by</th><th>What must be true afterwards</th></tr></thead>
+<tbody>
+<tr><td><span class="k">Click</span></td><td><code>locator.click()</code></td><td>a request fired, <em>or</em> the DOM changed, <em>or</em> navigation happened. <span class="k">Zero of three = a dead control</span> — that triple is Suite 22.</td></tr>
+<tr><td><span class="k">Type</span></td><td><code>pressSequentially()</code>, never <code>fill()</code></td><td>the value commits and survives a reload. Contact search is server-side and does not fire on typing — a Phase 8.0 fault clicked an unfiltered table and opened the wrong record.</td></tr>
+<tr><td><span class="k">Select</span></td><td><code>selectOption()</code>, <code>setDate()</code></td><td>the value binds to the row. <span class="k">No native <code>&lt;input type=date&gt;</code> exists in this product</span> — use <code>DateInput</code>.</td></tr>
+<tr><td><span class="k">Drag</span></td><td><code>mouse.move / down / move×N / up</code></td><td>the persisted <code>column_id</code> / <code>sort_order</code> <em>after a reload</em>. <code>dragTo()</code> fires two events and HTML5 dnd ignores it.</td></tr>
+<tr><td><span class="k">Hover</span></td><td><code>locator.hover()</code></td><td>the revealed action is visible and clickable.</td></tr>
+<tr><td><span class="k">Keyboard</span></td><td>Tab loop reading <code>activeElement</code></td><td>focus order sane, Enter/Space activate, <span class="k">Escape closes every modal and drawer</span>. Fixed by hand once; React Aria was rejected. Now pinned by <code>e2e/a11y.spec.ts</code>.</td></tr>
+</tbody>
+</table>
+
+<p class="small"><span class="k">v5 adds one line to this table's logic:</span> the eighteen disciplines in
+§4 are the same idea applied one level up. "It rendered" is to "it is accessible, fast, translated and
+works in Safari" what "it did not throw" is to "the drag persisted".</p>
+
+<h3>0.8 · The five organisations — unchanged, and the dispositions stand</h3>
+<table>
+<thead><tr><th>Org</th><th>id</th><th>Disposition at v5 scale</th><th>State</th></tr></thead>
+<tbody>
+<tr><td><span class="k">Unicode Group</span> — the CONFIGURED lane</td><td class="mono">fae87907</td><td>Data wiped, configuration kept. Reference lane; every suite authored here. <span class="k">Except the protected Aekam Inc team + 20 tasks.</span></td><td>Gujarat <code>24</code></td></tr>
+<tr><td><span class="k">UK AekamINC</span> — the BRAND-NEW lane</td><td class="mono">4d7e9380</td><td>Data wiped <em>and</em> configuration cleared. All 9 members kept. Built from nothing through the real screens.</td><td>Maharashtra <code>27</code></td></tr>
+<tr><td><span class="k">E2E Test &amp; Associates</span></td><td class="mono">64e7bea6</td><td>Wiped and rebuilt as the regression org at <span class="k">40% of the v5 figure</span>. ⚠ it does have R2.</td><td>—</td></tr>
+<tr><td><span class="k">Aekam Inc</span></td><td class="mono">045b76ad</td><td><span class="k">NO TOUCH.</span> 220 tasks, 30 teams, 164 memberships, god-mode seats. The admin module is still fully tested — §12, with a TEST org always the subject.</td><td>—</td></tr>
+<tr><td>Demo · Kartavaya</td><td class="mono">4ea8208f</td><td>untouched, out of scope</td><td>—</td></tr>
+</tbody>
+</table>
+
+
+<h3>0.9 · The harness — Playwright, the accounts, and the emulators</h3>
+
+<p><span class="k">Nothing below was in v5's first cut, and the owner was right to stop the plan for it.</span>
+A programme that says "every row is typed by a user" has to say <em>by which user, signed in how, on what</em>
+— otherwise "driven as a user" is an aspiration rather than a mechanism.</p>
+
+<h4>0.9.1 · Playwright — what runs the web half</h4>
+<table>
+<thead><tr><th>Thing</th><th>Where</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><span class="k">Real-user config</span></td><td><code>frontend/e2e-real/real.config.ts</code></td><td>The deployed suite. 7 chrome projects + the opt-in <code>xbrowser-*</code> set. <code>workers: 1</code> — one real user at a time, because journeys share server state.</td></tr>
+<tr><td><span class="k">Per-suite configs</span></td><td><code>e2e-real/suite*.config.ts</code> (21)</td><td>One per suite/wave so a wave can be run and re-run alone.</td></tr>
+<tr><td><span class="k">The matrix</span></td><td><code>frontend/playwright.matrix.ts</code></td><td>7 browser/device projects. Governs D14.</td></tr>
+<tr><td><span class="k">Stubbed config</span></td><td><code>frontend/playwright.config.ts</code></td><td>Local vite, every <code>/api/**</code> stubbed, backend on a dead port. Writes NOTHING — this is where a11y, i18n, perf and style-contract run.</td></tr>
+<tr><td><span class="k">Real Chrome, not the shell</span></td><td><code>CHROME_CHANNEL</code></td><td>Vercel bot mitigation refuses <code>chromium-headless-shell</code>'s fingerprint with <code>403 / x-vercel-mitigated: deny</code>. Set per project — it is chromium-only and would break the firefox/webkit projects.</td></tr>
+<tr><td><span class="k">Evidence</span></td><td><code>trace: 'on'</code>, <code>screenshot: 'on'</code>, <code>video: 'on'</code></td><td>Every test records all three, outside the repo in <code>os.tmpdir()</code>. Headless is forced — this machine cannot spawn a visible browser (<code>spawn UNKNOWN</code>), so the HTML report IS how a run is watched.</td></tr>
+</tbody>
+</table>
+
+<h4>0.9.2 · The accounts — verified live 2026-08-30, and one of them cannot sign in</h4>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">⚠ `auth.setup.ts` CANNOT sign the owner in, and never will.</span></p>
+<p style="margin:0">It fills the real login form with <code>E2E_ADMIN_EMAIL</code> +
+<code>E2E_ADMIN_PASSWORD</code>. <span class="k">`E2E_ADMIN_PASSWORD` does not exist in `.env.e2e` and
+cannot</span> — the owner account signs in with Google and has no password to type. So the
+<code>setup</code> project <span class="k">always fails on the owner</span>, which is why
+<code>mappls-probe</code>, <code>tonight</code>, <code>ui</code> and <code>skills</code> all carry
+<code>dependencies: []</code>. That is not a bug to fix; it is a shape to know.</p>
+</div>
+
+<table>
+<thead><tr><th>Account</th><th>How it authenticates</th><th>State file</th><th>Checked 2026-08-30</th></tr></thead>
+<tbody>
+<tr><td><span class="k">Owner</span> — <code>E2E_ADMIN_TOKEN</code></td>
+<td>Token only. <code>mint-state.mjs</code> writes <code>localStorage.auth_token</code>, which is the Bearer fallback <code>lib/api.js:25</code> reads on every request.</td>
+<td><code>GODMODE_STATE</code></td>
+<td><span class="pill p-has">WORKS</span> — <code>GET /api/auth/me</code> returns <span class="k">KEVAL SHAH, role <code>admin</code>, <code>module_levels</code> present</span></td></tr>
+<tr><td><span class="k">Approver</span> — <code>E2E_APPROVER_EMAIL</code> + password</td>
+<td>Real login form, through <code>auth.setup.ts</code>.</td>
+<td><code>APPROVER_STATE</code></td>
+<td><span class="pill p-has">PASSWORD PRESENT</span> — the half of <code>setup</code> that does succeed</td></tr>
+<tr><td><span class="k">Owner via form</span></td>
+<td><code>auth.setup.ts</code> uiLogin</td>
+<td><code>OWNER_STATE</code></td>
+<td><span class="pill p-gap">CANNOT</span> — no password exists</td></tr>
+<tr><td><span class="k">Per-lane org accounts</span></td>
+<td>Real login form, org-scoped</td>
+<td>per lane, <code>_lanes.ts</code></td>
+<td><span class="pill p-part">RE-CHECK IN STAGE 1</span> — the reseed deletes and recreates users, so lane credentials are minted during the run, not before it</td></tr>
+</tbody>
+</table>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">⚠ AND THE TOKEN THAT WORKS IS THE DANGEROUS ONE.</span></p>
+<p style="margin:0">The live check returned <code>org_id: (none)</code>. That is the unscoped platform
+credential <code>_lanes.ts</code> was written about: on 2026-08-28 it resolved every request into
+<span class="k">Aekam Inc</span> through <code>platform_bypass</code>, renamed the one org this programme
+guarantees is untouched, wrote a UPI row into it — <span class="k">and the suite went green, because the
+save genuinely succeeded</span>. A row count could not catch it. Only asserting the target could.</p>
+<p style="margin:12px 0 0"><span class="k">Therefore: write suites NEVER use this token.</span> It is
+Suite 19 and nothing else. Every write lane uses an org-scoped account so <code>platform_bypass</code>
+never engages and <em>the server itself</em> refuses a cross-org write. This is Rule 3, and this account
+is why Rule 3 exists.</p>
+</div>
+
+<h4>0.9.3 · The emulators — what runs the mobile half</h4>
+<table>
+<thead><tr><th>Thing</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td><span class="k">The two AVDs</span></td><td><code>Pixel_9_Pro</code> (phone) and <code>Tab_A11_Plus</code> (tablet). Both <span class="k">x86_64</span>. Started with <code>-no-snapshot-save -gpu swiftshader_indirect</code>.</td></tr>
+<tr><td><span class="k">The driver</span></td><td><code>mobile/e2e/android_e2e.py</code> + <code>_driver.py</code>. <span class="k">Not Maestro</span> — Maestro is a JVM tool and Java is not on this machine's PATH. The harness does what Maestro does underneath: <code>adb</code> + <code>uiautomator</code> dump the view hierarchy, find a node, tap or type at its centre. No new dependency.</td></tr>
+<tr><td><span class="k">Geofence</span></td><td><code>cmd location … test-provider</code> — stand at the site and punch, move 500 m and punch. ⚠ <span class="k">NOT <code>adb emu geo fix</code></span>: on this emulator build it answers OK and changes nothing. The test provider costs a <code>mocked</code> flag on every punch taken through it, and that is the trade.</td></tr>
+<tr><td><span class="k">Network loss</span></td><td><code>svc wifi/data disable</code> — lose the network on cue, reproducibly, for the offline-queue proof.</td></tr>
+<tr><td><span class="k">Cold start</span></td><td><code>am force-stop</code> then relaunch. <span class="k">Hot reload lies</span>; only a cold start proves the release-only auth race.</td></tr>
+<tr><td><span class="k">The APK</span></td><td>⚠ Must be the <span class="k">x86_64</span> build. The default is arm-only and installs, then dies with <code>SoLoaderDSONotFoundError: libreactnative.so</code> — which reads like an app crash and is a missing ABI.</td></tr>
+<tr><td><span class="k">Credentials</span></td><td>From the repo-root <code>.env.e2e</code>, the same file the Playwright suites read. Nothing hard-coded.</td></tr>
+</tbody>
+</table>
+
+<h3>0.10 · Every interaction class, and how each one is proven</h3>
+
+<p><span class="k">The owner's standard, verbatim: it must be driven like a user — text entered, forms
+submitted, buttons pressed, files uploaded and downloaded, mail sent and received.</span> §0.7 gives the
+vocabulary; this gives the coverage, class by class, with what counts as proof.</p>
+
+<table>
+<thead><tr><th class="n">#</th><th>Class</th><th>Driven by</th><th>Proof — and it is never "it did not throw"</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td><span class="k">Text entry</span></td><td><code>pressSequentially()</code>, never <code>fill()</code></td><td>The value commits <span class="k">and survives a reload</span>. <code>fill()</code> sets the DOM value without the keystrokes a controlled React input listens for, and server-side search does not fire on it.</td></tr>
+<tr><td class="n">2</td><td><span class="k">Forms</span></td><td>Fill every field, submit the real button</td><td><span class="k">Read the WRITE RESPONSE, then fetch the CANONICAL row</span> (suite rules 2 and 3). A POST echoes a few fields; asserting on the echo turns the rest into <code>NaN</code>.</td></tr>
+<tr><td class="n">3</td><td><span class="k">Buttons</span></td><td><code>locator.click()</code></td><td>A request fired, <em>or</em> the DOM changed, <em>or</em> navigation happened. <span class="k">Zero of three is a dead control</span> — Suite 22 exists for exactly this and it is how the 67 orphaned operations get found from the front.</td></tr>
+<tr><td class="n">4</td><td><span class="k">Selects &amp; dates</span></td><td><code>selectOption()</code>, <code>setDate()</code></td><td>The value binds to the row. Poll options a fetch populates (<code>pickOption</code>) — picking before they arrive selects nothing, silently. <span class="k">No native <code>&lt;input type=date&gt;</code> exists here.</span></td></tr>
+<tr><td class="n">5</td><td><span class="k">Drag</span></td><td><code>mouse.move / down / move×N / up</code></td><td>The persisted <code>column_id</code> / <code>sort_order</code> <span class="k">after a reload</span>. <code>dragTo()</code> fires two events and HTML5 dnd ignores it — a drag that animates and does not save is a shipped defect class here.</td></tr>
+<tr><td class="n">6</td><td><span class="k">Upload</span></td><td><code>setInputFiles()</code> on the real input</td><td>The object exists <span class="k">in R2</span> and the row points at it. Fixtures are real files — PDFs, images, a bank CSV, face photos. ⚠ <span class="k">No file bytes ever live in a column</span>; six historical 32MB rows are the exception on record (V6).</td></tr>
+<tr><td class="n">7</td><td><span class="k">Download</span></td><td><code>page.waitForEvent('download')</code></td><td><span class="k">The file is opened and read</span>, not merely received. A PDF is parsed for the figure it should carry; a CSV is diffed against the rows it exports. A 0-byte download satisfies a naive assertion.</td></tr>
+<tr><td class="n">8</td><td><span class="k">Email</span></td><td>The product's own send control</td><td>See §0.11 — with <code>OUTBOUND_MODE=live</code> this is the highest-consequence class in the run.</td></tr>
+<tr><td class="n">9</td><td><span class="k">Hover</span></td><td><code>locator.hover()</code></td><td>The revealed action is visible <span class="k">and clickable</span>. A mouse-only control is a defect, not a design.</td></tr>
+<tr><td class="n">10</td><td><span class="k">Keyboard</span></td><td>Tab loop reading <code>activeElement</code></td><td>Focus order sane, Enter/Space activate, <span class="k">Escape closes every modal and drawer</span>. Now also pinned by <code>e2e/a11y.spec.ts</code> (D13), which additionally requires a <em>visible</em> focus indicator.</td></tr>
+<tr><td class="n">11</td><td><span class="k">Second browser context</span></td><td><code>browser.newContext()</code></td><td>The eSign counterparty signs as a different person in a different session. A journey that only ever has one identity cannot prove a two-party flow.</td></tr>
+<tr><td class="n">12</td><td><span class="k">Mobile touch</span></td><td><code>adb</code> + <code>uiautomator</code></td><td>Tap at a node's centre from the dumped hierarchy. Plus geofence, network loss and cold start — §0.9.3.</td></tr>
+</tbody>
+</table>
+
+<h3>0.11 · ⚠ OUTBOUND_MODE — OWNER DECISION 2026-08-30: <span style="color:#B3261E">LIVE</span></h3>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">Decided by the owner: real mail leaves the building during this
+run.</span> Read live the same day, and production is already in that state:</p>
+<pre style="margin:0 0 10px">production  outbound_mode = "live"   suppressed_orgs_digest = "0"
+staging     outbound_mode = "dry"    suppressed_orgs_digest = "0"</pre>
+<p style="margin:0"><span class="k">`"0"` is the EMPTY SET.</span> No org is shielded. So there is no
+org-level guard, and <span class="k">the recipient scheme is the ONLY thing standing between this run and
+a reputation incident.</span></p>
+</div>
+
+<h4>Why live is nonetheless safe — the recipient scheme, not the mode</h4>
+<table>
+<thead><tr><th>Share</th><th>Address</th><th>Why it is safe</th></tr></thead>
+<tbody>
+<tr><td><span class="k">45%</span></td><td><code>…@simulator.amazonses.com</code></td><td>The SES mailbox simulator. <span class="k">Never leaves AWS</span>, and its bounce/complaint addresses exercise those paths deliberately without touching reputation.</td></tr>
+<tr><td><span class="k">50%</span></td><td><code>kevalvshah03+&lt;tag&gt;@gmail.com</code>, <code>kelisweet+&lt;tag&gt;@gmail.com</code></td><td>Real inboxes the owner controls. Gmail honours plus tags — <span class="k">proven deliverable 18 Aug</span>.</td></tr>
+<tr><td><span class="k">5%</span></td><td><code>test@unicodegroup.com</code> — <span class="k">plain, no plus tag</span></td><td>⚠ <code>test+&lt;tag&gt;@unicodegroup.com</code> <span class="k">BOUNCES</span> — IONOS rejects the plus tag. One probe cost one bounce; the assumption would have cost ~550. Used for contacts, employees, vendors, candidates, registrations and signers, and for <span class="k">exactly one login</span> (<code>users_email_key</code> is table-wide UNIQUE).</td></tr>
+</tbody>
+</table>
+
+<div class="card card--warn">
+<p style="margin:0 0 8px"><span class="k">⚠ THE PRE-FLIGHT THIS MAKES MANDATORY — new in v5, and it replaces
+the digest guard that is not in force.</span></p>
+<p style="margin:0 0 10px">Because <code>suppressed_orgs_digest = "0"</code>, gate <span class="k">P3</span>
+can no longer be satisfied by the digest. It is replaced by a check on the DATA:
+<span class="k">before any wave that sends, assert that ZERO recipient addresses fall outside the three
+shapes above.</span></p>
+<p style="margin:0">The domains present today show why. Read live 2026-08-30 across 30 accounts:</p>
+<pre style="margin:10px 0 0">gmail.com                18   (10 plus-addressed)   real inboxes
+system.kartavaya.invalid  5                          .invalid — never routes
+aekaminc.com              3                          real, but NO DKIM (OA-12) — goes out unsigned
+example.com               2                          IANA-reserved — HARD BOUNCE
+unicodegroup.com          2                          real</pre>
+<p style="margin:10px 0 0">The reseed deletes those rows and rebuilds. <span class="k">But two
+<code>@example.com</code> and five <code>.invalid</code> accounts exist right now</span>, and at
+<code>live</code> a single mail to either is a hard bounce against the verified sender domain. The
+pre-flight is what stops a seeded typo becoming an incident.</p>
+</div>
+
+<h4>What the decision changes elsewhere</h4>
+<ul>
+<li><code>.env.e2e</code> carries a note reading <span class="k">"Set dry on production 2026-08-30 for the
+93 rerun. OWED BACK AFTER THE RUN: production OUTBOUND_MODE=…"</span>. <span class="k">That note is now
+superseded</span> — the owner has decided live. Update it rather than leaving two instructions in the
+tree that disagree.</li>
+<li><span class="k">Suite 11 (Prachar) and Suite 08 (Vetana) become the highest-consequence suites in the
+run</span>, because campaign sends and payslip emails are where volume × live meets. Their recipient
+lists get the pre-flight twice: once at seed, once immediately before send.</li>
+<li><span class="k">A bounce is invisible to this product</span> — there is no webhook, and that is a
+recorded decision, not a bug (OA-13). So the run cannot learn from a bounce; it can only avoid causing
+one. That asymmetry is exactly why the pre-flight is a gate and not a report.</li>
+<li><code>aekaminc.com</code> has <span class="k">no DKIM</span> (OA-12), so anything sent from the
+fallback sender goes out unsigned. Prefer a verified sender for every send in the run.</li>
+</ul>
+
 
 <!-- ═══════════════════════════════════════════════════════════ 1 -->
 <h2><span class="n">1</span>This run drives production — what actually changes</h2>
@@ -119,7 +454,7 @@ the gates below are stricter than v4's, and the reason volumes come down rather 
 <tbody>
 <tr><td class="n">P1</td><td><span class="k">Three-system inventory</span> — Supabase · Railway · Cloudflare, read before anything is touched. Output: a written TOUCH list and NEVER-TOUCH list, each row carrying the query that produced it.</td><td>Stage 1, first</td><td>everything</td></tr>
 <tr><td class="n">P2</td><td><span class="k">Blast radius.</span> Per-table <code>org_id</code> distinct-count across every base table in <code>public</code> — 300 today, not the 42 the old argument was measured over. A single third-party org row turns R4′ from a reseed into an incident.</td><td>Stage 1</td><td>any DELETE</td></tr>
-<tr><td class="n">P3</td><td><span class="k">The outbound fence, attested at runtime.</span> <code>/api/health</code> reports the mode the PROCESS booted with and a <code>suppressed_orgs_digest</code>. A dashboard variable is not evidence — the list has shown a stale value while the process reported another.</td><td>before every wave that sends</td><td>Suites 02, 05, 08, 11, 12, 15, 17</td></tr>
+<tr><td class="n">P3</td><td><span class="k">The recipient pre-flight.</span> ⚠ REWRITTEN — the owner has decided <code>OUTBOUND_MODE=live</code> and <code>suppressed_orgs_digest</code> reads <code>"0"</code>, the EMPTY set, so the digest guard <span class="k">is not in force and cannot be the gate</span>. P3 is now a check on the DATA: <span class="k">zero recipient addresses outside the three approved shapes</span> (§0.11), asserted at seed and again immediately before send. <code>/api/health</code> is still read for the mode the PROCESS booted with, because a dashboard variable is not evidence.</td><td>before every wave that sends</td><td>Suites 02, 05, 08, 11, 12, 15, 17</td></tr>
 <tr><td class="n">P4</td><td><span class="k">Recovery is verified before the first delete, not after.</span> <code>backend/scripts/check_backup_coverage.py</code>, and the answer to the question in §9 about what the reversal path actually covers.</td><td>Stage 1</td><td>R4′</td></tr>
 <tr><td class="n">P5</td><td><span class="k">Deploy identity.</span> <code>meta.branch</code>, the SHA, and <code>current_schema()</code> read from <code>/api/health</code> on both services before every wave. A deploy 33 commits stale has already read as verification here.</td><td>every wave</td><td>the wave's verdict</td></tr>
 </tbody>

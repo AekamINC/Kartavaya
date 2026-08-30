@@ -10,6 +10,41 @@ Written 2026-08-30, after the QA gap audit, before the production window opens.
 
 ---
 
+## §0 is the contract — read it, do not summarise it
+
+⚠ **The first cut of v5 said "carried verbatim: the seat, the four judgements,
+the operating standards, Rules 1–3, the seven suite rules" and then POINTED at
+them instead of carrying them.** A pointer is a summary. The document warned
+against planning from a summary on page one while being one on page two.
+
+§0 of the proposal now writes all of it out, so an agent holding only that file
+has the whole contract:
+
+| §0 | What it carries |
+|---|---|
+| 0.1 | **Why** — the owner's words, and the three consequences (delete first; an emptied org is not a new org; a new customer does not work in dependency order) |
+| 0.2 | **The seat** — all seven hats, and the thing each one exists to stop |
+| 0.3 | **Seven operating standards**, each one a scar |
+| 0.4 | **The four judgements** this seat owns and may not delegate |
+| 0.5 | **Rules 1–3** in full — every row typed by a user; stop and fix but prove which first; never write without asserting the org ID |
+| 0.6 | **The eight suite rules**, each learned from a FALSE finding |
+| 0.7 | **How it is driven** — the interaction vocabulary table. Click, Type, Select, Drag, Hover, Keyboard, and what must be true after each |
+| 0.8 | **The five organisations** and their dispositions |
+| 0.9 | **The harness** — Playwright configs and projects; the accounts and which can actually sign in; the two AVDs and how mobile is driven |
+| 0.10 | **Every interaction class** — text, forms, buttons, selects, drag, upload, download, email, hover, keyboard, second browser context, mobile touch — each with what counts as proof |
+| 0.11 | **OUTBOUND_MODE = LIVE**, the owner's decision, and the pre-flight it makes mandatory |
+
+**The one line that governs everything else:** a row landing in a table proves
+the write path and says nothing about whether the drawer opened, the drag
+persisted, or the button was reachable by keyboard. Every interaction asserts
+its own observable consequence — never merely that it did not throw.
+
+v5's eighteen disciplines are that same idea one level up: *"it rendered"* is to
+*"it is accessible, fast, translated and works in Safari"* what *"it did not
+throw"* is to *"the drag persisted"*.
+
+---
+
 ## What v5 is
 
 **Same scope. Same rules. Same six stages, nine waves, twenty-two suites, R0–R9.
@@ -89,19 +124,23 @@ old order most of Suite 14's volume is structurally unreachable. Wave 6 now runs
 
 ---
 
-## Before Stage 1 opens — five things, and only ONE is an owner action
+## Before Stage 1 opens — five things, and NONE is still blocking
 
-⚠ **This list said "three are owner actions" and that was wrong.** Two of the
-three were checked and turned out to be mine. Recording the correction rather
-than editing it away, because "owner-blocked" and "nobody has tried" are
-different sentences and collapsing them is how work sits still.
+⚠ **This list said "three are owner actions" and that was wrong.** Two were
+checked and turned out to be dev work; the one real owner action has since been
+answered. Recording the corrections rather than editing them away, because
+"owner-blocked" and "nobody has tried" are different sentences and collapsing
+them is how work sits still.
+
+**Status 2026-08-30:** item 3 is **DONE** (APK built and verified), item 4 is
+**DECIDED** (live). Items 1, 2 and 5 remain.
 
 | # | Item | Whose | Why |
 |---|---|---|---|
 | 1 | **Bump `pyjwt` to 2.13.0** and run the backend suite | **dev** | A `requirements.txt` edit. It signs every session this programme creates; five known vulnerabilities, fix published. Only the DEPLOY is the owner's. |
 | 2 | **Confirm backup retention and PITR** | **split** | Measured 2026-08-30: the org is on the **Pro** plan, which carries 7-day daily backups by default; PITR is a paid add-on. **Whether that add-on is enabled is not readable through the API** — that half is a look at the dashboard. |
-| 3 | **Build the x86_64 APK** — `ARCHS=x86_64 bash mobile/scripts/build-apk.sh release` | **dev** | ⚠ Was listed as owner-blocked (OA-8) and is not. The script takes `ARCHS`; the Android SDK is present; and Android Studio ships a **JBR 21** that runs gradle. `android_e2e.py`'s "there is no Java on the PATH here" is true and is a different statement from "there is no Java". |
-| 4 | **Decide `OUTBOUND_MODE` for the window** | **OWNER** | The only genuine owner action of the five. Whether real mail leaves the building during a production run is a decision, not a task, and on production discovering it is not the same as choosing it. |
+| 3 | ~~Build the x86_64 APK~~ **✅ DONE 2026-08-30 13:30** | **dev** | ⚠ It was never owner-blocked. And the *previous* x86_64 APK (29 Aug 15:50) **pointed at a dead host** — `22b970c9` corrected `kartavya-` → `kartavaya-` at 16:09, nineteen minutes later, and Expo INLINES that URL at build time. Rebuilt, signed (v2 scheme), 53 MB, and **verified to contain the corrected hostname and zero instances of the dead one**. |
+| 4 | ~~Decide `OUTBOUND_MODE`~~ **✅ DECIDED 2026-08-30 — LIVE** | **owner, ANSWERED** | Real mail leaves the building. Production is already in that state. ⚠ **`suppressed_orgs_digest` reads `"0"` — the EMPTY set — so no org is shielded and the RECIPIENT SCHEME is the only guard.** See §0.11: 45% SES simulator, 50% gmail plus-tags, 5% plain `test@unicodegroup.com` (the plus-tagged form BOUNCES on IONOS). Gate P3 is rewritten as a data check because the digest guard is not in force. |
 | 5 | **Fix O-13 before relying on D1** | **dev** | The live-SQL ratchet counts a string, not a behaviour, so the discipline it enforces is currently unsound. |
 
 ---

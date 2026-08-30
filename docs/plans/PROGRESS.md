@@ -6230,3 +6230,90 @@ plan, not the code. Wave 6 now runs 19 → 17 → 14.
 **Execution is held until the owner says start.** Nothing in Stage 1 touches a
 row; the first thing that changes production is R4′, gated on P1, P2 and P4 all
 being satisfied in writing.
+
+---
+
+## 2026-08-30 · v5 §0 — the rules, the harness, and the outbound decision
+
+**The owner stopped the plan for the right reason.** v5 opened by saying
+"unchanged and carried verbatim: the seat, the four judgements, the operating
+standards, Rules 1–3, the seven suite rules" — and then *pointed* at them. A
+pointer is a summary. The document warned against planning from a summary on its
+first page while being one on its second, and it said nothing at all about
+Playwright, the accounts, or the emulators.
+
+### What §0 now carries, written out rather than referenced
+
+0.1 why (the owner's words, the three consequences) · 0.2 the seat and what each
+of the seven hats prevents · 0.3 the seven operating standards · 0.4 the four
+judgements · 0.5 Rules 1–3 in full · 0.6 the eight suite rules, each with the
+false finding that produced it · 0.7 the interaction vocabulary · 0.8 the five
+organisations · **0.9 the harness** · **0.10 every interaction class** ·
+**0.11 OUTBOUND_MODE**.
+
+An agent holding only that file now has the whole contract.
+
+### The harness, verified rather than described
+
+- ✅ **`E2E_ADMIN_TOKEN` works** — `GET /api/auth/me` returns KEVAL SHAH, role
+  `admin`, `module_levels` present.
+- ⚠ **and it resolves `org_id: (none)`.** That is the unscoped platform
+  credential which renamed Aekam Inc on 28 Aug through `platform_bypass` and left
+  the suite green, because the save genuinely succeeded. Write suites never use
+  it; it is Suite 19 and nothing else. **This account is why Rule 3 exists**, and
+  the plan now says so at the point where the token is introduced.
+- 🔴 **`E2E_ADMIN_PASSWORD` does not exist and cannot** — the owner signs in with
+  Google. `auth.setup.ts` therefore *always* fails on the owner, which is why
+  four projects carry `dependencies: []`. Documented as a shape, not filed as a
+  bug. `mint-state.mjs` is the documented way round it.
+- ✅ `E2E_APPROVER_PASSWORD` present — the half of `setup` that does succeed.
+- Mobile: two x86_64 AVDs driven by `adb` + `uiautomator` rather than Maestro
+  (no Java on PATH), the test provider for geofence — **not `adb emu geo fix`,
+  which answers OK and changes nothing** — `svc wifi/data disable` for the
+  offline queue, and `am force-stop` because hot reload lies.
+
+### Twelve interaction classes, each with what counts as proof
+
+Text (`pressSequentially`, never `fill`) · forms (write response *then* canonical
+row) · buttons (request OR DOM OR navigation — zero of three is a dead control) ·
+selects and dates · drag (persisted `sort_order` **after a reload**) · upload
+(the object in R2, not the 200) · **download (the file opened and read — a 0-byte
+download satisfies a naive assertion)** · email · hover · keyboard · a second
+browser context for the two-party eSign flow · mobile touch.
+
+### OUTBOUND_MODE = LIVE — decided, and it moved a gate
+
+Production is already `live`. The finding that matters:
+**`suppressed_orgs_digest` reads `"0"` — the empty set.** No org is shielded, so
+`OUTBOUND_SUPPRESSED_ORGS` is not a guard and cannot be cited as one. Gate P3 had
+been written to lean on that digest, so **P3 is rewritten as a check on the
+data**: zero recipients outside the SES simulator (45%), the owner's gmail plus
+tags (50%), and plain `test@unicodegroup.com` (5% — the plus-tagged form bounces,
+IONOS rejects the tag).
+
+Read live across today's 30 accounts: `gmail.com` 18, `system.kartavaya.invalid`
+5, `aekaminc.com` 3, **`example.com` 2**, `unicodegroup.com` 2. At `live` a single
+mail to a reserved domain is a hard bounce against the verified sender — and
+**this product cannot learn that it happened**, because there is no bounce webhook
+(a recorded decision, not a bug). The run can only avoid causing one, which is
+why the pre-flight is a gate and not a report.
+
+`.env.e2e` carried a superseded note saying the opposite; replaced, so the tree
+does not hold two instructions that disagree.
+
+### The mobile build — and a correction to what was said this morning
+
+"Stage 5 has been blocked since 28 Aug on something nobody had attempted" was
+**wrong**. `Kartavaya-2.0.4-release-x86_64.apk` was built 29 Aug 15:50. But
+`22b970c9` — *"the Railway hostnames were corrected"* — landed 29 Aug **16:09**,
+nineteen minutes later, changing `kartavya-` to `kartavaya-` (the missing "a") in
+`config.js` and `api/client.ts`. Expo **inlines** that URL at build time, so the
+shipped APK carried a hostname that 404s. It was not stale; **it could not reach
+the backend at all.** `e039ce38` then rewrote `ShellFrame.tsx` and `tokens.ts`
+(1,466 lines) the next morning.
+
+Rebuilt 13:30: 53 MB, v2-signed, and **verified by unzipping the bundle** — one
+occurrence of `kartavaya-staging`, zero of the dead spelling.
+
+⚠ Recorded and not resolved: `mobile/app.json` says `2.0.4`,
+`mobile/package.json` says `2.0.2`.
