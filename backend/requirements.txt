@@ -23,6 +23,9 @@ pywebpush==2.0.0
 cryptography==44.0.3
 slowapi==0.1.9
 limits==3.14.0
+# `limits` needs this to talk to a Redis rate-limit store. Without it, a set
+# REDIS_URL raises at start-up rather than falling back — see limiter.py.
+redis==5.2.1
 sentry-sdk[fastapi]==2.22.0
 # UPI payment QR for the public pay page (routers/pay.py). Pure Python, no
 # native deps, ~60KB — chosen over qrcode/Pillow, which drags in an image stack

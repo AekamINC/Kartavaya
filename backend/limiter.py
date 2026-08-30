@@ -74,6 +74,8 @@ it — audit rows, logs, anything added later — on the strength of an environm
 variable that is invisible in the code and easy to lose in a redeploy. This is
 narrower: the rate limiter's key, in git, with a test.
 """
+import logging
+import os
 from ipaddress import ip_address, ip_network
 
 from fastapi import Request
@@ -143,4 +145,39 @@ def client_ip(request: Request) -> str:
     return get_remote_address(request) or "unknown"
 
 
-limiter = Limiter(key_func=client_ip)
+logger = logging.getLogger(__name__)
+
+# ── WHERE THE COUNTERS LIVE ─────────────────────────────────────────────────
+#
+# slowapi defaults to an IN-PROCESS store. Production runs more than one
+# worker, so each keeps its own count and every configured limit is multiplied
+# by the worker count — measured 2026-08-30 on production as 60 requests
+# allowed against a `30/minute` route, i.e. two independent counters. Login is
+# `5/minute`, so it was really 10, and WHICH counter a request landed on was
+# chance.
+#
+# A shared store fixes both. `REDIS_URL` is optional on purpose: unset, this
+# falls back to the in-process store and the product still runs — coarse, the
+# way it has been all along — rather than refusing to boot.
+_REDIS_URL = (os.environ.get("REDIS_URL") or "").strip()
+_STORAGE_URI = _REDIS_URL or "memory://"
+
+# ⚠ `swallow_errors` is a DELIBERATE fail-open, and it is the lesser of two
+# evils rather than a good outcome. Without it, a Redis blip raises inside the
+# limiter and every rate-limited endpoint answers 500 — an outage caused by the
+# thing meant to protect against outages. With it, a storage failure means the
+# request is allowed and the limit is briefly not enforced.
+#
+# The danger of fail-open is that it is SILENT, which is this codebase's
+# dominant bug class. So the choice of store is logged at start-up, loudly
+# enough that "we thought Redis was in use" can be checked rather than assumed.
+limiter = Limiter(key_func=client_ip, storage_uri=_STORAGE_URI, swallow_errors=True)
+
+if _REDIS_URL:
+    logger.info("✅ Rate limiter: SHARED store (redis) — limits are exact across workers")
+else:
+    logger.warning(
+        "⚠ Rate limiter: IN-PROCESS store. Counters are per-worker, so every configured "
+        "limit is multiplied by the worker count and is non-deterministic. Set REDIS_URL "
+        "to make limits mean what they say.",
+    )
