@@ -1,0 +1,561 @@
+<title>93 v5 — Production Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   105 — PROPOSAL 93, v5
+
+   Same scope. Same rules. Same six stages, nine waves, twenty-two suites.
+   Three things change:
+
+     1. IT RUNS ON PRODUCTION, and the gates get harder because of it.
+     2. THE FULL QA DISCIPLINE SET — eighteen disciplines across twenty gates,
+        each with a named owner stage, proving artefact and blocking condition.
+     3. VOLUMES DROP AGAIN — 30% where the set is large, 50% where it is not.
+        ~1,566 rows per org -> ~569.
+
+   And it carries, in one place, everything still outstanding across 105
+   proposals and 27 plans — because the failure this programme exists to stop
+   is planning from a summary and silently losing the scope.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --s-lowest:#FFFEFB; --surface:#F8F6EF; --s-low:#F1EDE3;
+  --bg:#EAE5D8; --s-container:#E4DECD; --s-high:#DDD6C2;
+  --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+  --line:#CFC6AE; --line-2:#DDD5C0;
+  --accent:#00897f; --danger:#B3261E; --warn:#8A6A0F; --ok:#2E6B3E; --info:#2B5C8A;
+  --r:14px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+     font:400 15.5px/1.6 Inter,system-ui,sans-serif;padding:52px 38px 130px}
+.wrap{max-width:1240px}
+h1{font:300 46px/1.08 Newsreader,Georgia,serif;letter-spacing:-.02em;margin:0 0 6px}
+.sub{color:var(--ink-3);font-size:15px;margin:0 0 34px;max-width:76ch}
+h2{font:400 27px/1.2 Newsreader,Georgia,serif;margin:54px 0 10px;
+   padding-bottom:9px;border-bottom:1px solid var(--line)}
+h2 .n{color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:19px;margin-right:12px}
+h3{font:600 13px/1.4 Inter,sans-serif;letter-spacing:.11em;text-transform:uppercase;
+   color:var(--ink-3);margin:30px 0 9px}
+h4{font:600 16px/1.35 Inter,sans-serif;margin:22px 0 6px}
+p{max-width:80ch}
+code,.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px}
+pre{background:var(--s-low);border:1px solid var(--line-2);border-radius:10px;
+    padding:13px 15px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5}
+.card{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);padding:20px 22px;margin:18px 0}
+.card--stop{border-left:4px solid var(--danger);background:#FCF0EF}
+.card--warn{border-left:4px solid var(--warn);background:#FBF6E7}
+.card--ok{border-left:4px solid var(--ok);background:#EFF5F0}
+.card--info{border-left:4px solid var(--info);background:#EEF3F8}
+table{border-collapse:collapse;width:100%;margin:15px 0;font-size:13.8px}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line-2);vertical-align:top}
+th{font-weight:600;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+   background:var(--s-low);border-bottom:1px solid var(--line)}
+tbody tr:hover{background:var(--s-lowest)}
+td.n,th.n{width:46px;color:var(--ink-3);font-family:'JetBrains Mono',monospace;font-size:12.5px}
+td.num{text-align:right;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600;
+      letter-spacing:.03em;border:1px solid transparent;white-space:nowrap}
+.p-new{background:#EEF3F8;color:var(--info);border-color:#C3D5E6}
+.p-has{background:#EFF5F0;color:var(--ok);border-color:#BFD9C6}
+.p-gap{background:#FCF0EF;color:var(--danger);border-color:#E8C5C2}
+.p-part{background:#FBF6E7;color:var(--warn);border-color:#E5D6A8}
+.k{font-weight:600}
+.small{font-size:13px;color:var(--ink-3)}
+ul,ol{max-width:80ch}li{margin:4px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.tot td{border-top:2px solid var(--line);font-weight:700;background:var(--s-low)}
+</style>
+
+<div class="wrap">
+
+<h1>Proposal 93 · v5</h1>
+<p class="sub">2026-08-30 · the production run, the full QA discipline set, and everything still
+outstanding across 105 proposals and 27 plans, in one place.</p>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">Read <code>docs/proposals/93-reseed-and-reverify.html</code> and
+<code>93b-the-second-run.html</code> in full before planning from this.</span> This document changes three
+things about them and carries everything else forward unchanged. It is <span class="k">not</span> a
+summary of 93, and the single biggest failure of the 28 Aug sessions was planning from a compressed
+summary and silently losing most of the scope.</p>
+<p style="margin:0"><span class="k">If you find yourself planning from a summary, stop and re-read.</span></p>
+</div>
+
+<h3>What v5 changes, and nothing else</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Change</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td><span class="k">It runs on PRODUCTION.</span> The gates get harder, not the scope smaller.</td><td>Same code, same schema, same database. The rehearsal is the performance.</td></tr>
+<tr><td class="n">2</td><td><span class="k">The full QA discipline set</span> — 18 disciplines across 20 gates, each with an owner stage, a proving artefact and a blocking condition.</td><td>93 v1–v4 were an end-to-end programme wearing one hat. Eight of the twenty gates use tooling that did not exist on 29 Aug.</td></tr>
+<tr><td class="n">3</td><td><span class="k">Volumes drop again</span> — 30% on large sets, 50% on small. ~1,566 → ~569 per org.</td><td>Fewer rows written to a live database, more <em>kinds</em> of testing over them.</td></tr>
+</tbody>
+</table>
+
+<p><span class="k">Unchanged and carried verbatim:</span> the seat (all seven hats), the four judgements,
+the operating standards, Rules 1–3, the seven suite rules, the five organisations and their
+dispositions, all six stages, all nine waves, all 22 suites, R0–R9, §12 (Aekam Inc untouched) and
+§13 (excluded by decision, never <em>blocked</em>).</p>
+
+<!-- ═══════════════════════════════════════════════════════════ 1 -->
+<h2><span class="n">1</span>This run drives production — what actually changes</h2>
+
+<div class="card card--stop">
+<p style="margin:0 0 10px"><span class="k">⚠ There is no second environment.</span> Staging and
+production share one Supabase project <em>and</em>, since migration 241, one schema. Every row this
+programme types is a row in the database that serves customers. Every DELETE in R4′ is a production
+delete. Every email that escapes the fence reaches a real inbox.</p>
+<p style="margin:0">That is <span class="k">not</span> a reason to do less of it. It is the reason
+the gates below are stricter than v4's, and the reason volumes come down rather than coverage.</p>
+</div>
+
+<h3>The five production-only gates, each blocking</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Gate</th><th>Runs</th><th>Blocks</th></tr></thead>
+<tbody>
+<tr><td class="n">P1</td><td><span class="k">Three-system inventory</span> — Supabase · Railway · Cloudflare, read before anything is touched. Output: a written TOUCH list and NEVER-TOUCH list, each row carrying the query that produced it.</td><td>Stage 1, first</td><td>everything</td></tr>
+<tr><td class="n">P2</td><td><span class="k">Blast radius.</span> Per-table <code>org_id</code> distinct-count across every base table in <code>public</code> — 300 today, not the 42 the old argument was measured over. A single third-party org row turns R4′ from a reseed into an incident.</td><td>Stage 1</td><td>any DELETE</td></tr>
+<tr><td class="n">P3</td><td><span class="k">The outbound fence, attested at runtime.</span> <code>/api/health</code> reports the mode the PROCESS booted with and a <code>suppressed_orgs_digest</code>. A dashboard variable is not evidence — the list has shown a stale value while the process reported another.</td><td>before every wave that sends</td><td>Suites 02, 05, 08, 11, 12, 15, 17</td></tr>
+<tr><td class="n">P4</td><td><span class="k">Recovery is verified before the first delete, not after.</span> <code>backend/scripts/check_backup_coverage.py</code>, and the answer to the question in §9 about what the reversal path actually covers.</td><td>Stage 1</td><td>R4′</td></tr>
+<tr><td class="n">P5</td><td><span class="k">Deploy identity.</span> <code>meta.branch</code>, the SHA, and <code>current_schema()</code> read from <code>/api/health</code> on both services before every wave. A deploy 33 commits stale has already read as verification here.</td><td>every wave</td><td>the wave's verdict</td></tr>
+</tbody>
+</table>
+
+<h3>What production forbids that staging tolerated</h3>
+<ul>
+<li><span class="k">No write-path probes.</span> Validation is never tested by writing to see what happens. Read the wire, read the form, read <code>pg_constraint</code>.</li>
+<li><span class="k">No prefix deletes, ever.</span> E2E and Aekam Inc share the platform bucket under <code>staging/</code>. The R2 sweep is key-list driven, from the database, with <code>nullif(btrim(col),'')</code> — the naive predicate inflates the list ~3×.</li>
+<li><span class="k">No DROP without the schema named.</span> A prefix is not a stack. R9′ drops two backup schemas <em>by name, one at a time</em>, and neither is dropped to make room for the other.</li>
+<li><span class="k">A migration is preceded by a five-section risk report.</span> Unchanged from the standing rule.</li>
+<li><span class="k">RLS is re-checked after every DDL.</span> A new table without RLS is a cross-tenant leak that produces no error and no log line. Run the Supabase security advisor; treat a new <code>rls_disabled_in_public</code> as a breach, not a lint.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════ 2 -->
+<h2><span class="n">2</span>The scale rule — and the three things it must not touch</h2>
+
+<p>Owner's instruction: <span class="k">30% where the set is large, 50% where it is not.</span>
+Applied to v4's per-line counts, which is the plan as it stands.</p>
+
+<table>
+<thead><tr><th>Class</th><th>Rule</th><th>Reason</th></tr></thead>
+<tbody>
+<tr><td><span class="k">Large set</span> — v4 count ≥ 20</td><td>→ <span class="k">30%</span>, rounded, floor 1</td><td>Volume there proves throughput, and throughput is the cheapest thing to re-prove later.</td></tr>
+<tr><td><span class="k">Small set</span> — v4 count &lt; 20</td><td>→ <span class="k">50%</span>, rounded, floor 1</td><td>Already near the minimum that exercises the path at all.</td></tr>
+<tr><td><span class="k">HELD</span> — a set-cover, not a volume</td><td><span class="k">unchanged, 100%</span></td><td>Cutting a set-cover changes <em>what</em> is tested, not how much. All 18 report types, 14 Niyam rules (one per trigger family), 6 custom fields (one per input type), 4 PT/IT bands, both sides of the PO threshold, one template per compliance class, 9 senders, 3 UPI platforms, 6 doc series, 3 bank files, 3 consecutive payroll months, 4 sites, 4 geofence refusals.</td></tr>
+<tr><td><span class="k">DERIVED</span> — a product of other quantities</td><td><span class="k">recomputed from its driver</span>, never scaled on its own</td><td>Payslips are employees × months. Punches are employees × days × 2 × months. Scaling the product independently silently destroys the shape — three consecutive months becomes two, in/out becomes in.</td></tr>
+</tbody>
+</table>
+
+<div class="card card--warn">
+<p style="margin:0"><span class="k">⚠ The two floors that are not arithmetic.</span>
+<span class="k">Invoices never reach zero drafts</span> — the draft/final split is the whole of Rule 46,
+and 6 invoices means 4 final and 2 draft, not 6 final. <span class="k">Deals keep all three outcomes</span>
+— won, Lost <em>with a reason</em>, and open — because <code>lost_reason</code> is a column that was
+writable and unreachable for months and only a Lost deal proves it persists.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ 3 -->
+<h2><span class="n">3</span>The volume plan — v3 → v4 → v5</h2>
+
+<p class="small">Per main test org. Unicode Group and UK AekamINC each get the identical set, so a
+difference between them is a finding. E2E Test &amp; Associates gets 40% of it as the regression org.</p>
+
+<table>
+<thead><tr><th>§4 block</th><th class="num">v3</th><th class="num">v4</th><th class="num">v5</th><th>The lines that move — and the shape that does not</th></tr></thead>
+<tbody>
+<tr><td>01–02 Foundations</td><td class="num">141</td><td class="num">71</td><td class="num">47</td>
+<td>users 9→4; logins 9→4; 2FA 2→1; departments·designations 3·5→2·2; module cycles 14→7; per-member grants 12→6; compliance toggles 6→3. <span class="k">HELD</span> 9 senders · 3 UPI platforms · 6 doc series</td></tr>
+<tr><td>03 Core PM</td><td class="num">337</td><td class="num">168</td><td class="num">57</td>
+<td>tasks 40→12 (<span class="k">6 still exercise every field</span>); subtasks 24→7; comments 20→6; @mentions 10→5; time 17→8; teams 3→2; projects·milestones 4·8→2·4; boards·columns 2·8→1·4 with 3 drags; approvals 7→4. <span class="k">HELD</span> the 2 by-email approvals</td></tr>
+<tr><td>04 Graha — CRM</td><td class="num">228</td><td class="num">114</td><td class="num">49</td>
+<td>clients·contacts 12·24→6·7; deals 15→8 (<span class="k">2 won · 2 Lost with a reason · 4 open</span>); stage moves 20→6; activities 22→7; follow-ups 9→4; documents 6→3; territories 3→2. <span class="k">HELD</span> 6 custom fields, one per input type</td></tr>
+<tr><td>05–06 Ganit + Kray</td><td class="num">424</td><td class="num">212</td><td class="num">52</td>
+<td>invoices 20→6 (<span class="k">4 final / 2 draft, never zero drafts</span>); payments 15→8; expenses 13→6; products·vendors 8·6→4·3; POs·lines 6·17→3·8; receipts 5→2. <span class="k">HELD</span> 3 bank files · 4 recurring profiles + 2 cycles · 3 rate cards · both sides of the PO threshold</td></tr>
+<tr><td>07 Manav — HR</td><td class="num">400</td><td class="num">200</td><td class="num">68</td>
+<td>employees 15→8 — <span class="k">the driver; 08 and 09 recompute from it</span>. linked logins 8→4; leave 12→6; roster 70→21; assets 12→6; candidates 8→4; custody 6→3; UDIN·notice·DSC→2·2·1. <span class="k">HELD</span> 6 leave types · 6 commission bands typed out of order</td></tr>
+<tr><td>08 Vetana — payroll</td><td class="num">200</td><td class="num">100</td><td class="num">54</td>
+<td>structures 15→8; <span class="k">payslips DERIVED: 8+8+5 = 21</span> over three months, the short third month still the offboarding proof; PDFs·emails 10·14→5·7; loans·EMIs 3·9→2·4. <span class="k">HELD</span> 3 consecutive months · 4 PT/IT bands + the re-run that must move the figure</td></tr>
+<tr><td>09 Pahchan — attendance</td><td class="num">355</td><td class="num">178</td><td class="num">72</td>
+<td><span class="k">punches DERIVED: 3 employees × 3 days × 2 × 2 months = 36</span> — both months kept, in/out kept; enrolment photos 15→8; consents·acks 15·15→8·8; regularisations 5→2. <span class="k">HELD</span> 4 sites — typed, pin-dropped, altitude · 4 geofence refusals · 2 publish-to-payroll runs</td></tr>
+<tr><td>10–11 Vikray + Prachar</td><td class="num">400</td><td class="num">200</td><td class="num">67</td>
+<td>orders 17→8; stock items·moves 9·22→4·7; campaign recipients 72→22; sequences·enrolments 2·12→1·6; events·registrations 2·15→1·8; targets 5→2. <span class="k">HELD</span> one template per compliance class · unsubscribe-then-prove-exclusion</td></tr>
+<tr><td>12 Dristi — reports</td><td class="num">135</td><td class="num">68</td><td class="num">46</td>
+<td>report runs 20→6; exports 18→9; widgets 9→4; reconciled figures 30→9. <span class="k">HELD all 18 report types</span> — this page has printed six wrong figures before and a half-catalogue is a different test</td></tr>
+<tr><td>13–17 chat · skills · eSign · Niyam · billing</td><td class="num">510</td><td class="num">255</td><td class="num">57</td>
+<td>messages 68→20; channels 5→2; skills·acks 12·6→6·3; KB docs 4→2; content 9→4; eSign fields 12→6. <span class="k">HELD</span> 14 Niyam rules, one per trigger family</td></tr>
+<tr class="tot"><td>TOTAL per org</td><td class="num">3,130</td><td class="num">1,566</td><td class="num">~569</td><td><span class="k">36% of v4, 18% of v3</span></td></tr>
+</tbody>
+</table>
+
+<div class="card card--warn">
+<p style="margin:0 0 8px"><span class="k">⚠ The calendar does NOT drop by 64%, and saying it would be dishonest.</span></p>
+<p style="margin:0">Rows fall to a third. The number of <em>paths driven</em> is unchanged — all 22
+suites, all 9 waves, all six stages — and §4 below adds eighteen disciplines, fifteen of which need
+work that v4 did not contain. <span class="k">Estimate 10–13 days, against v4's 12–14.</span> The
+saving is in typing and in production write volume, not in thinking.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ 4 -->
+<h2><span class="n">4</span>The full QA discipline set — eighteen disciplines, twenty gates</h2>
+
+<p>93 v1–v4 were a system/E2E programme wearing one hat. This is the same programme with every
+discipline named, owned and gated. <span class="k">Eight of the twenty gates use tooling that did not
+exist on 29 Aug</span> — it landed on 2026-08-30 and is named in the <em>Instrument</em> column.</p>
+
+<p class="small"><span class="k">Eighteen disciplines, twenty rows.</span> Security is one discipline
+in the list and three rows here, because authz/tenancy, dependency scanning and penetration testing
+have different owners, different instruments and different gates — and collapsing them is how the
+first two get done and the third quietly does not.</p>
+
+<p class="small"><span class="pill p-has">HAVE</span> tooling exists and is proven ·
+<span class="pill p-new">NEW IN v5</span> built 2026-08-30, first use is this run ·
+<span class="pill p-part">PARTIAL</span> exists, does not cover the whole claim ·
+<span class="pill p-gap">GAP</span> nothing yet — the plan says how</p>
+
+<table>
+<thead><tr><th class="n">#</th><th>Discipline</th><th>What it means <em>here</em></th><th>Instrument</th><th>Owner stage / wave</th><th>The gate</th></tr></thead>
+<tbody>
+
+<tr><td class="n">D1</td><td><span class="k">Integration</span></td>
+<td>Router ↔ real schema. A mocked pool resolves any table name you hand it — <code>routers/messaging.py</code> once answered 500 against a real database with the whole suite green.</td>
+<td><span class="pill p-has">HAVE</span> live-SQL tests</td><td>Stage 2 · every wave</td>
+<td>⚠ <span class="k">No router ships without one test that executes its SQL against the real schema.</span> And see <span class="k">O-13</span>: the ratchet that enforces this counts a STRING, not a behaviour.</td></tr>
+
+<tr><td class="n">D2</td><td><span class="k">Component / contract</span></td>
+<td>The shape the client expects is the shape the server sends. Pydantic v2 <em>drops unknown members silently</em> — 24 placed eSign fields vanish that way.</td>
+<td><span class="pill p-has">HAVE</span> <code>test_contract_flows</code>, mobile <code>serverContract</code>, <code>pickerContracts</code></td><td>Stage 2 · waves 1–9</td>
+<td>Every request model that drops a field the UI sends is a finding, not a shrug. <span class="k">O-A</span> is exactly this.</td></tr>
+
+<tr><td class="n">D3</td><td><span class="k">System / E2E</span></td>
+<td>The 22 suites. Unchanged — this is what 93 always was.</td>
+<td><span class="pill p-has">HAVE</span> 69 specs, 21 configs</td><td>waves 1–9</td>
+<td>Rule 1: every row typed by a user. <code>check-e2e-no-bypass</code> holds the line at 5 baselined violations, shrink only.</td></tr>
+
+<tr><td class="n">D4</td><td><span class="k">Manual / exploratory</span></td>
+<td>Driving the product as a person, off-script. Six real defects came from this in one session — contact merge, and the ICICI import that lost every withdrawal.</td>
+<td><span class="pill p-has">HAVE</span> the seat</td><td>Stage 4 · after each wave</td>
+<td><span class="k">30 unscripted minutes per module, logged.</span> A wave is not closed on green specs alone — the specs only find what they were told to look for.</td></tr>
+
+<tr><td class="n">D5</td><td><span class="k">Automated / CI-gated</span></td>
+<td>What runs without being remembered. 20 gates in <code>npm run check</code>, all confirmed in CI by <code>check-ci-runs-every-gate</code>.</td>
+<td><span class="pill p-has">HAVE</span> 20 gates + nightly</td><td>continuous</td>
+<td>A gate that is not in CI does not exist. Four have been in that state here; the meta-gate now prevents a fifth.</td></tr>
+
+<tr><td class="n">D6</td><td><span class="k">White-box vs black-box</span></td>
+<td>Both, deliberately, and never one standing in for the other. The white-box half reads <code>pg_constraint</code> and the wire; the black-box half only ever clicks.</td>
+<td><span class="pill p-has">HAVE</span> both</td><td>every wave</td>
+<td>A finding needs BOTH: the black-box symptom a customer would report, and the white-box cause. Neither alone closes it.</td></tr>
+
+<tr><td class="n">D7</td><td><span class="k">Regression</span></td>
+<td>What was fixed stays fixed. 22 open findings, 3 closed — each closure needs a test that fails if it reopens.</td>
+<td><span class="pill p-has">HAVE</span> baselined suites</td><td>Stage 5 · wave 9</td>
+<td>Every fix in §8 lands with a test <span class="k">proved to bite</span>. The E2E org is the regression org and re-runs the whole set at 40% volume.</td></tr>
+
+<tr><td class="n">D8</td><td><span class="k">Smoke / sanity</span></td>
+<td>Is the thing even up, and is it the thing we think. <code>/api/health</code> on both services: schema, environment, SHA, branch, outbound mode.</td>
+<td><span class="pill p-has">HAVE</span> health + probe configs</td><td>before every wave</td>
+<td>Gate <span class="k">P5</span>. A stale deploy reads as verification, and has.</td></tr>
+
+<tr><td class="n">D9</td><td><span class="k">Performance · load · stress · soak · spike</span></td>
+<td>Front: bundle, CLS, DOM, API-call count. Back: the endpoints this volume actually hits, under the concurrency one firm produces — <span class="k">not</span> a synthetic flood at production.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>check-bundle-budget.mjs</code> + <code>e2e/web-vitals.spec.ts</code></td><td>Stage 3 · waves 3, 6, 9</td>
+<td>⚠ <span class="k">LOAD AND STRESS ARE CAPPED ON PRODUCTION.</span> Soak = the 3-month payroll and 2-month attendance already in §3. Spike = the billing-cycle run twice. <span class="k">No synthetic load generator points at production</span> — that is an incident, not a test. Known: <code>/api/teams</code> ×4 per page.</td></tr>
+
+<tr><td class="n">D10</td><td><span class="k">Security — authz / tenancy</span></td>
+<td>The one that ends a contract. Ten FKs reach four tables from request bodies, <span class="k">none composite with <code>org_id</code></span>.</td>
+<td><span class="pill p-has">HAVE</span> ~25 tenancy test files</td><td>Stage 2 · wave 8 · Suite 20</td>
+<td>Rule 3: never write without asserting the org first. Suite 18 attempts another org's project by id <em>and is refused</em>. Compare ID SETS, never bytes.</td></tr>
+
+<tr><td class="n">D11</td><td><span class="k">Security — SCA</span></td>
+<td>Shipped dependencies with known holes.</td>
+<td><span class="pill p-new">NEW IN v5</span> two ratchets</td><td>Stage 1 · continuous</td>
+<td>⚠ <span class="k">41 advisories were being swallowed by <code>|| true</code></span> — 24 backend (pyjwt 5, cryptography 6, starlette 7), 17 frontend (4 High). Both now fail on a new one. <span class="k">pyjwt to 2.13.0 BEFORE this run starts</span> — it signs every session the programme creates.</td></tr>
+
+<tr><td class="n">D12</td><td><span class="k">Security — pen testing</span></td>
+<td>Adversarial, not checklist. RBAC Package A's six privilege holes were found by a <em>design</em> audit and were never security-verified.</td>
+<td><span class="pill p-gap">GAP</span></td><td>Stage 4 · wave 8</td>
+<td>Each of the six verified independently against production: sensitive-module grants accepted, tier-3 client editing tasks, <code>is_project_member</code> trusting <code>users.role</code>, forward-target any account. <span class="k">Read-only probes only</span> — a proof-of-exploit that writes is an incident.</td></tr>
+
+<tr><td class="n">D13</td><td><span class="k">Accessibility</span></td>
+<td>Nine rendered rules plus two static gates.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>e2e/a11y.spec.ts</code>, <code>check-touch-targets</code> (ratcheted), <code>check-accent-contrast</code></td><td>Stage 3 · waves 1–9</td>
+<td>New violation fails. Known and held: <span class="k">all ten module pages jump h1 → h3</span>. <span class="pill p-part">PARTIAL</span> — no screen-reader pass, and the focus-ring rule runs on one engine.</td></tr>
+
+<tr><td class="n">D14</td><td><span class="k">Compatibility</span></td>
+<td>Seven projects: Chromium, Firefox, WebKit, Pixel 7 (= the Capacitor WebView), iPhone, iPad, Android tablet.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>playwright.matrix.ts</code></td><td>Stage 3 · Stage 5 · wave 9</td>
+<td>44 held at baseline, shrink only. Known: <span class="k">the Skill-pack editor does not work in Safari or at phone width</span> (7 tests), and <span class="k">"Save as draft instead" leaves the gate banner up in Safari</span>. Suite 14 and Suite 05 must not be signed off on Chrome alone.</td></tr>
+
+<tr><td class="n">D15</td><td><span class="k">Usability</span></td>
+<td>Can a stranger do it, unaided.</td>
+<td><span class="pill p-gap">GAP</span> — specified in proposal 104</td><td>after Stage 5</td>
+<td><span class="k">Owner-blocked: five participants who have never seen the product.</span> Five tasks, think-aloud, their own device. Do not spend a participant on a defect already in §8.</td></tr>
+
+<tr><td class="n">D16</td><td><span class="k">Localization / i18n</span></td>
+<td>Four interface languages, and whether the chosen one holds.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>e2e/i18n.spec.ts</code></td><td>Stage 3 · wave 9</td>
+<td>Known and held: <span class="k">EN leaks Sanskrit and Hindi on /dashboard; EN+GU renders Devanagari</span>. Measured with <code>innerText</code>, so it is what is on screen. A leak on any OTHER surface fails.</td></tr>
+
+<tr><td class="n">D17</td><td><span class="k">Data migration &amp; schema</span></td>
+<td>R4′'s delete order, derived fresh from <code>pg_constraint</code>, never re-pointed from the old plan.</td>
+<td><span class="pill p-has">HAVE</span> migration tests</td><td>Stage 1 · R4′ · R9′</td>
+<td>Carried forward and still load-bearing: <span class="k">926 null-org rows no <code>org_id</code> predicate can see</span>, 3 of them on protected tasks; <code>task_reminders</code> deleted BEFORE <code>tasks</code>; the <span class="k">21 SET NULLs matter more than the 242 CASCADEs</span> — a SET NULL mutates a surviving row and no count reveals it.</td></tr>
+
+<tr><td class="n">D18</td><td><span class="k">Recovery / failover / DR</span></td>
+<td>Can this be undone.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>check_backup_coverage.py</code> + <code>docs/DISASTER-RECOVERY.md</code></td><td>Stage 1 (P4) · Stage 6</td>
+<td>⚠ <span class="k">The reversal path is not a database backup.</span> 42 <code>public</code> tables are outside <code>premerge_backup_20260829</code> — 5,887 rows including every task, user and team. <span class="k">No restore has ever been rehearsed.</span> See §9.</td></tr>
+
+<tr><td class="n">D19</td><td><span class="k">Visual regression</span></td>
+<td>A resolved value changed and nobody noticed — the <code>.side</code> rule, the blank dropdowns, the CSP theme flash.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>e2e/style-contract.spec.ts</code></td><td>Stage 3 · waves 1–9</td>
+<td>15 selectors, computed styles not pixels, so the baseline is platform-independent and committed. Re-record only in the same commit as the design change.</td></tr>
+
+<tr><td class="n">D20</td><td><span class="k">Mutation</span></td>
+<td>Testing the tests. The only method that finds a guard nothing checks.</td>
+<td><span class="pill p-new">NEW IN v5</span> <code>backend/scripts/mutate.py</code></td><td>Stage 2 · Stage 5</td>
+<td><span class="k">Run against every guard this programme relies on before trusting it.</span> First run found a cross-tenant approval guard with no test behind it — disabling it left all five approvals suites green. 7 survivors remain, listed by line.</td></tr>
+
+</tbody>
+</table>
+
+<div class="card card--info">
+<p style="margin:0 0 8px"><span class="k">The two disciplines that cannot be closed by this programme, stated plainly.</span></p>
+<p style="margin:0"><span class="k">D15 Usability</span> needs five strangers. <span class="k">D12 pen testing</span>
+needs an adversarial pass that is not the person who wrote the code. Both are specified — 104 for the
+first, §8 O-P for the second — and both are <span class="k">owner-blocked, not skipped</span>. The
+difference between those two words is the whole of judgement 4.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ 5 -->
+<h2><span class="n">5</span>The six stages — unchanged, with the discipline gates added</h2>
+
+<table>
+<thead><tr><th class="n">St</th><th>Stage</th><th>Unchanged from v4</th><th>Disciplines gated here</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td><span class="k">Inventory &amp; freeze</span></td><td>Three-system read (DB · Railway · Cloudflare); TOUCH / NEVER-TOUCH lists; cron freeze ledger; R0–R3</td><td><span class="k">P1 P2 P4</span> · D11 SCA · D17 schema · D18 recovery</td></tr>
+<tr><td class="n">2</td><td><span class="k">Repair before re-find</span></td><td>The findings fixed BEFORE the wave that would re-find them — §8's "fix first" column</td><td>D1 integration · D2 contract · D10 tenancy · D20 mutation</td></tr>
+<tr><td class="n">3</td><td><span class="k">Wipe &amp; rebuild</span></td><td>R4′ delete in the derived order; then every row typed by a user, wave by wave</td><td>D9 performance · D13 a11y · D14 compatibility · D16 i18n · D19 visual</td></tr>
+<tr><td class="n">4</td><td><span class="k">Replay on UK</span></td><td>The identical set on UK AekamINC — a difference between the two orgs is a finding</td><td>D4 exploratory · D12 pen testing</td></tr>
+<tr><td class="n">5</td><td><span class="k">Mobile, both AVDs</span></td><td>Suite 21 on <code>Pixel_9_Pro</code> and <code>Tab_A11_Plus</code></td><td>D7 regression · D14 compatibility · D20 mutation</td></tr>
+<tr><td class="n">6</td><td><span class="k">Restore &amp; close</span></td><td>R9′ — crons restored to their read values, two backup schemas dropped by name, one at a time</td><td>D18 recovery</td></tr>
+</tbody>
+</table>
+
+<div class="card card--stop">
+<p style="margin:0 0 8px"><span class="k">⚠ Stage 5 is BLOCKED and has been since 28 Aug — this is not new, and it must not be re-discovered.</span></p>
+<p style="margin:0">The release APK ships <code>arm64-v8a</code> and <code>armeabi-v7a</code> only;
+both AVDs are x86_64. It crash-loops with <code>SoLoaderDSONotFoundError: libreactnative.so</code>.
+The APK is <em>correct for its purpose</em> — a real phone. Mobile is untestable on this machine until
+<code>ARCHS=x86_64 bash mobile/scripts/build-apk.sh release</code> produces an x86_64 build.
+<span class="k">Consequence nobody has stated: <code>mobile/e2e/android_e2e.py</code>'s assertions cannot
+have run green against a release APK on these AVDs.</span> Build it in Stage 1, not Stage 5.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ 6 -->
+<h2><span class="n">6</span>The nine waves — with the discipline each one must also close</h2>
+
+<p class="small">Wave order is unchanged from v4. The right-hand column is what v5 adds: the wave does
+not close until its disciplines close too.</p>
+
+<table>
+<thead><tr><th class="n">W</th><th>Suites</th><th>Also closes</th><th>The known trap in this wave</th></tr></thead>
+<tbody>
+<tr><td class="n">1</td><td>00 cold-start · 01 auth · 02 org settings</td><td>D8 smoke · D13 a11y · D19 visual</td><td>GSTIN blank must save. Cards show names, never UUIDs.</td></tr>
+<tr><td class="n">2</td><td>03 Core PM · 04 Graha</td><td>D1 integration · D2 contract</td><td><code>lost_reason</code> persists — it was writable and unreachable. Aekam Inc's team untouched.</td></tr>
+<tr><td class="n">3</td><td>05 Ganit · 06 Kray</td><td>D9 performance · D14 compatibility</td><td>Draft invoices must not be dunned or counted as revenue. Budget warns, never blocks. <span class="k">Safari: the draft-save banner does not clear.</span></td></tr>
+<tr><td class="n">4</td><td>07 Manav · 08 Vetana</td><td>D17 schema · D7 regression</td><td>Payroll must not pay leavers. PT varies by state AND gender. The re-run must MOVE the figure.</td></tr>
+<tr><td class="n">5</td><td>09 Pahchan</td><td>D14 compatibility · D4 exploratory</td><td>Geofence refusal is a required case, not an edge case. The emulator's test provider, never <code>adb emu geo fix</code>.</td></tr>
+<tr><td class="n">6</td><td>19 admin console · 17 client billing · 14 Sahayak</td><td>D10 tenancy · D12 pen testing</td><td>⚠ <span class="k">Suite 19 MUST precede Suite 14</span> — every credit top-up route is <code>require_platform_role</code>, so most of 14's volume is structurally unreachable in the old order. §12: a TEST org is always the subject.</td></tr>
+<tr><td class="n">7</td><td>10 Vikray · 11 Prachar · 15 eSign · 16 Niyam</td><td>D2 contract · D9 spike</td><td>Unsubscribe then prove exclusion. <span class="k">eSign field placement stores nothing</span> — <code>sign_fields</code> = 0 rows, live. eSign is web-only, never a mobile destination.</td></tr>
+<tr><td class="n">8</td><td>18 portal · 20 cross-cutting · 22 dead controls</td><td>D10 tenancy · D12 pen testing · D6 white-box</td><td>Attempt another org's project by id and be refused. No seat consumed by an org client.</td></tr>
+<tr><td class="n">9</td><td>12 Dristi · 13 Sanvaad · 21 mobile · E2E regression replay</td><td>D7 regression · D16 i18n · D14 compatibility</td><td>Every headline figure reconciled to its module — this page has printed six wrong figures. <span class="k">Never reconcile by summing a list; lists cap at 200.</span></td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ 7 -->
+<h2><span class="n">7</span>Everything still outstanding — the whole estate, in one table</h2>
+
+<p>Swept 2026-08-30 across <span class="k">105 proposals and 27 plans</span>. Sources:
+<code>93-F-OPEN-FINDINGS.md</code> (22 findings, 3 closed), <code>OWNER-ACTIONS.md</code> (OPEN section),
+<code>PHASE-0…8</code>, <code>FINAL-VERDICT-00-90.md</code> §3, <code>93-E-ORPHANED-CAPABILITY-SWEEP.md</code>,
+<code>STATUS.md</code>, and the 2026-08-30 QA audit.</p>
+
+<div class="card card--warn">
+<p style="margin:0"><span class="k">⚠ Every row below is a citation, not a measurement — except the
+nine marked ✎, which were re-verified live for this rescope (§9).</span> Stage 1 re-verifies the rest
+before Stage 2 acts on any of them. A finding filed on 27 Aug and fixed on 29 Aug that is still
+"open" in a ledger is exactly how a plan re-does work it already did.</p>
+</div>
+
+<h3>A · Live blockers — wrong in the running product (PHASE-2)</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Item</th><th>Fix by</th></tr></thead>
+<tbody>
+<tr><td class="n">L1</td><td>Payroll pays leavers</td><td>Stage 2, before wave 4</td></tr>
+<tr><td class="n">L2</td><td>Flat ₹200 professional tax in every state — PT varies by state and gender</td><td>Stage 2, before wave 4</td></tr>
+<tr><td class="n">L3</td><td>Two billing endpoints 500 on first call (missing <code>gst_rate</code>)</td><td>Stage 2, before wave 6</td></tr>
+<tr><td class="n">L4</td><td>Draft invoices dunned <em>and</em> counted as revenue</td><td>Stage 2, before wave 3</td></tr>
+<tr><td class="n">L5</td><td>Cross-tenant leak in the newest billing router</td><td>Stage 2, before wave 6 — D10</td></tr>
+<tr><td class="n">L6</td><td>The project status report is dead — it reads <code>public.boards</code>, ✎ <span class="k">0 rows in the whole database</span></td><td>Stage 2, before wave 2</td></tr>
+</tbody>
+</table>
+
+<h3>B · Open findings ledger — 19 of 22 still open</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Finding</th><th>Wave that re-finds it</th></tr></thead>
+<tbody>
+<tr><td class="n">O-3</td><td>The outbound freeze cannot stop a mention or comment email</td><td>1 — and it is a <span class="k">P3</span> concern on production</td></tr>
+<tr><td class="n">O-4</td><td><code>graha</code> inbound-emails 500s on a column that does not exist</td><td>2</td></tr>
+<tr><td class="n">O-5</td><td>A date picker inside a modal is unclickable</td><td>2 — D13</td></tr>
+<tr><td class="n">O-6</td><td>A solo administrator cannot approve a purchase order, ever</td><td>3</td></tr>
+<tr><td class="n">O-7</td><td>A scheduled campaign never sends</td><td>7</td></tr>
+<tr><td class="n">O-8</td><td>Pahchan policy overrides — four working routes, no screen</td><td>5</td></tr>
+<tr><td class="n">O-9</td><td>Thirty-one request fields no screen has ever sent</td><td>2, 3 — D2</td></tr>
+<tr><td class="n">O-10</td><td><code>lost_reason</code> and <code>pipeline_id</code> writable and unreachable</td><td>2</td></tr>
+<tr><td class="n">O-11</td><td>The DPDP data surface is built, unreachable, and documented as absent</td><td>8</td></tr>
+<tr><td class="n">O-12</td><td>Three tabs announce nothing while loading</td><td>1 — D13</td></tr>
+<tr><td class="n">O-13</td><td>⚠ <span class="k">The live-SQL ratchet counts a STRING, not a behaviour</span> — a test that merely mentions <code>prepare()</code> in prose credits its router with coverage it does not have</td><td>Stage 2 — <span class="k">D1's own gate is unsound; fix before relying on it</span></td></tr>
+<tr><td class="n">O-14</td><td>✎ <span class="k">RE-VERIFIED AND RECLASSIFIED — NOT a tenancy hole.</span> See §9.</td><td>—</td></tr>
+<tr><td class="n">O-15</td><td>Kray: duplicate approver rows, and budget dates that do nothing</td><td>3</td></tr>
+<tr><td class="n">O-16</td><td>"Seen by" names people who never saw the message</td><td>9</td></tr>
+<tr><td class="n">O-17</td><td>"Jump to latest" covers the controls beneath it</td><td>9 — D13</td></tr>
+<tr><td class="n">O-18</td><td>There is no way to delete a channel</td><td>9</td></tr>
+<tr><td class="n">O-20</td><td>Four active employees missing from the employee list</td><td>4</td></tr>
+<tr><td class="n">O-21</td><td>Niyam — quiet hours cannot work, and five more gaps</td><td>7</td></tr>
+<tr><td class="n">O-22</td><td>Report email carries no attachment size guard; a bounce is invisible</td><td>9</td></tr>
+</tbody>
+</table>
+
+<h3>C · Also open, from the suites — not separately chipped</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Item</th><th>Wave</th></tr></thead>
+<tbody>
+<tr><td class="n">O-A</td><td>✎ <span class="k">eSign field placement stores nothing</span> — <code>sign_fields</code> live count <span class="k">0</span>. <code>DocumentCreate</code> carries no <code>fields</code> member and Pydantic v2 drops it silently. D2.</td><td>7</td></tr>
+<tr><td class="n">O-B</td><td>eSign signing order is decorative — <code>/send</code> mails every signer at once, no predecessor check</td><td>7</td></tr>
+<tr><td class="n">O-C</td><td>An eSign decline does not move the document — still reads "Sent", can never complete</td><td>7</td></tr>
+<tr><td class="n">O-D</td><td>✎ <code>errText</code> swallows a structured refusal in three more copies — <code>manav/_shared.jsx</code>, <code>vetana/_shared.jsx</code>, <code>prachar/_shared.jsx</code>. <span class="k">All three confirmed present.</span> The dominant defect class.</td><td>2, 4, 7</td></tr>
+<tr><td class="n">O-E</td><td>Suite 14's ordering defect is in the PLAN — resolved by wave 6 above</td><td>6</td></tr>
+</tbody>
+</table>
+
+<h3>D · Still open from proposals 00–49 (FINAL-VERDICT §3)</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Item</th><th>Wave</th></tr></thead>
+<tbody>
+<tr><td class="n">V1</td><td>✎ <span class="k">The RAG / KB index is empty and always has been</span> — <code>hub_kb_documents</code> 0, <code>hub_kb_chunks</code> 0, live. Sahayak answers "grounded" on nothing. <span class="k">The single largest silent lie in the AI surface.</span></td><td>6 — Suite 14 uploads 2 KB docs and must then be answered FROM them</td></tr>
+<tr><td class="n">V2</td><td>✎ <span class="k">Employee ↔ login link</span> — <code>manav_employees.user_id</code>. Live: <span class="k">0 employees, 0 linked</span> (the reseed emptied the table; the old "0 of 98" is stale). Gates email-optional payslips and a correct Pahchan seat count.</td><td>4 — §3 types 8 employees and links 4</td></tr>
+<tr><td class="n">V3</td><td>✎ Shared-inbox reply loop unbuilt — <code>graha_inbound_emails</code> live count <span class="k">0</span></td><td>2 — record as unbuilt, do not file as broken</td></tr>
+<tr><td class="n">V4</td><td>Sahayak streaming never wired; <code>hub_chat.py</code> passes literal <code>language='en'</code>, so Hindi and Gujarati questions risk English answers</td><td>6 — <span class="k">D16 covers this</span></td></tr>
+<tr><td class="n">V5</td><td><span class="k">RBAC Package A — six privilege holes</span>, found by a design audit and never security-verified</td><td>8 — <span class="k">D12, and this is most of what D12 is for</span></td></tr>
+<tr><td class="n">V6</td><td>Six oversized file rows still inside Postgres (32MB) — the R2-only decision closed the write path, never migrated the history</td><td>Stage 1 inventory; owner decision to move or accept</td></tr>
+<tr><td class="n">V7</td><td><code>recurring_invoice_generator</code> — foreign serial format and two allocators that can poison a GSTR-1-filed GST serial. <span class="k">Verify it was rewritten before any cron points at it.</span></td><td>Stage 2, before wave 3</td></tr>
+</tbody>
+</table>
+
+<h3>E · Orphaned capability — 958 operations, 849 reached, 67 genuinely orphaned</h3>
+<div class="card">
+<p style="margin:0 0 8px">A route that exists, is deployed, works — and no screen calls it. Or a control
+with no route behind it. Either way the customer cannot do the thing and nothing goes red.</p>
+<p style="margin:0"><span class="k">Suite 22 (dead controls) in wave 8 is the wave that closes this</span>,
+and the sweep's own numbers are the acceptance criterion: <span class="k">67 orphans, and the count must
+be re-derived, not cited</span> — it fell 361 → 152 → 131 → 109 → 67 as false positives were resolved.
+Re-run the sweep against the deployed OpenAPI at the SHA the run is testing, per <span class="k">P5</span>.</p>
+</div>
+
+<h3>F · Owner-blocked — nothing in this programme unblocks these</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Item</th></tr></thead>
+<tbody>
+<tr><td class="n">OA-22</td><td>Four data decisions on LIVE rows — yours, not the programme's</td></tr>
+<tr><td class="n">OA-21</td><td>Two marketing feature sets that are <span class="k">NOT BUILT</span> — <code>mkt_*</code> landing pages / tracked links / clicks / referrals, and Prachar automations. §4 asks for them and they cannot be done. <span class="k">Record as excluded, never as failed.</span></td></tr>
+<tr><td class="n">OA-20</td><td>Three Manav gaps, and a ratchet that cannot see what it checks</td></tr>
+<tr><td class="n">OA-19</td><td>Five Graha features with no way in</td></tr>
+<tr><td class="n">OA-18</td><td>Storage quota accounting is broken, independently of the recycle bin</td></tr>
+<tr><td class="n">OA-17</td><td>The recycle-bin sweeper is BUILT AND DISARMED — arming it is yours</td></tr>
+<tr><td class="n">OA-16</td><td>Two product defects deferred by decision — your call on when</td></tr>
+<tr><td class="n">OA-13</td><td>No bounce feedback path — a decision, not a bug</td></tr>
+<tr><td class="n">OA-12</td><td><code>aekaminc.com</code> has no DKIM — the fallback sender goes out unsigned</td></tr>
+<tr><td class="n">OA-9</td><td>Mappls — add <code>www.kartavaya.com</code> to the whitelist</td></tr>
+<tr><td class="n">OA-8</td><td>APK cold-restart reproduction still owed · <span class="k">and the x86_64 build that unblocks Stage 5</span></td></tr>
+<tr><td class="n">OA-2</td><td>Drop the <code>qa_cleanup_20260822</code> restore schema?</td></tr>
+<tr><td class="n">OA-0.29</td><td>A fresh APK after ALL phases complete</td></tr>
+</tbody>
+</table>
+
+<h3>G · From the 2026-08-30 QA audit — new, and all of it feeds a discipline</h3>
+<table>
+<thead><tr><th class="n">#</th><th>Item</th><th>Discipline</th></tr></thead>
+<tbody>
+<tr><td class="n">Q1</td><td><span class="k">41 dependency advisories</span> were behind <code>|| true</code>. pyjwt 5, cryptography 6, starlette 7, axios 10, react-router 6. <span class="k">pyjwt first, before this run.</span></td><td>D11</td></tr>
+<tr><td class="n">Q2</td><td><span class="k">The reversal path is not a database backup</span> — 42 tables, 5,887 rows outside it</td><td>D18</td></tr>
+<tr><td class="n">Q3</td><td>7 mutation survivors on <code>approvals_router.py</code>, by line — open questions, not confirmed bugs</td><td>D20</td></tr>
+<tr><td class="n">Q4</td><td><code>/api/teams</code> fetched 4× per page; <code>/api/auth/me</code> 3×</td><td>D9</td></tr>
+<tr><td class="n">Q5</td><td>Skill-pack editor broken in Safari and at phone width (7 tests); Safari draft banner does not clear</td><td>D14</td></tr>
+<tr><td class="n">Q6</td><td>EN shows Sanskrit/Hindi; EN+GU shows Devanagari</td><td>D16</td></tr>
+<tr><td class="n">Q7</td><td>All ten module pages jump h1 → h3</td><td>D13</td></tr>
+<tr><td class="n">Q8</td><td>10 controls under the 44px tap minimum, ratcheted</td><td>D13</td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ 8 -->
+<h2><span class="n">8</span>Re-verified live for this rescope — and two things the ledgers had wrong</h2>
+
+<p class="small">Nine facts, read-only, 2026-08-30, against <code>kartavya-sg</code>. Marked ✎ above.
+This is the §14 rule applied to the plan itself: evidence, not citation.</p>
+
+<table>
+<thead><tr><th>Fact</th><th class="num">Live</th><th>What it changes</th></tr></thead>
+<tbody>
+<tr><td><code>hub_kb_documents</code> / <code>hub_kb_chunks</code></td><td class="num">0 / 0</td><td>V1 confirmed — the RAG index is still empty</td></tr>
+<tr><td><code>manav_employees</code> total / linked to a login</td><td class="num">0 / 0</td><td>⚠ <span class="k">V2's "0 of 98" is STALE.</span> The table is empty — the reseed took them. Wave 4 rebuilds from zero, so the link must be typed, not repaired</td></tr>
+<tr><td><code>graha_inbound_emails</code></td><td class="num">0</td><td>V3 confirmed unbuilt</td></tr>
+<tr><td><code>boards</code> / <code>board_columns</code></td><td class="num">0 / 0</td><td>L6 confirmed — the project report reads a table with no rows anywhere in the database</td></tr>
+<tr><td><code>sign_fields</code></td><td class="num">0</td><td>O-A confirmed — placement stores nothing</td></tr>
+<tr><td><code>mentions</code></td><td class="num">22</td><td>⚠ <span class="k">"@mentions have never once worked" is STALE.</span> They have rows now. Wave 2 asserts a delta, not a first row</td></tr>
+<tr><td><code>premerge_backup_20260829</code></td><td class="num">265 / 30,364</td><td>Not the recorded 258 / 29,608. <span class="k">A measurement with a date.</span> 42 <code>public</code> tables sit outside it</td></tr>
+<tr><td><code>approvals_router.py</code> scoped call sites</td><td class="num">9</td><td>See the reclassification below</td></tr>
+</tbody>
+</table>
+
+<div class="card card--ok">
+<p style="margin:0 0 8px"><span class="k">✎ O-14 RECLASSIFIED — "the task-approval admin hatch is still unscoped in one place" is NOT a tenancy hole.</span></p>
+<p style="margin:0">One unscoped <code>is_org_admin(user["user_id"])</code> does remain, at
+<code>approvals_router.py:570</code>, against nine scoped call sites. Reading the two statements it
+chooses between: <span class="k">both require a <code>project_assignments</code> row for the caller.</span>
+The admin branch adds <code>EXISTS (… pa.team_id = t.team_id AND pa.user_id = $1)</code>; the ordinary
+branch INNER JOINs the same table and additionally demands <code>role IN ('owner','admin')</code>. So
+the unscoped answer can only widen the list to projects the caller is <em>already a member of</em> —
+and membership is itself org-bounded. <span class="k">Not a boundary crossing.</span> It is carried here
+so that the next sweep does not re-file it, and so that anyone changing either query knows what was
+load-bearing.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ 9 -->
+<h2><span class="n">9</span>What must happen before Stage 1 opens</h2>
+<ol>
+<li><span class="k">Bump <code>pyjwt</code> to 2.13.0</span> and run the backend suite. It signs every session this programme creates, and it has five known vulnerabilities with a published fix. <span class="k">Q1.</span></li>
+<li><span class="k">Answer the recovery question.</span> Confirm the Supabase project's backup retention and whether PITR is enabled. It is the only full-database path and its parameters are unknown. One look at the dashboard. <span class="k">Q2 / D18.</span></li>
+<li><span class="k">Build the x86_64 APK.</span> <code>ARCHS=x86_64 bash mobile/scripts/build-apk.sh release</code>. Without it Stage 5 cannot run, and that has been true since 28 Aug. <span class="k">OA-8.</span></li>
+<li><span class="k">Decide OUTBOUND_MODE for the window</span>, deliberately, and record it. On production, discovering it is not the same as choosing it. <span class="k">P3.</span></li>
+<li><span class="k">Fix O-13 before relying on D1.</span> The live-SQL ratchet counts a string, so the discipline it enforces is currently unsound.</li>
+</ol>
+
+<div class="card card--stop">
+<p style="margin:0"><span class="k">Execution is held until you say start.</span> Unchanged from every
+version of this proposal. Nothing in Stage 1 touches a row; the three-system inventory is a read, and
+its output is two written lists. The first thing that changes production is R4′, and it is gated on
+<span class="k">P1, P2 and P4</span> all being satisfied in writing.</p>
+</div>
+
+<p class="small" style="margin-top:36px;padding-top:14px;border-top:1px solid var(--line)">
+Supersedes the volume plan in <code>93b-the-second-run.html</code> §4 only. Everything else in 93 and
+93b stands. Companion documents: <code>docs/proposals/104-uat-and-usability.html</code> (D15),
+<code>docs/DISASTER-RECOVERY.md</code> (D18), <code>docs/plans/93-AGENT-BRIEF.md</code> (the brief every
+agent carries verbatim).</p>
+
+</div>

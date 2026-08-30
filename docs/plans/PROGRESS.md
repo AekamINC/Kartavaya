@@ -6107,3 +6107,126 @@ desktop chromium, all skipped elsewhere with the reason stated in the skip.
 | Backend approvals suites | 23 passed (was 21 — two new authorisation tests) |
 | `ci.yml` / `nightly.yml` | both parse; 5 and 3 jobs |
 | `git status` on every mutated source file | clean |
+
+---
+
+## 2026-08-30 · Proposal 93 v5 — the production run, the full QA set, and the whole outstanding estate
+
+**What was asked.** Re-plan 93 with the same rules, purpose, flow, phases and
+waves; make the purpose stronger because this run drives PRODUCTION; add the
+full QA discipline set; scale volumes to 30% on large sets and 50% on small; and
+sweep every proposal and plan so nothing outstanding is missed.
+
+**What landed.** `docs/proposals/105-93-v5-production-and-the-full-qa-set.html`,
+with `docs/plans/93-V5-RESCOPE.md` as the route file — same shape as
+`93-V4-RESCOPE.md`, and for the same reason: the single biggest failure of the
+28 Aug sessions was planning from a compressed summary and silently losing the
+scope, so the route file says in its first line that it is not a substitute.
+
+### Three changes, and nothing else
+
+1. **Five production gates, all blocking** — P1 three-system inventory, P2 blast
+   radius across 300 base tables (the old safety argument was measured over 42),
+   P3 the outbound fence attested from `/api/health` rather than the dashboard
+   variable, P4 recovery verified *before* the first delete, P5 deploy identity
+   before every wave.
+2. **Eighteen disciplines across twenty gates (D1–D20)**, each with an owner
+   stage, a proving artefact and a blocking condition. Security is one
+   discipline in the list and three rows in the table — authz/tenancy, SCA and
+   pen testing have different owners, instruments and gates, and collapsing them
+   is how the first two get done and the third quietly does not.
+3. **Volumes 1,566 → ~569 per org (36% of v4, 18% of v3).**
+
+### The scale rule needed two classes the instruction did not name
+
+30% large / 50% small is arithmetic, and applied naively it would have destroyed
+the plan's shape. Two classes are exempt:
+
+- **HELD** — a set-cover, not a volume. All 18 report types, 14 Niyam rules (one
+  per trigger family), 6 custom fields (one per input type), 4 PT/IT bands, both
+  sides of the PO threshold, 3 consecutive payroll months, 4 geofence refusals.
+  Cutting a set-cover changes *what* is tested, not how much.
+- **DERIVED** — a product of other quantities, recomputed from its driver rather
+  than scaled alone. Payslips are employees × months; punches are employees ×
+  days × 2 × months. Scaling the product independently turns three consecutive
+  months into two and in/out into in — silently, and the assertion still passes.
+
+Plus two floors that are not arithmetic at all: invoices never reach zero drafts
+(6 = 4 final + 2 draft, because the split *is* Rule 46), and deals keep all three
+outcomes including Lost **with a reason**, because `lost_reason` was writable and
+unreachable for months and only a Lost deal proves it persists.
+
+**And the calendar does not fall with the row count** — 10–13 days against v4's
+12–14. Rows fall to a third; paths driven are unchanged and eighteen disciplines
+are added. Saying the run got 64% shorter would have been the easy sentence and
+the wrong one.
+
+### The sweep — 105 proposals, 27 plans
+
+| Source | Open |
+|---|---|
+| `PHASE-2` live blockers | 6 |
+| `93-F-OPEN-FINDINGS.md` | 19 of 22 |
+| Also-open from the suites | 5 |
+| `FINAL-VERDICT-00-90.md` §3 | 7 |
+| `93-E-ORPHANED-CAPABILITY-SWEEP.md` | 67 orphaned operations |
+| `OWNER-ACTIONS.md` OPEN | 13 |
+| 2026-08-30 QA audit | 8 |
+
+Every row is a citation, not a measurement, and the document says so — Stage 1
+re-verifies the rest before Stage 2 acts. A finding filed on 27 Aug and fixed on
+29 Aug that is still "open" in a ledger is how a plan re-does work it already
+did.
+
+### Nine facts re-verified live for the rescope, and three ledger entries were wrong
+
+Read-only against `kartavya-sg`:
+
+    hub_kb_documents 0 · hub_kb_chunks 0     the RAG index is still empty
+    graha_inbound_emails 0                   still unbuilt
+    boards 0 · board_columns 0               the project report reads a table
+                                             with no rows anywhere in the database
+    sign_fields 0                            eSign placement stores nothing
+    manav_employees 0 total, 0 linked        <- STALE LEDGER
+    mentions 22                              <- STALE LEDGER
+
+- **"0 of 98 employees linked to a login" is stale.** The table is *empty* — the
+  reseed took them. Wave 4 rebuilds from zero, so the link is typed, not
+  repaired. A plan written from the old number would have scheduled a repair for
+  rows that do not exist.
+- **"@mentions have never once worked" is stale.** 22 rows. Wave 2 asserts a
+  delta, not a first row.
+- **O-14 is NOT a tenancy hole, and I nearly reported that it was.** One unscoped
+  `is_org_admin` does remain at `approvals_router.py:570` against nine scoped
+  call sites, which reads exactly like the open finding. Reading the two
+  statements it chooses between: both require a `project_assignments` row for
+  the caller, so the unscoped answer can only widen the list to projects the
+  caller is *already a member of*, and membership is itself org-bounded.
+  Reclassified in the proposal and kept on record so the next sweep does not
+  re-file it.
+
+### One wave-order correction that is load-bearing
+
+**Suite 19 must precede Suite 14.** Every credit top-up route is
+`require_platform_role`, so the only door is the admin console. In the old order
+most of Suite 14's volume is structurally unreachable — the defect is in the
+plan, not the code. Wave 6 now runs 19 → 17 → 14.
+
+### Five things owed before Stage 1 opens
+
+1. `pyjwt` → 2.13.0. It signs every session this programme creates; five known
+   vulnerabilities, fix published.
+2. Confirm Supabase backup retention and whether PITR is on — the only
+   full-database recovery path, parameters unknown.
+3. `ARCHS=x86_64 bash mobile/scripts/build-apk.sh release`. Stage 5 has been
+   blocked on this since 28 Aug, and the consequence nobody had stated is that
+   `mobile/e2e/android_e2e.py` cannot have run green against a release APK on
+   these AVDs.
+4. Decide `OUTBOUND_MODE` for the window deliberately. On production,
+   discovering it is not the same as choosing it.
+5. Fix O-13 before relying on D1 — the live-SQL ratchet counts a string, not a
+   behaviour, so the discipline it enforces is currently unsound.
+
+**Execution is held until the owner says start.** Nothing in Stage 1 touches a
+row; the first thing that changes production is R4′, gated on P1, P2 and P4 all
+being satisfied in writing.

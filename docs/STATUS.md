@@ -34,6 +34,41 @@ Everything below marked "fixed 26 Aug" is therefore **running**.
 
 ---
 
+## 2026-08-30 — PROPOSAL 93 v5: THE PRODUCTION RUN, RESCOPED
+
+**`docs/proposals/105-93-v5-production-and-the-full-qa-set.html`**, route file
+`docs/plans/93-V5-RESCOPE.md`. Same scope, same rules, same six stages, nine
+waves, twenty-two suites. Three changes: it runs on **production** behind five
+new blocking gates (P1–P5); it carries the **full QA discipline set** — 18
+disciplines across 20 gates, each with an owner stage, a proving artefact and a
+blocking condition; and volumes drop again, **~1,566 → ~569 rows per org** (30%
+on large sets, 50% on small, HELD set-covers and DERIVED quantities exempt).
+
+⚠ **The calendar does not fall with the row count** — 10–13 days against v4's
+12–14. Rows fall to a third; paths driven are unchanged and eighteen disciplines
+are added.
+
+It also carries, in one place, **everything still outstanding across 105
+proposals and 27 plans**: 6 live blockers, 19 open findings, 5 also-open suite
+items, 7 from the 00–49 arc, 67 orphaned operations, 13 owner-blocked items and
+the 8 from the QA audit below. Every row is a citation, not a measurement —
+**Stage 1 re-verifies before Stage 2 acts.**
+
+**Nine facts were re-verified live for the rescope, and three ledger entries
+turned out to be wrong:** `manav_employees` is EMPTY (not "0 of 98" — the reseed
+took them), `mentions` holds 22 rows (not "never once worked"), and **open
+finding 14 is NOT a tenancy hole** — the one unscoped `is_org_admin` at
+`approvals_router.py:570` can only widen a list to projects the caller is
+already a member of, and membership is org-bounded. Reclassified, and recorded
+so the next sweep does not re-file it.
+
+**Owed before Stage 1 opens:** `pyjwt` → 2.13.0; the Supabase retention/PITR
+answer; an x86_64 APK (Stage 5 has been blocked on this since 28 Aug); a
+deliberate `OUTBOUND_MODE` decision; and a fix for O-13, whose ratchet counts a
+string rather than a behaviour and so makes discipline D1's gate unsound.
+
+---
+
 ## 2026-08-30 — THE QA GAP AUDIT: NINE DISCIPLINES CLOSED, TWO OWED TO PEOPLE
 
 A survey of the twenty-one standard QA disciplines against this repo found ten
