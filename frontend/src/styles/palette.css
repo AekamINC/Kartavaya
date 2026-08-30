@@ -53,7 +53,7 @@
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 
-@keyframes k-cmdk-in-v2 { from { opacity: 0; transform: translateY(-10px) scale(.985) } }
+@keyframes k-cmdk-in-v2 { from { opacity: 0; transform: translateY(calc(-10px * var(--motion-scale, 1))) scale(calc(1 - .015 * var(--motion-scale, 1))) } }
 
 /* ── The exits ───────────────────────────────────────────────────────────
    Both overlays entered and then vanished on a frame boundary: `CommandPalette`

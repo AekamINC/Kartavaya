@@ -1,0 +1,54 @@
+{
+  "note": "Rules that transition width/height with NO mount animation, accepted deliberately. Two kinds live here and they are not the same thing. (1) CORRECT: the transition responds to a real later change, so there is a previous value and a mount animation would be wrong. (2) DEAD: a bar fill with motion carefully written on it that no JSX renders — every one of these is also held in orphan-selectors-baseline.json. A dead entry must NOT be animated; animating a rule nothing renders is the ixFadeUp defect. The fix for those is deletion, and it has to convert the JSX first because check-classes fails on a class used but not declared. Shrink this file; do not grow it.",
+  "generated": "2026-08-30",
+  "held": {
+    "src/styles/components.css|.tabs__ind": {
+      "kind": "correct",
+      "reason": "The OTHER tab strip's indicator, and it already slides: one shared element transitioning left and width between tabs. It has a previous position by definition. This is the pattern .mt__ind was rebuilt to match — see module.css."
+    },
+    "src/styles/editorial.css|.side": {
+      "kind": "correct",
+      "reason": "The sidebar collapsing and expanding. A real state change with a real previous width; a mount animation would make the sidebar grow out of nothing on every page load."
+    },
+    "src/styles/editorial.css|.side__loz": {
+      "kind": "correct",
+      "reason": "The sidebar's active lozenge, which travels between nav items on transform + height. Same shape as .tabs__ind: it moves, so it always has a previous value."
+    },
+    "src/styles/module.css|.mt__ind": {
+      "kind": "correct",
+      "reason": "The module tab indicator, rebuilt this pass as one shared travelling element. Its width transition is the whole point. Its ENTRANCE is an animation, but on .mt__ind::after rather than .mt__ind — the parent's transform carries the travel and an animation on the same element would overwrite it — and this gate matches selectors exactly, so the pseudo does not satisfy the parent."
+    },
+    "src/styles/brand.css|.k-progress-fill": {
+      "kind": "dead",
+      "reason": "No JSX renders .k-progress-fill. Held in orphan-selectors-baseline.json. Delete, do not animate."
+    },
+    "src/styles/editorial.css|.k-stat__bar-fill": {
+      "kind": "dead",
+      "reason": "No JSX renders .k-stat__bar-fill, and it is declared TWICE — here and in kartavaya-design.css. Held in orphan-selectors-baseline.json. Delete both, do not animate."
+    },
+    "src/styles/editorial.css|.k-projcard__progress-fill": {
+      "kind": "dead",
+      "reason": "No JSX renders .k-projcard__progress-fill, and it is declared TWICE — here and in kartavaya-design.css. Held in orphan-selectors-baseline.json. Delete both, do not animate."
+    },
+    "src/styles/editorial.css|.k-tbar__fill": {
+      "kind": "dead",
+      "reason": "No JSX renders .k-tbar__fill. Held in orphan-selectors-baseline.json. Delete, do not animate."
+    },
+    "src/styles/editorial.css|.k-bar__col": {
+      "kind": "dead",
+      "reason": "No JSX renders .k-bar__col. Held in orphan-selectors-baseline.json. Delete, do not animate."
+    },
+    "src/styles/kartavaya-design.css|.k-stat__bar-fill": {
+      "kind": "dead",
+      "reason": "The second declaration of a rule nothing renders; see the editorial.css entry."
+    },
+    "src/styles/kartavaya-design.css|.k-projcard__progress-fill": {
+      "kind": "dead",
+      "reason": "The second declaration of a rule nothing renders; see the editorial.css entry."
+    },
+    "src/styles/reports.css|.rep-bar__fill": {
+      "kind": "dead",
+      "reason": "The ReportsPage schedules panel was retired 2026-08-27 with the public.report_schedules endpoints; liquid-glass.css records .rep-bar leaving its surface list for the same reason. Held in orphan-selectors-baseline.json. Delete, do not animate."
+    }
+  }
+}

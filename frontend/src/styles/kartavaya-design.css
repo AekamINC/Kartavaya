@@ -283,7 +283,22 @@
 :root {
   --glass-blur:  calc(22px * var(--glass-mix));
   --glass-sat:   calc(1 + .5 * var(--glass-mix));
-  --glass-alpha: calc(1 - (.28 * var(--glass-mix)));
+  /* .45, not the .28 this shipped with. At the default --glass-mix of .6 the
+     old coefficient resolved --glass-alpha to .832 — the topbar was 83%
+     opaque, only 17% of what sits behind it came through, and dragging the
+     Translucency slider all the way still only reached 28%. A control whose
+     entire range is 17% to 28% does not read as a control.
+     .45 gives 27% at the default and 45% at the far end. The default is the
+     number that matters, and it stays well under the ~40% at which a
+     text-bearing material stops being legible over arbitrary content. The far
+     end passes that point, but only for a user who dragged it there, and only
+     for the surfaces reading the BASE alpha: every text-heavy consumer
+     already adds to it (drawer.css +.10, components.css +.12), which holds
+     them at 33-35% translucent even at the maximum.
+     Both overrides below pin --glass-alpha to 1 — prefers-reduced-transparency
+     and the @supports test for backdrop-filter — so neither number reaches a
+     user who asked for less transparency or a browser that cannot blur. */
+  --glass-alpha: calc(1 - (.45 * var(--glass-mix)));
 
   /* The SIDEBAR's own glass, deliberately not the general set.
      ──────────────────────────────────────────────────────────
@@ -368,13 +383,43 @@
      scrollbar fallback where -webkit-scrollbar is unsupported, and the
      autofill wash. */
   color-scheme: light;
+  /* THE LIGHT RAMP WAS NOT A RAMP. Measured before this change, the seven
+     light surfaces spanned 1.410:1 darkest to lightest while the seven dark
+     ones span 1.600:1 — which is the whole reason the same page reads with
+     depth in dark and flat in light. The worst step was --s-low to --bg at
+     1.017:1: the first raised surface meeting page-ground, the most-used
+     elevation change in the product, and the same colour to any eye.
+
+     --bg IS PINNED AT #F3EFE6 AND CANNOT MOVE. Every semantic status chip in
+     the product paints color-mix(in srgb, var(--x) N%, transparent), and
+     check-contrast composites that family over --bg; at HEAD it already sits
+     between 4.5:1 and 4.8:1, with no slack anywhere in it. Measured: --bg one
+     step darker at #F2EEE5 regresses the baselined .msg--sys .msg__glyph,
+     which holds 3.39 with 0.01 to spare; #F1EDE4 adds 13 new failures,
+     #EEEAE0 adds 21, #EAE5D8 adds 32. So the ramp is widened AROUND a fixed
+     ground rather than by lowering it.
+
+     That fixes the collapse where it was fatal and moves it to where it is
+     not: --s-lowest and --surface are both top surfaces and may sit 1.018
+     apart; a raised surface and the page ground may not. Measured after,
+     each step against the one above it:
+       1.018 (--surface)     · 1.061 (--s-low)  · 1.053 (--bg)
+       1.095 (--s-container) · 1.088 (--s-high) · 1.100 (--s-highest)
+     — a span of 1.492:1. The figure that actually carries the depth is
+     --surface against --bg, a card against the page behind it: 1.073:1 to
+     1.118:1, so the separation above parity grew by three fifths.
+     --on-surface #1B1D1A holds 16.83:1 on --s-lowest down to 11.28:1 on
+     --s-highest, so the primary ink is nowhere near the 4.5:1 floor on any of
+     the seven. Only the three tiers below --bg got darker; the one ratio
+     worth recording is --on-surface-3 on --s-container, 5.14:1 to 4.96:1,
+     still AA. */
   --bg:         #F3EFE6;
   --s-lowest:   #FFFEFB;
-  --surface:    #FAF7F0;
-  --s-low:      #F5F1E7;
-  --s-container:#EEE9DC;
-  --s-high:     #E7E1D1;
-  --s-highest:  #DFD8C5;
+  --surface:    #FDFCF8;
+  --s-low:      #F8F5ED;
+  --s-container:#EBE5D6;
+  --s-high:     #E3DCCA;
+  --s-highest:  #DBD2BC;
 
   --on-surface:       #1B1D1A;
   --on-surface-2:     #4A4E48;
@@ -385,8 +430,9 @@
      three. On --bg #F3EFE6 a colour needs relative luminance ≤ .153 to clear
      4.5:1, and --on-surface-3 #666A61 already sits at .140 — a compliant
      fourth step would live in that sliver and be indistinguishable from the
-     third. So --on-surface-faint ALIASES --on-surface-3 in both themes. The
-     name survives because every one of its call sites is content text
+     third. (The ramp above was widened around --bg rather than through it, so
+     this ceiling has not moved.) So --on-surface-faint ALIASES --on-surface-3 in
+     both themes. The name survives because every one of its call sites is content text
      (IDs, separators, counts, "(edited)", deleted-message copy), and a
      token that is declared non-text while carrying text in ~30 places is a
      contrast bug, not a naming problem. Measured before this change:
@@ -407,15 +453,23 @@
      required to identify user interface components", and --outline IS that
      information: it is the border of every text input, checkbox, radio and
      select trigger. It failed on 11 of the 12 surface/theme combinations.
-     #78725F measured against all seven light surfaces:
-       --s-lowest 4.76 · --surface 4.49 · --s-low 4.26 · --bg 4.19
-       --s-container 3.96 · --s-high 3.68 · --s-highest 3.38
-     Chosen over the 3:1 minimum (#7E7663, worst 3.17) for headroom, and it
+     #78725F re-measured against all seven light surfaces after the ramp
+     above was widened (the two tiers above --bg got lighter so their figures
+     rose; the three below got darker so theirs fell; --bg itself is pinned
+     and unmoved):
+       --s-lowest 4.76 · --surface 4.68 · --s-low 4.41 · --bg 4.19
+       --s-container 3.82 · --s-high 3.51 · --s-highest 3.19
+     Chosen over the 3:1 minimum (#7E7663, worst 3.00 on the widened ramp)
+     for headroom, and it
      keeps the warm khaki hue rather than sliding grey. No rule in the tree
      paints --outline as TEXT — 39 call sites, all borders — so the 4.5:1
      threshold does not apply and the darker value costs nothing but weight.
      --rule-strong (:468) and --border-strong (lib/tokens.css:98) alias this,
-     so both move with it. */
+     so both move with it.
+     All seven still clear WCAG 1.4.11's 3:1, worst case 3.19 rather than the
+     3.38 it was, and the margin over the rejected #7E7663 survives the
+     widening. If the ramp is ever extended DOWNWARD again, --outline has to
+     darken with it. */
   --outline:         #78725F;
 
   --primary:              #04837A;
@@ -439,6 +493,31 @@
   --primary-container:    #B4F1E8;
   --on-primary-container: #00201D;
   --primary-vivid:        #05b7aa;
+
+  /* A SIBLING of --k-grad, not a replacement for it. --k-grad is a fill 4-8px
+     tall in all twelve of its call sites — .k-stat__bar-fill, .k-meter__fill,
+     .k-tbar__fill and the rest — and it runs all the way to --primary-vivid,
+     on which white measures 2.51:1. That is correct for a bar carrying no
+     text and disqualifying for anything a label sits on. White on --k-grad's
+     three light stops measures 6.38 · 4.63 · 2.51; on these three it measures
+     8.70 · 6.38 · 4.62, so every stop clears AA.
+     The stops are LITERALS on purpose. applyPrefs (CustomizePanel.jsx:252)
+     rewrites --k-grad from the user's accent at runtime and can promise no
+     contrast floor, so a gradient that has to stay legible cannot derive from
+     the accent trio — which is also why this is declared here, in the palette,
+     rather than next to --k-grad with the trio it does not follow.
+
+     ⚠ NO CONSUMER YET. Searched: nothing paints this, and nothing should be
+     retrofitted onto it — every surface currently carrying --on-primary text is
+     a control (a segment pill, a picker day cell, a toast action), and a 135°
+     three-stop gradient on a 24px cell reads as a bug. Its intended consumer is
+     the Today hero strip, which is NOT built. Until that lands this is a
+     declared-but-dead token, the same shape of defect as `ixFadeUp` having zero
+     call sites (editorial.css, "the list stagger") — and no gate catches it,
+     because check-tokens only fails a token that is REFERENCED and undeclared,
+     or declared in one theme and not the other. Delete it or use it; do not
+     leave it here indefinitely. */
+  --k-grad-surface: linear-gradient(135deg, #01554F, #046B64 55%, #05837C);
 
   --secondary:              #5C6450;
   --secondary-container:    #E1E7D4;
@@ -568,6 +647,13 @@
   --primary-container:    #00514B;
   --on-primary-container: #74F5E8;
   --primary-vivid:        #05b7aa;
+
+  /* The dark half of --k-grad-surface; see the light block for why its stops
+     are literals. Deepened again for dark, where the gradient sits on a near
+     black rather than on cream: white measures 10.60 · 7.86 · 6.12 on these
+     three. check-tokens fails a token declared in only one theme, so this
+     declaration would be required even if the value were identical. */
+  --k-grad-surface: linear-gradient(135deg, #014742, #045C56 55%, #036E68);
 
   --secondary:              #C3CBB0;
   --secondary-container:    #434A36;
@@ -983,7 +1069,11 @@
 
   /* Accent trio — overwritten at runtime by applyPrefs. The retired legacy
      blue #0082c6 is deliberately gone from --k-deep; 01-navigation.md retired
-     that gradient. */
+     that gradient.
+     --k-grad-surface is deliberately NOT one of these. It is the AA-safe
+     gradient for surfaces that carry text, its stops are fixed literals, and
+     it is declared in the light and dark palette blocks (§7 and §8) precisely
+     so applyPrefs cannot reach it. --k-grad itself is unchanged. */
   --k-primary: var(--primary-vivid);
   --k-mid:     var(--primary);
   --k-deep:    var(--primary-hover);
@@ -1622,7 +1712,17 @@ body {
   font-size: 13.5px;
   color: var(--ink);
   outline: none;
-  transition: border-color var(--dur-fast), background var(--dur-fast);
+  /* box-shadow, because the focus RING on this field is a box-shadow — and it
+     is not declared in this file. `.k-input` exists THREE times: here, in
+     kartavaya-design.css (byte-identical, deliberately — see its comment), and
+     an older variant in brand.css. Neither twin's `:focus` sets a box-shadow;
+     brand.css's does, and because the two `:focus` rules do not conflict on
+     that property, the ring leaks in from brand.css while the `transition`
+     comes from whichever file loads last, which is this one. So the ring
+     appeared in one frame while the border eased. Fixing it here fixes it for
+     the 48 files that render the class. */
+  transition: border-color var(--dur-fast), background var(--dur-fast),
+              box-shadow var(--dur-fast);
   font-family: inherit;
 }
 .k-input:focus {

@@ -193,9 +193,61 @@
 }
 .mt__b:hover { color: var(--on-surface); }
 .mt__b.on    { color: var(--on-surface); font-weight: 600; }
-.mt__b.on::after {
-  content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px;
-  height: 2px; border-radius: 1px 1px 0 0; background: var(--primary);
+/* ── The tab indicator — ONE element that travels ─────────────────────────
+   This was `.mt__b.on::after`: a 2px underline drawn inside whichever button
+   carried `.on`. Because each button owns its own box, the underline could not
+   move — it could only vanish from one tab and appear under the next.
+   animations.css §9d says so in as many words, and settled for growing the new
+   one out of its own centre because the alternative "needs a single shared
+   element and a ref per tab, which is JS in ModuleTabs".
+
+   That is now built, so this is the shared element. The button pseudo is gone:
+   two indicators would otherwise paint at once.
+
+   `.mt[role="tablist"]`, not `.mt` — `.mt` collides with boards.css §6 (see the
+   note above), and this file already uses the attribute form for exactly that
+   reason. It supplies the containing block, which is also what makes
+   `offsetLeft` in ModuleTabs measure against this element rather than the page.
+
+   TRANSFORM FOR THE TRAVEL, WIDTH FOR THE SIZE. The travel is the motion the
+   eye follows and it is the one that has to be cheap, so it is a translate and
+   stays on the compositor. Width is transitioned too, because the honest
+   alternative — a 1px bar scaled on X — puts the border-radius through the same
+   scale and turns a 1px corner into a 60px lens at the far end of the strip.
+   One absolutely-positioned 2px bar changing width lays out nothing but itself.
+
+   No `--motion-scale` anywhere here, deliberately. That scalar exists to zero
+   DECORATIVE distance; this distance is the message. Scaled to zero the bar
+   would travel nowhere and sit under the wrong tab. `--ix` still collapses the
+   duration for a reduced-motion user, so it arrives instantly instead. */
+.mt[role="tablist"] { position: relative; }
+.mt__ind {
+  /* Declared here, not left to a fallback at each use. check-tokens fails a
+     `var()` whose only definition is a fallback ("masked by a fallback"), and
+     it is right to: a token that exists only inside the parentheses that use it
+     cannot be found by anyone reading the sheet, and its real value — written
+     from ModuleTabs' layout effect — is invisible to CSS entirely. These three
+     are the element's state BEFORE the strip has been measured, which is the
+     honest initial state: nowhere, no width, not painted. */
+  --ind-x: 0px;
+  --ind-w: 0px;
+  --ind-o: 0;
+
+  position: absolute; left: 0; bottom: -1px;
+  height: 2px; width: var(--ind-w);
+  transform: translateX(var(--ind-x));
+  opacity: var(--ind-o);
+  pointer-events: none;
+  transition: transform var(--dur-base) var(--ease-emph),
+              width     var(--dur-base) var(--ease-emph),
+              opacity   var(--dur-fast) var(--ease-standard);
+}
+/* The paint is a child so the mount animation in animations.css §9d can own
+   `transform` outright. On the same element it would overwrite the translate
+   above and the bar would play its entrance parked at x=0. */
+.mt__ind::after {
+  content: ''; position: absolute; inset: 0;
+  border-radius: 1px 1px 0 0; background: var(--primary);
 }
 /* Count beside a tab. Two deliberate departures from 13 §1's own CSS, and one
    restoration:
@@ -1279,6 +1331,66 @@
 .dchart__h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dchart__err { font-size: 12.5px; color: var(--on-surface-3); }
 
+/* ── Chart fills: the mount animation ────────────────────────────────────────
+   The three primitives below — `Bars`, `Funnel` and `Meters` in
+   pages/dristi/_shared.jsx, which are what every Dristi analytics tab draws
+   with — declared no motion of any kind. Not a broken transition: none at all.
+   Each fill carried a size and nothing else, so it was painted at its final
+   height or width on the first frame and never moved.
+
+   A TRANSITION CANNOT FIX THAT, which is why what follows is an animation.
+   A transition interpolates from an OLD computed value, and on mount there is
+   no old value to leave: React renders the fill with its final `--h`/`--w`
+   already set, the browser takes that as the element's first computed style,
+   nothing changed, so nothing transitions. Only an ANIMATION runs on mount.
+   Twenty-four fills elsewhere in this build declare a `width` or `height`
+   transition and are dead on arrival for exactly this reason — what they
+   actually animate is a LATER change of datum, never the first paint.
+
+   The growth is a `transform`, never `width`/`height`. animations.css states
+   that invariant for every keyframe in its registry: the compositor animates a
+   transform with no layout pass, and a Dristi tab can have forty fills growing
+   at once.
+
+   `backwards`, not `forwards`. Backwards is what makes the stagger honest: a
+   fill whose delay has not elapsed holds the `from` keyframe — scale 0 —
+   instead of sitting at full size and then snapping back to nothing when its
+   turn arrives. Forwards is not wanted on top of it: the implicit `to` is the
+   element's own `transform: none`, so letting the animation stop leaves no
+   standing transform, and therefore no standing stacking context, on forty
+   elements that do not need one.
+
+   The names are `dChart*` and deliberately NOT `dm*`. Keyframes are GLOBAL and
+   the LAST declaration wins — animations.css's header records the run where
+   re-declaring `@keyframes fadeIn` and `pulse` silently took both names off
+   index.css for the whole application — and that same header states the `dm*`
+   registry is declared ONCE, in components.css. Adding two members to it from
+   here would give that registry a second home, which is the same defect one
+   step earlier. Both names were checked against every `@keyframes` in `src/`
+   before being chosen. */
+:root {
+  /* The stagger step. animations.css's reconciled table specifies a list
+     stagger as "--dur-base, 38ms step, capped at 11 steps (418ms <
+     --dur-xslow)"; this is that 38ms, with a name. The cap is applied at the
+     call sites with `min()` and it is not cosmetic — a forty-bar chart would
+     otherwise still be drawing 1.5s after it mounted.
+
+     It is a TOKEN rather than a literal in the calc() below because it has to
+     be: check-motion.mjs rule 2b gates an off-ladder duration written inside
+     a `calc(… var(--ix) …)` exactly as hard as a bare one, and 38ms is not
+     one of the five rungs (90/140/220/360/520ms). That script's header names
+     a custom property as the one door left open for a duration the ramp
+     cannot express — the door `--dur-shake` and `--dur-dot-stagger` use.
+
+     Fixed here and multiplied by `--ix` at the call sites, like
+     `--dur-dot-stagger`: this is a delay, so it has to collapse under reduced
+     motion, and the multiplication is what collapses it. */
+}
+/* A bar grows out of the axis it is measured against, so the origin is the
+   bottom edge — the default `center` would grow it from the middle in both
+   directions, which reads as a wipe rather than a bar being drawn. */
+/* A funnel stage and a meter are both read left-to-right from a fixed start. */
+
 /* ── Bars ───────────────────────────────────────────────────────────────── */
 .dbars { display: flex; align-items: flex-end; gap: 6px; }
 .dbars__c {
@@ -1299,6 +1411,14 @@
 .dbars__b {
   width: 100%; height: var(--h, 0%); min-height: 2px;
   background: var(--primary-container); border-radius: 3px 3px 0 0;
+  /* Grows vertically out of the axis. See the mount-animation note above this
+     section for why a `transition: height` here would never have run. */
+  transform-origin: bottom;
+  animation: ixGrowY var(--dur-slow) var(--ease-fill) backwards;
+  /* `--i` is the bar's index, set as a bare unitless number from _shared.jsx
+     because it is a multiplier: `3%` here makes the declaration invalid, it is
+     dropped, and every bar starts at once. */
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
 }
 /* The most recent period is the one being asked about. */
 .dbars__b--now { background: var(--primary); }
@@ -1318,7 +1438,15 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .dfun__t { height: 16px; background: var(--s-container); border-radius: 3px; overflow: hidden; }
-.dfun__f { display: block; height: 100%; width: var(--w, 0%); background: var(--primary); border-radius: 3px; }
+/* Expanded from a one-liner to carry the mount animation — see the note above
+   the Bars section. */
+.dfun__f {
+  display: block; height: 100%; width: var(--w, 0%);
+  background: var(--primary); border-radius: 3px;
+  transform-origin: left;
+  animation: ixGrowX var(--dur-slow) var(--ease-fill) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
+}
 .dfun__v {
   font-size: 12px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   color: var(--on-surface); white-space: nowrap;
@@ -1339,11 +1467,29 @@
 .dmet__f {
   display: block; height: 100%; width: var(--w, 0%);
   background: var(--primary); border-radius: var(--r-pill);
+  transform-origin: left;
+  animation: ixGrowX var(--dur-slow) var(--ease-fill) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
 }
 /* Semantic, and never the only signal — the printed figure beside it says the
    same thing in words and numerals. */
 .dmet__f--ok { background: var(--ok); }
 .dmet__f--warn { background: var(--warn); }
+/* Reduced motion — the second line of defence animations.css §9 asks for on
+   a stagger cascade specifically: a cascade must ARRIVE AT ONCE, not arrive
+   quickly. The token arithmetic already does that on its own (at
+   `--ix: .001` the whole 418ms spread is under half a millisecond, and
+   `--dur-slow` with it), so this is the belt to those braces rather than the
+   only guard.
+
+   It sits AFTER all three fills, not beside each one: a media query adds no
+   specificity, so the same block written earlier in the file would simply lose
+   to the base rules. animations.css found that by measurement — naming
+   `.skeleton` from a query above its own declaration left it shimmering at
+   1.7s under an emulated OS reduce. */
+@media (prefers-reduced-motion: reduce) {
+  .dbars__b, .dfun__f, .dmet__f { animation: none; }
+}
 .dmet__v {
   font-size: 11.5px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   color: var(--on-surface-2); white-space: nowrap;

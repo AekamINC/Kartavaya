@@ -136,6 +136,239 @@
 
    The failure this prevents is not subtle: a corner card at 9998 renders on
    top of the command palette and the dialog the user is reading. */
+/* ── `--motion-scale` and the "reduced" setting ───────────────────────────
+   The pair is `--ix` for TIME and `--motion-scale` for DISTANCE, and one
+   preference writes both (CustomizePanel.jsx:319-336):
+
+       full     --ix 1     --motion-scale 1
+       reduced  --ix .5    --motion-scale .5
+       none     --ix .001  --motion-scale 0
+
+   and the OS `prefers-reduced-motion` media query pins them to `.001 / 0`.
+
+   At `none` the distance scalar barely matters: `--ix: .001` makes every
+   duration ~0.2ms, so nothing is seen to move whatever it was going to do.
+   `reduced` is where it matters, and it was inconsistent. Measured across
+   src/styles: 27 moving keyframes consulted `--motion-scale` and 41 did not.
+   The 27 halved their travel AND their duration — gentler, which is the point.
+   The 41 kept their full travel and halved only the time, so a user who asked
+   for LESS motion got the same distance covered twice as fast. That is not a
+   smaller version of the animation; it is a more aggressive one.
+
+   25 of the 41 are now on the scalar: the decorative offsets on transient
+   surfaces — modal, popover, tooltip, toast (all six directions), command
+   palette (both), customise panel, project switcher, onboarding slides, admin
+   slide-over, skill dock, Sahayak, Sanvaad. Scale factors are written as
+   `calc(1 - .04 * var(--motion-scale, 1))` so they resolve to `scale(1)` at
+   zero, and the two keyframes that CENTRE with a translate keep their -50%
+   outside the scaled part — scaling a centring offset moves the dialog, it
+   does not calm it.
+
+   THE REST ARE DELIBERATE, and they are not oversights:
+     · Spinners (`dmSpin`, `auSpin`, `spin`, `gr-spin`, `k-cmdk-spin-v2`) —
+       the rotation is the entire content; overlay-motion.test.jsx carries an
+       explicit spinner exemption.
+     · Edge-anchored travel (`dmSheetIn`/`dmSheetOut`, `translateY(100%)`) —
+       a sheet arrives from the bottom EDGE. Halving that starts it already
+       half-open, which breaks the affordance rather than softening it. This
+       is the same argument `.mt__ind` makes in module.css: when the distance
+       is the message, the scalar must not touch it. It also means an
+       edge-anchored surface has no "gentler" mode, only a faster one — worth
+       knowing, and a design decision rather than a bug to fix here.
+     · Infinite sweeps (`ixShimmer`, `prgSlide`, `lotus-turn`) — a scaled
+       period becomes a strobe, and these are stopped outright under reduce.
+     · The growth primitives (`ixGrowX`/`ixGrowY`) and `vgwSparkDot` — a bar
+       arriving at its value IS the data, and each is switched off by its own
+       reduced-motion block rather than shortened. */
+
+/* ── The list-stagger step — ONE declaration ──────────────────────────────
+   The table above ("list stagger") fixes the step at 38ms and the cap at 11,
+   which together keep the last tile inside --dur-xslow: 11 x 38 = 418ms < 520.
+   It is declared here because this file owns that table.
+
+   It is declared ONCE because it was briefly declared three times. The chart
+   mount animations landed it as `--d-stagger-step` on a mid-file :root in
+   module.css, the stat-tile stagger as a rule-local `--k-stagger-step` in
+   editorial.css, and the Today pass was about to add a third — three names for
+   one constant, which is how a "38ms step" becomes a 38/40/42ms step nobody
+   notices. Consumers reference `var(--stagger-step)`; nothing redeclares it.
+
+   Not multiplied by --ix here. The consumers do that at the call site, because
+   a delay must scale with the duration ladder and a token that already carried
+   --ix could not be used anywhere a raw offset is wanted. */
+:root { --stagger-step: 38ms; }
+
+/* ── The plain fade, under ONE name ───────────────────────────────────────
+   `from { opacity: 0 }` and nothing else. It is the most reachable-for
+   animation in the product, which is exactly why it needs a home: it existed
+   as `k-cmdk-fadeIn` in editorial.css, and the moment two more consumers wanted
+   a fade (the sparkline's area, the Pahchan camera preview) the obvious move
+   was to declare it again under a local name each time.
+
+   overlay-motion.test.jsx forbids that — "no two keyframe names describe the
+   same animation" — and it is right to. `@keyframes` is ONE global namespace:
+   three names for one body means three chances to change one of them and
+   silently diverge the fade in a third of the product. The test caught all
+   three the first time they existed.
+
+   So it lives here with `ixFadeUp`, `ixTabInd` and `ixflash`, and the command
+   palette references it like everyone else. Nothing about it is palette- or
+   overlay-specific; the name should never have been. */
+@keyframes ixFadeIn { from { opacity: 0; } }
+
+/* ── The two growth primitives ────────────────────────────────────────────
+   A bar arriving at its value. These began as `dChartGrowY`/`dChartGrowX` in
+   module.css for the three Dristi chart fills; they are here now, under the
+   shared `ix` prefix, because the sweep below found nineteen more fills across
+   thirteen stylesheets that need exactly the same two frames. A primitive used
+   by thirteen files does not belong to one of them.
+
+   Scale, not width/height. A bar sized by `width: 62%` cannot be animated to
+   that width on mount — there is no previous value to interpolate FROM, which
+   is the whole finding this section acts on — and animating the real width
+   would lay out its parent on every frame. scaleX/scaleY are composited and
+   touch nothing else.
+
+   The from-state only. The to-state is deliberately absent so the animation
+   ends at whatever the element already computes, whether that is scale(1) or a
+   transform some other rule set; `backwards` at the call site holds the
+   from-state through the stagger delay so nothing paints full-size first. */
+@keyframes ixGrowY { from { transform: scaleY(0); } }
+@keyframes ixGrowX { from { transform: scaleX(0); } }
+
+/* ── The sweep: every bar fill that never animated on arrival ─────────────
+   FOUND BY MEASUREMENT, not by reading. `transition: width` and
+   `transition: height` appear on 26 rules across the stylesheets. A transition
+   needs a PREVIOUS value to interpolate from, and on mount there is none — the
+   element's first computed style is already `width: 62%` — so every one of
+   these bars painted at full size on frame one and the carefully chosen
+   `--dur-xslow var(--ease-fill)` beside it had never once run. It runs only
+   when the value CHANGES later, which for most of these is never: a stat bar,
+   a credit meter and a workload row are each written once, from the fetch that
+   drew them.
+
+   The transitions are all kept. They are correct for the later change; what
+   was missing is the arrival. An animation and a transition on the same
+   element do not fight — the animation runs on mount, the transition takes
+   over afterwards — and they touch different properties here anyway
+   (transform vs width).
+
+   ── THE 26, ACCOUNTED FOR ──
+   FOUR are not fills and are deliberately untouched. Each is a real state
+   change with a real previous value, which is exactly when a transition is the
+   right tool:
+     · `.k-side` (editorial.css:419)      — the sidebar collapsing, width
+     · `.tabs__ind` (components.css:324)  — the OTHER tab strip's indicator,
+       which already slides on `left`/`width`; `.mt__ind` in module.css is the
+       one that could not, and got its own element this pass
+     · the mobile sheet (this file, §10)  — already carries `dmSheetIn`
+     · `.dr` under a media query (drawer.css:701) — the drawer's own height
+
+   SIX are dead. Every one is a bar fill with motion written on it, rendered by
+   nothing, and already held in scripts/orphan-selectors-baseline.json:
+     `.k-tbar__fill` · `.k-bar__col` · `.k-onboard__bar-fill`'s neighbours
+     `.k-stat__bar-fill` and `.k-projcard__progress-fill` — both declared TWICE,
+     in kartavaya-design.css AND editorial.css — plus `.k-progress-fill`
+     (brand.css) and `.rep-bar__fill` (reports.css, whose panel was retired).
+   They get NOTHING. Animating a rule no JSX renders is the `ixFadeUp` defect
+   this file already carries a section about; the fix for these is deletion, and
+   the baseline's own note says so ("Shrink this file; do not grow it").
+
+   The remaining SIXTEEN declaration sites are the thirteen live selectors
+   below. Every one was grepped for in the JSX before it was added here.
+   (That sentence originally named the glob it was grepped with, and the glob
+   contains a star followed by a slash, which ended this comment eighty lines
+   early and made the whole block unparseable. check-css-parses caught it and
+   names this exact cause in its failure message.) */
+
+/* Vertical: bars in a column chart, anchored on the axis. */
+:is(.anx-duo__b, .trp-daily__bar) {
+  transform-origin: bottom;
+  animation: ixGrowY var(--dur-slow) var(--ease-fill) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
+}
+
+/* Horizontal: meters, progress tracks and workload rows. No stagger — these
+   are single figures, not series, and a lone bar has nothing to stagger
+   against. The two that ARE series are handled below. */
+:is(
+  .anx-age__f,          /* analytics.css  — ageing buckets   */
+  .bl__mtr-f,           /* billing.css    — plan meter       */
+  .wl__fill,            /* boards.css     — workload row     */
+  .prg__f,              /* components.css — generic progress */
+  .k-onboard__bar-fill, /* editorial.css  — onboarding bar   */
+  .hb-meter__f,         /* hub.css        — credit meter     */
+  .vk-tg__fill,         /* module.css     — sales target     */
+  .omtr__f,             /* org.css        — credit meter     */
+  .trp-mem__fill,       /* reports.css    — member hours     */
+  .prj-bin__fill        /* workflow.css   — project bin      */
+) {
+  transform-origin: left;
+  animation: ixGrowX var(--dur-slow) var(--ease-fill) backwards;
+}
+
+/* Kept out of the list above because `:is()` takes the specificity of its most
+   specific argument: this one is (0,1,1) and would have raised all ten to it. */
+.dr__st-bar i {
+  transform-origin: left;
+  animation: ixGrowX var(--dur-slow) var(--ease-fill) backwards;
+}
+
+/* ── The stagger index ladder — ONE declaration for the whole product ─────
+   `--i` is the step multiplier every staggered animation reads
+   (`calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix))`). It is set
+   from CSS rather than drilled through JSX because these children are always
+   siblings, so :nth-child already knows the index — and because an inline
+   `style={{'--i': n}}` still beats this, so a component that does pass the prop
+   keeps winning. `.k-cash__col` is exactly that case and is deliberately absent
+   from the list below.
+
+   ONE ladder, because there were briefly three: `.k-stats > .k-stat` in
+   editorial.css, `.k-today .k-approvals__row` in today.css, and the two series
+   charts here — three copies of the same eleven rules, which is how the cap
+   ends up different in one of them. Adding the marketplace grid would have made
+   four. A container joins by adding its name here.
+
+   Eleven rungs because the delay is capped at eleven steps anyway; a twelfth
+   child inherits `--i: 0` and arrives with the first, which is degraded rather
+   than broken.
+
+   `> :nth-child()`, not `> .specific-child`: the property is inert on an
+   element that never reads it, and naming the child class would mean editing
+   two selectors every time a container joins. */
+/* The container list is repeated on every rung, and that is not an oversight
+   to tidy up. Written once as an `:is(...)` followed by eleven indented
+   `> :nth-child(n)` blocks it LOOKED like a selector list and was not: the
+   first rung joined the `:is()`, and the other ten became separate rules whose
+   selector begins with a combinator. Those match nothing. Nothing caught it —
+   `> :nth-child(3) { --i: 2 }` is syntactically valid CSS, so check-css-parses
+   passes, and the only symptom was a marketplace grid where card 2 was late by
+   38ms and cards 3-12 arrived with card 1. Found by reading computed
+   `animation-delay` in a browser, not by reading the file.
+
+   Containers: .k-stats (stat tiles) · .k-approvals (Today's approvals rows) ·
+   .mkt-grid (skills marketplace) · .anx-duo (Dristi invoiced-vs-collected) ·
+   .trp-daily (TimeReport's daily columns). */
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(2)  { --i: 1; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(3)  { --i: 2; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(4)  { --i: 3; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(5)  { --i: 4; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(6)  { --i: 5; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(7)  { --i: 6; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(8)  { --i: 7; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(9)  { --i: 8; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(10) { --i: 9; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(11) { --i: 10; }
+:is(.k-stats, .k-approvals, .mkt-grid, .anx-duo, .trp-daily) > :nth-child(12) { --i: 11; }
+
+/* After the rules, not before: a media query adds no specificity. */
+@media (prefers-reduced-motion: reduce) {
+  .anx-duo__b, .trp-daily__bar,
+  .anx-age__f, .bl__mtr-f, .wl__fill, .prg__f, .k-onboard__bar-fill,
+  .hb-meter__f, .vk-tg__fill, .omtr__f, .trp-mem__fill, .prj-bin__fill,
+  .dr__st-bar i { animation: none; }
+}
+
 :root {
   --z-drawer-scrim: 199;
   --z-drawer:       200;
@@ -259,13 +492,71 @@
   transition: opacity var(--dur-fast) var(--ease-standard);
 }
 
-/* The rollback tint IxViews 10.3 specifies (`--danger-container` held for 1.6s
-   after a failed write) was declared here as `.ix-rollback` and applied
-   nowhere, so no failed write has ever tinted anything. Deleted rather than
-   kept as a promise: the class is the easy half, and the half that makes it
-   true — a JS timer holding the tint for a READING duration that must NOT be
-   scaled by `--ix` — belongs with whichever write path claims it. Reported as
-   not-done rather than left standing as evidence of a feature. */
+/* ── The rollback tint — IxViews 10.3 ─────────────────────────────────────
+   `--danger-container` held for 1.6s after a failed write. This was declared
+   here once before, applied NOWHERE, and deleted rather than kept as a promise:
+   "the class is the easy half, and the half that makes it true — a JS timer
+   holding the tint for a READING duration that must NOT be scaled by `--ix` —
+   belongs with whichever write path claims it."
+
+   A write path has now claimed it. `pages/graha/KanbanTab.jsx` moves a deal
+   optimistically, and its `catch` already did two of the three things a failed
+   write owes the user: a toast, and `setKanban(snapshot)` to put the card back.
+   The third was missing — the card slid back in silence, and the only link
+   between the card that moved and the toast in the corner was the user's
+   memory. `markTransient(setRolledBackIds, id, 1600)` supplies the timer, using
+   the same mechanism that already drives `.ix-pending` and the settle flash.
+
+   ── WHY AN OVERLAY AND NOT A `background` ──
+   Because a `background` here would be silent, which is the failure mode this
+   file has now documented three times. `.ix-rollback` and `.gr__kbcard` are
+   BOTH (0,1,0), and index.css imports graha.css (line 31) AFTER animations.css
+   (line 21) — so source order hands the card's own `background: var(--bg)` the
+   win and the tint never paints. Not deduced: the same mechanism is what forced
+   the `.skeleton` stop to be repeated at the foot of §10, and it is what §9d
+   had to reason about for the tab indicator before that selector was replaced.
+   An `::after` at (0,1,1) is contested by nothing, and it is
+   what lets this stay a BARE utility — it composites over whatever the host
+   paints, so it works on a row, a cell or a chip without knowing any of them.
+
+   `position: relative` is required for `inset: 0` to mean the host. The one
+   consumer, `.gr__kbcard`, is unpositioned (graha.css:361), so this supplies
+   the containing block rather than overriding one. A consumer that is itself
+   absolutely positioned already provides it and is unaffected; one that is
+   positioned by an INLINE style would beat this rule, which is true of the
+   dragging card — but a rollback only ever runs after the drag has ended.
+
+   ── WHY THE 1.6s DOES NOT SCALE ──
+   It is a reading duration, not a movement. `--ix` compresses motion so the
+   product feels quicker; compressing this would mean the failure notice
+   disappears before it is read, which is the opposite of what the setting is
+   for. So `--dur-rollback` is a fixed token and is deliberately absent from
+   the ladder. What IS animated is opacity only — `.ix-pending` makes the same
+   argument one block up ("opacity is not motion") — so there is nothing here a
+   reduced-motion user needs stopped.
+
+   Base opacity 0 with no `forwards`: if the JS timer and the animation ever
+   disagree, the overlay fails to INVISIBLE rather than to a stuck red card. */
+:root { --dur-rollback: 1.6s; }
+
+.ix-rollback { position: relative; }
+.ix-rollback::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--danger-container);
+  box-shadow: inset 0 0 0 1px var(--danger);
+  opacity: 0;
+  pointer-events: none;
+  animation: ixRollback var(--dur-rollback) var(--ease-standard);
+}
+@keyframes ixRollback {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* ── 9c · Tab panel entrance ──────────────────────────────────────────────
    Reference `motion.css` `.dm-tabs__p` — `@keyframes dmPanel { from { opacity:
@@ -288,37 +579,43 @@
 .ix-panel { animation: ixPanelIn var(--dur-base) var(--ease-emph) backwards; }
 
 /* ── 9d · Tab indicator ───────────────────────────────────────────────────
-   `.mt__b.on::after` (module.css:141) is the 2px underline on the selected
-   module tab. Measured before this rule: `animation-name: none`,
-   `transition-duration: 0s` — the underline teleports between tabs.
+   This section used to say: "The reference slides ONE indicator
+   (`.dm-tabs__ind`, `transition: left --dur-base --ease-emph, width --dur-base
+   --ease-emph`). That needs a single shared element and a ref per tab, which is
+   JS in `ModuleTabs` — a component three other module families share and a
+   sibling owns. So this is the CSS-reachable half."
 
-   The reference slides ONE indicator (`.dm-tabs__ind`, `transition: left
-   --dur-base --ease-emph, width --dur-base --ease-emph`). That needs a single
-   shared element and a ref per tab, which is JS in `ModuleTabs` — a component
-   three other module families share and a sibling owns. So this is the
-   CSS-reachable half: the underline on the newly-selected tab grows out from
-   its own centre. It restarts on every tab change for free, because `.on` moves
-   to a different button and that button's `::after` is a brand new box.
+   The JS half is now written. `ModuleTabs` renders one `.mt__ind` and measures
+   the selected tab with `offsetLeft`/`offsetWidth` in a layout effect, so the
+   bar SLIDES between tabs instead of teleporting. The travel itself is a
+   transition and lives with the element, in module.css.
 
-   ── ON WHY THIS RULE CAN LIVE HERE AT ALL ──
-   `.mt__b.on::after` is declared in module.css. index.css imports module.css
-   (line 10) BEFORE animations.css (line 12), and the two selectors have equal
-   specificity, so source order decides and this file wins. That is the same
-   mechanism §9 documents for `.skeleton` — and it cuts the other way there,
-   which is why that stop had to be repeated at the foot of §10. Verified by
-   measurement, not by reading: `animation-name` on `.mt__b.on::after` resolves
-   to `ixTabInd` with this rule present and to `none` without it.
+   What is left here is the one thing a transition cannot do: the entrance. A
+   transition needs a previous value, and on mount there is none — the same
+   reason the chart fills in module.css had to be animations. So `ixTabInd`
+   survives, retargeted from `.mt__b.on::after` (which no longer exists) to the
+   indicator's own paint layer, and now runs ONCE when the strip appears rather
+   than restarting on every tab change.
 
-   If module.css ever moves after animations.css in index.css, this rule goes
-   silent and the underline snaps again. It will not throw; it will just stop.
+   It is on `.mt__ind::after` and not `.mt__ind` because the parent's transform
+   carries the travel; an animation on the same element would win over it and
+   play the entrance at x=0.
+
+   The old note here explained at length why this rule could live in this file
+   at all — `.mt__b.on::after` was declared in module.css, imported BEFORE this
+   file, and equal specificity meant source order handed the win here. That
+   hazard is gone with the selector: `.mt__ind::after` is declared in module.css
+   and nothing in this file competes with it. `@keyframes` lookup is by name at
+   computed-value time and does not depend on import order, which is why the
+   keyframes can stay here with the rest of the motion table.
 
    `transform-origin: center` and scaleX only — no width animation, which would
-   relayout the button on every frame. */
+   relayout on every frame. */
 @keyframes ixTabInd {
   from { transform: scaleX(calc(1 - .999 * var(--motion-scale, 1))); opacity: 0; }
   to   { transform: scaleX(1); opacity: 1; }
 }
-.mt__b.on::after {
+.mt__ind::after {
   transform-origin: center;
   animation: ixTabInd var(--dur-base) var(--ease-emph) backwards;
 }
@@ -459,9 +756,19 @@
 .bsh[data-dragging] { transition: none; }
 .bsh.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) forwards; pointer-events: none; }
 
+/* The sheet's scrim only dimmed. A bottom sheet covers the lower half of a
+   phone screen and leaves the list above it fully sharp, so the dim read as a
+   tint over live content rather than as a layer in front of it. `--scrim-blur`
+   is declared once in components.css — with the `prefers-reduced-transparency`
+   opt-out — and is only referenced here, the same way this file references
+   `--dur-*` and the `dm*` keyframes rather than restating them. `-webkit-` is
+   required: Safari ships the prefixed property only, and this is the surface
+   most likely to be seen on it. No motion and no keyframe is involved. */
 .bsh__scrim {
   position: fixed; inset: 0; z-index: var(--z-sheet-scrim);
   background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 .bsh__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
@@ -508,8 +815,49 @@
 /* Was a self-contained gradient block animating `background-position`, with a
    hardcoded `rgba(0,0,0,.12)` shadow on `.hover-lift` beside it. Both are gone:
    colours come from tokens and the sweep is a transform. */
-.skeleton            { position: relative; overflow: hidden; display: block; border-radius: var(--r-sm); background: var(--surface-dim); }
-.skeleton::after     { content: ''; position: absolute; inset: 0; opacity: var(--motion-scale, 1);
+/* ── ixShimmer, which had never existed ───────────────────────────────────
+   `.skeleton::after` named this keyframe and no `@keyframes ixShimmer` was ever
+   written. CSS does not warn on that, does not fall back and does not drop the
+   rest of the declaration — the element simply holds its start state forever.
+   So the overlay sat still: a fixed diagonal highlight parked over the middle
+   of every skeleton in the product, on 28 files, since the day the rule was
+   written. It reads as a skeleton that is loading, which is why nobody caught
+   it by looking. check-orphan-keyframes found it on its first clean run and its
+   baseline holds it as "the expensive one … hold it only long enough to fix
+   it". This is that fix.
+
+   A TRANSLATE, because the comment above already promised one ("the sweep is a
+   transform") and because that promise is the reason `.ix-skeleton` exists: the
+   Pahchan review screen paints three dozen of these at once and says so at
+   Register.jsx:166. `background-position`, which `k-shimmer` in editorial.css
+   uses, repaints the gradient every frame; a transform does not.
+
+   The overlay is `inset: 0`, so it is exactly the host's width: -100% parks it
+   entirely off the left edge and +100% entirely off the right, and `.skeleton`
+   is `overflow: hidden`, so only the crossing is seen.
+
+   1.7s is NOT on the `--ix` ladder and must not be. An infinite animation whose
+   period scales becomes a strobe at `--ix: 4`; the reduced-motion stop at the
+   foot of this section is what turns it off, and `opacity: var(--motion-scale)`
+   collapses the highlight independently. check-motion permits the literal
+   because the value contains `infinite`. */
+@keyframes ixShimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+/* `.ix-skeleton` had NO base rule anywhere — only the reduced-motion stop in
+   §9, which turns off an animation that was never declared for it. Yet
+   EnrollQueue.jsx:74 and Register.jsx:172 render it, and a test asserts three
+   of them per slot. It was the intended primary name (§9 stops `.ix-skeleton`,
+   §10 repeats the stop for the `.skeleton` alias) and it never got an
+   implementation, so those tiles painted as bare boxes. Both names share the
+   rule now, which is what "the one legacy name with consumers" was describing
+   all along. */
+.skeleton,
+.ix-skeleton         { position: relative; overflow: hidden; display: block; border-radius: var(--r-sm); background: var(--surface-dim); }
+.skeleton::after,
+.ix-skeleton::after  { content: ''; position: absolute; inset: 0; opacity: var(--motion-scale, 1);
                        background: linear-gradient(100deg, transparent 12%, var(--surface) 50%, transparent 88%);
                        animation: ixShimmer 1.7s var(--ease-standard) infinite; }
 
@@ -519,6 +867,6 @@
    order. These two are the last declarations of those names in the file, so
    this is the only position from which the reduce stop actually lands. */
 @media (prefers-reduced-motion: reduce) {
-  .skeleton::after { animation: none; opacity: 0; }
+  .skeleton::after, .ix-skeleton::after { animation: none; opacity: 0; }
 }
 

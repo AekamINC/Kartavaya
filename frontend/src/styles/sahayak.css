@@ -60,7 +60,7 @@
 /* ── Answer card ───────────────────────────────────────────────────────── */
 .sh-card { border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--outline-variant)); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-card); overflow: hidden; }
 .sh-card--inline { margin: 6px 8px 12px; animation: shIn var(--dur-base) var(--ease-enter); }
-@keyframes shIn { from { opacity: 0; transform: translateY(-5px) } }
+@keyframes shIn { from { opacity: 0; transform: translateY(calc(-5px * var(--motion-scale, 1))) } }
 /* The prototype writes `var(--on-primary-container, var(--primary-text))`. Both
    are declared in both themes, so the fallback was hiding whether the first one
    existed rather than protecting anything. Dropped — 29 asks for the same on
@@ -598,4 +598,4 @@
 }
 /* 5px and the same easing as `shIn` at the top of this file — the prototype's
    own entrance, turned onto the leading edge. Not a new step. */
-@keyframes shRailIn { from { opacity: 0; transform: translateX(-5px) } }
+@keyframes shRailIn { from { opacity: 0; transform: translateX(calc(-5px * var(--motion-scale, 1))) } }

@@ -286,7 +286,15 @@ export function Bars({ items, format = NUM, empty = 'Nothing in this period yet.
           <span className="dbars__t">
             <span
               className={`dbars__b${n === items.length - 1 ? ' dbars__b--now' : ''}`}
-              style={{ '--h': `${pctOf(i.value, max)}%` }}
+              style={{
+                '--h': `${pctOf(i.value, max)}%`,
+                // The stagger index the mount animation in `module.css` multiplies
+                // by a duration, so bar 0 grows first and bar n last. It has to be
+                // the bare number and not a string with units: it is a multiplier
+                // inside a calc(), where `3%` makes the delay declaration invalid,
+                // it is dropped, and every bar starts together.
+                '--i': n,
+              }}
             />
           </span>
           {/* Raw GROUP BY labels arrive as `2026-02` and truncate to "2026…" in
@@ -308,11 +316,13 @@ export function Funnel({ items, format = FMT, empty = 'No deals in the pipeline.
   const max = Math.max(...items.map(i => Number(i.value) || 0), 0);
   return (
     <div className="dfun">
-      {items.map(i => (
+      {items.map((i, n) => (
         <div className="dfun__r" key={i.label}>
           <span className="dfun__l">{i.label}</span>
           <span className="dfun__t">
-            <span className="dfun__f" style={{ '--w': `${pctOf(i.value, max)}%` }} />
+            {/* `--i` is the stagger index, bare number — see the note on the bar
+                fill above for why it must not carry a unit. */}
+            <span className="dfun__f" style={{ '--w': `${pctOf(i.value, max)}%`, '--i': n }} />
           </span>
           <span className="dfun__v">{format(i.value)}</span>
           {i.sub != null && <span className="dfun__n">{i.sub}</span>}
@@ -331,13 +341,17 @@ export function Meters({ items, empty = 'Nothing to compare yet.' }) {
   if (!items?.length) return <p className="dnone">{empty}</p>;
   return (
     <div className="dmet">
-      {items.map(i => (
+      {items.map((i, n) => (
         <div className="dmet__r" key={i.label}>
           <span className="dmet__n" title={i.label}>{i.label}</span>
           <span className="dmet__t">
             <span
               className={`dmet__f${i.tone ? ` dmet__f--${i.tone}` : ''}`}
-              style={{ '--w': `${Math.min(Math.max(Number(i.pct) || 0, 0), 100)}%` }}
+              style={{
+                '--w': `${Math.min(Math.max(Number(i.pct) || 0, 0), 100)}%`,
+                // Stagger index, bare number — see the bar fill above.
+                '--i': n,
+              }}
             />
           </span>
           <span className="dmet__v">{i.value}</span>

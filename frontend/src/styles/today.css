@@ -316,3 +316,52 @@
 }
 .k-today .k-approvals__more { margin-top: var(--sp-3); align-self: flex-start; }
 .k-today .k-approvals__failed { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+
+/* ── Mount motion — the two things on this page that draw themselves ───────
+   Neither of the blocks below existed. This sheet carried ZERO animation and
+   ZERO transition declarations before this change: the cash chart painted
+   twelve stacked columns at full height on frame one, and the approvals list
+   appeared complete. Both are the defect module.css documents at "Chart fills:
+   the mount animation" — a `transition` cannot help here either, because on
+   mount React renders the final inline `height` as the element's FIRST computed
+   style, so nothing has changed and nothing transitions. Only an animation runs
+   on mount.
+
+   The keyframes are the ones already declared for the Dristi primitives
+   (module.css) and the stat row (animations.css). Referenced, not re-declared:
+   `@keyframes` names are global, a second declaration of a name silently wins
+   by source order, and check-orphan-keyframes.mjs now fails a duplicate. */
+
+/* Both halves of a column grow from the bottom, which is where the column is
+   anchored (`justify-content: flex-end`). Inflow sits ABOVE outflow, so its
+   own bottom edge is the join between the two — it grows up out of the outflow
+   rather than up off the axis, and the pair stays welded through the whole
+   animation instead of separating and closing.
+
+   `--i` comes from CashPosition.jsx and is set on the COLUMN, so both children
+   inherit one value and the two halves of a column always move together. */
+.k-today .k-cash__in,
+.k-today .k-cash__out {
+  transform-origin: bottom;
+  animation: ixGrowY var(--dur-slow) var(--ease-fill) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
+}
+
+/* The approvals list. `--i` comes from the shared index ladder in
+   animations.css, which names `.k-approvals` as one of its containers — the
+   rows are siblings, so CSS already knows the index and no prop has to be
+   drilled through the component. ApprovalsCard.jsx:135 renders
+   `rows.slice(0, 4)` with a "See all" link below it, so only the first four
+   rungs of that ladder are ever reached here. */
+.k-today .k-approvals__row {
+  animation: ixFadeUp var(--dur-base) var(--ease-emph) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
+}
+
+/* A media query adds no specificity, so this has to come AFTER the rules it
+   stops — the lesson animations.css §9 records for `.skeleton`. */
+@media (prefers-reduced-motion: reduce) {
+  .k-today .k-cash__in,
+  .k-today .k-cash__out,
+  .k-today .k-approvals__row { animation: none; }
+}

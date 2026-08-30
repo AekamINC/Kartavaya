@@ -184,8 +184,18 @@
    behind it appeared in one frame, so the console's detail panel was the only
    overlay in the build where the two layers did not arrive together.
    `dmFade`/`dmFadeOut` is the same pair as every other scrim (26 §6). */
+/* It also only DIMMED. The build's other translucent surfaces separate
+   themselves from what they cover with a blur — `.dr` (drawer.css:62),
+   `.kap__pop` (appearance.css:57) — and the scrims did not, so the
+   console table behind this panel stayed sharp enough to keep reading past the
+   dim. `--scrim-blur` is declared once in components.css and carries the
+   `prefers-reduced-transparency` opt-out there, so nothing branches here. The
+   `-webkit-` twin is required: Safari still ships the prefixed property only.
+   A scrim carries no text, so this costs nothing in contrast. */
 .aso__scrim {
   position: fixed; inset: 0; z-index: 420; background: var(--scrim); border: 0;
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 .aso__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; }
@@ -204,7 +214,7 @@
    faster than the entrance, per MOTION-SPEC §7.3. */
 .aso.is-closing { animation: dmDrawerOut var(--dur-fast) var(--ease-exit) both; }
 .aso.is-closing, .aso__scrim.is-closing { pointer-events: none; }
-@keyframes admSlideIn { from { transform: translateX(24px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes admSlideIn { from { transform: translateX(calc(24px * var(--motion-scale, 1))); opacity: 0 } to { transform: none; opacity: 1 } }
 
 .aso__head {
   flex: none; display: flex; align-items: flex-start; gap: var(--sp-3);

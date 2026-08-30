@@ -651,6 +651,43 @@
 .ph__clockvideo,
 .ph__clockshot { transform: scaleX(-1); }
 
+/* ── The three phases had no motion between them ──────────────────────────
+   ready -> cam -> done. The well above is shared precisely so the layout does
+   not jump between them, and that was the whole of it: the video appeared in
+   one frame, and the captured still replaced it in one frame. Nothing said a
+   photograph had been TAKEN — the only difference between a live preview and a
+   frozen frame of the same face, on a 1:1 well, is that one of them stopped
+   moving, which a person mid-shift does not notice.
+
+   Neither of these can be a transition. Both elements are mounted by the phase
+   change, so on their first computed style there is no previous value to
+   interpolate from — the same reason the chart fills in module.css had to be
+   animations.
+
+   ⚠ THE MIRROR MUST BE CARRIED THROUGH EVERY KEYFRAME. `transform` is one
+   property: a keyframe that sets `scale()` alone REPLACES `scaleX(-1)` above
+   and the face flips left-to-right for the duration of the animation, landing
+   back the right way round at the end. That is the bug this comment exists to
+   stop, and it is invisible to every gate in the repo. */
+.ph__clockvideo { animation: ixFadeIn var(--dur-base) var(--ease-enter) backwards; }
+/* The shutter settle: the still lands very slightly large and comes to rest.
+   Scale, not a flash — a white frame on a screen somebody is holding at arm's
+   length in a doorway is a startle, and it would fire on every punch of every
+   shift. The overshoot is 3%, on --motion-scale, so Animations = None makes it
+   a clean cross-fade with no movement at all. */
+.ph__clockshot { animation: phShotIn var(--dur-base) var(--ease-emph) backwards; }
+
+@keyframes phShotIn {
+  from {
+    opacity: 0;
+    transform: scaleX(-1) scale(calc(1 + .03 * var(--motion-scale, 1)));
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(-1) scale(1);
+  }
+}
+
 .ph__clockacts {
   display: flex;
   flex-wrap: wrap;

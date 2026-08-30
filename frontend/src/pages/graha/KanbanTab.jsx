@@ -58,6 +58,10 @@ export default function KanbanTab() {
   // cannot resurrect a stale flag.
   const [pendingIds, setPendingIds] = useState(() => new Set());
   const [landedIds, setLandedIds] = useState(() => new Set());
+  // The failed-write tint. 1600ms because it is a READING duration — see the
+  // `.ix-rollback` note in animations.css for why this one is not on the
+  // motion ladder and does not scale with the Animations preference.
+  const [rolledBackIds, setRolledBackIds] = useState(() => new Set());
   const timers = useRef(new Set());
 
   useEffect(() => () => { timers.current.forEach(clearTimeout); timers.current.clear(); }, []);
@@ -132,6 +136,10 @@ export default function KanbanTab() {
     } catch {
       pushToast({ title: 'Could not move deal', type: 'error' });
       if (snapshot) setKanban(snapshot);
+      // The card is now back where it started. Without this it slid back in
+      // silence and the only thing connecting it to the toast in the corner was
+      // the user's memory of which card they had just dragged.
+      markTransient(setRolledBackIds, sid(dealId), 1600);
     } finally {
       setPendingIds(prev => { const n = new Set(prev); n.delete(sid(dealId)); return n; });
     }
@@ -204,6 +212,7 @@ export default function KanbanTab() {
                                 ds.isDragging && 'is-dragging',
                                 pending && 'ix-pending',
                                 landedIds.has(sid(d.id)) && 'ix-landed',
+                                rolledBackIds.has(sid(d.id)) && 'ix-rollback',
                               ].filter(Boolean).join(' ')}
                               // The library writes transform/position here, so its
                               // style object is the ONLY thing left inline — every

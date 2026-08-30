@@ -157,3 +157,101 @@ describe('ModuleTabs · bilingual labels', () => {
     expect($('.mt__hi')).toBeNull();
   });
 });
+
+/**
+ * The sliding indicator.
+ *
+ * Before this, the 2px underline was `.mt__b.on::after` — drawn INSIDE the
+ * selected button. A pseudo-element cannot leave its own box, so the underline
+ * could only disappear from one tab and reappear under the next; animations.css
+ * §9d said so and settled for growing it out of its own centre, noting that a
+ * travelling bar "needs a single shared element and a ref per tab, which is JS
+ * in ModuleTabs".
+ *
+ * jsdom performs no layout, so offsetLeft/offsetWidth are 0 for everything.
+ * These stub them per element, which is enough to prove the half that actually
+ * regresses: that the effect finds the RIGHT tab, writes its geometry, and runs
+ * again when the selection changes. The transition itself is CSS and is asserted
+ * by check-motion, not here.
+ */
+describe('ModuleTabs · the sliding indicator', () => {
+  // Every tab is 100px wide and butted against the last, so tab n starts at
+  // n * 100. Derived from the element's position among its siblings rather than
+  // from read order — the effect reads only the ACTIVE tab, so a counter that
+  // incremented per read would hand whichever tab happened to be selected the
+  // offset 0 and the test would pass on every selection.
+  const geometry = () => {
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', {
+      configurable: true,
+      get() {
+        if (!this.classList?.contains('mt__b')) return 0;
+        const sibs = [...(this.parentElement?.children || [])]
+          .filter(e => e.classList.contains('mt__b'));
+        return Math.max(0, sibs.indexOf(this)) * 100;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get() { return this.classList?.contains('mt__b') ? 100 : 0; },
+    });
+    return () => {
+      delete HTMLElement.prototype.offsetLeft;
+      delete HTMLElement.prototype.offsetWidth;
+    };
+  };
+
+  let restore;
+  beforeEach(() => { restore = geometry(); });
+  afterEach(() => { restore(); });
+
+  const ind = () => $('.mt__ind');
+
+  it('renders exactly one indicator, inside the tablist', () => {
+    mount();
+    expect($$('.mt__ind')).toHaveLength(1);
+    // Inside `.mt`, because that element is the offsetParent the measurements
+    // are expressed against. In `.mt__wrap` the numbers would be off by
+    // whatever the strip is inset by.
+    expect(ind().parentElement.getAttribute('role')).toBe('tablist');
+  });
+
+  it('is hidden from assistive tech and from the pointer', () => {
+    mount();
+    // It carries no text and means nothing to a screen reader — the selected
+    // tab already says so with aria-selected.
+    expect(ind().getAttribute('aria-hidden')).toBe('true');
+    expect(ind().tagName).toBe('SPAN');
+  });
+
+  it('measures the ACTIVE tab, not the first one', () => {
+    // 'deals' is 4th in CRM, so offsetLeft 300 with the stub above.
+    mount('deals');
+    expect(ind().style.getPropertyValue('--ind-x')).toBe('312px');   // 300 + 12
+    expect(ind().style.getPropertyValue('--ind-w')).toBe('76px');    // 100 − 24
+    expect(ind().style.getPropertyValue('--ind-o')).toBe('1');
+  });
+
+  it('moves when the selection changes — the whole point of one shared element', () => {
+    mount('today');                       // 1st → offsetLeft 0
+    expect(ind().style.getPropertyValue('--ind-x')).toBe('12px');
+    mount('contacts');                    // 3rd → offsetLeft 200
+    expect(ind().style.getPropertyValue('--ind-x')).toBe('212px');
+  });
+
+  it('stays hidden when no inline tab is selected', () => {
+    // A tab that exists but sits behind More: it is promoted onto the strip by
+    // the overflow logic, so pick one that is not in the tab set at all.
+    mount('deals', ['clients', 'contacts']);
+    expect(ind().style.getPropertyValue('--ind-o')).toBe('0');
+  });
+
+  it('is not captured by the More button when its menu is open', () => {
+    mount('today');
+    click(more());
+    // `.mt__more` also takes `.on` while open. It lives in `.mt__ovf`, outside
+    // the tablist, so the query the effect runs cannot reach it — the bar must
+    // still be on the selected tab.
+    expect(more().className).toContain('on');
+    expect(ind().style.getPropertyValue('--ind-x')).toBe('12px');
+  });
+});

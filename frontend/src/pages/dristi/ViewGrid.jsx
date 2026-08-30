@@ -102,20 +102,48 @@ function KpiBody({ payload, spark }) {
     <div className="vgw-kpi">
       <div className="vgw-kpi__v">{fmtByUnit(v, payload.unit)}</div>
       {sub && <div className="vgw-kpi__s">{sub}</div>}
-      {showSpark && max > 0 && (
-        <>
-          <div className="vgw-spark" aria-hidden="true">
-            {series.map((r, i) => (
-              <i
-                key={r.period}
-                className={i === series.length - 1 ? 'vgw-spark__b vgw-spark__b--now' : 'vgw-spark__b'}
-                style={{ height: `${Math.max(((Number(r.value) || 0) / max) * 100, 8)}%` }}
-              />
-            ))}
-          </div>
-          <div className="vgw-sparklab">{`last ${series.length} periods`}</div>
-        </>
-      )}
+      {showSpark && max > 0 && (() => {
+        // A sparkline, at last. This block rendered a row of `<i>` elements
+        // with a percentage height — micro-BARS under a class called `spark`.
+        // Bars answer "how big was each period"; a KPI card has already given
+        // the figure and wants the other question, "which way is this going",
+        // which is a line. Twelve 3px columns also read as texture at this size
+        // rather than as a shape.
+        //
+        // Geometry in one place so the SVG and the endpoint dot cannot drift:
+        // the dot is positioned in CSS percentages rather than drawn in the
+        // SVG, because `preserveAspectRatio="none"` is what lets the line
+        // stretch to any card width and it would squash a <circle> into an
+        // ellipse by exactly the same factor.
+        const n = series.length;
+        // x is inset 2 either side so the 1.5px stroke and the dot are not
+        // clipped at the card edge; y from 25 (zero) to 3 (max).
+        const X = (i) => 2 + (i / (n - 1)) * 96;
+        const Y = (v) => 25 - ((Number(v) || 0) / max) * 22;
+        const pts = series.map((r, i) => [X(i), Y(r.value)]);
+        const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+        // The area closes on the ZERO line, not on the box floor, so the fill
+        // means "volume above zero" rather than "distance from the bottom of
+        // whatever this card happens to be".
+        const area = `${line} L${X(n - 1).toFixed(2)} 25 L${X(0).toFixed(2)} 25 Z`;
+        const lastY = Y(series[n - 1].value);
+        return (
+          <>
+            <div className="vgw-spark">
+              <svg className="vgw-spark__svg" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                <path className="vgw-spark__area" d={area} />
+                {/* pathLength normalises the stroke to 1 unit, which is what
+                    lets the draw-on run without measuring the path in JS. */}
+                <path className="vgw-spark__line" d={line} pathLength="1" vectorEffect="non-scaling-stroke" />
+              </svg>
+              {/* The latest period, which is the one the reader is being asked
+                  to react to — the same thing `--now` marked on the old bars. */}
+              <i className="vgw-spark__dot" style={{ bottom: `${(((28 - lastY) / 28) * 100).toFixed(2)}%` }} />
+            </div>
+            <div className="vgw-sparklab">{`last ${n} periods`}</div>
+          </>
+        );
+      })()}
     </div>
   );
 }

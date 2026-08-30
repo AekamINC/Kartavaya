@@ -540,16 +540,37 @@
 .ob__st.done .ob__n { background: var(--ok); color: var(--ok-container); }
 .ob__lb { font-size: 12px; color: var(--on-surface-3); }
 .ob__st.on .ob__lb { color: var(--on-surface); font-weight: 600; }
-/* The connector transitions on the SAME --dur-base ladder as .ob__n above it.
-   Measured before this line existed: completing a step faded the number badge to
-   green over 220ms while the rail beside it snapped instantly (transition-duration
-   0s), so a single progress indicator moved at two different speeds. Colour only —
-   `all` would catch flex-basis and animate the rail re-measuring itself. */
+/* The connector runs on the SAME --dur-base ladder as .ob__n above it.
+   Measured before that was true: completing a step faded the number badge to
+   green over 220ms while the rail beside it snapped instantly
+   (transition-duration 0s), so a single progress indicator moved at two
+   different speeds.
+
+   It now FILLS rather than flipping. A connector that changes colour all at
+   once says "this state is different"; a connector that fills from the step you
+   just finished toward the one you are going to says "you moved", which is the
+   only thing a progress rail is for. It is also the direction of travel — the
+   green grows the same way the user is going.
+
+   A scaled pseudo, not an animated `width`: the rail is a flex row and the
+   connectors are `flex: 1`, so animating width would make every step in the
+   rail re-measure on each frame — the exact hazard the old comment avoided by
+   restricting the transition to colour. `transform-origin: left` on an inset
+   overlay costs one composited layer and moves nothing else.
+
+   `overflow: hidden` is not needed and is deliberately absent: the pseudo is
+   `inset: 0`, so at scaleX(0) it has no area to spill. */
 .ob__line {
+  position: relative;
   flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px;
-  transition: background-color var(--dur-base) var(--ease-standard);
 }
-.ob__st.done + .ob__line { background: var(--ok); }
+.ob__line::after {
+  content: ''; position: absolute; inset: 0;
+  background: var(--ok);
+  transform: scaleX(0); transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-fill);
+}
+.ob__st.done + .ob__line::after { transform: scaleX(1); }
 /* 12 §1 collapses the rail to numbered dots and keeps only the current label,
    because "five labels on a 393px rail truncate to nonsense". Two further
    clamps, because the dots alone still did not fit: with 26px numbers and

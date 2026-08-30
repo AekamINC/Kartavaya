@@ -369,12 +369,53 @@
 .vgw-kpi__s { font-size: 12px; color: var(--on-surface-3); margin-top: 2px; }
 
 /* The earned sparkline on a roomy KPI — the run's own period rows. */
-.vgw-spark { display: flex; gap: 2px; height: 28px; align-items: flex-end; margin-top: 8px; }
-.vgw-spark__b {
-  flex: 1; display: block; min-height: 2px;
-  background: var(--primary-container); border-radius: 2px;
+/* ── The KPI sparkline ────────────────────────────────────────────────────
+   Was a flex row of `.vgw-spark__b` bars — micro-columns under a class named
+   `spark`. See the note in ViewGrid.jsx for why a KPI card wants a line.
+
+   `preserveAspectRatio="none"` is what makes one viewBox fit any card width.
+   The cost is that everything in the SVG is scaled by a different factor on
+   each axis, which is handled twice below: the stroke keeps its width through
+   `vector-effect`, and the endpoint is not in the SVG at all. */
+.vgw-spark { position: relative; height: 28px; margin-top: 8px; }
+.vgw-spark__svg { display: block; width: 100%; height: 100%; }
+.vgw-spark__area {
+  fill: var(--primary);
+  opacity: .14;
+  animation: ixFadeIn var(--dur-slow) var(--ease-standard) backwards;
 }
-.vgw-spark__b--now { background: var(--primary); }
+.vgw-spark__line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  /* pathLength="1" on the element normalises the geometry, so 1 unit is the
+     whole path no matter how many periods it has or how wide the card is. */
+  stroke-dasharray: 1;
+  animation: vgwSparkDraw var(--dur-xslow) var(--ease-fill) backwards;
+}
+/* An HTML element, not an SVG <circle>: the non-uniform scale above would draw
+   it as an ellipse, and the distortion would change with the card width. Its
+   `bottom` is set inline from the same Y() the path uses. `right` is fixed
+   because the last point is always the last point. */
+.vgw-spark__dot {
+  position: absolute;
+  right: 2%;
+  width: 5px; height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--primary);
+  /* A ring in the card's own colour, so the dot stays legible where it sits on
+     top of the area fill. */
+  box-shadow: 0 0 0 2px var(--surface);
+  transform: translate(50%, 50%);
+  animation: vgwSparkDot var(--dur-base) var(--ease-emph) backwards;
+  /* Held back until the line has drawn most of the way there — otherwise the
+     endpoint marks a place the line has not reached yet. */
+  animation-delay: calc(var(--dur-slow) * var(--ix));
+}
+@keyframes vgwSparkDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes vgwSparkDot  { from { opacity: 0; transform: translate(50%, 50%) scale(0); } }
 .vgw-sparklab { font-size: 10.5px; color: var(--on-surface-3); margin-top: 2px; }
 
 /* The trend stretches to its card: the track absorbs the height, so ANY
@@ -443,6 +484,13 @@
   .vgw, .anx-card, .vgw-trend__b, .vgw-hbars__f, .anx-duo__b, .anx-age__f {
     transition: none;
   }
+  /* The sparkline's three. A draw-on is movement, not just a fade, so it is
+     stopped outright rather than shortened — and the line must still be
+     VISIBLE, which is why `stroke-dashoffset` is reset here: `animation: none`
+     alone would leave the base `stroke-dasharray: 1` with the default offset
+     and the path would be drawn but blank. */
+  .vgw-spark__area, .vgw-spark__line, .vgw-spark__dot { animation: none; }
+  .vgw-spark__line { stroke-dashoffset: 0; }
 }
 
 .vgw-tools { display: inline-flex; gap: 4px; margin-left: auto; }

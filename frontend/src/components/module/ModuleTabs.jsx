@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TAB_HI, tabEn } from './tabLabels';
 import { Secondary } from '../Bilingual';
 
@@ -106,6 +106,10 @@ export default function ModuleTabs({
    * ROTATION: the same tablet turning landscape to portrait loses ~360px of
    * strip, and the count has to follow without a reload.
    */
+  // ── The sliding indicator ────────────────────────────────────────────────
+  // The CSS half is `.mt__ind` in module.css; animations.css §9d explains why
+  // the entrance stays an animation while the travel is a transition.
+  const indRef = useRef(null);
   const [fits, setFits] = useState(max);
   useEffect(() => {
     const el = listRef.current;
@@ -227,10 +231,51 @@ export default function ModuleTabs({
     );
   };
 
+  // useLayoutEffect, not useEffect: this runs after the DOM is updated but
+  // BEFORE the browser paints, so the bar is never seen at its previous tab —
+  // or, on the first render, at x=0 — for a frame.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const ind = indRef.current;
+    if (!list || !ind) return undefined;
+
+    const place = () => {
+      // Scoped to the tablist on purpose. The overflow "More" button also takes
+      // `.on` (when its menu is open) and would otherwise capture the bar, but
+      // it lives in `.mt__ovf`, outside this element.
+      const active = list.querySelector('.mt__b.on');
+      if (!active) { ind.style.setProperty('--ind-o', '0'); return; }
+      // offsetLeft/offsetWidth, not getBoundingClientRect: `.mt[role=tablist]`
+      // is the offsetParent (module.css gives it `position: relative`), so
+      // these are already in the indicator's own coordinate space and need no
+      // correction for the list's border, padding or page scroll.
+      ind.style.setProperty('--ind-x', `${active.offsetLeft + 12}px`);
+      // The 12px inset each side is what the old per-button underline used
+      // (`left: 12px; right: 12px`), so the bar keeps its exact former width.
+      ind.style.setProperty('--ind-w', `${Math.max(0, active.offsetWidth - 24)}px`);
+      ind.style.setProperty('--ind-o', '1');
+    };
+
+    place();
+    // Tab widths move after first paint for reasons no dependency array can
+    // see: a webfont swapping in, the container resizing, a count arriving.
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(place);
+    ro.observe(list);
+    return () => ro.disconnect();
+    // `fits` is in here because the overflow split changes which tabs are in
+    // `head`, which moves every tab after the split point.
+  }, [value, fits, head.length]);
+
   return (
     <div className="mt__wrap" ref={wrapRef}>
       <div className="mt" role="tablist" aria-label={label} onKeyDown={onKeyDown} ref={listRef}>
         {head.map(t => <Tab key={t.id} t={t} />)}
+        {/* One indicator for the whole strip, so it can travel. Rendered last
+            so it paints over nothing; it is `pointer-events: none` and out of
+            flow, and it carries no text, so it is invisible to the tablist's
+            accessibility tree rather than being an untabbable extra child. */}
+        <span className="mt__ind" ref={indRef} aria-hidden="true" />
       </div>
 
       {(tail.length > 0 || onCustomize) && (

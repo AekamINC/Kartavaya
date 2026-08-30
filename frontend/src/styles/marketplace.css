@@ -222,9 +222,33 @@
    that says so in words — 00 §12, colour is never the only carrier. */
 .mkt-card--held { border-color: color-mix(in srgb, var(--warn) 45%, var(--outline-variant)); }
 .mkt-card--held .mkt-card__top { opacity: .72; }
+/* ── Arrival ──────────────────────────────────────────────────────────────
+   The grid had hover motion and a drawer that slides, and no mount motion at
+   all: every pack in the catalogue appeared in the same frame. A marketplace is
+   the one surface in the product a user BROWSES rather than reads, and a grid
+   that lands all at once gives the eye no order to follow.
+
+   `--i` is not set here. It comes from the shared index ladder in
+   animations.css, which names `.mkt-grid` as a container — the cards are direct
+   children of the grid, so :nth-child already knows the index. That matters
+   more here than elsewhere: `.mkt-card` already carries an inline
+   `style={{'--mc': tone}}` from CatalogTab.jsx, and a second inline property
+   would mean merging into that object at the call site.
+
+   The catalogue can hold more than twelve packs. The ladder stops at eleven and
+   the delay is capped at eleven anyway, so the twelfth card onward arrives with
+   the first — a wave across the first two rows, then the rest. Degraded, not
+   broken, and it keeps the longest possible delay at 418ms rather than letting
+   a fifty-pack catalogue take twenty seconds to finish arriving. */
+.mkt-grid > .mkt-card {
+  animation: ixFadeUp var(--dur-base) var(--ease-emph) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mkt-card { transition: none; }
   .mkt-card:hover { transform: none; }
+  .mkt-grid > .mkt-card { animation: none; }
 }
 
 .mkt-card__top {
@@ -481,9 +505,20 @@
 
 .mk-dr.is-closing, .mk-dr__scrim.is-closing { pointer-events: none; }
 
+/* The scrim dimmed the catalogue and nothing more. Every other translucent
+   layer in the build separates itself from what it covers with a blur — the
+   task drawer at drawer.css:62, the appearance popover at appearance.css:57 —
+   and a dim alone leaves the card grid behind this one perfectly readable,
+   which is the opposite of what an overlay is for. The drawer itself is opaque
+   (`--bg`), so this is the only surface here that can carry the separation.
+   `--scrim-blur` is declared once in components.css and carries
+   the `prefers-reduced-transparency` opt-out there — referenced, never
+   redeclared. `-webkit-` because Safari has only the prefixed property. */
 .mk-dr__scrim {
   position: fixed; inset: 0; z-index: 199;
   background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
   border: 0;
 }

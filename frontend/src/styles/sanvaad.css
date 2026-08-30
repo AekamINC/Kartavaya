@@ -2643,7 +2643,7 @@
 .m2th__faces i + i { margin-left: -6px; }
 .m2th__when { font-weight: 400; color: var(--on-surface-3); }
 .m2th__body { margin-top: 7px; display: flex; flex-direction: column; gap: 2px; animation: m2thIn var(--dur-base) var(--ease-enter); }
-@keyframes m2thIn { from { opacity: 0; transform: translateY(-4px) } }
+@keyframes m2thIn { from { opacity: 0; transform: translateY(calc(-4px * var(--motion-scale, 1))) } }
 .m2th__body .m2m { grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
 /* DEVIATION, and it fixes a bug the owner caught on screen: an own reply inside
    a thread rendered ONE WORD PER LINE, with the avatar out to its right.
@@ -2722,7 +2722,7 @@
 
 /* Jump-to-latest pill */
 .m2jump { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; padding: 6px 14px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label); font-weight: 600; box-shadow: var(--shadow-4); z-index: 4; animation: m2jumpIn var(--dur-base) var(--ease-emph); }
-@keyframes m2jumpIn { from { opacity: 0; transform: translate(-50%, 10px) } }
+@keyframes m2jumpIn { from { opacity: 0; transform: translate(-50%, calc(10px * var(--motion-scale, 1))) } }
 
 /* ── § V2.10 · Mobile ─────────────────────────────────────────────────────────
    The prototype drives mobile off a CLASS, not a media query, so the phone

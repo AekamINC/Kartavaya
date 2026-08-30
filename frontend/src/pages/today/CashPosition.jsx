@@ -115,7 +115,12 @@ export default function CashPosition() {
               + `${inrShort(data.inflow)} in, ${inrShort(data.outflow)} out, net ${inrShort(data.net)}`}
           >
             {series.map((b, i) => (
-              <div key={b.start} className="k-cash__col" title={`${b.start} · in ${inrShort(b.inflow)} · out ${inrShort(b.outflow)}`}>
+              // `--i` is the stagger index today.css multiplies by --stagger-step.
+              // Set on the COLUMN so both halves inherit one value and move as a
+              // pair; a bare number, not a string with units, because it is a
+              // multiplier inside a calc() where `3%` invalidates the whole
+              // declaration and every column would start together.
+              <div key={b.start} className="k-cash__col" style={{ '--i': i }} title={`${b.start} · in ${inrShort(b.inflow)} · out ${inrShort(b.outflow)}`}>
                 <div
                   className={'k-cash__in' + (i === series.length - 1 ? ' is-current' : '')}
                   style={{ height: `${(b.inflow / peak) * 100}%` }}

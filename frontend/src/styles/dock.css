@@ -103,12 +103,12 @@
 /* ── the panel ────────────────────────────────────────────────────────────── */
 
 @keyframes k-dock-in {
-  from { transform: translateY(10px); opacity: 0; }
+  from { transform: translateY(calc(10px * var(--motion-scale, 1))); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
 }
 @keyframes k-dock-out {
   from { transform: translateY(0); opacity: 1; }
-  to   { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(calc(10px * var(--motion-scale, 1))); opacity: 0; }
 }
 
 .k-dock {

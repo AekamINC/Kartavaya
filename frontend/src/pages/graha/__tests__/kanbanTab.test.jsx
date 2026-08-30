@@ -138,6 +138,9 @@ describe('KanbanTab — the move is optimistic', () => {
     expect(settled.className).not.toMatch(/ix-pending/);
     // 9.1's settle flash, so the card is findable in the column it landed in.
     expect(settled.className).toMatch(/ix-landed/);
+    // And the failure tint is NOT along for the ride. Without this the test
+    // below could pass on a class that is simply always present.
+    expect(settled.className).not.toMatch(/ix-rollback/);
   });
 
   it('puts the card back where it came from when the write fails', async () => {
@@ -154,6 +157,11 @@ describe('KanbanTab — the move is optimistic', () => {
     expect(stageBtn('New')).toBeUndefined();
     expect(stageBtn('Qualified')).toBeTruthy();
     expect(text()).toContain('Could not move deal');
+    // IxViews 10.3's rollback tint. The toast is in a corner of the screen and
+    // the card is wherever the board put it back; this class is the only thing
+    // that says WHICH card the toast is about. It had never been applied by any
+    // write path in the product before this test existed.
+    expect(card.className).toMatch(/ix-rollback/);
   });
 
   it('does not strand the card dimmed when the same deal is moved twice', async () => {

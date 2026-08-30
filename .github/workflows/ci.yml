@@ -322,6 +322,28 @@ jobs:
       - name: Motion token gate
         run: node scripts/check-motion.mjs
 
+      # The motion gate's blind spot, and the orphan-selector gate's. An
+      # animation and its @keyframes are one thing in two halves: check-motion
+      # reads the DURATION and the EASING in `animation: ixShimmer 1.7s …` and
+      # never asks whether `ixShimmer` exists, and check-orphan-selectors skips
+      # inside @keyframes blocks on purpose, because a from/to is not a selector.
+      # So both halves could rot with a green build, and both had.
+      # `@keyframes ixFadeUp` was declared, documented as the list-stagger
+      # primitive in animations.css's measured motion table, and never once run;
+      # `animation: ixShimmer` named a keyframe that does not exist, which CSS
+      # does not warn about — the skeleton has held its first frame since it was
+      # written, and a frozen skeleton reads as one that is still loading.
+      - name: Orphan keyframes gate (declared and used, both directions)
+        run: node scripts/check-orphan-keyframes.mjs
+
+      # A transition needs a PREVIOUS value, and on mount there is none. Twenty-two
+      # bar fills were written with a tokenised `transition: width` that had never
+      # once run — they painted full-size on frame one while the stylesheet read as
+      # though they animated. check-motion only asks whether a duration is
+      # tokenised, not whether it ever elapses.
+      - name: Mount motion gate (a bar sized from data must animate on arrival)
+        run: node scripts/check-mount-motion.mjs
+
       - name: Orphan selector gate
         run: node scripts/check-orphan-selectors.mjs
 

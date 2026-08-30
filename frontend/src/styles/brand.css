@@ -102,7 +102,14 @@ body {
   width: 100%; padding: 11px 14px; background: var(--k-input-bg);
   border: 1.5px solid var(--k-border); border-radius: var(--r-md);
   font-family: var(--font-ui); font-size: 14px; color: var(--k-text);
-  outline: none; transition: border-color calc(var(--dur-base) * .82) var(--ease-standard), background calc(var(--dur-base) * .82) var(--ease-standard);
+  outline: none;
+/* box-shadow is in this list because the focus RING is a box-shadow. Without
+   it the border eased in over --dur-fast while the 3px ring around it appeared
+   in one frame — one control, two speeds, on the single most-used interaction
+   in the product. Measured across src/styles: four rules had exactly this
+   shape. The ring is what the eye actually catches, so it was the half that
+   snapped. */
+  transition: border-color calc(var(--dur-base) * .82) var(--ease-standard), background calc(var(--dur-base) * .82) var(--ease-standard), box-shadow calc(var(--dur-base) * .82) var(--ease-standard);
 }
 .k-input:focus { border-color: var(--k-mid); background: var(--k-white); box-shadow: 0 0 0 3px rgba(3,161,182,0.10); }
 .k-input::placeholder { color: var(--k-faint); }

@@ -1,0 +1,11 @@
+{
+  "note": "Keyframe faults accepted deliberately because the tree was already dirty when the gate went up. NEW faults fail. Named lists on purpose: deleting an entry is a reviewable act, and a count would let one fault be swapped for another. Shrink this file; do not grow it. Matching is by NAME; the file and line beside each entry are documentation and may drift. heldOrphans = @keyframes declared and never named by any animation \u2014 either wire it to the surface it was written for, or delete the block. heldMissing = an animation naming a keyframe that does not exist \u2014 this one is a LIVE DEFECT wherever it appears, because the element holds its start state forever with nothing in the console; hold it only long enough to fix it. THE TWO FOUNDING ENTRIES, both found by the first clean run: `pulse` is declared in index.css beside fadeIn and slideInR, but unlike those two it was never given the .anim-* rule that would apply it, and no Tailwind animate-pulse utility is used anywhere either \u2014 it is held rather than deleted because index.css is not this change's file. `ixShimmer` is the expensive one: .skeleton::after in animations.css names it and no @keyframes ixShimmer has ever existed, so every skeleton in the build \u2014 28 files apply that class \u2014 has been frozen on its first frame, which is indistinguishable from a skeleton that is still loading. It is held ONLY so this gate can land; it wants deleting from the baseline and fixing in the same week.",
+  "generated": "2026-08-29",
+  "heldOrphans": {
+    "pulse": {
+      "file": "src/index.css",
+      "line": 9
+    }
+  },
+  "heldMissing": {}
+}

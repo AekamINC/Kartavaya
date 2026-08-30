@@ -98,6 +98,21 @@
 .dr__scrim {
   position: fixed; inset: 0; z-index: var(--z-drawer-scrim);
   background: var(--scrim);
+  /* The scrim dimmed the board and left it sharp — it was one of twelve
+     `var(--scrim)` rules in src/styles and not one of them blurred, measured
+     2026-08-29. `--scrim-blur` is declared once, in components.css above its
+     Modal section, alongside the reasoning; the pair of properties is written
+     in the prefixed-first order the `.dr` rule above already uses, because
+     Safari shipped this behind `-webkit-` for years and still answers to it.
+
+     Nothing is added to the `prefers-reduced-transparency` block above: that
+     block cancels `backdrop-filter` on `.dr` because blur(0px) still allocates
+     a compositing layer on a surface that is painted for the whole session,
+     whereas the scrim exists only while the drawer is open and the token flip
+     in components.css already takes it to 0px. One flip, no second list to
+     keep in step. */
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 /* dmFade has no transform at all — a scrim that also moves reads as a second
@@ -178,7 +193,15 @@
   width: 100%; min-width: 0; padding: 7px 9px;
   border: 1px solid transparent; border-radius: var(--r-sm);
   background: transparent; color: var(--on-surface); text-align: left;
-  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+  /* box-shadow is in this list because the focus RING is a box-shadow. Without
+     it the border eased in over --dur-fast while the 3px ring around it
+     appeared in one frame — one control, two speeds, on the single most-used
+     interaction in the product. Measured across src/styles: four rules had
+     exactly this shape. The ring is what the eye catches, so it was the half
+     that snapped. */
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
 }
 .dr__title:hover { background: var(--s-container); }
 .dr__title:focus, .dr__title--edit {

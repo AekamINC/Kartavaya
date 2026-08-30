@@ -77,12 +77,13 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --rule                       light=var(--outline-variant)  dark=var(--outline-variant)
 --rule-soft                  light=var(--outline-variant)  dark=var(--outline-variant)
 --rule-strong                light=var(--outline)  dark=var(--outline)
---s-container                light=#EEE9DC  dark=#1D2229
---s-high                     light=#E7E1D1  dark=#252B33
---s-highest                  light=#DFD8C5  dark=#2E353E
---s-low                      light=#F5F1E7  dark=#171B21
+--s-container                light=#EBE5D6  dark=#1D2229
+--s-high                     light=#E3DCCA  dark=#252B33
+--s-highest                  light=#DBD2BC  dark=#2E353E
+--s-low                      light=#F8F5ED  dark=#171B21
 --s-lowest                   light=#FFFEFB  dark=#080A0C
 --scrim                      light=rgba(28, 26, 20, .34)  dark=rgba(0, 0, 0, .58)
+--scrim-blur                 light=0px  dark=0px
 --secondary                  light=#5C6450  dark=#C3CBB0
 --secondary-container        light=#E1E7D4  dark=#434A36
 --shadow-1                   light=0 1px 2px rgba(30, 28, 22, .07)  dark=0 1px 2px rgba(0, 0, 0, .5)
@@ -96,7 +97,7 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --shadow-md                  light=var(--shadow-2)  dark=var(--shadow-2)
 --shadow-seat                light=0 1px 2px rgba(28, 24, 16, .06)  dark=0 1px 2px rgba(0, 0, 0, .45)
 --shadow-sm                  light=var(--shadow-1)  dark=var(--shadow-1)
---surface                    light=#FAF7F0  dark=#12151A
+--surface                    light=#FDFCF8  dark=#12151A
 --surface-0                  light=var(--s-low)  dark=var(--s-low)
 --surface-1                  light=var(--surface)  dark=var(--surface)
 --surface-2                  light=var(--s-lowest)  dark=var(--s-lowest)

@@ -111,10 +111,35 @@ input, textarea, select { font-family: inherit; color: inherit; }
    `both` on the exit, not the default: without it the node reverts to opacity 1
    for the frame between the animation finishing and React unmounting it, which
    is a flash of full scrim at the end of a fade-out. */
+/* THE BLUR, AND WHY ALL FOUR SCRIMS IN THIS FILE GET IT — stated once here,
+   referenced by `.k-dr-scrim`, `.k-modal-scrim` and `.k-drawer-overlay` below.
+
+   Eleven scrims ship in this build and not one of them blurred. A scrim that
+   only dims leaves the page behind it sharp enough to keep reading — the text
+   is darker, but it is still text, so the surface in front never becomes the
+   only thing there is to look at. Every other translucent surface in the
+   product already separates itself this way: `.dr` (drawer.css:62),
+   `.kap__pop` (appearance.css:57), and `.k-glass` at :4733 below.
+
+   `--scrim-blur` is declared once, in components.css, and carries the
+   `prefers-reduced-transparency: reduce` opt-out there — so nothing branches
+   at any call site and the four rules below stay one line each.
+
+   This is the cheapest of the glass changes because a scrim is a
+   `position: fixed` fill with no text and no control inside it: check-contrast
+   has no foreground/background pair to compute here, and there is nothing
+   whose legibility a blur could reduce.
+
+   The `-webkit-` twin is required, not decorative. Safari carried
+   `backdrop-filter` behind the prefix for years and still answers to it, and
+   dropping it is a silent no-op on a real browser rather than a build
+   failure — which is the worse way round. */
 .kv__scrim {
   display: none;
   position: fixed; inset: 0; z-index: 200;
   background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 /* `pointer-events: none` while leaving, so the 220ms the exit takes is not
@@ -1388,12 +1413,67 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1px solid var(--rule);
 }
 .k-btn--ghost:hover { background: var(--surface); color: var(--ink); border-color: var(--rule-strong); }
+/* ── The destructive button — OUTLINED AT REST, SOLID ON HOVER ────────────
+   The owner's spec: red font, red border, cream fill at rest; on hover the
+   fill becomes red and the font inverts. An outlined destructive control
+   states its consequence and commits only when the pointer arrives, where a
+   solid red one shouts before anything is at stake — and 18 of the call sites
+   below are a "Delete" sitting in a table row, so a permanently-red button
+   would be the loudest thing on a page of ordinary data.
+
+   WHAT WAS HERE. `background: transparent` and a border mixed down to 30%
+   `--danger` over `--rule`, which on cream is a barely-pink hairline: the rest
+   state read as a slightly-off ghost button rather than as a warning. The
+   hover was an 8% wash — the fill changed, but nothing about it said the click
+   was now the destructive one.
+
+   `--s-lowest` rather than `transparent` for the cream: it is the surface ramp's
+   own paper (#FFFEFB light, #080A0C dark), so the button carries its own
+   ground and does not inherit whatever tint the row underneath it is in.
+
+   THE HOVER INK IS `--on-danger`, NOT WHITE. This is the whole reason the rule
+   below exists. `--danger` is #B42318 in light and white on it measures 6.57:1,
+   which passes AA comfortably — but the dark arm of `--danger` is #F2867A, a
+   pale coral, and white on THAT measures 2.48:1 and fails outright. Hard-coding
+   `#fff` here would have shipped a legible light mode and an unreadable dark
+   one, which is exactly the bug check-contrast pass 3 exists to catch.
+   `--on-danger` is already declared on both arms for this purpose
+   (kartavaya-design.css:468 #FFFFFF, :590 #2A0A06) and needs no dark override.
+   Measured, all four states: rest 6.52:1 light / 7.99:1 dark,
+   hover 6.57:1 light / 7.40:1 dark.
+
+   FOCUS is left to the app-wide ring — `:focus-visible { outline: 2px solid
+   var(--primary); outline-offset: 2px }` at components.css:694. It is NOT
+   redeclared here: the 2px offset puts the ring outside the button, so it
+   lands on the page ground rather than on the solid red fill, and every other
+   focusable surface in the build rings in `--primary`. A one-off danger-
+   coloured ring on eighteen buttons would be a second opinion about the focus
+   convention, not an improvement to it.
+
+   THE TRANSITION is restated rather than inherited. `.k-btn` above transitions
+   `background`, `box-shadow` and `transform` only, and this is the one variant
+   whose `color` and `border-color` both move — without them the fill slides in
+   over 140ms while the text snaps from red to near-white on the first frame,
+   which reads as a flicker rather than a state change. Redeclaring the
+   shorthand replaces the parent's list outright, so its three entries are
+   repeated verbatim before the two new ones are appended. */
 .k-btn--reject {
-  background: transparent;
+  background: var(--s-lowest);
   color: var(--danger);
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--rule));
+  border: 1px solid var(--danger);
+  transition: background var(--dur-fast),
+              box-shadow var(--dur-fast),
+              transform  var(--dur-instant),
+              color        var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
 }
-.k-btn--reject:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+/* `border-color`, not a second `border` shorthand: the 1px and the style are
+   already correct and restating them is how a width silently drifts. */
+.k-btn--reject:hover {
+  background: var(--danger);
+  color: var(--on-danger);
+  border-color: var(--danger);
+}
 
 /* ── Avatar / Priority / Project tag ────────────────────────────────────── */
 .k-avatar {
@@ -1664,6 +1744,66 @@ input, textarea, select { font-family: inherit; color: inherit; }
   transition: background var(--dur-fast);
 }
 .k-stat:hover { background: var(--s-high); }
+
+/* ── The list stagger — ixFadeUp's FIRST call site ────────────────────────
+   `@keyframes ixFadeUp` is declared at animations.css:178 and named in that
+   file's reconciled motion table (§"list stagger") as the primitive for a row
+   of tiles arriving together: `--dur-base`, a 38ms step, capped at 11 steps so
+   the last tile still lands inside `--dur-xslow`. It had ZERO call sites
+   anywhere in the frontend and had therefore never once run.
+
+   It was invisible to the gate that exists to catch exactly this:
+   check-orphan-selectors.mjs skips the body of an `@keyframes` block, because
+   `from`/`to`/`50%` are not selectors — so a keyframe nobody uses is the one
+   dead rule the orphan scan cannot see.
+
+   The stat row is where it belongs. Thirteen files render `.k-stats`, it is
+   the first thing painted after a fetch resolves on most of them, and it is a
+   set of sibling tiles whose only relationship is "these arrived together" —
+   which is what a stagger says and what four tiles appearing on one frame does
+   not.
+
+   `backwards` is load-bearing: with a delay and no fill mode the tile paints at
+   full opacity until its turn comes and then jumps back to 0 to start, which is
+   a flash rather than a reveal.
+
+   THE STEP IS A TOKEN, NOT A LITERAL, AND THIS WAS MEASURED. A bare
+   `calc(min(var(--i, 0), 11) * 38ms * var(--ix))` does scale, but
+   check-motion.mjs fails the build on it — its rule-2b exemption for an
+   --ix-scaled literal was withdrawn once the ladder sweep was done, and there
+   is no exemption list behind it. Run against this file alone it reports
+   `animation-delay | raw duration 38ms`, not even the gentler "off-ladder"
+   sentence, because the script's calc detector is
+   `calc\(([^()]|\([^()]*\))*\)` — one level of nesting — and `min(var(--i, 0),
+   11)` is two, so it never recognises the `var(--ix)` as being in the same
+   calc. Either message exits non-zero.
+
+   A custom property is the door rule 2 leaves open for a value the five-rung
+   ramp cannot express, and 38ms is one: it is a phase offset between siblings,
+   not a duration, so no rung is the right answer. Same shape as
+   `--dur-dot-stagger` (kartavaya-design.css:264) — declared fixed, multiplied
+   by `--ix` at the call site rather than baked into the token, which is what
+   keeps one factor of `--ix` in the result instead of two.
+
+   `--i` IS NOT PASSED TODAY. `ui/StatTile.jsx` renders `<div className="k-stat
+   …">` with no index, so `var(--i, 0)` falls back to 0 and every tile animates
+   on the same frame — the entrance is right, the stagger is flat. That is a
+   one-line prop away in StatTile.jsx, but it does not need to be a prop at all:
+   the tiles are siblings, so :nth-child supplies the same index from CSS with no
+   JSX change and no prop drilled through StatTile. That is what the block below
+   does. It is written as a FALLBACK rather than a replacement — an inline
+   `style={{'--i': n}}` beats a stylesheet declaration, so if StatTile ever does
+   pass the prop it silently wins and this block costs nothing. */
+.k-stats > .k-stat {
+  animation: ixFadeUp var(--dur-base) var(--ease-emph) backwards;
+  animation-delay: calc(min(var(--i, 0), 11) * var(--stagger-step) * var(--ix));
+}
+/* `--i` comes from the shared index ladder in animations.css, which `.k-stats`
+   is named in. Counted, not guessed: five files render it — ApprovalsPage (3),
+   today/StatRow (4), today/TodaySkeleton (4, from its TILES array),
+   vetana/DashboardTab (4) and vetana/StatutoryTab (4) — so only the first four
+   rungs are ever reached. */
+
 .k-stat--neutral { --c: var(--on-surface-3); }
 .k-stat--info    { --c: var(--primary); --c-text: var(--primary-text); }
 .k-stat--ok      { --c: var(--ok); }
@@ -3148,10 +3288,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-memlist__email { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
 
 /* ── Drawer ────────────────────────────────────────────────────────────── */
+/* Blur on `--scrim-blur`, per the note above `.kv__scrim`. This one already
+   blurred, at a hand-written 2px — enough to allocate a compositing layer and
+   not enough to stop anyone reading the table behind it, which is the worst of
+   both. The token is 8px and it is the same 8px at all four scrims, so they
+   stop disagreeing about how far back "behind" is. */
 .k-dr-scrim {
   position: fixed; inset: 0;
   background: rgba(8, 14, 26, 0.32);
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   z-index: 100;
   animation: k-fade-in var(--dur-fast) var(--ease-enter);
 }
@@ -3167,7 +3313,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 @keyframes k-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes k-slide-in { from { transform: translateX(8%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes k-slide-in { from { transform: translateX(calc(8% * var(--motion-scale, 1))); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 .k-dr__head {
   display: flex; align-items: center; justify-content: space-between;
@@ -3315,8 +3461,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-modal-scrim {
   position: fixed; inset: 0;
   background: rgba(8, 14, 26, 0.42);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  /* Blur on `--scrim-blur`, per the note above `.kv__scrim`. Was a hand-written
+     3px — the same drift as this rule's duration below, and for the same
+     reason: the most-opened dialog in the product was the one carrying the
+     off-system value. `saturate(1.1)` joins it so all four scrims match. */
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   z-index: var(--z-modal);
   /* Was `var(--dur-fast) ease-out`. The scrim of the most-opened dialog
      in the product was 150ms on a keyword curve while every other scrim in the
@@ -3361,7 +3511,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   overflow: hidden;
 }
 @keyframes k-modal-in {
-  from { opacity: 0; transform: translate(-50%, -46%) scale(.97); }
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 4% * var(--motion-scale, 1))) scale(calc(1 - .03 * var(--motion-scale, 1))); }
   to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 .k-modal__head {
@@ -3453,7 +3603,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   z-index: 91; display: flex; flex-direction: column; overflow: hidden;
   animation: k-cust-in var(--dur-base) var(--ease-emph);
 }
-@keyframes k-cust-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes k-cust-in { from { opacity: 0; transform: translateY(calc(8px * var(--motion-scale, 1))); } to { opacity: 1; transform: translateY(0); } }
 .k-cust__head {
   display: flex; align-items: flex-start; justify-content: space-between;
   padding: 16px 18px 12px; border-bottom: 1px solid var(--rule-soft);
@@ -3492,7 +3642,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 100%; padding: 10px 12px;
   background: var(--bg-soft); border: 1px solid var(--rule);
   border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink); outline: none;
-  transition: border-color var(--dur-fast), background var(--dur-fast); font-family: inherit;
+  /* box-shadow, because the focus RING on this field is a box-shadow — and it
+     is not declared in this file. `.k-input` exists THREE times: here, in
+     kartavaya-design.css (byte-identical, deliberately — see its comment), and
+     an older variant in brand.css. Neither twin's `:focus` sets a box-shadow;
+     brand.css's does, and because the two `:focus` rules do not conflict on
+     that property, the ring leaks in from brand.css while the `transition`
+     comes from whichever file loads last, which is this one. So the ring
+     appeared in one frame while the border eased. Fixing it here fixes it for
+     the 48 files that render the class. */
+  transition: border-color var(--dur-fast), background var(--dur-fast),
+              box-shadow var(--dur-fast); font-family: inherit;
 }
 .k-input:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); background: var(--surface); }
 .k-input::placeholder { color: var(--ink-faint); }
@@ -3882,7 +4042,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 100%; padding: 9px 12px; font-size: 13px;
   border-radius: 6px; border: 1px solid var(--rule);
   background: var(--bg); color: var(--ink);
-  transition: border-color var(--dur-fast);
+  /* box-shadow is in this list because the focus RING is a box-shadow. Without
+     it the border eased in over --dur-fast while the 3px ring around it
+     appeared in one frame — one control, two speeds, on the single most-used
+     interaction in the product. Measured across src/styles: four rules had
+     exactly this shape. The ring is what the eye catches, so it was the half
+     that snapped. */
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
 .k-formpanel__input:focus {
   outline: none; border-color: var(--k-primary);
@@ -4060,12 +4226,17 @@ select.k-formpanel__input { appearance: none;
 .k-approval-row__actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 /* ── Drawer ─────────────────────────────────────────────────────────────── */
+/* Blur on `--scrim-blur`, per the note above `.kv__scrim`. This rule also had
+   no `-webkit-` twin at all, so its 2px was doing nothing whatsoever in
+   Safari — the prefixed property is the only one that browser answered to for
+   years, and a missing prefix fails silently rather than at build time. */
 .k-drawer-overlay {
   position: fixed; inset: 0;
   background: rgba(10, 16, 28, 0.45);
   z-index: 300;
   display: flex; justify-content: flex-end;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
 }
 .k-drawer {
   width: min(560px, 100vw);
@@ -4162,12 +4333,12 @@ select.k-formpanel__input { appearance: none;
 }
 /* ── Onboarding checklist ──────────────────────────────────────────────── */
 @keyframes k-onboard-slide-up {
-  from { transform: translateY(16px); opacity: 0; }
+  from { transform: translateY(calc(16px * var(--motion-scale, 1))); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
 }
 @keyframes k-onboard-slide-down {
   from { transform: translateY(0); opacity: 1; }
-  to   { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(calc(16px * var(--motion-scale, 1))); opacity: 0; }
 }
 .k-onboard {
   position: fixed;
@@ -4278,7 +4449,7 @@ select.k-formpanel__input { appearance: none;
 }
 
 @keyframes fadeSlideDown {
-  from { opacity: 0; transform: translateY(-6px); }
+  from { opacity: 0; transform: translateY(calc(-6px * var(--motion-scale, 1))); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .k-proj-switcher__label {
@@ -4467,10 +4638,9 @@ select.k-formpanel__input { appearance: none;
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
   display: flex; justify-content: center; padding-top: min(20vh, 140px);
-  animation: k-cmdk-fadeIn var(--dur-fast) var(--ease-enter);
+  animation: ixFadeIn var(--dur-fast) var(--ease-enter);
 }
-@keyframes k-cmdk-fadeIn { from { opacity: 0; } }
-@keyframes k-cmdk-slideIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
+@keyframes k-cmdk-slideIn { from { opacity: 0; transform: translateY(calc(-8px * var(--motion-scale, 1))) scale(calc(1 - .02 * var(--motion-scale, 1))); } }
 .k-cmdk {
   width: min(560px, calc(100vw - 32px));
   max-height: min(420px, 60vh);
@@ -4614,29 +4784,67 @@ select.k-formpanel__input { appearance: none;
    as unrelated stats.
    `tabular-nums` on every rupee figure — a receivables number that changes
    width as it updates reads as unstable. */
+/* ── The hero strip — the one gradient surface in the product ─────────────
+   `--k-grad-surface` was declared in the palette with no consumer, and a token
+   nothing paints is the same defect as a keyframe nothing names: it reads as a
+   shipped feature and has never once run. This is its consumer, and it is the
+   right one — Today is the first screen, and receivables is the single figure
+   the page exists to put in front of an owner. Everything else on Today is a
+   card on cream; this is the one thing that is not, which is what makes it the
+   headline rather than the first of eight equals.
+
+   ── WHY EVERY LABEL BELOW IS PURE WHITE ──
+   Measured, not assumed, and this is the constraint the whole block is built
+   around. White on the gradient's three stops is 8.70 · 6.38 · 4.62 — the
+   lightest stop, #05837C, has just 0.12 of margin over the 4.5:1 floor. So
+   there is NO alpha budget: white at .92 is 4.16, at .86 is 3.85, at .80 is
+   3.53. Every one fails. The usual way to mute a sub-label — drop it to 70%
+   — is unavailable here, so hierarchy on this surface is carried by SIZE and
+   WEIGHT alone. If a future label needs to recede, make it smaller or lighter;
+   do not make it transparent.
+
+   check-contrast cannot help here and will report this block as clean whatever
+   it says: the script composites translucent backgrounds over `--bg` and has no
+   notion of a gradient, so the figures above are the only check there is.
+
+   The three tiles inside keep `background: var(--s-low)` and therefore keep
+   their semantic colours — `--ok` green and `--danger` red stay legible on
+   cream where they would not survive on teal. Cream tiles on the gradient is
+   also the intended reading: the surface is the headline, the tiles are the
+   breakdown sitting on top of it. */
 .k-hero-kpi {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   gap: 18px;
   padding: 20px 22px;
   border-radius: var(--r-lg);
-  background: var(--surface);
-  border: 1px solid var(--outline-variant);
-  box-shadow: var(--shadow-1);
+  background: var(--k-grad-surface);
+  /* No `--outline-variant` border: a cream hairline around a deep teal block
+     reads as a seam. The rim this surface gets is the glass layer's
+     `--lg-inset`, which is white and belongs on it. */
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-2);
 }
 .k-hero-kpi__main { min-width: 0; }
+/* #fff, not `--on-primary`: that token is #00332F in light and would be a dark
+   green on a dark teal. The surface is theme-independent by design (literal
+   stops, see the palette), so its foreground is too. */
 .k-hero-kpi__label {
   font-size: 10.5px; font-weight: 700; letter-spacing: .16em;
-  text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 6px;
+  text-transform: uppercase; color: #fff; margin-bottom: 6px;
 }
+/* The Devanagari twin inside the label sits on the gradient as well. Without
+   this it stayed `--on-surface-3`, a mid grey, at 1.4:1 on the teal. */
+.k-hero-kpi__label .hi-mute { color: #fff; }
 .k-hero-kpi__value {
   font-family: var(--font-display);
   font-size: clamp(30px, 4vw, 44px); font-weight: 400; line-height: 1;
-  color: var(--on-surface); letter-spacing: -.032em;
+  color: #fff; letter-spacing: -.032em;
   font-variant-numeric: tabular-nums;
   margin-bottom: 8px;
 }
-.k-hero-kpi__sub { font-size: 12px; color: var(--on-surface-3); }
+/* Recedes by weight and size, never by alpha — see the block comment above. */
+.k-hero-kpi__sub { font-size: 12px; font-weight: 400; color: #fff; }
 .k-hero-kpi__cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -4684,7 +4892,15 @@ select.k-formpanel__input { appearance: none;
 [data-theme="dark"] .k-approval-row:hover  { background: color-mix(in srgb, var(--k-primary) 8%,  var(--surface)); }
 [data-theme="dark"] .k-file-attach:hover   { background: color-mix(in srgb, var(--k-primary) 13%, var(--surface)); }
 [data-theme="dark"] .k-tmpl-card--new:hover{ background: color-mix(in srgb, var(--k-primary) 10%, transparent); }
-[data-theme="dark"] .k-btn--reject:hover   { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+/* `[data-theme="dark"] .k-btn--reject:hover` was here, boosting an 8% wash to
+   16% for exactly the tint-portability reason this section documents. The
+   destructive button no longer hovers on a tint — it hovers on a SOLID
+   `--danger` (see the block above `.k-btn--reject`), and a solid fill is
+   theme-portable by construction, because both arms of `--danger` are already
+   chosen for their own theme. Left in place this rule would have won on
+   specificity (0,2,1 against 0,2,0) and held dark mode alone at the old wash,
+   so deleting it is what makes the new hover reach dark at all. */
+
 [data-theme="dark"] .k-inboxrow.is-unread  {
   background: color-mix(in srgb, var(--k-primary) 10%, var(--surface));
   border-color: color-mix(in srgb, var(--k-primary) 38%, var(--rule));

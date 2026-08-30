@@ -120,7 +120,14 @@
   border-radius: var(--r-sm);
   font-family: inherit; font-size: var(--t-body-sm); color: var(--on-surface);
   outline: none;
-  transition: border-color var(--dur-fast), background var(--dur-fast);
+/* box-shadow is in this list because the focus RING is a box-shadow. Without
+   it the border eased in over --dur-fast while the 3px ring around it appeared
+   in one frame — one control, two speeds, on the single most-used interaction
+   in the product. Measured across src/styles: four rules had exactly this
+   shape. The ring is what the eye actually catches, so it was the half that
+   snapped. */
+  transition: border-color var(--dur-fast), background var(--dur-fast),
+              box-shadow var(--dur-fast);
 }
 /* A 3px box-shadow, NOT outline: outline cannot take a radius on all engines
    and clips against overflow parents. Same radius as the field so the ring
@@ -338,6 +345,47 @@ textarea.inp { resize: vertical; min-height: 76px; }
 
 .k-offline { position: sticky; top: 0; z-index: 60; padding: 7px var(--pad-page); background: var(--warn-container); color: var(--warn); font-size: var(--t-label); font-weight: 500; text-align: center; }
 
+/* ── The scrim blur ───────────────────────────────────────────────────────
+   MEASURED 2026-08-29: twelve rules across src/styles paint
+   `background: var(--scrim)` — `.modal__scrim` and `.sheet__scrim` here,
+   `.dr__scrim` (drawer.css), `.aso__scrim` (admin.css), `.bsh__scrim`
+   (animations.css), `.kv__scrim` and `.adm__scrim` (editorial.css),
+   `.mk-dr__scrim` (marketplace.css), `.sh__scrim` (sahayak.css),
+   `.k-cmdk-overlay` (palette.css), and hub.css's lightbox and modal — and not
+   one of the twelve declared a `backdrop-filter`. Every overlay in the build
+   dimmed the page and left it perfectly sharp, so a sheet arrived over content
+   that was still fully readable behind it and read as a card lying ON the page
+   rather than as a layer in FRONT of it. The depth cue the panels already buy
+   with `--glass-blur` was missing from the one element whose entire job is to
+   separate the two planes.
+
+   A token, not a literal repeated per rule, for the reason liquid-glass.css
+   gives under "token flips, not parallel selector lists": one flip below
+   disables the effect everywhere, and a scrim written next month cannot be
+   left out of a list that does not exist. The per-surface lists in this file
+   and in drawer.css are exactly the thing that drifted — eight of twelve
+   surfaces covered — and this file's own reduced-transparency block, further
+   down, says so in those words.
+
+   No contrast risk, which is what makes this the cheapest of the glass
+   changes: a scrim is a `position: fixed` fill with no text and no control
+   inside it, so check-contrast.mjs has no foreground/background pair to
+   compute here and there is nothing whose legibility a blur can reduce.
+
+   8px sits deliberately below the rungs `--glass-blur` drives on the panels:
+   the surface in front must stay the more strongly blurred of the two, or the
+   scrim competes with the thing it exists to set apart. */
+:root { --scrim-blur: 8px; }
+/* The whole opt-out, in one line. `--glass-blur` and `--side-blur` get the
+   same treatment at kartavaya-design.css:330. The surface-level
+   `backdrop-filter: none` rules further down this file and in drawer.css stay
+   as they are for their own separate reason — blur(0px) is a visual no-op that
+   still allocates a compositing layer — but no scrim needs that second rule,
+   because none of them is in the list those rules enumerate. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --scrim-blur: 0px; }
+}
+
 /* ── Modal ────────────────────────────────────────────────────────────────
    Converted off the static Tailwind palette (bg-bgDefault/border-borderDefault
    had no dark: variants, so the panel stayed cream over a near-black app). */
@@ -346,6 +394,13 @@ textarea.inp { resize: vertical; min-height: 76px; }
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: var(--scrim);
+  /* Prefixed first, unprefixed second — the order `.modal__panel` below
+     already uses. Safari carried `backdrop-filter` behind `-webkit-` for
+     years and still answers to it, so both are written at every glass site in
+     this file, and dropping either one is a silent no-op on a real browser
+     rather than a build failure. */
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   /* Was `modalIn calc(var(--dur-fast) * var(--ix))`, and both halves were
      wrong.
 
@@ -395,7 +450,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
 }
 /* Reference `@keyframes ovIn`, minus its translate(-50%,-50%) centring — this
    panel is centred by the scrim's flexbox, so only the 8px rise is ours. */
-@keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px) scale(.96) } }
+@keyframes modalPanelIn { from { opacity: 0; transform: translateY(calc(8px * var(--motion-scale, 1))) scale(calc(1 - .04 * var(--motion-scale, 1))) } }
 /* Exit. The panel had an entrance and no way out: `modal.jsx` and
    `ConfirmDialog.jsx` both did `if (!open) return null`, so every dialog in the
    app arrived gracefully and then blinked out of existence — the asymmetry
@@ -689,11 +744,11 @@ textarea.inp { resize: vertical; min-height: 76px; }
 @keyframes dmSheetOut  { to   { transform: translateY(100%) } }
 /* dmPop needs transform-origin set per placement or it grows from the wrong
    corner — see .pk__pop--up / --right below. */
-@keyframes dmPop    { from { opacity: 0; transform: scale(.97) translateY(-4px) } }
-@keyframes dmPopOut { to   { opacity: 0; transform: scale(.98) } }
+@keyframes dmPop    { from { opacity: 0; transform: scale(calc(1 - .03 * var(--motion-scale, 1))) translateY(calc(-4px * var(--motion-scale, 1))) } }
+@keyframes dmPopOut { to   { opacity: 0; transform: scale(calc(1 - .02 * var(--motion-scale, 1))) } }
 /* dmTip has no exit: a tooltip that fades out follows the cursor to the next
    control and reads as lag. */
-@keyframes dmTip  { from { opacity: 0; transform: scale(.94) } }
+@keyframes dmTip  { from { opacity: 0; transform: scale(calc(1 - .06 * var(--motion-scale, 1))) } }
 /* Linear, never eased — an eased spin looks like it is struggling. */
 @keyframes dmSpin { to { transform: rotate(360deg) } }
 /* The confirmation overshoot on a checkbox, MOTION-SPEC §4: "box overshoots to
@@ -1018,9 +1073,16 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .cbx.on svg { opacity: 1; transform: none; }
 .cbx.mixed { background: var(--primary); border-color: var(--primary-text); }
 .cbx.mixed::after { content: ''; width: 8px; height: 1.5px; border-radius: 1px; background: var(--on-primary); }
+/* The border-color transition is here for parity with `.cbx` four rules up,
+   which has carried one since it was written. A radio and a checkbox sit in the
+   same form, are toggled the same way, and were fading their outline at two
+   different speeds: the checkbox over --dur-fast, the radio in one frame. The
+   dot inside already springs; only the ring around it snapped. */
 .rdo {
   flex: none; width: 17px; height: 17px; padding: 0; display: grid; place-items: center;
   border: 1.5px solid var(--outline); border-radius: 50%; background: var(--s-lowest); cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
 }
 .rdo::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); transform: scale(0); transition: transform var(--dur-base) var(--ease-spring); }
 .rdo.on { border-color: var(--primary-text); }
@@ -1207,8 +1269,8 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    build lets the user choose all four (settings.css `[data-toast-pos]`), so the
    travel follows the edge the stack actually sits on — a left-positioned toast
    sliding in from the right would cross the screen to get home. */
-@keyframes tstIn { from { opacity: 0; transform: translateX(16px) } }
-@keyframes tstInL { from { opacity: 0; transform: translateX(-16px) } }
+@keyframes tstIn { from { opacity: 0; transform: translateX(calc(16px * var(--motion-scale, 1))) } }
+@keyframes tstInL { from { opacity: 0; transform: translateX(calc(-16px * var(--motion-scale, 1))) } }
 [data-toast-pos="tl"] .tst,
 [data-toast-pos="bl"] .tst { animation-name: tstInL; }
 
@@ -1237,9 +1299,9 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    not be clickable, and a second Dismiss during the exit is a click the user
    did not mean. */
 .tst.is-closing { animation: tstOut calc(var(--dur-base) * .82) var(--ease-exit) both; }
-@keyframes tstOut { to { opacity: 0; transform: translateX(12px) } }
-@keyframes tstOutL { to { opacity: 0; transform: translateX(-12px) } }
-@keyframes tstOutM { to { opacity: 0; transform: translateY(12px) } }
+@keyframes tstOut { to { opacity: 0; transform: translateX(calc(12px * var(--motion-scale, 1))) } }
+@keyframes tstOutL { to { opacity: 0; transform: translateX(calc(-12px * var(--motion-scale, 1))) } }
+@keyframes tstOutM { to { opacity: 0; transform: translateY(calc(12px * var(--motion-scale, 1))) } }
 [data-toast-pos="tl"] .tst.is-closing,
 [data-toast-pos="bl"] .tst.is-closing { animation-name: tstOutL; }
 
@@ -1260,7 +1322,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   [data-toast-pos="tl"] .tst.is-closing,
   [data-toast-pos="bl"] .tst.is-closing { animation-name: tstOutM; }
 }
-@keyframes tstInM { from { opacity: 0; transform: translateY(12px) } }
+@keyframes tstInM { from { opacity: 0; transform: translateY(calc(12px * var(--motion-scale, 1))) } }
 
 .tst__i { flex: none; margin-top: 1px; color: var(--tst-c, var(--on-surface-3)); font-size: 12px; font-weight: 700; }
 .tst__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1454,6 +1516,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 
 .sheet__scrim {
   position: fixed; inset: 0; z-index: var(--z-sheet-scrim); background: var(--scrim);
+  /* The same blur as `.modal__scrim`, off the one token declared above the
+     Modal section. The sheet and the modal are the same object in the
+     reference (`app.css:229`, cited on `.sheet` below) and already share a
+     glass rung, so their scrims may not separate the planes by different
+     amounts either. */
+  -webkit-backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
+  backdrop-filter: blur(var(--scrim-blur)) saturate(1.1);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 .sheet__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; }
