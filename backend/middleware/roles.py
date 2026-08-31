@@ -16,7 +16,11 @@ Usage:
   Depends(require_platform_role("platform_admin", "account_manager"))
   Depends(require_org_role("org_admin", "sahayak_admin"))
 """
+import logging
+
 from fastapi import Depends, HTTPException
+
+log = logging.getLogger(__name__)
 
 from auth_router import require_user
 from db import get_pool
@@ -103,7 +107,32 @@ def require_role(*allowed_roles: str):
 
 
 def require_platform_role(*allowed_roles: str):
-    """Check staging.user_roles for platform-wide roles (org_id IS NULL)."""
+    r"""Check `public.user_roles` for platform-wide roles (`org_id IS NULL`).
+
+    ── THE REFUSAL IS READ BY CUSTOMERS, SO IT IS WRITTEN FOR THEM ─────────────
+
+    This used to raise, verbatim:
+
+        This action requires one of: platform_owner, platform_admin,
+        platform_manager, account_manager, account_finance
+
+    and the frontend prints the server's `detail` straight into a toast, so that
+    sentence was shown to a paying customer — Aekam's internal role codes, in a
+    list, with nothing they can do about any of them.
+
+    Three suites caught it independently (14.12, 14.16, 14.18), each asserting
+    `not /requires one of:\s*platform_/i` on the toast, which is how a message
+    written for a stack trace ends up measured as a product defect.
+
+    ⚠ THE GATE IS UNCHANGED. Only the sentence moved. These endpoints are Aekam's
+    own account-management surface and a tenant must keep getting 403 — a
+    separation of duties `role_tiers.py:500` describes as letting staff "do the
+    work, not bill for it". What was wrong was telling the customer to go and
+    acquire `platform_owner`.
+
+    The role list is not lost: it goes to the LOG, where the person who needs it
+    is the one debugging, not the one clicking.
+    """
 
     async def _check(user=Depends(require_user)):
         pool = await get_pool()
@@ -113,9 +142,15 @@ def require_platform_role(*allowed_roles: str):
             user["user_id"], list(allowed_roles),
         )
         if not role:
+            log.info(
+                "platform-role refusal: user=%s needed one of %s",
+                user.get("user_id"), ", ".join(allowed_roles),
+            )
             raise HTTPException(
                 403,
-                f"This action requires one of: {', '.join(allowed_roles)}",
+                "This is an Aekam account-management action, so it cannot be done "
+                "from an organisation login. Ask your Aekam contact to make the "
+                "change.",
             )
         return user
 

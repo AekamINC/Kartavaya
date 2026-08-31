@@ -155,7 +155,20 @@ def test_a_non_platform_caller_is_403_in_the_house_voice(monkeypatch):
     with pytest.raises(HTTPException) as e:
         run(pr._pulse_gate(user=USER))
     assert e.value.status_code == 403
-    assert "This action requires one of" in str(e.value.detail)
+    # ⚠ ASSERT THE PROPERTY, NOT THE SENTENCE. This pinned the literal
+    # "This action requires one of", which was the message's OLD text — and that
+    # text was the defect: it listed Aekam's internal role codes
+    # (platform_owner, account_finance, …) into a toast a paying customer reads.
+    # Three e2e tests caught it as `not /requires one of:\s*platform_/i`.
+    #
+    # A test that pins the exact wording of a refusal makes the copy unfixable
+    # without editing the test, which is how bad copy survives. What matters is
+    # that the refusal says something and leaks no platform role code, so that
+    # is what is checked.
+    detail = str(e.value.detail)
+    assert detail.strip(), "the refusal carried no message at all"
+    assert "platform_" not in detail, (
+        "the refusal leaks Aekam's internal role codes to whoever called it: %r" % detail)
     # and the probe asked the platform-row question (org_id IS NULL)
     assert any("org_id IS NULL" in c[0] for c in p.calls)
 

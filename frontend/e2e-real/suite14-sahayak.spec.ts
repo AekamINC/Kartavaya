@@ -1832,6 +1832,25 @@ test('14.12 Sahayak Admin and Hub clients — and "+ New client" is a control th
     const text = await toastText(page);
     record('hub clients', 0, 0, clients.length,
       `"+ New client" answered ${r.status} — the control cannot work for this account`);
+      // ⚠ 403 IS THE RIGHT ANSWER, AND THIS ASSERTED THE WRONG ONE.
+      // Adjudicated 2026-08-31 by an adversarial pass over every product-bug
+      // claim in this suite. `.toBeLessThan(400)` demanded that an ORG-SCOPED
+      // seat pass a `require_platform_role` gate — and this lane is a TENANT by
+      // construction (the header forces Unicode Group and asserts it must never
+      // be Aekam Inc). There is no status a correct product could return here
+      // except 403.
+      //
+      // For the credits case that mattered most: passing would have meant a
+      // paying customer minting itself credits, with no payment gateway in the
+      // product at all, and the success branch would then have asserted the
+      // balance ROSE and recorded the test green. The gate is deliberate —
+      // role_tiers.py:500 says the set exists to let staff "do the work, not
+      // bill for it", and admin_orgs.py:3406 records it closing a live hole.
+      //
+      // THE FINDING ABOVE STANDS: a control drawn for a seat that cannot use it
+      // is a dead control, and every word of that message is still true. What
+      // changes is the demand. The refusal is asserted to be the CORRECT one and
+      // to be legible; making the door open was never the fix.
     expect(r.status,
       `\n  ⚠ "+ NEW CLIENT" IS A DEAD CONTROL. HubClientsPage draws the button and the whole\n` +
       `     seven-field form for every org user with module write, and posts\n` +
@@ -1841,7 +1860,7 @@ test('14.12 Sahayak Admin and Hub clients — and "+ New client" is a control th
       `     and the toast reads: "${text}"\n` +
       `     §10 lists "hub clients" as one of Suite 14's seventeen screens. A customer can\n` +
       `     see it, fill it, submit it, and never create a client.\n`)
-      .toBeLessThan(400);
+      .toBe(403);
     // The refusal, whatever the verdict on the control, must at least be legible.
     assertLegibleRefusal(text, '"+ New client"', wire);
   }
@@ -2209,13 +2228,32 @@ test('14.16 approve and reject on client content are controls this account canno
     record('content approved', N_CONTENT_APPROVED, 0, 0,
       `Approve answered ${r.status} — the control cannot work for this account`);
     assertLegibleRefusal(text, 'Approve on client content', wire);
+      // ⚠ 403 IS THE RIGHT ANSWER, AND THIS ASSERTED THE WRONG ONE.
+      // Adjudicated 2026-08-31 by an adversarial pass over every product-bug
+      // claim in this suite. `.toBeLessThan(400)` demanded that an ORG-SCOPED
+      // seat pass a `require_platform_role` gate — and this lane is a TENANT by
+      // construction (the header forces Unicode Group and asserts it must never
+      // be Aekam Inc). There is no status a correct product could return here
+      // except 403.
+      //
+      // For the credits case that mattered most: passing would have meant a
+      // paying customer minting itself credits, with no payment gateway in the
+      // product at all, and the success branch would then have asserted the
+      // balance ROSE and recorded the test green. The gate is deliberate —
+      // role_tiers.py:500 says the set exists to let staff "do the work, not
+      // bill for it", and admin_orgs.py:3406 records it closing a live hole.
+      //
+      // THE FINDING ABOVE STANDS: a control drawn for a seat that cannot use it
+      // is a dead control, and every word of that message is still true. What
+      // changes is the demand. The refusal is asserted to be the CORRECT one and
+      // to be legible; making the door open was never the fix.
     expect(r.status,
       `\n  ⚠ APPROVE / REJECT ARE DEAD CONTROLS FOR AN ORG-SCOPED ACCOUNT.\n` +
       `     hub/ContentTab.jsx:90 patches /v1/hub/clients/{id}/content/{cid}/review, which is\n` +
       `     require_platform_role(*SAHAYAK_COMMERCIAL_ROLES); the buttons are gated on screen\n` +
       `     only by useModuleWrite. Answer: ${r.status} ${r.text.slice(0, 160)}\n` +
       `     Toast: "${text}"\n`)
-      .toBeLessThan(400);
+      .toBe(403);
   }
 
   assertNoUncaught(con);
@@ -2268,6 +2306,25 @@ test('14.17 the brand profile — the only save control refuses, and the one tha
     const text = await toastText(page);
     record('brand profile', 1, 0, 0, `the only save control answered ${r.status}`);
     assertLegibleRefusal(text, 'Save on the brand profile', wire);
+      // ⚠ 403 IS THE RIGHT ANSWER, AND THIS ASSERTED THE WRONG ONE.
+      // Adjudicated 2026-08-31 by an adversarial pass over every product-bug
+      // claim in this suite. `.toBeLessThan(400)` demanded that an ORG-SCOPED
+      // seat pass a `require_platform_role` gate — and this lane is a TENANT by
+      // construction (the header forces Unicode Group and asserts it must never
+      // be Aekam Inc). There is no status a correct product could return here
+      // except 403.
+      //
+      // For the credits case that mattered most: passing would have meant a
+      // paying customer minting itself credits, with no payment gateway in the
+      // product at all, and the success branch would then have asserted the
+      // balance ROSE and recorded the test green. The gate is deliberate —
+      // role_tiers.py:500 says the set exists to let staff "do the work, not
+      // bill for it", and admin_orgs.py:3406 records it closing a live hole.
+      //
+      // THE FINDING ABOVE STANDS: a control drawn for a seat that cannot use it
+      // is a dead control, and every word of that message is still true. What
+      // changes is the demand. The refusal is asserted to be the CORRECT one and
+      // to be legible; making the door open was never the fix.
     expect(r.status,
       `\n  ⚠ AN ORGANISATION CAN NEVER SET A BRAND PROFILE.\n` +
       `     The ONLY brand save control in the product is BrandTab.jsx:41, which puts to\n` +
@@ -2278,7 +2335,7 @@ test('14.17 the brand profile — the only save control refuses, and the one tha
       `     93-E §3.4 files it as ORPHANED · LATENT. It is not latent from a customer's\n` +
       `     seat: the KPI strip on this very page says "Not set — output will be generic\n` +
       `     until it is", and there is no door.\n`)
-      .toBeLessThan(400);
+      .toBe(403);
   }
 
   assertNoUncaught(con);
@@ -2323,6 +2380,25 @@ test('14.18 "Add credits" on the client wallet is a control that refuses', async
     record('credit top-ups', N_TOPUPS, 0, 0,
       `"Add credits" answered ${r.status} — the control cannot work for this account`);
     assertLegibleRefusal(text, '"Add credits"', wire);
+      // ⚠ 403 IS THE RIGHT ANSWER, AND THIS ASSERTED THE WRONG ONE.
+      // Adjudicated 2026-08-31 by an adversarial pass over every product-bug
+      // claim in this suite. `.toBeLessThan(400)` demanded that an ORG-SCOPED
+      // seat pass a `require_platform_role` gate — and this lane is a TENANT by
+      // construction (the header forces Unicode Group and asserts it must never
+      // be Aekam Inc). There is no status a correct product could return here
+      // except 403.
+      //
+      // For the credits case that mattered most: passing would have meant a
+      // paying customer minting itself credits, with no payment gateway in the
+      // product at all, and the success branch would then have asserted the
+      // balance ROSE and recorded the test green. The gate is deliberate —
+      // role_tiers.py:500 says the set exists to let staff "do the work, not
+      // bill for it", and admin_orgs.py:3406 records it closing a live hole.
+      //
+      // THE FINDING ABOVE STANDS: a control drawn for a seat that cannot use it
+      // is a dead control, and every word of that message is still true. What
+      // changes is the demand. The refusal is asserted to be the CORRECT one and
+      // to be legible; making the door open was never the fix.
     expect(r.status,
       `\n  ⚠ "ADD CREDITS" IS A DEAD CONTROL. hub/CreditsTab.jsx renders the whole top-up\n` +
       `     form to every org user with module write and posts\n` +
@@ -2335,7 +2411,7 @@ test('14.18 "Add credits" on the client wallet is a control that refuses', async
       `     module goes through credits.spend against staging.hub_org_credits, the ORG\n` +
       `     wallet. So the one top-up control a customer can see funds a balance nothing\n` +
       `     charges against. §4's "credit top-ups 3" has no door at all.\n`)
-      .toBeLessThan(400);
+      .toBe(403);
   }
 
   assertNoUncaught(con);
