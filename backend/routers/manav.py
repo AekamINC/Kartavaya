@@ -1406,14 +1406,66 @@ async def create_employee(
     except Exception as exc:
         if _pg_code(exc) != "23505":
             raise
+        # ⚠ BY CONSTRAINT NAME, NOT BY ASSUMING WHICH ONE FIRED.
+        #
+        # `manav_employees` carries TWO partial unique indexes —
+        # `idx_manav_emp_code` on (org_id, employee_code) and
+        # `uq_manav_employee_login` on (org_id, user_id). A 23505 that blamed
+        # the employee code whatever the cause would tell an administrator to
+        # change a code that is perfectly free, while the login they attached
+        # is the thing already in use. That is a refusal pointing at the wrong
+        # field, which is worse than the 500 it replaced: it is confidently
+        # wrong rather than merely unhelpful.
+        #
+        # Anything this does not recognise stays the 500 it was, so Sentry keeps
+        # the real constraint name instead of a plausible 409 that hides it.
+        constraint = str(getattr(exc, "constraint_name", "") or "")
+        if constraint == "uq_manav_employee_login":
+            raise HTTPException(
+                409,
+                "That login is already attached to another employee in this "
+                "organisation. One person, one personnel file — unlink the "
+                "existing record before attaching the login here.",
+            )
+        if constraint != "idx_manav_emp_code":
+            raise
+        # WHO holds it, including the people the directory hides. The index
+        # carries no `is_active` and no on-the-rolls condition, so a leaver
+        # holds a code exactly as firmly as somebody still on the roster.
+        # NAMES, never ids: `create_employee` requires ADMIN, and an admin can
+        # already see every name in the firm.
+        holder = await pool.fetchrow(
+            "SELECT e.name, e.is_active, "
+            "  EXISTS (SELECT 1 FROM public.manav_offboarding x "
+            "           WHERE x.org_id = e.org_id AND x.employee_id = e.id "
+            "             AND x.status <> 'cancelled' "
+            "             AND x.last_working_day < CURRENT_DATE) AS has_left "
+            "  FROM public.manav_employees e "
+            " WHERE e.org_id=$1::uuid AND e.employee_code=$2",
+            org_id, body.employee_code,
+        )
+        if holder is None:
+            # The row moved between the INSERT and this lookup. Still a 409 —
+            # a bare 500 is the whole thing this change exists to stop.
+            raise HTTPException(
+                409,
+                f"Employee code {body.employee_code} is already in use in this "
+                f"organisation. Choose a different code.",
+            )
+        if holder["has_left"] or not holder["is_active"]:
+            raise HTTPException(
+                409,
+                f"Employee code {body.employee_code} belongs to {holder['name']}, "
+                f"who has left. The directory lists only people still on the "
+                f"rolls, which is why the code looks free — but a code stays with "
+                f"the person who held it, so their payslips, attendance and issued "
+                f"assets keep pointing at one file. Give this person a different "
+                f"code.",
+            )
         raise HTTPException(
             409,
-            f"The employee code \"{body.employee_code}\" is already in use in "
-            f"this organisation, so it cannot be given to somebody else — "
-            f"payslips, attendance and the asset register all identify a person "
-            f"by it. It may belong to somebody who has LEFT: the employee list "
-            f"hides anybody whose last working day has passed, and their code "
-            f"stays theirs. Choose a different code.",
+            f"Employee code {body.employee_code} is already used by "
+            f"{holder['name']}. Employee codes are unique within an organisation.",
         )
 
     # ── The invitation, AFTER the personnel file exists ─────────────────────

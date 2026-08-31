@@ -1098,6 +1098,57 @@ def _state_keys(*values) -> set:
     return keys
 
 
+def _pt_state_is_covered(slabs, state) -> bool:
+    """Does the ladder carry ANY band for this state, at any salary?
+
+    ⚠ THE QUESTION NOTHING COULD ANSWER, AND THE SILENCE IT LEFT.
+
+    `_pt_from_slabs` returns 0.0 for four different situations and the payslip
+    could not tell them apart:
+
+      1. the employee has no work state           -> a defensible zero
+      2. the state levies no professional tax     -> a CORRECT zero
+      3. the state levies it and this salary is
+         under the first band                     -> a CORRECT zero
+      4. THE STATE LEVIES IT AND THIS PRODUCT HAS
+         NO LADDER FOR THAT STATE                 -> a WRONG zero, and the
+                                                    employer carries the
+                                                    shortfall
+
+    2 and 4 are indistinguishable on the face of a payslip, and they are
+    opposite facts. Delhi, Haryana, Uttar Pradesh and Rajasthan levy no
+    professional tax at all, so zero is right there and must stay silent.
+    Tamil Nadu, Kerala, Madhya Pradesh, Odisha, Bihar, Punjab and the rest DO
+    levy it, and a zero there is money the firm still owes.
+
+    MEASURED 2026-08-31: `pay_professional_tax` carries shared bands for SEVEN
+    states — Assam, West Bengal, Gujarat, Maharashtra, Karnataka, Telangana and
+    Andhra Pradesh. About twenty-two states levy the tax. `_pt_slabs` already
+    says this in its own words — "the ~20-state seed is still owed, and the
+    flat-200 fallback that used to mask it has been removed" — so the gap is
+    known, unclosed, and now unmasked.
+
+    Seeding the missing states is DATA and is not done here: a slab invented
+    from memory is worse than an absent one, because it deducts a number
+    somebody will have to defend. What this function buys is that case 4 stops
+    being invisible.
+
+    Returns False only when a state was given AND no band anywhere in the
+    ladder names it. A caller with no state gets True, because "which state"
+    is a different missing thing and case 1 already has its own reporting.
+    """
+    keys = _state_keys(state)
+    if not keys:
+        return True
+    for row in slabs or ():
+        try:
+            if keys & _state_keys(row["state_code"], row["state_name"]):
+                return True
+        except (KeyError, TypeError, ValueError):
+            continue
+    return False
+
+
 def _pt_from_slabs(slabs, state, gross: float) -> tuple:
     """(monthly professional tax, the slab it came from) — or (0.0, None).
 
@@ -1387,6 +1438,22 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
             # Recording the base is additive and changes no figure. It makes
             # the frozen band interpretable, and it is what lets a check assert
             # that the band actually contains the number it was read against.
+            # ⚠ WHETHER THIS PRODUCT HAS A LADDER FOR THIS STATE AT ALL.
+            #
+            # False means the employee HAS a work state and no band anywhere
+            # names it — so the zero beside it is this product's gap, not the
+            # state's rule. See `_pt_state_is_covered`: today the ladder covers
+            # seven states of roughly twenty-two that levy the tax, so a firm in
+            # Chennai, Kochi, Bhopal, Bhubaneswar, Patna or Chandigarh deducts
+            # nothing and carries the shortfall.
+            #
+            # Recorded on the payslip rather than raised, because a payroll run
+            # must never stop for a missing rate — that rule is older than this
+            # entry and it is right. What it must not do is stay quiet.
+            "pt_state_covered": (
+                None if pt_slabs is None
+                else _pt_state_is_covered(pt_slabs, employee_state)
+            ),
             "pt_base": round(gross, 2),
             "pt_base_excludes": {
                 "commission": round(commission, 2),

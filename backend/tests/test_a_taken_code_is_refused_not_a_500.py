@@ -49,9 +49,20 @@ import pytest
 
 
 class FakeUniqueViolation(Exception):
-    """asyncpg raises with `sqlstate` on the exception; `_pg_code` reads it
-    without importing asyncpg into the router."""
+    """asyncpg raises with `sqlstate` AND `constraint_name` on the exception.
+
+    ⚠ THE CONSTRAINT NAME IS LOAD-BEARING AND WAS MISSING FROM THE FIRST
+    VERSION OF THIS FILE. `manav_employees` carries TWO partial unique indexes,
+    and a 409 that blamed the employee code whatever fired would tell an admin
+    to change a code that is perfectly free while the LOGIN they attached is the
+    duplicate. That is a refusal pointing at the wrong field — confidently
+    wrong, which is worse than the unhelpful 500 it replaced.
+    """
     sqlstate = "23505"
+
+    def __init__(self, constraint_name="idx_manav_emp_code"):
+        super().__init__(constraint_name)
+        self.constraint_name = constraint_name
 
 
 class FakeUndefinedColumn(Exception):
@@ -64,6 +75,18 @@ EMPLOYEE = {
     "email": "someone@example.invalid", "date_of_joining": "2026-08-01",
 }
 ASSET = {"asset_tag": "AST-S7-24", "name": "A laptop", "category": "laptop"}
+
+#: Who holds the code. The one that matters is a LEAVER: the directory hides
+#: them and the index does not, so this is the case an admin cannot work out
+#: from any screen the product offers.
+HOLDER_WHO_LEFT = {"name": "Kabir Solanki", "is_active": True, "has_left": True}
+HOLDER_STILL_HERE = {"name": "Aarav Trivedi", "is_active": True, "has_left": False}
+
+#: `assert_pahchan_seat_available` runs BEFORE the INSERT and reads through the
+#: same pool, so it consumes the first `fetchrow` on the way in. Answering it is
+#: not incidental: an uncapped, inactive module is the state that lets the route
+#: reach the write, which is where this file's subject lives.
+SEAT_ROW = {"seat_limit": None, "roster": 0, "exempt": 0, "module_active": False}
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +109,7 @@ class TestADuplicateEmployeeCode:
         self, api_client, mock_pool, as_admin, with_org_id, monkeypatch,
     ):
         monkeypatch.setattr(mock_pool, "acquire", _acquire_raising(FakeUniqueViolation()))
+        mock_pool.fetchrow.side_effect = [SEAT_ROW, HOLDER_WHO_LEFT]
         r = await api_client.post("/api/v1/manav/employees", json=EMPLOYEE)
         assert r.status_code == 409, (
             f"a taken employee code answered {r.status_code}. A 500 here carries "
@@ -98,10 +122,15 @@ class TestADuplicateEmployeeCode:
         self, api_client, mock_pool, as_admin, with_org_id, monkeypatch,
     ):
         monkeypatch.setattr(mock_pool, "acquire", _acquire_raising(FakeUniqueViolation()))
+        mock_pool.fetchrow.side_effect = [SEAT_ROW, HOLDER_WHO_LEFT]
         r = await api_client.post("/api/v1/manav/employees", json=EMPLOYEE)
         detail = str(r.json()["detail"])
         assert "S7-03" in detail, "the refusal does not say WHICH code is taken"
         assert "different code" in detail.lower(), "the refusal names no remedy"
+        assert "Kabir Solanki" in detail, (
+            "the refusal does not name WHO holds the code, so an admin cannot "
+            "act on it"
+        )
 
     @pytest.mark.anyio
     async def test_it_warns_that_the_holder_may_be_invisible(
@@ -115,12 +144,52 @@ class TestADuplicateEmployeeCode:
         wrong — which is exactly what happened to Suite 07.2.
         """
         monkeypatch.setattr(mock_pool, "acquire", _acquire_raising(FakeUniqueViolation()))
+        mock_pool.fetchrow.side_effect = [SEAT_ROW, HOLDER_WHO_LEFT]
         r = await api_client.post("/api/v1/manav/employees", json=EMPLOYEE)
         detail = str(r.json()["detail"]).lower()
-        assert "left" in detail and "hides" in detail, (
+        assert "left" in detail and "rolls" in detail, (
             "the refusal does not warn that the code may belong to somebody the "
             "employee list does not show"
         )
+
+    @pytest.mark.anyio
+    async def test_a_duplicate_LOGIN_blames_the_login_and_not_the_code(
+        self, api_client, mock_pool, as_admin, with_org_id, monkeypatch,
+    ):
+        """⚠ THE OTHER INDEX ON THE SAME TABLE.
+
+        `uq_manav_employee_login` is UNIQUE (org_id, user_id) WHERE user_id IS
+        NOT NULL. Both it and the code index raise 23505, and only the
+        constraint name tells them apart. Sending an admin to change a code
+        that is free, while the login is the thing already taken, is a worse
+        failure than the 500 — it is confidently wrong.
+        """
+        monkeypatch.setattr(
+            mock_pool, "acquire",
+            _acquire_raising(FakeUniqueViolation("uq_manav_employee_login")))
+        r = await api_client.post("/api/v1/manav/employees", json=EMPLOYEE)
+        assert r.status_code == 409
+        detail = str(r.json()["detail"]).lower()
+        assert "login" in detail, "a duplicate login is reported as a duplicate code"
+        assert "S7-03" not in str(r.json()["detail"]), (
+            "the refusal names the employee code, which is not what collided"
+        )
+
+    @pytest.mark.anyio
+    async def test_an_unrecognised_constraint_stays_a_fault(
+        self, api_client, mock_pool, as_admin, with_org_id, monkeypatch,
+    ):
+        """A 23505 from a constraint this code does not know is NOT dressed up.
+
+        A plausible 409 over an unknown collision would hide the real
+        constraint name from Sentry, which is the only thing that would tell
+        the next person what actually happened.
+        """
+        monkeypatch.setattr(
+            mock_pool, "acquire",
+            _acquire_raising(FakeUniqueViolation("some_index_added_later")))
+        with pytest.raises(FakeUniqueViolation):
+            await api_client.post("/api/v1/manav/employees", json=EMPLOYEE)
 
     @pytest.mark.anyio
     async def test_a_different_database_error_is_still_a_fault(

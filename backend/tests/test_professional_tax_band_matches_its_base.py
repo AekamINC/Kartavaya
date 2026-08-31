@@ -160,3 +160,126 @@ class TestTheBandAndTheBaseAgree:
         )
         assert treatment["pt_slab"]["slab_to"] == 7500
         assert treatment["pt_basis"] == "slab"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# THE NATIONAL GAP — a zero this product owes against a zero the state does
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Kartavaya is sold to firms across India, not to firms in two states. The
+# professional-tax ladder carries SEVEN states — Assam, West Bengal, Gujarat,
+# Maharashtra, Karnataka, Telangana, Andhra Pradesh — measured live on
+# 2026-08-31. About twenty-two states levy the tax.
+#
+# So an employee in Tamil Nadu, Kerala, Madhya Pradesh, Odisha, Bihar,
+# Jharkhand, Chhattisgarh, Punjab, Sikkim, Puducherry or the north-east has
+# ZERO professional tax deducted, silently, and the EMPLOYER carries the
+# shortfall with interest and penalty.
+#
+# ⚠ AND IT IS INDISTINGUISHABLE FROM BEING CORRECT. Delhi, Haryana, Uttar
+# Pradesh and Rajasthan levy no professional tax at all — zero is right there
+# and must stay silent. Two opposite facts, one number, and no way to tell them
+# apart from the payslip. `_pt_state_is_covered` is what separates them.
+#
+# Seeding the missing states is DATA and is deliberately NOT done here: a slab
+# invented from memory is worse than an absent one, because it deducts a figure
+# somebody will have to defend to a state authority.
+
+TN = [  # a state the ladder does NOT carry
+    {"state_code": "33", "state_name": "Tamil Nadu", "slab_from": 0,
+     "slab_to": None, "monthly_tax": 0, "effective_from": None, "month": None, "is_own": False},
+]
+
+
+class TestAStateWithNoLadderIsNotSilent:
+    def test_a_covered_state_reports_covered(self):
+        _, treatment = run(20_000.0, state="27")
+        assert treatment["pt_state_covered"] is True
+
+    def test_an_uncovered_state_is_flagged(self):
+        """⚠ THE ASSERTION THIS SECTION EXISTS FOR.
+
+        Maharashtra's ladder is loaded and the employee works in Karnataka. No
+        band anywhere names their state, so the zero is this product's gap.
+        """
+        out, treatment = run(20_000.0, state="29")
+        assert out["professional_tax"] == 0.0
+        assert treatment["pt_state_covered"] is False, (
+            "an employee whose state has NO ladder is reported the same as one "
+            "in a state that levies nothing — and the employer carries the "
+            "difference"
+        )
+
+    def test_no_state_at_all_is_not_reported_as_uncovered(self):
+        """Case 1 is a different missing thing and has its own reporting.
+
+        Blaming the ladder for an employee whose work state was never recorded
+        would send somebody to seed a state nobody has named.
+        """
+        _, treatment = run(20_000.0, state=None)
+        assert treatment["pt_state_covered"] is True
+
+    def test_a_state_that_levies_nothing_is_still_covered(self):
+        """A band that matches and charges 0 is a CORRECT zero and must stay
+        quiet. Maharashtra under Rs 7,500 is exactly that."""
+        out, treatment = run(5_000.0, state="27")
+        assert out["professional_tax"] == 0.0
+        assert treatment["pt_state_covered"] is True
+        assert treatment["pt_slab"] is not None
+
+    def test_the_flag_is_absent_when_the_table_was_never_consulted(self):
+        """`pt_slabs=None` means the pre-slab flat rule ran — nothing was looked
+        up, so there is no coverage question to answer and None says so."""
+        from routers.vetana import _compute_statutory
+        out = _compute_statutory(10_000.0, 20_000.0, dict(STRUCTURE),
+                                 commission=0.0, bonus=0.0,
+                                 pt_slabs=None, employee_state="33")
+        assert out["treatment"]["pt_state_covered"] is None
+
+
+class TestCoverageIsAboutTheSTATE_NotTheAmount:
+    """⚠ WRITTEN AFTER A MUTATION THAT DID NOT BITE.
+
+    The first version of the coverage tests used Maharashtra, whose ladder
+    carries three bands — 0, 175 and 200. A mutation making
+    `_pt_state_is_covered` skip any band whose tax is zero therefore stayed
+    GREEN: the other two bands still matched the state, so the answer was right
+    for the wrong reason. That is this programme's dominant fault reproduced
+    once more inside the test written to catch it.
+
+    Coverage is a question about whether the ladder KNOWS the state, and it has
+    to be answered from a state whose only band charges nothing — otherwise a
+    non-zero sibling answers it instead.
+    """
+
+    ONE_ZERO_BAND = [
+        {"state_code": "33", "state_name": "Tamil Nadu", "slab_from": 0,
+         "slab_to": None, "monthly_tax": 0, "effective_from": None,
+         "month": None, "is_own": False},
+    ]
+
+    def test_a_state_whose_only_band_is_zero_is_still_covered(self):
+        from routers.vetana import _pt_state_is_covered
+        assert _pt_state_is_covered(self.ONE_ZERO_BAND, "33") is True, (
+            "a state whose ladder exists and charges nothing at this salary was "
+            "reported as having no ladder at all — the two facts this flag was "
+            "added to separate, collapsed back together"
+        )
+
+    def test_a_state_absent_from_that_same_ladder_is_not_covered(self):
+        from routers.vetana import _pt_state_is_covered
+        assert _pt_state_is_covered(self.ONE_ZERO_BAND, "32") is False
+
+    def test_an_empty_ladder_covers_nothing(self):
+        from routers.vetana import _pt_state_is_covered
+        assert _pt_state_is_covered([], "33") is False
+        assert _pt_state_is_covered(None, "33") is False
+
+    def test_an_unreadable_row_does_not_hide_a_good_one(self):
+        """A malformed row is skipped, not fatal — the same standing
+        `_pt_from_slabs` gives it. A ladder that answered "not covered" because
+        one row was junk would report a national data gap that does not exist.
+        """
+        from routers.vetana import _pt_state_is_covered
+        broken = [{"state_code": None}, *self.ONE_ZERO_BAND]
+        assert _pt_state_is_covered(broken, "33") is True
