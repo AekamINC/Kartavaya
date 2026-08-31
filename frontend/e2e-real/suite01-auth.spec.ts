@@ -293,8 +293,30 @@ test.describe('Suite 01 — auth & account · Unicode Group', () => {
     // The picker, not a payload. §3's "picks from the real picker" — the module
     // access sheet is opened and its summary is read back, so the invite that
     // goes out carries what the screen says it carries.
+    // ⚠ THIS ASSERTED `No modules`, WHICH WAS A FACT ABOUT THE ORG, NOT THE
+    // PRODUCT. `defaultGrantsFor(activeModules)` pre-fills every non-sensitive
+    // module the org actually holds (TabMembers.jsx:242). Unicode held zero
+    // when this was written; once twelve were provisioned the summary correctly
+    // named eight and the test failed against the right behaviour.
+    //
+    // What is worth checking is the property that survives any org's
+    // configuration: A NEW COLLEAGUE IS NEVER HANDED THE SENSITIVE MODULES BY
+    // DEFAULT. Finance, Procurement, Payroll and HRMS are `sensitive: true` in
+    // `org/catalogue.js`, and `defaultGrantsFor` filters exactly those out —
+    // so an invitation that arrives carrying payroll is the defect, and it is
+    // the one that cannot be undone by noticing later.
     const summary = page.getByTestId('add-grants-summary');
-    await expect(summary).toContainText('No modules');
+    await expect(summary).toBeVisible({ timeout: 30_000 });
+    const said = (await summary.innerText()).trim();
+    for (const s of ['Ganit', 'Kray', 'Vetana', 'Manav']) {
+      expect(said, `the invitation form offers ${s} to a brand-new colleague by default. ` +
+        'It is `sensitive: true` in org/catalogue.js precisely so it is chosen deliberately ' +
+        `and never inherited: the summary reads "${said}"`).not.toContain(s);
+    }
+    // And it must SAY what it is handing over, in words. "No modules …" is the
+    // legitimate empty case; a blank is not.
+    expect(said.length, 'the module-access summary is blank, so the operator cannot see what '
+      + 'this invitation carries before sending it').toBeGreaterThan(8);
 
     await page.getByRole('button', { name: /^Add or invite$/ }).click();
 

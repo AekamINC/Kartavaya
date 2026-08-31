@@ -539,10 +539,24 @@ test.describe('Suite 02b — compliance & support access · Unicode Group', () =
     expect(meta, `a UUID reached the provenance line: ${meta}`).not.toMatch(UUID_RE);
 
     // ── 7 · IT PERSISTS — the reload is the server's opinion, not the toast's ──
-    await page.reload();
+    // ⚠ RE-OPENED, NOT RELOADED. `page.reload()` replays whatever the URL is at
+    // that moment, and by this point in the test it is no longer
+    // `?tab=compliance` — so the reload landed on the default tab, the rule row
+    // did not exist, and the failure read "element(s) not found" against a
+    // radio on a panel that was never on screen. Navigating to the tab is the
+    // same fresh load from the server's point of view (no client state
+    // survives), and it is what a person actually does to check something
+    // stuck: go back to the screen.
+    await openTab(page, 'compliance');
     const rowAfter = page.locator('.cmpl__rule').filter({ hasText: RULE.label });
+    await expect(rowAfter,
+      `the compliance panel did not come back after re-opening it, so nothing below can ` +
+      `say whether ${RULE.key} persisted`).toBeVisible({ timeout: 30_000 });
     await expect(
       rowAfter.getByRole('radio', { name: STATE_LABEL[OTHER], exact: true }),
+      `${RULE.label} was recorded as ${STATE_LABEL[OTHER]} and came back as something else. ` +
+      'A compliance position that does not survive the trip to the server is a position the ' +
+      'firm has not actually taken.',
     ).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
     // A row away from the default is marked as such — `cmpl__rule--off` is how
     // a firm spots its own decisions in a long panel.

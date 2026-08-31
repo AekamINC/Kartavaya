@@ -705,7 +705,18 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
 
     // Stored is not the same as in use, and the product must say so rather than
     // implying mail already goes out from this address.
-    await expect(page.getByText(/Saved — not in use yet|In use/)).toBeVisible();
+    //
+    // ⚠ SCOPED TO THE ROW THIS TEST JUST SAVED. It was `page.getByText(…)`
+    // against the whole page, which resolved to NINE tags once the org had nine
+    // saved senders and died on strict mode. Widening it with `.first()` would
+    // have been worse than the crash: it would pass on any row's tag, including
+    // one saved months ago, and say nothing about the address written here.
+    const row = page.locator('section').filter({ has: page.locator(`#snd-${purpose}-email`) });
+    await expect(row.getByText(/Saved — not in use yet|In use/),
+      `the ${purpose} sender was stored and its row does not say whether mail actually ` +
+      'goes out from it. Stored is not in use, and a screen that does not distinguish ' +
+      'them tells a firm its address is live when nothing is sending from it')
+      .toBeVisible();
   });
 
   test('02.5 UPI is one ID PER PLATFORM, not one VPA field', async ({ page }) => {
