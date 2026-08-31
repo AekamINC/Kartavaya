@@ -1,5 +1,6 @@
 import React from 'react';
 import EmptyState from '../ui/EmptyState';
+import { Announced } from '../ui/Skeleton';
 import { Table, TableHead, HeadCell, Cell } from '../ui/Table';
 import ArrangedDataTable from '../ui/arrangeDataTable';
 import { useSecondary, Secondary } from '../Bilingual';
@@ -77,13 +78,20 @@ export function Badge({ text, color, children }) {
   );
 }
 
-export function Shimmer({ count = 4 }) {
+export function Shimmer({ count = 4, label = 'Loading…' }) {
+  // ANNOUNCES ITSELF — the fourth copy of this shape, and the same reason as
+  // the three `Shim`s in the module `_shared.jsx` files: Suite 20.06 found 7 of
+  // 10 sampled screens drawing a loading state that said nothing to a screen
+  // reader. `Announced` no-ops inside an explicit `SkeletonRegion`, so a screen
+  // that already wraps this does not begin saying it twice.
   return (
-    <div className="k-shimmer">
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="k-shimmer__tile" />
-      ))}
-    </div>
+    <Announced label={label}>
+      <div className="k-shimmer" aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="k-shimmer__tile" />
+        ))}
+      </div>
+    </Announced>
   );
 }
 

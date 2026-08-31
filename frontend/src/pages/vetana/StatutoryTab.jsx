@@ -12,6 +12,7 @@
 // inventing four identifiers on a compliance screen. See the header of
 // `statutoryCalendar.js` for the same argument about professional tax dates.
 import React, { useState } from 'react';
+import DateInput from '../../components/ui/DateInput';
 import { Section, StatTile, DataTable, Td } from '../../components/editorial';
 import Tag from '../../components/ui/Tag';
 import {
@@ -48,16 +49,24 @@ export default function StatutoryTab() {
         <h3 className="k-section__title">
           Statutory<Secondary className="k-section__title-hi" value="वैधानिक" />
         </h3>
-        <label className="vt-field">
-          <span className="vt-field__l">Month</span>
-          <input
+        <div className="vt-field">
+          <span className="vt-field__l" id="vt-month-statutory">Month</span>
+          {/* Was a native `<input type="month">`. The product bans native
+              date-family controls (CLAUDE.md), and Vetana is where a wrong
+              month costs most: the value must match
+              `vetana_payroll_runs.month` EXACTLY, and a wrong one does not
+              fail -- it files against a run nobody will ever look at.
+              A `div`, not a `label`, because DateInput renders a BUTTON and
+              a label cannot label one; the association is aria-labelledby. */}
+          <DateInput
             type="month"
             value={month}
             max={thisMonth()}
             onChange={e => setMonth(e.target.value)}
             className="k-formpanel__input vt-field__in"
+            aria-labelledby="vt-month-statutory"
           />
-        </label>
+        </div>
       </div>
 
       {res.loading ? <Shim count={6} />

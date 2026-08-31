@@ -1,10 +1,18 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { usePicker } from './Picker';
 import CalendarGrid from './CalendarGrid';
+import MonthGrid, { fmtMonth, parseMonth } from './MonthGrid';
 
 /**
  * DateInput — a drop-in replacement for `<input type="date">`,
- * `type="datetime-local"` and `type="time"`.
+ * `type="datetime-local"`, `type="time"` and `type="month"`.
+ *
+ * ⚠ `month` WAS THE HOLE, and it was a named one. `Field.jsx` forwarded the
+ * other three here and not this, so five screens still emitted the native
+ * widget the rule bans — three of them Vetana, where a wrong month does not
+ * fail loudly but files against a payroll run that will never look at it. Suite
+ * 20.04 failed on this deliberately and called the fix a feature rather than a
+ * one-liner; `MonthGrid.jsx` is that feature.
  *
  * There were 91 of those three across 53 files. Two complaints follow from that
  * and neither can be fixed on the native control:
@@ -71,6 +79,12 @@ const label = (type, value) => {
     const t = parseTime(value);
     return t ? new Date(2000, 0, 1, t.h, t.min).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : null;
   }
+  if (type === 'month') {
+    // `parseDay` cannot serve here: `2026-08` has no day component, so the
+    // regex fails and every month would render as the empty placeholder.
+    const mm = parseMonth(value);
+    return mm ? new Date(mm.y, mm.m, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : null;
+  }
   const d = parseDay(value);
   if (!d) return null;
   const day = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -100,6 +114,7 @@ export default function DateInput({
   const { closing, close, onExitEnd } = usePicker(open, setOpen, rootRef, listRef);
 
   const withTime = type === 'datetime-local';
+  const isMonth = type === 'month';
   const dayPart = type === 'time' ? '' : (value || '').slice(0, 10);
   const timePart = type === 'time' ? (value || '') : (value || '').slice(11, 16);
   const selected = parseDay(dayPart);
@@ -136,6 +151,7 @@ export default function DateInput({
     emit(`${dayPart || fmtDay(new Date())}T${hm}`);
     close();
   };
+  const pickMonth = (ym) => { emit(fmtMonth(ym)); close(); };
 
   // The month view, the cell loop and the day-comparison helper all live in
   // CalendarGrid now — this file no longer draws a calendar. `today` stays:
@@ -196,12 +212,37 @@ export default function DateInput({
         onClick={() => (open ? close() : setOpen(true))}
       >
         <span className="pk__dti" aria-hidden="true">{type === 'time' ? Ic.clock : Ic.cal}</span>
-        <span className="pk__lbl">{shown || placeholder || (type === 'time' ? 'No time' : 'No date')}</span>
+        <span className="pk__lbl">
+          {shown || placeholder || (type === 'time' ? 'No time' : isMonth ? 'No month' : 'No date')}
+        </span>
       </button>
 
       {open && (
-        <div ref={popRef} className={popCls} role="dialog" onAnimationEnd={onExitEnd} aria-label={ariaLabel || 'Choose a date'} style={{ minWidth: 256 }}>
-          {type !== 'time' && (
+        <div ref={popRef} className={popCls} role="dialog" onAnimationEnd={onExitEnd} aria-label={ariaLabel || (isMonth ? 'Choose a month' : 'Choose a date')} style={{ minWidth: 256 }}>
+          {isMonth && (
+            <>
+              <div className="pk__quick">
+                {/* The months a payroll or filing screen actually reaches for.
+                    "Next month" is deliberately absent: every month field in
+                    the product carries `max={thisMonth()}` because you cannot
+                    run a payroll or file a return for a month that has not
+                    happened, and a quick button that lands on a blocked value
+                    would be a control that refuses itself. */}
+                {[['This month', 0], ['Last month', -1]].map(([l, n]) => (
+                  <button key={l} type="button" className="pk__q" onClick={() => {
+                    const d = new Date(today.getFullYear(), today.getMonth() + n, 1);
+                    pickMonth({ y: d.getFullYear(), m: d.getMonth() });
+                  }}>{l}</button>
+                ))}
+                {value && !required && <button type="button" className="pk__q" onClick={() => { emit(''); close(); }}>Clear</button>}
+              </div>
+              <div ref={listRef}>
+                <MonthGrid value={value} min={min} max={max} onPick={pickMonth} />
+              </div>
+            </>
+          )}
+
+          {type !== 'time' && !isMonth && (
             <>
               <div className="pk__quick">
                 {[['Today', 0], ['Tomorrow', 1], ['Next week', 7]].map(([l, n]) => (

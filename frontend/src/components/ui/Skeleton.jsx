@@ -148,21 +148,27 @@ export function SkeletonPage({ withStats = true, withTable = false, className = 
    conversation. */
 
 /** List rows — tasks, contacts, invoices, anything with an avatar and a title. */
-export function SkeletonList({ rows = 6, showAvatar = true, className = '', style }) {
+export function SkeletonList({ rows = 6, showAvatar = true, className = '', style, label = 'Loading…' }) {
+  // Announces itself unless an explicit `SkeletonRegion` already does — see
+  // `Announced`. `if (loading) return <SkeletonList />` is the spelling most
+  // call sites use, and before this it was silent to a screen reader while
+  // looking perfectly busy to an eye (Suite 20.06).
   return (
-    <div className={`k-skeleton-table ${className}`} style={style} aria-hidden="true">
-      {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} className="k-skeleton-table__row">
-          <div className="k-skeleton-table__cell" style={{ width: '100%' }}>
-            {showAvatar && <SkeletonAvatar size={24} />}
-            <SkeletonText width={`${52 + ((r * 13) % 26)}%`} height={13} />
+    <Announced label={label}>
+      <div className={`k-skeleton-table ${className}`} style={style} aria-hidden="true">
+        {Array.from({ length: rows }).map((_, r) => (
+          <div key={r} className="k-skeleton-table__row">
+            <div className="k-skeleton-table__cell" style={{ width: '100%' }}>
+              {showAvatar && <SkeletonAvatar size={24} />}
+              <SkeletonText width={`${52 + ((r * 13) % 26)}%`} height={13} />
+            </div>
+            <div className="k-skeleton-table__cell" style={{ width: '22%' }}>
+              <SkeletonText width="70%" height={11} />
+            </div>
           </div>
-          <div className="k-skeleton-table__cell" style={{ width: '22%' }}>
-            <SkeletonText width="70%" height={11} />
-          </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </Announced>
   );
 }
 
@@ -201,16 +207,52 @@ export function SkeletonChat({ rows = 5, className = '', style }) {
 }
 
 /**
+ * True when something up the tree is already a `SkeletonRegion`.
+ *
+ * Without this, making the primitives announce themselves would DOUBLE-announce
+ * on every screen that already wraps them properly — two nested `role="status"`
+ * `aria-live` regions, so a screen reader says "Loading contacts" twice. The
+ * screens that got it right must not be punished for the ones that did not.
+ */
+const InSkeletonRegion = React.createContext(false);
+
+/**
+ * Announce a skeleton, UNLESS an explicit `SkeletonRegion` already does.
+ *
+ * ── WHY THE PRIMITIVES ANNOUNCE THEMSELVES NOW ──────────────────────────────
+ *
+ * Suite 20.06, 2026-08-31: **7 of 10 sampled screens announced nothing at all**
+ * while loading — `role=status 0, aria-busy 0`. `vetana#payslips` was the sharp
+ * case: a skeleton IS drawn, so the screen looks busy to an eye and is silent to
+ * a screen reader.
+ *
+ * The three that passed each remembered to write
+ * `<SkeletonRegion label="…"><SkeletonList/></SkeletonRegion>` by hand. That is
+ * the defect: the contract lived in a wrapper every call site had to remember,
+ * and `if (loading) return <SkeletonList />` is the obvious, shorter, wrong
+ * spelling. Fixing seven call sites would leave the eighth to be written next
+ * month, so the primitive carries the contract and the wrapper stays available
+ * for a bespoke label.
+ */
+export function Announced({ label, children }) {
+  const inside = React.useContext(InSkeletonRegion);
+  if (inside) return children;
+  return <SkeletonRegion label={label}>{children}</SkeletonRegion>;
+}
+
+/**
  * Wrapper that exposes the aria-busy/role="status" contract in one place.
  * Wrap any of the above (or a group of them) with this when the skeleton
- * stands in for a live region of the page.
+ * stands in for a live region of the page and deserves a specific label.
  */
 export function SkeletonRegion({ label = 'Loading…', children, className = '', style }) {
   return (
-    <div className={className} style={style} role="status" aria-busy="true" aria-live="polite">
-      <span className="k-sr-only">{label}</span>
-      {children}
-    </div>
+    <InSkeletonRegion.Provider value>
+      <div className={className} style={style} role="status" aria-busy="true" aria-live="polite">
+        <span className="k-sr-only">{label}</span>
+        {children}
+      </div>
+    </InSkeletonRegion.Provider>
   );
 }
 

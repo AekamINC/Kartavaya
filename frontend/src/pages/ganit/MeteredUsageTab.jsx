@@ -180,11 +180,28 @@ export default function MeteredUsageTab() {
         {!canWrite && denial && <span className="gn-denial">{denial}</span>}
       </div>
 
+      {/* ── AN EMPTY FILTER IS NOT AN EMPTY TABLE ──────────────────────────
+          This said "No usage entries" whenever the list came back empty — and
+          the list is FILTERED, defaulting to Unbilled. Measured live
+          2026-08-31: Unicode holds 18 usage rows and ALL 18 are invoiced, so
+          the screen told a reader there were none while eighteen sat one
+          dropdown away. Suite 05.01 read the same contradiction from outside
+          and reported "18 rows on the wire and paints none of them".
+
+          20.09 asks that an empty list say so in words. Saying the WRONG words
+          is the version of that failure nobody checks for: the reader does not
+          go looking, because they have been told there is nothing to find. */}
       {items.length === 0 && (
         <EmptyState
           icon="ganit"
-          title="No usage entries"
-          description="Record billable hours, units, or transactions for your clients. Generate invoices from unbilled usage."
+          title={filter === 'unbilled' ? 'No unbilled usage'
+            : filter === 'invoiced' ? 'No invoiced usage'
+              : 'No usage entries'}
+          description={filter === 'all'
+            ? 'Record billable hours, units, or transactions for your clients. Generate invoices from unbilled usage.'
+            : filter === 'unbilled'
+              ? 'Everything recorded so far has been invoiced. Switch the filter to All to see it.'
+              : 'Nothing has been invoiced yet. Switch the filter to All to see what is recorded.'}
           action={canWrite ? '+ Usage Entry' : undefined}
           onAction={canWrite ? () => setEditing({ ...BLANK }) : undefined}
         />

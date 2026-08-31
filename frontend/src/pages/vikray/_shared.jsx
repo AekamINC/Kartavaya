@@ -267,16 +267,31 @@ export const lineAmount = li =>
  * Client-side totals for the create/edit forms.
  *
  * 27 §5: this is a PREVIEW and is labelled as one. The server computes the
- * authoritative figures in `_compute_order_totals`, and the two can disagree —
- * the order in which a per-line percentage discount and a flat order discount
- * are applied is not guaranteed to match. Making the client authoritative would
- * put tax arithmetic somewhere nobody can audit; showing an unlabelled figure
- * that later changes is the same lie with extra steps.
+ * authoritative figures in `_compute_order_totals`; making the client
+ * authoritative would put tax arithmetic somewhere nobody can audit.
+ *
+ * ⚠ THE "THEY MAY DISAGREE" CAVEAT THAT USED TO SIT HERE IS GONE, because the
+ * disagreement it excused was a DEFECT, not a tolerance. This said the order in
+ * which a per-line percentage discount and a flat order discount are applied
+ * "is not guaranteed to match" — and on 2026-08-30 it did not: the server taxed
+ * the value BEFORE the flat discount, over-stating output tax by ₹900 on one
+ * live order and on the tax invoice raised from it. A caveat that a figure
+ * might change on save is not a licence for it to change by real money; it made
+ * a wrong number look like a rounding difference for as long as it stood.
+ *
+ * Both sides now apply the flat discount to the taxable value, apportioned
+ * pro-rata across lines (s.15(3)(a) CGST Act; pro-rata because lines may carry
+ * different `gst_rate`s). The preview and the stored document agree to the
+ * paisa, and the assertion below is that they must keep agreeing.
  */
 export function previewTotals(lineItems, discount = 0) {
   const items = lineItems || [];
   const subtotal = items.reduce((s, li) => s + lineAmount(li), 0);
-  const gst = items.reduce((s, li) => s + lineAmount(li) * (Number(li.gst_rate) || 0) / 100, 0);
+  const flat = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
+  const gst = items.reduce((s, li) => {
+    const share = subtotal > 0 ? lineAmount(li) / subtotal : 0;
+    return s + (lineAmount(li) - flat * share) * (Number(li.gst_rate) || 0) / 100;
+  }, 0);
   return { subtotal, gst, total: subtotal + gst - (Number(discount) || 0) };
 }
 

@@ -269,7 +269,14 @@ export default function DocumentsTab() {
       <div className="gr__bar">
         <select className="k-input gr__sel gr__sel--wide" aria-label="Filter by folder" value={folderFilter} onChange={e => setFolderFilter(e.target.value)}>
           <option value="">All Folders</option>
-          {folders.map(f => <option key={f.folder} value={f.folder}>{f.folder} ({f.count})</option>)}
+          {/* The VALUE stays the raw folder — the list endpoint filters on that
+              exact string — but the TEXT is the client's name. Printing the
+              value was how this picker read "crm/19df5798-a669-…/documents (1)"
+              to a user, which is both unreadable and a breach of the
+              names-not-IDs rule (Suite 20.03, 2026-08-30). */}
+          {folders.map(f => (
+            <option key={f.folder} value={f.folder}>{(f.folder_label || f.folder)} ({f.count})</option>
+          ))}
         </select>
         <input className="k-input gr__search" placeholder="Search documents…" value={search}
           onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
@@ -370,7 +377,16 @@ export default function DocumentsTab() {
                         )}
                       </td>
                     ),
-                    folder: <td className="gr__td--mute">{d.folder || '—'}</td>,
+                    /* `folder_label`, NEVER `folder`. The raw value is a storage
+                       key — `crm/<client_id>/documents` — and printing it
+                       rendered a client UUID in a table cell. Suite 20.03 found
+                       three on this screen on 2026-08-30; this column and the
+                       picker above were both of the sources. The server computes
+                       the label so the two cannot disagree. Falls back to
+                       `folder` only if the API predates the field, which shows
+                       the raw path rather than an empty cell — visible, and
+                       still catchable by 20.03. */
+                    folder: <td className="gr__td--mute">{d.folder_label || d.folder || '—'}</td>,
                     file_size: <td className="gr__td--mute">{fmtSize(d.file_size)}</td>,
                     file_type: <td className="gr__td--mute gr__td--id">{d.mime_type || '—'}</td>,
                     [CREATED_KEY]: <CreatedCell value={d.created_at} />,

@@ -19,6 +19,7 @@
 // three states apart and cannot collapse them, and every original
 // `catch {}` in this module has been removed.
 import React, { useState, useEffect, useCallback } from 'react';
+import { Announced } from '../../components/ui/Skeleton';
 import { api } from '../../lib/api';
 import { inr } from '../../lib/inr';
 
@@ -132,11 +133,20 @@ export function Resource({ state, what, skeleton, empty, onRetry, children }) {
 }
 
 /** Local re-export so tabs need one import for the skeleton. */
-export function Shim({ count = 4 }) {
+export function Shim({ count = 4, label = 'Loading…' }) {
+  // ANNOUNCES ITSELF. Suite 20.06 (2026-08-31) found 7 of 10 sampled screens
+  // with `role=status 0, aria-busy 0` while loading, and `vetana#payslips` was
+  // the sharp one: a Shim IS drawn, so the screen looks busy to an eye and is
+  // silent to a screen reader.
+  //
+  // `Announced` is a no-op when an explicit `SkeletonRegion` already wraps this,
+  // so the screens that were written correctly do not start saying it twice.
   return (
-    <div className="k-shimmer">
-      {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
-    </div>
+    <Announced label={label}>
+      <div className="k-shimmer" aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
+      </div>
+    </Announced>
   );
 }
 

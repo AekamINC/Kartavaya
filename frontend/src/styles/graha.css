@@ -147,7 +147,22 @@
    The other six set properties `.tbl` does not touch and are left as they were:
    adding `td` to those would be noise pretending to be rigour. */
 .gr__td--name { font-weight: 600; }
-.gr__td--mute { color: var(--ink-2); }
+/* ── ONE ROW CONTRACT: THESE CELLS MUST NOT WRAP ────────────────────────────
+   Suite 20.05 measured `graha#contacts` rows at 59.5px against a `--row-h` of
+   50px. MEASURED by experiment 2026-08-31 — hiding each cell in turn until the
+   row fell back to the token — the culprit is the PHONE cell: at 71px wide,
+   "+44 7700 900124" wraps to three lines, and 3 x 19.53px + the rule is 59.5px.
+
+   ⚠ It reads as "not wrapping" from the outside, which is why it survived. A
+   cell that wraps has NO horizontal overflow, so `scrollWidth === clientWidth`
+   — the check that looks like it proves single-line proves the opposite.
+
+   `nowrap` WITHOUT ellipsis, deliberately: `.tbl__by` above clips a name at
+   14ch because a truncated name is still recognisable, but half a phone number
+   is not a phone number. Auto table layout gives the column its natural width
+   instead, and `.tbl__wrap` is `overflow-x: auto`, so a wide table scrolls
+   rather than a row growing. */
+.gr__td--mute { color: var(--ink-2); white-space: nowrap; }
 th.gr__td--mid, td.gr__td--mid { text-align: center; }
 .gr__td--cap  { text-transform: capitalize; }
 .gr__td--when { font-size: 11px; color: var(--ink-3); white-space: nowrap; }

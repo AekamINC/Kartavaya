@@ -978,6 +978,14 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    in the accessibility tree and leaves the layout to the cells, which stay
    direct grid items. Same reason on .pk__gcell, which wraps each day button. */
 .pk__grow, .pk__gcell { display: contents; }
+/* MonthGrid is FOUR across, not seven.
+   Because `.pk__grow`/`.pk__gcell` are `display: contents`, the row elements
+   are NOT layout boxes — every cell is a direct item of `.pk__grid`, so twelve
+   months poured into the calendar's 7-column track reflow as 7 + 5 regardless
+   of how the JSX is grouped. Caught by looking at it: the month mode's unit
+   tests all passed over this, because the DOM order and the roles were right
+   and only the painted layout was wrong. */
+.pk__grid--mon { grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .pk__dow  { height: 20px; display: grid; place-items: center; font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-3); }
 .pk__d {
   position: relative; height: 28px; display: grid; place-items: center;
@@ -990,6 +998,11 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .pk__d.today::after { content: ''; position: absolute; bottom: 3px; width: 3px; height: 3px; border-radius: 50%; background: var(--primary); }
 .pk__d.on     { background: var(--primary); color: var(--on-primary); font-weight: 500; }
 .pk__d.on::after { background: var(--on-primary); }
+/* The month cell in `MonthGrid`. `.pk__d` is sized for a two-digit day and a
+   three-letter month does not fit it — everything else (hover, today's dot,
+   the selected fill) is inherited deliberately so the two picker panels cannot
+   drift apart. Four per row instead of seven, so the extra width is free. */
+.pk__d--mon   { height: 32px; padding-inline: 6px; font-size: 12.5px; }
 
 /* DateInput — the drop-in for <input type="date|datetime-local|time">.
    Call sites pass the class the input carried (`k-input`,

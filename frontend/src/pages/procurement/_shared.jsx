@@ -81,7 +81,16 @@ export function previewTotals(lines, isIgst) {
     lineTotal = Math.round(lineTotal * 100) / 100;
     const gst = Math.round((lineTotal * (Number(l.gst_rate) || 0) / 100) * 100) / 100;
     if (isIgst) igst += gst;
-    else { cgst += Math.round((gst / 2) * 100) / 100; sgst += Math.round((gst / 2) * 100) / 100; }
+    // The halves are EXACT: round one, subtract for the other. Rounding both
+    // independently rounds an odd paisa UP TWICE, so CGST+SGST exceeds the tax
+    // on the line and the same goods total more intra-state than inter-state.
+    // Matches `services/purchase_orders.py`, which this preview shadows — a PO
+    // is matched against the invoice it becomes, and a paisa apart is reported
+    // as a tax discrepancy on an otherwise correct match.
+    else {
+      const half = Math.round((gst / 2) * 100) / 100;
+      cgst += half; sgst += Math.round((gst - half) * 100) / 100;
+    }
     subtotal += lineTotal;
   });
   const r = (n) => Math.round(n * 100) / 100;

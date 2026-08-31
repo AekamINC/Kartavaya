@@ -26,6 +26,7 @@
 // `items` is null whenever `error` is set, so a call site cannot accidentally
 // render "nobody is absent" over a 500.
 import React, { useState, useEffect, useCallback } from 'react';
+import { Announced } from '../../components/ui/Skeleton';
 import { api, rows as unwrapRows } from '../../lib/api';
 import Tag from '../../components/ui/Tag';
 import { PRIORITY_COLORS as TASK_PRIORITY_COLORS } from '../../lib/statusColors';
@@ -182,11 +183,20 @@ export function ErrorNote({ what, error, onRetry }) {
 }
 
 /** The skeleton. One import per tab for the loading state. */
-export function Shim({ count = 4 }) {
+export function Shim({ count = 4, label = 'Loading…' }) {
+  // ANNOUNCES ITSELF. Suite 20.06 (2026-08-31) found 7 of 10 sampled screens
+  // with `role=status 0, aria-busy 0` while loading, and `vetana#payslips` was
+  // the sharp one: a Shim IS drawn, so the screen looks busy to an eye and is
+  // silent to a screen reader.
+  //
+  // `Announced` is a no-op when an explicit `SkeletonRegion` already wraps this,
+  // so the screens that were written correctly do not start saying it twice.
   return (
-    <div className="k-shimmer">
-      {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
-    </div>
+    <Announced label={label}>
+      <div className="k-shimmer" aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
+      </div>
+    </Announced>
   );
 }
 

@@ -18,6 +18,7 @@
 // A "92%" with an unstated denominator is not a measurement.
 import React, { useState } from 'react';
 import { Empty, DataTable, Td } from '../../components/editorial';
+import DateInput from '../../components/ui/DateInput';
 import { useList, ErrorNote, Shim, thisMonth, monthRange } from './_shared';
 
 export default function PerformanceTab() {
@@ -29,16 +30,23 @@ export default function PerformanceTab() {
   return (
     <div>
       <div className="mn-bar">
-        <label className="mn-field">
-          <span className="mn-field__l">Month</span>
-          <input
+        <div className="mn-field">
+          <span className="mn-field__l" id="mn-perf-month">Month</span>
+          {/* Was a native `<input type="month">`. `BonusTab.jsx:56` in this same
+              module had already chosen a `<select>` over one and written down
+              why — "the native month control is the same browser-drawn widget
+              the date rule bans". This screen kept the widget; now both go
+              through the product's own picker. A `div`, not a `label`, because
+              DateInput renders a BUTTON that a label cannot label. */}
+          <DateInput
             className="k-input mn-f--lg"
             type="month"
             value={month}
             max={thisMonth()}
             onChange={e => setMonth(e.target.value)}
+            aria-labelledby="mn-perf-month"
           />
-        </label>
+        </div>
         <button type="button" className="k-btn k-btn--ghost" onClick={list.reload}>Refresh</button>
       </div>
 

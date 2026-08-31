@@ -32,6 +32,7 @@
 // NOT hidden by a client-side level check; see the note in
 // `__tests__/e2e/separated-duty.test.jsx`, which pins that decision.
 import React, { useState, useEffect } from 'react';
+import DateInput from '../../components/ui/DateInput';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
@@ -100,16 +101,24 @@ export default function PayrollTab({ runNonce, onChanged }) {
           Payroll runs<Secondary className="k-section__title-hi" value="वेतन संसाधन" />
         </h3>
         <div className="vt-head__act">
-          <label className="vt-field">
-            <span className="vt-field__l">Month</span>
-            <input
+          <div className="vt-field">
+            <span className="vt-field__l" id="vt-month-payroll">Month</span>
+            {/* Was a native `<input type="month">`. The product bans native
+                date-family controls (CLAUDE.md), and Vetana is where a wrong
+                month costs most: the value must match
+                `vetana_payroll_runs.month` EXACTLY, and a wrong one does not
+                fail -- it files against a run nobody will ever look at.
+                A `div`, not a `label`, because DateInput renders a BUTTON and
+                a label cannot label one; the association is aria-labelledby. */}
+            <DateInput
               type="month"
               value={month}
               max={thisMonth()}
               onChange={e => setMonth(e.target.value)}
               className="k-formpanel__input vt-field__in"
+              aria-labelledby="vt-month-payroll"
             />
-          </label>
+          </div>
           <button
             type="button"
             className="k-btn k-btn--primary"

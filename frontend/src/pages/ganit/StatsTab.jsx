@@ -327,13 +327,18 @@ export default function StatsTab() {
   const problems = challanProblems(challan);
 
   const periodPicker = (
-    <label className="gn-bar__f">
-      <span className="gn-bar__fl">Tax period</span>
-      <input
+    <div className="gn-bar__f">
+      <span className="gn-bar__fl" id="gn-tax-period">Tax period</span>
+      {/* Was a native `<input type="month">` — the last control in Ganit still
+          drawing the browser's own widget, which CLAUDE.md bans. A `div` rather
+          than a `label` because DateInput renders a BUTTON, and a label cannot
+          label one; the association is `aria-labelledby`. */}
+      <DateInput
         className="inp gn-bar__sel" type="month" value={period}
         onChange={e => e.target.value && setPeriod(e.target.value)}
+        aria-labelledby="gn-tax-period"
       />
-    </label>
+    </div>
   );
 
   if (loading) {

@@ -1008,7 +1008,22 @@
 
 /* The threshold field says whether it saved. It fired a silent PATCH on blur
    and surfaced a failure as a toast that named no row. */
-.vk-th     { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+/* ── STACKED, THIS CONTROL WAS TALLER THAN THE ROW IT LIVES IN ─────────────
+   Suite 20.05 measured `vikray#stock` rows at 56.5px against a `--row-h` of
+   50px. MEASURED by experiment 2026-08-31 — hiding each cell until the row fell
+   back to the token — the culprit is this control: as a COLUMN it is 55.5px
+   (the 82px input, a 2px gap, and a 12px status line), which no 50px row can
+   hold. Nothing was wrapping and no rule was fighting the token; the control
+   simply did not fit.
+
+   Laid out as a ROW it is one input's height, and the rows land exactly on the
+   token — proved in situ by injecting this rule into the live page: 18 rows off
+   the token became 0. The column it sits in is 356px wide against an 82px
+   input, so there is room and to spare.
+
+   `align-items: center` rather than `flex-end`: side by side, the status label
+   reads against the middle of the field it describes, not its bottom edge. */
+.vk-th     { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
 .vk-th__in { width: 82px; text-align: right; }
 .vk-th__s  { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; min-height: 12px; color: var(--on-surface-3); }
 .vk-th--saved  .vk-th__s { color: var(--ok); }

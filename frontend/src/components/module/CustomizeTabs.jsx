@@ -173,7 +173,36 @@ export default function CustomizeTabs({ open, onClose, tabs, defaultTab, standar
           {(dropProvided) => (
             <div className="ktabs__rows" ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
               {draft.map((id, i) => (
-                <Draggable draggableId={id} index={i} key={id}>
+                <Draggable
+                  draggableId={id}
+                  index={i}
+                  key={id}
+                  /* THE GRIP IS A <button>, AND THAT MADE IT INERT.
+                     `@hello-pangea/dnd` refuses to start a drag when the source
+                     event's target is one of its own `interactiveTagNames` —
+                     `button` is in that list — so `tryStart` returns null and
+                     the lock is never claimed. Neither the mouse nor the
+                     keyboard path ever begins.
+
+                     MEASURED by Suite 20.12b on 2026-08-31: a mouse
+                     press-and-drag past the threshold lifted NOTHING (no
+                     `[data-rfd-placeholder-context-id]`, no live-region
+                     announcement), and Space did nothing either — while the
+                     grip's own label promises "Space picks it up, arrows move
+                     it, Space drops it". A control that announces a capability
+                     it does not have is worse than one that stays quiet.
+
+                     This is the IDENTICAL guard that stopped every kanban card
+                     until 2026-08-29; `KanbanView.jsx:638` carries the same
+                     escape hatch with the same reasoning. The click-vs-drag
+                     distinction is unaffected — the sensor still needs its ~5px
+                     threshold to lift.
+
+                     The alternative is to stop rendering the grip as a
+                     <button>, which costs the keyboard affordance the label is
+                     promising in the first place. */
+                  disableInteractiveElementBlocking
+                >
                   {(provided, snapshot) => (
                     <DragRow provided={provided} snapshot={snapshot}>
                       <button

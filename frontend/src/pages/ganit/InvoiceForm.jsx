@@ -514,8 +514,23 @@ export default function InvoiceForm({
     });
   }
 
+  // The flat discount leaves the TAXABLE value before the GST is computed —
+  // s.15(3)(a) CGST Act, because the discount is recorded on this very invoice.
+  // This preview used to tax `lineTaxable` and subtract the discount only from
+  // the total, exactly as the server did until 2026-08-31. Both are fixed; they
+  // have to move together, because the figure shown while the form is being
+  // filled and the figure stored on save are the same document, and a customer
+  // who watches the tax change after pressing Save has been shown a lie.
+  //
+  // Apportioned pro-rata for the reason `ganit._compute_invoice` gives: lines
+  // may carry different `gst_rate`s, so a single blended deduction would move
+  // value between rate buckets and misstate the split.
   const subtotal = form.line_items.reduce((s, li) => s + lineTaxable(li), 0);
-  const gst = form.line_items.reduce((s, li) => s + lineTaxable(li) * (Number(li.gst_rate) || 0) / 100, 0);
+  const flat = Math.min(Math.max(Number(form.discount) || 0, 0), subtotal);
+  const gst = form.line_items.reduce((s, li) => {
+    const share = subtotal > 0 ? lineTaxable(li) / subtotal : 0;
+    return s + (lineTaxable(li) - flat * share) * (Number(li.gst_rate) || 0) / 100;
+  }, 0);
   const total = subtotal + gst - (Number(form.discount) || 0);
 
   // The rate is named only when every line carries the same one. "CGST 9%" over

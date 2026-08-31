@@ -209,7 +209,29 @@ export default function CustomizeColumns({
               {draft.map((c, i) => {
                 const last = !c.hidden && visibleCount <= 1;
                 return (
-                  <Draggable draggableId={c.id} index={i} key={c.id}>
+                  <Draggable
+                    draggableId={c.id}
+                    index={i}
+                    key={c.id}
+                    /* THE GRIP IS A <button>, AND THAT MADE IT INERT — the same
+                       defect, in the same shape, as `CustomizeTabs.jsx` and as
+                       every kanban card before 2026-08-29.
+                       `@hello-pangea/dnd` will not start a drag whose source
+                       event targets one of its `interactiveTagNames`, and
+                       `button` is one, so `tryStart` returns null before a lock
+                       is claimed.
+
+                       MEASURED by Suite 20.12b on 2026-08-31: mouse drag lifted
+                       nothing, Space lifted nothing, while the grip is labelled
+                       "Reorder Priority. Space picks it up, arrows move it,
+                       Space drops it."
+
+                       Same escape hatch as `KanbanView.jsx:638`. Column order
+                       is a SAVED preference (`useColumnPrefs`), so the visible
+                       consequence was that a user could not reorder columns at
+                       all by any means the UI offered. */
+                    disableInteractiveElementBlocking
+                  >
                     {(provided, snapshot) => (
                       <DragRow provided={provided} snapshot={snapshot}>
                         <button

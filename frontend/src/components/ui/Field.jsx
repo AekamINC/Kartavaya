@@ -57,8 +57,15 @@ export function Field({ label, sanskrit, required, hint, error, span, htmlFor, c
 
 /** A date/time `type` routes to DateInput — the same swap made at the 79
  *  literal call sites, done here so `<Input type="date">` is not the one hole
- *  left where the browser's white, off-to-the-side calendar still appears. */
-const DATEY = new Set(['date', 'datetime-local', 'time']);
+ *  left where the browser's white, off-to-the-side calendar still appears.
+ *
+ *  ⚠ `month` WAS MISSING FROM THIS SET and that omission WAS the hole. Suite
+ *  20.04 named this exact line: three types forwarded, `month` not, so every
+ *  month field emitted the native control the rule bans. It is here now that
+ *  `DateInput` has a month mode (`MonthGrid.jsx`) — the set and the component
+ *  have to move together, and adding the string alone would have rendered a
+ *  day calendar for a value with no day in it. */
+const DATEY = new Set(['date', 'datetime-local', 'time', 'month']);
 export const Input = ({ className = '', ...p }) =>
   (DATEY.has(p.type)
     ? <DateInput className={`inp ${className}`.trim()} {...p} />
