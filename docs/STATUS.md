@@ -12,6 +12,58 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-08-31 — 32 VERDICTS, AND NOT ONE PRODUCT BUG SURVIVED REFUTATION
+
+Every remaining failure across suites 12, 14, 15, 16, 17, 21 and 22 was triaged
+by a fresh agent, and every PRODUCT_BUG verdict was then handed to a SECOND
+agent whose only instruction was to refute it.
+
+    TEST_BUG          18
+    BLOCKED            4
+    DATA_GAP           2
+    CORRECT_REFUSAL    1
+    PRODUCT_BUG        7 claimed  ->  0 survived
+
+⚠ THE REFUTATIONS WERE NOT DISMISSALS. One rebuilt the shipped `.tbl` CSS
+verbatim in an isolated page to show the resize-grip overlap was a centre-point
+hit-test artefact. One traced `navigationRef.getCurrentRoute()` through
+@react-navigation v6 to show the accused line in `PahchanTabs` never executes on
+that path, and that the proposed fix would make the product worse.
+
+### The two that matter most, because a green would have been the defect
+
+**14.18** asserts `expect(r.status).toBeLessThan(400)` for `POST
+/v1/hub/clients/{id}/credits/topup` from a TENANT org_admin. There is no payment
+gateway in this product. Passing that assertion means a paying customer can mint
+itself free credits, and the success branch would then assert the balance rose
+and record the test GREEN. `role_tiers.py:500-513` says the gate exists so staff
+"do the work, not bill for it"; `admin_orgs.py:3406` records it closing a live
+hole. The test demanded the hole be reopened.
+
+**16.14** demands the engine hold back an IN-APP notification during quiet hours.
+It must not: `send.INTERRUPTING` deliberately excludes in-app, because quiet
+hours are about interruption, not about withholding a message someone opens
+themselves. The deferral shipped in 8d8cd831 is correct as written.
+
+### Three genuine residues, none of them the bug that was filed
+
+- **No Brand tab on `OrgSahayakPage.jsx`** — `PUT /v1/hub/org/brand` exists,
+  works and has zero callers. A missing SCREEN, not a broken gate. Do NOT relax
+  `require_platform_role` at `hub.py:1127`; that line is correct.
+- **`middleware/roles.py:118`** prints platform role CODES into a customer-facing
+  toast (`"This action requires one of: …"`). Poor refusal copy, shared by three
+  tests.
+- **`public.sign_fields` has no writer** — 24 placements typed, 0 stored. Facts
+  confirmed; it is the finding 15.04 exists to RECORD, not a new defect.
+
+### What this closes
+
+Suite 21 mobile: **31 passed, 0 product defects** — the last failure ("the queue
+does not drain") is E2E Test & Associates holding 0 employees and 0 pahchan
+sites, so the server refuses and the queue correctly HOLDS. The app never claims
+a queued punch was sent.
+
+
 ## 2026-08-31 — SEVEN "FAILURES" THAT WERE THE HARNESS, AND TWO THAT WERE NOT
 
 Every one of these was recorded as a suite failure. Two were the product.
