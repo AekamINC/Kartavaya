@@ -2101,7 +2101,22 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .tbl__grip {
   position: absolute;
   top: 0;
-  right: -3px;
+  /* ⚠ `right: 0`, NOT `right: -3px`. The grip used to straddle the cell
+     boundary by half its width, which put its own CENTRE 0.5px inside the NEXT
+     header. Measured on production, Ganit's bank table, three grips in a row:
+
+         document.elementFromPoint(grip centre)     -> th.tbl__th--rz  (the neighbour)
+         document.elementFromPoint(grip left edge)  -> the grip
+
+     The neighbour is `position: relative` and later in DOM order, so it paints
+     over a 7px target that only ever had 3.5 usable pixels — and the half a
+     user aims at, the middle, was the dead half. Suite 22.93 found all eight of
+     them across Ganit's bank ledger and Manav's exits register.
+
+     The box now sits fully inside its own cell. The visible line is the
+     `::after`, moved right by the same amount, so the divider is drawn within
+     2px of where it always was. */
+  right: 0;
   width: 7px;
   height: 100%;
   padding: 0;
@@ -2122,7 +2137,9 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   position: absolute;
   top: 18%;
   bottom: 18%;
-  left: 3px;
+  /* Flush with the cell's own right edge, which is the boundary the drag
+     moves. Was `3px` while the box hung 3px outside; both moved together. */
+  left: 5px;
   width: 2px;
   border-radius: 1px;
   background: var(--primary);
