@@ -8094,3 +8094,94 @@ and the §4 volume became the floor it can honestly be.
 
 Every one of these was GREEN over the thing it existed to catch. Making them
 real is the only reason the numbers below mean anything.
+
+---
+
+## 2026-08-31 · late — the second pass, and a form nobody could submit
+
+Wave 1 and wave 4 finished **29/0** each. Wave 3 came back **65 / 12** (from
+61/16). Wave 2 came back **50 / 11** (from 48/13) and its re-run is owed.
+
+### The shipped blocker
+
+**`POST /api/v1/graha/f/{slug}` had never once succeeded.** Driving the hosted
+page as a member of the public, then reading the live traceback:
+
+    asyncpg.exceptions.InvalidColumnReferenceError: there is no unique or
+    exclusion constraint matching the ON CONFLICT specification
+
+`ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != ''` with no
+partial unique index behind it — Postgres refuses at plan time. Every public
+lead form in the product 500'd, and `graha_web_form_submissions` holds **zero
+rows across every organisation**. That zero is what made it findable, and it is
+the second unknown in "a table at 0 rows is TWO unknowns".
+
+⚠ **The identical fault was already fixed thirty lines away in the same file.**
+`create_contact_from_email` carries the note about migration 022 declaring an
+index that was never created and migration 024 dropping the intent, "because
+phone is not unique in a CRM". One correction, two identical statements, one of
+them missed. Adding the index is NOT the fix: three contacts share 9876009901
+and they are Suite 04.19's fixtures for the dedupe screen.
+
+The browser reported it as `net::ERR_FAILED` and "blocked by CORS policy" —
+a 500 escapes before CORSMiddleware attaches its headers, the same misleading
+signature `_ensure_default_owner` already documents. **The CORS message was the
+symptom, not the problem.**
+
+### Product defects fixed
+
+- **A toast took the click meant for the application.** `.tst` was
+  `pointer-events: all` at `z-index: 520`. Measured by putting a real card into
+  the real region and hit-testing every control at its centre: with NOTHING
+  open, one toast covered **four top-bar controls including "New task"**. An
+  error toast never auto-dismisses, so that is not a four-second inconvenience.
+  Third overlay of this shape in a week, after the corner dock and the resize
+  grip; all three refused **only the mouse**.
+- **A stage chip could undo a hire.** `PATCH /candidates/{id}/stage` had no
+  guard on `converted_employee_id`, so somebody with a personnel record could
+  be sent back to `offer` — and the card then re-offered a Hire button that can
+  only answer 400. Found in the live data (Bhavin Chokshi); migration 248.
+- **A published web form had no way in.** `/f/:slug` is now a hosted page, the
+  tab carries a copyable link and a Preview instead of printing an API path,
+  and the public write is rate-limited — it had **no limit of any kind** on an
+  unauthenticated route that writes into a customer's CRM.
+- **A deal could be marked Lost and nobody could say why.** `lost_reason` has
+  worked since migration 018 and no screen ever asked.
+- **A second pipeline could not be created, chosen, or filled.** Three parts,
+  because the create control alone would have made a board that can never hold
+  anything.
+- **Three Manav registers rendered rows taller than their own token** (77/79px
+  against 66). Measured by hiding one cell at a time, then by injecting each
+  candidate rule live.
+
+### Harness faults, same class as before
+
+- **`08.11`'s reimbursement guard outlived the defect it was written around** —
+  the 10.08 shape exactly. It now asserts the identity that actually blocks the
+  PDF, and *prefers* the two reimbursement payslips into the sample rather than
+  avoiding them.
+- **`04.09` assumed its 8/6/16 split survived.** It read 11 won. `ensure()`
+  creates what is missing and returns early for what is present, so the stage is
+  whatever the last programme pass left. It now establishes the split through
+  the record and prints what it corrected. ⚠ The culprit **cannot be named**:
+  `update_deal` writes no `audit_log` row, the same gap Suite 22 recorded
+  costing the same answer about a Dristi chip.
+- **`07.8` asserted a constant floor of 30 and read 26 — and the product was
+  right.** `still_on_the_rolls()` excludes four people whose last working day
+  has passed. A flat floor assumes nobody has ever left.
+- **A pipeline test of my own stayed green over a hidden control.** It asserted
+  the nodes EXISTED; a mutation leaving them in the DOM with `display: none`
+  passed. A control nobody can reach satisfies an existence check exactly as
+  well as one they can — the orphaned-capability defect, reproduced inside the
+  test written to catch it.
+- **A toast test of my own could not fail either.** It fired both mouse events
+  in one instant, and two pauses at the same timestamp agree. The damage needs
+  time to pass between them.
+
+### Still owed
+
+Suite 04.07b (a territory cannot carry a priority) and 04.17 (no route creates
+a scoring rule, so every `lead_score` is 0) are reported without a verdict.
+05.08 and 05.15 are the outbound fence, deliberately. 05.13 is an arithmetic
+ceiling in the committed fixtures. 05.17's TDS refusal is **correct** and must
+not be relaxed.
