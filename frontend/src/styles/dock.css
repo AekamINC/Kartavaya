@@ -410,3 +410,39 @@
   cursor: pointer;
 }
 .k-dock__footlink:hover { text-decoration: underline; }
+
+/* ── THE CORNER THE DOCK TAKES, GIVEN BACK TO THE PAGE ────────────────────
+   The pill is `position: fixed` in the bottom-right corner, so it floats over
+   whatever the page happens to have put there — and Suite 22.93 measured
+   exactly that, on five different screens:
+
+     graha›kanban         "Won"     blocked by button.k-dock__pill
+     graha›activities     "Next page"
+     graha›billing        "Edit"
+     ganit›billing-profiles "Edit"
+     vikray›billing       "Edit"
+     manav›logins         "Columns"
+
+   `document.elementFromPoint` at each control's own centre returned the pill,
+   so a mouse click lands on the dock. The keyboard path still works, which is
+   why nothing had ever reported it: the control is present, enabled, and
+   focusable, and only the pointer is refused.
+
+   The dock cannot move — the corner is where it belongs — so the page gets
+   scroll room instead. `--k-dock-clear` is the pill's own footprint (its
+   ~40px box, its 20px inset, and a gap), reserved as bottom padding on the
+   scroller so the last row can always be brought out from under it.
+
+   Scoped to >= 1024px because below that `.k-dock__root` is `display: none`
+   and the bottom bar owns the corner — padding there would be a dead band.
+
+   ⚠ PADDING, NOT MARGIN, AND ON THE SCROLLER. `.kv__content` is the element
+   with `overflow-y: auto`; bottom padding inside it extends the scrollable
+   range, which is the only thing that lets a user reach content underneath a
+   fixed overlay. A margin would sit outside the scroll box and change
+   nothing. */
+:root { --k-dock-clear: 76px; }
+
+@media (min-width: 1024px) {
+  .kv__content { padding-bottom: calc(var(--pad-page) + var(--k-dock-clear)); }
+}
