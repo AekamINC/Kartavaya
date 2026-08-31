@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { PageHeader, PriorityDot } from '../components/editorial';
 import { userInitials } from '../lib/utils';
@@ -31,6 +31,10 @@ export default function TeamsPage() {
   const [projects,       setProjects]       = useState(null);
   const [projectsErr,    setProjectsErr]    = useState(null);
   const [selectedId,     setSelectedId]     = useState('');
+  // Read inside async callbacks, where `selectedId` would be the value
+  // captured when the fetch STARTED rather than the one on screen now.
+  const selectedIdRef = useRef('');
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [projectDetail,  setProjectDetail]  = useState(null);
   const [detailErr,      setDetailErr]      = useState(null);
   const [allUsers,       setAllUsers]       = useState(null);
@@ -50,9 +54,41 @@ export default function TeamsPage() {
     if (!selectedId && list.length) setSelectedId(list[0].team_id);
   };
 
+  // ⚠ THE ID THE ROSTER ON SCREEN WAS LOADED FOR. Every write below sends this
+  // rather than `selectedId`, and a response is dropped unless the two still
+  // agree — see the race described on `loadDetail`.
+  const detailIdRef = useRef('');
+
+  /**
+   * ⚠ A LATE RESPONSE FOR THE PREVIOUS PROJECT IS DISCARDED.
+   *
+   * Two fetches, no cancellation: pick project A, pick project B, and if A's
+   * response lands after B's, `setProjectDetail` wrote A's roster while
+   * `selectedId` was B. The screen then showed A's members under B's name, and
+   * the role select — which posts to `/teams/${selectedId}/members/${memberId}`
+   * — sent A's `member_id` to B's endpoint.
+   *
+   * Measured on production 2026-08-31 from a Suite 03.9 failure:
+   *
+   *     PUT /api/teams/team_9a89314a6658/members/mem_77b44eec56dc -> 404
+   *     mem_77b44eec56dc belongs to team_8b7c75da6a1e
+   *     the same person's row on team_9a89314a6658 is mem_9348c91e211f
+   *
+   * The person is on BOTH projects, which is why the id looked plausible and
+   * why the server was the only thing that could tell. The 404 was the lucky
+   * outcome: an id that happened to exist on the target team would have
+   * changed the WRONG person's role and answered 200.
+   *
+   * The effect below already clears the roster on a FAILED second fetch — "a
+   * roster attributed to the wrong project is worse than no roster". This is
+   * the same rule for the case where both fetches succeed and they finish out
+   * of order.
+   */
   const loadDetail = async (id) => {
     if (!id) return;
     const res = await api.get(`/teams/${id}`);
+    if (id !== selectedIdRef.current) return;   // a newer project is on screen
+    detailIdRef.current = id;
     setProjectDetail(res.data);
   };
 
@@ -127,7 +163,12 @@ export default function TeamsPage() {
   };
 
   const updateMemberRole = async (memberId, role) => {
-    const res = await api.put(`/teams/${selectedId}/members/${memberId}`, { role });
+    // `detailIdRef`, not `selectedId`: `memberId` came off the roster on
+    // screen, so it must be sent to the project that roster belongs to. If the
+    // two ever disagree the write is dropped rather than aimed at a guess.
+    const teamId = detailIdRef.current;
+    if (!teamId || teamId !== selectedId) return;
+    const res = await api.put(`/teams/${teamId}/members/${memberId}`, { role });
     setProjectDetail(prev => ({ ...prev, members: (prev?.members || []).map(m => m.member_id === memberId ? res.data : m) }));
   };
 
@@ -136,7 +177,12 @@ export default function TeamsPage() {
       message: 'Remove this member from the project?',
       confirmLabel: 'Remove',
       onConfirm: async () => {
-        await api.delete(`/teams/${selectedId}/members/${memberId}`);
+        // Same rule as `updateMemberRole`, and it matters more here: a remove
+        // aimed at the wrong project by a plausible id takes somebody off a
+        // roster nobody was looking at.
+        const teamId = detailIdRef.current;
+        if (!teamId || teamId !== selectedId) return;
+        await api.delete(`/teams/${teamId}/members/${memberId}`);
         setProjectDetail(prev => ({ ...prev, members: (prev?.members || []).filter(m => m.member_id !== memberId) }));
       },
     });

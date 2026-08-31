@@ -4428,7 +4428,16 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
     if payload.status: updates.append(f"status=${len(vals)+1}"); vals.append(payload.status)
     updates.append(f"updated_at=${len(vals)+1}"); vals.append(now_utc()); vals+=[team_id,member_id]
     row=await pool.fetchrow(f"UPDATE team_members SET {', '.join(updates)} WHERE team_id=${len(vals)-1} AND member_id=${len(vals)} RETURNING *",*vals)
-    if not row: raise HTTPException(404)
+    # ⚠ NAMED, BECAUSE A BARE 404 HERE IS THE SAME BYTES AS AN UNROUTED PATH.
+    # `HTTPException(404)` answers `{"detail":"Not Found"}`, which is exactly
+    # what FastAPI returns for a URL that matches no route at all. A caller
+    # reading that cannot tell "this endpoint does not exist" from "this member
+    # is not on this team", and 2026-08-31's triage of a Suite 03 failure spent
+    # a live probe against production to tell them apart. The route exists; the
+    # row did not.
+    if not row:
+        raise HTTPException(404, "That person is not a member of this project, so there "
+                                 "was nothing to change. They may have been removed already.")
     # ── BOTH HALVES OF THIS PATCH NOW REACH `project_assignments` ────────────
     #
     # FIX #5 (2026-05-14) made the ROLE sync conditional, because a status-only
