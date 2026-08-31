@@ -1708,11 +1708,23 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
         `is the whole point of the control${dump(wire)}`,
       ).toBeTruthy();
     }
+    // ⚠ A GLOBAL CENSUS IS THE WRONG MARK, AND IT DRIFTS BY DESIGN. This
+    // required the register to hold 30 people forever — 28 typed plus 2 hired —
+    // but Suite 08 processes four AUGUST LEAVERS, and a leaver correctly stops
+    // being on the roster. The floor then fails for a reason that has nothing
+    // to do with hiring, and the failure message blames 07.2.
+    //
+    // The property this test owns is the DELTA it just made: the two hires
+    // appeared. That is asserted above, by name, for each of them — so this
+    // line adds nothing except a dependency on every other suite's side
+    // effects. It is replaced by the delta, which is what "the conversion is
+    // the whole point of the control" actually means.
     expect(
-      empsAfter.length,
-      `the register went from ${empsBefore.length} to ${empsAfter.length}; §4's thirty is ` +
-      `28 typed plus 2 hired${dump(wire)}`,
-    ).toBeGreaterThanOrEqual(30);
+      empsAfter.length - empsBefore.length,
+      `the register went from ${empsBefore.length} to ${empsAfter.length}; the two ` +
+      `hires must have ADDED two people, whatever the roster held before` +
+      `${dump(wire)}`,
+    ).toBe(toHire.length);
 
     // And the customer sees them where they now belong.
     await manav(page, 'employees');
@@ -1765,8 +1777,15 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
     // first and skipped, because 150 pointless writes is 150 pointless writes.
     const staff = (await rowsOf(page, '/api/v1/manav/employees'))
       .filter((e) => /^S7-/.test(String(e.employee_code || '')) || CANDIDATES.includes(String(e.name)));
-    expect(staff.length, `07.2 must run first — only ${staff.length} people on the register${dump(wire)}`)
-      .toBeGreaterThan(27);
+    // ⚠ 27 ASSUMED NOBODY EVER LEAVES. Suite 08 processes four August leavers
+    // and a leaver correctly drops off the roster, so this floor fails for a
+    // reason unrelated to rostering and points the reader at 07.2, which is
+    // fine. The roster needs ENOUGH people to cover the shifts it defines, and
+    // that number is the one worth asserting.
+    expect(staff.length,
+      `only ${staff.length} people on the register — 07.2 must run first, and the ` +
+      `roster below needs at least ${SHIFTS.length} to cover its shifts${dump(wire)}`)
+      .toBeGreaterThanOrEqual(SHIFTS.length);
 
     const want = staff.slice(0, 30);
     const from = ROSTER_WEEK[0];

@@ -1656,15 +1656,43 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         }
 
         // ── the tax is the sum of the lines' own tax ───────────────────────
+        //
+        // ⚠ THIS TAXED THE FULL LINE TOTAL AND WOULD HAVE FORCED THE PRODUCT
+        // BACK TO OVER-CHARGING. An ORDER-LEVEL discount is apportioned across
+        // the lines before tax — `routers/vikray.py:228,246`:
+        //
+        //     deductible = min(max(discount, 0), subtotal)
+        //     share      = line_total / gross
+        //     taxable    = line_total - (deductible * share)
+        //
+        // Taxing `line_total` instead of `taxable` demands GST on money the
+        // customer was never charged. That is exactly the ₹1,150 excess output
+        // tax found on two live sales orders and fixed earlier in this
+        // programme, so passing this assertion would have re-opened it.
+        //
+        // ⚠ AND IT ROUNDS PER LINE, because the server does. vikray.py's own
+        // comment records why: `ganit._compute_invoice` halves and accumulates
+        // per line, `services/purchase_orders.py` copies Ganit so a PO can be
+        // matched against the invoice it becomes, and Vikray was the only one of
+        // the three rounding once at the end. Summing then rounding disagrees by
+        // a paisa on the SAME document once apportionment makes the figures
+        // un-round — an order and the invoice raised from it.
         const gross = items.reduce((s: number, li: any) =>
           s + (Number(li.quantity) || 0) * (Number(li.rate) || 0) *
           (1 - (Number(li.discount_pct) || 0) / 100), 0);
-        const lineTax = items.reduce((s: number, li: any) =>
-          s + (Number(li.quantity) || 0) * (Number(li.rate) || 0) *
-          (1 - (Number(li.discount_pct) || 0) / 100) * (Number(li.gst_rate) || 0) / 100, 0);
+        const deductible = gross > 0
+          ? Math.min(Math.max(Number(full.discount) || 0, 0), gross)
+          : 0;
+        const lineTax = items.reduce((s: number, li: any) => {
+          const lineTotal = (Number(li.quantity) || 0) * (Number(li.rate) || 0) *
+            (1 - (Number(li.discount_pct) || 0) / 100);
+          const taxable = gross > 0 ? lineTotal - deductible * (lineTotal / gross) : lineTotal;
+          return s + money(taxable * (Number(li.gst_rate) || 0) / 100);
+        }, 0);
         if (!near(cgst + sgst + igst, money(lineTax), 0.05)) {
           problems.push(`${plan.mark}: the tax stored is ${money(cgst + sgst + igst)} and the ` +
-            `lines carry ${money(lineTax)}`);
+            `lines carry ${money(lineTax)} once the order discount of ` +
+            `${money(deductible)} is apportioned across them`);
         }
 
         // ── THE IDENTITY EVERY MONEY DOCUMENT OBEYS ───────────────────────
