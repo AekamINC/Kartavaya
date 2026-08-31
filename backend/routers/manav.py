@@ -1319,57 +1319,102 @@ async def create_employee(
     # department/designation/user_id off the row; the RESPONSE keeps the three
     # keys it always had — a personnel row also carries PAN, Aadhaar and bank
     # details, and RETURNING * must not widen what leaves the API.
-    async with pool.acquire() as _conn:
-        async with _conn.transaction():
-            row = await _conn.fetchrow(
-                "INSERT INTO public.manav_employees "
-                "(org_id, user_id, employee_code, name, email, phone, department, designation, "
-                " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
-                " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
-                " reporting_to, shift, created_by, state) "
-                "VALUES ($1::uuid, NULLIF($2,''), NULLIF($3,''), $4, $5, $6, $7, $8, "
-                " NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,''), $12, $13, $14, $15, "
-                # $24 is `state`, bound already-normalised as '27' or NULL, and
-                # cast explicitly rather than left bare: PgBouncer turns an
-                # untyped parse error into an instant 500 with no useful log.
-                " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23, $24::text) "
-                "RETURNING *",
-                org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
-                body.department, body.designation, body.date_of_joining, body.date_of_birth,
-                # `body.address` and `body.bank_details` are passed as DICTS, exactly
-                # like `body.emergency_contact` beside them — NOT through `json.dumps`.
-                #
-                # `db.py` registers a jsonb codec whose encoder IS `json.dumps`, so
-                # dumping first encodes twice and the column ends up holding a JSON
-                # *string* rather than an object. This one INSERT is the cleanest proof
-                # of it in the codebase: three jsonb columns, written side by side, and
-                # the only one that stored correctly was the one passed as a dict —
-                # measured live, `emergency_contact` came back `object` while `address`
-                # and `bank_details` both came back `string`.
-                #
-                # The consequence was not cosmetic. `_mask_employee_pii` calls
-                # `_mask_bank(row["bank_details"])`, which expects a mapping, so
-                # **`GET /v1/manav/employees/{id}` returned 500 for every employee in
-                # the org** — the whole employee detail view was dead, and the failure
-                # reached the browser as a CORS error because the exception escaped
-                # before `CORSMiddleware` attached its headers.
-                body.gender or None, body.blood_group, body.emergency_contact, body.address,
-                # `encrypt_bank`, not the raw dict: the account number is held as
-                # ciphertext for the same reason the Aadhaar beside it is. See
-                # `services/pii.py`. The IFSC and bank name inside the same jsonb stay
-                # readable — they identify a branch, not a person.
-                encrypt_bank(ids["bank_details"]), ids["pan"], encrypt(body.aadhaar),
-                ids["uan"], ids["esi_number"],
-                body.employment_type, body.reporting_to, body.shift, user["user_id"],
-                # Normalised HERE rather than in the model, so an API caller who
-                # sends 'Maharashtra' and a form that sends '27' store the same
-                # two characters. Never raises — an unknown state is NULL.
-                _clean_state(body.state),
-            )
-            await employee_joined(
-                _conn, org_id=org_id, actor_id=user["user_id"],
-                employee_id=row["id"], row=dict(row),
-            )
+    # ── A CODE THAT IS ALREADY TAKEN IS A 409, NOT AN UNHANDLED 500 ─────────
+    #
+    # `idx_manav_emp_code` is UNIQUE (org_id, employee_code) WHERE employee_code
+    # IS NOT NULL, and it is CORRECT: an employee code must not be re-used,
+    # because payslips, attendance and the asset register all point at one file
+    # through it. What was missing was anybody catching the refusal.
+    #
+    # Without this, `asyncpg.exceptions.UniqueViolationError` escaped
+    # `create_employee`, passed OUTWARD through CORSMiddleware, and was turned
+    # into a 500 by `ServerErrorMiddleware` — which sits OUTSIDE the CORS layer,
+    # so the response carried no `Access-Control-Allow-Origin`. The browser
+    # therefore reported `net::ERR_FAILED` with no response event at all, and
+    # `frontend/src/pages/manav/_shared.jsx:123` answers a null response with
+    # "No response from the server — check your connection."
+    #
+    # ⚠ SO THE PRODUCT TOLD AN ADMINISTRATOR THEIR OWN NETWORK WAS BROKEN when
+    # the server had refused their write for a reason it knew exactly. That is
+    # the worst direction this can fail in: the one message that makes somebody
+    # stop looking at what they typed. Live in Sentry as PYTHON-FASTAPI-1P, six
+    # events, last 2026-08-31T20:19:29Z, and found by Suite 07.2.
+    #
+    # ⚠ AND THE CODE MAY BE HELD BY SOMEBODY THE ADMIN CANNOT SEE. The employee
+    # directory applies `still_on_the_rolls()`, so a leaver whose last working
+    # day has passed is hidden from every list — while their code stays taken.
+    # Four such people hold codes on the live org today. A refusal that only
+    # said "already exists" would send an admin to search a list the holder is
+    # not in, so the message says the code may belong to somebody who has left.
+    #
+    # `_pg_code` and this exact shape are already used at `create_scheme` in
+    # this file. The idiom was here; this route never reached for it.
+    try:
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                row = await _conn.fetchrow(
+                    "INSERT INTO public.manav_employees "
+                    "(org_id, user_id, employee_code, name, email, phone, department, designation, "
+                    " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
+                    " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
+                    " reporting_to, shift, created_by, state) "
+                    "VALUES ($1::uuid, NULLIF($2,''), NULLIF($3,''), $4, $5, $6, $7, $8, "
+                    " NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,''), $12, $13, $14, $15, "
+                    # $24 is `state`, bound already-normalised as '27' or NULL, and
+                    # cast explicitly rather than left bare: PgBouncer turns an
+                    # untyped parse error into an instant 500 with no useful log.
+                    " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23, $24::text) "
+                    "RETURNING *",
+                    org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
+                    body.department, body.designation, body.date_of_joining, body.date_of_birth,
+                    # `body.address` and `body.bank_details` are passed as DICTS, exactly
+                    # like `body.emergency_contact` beside them — NOT through `json.dumps`.
+                    #
+                    # `db.py` registers a jsonb codec whose encoder IS `json.dumps`, so
+                    # dumping first encodes twice and the column ends up holding a JSON
+                    # *string* rather than an object. This one INSERT is the cleanest proof
+                    # of it in the codebase: three jsonb columns, written side by side, and
+                    # the only one that stored correctly was the one passed as a dict —
+                    # measured live, `emergency_contact` came back `object` while `address`
+                    # and `bank_details` both came back `string`.
+                    #
+                    # The consequence was not cosmetic. `_mask_employee_pii` calls
+                    # `_mask_bank(row["bank_details"])`, which expects a mapping, so
+                    # **`GET /v1/manav/employees/{id}` returned 500 for every employee in
+                    # the org** — the whole employee detail view was dead, and the failure
+                    # reached the browser as a CORS error because the exception escaped
+                    # before `CORSMiddleware` attached its headers.
+                    body.gender or None, body.blood_group, body.emergency_contact, body.address,
+                    # `encrypt_bank`, not the raw dict: the account number is held as
+                    # ciphertext for the same reason the Aadhaar beside it is. See
+                    # `services/pii.py`. The IFSC and bank name inside the same jsonb stay
+                    # readable — they identify a branch, not a person.
+                    encrypt_bank(ids["bank_details"]), ids["pan"], encrypt(body.aadhaar),
+                    ids["uan"], ids["esi_number"],
+                    body.employment_type, body.reporting_to, body.shift, user["user_id"],
+                    # Normalised HERE rather than in the model, so an API caller who
+                    # sends 'Maharashtra' and a form that sends '27' store the same
+                    # two characters. Never raises — an unknown state is NULL.
+                    _clean_state(body.state),
+                )
+                await employee_joined(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    employee_id=row["id"], row=dict(row),
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if _pg_code(exc) != "23505":
+            raise
+        raise HTTPException(
+            409,
+            f"The employee code \"{body.employee_code}\" is already in use in "
+            f"this organisation, so it cannot be given to somebody else — "
+            f"payslips, attendance and the asset register all identify a person "
+            f"by it. It may belong to somebody who has LEFT: the employee list "
+            f"hides anybody whose last working day has passed, and their code "
+            f"stays theirs. Choose a different code.",
+        )
 
     # ── The invitation, AFTER the personnel file exists ─────────────────────
     #
@@ -4662,14 +4707,33 @@ async def create_asset(
     if body.condition not in valid_cond:
         raise HTTPException(400, f"condition must be one of: {', '.join(valid_cond)}")
     p_date = date.fromisoformat(body.purchase_date) if body.purchase_date else None
-    row = await pool.fetchrow(
-        "INSERT INTO public.manav_assets "
-        "(org_id, asset_tag, name, category, serial_number, purchase_date, "
-        "purchase_cost, condition, notes, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6::date, $7, $8, $9, $10) RETURNING *",
-        org_id, body.asset_tag, body.name, body.category, body.serial_number,
-        p_date, body.purchase_cost, body.condition, body.notes, user["user_id"],
-    )
+    # The SAME UNGUARDED SHAPE as `create_employee` had, 3,300 lines away in
+    # this file and found in the same sweep. `idx_assets_tag` is UNIQUE on
+    # (org_id, asset_tag); nothing caught the violation, so a re-used tag would
+    # have escaped as a 500 with no CORS headers and the screen would have told
+    # the admin their connection was broken. No live event yet — closed because
+    # it is the same defect, not because it has cost anybody anything.
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO public.manav_assets "
+            "(org_id, asset_tag, name, category, serial_number, purchase_date, "
+            "purchase_cost, condition, notes, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6::date, $7, $8, $9, $10) RETURNING *",
+            org_id, body.asset_tag, body.name, body.category, body.serial_number,
+            p_date, body.purchase_cost, body.condition, body.notes, user["user_id"],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if _pg_code(exc) != "23505":
+            raise
+        raise HTTPException(
+            409,
+            f"The asset tag \"{body.asset_tag}\" is already on another item in "
+            f"this organisation. A tag is how a person identifies one piece of "
+            f"equipment on the register and on the custody line that issues it, "
+            f"so two items cannot share one. Choose a different tag.",
+        )
     return dict(row)
 
 
