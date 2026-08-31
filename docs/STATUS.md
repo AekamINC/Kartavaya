@@ -12,6 +12,59 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-08-31 — SEVEN "FAILURES" THAT WERE THE HARNESS, AND TWO THAT WERE NOT
+
+Every one of these was recorded as a suite failure. Two were the product.
+
+| # | Read as | Actually |
+|---|---|---|
+| 1 | 17 Sanvaad failures | CSP guard import landed at 10:13; both runs predate it |
+| 2 | 13.12/13.15 TypeError | production serves no `/openapi.json` — correctly |
+| 3 | 16.01 + cascade | **PRODUCT** — session-mode pooler, 15 clients |
+| 4 | 14.00 + 12 more | **PRODUCT** — allowance unreachable, migration 245 |
+| 5 | 4 eSign failures | Railway service renamed 08-29, default was not |
+| 6 | same 4, one layer down | `staging.` schema dropped 08-29, four statements |
+| 7 | 4 mobile results | Cloudflare bans `Python-urllib` by name (403 · 1010) |
+
+⚠ THE FAILURE COUNT MEASURES HARNESS DRIFT AS MUCH AS PRODUCT HEALTH. Every
+estate change above is written down — the rename in memory, the schema drop in
+`CLAUDE.md`, the pooler in neither. The suites never caught up, and working
+through the 116 in order would have meant fixing things that were not broken.
+
+### Suite 21 mobile RAN, and it was never missing
+
+The wave-run report's "no config exists (`no suite21.config.ts`)" looked for a
+PLAYWRIGHT config for a suite that is deliberately `adb` + `uiautomator`,
+because Playwright cannot drive a native app. `mobile/e2e/android_e2e.py` is
+56 KB over 8 sections. First run ever: **36 passed · 2 failed · 5 blocked**,
+then 21 · 1 · 2 on the punch re-run once the UA ban was lifted.
+
+Its remaining blocks are CORRECT product behaviour: `403 {"detail":
+"Subscription is not active"}` — the harness account is in E2E Test &
+Associates, and that org has **no `subscriptions` row at all** (status null,
+zero `module_subscriptions`) where every other org is active with 12–13 modules.
+
+### Suite 19.3 was never a gap either
+
+`admin.config.ts` already matches `suite19-support-session`. The lane runs
+**8/0** with 19.3a and 19.3b both executing.
+
+### 🔴 STILL TRUE, AND IT AFFECTS REAL USERS — B4
+
+    Unicode Group   30 employees   0 with a user_id   0 matchable by email
+                     9 org members
+
+`pahchan.py` resolves self-service on `user_id`, so **no employee in that org
+can clock in, open their own payslip, record DPDP consent or raise a
+correction.** Not an orphaned capability — `LinkAccountsTab.jsx` and
+`EmployeesTab.jsx` both drive `POST /v1/manav/employees/{id}/link`, with tests.
+It is a DATA gap, and it cannot be closed by linking alone: the 30 accounts do
+not exist, so it needs 30 invitations first.
+
+⚠ **OUTBOUND_MODE IS LIVE.** Thirty invitations is thirty real emails. Owner
+decision, not a cleanup task.
+
+
 ## 2026-08-31 — 🔴 PRODUCTION RUNS ON THE SESSION-MODE POOLER: 15 CLIENTS, 5 FREE
 
 Found by reading a suite-16 failure, not by looking for it. 16.01 reported
