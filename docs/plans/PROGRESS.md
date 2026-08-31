@@ -7706,3 +7706,31 @@ partial fix from a wrong one.
 
 `ganit#products`, `ganit#expenses` and `manav#udin` did not reproduce on the
 probe run at all — data-dependent, and not guessed at.
+
+---
+
+## 2026-08-31 — SUITE 20 CONFIRMED 14/16 AFTER DEPLOY (was 11/16)
+
+Third run of the day, against the deployed fixes. **14 passed, 2 failed, 13.9m.**
+
+| Test | this morning | now |
+|---|---|---|
+| 20.03 no screen paints a UUID | 3 ids | ✅ **ok** |
+| 20.04 no native date control | 5 screens | ✅ **ok** — "0 screen(s)" |
+| 20.12b every drag handle can start a drag | fail | ✅ **ok** |
+| 20.05 rows on `--row-h` | 10 screens | ❌ 6 screens |
+| 20.06 a loading screen says so | 3 of 10 | ❌ 4 of 10 |
+
+⚠ **A NOTE ON READING THE LEDGER MID-RUN.** While the suite was still going I
+read `ledger.json` and reported 20.03 as still failing with three UUIDs. It was
+not — 20.03 passes. The ledger is written by 20.01 and read by the tests after
+it, and reading it from outside while the run is in progress gave a stale
+answer. The suite's own verdict is the one that counts; my out-of-band read was
+faster and wrong.
+
+The two that remain are the two hardest to characterise, and both are honestly
+open rather than half-claimed: 20.05 has one PROVEN partial (84 → 53.5px on
+`graha#documents`, ~3.5px residual undiagnosed) plus five screens that did not
+reproduce on the probe; 20.06's six screens all render fine in the 20.01 crawl,
+which points at the test's own API shaping rather than at silent screens — not
+yet settled either way.
