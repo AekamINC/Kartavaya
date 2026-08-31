@@ -4671,10 +4671,24 @@ async def list_documents(
     q = ("SELECT d.*, "
          "COALESCE(NULLIF(btrim(_cu.name), ''), NULLIF(btrim(_cu.full_name), '')) "
          "AS created_by_name, "
+         # The client NAME for `d.folder`, by the same rule `/documents/folders`
+         # uses — see the long note there. `d.folder` is a storage key holding a
+         # client UUID, and the Folder column rendered it raw; Suite 20.03 found
+         # three UUIDs on this screen on 2026-08-30 and this is one of the two
+         # places they came from. The raw `folder` stays in the payload because
+         # the filter round-trips on that exact string.
+         "COALESCE(NULLIF(btrim(_fc.name), ''), "
+         "         CASE WHEN d.folder = 'crm/unfiled/documents' THEN 'Unfiled' END, "
+         "         d.folder) AS folder_label, "
          "(d.uploaded_by IS NOT NULL) AS has_creator, "
          + actor_select("d", created=False, updated=True) +
          "COUNT(*) OVER() AS _total "
          "FROM public.graha_documents d "
+         # Cast only where the shape matches, so a non-client folder is NULL
+         # rather than a failed cast on every row of the list.
+         "LEFT JOIN public.graha_clients _fc "
+         "  ON _fc.org_id = d.org_id "
+         " AND _fc.id = substring(d.folder from '^crm/([0-9a-fA-F-]{36})/')::uuid "
          # `_cu` is `audit_actors.CREATOR_ALIAS` by hand — the same alias the
          # generated half would have used, so the two never collide and a
          # reader sees one convention. `public.` is spelled out: migration 142
@@ -4898,9 +4912,42 @@ async def list_document_folders(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT folder, COUNT(*) AS count "
-        "FROM public.graha_documents WHERE org_id=$1::uuid AND is_active=TRUE AND folder != '' "
-        "GROUP BY folder ORDER BY folder",
+        # ── A FOLDER PATH IS A STORAGE KEY, AND IT CONTAINS A UUID ──────────
+        #
+        # `folder` is `crm/<graha_clients.id>/documents` — the key the file
+        # actually lives under in R2. The filter needs that exact string
+        # (`AND d.folder=$n`), so it keeps being returned. What must NEVER be
+        # returned alone is the path itself for DISPLAY: the product's standing
+        # rule is that no UUID is ever rendered, and Suite 20.03 caught three of
+        # them on this screen on 2026-08-30, in the folder picker and the
+        # folder column — "crm/19df5798-a669-…/documents (1)".
+        #
+        # `folder_label` is that same row's client NAME. Computed here rather
+        # than in the client so the picker and the table column cannot disagree
+        # about what one folder is called, and so a third reader gets it right
+        # for free.
+        #
+        # The id is extracted by regex and cast only when the shape matches, so
+        # a folder that is not a client path (`crm/unfiled/documents`, or
+        # anything a later feature invents) yields NULL rather than raising on
+        # the cast. `COALESCE` then falls back to 'Unfiled', and finally to the
+        # raw folder — which keeps a NEW path shape visible and reportable
+        # instead of blank, and lets 20.03 catch it rather than this hiding it.
+        "WITH f AS ("
+        "  SELECT folder, COUNT(*) AS count,"
+        "         substring(folder from '^crm/([0-9a-fA-F-]{36})/') AS _cid"
+        "    FROM public.graha_documents"
+        "   WHERE org_id=$1::uuid AND is_active=TRUE AND folder != ''"
+        "   GROUP BY folder"
+        ") "
+        "SELECT f.folder, f.count, "
+        "       COALESCE(NULLIF(btrim(c.name), ''), "
+        "                CASE WHEN f.folder = 'crm/unfiled/documents' THEN 'Unfiled' END, "
+        "                f.folder) AS folder_label "
+        "  FROM f "
+        "  LEFT JOIN public.graha_clients c "
+        "    ON c.id = f._cid::uuid AND c.org_id = $1::uuid "
+        " ORDER BY folder_label",
         org_id,
     )
     return {"data": [dict(r) for r in rows]}

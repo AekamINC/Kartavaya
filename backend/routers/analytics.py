@@ -564,6 +564,60 @@ def _row_out(r) -> dict:
     }
 
 
+def _widget_module(w: dict) -> str | None:
+    """Which module a preset widget belongs to.
+
+    ── WHY THIS EXISTS: GET /v1/analytics/views ANSWERED 500 FOR EVERY MODULE ──
+    Found 2026-08-30 by Suite 12. `_presets_for` read `REGISTRY[w["metric"]]`
+    unconditionally, and a preset layout holds TWO shapes of widget:
+
+        {"metric": "ganit.revenue_this_month"}     a METRIC widget
+        {"report": "ganit.member_activity"}        a REPORT widget — NO "metric"
+
+    Three of the shipped presets carry a report widget — founder, finance and
+    sales_head (`analytics/presets.py:86,107,149`) — so `w["metric"]` raised
+    `KeyError: 'metric'` and the endpoint 500'd. Not for one module: the loop
+    walks every preset on every call, so the FIRST report widget it meets kills
+    the request whatever module was asked for.
+
+    The consequence is a chain, and it is why this was invisible for so long:
+    no views bar renders, so no preset chip renders, so the alert bell — which
+    lives on a preset KPI widget — never appears. Saved views and metric alerts
+    are unreachable through the product entirely. `analytics_views` and
+    `analytics_alerts` each hold ZERO ROWS ACROSS THE WHOLE DATABASE, for all
+    time, which reads like a feature nobody uses and is a feature nobody can.
+
+    A report widget names its module the same way a metric does — the segment
+    before the first dot — so the module is read from whichever key is present
+    rather than assuming the metric one. Returns None for a widget carrying
+    neither, which then matches no module and is dropped: an unknown widget
+    shape must not take the endpoint down with it a second time.
+    """
+    if "metric" in w:
+        entry = REGISTRY.get(w["metric"])
+        if entry is None:
+            # ⚠ DROPPED, BUT NEVER SILENTLY. Swapping the old `REGISTRY[...]`
+            # for a plain `.get()` would trade a 500 for this codebase's
+            # dominant bug class: a preset quietly losing a widget, on a screen
+            # whose whole job is to be believed. A preset naming a metric that
+            # is not registered is a REAL defect — a rename that missed a
+            # caller — and it must stay findable in the log even though it no
+            # longer takes the endpoint down with it.
+            log.warning(
+                "analytics preset references an unregistered metric %r; the widget "
+                "is dropped from the layout. This is a defect in PRESETS or a "
+                "metric that failed to register, not a caller error.",
+                w["metric"],
+            )
+            return None
+        return entry.module
+    ref = w.get("report")
+    if ref:
+        return str(ref).split(".", 1)[0]
+    log.warning("analytics preset widget carries neither 'metric' nor 'report': %r", w)
+    return None
+
+
 def _presets_for(module: str, reachable: set) -> list:
     """Presets, cut to what THIS caller may see.
 
@@ -575,10 +629,10 @@ def _presets_for(module: str, reachable: set) -> list:
     for key, p in PRESETS.items():
         if module == CROSS_MODULE:
             layout = [w for w in p["layout"]
-                      if REGISTRY[w["metric"]].module in reachable]
+                      if _widget_module(w) in reachable]
         else:
             layout = [w for w in p["layout"]
-                      if REGISTRY[w["metric"]].module == module]
+                      if _widget_module(w) == module]
         if layout:
             out.append({"key": key, "label": p["label"], "hi": p.get("hi", ""),
                         "why": p["why"], "layout": layout})

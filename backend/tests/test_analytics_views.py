@@ -69,9 +69,34 @@ def all_reachable(monkeypatch):
 
 # ── presets are declarations the registry must honour ────────────────────────
 
+# ⚠ A PRESET LAYOUT HOLDS TWO WIDGET SHAPES, AND THESE TESTS ASSUMED ONE.
+#
+# Until 2026-08-31 the three tests below subscripted `w["metric"]`
+# unconditionally, so they raised `KeyError: 'metric'` and had been RED — which
+# is the same false assumption that made `GET /v1/analytics/views` answer 500
+# for every module (see `test_analytics_preset_widget_shapes.py`). A red test
+# asserts nothing, so the endpoint's contract was unheld by the very file whose
+# job is to hold it, at the moment it broke.
+#
+#     {"metric": "ganit.revenue_this_month", "viz": ..., "w": ...}   METRIC
+#     {"report": "ganit.member_activity"}                            REPORT
+#
+# A report widget is BARE — no `viz`, no `w` — so the geometry assertions apply
+# to metric widgets only. `_widget_module` is the one resolver both shapes go
+# through; using it here means these tests and the endpoint cannot drift apart.
+
+def _is_report(w):
+    return "metric" not in w and "report" in w
+
+
 def test_every_preset_widget_names_a_registered_metric():
     for key, p in PRESETS.items():
         for w in p["layout"]:
+            assert ax._widget_module(w) is not None, (
+                f"{key}: widget resolves to no module and is dropped from the "
+                f"layout, so nobody will see it: {w}")
+            if _is_report(w):
+                continue                      # bare by design: no viz, no w
             assert w["metric"] in REGISTRY, f"{key}: {w['metric']}"
             assert w["viz"] in VIZ_TYPES, f"{key}: {w['viz']}"
             assert w["w"] in (1, 2, 3), f"{key}: w={w['w']}"
@@ -80,7 +105,7 @@ def test_every_preset_widget_names_a_registered_metric():
 def test_every_preset_explains_itself_and_names_its_modules():
     for key, p in PRESETS.items():
         assert len(p["why"]) > 40, key
-        used = {REGISTRY[w["metric"]].module for w in p["layout"]}
+        used = {ax._widget_module(w) for w in p["layout"]}
         assert used <= set(p["modules"]), \
             f"{key} draws on {used - set(p['modules'])} without declaring it"
 
@@ -90,14 +115,24 @@ def test_preset_cut_to_a_module_tab_keeps_only_that_module():
     assert cut, "no preset survives a ganit cut"
     for p in cut:
         for w in p["layout"]:
-            assert REGISTRY[w["metric"]].module == "ganit"
+            assert ax._widget_module(w) == "ganit"
+
+
+def test_a_report_widget_is_actually_exercised_by_these_tests():
+    """Anti-vacuity. Every assertion above would still pass if report widgets
+    did not exist, and that is exactly the state the tests were written in.
+    Three are shipped (`founder`, `finance`, `sales_head`); if that ever reaches
+    zero, the shape handling above is untested and this says so."""
+    reports = [(k, w) for k, p in PRESETS.items() for w in p["layout"] if _is_report(w)]
+    assert len(reports) == 3, (
+        f"expected the 3 shipped report widgets; found {len(reports)}: {reports}")
 
 
 def test_preset_cut_on_the_cross_surface_respects_entitlement():
     cut = ax._presets_for(ax.CROSS_MODULE, {"core"})   # org without ganit
     for p in cut:
         for w in p["layout"]:
-            assert REGISTRY[w["metric"]].module == "core"
+            assert ax._widget_module(w) == "core"
     # finance is ganit-only: with core alone it must be omitted, not a husk
     assert "finance" not in {p["key"] for p in cut}
 

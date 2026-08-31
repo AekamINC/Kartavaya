@@ -208,7 +208,12 @@ def test_a_preset_stands_in_cut_to_this_module(pool, ganit_only):
     assert out["source"] == "preset:founder"
     assert out["widgets"], "the preset cut left nothing"
     for w in out["widgets"]:
-        assert ax.REGISTRY[w["metric"]].module == "ganit", w
+        # `founder` carries a REPORT widget (`{"report": "ganit.member_activity"}`)
+        # with no `metric` key, so this subscripted a key that was not there and
+        # had been RED. `_widget_module` is the resolver the endpoint itself
+        # uses, which is the point — a test that reaches past it can disagree
+        # with the code it is checking, and this one did.
+        assert ax._widget_module(w) == "ganit", w
 
 
 def test_the_derived_default_caps_at_nine_in_registry_order(pool, ganit_only, no_presets):
