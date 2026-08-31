@@ -820,28 +820,51 @@ async def download_project_report_pdf(
             raise HTTPException(400, f"{label} must be an ISO date (YYYY-MM-DD)")
 
     pool = await get_pool()
-    team_id = await pool.fetchval(
-        "SELECT team_id FROM public.organisations WHERE id=$1::uuid", org_id
-    )
-    if not team_id:
-        raise HTTPException(404, "Organisation has no team")
-
+    # ⚠ A PROJECT IS A TEAM, AND THIS ROUTE WAS THE LAST HANDLER POINTED AT AN
+    # ABANDONED MODEL. "Download report" answered 404 for EVERY project in the
+    # product, for two independent reasons — either alone was fatal.
+    #
+    #  1. It read `public.boards`, which holds ZERO rows and has no INSERT
+    #     anywhere in `backend/`: the table cannot gain one through the product.
+    #     `templates.py:257` already records that columns live in
+    #     `public.project_columns`, "Not `board_columns`". Live: boards 0,
+    #     board_columns 0, project_columns 274, and of 378 task rows, 336 carry
+    #     `team_id` and **none** carries a `board_id`.
+    #
+    #  2. It resolved the team as `SELECT team_id FROM organisations WHERE
+    #     id = $org` — ONE team per organisation. Unicode Group has 9 teams and
+    #     Aekam Inc has 30, so the predicate became `board_id = <project A> AND
+    #     team_id = <project B>`. Even a perfectly seeded `boards` table would
+    #     still have 404'd for 8 of Unicode's 9 projects and 29 of Aekam's 30.
+    #
+    # The id in the path IS the team id: `ProjectBoardPage.jsx:84` takes
+    # `projectId` from the route and calls `/teams/{projectId}` with it before
+    # posting it here. So the project is looked up where it lives, scoped by the
+    # team's OWN `org_id` — which is what keeps this org-safe now that one
+    # organisation legitimately holds many.
     board = await pool.fetchrow(
-        "SELECT board_id, name FROM public.boards WHERE board_id=$1 AND team_id=$2",
-        board_id, team_id,
+        "SELECT team_id, name FROM public.teams "
+        "WHERE team_id=$1 AND org_id=$2::uuid AND deleted_at IS NULL",
+        board_id, org_id,
     )
     if not board:
-        raise HTTPException(404, "Project board not found")
+        raise HTTPException(404, "Project not found")
+    team_id = board["team_id"]
 
+    # ⚠ `board_id` DROPPED FROM BOTH PREDICATES. `public.tasks.board_id` is NULL
+    # on all 378 rows (live), so `WHERE board_id=$1 AND team_id=$2` matched
+    # nothing even where the route got this far — the report would have printed
+    # "0 open, 0 overdue" for a project with real work on it. `team_id` is the
+    # column tasks are actually keyed on: 336 of 378 carry one.
     open_tasks = await pool.fetchval(
-        "SELECT COUNT(*) FROM public.tasks WHERE board_id=$1 AND team_id=$2 "
+        "SELECT COUNT(*) FROM public.tasks WHERE team_id=$1 "
         "AND archived_at IS NULL AND status <> 'done'",
-        board_id, team_id,
+        team_id,
     ) or 0
     overdue_tasks = await pool.fetchval(
-        "SELECT COUNT(*) FROM public.tasks WHERE board_id=$1 AND team_id=$2 "
+        "SELECT COUNT(*) FROM public.tasks WHERE team_id=$1 "
         "AND archived_at IS NULL AND status <> 'done' AND due_at < NOW()",
-        board_id, team_id,
+        team_id,
     ) or 0
     minutes = await pool.fetchval(
         # `public.time_entries`, NOT `staging.` — there is no such table in
@@ -854,9 +877,12 @@ async def download_project_report_pdf(
         # plan clean against the live catalogue; this was the only refusal.
         "SELECT COALESCE(SUM(t.minutes), 0) FROM public.time_entries t "
         "JOIN public.tasks k ON k.task_id = t.task_id "
-        "WHERE t.org_id=$1::uuid AND k.board_id=$2 "
+        # ⚠ `k.board_id` TOO — same NULL column, same silent zero. This joined
+        # tasks purely to filter on a field no task row has ever carried, so the
+        # report's "hours" line was structurally 0.0 for every project.
+        "WHERE t.org_id=$1::uuid AND k.team_id=$2 "
         "AND t.started_at >= $3::text::date AND t.started_at < ($4::text::date + 1)",
-        org_id, board_id, period_start, period_end,
+        org_id, team_id, period_start, period_end,
     ) or 0
     hours = round(float(minutes) / 60, 1)
 
