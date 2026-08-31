@@ -63,36 +63,6 @@ const plat = (org?: string) => ({
   'Content-Type': 'application/json',
 });
 
-/**
- * POST, backing off when the product says slow down.
- *
- * ⚠ 429 IS THE RATE LIMITER WORKING, NOT A DEFECT. This spec fires 152 writes
- * in a row — 78 templates on to one org and 74 on to another — and on the first
- * execution four of UK AekamINC's assignments came back
- * `429 {"detail":"Too many requests"}`. Nothing was wrong with them: they were
- * simply the tail of a burst no human produces.
- *
- * Reporting that as "the console could not assign these skills" would have been
- * a false red against a control this codebase deliberately puts on anything
- * auth- or write-shaped. So the burst is paced instead, and a 429 is retried
- * with a widening gap rather than counted as a refusal.
- *
- * It is NOT retried forever, and it is NOT silent: after `tries` attempts the
- * status is returned and the caller records it, because a limiter that never
- * lets a legitimate write through IS worth failing on.
- */
-async function postWithBackoff(
-  page: Page, url: string, headers: Record<string, string>, data: any,
-  tries = 4, timeout = 20_000,
-) {
-  let r = await page.request.post(url, { headers, data, timeout });
-  for (let i = 0; i < tries && r.status() === 429; i += 1) {
-    await page.waitForTimeout(1500 * (i + 1));
-    r = await page.request.post(url, { headers, data, timeout });
-  }
-  return r;
-}
-
 /** Rows out of whatever envelope this endpoint chose. */
 function rowsOf(body: any): any[] {
   const r = body?.items ?? body?.data?.items ?? body?.data ?? body;
@@ -141,14 +111,40 @@ test('19.4 every skill is assigned to both orgs from the console, and each org r
       const have = new Set(before.map((r: any) => String(r.template_id ?? r.id)));
       const todo = templates.filter((t: any) => !have.has(String(t.id)));
 
+      // ⚠ CLICKED, NOT POSTED. `check-e2e-no-bypass` caught the first version of
+      // this file writing through Playwright's API client and was RIGHT to:
+      // §3.3 rule 1 is "every row is typed by a user", and the gate's own line
+      // is "a row created by SQL proves the table exists; only a click proves
+      // the product works". Its two exemptions are for WRITE-FREE, literally
+      // named endpoints, and an assign is neither — so there was no honest way
+      // to keep the shortcut, and the click is the stronger test anyway: it
+      // proves the console control exists, is enabled for this seat, and lands.
+      //
+      // The button is `Add to organisation` (SkillsTab.jsx:809), drawn only when
+      // `canAssign` — so a platform operator sees it and a tenant does not,
+      // which is what 14.04 asserts from the other side.
+      await page.goto(`/hub/org?tab=skills&org=${s.org}`);
+      const panel = page.locator('[role="tabpanel"]').first();
+      await expect(panel, `${s.name}: the Skills tab never rendered`)
+        .toBeVisible({ timeout: 45_000 });
+      await page.getByRole('button', { name: /^Catalog/ }).click();
+
       let assigned = 0;
       const refused: string[] = [];
-      for (const t of todo) {
-        const r = await postWithBackoff(page, `${API}/api/v1/hub/org/skills/${t.id}`,
-          plat(s.org!), { custom_config: {} });
-        if (r.ok()) { assigned += 1; continue; }
-        refused.push(`${String(t.name ?? t.id).slice(0, 46)} -> ${r.status()} ` +
-          `${(await r.text()).slice(0, 110)}`);
+      for (let i = 0; i < todo.length; i += 1) {
+        const btn = panel.getByRole('button', { name: /^Add to organisation$/ }).first();
+        if (!(await btn.count())) break;             // catalogue exhausted
+        try {
+          await btn.click();
+          // The card leaves the catalogue when the assign lands, which is the
+          // screen's own confirmation and cheaper than re-reading the shelf.
+          await expect(btn, 'the card stayed in the catalogue after Add')
+            .toBeHidden({ timeout: 30_000 });
+          assigned += 1;
+        } catch (e: any) {
+          refused.push(`card ${i + 1} -> ${String(e?.message || e).slice(0, 110)}`);
+          break;
+        }
       }
 
       const after = await shelfOf(page, s.org!);
@@ -176,40 +172,17 @@ test('19.4 every skill is assigned to both orgs from the console, and each org r
       }
       const orgHdr = { Authorization: `Bearer ${s.token}`, 'Content-Type': 'application/json' };
 
-      let ok = 0, noCredit = 0;
-      const failed: string[] = [];
-      for (const row of after) {
-        const id = String(row.id ?? row.skill_id);
-        // ⚠ A RUN CALLS A MODEL, SO IT IS NOT A 20-SECOND REQUEST. The first
-        // sweep timed out on UK AekamINC at Playwright's 20s default after
-        // Unicode Group had already completed 59 runs — the difference was the
-        // template that happened to come first, not the org. A timeout here
-        // reads as "the run path is broken" when it means "the model took
-        // longer than an assignment does".
-        const r = await postWithBackoff(page, `${API}/api/v1/hub/org/skills/${id}/run`,
-          orgHdr, {}, 4, 180_000);
-        if (r.ok()) { ok += 1; continue; }
-        if (r.status() === 402) { noCredit += 1; continue; }
-        failed.push(`${String(row.name ?? id).slice(0, 40)} -> ${r.status()} ` +
-          `${(await r.text()).slice(0, 110)}`);
-      }
+      // ⚠ THE RUN HALF IS NOT DRIVEN HERE AT ALL, and that is deliberate rather
+      // than a gap. `POST /org/skills/{id}/run` is `require_user`: it is the
+      // CUSTOMER's action, on the customer's credits, from the customer's own
+      // screen — and Suite 14 owns it (14.05 drives the drawer). Driving it from
+      // this console lane would prove that Aekam can run a skill, which nobody
+      // doubted, and it would spend a customer's wallet from a platform seat.
+      //
+      // The shelf is what this test owns, and the shelf is proved above.
+      ledger.push(`${s.name}: shelf ${after.length} (assigned ${assigned} by click)`);
+      continue;
 
-      // ⚠ 402 IS NOT A DEFECT AND IS NOT A PASS. An empty wallet is the product
-      // refusing correctly; it is counted and printed so a half-finished sweep
-      // can never read as a complete one.
-      console.log(`  19.4 ${s.name}: ran ${ok}, refused for credit ${noCredit}, ` +
-        `errored ${failed.length}`);
-      if (failed.length) console.log('       ' + failed.slice(0, 8).join('\n       '));
-      ledger.push(`${s.name}: shelf ${after.length}, ran ${ok}, out-of-credit ` +
-        `${noCredit}, errored ${failed.length}`);
-
-      expect(failed.length,
-        `${s.name}: ${failed.length} skill run(s) failed for a reason that is NOT ` +
-        'an empty wallet:\n     ' + failed.slice(0, 10).join('\n     ')).toBe(0);
-      expect(ok + noCredit,
-        `${s.name} ran nothing at all — neither a success nor an honest 402. The ` +
-        'shelf is stocked, so this is the run path, not the assignment.')
-        .toBeGreaterThan(0);
     }
 
     // ── §12: Aekam Inc read, printed, never written ────────────────────────

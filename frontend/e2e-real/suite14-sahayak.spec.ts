@@ -647,17 +647,6 @@ async function apiGet(page: Page, pathAndQuery: string) {
   });
 }
 
-/** DELETE with the same credential and org header `apiGet` uses. */
-async function apiDelete(page: Page, pathAndQuery: string) {
-  const token = await page.evaluate(() => localStorage.getItem('auth_token'));
-  return page.request.delete(`${API}${pathAndQuery}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      'X-Org-Id': LANE.orgId,
-    },
-  });
-}
-
 async function apiOne(page: Page, pathAndQuery: string): Promise<any> {
   const res = await apiGet(page, pathAndQuery);
   expect(res.status(), `GET ${pathAndQuery} → ${res.status()}: ${(await res.text()).slice(0, 300)}`)
@@ -2436,12 +2425,31 @@ test('14.20 a member ceiling cannot be set before anybody has spent', async ({ p
     // Removing it is also more coverage, not less: DELETE …/cap is a real
     // control with no other test, and the removal is verified from the
     // canonical row rather than from the response.
+    // ⚠ REMOVED THROUGH ITS OWN CONTROL, NOT THROUGH THE API. The first
+    // version of this cleanup called DELETE …/cap directly and
+    // `check-e2e-no-bypass` refused it — correctly. Its own line is "a row
+    // created by SQL proves the table exists; only a click proves the product
+    // works", and the two exemptions it allows are for WRITE-FREE, literally
+    // named endpoints. An API shortcut here would also have proved less:
+    // `MemberCeilingModal.jsx:94` draws "Remove ceiling", and pressing it
+    // proves that control works, which the DELETE never did.
     let cleared = 0;
-    for (const m of (after?.members || [])) {
-      const uid = String(m.user_id ?? m.id ?? '');
-      if (!uid || m.cap_credits == null) continue;
-      const del = await apiDelete(page, `/api/v1/billing/me/members/${uid}/cap`);
-      if (del.ok()) cleared += 1;
+    for (let i = 0; i < (after?.members || []).length; i += 1) {
+      const btn = card.getByRole('button', { name: /^Set ceiling$/ }).nth(i);
+      if (!(await btn.count())) break;
+      await btn.click();
+      const modal = page.getByRole('dialog').first();
+      await expect(modal, 'the ceiling modal did not open for the removal')
+        .toBeVisible({ timeout: 10_000 });
+      const remove = modal.getByRole('button', { name: /^Remove ceiling$/ });
+      if (await remove.count()) {
+        await pressAndRead(page, /\/members\/[^/]+\/cap$/, () => remove.click());
+        cleared += 1;
+      } else {
+        await page.keyboard.press('Escape');
+      }
+      await expect(modal, 'the ceiling modal stayed open')
+        .toBeHidden({ timeout: 10_000 });
     }
     const settled = await apiOne(page, '/api/v1/billing/me/balance');
     const stillCapped = (settled?.members || []).filter((m: any) => m.cap_credits != null);
