@@ -414,6 +414,45 @@
 .mn-rowact { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .mn-rowact .mn-f--sm { width: 140px; }
 
+/* ── INSIDE A TABLE, THE ACTIONS DO NOT WRAP ────────────────────────────────
+   MEASURED on the deployed app 2026-08-31, by hiding one cell at a time and
+   then by injecting each candidate rule and re-reading the row: the DSC and
+   UDIN registers rendered 77px rows against a `--row-h` of 66. The actions
+   cell is the cause on both. `.mn-rowact` is 76px of content there — two
+   ghost buttons at 37.5px stacked, because "Custody" + "Revoke" (152px) and
+   "Add UDIN" + "Not required" (168px) do not fit their column on one line and
+   `flex-wrap: wrap` folds them. This rule alone takes both registers 77 -> 66.
+
+   The identical fault, the identical fix and the identical reasoning are at
+   `.tbl .gr__sacts` in `graha.css` — `graha#documents` measured 84px against
+   50 for exactly this. Scoped to `.tbl` for the same reason: wrapping is
+   correct everywhere else, because only a table row has a height contract.
+   Auto layout gives the column its natural width and `.tbl__wrap` scrolls. */
+.tbl .mn-rowact { flex-wrap: nowrap; }
+
+/* ── AND THE SUBTITLE UNDER A NAME IS CLAMPED, NOT FOLDED ───────────────────
+   The notices register needed both: `nowrap` alone left it at 79px because a
+   SECOND cell was also over — the notice title, whose `.mn-t__mute` subtitle
+   wraps to three lines at 257px (78px of content). Clamped, the pair measures
+   66 with the rule above; either rule on its own leaves it at 79 or 77.
+
+   ⚠ SCOPED TO THE SUBTITLE POSITION, NOT TO `.mn-t__mute`. That class is
+   overloaded — it is also the WARNING text under the status badge on the DSC
+   register ("no certificate serial recorded") and the muted em-dash used for
+   an absent value. Clamping it flat would truncate an advisory the register
+   exists to raise. The adjacent-sibling selector reaches only the second line
+   of a name cell, which is a designation or a document kind: a label, where
+   an ellipsis costs nothing. The warnings follow a `.tag`, so they are
+   untouched — verified by measuring all nineteen Manav tabs, where the nine
+   already-compliant tables stayed at 66. */
+.tbl td .mn-t__n--b + .mn-t__mute {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+}
+
 /* An edit form opened inside a table row. `.k-formpanel` carries a bottom
    margin meant for page flow, which inside a `<td>` leaves a gap under the
    row it belongs to. */
