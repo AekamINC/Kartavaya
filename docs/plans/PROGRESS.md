@@ -8185,3 +8185,101 @@ a scoring rule, so every `lead_score` is 0) are reported without a verdict.
 05.08 and 05.15 are the outbound fence, deliberately. 05.13 is an arithmetic
 ceiling in the committed fixtures. 05.17's TDS refusal is **correct** and must
 not be relaxed.
+
+---
+
+## 2026-08-31 · night — three checks that could not fail, and one that never ran
+
+### The lead form that had never once worked
+
+`POST /api/v1/graha/f/{slug}` carried `ON CONFLICT (org_id, phone)` against a
+partial unique index that does not exist. Postgres refuses that at plan time, so
+the branch had **never once succeeded** and `graha_web_form_submissions` held
+zero rows across every organisation in the product.
+
+⚠ **The identical fault was already fixed thirty lines away in the same file.**
+`create_contact_from_email` carries the note about migration 022 declaring an
+index that was never created and migration 024 dropping the intent, "because
+phone is not unique in a CRM". One correction, two identical statements, one of
+them missed. Adding the index is NOT the fix — three contacts share 9876009901
+and they are Suite 04.19's own dedupe fixtures.
+
+Proven end to end: two submissions typed into the hosted page in a browser.
+
+### ₹54,000 a month is charged and no invoice can reach it
+
+Four organisations carry a `monthly_price`. `org_billing_lines` is empty for
+every org in the product, and an invoice is a query over it.
+
+A view exists to catch precisely this. `services/billing_lines.py` states the
+contract — *"`v_org_platform_line_drift` must always return zero rows"* — and
+migration 096 calls it *"the single query to run after each change"*. **A grep
+across every `.py`, `.mjs` and `.js` finds it nowhere outside the two migrations
+that created it.** No route, no cron, no test, no health field. It has returned
+four rows the whole time and nothing said so.
+
+⚠ **This is the programme's dominant finding wearing different clothes.** An
+assertion satisfied by its own shape cannot fail because of how it is written; a
+check nothing executes cannot fail because it never runs. Both are green for
+ever, and both are worse than no check, because somebody was left believing the
+invariant was watched. It now reports on `/api/health` — a count, never the rows
+(the endpoint is unauthenticated), and `null` for unreadable kept distinct from
+`0` for clean. Live: `"billing_drift":{"platform_line":4,"credits":0}`.
+
+### Professional tax covers seven states of about twenty-two
+
+Seeded: Assam, West Bengal, Gujarat, Maharashtra, Karnataka, Telangana, Andhra
+Pradesh. So a firm in Chennai, Kochi, Bhopal, Bhubaneswar, Patna or Chandigarh
+deducts **₹0 professional tax for every employee**, silently, and the employer
+carries the shortfall with interest and penalty. `_pt_slabs` already says so:
+*"the ~20-state seed is still owed, and the flat-200 fallback that used to mask
+it has been removed."* Known, unclosed, unmasked.
+
+⚠ **And it looks exactly like being correct.** Delhi, Haryana, Uttar Pradesh and
+Rajasthan levy no professional tax at all. Two opposite facts, one number, and
+nothing on the payslip could tell them apart. `pt_state_covered` separates them.
+
+Seeding the missing fifteen is deliberately NOT done here: an invented slab
+deducts a figure somebody has to defend to a state authority.
+
+⚠ **The owner's correction is on the record**: *"this application is for whole of
+India not just one particular state."* Right, and the analysis before it had been
+reasoning from whichever two states the test org happened to use.
+
+### Three of my own checks could not fail
+
+- A pipeline test asserted the controls **existed** — and stayed green under a
+  mutation that left them in the DOM with `display: none`. A control nobody can
+  reach passes an existence check exactly as well as one they can.
+- A toast test fired both mouse events in a single instant, where two pauses
+  compute the same remaining time and agree. The damage needs time between them.
+- A professional-tax coverage test used Maharashtra, whose ladder has three
+  bands, so a mutation skipping zero-tax bands was masked by the siblings —
+  right answer, wrong reason.
+
+### And an agent's verifier refused a patch that was worse than the bug
+
+The proposed camera fix guarded on `videoWidth > 0`. The checking agent read the
+spec: `drawImage` is a no-op at that readiness state, so the guard passes and
+produces a valid JPEG of a **blank canvas**. Nothing in the suite checks photo
+bytes, only that a key is non-null — so it would have gone green over a black
+selfie in a biometric attendance product.
+
+### Two corrections to work landed the same night
+
+- The duplicate-employee-code 409 blamed the **employee code** whichever of the
+  table's two partial unique indexes fired, so a duplicate LOGIN would have sent
+  an admin to change a code that was perfectly free. Unhelpful became
+  confidently wrong. Now branches on `constraint_name`.
+- That fix then inlined a twenty-sixth copy of the on-the-rolls predicate, which
+  a repo guard forbids because twenty-five once drifted. The guard was right —
+  and it caught the explanatory comment too, because the comment quoted the very
+  alias it forbids.
+
+### Environment
+
+Migration 249: 52 contacts, 16 vendors and **30 of 30 employees who had no
+address at all** now carry `+tag` aliases on one mailbox. Owner chose real
+delivery over suppression — a suppressed send proves only that a button was
+pressed; a delivered one proves the template, the sender domain, the link and
+the recipient. Caps raised from 100/day (already exceeded at 105) to 500.
