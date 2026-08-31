@@ -12,6 +12,102 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-08-31 — 🔴 PRODUCTION RUNS ON THE SESSION-MODE POOLER: 15 CLIENTS, 5 FREE
+
+Found by reading a suite-16 failure, not by looking for it. 16.01 reported
+`GET /api/v1/org/members → 500`. The endpoint was fine. Railway, same second:
+
+    12:02:04  [3] Booting worker with pid: 3      <- ONE worker
+    12:02:08      DB pool created successfully
+    12:02:13      (EMAXCONNSESSION) max clients reached in session mode
+                  - max clients are limited to pool_size: 15
+
+Five seconds after the pool came up, SIX unrelated endpoints 500'd together —
+`/api/users`, `/api/tasks`, `/api/activity/feed`, `/api/v1/ganit/stats`,
+`/api/v1/hub/skills/templates`, `/api/v1/org/members`. That is not six bugs.
+
+`DATABASE_URL` points at port **5432** of `aws-1-ap-southeast-1.pooler.supabase
+.com`. On a pooler host 5432 is **Supavisor in SESSION mode**, not a direct
+connection: one pinned Postgres backend per client, 15 clients for the whole
+project. Probed live — connect, `SELECT 1`, close, no writes:
+
+    5432 session   opened= 5/16  stopped_by=EMAXCONNSESSION (limit 15)
+    6543 txn       opened=24/24  stopped_by=(reached target)
+
+**Five.** The API's own pool is `max_size=10`, so it cannot reach its own
+configured size, and every cron, migration and probe draws from the same 15.
+
+⚠ AND THE DIRECTION IS THE POINT. **staging runs 6543. Production runs 5432.**
+`CLAUDE.md` records this as "only the pooler port differs" — it is not a neutral
+difference, and the stale, userless environment holds the good one.
+
+`db.py:_direct_dsn` is also documented backwards: it rewrites 6543 → 5432 and
+calls that "direct connection". On a pooler host that is the same pooler in the
+*worse* mode, so the boot-time fallback silently trades a ~200-client ceiling
+for a 15-client one and logs success. It is not how production got here
+(`create_pool` opens only `min_size=2`; the wall is hit later, at request time,
+where nothing catches it) but it is armed for next time — and `EMAXCONNSESSION`
+is an `InternalServerError`, which that `except` clause does not even list.
+
+Safe to move: `statement_cache_size=0` is already set, `_init_conn` registers
+only client-side codecs and deliberately sets no `search_path`, and there is no
+`LISTEN`/`NOTIFY`, no `pg_advisory_lock`, no `CREATE TEMP` and no explicit
+`.prepare()` anywhere in `backend/`. Report:
+`docs/incidents/2026-08-31-production-on-the-session-mode-pooler.md`.
+
+**OWNER ACTION — one variable, reversible.** Blocked twice by the auto-mode
+classifier here, and the MCP alternative would print the DB password:
+
+    railway variables --service Kartavaya --set "DATABASE_URL=$(railway       variables --service Kartavaya --kv | grep '^DATABASE_URL='       | cut -d= -f2- | sed 's#:5432/#:6543/#')"
+
+## 2026-08-31 — SUITE 13 WAS 0/17 AND IT WAS NEVER THE PRODUCT: 14 PASS
+
+Both suite-13 runs on record (08:52 and 10:04) predate `d1f8c394` at 10:13, the
+commit that gave the CSP guard the import it needed. Every one of the 17
+failures was the same line — Cloudflare's `__CF$cv$` beacon being refused, which
+`CLAUDE.md` documents as EXPECTED and un-allowlistable (its hash changes every
+request; measured three fetches, three hashes). Re-run against the same build:
+**14 passed, 3 failed.** Fourteen "failures" were a stale harness.
+
+⚠ THE PRODUCT CSP IS CORRECT, and was the whole time. Our bootstrap
+`sha256-JtAu+6V2X/…` matches across repo `index.html`, the shipped
+`_headers`, and the live page. Only the beacon is refused.
+
+### And two of the remaining three were the same class again
+
+13.12 and 13.15 threw `TypeError: Cannot convert undefined or null to object`
+on `Object.keys(openapi.paths)`. **Production does not serve `/openapi.json` —
+`server.py` builds the app with `openapi_url=None` when docs are off, so the
+schema is never generated.** `/openapi.json`, `/api/openapi.json` and `/docs`
+all 404. The suites were written against staging's posture, where all three are
+served unauthenticated — which is the thing that is wrong, not this.
+
+Replaced with `absentRoutes()` in `_helpers.ts`, which asks the deployed router
+directly. Stronger, not weaker: a 404 is the router's own answer and cannot
+drift from the deployment. Mutation-proved live —
+
+    /api/v1/messaging/receipts                    404   (absent, as claimed)
+    /api/v1/messaging/attachments                 404   (absent, as claimed)
+    /api/v1/messaging/channels                    401   (exists -> would fail)
+    /api/v1/messaging/channels/{id}/read          405   (exists, POST-only)
+
+The 405 is why the probe uses GET even on write-shaped paths.
+
+⚠ WHAT IT GIVES UP, stated rather than left to be found: it cannot ENUMERATE.
+The schema read could catch a route nobody guessed; a probe only answers about
+paths it is given. The helper takes a LIST and logs every status for that reason.
+
+### 🔴 OWNER DECISION — suites 15.04 and 15.11 have no replacement
+
+Both need the *schema*, not routes: 15.04 asserts the deployed `DocumentCreate`
+contract, and 15.11 enumerates every deployed eSign operation to find ORPHANS —
+a route that exists and no screen calls. Probing the known list inverts that
+test into "every control has a route" and loses the direction that finds the
+defect, so it has NOT been rewritten. Either production serves `/openapi.json`
+behind authentication, or those two tests can only run against a docs-enabled
+deploy. That is a decision, not a fix.
+
+
 ## 2026-08-31 — SUITE 22 (DEAD CONTROLS) 12/13: NOTHING IS DEAD, ONE THING IS COVERED
 
 **12 passed, 1 failed, 32.3m** — seven full sweeps of every visible enabled

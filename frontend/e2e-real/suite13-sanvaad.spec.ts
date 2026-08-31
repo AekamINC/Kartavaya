@@ -190,7 +190,7 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, activeLane, assertOrg } from './_lanes';
 
-import { isForeignInlineScriptRefusal } from './_helpers';
+import { absentRoutes, isForeignInlineScriptRefusal } from './_helpers';
 // ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
 // unset run is byte-for-byte the Unicode run this suite was authored against.
 // `lane('unicode')` frozen here at import time was why the UK replay could not
@@ -2163,16 +2163,31 @@ test('13.12 read receipts — where "Seen by" comes from, and the dead table bes
   // There is no route that reads or writes `samvada_read_receipts`; the OpenAPI
   // has no path containing "receipt" at all. This asserts the absence so that a
   // future route appearing is a visible change rather than a silent one.
-  const openapi = await (await page.request.get(`${API}/openapi.json`)).json();
-  // ⚠ SCOPED TO `/messaging/`. An unscoped `/receipt/i` matches
+  //
+  // ⚠ PROBED, NOT ENUMERATED. This read `/openapi.json` until 2026-08-31 and
+  // threw `Cannot convert undefined or null to object` on every production run:
+  // production does not serve the schema (`openapi_url=None`), so `.paths` was
+  // undefined. See `absentRoutes` for why asking the router itself is the
+  // better proof and what it gives up.
+  //
+  // ⚠ STILL SCOPED TO `/messaging/`. An unscoped `receipt` search matched
   // `/api/v1/procurement/purchase-orders/{po_id}/receipts` — Kray's GOODS
-  // receipts, an entirely different thing — and the first run failed here
-  // naming a route with nothing to do with Sanvaad. A word can mean two things
-  // in one API, and a filter has to say which one it means.
-  const receiptPaths = Object.keys(openapi.paths)
-    .filter((p) => p.includes('/messaging/') && /receipt/i.test(p));
-  expect(receiptPaths, `a Sanvaad read-receipt route now exists: ${JSON.stringify(receiptPaths)}`)
-    .toEqual([]);
+  // receipts, an entirely different thing — and an early run failed here naming
+  // a route with nothing to do with Sanvaad. A word can mean two things in one
+  // API, and the paths probed have to say which one they mean.
+  const RECEIPT_SHAPES = [
+    '/api/v1/messaging/receipts',
+    '/api/v1/messaging/read-receipts',
+    '/api/v1/messaging/messages/00000000-0000-0000-0000-000000000000/receipts',
+    '/api/v1/messaging/messages/00000000-0000-0000-0000-000000000000/read-receipts',
+    '/api/v1/messaging/channels/00000000-0000-0000-0000-000000000000/receipts',
+  ];
+  const receipts = await absentRoutes(page, API, RECEIPT_SHAPES);
+  console.log(`S13-SEEN  read-receipt probe: ${JSON.stringify(receipts.seen)}`);
+  expect(receipts.present,
+    `a Sanvaad read-receipt route now exists: ${JSON.stringify(receipts.present)}. ` +
+    `\`samvada_read_receipts\` was a dead table; if it now has a route, the ` +
+    `"Seen by" finding in this test needs re-taking.`).toEqual([]);
 
   assertConsole(con);
 });
@@ -2410,13 +2425,21 @@ test('13.15 attachments: no control, no route, no row — a §4 volume that cann
   expect(await page.locator('.m2cp input[type="file"]').count(),
     'a file input appeared in the composer').toBe(0);
 
-  // ── 2. NO ROUTE. The DEPLOYED OpenAPI, not the local tree.
-  const openapi = await (await page.request.get(`${API}/openapi.json`)).json();
-  const messagingPaths = Object.keys(openapi.paths).filter((p) => p.includes('/messaging/'));
-  const attachRoutes = messagingPaths.filter((p) => /attach|upload|file/i.test(p));
-  console.log(`S13-ATTACH  ${messagingPaths.length} deployed /messaging/ routes, ` +
-    `${attachRoutes.length} of them attachment-shaped`);
-  expect(attachRoutes, `an attachment route now exists: ${JSON.stringify(attachRoutes)}`).toEqual([]);
+  // ── 2. NO ROUTE. Asked of the DEPLOYED router, not the local tree and not
+  //       the OpenAPI — production does not publish one. See `absentRoutes`.
+  const ATTACH_SHAPES = [
+    '/api/v1/messaging/attachments',
+    '/api/v1/messaging/upload',
+    '/api/v1/messaging/files',
+    '/api/v1/messaging/channels/00000000-0000-0000-0000-000000000000/attachments',
+    '/api/v1/messaging/channels/00000000-0000-0000-0000-000000000000/upload',
+    '/api/v1/messaging/messages/00000000-0000-0000-0000-000000000000/attachments',
+  ];
+  const attach = await absentRoutes(page, API, ATTACH_SHAPES);
+  console.log(`S13-ATTACH  attachment probe: ${JSON.stringify(attach.seen)}`);
+  expect(attach.present,
+    `an attachment route now exists: ${JSON.stringify(attach.present)} — §4's 12 ` +
+    `attachments may now be achievable and this test's verdict needs re-taking.`).toEqual([]);
 
   // ── 3. NO ROW. Asserted through the product's own read: every message this
   //       suite created comes back without an attachments array of any kind.

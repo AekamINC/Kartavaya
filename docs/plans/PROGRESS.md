@@ -8010,3 +8010,42 @@ its sales branch counted soft-deleted orders (6 statuses vs 5, a whole
 was already written in that function, in its revenue branch: *"an export that
 disagrees with the screen it was taken from is worse than either being wrong
 alone."*
+
+## 2026-08-31 — two things that were never the product
+
+### The pooler
+
+A suite-16 failure said `GET /api/v1/org/members → 500`. Following it instead of
+retrying it found six endpoints 500'ing in the same second on `EMAXCONNSESSION`.
+Production's `DATABASE_URL` is on port 5432 — Supavisor SESSION mode, 15 clients
+for the project. Probed: **5 free**. Port 6543 took 24 of 24. Staging has been on
+6543 the whole time. One variable, reversible, owner-blocked here by the
+classifier; risk report in `docs/incidents/`.
+
+The lesson is the one this file keeps writing down: a 500 on one endpoint is a
+question, not an answer. Six endpoints failing in one second is a different
+question entirely, and only the deploy log could tell them apart.
+
+### Suite 13, and what a stale harness costs
+
+Suite 13 stood at **0 of 17** across two runs. Neither was the product: both
+predate `d1f8c394`, which gave the CSP guard its import. Re-run unchanged
+against the same build — **14 pass**. The wave-run report had already predicted
+this ("retrofit `isForeignInlineScriptRefusal()` into Suites 13 and 18 — removes
+~58 of the 116 failures"); the runs simply happened before the retrofit landed
+and the result was carried forward as if it meant something.
+
+⚠ A RESULT IS ONLY EVIDENCE OF THE BUILD IT RAN AGAINST. Two of the three
+survivors were the same class one layer down: `Object.keys(openapi.paths)` on a
+schema **production correctly refuses to publish** (`openapi_url=None`). The
+suites encode staging's posture, where `/openapi.json` is open — and staging
+being open is the defect, not production being closed.
+
+Replaced with a deployed-router probe, mutation-proved (`/messaging/receipts`
+404 absent · `/messaging/channels` 401 present · `…/read` 405 present, which is
+why the probe GETs even write-shaped paths). It cannot enumerate, and says so.
+
+15.04 and 15.11 need the schema itself and have NOT been rewritten — 15.11 hunts
+ORPHANED routes, and probing a known list inverts it into the one direction that
+cannot find one. Raised as an owner decision rather than quietly narrowed.
+

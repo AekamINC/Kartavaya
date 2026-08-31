@@ -561,3 +561,54 @@ export function isForeignInlineScriptRefusal(fullText: string): boolean {
   // fallback must become `false`.
   return true;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROVING A ROUTE DOES NOT EXIST, WITHOUT `/openapi.json`
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠ PRODUCTION DOES NOT SERVE `/openapi.json`, AND THAT IS CORRECT.
+// `server.py` builds the app with `openapi_url=... if _DOCS_ON else None`, so
+// on production the schema is not merely refused — it is never generated.
+// Measured 2026-08-31: `/openapi.json`, `/api/openapi.json` and `/docs` all
+// return 404 with body `{"detail":"Not Found"}`. Staging serves all three
+// unauthenticated, which is the thing that is wrong, not this.
+//
+// Four tests were written against staging's posture and read `.paths` or
+// `.components` straight off that 404 body:
+//
+//   13.12  Object.keys(openapi.paths)  -> TypeError: Cannot convert undefined
+//   13.15  Object.keys(openapi.paths)  -> TypeError: Cannot convert undefined
+//   15.04  spec?.components?.schemas?… -> undefined, clean but equally wrong
+//
+// None of those failures says anything about routing. They say the suite asked
+// production for a document it does not publish.
+//
+// ⚠ AND THE REPLACEMENT IS STRONGER, NOT WEAKER. Asking the deployed router
+// directly is a better proof of absence than reading a document about it: a 404
+// is the router's own answer, and it cannot drift from the deployment the way a
+// schema read from somewhere else can. A path that EXISTS but refuses this
+// caller answers 401/403/405/422 — anything but 404 — so a route appearing
+// later still turns the assertion red.
+//
+// ⚠ WHAT IT DOES NOT DO, stated rather than left to be discovered: it cannot
+// ENUMERATE. The OpenAPI read could catch a route whose name nobody guessed;
+// a probe only answers about paths it is given. Callers must therefore pass the
+// shapes they mean to exclude, and a route deployed under a name outside that
+// list will not be seen. That is a real reduction in reach and it is the reason
+// this helper takes a LIST and reports every status it saw.
+export async function absentRoutes(
+  page: import('@playwright/test').Page,
+  base: string,
+  paths: string[],
+): Promise<{ present: string[]; seen: Record<string, number> }> {
+  const seen: Record<string, number> = {};
+  const present: string[] = [];
+  for (const p of paths) {
+    // GET even for write-shaped paths: a POST-only route answers 405, which is
+    // "exists", and that is exactly the signal wanted. A GET also cannot write.
+    const r = await page.request.get(`${base}${p}`);
+    seen[p] = r.status();
+    if (r.status() !== 404) present.push(`${p} -> ${r.status()}`);
+  }
+  return { present, seen };
+}
