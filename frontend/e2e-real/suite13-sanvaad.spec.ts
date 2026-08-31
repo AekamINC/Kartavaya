@@ -754,7 +754,20 @@ test('13.01 Sanvaad mounts both tabs, the rail states what is empty, and nothing
   await expect(page.getByRole('button', { name: 'New direct message' })).toBeVisible();
 
   // ── no spinner outlives the load, and no error toast on a healthy screen ──
-  await expect(page.locator('.sk, .skeleton, [aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 });
+  // ⚠ TWO OF THESE THREE SELECTORS MATCH NOTHING, and this asserts a count of
+  // ZERO — so they could only ever agree. `.sk` and `.skeleton` exist nowhere in
+  // `frontend/src`; the loading primitives are `k-skeleton-table`
+  // (ui/Skeleton.jsx:82), `k-shimmer` (ModuleUI.jsx:89) and `dr__skel`.
+  // `[aria-busy="true"]` is real but sits on the `SkeletonRegion` WRAPPER
+  // (Skeleton.jsx:251) rather than on the table skeleton itself, so a screen
+  // stuck on a bare `SkeletonTable` satisfied this line.
+  //
+  // A dead selector inside a `toHaveCount(0)` is the worst version of the
+  // "static ratchets are NOT coverage" fault this repo already records twice:
+  // it cannot fail, so it reads as a guard forever.
+  await expect(page.locator(
+    '[class*="k-skeleton"], [class*="k-shimmer"], [class*="dr__skel"], [aria-busy="true"]'))
+    .toHaveCount(0, { timeout: 20_000 });
   const toasts = await page.locator('.k-toast, .toast').allInnerTexts();
   for (const t of toasts) {
     expect(t, `an unexpected toast on a healthy Sanvaad: ${t}`).toMatch(IGNORABLE_TOAST);
