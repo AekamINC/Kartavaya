@@ -2481,6 +2481,44 @@ async def assign_role(
     org_roles = set(CONSOLE_ASSIGNABLE_ORG_ROLES)
 
     if body.role_code in platform_roles:
+        # ── NOBODY GRANTS THEMSELVES A PLATFORM ROLE ─────────────────────────
+        #
+        # This route is god mode only (`SUPERUSER_ONLY_ROLES`), and without this
+        # check a `platform_admin` could pass their OWN user_id and hand
+        # themselves `platform_support`. That is not a lateral move, because
+        # `support_sessions._can_raise_support` deliberately admits SUPPORT_ROLES
+        # and nothing else, and its docstring states the invariant the narrowing
+        # buys:
+        #
+        #     "the ONLY holder of a session is the role that gets nothing
+        #      without one, so a session can only ever narrow — there is no
+        #      role here for it to widen."
+        #
+        # A platform_admin holding platform_support falsifies that sentence: the
+        # same account then reaches graha, vikray, prachar, sahayak, dristi and
+        # sanvaad BY ROLE *and* holds a session. The measured escape recorded in
+        # that same docstring — a platform_staff on a `graha / viewer` session
+        # admitted to POST on all six, audit row reading `level: 'admin'` — is
+        # exactly what this reopens, one tier higher.
+        #
+        # Two guards survive it (`subscription` caps unconditionally, and the
+        # customer's own org_admin still approves the session), so this is
+        # defence-in-depth rather than an open door. It is still a rule that was
+        # written down and not enforced, and the audit half is unconditional: a
+        # self-grant records `granted_by = <self>`, which is a privilege grant on
+        # the most sensitive tier with no second party in the record.
+        #
+        # Org-scoped roles are NOT covered by this check, deliberately. Granting
+        # yourself `org_admin` of a customer org through this console is already
+        # refused by `CONSOLE_ASSIGNABLE_ORG_ROLES`, and an operator adding
+        # themselves to an org they are provisioning is an ordinary action.
+        if body.user_id == user["user_id"]:
+            raise HTTPException(
+                403,
+                f"'{body.role_code}' cannot be granted to yourself. A platform "
+                "role must be granted by a different platform admin, so that "
+                "every grant on this tier has a second party in the audit trail.",
+            )
         await pool.execute(
             "INSERT INTO public.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, NULL, $2, $3) "

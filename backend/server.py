@@ -345,7 +345,13 @@ if _SENTRY_DSN:
 
 #: The only environments that may serve the API map. Compared case-insensitively.
 _NON_PRODUCTION_ENVIRONMENTS: frozenset[str] = frozenset({
-    "staging", "stage",
+    # ⚠ "staging" and "stage" were REMOVED 2026-08-30. There is no staging
+    # environment any more — everything moved to production — but the Railway
+    # environment still exists with ENVIRONMENT=staging, and it was serving the
+    # complete API map UNAUTHENTICATED (verified: HTTP 200, 1,022,070 bytes)
+    # against the SAME production database that holds payroll and bank details.
+    # A deployment that still calls itself staging is not a reason to hand out
+    # the map. Local names stay, because a laptop is genuinely not the product.
     "local", "dev", "development",
     "test", "testing", "qa", "preview",
 })
@@ -379,16 +385,52 @@ async def global_write_rate_limit(request: Request, call_next):
         key = f"global_write:{_client_ip(request)}"
         import time
         _now = int(time.time())
+        _minute = _now // 60
+
+        # ── THIS DICT WAS NEVER PRUNED ──────────────────────────────────────
+        #
+        # One entry per distinct client IP, added forever and removed never. On
+        # a long-running worker that is an unbounded leak whose size is the
+        # number of addresses that have ever written — and it is the quiet kind,
+        # invisible for weeks and then a restart loop nobody can attribute.
+        #
+        # Every entry is `(minute, count)`, so anything from a previous minute
+        # is already dead weight: the branch below rewrites it on the next hit
+        # from that key and reads it never. Dropping them costs one sweep per
+        # minute per worker, not one per request.
+        global _write_rate_last_sweep
+        if _minute != _write_rate_last_sweep:
+            _write_rate_last_sweep = _minute
+            for _k in [k for k, v in _write_rate_buckets.items() if v[0] != _minute]:
+                del _write_rate_buckets[_k]
+
         _bucket = _write_rate_buckets.get(key)
-        if _bucket and _bucket[0] == _now // 60:
-            if _bucket[1] >= 120:
+        if _bucket and _bucket[0] == _minute:
+            if _bucket[1] >= _WRITE_LIMIT_PER_MIN:
                 return JSONResponse(status_code=429, content={"detail": "Too many requests"})
             _write_rate_buckets[key] = (_bucket[0], _bucket[1] + 1)
         else:
-            _write_rate_buckets[key] = (_now // 60, 1)
+            _write_rate_buckets[key] = (_minute, 1)
     return await call_next(request)
 
+
+#: Writes per minute per caller, before this middleware answers 429.
+#:
+#: ⚠ THIS COUNTER IS PER WORKER AND THE LIMIT IS THEREFORE PER WORKER. Production
+#: runs more than one, so the effective ceiling is this number times the worker
+#: count, and which counter a request lands on is chance. `limiter.py` documents
+#: the same defect for slowapi at length and fixed it with a shared Redis store;
+#: this middleware predates that and does NOT share it. The number is honest
+#: about being a coarse flood guard rather than an exact quota — it is not the
+#: limit anything security-shaped should rely on, and nothing does: login,
+#: 2FA and the other auth-shaped routes carry their own slowapi limits, which
+#: DO use the shared store when `REDIS_URL` is set.
+_WRITE_LIMIT_PER_MIN = 120
+
 _write_rate_buckets: dict = {}
+#: The minute whose stale entries were last swept, so the sweep runs once a
+#: minute per worker instead of on every mutating request.
+_write_rate_last_sweep: int = -1
 
 
 @app.exception_handler(Exception)
@@ -6462,16 +6504,44 @@ async def _run_startup_migrations():
         # period_start in one INSERT — and 095 §3 gives every existing org a row.
         # That leaves ONE writer of this money table instead of two that
         # disagree about the same row, which is the point of the exercise.
-        # Ensure all users with role='admin' have platform_admin in user_roles
-        await pool.execute("""
-            INSERT INTO public.user_roles (user_id, org_id, role_code)
-            SELECT user_id, NULL, 'platform_admin'
-            -- NOT is_system is belt-and-braces: Niyam accounts are seeded with
-            -- role='member', but a system row must never be one UPDATE away
-            -- from platform_admin.
-            FROM users WHERE role = 'admin' AND NOT COALESCE(is_system, FALSE)
-            ON CONFLICT DO NOTHING
-        """)
+        # ── REMOVED 2026-08-30: the boot-time platform_admin backfill ────────
+        #
+        # It ran, on EVERY startup:
+        #
+        #     INSERT INTO public.user_roles (user_id, org_id, role_code)
+        #     SELECT user_id, NULL, 'platform_admin'
+        #     FROM users WHERE role='admin' AND NOT COALESCE(is_system, FALSE)
+        #     ON CONFLICT DO NOTHING
+        #
+        # `users.role` IS A PER-ORG FACT STORED IN ONE GLOBAL COLUMN — CLAUDE.md
+        # says so, and says the rows that look corrupt are real and must not be
+        # cleaned. This statement read that per-org value as a platform-wide one
+        # and handed out `platform_admin`: god mode, org-less, reaching every
+        # organisation. A deploy was the only action required.
+        #
+        # Measured live 2026-08-30, before removal — six accounts matched, and
+        # TWO did not yet hold the role:
+        #     kevalvshah03+e2e-owner@gmail.com     (user_f1a0a472b98f)
+        #     kevalvshah03+e2e-approver@gmail.com  (user_549c9cac35aa)
+        # Both are e2e fixtures. `+e2e-owner` is the sole org_owner of E2E Test &
+        # Associates and the account 23 specs use to prove OWNER is not GODMODE.
+        # The next restart would have made it a platform admin and turned every
+        # one of those assertions vacuous — the same defect the 93 v5 start-here
+        # page records ("55 owner specs had been running as admin and proving
+        # nothing"), arriving by a different door.
+        #
+        # It also wrote NO `granted_by`, which is why 7 of the 11 platform grants
+        # in the live table have a NULL grantor: nobody granted them, a boot did.
+        # And it sat inside the `except` below that logs "non-fatal" and carries
+        # on, so a failure here was never visible either.
+        #
+        # The four legitimate platform_admin holders (admin@, bhoomi@,
+        # kevalvshah03@, sid@aekaminc.com) already have their rows, so removing
+        # this takes nothing away from anyone. Platform roles are granted at
+        # POST /api/v1/admin/orgs/roles/assign, by a different platform admin,
+        # with `granted_by` recorded — see the self-grant refusal added the same
+        # day in routers/admin_orgs.py.
+        pass
         logger.info("Startup migrations OK")
     except Exception as e:
         logger.warning("Startup migration warning (non-fatal): %s", e)

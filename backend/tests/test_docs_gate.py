@@ -98,25 +98,50 @@ def test_unset_everything_is_production():
 # ── Values that legitimately DO serve it ─────────────────────────────────────
 
 @pytest.mark.parametrize("value", [
-    "staging", "Staging", "STAGING",
     "local", "Local",
     "dev", "development", "Development",
-    "test", "testing", "qa", "preview", "stage",
+    "test", "testing", "qa", "preview",
 ])
 def test_recognised_non_production_serves_docs(value):
     assert _resolve(environment=value) is True, (
-        f"ENVIRONMENT={value!r} should serve docs — staging is the environment "
-        f"that exists to be poked at"
+        f"ENVIRONMENT={value!r} should serve docs — a laptop is genuinely not "
+        f"the product"
     )
 
 
-def test_railway_environment_staging_serves_docs():
-    assert _resolve(railway_environment="staging") is True
+@pytest.mark.parametrize("value", ["staging", "Staging", "STAGING", "stage"])
+def test_staging_no_longer_serves_docs(value):
+    """⚠ THIS TEST INVERTED ON 2026-08-30, AND IT MUST NOT BE INVERTED BACK.
+
+    "staging" and "stage" used to be on the allowlist, on the reasoning that
+    staging "is the environment that exists to be poked at". There is no staging
+    environment any more — everything moved to production — but the Railway
+    environment still exists carrying ENVIRONMENT=staging, and it was serving the
+    complete API map UNAUTHENTICATED against the SAME production database:
+
+        GET https://kartavaya-staging.up.railway.app/openapi.json
+        -> HTTP 200, 1,022,070 bytes            (measured 2026-08-30)
+        GET https://api.kartavaya.com/openapi.json
+        -> HTTP 404                             (correct)
+
+    That is reconnaissance handed to anyone: which fields exist on a payslip,
+    which admin routes to try first, for a product holding payroll and bank
+    details. A deployment that still calls itself staging is not a reason to
+    publish the map, because the name no longer describes a separate place.
+    """
+    assert _resolve(environment=value) is False, (
+        f"ENVIRONMENT={value!r} served the API map. There is no staging "
+        f"environment — that name now points at production data."
+    )
+
+
+def test_railway_environment_staging_no_longer_serves_docs():
+    assert _resolve(railway_environment="staging") is False
 
 
 def test_environment_wins_over_railway_environment():
-    """ENVIRONMENT is read first; a staging RAILWAY_ENVIRONMENT must not override it."""
-    assert _resolve(environment="production", railway_environment="staging") is False
+    """ENVIRONMENT is read first; a RAILWAY_ENVIRONMENT value must not override it."""
+    assert _resolve(environment="production", railway_environment="dev") is False
 
 
 # ── The deliberate production escape hatch ───────────────────────────────────

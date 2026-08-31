@@ -303,3 +303,80 @@ async def test_granting_a_free_role_is_still_god_mode_only(
     _console(mock_pool, STAFF)
     r = await _assign(api_client, "aekam_team")
     assert r.status_code == 403, r.text
+
+
+# ── Nobody grants themselves a platform role ─────────────────────────────────
+#
+# Found 2026-08-30 by reading the live `user_roles` rows: `POST /roles/assign`
+# took the target from `body.user_id` and the grantor from the session, and
+# never compared them. The route is god mode only, so the exposed population is
+# the four `platform_admin` holders — but the rule it broke is written down in
+# `support_sessions._can_raise_support`:
+#
+#     "the ONLY holder of a session is the role that gets nothing without one,
+#      so a session can only ever narrow — there is no role here for it to
+#      widen."
+#
+# A `platform_admin` who grants itself `platform_support` falsifies that: it
+# reaches six modules BY ROLE *and* holds a session. Two guards still stand
+# (`subscription` caps unconditionally; the customer's own org_admin approves
+# the session), so this is defence-in-depth, not an open door — but the audit
+# half is unconditional. A self-grant writes `granted_by = <self>`: a privilege
+# grant on the most sensitive tier with no second party in the record.
+
+SELF = "user_mem001"  # the caller wired by the `as_platform` fixture
+
+
+async def _assign_to(api_client, user_id, role_code, org_id=None):
+    body = {"user_id": user_id, "role_code": role_code}
+    if org_id:
+        body["org_id"] = org_id
+    return await api_client.post("/api/v1/admin/orgs/roles/assign", json=body)
+
+
+@pytest.mark.parametrize("code", ["platform_admin", "platform_manager",
+                                  "platform_staff", "platform_support"])
+async def test_a_platform_role_cannot_be_granted_to_yourself(
+    api_client, as_platform, mock_pool, code
+):
+    _console(mock_pool, GOD)
+    r = await _assign_to(api_client, SELF, code)
+    assert r.status_code == 403, r.text
+    assert "yourself" in r.text.lower()
+
+
+async def test_self_granting_support_is_refused_by_name(
+    api_client, as_platform, mock_pool
+):
+    """`platform_support` is the one that matters, because god mode is
+    deliberately excluded from raising a support session. If a platform_admin
+    can hand itself the role, that exclusion is a comment rather than a control."""
+    _console(mock_pool, GOD)
+    r = await _assign_to(api_client, SELF, "platform_support")
+    assert r.status_code == 403
+    assert "platform_support" in r.text
+
+
+async def test_granting_a_platform_role_to_SOMEONE_ELSE_still_works(
+    api_client, as_platform, mock_pool
+):
+    """The guard must not become a ban on platform roles. This is the test that
+    fails if the check is written as `if body.role_code in platform_roles` with
+    the identity comparison dropped — which is the obvious way to get the first
+    test green while breaking the feature."""
+    _console(mock_pool, GOD)
+    r = await _assign_to(api_client, TARGET, "platform_staff")
+    assert r.status_code == 200, r.text
+    assert r.json()["role"] == "platform_staff"
+
+
+async def test_an_org_scoped_role_may_still_be_granted_to_yourself(
+    api_client, as_platform, mock_pool
+):
+    """Deliberately NOT covered. An operator adding themselves to an org they
+    are provisioning is ordinary, and the console already refuses the org roles
+    that would matter via CONSOLE_ASSIGNABLE_ORG_ROLES. Pinned so that widening
+    the guard to every role is a visible decision rather than a silent one."""
+    _console(mock_pool, GOD)
+    r = await _assign_to(api_client, SELF, "hr_admin", org_id=ORG)
+    assert r.status_code == 200, r.text
