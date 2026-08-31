@@ -184,9 +184,36 @@ def type_text(s: str) -> None:
 
 
 def field_text(xml: str, index: int) -> str | None:
-    """What is actually IN the nth text input, read back off the screen."""
+    """What is actually IN the nth text input, read back off the screen.
+
+    ⚠ THIS WAS INOPERATIVE UNTIL 2026-08-31, AND IT FAILED OPEN INTO A
+    NEGATIVE. The pattern was:
+
+        <node[^>]*class="android\.widget\.EditText"[^>]*text="([^"]*)"[^>]*>
+
+    which requires `class` to appear BEFORE `text` on the node. uiautomator
+    emits them the other way round. Measured against a live dump from
+    `emulator-5554` on 2026-08-31 — the attribute order is:
+
+        index, text, resource-id, class, package, content-desc, checkable, ...
+
+    So the regex matched ZERO nodes on every screen, `field_text` returned None
+    for every index, and `type_verified` took its `got is None` branch and
+    reported **"the field vanished after typing"**. Two red lines that say a
+    control disappeared, from a guard that never ran.
+
+    `[^>]*` cannot cross a `>`, which is what makes the ordering load-bearing
+    rather than incidental: both attributes must sit on the same node AND in the
+    written order.
+
+    It is matched on `text` first now, and `class` is still required so this
+    cannot start reading a TextView. The docstring below explains why the guard
+    exists at all — it is the check that caught `adb shell input text` dropping
+    and doubling characters, and for however long the pattern was reversed that
+    check was not being made.
+    """
     fields = re.findall(
-        r'<node[^>]*class="android\.widget\.EditText"[^>]*text="([^"]*)"[^>]*>', xml)
+        r'<node[^>]*text="([^"]*)"[^>]*class="android\.widget\.EditText"', xml)
     return fields[index] if index < len(fields) else None
 
 

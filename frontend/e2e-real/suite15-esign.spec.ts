@@ -241,7 +241,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 
-import { isForeignInlineScriptRefusal } from './_helpers';
+import { absentRoutes, isForeignInlineScriptRefusal } from './_helpers';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
 const FIX = path.join(HERE, 'fixtures', 'generated', 'esign');
@@ -1424,21 +1424,27 @@ test('15.03 the canonical record, and the multi-page PDF that came back out of R
 test('15.04 field placement is TYPED AND THROWN AWAY — the honest finding, asserted three ways', async ({ page }) => {
   await signIn(page);
 
-  // ── 1. THE DEPLOYED CONTRACT. Not the source tree — the running service. ──
-  // `⚠ "the code already does X" must be checked against what is DEPLOYED`, and
-  // the OpenAPI the staging process publishes is that check.
-  const spec = await (await page.request.get(`${API}/openapi.json`)).json();
-  const create = spec?.components?.schemas?.routers__esign__DocumentCreate;
-  expect(create, 'the deployed OpenAPI has no routers__esign__DocumentCreate schema').toBeTruthy();
-  const members = Object.keys(create.properties || {});
-  expect(members.sort(),
-    'the deployed create contract has changed. If `fields` has been ADDED, this ' +
-    'test is now the thing standing in the way of the fix — rewrite it to assert ' +
-    'the placement is STORED, and re-point 15.12\'s volume line at sign_fields.')
-    .toEqual(['description', 'expires_days', 'message', 'signers', 'title'].sort());
-  expect(members,
-    'the deployed create contract now accepts `fields` — see the message above')
-    .not.toContain('fields');
+  // ── 1. THE DEPLOYED CONTRACT — EXCLUDED BY DECISION, 2026-08-31 ──────────
+  //
+  // This read `/openapi.json` and asserted the shape of
+  // `routers__esign__DocumentCreate`. PRODUCTION DOES NOT PUBLISH A SCHEMA:
+  // `server.py` builds the app with `openapi_url=... if _DOCS_ON else None`, so
+  // on production it is never generated — `/openapi.json`, `/api/openapi.json`
+  // and `/docs` all 404 (measured 2026-08-31). Staging serves all three
+  // unauthenticated, which is the thing that is wrong; production being closed
+  // is correct and STAYS closed. Owner decision, 2026-08-31.
+  //
+  // ⚠ NOTHING THIS TEST IS FOR IS LOST. The block was only ever a PROXY for one
+  // question — does the deployed router store field placement — and steps 2 and
+  // 3 below answer it DIRECTLY, and harder: 24 fields are placed through the
+  // deployed UI, the canonical record comes back carrying none, and
+  // `public.sign_fields` holds zero rows for the document just built. A schema
+  // is a document ABOUT the router; those two are the router.
+  //
+  // The one thing it did that they cannot: go red the moment `fields` is ADDED
+  // to the contract. That alarm is gone, and this comment is where the next
+  // person learns it was. Restore the block verbatim from git history if
+  // production ever serves an authenticated schema — nothing needs re-deriving.
 
   // ── 2. THE CANONICAL RECORD carries no placement, per document ────────────
   const docs = await myDocs(page);
@@ -2214,14 +2220,33 @@ test('15.10 the signed PDF actually downloads — bytes, not a 200 with an empty
 test('15.11 every eSign route has a control, and every control a route', async ({ page }) => {
   await signIn(page);
 
-  // ── The DEPLOYED surface, not the source tree ────────────────────────────
-  const spec = await (await page.request.get(`${API}/openapi.json`)).json();
-  const routes = Object.keys(spec.paths || {})
-    .filter((p) => p.startsWith('/api/v1/esign/'))
-    .flatMap((p) => Object.keys(spec.paths[p])
-      .filter((m) => ['get', 'post', 'put', 'patch', 'delete'].includes(m))
-      .map((m) => `${m.toUpperCase()} ${p}`))
-    .sort();
+  // ── HALF OF THIS TEST IS EXCLUDED BY DECISION, 2026-08-31 ────────────────
+  //
+  // This enumerated the deployed eSign surface from `${API}/openapi.json`.
+  // PRODUCTION DOES NOT PUBLISH A SCHEMA (`openapi_url=None`), so the read got
+  // a 404 body, `Object.keys(spec.paths || {})` computed `[]`, and the test
+  // then reported ALL FOURTEEN routes as absent. Not one of them is. That is a
+  // false red of the worst kind — it names real, working, wired routes as dead
+  // controls. Owner decision 2026-08-31: production stays closed.
+  //
+  // ⚠ THE TWO DIRECTIONS HAVE DIFFERENT FATES, AND ONLY ONE CAN SURVIVE HERE.
+  //
+  //   "every control a route"  — KEPT, and now STRONGER. Each MATRIX path is
+  //     probed against the deployed router itself (`absentRoutes`), so a
+  //     control pointing at a route that does not exist still fails. A 404 is
+  //     the router's own answer and cannot drift from the deployment the way a
+  //     schema read from elsewhere can.
+  //
+  //   "every route a control" — LOST. Finding an ORPHAN — a route that exists,
+  //     works, and no screen calls — requires ENUMERATING what is deployed, and
+  //     a probe only answers about paths it is handed. It cannot discover a
+  //     route nobody thought to name. This is the dominant defect class here
+  //     (67 of 958 operations, `docs/plans/93-E-ORPHANED-CAPABILITY-SWEEP.md`),
+  //     so the loss is real and is written down rather than papered over. The
+  //     sweep document remains the record; it is now maintained by hand.
+  //
+  // Restore the enumeration verbatim from git history if production ever serves
+  // an authenticated schema.
 
   /**
    * Every deployed eSign operation, and the control that reaches it.
@@ -2249,21 +2274,46 @@ test('15.11 every eSign route has a control, and every control a route', async (
     'GET /api/v1/esign/documents/{doc_id}/audit': 'ORPHANED · SUPERSEDED — no caller. DetailTab takes audit_trail off GET /documents/{id}',
   };
 
-  const unmapped = routes.filter((r) => !(r in MATRIX));
-  expect(unmapped,
-    'the deployed service carries eSign route(s) this matrix does not account ' +
-    'for. Every one is either reached by a control or is an ORPHAN, and an ' +
-    'unlisted route is an unmeasured one:\n     ' + unmapped.join('\n     '))
+  // ⚠ BOTH DIRECTIONS WOULD NOW BE TAUTOLOGIES. With `routes` derived from
+  // `MATRIX`, `unmapped` and `missing` are both empty BY CONSTRUCTION — they
+  // would be two green assertions that cannot fail, which is the exact shape
+  // this suite exists to catch elsewhere. They are replaced by a real probe.
+  //
+  // EVERY CONTROL A ROUTE, asked of the deployed router. A path that does not
+  // exist answers 404; one that exists but refuses this caller, or refuses the
+  // method, answers 401/403/405/422 — anything but 404. So a control aimed at a
+  // route that has been renamed or removed still turns this red.
+  const paths = Array.from(new Set(Object.keys(MATRIX).map((r) => r.split(' ')[1])))
+    .map((p) => p
+      .replace('{doc_id}', '00000000-0000-0000-0000-000000000000')
+      .replace('{signer_id}', '00000000-0000-0000-0000-000000000000')
+      .replace('{token}', 'probe'));
+  const probe = await absentRoutes(page, API, paths);
+  console.log(`  15.11 route probe: ${JSON.stringify(probe.seen)}`);
+  // ⚠ A 404 IS ONLY UNAMBIGUOUS WHERE AUTH RUNS FIRST. An authenticated route
+  // answers 401 before it ever looks the resource up, so 404 there means the
+  // PATH is gone. `/verify/{token}` is deliberately PUBLIC (15.08 signs with no
+  // session at all), so a probe token reaches the lookup and 404s for a reason
+  // that has nothing to do with routing. Measured 2026-08-31: every other path
+  // answered 401 or 405; that one answered 404 with the route plainly mounted,
+  // as its own siblings `/verify/{token}/otp/send`, `/sign` and `/decline` all
+  // answering 405 prove.
+  //
+  // It is EXEMPTED BY NAME, never by pattern, and its siblings still carry the
+  // check for that prefix.
+  const PUBLIC_LOOKUP = ['/api/v1/esign/verify/probe'];
+  const dead = paths.filter((p) => probe.seen[p] === 404 && !PUBLIC_LOOKUP.includes(p));
+  expect(dead,
+    'this matrix names route(s) the deployed service does not have, so a control '
+    + 'calling one of them is a DEAD CONTROL:\n     ' + dead.join('\n     '))
     .toEqual([]);
 
-  const missing = Object.keys(MATRIX).filter((r) => !routes.includes(r));
-  expect(missing,
-    'this matrix names route(s) the deployed service does not have. A control ' +
-    'that calls one of these is a dead control:\n     ' + missing.join('\n     '))
-    .toEqual([]);
+  // Anti-vacuity: a probe that reached nothing must not read as "all present".
+  expect(paths.length, 'the MATRIX yielded no probeable paths').toBeGreaterThan(5);
 
-  console.log(`  15.11 ${routes.length} deployed eSign operations, all accounted for:`);
-  for (const r of routes) console.log(`         ${r}  →  ${MATRIX[r]}`);
+  console.log(`  15.11 ${Object.keys(MATRIX).length} matrix operations, every path live:`);
+  console.log(`  15.11 ${Object.keys(MATRIX).length} matrix operations, every path live:`);
+  for (const r of Object.keys(MATRIX)) console.log(`         ${r}  →  ${MATRIX[r]}`);
 
   // ── The one orphan, exercised so it is measured rather than assumed ──────
   const docs = await myDocs(page);
