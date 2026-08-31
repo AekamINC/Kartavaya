@@ -543,8 +543,14 @@ def compute_po_totals(lines: Iterable[Any], is_igst: bool) -> dict[str, Any]:
         if is_igst:
             igst += gst_amount
         else:
-            cgst += round(gst_amount / 2, 2)
-            sgst += round(gst_amount / 2, 2)
+            # The halves are EXACT: round one, subtract for the other. Rounding
+            # both independently rounds an odd paisa UP TWICE, so CGST+SGST
+            # exceeds the tax on the line — and the same goods then total more
+            # intra-state than inter-state, which no provision of the Act
+            # allows. `s.9` CGST + `s.9` SGST together are `s.5` IGST.
+            half = round(gst_amount / 2, 2)
+            cgst += half
+            sgst += round(gst_amount - half, 2)
 
         subtotal += line_total
         out_lines.append({

@@ -76,10 +76,34 @@ def test_compute_interstate_gst():
 
 
 def test_compute_with_discount():
+    """A recorded flat discount leaves the TAXABLE value — s.15(3)(a) CGST Act.
+
+    This asserted 1080 until 2026-08-31, which is 1000 + 90 + 90 - 100: the tax
+    computed on the GROSS 1000 and the discount taken off only at the end. The
+    correct figure is 1062 — 900 taxable, 81 + 81 tax — and one live FINAL tax
+    invoice (INV-2026-0009) had been raised on the old arithmetic, over-stating
+    output tax by 900.00.
+    """
     items = [LineItem(description="Item A", quantity=1, rate=1000, gst_rate=18)]
     result = _compute_invoice(items, is_igst=False, flat_discount=100)
     assert result["discount"] == 100
-    assert result["total"] == 1080  # 1000 + 90 + 90 - 100
+    assert result["subtotal"] == 1000, "the subtotal stays GROSS; only the tax moves"
+    assert (result["cgst"], result["sgst"]) == (81, 81)  # 18% of 900, halved
+    assert result["total"] == 1062  # 1000 + 81 + 81 - 100
+
+
+def test_a_flat_discount_and_an_equivalent_line_discount_reach_the_same_money():
+    """100.00 off a 1000.00 line is 10% off a 1000.00 line. The Act treats both
+    as reducing the transaction value, so the two routes cannot disagree — and
+    before the 2026-08-31 repair they did, by 18.00 of tax."""
+    flat = _compute_invoice(
+        [LineItem(description="A", quantity=1, rate=1000, gst_rate=18)],
+        is_igst=False, flat_discount=100)
+    per_line = _compute_invoice(
+        [LineItem(description="A", quantity=1, rate=1000, gst_rate=18, discount_pct=10)],
+        is_igst=False)
+    assert flat["total"] == per_line["total"] == 1062
+    assert (flat["cgst"], flat["sgst"]) == (per_line["cgst"], per_line["sgst"])
 
 
 def test_compute_line_discount_pct():

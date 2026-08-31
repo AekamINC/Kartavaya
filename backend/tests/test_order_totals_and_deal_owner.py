@@ -61,7 +61,13 @@ LINES = [
 #: 2×1000 = 2000.00 and 1×500 less 10% = 450.00 → gross 2450.00
 GROSS = 2450.0
 #: 18% of 2000 = 360.00, 12% of 450 = 54.00 → 414.00
+#: The tax on this order with NO discount. Still correct, and still what an
+#: undiscounted order is charged — `test_a_zero_discount_order_is_unchanged`.
 TAX = 414.0
+#: The tax once a 200.00 order discount leaves the taxable value, apportioned
+#: pro-rata: line 1 keeps 2000 − 200×(2000/2450) = 1836.74 @ 18% = 330.61, and
+#: line 2 keeps 450 − 200×(450/2450) = 413.27 @ 12% = 49.59.
+TAX_ON_NET = 380.20
 
 
 def test_the_five_figures_on_a_discounted_order_add_up():
@@ -83,12 +89,30 @@ def test_the_subtotal_is_the_taxable_value_and_not_a_net_figure():
     )
 
 
-def test_the_money_a_customer_pays_did_not_move():
-    """`(gross − discount) + tax` and `gross + tax − discount` are the same
-    money. The repair restates the taxable value; it must not reprice
-    anything."""
+def test_the_money_a_customer_pays_DID_move_and_moved_DOWN():
+    """⚠ THIS TEST ONCE ASSERTED THE OPPOSITE, AND WAS RIGHT TO.
+
+    Defect 1 above was a pure restatement: `(gross − discount) + tax` and
+    `gross + tax − discount` are the same money, so no order was repriced and
+    this test held the total still at 2664.00.
+
+    Defect 3 (2026-08-31, below) is NOT a restatement. Tax was charged on the
+    GROSS, so the total was genuinely too high, and correcting the base must
+    move what the customer pays — DOWNWARDS, by exactly the over-charged tax
+    and never by more:
+
+        2664.00 − 2630.20 = 33.80  =  TAX − TAX_ON_NET  =  414.00 − 380.20
+
+    The DIRECTION is the assertion worth keeping. A change to this arithmetic
+    that moved a total UP would charge a customer more than the order they
+    agreed to, and that must never pass silently.
+    """
     *_, total = vikray._compute_order_totals(LINES, 200.0, False)
-    assert total == round(GROSS - 200.0 + TAX, 2) == 2664.0
+    assert total == round(GROSS - 200.0 + TAX_ON_NET, 2) == 2630.20
+    assert total < round(GROSS - 200.0 + TAX, 2), (
+        "correcting the taxable value must only ever reduce what is payable"
+    )
+    assert round(round(GROSS - 200.0 + TAX, 2) - total, 2) == round(TAX - TAX_ON_NET, 2)
 
 
 def test_igst_and_cgst_sgst_reach_the_same_total():
@@ -96,7 +120,7 @@ def test_igst_and_cgst_sgst_reach_the_same_total():
     it. `s.7`/`s.8` IGST Act — the rate is the rate either way."""
     _, c, s_, _i, intra = vikray._compute_order_totals(LINES, 200.0, False)
     _, _, _, igst, inter = vikray._compute_order_totals(LINES, 200.0, True)
-    assert round(c + s_, 2) == round(igst, 2) == TAX
+    assert round(c + s_, 2) == round(igst, 2) == TAX_ON_NET
     assert intra == inter
 
 

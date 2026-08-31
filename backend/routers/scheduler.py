@@ -284,7 +284,7 @@ async def run_publish(x_cron_secret: str = Header("")):
 
             sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o
             -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET"
-            "https://kartavaya-staging.up.railway.app/api/internal/cron/$p");
+            "https://api.kartavaya.com/api/internal/cron/$p");
             echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1;
             done; exit $rc'
 
@@ -970,6 +970,22 @@ async def run_billing(x_cron_secret: str = Header("")):
     from routers.client_billing import sweep_client_auto_invoices
     billing = await run_billing_cycle()
     client = await sweep_client_auto_invoices()
+
+    # `advance_periods` now isolates per-org failures so one bad row cannot
+    # truncate the sweep — but isolating a failure and REPORTING it are two
+    # different things, and stopping at the first would be the same silent
+    # success in a new place: a tick that advanced 3 orgs and failed 40 would
+    # answer 200 and read as a healthy night.
+    #
+    # Same verdict shape as `_for_each_org`: the work is complete, the tick is
+    # a failure. Counts stay in the detail so the operator can decide whether a
+    # re-run is safe without reading the logs.
+    failed = (billing.get("periods") or {}).get("failed")
+    if failed:
+        log.error("Cron 'billing': %d organisation(s) failed to advance", len(failed))
+        raise HTTPException(500, {"job": "billing", "failed_orgs": len(failed),
+                                  "advanced": (billing.get("periods") or {}).get("advanced")})
+
     return {**billing, "client_auto_invoices": client}
 
 

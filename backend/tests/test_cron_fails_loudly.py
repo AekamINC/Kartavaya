@@ -117,11 +117,25 @@ def test_the_scan_can_see_the_handlers_at_all():
     # subject. Recorded here on 2026-08-27, three days late, which is the small
     # cost of asserting an exact number and the reason it is worth paying.
     #
+    # NINETEEN since 2026-08-29: `run_recycle_bin_purge`, the second stage of
+    # the two-stage recycle bin (`67704dda`, proposal 93).
+    #
+    # ⚠ IT WAS ADDED WITHOUT UPDATING THIS NUMBER, so this test — the one whose
+    # whole job is to stop the rest of the file passing vacuously — was itself
+    # RED from 2026-08-29 to 2026-08-31. A red ratchet asserts nothing, and
+    # every `assert not ...` below it was unverified for those two days. Noticed
+    # only because an unrelated regression run surfaced it.
+    #
+    # That is the second time this exact cost has been paid here (see the
+    # analytics_sync note above, recorded three days late) and it is the
+    # argument FOR the exact count, not against it: a lower bound would have
+    # absorbed both silently and neither would ever have been noticed.
+    #
     # The count is asserted rather than a lower bound because the point of this
     # test is that the SCAN still sees the handlers — a number that only ever
     # grew would pass on a scan that had started matching something else.
-    assert len(names) == 18, (
-        f"expected the eighteen cron endpoints, found {len(names)}: {sorted(names)}"
+    assert len(names) == 19, (
+        f"expected the nineteen cron endpoints, found {len(names)}: {sorted(names)}"
     )
     # The five whose implementation was found and wired, and the two that
     # refuse. If one of these disappears the scan is looking at the wrong thing.

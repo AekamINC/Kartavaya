@@ -586,6 +586,17 @@ async def check_thresholds_approaching(
         FROM public.ganit_invoices
         WHERE org_id = $1::uuid
           AND is_active
+          -- A DRAFT IS NOT A SUPPLY, so it is not turnover. Counting drafts
+          -- moved this figure UP, which contradicts the floor the docstring
+          -- above promises and breaks it in the dangerous direction: a firm
+          -- would be told it is approaching a registration or audit threshold
+          -- on documents it has never issued to anyone. The floor argument is
+          -- about PAN-level scope (registrations this product cannot see), not
+          -- a licence to pad the number with unissued paper.
+          --
+          -- Nullable-safe: `doc_status` is nullable and `NULL <> 'draft'` is
+          -- NULL, which would drop every legacy row instead of keeping it.
+          AND COALESCE(doc_status, '') <> 'draft'
           AND invoice_date > $2::date
         """,
         org_id, window_start,

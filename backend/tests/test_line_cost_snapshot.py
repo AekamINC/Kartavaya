@@ -569,6 +569,12 @@ async def test_order_to_invoice_carries_the_cost_verbatim(monkeypatch):
           "line_items": stored, "is_igst": False, "contact_id": None,
           "client_id": None, "subtotal": 200, "cgst": 18, "sgst": 18,
           "igst": 0, "discount": 0, "total": 236,
+          # Present because the real SELECT is `SELECT *` and the column
+          # is real (`vikray_orders.salesperson_id`, text, verified live
+          # 2026-08-31). It was absent here, so this test raised KeyError
+          # and had been RED - meaning the cost-carried-verbatim invariant
+          # below was not checked at all, by the test that exists to check it.
+          "salesperson_id": None,
           "order_number": "SO-2026-0001"}),
         ("INSERT INTO public.ganit_invoices", {"id": "i1"}),
     ]

@@ -311,26 +311,80 @@ class DocStatusUpdate(BaseModel):
 # ── Helper: compute GST breakdown ───────────────────────────
 
 def _compute_invoice(items: list[LineItem], is_igst: bool, flat_discount: float = 0):
+    """The tax invoice's figures. `subtotal` is GROSS; the tax is on the NET.
+
+    ── s.15(3)(a) CGST ACT: A RECORDED DISCOUNT LEAVES THE TAXABLE VALUE ────
+
+    `flat_discount` used to be subtracted from the TOTAL only — never from the
+    base the tax was computed on — so an invoice-recorded discount was taxed.
+    Measured live 2026-08-31, ONE row and it is the worst possible one:
+
+        INV-2026-0009  tax_invoice  FINAL  subtotal 30000  discount 5000
+                       cgst 2700 + sgst 2700 = 5400, correct 4500
+
+    ₹900 of output tax over-stated on a FINAL tax invoice — the statutory
+    document a GSTR-1 return is filed from, not a draft and not an estimate.
+
+    The sibling defect in `vikray._compute_order_totals` was fixed first; this
+    is the same arithmetic on the document the order becomes, and the two must
+    agree or `generate_invoice_from_order` mints an invoice that contradicts
+    its own order (`tests/test_order_totals_and_deal_owner.py` holds that).
+
+    ⚠ APPORTIONED PRO-RATA. Lines may carry different `gst_rate`s, so one
+    blended deduction would move value between rate buckets and misstate the
+    CGST/SGST/IGST split — which is exactly what GSTR-1 is filed on — even
+    where the total came out right. Each line's share is `line_total / gross`.
+
+    ── WHAT DOES NOT MOVE ───────────────────────────────────────────────────
+
+    At `flat_discount == 0` this is arithmetically identical, line for line
+    and rounding for rounding, to what it did before. That matters beyond
+    regression: `services/purchase_orders.py` re-implements this rounding to
+    match a PO against the invoice it becomes, and a PO carries no flat
+    discount — only per-line `discount_pct`, which was always handled here and
+    still is. So the shared contract is untouched.
+
+    `line_total` also stays GROSS in the stored line; only `gst_amount` moves,
+    so the per-line tax figures still sum to the header ones.
+    """
     subtotal = 0
     cgst = 0
     sgst = 0
     igst = 0
     computed_items = []
 
+    priced = []
     for item in items:
         line_total = item.quantity * item.rate
         if item.discount_pct > 0:
             line_total *= (1 - item.discount_pct / 100)
         line_total = round(line_total, 2)
+        subtotal += line_total
+        priced.append((item, line_total))
 
-        gst_amount = round(line_total * item.gst_rate / 100, 2)
+    # Clamp: a discount larger than the invoice is a data-entry mistake and must
+    # not mint a NEGATIVE taxable value. The `total` line below keeps the
+    # arithmetic it always did, so the error stays visible rather than absorbed.
+    gross = round(subtotal, 2)
+    deductible = min(max(float(flat_discount or 0), 0.0), gross) if gross > 0 else 0.0
+
+    for item, line_total in priced:
+        share = (line_total / gross) if gross > 0 else 0.0
+        taxable = line_total - (deductible * share)
+
+        gst_amount = round(taxable * item.gst_rate / 100, 2)
         if is_igst:
             igst += gst_amount
         else:
-            cgst += round(gst_amount / 2, 2)
-            sgst += round(gst_amount / 2, 2)
+            # The halves are EXACT: round one, subtract for the other. Rounding
+            # both independently rounds an odd paisa UP TWICE, so CGST+SGST
+            # exceeds the tax on the line — and the same goods then total more
+            # intra-state than inter-state, which no provision of the Act
+            # allows. `s.9` CGST + `s.9` SGST together are `s.5` IGST.
+            half = round(gst_amount / 2, 2)
+            cgst += half
+            sgst += round(gst_amount - half, 2)
 
-        subtotal += line_total
         computed_items.append({
             "description": item.description,
             "product_id": item.product_id,
@@ -2944,8 +2998,28 @@ async def payables_summary(
 ):
     pool = await get_pool()
     totals = await pool.fetchrow(
-        "SELECT COALESCE(SUM(total - amount_paid), 0) AS outstanding, "
-        "COALESCE(SUM(total - amount_paid) FILTER (WHERE due_date < CURRENT_DATE), 0) AS overdue, "
+        # ── A CANCELLED BILL IS NOT OWED TO ANYBODY ─────────────────────────
+        #
+        # `outstanding` and `overdue` carried no status filter, while the aging
+        # query immediately below excludes `('paid','cancelled')`. So the
+        # headline figure and the breakdown printed under it were computed over
+        # DIFFERENT row sets, and a cancelled bill with nothing paid against it
+        # contributed its full value to "outstanding" while appearing in no
+        # bucket. The two would simply not add up.
+        #
+        # 'paid' needs no exclusion arithmetically — `total - amount_paid` is 0
+        # — but it is named anyway so this row set is visibly the same one the
+        # aging query uses, rather than the same one by coincidence.
+        #
+        # ⚠ EXPOSURE IS CURRENTLY ZERO AND THAT IS NOT REASSURANCE. Measured
+        # live 2026-08-31: 17 active bills, 0 cancelled, so the two figures
+        # agree VACUOUSLY — the check that would have caught this passes today
+        # for the same reason the bug is invisible today. The first cancelled
+        # bill splits them, with no error and no log line.
+        "SELECT COALESCE(SUM(total - amount_paid) "
+        "         FILTER (WHERE status NOT IN ('paid','cancelled')), 0) AS outstanding, "
+        "COALESCE(SUM(total - amount_paid) FILTER (WHERE due_date < CURRENT_DATE "
+        "         AND status NOT IN ('paid','cancelled')), 0) AS overdue, "
         "COUNT(*) FILTER (WHERE status != 'paid' AND status != 'cancelled') AS open_bills "
         "FROM public.ganit_vendor_bills WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,

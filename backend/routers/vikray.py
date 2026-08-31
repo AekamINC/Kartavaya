@@ -174,23 +174,91 @@ def _compute_order_totals(line_items: list[dict], discount: float, is_igst: bool
     `services/purchase_orders.py` matches a PO against the invoice it becomes
     and two roundings would report a tax discrepancy on every match.
     """
-    subtotal = 0
-    total_tax = 0
+    # ── THE ORDER-LEVEL DISCOUNT NOW REDUCES THE TAXABLE VALUE ──────────────
+    #
+    # Found 2026-08-30 by a live query, and by NO test — Suite 10 passed while
+    # this was wrong, because nothing asserted the tax base. Measured on two
+    # live rows:
+    #
+    #     SO-2026-0007  subtotal 30000  discount 5000  tax 5400  correct 4500
+    #     SO-2026-0014                                 tax 2175  correct 1925
+    #
+    # i.e. 18% of the GROSS. Excess output tax of ₹900 and ₹250 on two orders.
+    #
+    # **s.15(3)(a) CGST Act**: the value of a supply "shall not include any
+    # discount which is given before or at the time of the supply if such
+    # discount has been duly recorded in the invoice". This order discount IS
+    # recorded on the invoice — `OrderDetail` prints it, and
+    # `generate_invoice_from_order` copies it onto the tax invoice — so it is
+    # excluded from the transaction value and tax is charged on the net.
+    #
+    # The PER-LINE `discount_pct` was already treated correctly; only the flat
+    # order-level one was not. Note the two are not interchangeable: a line
+    # discount is part of that line's price, a flat one is an order-level
+    # concession, and the Act treats both as reducing the value.
+    #
+    # ⚠ APPORTIONED PRO-RATA, NOT DEDUCTED IN ONE LUMP. Lines may carry
+    # DIFFERENT `gst_rate`s — 18% goods beside 5% goods is ordinary — so a
+    # single blended deduction would move value between rate buckets and
+    # misstate the CGST/SGST/IGST split even when the total came out right.
+    # Each line's share is `line_total / gross`, which is the apportionment
+    # rule the Act's own valuation rules imply and the one a GSTR-1 reader
+    # expects.
+    #
+    # ── WHAT DOES NOT CHANGE ────────────────────────────────────────────────
+    # `subtotal` stays GROSS. That is deliberate and was itself a fix (see
+    # above): every Ganit reader treats `ganit_invoices.subtotal` as gross, and
+    # `subtotal + tax − discount = total` is the identity the totals block
+    # prints. Only the TAX figure moves, and it moves DOWN — no customer is
+    # newly charged more.
+    gross = 0.0
+    priced: list[tuple[float, float]] = []      # (line_total, gst_fraction)
     for item in line_items:
         qty = item.get("quantity", 1)
         rate = item.get("rate", 0)
         disc = item.get("discount_pct", 0)
         line_total = round(qty * rate * (1 - disc / 100), 2)
-        gst = item.get("gst_rate", 18) / 100
-        subtotal += line_total
-        total_tax += round(line_total * gst, 2)
-    subtotal = round(subtotal, 2)
-    total_tax = round(total_tax, 2)
-    total = round(subtotal + total_tax - discount, 2)
-    if is_igst:
-        return subtotal, 0, 0, total_tax, total
-    half = round(total_tax / 2, 2)
-    return subtotal, half, round(total_tax - half, 2), 0, total
+        gross += line_total
+        priced.append((line_total, item.get("gst_rate", 18)))
+    subtotal = round(gross, 2)
+
+    # A discount larger than the order, or an order of zero value, must not
+    # produce a negative taxable value or a division by zero — clamp, and let
+    # the `total` line below carry the arithmetic it always did.
+    deductible = min(max(float(discount or 0), 0.0), subtotal) if subtotal > 0 else 0.0
+
+    # ── ROUNDED THE WAY GANIT ROUNDS, LINE BY LINE ──────────────────────────
+    #
+    # This used to sum the tax and halve ONCE at the end. `ganit._compute_invoice`
+    # halves PER LINE and accumulates, and `services/purchase_orders.py` copies
+    # Ganit's rule so a PO can be matched against the invoice it becomes.
+    # Vikray was the only one of the three rounding differently.
+    #
+    # It did not show while the discount was taxed on the gross, because the
+    # figures came out round. Apportionment makes them not round, and the two
+    # then disagreed by a paisa on the SAME document — an order and the invoice
+    # `generate_invoice_from_order` raises from it. A paisa is not a rounding
+    # nicety here: `purchase_orders` reports a tax discrepancy on any mismatch,
+    # so it would surface as a spurious exception on a correctly matched PO.
+    cgst = sgst = igst = 0.0
+    for line_total, gst_rate in priced:
+        share = (line_total / subtotal) if subtotal > 0 else 0.0
+        taxable = line_total - (deductible * share)
+        gst_amount = round(taxable * gst_rate / 100, 2)
+        if is_igst:
+            igst += gst_amount
+        else:
+            # The halves are EXACT: round one, subtract for the other. Rounding
+            # both independently rounds an odd paisa UP TWICE, so CGST+SGST
+            # exceeds the tax on the line — and the same goods then total more
+            # intra-state than inter-state, which no provision of the Act
+            # allows. `s.9` CGST + `s.9` SGST together are `s.5` IGST.
+            half = round(gst_amount / 2, 2)
+            cgst += half
+            sgst += round(gst_amount - half, 2)
+    cgst, sgst, igst = round(cgst, 2), round(sgst, 2), round(igst, 2)
+    total = round(subtotal + cgst + sgst + igst - discount, 2)
+    return subtotal, cgst, sgst, igst, total
 
 _VALID_TRANSITIONS = {
     "draft": {"confirmed", "cancelled"},
@@ -1605,9 +1673,35 @@ async def dashboard(
         org_id,
     )
     revenue = await pool.fetchrow(
+        # ── THIS REPORTED 3.2x THE REAL FIGURE (measured live 2026-08-31) ────
+        #
+        # 817,016.00 against a true 257,696.00 on the reference org, because it
+        # counted every DRAFT invoice. `order_value` twelve lines above already
+        # excludes `'draft'` and already filters `is_active` — the disagreement
+        # was inside this one endpoint, two queries apart, and the dashboard
+        # printed both numbers side by side.
+        #
+        # A draft has not been issued to anybody. It is not revenue, it is not
+        # outstanding and it cannot have been collected — the same rule
+        # `ganit.invoice_stats` states at length and `dristi.py` states again.
+        #
+        # THREE filters were missing, not one:
+        #   - `doc_status <> 'draft'`  unissued documents are not revenue
+        #   - `invoice_type <> 'credit_note'`  a credit note is a REDUCTION of
+        #     revenue; summed unfiltered it ADDED to it, so the sign was wrong
+        #   - `is_active`  soft-deleted invoices were still being counted
+        #
+        # Nullable-safe on `doc_status` for the reason `ganit.py` gives: the
+        # column is nullable, `NULL <> 'draft'` is NULL, and the bare form would
+        # silently drop every legacy row that predates the column — trading an
+        # over-count for an under-count and looking like a fix.
         "SELECT COALESCE(SUM(total),0) AS total_revenue, "
         "COALESCE(SUM(amount_paid),0) AS collected "
-        "FROM public.ganit_invoices WHERE org_id=$1::uuid AND payment_status != 'cancelled'",
+        "FROM public.ganit_invoices "
+        "WHERE org_id=$1::uuid AND payment_status != 'cancelled' "
+        "  AND is_active=TRUE "
+        "  AND COALESCE(doc_status,'') <> 'draft' "
+        "  AND COALESCE(invoice_type,'') <> 'credit_note'",
         org_id,
     )
     return {

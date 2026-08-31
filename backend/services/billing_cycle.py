@@ -72,34 +72,74 @@ async def advance_periods(pool, today: date | None = None) -> dict:
         "FROM public.subscriptions s "
         "JOIN public.organisations o ON o.id = s.org_id "
         "WHERE s.status = 'active' "
+        # A DEACTIVATED ORGANISATION MUST NOT BE BILLED. `scheduler._for_each_org`
+        # states this rule for every other cron in the product and filters on it;
+        # this sweep joined `organisations` already — it had the row in hand and
+        # simply never looked at the column.
+        #
+        # `IS NOT FALSE` rather than `= TRUE` so a NULL (a row predating the
+        # column) is INCLUDED rather than silently dropped. That direction is
+        # deliberate and is the same choice `_for_each_org` makes: getting this
+        # backwards would stop billing every legacy org, which is a worse and
+        # much quieter failure than the one being fixed.
+        "  AND o.is_active IS NOT FALSE "
         "  AND s.current_period_end IS NOT NULL "
         "  AND s.current_period_end <= $1",
         today,
     )
 
+    # ── ONE ORG'S FAILURE MUST NOT SILENTLY TRUNCATE THE SWEEP ──────────────
+    #
+    # This loop had no guard. A single raise — a bad anchor day, a lock timeout,
+    # one malformed row — aborted the whole run, and because each UPDATE commits
+    # on its own, the orgs already advanced STAYED advanced while every org after
+    # the failure was silently not. The cron answered 500 with no record of how
+    # far it got, and a re-run would advance the first group a SECOND time.
+    #
+    # Same shape as `scheduler._for_each_org`: isolate per org, keep going, and
+    # fail the tick at the end so the failure is loud without being contagious.
+    # The counts are returned either way, which is what makes a re-run decidable.
     advanced = 0
+    failures: dict[str, str] = {}
     for r in rows:
-        anchor = r["billing_anchor_day"] or 1
-        old_end = r["current_period_end"]
-        new_start = next_anchor(anchor, old_end)
-        new_end = period_end_for(new_start, r["billing_cycle"])
+        org_id = str(r["org_id"])
+        try:
+            anchor = r["billing_anchor_day"] or 1
+            old_end = r["current_period_end"]
+            new_start = next_anchor(anchor, old_end)
+            new_end = period_end_for(new_start, r["billing_cycle"])
 
-        await pool.execute(
-            "UPDATE public.subscriptions SET "
-            "  current_period_start = $2, "
-            "  current_period_end   = $3, "
-            "  next_billing_date    = $3, "
-            "  updated_at           = NOW() "
-            "WHERE org_id = $1",
-            r["org_id"], new_start, new_end,
-        )
-        advanced += 1
-        log.info(
-            "Advanced billing period for org %s: %s → %s..%s",
-            r["org_id"], old_end, new_start, new_end,
-        )
+            await pool.execute(
+                "UPDATE public.subscriptions SET "
+                "  current_period_start = $2, "
+                "  current_period_end   = $3, "
+                "  next_billing_date    = $3, "
+                "  updated_at           = NOW() "
+                # Scoped to the ACTIVE subscription, not to the org. A UNIQUE
+                # index on `org_id` means these select the same row today, so
+                # this changes nothing now — it is here because the SELECT above
+                # filters `status='active'` and the UPDATE did not, and the day
+                # an org is allowed a second subscription row that difference
+                # rewrites a cancelled plan's period dates with no error.
+                "WHERE org_id = $1 AND status = 'active'",
+                r["org_id"], new_start, new_end,
+            )
+            advanced += 1
+            log.info(
+                "Advanced billing period for org %s: %s → %s..%s",
+                org_id, old_end, new_start, new_end,
+            )
+        except Exception as exc:                                    # noqa: BLE001
+            log.exception("Billing cycle: could not advance org %s", org_id)
+            failures[org_id] = f"{type(exc).__name__}: {exc}"
 
-    return {"advanced": advanced, "checked": len(rows)}
+    out = {"advanced": advanced, "checked": len(rows)}
+    if failures:
+        # Reported, never swallowed. Returning a clean result here is the
+        # failure mode this codebase names most often: the caller would see
+        # {"advanced": 3} and read a partial sweep as a complete one.
+        out["failed"] = failures
+    return out
 
 
 async def expire_trials(pool, today: date | None = None) -> dict:
