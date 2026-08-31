@@ -314,7 +314,7 @@ fs.mkdirSync(DL, { recursive: true });
 // `lane('unicode')` frozen here at import time was why the UK replay could not
 // be run at all — §14's own first category, a hidden dependency on Unicode.
 const LANE = activeLane();
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +

@@ -52,7 +52,7 @@ test('Mappls Places, called from a signed-in browser on a whitelisted origin', a
      the SDK offers rather than what the docs claim. `loadMappls()` is the
      product's loader and it fetches the URL our own token endpoint serves. */
   await page.evaluate(async () => {
-    const API = 'https://kartavaya-staging.up.railway.app/api';
+    const API = 'https://api.kartavaya.com/api';
     const auth = localStorage.getItem('auth_token');
     const tr = await fetch(API + '/v1/maps/token', {
       headers: auth ? { Authorization: 'Bearer ' + auth } : {},
@@ -81,7 +81,7 @@ test('Mappls Places, called from a signed-in browser on a whitelisted origin', a
   await page.waitForTimeout(3000);
 
   const report = await page.evaluate(async () => {
-    const API = 'https://kartavaya-staging.up.railway.app/api';
+    const API = 'https://api.kartavaya.com/api';
 
     // The key never leaves the browser and never enters a transcript: the page
     // asks our own endpoint for it, exactly as the map loader already does.

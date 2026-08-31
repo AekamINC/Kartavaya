@@ -202,14 +202,14 @@
  */
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, activeLane, assertOrg } from './_lanes';
-import { setDate, settle } from './_helpers';
+import { setDate, settle, isForeignInlineScriptRefusal } from './_helpers';
 
 // ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
 // unset run is byte-for-byte the Unicode run this suite was authored against.
 // `lane('unicode')` frozen here at import time was why the UK replay could not
 // be run at all — §14's own first category, a hidden dependency on Unicode.
 const LANE = activeLane();
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 /** The one place a stamp is needed. See §6 above. */
 const RUN = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -372,7 +372,13 @@ type Console = { errors: string[]; uncaught: string[] };
 function watchConsole(page: Page): Console {
   const c: Console = { errors: [], uncaught: [] };
   page.on('console', (m) => {
-    if (m.type() === 'error') c.errors.push(`${page.url().replace(/^https?:\/\/[^/]+/, '')}  ${m.text().slice(0, 240)}`);
+    if (m.type() !== 'error') return;
+    const full = m.text();
+    // Cloudflare injects its own `__CF$cv$` loader carrying a per-request token,
+    // so its hash differs on every load and can never be allowed by hash.
+    // CLASSIFIED, not ignored: a refusal of OUR bootstrap still fails. _helpers.
+    if (isForeignInlineScriptRefusal(full)) return;
+    c.errors.push(`${page.url().replace(/^https?:\/\/[^/]+/, '')}  ${full.slice(0, 240)}`);
   });
   page.on('pageerror', (e) => c.uncaught.push(`${page.url()}  ${String(e).slice(0, 240)}`));
   return c;

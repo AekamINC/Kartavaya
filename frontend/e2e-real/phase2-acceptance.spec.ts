@@ -41,7 +41,7 @@
 import { test, expect } from '@playwright/test';
 import { GODMODE_STATE } from './real.config';
 import {
-  RUN, api, apiOk, settle, openTab, shot, submitting,
+  RUN, api, apiOk, settle, openTab, shot, submitting, setMonth,
   useOrg, activeOrgId, assertOutboundFenceFor,
 } from './_helpers';
 
@@ -89,10 +89,13 @@ test('2.1 · a payroll run pays 51, not 60 — the nine leavers are out', async 
     state.employeeCount = Number(existing.employee_count);
   } else {
     await openTab(page, /payroll/i);
-    const monthInput = page.locator('input[type="month"]').first();
-    await expect(monthInput, 'the payroll month picker is not on the Payroll tab')
-      .toBeVisible();
-    await monthInput.fill(MONTH);
+    // The month field is a `DateInput type="month"` since 2026-08-31, not a
+    // native control: `input[type="month"]` now finds only the hidden
+    // `.pk__native`, which cannot be seen or filled. `setMonth` drives the
+    // visible picker the way a person does.
+    await expect(page.getByRole('button', { name: 'Month' }).first(),
+      'the payroll month picker is not on the Payroll tab').toBeVisible();
+    await setMonth(page, 'Month', MONTH);
 
     const process = page.getByRole('button', { name: /Process/i }).first();
     await expect(process, 'the Process control is not on the Payroll tab').toBeVisible();
@@ -253,7 +256,7 @@ test('2.5 · creating a billing profile for another org\'s client is refused',
     const theirs = await api(page, 'get', '/api/v1/graha/clients?limit=1');
     // Read it as the OTHER org, then ask for it as THIS one.
     const asThem = await page.request.get(
-      `${process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app'}` +
+      `${process.env.E2E_API_URL || 'https://api.kartavaya.com'}` +
       '/api/v1/graha/clients?limit=1',
       {
         headers: {

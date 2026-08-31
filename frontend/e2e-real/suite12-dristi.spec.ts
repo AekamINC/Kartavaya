@@ -311,7 +311,7 @@ import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lane
 import { S12_DL } from './suite12.config';
 
 const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +

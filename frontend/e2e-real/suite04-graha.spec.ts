@@ -112,15 +112,15 @@
  */
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
-import { setDate } from './_helpers';
+import { setDate, isForeignInlineScriptRefusal } from './_helpers';
 
 // ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
 // unset run is byte-for-byte the Unicode run this suite was authored against.
 // `lane('unicode')` frozen here at import time was why the UK replay could not
 // be run at all — §14's own first category, a hidden dependency on Unicode.
 const LANE = activeLane();
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
-const BASE = process.env.E2E_BASE_URL || 'https://staging.kartavaya.com';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
+const BASE = process.env.E2E_BASE_URL || 'https://app.kartavaya.com';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +
@@ -207,13 +207,28 @@ const CUSTOM_FIELDS: { name: string; type: string; html: string }[] = [
   { name: `${TAG} CF date`, type: 'date', html: 'DateInput' },
   { name: `${TAG} CF url`, type: 'url', html: 'url' },
   { name: `${TAG} CF email`, type: 'email', html: 'email' },
-  // ⚠ `phone`, not `tel`. `CustomFieldInputs.jsx` renders
+  // ⚠ `tel`, not `phone` — CORRECTED 2026-08-30, AND THE OLD COMMENT IS KEPT
+  // BELOW BECAUSE IT WAS RIGHT WHEN IT WAS WRITTEN.
+  //
+  // It read: "`phone`, not `tel`. CustomFieldInputs.jsx renders
   // `type={f.field_type === 'text' ? 'text' : f.field_type}`, so a phone field
   // ships `<input type="phone">` — which is not a valid input type, falls back
   // to text in every browser, and therefore does NOT get the numeric keypad the
   // file's own comment says it is there for. The attribute is asserted as it is
-  // actually written; the mismatch is in the report.
-  { name: `${TAG} CF phone`, type: 'phone', html: 'phone' },
+  // actually written; the mismatch is in the report."
+  //
+  // That was true, this suite is what FOUND it on 2026-08-29, and it was fixed:
+  // `CustomFieldInputs.jsx:55` now carries an explicit
+  // `HTML_INPUT_TYPE = { text:'text', url:'url', email:'email', phone:'tel' }`
+  // map — deliberately a map rather than a pass-through, so a new `field_type`
+  // cannot silently become an invalid attribute again.
+  //
+  // The assertion was never updated, so from that day this test failed ON THE
+  // CORRECT FIX. That is a defect in the test, not the product: it teaches
+  // people to edit tests to get green, which is how a real bug gets buried.
+  // Asserting `tel` now also means a REGRESSION to `type="phone"` fails here,
+  // which the old assertion could not do.
+  { name: `${TAG} CF phone`, type: 'phone', html: 'tel' },
 ];
 
 test.beforeAll(() => {
@@ -329,7 +344,12 @@ function watchConsole(page: Page): Watcher {
   let where = 'boot';
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    errors.push({ where, text: m.text().slice(0, 240) });
+    const full = m.text();
+    // Cloudflare injects its own `__CF$cv$` loader carrying a per-request token,
+    // so its hash differs on every load and can never be allowed by hash.
+    // CLASSIFIED, not ignored: a refusal of OUR bootstrap still fails. _helpers.
+    if (isForeignInlineScriptRefusal(full)) return;
+    errors.push({ where, text: full.slice(0, 240) });
   });
   page.on('pageerror', (e) => {
     errors.push({ where, text: `UNCAUGHT ${String(e?.message ?? e).slice(0, 240)}` });

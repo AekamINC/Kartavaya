@@ -51,7 +51,7 @@ import { settle } from './_helpers';
 
 test.use({ storageState: OWNER_STATE });
 
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 /**
  * `WRITE_SKILL_FUNCTIONS`, verbatim from `backend/services/skill_dispatcher.py`.

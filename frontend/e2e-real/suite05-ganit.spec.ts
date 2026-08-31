@@ -216,7 +216,7 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
-import { setDate } from './_helpers';
+import { setDate, isForeignInlineScriptRefusal } from './_helpers';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BANK_DIR = path.join(HERE, 'fixtures', 'bank');
@@ -228,7 +228,7 @@ fs.mkdirSync(DL, { recursive: true });
 // `lane('unicode')` frozen here at import time was why the UK replay could not
 // be run at all — §14's own first category, a hidden dependency on Unicode.
 const LANE = activeLane();
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 const BLOCKED =
   'BLOCKED — no Unicode Group credential. Set E2E_UNICODE_TOKEN (or ' +
@@ -625,7 +625,12 @@ function watchConsole(page: Page): Watcher {
   let where = 'boot';
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    errors.push({ where, text: m.text().slice(0, 240) });
+    const full = m.text();
+    // Cloudflare injects its own `__CF$cv$` loader carrying a per-request token,
+    // so its hash differs on every load and can never be allowed by hash.
+    // CLASSIFIED, not ignored: a refusal of OUR bootstrap still fails. _helpers.
+    if (isForeignInlineScriptRefusal(full)) return;
+    errors.push({ where, text: full.slice(0, 240) });
   });
   page.on('pageerror', (e) => {
     errors.push({ where, text: `UNCAUGHT ${String(e?.message ?? e).slice(0, 240)}` });
@@ -1600,8 +1605,38 @@ test.describe('Suite 05 — Ganit (Finance, books) · Unicode Group', () => {
     console.log(`\n  05.06 — supplier: ${profile.name} · ${home} (GST state code ` +
       `${GST_STATE_CODE[home]}) · own GSTIN ${profile.gstin ? 'set' : 'BLANK'}\n`);
 
-    const contacts = await apiRows(page, '/api/v1/graha/contacts');
-    expect(contacts.length, 'no contacts to invoice — Wave 2 left 53').toBeGreaterThan(0);
+    /**
+     * ⚠ ONLY CONTACTS WHO HAVE AN EMPLOYER, and the reason is a cross-suite trap.
+     *
+     * This test asserts that picking a customer ADOPTS their company, because
+     * that adoption is what puts an invoice on a company ledger at all. A
+     * contact with no `client_id` has no company to adopt, so the form
+     * correctly leaves "Select company…" — and the assertion below then reports
+     * a product defect that is not one.
+     *
+     * MEASURED 2026-08-31: exactly ONE of Unicode's 81 contacts had no company
+     * — `S16 Contact 202608302221`, created by **Suite 16** at 22:26 the night
+     * before. `/v1/graha/contacts` is `ORDER BY c.created_at DESC`, so the
+     * newest contact is `contacts[0]`, and `createInvoice(1)` reached for
+     * exactly it. Suite 05 failed on Suite 16's leftovers, 45 invoices were
+     * never created, and 05.09/05.13/05.18/05.19 then failed on "05.06 must run
+     * first" — one unrelated row taking five tests down with it.
+     *
+     * Filtering here rather than deleting that contact: the suites share one
+     * org by design, any of them may leave a company-less person behind, and a
+     * test that only passes when nobody else has run is not a test.
+     */
+    const allContacts = await apiRows(page, '/api/v1/graha/contacts');
+    expect(allContacts.length, 'no contacts to invoice — Wave 2 left 53').toBeGreaterThan(0);
+    const contacts = allContacts.filter((c) => c.client_id);
+    expect(contacts.length,
+      `none of the ${allContacts.length} contacts has an employer, so no invoice can be `
+      + 'filed against a company — that IS the product defect this test looks for')
+      .toBeGreaterThan(0);
+    if (contacts.length !== allContacts.length) {
+      console.log(`  05.06 — ${allContacts.length - contacts.length} contact(s) carry no `
+        + 'company and are skipped; an invoice cannot adopt what is not there');
+    }
     const products = await apiRows(page, '/api/v1/ganit/products');
     const costed = products.filter((x) => String(x.name || '').startsWith(`${TAG} Product `)
       && x.cost_price != null);

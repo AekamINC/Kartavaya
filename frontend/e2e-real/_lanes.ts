@@ -304,7 +304,7 @@ export async function signInAs(page: Page, l: Lane) {
 export async function assertOrg(request: APIRequestContext, page: Page, l: Lane) {
   const token = await page.evaluate(() => localStorage.getItem('auth_token'));
   const res = await request.get(
-    `${process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app'}/api/v1/org/profile`,
+    `${process.env.E2E_API_URL || 'https://api.kartavaya.com'}/api/v1/org/profile`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );
   expect(res.ok(), `org profile probe failed: ${res.status()}`).toBeTruthy();

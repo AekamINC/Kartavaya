@@ -930,7 +930,7 @@ test.describe('Suite 02 — org settings · Unicode Group', () => {
   ];
   const slotEmail = (tag: string) => `kevalvshah03+u${tag}@gmail.com`;
 
-  const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+  const API_BASE = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
   /** The member rows the SERVER holds, read fresh. The screen is the claim; this is the fact. */
   /**

@@ -28,7 +28,7 @@ test('the UPI tab shows the paytm id that is stored on the server', async ({ pag
 
   // What the server holds, read at the moment of the check rather than trusted
   // from a previous run.
-  const api = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+  const api = process.env.E2E_API_URL || 'https://api.kartavaya.com';
   const res = await request.get(`${api}/api/v1/org/profile/upi-accounts`, {
     headers: { Authorization: `Bearer ${TOKEN}` },
   });

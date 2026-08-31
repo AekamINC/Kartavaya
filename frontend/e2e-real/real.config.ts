@@ -128,7 +128,7 @@ export default defineConfig({
   ],
   outputDir: path.join(DL_DIR, 'artifacts'),
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'https://staging.kartavaya.com',
+    baseURL: process.env.E2E_BASE_URL || 'https://app.kartavaya.com',
     // `channel: 'chrome'` is NOT here on purpose — it is chromium-only and would
     // break the firefox/webkit projects. It is set per project as
     // `CHROME_CHANNEL`; the whole reason it is needed at all, and the measured

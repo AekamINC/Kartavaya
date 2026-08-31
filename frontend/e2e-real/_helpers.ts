@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DL_DIR } from './real.config';
 
-export const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+export const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 export const ORG = process.env.E2E_ORG_ID || '';
 
 /**
@@ -322,6 +322,56 @@ export async function setDate(scope: any, labelText: string | RegExp, iso: strin
   await expect(pop).toBeHidden();
 }
 
+/**
+ * Set a MONTH (`YYYY-MM`) on a `<DateInput type="month">`.
+ *
+ * ── WHY THIS EXISTS, 2026-08-31 ─────────────────────────────────────────────
+ *
+ * Five screens used to carry a native `<input type="month">` and specs drove
+ * them with `.fill('2026-01')`. Suite 20.04 failed on those controls on purpose
+ * — CLAUDE.md bans native date-family widgets — and the fix was to give
+ * `DateInput` a month mode. `input[type="month"]` now resolves to DateInput's
+ * HIDDEN `.pk__native`, which Playwright will refuse to fill, correctly. So the
+ * locator has to change with the control, exactly as `setDate` did when the day
+ * pickers were replaced.
+ *
+ * ⚠ ADDRESSED BY ACCESSIBLE NAME, NOT BY `<label>`. `setDate` above finds a
+ * `<label>` wrapping its field; these fields are a `<div>` + `aria-labelledby`,
+ * because DateInput renders a BUTTON and a `<label>` cannot label a button.
+ * Copying `setDate`'s locator here would find nothing.
+ */
+export async function setMonth(scope: any, labelText: string | RegExp, ym: string) {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!m) throw new Error(`setMonth needs YYYY-MM, got ${JSON.stringify(ym)}`);
+  const [wantY, wantM] = [+m[1], +m[2]];
+
+  const trigger = scope.getByRole('button', { name: labelText }).first();
+  await trigger.click();
+  // The popup is a sibling of the trigger inside the same `.pk--dt` root, so it
+  // is reached from the trigger rather than from the page — two month fields on
+  // one screen (Vetana has three) would otherwise be indistinguishable.
+  const pop = trigger.locator('xpath=ancestor::div[contains(@class,"pk--dt")][1]')
+    .locator('.pk__pop');
+  await expect(pop).toBeVisible();
+
+  // Step the YEAR — the month panel pages by year, not by month.
+  for (let i = 0; i < 25; i++) {
+    const shown = +(await pop.locator('.pk__calt').innerText()).trim();
+    if (shown === wantY) break;
+    await pop.getByRole('button', { name: shown < wantY ? 'Next year' : 'Previous year' }).click();
+  }
+  expect(+(await pop.locator('.pk__calt').innerText()).trim(),
+    `the month picker never reached ${wantY}`).toBe(wantY);
+
+  const full = new Date(wantY, wantM - 1, 1)
+    .toLocaleString('en-GB', { month: 'long' });
+  const cell = pop.getByRole('button', { name: `${full} ${wantY}` });
+  await expect(cell, `${full} ${wantY} is not selectable — check the field's max`)
+    .toBeEnabled();
+  await cell.click();
+  await expect(pop).toBeHidden();
+}
+
 // ══ TARGETING AN ORG, AND PROVING IT ═════════════════════════════════════════
 //
 // Added 2026-08-26 after a Phase-1 acceptance run wrote a vendor into the WRONG
@@ -459,4 +509,55 @@ export async function pickFromPicker(
   await expect(listbox, `the ${what} picker did not close after choosing`)
     .toBeHidden({ timeout: 10_000 });
   return chosen;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CLOUDFLARE'S OWN INLINE SCRIPT IS REFUSED ON EVERY PAGE, AND IT IS NOT OURS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Measured 2026-08-30 against production. Every page serves TWO inline scripts:
+//
+//   len=1985  sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=   <- OURS, ALLOWED
+//   len= 921  Cloudflare's `__CF$cv$…` loader                        <- refused
+//
+// Cloudflare injects the second at the edge and it carries a PER-REQUEST TOKEN,
+// so its sha256 differs on every single load — curl saw `XsVVTi4J…` while the
+// browser reported `5LrLphsF…` and `ZVkQbSb4…` on the same page. It can never be
+// allowed by hash, and `'unsafe-inline'` would be a real security regression to
+// silence an analytics beacon. `beacon.min.js` itself already loads fine as an
+// allowed external script; only the loader snippet is refused.
+//
+// ⚠ WHY THIS FILTER EXISTS: it was failing FIVE suites — 00 cold-start, 05.01
+// Ganit, 06.01 Kray, 08.2/08.3 Vetana and 04.21 Graha — each of which asserts
+// "no console errors on this screen". Every one of those is a FALSE RED, and a
+// false red is worse than no test: it buries the real findings underneath it.
+//
+// ⚠ AND WHY IT IS NARROW. Blanket-ignoring "Refused to execute inline script"
+// would hide the exact defect `check-csp-hash.mjs` exists to catch — OUR
+// pre-paint bootstrap being refused, which costs a wrong-theme flash on every
+// load for every user, silently. So the refusal is CLASSIFIED, not ignored:
+// the browser names the hash it wanted, and if that is our bootstrap's hash then
+// the refusal IS ours and this returns false, so the suite still fails.
+export const APP_BOOTSTRAP_SHA = 'sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=';
+
+/**
+ * True only for an inline-script CSP refusal that is demonstrably NOT ours.
+ *
+ * ⚠ PASS THE FULL `m.text()`, NOT A TRUNCATED COPY. The collectors slice console
+ * text to 240 chars for readability, and the hash the browser asks for sits
+ * AFTER that cut — classify first, slice second, or this can never tell the two
+ * apart and silently degrades to the blanket ignore it is written to avoid.
+ */
+export function isForeignInlineScriptRefusal(fullText: string): boolean {
+  if (!/Refused to execute inline script/i.test(fullText)) return false;
+  const required = fullText.match(/a hash \('(sha256-[A-Za-z0-9+/=]+)'\)/)?.[1];
+  // The browser names the hash it needed. If that is OUR bootstrap, the refusal
+  // is ours and must fail the suite.
+  if (required) return required !== APP_BOOTSTRAP_SHA;
+  // Truncated or a browser that phrases it differently. Treated as foreign, and
+  // that is safe ONLY because `check-csp-hash.mjs` independently proves our
+  // bootstrap's hash is in the shipped `public/_headers` on every `npm run
+  // check` — it fails the build if it drifts. If that gate is ever removed, this
+  // fallback must become `false`.
+  return true;
 }

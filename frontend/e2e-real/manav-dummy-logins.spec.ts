@@ -151,7 +151,7 @@ const TARGET_NAME = /E2E Test & Associates/i;
 /** Unicode Group — a real customer, never written to, asserted against below. */
 const FORBIDDEN_ORG = 'fae87907-2f99-4b35-a241-c94d9e1e4a17';
 
-const BASE = process.env.E2E_BASE_URL || 'https://staging.kartavaya.com';
+const BASE = process.env.E2E_BASE_URL || 'https://app.kartavaya.com';
 
 /** The DPDP notice version the clock screen serves (`pahchan.py:521`). */
 const NOTICE_VERSION = '2026-08-06.1';

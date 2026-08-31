@@ -146,7 +146,7 @@ import * as os from 'os';
 import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 
 const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 const OUT = path.join(os.tmpdir(), 'kartavya-e2e-suite20');
 const LEDGER = path.join(OUT, 'ledger.json');
@@ -480,6 +480,30 @@ async function scan(page: Page): Promise<Omit<Screen, 'id' | 'path' | 'family' |
       const rows = [...scope.querySelectorAll<HTMLElement>(sel)];
       for (const r of rows) {
         if (EXCLUDE.some((x) => r.closest(x))) continue;
+        // ── AN EXPANSION ROW IS NOT A DATA ROW ───────────────────────────
+        //
+        // Several tables render an inline editor as one full-width row —
+        // `<tr><td colspan={COLUMNS.length}><form class="k-formpanel">…`.
+        // `manav#notices` puts an entire status form in one, which measures
+        // 254px, and holding a form to a 50px row token is asking the wrong
+        // question. `--row-h` is the ONE ROW CONTRACT for rows that carry a
+        // record; an expanded editor is a panel that happens to live in a
+        // `<tbody>`.
+        //
+        // ⚠ THIS WAS EATING THE REAL SIGNAL. On 2026-08-31 this test named ten
+        // screens; FOUR of them (manav#notices, manav#udin, manav#dsc,
+        // graha#documents) were only their expansion forms, and the six
+        // genuine ones — contacts, products and stock sitting 6–9px over the
+        // token — read as the small print at the bottom of a long list. A
+        // check that reports four false rows for every six true ones is one
+        // people learn to skim.
+        //
+        // Detected by SHAPE — a single cell spanning the table — rather than
+        // by a class list, which would need a new entry for every table that
+        // grows an inline editor and would silently under-report until it got
+        // one.
+        const cells = r.children;
+        if (cells.length === 1 && (cells[0] as HTMLTableCellElement).colSpan > 1) continue;
         const box = r.getBoundingClientRect();
         // A row scrolled out of layout has no box; measuring it says nothing.
         if (box.height === 0) continue;
@@ -988,28 +1012,38 @@ test.describe('Suite 20 — Cross-cutting · Unicode Group', () => {
      * `DateInput`'s own hidden `.pk__native` is excluded by the scan — form
      * serialisation by `name` depends on it (`DateInput.jsx:166`).
      *
-     * What remains, if anything, is the un-migrated remainder. `Field.jsx:61`
-     * routes `Input` through `DateInput` for `date | datetime-local | time`
-     * and NOT for `month`, so a `type="month"` field still emits a native
-     * control. That is a real finding and it is NOT a one-line fix — closing
-     * it means giving `DateInput` a month mode, which is a feature. The
-     * product has already been moving this way without it: `vetana.css:38`
-     * records the month inputs as a known unlabelled-control problem, and
-     * `manav/BonusTab.jsx:56` and `sahayak/SkillsTab.jsx:95` both document
-     * choosing a `<select>` over `type="month"` deliberately.
+     * ✅ RESOLVED 2026-08-31 — and HOW it resolved is the point of keeping it.
      *
-     * So this is reported as a FAILURE with the decision named, rather than
-     * excused into a green — a suite that quietly drops the line it cannot
-     * meet is the silent cap §10 warns about.
+     * This test used to fail here deliberately. `Field.jsx` routed `Input`
+     * through `DateInput` for `date | datetime-local | time` and NOT for
+     * `month`, so five screens still emitted a native control. That was
+     * reported as a FAILURE with the decision named — "closing it means giving
+     * `DateInput` a month mode, which is a feature" — rather than excused into
+     * a green, because a suite that quietly drops the line it cannot meet is
+     * the silent cap §10 warns about.
+     *
+     * The feature was then built: `MonthGrid.jsx`, `month` added to `DATEY`,
+     * and all five screens migrated — three Vetana (where `BonusTab.jsx:56`
+     * had already written down what a wrong month costs), `ganit/StatsTab` and
+     * `manav/PerformanceTab`. `_helpers.ts::setMonth()` drives it, addressing
+     * the control by ACCESSIBLE NAME rather than by `<label>`, because
+     * DateInput renders a button and a label cannot label a button.
+     *
+     * The failing test is what made that happen. It stayed visible, with the
+     * decision written down, until somebody took it — which is the argument
+     * for reporting a finding as a failure instead of a skip.
      */
     expect(
       found,
       'a NATIVE date-family control is on screen. The product\'s standing rule is that ' +
-      'there are none — every date goes through `DateInput`, and `setDate()` is the only ' +
-      'way a test can drive one. `Field.jsx:61` forwards `date`, `datetime-local` and ' +
-      '`time` to `DateInput` but NOT `month`, so month fields still emit the native ' +
-      'control. DECISION NEEDED: give `DateInput` a month mode, or replace these with the ' +
-      '<select> pattern manav/BonusTab.jsx:56 already uses.\n     ' + found.join('\n     '),
+      'there are none — every date goes through `DateInput`, and `setDate()`/`setMonth()` ' +
+      'are the only ways a test can drive one.\n\n' +
+      'THE `month` HOLE THIS TEST NAMED IS CLOSED (2026-08-31). The decision it asked for ' +
+      'was taken: `DateInput` gained a month mode (`MonthGrid.jsx`), `Field.jsx` forwards ' +
+      '`month` with the other three, and all five screens that carried the native widget ' +
+      'were migrated — three Vetana, plus ganit/StatsTab and manav/PerformanceTab. So a ' +
+      'failure here is a NEW native control, not the known remainder.\n     '
+      + found.join('\n     '),
     ).toEqual([]);
   });
 

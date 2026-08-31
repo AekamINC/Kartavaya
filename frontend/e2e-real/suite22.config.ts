@@ -101,7 +101,18 @@ export default defineConfig({
   outputDir: path.join(OUT, 'artifacts'),
   retries: 0,
   workers: 3,
-  timeout: 90 * 60_000,
+  // ⚠ CAPPED 2026-08-30, from 90 minutes. A per-test budget measured in
+  // tens of minutes does not protect a slow test — it hides a DEAD one. Suite 04
+  // proved it: the browser died, the worker sat at idle CPU, and with a 45-minute
+  // budget nothing killed the wait. 2 of 22 tests ran, 20 never started, and the
+  // wave lost its slot to a crash that never surfaced as a failure.
+  //
+  // 20 minutes is ~7x the longest test actually observed in this programme
+  // (04.04, fifty contacts with addresses, 2.7m). A test that genuinely needs
+  // more should say so with `test.setTimeout()` in the file that needs it, where
+  // the exception is visible, rather than every test inheriting a budget sized
+  // for the slowest one.
+  timeout: 20 * 60_000,
   expect: { timeout: 15_000 },
   reporter: [
     ['list'],

@@ -53,7 +53,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { ORG as ORG_IDS } from './_lanes';
 
-const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API_BASE = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 const GODMODE = process.env.E2E_GODMODE_TOKEN;
 

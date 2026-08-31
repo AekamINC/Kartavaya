@@ -126,7 +126,7 @@ const TARGET_NAME = /E2E Test & Associates/i;
 /** Unicode Group — a real customer. Asserted against, never written to. */
 const FORBIDDEN_ORG = 'fae87907-2f99-4b35-a241-c94d9e1e4a17';
 
-const BASE = process.env.E2E_BASE_URL || 'https://staging.kartavaya.com';
+const BASE = process.env.E2E_BASE_URL || 'https://app.kartavaya.com';
 
 // ── 4.1 · which rule, and why THIS one ───────────────────────────────────────
 //

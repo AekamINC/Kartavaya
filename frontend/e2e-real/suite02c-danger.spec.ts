@@ -118,7 +118,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import { ORG as ORG_IDS, assertOrg, lane, activeLane, signInAs } from './_lanes';
 
-const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API_BASE = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 /**
  * THE LANE. Unicode Group, and asserted to be Unicode Group rather than

@@ -62,7 +62,7 @@ const BLOCKED =
   'platform_bypass and will write there. ENVIRONMENT blocker, not a product ' +
   'or test defect.';
 
-const API_BASE = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API_BASE = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 type Creds = { email: string; password: string };
 type Lane = { creds: Creds; org: string; orgId: string; reference: boolean; token?: string };

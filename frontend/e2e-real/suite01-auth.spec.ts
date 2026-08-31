@@ -41,7 +41,7 @@
  *
  *   $ curl -H "Authorization: Bearer $E2E_ADMIN_TOKEN" \
  *          -H "X-Org-Id: fae87907-…" \
- *          https://kartavaya-staging.up.railway.app/api/v1/org/members
+ *          https://api.kartavaya.com/api/v1/org/members
  *   401 {"detail":"Invalid or expired token"}
  *
  * So the tests that need to BE a Unicode member fail with one precise sentence
@@ -81,6 +81,8 @@
 import { test, expect, Page } from '@playwright/test';
 
 const UNICODE_ORG_ID = 'fae87907-2f99-4b35-a241-c94d9e1e4a17';
+const E2E_ORG_ID     = '64e7bea6-6abe-490c-a2a4-27a60c6be916';
+const UK_ORG_ID      = '4d7e9380-ff98-4c1d-bffd-a76df7e91f21';
 
 /** A real Unicode Group seat — used as the SUBJECT of the unauthenticated
  *  flows. Not a login: there is no password for it (see the header). */
@@ -141,7 +143,7 @@ const BLOCKED =
  * while nothing leaves the building — the 1,562-row trap in §0 exactly. Any
  * assertion about mail ARRIVING must skip on this lane rather than pass.
  */
-type Lane = { creds: Creds; org: string; reference: boolean; outboundSuppressed: boolean;
+type Lane = { creds: Creds; org: string; orgId: string; reference: boolean; outboundSuppressed: boolean;
               /** Set only when the lane cannot be driven at all — see UK_BLOCKED. */
               blocked?: string };
 
@@ -192,11 +194,11 @@ function resolveLane(): Lane {
   // 2026-08-29: it took wave 1's entire UK replay down with it. So the refusal
   // is carried on the lane and enforced by `test.skip` below.
   if (UK_LANE) return { creds: { email: '', password: '' }, org: 'UK AekamINC',
-    reference: false, outboundSuppressed: false, blocked: UK_BLOCKED };
+    orgId: UK_ORG_ID, reference: false, outboundSuppressed: false, blocked: UK_BLOCKED };
 
   const uni = unicodeCreds();
   if (uni) {
-    return { creds: uni, org: 'Unicode Group', reference: true, outboundSuppressed: false };
+    return { creds: uni, org: 'Unicode Group', orgId: UNICODE_ORG_ID, reference: true, outboundSuppressed: false };
   }
   const email = process.env.E2E_APPROVER_EMAIL;
   const password = process.env.E2E_APPROVER_PASSWORD;
@@ -204,6 +206,7 @@ function resolveLane(): Lane {
   return {
     creds: { email, password },
     org: 'E2E Test & Associates',
+    orgId: E2E_ORG_ID,
     reference: false,
     outboundSuppressed: true,
   };
@@ -304,7 +307,14 @@ test.describe('Suite 01 — auth & account · Unicode Group', () => {
 
     // Recorded for the run report's SQL check against public.invites.
     console.log(`\n[suite01] invited address: ${INVITEE}`);
-    console.log(`[suite01] org: ${UNICODE_ORG_ID}\n`);
+    // ⚠ THE RESOLVED LANE'S ORG, NOT `UNICODE_ORG_ID`. This printed the hardcoded
+    // Unicode id whatever lane ran — and it exists specifically so a verifier can
+    // SQL `public.invites`. On a fallback run it therefore sent them to Unicode
+    // Group, where the row is NOT: 0 rows found, the invite filed as failed, when
+    // it had in fact succeeded in E2E Test & Associates. It also flatly
+    // contradicted the `⚠ FALLBACK — NOT the reference lane` banner printed three
+    // lines earlier in beforeAll. Found 2026-08-30 by a wave-1 agent.
+    console.log(`[suite01] org: ${LANE.orgId}  (${LANE.org})\n`);
   });
 
   test('01.2 forgot-password is requested and confirmed on screen', async ({ page }) => {

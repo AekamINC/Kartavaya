@@ -35,7 +35,7 @@ import * as path from 'path';
 import { OWNER_STATE, DL_DIR } from './real.config';
 import { submitting } from './_helpers';
 
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 const ORG = process.env.E2E_ORG_ID || '';
 // AWS SES simulator: accepts and discards, never bounces, reaches no human.
 const SIGNER_EMAIL = process.env.E2E_SIGNER_EMAIL || 'success+e2esign@simulator.amazonses.com';

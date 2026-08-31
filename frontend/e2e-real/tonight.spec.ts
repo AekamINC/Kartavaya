@@ -25,7 +25,7 @@ import { OWNER_STATE } from './real.config';
 
 test.use({ storageState: OWNER_STATE });
 
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 const ORG = process.env.E2E_ORG_ID!;
 
 /** The bearer the app itself sends. Read from the same storage state the UI

@@ -344,14 +344,14 @@
  */
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, activeLane, signInAs } from './_lanes';
-import { setDate, settle, download } from './_helpers';
+import { setDate, setMonth, settle, download, isForeignInlineScriptRefusal } from './_helpers';
 
 // ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
 // unset run is byte-for-byte the Unicode run this suite was authored against.
 // `lane('unicode')` frozen here at import time was why the UK replay could not
 // be run at all — §14's own first category, a hidden dependency on Unicode.
 const LANE = activeLane();
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 
 /** The three consecutive months §4 asks for. See §4-not-reachable note 1. */
 const MONTHS = ['2026-06', '2026-07', '2026-08'] as const;
@@ -617,7 +617,13 @@ type Con = { errors: string[]; uncaught: string[] };
 function watchConsole(page: Page): Con {
   const c: Con = { errors: [], uncaught: [] };
   page.on('console', (m) => {
-    if (m.type() === 'error') c.errors.push(`${page.url().replace(/^https?:\/\/[^/]+/, '')}  ${m.text().slice(0, 240)}`);
+    if (m.type() !== 'error') return;
+    const full = m.text();
+    // Cloudflare injects its own `__CF$cv$` loader carrying a per-request token,
+    // so its hash differs on every load and can never be allowed by hash.
+    // CLASSIFIED, not ignored: a refusal of OUR bootstrap still fails. _helpers.
+    if (isForeignInlineScriptRefusal(full)) return;
+    c.errors.push(`${page.url().replace(/^https?:\/\/[^/]+/, '')}  ${full.slice(0, 240)}`);
   });
   page.on('pageerror', (e) => c.uncaught.push(`${page.url()}  ${String(e).slice(0, 240)}`));
   return c;
@@ -1188,6 +1194,44 @@ async function employeeIndex(page: Page) {
     add(e);
     offRolls += 1;
   }
+  // ── AND ANYONE THIS SUITE ITSELF OFFBOARDED ON AN EARLIER RUN ─────────────
+  //
+  // ⚠ THE RECOVERY ABOVE IS CIRCULAR, AND IT DEADLOCKED THE WHOLE SUITE ON ITS
+  // SECOND EXECUTION. Measured 2026-08-30: 30 employees in the database, all
+  // `status='active'` and `is_active=TRUE`, and the directory correctly returned
+  // 26 — because 08.4's own four leavers ("S8 exit — pro-rated leaver 1..4",
+  // last working days 2026-08-11/13/17/20) are past their last day and
+  // `still_on_the_rolls` drops them, which is right.
+  //
+  // The payslip recovery above cannot see them, because payslips for this month
+  // are created by 08.5–08.7 — which run AFTER this precondition. So:
+  //
+  //   first run   no leavers yet        -> 30 readable -> passes -> creates 4
+  //   second run  its own 4 are off     -> 26 readable, 0 payslips -> FAILS
+  //
+  // §6 requires every suite to run twice and report "0 typed, N already
+  // present". As written this one could only ever pass once, and the failure
+  // read as "Suite 07 did not create the employees" — pointing at the wrong
+  // suite entirely, which is how a whole wave gets re-run for nothing.
+  //
+  // The offboarding register does not depend on payroll having run, so it is
+  // the recovery that holds on every execution. The detail route is deliberately
+  // readable for someone off the rolls — a leaver in clearance still has assets
+  // to hand back and a settlement to receive (`manav.py:401`).
+  const exits = await rowsOf(page, '/api/v1/manav/offboarding?limit=200').catch(() => []);
+  for (const x of exits) {
+    const id = x?.employee_id;
+    if (!id) continue;
+    if (rows.some((r) => String(r?.id) === String(id))) continue;
+    const body = await orgGet(page, `/api/v1/manav/employees/${id}`);
+    const e = body?.employee ?? body;
+    expect(e?.name, `an offboarded employee could not be read back through the detail route`)
+      .toBeTruthy();
+    rows.push(e);
+    add(e);
+    offRolls += 1;
+  }
+
   expect(rows.length, `Wave 2 left thirty employees and this suite depends on them; Suite 07 ` +
     `owns creating them. ${rows.length} were readable (${offRolls} of them only through the ` +
     'detail route, being past their last working day).').toBeGreaterThanOrEqual(30);
@@ -1288,12 +1332,17 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     // fires a fetch, and asserting into the gap is the same race `saveAndWait`
     // exists for — a reload that outruns the request reports "the product did
     // not do it" when it had.
-    const psMonth = page.locator('#mt-panel-payslips input[type="month"]').first();
-    await expect(psMonth, 'the payslips tab has no month filter').toBeVisible({ timeout: 25_000 });
+    const psPanel = page.locator('#mt-panel-payslips');
+    // `input[type="month"]` is DateInput's HIDDEN `.pk__native` since
+    // 2026-08-31. It still carries the value, so `toHaveValue` below is
+    // still the right assertion — but it cannot be filled or seen, so the
+    // visible trigger and `setMonth()` do the driving.
+    await expect(psPanel.getByRole('button', { name: 'Month' }),
+      'the payslips tab has no month filter').toBeVisible({ timeout: 25_000 });
     await Promise.all([
       page.waitForResponse(r => /\/vetana\/payslips\?month=2026-01/.test(r.url()) &&
         r.request().method() === 'GET', { timeout: 30_000 }),
-      psMonth.fill('2026-01'),
+      setMonth(psPanel, 'Month', '2026-01'),
     ]);
     await expect(emptyTitle(page), 'a month with no payslips does not say so in words')
       .toHaveText(/No payslips for January 2026/i, { timeout: 20_000 });
@@ -1330,7 +1379,7 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     await Promise.all([
       page.waitForResponse(r => /statutory-summary\?month=2026-01/.test(r.url()) &&
         r.request().method() === 'GET', { timeout: 30_000 }),
-      stat.locator('input[type="month"]').first().fill('2026-01'),
+      setMonth(stat, 'Month', '2026-01'),
     ]);
     await expect(stat, 'a month with no deductions does not say so in words')
       .toContainText(/Nothing was deducted in January 2026/i, { timeout: 25_000 });
@@ -1696,10 +1745,16 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     }
 
     await vetana(page, 'payroll');
-    const monthBox = page.locator('#mt-panel-payroll input[type="month"]').first();
-    await expect(monthBox, 'the payroll month picker is not on screen').toBeVisible({ timeout: 25_000 });
-    await monthBox.fill(month);
-    await expect(monthBox, 'the month picker would not take the month').toHaveValue(month);
+    const payrollPanel = page.locator('#mt-panel-payroll');
+    // `input[type="month"]` is DateInput's HIDDEN `.pk__native` since
+    // 2026-08-31. It still carries the value, so `toHaveValue` below is
+    // still the right assertion — but it cannot be filled or seen, so the
+    // visible trigger and `setMonth()` do the driving.
+    await expect(payrollPanel.getByRole('button', { name: 'Month' }),
+      'the payroll month picker is not on screen').toBeVisible({ timeout: 25_000 });
+    await setMonth(payrollPanel, 'Month', month);
+    await expect(payrollPanel.locator('input[type="month"]'),
+      'the month picker would not take the month').toHaveValue(month);
 
     // The Source card is the reference's "Attendance imported from मानव", and
     // it is what says whether overtime was computed AT ALL — "0 hours of
@@ -2261,8 +2316,7 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
 
     // ── SCREEN 7 · the payslip, which says all of this in words ──────────
     await vetana(page, 'payslips');
-    const monthBox = page.locator('#mt-panel-payslips input[type="month"]').first();
-    await monthBox.fill(PAY);
+    await setMonth(page.locator('#mt-panel-payslips'), 'Month', PAY);
     const leaver = byEmp.get(LEAVERS[0].code);
     await clickSettled(page, page.getByRole('button', { name: new RegExp(reEsc(String(leaver.employee_name))) }).first(),
       /\/vetana\/payslips/, "the leaver's payslip card");
@@ -2298,10 +2352,14 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
       .toBe(0);
 
     await vetana(page, 'payslips');
-    const monthBox = page.locator('#mt-panel-payslips input[type="month"]').first();
-    await expect(monthBox).toBeVisible({ timeout: 25_000 });
-    await monthBox.fill(PAY);
-    await expect(monthBox).toHaveValue(PAY);
+    const psPanel2 = page.locator('#mt-panel-payslips');
+    // `input[type="month"]` is DateInput's HIDDEN `.pk__native` since
+    // 2026-08-31. It still carries the value, so `toHaveValue` below is
+    // still the right assertion — but it cannot be filled or seen, so the
+    // visible trigger and `setMonth()` do the driving.
+    await expect(psPanel2.getByRole('button', { name: 'Month' })).toBeVisible({ timeout: 25_000 });
+    await setMonth(psPanel2, 'Month', PAY);
+    await expect(psPanel2.locator('input[type="month"]')).toHaveValue(PAY);
     await settle(page);
 
     const seen: string[] = [];
@@ -2659,8 +2717,7 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     // the status it found. That refusal is what makes a second execution of
     // this whole suite safe.
     await vetana(page, 'payroll');
-    const monthBox = page.locator('#mt-panel-payroll input[type="month"]').first();
-    await monthBox.fill(PAY);
+    await setMonth(page.locator('#mt-panel-payroll'), 'Month', PAY);
     await page.getByRole('button', { name: /Process payroll/ }).click();
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible({ timeout: 15_000 });
@@ -2702,7 +2759,7 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
       const before = await rowsOf(page, `/api/v1/vetana/payslips?month=${PAY}`);
       const beforeBy = new Map<string, any>(before.map(p => [String(p.employee_code || p.employee_name), p]));
       await vetana(page, 'payroll');
-      await page.locator('#mt-panel-payroll input[type="month"]').first().fill(PAY);
+      await setMonth(page.locator('#mt-panel-payroll'), 'Month', PAY);
       await page.getByRole('button', { name: /Process payroll/ }).click();
       const d2 = page.getByRole('alertdialog');
       await expect(d2).toBeVisible({ timeout: 15_000 });
@@ -2761,9 +2818,12 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
 
     await vetana(page, 'statutory');
     const stat = page.locator('#mt-panel-statutory');
-    const monthBox = stat.locator('input[type="month"]').first();
-    await expect(monthBox).toBeVisible({ timeout: 25_000 });
-    await monthBox.fill(PAY);
+    // `input[type="month"]` is DateInput's HIDDEN `.pk__native` since
+    // 2026-08-31. It still carries the value, so `toHaveValue` below is
+    // still the right assertion — but it cannot be filled or seen, so the
+    // visible trigger and `setMonth()` do the driving.
+    await expect(stat.getByRole('button', { name: 'Month' })).toBeVisible({ timeout: 25_000 });
+    await setMonth(stat, 'Month', PAY);
     await settle(page);
 
     // The four statutory tiles, then the calendar — which prints the RULE

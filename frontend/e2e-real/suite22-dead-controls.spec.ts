@@ -158,7 +158,7 @@ import * as os from 'os';
 import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 
 const LANE = lane('unicode');
-const API = process.env.E2E_API_URL || 'https://kartavaya-staging.up.railway.app';
+const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 const OUT = path.join(os.tmpdir(), 'kartavya-e2e-suite22');
 const LEDGER_DIR = path.join(OUT, 'ledger');
 fs.mkdirSync(LEDGER_DIR, { recursive: true });
