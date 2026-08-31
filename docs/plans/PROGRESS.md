@@ -8344,3 +8344,28 @@ cannot distinguish reading the *state* from reading the *salary* — which is
 exactly what the anti-vacuity floor exists to say. A fixture gap, correctly
 refused. (Checked in passing: Gujarat's apparent duplicate slabs are the org's
 own ladder outranking the shared national one, which is designed behaviour.)
+
+### ⚠ A correction: the deal audit gap was overstated
+
+Carried into this session as "`update_deal` writes no audit row, so a stage
+change leaves only `updated_at` — four deals moved and the culprit CANNOT be
+named." **That is wrong.** `update_deal` appends `updated_by` to its SET list,
+and the value resolves cleanly through the product's own ladder:
+
+    SELECT d.title, COALESCE(NULLIF(btrim(u.full_name),''), NULLIF(btrim(u.name),''), u.email)
+      FROM public.graha_deals d LEFT JOIN public.users u ON u.user_id = d.updated_by
+    -- S04 Deal 11-14, Lost, all four: "Keval UK"
+
+The first join tried was `u.id::text = d.updated_by`, which matches nothing —
+`updated_by` holds `users.user_id` (TEXT, e.g. `user_21457956f010`), which is
+exactly what `services/audit_actors` exists to join and documents in its header.
+**A wrong join and a missing column look identical from the outside**, and the
+finding had been recorded from the wrong one.
+
+What remains true is narrower and is a design choice rather than a defect: only
+the LAST editor survives, so two edits in sequence leave one name; and
+`graha_activities` — which the deal drawer renders as a timeline — carries only
+`call/email/meeting/note/task`, so a stage change never appears on it. Whether
+that timeline should carry system events is an owner call, not a bug fix, and
+adding a type the create route rejects would put rows on a screen with no
+icon, no label and no way for a user to have made them.
