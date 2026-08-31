@@ -409,6 +409,23 @@ const revisedQty = (po: number, line: number): number | null => {
 };
 
 /**
+ * The category a revision leaves on an order, when it changes one.
+ *
+ * ⚠ THE SAME SHAPE AS `revisedQty`, AND IT WAS MISSING. 06.04 asserted every
+ * order still carries the category it was RAISED with — while REVISION_PLAN
+ * r:3 deliberately re-categorises PO 6 to 'Machinery · plant', and 06.07 drives
+ * that revision. So the two tests disagreed about the same order by design, and
+ * whichever ran second lost.
+ *
+ * Quantity already had this helper for exactly the same reason. Category did
+ * not, which is the whole defect.
+ */
+const revisedCategory = (po: number): string | null => {
+  const rev = REVISION_PLAN.find((x) => x.po === po && x.category);
+  return rev ? rev.category! : null;
+};
+
+/**
  * The order total, computed the way the SERVER computes it.
  *
  * Same order of operations as `services/purchase_orders.compute_po_totals` and
@@ -1764,7 +1781,13 @@ test.describe('Suite 06 — Kray (procurement) · Unicode Group', () => {
 
       expect(String(o.department), `${poMark(plan.n)} lost its department, and a budget keyed ` +
         'on one cannot match what is not there').toBe(plan.dept);
-      expect(String(o.category), `${poMark(plan.n)} lost its category`).toBe(plan.cat);
+      // A revised order carries the category the REVISION left, not the one it
+      // was raised with. See `revisedCategory` — 06.07 does that on purpose.
+      const wantCat = revisedCategory(plan.n) ?? plan.cat;
+      expect(String(o.category),
+        `${poMark(plan.n)} lost its category — expected ${wantCat}` +
+        (revisedCategory(plan.n) ? ' (set by revision r3, not the original)' : ''))
+        .toBe(wantCat);
     }
 
     expect(lines, `wanted ${N_LINES} purchase-order lines across the twelve, counted ${lines}`)
