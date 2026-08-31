@@ -2310,19 +2310,68 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         }
 
         // ── THE TAXABLE VALUE ──────────────────────────────────────────
-        // Every Ganit reader computes turnover as `subtotal − discount` and
-        // Ganit's own writer stores `subtotal` GROSS. Vikray stores it NET, and
-        // this conversion copies it across verbatim, so the discount is
-        // subtracted a second time by every reader downstream.
-        const orderGross = money(Number(order.subtotal) + Number(order.discount || 0));
+        //
+        // ⚠ THIS CHECK ENCODED THE DEFECT IT WAS WRITTEN AGAINST, AND OUTLIVED
+        // IT. It read `orderGross = order.subtotal + order.discount`, which is
+        // only true while `vikray_orders.subtotal` is stored NET — the very bug
+        // it existed to catch. Commit 827bafe8 made `subtotal` GROSS on both
+        // sides (`_compute_order_totals`, vikray.py:209: "`subtotal` stays
+        // GROSS … every Ganit reader treats `ganit_invoices.subtotal` as
+        // gross"), so the check went on adding a discount that was no longer
+        // subtracted and demanded 30,000 where the correct taxable value is
+        // 25,000. It failed on the one discounted order of the ten, against a
+        // conversion that had become right.
+        //
+        // Read from the two rows rather than reconstructed: turnover is
+        // `subtotal − discount` on BOTH sides now, so the invariant is that the
+        // two agree — which holds whichever convention the columns settle on,
+        // and breaks the moment the conversion starts copying between them.
+        const orderTaxable = money(Number(order.subtotal) - Number(order.discount || 0));
         const invoiceTaxable = money(Number(invoice.subtotal) - Number(invoice.discount || 0));
-        const expectedTaxable = money(orderGross - Number(order.discount || 0));
-        if (!near(invoiceTaxable, expectedTaxable, 0.05)) {
-          problems.push(`${plan.mark}: the order's taxable value is ${expectedTaxable} ` +
-            `(gross ${orderGross} less a discount of ${money(order.discount)}) and the invoice ` +
-            `reports ${invoiceTaxable} as subtotal − discount. Vikray stores subtotal NET of the ` +
-            'discount and Ganit stores it GROSS, so the conversion hands a net figure to every ' +
-            'reader that will subtract the discount again.');
+        if (!near(invoiceTaxable, orderTaxable, 0.05)) {
+          problems.push(`${plan.mark}: the order's taxable value is ${orderTaxable} ` +
+            `(subtotal ${money(order.subtotal)} less a discount of ${money(order.discount)}) and ` +
+            `the invoice reports ${invoiceTaxable}. Every Ganit reader computes turnover as ` +
+            '`subtotal − discount`, so a conversion that copies a differently-scaled subtotal ' +
+            'across restates the sale for GSTR-1, the commission register and receivables.');
+        }
+
+        // AND THE TAX IS ON THAT VALUE, NOT ON THE GROSS. s.15(3)(a) excludes an
+        // invoice-recorded discount from the transaction value, and the previous
+        // shape of this test could not see the difference: it compared two
+        // subtotals and never once looked at the base the tax was computed on.
+        // 827bafe8's own commit message says so — "SUITE 10 PASSED THE WHOLE
+        // TIME. Nothing asserted the tax BASE." This is that assertion.
+        const invTax = money(Number(invoice.cgst || 0) + Number(invoice.sgst || 0)
+          + Number(invoice.igst || 0));
+        const identity = money(Number(invoice.subtotal) + invTax - Number(invoice.discount || 0));
+        if (!near(identity, money(invoice.total), 0.05)) {
+          problems.push(`${plan.mark}: the invoice does not add up — subtotal ` +
+            `${money(invoice.subtotal)} + tax ${invTax} − discount ` +
+            `${money(invoice.discount)} = ${identity}, and it totals ${money(invoice.total)}. ` +
+            'That is the identity the totals block prints and the reader checks by eye.');
+        }
+        if (invoiceTaxable > 0) {
+          const impliedRate = money((invTax / invoiceTaxable) * 100);
+          const grossRate = money((invTax / Math.max(money(Number(invoice.subtotal)), 0.01)) * 100);
+          // The lines carry their own `gst_rate`; the blended rate must land on
+          // the NET base. If the tax was computed on the gross it reads HIGH
+          // against the net and exactly right against the gross — which is the
+          // fingerprint, and the only way to tell the two apart from outside.
+          //
+          // PROVED TO BITE, against INV-2026-0009's own recorded before/after:
+          //   before  tax 5400 · net 25000 -> 21.6%  · gross 30000 -> 18.00%  FIRES
+          //   after   tax 4500 · net 25000 -> 18.00% · gross 30000 -> 15.00%  silent
+          // The 18%-on-gross coincidence is what makes it identifiable; a check
+          // on the net rate alone could not tell an over-charge from a mixed-rate
+          // basket.
+          if (Number(invoice.discount || 0) > 0 && Math.abs(grossRate - 18) < 0.05
+              && Math.abs(impliedRate - 18) > 0.05) {
+            problems.push(`${plan.mark}: the tax of ${invTax} is 18% of the GROSS subtotal ` +
+              `${money(invoice.subtotal)} rather than of the taxable value ${invoiceTaxable}. ` +
+              's.15(3)(a) excludes an invoice-recorded discount from the transaction value, so ' +
+              'this over-states output tax and over-charges the customer.');
+          }
         }
 
         // ── THE PLACE OF SUPPLY ────────────────────────────────────────
@@ -2530,6 +2579,25 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       // the COUNT and the shortfall is what gets typed.
       let owed = Math.max(0, N_STOCK_MOVES - before.human);
 
+      // ⚠ ONE MOVEMENT IS RESERVED FOR §4's DELIBERATE NEGATIVE, BECAUSE THE
+      // BUDGET USED TO EAT IT.
+      //
+      // Steps 1 and 2 alone spend the whole forty-five on a fresh ledger —
+      // 18 opening restocks, then 27 nudges — so `owed` reached 0 before step 4
+      // was ever reached, and `if (owed > 0)` skipped it silently. §4's "one
+      // driven negative to see the warning" was therefore NEVER EXERCISED, on
+      // any run, and 10.09 passed anyway: the count was right, and the count was
+      // all it checked. 10.16 is what caught it, reporting
+      // "stock items below zero: 0 (wanted 1)".
+      //
+      // The negative is a STATE §4 asks for, not a quota line, so it is driven
+      // whenever no product is below zero — even if that takes the ledger one
+      // movement past forty-five, which the floor assertion below allows.
+      const negativeAlready = (await apiRows(page, '/api/v1/vikray/stock'))
+        .some((r) => String(r.name || '').startsWith('S05 Product ')
+          && Number(r.quantity_on_hand) < 0);
+      owed = Math.max(0, owed - (negativeAlready ? 0 : 1));
+
       // 1 · an opening restock on every product, which is what a firm does
       //     first and what gives the ledger depth for everything after it.
       const opening = catalogue.slice(0, Math.min(owed, N_PRODUCTS));
@@ -2557,10 +2625,11 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         await nudge(catalogue[i], -1); owed--;
       }
 
-      // 3 · the remaining human reasons, and the one deliberate negative.
+      // 3 · the remaining human reasons. `> 0`, not `> 1`: the negative below
+      //     is funded by `reserve`, not by a leftover this loop had to dodge.
       const REASONS = ['damage', 'return', 'manual_adjustment'];
       let ri = 0;
-      while (owed > 1) {
+      while (owed > 0) {
         const prod = catalogue[ri % catalogue.length];
         await adjust(prod, ri % 2 === 0 ? -3 : 6, REASONS[ri % REASONS.length]);
         owed--; ri++;
@@ -2568,7 +2637,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
 
       // 4 · §4's "one driven negative to see the warning". Chosen as a delta
       //     that is unambiguously below the current balance, read live.
-      if (owed > 0) {
+      if (!negativeAlready) {
         const target = catalogue[catalogue.length - 1];
         const held = Number(
           (await apiRows(page, '/api/v1/vikray/stock'))
@@ -2586,13 +2655,34 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       }
 
       // ── the read-back, and the history screen that reads it ────────────
+      //
+      // ⚠ TWO ASSERTIONS, BECAUSE AN APPEND-ONLY LEDGER CANNOT SATISFY ONE.
+      //
+      // This was `expect(after.human).toBe(45)`, and it is not a claim this
+      // ledger can honour twice. `vikray_stock_moves` has NO name, note or ref
+      // column — the route's own comment says a wrong movement is corrected by
+      // a counter-movement and never edited — so the suite cannot mark its own
+      // rows and cannot tell them from a previous run's. Every other §4 volume
+      // in this file is marked (`S10 target NN`, `S05 Product NN`); this one
+      // structurally is not, and equality on it fails the moment the ledger
+      // holds more than the target for any reason. It reached 63 that way.
+      //
+      // So the idempotence claim is made where it is actually checkable — THIS
+      // RUN ADDED EXACTLY WHAT IT TYPED — and §4's forty-five becomes the floor
+      // it can only ever be. A duplicating `ensure()` still fails the first
+      // assertion, which is the defect the equality was there to catch.
       const after = await census();
+      expect(after.human - before.human,
+        `the ledger gained ${after.human - before.human} movements recorded by a person ` +
+        `while this run typed ${typed}. A gap means a control wrote more than once per press, ` +
+        'or something outside this suite is writing to the same ledger.' + dumpWire(wire))
+        .toBe(typed);
       expect(after.human,
-        `§4 asks for ${N_STOCK_MOVES} stock movements a person recorded and the ledger holds ` +
-        `${after.human}. The ${after.lifecycle} movements stamped by the order lifecycle ` +
+        `§4 asks for at least ${N_STOCK_MOVES} stock movements a person recorded and the ledger ` +
+        `holds ${after.human}. The ${after.lifecycle} movements stamped by the order lifecycle ` +
         '(`order_confirmed`, `order_cancelled`) are counted apart, because nobody typed them.' +
         dumpWire(wire))
-        .toBe(N_STOCK_MOVES);
+        .toBeGreaterThanOrEqual(N_STOCK_MOVES);
 
       // `GET /stock/{id}/moves` existed since migration 036 with NO caller —
       // every adjustment was written to an audit trail nobody could read.
@@ -3571,8 +3661,31 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
        * duplicated anything reports a number that is too high rather than
        * passing on a "greater than zero" that could never fail.
        */
-      const counts: { what: string; got: number; want: number }[] = [];
+      const counts: { what: string; got: number; want: number; atLeast?: boolean }[] = [];
       const push = (what: string, got: number, want: number) => counts.push({ what, got, want });
+
+      /**
+       * ⚠ THE TWO ROWS THAT CANNOT BE EQUALITIES, AND WHY THEY ARE NAMED.
+       *
+       * Every count above is marked and therefore countable exactly: orders
+       * carry `S10 …`, products `S05 Product NN`, targets `S10 target NN`. A
+       * second run finds its own rows and adds nothing.
+       *
+       * `vikray_stock_moves` has no name, note or reference column — the route
+       * says so itself: an append-only ledger where a wrong movement is
+       * corrected by a counter-movement and never edited. So the suite cannot
+       * mark a movement, cannot recognise one it made, and cannot make the
+       * ledger hold exactly forty-five once anything else has written to it.
+       * Equality here does not test idempotence; it tests that nothing has ever
+       * happened, and it failed at 63.
+       *
+       * The idempotence claim for stock lives in 10.09, where it IS checkable —
+       * `after.human - before.human === typed` — and this sheet keeps the §4
+       * volume as the floor it can honestly be. `atLeast` is spelled per row so
+       * a future relaxation has to be argued for rather than inherited.
+       */
+      const pushFloor = (what: string, got: number, want: number) =>
+        counts.push({ what, got, want, atLeast: true });
 
       const orders = await myOrders(page);
       push('orders', orders.size, N_ORDERS);
@@ -3593,7 +3706,11 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         .filter((r) => String(r.name || '').startsWith('S05 Product '));
       push('stock items with a threshold',
         stock.filter((r) => Number(r.low_stock_threshold) > 0).length, N_STOCK_ITEMS);
-      push('stock items below zero',
+      // A FLOOR, and only because order fulfilment can take a product negative
+      // too: §4 asks that ONE be driven there by hand so the dialog's warning is
+      // seen, which is a state to reach and not a quantity to match. 10.09 is
+      // where that hand-driven one is proved, warning and all.
+      pushFloor('stock items below zero',
         stock.filter((r) => Number(r.quantity_on_hand) < 0).length, 1);
 
       const products = (await apiRows(page, '/api/v1/products'))
@@ -3606,7 +3723,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           if (HUMAN.has(String(m.reason))) humanMoves++; else lifecycleMoves++;
         }
       }
-      push('stock movements recorded by a person', humanMoves, N_STOCK_MOVES);
+      pushFloor('stock movements recorded by a person', humanMoves, N_STOCK_MOVES);
 
       const targets = (await apiRows(page, '/api/v1/vikray/targets'))
         .filter((t) => /^S10 target \d{2}$/.test(String(t.notes || '').trim()));
@@ -3619,18 +3736,22 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
         : 0;
       push('commission payout runs downloaded', payouts, N_PAYOUT_RUNS);
 
+      const ok = (c: typeof counts[number]) => (c.atLeast ? c.got >= c.want : c.got === c.want);
+
       console.log('\n  10.16 — §4 volumes against the live database:\n' +
-        counts.map((c) => `     ${c.got === c.want ? '✓' : '✗'} ${c.what.padEnd(38)} ` +
-          `${String(c.got).padStart(4)} / ${c.want}`).join('\n') +
+        counts.map((c) => `     ${ok(c) ? '✓' : '✗'} ${c.what.padEnd(38)} ` +
+          `${String(c.got).padStart(4)} / ${c.atLeast ? '≥' : ''}${c.want}`).join('\n') +
         `\n     (plus ${lifecycleMoves} stock movements stamped by the order lifecycle, which ` +
         'nobody typed and §4 does not count)\n');
 
-      const wrong = counts.filter((c) => c.got !== c.want);
-      expect(wrong.map((c) => `${c.what}: ${c.got} (wanted ${c.want})`),
+      const wrong = counts.filter((c) => !ok(c));
+      expect(wrong.map((c) => `${c.what}: ${c.got} (wanted ${c.atLeast ? 'at least ' : ''}${c.want})`),
         'a §4 volume is not exact. A count ABOVE the target on a second execution means ' +
         '`ensure()` failed to recognise this suite\'s own marks and duplicated them; a count ' +
         'BELOW it means the run that made them did not finish, or a control it needed does not ' +
-        'exist. All three are reported here and none is ruled on.').toEqual([]);
+        'exist. All three are reported here and none is ruled on. The two rows marked ≥ are the ' +
+        'append-only stock ledger, which carries no mark to recognise — see `pushFloor`.')
+        .toEqual([]);
     });
 
   // ──────────────────────────────────────────────────────────────────────────
