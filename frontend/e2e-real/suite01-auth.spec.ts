@@ -347,9 +347,41 @@ test.describe('Suite 01 — auth & account · Unicode Group', () => {
     const results: string[] = [];
     let refusedAt = 0;
 
+    // ⚠ ONE PAGE LOAD, NOT SIX, AND THE STATUS IS WHAT IS READ.
+    //
+    // This loop called `page.goto('/login')` on every attempt — a full SPA
+    // reload against a Cloudflare-served bundle, 8-15s each. Six of those is
+    // 60-90 seconds, so the attempts STRADDLED THE 1-MINUTE WINDOW and the
+    // counter reset before the sixth. It then reported "no attempt was
+    // rate-limited" against a limiter that was working. Measured directly the
+    // same minute, through the same host:
+    //
+    //     401 401 401 401 401 429 429 429      six POSTs, about two seconds
+    //
+    // and `/api/health` answers `rate_limit_store: "redis"`, so the counters
+    // are shared across workers — the split-bucket defect described at length
+    // below was fixed, and this test could no longer see it either way.
+    //
+    // The form is now submitted repeatedly WITHOUT a reload, which is also what
+    // somebody hammering a login actually does, and each attempt is classified
+    // by its RESPONSE STATUS rather than by the banner's text. Reading the
+    // banner needed a fresh render to tell attempt N from N-1; a status cannot
+    // be stale. The banner's WORDS are still asserted, on the refusal itself,
+    // because the whole point of `authErrorMessage` is that slowapi's own
+    // string never reaches a person.
+    const t0 = Date.now();
+    await page.goto('/login');
+    await expect(page.locator('#au-email')).toBeVisible({ timeout: 30_000 });
+    await page.locator('#au-email').fill(UNICODE_KNOWN_ADDRESS);
+
     for (let attempt = 1; attempt <= 6; attempt += 1) {
-      await page.goto('/login');
-      await fillLogin(page, UNICODE_KNOWN_ADDRESS, `definitely-not-the-password-${attempt}`);
+      await page.locator('#au-password').fill(`definitely-not-the-password-${attempt}`);
+      const [res] = await Promise.all([
+        page.waitForResponse((r) => /\/auth\/login$/.test(new URL(r.url()).pathname)
+          && r.request().method() === 'POST', { timeout: 30_000 }),
+        page.locator('form button[type="submit"]').first().click(),
+      ]);
+      const status = res.status();
 
       // ⚠ THIS ASSERTION WAS A TEST BUG ON ITS FIRST RUN, and it is worth
       // leaving the scar visible because it is the exact failure the programme
@@ -375,11 +407,17 @@ test.describe('Suite 01 — auth & account · Unicode Group', () => {
       await expect(banner.first()).toBeVisible({ timeout: 30_000 });
       const said = ((await banner.first().innerText()) || '').trim();
 
-      if (/Too many attempts/i.test(said)) {
-        results.push(`${attempt}: REFUSED (rate limited) — "${said}"`);
+      if (status === 429) {
+        results.push(`${attempt}: REFUSED 429 — "${said}"`);
         if (!refusedAt) refusedAt = attempt;
+        // Asserted on the refusal itself, which is the only place it can be
+        // wrong: slowapi answers "Rate limit exceeded: 5 per 1 minute" and no
+        // user may ever read it.
+        expect(said, 'a rate-limited sign-in showed the limiter\'s own machine string '
+          + 'instead of the sentence `authErrorMessage` rewrites it to')
+          .toMatch(/Too many attempts/i);
       } else {
-        results.push(`${attempt}: rejected — "${said}"`);
+        results.push(`${attempt}: ${status} — "${said}"`);
       }
 
       // Still on the form, every time. A rate-limited attempt that let the user
@@ -397,9 +435,21 @@ test.describe('Suite 01 — auth & account · Unicode Group', () => {
     // It can never move it later, so `<= 6` is the real invariant.
     //
     // ═══════════════════════════════════════════════════════════════════════
-    // ⚠ THIS ASSERTION FAILS ON STAGING TODAY, AND IT IS A PRODUCT BUG.
-    //   DO NOT LOOSEN IT. Measured 2026-08-28.
+    // ⚠ THE SPLIT-BUCKET DEFECT BELOW IS FIXED. THE HISTORY STAYS.
+    //   Raised 2026-08-28 · closed and re-measured 2026-08-31.
     // ═══════════════════════════════════════════════════════════════════════
+    // `/api/health` now answers `rate_limit_store: "redis"`, and six POSTs
+    // through `api.kartavaya.com` in one window read 401 401 401 401 401 429 —
+    // one counter, refusing exactly at the sixth. The account of the defect is
+    // kept because it is the reasoning that found it, and because the shape
+    // ("an INTERMITTENT limit is the signature of a split bucket") is the part
+    // worth having the next time a limit half-works.
+    //
+    // ⚠ IT FAILED AGAIN ON 2026-08-31 AND THE PRODUCT WAS INNOCENT. The loop
+    // reloaded the page for every attempt and took 60-90s, straddling the
+    // 1-minute window; see the note above the loop. The elapsed time is now
+    // printed in the failure message so nobody re-opens this from the same
+    // evidence a third time.
     // Six bad passwords through the form: all six answered 401, none refused.
     // Before accusing the product, the endpoint was measured directly —
     //
@@ -431,7 +481,15 @@ test.describe('Suite 01 — auth & account · Unicode Group', () => {
     //
     // Fix is a shared store (`Limiter(..., storage_uri=…)`) or one worker —
     // not a weaker assertion here.
-    expect(refusedAt, `no attempt was rate-limited:\n  ${results.join('\n  ')}`).toBeGreaterThan(0);
+    const secs = Math.round((Date.now() - t0) / 1000);
+    expect(refusedAt, `no attempt was rate-limited in ${secs}s:\n  `
+      + results.join('\n  ')
+      + (secs >= 55
+        ? `\n\n  ⚠ THE SIX ATTEMPTS TOOK ${secs}s, SO THEY STRADDLED THE `
+          + '1-minute window and the counter reset mid-run. That is this test being '
+          + 'slow, not the limiter being absent — measure the endpoint directly '
+          + 'before reporting a product defect.'
+        : '')).toBeGreaterThan(0);
     expect(refusedAt).toBeLessThanOrEqual(6);
 
     // And the machine string must never reach the first screen of the product.
