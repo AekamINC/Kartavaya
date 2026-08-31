@@ -357,18 +357,43 @@ const ENGINE_FAMILIES = [
   'analytics', 'approval', 'crm', 'esign', 'hr', 'invoice', 'marketing',
   'payroll', 'sales', 'task', 'whatsapp',
 ];
-/** The seven `NiyamPage.FAMILIES` offers as filter chips, minus 'all'. */
-const CHIP_FAMILIES = [
-  'task', 'approval', 'invoice', 'crm', 'sales', 'hr', 'analytics',
-];
+/**
+ * ⚠ THIS WAS A FROZEN COPY OF THE DEFECT, AND IT OUTLIVED THE FIX.
+ *
+ * It read "the seven `NiyamPage.FAMILIES` offers as filter chips" and listed
+ * them, so `16.02b` asserted BOTH "the chips are exactly these seven" and
+ * "the engine's eleven families all have a chip" — a contradiction that could
+ * only be satisfied while the product was wrong.
+ *
+ * Fixed 2026-08-31: the chips are now DERIVED from the catalogue, so the two
+ * lists are the same list and there is nothing left to freeze. Kept as an
+ * alias rather than deleted, because the assertion it feeds is the one worth
+ * having — chips EXACTLY the engine's families, neither short (a rule nobody
+ * can filter to) nor long (a filter that matches nothing).
+ */
+const CHIP_FAMILIES = ENGINE_FAMILIES;
 
 /** The six verbs `GET /catalog` serves. */
 const ALL_VERBS = [
   'invoice.remind_customer', 'notify.send', 'report.send',
   'task.add_comment', 'task.create', 'task.set_status',
 ];
-/** The two `ActionCard` renders configuration fields for. */
-const CONFIGURABLE_VERBS = ['notify.send', 'task.set_status'];
+/**
+ * The verbs that take NO configuration, by design — everything they need is on
+ * the event that triggered them.
+ *
+ *   report.send                `validate_steps` REFUSES any key but `verb`;
+ *                              the schedule row carries every setting.
+ *   invoice.remind_customer    `InvoiceRemindCustomer.run` reads `config`
+ *                              nowhere, and `validate.py` has no branch for it.
+ *
+ * ⚠ THIS LIST USED TO BE ITS INVERSE — `CONFIGURABLE_VERBS`, a frozen copy of
+ * the two verbs the editor happened to handle. That framing made the check
+ * "has the editor changed", when the question is "can a person configure what
+ * the engine can run". Inverted 2026-08-31, when four of the six became
+ * configurable and the frozen list went red for the right reason.
+ */
+const NO_CONFIG_VERBS = ['report.send', 'invoice.remind_customer'];
 
 // ════════════════════════════════════════════════════════════════════════════
 // §4 — THE FOURTEEN RULES
@@ -1542,7 +1567,14 @@ test('16.02b every family the engine groups by has a filter chip', async ({ page
   const chipKeys = await page.locator('.niyam-filters .niyam-chip').evaluateAll(
     (bs) => bs.map((b: any) => b.getAttribute('data-family') || 'all'));
   const offeredFamilies = chipKeys.filter((k) => k !== 'all').sort();
-  expect(offeredFamilies, 'the chip set has moved').toEqual([...CHIP_FAMILIES].sort());
+  // EXACTLY the engine's families. The `missing` check below is the half this
+  // suite was written for; this is the other half, and it is why the list is no
+  // longer written down twice: a chip for a family the engine does not group by
+  // is a filter that matches nothing, which reads to a person exactly like a
+  // module with no data in it.
+  expect(offeredFamilies,
+    'the chips and the engine disagree about which families exist')
+    .toEqual([...CHIP_FAMILIES].sort());
 
   // Each chip must also NARROW the list, not merely paint pressed — a filter
   // that changes nothing is a dead control.
@@ -1655,12 +1687,24 @@ test('16.03 every action verb the catalogue offers can actually be configured, a
         `${d.inputs} input(s)`).join(' · '));
 
     // A verb with no fields beyond the verb picker itself is a verb the product
-    // offers and cannot configure. `report.send` is the ONE legitimate case —
-    // `validate_steps` refuses any key but `verb` on it, by design, because the
-    // schedule row carries every setting.
+    // offers and cannot configure — unless it genuinely needs none, which two
+    // of the six do (see NO_CONFIG_VERBS).
+    //
+    // ⚠ AND THOSE TWO MUST SAY SO. An empty card reads as a broken screen, not
+    // as "you are already finished", and a person who has just chosen a verb
+    // cannot tell the two apart. So the exemption is not a free pass: the card
+    // has to carry an explanation instead of fields.
     const unconfigurable = verbs.filter((v) =>
-      v !== 'report.send' && drawn[v].selects <= 1 && drawn[v].inputs === 0);
+      !NO_CONFIG_VERBS.includes(v) && drawn[v].selects <= 1 && drawn[v].inputs === 0);
     ledgerWrite({ verbCards: drawn, unconfigurableVerbs: unconfigurable });
+    for (const v of NO_CONFIG_VERBS) {
+      await verbSelect.selectOption(v);
+      await expect(act.locator('.niyam-muted'),
+        `${v} takes no settings and the card says nothing — an empty card reads ` +
+        'as a broken screen rather than as a finished one')
+        .toContainText(/takes no settings/i);
+    }
+
     expect(unconfigurable,
       `${unconfigurable.length} action verbs are offered by the picker and have NO ` +
       `configuration fields at all: ${unconfigurable.join(', ')}. Choosing one gives a ` +

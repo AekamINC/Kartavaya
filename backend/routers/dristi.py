@@ -139,10 +139,24 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
         # query joined `tm.id` twice, so it raised UndefinedColumn and this
         # branch 500'd every time: `GET /exports/overview` had never returned,
         # and neither had a scheduled report of type "overview".
+        # ⚠ `archived_at IS NULL` WAS MISSING, AND THE COMMENT TWELVE LINES
+        # BELOW ALREADY STATED THE RULE IT BREAKS: "an export that disagrees
+        # with the screen it was taken from is worse than either being wrong
+        # alone." The revenue branch got the guards; the tasks branch did not.
+        #
+        # `/overview`'s own task count (this file, `total_tasks`) filters
+        # `archived_at IS NULL`. This one did not, so the CSV a partner mails
+        # to a client counted archived tasks the screen had already dropped.
+        # Suite 12.10 measured the delta on the reference org: **CSV 108
+        # against the screen's 104.**
+        #
+        # The guard is written the same way the tile writes it, so the two
+        # cannot answer differently.
         tasks = await pool.fetchval(
             "SELECT COUNT(*) FROM tasks t "
             "JOIN teams tm ON tm.team_id = t.team_id "
-            "WHERE tm.org_id=$1::uuid AND tm.deleted_at IS NULL",
+            "WHERE tm.org_id=$1::uuid AND tm.deleted_at IS NULL "
+            "AND t.archived_at IS NULL",
             org_id,
         )
         contacts = await pool.fetchval(
@@ -204,9 +218,22 @@ async def _fetch_report_data(pool, org_id: str, report_type: str,
             + still_on_the_rolls("e"), org_id)
         return {"active_employees": count}
     elif report_type == "sales":
+        # ⚠ `is_active = TRUE` WAS MISSING, and `/v1/dristi/sales`'s
+        # `status_split` — the screen this file exports — has it. So the CSV
+        # carried a whole STATUS the screen does not draw.
+        #
+        # Measured by suite 12.10 on the reference org 2026-08-31: the screen
+        # shows 5 statuses; the CSV showed 6, the extra being a `cancelled` row
+        # of 6 orders worth 242,725 that exists in the file and nowhere on the
+        # page. A partner reading the export sees cancelled orders in their
+        # sales figures and cannot find them in the product.
+        #
+        # Same rule as the tasks branch above and the revenue branch below: the
+        # export carries the SCREEN's guards, verbatim, or the two disagree and
+        # the reader has no way to tell which to believe.
         rows = await pool.fetch(
             "SELECT status, COUNT(*) AS count, SUM(total) AS total "
-            "FROM public.vikray_orders WHERE org_id=$1::uuid "
+            "FROM public.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE "
             + ("AND order_date BETWEEN $2::date AND $3::date " if win else "")
             + "GROUP BY status", org_id, *wargs)
         return {"orders_by_status": [dict(r) for r in rows]}

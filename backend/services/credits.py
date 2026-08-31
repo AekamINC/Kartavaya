@@ -253,6 +253,18 @@ def next_period(period: date) -> date:
     return date(period.year + (period.month // 12), (period.month % 12) + 1, 1)
 
 
+def previous_period(period: date) -> date:
+    """The first day of the month BEFORE `period`.
+
+    Exists for one caller — the wallet bootstrap in `balance_of`, which has to
+    stamp a new row as NOT YET ROLLED so the first `roll_period` grants the
+    plan's allowance. See the comment there for what stamping the current
+    period instead cost.
+    """
+    return (date(period.year - 1, 12, 1) if period.month == 1
+            else date(period.year, period.month - 1, 1))
+
+
 def _human_date(d: date) -> str:
     """`1 September 2026`. Absolute, never "next month" — a relative date in a
     refusal is a date the reader has to compute while annoyed."""
@@ -521,12 +533,48 @@ async def balance_of(conn, org_id: str, *, for_update: bool = False) -> Balance:
     org = await _org_row(conn, org_id)
     w = await _wallet_row(conn, org_id, for_update)
     if w is None:
+        # ── ⚠ A NEW WALLET IS BORN UNROLLED, NOT ALREADY-ROLLED ────────────
+        #
+        # `period_start` was `current_period()`, and `roll_period` returns
+        # early at `if bal.period_start >= now_period`. So a wallet created
+        # today was stamped "already granted for this month" while holding
+        # zero, and the plan's `monthly_credits` was not granted until the 1st
+        # of the NEXT month.
+        #
+        # A customer who signs up on the 2nd gets nothing for twenty-nine days
+        # of a plan they are paying for, and every Sahayak surface answers 402.
+        # Nothing raises, nothing logs — the wallet reads as a legitimately
+        # empty one.
+        #
+        # Measured live 2026-08-31, two orgs created 2026-08-28:
+        #
+        #     UK AekamINC     monthly_credits 2000   balance 0   ledger rows 0
+        #     Unicode Group   monthly_credits 1000   balance 0   ledger rows 0
+        #
+        # Both had gone three days with a paid allowance and no way to reach
+        # it: the only top-up doors (`POST /v1/hub/org/credits/topup` and the
+        # per-client one) are `require_platform_role(SAHAYAK_COMMERCIAL_ROLES)`,
+        # i.e. the Aekam console. It also blocked twelve of suite 14's twenty
+        # tests, all cascading from one empty wallet.
+        #
+        # `previous_period(current_period())` rather than granting inline: the
+        # allowance is then given by `roll_period` itself, on the very next
+        # read (`GET /v1/hub/org/credits` calls it), through the audited path
+        # that writes the `grant` ledger row and carries the member ceilings
+        # forward. A second inline grant here would be a second implementation
+        # of the one thing this module exists to get right, and it would write
+        # no ledger row — the wallet would hold credits no `SUM(amount)` could
+        # explain, which `roll_period`'s own docstring records as the bug that
+        # made every wallet in this product unreconcilable.
+        #
+        # The `expire` half of the roll is a no-op here: a new wallet has no
+        # unused allowance to forfeit, so only the `grant` row is written.
         await conn.execute(
             "INSERT INTO public.hub_org_credits "
             "(org_id, balance, allowance_balance, purchased_balance, period_start, credits_reset_at) "
             "VALUES ($1::uuid, 0, 0, 0, $2::date, NOW()) "
             "ON CONFLICT (org_id) DO NOTHING",
-            org_id, current_period(),
+            org_id, previous_period(current_period()),
         )
         w = await _wallet_row(conn, org_id, for_update)
     if w is None:
@@ -1200,7 +1248,32 @@ async def refund(
     orig_period = original["period_start"] or current_period()
 
     bal = await balance_of(conn, org_id, for_update=True)
-    period = bal.period_start
+    # ⚠ THE PERIOD THE ALLOWANCE IS IN NOW, NOT THE LAST ONE THE WALLET WAS
+    # STAMPED WITH. This was `bal.period_start`, which is a LAGGING value —
+    # it only becomes the current period when something calls `roll_period`.
+    #
+    # The rule below asks one question: "has the allowance that paid for this
+    # spend been reset since?" That is `orig_period != current_period()`.
+    # Reading it off the wallet was wrong in both directions:
+    #
+    #  · Too eager. A wallet is bootstrapped stamped as NOT YET ROLLED, so a
+    #    new org's `period_start` is last month until its first roll. A refund
+    #    of a spend made THIS month then read as cross-period and came back as
+    #    purchased — the customer keeps the credits, so nothing is lost, but
+    #    the bucket is wrong and the ledger line says something untrue.
+    #
+    #  · TOO SLACK, AND THIS ONE COSTS THE CUSTOMER. On the 1st, before
+    #    anything has rolled, `bal.period_start` is LAST month and so is
+    #    `orig_period` — they compare EQUAL, the rule does not fire, and the
+    #    allowance portion is returned into a bucket the next roll zeroes. The
+    #    refund is destroyed. That predates the bootstrap change and is the
+    #    reason this is a fix rather than an adjustment.
+    #
+    # Deliberately NOT `roll_period` here: rolling inside a refund would write
+    # a `grant` ledger row as a side effect of returning money, and the two
+    # events have nothing to do with each other. The comparison needs today's
+    # date, not a state change.
+    period = current_period()
 
     alw_back = abs(int(original["allowance_delta"] or 0))
     pur_back = abs(int(original["purchased_delta"] or 0))

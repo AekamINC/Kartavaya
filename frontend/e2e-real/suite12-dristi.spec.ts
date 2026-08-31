@@ -2188,9 +2188,38 @@ test.describe('Suite 12 · Dristi — reports, analytics, and every figure tied 
 
       // The org side is a single SQL aggregate, taken in the same moment.
       const overview = await apiOne(page, '/api/v1/dristi/overview');
-      rec.eq('Σ invoiced over every client report = the org\'s invoiced total',
-        `Σ over ${rows.length} client reports`, sumInvoiced,
+      // ⚠ PLUS THE INVOICES THAT ARE ON NO CLIENT. This asserted a bare
+      // equality and could not hold: an invoice may legitimately carry no
+      // `client_id` — one can be raised before the CRM record exists, the same
+      // principle "GSTIN/PAN/TAN block nothing" states about a different field
+      // — and no client report can contain it.
+      //
+      // Measured live 2026-08-31: 6 such invoices, ₹71,508, against 29 client
+      // reports summing ₹40,15,831 and a headline of ₹40,87,339. Every
+      // ATTACHED invoice was checked too (0 orphaned ids, 0 on an inactive
+      // client), so the bucket is the whole of the difference.
+      //
+      // Neither number was wrong and neither was changed. What was wrong is
+      // that the difference was invisible, so the overview now REPORTS it —
+      // `revenue.unattached_invoiced` — and the reconciliation closes against
+      // the figure the product itself publishes rather than being relaxed.
+      //
+      // Strictly stronger than the old line: it fails if a rupee goes missing
+      // anywhere, AND if the unattached figure stops agreeing with the
+      // invoices behind it.
+      const unattached = Number(overview?.revenue?.unattached_invoiced || 0);
+      rec.eq('Σ invoiced over every client report + the unattached bucket = the org\'s total',
+        `Σ over ${rows.length} client reports + ${unattached} on no client`,
+        sumInvoiced + unattached,
         'GET /v1/dristi/overview revenue.total_invoiced', Number(overview?.revenue?.total_invoiced));
+
+      // And the bucket is REPORTED, not merely subtracted. A figure the API
+      // does not publish cannot be shown to the partner doing this subtraction
+      // on screen, which was the actual defect.
+      rec.eq('the overview names how many invoices are on no client',
+        'revenue.unattached_count is a number',
+        Number.isFinite(Number(overview?.revenue?.unattached_count)) ? 1 : 0,
+        'it must be', 1, 0);
       rec.eq('Σ collected over every client report = the org\'s collected total',
         `Σ over ${rows.length} client reports`, sumCollected,
         'GET /v1/dristi/overview revenue.total_collected', Number(overview?.revenue?.total_collected));
@@ -2689,9 +2718,38 @@ test.describe('Suite 12 · Dristi — reports, analytics, and every figure tied 
       const allStages = stages.reduce((a, s) => a + Number(s.value || 0), 0);
       const openStages = stages.filter((s) => s.stage !== 'Won' && s.stage !== 'Lost')
         .reduce((a, s) => a + Number(s.value || 0), 0);
-      rec.eq('the Pipeline tab\'s stage values add up to the Overview deal total',
+      // ⚠ THIS COMPARED ALL STAGES AGAINST THE HEADLINE, AND THE FILE ALSO
+      // COMPARES THE OPEN STAGES AGAINST THE SAME HEADLINE (below). Both can
+      // only hold on an org where no deal has ever closed — so the pair was a
+      // contradiction, and it read as satisfied only because the product was
+      // on the wrong side of it: `deals.pipeline_value` was SUM(value) over
+      // EVERY deal while both strips printed it as "Open pipeline".
+      //
+      // That was fixed on 2026-08-31 (the headline is now the open pipeline,
+      // and migration 242 backfilled the close timestamps it reads). The
+      // all-stages reading has no headline to equal any more, and inventing
+      // one would put the old defect back.
+      //
+      // What survives is the DECOMPOSITION, which is the real invariant and a
+      // strictly stronger check than either half was: the funnel's own closed
+      // stages plus the headline must be the funnel's total. It catches a
+      // stage the headline wrongly includes AND one it wrongly drops.
+      const closedStages = stages
+        .filter((s) => s.stage === 'Won' || s.stage === 'Lost')
+        .reduce((a, s) => a + Number(s.value || 0), 0);
+      rec.eq('the Pipeline tab decomposes into the headline plus its closed stages',
         'Σ over GET /v1/dristi/pipeline stages', allStages,
-        'GET /v1/dristi/overview deals.pipeline_value', Number(overview?.deals?.pipeline_value));
+        'GET /v1/dristi/overview deals.pipeline_value + the funnel\'s Won and Lost',
+        Number(overview?.deals?.pipeline_value) + closedStages);
+
+      // And the funnel's Won agrees with the Overview's, which still counts on
+      // the STAGE — the two surfaces must not drift apart on the closed side
+      // just because the open side is now measured differently.
+      rec.eq('the Pipeline tab\'s Won value = the Overview Won value',
+        'Σ over GET /v1/dristi/pipeline stages where stage = Won',
+        stages.filter((s) => s.stage === 'Won')
+          .reduce((a, s) => a + Number(s.value || 0), 0),
+        'GET /v1/dristi/overview deals.won_value', Number(overview?.deals?.won_value));
 
       // ⚠ THE LABEL. `deals.pipeline_value` is SUM(value) over EVERY deal and
       // both the KPI strip and the Overview tab print it as "Open pipeline".
@@ -2733,10 +2791,25 @@ test.describe('Suite 12 · Dristi — reports, analytics, and every figure tied 
 
       // Deal-level pivot, a third reading.
       const qDeals = await query(page, { source: 'deals', group_by: 'stage', measure: 'sum' }) as any[];
-      rec.eq('the pivot engine\'s deals-by-stage total = the Overview deal total',
+      // Same correction as the funnel above: the pivot groups EVERY stage, so
+      // its total is comparable to the funnel's total and not to a headline
+      // that now means open pipeline. Comparing the two all-stage readings to
+      // each other is what this line was really for — a third engine over the
+      // same table — and it no longer depends on how the headline is scoped.
+      rec.eq('the pivot engine\'s deals-by-stage total = the Pipeline tab\'s',
         'Σ over POST /v1/dristi/query deals by stage',
         qDeals.reduce((a, r) => a + Number(r.value || 0), 0),
-        'GET /v1/dristi/overview deals.pipeline_value', Number(overview?.deals?.pipeline_value));
+        'Σ over GET /v1/dristi/pipeline stages', allStages);
+
+      // …and the pivot's OPEN subtotal is the headline, which is the assertion
+      // the old line was reaching for. Both readings are now scoped the same
+      // way before they are compared.
+      rec.eq('the pivot engine\'s OPEN deals total = the "Open pipeline" headline',
+        'Σ over POST /v1/dristi/query deals by stage, minus Won and Lost',
+        qDeals.filter((r: any) => r.stage !== 'Won' && r.stage !== 'Lost')
+          .reduce((a, r) => a + Number(r.value || 0), 0),
+        'GET /v1/dristi/overview deals.pipeline_value',
+        Number(overview?.deals?.pipeline_value));
 
       // ══ PEOPLE ════════════════════════════════════════════════════════════
       const headcount = await runOf('manav.headcount', 'stock');
