@@ -16,7 +16,10 @@
 // forecast you can accidentally edit by clicking is worse than one you cannot.
 import React, { useState, useEffect } from 'react';
 import { api, rows, body } from '../../lib/api';
+import { apiErrorText } from '../../lib/apiError';
 import { Empty, Shimmer } from '../../components/editorial';
+import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import { stageColor } from './_shared';
 import { useLanguage } from '../../components/CustomizePanel';
 import { secondaryOf } from '../../lib/labels';
@@ -77,13 +80,42 @@ export default function PipelineTab() {
   const [owners, setOwners] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  /* ── THE PIPELINES THEMSELVES, WHICH THIS TAB NEVER ASKED FOR ──────────
+     `POST /v1/graha/pipelines` has existed since the module shipped and a
+     grep for `pipelines` across `frontend/src` returned ONE hit: the word
+     inside a module-catalogue blurb. Nothing called it, no screen listed
+     them, and this tab's own empty state sent the reader to a Deals tab that
+     has no such control either. Suite 04.18 found it by looking for the
+     button and enumerating every one that is actually on those two screens.
+     What happened instead: `create_deal` silently INSERTs a pipeline called
+     "Default Pipeline" the first time a deal is raised without one. So every
+     org has exactly one pipeline, nobody typed it, and §4's "2 pipelines"
+     could not be reached by a person. */
+  const [pipelines, setPipelines] = useState([]);
+  const [pipelineId, setPipelineId] = useState('');
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const { pushToast } = useToast();
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change the pipeline' });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [pipelineId]);
 
   async function load() {
     setErr('');
+    // The list of pipelines is an ENRICHMENT and must not be able to take the
+    // board down with it — the same standing this file already gives the
+    // follow-up map, the forecast and the member directory. A 403 here leaves
+    // the picker absent and the default board exactly as it was.
     try {
-      const r = body(await api.get('/v1/graha/deals/kanban'));
+      const pl = rows(await api.get('/v1/graha/pipelines'));
+      setPipelines(pl);
+    } catch { /* no picker; the default board still draws */ }
+    try {
+      // `deals_kanban` takes `pipeline_id` and falls back to the org's default
+      // when it is absent, so an unset selection is the behaviour this tab has
+      // always had rather than a new empty case.
+      const q = pipelineId ? `?pipeline_id=${encodeURIComponent(pipelineId)}` : '';
+      const r = body(await api.get(`/v1/graha/deals/kanban${q}`));
       setStages(r.stages || []);
       setColumns(r.columns || {});
     } catch (e) {
@@ -143,14 +175,78 @@ export default function PipelineTab() {
     } catch { setOwners(null); }
   }
 
+  async function createPipeline(e) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      // `stages` is left to the server's own default — the six this module
+      // spells everywhere else. A stage editor is a separate job and shipping
+      // the create control without one is still the difference between "cannot
+      // be done at all" and "cannot yet be customised".
+      const res = await api.post('/v1/graha/pipelines', { name });
+      pushToast({ title: `Pipeline "${name}" created`, type: 'success' });
+      setNewName('');
+      const made = body(res)?.id;
+      // Select it immediately. A board created and not shown is the shape this
+      // whole change exists to close.
+      if (made) setPipelineId(String(made)); else load();
+    } catch (e2) {
+      pushToast({ title: apiErrorText(e2, 'Could not create the pipeline'), type: 'error' });
+    } finally { setCreating(false); }
+  }
+
+  /** The picker and the create box, drawn above the board AND above the empty
+   *  state — the empty state is exactly where somebody needs them most. */
+  const controls = (
+    <div className="gpipe__bar">
+      {pipelines.length > 1 && (
+        <label className="gr__f">
+          <span className="gr__fl">Pipeline</span>
+          <select className="k-input" value={pipelineId}
+            onChange={e => setPipelineId(e.target.value)}>
+            {pipelines.map(p => (
+              <option key={p.id} value={String(p.id)}>
+                {p.name}{p.is_default ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <form className="gpipe__new" onSubmit={createPipeline}>
+        <label className="gr__f">
+          <span className="gr__fl">New pipeline</span>
+          <input className="k-input" value={newName} maxLength={80}
+            placeholder="Retainers, Audit work, Referrals…"
+            onChange={e => setNewName(e.target.value)} />
+        </label>
+        <button type="submit" className="k-btn k-btn--ghost"
+          disabled={!canWrite || creating || !newName.trim()}
+          title={denial || undefined}>
+          {creating ? 'Creating…' : 'Create'}
+        </button>
+      </form>
+    </div>
+  );
+
   if (loading) return <Shimmer count={6} />;
   if (err) return <div className="note note--warn" role="status">{err}</div>;
   if (!stages.length) {
     return (
-      <Empty
-        title="No pipeline set up yet"
-        sub="A pipeline defines the stages a deal moves through. Create one from the Deals tab and your board appears here."
-      />
+      <>
+        {controls}
+        {/* ⚠ THE OLD SENTENCE HERE WAS FALSE: "Create one from the Deals tab
+            and your board appears here". The Deals tab has never carried a
+            control that makes a pipeline — Suite 04.18 enumerated every button
+            on both screens to establish it. An empty state that names a place
+            with nothing in it costs the reader the trip and teaches them the
+            product is lying to them. The control is now on this line. */}
+        <Empty
+          title="No pipeline set up yet"
+          sub="A pipeline defines the stages a deal moves through. Name one above and your board appears here."
+        />
+      </>
     );
   }
 
@@ -169,6 +265,7 @@ export default function PipelineTab() {
 
   return (
     <>
+      {controls}
       {stale > 0 && (
         <p className="gpipe__lede">
           {stale} {stale === 1 ? 'deal on this board has' : 'deals on this board have'} no follow-up scheduled.

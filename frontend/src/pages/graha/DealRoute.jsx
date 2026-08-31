@@ -88,6 +88,12 @@ export default function DealRoute() {
      existed. Same directory as `TargetsTab`'s salesperson picker, so the two
      sides of that join are chosen from one list. */
   const [members, setMembers] = useState([]);
+  /* The org's pipelines, for the MOVE. `_DEAL_COLS` has always carried
+     `pipeline_id` and no screen has ever sent one, so a deal landed on
+     whatever `create_deal` bootstrapped and stayed there. Without this a
+     second pipeline is a board that can never hold anything — which would
+     make PipelineTab's new create control a dead end rather than a fix. */
+  const [pipelines, setPipelines] = useState([]);
 
   /**
    * A `users.user_id` resolved to the person's NAME, or '' when it cannot be.
@@ -159,6 +165,17 @@ export default function DealRoute() {
     return () => { dead = true; };
   }, []);
 
+  /* Same shape, separately: `/pipelines` is on the plain module gate rather
+     than on org_admin, so tying it to the members fetch would hide it from
+     every non-admin for no reason. */
+  useEffect(() => {
+    let dead = false;
+    api.get('/v1/graha/pipelines')
+      .then(r => { if (!dead) setPipelines(rows(r)); })
+      .catch(() => { /* the field simply does not appear */ });
+    return () => { dead = true; };
+  }, []);
+
   /**
    * Closing is a navigation, so Back, Escape and the × all mean one thing.
    *
@@ -208,6 +225,11 @@ export default function DealRoute() {
       // opened without this key and saved with the stage still Lost would send
       // an empty reason over a real one.
       lost_reason: deal.lost_reason || '',
+      // Seeded from the row and never blank: `update_deal` answers 400 to an
+      // empty `pipeline_id` on purpose — "A deal must stay on a pipeline",
+      // because a deal with none has quietly left every board in the
+      // organisation while still counting in the list and in the CRM report.
+      pipeline_id: deal.pipeline_id ? String(deal.pipeline_id) : '',
       custom_data: deal.custom_data || {},
       // '' is a legitimate value and CLEARS the owner: `update_deal` binds
       // `assigned_to=NULLIF($n,'')`, so unassigning is a real edit and not a
@@ -238,6 +260,10 @@ export default function DealRoute() {
          exists to hold, and a stage corrected by hand is not a retraction of
          it. Omitting the key leaves the column alone; sending '' would not. */
       if (payload.stage !== 'Lost') delete payload.lost_reason;
+      // A deal whose pipeline could not be read (the enrichment 403'd, or the
+      // row predates one) must not have the key sent at all — '' is the one
+      // value this column refuses.
+      if (!payload.pipeline_id) delete payload.pipeline_id;
       await api.patch(`/v1/graha/deals/${dealId}`, payload);
       pushToast({ title: 'Deal updated', type: 'success' });
       setDraft(null);
@@ -379,6 +405,20 @@ export default function DealRoute() {
                       <select className="k-input" value={draft.stage}
                         onChange={e => setDraft({ ...draft, stage: e.target.value })}>
                         {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ))}
+                    {/* Only when there is somewhere else to go. One pipeline
+                        means a select with a single option nobody can get
+                        wrong; the field appears the moment a second exists. */}
+                    {pipelines.length > 1 && field('Pipeline', (
+                      <select className="k-input" value={draft.pipeline_id}
+                        onChange={e => setDraft({ ...draft, pipeline_id: e.target.value })}>
+                        {!draft.pipeline_id && <option value="">— Unchanged —</option>}
+                        {pipelines.map(pp => (
+                          <option key={pp.id} value={String(pp.id)}>
+                            {pp.name}{pp.is_default ? ' (default)' : ''}
+                          </option>
+                        ))}
                       </select>
                     ))}
                     {field('Probability (%)', <input className="k-input" type="number" min="0" max="100"

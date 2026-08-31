@@ -139,6 +139,12 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
      them, but no create form could set one and no screen could read one — so a
      territory could be defined and never used. */
   const [territories, setTerritories] = useState([]);
+  /* The org's pipelines. `DealCreate.pipeline_id` has always been accepted and
+     `resolve_deal_pipeline` has always proved it belongs to the caller's org —
+     no screen ever sent one, so every deal in the product landed on whatever
+     `create_deal` bootstrapped. A second pipeline could therefore be made (once
+     PipelineTab grew the control) and would stay empty for ever. Suite 04.18. */
+  const [pipelines, setPipelines] = useState([]);
   /* ── THE DEAL'S OWNER, AND WHY THIS FIELD HAD TO EXIST ──────────────────
      `graha_deals.assigned_to` is written by `create_deal`, sits in
      `update_deal`'s `_DEAL_COLS`, and is READ in three places — the pipeline
@@ -162,7 +168,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
      `scripts/check-rendered-ids.mjs` admits and the one the territory and
      client dropdowns already use. */
   const [members, setMembers] = useState([]);
-  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '' });
+  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '', pipeline_id: '' });
   const [saving, setSaving] = useState(false);
 
   /** Open one deal. The single door — see the note at the top of this file. */
@@ -253,14 +259,16 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
   // leaves that select empty rather than blocking the form.
   async function loadFormData() {
     try {
-      const [cr, clr, tr] = await Promise.all([
+      const [cr, clr, tr, pl] = await Promise.all([
         api.get('/v1/graha/contacts'),
         api.get('/v1/graha/clients'),
         api.get('/v1/graha/territories'),
+        api.get('/v1/graha/pipelines'),
       ]);
       setContacts(rows(cr));
       setDealClients(rows(clr));
       setTerritories(rows(tr));
+      setPipelines(rows(pl));
     } catch { /* selects offer "None" only */ }
     // Separately, and deliberately not inside the Promise.all above:
     // `/v1/org/members` is org_admin+ only, so a plain member gets a 403 and
@@ -280,7 +288,7 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
       await api.post('/v1/graha/deals', { ...form, value: parseFloat(form.value) || 0 });
       pushToast({ title: 'Deal created', type: 'success' });
       setShowForm(false);
-      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '' });
+      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '', pipeline_id: '' });
       load();
     } catch (e2) { pushToast({ title: apiErrorText(e2, 'Failed'), type: 'error' }); }
     finally { setSaving(false); }
@@ -533,6 +541,23 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
                 {members.map(m => (
                   <option key={m.user_id} value={m.user_id}>
                     {m.full_name || m.email}
+                  </option>
+                ))}
+              </select>
+            ))}
+            {/* ⚠ ONLY WHEN THERE IS A CHOICE TO MAKE. With one pipeline the
+                select would be a control with a single option that cannot be
+                got wrong, and `create_deal` already puts the deal there. It
+                appears the moment a second exists, which is also the moment it
+                starts to matter. Blank sends nothing and keeps the server's own
+                default — the behaviour every deal in the product has had. */}
+            {pipelines.length > 1 && field('Pipeline', (
+              <select className="k-input" value={form.pipeline_id || ''}
+                onChange={e => setForm({ ...form, pipeline_id: e.target.value })}>
+                <option value="">— The default —</option>
+                {pipelines.map(pp => (
+                  <option key={pp.id} value={String(pp.id)}>
+                    {pp.name}{pp.is_default ? ' (default)' : ''}
                   </option>
                 ))}
               </select>
