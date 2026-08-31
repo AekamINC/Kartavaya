@@ -7591,3 +7591,62 @@ where the dock is shown at all.
 The `th.tbl__th--rz` self-block is the more suspicious of the three — a resize
 handle covered by its own header cell cannot be reached by mouse at all — and is
 not yet diagnosed.
+
+---
+
+## 2026-08-31 — SHIPPED, AND VERIFIED IN PRODUCTION
+
+Six commits, `47a8ade6..503725e0`, pushed to `main`. **Railway deployment
+`b873f7f7` — SUCCESS**, commit `503725e0`; Cloudflare Pages rebuilt to
+`index-Fyg4wIsZ.js`.
+
+### Two things caught in the pre-commit audit rather than shipped
+
+**`KanbanView.jsx` showed 796 insertions / 796 deletions** — a whole-file
+line-ending flip left by my own mutation script, with byte-identical content
+(`git diff --ignore-cr-at-eol` empty). Reverted. Every other changed file was
+checked for the same thing; it was the only one.
+
+**A backend test failing** (`test_org_settings_amendable.py`, 4 cases) was
+proved **pre-existing** by running it in a temporary worktree at pristine HEAD —
+the same 4 failures. Not a regression. A worktree rather than `git stash`,
+because the stash is shared across worktrees in this repo and popping it earlier
+today failed mid-apply.
+
+### The fixes, proved live rather than assumed
+
+**The boot-time privilege grant — proved by the restart itself.** The deploy
+restarted the backend at 06:19. Had that INSERT still been there, the two e2e
+accounts would have gained `platform_admin` on the way up:
+
+| | before | after the restart |
+|---|---|---|
+| `e2e-owner` platform grants | 0 | **0** |
+| `e2e-approver` platform grants | 0 | **0** |
+| total null-org grants | 11 | **11** |
+
+**The analytics 500 is gone.** `GET /v1/analytics/views` answered **200 for
+every module** (ganit, graha, vetana, core) where it previously answered 500 for
+all of them, and returns three populated presets — `founder` (7 widgets) and
+`finance` (9) being exactly the ones carrying the report widget that raised
+`KeyError`. The views bar, saved views and the metric alert bell are reachable
+for the first time, and the Finance console errors that wore this as a CORS
+message go with it.
+
+**The revenue fix is live and exact — and the defect had GROWN.** The deployed
+dashboard returns `total_revenue: 338290.0`, matching the corrected SQL to the
+paisa. The old formula on today's data would report **1,782,610.00**:
+
+    when found (18 invoices, 7 drafts)   817,016  vs    257,696   → 3.2x
+    at deploy  (25 invoices, 8 drafts) 1,782,610  vs    338,290   → 5.3x
+
+It grows with every draft, which is inherent to what it was doing.
+
+**The frontend fixes are in the served bundles**, checked by marker across three
+chunks: "Choose a month" and "No month" (`MonthGrid`),
+`disableInteractiveElementBlocking` (both grips) in `index-Fyg4wIsZ.js`;
+`folder_label` in `GrahaModule-C7Bhlazo.js`; "No unbilled usage" in
+`MeteredUsageTab-Bfq4kJoo.js`.
+
+`collected` still reads 0.00 — consistent with `ganit_payments` holding zero
+rows, which is the known coverage hole and not a regression.
