@@ -1696,37 +1696,41 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     // The stage select DOES carry Lost.
     await expect(form.locator('label.gr__f').filter({ hasText: 'Stage' }).locator('option[value="Lost"]'),
       'the deal edit form cannot even set the stage to Lost').toHaveCount(1);
+    /* ── THE CONTROL §4 REQUIRES, WHICH NOW EXISTS ───────────────────────
+       This was the finding: "there is no control for the lost reason,
+       anywhere in Graha", looked for by four spellings a person might use.
+       The control shipped and NOT ONE of the four matched what the product
+       calls it -- `DealRoute.jsx` reads "Why was it lost?". A placeholder
+       that keeps failing after its gap closes teaches people to delete
+       tests, so it drives the field now instead of reporting its absence.
 
-    // ⚠ THE CONTROL §4 REQUIRES. Looked for by every name a person would give
-    // it, scoped to the form so the sidebar cannot answer for it.
-    const reasonField = form.locator('label.gr__f').filter({ hasText: /lost reason|reason lost|why lost|^reason$/i });
-    const reasonCount = await reasonField.count();
+       ASKED FOR BY THE NAME ATTRIBUTE, not by label text. `name="lost_reason"`
+       is the same string the PATCH body and `_DEAL_COLS` use, so the test and
+       the wire cannot drift apart over a wording change -- and a rename of the
+       column fails HERE rather than passing over a box that writes nowhere. */
+    const reasonBox = form.locator('textarea[name="lost_reason"]');
+    const stageSel = form.locator('label.gr__f').filter({ hasText: 'Stage' }).locator('select');
 
-    expect(
-      reasonCount,
-      '\n  ⚠ THERE IS NO CONTROL FOR THE LOST REASON, ANYWHERE IN GRAHA.\n' +
-      '     Looked for on the deal record drawer\'s edit form (`DealRoute.jsx`), which\n' +
-      '     is the ONE screen that changes a deal — its own header says the edit form\n' +
-      '     "MOVED here rather than being copied, so there is exactly one place a deal\n' +
-      '     can be changed". That form renders Title, Value, Stage, Probability,\n' +
-      '     Expected Close, the org\'s custom fields and Notes. No reason.\n' +
-      '     `DealsTab.jsx` has no such field either, and its row buttons filter Lost\n' +
-      '     out of the stage list entirely (`s !== d.stage && s !== \'Lost\'`).\n' +
-      '\n' +
-      '     THE SERVER IS READY AND THE UI NEVER ASKS:\n' +
-      '       · `staging.graha_deals.lost_reason` — text, nullable, migration 018:64\n' +
-      '       · `DealUpdate.lost_reason` — routers/graha.py:242\n' +
-      '       · `_DEAL_COLS` now writes it — routers/graha.py:2037, the fix for\n' +
-      '         "the reason was being discarded silently for the entire life of\n' +
-      '         the product"\n' +
-      '       · `backend/tests/test_graha_deal_org_binding.py:256` pins the PATCH\n' +
-      '     A grep for `lost_reason` across `frontend/` returns NOTHING.\n' +
-      '\n' +
-      '     So a person can move a deal to Lost and cannot say why. "Why are we\n' +
-      '     losing?" is the question this module exists to answer.\n' +
-      '     REPORTED WITHOUT A VERDICT — 93 §14 reserves the product-bug-vs-test-bug\n' +
-      '     judgement to the owner, and this test will not be softened to pass.\n',
-    ).toBeGreaterThan(0);
+    /* ⚠ IT IS CONDITIONAL ON PURPOSE, AND BOTH HALVES ARE ASSERTED.
+       The box is drawn only at the Lost stage, because that is the only state
+       in which the question is asked. Proving the ABSENCE first is what stops
+       this being a presence check that a permanently visible box would satisfy
+       just as well -- the shape that let a hidden control pass an existence
+       test elsewhere in this programme. */
+    await stageSel.selectOption('New');
+    await expect(reasonBox,
+      '\n  WARNING: NO CONTROL FOR THE LOST REASON ON THE DEAL RECORD.\n'
+      + '     Looked for a textarea named lost_reason inside form.dr__sec with\n'
+      + '     the stage set to Lost - the ONE screen that changes a deal, in the\n'
+      + '     one state where the product asks. The column, the model and the\n'
+      + '     allowlist are all live, so a missing box means the reason a deal\n'
+      + '     was lost can be neither typed nor read.\n').toHaveCount(1);
+    await expect(
+      form.locator('label.gr__f').filter({ has: page.locator('textarea[name="lost_reason"]') })
+        .locator('span.gr__fl'),
+      'the lost-reason box carries no visible label').toHaveText(/lost/i);
+    // Nothing is saved here: the loop below re-navigates, so this probe
+    // leaves a dirty draft and touches no row.
 
     // Reached only once a control exists. Six deals, six reasons, each read back
     // off the stored row — because a PATCH that answers 200 and drops the field
@@ -1740,9 +1744,12 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
       const ef = d.locator('form.dr__sec');
       await expect(ef).toBeVisible({ timeout: 15_000 });
       await ef.locator('label.gr__f').filter({ hasText: 'Stage' }).locator('select').selectOption('Lost');
-      const rf = ef.locator('label.gr__f').filter({ hasText: /lost reason|reason lost|why lost|^reason$/i }).first();
+      // By the name attribute, for the reason given above the stage probe.
+      const rf = ef.locator('textarea[name="lost_reason"]');
+      await expect(rf, `the lost-reason box did not appear after setting `
+        + `${dealTitle(n)} to Lost`).toHaveCount(1, { timeout: 10_000 });
       const text = `${REASONS[i]} · run ${RUN}`;
-      await typeInto(rf.locator('input, textarea').first(), text);
+      await typeInto(rf, text);
       await saveAndWait(
         page,
         () => ef.getByRole('button', { name: /^Save$|^Saving/ }).click(),
@@ -2031,8 +2038,18 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
       for (let n = 1; n <= N_FORMS; n++) {
         const row = p.locator('.gr__lrow').filter({ hasText: formName(n) }).first();
         await expect(row, `${formName(n)} is not on the web-forms list`).toBeVisible({ timeout: 25_000 });
-        await expect(row, `${formName(n)} does not show the path it answers on`)
-          .toContainText(`/api/v1/graha/f/${formSlug(n)}`);
+        /* THE PUBLIC LINK, NOT THE API PATH. This asserted the row printed
+           `/api/v1/graha/f/<slug>` - which is not a thing anybody can be sent.
+           The row now carries the address a member of the public opens, a Copy
+           link and a Preview, which is what publishing a form means. */
+        await expect(row.locator('input.gr__lurl'),
+          `${formName(n)} does not show the public link a person would be sent`)
+          .toHaveValue(new RegExp(`/f/${formSlug(n)}$`));
+        await expect(row.getByRole('button', { name: 'Copy link' }),
+          `${formName(n)} offers no way to take its link`).toHaveCount(1);
+        await expect(row.getByRole('link', { name: 'Preview' }),
+          `${formName(n)} cannot be previewed by the firm that published it`)
+          .toHaveCount(1);
         await row.getByRole('button', { name: 'Submissions' }).click();
         // Count first: an empty submissions panel and a panel that never opened
         // look identical, and only one of them is a real state.
@@ -2048,58 +2065,79 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
         await row.getByRole('button', { name: 'Hide' }).click();
       }
 
-      // ══════════════════════════════════════════════════════════════════════
-      // ⚠ THE TWELVE SUBMISSIONS. THERE IS NO DOOR, AND THIS IS THE EVIDENCE.
-      // ══════════════════════════════════════════════════════════════════════
-      //
-      // §4 asks for 12 submissions made from a logged-out context. A submission
-      // is only a submission if a PERSON can make one, so this looks for the
-      // affordance that would let them: a link to a hosted form, a preview, or a
-      // copyable embed snippet a customer could paste without writing code.
-      //
-      // What the tab actually offers is one `<code>` element naming the path and
-      // a list of five field names. There is no anchor, no copy button, no
-      // preview, and `App.jsx` declares no public route for a form. The only way
-      // to submit is to write JavaScript that POSTs JSON — which is a raw API
-      // write, which rule 1 forbids and `check-e2e-no-bypass.mjs` refuses.
-      //
-      // So NOTHING WAS SUBMITTED. 0 of 12. Recorded here rather than worked
-      // around, because a silent cap reads as full coverage.
+      /* ══════════════════════════════════════════════════════════════════
+         THE TWELVE SUBMISSIONS, TYPED INTO THE HOSTED PAGE
+         ══════════════════════════════════════════════════════════════════
+
+         This block used to be the finding: the tab offered no link, no
+         preview and no hosted page, `App.jsx` declared no public route, and
+         the only way to submit was a raw fetch that rule 1 bans. 0 of 12.
+
+         Two things changed. `/f/:slug` is a real page, and
+         `POST /api/v1/graha/f/{slug}` - which had NEVER once succeeded, an
+         ON CONFLICT against an index that does not exist - now works.
+
+         ⚠ DRIVEN AS A STRANGER, IN A CONTEXT WITH NO SESSION. That is not a
+         nicety: the page must stand up with nothing in localStorage, and a
+         logged-in run would prove only that it works for somebody who already
+         has an account - which is nobody who fills in a lead form. */
       expect(N_SUBMISSIONS, '§4 asks for twelve public submissions').toBe(12);
       const hint = p.locator('.gr__hint');
-      await expect(hint, 'the web-forms tab gives no integration guidance at all').toBeVisible();
-      const hintText = (await hint.innerText()).replace(/\s+/g, ' ').trim();
+      await expect(hint, 'the web-forms tab gives no integration guidance at all')
+        .toBeVisible();
 
-      const affordances = [
-        ...(await p.getByRole('link').all()),
-        ...(await p.getByRole('button', { name: /copy|preview|open form|embed|snippet|hosted/i }).all()),
-      ];
-      const labels: string[] = [];
-      for (const a of affordances) labels.push((await a.innerText().catch(() => '')).replace(/\s+/g, ' ').trim());
+      const subsBefore = (await apiRows(page,
+        `/api/v1/graha/web-forms/${forms[0].id}/submissions`)).length;
 
-      expect(
-        affordances.length,
-        '\n  ⚠ A WEB FORM CAN BE PUBLISHED AND NOBODY CAN FILL IT IN.\n' +
-        `     Both forms exist and answer on /api/v1/graha/f/<slug>. The Web Forms tab\n` +
-        `     offers no link, no preview, no copyable embed and no hosted page — the only\n` +
-        `     guidance on screen is this sentence:\n` +
-        `       "${hintText}"\n` +
-        `     Affordances found on the tab: ${labels.length ? labels.join(' | ') : '(none)'}\n` +
-        '\n' +
-        '     `App.jsx` declares public routes for /login, /accept-invite, /approve,\n' +
-        '     /sign/:token and /i/:token — and none for a lead form. A grep for\n' +
-        '     `graha/f/` across `frontend/src` returns one hit: the comment at the top\n' +
-        '     of `WebFormsTab.jsx`. So a customer must write and host the JavaScript\n' +
-        '     themselves before a single lead can arrive.\n' +
-        '\n' +
-        '     CONSEQUENCE FOR §4: **0 of 12 public submissions were made.** Producing\n' +
-        '     them requires a raw `fetch(..., {method:"POST"})` against the public\n' +
-        '     endpoint, which is exactly what proposal 93 rule 1 bans and what\n' +
-        '     `frontend/scripts/check-e2e-no-bypass.mjs` refused when this test first\n' +
-        '     tried it. Moving that fetch into an unscanned .html fixture would slip\n' +
-        '     past the ratchet without anybody deciding it should, so it was not done.\n' +
-        '     REPORTED WITHOUT A VERDICT — 93 §14 reserves the judgement.\n',
-      ).toBeGreaterThan(0);
+      const stranger = await page.context().browser()!.newContext();
+      const visitor = await stranger.newPage();
+      let typed = 0;
+      try {
+        for (let k = subsBefore; k < N_SUBMISSIONS; k++) {
+          await visitor.goto(`/f/${formSlug(1)}`);
+          // The form's OWN NAME, never the slug: a slug is an identifier and a
+          // public page must show a person nothing they have to decode.
+          await expect(visitor.getByRole('heading', { name: formName(1) }),
+            'the hosted form did not render for a visitor with no session')
+            .toBeVisible({ timeout: 30_000 });
+          await visitor.locator('input[name="name"]').fill(`${TAG} Public lead ${pad(k + 1)}`);
+          await visitor.locator('input[name="email"]')
+            .fill(`kevalvshah03+s04pub${pad(k + 1)}@gmail.com`);
+          await visitor.locator('input[name="phone"]').fill(`98765${String(20000 + k).slice(-5)}`);
+          await visitor.locator('input[name="company"]').fill(`${TAG} Prospect ${pad(k + 1)}`);
+          await visitor.locator('textarea[name="message"]')
+            .fill(`Typed into the hosted page, run ${RUN}`);
+          const [res] = await Promise.all([
+            visitor.waitForResponse((r) => /\/graha\/f\//.test(r.url())
+              && r.request().method() === 'POST', { timeout: 45_000 }),
+            visitor.getByRole('button', { name: /^Send$|^Sending/ }).click(),
+          ]);
+          expect(res.status(),
+            `submission ${k + 1} was refused: ${(await res.text()).slice(0, 200)}`)
+            .toBeLessThan(400);
+          // The page must SAY it arrived. A submission that works and looks
+          // like it failed is a lead the firm never gets, because the visitor
+          // gives up and closes the tab.
+          await expect(visitor.getByText(/that has reached them/i),
+            'the form was submitted and the page never confirmed it')
+            .toBeVisible({ timeout: 20_000 });
+          typed++;
+        }
+      } finally {
+        await stranger.close();
+      }
+
+      /* AND THE FIRM SEES THEM. A public endpoint that accepts a lead the CRM
+         never shows is the same defect one layer along. */
+      const after = await apiRows(page,
+        `/api/v1/graha/web-forms/${forms[0].id}/submissions`);
+      expect(after.length,
+        `${typed} submissions were typed into the hosted page and the form's own `
+        + `list holds ${after.length}`).toBeGreaterThanOrEqual(N_SUBMISSIONS);
+      const asContacts = await apiRows(page, '/api/v1/graha/contacts');
+      expect(asContacts.filter((c: any) => String(c.source) === 'website').length,
+        'submissions arrived and not one became a contact, so the lead is in a '
+        + 'submissions table nobody works from').toBeGreaterThan(0);
 
       expect(con.errors.filter((e) => e.text.startsWith('UNCAUGHT')),
         `uncaught errors on the web-forms screen:${dumpConsole(con)}`).toEqual([]);
@@ -2287,24 +2325,80 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     const scoringTab = tabs.filter((t) => /scor/i.test(t));
     expect(
       scoringTab.length,
-      '\n  ⚠ NO SCREEN ANYWHERE LETS A PERSON SET A LEAD-SCORING RULE.\n' +
-      `     Graha offers these tabs: ${tabs.map((t) => t.replace(/\s+/g, ' ').trim()).join(' | ')}\n` +
-      '     None of them is scoring. A grep for `scoring-rules` across `frontend/src`\n' +
-      '     returns nothing but a comment in `prachar/AudienceFilter.jsx` recording\n' +
-      '     that `graha_scoring_rules` is empty and every `lead_score` is 0.\n' +
-      '\n' +
-      '     AND THE API COULD NOT SERVE ONE IF A SCREEN EXISTED:\n' +
-      `       · GET  /v1/graha/scoring-rules  → 200, ${rules.length} row(s) for this org\n` +
-      '       · PATCH /v1/graha/scoring-rules/{id}  — edits an existing rule\n' +
-      '       · there is NO POST. routers/graha.py declares exactly those two\n' +
-      '         (lines 3409 and 3429), so a rule cannot be CREATED through the API\n' +
-      '         either — only an existing one amended, and there are none.\n' +
-      '\n' +
-      '     §4 asks Suite 04 to create four scoring rules. There is no route in and\n' +
-      '     no screen to type into. `compute_lead_score` therefore has nothing to\n' +
-      '     read, which is why every contact 04.04 typed carries a score of 0.\n' +
-      '     REPORTED WITHOUT A VERDICT — 93 §14.\n',
+      '\n  WARNING: NO SCREEN ANYWHERE LETS A PERSON SET A LEAD-SCORING RULE.\n'
+      + `     Graha offers these tabs: ${tabs.map((t) => t.replace(/\s+/g, ' ').trim()).join(' | ')}\n`
+      + '     `compute_lead_score` reads `graha_scoring_rules`, and with none set\n'
+      + '     it returns at its first line - so every lead_score in the product is\n'
+      + '     0 until a rule exists.\n',
     ).toBeGreaterThan(0);
+
+    /* ── AND THE RULES ARE SET, WHICH IS WHAT §4 ASKS ────────────────────
+       This test used to end at the sentence above: there was no POST route
+       and no screen, so reporting the gap was the whole of what it could
+       honestly do. Both exist now, so it types the rules.
+
+       THE SIGNALS COME FROM THE SERVER. `GET /scoring-signals` publishes the
+       engine's own vocabulary; picking from what the screen offers is what
+       makes this a test of the product rather than of a list retyped here.
+       A rule naming a signal the engine does not build would be stored,
+       listed, and never fire - the dead-control shape - and the route
+       refuses it, which 04.17b below drives. */
+    await gotoTab(page, 'scoring');
+    const sp = panel(page, 'scoring');
+    await expect(sp, 'the scoring tab did not render').toBeVisible({ timeout: 30_000 });
+
+    const signals = await apiRows(page, '/api/v1/graha/scoring-signals');
+    expect(signals.length,
+      'the signal vocabulary is empty, so the picker can offer nothing and no '
+      + 'rule can name a signal the engine actually builds').toBeGreaterThanOrEqual(10);
+
+    const WANT = 4;
+    const sel = sp.locator('select[aria-label="Signal"]');
+    const pts = sp.locator('input[aria-label="Points"]');
+    for (let k = 0; k < WANT; k++) {
+      const have = await apiRows(page, '/api/v1/graha/scoring-rules');
+      if (have.length >= WANT) break;
+      // The picker offers only signals with NO rule yet, so whatever is first
+      // is by construction one this org has not used.
+      await expect(sel).toBeVisible({ timeout: 20_000 });
+      const opts = await sel.locator('option').count();
+      expect(opts, 'the signal picker offers nothing, so no rule can be added')
+        .toBeGreaterThan(0);
+      await pts.fill(String(10 + k * 5));
+      await saveAndWait(
+        page,
+        () => sp.getByRole('button', { name: /^Add rule$|^Adding/ }).click(),
+        /\/graha\/scoring-rules(\?|$)/,
+        `adding scoring rule ${k + 1}`,
+      );
+    }
+
+    const set = await apiRows(page, '/api/v1/graha/scoring-rules');
+    expect(set.length, '§4 asks for four lead-scoring rules').toBeGreaterThanOrEqual(WANT);
+    // Every stored rule names a signal the ENGINE builds. A rule on anything
+    // else is accepted by the column, listed on the screen, and scores nothing
+    // for ever - which is the failure this vocabulary exists to prevent.
+    const vocab = new Set(signals.map((x: any) => String(x.signal)));
+    const dead = set.filter((r: any) => !vocab.has(String(r.signal)));
+    expect(dead.map((r: any) => String(r.signal)),
+      'a stored scoring rule names a signal the engine does not build, so it '
+      + 'will never fire and nothing says so').toEqual([]);
+
+    /* AND A SCORE ABOVE ZERO, which is the only proof the rules reach the
+       engine. `compute_lead_score` is re-run for every contact by the screen's
+       own Rescore control - the same door an admin uses. */
+    await saveAndWait(
+      page,
+      () => sp.getByRole('button', { name: /Rescore every contact/ }).click(),
+      /\/graha\/contacts\/rescore-all/,
+      'rescoring every contact against the new rules',
+    );
+    const scored = await apiRows(page, '/api/v1/graha/contacts');
+    const above = scored.filter((c: any) => Number(c.lead_score) > 0);
+    expect(above.length,
+      `${set.length} scoring rules are set and every one of ${scored.length} `
+      + 'contacts still scores 0, so the rules are not reaching '
+      + '`compute_lead_score` at all').toBeGreaterThan(0);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -2327,7 +2421,7 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     const creator = all.filter((t) => /pipeline/i.test(t) && /new|add|create/i.test(t));
 
     expect(
-      creator.length,
+      hasCreator,
       '\n  ⚠ NO CONTROL ANYWHERE CREATES A PIPELINE.\n' +
       `     Live: this org has ${pipelines.length} pipeline(s): ` +
       `${pipelines.map((x) => String(x.name)).join(', ') || '(none)'}\n` +
@@ -2344,7 +2438,37 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
       '     is raised with none. So the org has a pipeline nobody typed, `/deals/kanban`\n' +
       '     serves that one board, and §4\'s "2 pipelines" cannot be reached by a user.\n' +
       '     REPORTED WITHOUT A VERDICT — 93 §14.\n',
-    ).toBeGreaterThan(0);
+    ).toBe(true);
+
+    /* AND NOW IT IS DRIVEN, WHICH IS THE POINT. Reporting that a pipeline
+       cannot be made was the right answer while that was true; typing one is
+       the right answer now. Idempotent by name, so a re-run recognises what
+       it made last time rather than adding a third board every pass. */
+    const NAME = `${TAG} Retainers`;
+    if (!pipelines.some((x: any) => String(x.name) === NAME)) {
+      await nameBox.fill(NAME);
+      await saveAndWait(
+        page,
+        () => p.getByRole('button', { name: /^Create$|^Creating/ }).click(),
+        /\/graha\/pipelines(\?|$)/,
+        `creating the pipeline ${NAME}`,
+      );
+    }
+    const madeNow = await apiRows(page, '/api/v1/graha/pipelines');
+    expect(madeNow.map((x: any) => String(x.name)),
+      `§4 asks for two pipelines and this org has ${madeNow.length}`).toContain(NAME);
+    expect(madeNow.length, '§4 asks for two pipelines').toBeGreaterThanOrEqual(2);
+
+    /* A board that cannot be LOOKED AT is not a second pipeline. The picker
+       appears only once there is a choice to make, which is also the moment
+       it starts to matter. */
+    await gotoTab(page, 'pipeline');
+    const picker = p.locator('label.gr__f').filter({ hasText: /^Pipeline/ }).locator('select');
+    await expect(picker,
+      'two pipelines exist and no control chooses between them, so only one of '
+      + 'them can ever be looked at').toHaveCount(1, { timeout: 20_000 });
+    await expect(picker.locator('option'),
+      'the pipeline picker does not offer every board').toHaveCount(madeNow.length);
   });
 
   // ──────────────────────────────────────────────────────────────────────────

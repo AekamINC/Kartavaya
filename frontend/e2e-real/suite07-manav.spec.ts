@@ -1117,8 +1117,34 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
 
     // ── The register ───────────────────────────────────────────────────────
     await manav(page, 'employees');
+    /* ⚠ THE DIRECTORY IS NOT THE REGISTER OF CODES, AND THAT COST A 500.
+       `GET /employees` applies `still_on_the_rolls()` and DELIBERATELY hides
+       anybody whose last working day has passed — correct, and pinned by its
+       own test. But an employee CODE stays taken by a leaver: the unique index
+       carries no `is_active` and no on-the-rolls condition.
+       So this skip oracle went blind to four of §4's own people the moment 07.8
+       offboarded them, re-typed S7-03, and the POST answered 500 with no CORS
+       headers — which the browser reports as `net::ERR_FAILED`, which is why the
+       failure read as a network timeout rather than as a duplicate.
+       The offboarding register is the other half of the roll, and it is a door
+       the product already offers. */
     const existing = await rowsOf(page, '/api/v1/manav/employees');
-    const byCode = new Map(existing.map((e) => [String(e.employee_code || ''), e]));
+    const leavers = await rowsOf(page, '/api/v1/manav/offboarding');
+    const leaverIds = new Set(leavers.map((r) => String(r.employee_id)));
+    const held = new Map(existing.map((e) => [String(e.employee_code || ''), e]));
+    // A leaver's row is not in the directory, so its code has to be recovered
+    // from the exit rows themselves where the endpoint carries it.
+    for (const r of leavers) {
+      const code = String(r.employee_code || '');
+      if (code) held.set(code, r);
+    }
+    const byCode = held;
+    console.log(
+      `
+  07.2 codes already taken: ${byCode.size} `
+      + `(${existing.length} on the rolls, ${leaverIds.size} with an exit)
+`,
+    );
 
     let typed = 0;
     for (const emp of EMPLOYEES) {
@@ -1171,14 +1197,27 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
     // ── The evidence: the rows, and then the screen ────────────────────────
     const after = await rowsOf(page, '/api/v1/manav/employees');
     const codes = new Set(after.map((e) => String(e.employee_code || '')));
+    /* The same correction as the skip oracle above, for the same reason: a
+       person §4 asked for who has since LEFT is not missing from the register,
+       they are correctly absent from the directory. Asserting against the
+       filtered list alone would go a little redder every time somebody
+       resigns, and would blame the product for its own rule. */
+    for (const r of await rowsOf(page, '/api/v1/manav/offboarding')) {
+      const c = String(r.employee_code || '');
+      if (c) codes.add(c);
+    }
     const missing = EMPLOYEES.filter((e) => !codes.has(e.code)).map((e) => e.code);
-    expect(missing, `these codes are not in GET /manav/employees${dump(wire)}`).toEqual([]);
+    expect(missing, `these codes are on neither the roll nor the exit register${dump(wire)}`)
+      .toEqual([]);
 
     // The state went in as a CODE and must come back as one — the select can
     // only send what is in its list, and the list sends the canonical numeric
     // form the PT join needs.
     for (const emp of EMPLOYEES) {
       const row = after.find((r) => String(r.employee_code) === emp.code);
+      // A leaver is off the directory by design; their state is not readable
+      // here and is not this test's subject.
+      if (!row) continue;
       expect(String(row.state ?? ''), `${emp.code} lost its work state`).toBe(emp.state);
     }
 
@@ -1660,10 +1699,15 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
     // flip: it is that the personnel register gains a row.
     const empsBefore = await rowsOf(page, '/api/v1/manav/employees');
     const toHire = [CANDIDATES[0], CANDIDATES[1]];
+    // How many conversions THIS run performs. §6 idempotence: a second run
+    // recognises what the first did rather than repeating it, so the delta the
+    // register may show is this number and not §4's two.
+    let hiredNow = 0;
 
     for (const name of toHire) {
       const c = (await rowsOf(page, '/api/v1/manav/candidates')).find((x) => String(x.full_name) === name);
       if (String(c.stage) === 'hired' || c.converted_employee_id) continue;
+      hiredNow += 1;
 
       const opening = mineOpen.find((o) => String(o.id) === String(c.job_opening_id)) || mineOpen[0];
       await manav(page, 'recruitment');
@@ -1719,12 +1763,22 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
     // line adds nothing except a dependency on every other suite's side
     // effects. It is replaced by the delta, which is what "the conversion is
     // the whole point of the control" actually means.
+    /* ⚠ THE DELTA IS OF WHAT THIS RUN ACTUALLY DID, NOT OF §4's TARGET.
+       This asserted the register grew by exactly two. On the FIRST run that is
+       right; on every run after it, both candidates are already hired — the
+       loop above skips them by design, `hire_candidate` refuses a second
+       conversion outright, and the register correctly does not move. The
+       assertion therefore demanded that a re-run duplicate two people, which is
+       the one thing this product is careful not to let anybody do.
+       `hiredNow` counts the conversions THIS run performed. Zero is a true and
+       healthy answer; what must never happen is a conversion that reports
+       success and adds nobody, and that is what this now says. */
     expect(
       empsAfter.length - empsBefore.length,
-      `the register went from ${empsBefore.length} to ${empsAfter.length}; the two ` +
-      `hires must have ADDED two people, whatever the roster held before` +
-      `${dump(wire)}`,
-    ).toBe(toHire.length);
+      `${hiredNow} hire(s) were performed by this run and the register went from `
+      + `${empsBefore.length} to ${empsAfter.length}. A conversion must add exactly `
+      + `the people it converted — no more, and never fewer${dump(wire)}`,
+    ).toBe(hiredNow);
 
     // And the customer sees them where they now belong.
     await manav(page, 'employees');
