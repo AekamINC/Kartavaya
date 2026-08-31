@@ -112,6 +112,26 @@
   color: var(--on-surface-3);
 }
 
+/* The h1 on every state of the hosted lead form — the form's own name, and
+ * the three answers it can give instead (not accepting replies, could not
+ * open, thank you). It was USED IN `PublicLeadForm.jsx` AND NEVER DEFINED, so
+ * the heading on a page shown to members of the public rendered at the
+ * browser's default h1: Times, 2em, and nothing to do with this product.
+ * `check-classes` is what found it — a class with no rule renders unstyled.
+ *
+ * Sized one step below `.ap__outcome-t`: that is a signing outcome, which is
+ * the last word on a document, and this is the top of a form somebody still
+ * has to fill in. */
+.pub__title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: var(--t-title-w);
+  letter-spacing: -.01em;
+  color: var(--on-surface);
+  margin: 0;
+  text-wrap: balance;
+}
+
 /* ── Shared prose ───────────────────────────────────────────────────────────
  * 64ch is the measure for body copy. Long legal sentences (the IT Act notice on
  * the signing page) are unreadable at full 1440px width.

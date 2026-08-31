@@ -12,6 +12,58 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-08-31 LATE — WAVE 2 RE-TRIAGE: 54/7, AND NOT ONE OF THE SEVEN WAS THE PRODUCT
+
+Five were faults in checks written hours earlier; two were fixtures **migration
+249 had taken apart**. The distribution is itself the finding — at this stage of
+93 the checks fail more often than the product does.
+
+### 🔴 The one to read: a green detector was reported as broken
+
+`GET /contacts/duplicates` returned **zero groups and was correct**. Migration
+249 rewrote every *stored* contact to a `kevalvshah03+<tag>@gmail.com` alias
+while `contactEmail()` in the spec still generated `@example.com` — so every
+duplicate typed afterwards shared an address with **nobody**. The fixture had
+come apart and the product was blamed. Generated value and stored value are one
+string now; **migration 250** repaired the three rows already typed (3 live
+groups verified back). Aekam Inc untouched — 0 rows there carry `@example.com`.
+
+### A check that could only ever pass once
+
+04.19 detects duplicates and then *merges* them, consuming the fixture the next
+run needs, while 04.04 skips re-creating a contact whose name still shows on the
+merged row. Same family as an assertion satisfied by its own shape: not a check
+that cannot fail, but one that cannot fail **twice**.
+
+### ⚠ There is no TypeScript in this repo
+
+04.18 referenced `hasCreator` and `nameBox`, neither of which exists. `npx tsc`
+is not installed and Playwright strips types without checking them, so **only an
+execution can find that class of fault**. Worth knowing before trusting any
+rewritten spec that has not actually been run.
+
+### The rest, all product-is-right
+
+- **04.11** asserted the lost-reason box was present at the `New` stage; it is
+  drawn only at `Lost`, on purpose.
+- **04.13** aimed its cover follow-up at deal 01 by name and never read its
+  stage — 04.10 had carried it to **Won**, and a closed card deliberately shows
+  no follow-up marker. Picks by stage now, and the deliberate behaviour is
+  pinned so "mark every deal with a follow-up" cannot creep in.
+- **04.14** was refused by the rate limit *this programme added* to the public
+  lead form. The 429 is correct; the test paces itself rather than the guard
+  being relaxed.
+- **07.11**'s publish guard required that no employee hold an address, which
+  stopped being true when 249 gave all 30 one. Guard kept and still fails
+  closed; the predicate now asks who **owns** the address.
+- **08.8** is a floor telling the truth: at ₹9,308 Gujarat's own band and
+  Maharashtra's both charge ₹175, so the run cannot show the state reaches the
+  lookup. A fixture gap, correctly refused — not a regression. (Gujarat's
+  apparent duplicate slabs are the org's own ladder outranking the shared
+  national one, which is designed.)
+
+---
+
 ## 2026-08-31 — 32 VERDICTS, AND NOT ONE PRODUCT BUG SURVIVED REFUTATION
 
 Every remaining failure across suites 12, 14, 15, 16, 17, 21 and 22 was triaged

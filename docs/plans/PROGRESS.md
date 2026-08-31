@@ -8283,3 +8283,64 @@ address at all** now carry `+tag` aliases on one mailbox. Owner chose real
 delivery over suppression — a suppressed send proves only that a button was
 pressed; a delivered one proves the template, the sender domain, the link and
 the recipient. Caps raised from 100/day (already exceeded at 105) to 500.
+
+## 2026-08-31 late — re-triage of wave 2, and a fixture my own migration broke
+
+Wave 2 re-ran at 54/7 after the six suite rewrites. **None of the seven was a
+product defect.** Five were faults in checks written hours earlier; two were
+fixtures that migration 249 had quietly taken apart. Recording them because the
+distribution is the finding: at this point in the programme the checks are
+failing more often than the product is.
+
+### The two that were mine, and neither announced itself
+
+- **Migration 249 desynchronised the dedupe fixture from the spec.** It rewrote
+  every *stored* contact to the owner's `kevalvshah03+<tag>@gmail.com` alias.
+  `contactEmail()` in `suite04-graha.spec.ts` still generated `@example.com`, so
+  every duplicate typed afterwards shared an address with **nobody**.
+  `GET /contacts/duplicates` correctly returned zero groups and 04.19 failed
+  asking why the detector was broken. **The detector was right the whole time.**
+  A generated value and a stored value that drift apart cannot be caught from
+  either side alone, so they are one string now. Migration 250 repaired the three
+  rows already typed; three live groups verified back.
+- **07.11 refused to publish for ever.** Its guard required that *no* employee
+  hold an address — true while Suite 07 left them blank, false the moment 249
+  gave all 30 one. The guard was still protecting something real, so the
+  predicate narrowed rather than the guard going: it now asks who *owns* each
+  address and still fails closed on anything unrecognised.
+
+### And a check that could only ever pass once
+
+04.19 detects duplicates and then **merges them**. The merge consumes the very
+fixture the next run needs, and 04.04's idempotence check skips re-creating a
+contact whose name it can still see on a merged row. Same family as the
+assertion satisfied by its own shape, one turn of the crank later: not a check
+that cannot fail, but a check that cannot fail *twice*.
+
+### The product was right and the test was wrong, four times
+
+- **04.11** selected the `New` stage and asserted the lost-reason box was
+  *present*. It is drawn only at `Lost`, deliberately. The absence probe had kept
+  the presence expectation.
+- **04.13** aimed its cover follow-up at deal 01 *by name* and never read its
+  stage; 04.10 had since carried that deal to **Won**, and `PipelineTab` draws no
+  marker on a closed card on purpose — nobody needs chasing about a deal already
+  won. It picks by stage now, and the deliberate behaviour is pinned by its own
+  assertion, because "mark every deal that has a follow-up" would have satisfied
+  the positive check while turning the board into noise.
+- **04.14** was refused by the rate limit *this programme added* to the public
+  lead form. A 429 on the eleventh submission in a minute is correct; relaxing it
+  for a green tick would take a guard out of production. The test paces itself.
+- **04.18** referenced `hasCreator` and `nameBox`, neither of which exists. There
+  is **no TypeScript in this repo**, so nothing but an execution could have found
+  it — worth knowing before trusting any future rewrite that has not been run.
+
+### 08.8 is a floor telling the truth, not a regression
+
+Professional tax: at a gross of ₹9,308 the org's own Gujarat band (9000–11999)
+charges ₹175 and Maharashtra's (7501–10000) charges ₹175 **too**. Every
+out-of-state employee happened to land where the ladders agree, so the run
+cannot distinguish reading the *state* from reading the *salary* — which is
+exactly what the anti-vacuity floor exists to say. A fixture gap, correctly
+refused. (Checked in passing: Gujarat's apparent duplicate slabs are the org's
+own ladder outranking the shared national one, which is designed behaviour.)

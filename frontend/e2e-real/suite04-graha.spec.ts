@@ -2124,6 +2124,17 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
 
       // ── The two forms exist, published, with their slug and source tag ────
       const forms = await apiRows(page, '/api/v1/graha/web-forms');
+      /* ⚠ THE FORM THAT IS TYPED INTO MUST BE THE FORM THAT IS READ BACK,
+         AND ONCE IT WAS NOT. This block submits to `formSlug(1)` and used to
+         count submissions on `forms[0]` — which is whatever the list route
+         happens to order first, and was form 02. Twelve submissions landed
+         correctly, the count came back 0, and the report blamed the product
+         for losing them: form 01 held all 24. Addressed by SLUG, so the two
+         halves cannot drift apart again. */
+      const target = forms.find((f: any) => String(f.slug) === formSlug(1));
+      expect(target,
+        `no web form carries the slug ${formSlug(1)}. Present: `
+        + `${forms.map((f: any) => String(f.slug)).join(', ') || '(none)'}`).toBeTruthy();
       const byName = new Map(forms.map((f) => [String(f.name), f]));
       for (let n = 1; n <= N_FORMS; n++) {
         const f = byName.get(formName(n));
@@ -2188,7 +2199,7 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
         .toBeVisible();
 
       const subsBefore = (await apiRows(page,
-        `/api/v1/graha/web-forms/${forms[0].id}/submissions`)).length;
+        `/api/v1/graha/web-forms/${target.id}/submissions`)).length;
 
       const stranger = await page.context().browser()!.newContext();
       const visitor = await stranger.newPage();
@@ -2251,7 +2262,7 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
       /* AND THE FIRM SEES THEM. A public endpoint that accepts a lead the CRM
          never shows is the same defect one layer along. */
       const after = await apiRows(page,
-        `/api/v1/graha/web-forms/${forms[0].id}/submissions`);
+        `/api/v1/graha/web-forms/${target.id}/submissions`);
       expect(after.length,
         `${typed} submissions were typed into the hosted page and the form's own `
         + `list holds ${after.length}`).toBeGreaterThanOrEqual(N_SUBMISSIONS);
@@ -2560,9 +2571,18 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
       `${pipelines.map((x) => String(x.name)).join(', ') || '(none)'}\n` +
       `     Buttons actually on the pipeline and deals screens: ${all.slice(0, 24).join(' | ')}\n`,
     ).toBeVisible({ timeout: 20_000 });
-    expect(creator.length,
-      `no button on either screen names pipeline creation. Saw: ${all.slice(0, 24).join(' | ')}`)
-      .toBeGreaterThan(0);
+    /* ASKED FOR ON THE FORM, NOT IN THE BUTTON TEXT. This wanted a button whose
+       own label said both "pipeline" and "create"; the button reads `Create` and
+       the word "pipeline" is in the field label beside it, which is ordinary and
+       correct. Requiring the noun in the verb would have pushed the product into
+       worse copy to satisfy a test. What a person actually needs is a labelled
+       control they can find, so that is what is asserted. */
+    await expect(newForm.locator('.gr__fl').filter({ hasText: /pipeline/i }),
+      `nothing on the pipeline tab is labelled as creating a pipeline. `
+      + `Buttons seen: ${all.slice(0, 24).join(' | ')}`)
+      .toHaveCount(1);
+    await expect(newForm.getByRole('button', { name: /^Create$|^Creating/ }),
+      'the create-pipeline form has no submit control').toHaveCount(1);
     const nameBox = newForm.locator('input.k-input');
     await expect(nameBox, 'the create-pipeline form carries no name box').toHaveCount(1);
 
