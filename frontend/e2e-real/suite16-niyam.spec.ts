@@ -427,24 +427,48 @@ const RULES: RuleSpec[] = [
     cond: { field: 'title', operator: 'contains', value: TAG }, carriesRecipient: true,  trigger: 'task.create' },
   { n: 2,  event: 'task.status_changed',  family: 'task',      to: '@creator',
     cond: { field: 'title', operator: 'contains', value: TAG }, carriesRecipient: true,  trigger: 'task.flip' },
+  // ⚠ EIGHT OF THESE NAME `@org_admins`, AND `carriesRecipient: false` IS WHY.
+  //
+  // 16.13 measured the consequence of the other choice: "5 rule(s) fired
+  // correctly, evaluated correctly, reached their action step and notified
+  // NOBODY: contact.created, deal.stage_changed, payment.recorded,
+  // stock.adjusted, leave.requested." `registry.py` gives those event types no
+  // `created_by` and no `assignee_user_ids`, so `@creator` and `@assignees`
+  // both resolve to nobody and `NotifySend.run` records "nobody to notify on
+  // this event".
+  //
+  // The engine always had the answer — `DB_TOKENS = {"@org_admins"}`, whose own
+  // comment says it exists because "the org-shaped temporal events … have no
+  // creator and no assignees" — and until 2026-08-31 the rule editor did not
+  // offer it, so a customer could build, arm and fire a rule that could never
+  // reach a person. Fixed there; taken up here, because a suite that keeps
+  // asking for a recipient it knows cannot resolve is testing its own
+  // workaround rather than the product.
+  //
+  // `carriesRecipient` is not a new flag: it already marked exactly these
+  // EIGHT. Verified against the registry rather than trusted — of the fourteen
+  // event types this suite uses, the six marked `true` carry `created_by` and
+  // these eight carry NEITHER `created_by` NOR `assignee_user_ids`. 16.13 named
+  // only five because only those five fire inside this suite's window; the
+  // other three evaluate against the backlog and have the same problem.
   // ── crm ───────────────────────────────────────────────────────────────────
   { n: 3,  event: 'client.created',       family: 'crm',       to: '@creator',
     cond: { field: 'name', operator: 'contains', value: TAG }, carriesRecipient: true,  trigger: 'client.create' },
-  { n: 4,  event: 'contact.created',      family: 'crm',       to: '@creator',
+  { n: 4,  event: 'contact.created',      family: 'crm',       to: '@org_admins',
     cond: { field: 'source', operator: 'contains', value: TAG }, carriesRecipient: false, trigger: 'contact.create' },
   { n: 5,  event: 'deal.created',         family: 'crm',       to: '@creator',
     cond: { field: 'title', operator: 'contains', value: TAG }, carriesRecipient: true,  trigger: 'deal.create' },
-  { n: 6,  event: 'deal.stage_changed',   family: 'crm',       to: '@creator',
+  { n: 6,  event: 'deal.stage_changed',   family: 'crm',       to: '@org_admins',
     cond: { field: 'value', operator: 'gte', value: '4160000' }, carriesRecipient: false, trigger: 'deal.move' },
   // ── invoice ───────────────────────────────────────────────────────────────
   { n: 7,  event: 'invoice.created',      family: 'invoice',   to: '@creator',
     cond: { field: 'total', operator: 'gte', value: '1' }, carriesRecipient: true,  trigger: null },
-  { n: 8,  event: 'payment.recorded',     family: 'invoice',   to: '@creator',
+  { n: 8,  event: 'payment.recorded',     family: 'invoice',   to: '@org_admins',
     cond: { field: 'amount', operator: 'lte', value: '2' }, carriesRecipient: false, trigger: 'payment.record' },
   // ── sales ─────────────────────────────────────────────────────────────────
   { n: 9,  event: 'order.created',        family: 'sales',     to: '@creator',
     cond: { field: 'total', operator: 'gte', value: '1' }, carriesRecipient: true,  trigger: null },
-  { n: 10, event: 'stock.adjusted',       family: 'sales',     to: '@creator',
+  { n: 10, event: 'stock.adjusted',       family: 'sales',     to: '@org_admins',
     cond: { field: 'product_name', operator: 'contains', value: 'S05 Product 01' }, carriesRecipient: false, trigger: 'stock.bump' },
   // ── hr ────────────────────────────────────────────────────────────────────
   // ⚠ THREE DAYS, NOT THIRTEEN, AND THE REASON IS A MANAV FINDING.
@@ -468,15 +492,15 @@ const RULES: RuleSpec[] = [
   //
   // Among the employees the picker ACTUALLY OFFERS, the largest balance is 3
   // days. So the rule is written against what a customer can really do.
-  { n: 11, event: 'leave.requested',      family: 'hr',        to: '@creator',
+  { n: 11, event: 'leave.requested',      family: 'hr',        to: '@org_admins',
     cond: { field: 'days', operator: 'gte', value: '3' }, carriesRecipient: false, trigger: 'leave.request' },
-  { n: 12, event: 'expense.claimed',      family: 'hr',        to: '@creator',
+  { n: 12, event: 'expense.claimed',      family: 'hr',        to: '@org_admins',
     cond: { field: 'amount', operator: 'gte', value: '1' }, carriesRecipient: false, trigger: null },
   // ── esign ─────────────────────────────────────────────────────────────────
-  { n: 13, event: 'document.sent',        family: 'esign',     to: '@creator',
+  { n: 13, event: 'document.sent',        family: 'esign',     to: '@org_admins',
     cond: { field: 'signer_count', operator: 'gte', value: '1' }, carriesRecipient: false, trigger: null },
   // ── marketing ─────────────────────────────────────────────────────────────
-  { n: 14, event: 'contact.unsubscribed', family: 'marketing', to: '@creator',
+  { n: 14, event: 'contact.unsubscribed', family: 'marketing', to: '@org_admins',
     cond: null, carriesRecipient: false, trigger: null },
 ];
 

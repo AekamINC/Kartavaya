@@ -2806,7 +2806,14 @@ test.describe('Suite 12 · Dristi — reports, analytics, and every figure tied 
       // way before they are compared.
       rec.eq('the pivot engine\'s OPEN deals total = the "Open pipeline" headline',
         'Σ over POST /v1/dristi/query deals by stage, minus Won and Lost',
-        qDeals.filter((r: any) => r.stage !== 'Won' && r.stage !== 'Lost')
+        // ⚠ `label`, NOT `stage`. `run_pivot_query` aliases the group column
+        // to `label` (`SELECT {group_by} AS label`), so `r.stage` is undefined
+        // on every row and this filter excluded NOTHING — the "open" subtotal
+        // came back equal to the all-stage total and the assertion failed
+        // against a correct product. Caught on the first run after it was
+        // written, which is the argument for running a new assertion before
+        // trusting it.
+        qDeals.filter((r: any) => r.label !== 'Won' && r.label !== 'Lost')
           .reduce((a, r) => a + Number(r.value || 0), 0),
         'GET /v1/dristi/overview deals.pipeline_value',
         Number(overview?.deals?.pipeline_value));
