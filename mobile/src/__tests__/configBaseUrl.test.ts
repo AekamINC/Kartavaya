@@ -30,13 +30,26 @@ test('with no override at all, the URL is the build-time value', () => {
   assert.equal(resolveBackendUrl(), BUILD_BACKEND_URL);
 });
 
-test('the build-time fallback is STAGING, never production', () => {
+test('the build-time fallback is a NAME WE OWN, not a Railway hostname', () => {
+  // ⚠ THIS TEST USED TO REQUIRE /staging/, AND THAT WORLD IS GONE.
+  //
+  // Its reasoning was "production shares a database with staging, so an
+  // unverified client must never default there". Both halves are now false:
+  // everything was moved to production on 2026-08-30, there is one database and
+  // one branch, and `kartavaya-staging.up.railway.app` is a host that no longer
+  // answers. Defaulting an unconfigured build at a dead hostname is not safety,
+  // it is a client that cannot reach anything.
+  //
+  // The invariant that replaces it is the one that has actually cost something:
+  // a Railway service RENAME already shipped an APK pointing at a dead host.
+  // `api.kartavaya.com` is a name we own, so it survives the next rename.
+  //
   // `EXPO_PUBLIC_API_URL` is unset in this process, which is exactly the
   // unverified-configuration case the fallback exists for.
   assert.match(
-    BUILD_BACKEND_URL, /staging/,
-    'the unconfigured fallback moved off staging. Production shares a database '
-    + 'with it; an unverified client must never default there.',
+    BUILD_BACKEND_URL, /^https:\/\/api\.kartavaya\.com$/,
+    'the unconfigured fallback is not api.kartavaya.com. A Railway hostname here '
+    + 'ships an APK that dies at the next service rename — which has happened.',
   );
 });
 

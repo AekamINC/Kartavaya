@@ -85,17 +85,27 @@ test('no build profile declares a channel EAS would reject', () => {
 test('every profile still names the API it points at', () => {
   // The channel does not decide the backend — `EXPO_PUBLIC_API_URL` does, and
   // it is inlined at build time. Adding a channel must not be mistaken for
-  // making the environment switchable: production is reached only by naming it,
-  // because staging and production share a Supabase database.
+  // making the environment switchable.
+  //
+  // ⚠ THIS USED TO REQUIRE NON-PRODUCTION PROFILES TO NAME /staging/, on the
+  // reasoning that "production is reached only by naming it, because staging
+  // and production share a Supabase database". There is no staging any more —
+  // one project, one schema, one branch since 2026-08-30 — and the old host
+  // does not answer, so that rule now only guarantees a build that reaches
+  // nothing.
+  //
+  // What replaces it is the failure that actually shipped: a Railway service
+  // rename put a dead hostname in a released APK. EVERY profile must name
+  // `api.kartavaya.com`, a name we own, which survives the next rename.
   const eas = readJson('eas.json');
   for (const name of PROFILES) {
     const url = eas.build[name].env?.EXPO_PUBLIC_API_URL;
-    assert.ok(url, `${name} no longer names an API URL — it would fall back to staging`);
-    if (name === 'production') {
-      assert.match(url, /production/, 'the production profile stopped naming production');
-    } else {
-      assert.match(url, /staging/, `${name} points somewhere other than staging`);
-    }
+    assert.ok(url, `${name} no longer names an API URL`);
+    assert.match(
+      url, /^https:\/\/api\.kartavaya\.com$/,
+      `${name} points at ${url} rather than the domain we own. A Railway `
+      + 'hostname here dies at the next service rename.',
+    );
   }
 });
 
