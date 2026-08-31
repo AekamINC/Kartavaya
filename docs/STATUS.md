@@ -2583,3 +2583,76 @@ would not have helped.
 is fixed, unit-tested, mutation-proved and deployed. That was the part that could
 lock real users out.
 
+---
+
+## 🔴 Suite 12.11 — "Open pipeline" counted WON AND LOST deals (fixed 2026-08-31)
+
+**The headline overstated open pipeline by 36%.** `routers/dristi.py` summed
+`value` over the whole of `graha_deals` with no predicate beyond `org_id`, and
+`OverviewTab.jsx:49` prints it as **"Open pipeline"**.
+
+| Reading of one concept | Value, live |
+|---|---|
+| `GET /v1/dristi/overview` `deals.pipeline_value` — the tile | **35,730,000** |
+| the Pipeline tab's funnel (excludes Won and Lost) | 26,320,000 |
+| `analytics.run graha.pipeline_by_stage` (minus Won and Lost) | 26,320,000 |
+
+9,410,000 of closed deals inside the headline; 15 of 33 deals already closed.
+
+### The tile was only half of it — TWO WRITE PATHS never maintained the column
+
+The product decided long ago that the close is a TIMESTAMP, not a stage string,
+and `graha.pipeline_by_stage` states the reason in its own description: *stage
+values are per-org text*. But nothing kept the timestamps true.
+
+- `create_deal` inserted `body.stage` verbatim and stamped nothing — a deal
+  ENTERED as Won or Lost was closed on the board and open in the money
+  **permanently**, because nothing would ever move its stage again.
+- `update_deal` stamped on the way IN and cleared nothing on the way OUT — a
+  deal moved to Won and then back to an open stage kept `won_at` forever and
+  was **subtracted** from open pipeline while sitting in an open column.
+
+Measured read-only before any change: 8 deals closed on screen and open in the
+money (₹2,950,000), 1 deal open on screen and closed in the money (₹750,000).
+Neither direction raises, logs, or shows anything.
+
+### ✅ Fixed, and the three readings now reconcile
+
+| | |
+|---|---|
+| `routers/dristi.py` | `pipeline_value` scoped by FILTER. `total_deals`, `won_deals`, `won_value`, `lost_deals` deliberately UNCHANGED — they count on `stage`, which is what a person reads on the board |
+| `routers/graha.py` | `create_deal` stamps a closing stage; `update_deal` clears both on re-open and clears the opposite one on a close |
+| migration **242** | backfills 9 rows (all Unicode Group, Aekam untouched); reversal record written FIRST into `migration_242_deal_close_before` |
+| `test_deal_close_is_a_timestamp.py` | 24 tests on BOUND PARAMETERS, both paths, 4 mutations killed |
+| `test_open_pipeline_reconciles.py` | 6 tests comparing the router's captured SQL against the REGISTRY BUILDER — no third copy of the rule. 3 mutations killed |
+
+**Live after 242: tile = metric = funnel = ₹26,370,000.** ✅
+
+The mutation worth remembering is M4 — stamping *every* created deal rather
+than only closing ones. It passes a naive test and hides every new deal from
+the pipeline it was just added to: a worse number than the defect.
+
+## 🔴 → ✅ Two tables in `public` had NO RLS — closed 2026-08-31 (migration 243)
+
+Found by the post-DDL advisor run CLAUDE.md requires. Neither was new and
+neither came from this session's DDL:
+
+    report_schedules               rls_on=false   anon_select=true
+    task_requires_approval_legacy  rls_on=false   anon_select=true
+
+`public` is exposed to PostgREST and the anon key is compiled into the shipped
+browser bundle, so this is a direct read by anyone who opens the app — no API
+route, none of the backend's guards in the path. `report_schedules.recipients`
+is a list of email addresses.
+
+⚠ **The leak was LATENT: both tables hold 0 rows**, and no backend path reads
+either — `git grep` finds them in comments only, every one describing the table
+as retired. That is a reason to close it calmly, not a reason to leave it: the
+hole opens the moment a row lands, and it opens silently.
+
+`public` is now **0 of 301 tables without RLS**.
+
+⚠ **NOT dropped.** `routers/reports.py` says in its own header that this table
+"is being dropped", and migration 236 retired the router without the table.
+**A DROP needs the owner's approval BY NAME** — enabling RLS closes the hole
+today without spending that approval. Raised as an owner action.

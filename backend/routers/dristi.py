@@ -256,8 +256,35 @@ async def overview(
     deals = None
     if "graha" in allowed:
         deals = await pool.fetchrow(
+        # ── "OPEN PIPELINE" WAS EVERY DEAL, WON AND LOST INCLUDED ───────────
+        #
+        # `OverviewTab.jsx:49` prints this as **"Open pipeline"**, and it was
+        # `SUM(value)` over the whole table. Measured live 2026-08-31 on the
+        # reference org: 35,730,000 shown against 26,320,000 actually open —
+        # 9,410,000 of Won and Lost deals counted as open, 15 of 33 deals
+        # closed. A 36% overstatement of the number a sales lead plans from.
+        #
+        # Suite 12.11 caught it as a reconciliation failure rather than as a
+        # wrong number, which is the point of that test: three readings of one
+        # concept disagreed — this headline, the Pipeline tab's funnel, and
+        # `analytics.run graha.pipeline_by_stage`.
+        #
+        # The rule is not invented here. `analytics.py:1037` states it for the
+        # per-client figure and calls it the registry's board rule verbatim —
+        # "active only, archived out, undecided only" — so the same predicate is
+        # used, and the org headline and the client report now agree BY
+        # CONSTRUCTION rather than by both being maintained.
+        #
+        # ⚠ On `won_at`/`lost_at`, NOT `stage`. The other aggregates here filter
+        # `stage='Won'`, and the two are not the same test: `stage` is a display
+        # string a customer can rename, while the timestamps are what the
+        # transition writes. Only `pipeline_value` moves — `total_deals`,
+        # `won_deals`, `won_value` and `lost_deals` keep exactly the counts they
+        # had, because those are answering a different question.
         "SELECT COUNT(*) AS total_deals, "
-        "COALESCE(SUM(value),0) AS pipeline_value, "
+        "COALESCE(SUM(value) FILTER (WHERE is_active = TRUE "
+        "                        AND won_at IS NULL AND lost_at IS NULL "
+        "                        AND archived_at IS NULL),0) AS pipeline_value, "
         "COUNT(*) FILTER (WHERE stage='Won') AS won_deals, "
         "COALESCE(SUM(value) FILTER (WHERE stage='Won'),0) AS won_value, "
         "COUNT(*) FILTER (WHERE stage='Lost') AS lost_deals "

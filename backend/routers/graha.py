@@ -1914,20 +1914,45 @@ async def create_deal(
     # `RETURNING *` because `deal_created` reads value, client_id, assigned_to
     # and created_by beyond the three columns the response needs; the RESPONSE
     # is built explicitly so its shape is unchanged by the widening.
+    # -- A DEAL CAN BE BORN CLOSED, AND THIS PATH NEVER STAMPED IT ---------
+    #
+    # `update_deal` writes `won_at`/`lost_at` when the stage moves to a closing
+    # stage. Creation did not, and `body.stage` is a free string the form and
+    # the API both accept -- so a deal ENTERED as Won (a sale already made and
+    # logged after the fact, an import, a Playwright seed) was closed on the
+    # board and open in every money figure, permanently, because nothing would
+    # ever move its stage again to trigger the stamp.
+    #
+    # Measured live 2026-08-31 on the reference org: 8 such deals, 2,950,000
+    # counted as open pipeline while reading Won or Lost on screen. Together
+    # with the un-close above this is the whole of suite 12.11's finding -- the
+    # three readings of "open pipeline" could not reconcile because two of them
+    # trusted the timestamp and the data had none.
+    #
+    # Same rule as the update path, same two strings, deliberately duplicated
+    # rather than shared: the alternative is a helper that the next writer of an
+    # INSERT still has to know exists, and a divergence between them would be
+    # invisible. They sit 200 lines apart in one file and both name the other.
+    _won_at = datetime.now(timezone.utc) if body.stage == "Won" else None
+    _lost_at = datetime.now(timezone.utc) if body.stage == "Lost" else None
+
     from services.niyam.subjects import deal_created
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
                 "INSERT INTO public.graha_deals "
                 "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
-                " expected_close_date, assigned_to, notes, tags, created_by, custom_data, territory_id) "
+                " expected_close_date, assigned_to, notes, tags, created_by, custom_data, territory_id, "
+                " won_at, lost_at) "
                 "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
-                " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb, NULLIF($15,'')::uuid) "
+                " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb, NULLIF($15,'')::uuid, "
+                " $16, $17) "
                 "RETURNING *",
                 org_id, pipeline_id, contact_id, client_id, body.title, body.value,
                 body.stage, body.probability, body.expected_close_date,
                 assigned_to, body.notes, body.tags, user["user_id"],
                 json.dumps(body.custom_data or {}), territory_id,
+                _won_at, _lost_at,
             )
             await deal_created(_conn, org_id=org_id, actor_id=user["user_id"],
                                deal_id=row["id"], row=dict(row))
@@ -2140,12 +2165,45 @@ async def update_deal(
         updates["pipeline_id"] = await resolve_deal_pipeline(
             pool, org_id, updates["pipeline_id"])
 
-    if "stage" in updates and updates["stage"] == "Won":
-        updates["won_at"] = datetime.now(timezone.utc)
-        updates["probability"] = 100
-    elif "stage" in updates and updates["stage"] == "Lost":
-        updates["lost_at"] = datetime.now(timezone.utc)
-        updates["probability"] = 0
+    # -- CLOSING IS A TIMESTAMP, AND IT HAS TO BE ABLE TO UN-CLOSE ----------
+    #
+    # This stamped `won_at` on the way IN and cleared nothing on the way OUT,
+    # so a deal moved to Won and then back to Proposal -- the ordinary shape of
+    # a deal that slips -- kept its `won_at` forever.
+    #
+    # That is not cosmetic, because the stage string and the timestamp are not
+    # interchangeable and the product has already chosen between them. Every
+    # money figure reads the TIMESTAMP; `graha.pipeline_by_stage` says so by
+    # name -- "the close is the won_at/lost_at timestamp, never a stage string,
+    # because stage values are per-org text". So the re-opened deal sat in an
+    # open column on the board and was subtracted from open pipeline in the
+    # metric, in the client report and on the Dristi overview. Measured live
+    # 2026-08-31: one deal, 750,000, open on screen and absent from the money.
+    #
+    # `None` rather than dropping the key: both columns are in `_DEAL_COLS`, the
+    # `ts_fields` branch below binds the value straight through, and NULL is
+    # precisely what "not won" means.
+    #
+    # The stage is authoritative here, as it already was for `probability` and
+    # for `won_at` on the winning path -- a PATCH carrying `stage="Proposal"`
+    # AND an explicit `won_at` is self-contradictory, and the half a person can
+    # see on the board is the half that wins.
+    if "stage" in updates:
+        _stage = updates["stage"]
+        if _stage == "Won":
+            updates["won_at"] = datetime.now(timezone.utc)
+            updates["lost_at"] = None
+            updates["probability"] = 100
+        elif _stage == "Lost":
+            updates["lost_at"] = datetime.now(timezone.utc)
+            updates["won_at"] = None
+            updates["probability"] = 0
+        else:
+            # Re-opened. `probability` is deliberately NOT reset: 100 and 0 were
+            # written BY the close, but any other number is the rep's own
+            # estimate and this path has nothing better to replace it with.
+            updates["won_at"] = None
+            updates["lost_at"] = None
 
     date_fields = {"expected_close_date"}
     ts_fields = {"won_at", "lost_at"}

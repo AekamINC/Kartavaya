@@ -7734,3 +7734,83 @@ open rather than half-claimed: 20.05 has one PROVEN partial (84 → 53.5px on
 reproduce on the probe; 20.06's six screens all render fine in the 20.01 crawl,
 which points at the test's own API shaping rather than at silent screens — not
 yet settled either way.
+
+---
+
+## 2026-08-31 — DRISTI 12.11: "OPEN PIPELINE" WAS EVERY DEAL, WON AND LOST
+
+Suite 12.11 reported *"3 of 31 figures do NOT reconcile"*. It does not assert a
+number; it reads one concept from three surfaces and requires agreement. Three
+readings of **open pipeline** disagreed:
+
+| Reading | Value |
+|---|---|
+| `GET /v1/dristi/overview` `deals.pipeline_value`, tiled **"Open pipeline"** | 35,730,000 |
+| the Pipeline tab's funnel, which excludes Won and Lost | 26,320,000 |
+| `analytics.run graha.pipeline_by_stage`, minus Won and Lost | 26,320,000 |
+
+`routers/dristi.py` summed `value` over the whole table with no predicate
+beyond `org_id`. Live on the reference org: **9,410,000 of closed deals inside
+the headline, 15 of 33 deals already closed — a 36% overstatement** of the one
+number a sales lead plans a quarter from.
+
+### The half that was NOT the tile
+
+Scoping the read did not make the three agree — it moved the tile to
+28,520,000, still 2,200,000 above the funnel. The predicate is on
+`won_at`/`lost_at`, and **two write paths never maintained those columns**:
+
+- `create_deal` inserted `body.stage` verbatim and stamped nothing, so a deal
+  ENTERED as Won or Lost was closed on the board and open in the money forever
+  — nothing would ever move its stage again to trigger a stamp.
+- `update_deal` stamped on the way IN and cleared nothing on the way OUT, so a
+  deal moved to Won and then back to an open stage kept `won_at` permanently
+  and was subtracted from open pipeline while sitting in an open column.
+
+Measured live, read-only, before anything changed:
+
+    won_stage_no_timestamp    5   1,000,000  | closed on screen,
+    lost_stage_no_timestamp   3   1,950,000  | OPEN in every money figure
+    open_stage_stale_won_at   1     750,000    open on screen,
+                                               CLOSED in every money figure
+
+Neither direction produces an error or a log line — the dominant bug class in
+this codebase, again.
+
+### What landed
+
+| | |
+|---|---|
+| `routers/dristi.py` | `pipeline_value` scoped by FILTER; `total_deals`, `won_deals`, `won_value`, `lost_deals` deliberately UNCHANGED — they count on `stage`, which is what a person reads on the board |
+| `routers/graha.py` | `create_deal` stamps a closing stage; `update_deal` clears both timestamps on re-open, and clears the opposite one on a close |
+| migration **242** | backfills the 9 divergent rows; reversal record written FIRST into `migration_242_deal_close_before` |
+| `test_deal_close_is_a_timestamp.py` | 24 tests, both write paths, asserting on BOUND PARAMETERS. 4 mutations killed |
+| `test_open_pipeline_reconciles.py` | 6 tests comparing the router's captured SQL against the REGISTRY BUILDER — no third copy of the rule. 3 mutations killed |
+
+**Live after 242 — all three readings reconcile at 26,370,000.**
+
+The M4 mutation is the one worth remembering: stamping every created deal
+rather than only closing ones. It passes a naive test and hides every new deal
+from the pipeline it was just added to — a worse number than the defect.
+
+### RLS: two tables in `public` had none
+
+CLAUDE.md requires the security advisor after any DDL. Running it after 242
+returned two `rls_disabled_in_public` **ERRORS**, neither of them new and
+neither mine:
+
+    report_schedules               rls_on=false  anon_select=true
+    task_requires_approval_legacy  rls_on=false  anon_select=true
+
+`public` is exposed to PostgREST and the anon key ships in the browser bundle,
+so that is a direct read by anyone who opens the app. `report_schedules`
+carries `recipients` — email addresses.
+
+**The leak is LATENT: both tables hold 0 rows**, and no backend path reads
+either (git grep finds comments only, all describing the table as retired).
+Closed by migration **243**; `public` is now **0 of 301 tables without RLS**.
+
+⚠ **NOT dropped.** `routers/reports.py` says in its own header that
+`report_schedules` "is being dropped" and migration 236 retired the router
+without the table. A DROP needs the owner's approval BY NAME — raised as an
+owner action rather than taken.
