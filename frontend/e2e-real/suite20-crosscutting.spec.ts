@@ -1135,12 +1135,39 @@ test.describe('Suite 20 — Cross-cutting · Unicode Group', () => {
     const announced: string[] = [];
 
     for (const [route, tab, pattern] of CASES) {
-      await shape(page, pattern, 'slow', 7_000);
+      /**
+       * ⚠ 20_000, NOT 7_000 — AND THE OLD NUMBER MADE THIS TEST MEASURE THE
+       * WRONG MOMENT ENTIRELY.
+       *
+       * `openTabById` → `openTabByLabel` ends with `await settle(page)` (:664),
+       * and `settle` here is the file-local one at :397 —
+       * `waitForLoadState('networkidle', { timeout: 12_000 })`. With a 7 s
+       * delay, 12_000 > 7_000, so settle waits for the shaped request to
+       * COMPLETE, and only then does the 1500 ms below run. The sample fired
+       * roughly 8.5–13.5 s after the tab click, on a screen that had finished
+       * loading — so "role=status 0, aria-busy 0, skeleton 0" meant *nothing
+       * was loading*, not *nothing was announced*. The comment that used to sit
+       * on the wait, "While the request is still in flight — the whole point",
+       * was false by construction for any screen served by one shaped request.
+       *
+       * That produced six failures against screens Suite 20.01 records as
+       * rendering perfectly, and it survived because the discriminator was
+       * printed in this test's own output and never read: `/vetana#payslips`
+       * reported `skeleton 1` — the one screen where the sample happened to
+       * land mid-load — while the six reported `skeleton 0`.
+       *
+       * 20_000 > settle's 12_000 cap, so settle now gives up at the cap with
+       * the request still pending, and the sample is taken in flight for real.
+       * Raising the delay rather than removing the settle keeps every other
+       * screen's open path identical to the rest of the suite.
+       */
+      await shape(page, pattern, 'slow', 20_000);
       try {
         await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 45_000 });
         await openTabById(page, L, route, tab);
 
-        // While the request is still in flight — the whole point.
+        // NOW genuinely while the request is in flight: settle above gave up at
+        // its 12 s cap and the shaped response is still 8 s away.
         await page.waitForTimeout(1500);
         const busy = await page.evaluate(() => {
           const main = document.querySelector('#main') || document.body;

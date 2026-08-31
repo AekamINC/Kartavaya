@@ -72,6 +72,31 @@
    `.tbl__wrap` is `overflow-x: auto`, so a wider table scrolls. */
 .tbl .gr__sacts { flex-wrap: nowrap; }
 
+/* ── AND THE OTHER HALF OF THE SAME ROW: A SUBTITLE IS CLAMPED, NOT FOLDED ──
+   The actions fix above took `graha#documents` from 84px to 53.5px against a
+   `--row-h` of 50 — a real improvement that did not reach the token, because a
+   SECOND cell was also over. This is that cell.
+
+   `.gr__ls` (see `.gr__lrow` below) is a LIST ROW class, reused in the name
+   cell of this table at `DocumentsTab.jsx:377` to render the description. At
+   11px its line box is 16.5px, and the row reconciles uniquely: 19.53px of
+   name plus two 16.5px description lines is 52.5, which is the 53.5 measured
+   once the row rule is counted. No other combination of elements in that row
+   lands there — the button is 37.5, a tag 20.5, base text 19.53.
+
+   ⚠ CLAMPED RATHER THAN `nowrap`, DELIBERATELY. `.gr__ls` carries
+   `overflow-wrap: anywhere`, so its min-content contribution is ONE CHARACTER:
+   it never widens the column, it only grows the row. `nowrap` would raise that
+   contribution to the whole description and pull width off every other column
+   — trading a height violation for a worse layout. */
+.tbl td .gr__ls {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+}
+
 /* A lede under a section title. */
 .gr__lede { font-size: 12px; color: var(--ink-3); margin: 0 0 16px; line-height: 1.55; }
 
