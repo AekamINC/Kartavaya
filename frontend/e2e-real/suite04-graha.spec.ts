@@ -179,7 +179,19 @@ const OPEN_STAGES = ['New', 'Qualified', 'Proposal', 'Negotiation'];
 
 const clientName = (n: number) => `${TAG} Client ${pad(n)} ${PLACES[(n - 1) % 6].city}`;
 const contactName = (n: number) => `${TAG} Contact ${pad(n)}`;
-const contactEmail = (n: number) => `s04.contact${pad(n)}@example.com`;
+/* ⚠ THIS MUST MATCH WHAT THE DATABASE HOLDS, AND ONCE IT DID NOT.
+   The owner's ruling is that every address in the product is a
+   `kevalvshah03+<tag>@gmail.com` alias — a real inbox, because a suppressed
+   send proves only that a button was pressed. Migration 249 rewrote the stored
+   contacts to that form; this generator still produced `@example.com`.
+
+   Nothing failed loudly. 04.04 kept typing duplicates, each one sharing an
+   address with NOBODY, so `/contacts/duplicates` correctly reported zero groups
+   and 04.19 failed asking why the detector was broken. The detector was right;
+   the fixture had come apart. A generated address and a stored address that
+   drift apart cannot be caught by either side alone — so they are the same
+   string here, and migration 250 repaired the three rows already typed. */
+const contactEmail = (n: number) => `kevalvshah03+s04contact${pad(n)}@gmail.com`;
 /** Ten digits, unique per contact — `idx_graha_contacts_org_phone` is UNIQUE. */
 const contactPhone = (n: number) => `98${String(76000000 + n)}`;
 const dupeName = (n: number) => `${TAG} Contact Dup ${n}`;
@@ -1205,21 +1217,64 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
         `     The New Territory form offers: ${fields.join(' | ') || '(no labelled fields)'}\n` +
         `     ${territories.length} live territor(ies) and ${withPriority.length} carry a priority of any kind.\n` +
         '\n' +
-        '     `TerritoriesTab.jsx` renders Name, Description, Assigned Users and\n' +
-        '     Pincodes covered — nothing else — and `TerritoryCreate` in\n' +
-        '     routers/graha.py carries `name`, `description`, `assigned_users` and\n' +
-        '     `rules` only. `rules` is free-form jsonb and the form writes exactly one\n' +
-        '     key into it, `pincodes`; the tab\'s own comment says a save from this\n' +
-        '     screen REPLACES the whole column, so a priority stored there by any\n' +
-        '     other means would be deleted the next time somebody edits the patch.\n' +
-        '\n' +
-        '     It is not academic. `POST /contacts/route-all` returns an `overlaps`\n' +
+        '     `territory_routing.py` has sorted overlapping claims on `rules.priority`\n' +
+        '     since Phase 7.1 — lowest wins, blank last, ties by name — and NOTHING\n' +
+        '     COULD EVER SET ONE. `POST /contacts/route-all` returns an `overlaps`\n' +
         '     array and the tab prints "N pincode(s) claimed by more than one\n' +
-        '     territory" — so the product detects the collision, resolves it inside\n' +
-        '     `territory_routing` and tells the customer about it afterwards, with no\n' +
-        '     control anywhere to decide the outcome in advance.\n' +
-        '     REPORTED WITHOUT A VERDICT — 93 §14.\n',
+        '     territory", so the product detects the collision, resolves it inside\n' +
+        '     the router and tells the customer afterwards — with no control to\n' +
+        '     decide the outcome in advance.\n',
       ).toBeGreaterThan(0);
+
+      /* ── AND NOW IT IS SET, WHICH IS THE POINT ────────────────────────────
+         Owner's ruling, 2026-08-31: "let org decide not hard coded, org can
+         decide in setting of the module." So the number is the firm's, and
+         this drives it end to end: type one, save it, read it back off the
+         stored row.
+
+         ⚠ THE TYPE IS ASSERTED, NOT JUST THE VALUE. `_priority_of` accepts an
+         INTEGER and ignores everything else, so a form that posts "2" as a
+         string would be silently dropped and the firm would believe it had set
+         an order it had not. A jsonb "2" and a jsonb 2 look identical in every
+         screenshot; only this assertion tells them apart. */
+      const target = territories[0];
+      expect(target, '04.07 must run before 04.07b — there are no territories to prioritise')
+        .toBeTruthy();
+
+      await p.getByRole('button', { name: 'Edit' }).first().click();
+      const ef = p.locator('form.gr__panel');
+      await expect(ef, 'the territory edit form did not open').toBeVisible({ timeout: 15_000 });
+      const pinsBefore = ((target.rules || {}).pincodes || []) as string[];
+
+      const box = ef.locator('input[aria-label="Priority when patches overlap"]');
+      await expect(box, 'the priority control is not on the edit form, only the create form')
+        .toHaveCount(1);
+      await box.fill('2');
+      await saveAndWait(
+        page,
+        () => ef.getByRole('button', { name: /^Save changes$|^Saving/ }).click(),
+        /\/graha\/territories/,
+        `setting a priority on ${String(target.name)}`,
+      );
+
+      const after = await apiRows(page, '/api/v1/graha/territories');
+      const stored = after.find((t: any) => String(t.id) === String(target.id));
+      expect(stored, 'the territory disappeared after saving a priority').toBeTruthy();
+      expect((stored.rules || {}).priority,
+        'the priority did not survive the save — `rules` is replaced wholesale by this '
+        + 'form, so a key it forgets to carry is a key it deletes')
+        .toBe(2);
+      expect(typeof (stored.rules || {}).priority,
+        'the priority was stored as a string. `_priority_of` accepts an integer and '
+        + 'ignores everything else, so this territory has no priority at all and the '
+        + 'firm has no way to discover that')
+        .toBe('number');
+      /* THE PINCODES ARE WHAT A TERRITORY IS. The save replaces the whole
+         `rules` column; a save that carries the priority and forgets these
+         empties the patch, and the routing then matches nobody. */
+      expect(((stored.rules || {}).pincodes || []).sort(),
+        'saving a priority emptied the territory of its pincodes')
+        .toEqual([...pinsBefore].sort());
     });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1717,7 +1772,17 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
        this being a presence check that a permanently visible box would satisfy
        just as well -- the shape that let a hidden control pass an existence
        test elsewhere in this programme. */
+    /* AT ANY OTHER STAGE THE BOX MUST BE ABSENT. Asserted first and on its own,
+       because it is the half that gives the next assertion its meaning: a box
+       that is always on screen would satisfy a presence check just as well and
+       prove nothing about the condition. */
     await stageSel.selectOption('New');
+    await expect(reasonBox,
+      'the lost-reason box is drawn at the New stage. It is asked only of a LOST '
+      + 'deal; a box that is always present makes the presence check below vacuous')
+      .toHaveCount(0);
+
+    await stageSel.selectOption('Lost');
     await expect(reasonBox,
       '\n  WARNING: NO CONTROL FOR THE LOST REASON ON THE DEAL RECORD.\n'
       + '     Looked for a textarea named lost_reason inside form.dr__sec with\n'
@@ -1945,16 +2010,36 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     // one of §4's eighteen: those are a counted volume, and borrowing one of
     // them for this would make the count depend on which ran last.
     const COVER = `${TAG} Follow-up cover`;
-    const openOnDeal = (await apiRows(page, '/api/v1/graha/follow-ups?is_completed=false'))
-      .filter((f: any) => f.deal_id);
-    if (!openOnDeal.length) {
+    /* ⚠ IT MUST HANG OFF A DEAL THAT IS STILL OPEN, AND ONCE IT DID NOT.
+       This asked for `dealTitle(1)` by name and never looked at its stage. That
+       deal had since been carried to Won by 04.10, and `PipelineTab` draws
+       `.gdeal__next` as `{closed ? null : f ? ...}` — a Won or Lost card shows
+       no follow-up marker ON PURPOSE, because nobody needs chasing about a deal
+       that is finished. So the board was right, the assertion below was right,
+       and the fixture pointed at the one deal that could never satisfy it.
+       Picking by STAGE rather than by name is what makes this stable: 04.10 is
+       free to close any particular deal without silently disarming this test. */
+    const allDeals = await apiRows(page, '/api/v1/graha/deals');
+    const openDeal = allDeals.find((d: any) => !['Won', 'Lost'].includes(String(d.stage)));
+    expect(openDeal,
+      `every deal in this org is Won or Lost, so no card on the board can carry a `
+      + `follow-up marker. Stages seen: ${[...new Set(allDeals.map((d: any) => String(d.stage)))].join(', ')}`)
+      .toBeTruthy();
+
+    const openOnOpenDeal = (await apiRows(page, '/api/v1/graha/follow-ups?is_completed=false'))
+      .filter((f: any) => f.deal_id)
+      .filter((f: any) => {
+        const d = allDeals.find((x: any) => String(x.id) === String(f.deal_id));
+        return d && !['Won', 'Lost'].includes(String(d.stage));
+      });
+    if (!openOnOpenDeal.length) {
       await p.getByRole('button', { name: '+ New Follow-up' }).click();
       const form = p.locator('form.gr__panel');
       await expect(form, 'the New Follow-up form did not open').toBeVisible({ timeout: 15_000 });
       const f = (label: string) => form.locator('label.gr__f').filter({ hasText: label }).first();
       await f('Title *').locator('input').fill(COVER);
       await setDate(form, 'Due Date *', `${year}-12-15`);
-      await pickByLabel(f('Deal').locator('select'), dealTitle(1), 'deal');
+      await pickByLabel(f('Deal').locator('select'), String(openDeal.title), 'deal');
       await f('Description').locator('input').fill(`${TAG} kept open so the board has something to mark`);
       await saveAndWait(page, () => form.getByRole('button', { name: /^Create$|^Creating/ }).click(),
         /\/graha\/follow-ups(\?|$)/, `scheduling ${COVER}`);
@@ -1980,6 +2065,22 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
           + 'them — and a board that cannot show what is covered is the whole point of the tab',
           timeout: 25_000 })
       .toBeGreaterThan(0);
+
+    /* ── AND THE OTHER HALF, WHICH IS THE ONE THAT COST A FALSE FINDING ────
+       A CLOSED deal must NOT be marked, even while an open follow-up hangs off
+       it. Without this, "mark every deal that has a follow-up" would satisfy
+       the assertion above and quietly start nagging firms about deals they
+       have already won — and I would not have found out from this suite,
+       because the check above would still be green. */
+    const wonCard = pp.locator('.gdeal').filter({
+      has: page.locator('.gdeal__co', { hasText: dealTitle(1) }),
+    });
+    if (await wonCard.count()) {
+      await expect(wonCard.locator('.gdeal__next'),
+        `${dealTitle(1)} is Won and the board marked it with a follow-up. A finished `
+        + 'deal needs no chasing; marking it turns the board into noise')
+        .toHaveCount(0);
+    }
 
     expect(con.errors.filter((e) => e.text.startsWith('UNCAUGHT')),
       `uncaught errors on the follow-ups/pipeline screens:${dumpConsole(con)}`).toEqual([]);
@@ -2093,7 +2194,27 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
       const visitor = await stranger.newPage();
       let typed = 0;
       try {
+        /* ⚠ THE PUBLIC WRITE IS RATE LIMITED, AND THE TEST OBEYS IT.
+           `POST /f/{slug}` carries `@limiter.limit("10/minute")` — it is an
+           unauthenticated write, and it had NO limit at all until this
+           programme added one. The eleventh submission in a minute is refused
+           with a 429, and that refusal is CORRECT: relaxing the limit so a
+           test can run would remove the guard from production to make a
+           green tick, which is the wrong way round.
+
+           So this paces itself instead. Twelve real people filling in a lead
+           form arrive from twelve addresses; only a test drives them all down
+           one. Nine per window leaves headroom for the retry the harness may
+           make on a flaky navigation. */
+        let inWindow = 0;
         for (let k = subsBefore; k < N_SUBMISSIONS; k++) {
+          if (inWindow >= 9) {
+            console.log(
+              `  pausing 61s — ${inWindow} submissions sent, the public form allows 10/min`);
+            await visitor.waitForTimeout(61_000);
+            inWindow = 0;
+          }
+          inWindow++;
           await visitor.goto(`/f/${formSlug(1)}`);
           // The form's OWN NAME, never the slug: a slug is an identifier and a
           // public page must show a person nothing they have to decode.
@@ -2420,25 +2541,30 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     const all = [...pipelineButtons, ...dealButtons].map((t) => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
     const creator = all.filter((t) => /pipeline/i.test(t) && /new|add|create/i.test(t));
 
-    expect(
-      hasCreator,
+    /* ⚠ THE CONTROL IS ASKED FOR BY WHAT IT DOES, NOT BY WHERE IT SITS.
+       The finding this replaces was "NO CONTROL ANYWHERE CREATES A PIPELINE":
+       `POST /v1/graha/pipelines` existed and a grep for `pipelines` across
+       `frontend/src` returned ONE hit, a module-catalogue blurb. Instead,
+       `create_deal` silently INSERTed a "Default Pipeline" the first time a
+       deal was raised with none — so the org had a board nobody typed and
+       §4's two pipelines could not be reached by any user.
+
+       It is driven now. The form is `form.gpipe__new` on the pipeline tab; the
+       box is asked for THROUGH that form rather than by placeholder text, so a
+       reworded placeholder does not quietly stop this test exercising it. */
+    await gotoTab(page, 'pipeline');
+    const newForm = p.locator('form.gpipe__new');
+    await expect(newForm,
       '\n  ⚠ NO CONTROL ANYWHERE CREATES A PIPELINE.\n' +
       `     Live: this org has ${pipelines.length} pipeline(s): ` +
       `${pipelines.map((x) => String(x.name)).join(', ') || '(none)'}\n` +
-      '     `PipelineTab.jsx`\'s own empty state says "Create one from the Deals tab and\n' +
-      '     your board appears here" — and the Deals tab has no such control. Buttons\n' +
-      `     actually on those two screens: ${all.slice(0, 24).join(' | ')}\n` +
-      '\n' +
-      '     `POST /v1/graha/pipelines` exists (routers/graha.py:1603) and a grep for\n' +
-      '     `pipelines` across `frontend/src` returns ONE hit — the word in a module\n' +
-      '     catalogue blurb. Nothing calls it.\n' +
-      '\n' +
-      '     What actually happens instead: `create_deal` (routers/graha.py:1806-1815)\n' +
-      '     silently INSERTs a pipeline called "Default Pipeline" the first time a deal\n' +
-      '     is raised with none. So the org has a pipeline nobody typed, `/deals/kanban`\n' +
-      '     serves that one board, and §4\'s "2 pipelines" cannot be reached by a user.\n' +
-      '     REPORTED WITHOUT A VERDICT — 93 §14.\n',
-    ).toBe(true);
+      `     Buttons actually on the pipeline and deals screens: ${all.slice(0, 24).join(' | ')}\n`,
+    ).toBeVisible({ timeout: 20_000 });
+    expect(creator.length,
+      `no button on either screen names pipeline creation. Saw: ${all.slice(0, 24).join(' | ')}`)
+      .toBeGreaterThan(0);
+    const nameBox = newForm.locator('input.k-input');
+    await expect(nameBox, 'the create-pipeline form carries no name box').toHaveCount(1);
 
     /* AND NOW IT IS DRIVEN, WHICH IS THE POINT. Reporting that a pipeline
        cannot be made was the right answer while that was true; typing one is

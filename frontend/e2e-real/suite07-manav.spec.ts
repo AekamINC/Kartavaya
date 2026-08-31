@@ -2541,15 +2541,30 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
      * if any employee on this register has picked up an address, six
      * announcements become up to 180 real emails and this must stop rather than
      * send them. */
-    const withEmail = (await rowsOf(page, '/api/v1/manav/employees'))
-      .filter((e) => String(e.email || '').trim());
+    /* ⚠ THE PRECONDITION CHANGED, SO THE PREDICATE DID — NOT THE GUARD.
+       This used to require that NO employee held an address at all, which was
+       right while Suite 07 left every one of them blank. Migration 249 then
+       gave all 30 an address on the owner's explicit ruling: every address in
+       the product is a `kevalvshah03+<tag>@gmail.com` alias, real mail is
+       wanted, and a suppressed send proves only that a button was pressed.
+
+       Under the old predicate this test refused to publish for ever — and
+       "no employee has an address" is no longer the thing worth protecting.
+       What IS worth protecting is that six announcements never reach a
+       STRANGER. So the guard now asks who owns each address, and blocks on
+       exactly the addresses nobody here can answer for. It still fails closed:
+       an unrecognised address stops the publish. */
+    const OURS = /^kevalvshah03\+[^@]*@gmail\.com$|@simulator\.amazonses\.com$/i;
+    const notOurs = (await rowsOf(page, '/api/v1/manav/employees'))
+      .filter((e) => String(e.email || '').trim())
+      .filter((e) => !OURS.test(String(e.email).trim()));
     expect(
-      withEmail.map((e) => `${e.employee_code}:${e.email}`),
+      notOurs.map((e) => `${e.employee_code}:${e.email}`),
       'REFUSING TO PUBLISH. An announcement mails every active employee who holds an email ' +
-      'address, staging reports outbound_mode="live" and nothing is suppressed, so publishing ' +
-      'six of them here would send real mail to the addresses listed above. Suite 07 creates ' +
-      'every employee with the address left blank precisely so this cannot happen — an address ' +
-      'appearing here means something else put it there.',
+      'address and outbound_mode is "live", so publishing six of them would send real mail ' +
+      'to the addresses listed above — and those addresses are not ones this programme owns. ' +
+      'An owned address is a kevalvshah03+<tag>@gmail.com alias or the SES simulator; ' +
+      'anything else belongs to a person who did not ask to be in a test.',
     ).toEqual([]);
 
     await manav(page, 'announcements');
