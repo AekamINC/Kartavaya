@@ -430,11 +430,38 @@ def validate_payslip(payslip: dict, employee: dict, org: dict) -> DocumentCheck:
     gross = _num(payslip.get("gross"))
     deductions = _num(payslip.get("total_deductions"))
     net = _num(payslip.get("net_pay"))
-    if abs(gross - deductions - net) > 1.0:
+    # ⚠ REIMBURSEMENTS ARE A TERM IN THIS IDENTITY AND WERE MISSING FROM IT.
+    #
+    # `routers/vetana.py:2175-2177` computes
+    #     gross = gross_fixed + variable_total          (reimbursement EXCLUDED)
+    #     net   = gross - total_deductions + reimbursement_total
+    # so `gross - deductions - net` equals `-reimbursements` BY CONSTRUCTION.
+    # Any payslip carrying one therefore failed this check, blocked
+    # `raise_if_incomplete`, and `GET …/payslips/{id}/pdf` answered 422. Two
+    # employees — PS-2026-0062 and PS-2026-0089, August 2026 — could not obtain
+    # a payslip at all, and `vetana.py:2317` mails the notification anyway with
+    # `pdf_bytes = None`, so they were told about a document that would not open.
+    #
+    # The exclusion from `gross` is deliberate and correct: counting a
+    # reimbursement as wages inflated the loan-recovery ceiling under the
+    # Payment of Wages Act s.7(3), fixed at vetana.py:2115-2143. So the records
+    # were right and only the identity was wrong.
+    #
+    # ⚠ AND THE VALIDATOR IS RELAXED LAST, NEVER FIRST. Until `payslip_pdf.py`
+    # was changed, this check was a TRUE statement about the page: the Earnings
+    # table listed "Reimbursements" under a Gross foot that excluded it, and the
+    # totals read 13,269 − 51.92 = 14,092. Loosening this alone would have
+    # shipped exactly the unverifiable wage record it exists to prevent. The
+    # slip now carries an "Add reimbursements" line, so the three figures
+    # reconcile to the net ON THE PAGE, and only then does this widen to match.
+    reimbursements = _num(payslip.get("reimbursements"))
+    if abs(gross - deductions + reimbursements - net) > 1.0:
+        _expected = gross - deductions + reimbursements
         chk.blocking.append(Gap(
             "payslip.net_pay", "Net pay reconciliation",
-            f"Gross ({gross:,.2f}) less deductions ({deductions:,.2f}) is "
-            f"{gross - deductions:,.2f}, but net pay is recorded as {net:,.2f}. "
+            f"Gross ({gross:,.2f}) less deductions ({deductions:,.2f})"
+            + (f" plus reimbursements ({reimbursements:,.2f})" if reimbursements else "")
+            + f" is {_expected:,.2f}, but net pay is recorded as {net:,.2f}. "
             "The figures on the slip do not reconcile.",
             "Vetana → re-run payroll for this period",
         ))

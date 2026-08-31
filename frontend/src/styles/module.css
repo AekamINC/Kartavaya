@@ -500,8 +500,24 @@
 .rv__n   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--on-surface-3); width: 26px; }
 .rv__who { min-width: 0; }
 .rv__t   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 500; white-space: nowrap; }
-.rv__loc { display: flex; align-items: center; gap: 5px; font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
-.rv__v   { display: flex; gap: 4px; justify-content: flex-end; white-space: nowrap; }
+/* ⚠ NO `display: flex` ON A CELL. These two carried it, and they were the only
+   two in the product that did — every other cell needing a flex row puts it on
+   an INNER wrapper (`.rv__trip` inside `.rv__trip-cell` below; `.vk-stk__acts`
+   and `.vk-tg__acts` use `text-align: right` on the cell instead).
+
+   `display: flex` on a `<td>` takes it out of table layout, so the browser's
+   CSS table fixup wraps it in an anonymous table-cell box. The register then
+   measured 132px against a 66px `--row-h` — exactly 2x, because a `.tbl td` is
+   a 66px border-box with a 65px content box and the fixup stacks two of them.
+   That is 20.05's one-row contract broken, and it broke tab order with it:
+   9.12 found the two cells out of sequence for a keyboard user.
+
+   The flex lives on a wrapper now. The cell keeps only the typography, which is
+   what the comment above this block already says it should. */
+.rv__loc { font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
+.rv__loc__in { display: flex; align-items: center; gap: 5px; }
+.rv__v   { white-space: nowrap; }
+.rv__v__in { display: flex; gap: 4px; justify-content: flex-end; }
 
 /* The comparison. `.rv__trip` is one of the four things 07 §"Reuse before you
    create" lists as genuinely new, because no primitive covers it. */

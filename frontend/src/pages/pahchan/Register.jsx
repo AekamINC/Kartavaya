@@ -870,114 +870,118 @@ export default function Register() {
                   </Td>
 
                   <Td className="rv__loc">
-                    {p.site_name || '—'}
-                    {p.accuracy_m != null && (
-                      <span className="rv__acc">
-                        ±{Math.round(p.accuracy_m)}m
-                      </span>
-                    )}
+                    <div className="rv__loc__in">
+                      {p.site_name || '—'}
+                      {p.accuracy_m != null && (
+                        <span className="rv__acc">
+                          ±{Math.round(p.accuracy_m)}m
+                        </span>
+                      )}
+                    </div>
                   </Td>
 
                   <Td className="rv__v">
-                    {mine
-                      /* `key` on the flash wrapper so the one-shot RESTARTS when
-                         the verdict changes, rather than being a class already on
-                         the node that never fires again. The flash is the polish;
-                         the chip appearing where a dash was is the signal, and
-                         that difference is static — `--dur-slow` collapses to
-                         ~0.5ms under `prefers-reduced-motion`, so the animation
-                         goes, and it must not take the confirmation with it. */
-                      ? (
-                        <span key={mine} className="ix-flash rv__flash">
-                          {/* The tone comes from `status`; the WORD is named,
-                              because the affordance and its result have to agree.
-                              The help line above this table says "↵ confirm · F
-                              flag", and the bare STATUS_MAP words are "Done" and
-                              "Rejected" — so pressing F on a punch that needs a
-                              second look reported it as REJECTED, which is a
-                              different decision about a person's attendance than
-                              the one the reviewer made. */}
-                          <StatusChip
-                            status={mine === 'ok' ? 'done' : 'rejected'}
-                            label={mine === 'ok' ? 'Confirmed' : 'Flagged'}
-                          />
-                        </span>
-                      )
-                      : noRef
-                        // §3: no reference pair suppresses the confirm affordance
-                        // and offers enrollment instead. Confirming here would be
-                        // trust with a checkmark on it.
-                        ? <button className="btn btn--ghost btn--sm"
-                            onClick={(e) => { e.stopPropagation(); pushToast({
-                              type: 'info',
-                              title: 'Enrollment request',
-                              message: `${p.employee_name} needs two reference photos before their punches can be verified.`,
-                            }); }}>
-                            Send enrollment request
-                          </button>
-                        /* Not an em-dash. This is the cell a reviewer looks at to
-                           know whether the row is theirs to judge, and ↵ now
-                           refuses on two of these three states — so it names the
-                           one it is in rather than letting the refusal arrive as
-                           an unexplained toast. */
-                        : (
-                          /* The reference (`PahchanReview.jsx:184`) puts a
-                             confirm and a flag control on every row. The build
-                             had the keyboard path only, so a reviewer who
-                             reaches for a mouse — or a touch device, where there
-                             is no ↵ at all — could read the queue and decide
-                             nothing.
-
-                             Both buttons seek to this row and then call the SAME
-                             `record()` the keyboard calls. That is the point: the
-                             gate that refuses a confirm against photos which have
-                             not loaded lives inside `record`, and duplicating the
-                             decision here is how the two paths drift until one of
-                             them will clear a day nobody looked at.
-
-                             Confirm is disabled while the comparison is not
-                             READY, so the refusal is visible before the click
-                             rather than arriving as a toast afterwards. Flag is
-                             never disabled — §3's reasoning, and the same reason
-                             F is ungated: a reviewer who cannot see the faces
-                             still has an opinion, and gating it strands the queue
-                             on exactly the rows that need a person. */
-                          <div className="rv__acts">
-                            <button
-                              type="button"
-                              className="btn btn--ghost btn--sm"
-                              disabled={compare[p.id] !== COMPARE.READY}
-                              title={compare[p.id] === COMPARE.BROKEN
-                                ? 'The photos did not load, so there is nothing to compare'
-                                : compare[p.id] === COMPARE.READY
-                                  ? `Confirm ${p.employee_name}'s punch`
-                                  : 'Still loading the photos'}
-                              onClick={(e) => { e.stopPropagation(); seek(i); record('ok'); }}
-                            >
-                              Confirm
+                    <div className="rv__v__in">
+                      {mine
+                        /* `key` on the flash wrapper so the one-shot RESTARTS when
+                           the verdict changes, rather than being a class already on
+                           the node that never fires again. The flash is the polish;
+                           the chip appearing where a dash was is the signal, and
+                           that difference is static — `--dur-slow` collapses to
+                           ~0.5ms under `prefers-reduced-motion`, so the animation
+                           goes, and it must not take the confirmation with it. */
+                        ? (
+                          <span key={mine} className="ix-flash rv__flash">
+                            {/* The tone comes from `status`; the WORD is named,
+                                because the affordance and its result have to agree.
+                                The help line above this table says "↵ confirm · F
+                                flag", and the bare STATUS_MAP words are "Done" and
+                                "Rejected" — so pressing F on a punch that needs a
+                                second look reported it as REJECTED, which is a
+                                different decision about a person's attendance than
+                                the one the reviewer made. */}
+                            <StatusChip
+                              status={mine === 'ok' ? 'done' : 'rejected'}
+                              label={mine === 'ok' ? 'Confirmed' : 'Flagged'}
+                            />
+                          </span>
+                        )
+                        : noRef
+                          // §3: no reference pair suppresses the confirm affordance
+                          // and offers enrollment instead. Confirming here would be
+                          // trust with a checkmark on it.
+                          ? <button className="btn btn--ghost btn--sm"
+                              onClick={(e) => { e.stopPropagation(); pushToast({
+                                type: 'info',
+                                title: 'Enrollment request',
+                                message: `${p.employee_name} needs two reference photos before their punches can be verified.`,
+                              }); }}>
+                              Send enrollment request
                             </button>
-                            <button
-                              type="button"
-                              className="btn btn--ghost btn--sm"
-                              title={`Flag ${p.employee_name}'s punch for a second look`}
-                              onClick={(e) => { e.stopPropagation(); seek(i); record('flagged'); }}
-                            >
-                              Flag
-                            </button>
-                            {compare[p.id] !== COMPARE.READY && (
-                              /* BROKEN and PENDING must not read alike — one is
-                                 "wait" and the other is "this will never
-                                 arrive". The tone is the per-row difference, so
-                                 it rides `--c`. */
-                              <span
-                                className="rv__cmp"
-                                style={compare[p.id] === COMPARE.BROKEN ? { '--c': 'var(--danger)' } : undefined}
+                          /* Not an em-dash. This is the cell a reviewer looks at to
+                             know whether the row is theirs to judge, and ↵ now
+                             refuses on two of these three states — so it names the
+                             one it is in rather than letting the refusal arrive as
+                             an unexplained toast. */
+                          : (
+                            /* The reference (`PahchanReview.jsx:184`) puts a
+                               confirm and a flag control on every row. The build
+                               had the keyboard path only, so a reviewer who
+                               reaches for a mouse — or a touch device, where there
+                               is no ↵ at all — could read the queue and decide
+                               nothing.
+
+                               Both buttons seek to this row and then call the SAME
+                               `record()` the keyboard calls. That is the point: the
+                               gate that refuses a confirm against photos which have
+                               not loaded lives inside `record`, and duplicating the
+                               decision here is how the two paths drift until one of
+                               them will clear a day nobody looked at.
+
+                               Confirm is disabled while the comparison is not
+                               READY, so the refusal is visible before the click
+                               rather than arriving as a toast afterwards. Flag is
+                               never disabled — §3's reasoning, and the same reason
+                               F is ungated: a reviewer who cannot see the faces
+                               still has an opinion, and gating it strands the queue
+                               on exactly the rows that need a person. */
+                            <div className="rv__acts">
+                              <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                disabled={compare[p.id] !== COMPARE.READY}
+                                title={compare[p.id] === COMPARE.BROKEN
+                                  ? 'The photos did not load, so there is nothing to compare'
+                                  : compare[p.id] === COMPARE.READY
+                                    ? `Confirm ${p.employee_name}'s punch`
+                                    : 'Still loading the photos'}
+                                onClick={(e) => { e.stopPropagation(); seek(i); record('ok'); }}
                               >
-                                {compare[p.id] === COMPARE.BROKEN ? 'Cannot compare' : 'Loading photos'}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                                Confirm
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                title={`Flag ${p.employee_name}'s punch for a second look`}
+                                onClick={(e) => { e.stopPropagation(); seek(i); record('flagged'); }}
+                              >
+                                Flag
+                              </button>
+                              {compare[p.id] !== COMPARE.READY && (
+                                /* BROKEN and PENDING must not read alike — one is
+                                   "wait" and the other is "this will never
+                                   arrive". The tone is the per-row difference, so
+                                   it rides `--c`. */
+                                <span
+                                  className="rv__cmp"
+                                  style={compare[p.id] === COMPARE.BROKEN ? { '--c': 'var(--danger)' } : undefined}
+                                >
+                                  {compare[p.id] === COMPARE.BROKEN ? 'Cannot compare' : 'Loading photos'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                    </div>
                   </Td>
                 </tr>
 

@@ -139,7 +139,18 @@ def _build_html(payslip: dict, employee: dict, org: dict, check: DocumentCheck |
         ("Conveyance", payslip.get("conveyance")),
         ("Medical", payslip.get("medical")),
         ("Overtime pay", payslip.get("overtime_pay")),
-        ("Reimbursements", payslip.get("reimbursements")),
+        # ⚠ REIMBURSEMENTS ARE NOT AN EARNING AND MUST NOT SIT UNDER THIS FOOT.
+        # They were listed here, above a "Gross earnings" total that EXCLUDES
+        # them — `routers/vetana.py:2175` computes
+        # `gross = gross_fixed + variable_total` with reimbursement deliberately
+        # left out, because counting it inflated the loan-recovery ceiling under
+        # the Payment of Wages Act s.7(3). So the page showed a line item that
+        # its own subtotal did not contain, and the totals block below then read
+        # 13,269 − 51.92 = 14,092. A wage record whose printed figures do not add
+        # up is not a wage record.
+        #
+        # They now appear in the totals block, after deductions, which is where
+        # the arithmetic actually puts them: net = gross − deductions + reimb.
     ])
     earnings.append(
         f'<tr class="lines__foot"><td>Gross earnings</td>'
@@ -164,13 +175,18 @@ def _build_html(payslip: dict, employee: dict, org: dict, check: DocumentCheck |
 
     # ── net pay ──────────────────────────────────────────────────────────────
     net_pay = float(payslip.get("net_pay") or 0)
-    totals_html = R.totals(
-        [
-            ("Gross earnings", _fmt(payslip.get("gross"))),
-            ("Less deductions", f'&minus;{_fmt(payslip.get("total_deductions"))}'),
-        ],
-        grand=("Net pay", _fmt(net_pay)),
-    )
+    _reimb = float(payslip.get("reimbursements") or 0)
+    _lines = [
+        ("Gross earnings", _fmt(payslip.get("gross"))),
+        ("Less deductions", f'&minus;{_fmt(payslip.get("total_deductions"))}'),
+    ]
+    # Shown only when there is one, so an ordinary slip is unchanged — and shown
+    # ADDITIVELY, because that is the sign the arithmetic gives it. With this
+    # line present the three figures reconcile to the net on the page, which is
+    # the whole point: 13,269.23 − 51.92 + 875.00 = 14,092.31.
+    if abs(_reimb) > 0.005:
+        _lines.append(("Add reimbursements", _fmt(_reimb)))
+    totals_html = R.totals(_lines, grand=("Net pay", _fmt(net_pay)))
     words = R.words_line(
         f"Net pay in words &mdash; <b>{R.esc(amount_in_words_inr(net_pay))}</b>"
     )
