@@ -157,6 +157,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 
+import { isForeignInlineScriptRefusal } from './_helpers';
 const LANE = lane('unicode');
 const API = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 const OUT = path.join(os.tmpdir(), 'kartavya-e2e-suite22');

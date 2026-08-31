@@ -353,8 +353,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
-import { openTab } from './_helpers';
-
+import { openTab, isForeignInlineScriptRefusal } from './_helpers';
 // ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
 // unset run is byte-for-byte the Unicode run this suite was authored against.
 // `lane('unicode')` frozen here at import time was why the UK replay could not

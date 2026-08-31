@@ -170,7 +170,7 @@
  */
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, activeLane, assertOrg } from './_lanes';
-import { settle } from './_helpers';
+import { settle, isForeignInlineScriptRefusal } from './_helpers';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

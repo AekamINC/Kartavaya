@@ -233,6 +233,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
 
+import { isForeignInlineScriptRefusal } from './_helpers';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
 const FIX = path.join(HERE, 'fixtures', 'generated', 'esign');

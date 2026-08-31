@@ -308,6 +308,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'crypto';
 import { lane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
+import { isForeignInlineScriptRefusal } from './_helpers';
 import { S12_DL } from './suite12.config';
 
 const LANE = lane('unicode');

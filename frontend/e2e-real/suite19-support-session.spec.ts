@@ -63,6 +63,7 @@
 import { test, expect, Page, Request } from '@playwright/test';
 import { ORG as ORG_IDS } from './_lanes';
 
+import { isForeignInlineScriptRefusal } from './_helpers';
 const API_BASE = process.env.E2E_API_URL || 'https://api.kartavaya.com';
 const SUPPORT = process.env.E2E_SUPPORT_TOKEN;
 const SUPPORT_EMAIL = process.env.E2E_SUPPORT_EMAIL || 'kevalvshah03+support@gmail.com';

@@ -265,8 +265,7 @@
  */
 import { test, expect, Page, Locator } from '@playwright/test';
 import { lane, activeLane, assertOrg } from './_lanes';
-import { setDate, settle } from './_helpers';
-
+import { setDate, settle, isForeignInlineScriptRefusal } from './_helpers';
 // ⚠ STAGE 4 (§14): `activeLane()` reads E2E_LANE and DEFAULTS TO 'unicode', so an
 // unset run is byte-for-byte the Unicode run this suite was authored against.
 // `lane('unicode')` frozen here at import time was why the UK replay could not

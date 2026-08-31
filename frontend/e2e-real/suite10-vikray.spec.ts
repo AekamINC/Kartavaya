@@ -304,8 +304,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
-import { setDate } from './_helpers';
-
+import { setDate, isForeignInlineScriptRefusal } from './_helpers';
 const DL = path.join(os.tmpdir(), 'kartavya-e2e-wave4', 'vikray-downloads');
 fs.mkdirSync(DL, { recursive: true });
 
