@@ -119,14 +119,17 @@
  * browser's default h1: Times, 2em, and nothing to do with this product.
  * `check-classes` is what found it — a class with no rule renders unstyled.
  *
- * Sized one step below `.ap__outcome-t`: that is a signing outcome, which is
- * the last word on a document, and this is the top of a form somebody still
- * has to fill in. */
+ * Sized and weighted to MATCH `.ap__outcome-t`, not a step below it. The first
+ * attempt reasoned that a signing outcome is the last word on a document while
+ * this is the top of a form, so it took `--t-title` — and measured on the live
+ * page that is 15.96px against a 13.02px lede. A heading 1.2x its own body copy
+ * is not a heading. Both of these are standalone pages a stranger lands on cold
+ * with no chrome and no nav, and on such a page the h1 IS the interface. */
 .pub__title {
   font-family: var(--font-display);
-  font-size: var(--t-title);
-  font-weight: var(--t-title-w);
-  letter-spacing: -.01em;
+  font-size: var(--t-title-lg);
+  font-weight: 400;
+  letter-spacing: -.02em;
   color: var(--on-surface);
   margin: 0;
   text-wrap: balance;
