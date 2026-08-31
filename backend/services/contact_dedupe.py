@@ -350,7 +350,37 @@ async def merge_contacts(
                             loser_id, survivor_id,
                         )
                         if clashes:
-                            dropped_rows[tbl] = [json.loads(c["row"]) for c in clashes]
+                            # ⚠ `to_jsonb(...)` COMES BACK A DICT, NOT A STRING, and this
+                            # line raised `TypeError: the JSON object must be str,
+                            # bytes or bytearray, not dict` on every merge that
+                            # reached it. `db.py` registers a jsonb DECODER on every
+                            # connection (`_json_decoder`), so asyncpg has already
+                            # parsed the column before it gets here — the same trap
+                            # that file's own docstring warns about: "Several routers
+                            # already carry defensive `json.loads` for exactly that,
+                            # which is the symptom."
+                            #
+                            # It was the ONLY unguarded `json.loads` in this file —
+                            # lines 404, 406, 533 and 546 all test `isinstance(..., str)`
+                            # first — which is what makes it an oversight rather than a
+                            # decision.
+                            #
+                            # ⚠ AND IT WAS LATENT FOR MONTHS, WHICH IS WHY NOBODY SAW IT.
+                            # This branch runs only when a referencing table has a
+                            # COMPOSITE UNIQUE index containing the FK column and the
+                            # loser holds a row that would collide with the survivor's.
+                            # Of the nineteen tables holding an FK to `graha_contacts`,
+                            # exactly two qualify: `graha_contact_labels(contact_id,
+                            # label_id)` and `prachar_sequence_enrollments(sequence_id,
+                            # contact_id)`. All six merges in `graha_contact_merges`
+                            # carry `moved_rows = {}` — no clash had ever occurred in
+                            # production — until Suite 04 put the SAME label on a
+                            # duplicate pair, and from that moment every merge of that
+                            # group answered 500.
+                            dropped_rows[tbl] = [
+                                json.loads(c["row"]) if isinstance(c["row"], str) else c["row"]
+                                for c in clashes
+                            ]
                             await conn.execute(
                                 f"DELETE FROM {tbl} l "
                                 f"WHERE l.{col}=$1::uuid AND EXISTS ("
