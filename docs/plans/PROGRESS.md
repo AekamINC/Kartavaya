@@ -8049,3 +8049,48 @@ why the probe GETs even write-shaped paths). It cannot enumerate, and says so.
 ORPHANED routes, and probing a known list inverts it into the one direction that
 cannot find one. Raised as an owner decision rather than quietly narrowed.
 
+
+### Nine defects, and the assertions that were agreeing with themselves
+
+Nine product defects fixed and verified in the product (not "code shipped"):
+the session-mode pooler, credits unreachable for two paying orgs, the contact
+merge 500, a refusal leaking Aekam role codes to a customer, a payslip withheld
+from two employees who WERE mailed a notification, the register's tab order,
+the merge rewriting its own audit ledger, a dead `created_at` age guard, and
+`Download report` 404'ing for every project in the product.
+
+The tenth was mine. `827bafe8` corrected the GST base **in the data** as well as
+the code, and `balance_due` is a stored column, not a derived one — so
+INV-2026-0009 sat in production demanding ₹30,400 against a ₹29,500 invoice with
+nothing paid. Migration 246 corrects it; the report is in the commit. The row's
+own evidence is what ruled out a code path: `updated_at` moved while
+`updated_by` stayed NULL, and all six application updaters stamp both in one
+statement.
+
+⚠ **THE DOMINANT FINDING IS STILL NOT A PRODUCT BUG.** Around twenty harness
+faults, and — the class worth the name — **assertions that were satisfied by
+their own shape**:
+
+- `10.01`'s settle guard matched `[class*="sk-"]`, which selects **skills**
+  components and never a skeleton, so the check reduced to `text.length > 0`.
+- `13.01` asserted `toHaveCount(0)` on `.sk, .skeleton, [aria-busy="true"]`;
+  two of the three exist nowhere in the product, and a count-of-zero over a dead
+  selector cannot fail.
+- `06.02` set a vendor's payment terms from the clock — one run in three it
+  wrote the value already stored, and the read-back agreed with itself.
+- `10.08`'s taxable-value check computed `subtotal + discount`, which is only
+  true while `subtotal` is stored NET — **the bug it was written to catch**. It
+  outlived the fix and then failed a conversion that had become correct.
+- `10.09` spent its whole 45-movement budget before reaching §4's deliberate
+  negative, so the below-zero warning had never once been asserted. It passed
+  every time; `10.16` is what caught it.
+
+`10.16` also asked an append-only ledger for an exact count. `vikray_stock_moves`
+carries no name, note or reference column — the route says why — so the suite
+cannot recognise a row it wrote. That is not idempotence, it is a claim that
+nothing has ever happened, and it read 63 against a target of 45. The
+idempotence claim moved to where it is checkable (`after - before === typed`)
+and the §4 volume became the floor it can honestly be.
+
+Every one of these was GREEN over the thing it existed to catch. Making them
+real is the only reason the numbers below mean anything.
