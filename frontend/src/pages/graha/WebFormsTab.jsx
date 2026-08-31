@@ -28,6 +28,28 @@ export default function WebFormsTab() {
   const [err, setErr] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', slug: '', auto_source: 'web_form' });
+  const [copied, setCopied] = useState('');
+
+  /* The address a member of the PUBLIC uses. Built from the browser's own
+     origin rather than from a configured base: this tab is only ever open on
+     the host the customer is already using, so that origin is by construction
+     the right one, and a stale env var cannot hand somebody a dead link to
+     put on their website. */
+  const publicUrl = slug => `${window.location.origin}/f/${slug}`;
+
+  async function copy(slug) {
+    const url = publicUrl(slug);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      /* Clipboard refused — an insecure context, or the permission denied.
+         The input beside the button holds the same text and selects itself on
+         focus, so there is always a way to take the link by hand. */
+      return;
+    }
+    setCopied(slug);
+    setTimeout(() => setCopied(c => (c === slug ? '' : c)), 2000);
+  }
   const [submissions, setSubmissions] = useState({});
   const [openSubs, setOpenSubs] = useState(null);
 
@@ -113,7 +135,30 @@ export default function WebFormsTab() {
           <div className="gr__lmain">
             <div className="gr__lt">{f.name}</div>
             <div className="gr__ls">
-              /api/v1/graha/f/{f.slug} · {f.submission_count} submissions · source: {f.auto_source}
+              {f.submission_count} submissions · source: {f.auto_source}
+            </div>
+            {/* ── THE LINK, WHICH IS THE WHOLE POINT OF PUBLISHING A FORM ────
+                This row used to print the API PATH — `/api/v1/graha/f/<slug>`
+                — which is not a thing anybody can be sent. Suite 04.14 found
+                the consequence: the tab offered no link, no preview and no
+                hosted page, so a firm had to write and host the JavaScript
+                itself before one lead could arrive, and 0 of 12 public
+                submissions were made. `/f/:slug` is now a real page. */}
+            <div className="gr__lform">
+              <input
+                className="k-input gr__lurl" readOnly value={publicUrl(f.slug)}
+                aria-label={`Public link for ${f.name}`}
+                onFocus={e => e.target.select()}
+              />
+              <button type="button" className="k-btn k-btn--ghost"
+                onClick={() => copy(f.slug)}>
+                {copied === f.slug ? 'Copied' : 'Copy link'}
+              </button>
+              {/* `rel="noreferrer"` and a new tab: this is the customer
+                  checking their own public page, and it must not take them out
+                  of the tab they are working in. */}
+              <a className="k-btn k-btn--ghost" href={publicUrl(f.slug)}
+                target="_blank" rel="noreferrer">Preview</a>
             </div>
             {openSubs === f.id && submissions[f.id] && (
               <div className="gr__stack">
@@ -140,7 +185,12 @@ export default function WebFormsTab() {
 
       {forms.length > 0 && (
         <div className="gr__hint">
-          <strong>Embed code:</strong> POST your form data as JSON to <code>/api/v1/graha/f/{'<slug>'}</code> — fields: name, email, phone, company, message. No auth required.
+          <strong>Where to put the link:</strong> on your website, in an email
+          signature, or in a WhatsApp message. Whoever opens it fills the form in
+          and the reply arrives here as a contact and a lead.
+          {' '}Developers can also POST JSON straight to{' '}
+          <code>/api/v1/graha/f/{'<slug>'}</code> — fields: name, email, phone,
+          company, message, no auth required.
         </div>
       )}
     </div>

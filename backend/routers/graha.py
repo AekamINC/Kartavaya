@@ -23,6 +23,7 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, is_org_admin
 from middleware.role_tiers import ORG_MANAGEMENT_ROLES, held_module_levels
 from middleware.subscription import require_any_module, require_module
+from limiter import limiter
 from services.audit_actors import actor_joins, actor_select
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
@@ -4305,11 +4306,61 @@ async def list_form_submissions(
     return _listed(rows, limit=200)
 
 
+@router.get("/f/{slug}")
+@limiter.limit("60/minute")
+async def read_web_form(slug: str, request: Request):
+    """The public face of a lead form — what a hosted page needs to draw it.
+
+    ── WHY THIS ROUTE EXISTS AT ALL ────────────────────────────────────────
+    `POST /f/{slug}` has always worked and there was nowhere to post FROM.
+    `App.jsx` declares public routes for /login, /accept-invite, /approve,
+    /sign/:token and /i/:token, and none for a lead form; the Web Forms tab
+    offered no link, no preview and no hosted page, only a sentence telling
+    the customer to POST JSON themselves. Suite 04.14 put it plainly: "a web
+    form can be published and nobody can fill it in."
+
+    ⚠ WHAT IT MAY ANSWER IS DELIBERATELY SHORTER THAN THE ROW.
+    This is unauthenticated, so it returns the form's NAME and its field list
+    and nothing else. Not `org_id`, not `submission_count`, not `created_by`,
+    not `auto_assign_to` — a stranger holding a slug learns what to type in,
+    which is the whole job, and learns nothing about the organisation behind
+    it. `SELECT *` is what the POST below does and it is not what this does.
+
+    A missing or retired form is 404, matching the POST, so an active slug and
+    an inactive one are the same answer to someone guessing.
+    """
+    pool = await get_pool()
+    form = await pool.fetchrow(
+        "SELECT name, fields FROM public.graha_web_forms "
+        "WHERE slug=$1 AND is_active=TRUE",
+        slug,
+    )
+    if not form:
+        raise HTTPException(404, "Form not found")
+    return {"name": form["name"], "fields": form["fields"] or []}
+
+
 @router.post("/f/{slug}")
+@limiter.limit("10/minute")
 async def submit_web_form(
     slug: str,
     request: Request,
 ):
+    """
+    ⚠ RATE-LIMITED, AND IT WAS NOT.
+
+    This route is unauthenticated and it WRITES — a contact, a lead and a
+    submission row into a paying customer's CRM — and it carried no limit of
+    any kind. Anybody holding a slug could fill a customer's contact list at
+    the speed of their connection, and the slug is by definition public.
+    CLAUDE.md's rule names "anything auth-shaped"; an unauthenticated public
+    write is the same hazard wearing different clothes.
+
+    10/minute per caller: a person filling in a form once is nowhere near it,
+    and a script is stopped. The key is the last forwarded hop before the
+    Cloudflare edge — see `limiter.py`, which is the only correct reading of
+    `X-Forwarded-For` behind two proxies.
+    """
     pool = await get_pool()
     form = await pool.fetchrow(
         "SELECT * FROM public.graha_web_forms WHERE slug=$1 AND is_active=TRUE",

@@ -108,6 +108,7 @@ const SigningPage           = lazyPage(() => import('./pages/SigningPage'));
 // The public pay page. Lazy like its neighbours, so the app shell's bundle is
 // not on the critical path for a customer who will only ever see this one page.
 const PayPage               = lazyPage(() => import('./pages/PayPage'));
+const PublicLeadForm        = lazyPage(() => import('./pages/PublicLeadForm'));
 const CustomizeSettingsPage = lazyPage(() => import('./pages/CustomizeSettingsPage'));
 const LandingPage           = lazyPage(() => import('./pages/marketing/LandingPage'));
 
@@ -178,6 +179,15 @@ function AppRouter() {
             Declared with the other public routes so the protected shell never
             sees it and cannot bounce a paying customer to /login. */}
         <Route path="/i/:token"         element={<PayPage />} />
+
+        {/* The hosted lead form. Public by definition: the visitor is a
+            PROSPECT of the customer's — somebody who has never had an account
+            here and never will. `POST /api/v1/graha/f/{slug}` has always
+            worked and there was nowhere to submit from, so a firm could
+            publish a form and no member of the public could fill it in
+            (Suite 04.14). Declared with the other public routes so the
+            protected shell never bounces a prospect to /login. */}
+        <Route path="/f/:slug"          element={<PublicLeadForm />} />
 
         {/* Legal documents. Public by definition — these are read by people
             evaluating the product and by their counsel, neither of whom has an

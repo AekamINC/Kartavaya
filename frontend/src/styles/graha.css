@@ -604,3 +604,22 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
    the product, including on the branch where the lookup found nothing — which
    is precisely the branch where a person concludes the feature is broken. */
 .k-pinfill__wrap { display: flex; flex-direction: column; gap: 2px; }
+
+
+/* ── The public link on a web form row ─────────────────────────────────────
+   A read-only box holding the address, a Copy and a Preview. The box is an
+   `<input>` rather than a `<code>` because a link somebody has to select by
+   hand needs to BE selectable text on every platform, and `onFocus` selects
+   the whole of it — the clipboard API refuses in an insecure context and on
+   some managed browsers, and there has to be a way through that is not a
+   button.
+
+   `min-width: 0` on the input so it may shrink inside the flex row instead of
+   pushing Copy and Preview off the end; `flex-wrap` so the three stack rather
+   than squeeze on a narrow screen. */
+.gr__lform { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.gr__lurl {
+  flex: 1 1 260px; min-width: 0;
+  font-family: var(--font-mono);
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+}

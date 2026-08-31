@@ -49,7 +49,12 @@ api.interceptors.request.use((config) => {
  */
 const PUBLIC_PATHS = [
   '/login', '/accept-invite', '/forgot-password', '/reset-password',
-  '/approve', '/sign/',
+  // '/f/' is the hosted lead form. Its visitor is a member of the PUBLIC —
+  // a prospect who has never had an account here and never will — so a 401
+  // or 404 from that page must not end a session or bounce anybody to a
+  // login form they cannot satisfy. Same standing as '/approve' and '/sign/',
+  // and for the same reason.
+  '/approve', '/sign/', '/f/',
 ];
 
 /**
