@@ -1230,6 +1230,18 @@
 .dwin__note b { color: var(--ink); font-weight: 600; }
 .dstats--next { margin-top: 14px; }
 
+/* The reconciliation note under the finance tiles. `.dwin__note`'s tone
+   exactly — it is the same kind of sentence, a fact about how to read the
+   numbers above it — but its own class, because it sits inside `.dstats`'
+   rhythm and borrows that top margin rather than `.dwin`'s. */
+.dstats__note {
+  margin: calc(var(--gap-tight) * 1.2) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--on-surface-2);
+  max-width: 62ch;
+}
+
 /* ── Dristi's stat rows — spaced, glass, and coloured by the module they read ─
    Reported 2026-08-10: "these stats cards / pills are stuck together". They
    were. `.k-stats` ships `gap: var(--gap-tight)`, which is right for a dashboard

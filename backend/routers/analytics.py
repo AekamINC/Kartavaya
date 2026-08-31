@@ -310,13 +310,58 @@ async def run(
         else f"_as-at-{date.today().isoformat()}"
     )
 
+    # ── WHAT AN EXPORT OF THIS METRIC IS, WRITTEN INTO THE FILE ────────────
+    #
+    # ⚠ A METRIC WITH NO ROWS DOWNLOADED AS SEVEN BYTES. `headers = ... else
+    # ["value"]` and no rows produced the single line `value\r\n` — a file
+    # that opens empty, says nothing, and is indistinguishable from a broken
+    # export. Suite 12.10 caught it by weight (`metric-0-csv downloaded as an
+    # EMPTY file`, 7 bytes against a floor of 20) and named the class: §1's
+    # "a 200 with an empty body".
+    #
+    # The fix is not a bigger floor. A person who clicks "Download <metric> as
+    # CSV" and opens the file has to be able to tell "this metric has no data
+    # in this window" from "the export is broken", and neither the metric's
+    # name nor the window was in the file at all — even when it DID have rows.
+    #
+    # The shape is the client report's, which already does this two hundred
+    # lines below: identify, then a blank line, then the table.
+    #
+    # ⚠ NOT the label alone. `as_at`/`window` is the half that makes an empty
+    # answer legible — "0 rows for 2026-04-01 to 2026-06-30" is a fact about
+    # the question, and "0 rows" on its own is not.
+    def _preamble():
+        when = (f"{win.start.isoformat()} to {win.end.isoformat()}" if win
+                else f"as at {date.today().isoformat()}")
+        return [
+            ("Metric", m.label or m.key),
+            ("Key", m.key),
+            ("Period", when),
+            ("Rows", len(rows)),
+        ]
+
     if format == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)
+        # ⚠ `_fcell`, NOT `csv_cell`. This path used the bare one, and
+        # `routers/pulse.py` says so in a comment — "the formula guard on every
+        # cell, WHERE THE TENANT /run USES BARE csv_cell". Somebody found this
+        # hole, wrote it down beside the fixed copy, and left it open on the
+        # tenant-facing export.
+        #
+        # It is reachable with ordinary data. Metric labels are per-org text: a
+        # deal stage the customer renamed, a client name off a lead form, a
+        # product name. `graha.pipeline_by_stage` GROUPs BY `d.stage` and
+        # `graha.client_concentration` by client name — a client called
+        # `=HYPERLINK("http://…","click")` becomes a live formula in the
+        # exported file, on the desk of whoever opens it.
+        for k, v in _preamble():
+            w.writerow([k, _fcell(v)])
+        w.writerow([])
         headers = list(rows[0].keys()) if rows else ["value"]
         w.writerow(headers)
         for r in rows:
-            w.writerow([csv_cell(r.get(h)) for h in headers])
+            w.writerow([_fcell(r.get(h)) for h in headers])
         return Response(
             content=buf.getvalue(),
             media_type="text/csv; charset=utf-8",
@@ -341,7 +386,9 @@ async def run(
         for cell in ws[4]:
             cell.font = Font(bold=True)
         for r in rows:
-            ws.append([csv_cell(r.get(h)) for h in headers])
+            # openpyxl writes an `=`-leading string as a live FORMULA cell, so
+            # xlsx needs the guard as much as csv does — see the csv branch.
+            ws.append([_fcell(r.get(h)) for h in headers])
         out = io.BytesIO()
         wb.save(out)
         return Response(

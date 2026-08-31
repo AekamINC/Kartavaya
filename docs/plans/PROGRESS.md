@@ -7814,3 +7814,115 @@ Closed by migration **243**; `public` is now **0 of 301 tables without RLS**.
 `report_schedules` "is being dropped" and migration 236 retired the router
 without the table. A DROP needs the owner's approval BY NAME — raised as an
 owner action rather than taken.
+
+---
+
+## 2026-08-31 — SUITES 12 AND 16: SEVEN SCREENS THAT COULD NOT REACH THE ENGINE
+
+Every one of these is the same shape, and it is worth naming as a class: **the
+back end grew a capability, the screen did not, and nothing failed.** No error,
+no log line, no red test. The API stayed correct and a person simply could not
+get there.
+
+| | Finding | Was |
+|---|---|---|
+| 12.03 | the metric menu offered 4 metrics `/run` refuses | two gates, weaker one drew the menu |
+| 12.09 | Σ client reports ≠ org invoiced | ₹71,508 on 6 client-less invoices, invisible |
+| 12.10 | a metric CSV downloaded as **7 bytes** | `value
+` and nothing else |
+| 16.02b | 4 of 11 rule families had no filter chip | a hand-kept list, stale for the second time |
+| 16.03 | 2 verbs unbuildable, 2 more looked broken | `ActionCard` had branches for 2 of 6 |
+| 16.03b | no rule could send email or push | `channel` hardcoded, no control |
+| 16.03c | recipient picker missing `@org_admins` | 6 shipped templates use it |
+
+### 12.03 — the menu and the door asked different questions
+
+`/run` calls `require_module`. `_reachable` called `held_level(...) is not
+None`, which answers only *does this PERSON hold a grant* and returns `admin`
+for any org owner or admin unconditionally. It never asked whether the ORG had
+bought the module. The reference org holds twelve active modules and **no
+`module_subscriptions` row for `varta` at all**, so `varta.sends`,
+`varta.delivery_rate`, `varta.read_rate` and `varta.reply_rate` sat in "Add a
+metric…" and 403'd the moment the widget drew.
+
+The org half moved into `subscription.org_module_refusal`, which RETURNS the
+refusal instead of raising it. `require_module` raises what it returns;
+`_reachable(runnable=True)` hides what it names. One implementation.
+
+⚠ **Calling `require_module` in a loop was the obvious fix and is wrong.** It
+runs the platform branch once per module, and `platform_audit_needed` writes an
+audit row for every sensitive module a platform role reads — twelve rows per
+catalogue GET would bury the ~330 warn-severity rows the audit exists for.
+That is the volume regression `platform_audit_needed`'s own docstring argues
+against, arrived at from the other side.
+
+### 12.10 — seven bytes, and the injection hole somebody wrote down
+
+`headers = list(rows[0].keys()) if rows else ["value"]` with no rows produced
+the single line `value
+`. The file now opens with what it is — metric,
+key, period, row count — so **"this metric has no data in this window" is
+distinguishable from "the export is broken"**, which it was not, for empty
+files *or* full ones.
+
+The same branch used bare `csv_cell` where every other export uses the formula
+guard. **`routers/pulse.py` says so, in a comment, beside its own guarded
+copy** — *"the formula guard on every cell, WHERE THE TENANT /run USES BARE
+csv_cell"*. Aekam's desks were protected and the customer's were not. Reachable
+with ordinary data: `graha.pipeline_by_stage` groups by `d.stage` (customer
+text) and `client_concentration` by client name (off a lead form). openpyxl
+writes an `=`-leading string as a live formula, so xlsx was equally exposed.
+
+### 12.09 — the verdict is that BOTH numbers are right
+
+Σ over the client reports = 3,988,101.24; the org headline = 4,047,691.24.
+Measured live: **6 invoices, ₹71,508, `client_id IS NULL`** — and every
+attached invoice checked clean (0 orphaned ids, 0 on an inactive client), so
+the whole gap is that bucket.
+
+An invoice may legitimately have no client; one can be raised before the CRM
+record exists. So the suite's invariant is not a property this product has, and
+making it true would mean refusing invoices the product is right to accept.
+
+**What was wrong is that the difference was invisible.** A partner doing that
+subtraction found money they could neither explain nor go and look at. The
+overview now reports `unattached_invoiced` / `unattached_count` in the SAME
+statement over the SAME guards, and the tab draws a line only when the count is
+non-zero. ⚠ The headline was NOT narrowed — that would turn a visible
+discrepancy into an understated revenue figure, which is worse and silent.
+
+### 16.02b — the same list, stale for the second time
+
+`FAMILIES` recorded this as already fixed once, in its own comment: *"the
+registry grew three families after the first four chips shipped."* That fix
+added three literals and left the mechanism intact. The chips are now derived
+from the catalogue, and an unlabelled family is title-cased rather than hidden
+— an ugly chip is a bug someone fixes, a missing chip is a feature nobody
+finds.
+
+### 16.03 — and why quiet hours had no drivable path
+
+`validate.py` refuses `task.create` without a title AND a project, and
+`task.add_comment` without a body. Neither field existed on screen, so picking
+either verb produced a rule that could not be saved, **with an error naming a
+field that was not there.** `task.create`'s project list did not exist anywhere
+to render from, so `/v1/niyam/catalog` now serves `teams` — on that endpoint
+and not a second one, for the reason its own docstring gives: "the builder
+renders ONLY from this".
+
+`blankStep()` hardcoded `channel: 'inapp'` with no control, so two thirds of a
+delivery layer that has carried email since 2026-08-18 was unreachable. That is
+also the answer to the open quiet-hours question: quiet hours suppress the
+channels that INTERRUPT, in-app is deliberately exempt, so **every rule the UI
+could build was exempt by construction.**
+
+### Landed
+
+    migration 242   deal close timestamps backfilled (9 rows)
+    migration 243   RLS on the two tables in `public` that had none
+    d5964a09        open pipeline — dristi + graha + 30 tests, 7 mutations
+    32a39fe6        niyam + analytics — 26 tests, 10 mutations
+    (this)          exports + unattached — 16 tests, 8 mutations
+
+Backend suites green: 2,197 on the gate band, 885 on niyam, 576 on
+dristi/analytics. `npm run check` exit 0, `npm run build` clean.

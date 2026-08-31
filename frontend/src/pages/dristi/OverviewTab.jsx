@@ -63,6 +63,7 @@ export default function OverviewTab() {
               {withheld.has('revenue')
                 ? <Withheld what="Invoiced, collected and outstanding" module={SOURCE_LABEL.revenue} />
                 : (
+                  <>
                   <div className="k-stats dstats dstats--fin">
                     <StatTile label="Invoiced" sanskrit="बीजक" value={FMT(revenue.total_invoiced)} />
                     <StatTile label="Collected" sanskrit="प्राप्त" value={FMT(revenue.total_collected)} variant="ok" />
@@ -72,6 +73,26 @@ export default function OverviewTab() {
                     <StatTile label="Outstanding" sanskrit="बकाया" value={FMT(revenue.outstanding)} variant="warn"
                       sub="unpaid and not cancelled" />
                   </div>
+                  {/* ⚠ THE PART OF "INVOICED" NO CLIENT REPORT CAN CONTAIN.
+                      Suite 12.09 adds up every client report and requires the
+                      total to be this headline. It did not close: 6 invoices
+                      worth 71,508 carry no `client_id` (measured 2026-08-31).
+                      Neither number is wrong — an invoice can legitimately be
+                      raised before the CRM record exists — but the difference
+                      was invisible, so a partner doing that subtraction found
+                      money they could neither explain nor go and look at.
+                      Drawn only when there IS a gap: a zero here is noise on
+                      the page every well-kept org would carry for ever. */}
+                  {revenue.unattached_count > 0 && (
+                    <p className="dstats__note">
+                      {FMT(revenue.unattached_invoiced)} of this is on{' '}
+                      {NUM(revenue.unattached_count)}{' '}
+                      {revenue.unattached_count === 1 ? 'invoice' : 'invoices'}{' '}
+                      with no client attached, so it appears in no client
+                      report. Open Invoices and set a client to bring it in.
+                    </p>
+                  )}
+                  </>
                 )}
               {withheld.has('orders')
                 ? <Withheld what="Orders" module={SOURCE_LABEL.orders} />

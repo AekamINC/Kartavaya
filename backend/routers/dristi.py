@@ -314,10 +314,35 @@ async def overview(
         # rather than a bare `<>`, the canonical form from
         # `services/gst_period.py`: the column is nullable and NULL <> 'draft'
         # is NULL, which would silently drop every row predating the column.
+        #
+        # ── `unattached_*`: THE MONEY NO CLIENT REPORT CAN CONTAIN ──────────
+        #
+        # Suite 12.09 asserts "Σ invoiced over every client report = the org's
+        # invoiced total" and it did not close. Measured live 2026-08-31 on the
+        # reference org: **6 invoices, 71,508, with `client_id IS NULL`.**
+        #
+        # ⚠ NEITHER NUMBER IS WRONG, AND NEITHER WAS CHANGED. An invoice may
+        # legitimately have no client — one can be raised before the CRM record
+        # exists, and `GSTIN/PAN/TAN block nothing` is the same principle
+        # applied to a different field. Every attached invoice was checked and
+        # points at a live, listed client (0 orphaned ids, 0 on an inactive
+        # client), so the ENTIRE gap is this bucket.
+        #
+        # What was wrong is that the bucket was INVISIBLE. A partner reading
+        # "Invoiced 40,87,339" and adding up the Clients tab gets 40,15,831,
+        # and there was nothing on any screen to explain 71,508 or to find the
+        # six invoices behind it. A number that cannot be reconciled and cannot
+        # be investigated is how a person stops trusting the whole page.
+        #
+        # So the difference is REPORTED rather than reconciled away. It is
+        # computed inside the SAME statement, over the SAME guards, so the two
+        # figures cannot drift the way a second query would.
         revenue = await pool.fetchrow(
         "SELECT COALESCE(SUM(total),0) AS total_invoiced, "
         "COALESCE(SUM(amount_paid),0) AS total_collected, "
-        "COALESCE(SUM(total - amount_paid) FILTER (WHERE payment_status NOT IN ('paid','cancelled')),0) AS outstanding "
+        "COALESCE(SUM(total - amount_paid) FILTER (WHERE payment_status NOT IN ('paid','cancelled')),0) AS outstanding, "
+        "COALESCE(SUM(total) FILTER (WHERE client_id IS NULL),0) AS unattached_invoiced, "
+        "COUNT(*) FILTER (WHERE client_id IS NULL) AS unattached_count "
         "FROM public.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
         "AND COALESCE(doc_status, '') <> 'draft'"
         + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),

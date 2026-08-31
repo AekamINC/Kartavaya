@@ -2656,3 +2656,89 @@ hole opens the moment a row lands, and it opens silently.
 "is being dropped", and migration 236 retired the router without the table.
 **A DROP needs the owner's approval BY NAME** — enabling RLS closes the hole
 today without spending that approval. Raised as an owner action.
+
+---
+
+## ✅ Suites 12 & 16 — seven screens that could not reach the engine (fixed 2026-08-31)
+
+One class, seven instances: **the back end grew a capability, the screen did
+not, and nothing failed.** No error, no log line, no red test — the API stayed
+correct and a person simply could not get there.
+
+| | Finding | Status |
+|---|---|---|
+| 12.03 | the metric menu offered 4 metrics `/run` refuses (all `varta.*`) | ✅ fixed |
+| 12.09 | Σ client reports ≠ org invoiced — ₹71,508 on 6 client-less invoices | ✅ surfaced (see verdict) |
+| 12.10 | a metric CSV downloaded as **7 bytes**, and had no formula guard | ✅ fixed |
+| 16.02b | 4 of 11 rule families had no filter chip | ✅ fixed |
+| 16.03 | 2 verbs unbuildable, 2 more looked broken | ✅ fixed |
+| 16.03b | **no rule could send email or push** | ✅ fixed |
+| 16.03c | recipient picker missing `@org_admins` (6 templates use it) | ✅ fixed |
+
+### 12.03 — the menu and the door asked different questions
+
+`/run` calls `require_module`; `_reachable` called `held_level(...) is not
+None`, which answers only *does this PERSON hold a grant* and returns `admin`
+for any org owner or admin unconditionally. It never asked whether the ORG had
+bought the module. The org half now lives in
+`subscription.org_module_refusal`, which RETURNS the refusal — `require_module`
+raises what it returns, `_reachable(runnable=True)` hides what it names.
+
+⚠ Calling `require_module` in a loop is the obvious fix and is wrong:
+`platform_audit_needed` writes a row per sensitive module a platform role
+reads, so twelve rows per catalogue GET would bury the ~330 warn-severity rows
+the audit exists for.
+
+### 12.10 — and the injection hole that was written down and left open
+
+`headers = … else ["value"]` with no rows produced the single line
+`value
+`. The file now opens with metric, key, period and row count, so
+"no data in this window" is distinguishable from "the export is broken".
+
+The same branch used bare `csv_cell` where every other export uses the formula
+guard — **and `routers/pulse.py` says so in a comment beside its own guarded
+copy**: *"the formula guard on every cell, WHERE THE TENANT /run USES BARE
+csv_cell"*. Aekam's desks were protected and the customer's were not.
+Reachable with ordinary data: metric labels are per-org text (a renamed deal
+stage, a client name off a lead form). openpyxl writes an `=`-leading string as
+a live formula, so xlsx was equally exposed. Both guarded now.
+
+### 12.09 — 🟢 VERDICT: both numbers are right, and neither was changed
+
+Σ over the client reports 3,988,101.24 · org headline 4,047,691.24. Measured
+live: **6 invoices, ₹71,508, `client_id IS NULL`**, with every attached invoice
+clean (0 orphaned ids, 0 on an inactive client) — so the whole gap is that
+bucket.
+
+An invoice may legitimately have no client; one can be raised before the CRM
+record exists. The suite's invariant is therefore not a property this product
+has, and making it true would mean refusing invoices the product is right to
+accept.
+
+**What was wrong is that the difference was invisible.** The overview now
+reports `unattached_invoiced` / `unattached_count` from the SAME statement over
+the SAME guards, and the tab draws a line only when the count is non-zero.
+⚠ The headline was NOT narrowed to close the gap — that trades a visible
+discrepancy for an understated revenue figure, which is worse and silent.
+
+### 16.03b — why quiet hours had no drivable path
+
+`blankStep()` hardcoded `channel: 'inapp'` and no control existed, so two
+thirds of a delivery layer that has carried email since 2026-08-18 was
+unreachable from the UI. That is also the answer to the standing quiet-hours
+question: quiet hours suppress the channels that INTERRUPT, in-app is
+deliberately exempt, so **every rule the UI could build was exempt by
+construction.**
+
+### Tests
+
+    test_catalogue_offers_only_what_run_answers.py    7 · 3 mutations killed
+    test_metric_export_says_what_it_is.py            11 · 4 mutations killed
+    test_unattached_invoices_are_reported.py          5 · 4 mutations killed
+    test_niyam_catalog_serves_the_task_target.py      5 · 2 mutations killed
+    niyamBuilderReachesTheEngine.test.jsx            14 · 5 mutations killed
+
+The frontend tests assert against the CATALOGUE, not against a list — *"the
+chip list has eleven entries"* is the assertion that passed while four families
+were missing, because it was written against the list itself.
