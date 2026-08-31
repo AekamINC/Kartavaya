@@ -66,16 +66,52 @@ export function Field({ label, sanskrit, required, hint, error, span, htmlFor, c
  *  have to move together, and adding the string alone would have rendered a
  *  day calendar for a value with no day in it. */
 const DATEY = new Set(['date', 'datetime-local', 'time', 'month']);
-export const Input = ({ className = '', ...p }) =>
+/**
+ * ⚠ `label` WAS A DEAD PROP ON THESE THREE, AND IT LOOKED ALIVE.
+ *
+ * `<Input label="What is this rule called?">` spread `label` straight onto the
+ * `<input>`, where it is not a labelling mechanism for anything — not a screen
+ * reader, not a visible caption. The attribute sat in the DOM looking like
+ * intent that had been honoured.
+ *
+ * Suite 16.02c measured the result: **10 of 10 controls in the Niyam rule
+ * editor had no accessible name at all**, and five of them carried a stranded
+ * `label="…"` proving somebody had tried. A person meets four identical boxes
+ * and has to guess which is which.
+ *
+ * So the prop now does what every caller already assumed: a `label` wraps the
+ * control in `Field`, which renders a real `<label htmlFor>` and wires the hint
+ * and error ids to it. WITHOUT a `label` the output is byte-for-byte what it
+ * was — `label` is the only trigger, and no existing call site passes one
+ * except the three this was found through.
+ *
+ * The alternative was to make each page reach for `Field` by hand. This is
+ * better: the failure mode was a caller reasonably believing the simple thing
+ * worked, and the fix makes the simple thing work rather than adding a rule
+ * nobody reads.
+ */
+const withField = (render) => ({
+  className = '', label, sanskrit, hint, error, span, htmlFor, ...p
+}) => {
+  if (label === undefined) return render(className, p, {});
+  return (
+    <Field label={label} sanskrit={sanskrit} hint={hint} error={error}
+           span={span} htmlFor={htmlFor} required={p.required}>
+      {(fieldProps) => render(className, p, fieldProps)}
+    </Field>
+  );
+};
+
+export const Input = withField((className, p, fp) =>
   (DATEY.has(p.type)
-    ? <DateInput className={`inp ${className}`.trim()} {...p} />
-    : <input className={`inp ${className}`.trim()} {...p} />);
+    ? <DateInput className={`inp ${className}`.trim()} {...p} {...fp} />
+    : <input className={`inp ${className}`.trim()} {...p} {...fp} />));
 
-export const Textarea = ({ className = '', ...p }) =>
-  <textarea className={`inp ${className}`.trim()} {...p} />;
+export const Textarea = withField((className, p, fp) =>
+  <textarea className={`inp ${className}`.trim()} {...p} {...fp} />);
 
-export const Select = ({ className = '', children, ...p }) =>
-  <select className={`inp ${className}`.trim()} {...p}>{children}</select>;
+export const Select = withField((className, { children, ...p }, fp) =>
+  <select className={`inp ${className}`.trim()} {...p} {...fp}>{children}</select>);
 
 export const Row2 = ({ children }) => <div className="row2">{children}</div>;
 

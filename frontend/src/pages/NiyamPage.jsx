@@ -594,6 +594,11 @@ function ConditionCard({ step, event, onChange }) {
   return (
     <div className="niyam-cond">
       <Select
+        aria-label="Condition field"
+        /* aria-label, not a visible caption: these three read as ONE
+           sentence — [field] [operator] [value] — and a stacked label
+           above each would break the line they are meant to form.
+           Suite 16.02c: all ten editor controls had no name at all. */
         value={step.config.field}
         onChange={(e) => {
           const next = fields.find((f) => f.key === e.target.value);
@@ -607,6 +612,7 @@ function ConditionCard({ step, event, onChange }) {
       </Select>
 
       <Select
+        aria-label="Condition operator"
         value={step.config.operator}
         onChange={(e) => onChange({ ...step.config, operator: e.target.value })}
       >
@@ -615,6 +621,7 @@ function ConditionCard({ step, event, onChange }) {
 
       {needsValue && (field?.options?.length ? (
         <Select
+          aria-label="Condition value"
           value={step.config.value ?? ''}
           onChange={(e) => onChange({ ...step.config, value: e.target.value })}
         >
@@ -623,6 +630,7 @@ function ConditionCard({ step, event, onChange }) {
         </Select>
       ) : (
         <Input
+          aria-label="Condition value"
           value={step.config.value ?? ''}
           onChange={(e) => onChange({ ...step.config, value: e.target.value })}
           placeholder={field?.kind === 'date' ? 'days, or a date' : 'value'}
@@ -636,13 +644,15 @@ function ActionCard({ step, catalog, onChange }) {
   const cfg = step.config;
   return (
     <div className="niyam-action">
-      <Select value={cfg.verb} onChange={(e) => onChange({ ...cfg, verb: e.target.value })}>
+      <Select aria-label="What this rule does" value={cfg.verb}
+              onChange={(e) => onChange({ ...cfg, verb: e.target.value })}>
         {(catalog?.actions || []).map((a) => <option key={a} value={a}>{a}</option>)}
       </Select>
 
       {cfg.verb === 'notify.send' && (
         <>
           <Select
+            aria-label="Who is notified"
             value={(cfg.to || [])[0] || '@assignees'}
             onChange={(e) => onChange({ ...cfg, to: [e.target.value] })}
           >
