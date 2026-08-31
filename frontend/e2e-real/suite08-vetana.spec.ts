@@ -1921,11 +1921,31 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
       'pay_income_tax_slabs produced nothing for anybody').toBeGreaterThan(0);
     expect(String(run.status), 'the August run is not in the processed state').toBe('processed');
 
-    // The run header's own arithmetic: gross less deductions is net, to the
-    // rupee, across thirty payslips. (Reimbursements were consumed by June, so
-    // the identity holds on this month — see 08.5.)
+    // The run header's own arithmetic, across thirty payslips.
+    //
+    // ⚠ REIMBURSEMENTS ARE A TERM IN THIS IDENTITY, and the comment that used to
+    // sit here said the opposite: "Reimbursements were consumed by June, so the
+    // identity holds on this month". That stopped being true when the
+    // `expense_date <= month_end` fix (2026-08-29, vetana.py:2031) correctly
+    // moved both approved claims onto AUGUST payslips — ₹875 on PS-2026-0062 and
+    // ₹750 on PS-2026-0089.
+    //
+    // `routers/vetana.py:2177` builds net as
+    //     net = gross - total_deductions + reimbursement_total
+    // with reimbursement deliberately EXCLUDED from gross (s.7(3) of the Payment
+    // of Wages Act — counting it inflated the loan-recovery ceiling). So the
+    // two-term identity is short by exactly the reimbursements, and asserting it
+    // demanded that the product either stop paying them or start calling them
+    // wages.
     const sum = (k: string) => slips.reduce((s, p) => s + Number(p[k] || 0), 0);
-    expect(sum('gross') - sum('total_deductions')).toBeCloseTo(sum('net_pay'), 1);
+    expect(sum('gross') - sum('total_deductions') + sum('reimbursements'))
+      .toBeCloseTo(sum('net_pay'), 1);
+    // And the claims are POSITIVELY asserted rather than assumed away, so a
+    // month that silently stopped carrying them fails instead of passing.
+    expect(sum('reimbursements'),
+      'August must carry the two approved expense claims — ₹875 and ₹750 — that ' +
+      'the expense_date fix moved onto this month')
+      .toBeCloseTo(1625, 1);
     expect(Number(run.total_gross)).toBeCloseTo(sum('gross'), 1);
     expect(Number(run.total_net)).toBeCloseTo(sum('net_pay'), 1);
 

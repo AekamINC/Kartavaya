@@ -2424,8 +2424,14 @@ test.describe('Suite 06 — Kray (procurement) · Unicode Group', () => {
       .not.toBe('awaiting_approval');
     expect(Boolean(material.data.approval_required), 'the materially-revised order came back ' +
       'requiring approval against a rule that does not match its new total').toBe(false);
+    // ⚠ THIS ASSERTED 1 WHILE ITS OWN MESSAGE SAYS IT MUST NOT. The line above
+    // requires `approval_required === false` — no rule matches the new total —
+    // and then this demanded an approval row anyway. An approval against a rule
+    // that matches nobody is an approval nobody is required to give, and §4
+    // counts exactly six, so creating a seventh would make 06.10 unsatisfiable.
+    // The message was right and the number was wrong.
     expect((material.approvals || []).length, 'the material revision spent an approval row. ' +
-      'It must not: no rule matches the new total, and §4 counts exactly six').toBe(1);
+      'It must not: no rule matches the new total, and §4 counts exactly six').toBe(0);
 
     // The history is PAINTED, not merely stored. The panel existed for the
     // whole life of the module with nothing to put in it.

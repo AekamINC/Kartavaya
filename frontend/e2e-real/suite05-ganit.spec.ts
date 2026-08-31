@@ -216,7 +216,7 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { lane, activeLane, signInAs as laneSignIn, assertOrg, ORG as ORG_IDS } from './_lanes';
-import { setDate, isForeignInlineScriptRefusal } from './_helpers';
+import { isForeignInlineScriptRefusal, setDate, setMonth } from './_helpers';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BANK_DIR = path.join(HERE, 'fixtures', 'bank');
@@ -3299,9 +3299,14 @@ test.describe('Suite 05 — Ganit (Finance, books) · Unicode Group', () => {
     const made: string[] = [];
     for (const c of CHALLANS) {
       con.at(`challan ${c.period}`);
-      const period = p.locator('input.gn-bar__sel[type=month]').first();
-      await expect(period, 'the GST filing screen offers no tax-period control').toBeVisible({ timeout: 30_000 });
-      await period.fill(c.period);
+      // ⚠ THERE IS NO NATIVE `<input type=month>` IN THIS PRODUCT, BY RULE.
+      // CLAUDE.md forbids a bare native date/month control anywhere, and
+      // `check-dateinput-handlers.mjs` is the ratchet that keeps it out — so
+      // this selector matched nothing and the test died here without ever
+      // reaching what it was written to measure. The control is `DateInput`,
+      // reached by its accessible name: `StatsTab.jsx:331` gives the trigger
+      // `aria-labelledby="gn-tax-period"`, which renders as "Tax period".
+      await setMonth(p, /Tax period/, c.period);
       await settle(page);
 
       const open = p.getByRole('button', { name: /^Prepare counterfoil$/ });
@@ -3413,7 +3418,8 @@ test.describe('Suite 05 — Ganit (Finance, books) · Unicode Group', () => {
     // ── GST filing, the claim this product actually makes ──────────────────
     con.at('stats');
     p = await openTab(page, 'stats', 'GST filing');
-    await p.locator('input.gn-bar__sel[type=month]').first().fill('2026-08');
+    // Same stale native-month selector as 05.17 — see the note there.
+    await setMonth(p, /Tax period/, '2026-08');
     await settle(page);
     await expect(p.locator('.gn-panel__h').first(),
       'the GST filing screen rendered no panel at all').toBeVisible({ timeout: 40_000 });

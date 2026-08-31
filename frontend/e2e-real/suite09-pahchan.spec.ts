@@ -2947,10 +2947,31 @@ test.describe('Suite 09 — Pahchan · Unicode Group', () => {
       `correction days in this window${dump(wire)}`).toBe(run1.preview.days_built);
 
     // ── The rows payroll will actually price ────────────────────────────────
-    const written = await rowsOf(page,
-      `/api/v1/manav/attendance?date_from=${WINDOW_CORRECTIONS.from}&date_to=${WINDOW_CORRECTIONS.to}`);
+    //
+    // ⚠ THIS FILTERED ON A FIELD THE ENDPOINT DOES NOT EMIT, so it matched
+    // NOTHING and `days` was always empty. `list_attendance` (manav.py:2603)
+    // projects `a.id, a.date, a.check_in, a.check_out, a.status,
+    // e.name AS employee_name, e.employee_code` — there is no `employee_id` on
+    // the row, so `String(r.employee_id)` was `"undefined"` for every one.
+    //
+    // A filter that silently keeps zero rows is the worst shape a filter can
+    // take: the assertion below then compares two empty things and can only
+    // fail on a count, never on a wrong VALUE.
+    //
+    // The endpoint takes `employee_id` as a QUERY parameter (manav.py:2593), so
+    // the scoping is done by the server, which is both correct and narrower
+    // than anything the client could reconstruct.
     const mine = await me(page, 1);
-    const ours = written.filter((r: any) => String(r.employee_id) === String(mine.employee.id));
+    const ours = await rowsOf(page,
+      `/api/v1/manav/attendance?date_from=${WINDOW_CORRECTIONS.from}` +
+      `&date_to=${WINDOW_CORRECTIONS.to}&employee_id=${mine.employee.id}`);
+    // Anti-vacuity: a server-side filter that returns nothing must not read as
+    // agreement. This person has approved corrections in this window by
+    // construction — 09.10 raised them.
+    expect(ours.length,
+      'the attendance register returned no rows at all for this employee in the ' +
+      'correction window, so the day-count comparison below would compare two ' +
+      'empty sets and pass on nothing').toBeGreaterThan(0);
     const days = [...new Set(ours.map((r: any) => String(r.date).slice(0, 10)))].sort();
 
     /**
