@@ -1402,6 +1402,73 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     const stat = await ensure(page, [...Array(N_DEALS)].map((_, i) => i + 1), have, dealTitle, createDeal);
     console.log(`\n  04.09 deals — typed ${stat.typed}, already present ${stat.found}\n`);
 
+    /**
+     * ⚠ THE DISTRIBUTION IS ESTABLISHED, NOT ASSUMED TO HAVE SURVIVED.
+     *
+     * `ensure()` creates what is missing and returns early for what is
+     * present — so on every run after the first, the stage a deal is in is
+     * whatever the LAST run of the whole programme left it in, not what
+     * `stageOf(n)` asked for at creation.
+     *
+     * Measured on the live org 2026-08-31, after a full programme pass: the
+     * thirty S04 deals stood at 11 Won / 2 Lost / 17 open against §4's
+     * 8 / 6 / 16. Four deals §4 wants Lost were at Won and one it wants Won
+     * was at Negotiation, every one of them PATCHed during the programme
+     * window by the shared Unicode account.
+     *
+     * ⚠ AND THE CULPRIT CANNOT BE NAMED, WHICH IS A FINDING OF ITS OWN.
+     * `update_deal` writes NO `audit_log` row, so a stage change leaves only
+     * `updated_at` and `updated_by` — and `updated_by` is the one account
+     * every suite in this programme shares. Suite 22's own exclusion list
+     * records the same gap costing the same answer about a Dristi chip:
+     * "that CRUD writes no audit_log row, so the state was the only trace".
+     *
+     * So the correction is made HERE, through the record — the one screen
+     * that changes a deal — and it is PRINTED rather than performed quietly.
+     * A run that silently repaired its own precondition would report a green
+     * 8/6/16 while the board drifted further every pass, which is the 04.13
+     * shape: a test that eats its own precondition and then agrees with
+     * itself. The drift is evidence; it goes in the log.
+     */
+    const drifted = await apiRows(page, '/api/v1/graha/deals?include_archived=true');
+    const idByTitleNow = new Map(drifted.map((d) => [String(d.title), d]));
+    const corrections: string[] = [];
+    for (let n = 1; n <= N_DEALS; n++) {
+      const d = idByTitleNow.get(dealTitle(n));
+      if (!d) continue;                       // reported by the assertion below
+      const want = stageOf(n);
+      if (String(d.stage) === want) continue;
+      corrections.push(`${dealTitle(n)}: ${d.stage} -> ${want}`);
+      await page.goto(`/graha/deals/${d.id}`);
+      const rec = page.getByRole('dialog');
+      await expect(rec, `the record for ${dealTitle(n)} did not open`)
+        .toBeVisible({ timeout: 40_000 });
+      await rec.getByRole('button', { name: 'Edit deal' }).click();
+      const ef = rec.locator('form.dr__sec');
+      await expect(ef, 'the deal edit form did not open').toBeVisible({ timeout: 15_000 });
+      await ef.locator('label.gr__f').filter({ hasText: 'Stage' }).locator('select')
+        .selectOption(want);
+      await saveAndWait(
+        page,
+        () => ef.getByRole('button', { name: /^Sav/ }).click(),
+        new RegExp(`/v1/graha/deals/${d.id}$`),
+        `putting ${dealTitle(n)} back to ${want}`,
+      );
+      // No explicit close: the loop navigates for the next one, and the last
+      // correction is followed by the read below, which is an API call.
+    }
+    if (corrections.length) {
+      const lines = corrections.map((c) => `      ${c}`).join('\n');
+      console.log(
+        `\n  WARNING: 04.09 found ${corrections.length} deal(s) not in the stage that §4 asks\n`
+        + '    for, and put them back. Something in this programme moves them and no\n'
+        + '    audit row says what: update_deal writes none.\n'
+        + lines + '\n',
+      );
+    } else {
+      console.log('\n  04.09 stages: every deal was already in the stage that §4 asks for\n');
+    }
+
     const after = await apiRows(page, '/api/v1/graha/deals?include_archived=true');
     const byTitle = new Map(after.map((d) => [String(d.title), d]));
     let won = 0, lost = 0, open = 0, withTerritory = 0, withClient = 0;
