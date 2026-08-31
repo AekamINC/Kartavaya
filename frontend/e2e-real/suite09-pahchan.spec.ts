@@ -587,7 +587,12 @@ type Con = { errors: string[]; uncaught: string[] };
 function watchConsole(page: Page): Con {
   const c: Con = { errors: [], uncaught: [] };
   page.on('console', (m) => {
-    if (m.type() === 'error') c.errors.push(`${page.url().replace(/^https?:\/\/[^/]+/, '')}  ${m.text().slice(0, 240)}`);
+    if (m.type() !== 'error') return;
+    // Cloudflare's `__CF$cv$` loader carries a per-request token, so its hash
+    // differs every load and can never be allowed by hash. CLASSIFIED, not
+    // ignored: a refusal of OUR bootstrap still fails. See _helpers.
+    if (isForeignInlineScriptRefusal(m.text())) return;
+    c.errors.push(`${page.url().replace(/^https?:\/\/[^/]+/, '')}  ${m.text().slice(0, 240)}`);
   });
   page.on('pageerror', (e) => c.uncaught.push(`${page.url()}  ${String(e).slice(0, 240)}`));
   return c;

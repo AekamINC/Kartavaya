@@ -161,7 +161,12 @@ test.describe('Suite 19.3 — support sessions · the operator raises the ask', 
     // reports a clean console it never watched.
     const consoleErrors: string[] = [];
     const failedRequests: string[] = [];
-    page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+    page.on('console', (m) => {
+      if (m.type() !== 'error') return;
+      // Cloudflare's per-request `__CF$cv$` loader — classified, not ignored.
+      if (isForeignInlineScriptRefusal(m.text())) return;
+      consoleErrors.push(m.text());
+    });
     page.on('response', (r) => {
       if (r.status() >= 400 && /\/api\//.test(r.url())) {
         failedRequests.push(`${r.status()} ${new URL(r.url()).pathname}`);

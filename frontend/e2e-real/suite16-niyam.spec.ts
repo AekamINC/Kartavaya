@@ -105,10 +105,16 @@
  * 16 cannot exist. Calling the endpoint the disarmed cron calls is doing what
  * time would do. It is stated here rather than folded in, and it is reported.
  *
+ * ⚠ `Kartavaya`, WITH THE SECOND 'a', AND NO `--environment`. The service was
+ * renamed (the old name is a dead 404) and there is no staging environment to
+ * name. Verified 2026-08-31: the old command returns NOTHING, which reads as
+ * "the secret is unset" and is not — it is why suite 16 reported BLOCKED and
+ * 20 tests never ran.
+ *
  * The secret is NOT stored. Supply it for the run:
  *
- *   export E2E_CRON_SECRET="$(railway variables --service Kartavya \
- *       --environment staging --kv | sed -n 's/^CRON_SECRET=//p')"
+ *   export E2E_CRON_SECRET="$(railway variables --service Kartavaya \
+ *       --kv | sed -n 's/^CRON_SECRET=//p')"
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * WHAT §10 ASKS FOR, AND WHICH HALF OF IT THE PRODUCT CANNOT DO
@@ -297,8 +303,8 @@
  *
  * Run:
  *   cd frontend
- *   export E2E_CRON_SECRET="$(railway variables --service Kartavya \
- *       --environment staging --kv | sed -n 's/^CRON_SECRET=//p')"
+ *   export E2E_CRON_SECRET="$(railway variables --service Kartavaya \
+ *       --kv | sed -n 's/^CRON_SECRET=//p')"
  *   npx playwright test --config e2e-real/suite16.config.ts
  */
 import { test, expect, Page, Locator } from '@playwright/test';
@@ -330,8 +336,7 @@ const BLOCKED_CRON =
   'else will ever drain staging.niyam_events, no rule can accumulate a run, and PATCH ' +
   '{is_armed:true} is refused by design on a rule that has never run. Supply it for ' +
   'the run only:\n' +
-  '  export E2E_CRON_SECRET="$(railway variables --service Kartavya --environment ' +
-  'staging --kv | sed -n \'s/^CRON_SECRET=//p\')"\n' +
+  '  export E2E_CRON_SECRET="$(railway variables --service Kartavaya --kv | sed -n \'s/^CRON_SECRET=//p\')"\n' +
   'This is a FAILURE, not a skip — see the file header for why calling the sweep is ' +
   'the engine\'s clock and not an API shortcut.';
 

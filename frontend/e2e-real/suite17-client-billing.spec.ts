@@ -577,6 +577,10 @@ function watchConsole(page: Page): Watcher {
   let where = 'boot';
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
+    // Cloudflare's `__CF$cv$` loader carries a per-request token, so its hash
+    // differs every load and can never be allowed by hash. CLASSIFIED, not
+    // ignored: a refusal of OUR bootstrap still fails. See _helpers.
+    if (isForeignInlineScriptRefusal(m.text())) return;
     errors.push({ where, text: m.text().slice(0, 240) });
   });
   page.on('pageerror', (e) => {

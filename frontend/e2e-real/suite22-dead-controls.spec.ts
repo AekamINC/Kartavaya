@@ -884,7 +884,14 @@ function instrument(page: Page, context: BrowserContext, shard: string): Probe {
       append(netFile(shard), { at: new Date().toISOString(), method: m, url: r.url().replace(API, ''), status: r.status(), reachedServer: true });
     }
   });
-  page.on('console', (m) => { if (m.type() === 'error') p.cons.push(m.text().slice(0, 220)); });
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    // Cloudflare's `__CF$cv$` loader carries a per-request token, so its hash
+    // differs every load and can never be allowed by hash. CLASSIFIED, not
+    // ignored: a refusal of OUR bootstrap still fails. See _helpers.
+    if (isForeignInlineScriptRefusal(m.text())) return;
+    p.cons.push(m.text().slice(0, 220));
+  });
   page.on('pageerror', (e) => p.cons.push('pageerror: ' + String(e).slice(0, 220)));
   // Cancel, always. A confirm-guarded destructive act cannot complete.
   page.on('dialog', async (d) => { p.dialogs.push(`${d.type()}: ${d.message().slice(0, 140)}`); await d.dismiss().catch(() => {}); });
