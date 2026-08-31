@@ -4394,13 +4394,22 @@ async def submit_web_form(
     if existing:
         contact_id = str(existing["id"])
     elif name:
-        # `xmax = 0` IS HOW AN UPSERT TELLS YOU WHICH HALF RAN.
+        # ⚠ THIS BRANCH 500'd ON EVERY SUBMISSION UNTIL 2026-08-31, AND THE
+        #   SAME FAULT HAD ALREADY BEEN FIXED THIRTY LINES OF THIS FILE AWAY.
         #
-        # This statement is `ON CONFLICT ... DO UPDATE`, so a repeat submission
-        # from the same phone number returns the EXISTING contact's id and
-        # touches nothing. Emitting on that id would announce a lead created
-        # that was not — and on a PUBLIC form, which anyone can submit twice, a
-        # rule on "a lead is added" would fire again for every resubmission.
+        # It was an `ON CONFLICT (org_id, phone) … DO UPDATE`, and no partial
+        # unique index behind it. `create_contact_from_email` above carries the
+        # note: "Migration 022 declared a unique index on (org_id, phone) that
+        # was never created in the live DB … every new inbound lead 500'd.
+        # Migration 024 drops the intent deliberately: phone is not unique in a
+        # CRM." That correction was applied to ONE of the two identical
+        # statements. This was the other one.
+        #
+        # A repeat submission never reaches here anyway — the email-then-phone
+        # lookup above catches it and returns the existing contact's id — so
+        # `contact_created` still fires once per person and not once per
+        # submission, which is what the emitting rule needs on a public form
+        # anyone can fill in twice.
         #
         # Postgres sets `xmax` to 0 on a row this statement INSERTED and to the
         # locking transaction id on one it UPDATED. It is the only signal the
@@ -4443,14 +4452,26 @@ async def submit_web_form(
                     " assigned_to, notes, created_by, client_id) "
                     "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, "
                     " NULLIF($7,'')::uuid, $8, 'system', NULLIF($9,'')::uuid) "
-                    "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
-                    # `DO UPDATE SET notes = <its own notes>` is a deliberate
-                    # no-op: a resubmission must return the existing row's id
-                    # and change NOTHING. `client_id` is not in the SET list,
-                    # so a repeat submission cannot re-point — or unlink — the
-                    # company an existing contact already belongs to.
-                    "DO UPDATE SET notes = public.graha_contacts.notes "
-                    "RETURNING *, (xmax = 0) AS _inserted",
+                    # Postgres answered `InvalidColumnReferenceError: there
+                    # is no unique or exclusion constraint matching the ON
+                    # CONFLICT specification` — read off the live traceback on
+                    # 2026-08-31 after driving the hosted page as a member of
+                    # the public. `graha_web_form_submissions` held ZERO rows
+                    # across the whole product, which is the number that made
+                    # it findable.
+                    #
+                    # ⚠ THE INDEX MUST NOT BE ADDED TO MAKE IT WORK. Three
+                    # contacts share 9876009901 today and they are Suite
+                    # 04.19's fixtures for the DEDUPE screen, which exists
+                    # because duplicate contacts are a normal state a firm
+                    # cleans up later. A unique index would fail to build AND
+                    # contradict a shipped feature.
+                    #
+                    # What is lost is only the RACE — two simultaneous
+                    # submissions from one number now make two contacts. That
+                    # is exactly the state `/contacts/duplicates` reviews, and
+                    # a far smaller fault than a form nobody can submit.
+                    "RETURNING *, TRUE AS _inserted",
                     org_id, name, email, phone, company,
                     form["auto_source"] or "web_form",
                     str(form["auto_assign_to"]) if form["auto_assign_to"] else "",
