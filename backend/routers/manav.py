@@ -4483,6 +4483,49 @@ async def update_candidate_stage(
     valid_stages = ("applied", "screening", "interview", "offer", "hired", "rejected")
     if body.stage not in valid_stages:
         raise HTTPException(400, f"stage must be one of: {', '.join(valid_stages)}")
+
+    # ── A HIRE IS THE END OF THE PIPELINE, AND THIS ROUTE COULD UNDO IT ──────
+    #
+    # `hire_candidate` below refuses to convert somebody twice. Nothing refused
+    # the reverse: a candidate who ALREADY HAS an employee record could be sent
+    # back to `offer`, to `screening`, or marked `rejected`, and the row would
+    # then contradict itself — the recruitment register saying the offer is
+    # open while the personnel register has them on the payroll.
+    #
+    # FOUND IN THE LIVE DATA on 2026-08-31, by Suite 07.7. Bhavin Chokshi
+    # carried `converted_employee_id = 0efbf133…` with `stage = 'offer'`, and
+    # the suite reported "no write request was made at all" — because it had
+    # skipped him as already converted and then found him off the hired stage.
+    # One row product-wide; migration 248 repairs it.
+    #
+    # Three things it costs, and the first is the one a customer sees:
+    #   · the candidate card re-offers the whole pipeline INCLUDING Hire, and
+    #     `hire_candidate` answers that click 400 "already been converted". A
+    #     control that can only fail is a dead control — the exact shape Suite
+    #     22 exists to find.
+    #   · `rejected` on somebody who is already an employee is a record that
+    #     contradicts the personnel register beside it.
+    #   · the recruitment funnel counts by stage, so a hired person parked at
+    #     `offer` undercounts hires and overcounts live offers, permanently.
+    #
+    # The refusal names the remedy rather than only the rule: a person who has
+    # been hired leaves through OFFBOARDING, which is a different register and
+    # a different decision, and no amount of editing the candidate row is it.
+    converted = await pool.fetchval(
+        "SELECT converted_employee_id FROM public.manav_candidates "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(candidate_id), org_id,
+    )
+    if converted and body.stage != "hired":
+        raise HTTPException(
+            409,
+            "This candidate has already been hired and has a personnel record, so "
+            f"their recruitment stage cannot be moved back to '{body.stage}'. If they "
+            "are leaving, start an exit from Manav > Exits — that is the register "
+            "that records a departure. If the hire itself was a mistake, the "
+            "employee record has to be dealt with first.",
+        )
+
     row = await pool.fetchrow(
         "UPDATE public.manav_candidates SET stage=$1, rejection_reason=$2, updated_at=NOW() "
         "WHERE id=$3::uuid AND org_id=$4::uuid RETURNING *",

@@ -2039,6 +2039,9 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
     expect(LEAVERS.length, 'the four leavers are not all on the register').toBe(4);
 
     const EXIT_TYPES = ['Resignation', 'Resignation', 'End of contract', 'Retirement'];
+    // The directory BEFORE this test starts anything. See the assertion below
+    // on why a constant floor was the wrong shape here.
+    const rollBefore = (await rowsOf(page, '/api/v1/manav/employees')).length;
     let exits = await rowsOf(page, '/api/v1/manav/offboarding');
     const leaving = new Set(exits.map((r) => String(r.employee_id)));
 
@@ -2073,8 +2076,43 @@ test.describe('Suite 07 — Manav · Unicode Group', () => {
     for (const r of mineExits) {
       expect(String(r.status), 'a freshly started exit must not already be completed').not.toBe('completed');
     }
+    /**
+     * ⚠ AGAINST THE ROLL THIS TEST FOUND, NOT AGAINST A CONSTANT.
+     *
+     * This read `>= 30` and got 26, and the product was right. `manav_employees`
+     * holds 30 active rows for this org and the directory returns 26, because
+     * `still_on_the_rolls()` excludes anybody whose LAST WORKING DAY HAS PASSED
+     * — and four people had already left: Kabir Solanki (11 Aug), Rohit Vyas
+     * (13 Aug), Yash Rathod (17 Aug), Vivek Thakkar (20 Aug), all from earlier
+     * rounds of this programme. 30 - 4 = 26.
+     *
+     * A flat floor of 30 is an assumption that nobody has ever left, on an org
+     * that accumulates state across every run — so the check would go red a
+     * little more every pass and blame the product each time.
+     *
+     * What the test actually means is that starting an exit does not take the
+     * person off the register, and THAT is measurable exactly: the four exits
+     * above are dated 2026-09-30, which is in the future, so the roll must not
+     * have moved at all. `ExitsTab.jsx` opens by saying deactivation is the
+     * LAST step, and `still_on_the_rolls`'s own note says a leaver keeps the
+     * flag until settlement. Both are checked here rather than assumed.
+     */
     const stillActive = (await rowsOf(page, '/api/v1/manav/employees')).length;
-    expect(stillActive, 'starting an exit must not remove anybody from the register').toBeGreaterThanOrEqual(30);
+    expect(stillActive,
+      `the directory held ${rollBefore} people before these four exits were started and `
+      + `holds ${stillActive} after. A future-dated exit must not take anybody off the `
+      + `roll — deactivation is the last step of an exit, not the first${dump(wire)}`)
+      .toBe(rollBefore);
+
+    // And each of the four is still THERE by name, not merely a count that
+    // happens to match because somebody else was added in the same window.
+    const roll = await rowsOf(page, '/api/v1/manav/employees');
+    for (const emp of LEAVERS) {
+      expect(roll.some((e) => String(e.id) === String(emp.id)),
+        `${emp.name} has an exit dated 2026-09-30 — in the future — and has already `
+        + 'left the directory. `still_on_the_rolls` excludes only a last working day '
+        + 'that has PASSED').toBe(true);
+    }
 
     // ── Four exit interviews ───────────────────────────────────────────────
     const REASONS = ['Compensation', 'Career growth', 'Relocation', 'Personal'];

@@ -1,0 +1,72 @@
+-- 248 · A candidate with a personnel record, parked back at the offer stage.
+--
+-- ── THE FIVE SECTIONS ─────────────────────────────────────────────────────
+--
+-- 1 · WHAT IS WRONG
+--     `manav_candidates.converted_employee_id` is set — the person HAS an
+--     employee row, created by `hire_candidate` inside a transaction that also
+--     writes `stage='hired'` — and `stage` reads 'offer'.
+--
+--     Live, measured 2026-08-31 before this file was written:
+--
+--         stage    n   orgs
+--         hired    1   1
+--         offer    1   1     <- this row
+--
+--     ONE row product-wide. Bhavin Chokshi, Unicode Group,
+--     converted_employee_id = 0efbf133-1626-462e-be7b-fb3f1b0adfee,
+--     updated_at 2026-08-31 09:40:49+00.
+--
+-- 2 · HOW IT GOT THERE
+--     `PATCH /candidates/{id}/stage` had no guard on `converted_employee_id`.
+--     `hire_candidate` refuses to convert somebody twice; nothing refused the
+--     reverse, so a stage chip clicked after the hire wrote the row back. The
+--     hire route itself is sound — one transaction, both writes, and the other
+--     converted candidate in the same org is correctly 'hired'.
+--
+--     The guard is in this same change (routers/manav.py, 409 with the
+--     offboarding remedy named). Without it this UPDATE would be undone by the
+--     next stray click, which is why the two ship together.
+--
+-- 3 · WHAT THIS STATEMENT TOUCHES
+--     Rows where a personnel record EXISTS and the stage disagrees. It cannot
+--     reach a candidate who has not been hired, because the predicate requires
+--     `converted_employee_id IS NOT NULL`, and it cannot reach one already
+--     correct, because it requires `stage <> 'hired'`.
+--
+--     Scoped to no organisation on purpose: the condition is a contradiction
+--     inside one row, not a tenant's data question, and the count above says
+--     exactly one row in the whole database meets it.
+--
+-- 4 · SIDE EFFECTS OF THE WRITE
+--     · `updated_at` moves, and that is the ONLY stamp available:
+--       `manav_candidates` carries no `updated_by` column at all (checked
+--       against the live catalogue, not assumed). So unlike migration 246,
+--       where a NULL `updated_by` beside a moved `updated_at` is what ruled
+--       out a code path, this table leaves no such trace either way.
+--     · NO event is emitted. `employee_joined` already fired when the employee
+--       row was created; firing anything here would announce a hire that
+--       happened days ago and could re-run automation rules against it.
+--     · The recruitment funnel's counts change by one: one fewer live offer,
+--       one more hire. That is the correction, not a side effect.
+--     · No trigger exists on `manav_candidates` that this statement fires.
+--
+-- 5 · REVERSAL
+--     Recorded here rather than in a backup table: a NEW table in `public`
+--     carries no RLS and would be a cross-tenant read the moment it existed
+--     (CLAUDE.md, and migration 246 made the same call).
+--
+--         UPDATE public.manav_candidates
+--         SET stage = 'offer'
+--         WHERE id = (SELECT id FROM public.manav_candidates
+--                     WHERE full_name = 'Bhavin Chokshi'
+--                       AND org_id = 'fae87907-2f99-4b35-a241-c94d9e1e4a17');
+--
+--     The reversal is exact because there is one row and its prior stage is
+--     recorded above.
+
+UPDATE public.manav_candidates
+SET stage = 'hired',
+    updated_at = NOW()
+WHERE converted_employee_id IS NOT NULL
+  AND stage <> 'hired';
