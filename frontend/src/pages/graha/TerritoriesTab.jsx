@@ -243,6 +243,46 @@ export default function TerritoriesTab() {
               <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
             <label className="gr__f"><span className="gr__fl">Description</span>
               <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+            {/* ── WHO WINS WHEN TWO PATCHES CLAIM THE SAME PINCODE ────────────
+                `services/territory_routing.py` has sorted on `rules.priority`
+                since Phase 7.1 — lowest wins, blank sorts last, ties broken by
+                name — and its own note says so at length. It was open question 1
+                in PHASE-7 and the engine answered it deterministically pending a
+                ruling, "because two runs over the same data must route a contact
+                the same way, or the first support ticket is unanswerable".
+
+                ⚠ AND NOTHING COULD SET IT. Six live territories, none carrying a
+                priority of any kind, because this form is the only writer of
+                `rules` and it wrote exactly one key. Suite 04.07b found it: the
+                product DETECTS the collision, resolves it, and reports it
+                afterwards, with no control to decide the outcome in advance.
+
+                Owner's ruling 2026-08-31: the org decides, not the product. So
+                this is a number the firm sets per patch rather than a strategy
+                hardcoded anywhere. Left BLANK is a real answer and the common
+                one — it means "no opinion", and the engine falls back to name,
+                which is stable because the name is unique per org. */}
+            <label className="gr__f">
+              <span className="gr__fl">Priority when patches overlap</span>
+              <input
+                className="k-input" type="number" min="1" max="999"
+                aria-label="Priority when patches overlap"
+                placeholder="Leave blank for no preference"
+                value={form.rules.priority ?? ''}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const next = { ...form.rules };
+                  // Deleted rather than written as null or '': `_priority_of`
+                  // accepts an INTEGER and ignores anything else, so an empty
+                  // string would read as "no priority" anyway — but it would
+                  // sit in the jsonb looking like an answer somebody gave.
+                  if (raw === '') delete next.priority;
+                  else next.priority = parseInt(raw, 10);
+                  setForm({ ...form, rules: next });
+                }}
+              />
+              <span className="gr__fh">Lower wins. Blank means no preference.</span>
+            </label>
           </div>
           <div className="gr__group">
             <span className="gr__fl">Assigned Users</span>
@@ -317,6 +357,15 @@ export default function TerritoriesTab() {
           <div className="gr__lmain">
             <div className="gr__lt">{t.name}</div>
             {t.description && <div className="gr__lsub">{t.description}</div>}
+            {Number.isInteger(t.rules?.priority) && (
+              /* Shown on the ROW, not only inside the form. The whole value of
+                 a priority is being able to read the order at a glance; having
+                 to open six territories to learn which one wins is the same
+                 cost the pincode list had before it was surfaced here. */
+              <span className="gr__tok" title="Lower wins when two patches claim one pincode">
+                Priority {t.rules.priority}
+              </span>
+            )}
             {t.rules?.pincodes?.length > 0 && (
               /* The count, and then the pincodes themselves — each one opens
                  its own area preview (Phase 8.2). It was a bare number, so the
