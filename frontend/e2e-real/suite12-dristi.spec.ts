@@ -2602,10 +2602,26 @@ test.describe('Suite 12 · Dristi — reports, analytics, and every figure tied 
       // matters first.
       rec.settle('12.10 exports against the screens they were taken from');
 
+      /* ⚠ TWO NUMBERS, AND THE FLOOR WAS CHECKING NEITHER OF THEM.
+         This asserted `got.length >= 24` while the block above it printed that
+         this test takes 22 — 5 + 5 + 2 + 4 + 6, every one enumerated. The 24
+         was arithmetic that matched no list, so the test failed over a count
+         that was never wrong, while **§4's actual requirement went unchecked**:
+         36 exports across the run, of which 12.06 and 12.09 take the rest.
+
+         Both are asserted now, each against the thing it actually measures.
+         The per-test floor catches an export silently skipped HERE; the
+         run-wide floor is the one that answers §4, and it is the number a
+         reader of this suite would have thought was being checked all along. */
       expect(got.length,
-        `§4 asks for ${N_EXPORTS} exports. This test took ${got.length}; 12.06 and 12.09 take the ` +
-        'rest. Every one is asserted to have produced a file with bytes in it.')
-        .toBeGreaterThanOrEqual(24);
+        `this test's own export list is 22 (5 all-time + 5 dated + 2 tab + 4 chart ` +
+        `+ 6 analytics card) and it took ${got.length}, so one was skipped without failing`)
+        .toBeGreaterThanOrEqual(22);
+      expect(files,
+        `§4 asks for ${N_EXPORTS} exports across the run and ${files} distinct file(s) ` +
+        'reached disk. 12.10 takes 22 of them; 12.06 and 12.09 take the rest, and every ' +
+        'one is asserted to have produced a file with bytes in it.')
+        .toBeGreaterThanOrEqual(N_EXPORTS);
       assertNoUncaught(con);
     });
 

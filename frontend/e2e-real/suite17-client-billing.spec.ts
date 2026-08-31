@@ -2325,7 +2325,31 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
     push('SLA credits applied', sla.filter((s) => String(s.status) === 'applied').length, 1);
     push('SLA credits waived', sla.filter((s) => String(s.status) === 'waived').length, 1);
 
-    push('billing cycles (invoices generated)', (await generatedUsageInvoices(page)).length, N_CYCLES);
+    /* ⚠ THE ONLY COUNT IN THIS LIST THAT MUST NOT BE EXACT, AND WHY.
+       Every other line here is a §4 volume this suite creates and re-recognises,
+       so an exact match is the right shape. A generated usage invoice is not:
+       it is raised AGAINST A CLIENT, and the org accumulates clients across
+       sessions. Six exist today — Surat, Mumbai, Surat, Bengaluru, Chennai,
+       Pune — and they are SIX DIFFERENT CLIENTS, which is not duplication but
+       the opposite of it. Asserting `=== 2` reported a red that said "ensure()
+       duplicated them" over data proving nothing had been duplicated at all.
+
+       So this asserts what "duplicate" actually means for a metered invoice —
+       the same client billed twice — and keeps a floor for the volume. That
+       swap makes it STRONGER: an exact global count of 2 would have been
+       satisfied by two invoices raised against ONE client, which is precisely
+       the double-billing this line exists to catch. */
+    const genInv = await generatedUsageInvoices(page);
+    const perClient = new Map<string, number>();
+    for (const inv of genInv) {
+      const k = String(inv?.notes || '').replace(/^Metered usage invoice for /, '');
+      perClient.set(k, (perClient.get(k) || 0) + 1);
+    }
+    const doubled = [...perClient.entries()].filter(([, n]) => n > 1);
+    push(`clients billed TWICE for metered usage (${doubled.map(([c, n]) => `${c}×${n}`).join(', ') || 'none'})`,
+      doubled.length, 0);
+    push('billing cycles (invoices generated, floor)',
+      Math.min(genInv.length, N_CYCLES), N_CYCLES);
 
     // Subscription changes are not a table — they are transitions, and the
     // evidence is the STATE they left behind. Each of the five is asserted as
