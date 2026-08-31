@@ -2467,15 +2467,23 @@ test('13.15 attachments: no control, no route, no row — a §4 volume that cann
    * `ChannelDetails.jsx` shipped: a private channel could never gain a second
    * member for that whole period. 13.02 and 13.05 are what keep it called.
    */
-  const openapiPaths = Object.keys(openapi.paths);
-  expect(openapiPaths.filter((p) => /typing/i.test(p)),
-    'a typing route now exists — D1 has been reversed').toEqual([]);
+  const TYPING_SHAPES = [
+    '/api/v1/messaging/typing',
+    '/api/v1/messaging/channels/00000000-0000-0000-0000-000000000000/typing',
+  ];
+  const typing = await absentRoutes(page, API, TYPING_SHAPES);
+  console.log(`S13-TYPING  typing probe: ${JSON.stringify(typing.seen)}`);
+  expect(typing.present,
+    `a typing route now exists — D1 has been reversed: ${JSON.stringify(typing.present)}`)
+    .toEqual([]);
 
-  // Every messaging route the deployed build offers, printed so the next reader
-  // can diff it rather than re-derive it.
-  console.log('S13-ROUTES\n  ' + messagingPaths.map((p) =>
-    `${Object.keys(openapi.paths[p]).filter((m) => ['get', 'post', 'put', 'patch', 'delete'].includes(m))
-      .map((m) => m.toUpperCase()).sort().join(' ').padEnd(20)} ${p}`).join('\n  '));
+  // ⚠ THE ROUTE CENSUS THAT USED TO PRINT HERE IS GONE, and saying so is the
+  // honest cost of this change rather than something to quietly drop. It listed
+  // every deployed `/messaging/` path with its methods, straight off the schema,
+  // so the next reader could DIFF the module's surface instead of re-deriving
+  // it. Production publishes no schema (`openapi_url=None`), and a probe cannot
+  // enumerate — it only answers about the paths it is handed. The decorators in
+  // `backend/routers/messaging.py` are now the only place that list exists.
 
   assertConsole(con);
 });

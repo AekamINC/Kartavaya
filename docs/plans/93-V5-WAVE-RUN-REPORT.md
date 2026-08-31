@@ -45,7 +45,29 @@ Wave  Suite                       Pass  Fail  Skip  Never-ran  Exit
 NOT RUN AT ALL (no dispatch, so no row above):
   Suite 19.3 support-session — admin.config.ts covers it; the briefed
     filename filter excluded it. Suite 19 coverage is PARTIAL.
-  Suite 21 — no config exists (no suite21.config.ts); never dispatched.
+  Suite 21 — never dispatched, but ⚠ THE STATED REASON WAS WRONG. Corrected
+    2026-08-31: "no suite21.config.ts" looked for a PLAYWRIGHT config for a
+    suite that was deliberately never a Playwright suite. Playwright cannot
+    drive a native app. The suite EXISTS and is complete:
+
+        mobile/e2e/android_e2e.py     56 KB, 8 sections
+        mobile/e2e/_driver.py         26 KB, adb + uiautomator
+
+    Its own docstring says why: Maestro was the plan, Maestro is a JVM tool,
+    there is no Java on PATH here — so the harness does what Maestro does
+    underneath (dump hierarchy, find node, tap) with no new dependency.
+    Sections: launch · punch · offline · tasks · invoices · esign · push ·
+    tablet — including the geofence REFUSAL path via `cmd location
+    test-provider` (NOT `adb emu geo fix`, which answers OK and does nothing
+    on this build).
+
+    Everything it needs is present and was verified 2026-08-31:
+        adb                       on PATH
+        Pixel_9_Pro, Tab_A11_Plus both AVDs exist
+        app-release.apk           53 MB, x86_64, built 2026-08-30 16:19
+
+    So Stage 5 is not blocked on writing a suite. It is blocked on booting
+    two emulators and a healthy backend — and it has never been run.
 
 ═══════════════════════════════════════════════════════════════
 2. EVERY FAILURE, BY VERDICT — PRODUCT BUGS FIRST
@@ -419,8 +441,11 @@ THE BRIEFED COMMAND COLLECTED ZERO TESTS FOR SIX SUITES:
   real.config.ts") and never fired. Every one of these six is a silent
   no-op for anyone who runs the runbook literally.
 
-MISSING CONFIGS: no suite19.config.ts, no suite21.config.ts, no
-  suite01-suite10 configs. Suite 21 was never dispatched.
+MISSING CONFIGS: no suite19.config.ts, no suite01-suite10 configs.
+  ⚠ "no suite21.config.ts" IS STRUCK — see §1. Suite 21 is a Python/adb
+  harness by design and never wanted a Playwright config. Looking for one
+  and reporting its absence as the reason a suite never ran is how a
+  BUILT, RUNNABLE suite came to be recorded as missing for a whole run.
 
 BLOCKED, NOT COVERED — treat as UNTESTED, not passing:
   · Payroll's whole trap (leavers, PT by state+gender, re-run moves the
