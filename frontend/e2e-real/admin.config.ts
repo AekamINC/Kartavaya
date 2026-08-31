@@ -55,7 +55,12 @@ export default defineConfig({
       // a customer approves, which is exactly why it is the only role the
       // server lets raise a request. It is here because this is where the
       // platform-side credentials live, not because it is a second god mode.
-      testMatch: /suite19-(admin-modules|support-session)\.spec\.ts/,
+      // 19.4 stocks the ORG SKILL SHELF. `POST /v1/hub/org/skills/{template_id}`
+      // is require_platform_role AND takes get_org_id, so it is an Aekam
+      // operator acting inside the subject org — a console action, which is
+      // why it lives in this lane and not in Suite 14. Aekam assigns; the ORG
+      // then runs, on its own credits, and Suite 14 owns that half.
+      testMatch: /suite19-(admin-modules|support-session|skill-shelf)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

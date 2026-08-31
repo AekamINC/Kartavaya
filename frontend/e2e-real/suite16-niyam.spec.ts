@@ -1811,6 +1811,7 @@ test('16.04 fourteen rules across seven trigger families are built through the e
     const ids: Record<string, string> = {};
 
     let rebuilt = 0;
+    let patched = 0;
     for (const r of RULES) {
       const name = ruleName(r);
       const existing = before.get(name);
@@ -1831,7 +1832,57 @@ test('16.04 fourteen rules across seven trigger families are built through the e
               && cond.config.operator === r.cond.operator
               && String(cond.config.value) === String(r.cond.value)
           : !cond;
-        if (matches) { ids[name] = String(existing.rule_id); found++; continue; }
+
+        // ⚠ THE ACTION STEP WAS NEVER COMPARED, SO "ALREADY PRESENT" MEANT
+        // "ALREADY NAMED". Only the CONDITION was reconciled above. When the
+        // spec changed eight rules from `@creator` to `@org_admins`, every one
+        // of them still matched on its condition, was accepted as this suite's
+        // own output, and 16.04 then asserted the new intent against a row
+        // built on 2026-08-30 at 22:22 carrying the old one. `to` came back
+        // `["@creator"]` and the test read as a product bug for two runs.
+        //
+        // §7.3 asks a second execution to report "0 typed, N already present".
+        // It cannot mean that unless "present" also means CORRECT.
+        const act = (d.steps || []).find((x: any) => x.kind === 'action');
+        const storedTo = JSON.stringify(act?.config?.to ?? null);
+        const wantTo = JSON.stringify([r.to]);
+        const actMatches = storedTo === wantTo;
+
+        if (matches && actMatches) { ids[name] = String(existing.rule_id); found++; continue; }
+
+        // ⚠ A RECIPIENT DRIFT IS PATCHED, NEVER REBUILT. Delete-and-rebuild is
+        // right for a changed CONDITION — the rule is asking a different
+        // question and its history is about the old one — but it is the wrong
+        // instrument here, twice over. `delete_rule`'s own docstring calls the
+        // loss of run history "a real loss", and `patch_rule` REFUSES to arm a
+        // rule with zero runs, so rebuilding to fix a recipient would leave the
+        // rule unarmable and take 16.08 down with it. The product has an Edit
+        // control (`NiyamPage.jsx:541`) and a `PATCH /rules/{id}`; this uses
+        // them, which is also what a customer changing their mind would do.
+        if (matches && !actMatches) {
+          console.log(`  ${name}: recipient ${storedTo} does not match the spec ` +
+            `${wantTo} — editing in place, history kept`);
+          await gotoNiyam(page);
+          const c = ruleCard(page, name);
+          await expect(c, `no rule card named "${name}"`).toBeVisible({ timeout: 30_000 });
+          await c.getByRole('button', { name: 'Edit', exact: true }).click();
+          const ed2 = page.locator('.niyam-editor').first();
+          await expect(ed2, 'Edit opened no editor').toBeVisible({ timeout: 20_000 });
+          const sel2 = ed2.locator('.niyam-action select.inp');
+          await expect(sel2, 'the action card drew no selects in the editor')
+            .not.toHaveCount(0, { timeout: 20_000 });
+          await sel2.nth(1).selectOption(r.to);
+          await saveAndWait(page, /\/v1\/niyam\/rules\/[^/]+$/,
+            () => ed2.getByRole('button', { name: 'Save', exact: true }).click(),
+            `patching ${name}'s recipient`, ['PATCH', 'PUT']);
+
+          // The canonical row, because a 2xx is not a stored value.
+          const again = await apiJson(page, `/api/v1/niyam/rules/${existing.rule_id}`);
+          const act2 = (again.steps || []).find((x: any) => x.kind === 'action');
+          expect(JSON.stringify(act2?.config?.to ?? null),
+            `${name}: the editor saved but the recipient did not change`).toBe(wantTo);
+          ids[name] = String(existing.rule_id); patched++; continue;
+        }
 
         console.log(`  ${name}: stored condition ` +
           `${JSON.stringify(cond?.config)} does not match the spec ` +
@@ -1857,6 +1908,7 @@ test('16.04 fourteen rules across seven trigger families are built through the e
       typed++;
     }
     if (rebuilt) console.log(`  16.04 — ${rebuilt} rule(s) rebuilt after a spec change`);
+    if (patched) console.log(`  16.04 — ${patched} rule(s) reconciled in place, run history kept`);
     console.log(`\n  16.04 rules — typed ${typed}, already present ${found} (§6 idempotence)\n`);
     ledgerWrite({ ruleIds: ids, rulesTyped: typed, rulesFound: found });
 
