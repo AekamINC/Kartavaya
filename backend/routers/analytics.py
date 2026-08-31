@@ -58,7 +58,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.module_levels import held_level
 from middleware.org_resolver import get_org_id
-from middleware.subscription import require_module
+from middleware.subscription import org_module_refusal, require_module
 from services import analytics_window as aw
 from services.report_render import csv_cell
 
@@ -81,7 +81,8 @@ FORMATS = ("json", "csv", "xlsx", "pdf")
 UNGATED_MODULES = frozenset({"core"})
 
 
-async def _reachable(pool, user_id: str, org_id: str, also=frozenset()) -> set[str]:
+async def _reachable(pool, user_id: str, org_id: str, also=frozenset(),
+                     *, runnable: bool = False) -> set[str]:
     """Which registry modules this caller may SEE — the catalogue intersection.
 
     The same loop `routers/dristi.reachable_modules` runs, over `held_level`
@@ -95,12 +96,43 @@ async def _reachable(pool, user_id: str, org_id: str, also=frozenset()) -> set[s
     metric-less module would be permanently withheld from
     `/report-sections` — withheld for a reason that has nothing to do with
     the caller's entitlement, and stated nowhere.
+
+    ⚠ `runnable=True` ADDS THE ORG'S HALF OF THE GATE, and a menu needs it.
+
+    `held_level` answers only "does this PERSON hold a grant", and it returns
+    `admin` for any org owner or admin unconditionally. `/run` also asks
+    whether the ORG has the module active and its subscription live. Two
+    gates, one strictly weaker — and the weaker one drew the menu.
+
+    Suite 12.03 measured it on the reference org 2026-08-31: **the catalogue
+    offered 4 metrics `/run` refuses**, every one `varta.*`. That org holds
+    twelve active modules and no `module_subscriptions` row for `varta` at
+    all, so `varta.sends`, `varta.delivery_rate`, `varta.read_rate` and
+    `varta.reply_rate` were pickable in "Add a metric…" and answered 403 the
+    moment the widget drew. A menu that lists dishes the kitchen refuses is
+    worse than a short menu: the person picks one, gets an error they cannot
+    act on, and learns nothing about which module they would have to buy.
+
+    The org half is `subscription.org_module_refusal` — the SAME function
+    `require_module` now raises from, so the menu and the door cannot drift.
+    It is called rather than `require_module` itself because that would run
+    the platform branch once per module, and `platform_audit_needed` writes a
+    row for every sensitive module a platform role reads; twelve rows per
+    catalogue GET would bury the audit.
+
+    `runnable` is OPT-IN, and `/report-sections` deliberately does not take it
+    — see its own docstring, which argues the split it draws between listing a
+    register's NAME and serving its ROWS. That argument is about `reads`, and
+    this parameter does not touch it.
     """
     asked = (modules_in_registry() | set(also))
     out = set(UNGATED_MODULES & asked)
     for code in asked - UNGATED_MODULES:
-        if await held_level(pool, user_id, org_id, code) is not None:
-            out.add(code)
+        if await held_level(pool, user_id, org_id, code) is None:
+            continue
+        if runnable and await org_module_refusal(pool, org_id, code) is not None:
+            continue
+        out.add(code)
     return out
 
 
@@ -110,7 +142,9 @@ async def catalogue(
     org_id=Depends(get_org_id),
 ):
     pool = await get_pool()
-    reachable = await _reachable(pool, user["user_id"], org_id)
+    # `runnable=True`: this list IS the "Add a metric…" menu, so every entry
+    # has to be something `/run` will actually answer. See `_reachable`.
+    reachable = await _reachable(pool, user["user_id"], org_id, runnable=True)
     metrics = catalogue_for(reachable)
     return {
         "metrics": metrics,

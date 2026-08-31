@@ -197,11 +197,23 @@ def test_compare_previous_year_holds_the_dates(pool, gate):
 
 # ── the catalogue ────────────────────────────────────────────────────────────
 
+#: The catalogue now asks BOTH halves of the module gate — the person's grant
+#: (`held_level`) and the org's subscription (`org_module_refusal`). These two
+#: tests are about the metric list's SHAPE, so the org half is answered "active"
+#: and the person half is what each one varies. The org half has its own file:
+#: `test_catalogue_offers_only_what_run_answers.py`.
+def _org_says_active(monkeypatch):
+    async def _ok(pool_, org_id, code):
+        return None
+    monkeypatch.setattr(ax, "org_module_refusal", _ok)
+
+
 def test_catalogue_intersects_reachable_modules(pool, monkeypatch):
     async def _held(pool_, user_id, org_id, code):
         return None  # no module reachable
 
     monkeypatch.setattr(ax, "held_level", _held)
+    _org_says_active(monkeypatch)
     out = run(ax.catalogue(user=USER, org_id=ORG))
     listed = {m["module"] for m in out["metrics"]}
     # core survives — it is ungated by design; everything else is withheld
@@ -215,6 +227,7 @@ def test_catalogue_lists_absent_metrics_with_reasons(pool, monkeypatch):
         return "admin"
 
     monkeypatch.setattr(ax, "held_level", _held)
+    _org_says_active(monkeypatch)
     out = run(ax.catalogue(user=USER, org_id=ORG))
     absent = {m["key"]: m for m in out["metrics"] if m.get("absent")}
     assert "ganit.tds_by_section" in absent

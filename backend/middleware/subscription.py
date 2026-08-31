@@ -679,73 +679,107 @@ def require_module(module_code: str):
                         module_code=module_code,
                     )
 
-        cache_key = f"{org_id}:{module_code}"
-        now = datetime.now(timezone.utc)
-
-        if len(_cache) > _CACHE_MAX_SIZE:
-            _cache.clear()
-
-        if cache_key in _cache:
-            cached_at, is_active = _cache[cache_key]
-            if now - cached_at < _CACHE_TTL:
-                if not is_active:
-                    raise ModuleRefusal(
-                        f"Module '{module_code}' is not active. "
-                        "Contact your administrator to activate it.",
-                        stage="module_inactive",
-                        module_code=module_code,
-                    )
-                return
-
-        sub = await pool.fetchrow(
-            "SELECT s.status, p.features FROM public.subscriptions s "
-            "JOIN public.plans p ON p.id = s.plan_id "
-            "WHERE s.org_id=$1::uuid",
-            org_id,
-        )
-        if not sub or sub["status"] in ("cancelled", "paused"):
-            _cache[cache_key] = (now, False)
-            msg = (
-                "Your subscription is paused. Contact your organisation owner "
-                "or Aekam support to resume it."
-                if sub and sub["status"] == "paused"
-                else "Subscription is not active"
-            )
-            raise ModuleRefusal(
-                msg, stage="subscription", module_code=module_code)
-
-        if module_code in BUNDLED_MODULES:
-            features = sub["features"] if isinstance(sub["features"], dict) else {}
-            if features.get(module_code):
-                _cache[cache_key] = (now, True)
-                return
-            else:
-                _cache[cache_key] = (now, False)
-                raise ModuleRefusal(
-                    f"Module '{module_code}' requires a paid plan. "
-                    "Contact your administrator to upgrade.",
-                    stage="module_inactive",
-                    module_code=module_code,
-                )
-
-        mod = await pool.fetchval(
-            "SELECT 1 FROM public.module_subscriptions "
-            "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
-            org_id, module_code,
-        )
-
-        is_active = mod is not None
-        _cache[cache_key] = (now, is_active)
-
-        if not is_active:
-            raise ModuleRefusal(
-                f"Module '{module_code}' is not active. "
-                "Contact your administrator to activate it.",
-                stage="module_inactive",
-                module_code=module_code,
-            )
+        refusal = await org_module_refusal(pool, org_id, module_code)
+        if refusal is not None:
+            raise refusal
 
     return _check
+
+
+async def org_module_refusal(pool, org_id: str, module_code: str):
+    """The ORG half of the module gate: is this module active for this org?
+
+    Returns the `ModuleRefusal` the caller should raise, or `None` to admit.
+    Nothing about the *person* is asked here — reach, role, grant level and the
+    platform audit row are all decided by `require_module` before this runs.
+
+    ── WHY THIS IS A FUNCTION AND NOT INLINE ────────────────────────────────
+    It was inline in `require_module`, which is a FastAPI dependency and RAISES.
+    That made it unusable by the surfaces that need to ask the same question
+    without a refusal — the catalogues — so `routers/analytics._reachable`
+    asked `held_level` instead, which answers only "does this person hold a
+    grant" and returns `admin` for any org owner or admin unconditionally.
+
+    Two gates, one strictly weaker, and the weaker one drew the menu. Suite
+    12.03 measured it on the reference org 2026-08-31: the analytics catalogue
+    offered **4 metrics `/run` refuses** — every `varta.*` that is not already
+    declared absent — because that org holds twelve active modules and no
+    `module_subscriptions` row for `varta` at all. A person could pick
+    `varta.read_rate` out of "Add a metric…" and get a 403 with nothing to act
+    on.
+
+    So the answer moves here and both callers ask it. `require_module` raises
+    what this returns; `_reachable` hides the module and counts it in
+    `withheld_count`.
+
+    ⚠ RETURNING RATHER THAN RAISING IS THE POINT, and it is also why the
+    catalogue does not simply call `require_module` in a loop: that would run
+    the PLATFORM branch twelve times per page load, and
+    `platform_audit_needed` writes a row for every sensitive module a platform
+    role reads. Twelve modules per catalogue GET would bury the ~330
+    warn-severity rows the audit exists for — the volume regression that
+    function's own docstring argues against, arrived at from the other side.
+
+    The `_cache` is shared with `require_module` and keyed the same
+    (`org_id:module_code`), so a catalogue load warms the gate rather than
+    doubling its queries.
+    """
+    cache_key = f"{org_id}:{module_code}"
+    now = datetime.now(timezone.utc)
+
+    inactive = ModuleRefusal(
+        f"Module '{module_code}' is not active. "
+        "Contact your administrator to activate it.",
+        stage="module_inactive",
+        module_code=module_code,
+    )
+
+    if len(_cache) > _CACHE_MAX_SIZE:
+        _cache.clear()
+
+    if cache_key in _cache:
+        cached_at, is_active = _cache[cache_key]
+        if now - cached_at < _CACHE_TTL:
+            return None if is_active else inactive
+
+    sub = await pool.fetchrow(
+        "SELECT s.status, p.features FROM public.subscriptions s "
+        "JOIN public.plans p ON p.id = s.plan_id "
+        "WHERE s.org_id=$1::uuid",
+        org_id,
+    )
+    if not sub or sub["status"] in ("cancelled", "paused"):
+        _cache[cache_key] = (now, False)
+        msg = (
+            "Your subscription is paused. Contact your organisation owner "
+            "or Aekam support to resume it."
+            if sub and sub["status"] == "paused"
+            else "Subscription is not active"
+        )
+        return ModuleRefusal(msg, stage="subscription", module_code=module_code)
+
+    if module_code in BUNDLED_MODULES:
+        features = sub["features"] if isinstance(sub["features"], dict) else {}
+        if features.get(module_code):
+            _cache[cache_key] = (now, True)
+            return None
+        _cache[cache_key] = (now, False)
+        return ModuleRefusal(
+            f"Module '{module_code}' requires a paid plan. "
+            "Contact your administrator to upgrade.",
+            stage="module_inactive",
+            module_code=module_code,
+        )
+
+    mod = await pool.fetchval(
+        "SELECT 1 FROM public.module_subscriptions "
+        "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
+        org_id, module_code,
+    )
+
+    is_active = mod is not None
+    _cache[cache_key] = (now, is_active)
+    return None if is_active else inactive
 
 
 def _nearest_refusal(

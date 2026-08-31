@@ -74,16 +74,39 @@ def _invalid(exc: RuleInvalid):
 # ── what the builder may offer ───────────────────────────────────────────────
 
 @router.get("/catalog")
-async def catalog(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
+async def catalog(org_id: str = Depends(get_org_id),
+                  _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Every event type, its fields, and the operators each field allows.
 
     The builder renders ONLY from this. That is the structural half of "a broken
     rule is unwritable": the field list a person picks from and the field list
     the engine can evaluate are the same list, served from one registry, so they
     cannot drift the way the old builder drifted from its engine.
+
+    ⚠ `teams` IS HERE BECAUSE `task.create` COULD NOT BE SAVED WITHOUT IT.
+    `validate._validate_action` requires a `team_id` on that verb and says why —
+    "Most events belong to no team, so the target cannot come from the event."
+    The builder had no field for it and no list to fill one from, so picking
+    the verb produced a rule that always failed to save, naming a field that was
+    not on screen (suite 16.03, 2026-08-31).
+
+    It is served from the SAME endpoint as the events and actions for the same
+    reason they are: "the builder renders ONLY from this". A second fetch for
+    the project list would be a second thing that can be forgotten.
     """
     from services.niyam.actions import ACTIONS
+    pool = await get_pool()
+    teams = await pool.fetch(
+        # `deleted_at IS NULL` — dristi.py's guard on the same table. A rule
+        # aimed at a deleted project would validate and then create tasks
+        # nobody can see.
+        "SELECT team_id, name FROM public.teams "
+        " WHERE org_id = $1::uuid AND deleted_at IS NULL "
+        " ORDER BY name",
+        org_id)
     return {
+        "teams": [{"team_id": str(t["team_id"]), "name": t["name"]}
+                  for t in teams],
         "events": [
             {
                 "event_type": et,

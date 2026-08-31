@@ -202,7 +202,7 @@ async def test_the_rest_of_the_crm_is_untouched(api_client, ganit_only, path):
     assert resp.status_code == 403, f"{path} answered {resp.status_code}"
 
 
-def test_exactly_ten_routes_carry_the_wider_gate():
+def test_exactly_the_named_routes_carry_the_wider_gate():
     """A structural check, so a future bulk edit cannot quietly move the whole
     router onto the wider gate without this file noticing.
 
@@ -214,10 +214,24 @@ def test_exactly_ten_routes_carry_the_wider_gate():
     import inspect
     import routers.graha as g
 
+    # ⚠ FOURTEEN, NOT TEN. The four coordinate routes joined in Phase 7.1a
+    # (migration 237) and this ratchet went red on them — correctly: it is a
+    # list of NAMES and four names had been added without anyone updating it.
+    #
+    # They belong on the wider gate for the same reason the other ten do: the
+    # subject is a client or a contact, which a Ganit-only org owns as much as
+    # a Graha org does. A firm that bought Finance and not CRM still has
+    # customers, and still has a business address to drop a pin on.
+    #
+    # Widening this set has to be a decision somebody writes down — which is
+    # exactly what going red forced here, and why the check is a list of names
+    # rather than a count.
     widened = {
         "list_clients", "create_client", "get_client", "update_client",
         "delete_client", "list_contacts", "create_contact", "get_contact",
         "update_contact", "delete_contact",
+        "set_client_coordinate", "clear_client_coordinate",
+        "set_contact_coordinate", "clear_contact_coordinate",
     }
     on_wide, on_narrow = set(), set()
     for name, fn in vars(g).items():

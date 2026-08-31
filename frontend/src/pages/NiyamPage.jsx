@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Section, Badge } from '../components/editorial';
 import ModuleHeader from '../components/module/ModuleHeader';
 import { ICONS } from '../components/layout/navIcons';
-import { Button, Select, Input, Toggle, EmptyState, ErrorState, useToast } from '../components/ui';
+import { Button, Select, Input, Textarea, Toggle, EmptyState, ErrorState, useToast } from '../components/ui';
 import { Secondary } from '../components/Bilingual';
 import { api } from '../lib/api';
 
@@ -110,18 +110,69 @@ function Flow({ steps, fieldsByKey }) {
 }
 
 /** Families, in the order they appear in the product's own navigation. */
-const FAMILIES = [
-  { key: 'all',       label: 'Everything' },
-  { key: 'task',      label: 'Tasks' },
-  { key: 'approval',  label: 'Approvals' },
-  { key: 'invoice',   label: 'Invoices' },
-  { key: 'crm',       label: 'Leads' },
-  // The registry grew three families after the first four chips shipped; a
-  // rule filed under one of these was reachable only through 'Everything'.
-  { key: 'sales',     label: 'Sales & stock' },
-  { key: 'hr',        label: 'People' },
-  { key: 'analytics', label: 'Alerts' },
-];
+/**
+ * What each family is CALLED. Not which families exist — that is the engine's
+ * answer, and it is read off the catalogue below.
+ *
+ * ⚠ THIS LIST USED TO BE THE FAMILIES THEMSELVES, AND IT WENT STALE TWICE.
+ *
+ * The first time is recorded in its own comment: "the registry grew three
+ * families after the first four chips shipped; a rule filed under one of these
+ * was reachable only through 'Everything'." Adding the three fixed those three
+ * and left the mechanism exactly as it was — so it happened again. Suite 16.02b
+ * on 2026-08-31 found **4 of the engine's 11 families with no chip**:
+ *
+ *     esign      4 events        marketing  2 events
+ *     payroll    2 events        whatsapp   1 event
+ *
+ * A rule about a signature, a payslip, a campaign or a WhatsApp message could
+ * be built, and was then filterable only by scrolling 'Everything'.
+ *
+ * So the chips are DERIVED from the catalogue now. A family the engine declares
+ * gets a chip on the day it is declared, whether or not anyone remembers this
+ * file. A key with no label here is title-cased rather than hidden: an ugly
+ * chip is a bug someone fixes, a missing chip is a feature nobody can find.
+ */
+const FAMILY_LABELS = {
+  task:      'Tasks',
+  approval:  'Approvals',
+  invoice:   'Invoices',
+  crm:       'Leads',
+  sales:     'Sales & stock',
+  hr:        'People',
+  analytics: 'Alerts',
+  esign:     'Signatures',
+  payroll:   'Payroll',
+  marketing: 'Campaigns',
+  whatsapp:  'WhatsApp',
+};
+
+const titleCase = (key) =>
+  key.replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+/** 'Everything', then every family the engine actually declares.
+ *
+ *  Ordered by `FAMILY_LABELS`' own key order, so the chips do not reshuffle
+ *  when the catalogue's event order changes; anything not named there follows,
+ *  alphabetically, rather than landing wherever the registry happened to put
+ *  it. Rules and templates are read as sources as well as events, because a
+ *  rule can outlive the event it was filed under and must stay filterable.
+ */
+function familiesFrom(...lists) {
+  const seen = new Set();
+  lists.forEach((list) => (list || []).forEach((x) => {
+    if (x?.family) seen.add(x.family);
+  }));
+  const known = Object.keys(FAMILY_LABELS).filter((k) => seen.has(k));
+  const extra = [...seen].filter((k) => !(k in FAMILY_LABELS)).sort();
+  return [
+    { key: 'all', label: 'Everything' },
+    ...[...known, ...extra].map((key) => ({
+      key,
+      label: FAMILY_LABELS[key] || titleCase(key),
+    })),
+  ];
+}
 
 /** A step with nothing filled in yet, per kind. */
 function blankStep(kind, catalogEvent) {
@@ -132,6 +183,64 @@ function blankStep(kind, catalogEvent) {
   if (kind === 'wait') return { kind, config: { minutes: 60 } };
   return { kind, config: { verb: 'notify.send', channel: 'inapp', to: ['@assignees'], title: '', body: '' } };
 }
+
+/**
+ * ⚠ THE ACTION EDITOR OFFERED SIX VERBS AND COULD CONFIGURE TWO.
+ *
+ * `ActionCard` rendered fields for `notify.send` and `task.set_status` and
+ * nothing at all for the other four. Two of those four are correct with no
+ * fields — `report.send` reads everything off the schedule row the event names
+ * and `validate.py` REFUSES a stray key on it, and `invoice.remind_customer`
+ * takes no settings either. But an empty box says "this is broken", not "this
+ * needs nothing", so they now say which.
+ *
+ * The other two were genuinely unbuildable from this screen (suite 16.03,
+ * 2026-08-31). `validate_steps` refuses both without configuration a person
+ * had no field to enter:
+ *
+ *     task.add_comment   "A comment needs something to say."   (body)
+ *     task.create        "A task needs a title."               (title)
+ *                        "Choose which project the task…"      (team_id)
+ *
+ * So picking either verb produced a rule that could not be saved, with an
+ * error naming a field that was not on screen.
+ *
+ * ── THE FAILURE MODE, NOT ONLY THE FOUR INSTANCES ────────────────────────
+ * `cfg.verb === '…' && (…)` is what let four verbs ship with no editor: adding
+ * a verb to the engine changes nothing on this screen, and NOTHING SAYS SO —
+ * the card simply renders less. The per-verb blocks stay (they are readable,
+ * and each verb's fields differ too much to table), but `ActionCard` now ends
+ * with a fallback that names any verb it has no branch for. A gap is then
+ * visible on screen instead of looking like a verb that needs nothing.
+ */
+const NO_SETTINGS = 'This action takes no settings — it reads what it needs '
+  + 'from the event that triggered it.';
+
+const ACTION_HELP = {
+  'report.send': NO_SETTINGS,
+  'invoice.remind_customer': NO_SETTINGS,
+};
+
+/** Who a notification can name.
+ *
+ *  ⚠ `@org_admins` WAS MISSING AND SIX SHIPPED TEMPLATES USE IT. The engine
+ *  defines it (`actions.DB_TOKENS`), resolves it against the database, and the
+ *  metric-alert, stock-low, attendance-summary, invoice-paid, invoice-large
+ *  and invoice-cancelled templates all notify it. Opening one of those in this
+ *  editor showed a recipient dropdown whose value was not among its options —
+ *  the rule said "tell the org admins" and the screen said "whoever it is
+ *  assigned to". The screen was wrong, and one touch of that control made the
+ *  rule agree with the screen.
+ *
+ *  It is also the only correct answer for the org-shaped events: a product
+ *  running low and a day's attendance have no creator and no assignee, so
+ *  every other token resolves to nobody.
+ */
+const RECIPIENTS = [
+  { value: '@assignees',  label: 'whoever it is assigned to' },
+  { value: '@creator',    label: 'whoever created it' },
+  { value: '@org_admins', label: "the organisation's admins" },
+];
 
 export default function NiyamPage() {
   const toast = useToast();
@@ -191,6 +300,23 @@ export default function NiyamPage() {
   }, [catalog]);
 
   const shown = (list) => (family === 'all' ? list : list.filter((x) => x.family === family));
+
+  // The chips, from what the engine declares rather than from a list kept by
+  // hand. Templates and rules are read too: a rule filed under a family whose
+  // last event was retired still has to be findable.
+  const families = useMemo(
+    () => familiesFrom(catalog?.events, templates, rules),
+    [catalog, templates, rules],
+  );
+
+  // A chip that has just stopped existing must not leave the page filtered to
+  // nothing with no way back — that state is unreachable from the UI, which is
+  // the same class of defect as the missing chip itself.
+  useEffect(() => {
+    if (family !== 'all' && !families.some((f) => f.key === family)) {
+      setFamily('all');
+    }
+  }, [families, family]);
 
   // ── mutations ─────────────────────────────────────────────────────────────
 
@@ -333,7 +459,7 @@ export default function NiyamPage() {
       {/* Filter by what a rule is ABOUT. Same four families the colours
           encode, so the control and the palette teach each other. */}
       <div className="niyam-filters" role="group" aria-label="Filter by what the rule is about">
-        {FAMILIES.map((f) => (
+        {families.map((f) => (
           <button
             key={f.key}
             type="button"
@@ -642,35 +768,119 @@ function ConditionCard({ step, event, onChange }) {
 
 function ActionCard({ step, catalog, onChange }) {
   const cfg = step.config;
+  const set = (patch) => onChange({ ...cfg, ...patch });
+
+  // Switching verb must not carry the old verb's keys across. `report.send`
+  // refuses a stray key outright ("report.send takes no settings — remove: …"),
+  // so a rule that had been a notification and was changed to a report send was
+  // unsaveable with an error about a field the author could no longer see.
+  const setVerb = (verb) => onChange(
+    verb === cfg.verb ? { ...cfg, verb } : { ...blankStep('action').config, verb },
+  );
+
+  const known = new Set(['notify.send', 'task.set_status',
+                         'task.create', 'task.add_comment',
+                         'report.send', 'invoice.remind_customer']);
+
   return (
     <div className="niyam-action">
       <Select aria-label="What this rule does" value={cfg.verb}
-              onChange={(e) => onChange({ ...cfg, verb: e.target.value })}>
+              onChange={(e) => setVerb(e.target.value)}>
         {(catalog?.actions || []).map((a) => <option key={a} value={a}>{a}</option>)}
       </Select>
 
       {cfg.verb === 'notify.send' && (
         <>
           <Select
-            aria-label="Who is notified"
+            label="Who is notified"
             value={(cfg.to || [])[0] || '@assignees'}
-            onChange={(e) => onChange({ ...cfg, to: [e.target.value] })}
+            onChange={(e) => set({ to: [e.target.value] })}
           >
             {/* Stored as a QUESTION, not a person: the answer differs for every
                 event, and "tell whoever asked for it" is meaningless as an id. */}
-            <option value="@assignees">whoever it is assigned to</option>
-            <option value="@creator">whoever created it</option>
+            {RECIPIENTS.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </Select>
+          {/* ⚠ THE CHANNEL WAS HARDCODED `inapp` IN `blankStep` AND HAD NO
+              CONTROL, so no rule built on this screen could ever send an email
+              or a push — `send.CHANNELS` has carried all three since email
+              graduated on 2026-08-18, and `PLANNED_CHANNELS` is now empty.
+              It is also why quiet hours had no drivable path: they apply to the
+              channels that INTERRUPT, and in-app is deliberately exempt (it is
+              a row in a list, not a thing that wakes anyone), so every rule the
+              UI could build was exempt by construction. */}
+          <Select
+            label="How"
+            value={cfg.channel || 'inapp'}
+            onChange={(e) => set({ channel: e.target.value })}
+            hint="Push and email respect the org's quiet hours. In-app does not
+                  — it waits in the list rather than interrupting."
+          >
+            <option value="inapp">in the app</option>
+            <option value="push">as a push notification</option>
+            <option value="email">by email</option>
           </Select>
           <Input label="Title" value={cfg.title || ''}
-            onChange={(e) => onChange({ ...cfg, title: e.target.value })} />
+            onChange={(e) => set({ title: e.target.value })} />
           <Input label="Message" value={cfg.body || ''}
-            onChange={(e) => onChange({ ...cfg, body: e.target.value })} />
+            onChange={(e) => set({ body: e.target.value })} />
         </>
       )}
 
       {cfg.verb === 'task.set_status' && (
         <Input label="Set status to" value={cfg.status || ''}
-          onChange={(e) => onChange({ ...cfg, status: e.target.value })} />
+          onChange={(e) => set({ status: e.target.value })} />
+      )}
+
+      {cfg.verb === 'task.create' && (
+        <>
+          <Input label="Task title" value={cfg.title || ''}
+            onChange={(e) => set({ title: e.target.value })} />
+          {/* `validate.py` REQUIRES this: "Most events belong to no team, so
+              the target cannot come from the event — the rule must name where
+              the task goes." Without the field the verb was unsaveable. */}
+          <Select
+            label="In which project"
+            value={cfg.team_id || ''}
+            onChange={(e) => set({ team_id: e.target.value })}
+          >
+            <option value="">Choose a project…</option>
+            {(catalog?.teams || []).map((t) => (
+              <option key={t.team_id} value={t.team_id}>{t.name}</option>
+            ))}
+          </Select>
+          <Textarea label="Description" value={cfg.description || ''}
+            onChange={(e) => set({ description: e.target.value })} />
+          <Select label="Priority" value={cfg.priority || 'medium'}
+                  onChange={(e) => set({ priority: e.target.value })}>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </Select>
+        </>
+      )}
+
+      {cfg.verb === 'task.add_comment' && (
+        <Textarea label="Comment" value={cfg.body || ''}
+          onChange={(e) => set({ body: e.target.value })} />
+      )}
+
+      {/* The two that genuinely need nothing SAY so. An empty card reads as a
+          broken screen, and a person who has just picked a verb deserves to
+          know they are already finished. */}
+      {ACTION_HELP[cfg.verb] && (
+        <p className="niyam-muted">{ACTION_HELP[cfg.verb]}</p>
+      )}
+
+      {/* A verb the engine has grown and this editor has not. Says so rather
+          than rendering nothing — the failure mode this whole card was fixed
+          for. */}
+      {cfg.verb && !known.has(cfg.verb) && (
+        <p className="niyam-muted">
+          This action has no settings on this screen yet. It may need
+          configuration the rule cannot be saved without.
+        </p>
       )}
     </div>
   );
