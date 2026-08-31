@@ -67,7 +67,15 @@
  * Playwright can read.
  *
  * So `inbox()` below is the signer's mailbox, and it is a **read-only SELECT**
- * over `staging.sign_signers`, run through `railway run` so no credential is
+ * over `public.sign_signers`, run through `railway run` so no credential is
+ *
+ * ⚠ THESE QUERIES SAID `staging.` UNTIL 2026-08-31 AND THE SCHEMA WAS DROPPED
+ * ON 2026-08-29 (migration 241 moved all 258 tables into `public`). The read
+ * raised `UndefinedTableError: relation "staging.sign_signers" does not exist`,
+ * which surfaced as "the signer mailbox read failed" — and that message names
+ * itself an ENVIRONMENT blocker, so FOUR failures read as unreachable
+ * infrastructure. Comments below that still say `staging.` are describing
+ * history and are left alone; only the four EXECUTED statements moved.
  * ever written to a file in this repository. It reads. It never writes, and it
  * never creates a row this suite then claims a user typed. If it cannot run,
  * the tests that need it FAIL with the exact command to make it work — they do
@@ -538,19 +546,19 @@ async def main():
         if mode == "signers":
             rows = await conn.fetch(
                 "SELECT s.id::text AS signer_id, s.email, s.sign_order, s.token, s.status "
-                "FROM staging.sign_signers s WHERE s.document_id = $1::uuid "
+                "FROM public.sign_signers s WHERE s.document_id = $1::uuid "
                 "ORDER BY s.sign_order", arg)
         elif mode == "otp":
             rows = await conn.fetch(
                 "SELECT otp_code, otp_expires_at::text AS otp_expires_at "
-                "FROM staging.sign_signers WHERE id = $1::uuid", arg)
+                "FROM public.sign_signers WHERE id = $1::uuid", arg)
         elif mode == "fields":
             rows = await conn.fetch(
-                "SELECT count(*) AS n FROM staging.sign_fields WHERE document_id = $1::uuid", arg)
+                "SELECT count(*) AS n FROM public.sign_fields WHERE document_id = $1::uuid", arg)
         elif mode == "otplog":
             rows = await conn.fetch(
                 "SELECT purpose, status, org_id::text AS org_id, user_id, ts::text AS ts "
-                "FROM staging.outbound_log WHERE purpose = 'signing_otp' "
+                "FROM public.outbound_log WHERE purpose = 'signing_otp' "
                 "AND lower(recipient) = lower($1::text) ORDER BY ts DESC LIMIT 5", arg)
         else:
             rows = []
@@ -589,7 +597,7 @@ const INBOX_HELP =
   '     anyone but the recipient (esign_service.py:299-303), so the second\n' +
   '     browser context needs the mailbox, and this suite stands in for it with\n' +
   '     one read-only SELECT. Make ONE of these true and re-run:\n' +
-  '       · `railway link` this repo to Kartavya Production / staging, and leave\n' +
+  '       · `railway link` this repo to Kartavaya Production, and leave\n' +
   '         `backend/.venv` in place  (the default path — no secret is stored)\n' +
   '       · export E2E_ESIGN_PG_URL=<read-only Postgres URL for the staging DB>\n' +
   '       · export E2E_ESIGN_PYTHON=<an interpreter that has asyncpg>\n';
@@ -606,7 +614,15 @@ function inbox(mode: 'signers' | 'otp' | 'fields', arg: string): any[] {
   const script = inboxScript();
   const py = python();
   const direct = process.env.E2E_ESIGN_PG_URL;
-  const service = process.env.E2E_ESIGN_RAILWAY_SERVICE || 'Kartavya';
+  // ⚠ `Kartavaya`, WITH THE SECOND 'a'. The service was renamed on 2026-08-29
+  // and this default was not. `railway run --service Kartavya` answers
+  // "Service not found", which surfaces here as "the signer mailbox read
+  // failed" — an ENVIRONMENT blocker by its own diagnosis, so FOUR of this
+  // suite's failures read as unreachable infrastructure when the only thing
+  // wrong was one letter. Proved both ways before changing it:
+  //     railway run --service Kartavya  -- echo ok   ->  Service not found
+  //     railway run --service Kartavaya -- echo ok   ->  ok
+  const service = process.env.E2E_ESIGN_RAILWAY_SERVICE || 'Kartavaya';
   const cmd = direct
     ? `"${py}" "${script}" ${mode} "${arg}"`
     : `railway run --service ${service} -- "${py}" "${script}" ${mode} "${arg}"`;

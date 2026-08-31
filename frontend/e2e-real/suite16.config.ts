@@ -44,7 +44,7 @@
  * Supply it for the run rather than storing it:
  *
  *   cd frontend
- *   export E2E_CRON_SECRET="$(railway variables --service Kartavya \
+ *   export E2E_CRON_SECRET="$(railway variables --service Kartavaya \
  *       --environment staging --kv | sed -n 's/^CRON_SECRET=//p')"
  *   npx playwright test --config e2e-real/suite16.config.ts
  *
