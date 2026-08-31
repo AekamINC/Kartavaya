@@ -240,6 +240,27 @@ async def _referencing_tables(conn) -> list[tuple[str, str]]:
         WHERE con.contype = 'f'
           AND con.confrelid = 'graha_contacts'::regclass
           AND con.conrelid <> 'graha_contacts'::regclass
+          -- ⚠ THE AUDIT LEDGER IS NOT DOMAIN DATA, AND IT WAS REWRITING ITSELF.
+          -- `graha_contact_merges.survivor_id` and `.merged_id` both REFERENCE
+          -- `graha_contacts` (migration 024_graha_dedupe_merge.sql:77-78), so
+          -- this catalogue returned them like any other FK — and both
+          -- `merge_contacts` and `undo_merge` then re-pointed the very rows that
+          -- RECORD the merge.
+          --
+          -- Measured live: all six rows in `graha_contact_merges` ended up with
+          -- `survivor_id = merged_id`, which `merge_contacts` cannot even write
+          -- (line 299 refuses a self-merge). `undo_merge` reads survivor and
+          -- loser into locals and then runs
+          --     UPDATE graha_contact_merges SET survivor_id = <loser>
+          --      WHERE survivor_id = <survivor>
+          -- which matches the row being undone and collapses it to (loser,
+          -- loser). The reversal path destroyed its own evidence.
+          --
+          -- Excluded BY NAME, never by pattern: this is the one table whose FK
+          -- to `graha_contacts` is a historical FACT about two contacts rather
+          -- than a row belonging to one of them. A prefix rule here would be the
+          -- same mistake as a prefix in a DROP allowlist.
+          AND con.conrelid <> 'graha_contact_merges'::regclass
         ORDER BY 1
         """
     )
@@ -539,11 +560,28 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
             fk_tables = await _referencing_tables(conn)
 
             for tbl, col in fk_tables:
+                # ⚠ THIS PROBE ALWAYS ANSWERED FALSE, SO THE AGE GUARD BELOW
+                # NEVER RAN. It string-split `tbl` on a dot — but `tbl` comes
+                # from `conrelid::regclass::text`, and regclass renders a name
+                # UNQUALIFIED whenever its schema is on the search_path. Live,
+                # `search_path` is `"$user", public, extensions`, so `tbl` is
+                # `graha_contact_merges`, not `public.graha_contact_merges`:
+                # `split_part(tbl,'.',2)` is the EMPTY STRING and the EXISTS can
+                # never match.
+                #
+                # So every undo took the `else` branch and re-pointed EVERY row
+                # still on the survivor, regardless of when it was created —
+                # exactly the rows the docstring above promises to leave alone
+                # ("Rows created after the merge stay with the survivor").
+                #
+                # Asked of `pg_attribute` through `::regclass` instead, which
+                # resolves whichever form the text arrives in and cannot be
+                # defeated by qualification.
                 has_created = await conn.fetchval(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-                    "WHERE table_schema=split_part($1,'.',1) "
-                    "  AND table_name=split_part($1,'.',2) "
-                    "  AND column_name='created_at')",
+                    "SELECT EXISTS (SELECT 1 FROM pg_attribute "
+                    "WHERE attrelid = $1::regclass "
+                    "  AND attname = 'created_at' "
+                    "  AND attnum > 0 AND NOT attisdropped)",
                     tbl,
                 )
                 if has_created:
