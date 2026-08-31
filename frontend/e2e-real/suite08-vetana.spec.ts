@@ -2421,13 +2421,49 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     const slips = (await rowsOf(page, `/api/v1/vetana/payslips?month=${PAY}`))
       .sort((x, y) => String(x.payslip_number).localeCompare(String(y.payslip_number)));
     expect(slips.length, '08.7 owns the August run').toBe(30);
-    // August, deliberately: the two approved expense claims were consumed by
-    // the June run, so no August payslip carries a reimbursement and the
-    // reconciliation `validate_payslip` blocks on cannot fail here. See §14.
-    expect(slips.filter(p => Number(p.reimbursements) > 0).length,
-      'an August payslip carries a reimbursement, which makes gross − deductions − net ' +
-      'non-zero and blocks the PDF; the twenty would need choosing differently')
-      .toBe(0);
+    /**
+     * ⚠ THIS GUARD WAS A WORKAROUND FOR A DEFECT THAT HAS BEEN FIXED, AND IT
+     *    OUTLIVED IT — the 10.08 shape exactly: an assertion that encodes the
+     *    bug it was written around, and then fails a state that has become
+     *    correct.
+     *
+     * It read: no August payslip may carry a reimbursement, because
+     * `gross − deductions − net` would be non-zero and `validate_payslip`
+     * would block the PDF. That was true. `routers/vetana.py` computes
+     *     gross = gross_fixed + variable_total          (reimbursement EXCLUDED)
+     *     net   = gross − total_deductions + reimbursement_total
+     * so the difference equalled `−reimbursements` BY CONSTRUCTION, and
+     * PS-2026-0062 and PS-2026-0089 could not obtain a payslip at all while
+     * the notification was mailed anyway with `pdf_bytes = None`.
+     *
+     * `doc_validation.py` now carries the reimbursement term in the identity —
+     * its own note says the exclusion from `gross` is correct (counting a
+     * reimbursement as wages inflated the s.7(3) loan-recovery ceiling), so
+     * the records were right and only the identity was wrong.
+     *
+     * Live, 2026-08-31: both payslips reconcile to 0.00 with the term in.
+     *
+     * So the precondition is now the REAL rule — the identity holds on every
+     * slip — and the reimbursement slips are no longer excluded. They are
+     * PREFERRED into the twenty below, because a suite that quietly avoids the
+     * two documents this fix exists for would go green having tested nothing
+     * about it.
+     */
+    const offBy = slips
+      .map(p => ({
+        n: String(p.payslip_number),
+        gap: Math.round((Number(p.gross) - Number(p.total_deductions)
+          + Number(p.reimbursements || 0) - Number(p.net_pay)) * 100) / 100,
+      }))
+      .filter(x => Math.abs(x.gap) > 0.005);
+    const gaps = offBy.map((x) => `      ${x.n} off by ${x.gap}`).join('\n');
+    expect(offBy, 'a payslip does not reconcile: gross - deductions + reimbursements '
+      + 'must equal net, and validate_payslip blocks the PDF of any slip where it '
+      + 'does not:\n' + gaps).toEqual([]);
+
+    const withReimbursement = slips.filter((p) => Number(p.reimbursements) > 0);
+    console.log(`\n  08.11 - ${withReimbursement.length} of ${slips.length} payslips carry `
+      + `a reimbursement; every one is included below rather than avoided.\n`);
 
     await vetana(page, 'payslips');
     const psPanel2 = page.locator('#mt-panel-payslips');
@@ -2442,7 +2478,15 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
 
     const seen: string[] = [];
     const sizes: number[] = [];
-    for (const p of slips.slice(0, 20)) {
+    // Reimbursement slips FIRST — see the note above. Without this the
+    // `.slice(0, 20)` is ordered by payslip number and the two documents this
+    // whole check exists for may not be in the twenty at all.
+    const chosen = [
+      ...withReimbursement,
+      ...slips.filter(p => !(Number(p.reimbursements) > 0)),
+    ].slice(0, 20);
+
+    for (const p of chosen) {
       await clickSettled(page,
         page.getByRole('button', { name: new RegExp(reEsc(String(p.payslip_number))) }).first(),
         /\/vetana\/payslips/, `the payslip card for ${p.payslip_number}`);
