@@ -2,20 +2,22 @@
 import Constants from 'expo-constants';
 
 /**
- * Fallback is STAGING, matching src/config.js.
+ * Fallback is PRODUCTION, matching src/config.js.
  *
- * This is only reached when EXPO_PUBLIC_API_URL is unset, which always means an
- * unverified configuration. Staging and production share a Supabase database, so
- * a client that silently defaults to production writes real rows against real
- * customer data. Production is reached only by being named — the eas.json
- * `production` profile sets it explicitly.
+ * ⚠ THERE IS NO STAGING ENVIRONMENT. It was retired on 2026-08-30 and everything
+ * moved to production. The host that used to be called "staging" reached the
+ * SAME Supabase database, so defaulting to it never protected any data — it only
+ * suppressed outbound mail, on a backend 30 commits stale. Pointing the fallback
+ * at a name that no longer means anything is worse than pointing it at the one
+ * host that is real.
  *
- * The previous value also had a capitalised host (`Kartavaya-production`), which
- * only worked because DNS is case-insensitive.
+ * `api.kartavaya.com` is a name we own, so it does not move when Railway renames
+ * a service — which has already happened once and shipped an APK aimed at a dead
+ * host. Expo INLINES this at bundle time; no runtime setting can correct it.
  */
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
-  'https://kartavaya-staging.up.railway.app';
+  'https://api.kartavaya.com';
 
 /**
  * X-App-Version — the ONE version signal the owner approved for Pulse

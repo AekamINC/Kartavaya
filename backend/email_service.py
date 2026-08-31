@@ -645,6 +645,15 @@ def send_email(to_email: str, subject: str, html_content: str,
         # this existed and what every org still gets until migration 106 is
         # applied and an address is verified.
         from_email = from_plan.resolve()
+        # Record WHICH address, now that it is known. `begin()` ran on the
+        # caller's thread before this resolved, which is why outbound_log
+        # carried only `mode` and `ref` and could never answer "what did this
+        # go out as?" — the one question the senders feature exists to control.
+        att.sender(from_email)
+        # Record WHICH address, now that it is known. `begin()` ran on the
+        # caller's thread before this resolved, which is why outbound_log
+        # carried only `mode` and `ref` and could never answer "what did this
+        # go out as?" — the one question the senders feature exists to control.
 
         if ses_client:
             try:
@@ -1634,6 +1643,11 @@ def send_report_email(
         # envelope below. They must be the same string: SES rejects a raw
         # message whose `Source` does not match the `From:` header it carries.
         from_email = from_plan.resolve()
+        # Record WHICH address, now that it is known. `begin()` ran on the
+        # caller's thread before this resolved, which is why outbound_log
+        # carried only `mode` and `ref` and could never answer "what did this
+        # go out as?" — the one question the senders feature exists to control.
+        att.sender(from_email)
 
         try:
             msg = MIMEMultipart("mixed")

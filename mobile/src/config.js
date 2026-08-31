@@ -20,18 +20,27 @@
 // text field that changes which database a user writes to is a support incident
 // waiting to be talked through over the phone.
 //
-// ── THE SAFETY PROPERTY, UNCHANGED ───────────────────────────────────────────
+// ── THE FALLBACK, AND WHY IT CHANGED ─────────────────────────────────────────
 //
-// THE FALLBACK IS STAGING, deliberately. The build-time value is only reached
-// when EXPO_PUBLIC_API_URL is unset — a bare `expo start`, a misconfigured
-// profile, a build env that failed to inject. Every one of those is an
-// unverified configuration, and staging and production share a Supabase
-// database, so an unverified client defaulting to production writes real rows
-// against real customer data. Production is reached only by NAMING it.
+// ⚠ THERE IS NO STAGING ENVIRONMENT. Retired 2026-08-30; everything moved to
+// production. The fallback is now `https://api.kartavaya.com`.
 //
-// The override does not weaken that. An absent, blank, malformed or non-HTTPS
-// stored value resolves to the build-time value, which resolves to staging — a
-// corrupt key can only ever fail toward the safer host, never toward production.
+// The old fallback was staging, on the reasoning that defaulting to production
+// would write real customer rows. THAT REASONING WAS BACKWARDS, and it is worth
+// writing down so it is not reintroduced: the staging host reached the SAME
+// Supabase project, the same schema, the same R2 bucket. Nothing in the backend
+// branches on environment before a write. So the staging default never protected
+// one row — it only suppressed outbound mail (OUTBOUND_MODE=dry), on a backend
+// 30 commits stale. It bought mail safety and was described as data safety.
+//
+// There is no safer host to fail toward, so the fallback now points at the one
+// host that is real and that we own the name of. A name we own does not move
+// when Railway renames a service — which has already happened once and shipped
+// an APK aimed at a host answering 404.
+//
+// The override does not weaken this. An absent, blank, malformed or non-HTTPS
+// stored value resolves to the build-time value, which resolves to production —
+// the only environment there is.
 //
 // ── THE OTA TRAP THIS FILE'S NEIGHBOUR CANNOT DOCUMENT ───────────────────────
 //
@@ -53,7 +62,7 @@ export const API_BASE_URL_KEY = 'config.apiBaseUrl';
 
 /** Compiled into the bundle. Staging unless a profile named otherwise. */
 export const BUILD_BACKEND_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'https://kartavaya-staging.up.railway.app';
+  process.env.EXPO_PUBLIC_API_URL ?? 'https://api.kartavaya.com';
 
 /**
  * A stored override, or undefined if there is nothing usable there.

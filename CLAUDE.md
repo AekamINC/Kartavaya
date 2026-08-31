@@ -2,9 +2,16 @@
 
 PM SaaS for Indian firms, by Aekam Inc. Vite + React (`frontend/`), FastAPI +
 asyncpg (`backend/`), Supabase Postgres, Railway backend + Vercel frontend,
-Expo React Native app (`mobile/`). Two branches only: `staging` is where work
-happens, `main` is production. Test against staging.kartavaya.com. The domain
-is **kartavaya.com** — not kartavya.com.
+Expo React Native app (`mobile/`). ⚠ **WORK HAPPENS ON `main`, AND `main` IS
+PRODUCTION.** Everything from `staging` was moved to production; the `staging`
+branch is 30 commits behind and nothing is developed on it. **Both branches
+deploy against the SAME database — see "The one dangerous fact". Testing
+"against staging" protects nothing; there is no safe host.** ⚠
+`staging.kartavaya.com` does not resolve today, and
+`docs/DNS-AND-SUBDOMAINS.md` carries a pending step to create it: **do not
+execute that step** without reading this file first — it would turn this line
+from fail-closed into fail-open. The domain is **kartavaya.com** — not
+kartavya.com.
 
 ## Keeping status current — read this before claiming anything is "done"
 
@@ -26,9 +33,25 @@ same status audit, written over and over. Do not add a proposal 91.
 
 ## The one dangerous fact
 
-**Staging and production share a single Supabase database, and since
-2026-08-29 a single SCHEMA.** Every migration and every write-path probe
-touches production data. There is no second environment to be wrong in.
+**There is ONE system. `staging` is a label on a second front door, not a
+second place.** One Supabase project (`toacecaewujfxjfrjwco`), one schema
+(`public`), one R2 bucket, one JWT secret, one set of provider credentials.
+Both Railway environments carry the same `DATABASE_URL` — only the pooler port
+differs, and `db.py` rewrites it on failure. **Nothing in the backend branches
+on environment before a write** (`git grep -E 'is_production|IS_PRODUCTION' --
+backend` returns nothing). A write through the staging front door is a
+production write; a DELETE through it is a production DELETE; a file uploaded
+through it is a production object.
+
+The staging label buys exactly one thing: `OUTBOUND_MODE=dry`, which suppresses
+mail, push and social — **not data** — and it does not skip the business write,
+it changes the value written (`status='suppressed'`) into production tables.
+Two differences make staging *worse* than production, not safer: it runs a
+backend 30 commits stale, and it serves `/docs` + `/openapi.json`
+unauthenticated where production 404s both.
+
+Every migration and every write-path probe touches production data. **There is
+nowhere to be wrong.**
 
 ⚠ **`staging` THE SCHEMA NO LONGER EXISTS.** Migration 241 moved all 258 of its
 tables into `public` and `DROP SCHEMA staging RESTRICT` ran the same evening.
@@ -119,6 +142,20 @@ reversal path for the consolidation.
 
 - **GSTIN / PAN / TAN are non-mandatory and must block nothing.** This has
   drifted back more than once; do not "fix" it.
+  ⚠ **THE RULE IS ABOUT CAPTURE, NOT EMISSION**, and the difference is not a
+  loophole. Nothing may *require* a GSTIN/PAN/TAN to save a client, an invoice,
+  an employee or a contact. A **statutory form that the law reports under one of
+  those registrations may still refuse to be issued without it** — a GSTR-1
+  preview has nothing to attribute supplies to without a supplier GSTIN, and an
+  ITNS-281 TDS challan without a TAN is invalid under **s.203A**, where a PAN is
+  explicitly not a substitute.
+  Suite 05.17 hit exactly this on 2026-08-31, refused to rule on it (93 §14) and
+  handed it up. The verdict: `validate_tds_challan` and the GSTR-1 preview's
+  `supplier_gstin_missing` are **CORRECT and must not be relaxed**. Both name the
+  field, the section and the screen that fixes it, which is the behaviour wanted
+  — the alternative is emitting a document the department will reject, or
+  inventing a number to fill the gap. If a real customer is blocked here, the
+  answer is to enter their TAN, not to remove the check.
 - Unpaid invoices are editable — and `doc_status` defaults to `'final'`, so
   don't infer editability from that column.
 - A CRM client is the **company** (the customer). Contacts are people who
@@ -143,7 +180,22 @@ dependency.
 
 - The database stays on Supabase, permanently — never suggest Neon or any
   migration off it. Region stays Singapore.
-- `vercel.json` accepts no comments: a `"//"` key kills the deploy before the
-  build starts, with no logs, and the site silently stays on the old build.
+- **Vercel is gone — the frontend is Cloudflare Pages.** Verified 2026-08-30: all
+  four hosts answer `Server: cloudflare` with no `x-vercel-*` header.
+  `frontend/vercel.json` and `.vercel-trigger` are **deleted**, and
+  `check-csp-hash.mjs` fails if either returns — a file that looks like config
+  and serves nothing is how a rule ends up maintained where nobody reads it.
+  (The old rule here was "`vercel.json` accepts no comments: a `\"//\"` key kills
+  the deploy with no logs." Obsolete, and kept only so the next person who finds
+  a `vercel.json` in an old branch knows why it went.)
+- **`frontend/public/_headers` is the ONLY shipped CSP.** It carries the sha256
+  of the inline pre-paint bootstrap in `index.html`; if they drift, the browser
+  silently refuses the script on every load — a frame of the wrong theme, and on
+  Windows a blurred sidebar that snaps solid. `check-csp-hash.mjs` pins the hash
+  **and** the directives four incidents were caused by losing (`camera=(self)`,
+  the Mappls hosts, `worker-src 'self' blob:`, the `/assets/*` Cache-Control
+  detach). ⚠ Cloudflare also injects its own `__CF$cv$` inline script whose hash
+  changes every request — its console error is expected, and **must not** be
+  silenced with `'unsafe-inline'`.
 - Cron endpoints authenticate via `CRON_SECRET`; `/cron/reports` and
   `/cron/esign` are 501 stubs — never arm them.

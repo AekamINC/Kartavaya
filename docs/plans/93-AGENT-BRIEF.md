@@ -159,10 +159,17 @@ presents as "the button does nothing", or as a CORS error in the console — the
   crashes the tab via the ErrorBoundary. Ratchet:
   `frontend/scripts/check-dateinput-handlers.mjs`.
 - Every table sits on the `--row-h` token (66px default, tiers 48/66/76).
-- Work on the `staging` branch. Test against **staging.kartavaya.com** — the
-  domain is **kartavaya.com**, not kartavya.com.
-- Before trusting any live probe, confirm which SHA the service is running
-  (`meta.branch`) — staging has silently tracked `main` before.
+- ⚠ **WORK ON `main`. THIS IS A PRODUCTION RUN.** Everything from `staging` was
+  moved to production; `main` is the branch and `api.kartavaya.com` /
+  `app.kartavaya.com` are the targets. **There is no staging environment** —
+  that name is a label on a second, staler front door onto the SAME database.
+  Do not "test against staging" to be safe; it is not safer, and
+  `staging.kartavaya.com` does not resolve. The domain is **kartavaya.com**,
+  not kartavya.com.
+- Every row you type is a real row in the live product, alongside real
+  customers. That is the point of this run, and it is why the gates are strict.
+- Before trusting any live probe, confirm which SHA the service is running —
+  `/api/health` reports `environment` and `current_schema()`.
 - **Do NOT commit.** Report; the lead commits.
 
 ## Running

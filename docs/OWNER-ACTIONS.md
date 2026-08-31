@@ -21,6 +21,114 @@ behind it.
 
 ## OPEN
 
+### 24. The receipt upload has no door — and BUILDING ONE would lose receipts, 2026-08-31
+
+Suite 05.05 reports it plainly: **"THE ATTACHMENT HAS NO DOOR."** `ExpensesTab`
+renders no `input[type=file]`, while `ExpenseCreate.receipt_urls` is
+API-writable — an orphaned capability, and §4 asks for an expense "with
+attachment".
+
+**I did not build the door, and that is the finding.** `routers/ganit.py:229`
+already explains why it is shut, and a live check confirms every word:
+
+> There is no `receipt_keys` beside this and none is invented here … a receipt
+> filed through `POST /api/upload` keeps only the presigned URL that upload
+> answered with, **the one that expires in nine hours**, and `list_expenses` has
+> nothing to re-sign from.
+
+So an upload control would work perfectly for an afternoon and then hand every
+customer a dead link, with **no key stored to recover from**. The obvious repair
+is the one that destroys data.
+
+**Verified live 2026-08-31 — nothing has been lost yet:**
+
+| Column | Rows | Holding a file |
+|---|---|---|
+| `ganit_expenses.receipt_urls` (`text[]`) | 30 | **0** |
+| `manav_expense_claims.receipt_urls` (`jsonb`) | 12 | **0** |
+| `ganit_vendor_bills.attachment_url` (`text`) | 17 | **0** |
+
+That is why the repair is a COLUMN and not a migration of contents — and why it
+is worth doing before anyone opens the door rather than after.
+
+**What you decide.** Three `ALTER TABLE`s adding a key column beside each URL
+column. They land on live rows (one database), which is why this is yours and
+not mine. ⚠ And note the two spellings of one idea while you are here:
+`ganit_expenses.receipt_urls` is `text[]` and `manav_expense_claims.receipt_urls`
+is `jsonb`. Whoever writes the migration should pick one shape, or the next
+reader will write code that works on one table and not the other.
+
+**Do NOT close the gap by scraping a key out of the stored URL** — `ganit.py:229`
+says why, and it is right: these boxes also accept hand-typed links to somewhere
+that is not our bucket.
+
+**What I finish once you have.** The upload control on all three screens, the
+re-signing read path, and a test that a receipt is still fetchable the day
+after it was attached — which is the assertion that would have caught this.
+
+---
+
+### 23. NOT ONE PLATFORM BILLING LINE EXISTS — the monthly fee cannot be invoiced, 2026-08-31
+
+**`org_billing_lines` is EMPTY. Zero rows, of every kind, for all time.**
+
+`services/billing_lines.py` states the invariant in its own module docstring:
+
+> `v_org_platform_line_drift` MUST ALWAYS RETURN ZERO ROWS.
+
+It returns **four** — every organisation that has a price:
+
+| Organisation | monthly_price | open platform line |
+|---|---|---|
+| UK AekamINC | 20,000.00 | **none** |
+| E2E Test & Associates | 12,000.00 | **none** |
+| Unicode Group | 12,000.00 | **none** |
+| Demo - Kartavaya | 10,000.00 | **none** |
+
+**What it costs.** `POST /subscription/invoices` raises an invoice from
+`line_ids` the operator loads out of `org_billing_lines`. With no platform line,
+pressing **Load lines** offers nothing for the monthly fee — so the fee cannot
+be put on an invoice through the product's own path at all. That is
+54,000.00 a month across four orgs with no way to bill it as designed.
+
+**This is NOT a code defect, and I have not "fixed" it.** The write path is
+correct: `PATCH /org/{id}/settings` moves the fee and the line in ONE
+transaction and *refuses* if the line cannot be written, precisely so this drift
+cannot be created. These four prices were therefore set by something else — a
+seed, a migration, or direct SQL — before that guard existed. Nothing in the
+code needs changing.
+
+**Why I am not doing it myself.** Creating a billing line is a decision to bill
+a real organisation a real amount, and one of the four is Aekam's own UK entity.
+That is a business call, not a QA repair, and it is the kind of write your
+standing approval for "migrations and data" was never meant to cover.
+
+**What you do.** For each org, open its admin page and re-save the monthly fee —
+type the same number and save. `sync_platform_line` creates what is absent, so
+re-saving an unchanged fee is enough. Four saves, and confirm the drift view is
+empty afterwards:
+
+    SELECT * FROM public.v_org_platform_line_drift;   -- must return 0 rows
+
+**Or tell me to do it** and I will drive the same four saves through the shipped
+endpoint (never raw SQL — a line written around `sync_platform_line` is the
+second writer that stops the invariant holding), with the before-state captured
+first.
+
+**What I finish once you have.** The invariant goes green, and I add a check
+that fails when the drift view is non-empty — so the next time a price is set
+outside the endpoint, it is caught by a test rather than by someone reading a
+view a year later.
+
+⚠ **A related fact, for the same decision.** `ganit_payments` is also empty —
+no payment has EVER been recorded — so `collected`, receivables ageing, the cash
+position card and dunning are all unexercised against a real payment. The write
+path is wired (`POST /ganit/invoices/{id}/payments`, reached by
+`InvoiceDetail.jsx:143`) and Suite 05 covers it, so this is a coverage hole
+rather than a broken capability. I am running that suite to establish which.
+
+---
+
 ### 22. Four DATA decisions that are yours, not mine — proposal 93, 2026-08-29
 
 Every one of these edits rows that already exist. Code changes I make; **data
@@ -586,11 +694,19 @@ API. Bumping the number to mark "a fresh build" would claim a change the app did
 not undergo. This is the same software, rebuilt because the file was lost.
 840 mobile tests pass.
 
-⚠ **It points at STAGING.** `src/config.js` compiles
-`EXPO_PUBLIC_API_URL ?? https://kartavaya-staging.up.railway.app`, and there is a
-runtime override at `config.apiBaseUrl`. That is right for a verification
-build — the inbox-9 reproduction queues and clears a real punch, and it must not
-do that against production.
+⚠ **CORRECTED 2026-08-30 — THIS PARAGRAPH USED TO SAY THE OPPOSITE, AND IT WAS
+WRONG.** It said the APK "points at STAGING" and that this was right "because it
+must not [write] against production". **There is no staging.** The host that
+carried that name reached the SAME Supabase database, so pointing at it never
+protected a single row — it only suppressed outbound mail. The APK and both
+config fallbacks now target `api.kartavaya.com`, deliberately, per gate P0.
+
+**So read this before you run it: the inbox-9 reproduction writes a REAL punch
+into the production database** — `POST /punch` → `INSERT INTO
+public.pahchan_punches` either way. Do it in the seeded test org under your own
+login, and note the row id so it can be removed. The precedent is in this same
+file: item 6, where test punches became 960 production rows needing migration
+205 and a backup schema.
 
 **What you do:** install it, then reproduce inbox 9 — put the device in
 airplane mode, capture a punch with a photo so the upload fails, restore

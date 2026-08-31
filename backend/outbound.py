@@ -411,6 +411,47 @@ class Attempt:
         # provider, so nothing can come back to report.
         self._closed = blocked
 
+    def sender(self, from_email: str | None) -> None:
+        """Record WHICH ADDRESS this went out as. Call it as soon as it resolves.
+
+        ── The gap this closes, measured 2026-08-30 ────────────────────────────
+
+        `outbound_log.detail` carried exactly two keys — `mode` and `ref` — and
+        **the From address was in neither.** 336 rows, none of them able to answer
+        "which address did this go out as?".
+
+        That is the one question the senders feature exists to control.
+        `org_email_senders` lets an org send payroll from `payroll@…` and invoices
+        from `invoice@…`; `email_senders.pick_from` has five documented ways to
+        fall back to `FROM_EMAIL`, four of them live. Which branch a given message
+        took was unknowable after the fact, so a bad sender configuration could
+        not be diagnosed from the ledger — only reproduced.
+
+        ── Why it is a SETTER and not a `begin()` argument ─────────────────────
+
+        Because of the threading, and this is the whole reason the gap existed.
+        `begin()` runs on the CALLER's thread — it has to, it is the last line
+        guaranteed to see the request context. But `from_plan.resolve()` runs
+        later, inside the SENDING thread (`email_service.py`, "RESOLVED HERE, in
+        the sending thread"), deliberately: it may hit the database for the org's
+        row, and blocking is free there and costly on the caller.
+
+        So at `begin()` time the address genuinely is not known yet. `_finish`
+        writes the WHOLE row rather than a delta, so a value recorded any time
+        before completion lands in the same INSERT.
+
+        Safe to call more than once and safe to call with None — the last real
+        value wins, and None never overwrites a real one.
+        """
+        if not from_email:
+            return
+        try:
+            detail = dict(self._fields.get("detail") or {})
+            detail["from"] = from_email
+            self._fields["detail"] = detail
+        except Exception:               # never the sender's problem
+            logger.debug("outbound: recording the sender failed", exc_info=True)
+
     def sent(self, message_id: str | None = None, *,
              provider: str | None = None, bytes: int | None = None) -> None:
         """The provider ACCEPTED it. `message_id` is the receipt.

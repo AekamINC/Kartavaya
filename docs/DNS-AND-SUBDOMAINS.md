@@ -19,9 +19,9 @@ they pointed at a dead Vercel deployment) and nothing replaced them. So
 | `www.kartavaya.com` | redirect to the apex | Cloudflare Pages | 🟠 Proxied | — |
 | **`app.kartavaya.com`** | **the product** | Cloudflare Pages | 🟠 Proxied | `FRONTEND_URL` |
 | **`pay.kartavaya.com`** | **the public invoice** | Cloudflare Pages | 🟠 Proxied | `PAY_URL` |
-| `api.kartavaya.com` | the backend | Railway (production) | ⚪ **DNS only** | `BACKEND_URL` |
+| `api.kartavaya.com` | the backend | Railway (production) | 🟠 **Proxied** | `BACKEND_URL` |
 
-### 🔴 Two of these are inside emails, and neither resolves today
+### 🔴 Two of these are inside emails — ✅ both resolve as of 2026-08-30
 
 **`app.` and `pay.` are not cosmetic.** They are written into mail that goes to
 customers and to *customers' customers*:
@@ -34,8 +34,9 @@ customers and to *customers' customers*:
   `pay.kartavaya.com/i/{token}`, opened by *the customer's customer*, who has no
   account and never will.
 
-⚠ **With `OUTBOUND_MODE=live`, a v5 run emails real invoices containing
-`https://pay.kartavaya.com/i/…` links — to a host that does not resolve.**
+✅ **RESOLVED 2026-08-30.** Both hosts answer 200 and
+`scripts/check-production-targets.mjs` asserts all three email link bases on
+every run. The warning below is kept because the failure mode has not changed:
 Both are Railway variables and are SET, so the deployed values may differ from
 these code defaults. **Read them before any wave that mails** — if they are the
 defaults, every link in every invoice is dead.
@@ -55,12 +56,28 @@ extra Custom Domain, not a second build.
 
 ---
 
-## The two staging hosts
+## ⛔ The two staging hosts — CANCELLED 2026-08-30, DO NOT CREATE
 
-| Host | What it is | Points at | Proxy |
-|---|---|---|---|
-| `staging.kartavaya.com` | staging frontend | Cloudflare Pages (staging) | 🟠 Proxied |
-| `api-staging.kartavaya.com` | staging backend | Railway (staging) | ⚪ **DNS only** |
+| Host | Status |
+|---|---|
+| ~~`staging.kartavaya.com`~~ | ⛔ **do not create** |
+| ~~`api-staging.kartavaya.com`~~ | ⛔ **do not create** |
+
+**There is no staging environment.** Everything moved to production on
+2026-08-30. The Railway environment still labelled `staging` reaches the SAME
+Supabase project and the SAME `public` schema — it is a second, staler front
+door, not a second place. It buys `OUTBOUND_MODE=dry` (mail, push and social,
+**not data**) on a backend 30 commits behind, and it is the deployment that was
+serving `/openapi.json` unauthenticated.
+
+**Neither name resolves today, and that is load-bearing.** Instructions to "test
+against staging" currently fail **CLOSED** — a dead name stops you. Creating
+these records makes them fail **OPEN**, onto production data, silently. See
+section 6.
+
+The rest of this section is kept because the spelling argument below is still
+correct *if* a real second environment is ever built — and that needs its own
+Supabase project first, of which DNS is the last step, not the first.
 
 ### ⚠ `api-staging`, NOT `staging-api` — and the repo disagrees with itself
 
@@ -72,7 +89,9 @@ extra Custom Domain, not a second build.
 **The CSP wins, because it is what enforces.** `connect-src` names
 `api-staging.kartavaya.com`; a frontend pointed at `staging-api.` would have
 every request blocked by the browser with a CSP violation and no server-side
-trace. Create `api-staging`; the doc is wrong and should be corrected.
+trace. ⛔ **But do NOT create it** — see the cancellation above. This entry is
+kept only so that the spelling is on record if a real second environment is
+ever built; `STAGING_SETUP.md`'s `staging-api.` remains the wrong spelling.
 
 **`PAY_URL` must be set per environment.** Its comment says so explicitly: unset,
 it points at production, "which is correct for production and wrong for anywhere
@@ -107,7 +126,7 @@ subdomain answer with the dead Vercel deployment, and it makes the
 | `app.kartavaya.com` | login, and the product behind it |
 | `pay.kartavaya.com` | viewing an invoice, the QR and the UPI string |
 | `api.kartavaya.com` | the backend |
-| `staging.kartavaya.com` | future staging work |
+| ~~`staging.kartavaya.com`~~ | ⛔ **CANCELLED — do not create.** There is no staging environment; see the section above |
 
 **All four web hosts are ONE Cloudflare Pages project.** `frontend/src/App.jsx:156`
 — `RootGate` renders `<LandingPage />` when there is no user and the app shell
@@ -144,8 +163,15 @@ record** — that is what produced both the Vercel 404 and the current `1016`.
 ### 2 · Railway custom domain for the API
 
 Service **Kartavaya** → **Settings → Networking → Custom Domain** →
-`api.kartavaya.com`. Keep the DNS record **⚪ DNS only** — behind the proxy
-Railway cannot complete its ACME challenge.
+`api.kartavaya.com`.
+
+⚠ **CORRECTED 2026-08-30: this said "keep the record DNS only, Railway cannot
+complete its ACME challenge behind the proxy". That was wrong.** `api.` is
+**PROXIED** and works: Cloudflare terminates TLS with its own certificate and
+Railway never needs to issue one. Verified live — `GET
+https://api.kartavaya.com/api/health` → 200, and `POST /api/auth/login` with an
+`okhttp` user agent returns a real FastAPI 422 rather than a challenge, so the
+mobile app is unaffected. **Do not un-proxy it to follow the old instruction.**
 
 ### 3 · Railway variables — ⚠ THIS IS THE STEP THAT SILENTLY BREAKS EMAIL
 
@@ -185,12 +211,29 @@ credentials — hence step 3.
 Set `COOKIE_DOMAIN=.kartavaya.com` **only** if a cookie must be readable across
 subdomains. It widens the blast radius of a session and is not needed today.
 
-### 6 · Staging, when you get to it
+### 6 · ⛔ STAGING — DO NOT CREATE THESE RECORDS
 
-`staging.kartavaya.com` on the staging Pages project, and
-`api-staging.kartavaya.com` on the Railway **staging** service. Also set
-`PAY_URL` on staging to a staging origin — its own comment warns that unset it
-points at production, "and production would answer 404" for a staging token.
+**This step is CANCELLED as of 2026-08-30. Do not execute it.**
+
+It used to read: *"`staging.kartavaya.com` on the staging Pages project, and
+`api-staging.kartavaya.com` on the Railway staging service."* Creating that pair
+is the single most dangerous routine action left in this repo, and nobody doing
+it would think they were doing anything but finishing the DNS map.
+
+**Why.** `CLAUDE.md` is loaded into every session and used to instruct every
+reader to *"test against staging.kartavaya.com"*. That name **does not resolve**,
+so the instruction fails **CLOSED** — you hit a dead name and stop. There is no
+staging environment: the host carrying that label reaches the SAME Supabase
+project and the SAME `public` schema. **The moment this pair exists, that
+instruction fails OPEN** and routes every test write onto the production
+database, where it succeeds silently.
+
+The `CLAUDE.md` line has been corrected, but the record stays cancelled: a
+resolving `staging.` hostname is a standing invitation to believe there is
+somewhere safe to be wrong, and there is not.
+
+If a genuinely separate environment is ever wanted, it needs its own Supabase
+project first. DNS is the last step of that work, not the first.
 
 ### 7 · Verify
 
@@ -213,10 +256,14 @@ serving right now. Both failure modes have already happened here.
 
 ### Railway hosts — `api`, `api-staging`
 
-Railway dashboard → service → **Settings → Networking → Custom Domain**. Railway
-issues its own Let's Encrypt certificate, which is why these must stay
-**⚪ DNS only** — behind Cloudflare's proxy Railway cannot complete the ACME
-challenge and will never issue one.
+Railway dashboard → service → **Settings → Networking → Custom Domain**.
+
+⚠ **This paragraph used to end "…which is why these must stay ⚪ DNS only".
+That conclusion was WRONG — see the correction at the end of this document.**
+`api.kartavaya.com` runs 🟠 **proxied** today and works, because Cloudflare
+terminates TLS with its own certificate and Railway never issues one. Do not
+un-proxy it. (`api-staging` is ⛔ cancelled entirely; there is no staging
+environment.)
 
 ⚠ `api.kartavaya.com` already has its CNAME and a `_railway-verify` TXT, so the
 flow was started and never finished. Measured: the host serves
@@ -242,7 +289,7 @@ staging reference during a production run.
 2. **`app.` and `pay.`** — before any wave that mails, because they are inside the mail.
 3. **Read `FRONTEND_URL` and `PAY_URL` in Railway** and make them match what you created.
 4. **`api.` custom domain on Railway** so the certificate issues.
-5. **Staging pair** — `staging.` and `api-staging.` — before the staging half of anything.
+5. ~~**Staging pair** — `staging.` and `api-staging.`~~ ⛔ **CANCELLED 2026-08-30 — DO NOT CREATE.** See section 6: there is no staging environment, and creating these turns CLAUDE.md's "test against staging" from fail-closed into fail-open onto the production database.
 
 ---
 

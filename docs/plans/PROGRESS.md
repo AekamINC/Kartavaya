@@ -6581,3 +6581,1013 @@ would not have helped.
 is fixed, unit-tested, mutation-proved and deployed. That was the part that could
 lock real users out.
 
+
+---
+
+## 2026-08-30 LATE — two privilege defects closed, and the environment model corrected
+
+### 🔴 PRIVILEGE ESCALATION ON EVERY DEPLOY — found and removed
+
+`server.py`'s startup migration block ran, on **every boot**:
+
+    INSERT INTO public.user_roles (user_id, org_id, role_code)
+    SELECT user_id, NULL, 'platform_admin'
+    FROM users WHERE role = 'admin' AND NOT COALESCE(is_system, FALSE)
+    ON CONFLICT DO NOTHING
+
+**`users.role` is a PER-ORG fact stored in ONE GLOBAL COLUMN** — CLAUDE.md says
+so, and says the rows that look corrupt are real and must never be cleaned. This
+statement read that per-org value as a platform-wide one and granted
+`platform_admin`: god mode, org-less, reaching every organisation. **The only
+action required was a deploy.**
+
+Measured live before removal — six accounts matched `role='admin'`, and **two did
+not yet hold the role**:
+
+| account | user_id | had platform_admin |
+|---|---|---|
+| `kevalvshah03+e2e-owner@gmail.com` | `user_f1a0a472b98f` | 🔴 no — would gain it next restart |
+| `kevalvshah03+e2e-approver@gmail.com` | `user_549c9cac35aa` | 🔴 no — same |
+| admin@ · bhoomi@ · kevalvshah03@ · sid@aekaminc.com | — | ✅ already |
+
+`+e2e-owner` is the **sole `org_owner` of E2E Test & Associates** and the account
+**23 specs** use to prove OWNER is not GODMODE. One restart would have made it a
+platform admin and turned every one of those assertions vacuous — the same defect
+`93-V5-START-HERE.md` records ("55 owner specs had been running as admin and
+proving nothing"), arriving by a different door.
+
+Two aggravating properties: it wrote **no `granted_by`** (which is why 7 of 11
+live platform grants have a NULL grantor — nobody granted them, a boot did), and
+it sat inside `except Exception: logger.warning("… non-fatal")`, so a failure was
+invisible too.
+
+**Removed**, with the reason kept in place. Pinned by
+`backend/tests/test_no_boot_time_platform_admin.py` (3 tests). Mutation-proved:
+restoring the statement fails 2 of the 3.
+
+### 🔴 SELF-GRANT OF A PLATFORM ROLE — refused
+
+`POST /api/v1/admin/orgs/roles/assign` took the target from `body.user_id` and
+the grantor from the session and **never compared them**. God mode only, so the
+exposed population is the four `platform_admin` holders — but it falsified the
+invariant `support_sessions._can_raise_support` is built on:
+
+> "the ONLY holder of a session is the role that gets nothing without one, so a
+> session can only ever narrow — there is no role here for it to widen."
+
+A `platform_admin` self-granting `platform_support` reaches six modules BY ROLE
+*and* holds a session. Two guards still stand (`subscription` caps
+unconditionally; the customer's own org_admin approves the session), so this is
+defence-in-depth rather than an open door — but the audit half is unconditional.
+
+**Fixed** in `routers/admin_orgs.py`. 5 new tests; **mutation-proved both ways** —
+disabling the guard fails 5, over-broadening it to ban every platform grant fails
+the one test written for exactly that. 216 passed across the console, privacy,
+seat-limit, sensitive-grants and cross-org suites.
+
+### 🔴 THE STAGING API MAP WAS PUBLIC — closed
+
+`GET https://kartavaya-staging.up.railway.app/openapi.json` → **HTTP 200,
+1,022,070 bytes**; `/docs` → 200. Production correctly 404s both. Same database,
+so this was the complete API map of a payroll product served unauthenticated.
+`staging`/`stage` removed from `_NON_PRODUCTION_ENVIRONMENTS`.
+`test_docs_gate.py` inverted with a do-not-revert note; **56 passed**.
+
+### THE ENVIRONMENT MODEL WAS WRONG IN THE DOCS
+
+Owner, repeatedly: *"we are in production"*, *"everything of staging has been
+moved to production"*. An audit (52 candidates → 11 confirmed, 41 refuted)
+established there is **one system with two labels**, not two systems sharing a
+database. The only real difference the staging door buys is `OUTBOUND_MODE=dry`
+— **mail, push and social, not data** — on a backend **30 commits stale**.
+`DB_SCHEMA`, `R2_PREFIX`, `RESEND_API_KEY` and `/api/health`'s `environment`
+field are read by **zero code**.
+
+Corrected in `CLAUDE.md` (both the opening paragraph and "The one dangerous
+fact") and `93-AGENT-BRIEF.md` (was *"Work on the `staging` branch. Test against
+staging.kartavaya.com"*). All mobile fallbacks and all three `eas.json` profiles
+repointed to `api.kartavaya.com`.
+
+⚠ **A landmine was found and left defused, not executed.**
+`docs/DNS-AND-SUBDOMAINS.md:245` carries a pending step to create
+`staging.kartavaya.com`. While that name does not resolve, "test against
+staging" fails CLOSED. The moment the pair exists it fails OPEN and routes test
+writes onto production. **Do not execute that step.**
+
+### OWNER CREDENTIAL RESTORED — blocker 1 closed
+
+`kevalvshah03+e2e-owner@gmail.com` had no usable credential and 23 specs were
+stalled. Set by driving the shipped `POST /api/auth/reset-password` so the
+product computed the hash. **No mail sent** (the token was written directly, not
+via `/forgot-password`). Reversal captured before the change.
+`--project=setup` now passes **3/3** with three genuinely distinct accounts:
+
+    owner     user_f1a0a472b98f  kevalvshah03+e2e-owner@gmail.com
+    approver  user_549c9cac35aa  kevalvshah03+e2e-approver@gmail.com
+    godmode   user_f798947b8a2e  kevalvshah03@gmail.com
+
+⚠ Neither `kevalvshah03@gmail.com` (it is `E2E_GODMODE_EMAIL`) nor
+`keval.shah@unicodegroup.com` (org_ADMIN of the E2E org, not owner) can stand in
+for OWNER — either substitution makes every owner-vs-admin assertion vacuous.
+
+### GATE P2 — BLAST RADIUS MEASURED
+
+300 base tables, **249 carry `org_id`**, 51 do not. Five orgs exist and no table
+holds a sixth value. Delete scope: Unicode 1,297 + UK 70 + E2E 17 = **1,384
+rows**. Aekam Inc holds **4,630** and must survive.
+
+⚠ **THE ABORT: `users` cannot be org-scoped, and four people — including the
+owner's own login — hold membership in both a TOUCH org and a NO-TOUCH org.** A
+"delete the users of these three orgs" step locks the owner out of Aekam Inc.
+
+⚠ **3,007 rows carry `org_id IS NULL`** — more than twice the 1,384 in scope,
+invisible to every org-scoped statement, and **still being written today**. An
+org-scoped DELETE reaches none of them: the wipe will report zero rows for the
+org while 3,007 remain. Largest: `notifications` 1,317 · `audit_log` 894 ·
+`sync_tombstones` 273 · `outbound_log` 180 · `tasks` 42.
+Some is legitimate (platform roles, tax slabs, `notice_type`); most is not.
+
+⚠ `channels.org_id` is **`text`**, the only one of 249 that is not `uuid`, and
+holds `team_*` ids. A uuid predicate throws or matches nothing. `channels` (8
+rows, real historical client names) and `channel_members` (16) need an explicit
+exclusion list.
+
+### D4 EXPLORATORY — driven by hand against production
+
+- **Task creation writes `org_id = NULL`.** 42 of 365 tasks, all personal tasks,
+  since 2026-05-04. Reproduced live: `task_77454f0fa736`. Consequence: Stage 3's
+  org-scoped delete cannot reach it, so the wipe leaves it behind.
+- **~34 navigation buttons carry no accessible name**, and the login submit
+  button has none either. D13, and it is also why a locator written against
+  visible text fails as a *missing control*.
+- **Every app page serves the marketing document title** — "Kartavaya — one
+  place to run an Indian business" on `/dashboard` and `/tasks`.
+- The dashboard did not reflect a new task at ~4s but did after a navigation.
+  Whether that is a slow refetch or no refetch was **not** established.
+
+### RETRACTED
+
+**P3b is not a blocker for `unicodegroup.com`.** The gate has DKIM selectors
+configured for `kartavaya.com` **only**, so it is structurally blind to the other
+two domains and judged them on SPF alone. The owner confirms `unicodegroup.com`
+is DKIM-verified in SES, and **DMARC passes on either SPF or DKIM alignment**
+(RFC 7489 §6.6.2). The gate's failure text also names the wrong mechanism — SES
+throttles on bounce and complaint rates, not authentication failures. Adding
+`include:amazonses.com` remains worth doing; it does not gate wave 1.
+
+### ALSO FOUND, NOT YET FIXED
+
+- **`outbound_log` never records the From address.** `detail` carries only
+  `mode` and `ref`. Structural: `outbound.begin()` writes the row on the
+  caller's thread before `from_plan.resolve()` runs in the sending thread
+  (`email_service.py:645`). The one thing the senders feature exists to control
+  is the one thing the audit trail does not carry.
+- **A third write path for platform roles exists and has not been found.** The
+  live `platform_support` row is self-granted by an account that cannot call the
+  console endpoint (`global_role='member'`), so it came from SQL or a script.
+- **`pyjwt` was 2.12.0** (not 2.8.x — I overstated that; corrected here rather
+  than edited away). Bumped to **2.13.0** per D11; it signs every session this
+  programme creates.
+
+⚠ **EVERY FIX ABOVE IS LOCAL AND UNDEPLOYED.** The escalation, the self-grant
+and the public API map are all still live in production until `main` deploys.
+
+### Second batch, same session — the gates and the audit trail
+
+**`outbound_log` now records the From address.** It carried exactly two `detail`
+keys — `mode` and `ref` — across 336 live rows, so the ledger could not answer
+*"which address did this go out as?"*, which is the one question the senders
+feature exists to control. `email_senders.pick_from` has five documented ways to
+fall back to `FROM_EMAIL`, four of them live, and which branch a message took was
+unknowable after the fact.
+
+The cause was threading, not neglect: `outbound.begin()` runs on the caller's
+thread (it must — it is the last line that can see the request context), while
+`from_plan.resolve()` runs later in the sending thread, deliberately, because it
+may hit the database. Closed with `Attempt.sender()`, called at both resolve
+sites; `_finish` writes the whole row rather than a delta, so a value recorded
+any time before completion lands in the same INSERT.
+**7 new tests, both halves mutation-proved** — making `sender()` a no-op fails 4,
+deleting either call site fails the static site-count test. 140 passed across the
+outbound and email-sender suites.
+
+**`check-sender-dns.mjs` — three defects fixed, and it now reports UNKNOWN
+honestly.** It failed the gate on `unicodegroup.com` for an SPF record that does
+not name SES, while having **no DKIM selectors configured for that domain at
+all** — so it was reading its own blindness as a failure. DMARC passes on
+**either** an aligned SPF **or** an aligned DKIM (RFC 7489 §6.6.2), so a
+DKIM-verified domain delivers fine. The SPF verdict is now deferred until after
+the DKIM probe and resolves three ways: live DKIM → warning; selectors listed but
+zero live → problem; **no selectors listed → warning that names the blindness**.
+Its closing text also claimed authentication failures are how SES throttles and
+suspends — they are not, SES acts on bounce and complaint rates, and naming the
+wrong mechanism sends the next person to the wrong dashboard. The success line no
+longer says "every sender domain can authenticate" when two of three are
+unverifiable; it says what was actually established.
+Mutation-proved: `--domain=example.com` (`v=spf1 -all`) still exits 1.
+
+⚠ **Still owed by the owner:** the three Easy-DKIM selector tokens for
+`unicodegroup.com` and `aekaminc.com` from the SES console. Until they are in
+`DOMAINS`, those two domains are UNKNOWN — not a pass, and not a failure.
+
+**`pyjwt` 2.12.0 → 2.13.0** (D11). It signs every session this programme creates.
+Installed and verified: **170 passed** across auth, rate-limit, separated-duty,
+approvals-authorisation and OAuth-security.
+
+**Every staging reference in tracked source is repointed at production**, not
+merely annotated — the owner's instruction was to move it, not explain it:
+
+| File | Was |
+|---|---|
+| `mobile/eas.json` | 3 profiles pinned the staging host |
+| `mobile/src/config.js` | fallback + a "SAFETY PROPERTY" comment whose reasoning was backwards |
+| `mobile/src/api/client.ts` | fallback |
+| `mobile/.env`, `mobile/.env.example` | comment contradicted its own value |
+| `backend/routers/scheduler.py:287` | the cron command a human is told to paste into Railway |
+| `frontend/.env.staging.example` | now a tombstone pointing at `.env.example` |
+| `docs/OWNER-ACTIONS.md` | told the owner the staging APK "must not" write production — it does |
+| `docs/DNS-AND-SUBDOMAINS.md` | ⛔ the staging-pair step is CANCELLED in all four places it appeared |
+
+The only remaining hits are this document, a test comment describing the fix, and
+a **gitignored** local Android build artifact — none of which ship.
+
+**Also corrected in `DNS-AND-SUBDOMAINS.md`:** it instructed keeping
+`api.kartavaya.com` as ⚪ DNS-only "because Railway cannot complete ACME behind
+the proxy". `api.` is **proxied** and works — Cloudflare terminates TLS with its
+own certificate and Railway never issues one. The document already carried that
+correction at the end while still prescribing the opposite in two earlier
+sections; both now point at it. Un-proxying to follow the old instruction would
+have broken the API.
+
+### Wave execution — started 2026-08-30 22:05
+
+Running against production, sequentially by wave, one agent per suite.
+
+| Wave | Suite | passed | failed | exit |
+|---|---|---|---|---|
+| 1 | 01 auth | **4** | 0 | 0 |
+| 1 | 02 org settings | **16** | 1 | 1 |
+| 1 | 00 cold-start | 0 | 1 | 1 |
+
+Waves 2–9 in flight at the time of writing.
+
+### `vercel.json` removed — and why it could not just be deleted
+
+Owner asked: *"vercel is gone now its cloudflare so do we need vercel.json?"*
+
+**Verified first:** all four hosts answer `Server: cloudflare` with a `CF-RAY`
+and **no `x-vercel-*` header at all**. `@vercel/analytics` was already out of
+`package.json` and `src/`. Vercel is genuinely gone.
+
+⚠ **But `frontend/scripts/check-csp-hash.mjs:47` read `vercel.json`
+UNCONDITIONALLY** — a bare `readFileSync`, no existence check — and it is gate
+**#1 of a 20-gate `&&` chain**. Deleting the file on its own would have thrown
+ENOENT and taken `npm run check` down entirely, including the nineteen gates
+after it.
+
+⚠ **And deleting it naively would have cost more than the file.** The gate's
+whole design was "two hosts, one rule": it required `vercel.json` and
+`public/_headers` to allow the SAME hashes and to match directive-by-directive.
+That comparison is what caught, on 2026-08-29:
+
+- `Permissions-Policy: camera=()` where the policy needs `camera=(self)` — the
+  exact Pahchan defect fixed in `d47adafc` that same morning;
+- every Mappls host missing from `script-src`, `style-src`, `style-src-elem` and
+  `connect-src`, so territory maps would not have drawn;
+- `worker-src 'self' blob:` absent entirely;
+- a script hash that had **never** matched — not drift, wrong from the first line.
+
+So the comparison was replaced rather than dropped. With one host there is no
+second file to disagree with, so the gate now checks `public/_headers` against an
+**explicit required set pinned in the gate itself**. That is strictly stronger
+than what it replaced: the old check proved two files agreed, which two files can
+do while both being wrong.
+
+`frontend/vercel.json` and `.vercel-trigger` deleted. The gate now **fails if
+either returns** — a file that looks like configuration and serves nothing is how
+a rule ends up maintained in the copy nobody reads.
+
+**Mutation-proved, five ways, each restored after:**
+
+| mutation | result |
+|---|---|
+| `camera=(self)` → `camera=()` | exit 1 ✅ |
+| Mappls hosts dropped from `script-src` | exit 1 ✅ |
+| `worker-src` deleted | exit 1 ✅ |
+| script hash corrupted | exit 1 ✅ |
+| `vercel.json` re-added | exit 1 ✅ |
+| baseline | **exit 0** |
+
+`npm run check` — **all 20 gates pass, exit 0**, and `check-ci-runs-every-gate`
+confirms all 20 also run in CI. CLAUDE.md's now-obsolete "`vercel.json` accepts
+no comments" rule is replaced by what is actually true: `public/_headers` is the
+only shipped CSP.
+
+### ✎ A verdict overturned — the CSP "product bug" was not one
+
+The Wave 1 cold-start agent filed **PRODUCT BUG**: *"CSP blocks an inline script
+on 31/31 routes and on /login; the required hash differs on every page load."*
+The console errors are real and reproduce. The verdict is wrong, and product-bug
+vs test-bug is a judgement this seat owns and may not delegate — so it was
+adjudicated rather than filed.
+
+Measured directly against production `/login`:
+
+    PRODUCTION  2 inline scripts
+      len=1985  sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=   <- ALLOWED
+      len= 921  sha256-XsVVTi4JgJppKhZqdy0JRjzr4oTMfobdmu/BUIAARAI=   <- blocked
+    LOCAL index.html
+      len=1985  sha256-JtAu+6V2X/sONIJ0daMfltBe8H1N8hZ9kn7S9IFO4hk=   <- same
+
+**The app's own pre-paint bootstrap is correctly allowed and works.** The blocked
+script is Cloudflare's injected `__CF$cv$`, which carries a per-request token —
+curl saw hash `XsVVTi4J…` while the browser reported `5LrLphsF…` and
+`ZVkQbSb4…` on the same page. It changes every load and **can never be hashed
+into a CSP**. What is lost is Cloudflare Insights analytics, not app function,
+which is why the product logs in and runs normally. `check-csp-hash.mjs` is green
+and correct.
+
+**Two real findings survive, and the second is the valuable one:**
+
+- ~165 console errors per run on every route that nobody can action — exactly the
+  noise that hides a real error when one appears. The fix is in the Cloudflare
+  dashboard (disable auto-injection; `beacon.min.js` already loads as an allowed
+  external script), not in the CSP, and **not** `'unsafe-inline'`.
+- **`coldstart-nav-audit.spec.ts` prints `consoleErrors` per route and never
+  asserts them** (asserts only route verdicts at :257-259 and `pageErrors` at
+  :260). A genuine CSP breach on every route would report GREEN. That is an
+  anti-vacuity gap the agent found and it stands.
+
+### Wave execution — findings, 2026-08-30 23:20
+
+#### 🔴 L1's MECHANISM, with evidence — an offboarded employee is hidden from the list and still counted by payroll
+
+Measured live on Unicode Group after Suite 07 ran:
+
+    DB    30 employees, ALL status='active', ALL is_active=TRUE
+          4 of them (S7-03, S7-05, S7-09, S7-11) carry a manav_offboarding row
+    API   GET /api/v1/manav/employees?limit=200
+          data=26  total=26  limit=500  truncated=false
+          the four offboarded employees: ABSENT
+
+So the employee list drops them. But their own row still reads `status='active'`
+and `is_active=TRUE`, and **payroll's coverage count filters on nothing else**:
+
+    vetana.py:2929   SELECT COUNT(*) FROM public.manav_employees e
+                      WHERE e.org_id=$1::uuid AND e.is_active=TRUE
+
+`manav_offboarding` appears 5 times in `vetana.py`, but not in that predicate.
+**The screen that shows who works here and the code that decides who gets paid
+disagree, and payroll is the one that pays.** That is L1 — "payroll must not pay
+leavers" — with its mechanism exposed rather than cited.
+
+⚠ It also breaks Suite 08's precondition: the wave contract says Suite 07 leaves
+thirty employees, Suite 07 then offboards four, and Suite 08 can read only 26. So
+Vetana's 15 remaining failures all stand on a precondition the wave itself
+destroys. That is a PLAN defect as much as a product one — one of the two has to
+give, and it should be stated rather than worked around.
+
+Also found: **2 of the 30 employees have a NULL `employee_code`**, so they are
+unaddressable by the code every other suite uses to refer to a person.
+
+#### 🔴 GRAHA — five orphaned capabilities and a rendered UUID
+
+Suite 04, after the hang fix: **16 passed, 6 failed** (6.8m). All six are real;
+no test bugs remain. Five are the same class — the API can write it and no human
+can reach it:
+
+| Test | The suite's own words |
+|---|---|
+| 04.11 | "THERE IS NO CONTROL FOR THE LOST REASON, ANYWHERE IN GRAHA" |
+| 04.07b | "A TERRITORY CANNOT BE GIVEN A PRIORITY" |
+| 04.14 | "A WEB FORM CAN BE PUBLISHED AND NOBODY CAN FILL IT IN" |
+| 04.17 | "NO SCREEN ANYWHERE LETS A PERSON SET A LEAD-SCORING RULE" |
+| 04.18 | "NO CONTROL ANYWHERE CREATES A PIPELINE" — and `PipelineTab.jsx`'s empty state tells the user to "Create one from the Deals tab", where no such control exists |
+
+`lost_reason` verified independently: **0 occurrences in all of `frontend/src`**,
+declared at `graha.py:242`, writable at `:2095`, and live — 30 deals, 6 lost,
+**0 carrying a reason**.
+
+**04.21 — a UUID is rendered as text** on Graha's documents tab
+(`19df5798-a669-4318-b9fd-47a52e07685e`), violating CLAUDE.md's "never render a
+user/member/org UUID". ⚠ `check-rendered-ids.mjs` reports **"597 components, no
+id drawn on screen", exit 0**. Third recorded instance of that ratchet being
+green over a real violation — it reads source strings; the violation is a
+rendered value. Only the live sweep catches it.
+
+#### THE CSP FALSE-RED — five suites, fixed narrowly
+
+Cloudflare injects a `__CF$cv$` loader carrying a per-request token, so its
+sha256 differs on every load and can never be allowed by hash. It was failing
+**00 cold-start, 05.01 Ganit, 06.01 Kray, 08.2/08.3 Vetana and 04.21 Graha** —
+every one a false red burying real findings.
+
+⚠ **Classified, not ignored.** A blanket ignore of "Refused to execute inline
+script" would hide the one defect `check-csp-hash.mjs` exists to catch: OUR
+pre-paint bootstrap being refused, which costs a wrong-theme flash on every load,
+silently. The browser names the hash it wanted, so if that is our bootstrap's
+hash the refusal is ours and the suite still fails.
+
+`isForeignInlineScriptRefusal()` in `_helpers.ts`, wired into all six collectors
+(03, 04, 05, 06, 07, 08). Behaviour-proved on five cases, including **"OUR
+bootstrap refused → STILL FAILS"** and **"a style-src violation → STILL FAILS"**.
+
+#### THE SUITE 04 HANG — three causes, all systemic
+
+1. **`timeout: 45 * 60_000`.** The browser died and nothing killed the wait: 2 of
+   22 tests ran, 20 never started. A budget that size does not protect a slow
+   test, it hides a dead one. Capped to 10 minutes.
+2. **`trace:'on'` + `video:'on'`** inherited from `real.config.ts` — already on
+   record in this directory (`manav-dummy-logins.spec.ts` turns both off and says
+   why). Now `retain-on-failure`: a failing test keeps everything, a passing one
+   stops serialising 22MB. Run time fell 14.1m → 6.8m.
+3. **`wave2.config.ts` never declared Suite 03**, so the briefed Wave 2 command
+   collected zero tests and exited 1. A wave step that is a silent no-op reads
+   exactly like one that passed. Added the `corepm` project.
+
+⚠ **The timeout was systemic**: eleven configs carried 45–120 minute per-test
+budgets. All capped to 20 minutes — ~7× the longest test actually observed
+(04.04, fifty contacts, 2.7m).
+
+#### MY OWN ORCHESTRATION ERROR
+
+The wave workflow ran each wave's suites with `parallel()`. Wave 4 is
+**07 Manav → 08 Vetana** with a hard data dependency, so Vetana started before
+Manav had written a single employee: **16 of its 17 failures were "0 were
+readable"**, not defects. Re-run sequentially, Manav produced 30 employees
+(from 0) and Vetana's failures changed shape entirely.
+
+Wave 6 has the same hazard and the plan names it — "Suite 19 MUST precede Suite
+14". Suite 19 came back **5 passed, 0 failed**, so credits exist; Suite 14 is
+being re-run after it rather than beside it.
+
+#### Stale harness defaults — 37 files
+
+`_helpers.ts`, `_lanes.ts`, `real.config.ts` and every suite defaulted to
+`kartavaya-staging.up.railway.app`; `mappls-browser-probe.spec.ts` was
+**hardcoded** to it with no env fallback; two specs defaulted to
+`staging.kartavaya.com`, which does not resolve. All repointed to production.
+
+#### A stale assertion corrected
+
+**04.03 was a TEST bug.** The spec asserted `<input type="phone">`.
+`CustomFieldInputs.jsx:55` now carries an explicit
+`HTML_INPUT_TYPE = { …, phone: 'tel' }` map — added *because this suite found
+that defect on 2026-08-29*. The assertion was never updated, so it had been
+failing on the correct fix ever since. Asserting `tel` also means a regression
+back to `type="phone"` now fails, which the old assertion could not do.
+
+---
+
+## 2026-08-31 — GST charged on the pre-discount value (P1)
+
+**One defect, six implementations, and a FINAL tax invoice carrying it.**
+
+s.15(3)(a) CGST Act excludes an invoice-recorded discount from the transaction
+value. A flat order/invoice discount *is* recorded on the document, so tax is
+charged on the net. Every site applied the per-line `discount_pct` correctly
+and then subtracted the flat discount **from the total only**, never from the
+base the tax was computed on.
+
+Found by a live query. **Suite 10 passed the whole time** — nothing anywhere
+asserted the tax *base*, only that the figures were internally consistent, and
+they were: consistently computed on the wrong value.
+
+### Live exposure, measured before the fix
+
+| Document | Status | Tax charged | Correct | Excess |
+|---|---|---|---|---|
+| **INV-2026-0009** | **final `tax_invoice`** | 5,400.00 | 4,500.00 | **900.00** |
+| SO-2026-0007 | confirmed | 5,400.00 | 4,500.00 | 900.00 |
+| SO-2026-0014 | cancelled | 2,175.00 | 1,925.00 | 250.00 |
+| SO-2026-0021 | confirmed | 1,260.00 | 360.00 | 900.00 |
+| SO-2026-0028 | delivered | 0.00 | 0.00 | — (0% line) |
+| SO-2026-0035 | draft | 13,450.00 | 12,677.01 | 772.99 |
+
+All Unicode Group, all seeded 2026-08-30. **−₹3,722.99** of output tax
+over-stated in total. Aekam Inc holds no discounted row.
+
+### What changed
+
+Server — the discount now leaves the taxable value, **apportioned pro-rata**
+across lines (lines carry different `gst_rate`s, so a lump deduction moves
+value between rate buckets and misstates the split GSTR-1 is filed on):
+
+- `routers/vikray.py::_compute_order_totals`
+- `routers/ganit.py::_compute_invoice` — the tax invoice itself
+
+Client — all three previews, which agreed with the wrong server and so showed
+nothing amiss:
+
+- `pages/ganit/InvoiceForm.jsx`
+- `pages/vikray/_shared.jsx` — its docstring **excused** the disagreement as a
+  tolerance ("the two can disagree"); that caveat is deleted, because what it
+  was excusing was ₹900 of real money, not a rounding order
+- `pages/procurement/_shared.jsx`
+
+### A second defect found on the way
+
+`test_the_order_and_the_invoice_agree_on_the_taxable_value` failed by **one
+paisa** once the figures stopped being round. Ganit halves CGST/SGST *per line*
+and rounds **both halves up**, so on an odd paisa `CGST + SGST > tax` and the
+same goods total more intra-state than inter-state. Now an exact split — round
+one half, subtract for the other — in all four places that do it
+(`ganit.py`, `vikray.py`, `services/purchase_orders.py`,
+`pages/procurement/_shared.jsx`). `purchase_orders` reports a tax discrepancy
+on any mismatch, so this would have surfaced as a spurious exception on a
+correctly matched PO.
+
+### A test that had been RED, hiding its own invariant
+
+`test_line_cost_snapshot.py::test_order_to_invoice_carries_the_cost_verbatim`
+raised `KeyError: 'salesperson_id'` — a hand-built stub row that had drifted
+from a real column (`vikray_orders.salesperson_id`, text, verified live). The
+route is fine; the fixture was stale, and the cost-carried-verbatim invariant
+had not been checked at all by the test that exists to check it.
+
+### Verification
+
+- **1,228 backend tests pass**, 0 failures, across every module touched.
+- 11 new Python tests + 8 new vitest tests.
+- **Mutation-proved 7/7** server-side, each kill attributed to a *named* test;
+  the client fix is killed by 4, with the 3 survivors being exactly the cases
+  that must not move (undiscounted, per-line-only, empty).
+- Two pre-existing tests asserted the OLD figures. Rewritten, not deleted:
+  `test_the_money_a_customer_pays_did_not_move` is now
+  `..._DID_move_and_moved_DOWN` and asserts the **direction** — a change that
+  moved a total *up* would charge more than the order agreed.
+- Live rows corrected; reversal SQL captured before the write. Post-check: every
+  row now taxes at exactly its own rate on the net — 18.00, 18.00, 5.00, 18.00,
+  0.00 and 15.46 (the correct 18/5 blend) — and `subtotal + tax − discount =
+  total` holds on all six.
+
+⚠ INV-2026-0009 was `doc_status='final'`, which is normally amended by credit
+note, not edit. Corrected in place because it was minted by the reseed, no
+return has been filed from it, and no customer ever saw it — a credit note
+would fabricate a document trail for a defect that never left the database.
+**This reasoning does not extend to a real invoice.**
+
+---
+
+## 2026-08-31 (cont.) — FIVE MORE DEFECTS, AND TWO GUARDS THAT HAD GONE RED
+
+### 🔴 The Vikray dashboard reported 3.2× the real revenue
+
+`GET /v1/vikray/dashboard` summed **every** invoice: drafts, credit notes and
+soft-deleted rows included. Measured live:
+
+| | Reported | Correct |
+|---|---|---|
+| total_revenue | **817,016.00** | **257,696.00** |
+
+Seven draft invoices, ₹559,320 of them. **Three** filters were missing, not one:
+`doc_status <> 'draft'`, `invoice_type <> 'credit_note'` (a credit note *reduces*
+revenue — summed unfiltered it added, so the sign was wrong) and `is_active`.
+
+`order_value`, computed **twelve lines earlier in the same response**, already
+excluded drafts and already filtered `is_active`. The dashboard printed both
+numbers side by side.
+
+### 🔴 The same inflation on a figure compared against statutory thresholds
+
+`check_thresholds_approaching` summed drafts into rolling twelve-month turnover
+— the number checked against GST registration and audit limits. Same
+817,016 → 257,696. Its docstring calls the figure a FLOOR; drafts push it UP, so
+a firm could be told it is nearing a threshold on paper it never issued.
+
+### 🟡 A payables headline that disagreed with its own breakdown
+
+`payables_summary.outstanding` had no status filter while the aging query
+directly beneath it excluded `('paid','cancelled')` — two figures on one card,
+computed over different row sets. **Exposure is zero today (0 cancelled bills),
+which is why it was invisible**: the two agree vacuously, and the first
+cancelled bill splits them with no error.
+
+### 🔴 The billing sweep billed deactivated orgs, and one failure truncated it
+
+`advance_periods` joined `organisations` and never read `is_active` —
+`scheduler._for_each_org` states that exact rule for every other cron. And the
+loop had **no guard**: one raise aborted the run, and because each UPDATE
+commits on its own, orgs already advanced stayed advanced while every org after
+the failure was silently not — a 500 with no record of how far it got, so a
+re-run would advance the first group **twice**. Now isolated per org, reported,
+and `/cron/billing` fails the tick instead of answering 200.
+
+### 🔴 An unbounded memory leak in the global write limiter
+
+`server._write_rate_buckets` added one entry per distinct client IP and removed
+**none**, for the life of the worker — invisible for weeks, then a restart loop
+nobody attributes to a rate limiter. Now swept once a minute. The per-worker
+multiplication (`120 × workers`, which `limiter.py` documents and fixed for
+slowapi) is recorded on the constant rather than silently implied.
+
+### ⚠ TWO ANTI-VACUITY GUARDS HAD THEMSELVES GONE RED
+
+- **`test_cron_fails_loudly.py::test_the_scan_can_see_the_handlers_at_all`** —
+  the test whose entire job is to stop that file passing vacuously. Red since
+  **2026-08-29**, when `run_recycle_bin_purge` was added without updating the
+  count, so every `assert not ...` below it was unverified for two days. Second
+  time this file has paid that cost — and it is the argument *for* the exact
+  count, since a lower bound would have absorbed both silently.
+- **Four analytics tests** subscripted `w["metric"]` on a layout holding two
+  widget shapes, so they raised `KeyError` — the *same* false assumption that
+  made `/v1/analytics/views` answer 500. The contract was unheld by the file
+  whose job is to hold it, at the moment it broke.
+
+### Overturned — P7 was not a defect
+
+The "toast deadlock" does not exist. `.k-toasts` carries `pointer-events: none`
+and is 320px in a corner; `.tst { pointer-events: all }` re-enables the card
+alone so its dismiss button works. z-520 above modal-420 is the documented
+ladder — a toast must not hide behind what triggered it. **My earlier note read
+the card rule without reading its container.** Already correct in HEAD.
+
+### Verification
+
+**3,536 backend tests pass, 0 failures.** 24 new tests. Mutation matrices:
+6/6 (draft guards), 6/6 (billing sweep), 4/6 (write limiter).
+
+⚠ **The two write-limiter survivors are recorded, not hidden.** One is an
+EQUIVALENT MUTANT (`clear()` vs selective delete cannot differ, because the
+sweep only runs when every entry is already stale). The other changes cost, not
+behaviour — and the test that claimed to catch it **passed under the mutation**,
+so it was DELETED rather than left as a green check proving nothing.
+
+### 🔴 Found, not fixed — `ganit_payments` holds ZERO rows
+
+No payment has ever been recorded. Per CLAUDE.md a table at 0 rows is **two**
+unknowns, and this one gates a whole surface: `collected`, receivables ageing,
+cash position and dunning are all unexercised against a real payment. Not a code
+defect — a coverage hole, and the largest one left.
+
+---
+
+## 2026-08-31 (cont.) — THE `month` HOLE IS CLOSED, AND A SCREENSHOT CAUGHT WHAT 15 TESTS DID NOT
+
+### The finding, and why it stayed open
+
+CLAUDE.md: no native date-family controls anywhere — the browser's picker is
+the one control in the product with no design, and Playwright cannot `fill()` a
+control clipped out of the tab order.
+
+`Field.jsx` routed `date`, `datetime-local` and `time` through `DateInput` and
+**not `month`**, so five screens still emitted the native widget. Suite 20.04
+failed on this **deliberately**, naming the fix as a feature rather than
+excusing it into a green: *"closing it means giving `DateInput` a month mode"*.
+
+Three of the five were Vetana — and `manav/BonusTab.jsx:56` had already written
+down what a wrong month costs there: the value must match
+`vetana_payroll_runs.month` EXACTLY, and a wrong one *"does not fail, it files
+the award against a month no payroll run will ever look at, and the person is
+simply not paid."*
+
+### What was built
+
+- **`components/ui/MonthGrid.jsx`** — a twelve-month panel on CalendarGrid's own
+  markup and classes, so the two pickers cannot drift apart. Roving tabindex
+  (one tab stop, not twelve), arrow/Home/End/PageUp-Down keys, `min`/`max`.
+- **`DateInput`** gained `type="month"`: an "Aug 2026" label, a **This month /
+  Last month / Clear** quick row (no "Next month" — every month field in the
+  product is capped at today, so it would be a control that refuses itself), and
+  `emit()` producing the wire value `2026-08`.
+- **`Field.jsx`** — `month` added to `DATEY`, the exact line suite 20.04 named.
+- **Five screens migrated**: `vetana/PayrollTab`, `vetana/PayslipsTab`,
+  `vetana/StatutoryTab`, `ganit/StatsTab`, `manav/PerformanceTab`. Each
+  `<label>` became a `<div>` + `aria-labelledby`, because **DateInput renders a
+  BUTTON and a `<label>` cannot label a button**.
+- **`_helpers.ts::setMonth()`** — addresses the control by ACCESSIBLE NAME, not
+  by `<label>` as `setDate` does, for that same reason.
+- **10 spec locators** repointed across `suite08-vetana`, `phase2-acceptance`.
+  The two `toHaveValue` read-backs were **kept**: `input[type="month"]` still
+  finds DateInput's hidden `.pk__native`, which still carries the value — it
+  just cannot be seen or filled.
+- **Suite 20.04's verdict updated** from "DECISION NEEDED" to resolved, with the
+  note that the failing test is what made the fix happen.
+
+### ⚠ A SCREENSHOT CAUGHT A BUG 15 GREEN TESTS COULD NOT
+
+The first render laid the months out **7 across** — Jan–Jul, then Aug–Dec.
+`.pk__grid` is the calendar's `repeat(7, 1fr)` week and `.pk__grow`/`.pk__gcell`
+are `display: contents`, so the row grouping in the JSX carries **no layout
+weight**: twelve cells pour into a seven-track grid whatever the markup says.
+
+Every unit test passed over it, because the DOM order, the roles, the labels and
+the emitted value were all correct — **only the painted result was wrong**.
+Fixed with `.pk__grid--mon { grid-template-columns: repeat(4, 1fr) }`.
+
+This is the argument for looking at the thing: assertions test what you thought
+to assert, and nobody writes `expect(monthsPerRow).toBe(4)`.
+
+### Verification
+
+- **15 vitest tests** — wire format, label, min/max, the single tab stop, the
+  hidden native's serialisation attributes, and `<Input type="month">` no longer
+  producing a native control.
+- **Driven live in the browser**: mounted through the Vite dev server with no
+  repo changes, opened, and confirmed — Jun selected, Aug carrying the today
+  dot, Sep–Dec disabled by `max`, and the console logging `EMITTED: 2026-03` on
+  a pick. Screenshotted before and after the layout fix.
+- `npm run build` green; **all 20 `npm run check` gates green (exit 0)**; all
+  four modified spec files parse under `playwright --list`.
+
+### Noted, not actioned
+
+`check-orphan-selectors` asks for two baseline entries to be removed
+(`.jsx`, `.k-label`). Both **pre-date this session** — `.k-label` has a real
+consumer in `AddressSuggest.jsx` (untouched), and **`.jsx` is a phantom
+selector** the extractor pulls out of pre-existing CSS comments mentioning
+`editorial/ModuleUI.jsx`. That is the exact hazard CLAUDE.md records about
+string-matching selectors. The gate exits 0; the fix belongs in the extraction
+regex, not the baseline, so the baseline was left alone.
+
+---
+
+## 2026-08-31 (cont.) — SUITE 20 RUN AGAINST PRODUCTION: 11/16, AND THREE OF THE FIVE CLOSED
+
+`npx playwright test --config e2e-real/suite20.config.ts` — **11 passed, 5 failed,
+14.0m**, 187 screens crawled, 959 rows measured.
+
+⚠ **THESE SUITES DRIVE THE DEPLOYED APP.** Everything below is fixed in the
+working tree and **not deployed**, so a re-run today still reports the old
+numbers. That is not the fix failing; it is the fix not shipped.
+
+| | Test | State |
+|---|---|---|
+| ✅ | 20.01 every screen opened, ledger written (5.5m) | pass |
+| ✅ | 20.02 no uncaught exception, no console error | pass — **0 across 187 screens** |
+| 🔧 | 20.03 no screen paints a UUID | **FIXED** — `folder_label` |
+| 🔧 | 20.04 no native date control | **FIXED** — the month mode above |
+| 🟡 | 20.05 every row on `--row-h` | scan fixed; **6 genuine remain** |
+| 🔧 | 20.06 a loading screen SAYS it is loading | **FIXED** — announcing primitives |
+| ✅ | 20.07–20.11, 20.13–20.15 | pass |
+| 🔧 | 20.12b every drag handle can start a drag | **FIXED** — 2 handles |
+
+### 🔴 20.12b — two drag handles that did nothing, while promising they would
+
+`.ktabs__grip` (module tab order) and `.kcols__grip` (table column order) are
+`<button>` elements. `@hello-pangea/dnd` refuses to start a drag whose source
+event targets one of its `interactiveTagNames`, and `button` is one — so
+`tryStart` returns null before a lock is claimed and **neither the mouse nor the
+keyboard path ever begins**.
+
+The grips are labelled *"Space picks it up, arrows move it, Space drops it."*
+A control that announces a capability it does not have is worse than one that
+stays quiet. Column order is a saved preference, so a user could not reorder
+columns by any means the UI offered.
+
+**This is the identical guard that stopped every kanban card until 2026-08-29**,
+and `KanbanView.jsx:638` already carried the escape hatch with the reasoning
+written out. `disableInteractiveElementBlocking` added to both, citing it.
+
+### 🔴 20.06 — 7 of 10 sampled screens were silent while loading
+
+`role=status 0, aria-busy 0`. `vetana#payslips` is the sharp case: a skeleton IS
+drawn, so the screen looks busy to an eye and says **nothing** to a screen
+reader — worse than drawing nothing, because a sighted user sees progress and a
+blind one sees a page that never explains itself.
+
+The three that passed had each hand-written
+`<SkeletonRegion label="…"><SkeletonList/></SkeletonRegion>`. **That was the
+defect**: the contract lived in a wrapper every call site had to remember, and
+`if (loading) return <SkeletonList />` — shorter, obvious, what most screens
+actually wrote — was silent. Fixing seven call sites would have left the eighth
+to be written next month, so **the primitives now carry the contract**:
+`SkeletonList` and all four `Shim`/`Shimmer` copies announce themselves.
+
+⚠ **And the half that is easy to get wrong.** Making primitives announce must
+not punish the screens that already did it right — two nested `role="status"
+aria-live` regions make a reader say it twice. `Announced` reads a context
+`SkeletonRegion` provides and steps aside when one is above it. **11 tests,
+5/5 mutations killed**, including both "always wrap" and "never wrap".
+
+### 🔴 20.03 — three UUIDs, all in a storage path
+
+`graha_documents.folder` is the R2 key `crm/<graha_clients.id>/documents`. The
+folder picker printed it verbatim — *"crm/19df5798-a669-…/documents (1)"* — and
+so did the Folder column. `graha#documents` was **the only screen of 187 that
+painted a UUID**, and `check-rendered-ids.mjs` stayed GREEN over it, which is
+the documented lesson about ratchets again.
+
+`folder_label` is now computed in SQL — one expression, both endpoints, so the
+picker and the column cannot disagree — and the raw `folder` stays in the
+payload because `?folder=` round-trips on that exact string. The last COALESCE
+arm is deliberately the raw path: an unrecognised folder shape stays VISIBLE and
+catchable by 20.03 rather than rendering blank. **11 tests.**
+
+### 🟡 20.05 — the scan was drowning its own signal
+
+It named ten screens. **Four were not defects**: `manav#notices` (254px),
+`manav#udin`, `manav#dsc` and `graha#documents` render an inline editor as a
+full-width `<tr><td colspan=N><form class="k-formpanel">`, and holding a form to
+a 50px row token asks the wrong question. Now excluded **by shape** — a single
+cell spanning the table — rather than by a class list that would need an entry
+per table.
+
+**Six are genuine and remain open**: `graha#contacts`, `ganit#contacts`,
+`ganit#products`, `vikray#products`, `vikray#contacts` (59.5px) and
+`vikray#stock` (56.5px), against a `--row-h` of 50px at band V2.
+
+**Not fixed, and deliberately not guessed at.** The cells are single-line in the
+JSX, so the overflow is a wrap under a narrow column — and the obvious remedy, a
+global `white-space: nowrap` on every table cell, is a sweeping change across
+187 screens of exactly the shape this repo keeps recording incidents about. It
+needs the offending cell measured in a browser first.
+
+---
+
+## 2026-08-31 (cont.) — SUITE 05 (GANIT): 13/24, AND THE PAYMENTS MYSTERY IS SOLVED
+
+`wave3.config.ts --project=ganit` — **13 passed, 11 failed, 7.4m**.
+
+### 🔴 WHY `ganit_payments` HAS ZERO ROWS — one contact took five tests down
+
+05.09 did not fail on payments. It failed on **"05.06 must run first — Expected
+45, Received 0"**: there were no invoices to pay. And 05.06 failed on
+
+> picking the customer did not adopt their company — the invoice would be filed
+> against no company at all
+
+**⚠ I ALMOST FIXED THE WRONG THING.** That reads as a product defect in
+`InvoiceForm.pickCustomer`. It is not. Measured:
+
+- `pickCustomer` is correct: `client_id: f.client_id || c?.client_id`.
+- The API returns `client_id` (`graha.py:615`), and 80 of Unicode's 81 contacts
+  have one.
+- The **one** that does not is `S16 Contact 202608302221` — created by **Suite
+  16** at 22:26 the previous night.
+- `/v1/graha/contacts` is `ORDER BY c.created_at DESC`, so the newest contact is
+  `contacts[0]`, and `createInvoice(1)` reached for **exactly it**.
+
+A contact with no employer has no company to adopt. **The form was right.** One
+row left behind by an unrelated suite blocked 45 invoices, and 05.07, 05.08,
+05.09, 05.13 and 05.19 then failed on "05.06 must run first" — five tests, one
+cause, none of them a product fault.
+
+Fixed in the spec: 05.06 now filters to contacts that **have** an employer, and
+says how many it skipped. Deleting the contact would have been the wrong repair
+— the suites share one org by design, any of them may leave a company-less
+person behind, and a test that only passes when nobody else has run is not a
+test.
+
+### 🔴 THE CORS ERRORS WERE THE ANALYTICS 500 WEARING A DISGUISE
+
+05.18 reported console errors on read-only Finance screens:
+
+    Access to XMLHttpRequest at '…/api/v1/analytics/views?module=ganit'
+    blocked by CORS policy: No 'Access-Control-Allow-Origin' header
+
+That reads as a deployment/config fault. **It is not.** Probed live:
+
+| Request | Result |
+|---|---|
+| `OPTIONS` preflight on the Railway host | **200**, `allow-origin: https://app.kartavaya.com` |
+| `OPTIONS` preflight on `api.kartavaya.com` | **200**, same |
+| unauthenticated `GET` on the same route | **401**, WITH the allow-origin header |
+
+CORS is configured correctly and handled responses carry the headers. An
+**unhandled 500 escapes the middleware** and reaches the browser bare, which
+Chrome reports as a CORS violation rather than a 500 — and
+`/v1/analytics/views` was 500-ing for *every* module on the `KeyError: 'metric'`
+fixed earlier today. **So the analytics fix is bigger than it looked**: not just
+an empty views bar, but a console error on every Finance settings screen.
+
+### The rest, categorised rather than guessed at
+
+| Test | Verdict |
+|---|---|
+| 05.07 · 05.08 · 05.09 · 05.13 · 05.19 | downstream of 05.06 — should clear |
+| 05.15 | **NOT a defect** — "THE OUTBOUND FENCE IS DOWN … NOT sent, deliberately" is the fence working |
+| 05.01 metered-usage | **FIXED** — see below |
+| 05.18 (the 422 half) | data: Unicode has no GSTIN; the error message is exemplary and names the fix |
+| 05.05 attachment | **open** — orphaned capability, see below |
+| 05.17 TDS challan refused | **open**, not yet diagnosed |
+
+### 🟡 05.01 — an empty FILTER is not an empty TABLE
+
+"metered-usage has 18 rows on the wire and paints none of them" is a harness
+false positive: it compared an unfiltered wire count against a filtered screen,
+and the tab defaults to **Unbilled**. Live: 18 rows, **18 invoiced, 0 unbilled**
+— so painting none is correct.
+
+But the empty state said **"No usage entries"** while eighteen sat one dropdown
+away. 20.09 asks that an empty list say so in words; saying the WRONG words is
+the version nobody checks for, because the reader stops looking. The copy is now
+filter-aware.
+
+### 🔴 05.05 — an orphaned capability, left open
+
+> THE ATTACHMENT HAS NO DOOR. `ExpensesTab.jsx` renders no `input[type=file]`,
+> while `ExpenseCreate.receipt_urls` exists on the API model — a column that is
+> API-writable and unenterable by a human.
+
+Real, and the documented orphaned-capability class. Adding a receipt upload is a
+feature, not a repair, so it is recorded rather than slipped in.
+
+---
+
+## 2026-08-31 (cont.) — 20.05 MEASURED, NOT GUESSED, AND BOTH CAUSES FIXED
+
+I said I would not guess at the six genuine `--row-h` violations. I measured
+them instead, with a throwaway probe (`rowprobe.spec.ts`, since deleted) that
+hid each cell in turn until the row fell back to the token.
+
+### ⚠ WHAT I GOT WRONG ON THE WAY, AND WHY IT MATTERS
+
+The first pass reported **"no cell is wrapping"** because every cell had
+`scrollWidth === clientWidth`. That reasoning is **backwards**: a cell that
+wraps has no horizontal overflow, so those two are equal *precisely because* it
+wrapped. The check that looks like it proves single-line proves the opposite.
+Three passes were spent ruling out padding, margins, competing CSS rules and
+ancestor stretching before the experiment gave the answer directly.
+
+### The two causes, each proved in situ
+
+**`graha#contacts` (59.5px vs 50px)** — the PHONE cell. At 71px wide,
+`+44 7700 900124` wraps to three lines: 3 × 19.53px + the rule = 59.5px.
+
+Fixed with `.gr__td--mute { white-space: nowrap }` — **no ellipsis**,
+deliberately. `.tbl__by` clips a name at 14ch because a truncated name is still
+recognisable; half a phone number is not a phone number. Auto table layout gives
+the column its natural width, and `.tbl__wrap` is `overflow-x: auto`, so a wide
+table scrolls rather than a row growing.
+
+**`vikray#stock` (56.5px vs 50px)** — the threshold control. Stacked as a
+column it is 55.5px (82px input + 2px gap + 12px status line), which **no 50px
+row can hold**. Nothing was wrapping and no rule was fighting the token; the
+control simply did not fit. Laid out as a row it is one input tall. The column
+is 356px wide against an 82px input, so there is room and to spare.
+
+### Proof, taken against the LIVE app
+
+Both rules were injected into the deployed page and the rows re-counted:
+
+| Screen | rows off the token | with the rule injected |
+|---|---|---|
+| `graha#contacts` | **24** | **0** |
+| `vikray#stock` | **18** | **0** |
+
+A third candidate (`.vk-th__s { min-height: 0 }`) changed nothing and was
+discarded — which is the point of testing candidates rather than shipping the
+first plausible one.
+
+`ganit#contacts` and `vikray#contacts` import the same `graha/ContactsTab`, so
+the first rule covers them too. `ganit#products` and `vikray#products` reported
+**clean** on this run, having been named on 08-30 — worth re-checking after
+deploy rather than assumed fixed.
+
+**Verified:** build green, 20/20 gates green, 3,278 frontend tests green. The
+probe and its config were deleted; they were scaffolding, not coverage.
+
+---
+
+## 2026-08-31 (cont.) — SUITE 22 (DEAD CONTROLS): 12/13, AND THE ONE FAILURE IS AN OVERLAY
+
+`suite22.config.ts` — **12 passed, 1 failed, 32.3m**, seven full sweeps of every
+visible enabled control in the product (chrome, core, settings, money, people,
+crm, comms).
+
+**The strong result is what passed.** Every sweep came back clean, and the
+census tests confirm it: **no control answered a 5xx, none answered a 4xx, and
+the protected Aekam Inc team was untouched.** For a suite whose entire purpose
+is finding controls that do nothing, that is the outcome worth stating.
+
+⚠ Its preflight also records `outbound_mode=live suppressed_orgs_digest=0`, so
+**every send control was excluded by name** — the sweep did not click anything
+that would reach a real person.
+
+### 🔴 22.93 — three classes of control covered by something on top of it
+
+| Blocked control | Blocked by | Screens |
+|---|---|---|
+| "Next page", "Open", "Edit" | `button.k-dock__pill` | graha›activities, graha›documents, graha›billing, ganit›billing-profiles |
+| six "Resize <column>" handles | `th.tbl__th--rz` — **the header the handle belongs to** | ganit›bank |
+| "OPEN", "LAST ORDER" | a bare `span` | vikray›customers |
+
+### What I measured, and what I deliberately did NOT ship
+
+The corner dock is `position: fixed` bottom-right. Measured live:
+
+    pill h=38px, sits 20px off the bottom
+    → the dock owns the bottom 58px of the viewport
+    .mpage computed padding-bottom = 20px
+
+**58px of dock against 20px of reserved space** is the whole defect: any control
+in the last 38px of page content is underneath it. Note also that `module.css`
+declares `.mpage { padding: 0 0 48px }` and it computes to **20px**, so
+something overrides it — worth finding before changing that value.
+
+⚠ **BUT I COULD NOT REPRODUCE THE OVERLAP**, and so shipped nothing. With
+today's data the activities list is short, the page does not scroll at the
+document level (an inner container scrolls), and the hit test found **0**
+controls covered. A padding change that cannot be shown to fix anything is the
+sweeping guess this session has twice avoided — and unlike the row-height fixes,
+where injecting the rule live moved 24 → 0 and 18 → 0, there was no such proof
+available here.
+
+Recorded with the arithmetic instead, which is what the next attempt needs:
+reserve ≥ 58px plus a gap, on the container that actually scrolls, at ≥1024px
+where the dock is shown at all.
+
+The `th.tbl__th--rz` self-block is the more suspicious of the three — a resize
+handle covered by its own header cell cannot be reached by mouse at all — and is
+not yet diagnosed.

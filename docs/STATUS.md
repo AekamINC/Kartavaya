@@ -10,6 +10,360 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 - The deep history lives in `docs/proposals/`; the plan in `docs/plans/`; the
   arc in `docs/FINAL-VERDICT-00-90.md`. **This is the dashboard, not the archive.**
 
+---
+
+## 2026-08-31 — SUITE 22 (DEAD CONTROLS) 12/13: NOTHING IS DEAD, ONE THING IS COVERED
+
+**12 passed, 1 failed, 32.3m** — seven full sweeps of every visible enabled
+control in the product (chrome, core, settings, money, people, crm, comms).
+
+✅ **The result worth stating is what PASSED.** For a suite whose whole purpose
+is finding controls that do nothing: every sweep clean, **no control answered a
+5xx, none answered a 4xx**, and the protected Aekam Inc team untouched. Its
+preflight also records `outbound_mode=live`, so **every send control was
+excluded by name** — nothing was clicked that would reach a real person.
+
+🔴 **22.93 — controls covered by something on top of them**, in three classes:
+
+| Blocked | By | Where |
+|---|---|---|
+| "Next page", "Open", "Edit" | `button.k-dock__pill` | 4 screens across graha + ganit |
+| six "Resize <column>" handles | `th.tbl__th--rz` — **the header the handle belongs to** | ganit›bank |
+| "OPEN", "LAST ORDER" | a bare `span` | vikray›customers |
+
+**Measured:** the corner dock's pill is 38px tall sitting 20px off the bottom, so
+**the dock owns the bottom 58px of the viewport while `.mpage` reserves 20px**.
+That mismatch is the defect. (`module.css` declares 48px there and it computes
+to 20px — something overrides it, and that wants finding first.)
+
+⚠ **NOTHING WAS SHIPPED FOR THIS, DELIBERATELY.** The overlap could not be
+reproduced with today's data — short list, inner scroll container, hit test found
+**0** covered — and a padding change across every page that cannot be shown to
+fix anything is exactly the guess this session twice avoided. Where proof WAS
+available (the row heights) the rules were injected live and moved 24 → 0 and
+18 → 0. Here it was not, so the arithmetic is recorded for the next attempt
+instead. The `th.tbl__th--rz` self-block is the most suspicious of the three and
+is not yet diagnosed.
+
+---
+
+## 2026-08-31 — ✅ 20.05 MEASURED AND BOTH CAUSES FIXED, AND THE TDS VERDICT TAKEN
+
+**The six genuine `--row-h` violations are explained and fixed** — measured with
+a throwaway probe that hid each cell until the row fell back to the token,
+rather than guessed at with a global `white-space: nowrap`.
+
+⚠ **AND THE FIRST PASS GOT IT BACKWARDS.** It reported "no cell is wrapping"
+because `scrollWidth === clientWidth` on every cell. That is exactly what a
+WRAPPED cell looks like — wrapping is what removes the horizontal overflow. The
+check that appears to prove single-line proves the opposite.
+
+| Screen | Cause | Fix |
+|---|---|---|
+| `graha#contacts` 59.5px | the PHONE cell wraps to 3 lines at 71px wide | `.gr__td--mute { white-space: nowrap }` — **no ellipsis**; half a phone number is not a phone number |
+| `vikray#stock` 56.5px | the threshold control is **55.5px stacked** — no 50px row can hold it | laid out as a row; the column is 356px wide against an 82px input |
+
+**Proved against the LIVE app** by injecting each rule and re-counting:
+`graha#contacts` **24 → 0**, `vikray#stock` **18 → 0**. A third candidate
+changed nothing and was discarded. `ganit#contacts` / `vikray#contacts` share
+`graha/ContactsTab`, so the first rule covers them.
+
+### ✅ THE TDS/GSTIN VERDICT — the rule is about CAPTURE, not EMISSION
+
+Suite 05.17 found a TDS challan refused for a missing TAN, named the tension
+with the standing rule that *"GSTIN / PAN / TAN … must block nothing"*, and
+**deliberately refused to rule** (93 §14). Taken now, and written into
+`CLAUDE.md` so the next reader does not "fix" the validator:
+
+**`validate_tds_challan` and the GSTR-1 `supplier_gstin_missing` refusal are
+CORRECT and must not be relaxed.** Nothing may *require* those numbers to save a
+client, invoice or employee — and `org_profile.py:462` carries the owner's own
+words to that effect, while `VendorForm.jsx:297` confirms they block no save. But
+an ITNS-281 without a TAN is invalid under **s.203A**, where a PAN is explicitly
+not a substitute, and a GSTR-1 has nothing to attribute supplies to without a
+supplier GSTIN. The codebase already had a component built for this exact
+refusal (`DocumentError.jsx`). The distinction was implemented; it just was not
+written down.
+
+---
+
+## 2026-08-31 — SUITE 05 (GANIT) 13/24, AND WHY `ganit_payments` IS EMPTY
+
+🔴 **ONE CONTACT TOOK FIVE TESTS DOWN.** 05.09 did not fail on payments — it
+failed on *"05.06 must run first — Expected 45, Received 0"*. No invoices
+existed. And 05.06 failed reporting what reads as a product defect:
+
+> picking the customer did not adopt their company
+
+⚠ **IT IS NOT ONE, AND I ALMOST FIXED THE WRONG THING.** `pickCustomer` is
+correct, the API returns `client_id`, and **80 of Unicode's 81 contacts have
+one**. The single exception — `S16 Contact 202608302221` — was created by
+**Suite 16** at 22:26 the night before, and `/v1/graha/contacts` is
+`ORDER BY created_at DESC`, so the newest contact is `contacts[0]` and
+`createInvoice(1)` reached for exactly it. A contact with no employer has no
+company to adopt. **The form was right.**
+
+One row left by an unrelated suite blocked 45 invoices, and 05.07, 05.08, 05.09,
+05.13 and 05.19 then failed on "05.06 must run first". Fixed in the SPEC (filter
+to contacts that have an employer) — not by deleting the row: the suites share
+one org by design, and a test that only passes when nobody else has run is not a
+test.
+
+🔴 **THE CORS ERRORS WERE THE ANALYTICS 500 IN DISGUISE.** 05.18 reported
+`/api/v1/analytics/views` "blocked by CORS policy". Probed live: the OPTIONS
+preflight returns **200 with `allow-origin: https://app.kartavaya.com` on BOTH
+hosts**, and an unauthenticated GET returns **401 WITH the header**. CORS is
+fine. An unhandled 500 escapes the middleware and reaches the browser bare,
+which Chrome reports as a CORS violation — and that endpoint was 500-ing for
+every module on the `KeyError: 'metric'` fixed earlier today. **The analytics
+fix is bigger than it looked**: a console error on every Finance settings screen,
+not just an empty views bar.
+
+🟡 **AN EMPTY FILTER IS NOT AN EMPTY TABLE.** "metered-usage has 18 rows on the
+wire and paints none" is a harness false positive — the tab defaults to
+*Unbilled* and live data is 18 rows, **18 invoiced, 0 unbilled**. But the empty
+state read "No usage entries" while eighteen sat one dropdown away. Saying the
+WRONG words is the version of that failure nobody checks for, because the reader
+stops looking. Copy is now filter-aware.
+
+**Not defects:** 05.15 — *"THE OUTBOUND FENCE IS DOWN … NOT sent,
+deliberately"* is the fence working as designed.
+
+**Still open:** 05.05 (`ExpensesTab` renders no file input while
+`ExpenseCreate.receipt_urls` is API-writable — an orphaned capability, and a
+feature rather than a repair) and 05.17 (a TDS challan refused, not yet
+diagnosed).
+
+---
+
+## 2026-08-31 — SUITE 20 RUN AGAINST PRODUCTION: 11/16, AND 3 OF THE 5 NOW CLOSED
+
+`suite20.config.ts` — **11 passed, 5 failed, 14.0m**, 187 screens crawled, 959
+rows measured. **0 uncaught exceptions and 0 console errors across all 187.**
+
+⚠ **THE SUITES DRIVE THE DEPLOYED APP.** Every fix below is in the working tree
+and **NOT DEPLOYED**, so a re-run today still reports the old numbers. That is
+the fix not being shipped, not the fix failing.
+
+| Test | State |
+|---|---|
+| 20.03 no screen paints a UUID | 🔧 **FIXED** — `folder_label` |
+| 20.04 no native date control | 🔧 **FIXED** — the month mode |
+| 20.05 every row on `--row-h` | 🟡 scan fixed; **6 genuine remain, not guessed at** |
+| 20.06 a loading screen SAYS it is loading | 🔧 **FIXED** — announcing primitives |
+| 20.12b every drag handle can start a drag | 🔧 **FIXED** — 2 handles |
+
+🔴 **TWO DRAG HANDLES DID NOTHING WHILE PROMISING THEY WOULD.** `.ktabs__grip`
+and `.kcols__grip` are `<button>`s, and `@hello-pangea/dnd` refuses to start a
+drag whose source event targets one of its `interactiveTagNames` — so neither
+mouse nor keyboard ever began, while the grips are labelled *"Space picks it up,
+arrows move it, Space drops it."* Column order is a SAVED preference, so it
+could not be reordered by any means the UI offered. **The identical guard that
+stopped every kanban card until 2026-08-29**; `KanbanView.jsx:638` already had
+the escape hatch and the reasoning.
+
+🔴 **7 OF 10 SAMPLED SCREENS WERE SILENT WHILE LOADING.** `vetana#payslips` is
+the sharp case: a skeleton IS drawn, so it looks busy to an eye and says nothing
+to a screen reader. The three that passed had each hand-written a
+`SkeletonRegion` — **the contract lived in a wrapper every call site had to
+remember**, and the shorter, obvious spelling was silent. The primitives now
+carry it, with a context so the screens that were already correct do not begin
+double-announcing. 11 tests, 5/5 mutations killed.
+
+🔴 **`graha#documents` WAS THE ONLY SCREEN OF 187 PAINTING A UUID** — the R2
+storage key `crm/<client_id>/documents`, printed raw in both the folder picker
+and the Folder column. `check-rendered-ids.mjs` stayed GREEN over it. Now one
+SQL-computed `folder_label` for both endpoints.
+
+🟡 **20.05's scan was drowning its own signal**: of ten screens named, FOUR were
+inline editor rows (`<tr><td colspan=N><form>`), where holding a form to a 50px
+row token asks the wrong question — now excluded by SHAPE. Six are genuine and
+**left open rather than guessed at**: the obvious remedy is a global
+`white-space: nowrap` across 187 screens, which is the shape of incident this
+repo keeps recording. It needs the offending cell measured first.
+
+**Verified:** frontend 3,278 tests / 204 files green, `npm run build` green,
+20/20 gates green; backend 2,829 green across every touched module.
+
+→ Full detail in `docs/plans/PROGRESS.md` under this date.
+
+---
+
+## 2026-08-31 — ✅ THE NATIVE `month` CONTROL IS GONE (SUITE 20.04 CLOSED)
+
+CLAUDE.md bans native date-family controls. `Field.jsx` forwarded `date`,
+`datetime-local` and `time` to `DateInput` and **not `month`**, so five screens
+still emitted the browser's own widget. **Suite 20.04 failed on this
+deliberately**, naming the fix as a feature instead of excusing it into a green:
+*"closing it means giving `DateInput` a month mode"*. That decision has now been
+taken and built.
+
+Three of the five were Vetana, where `manav/BonusTab.jsx:56` had already written
+down the cost: the month must match `vetana_payroll_runs.month` EXACTLY, and a
+wrong one *"does not fail, it files the award against a month no payroll run
+will ever look at, and the person is simply not paid."*
+
+**Built:** `components/ui/MonthGrid.jsx` (CalendarGrid's own markup and classes,
+one tab stop, arrow/Home/End keys, `min`/`max`); `DateInput type="month"` with
+an "Aug 2026" label and a This month / Last month / Clear row; `month` added to
+`Field.jsx`'s `DATEY`; **five screens migrated** (`vetana/PayrollTab`,
+`PayslipsTab`, `StatutoryTab`, `ganit/StatsTab`, `manav/PerformanceTab`), each
+`<label>` becoming a `<div>` + `aria-labelledby` because DateInput renders a
+BUTTON and a label cannot label one; `_helpers.ts::setMonth()`; **10 spec
+locators** repointed across two spec files.
+
+⚠ **A SCREENSHOT CAUGHT A BUG THAT 15 GREEN TESTS COULD NOT.** The first
+render laid the months out **7 across** — `.pk__grid` is the calendar's
+`repeat(7, 1fr)` week and `.pk__grow`/`.pk__gcell` are `display: contents`, so
+the JSX row grouping carries no layout weight at all. Every unit test passed
+over it: the DOM order, roles, labels and emitted value were all correct, and
+only the painted result was wrong. Nobody writes `expect(monthsPerRow).toBe(4)`
+— which is the argument for looking at the thing.
+
+**Verified:** 15 vitest tests; driven live in the browser (mounted via the dev
+server with no repo changes — Jun selected, Aug carrying the today dot,
+Sep–Dec disabled by `max`, console logging `EMITTED: 2026-03` on a pick);
+`npm run build` green; **all 20 `npm run check` gates green**; all four modified
+spec files parse under `playwright --list`.
+
+→ Full detail in `docs/plans/PROGRESS.md` under this date.
+
+---
+
+## 2026-08-31 — FIVE MORE MONEY/RELIABILITY DEFECTS, AND TWO GUARDS THAT HAD GONE RED
+
+| | Defect | Measured |
+|---|---|---|
+| 🔴 | **Vikray dashboard reported 3.2x the real revenue** — drafts, credit notes (added instead of subtracted) and soft-deleted rows all counted | **817,016.00** shown vs **257,696.00** true |
+| 🔴 | **Same inflation on GST threshold turnover** — the figure checked against registration/audit limits, whose docstring calls it a FLOOR | same 817,016 → 257,696 |
+| 🔴 | **Billing sweep billed DEACTIVATED orgs**, and one org's failure silently truncated the run — earlier orgs stayed advanced, a re-run would advance them **twice** | now isolated, reported, tick fails |
+| 🔴 | **Unbounded memory leak** in the global write limiter — one entry per client IP, never removed, for the life of the worker | now swept once a minute |
+| 🟡 | **Payables headline disagreed with its own aging breakdown** | latent — **0 cancelled bills today**, so the two agree VACUOUSLY |
+
+⚠ **TWO ANTI-VACUITY GUARDS WERE THEMSELVES RED**, which is worse than the bugs
+above because it means other checks were unverified while they sat green:
+
+- `test_cron_fails_loudly.py::test_the_scan_can_see_the_handlers_at_all` — the
+  test that exists to stop that whole file passing vacuously. Red since
+  **2026-08-29** (`run_recycle_bin_purge` added, count not updated), so every
+  `assert not ...` under it proved nothing for two days.
+- Four analytics tests subscripted `w["metric"]` on a two-shape layout — the
+  SAME false assumption that made `/v1/analytics/views` answer 500. The
+  endpoint's contract was unheld by the file whose job is to hold it, exactly
+  when it broke.
+
+**Overturned — P7 "toast deadlock" is NOT a defect.** `.k-toasts` is
+`pointer-events: none` and 320px in a corner; `.tst { pointer-events: all }`
+re-enables only the card so its dismiss button works, and z-520-over-modal-420
+is the documented ladder. My earlier note read the card rule without its
+container. Already correct in HEAD.
+
+**Verified:** 3,536 backend tests pass, 0 failures. 24 new tests. Mutation
+matrices 6/6, 6/6, and 4/6 — the two survivors on the last are recorded in the
+test file: one is an EQUIVALENT MUTANT, and the other's test **passed under the
+mutation**, so it was deleted rather than kept as a green check proving nothing.
+
+🔴 **FOUND, NOT FIXED — `ganit_payments` holds ZERO rows.** No payment has ever
+been recorded, so `collected`, receivables ageing, cash position and dunning are
+all unexercised against a real payment. Not a code defect; the largest remaining
+coverage hole, and per CLAUDE.md a table at 0 rows is two unknowns, not one.
+
+→ Full detail in `docs/plans/PROGRESS.md` under this date.
+
+---
+
+## 2026-08-31 — GST WAS CHARGED ON THE PRE-DISCOUNT VALUE, AND A FINAL TAX INVOICE CARRIED IT
+
+**Fixed in code and in the data. Six implementations of one defect.**
+
+s.15(3)(a) CGST Act excludes an invoice-recorded discount from the transaction
+value. Every site applied the per-line `discount_pct` correctly, then took the
+flat order/invoice discount off **the total only** — never off the base the
+tax was computed on. Found by a live query.
+
+⚠ **SUITE 10 PASSED THE WHOLE TIME.** Nothing asserted the tax *base*, only
+that the figures were internally consistent — and they were, consistently
+computed on the wrong value. The anti-vacuity lesson again: a check that
+reconciles a document against itself cannot see a wrong input.
+
+| Document | Status | Tax charged | Correct | Excess |
+|---|---|---|---|---|
+| **INV-2026-0009** | **final `tax_invoice`** | 5,400.00 | 4,500.00 | **900.00** |
+| SO-2026-0007 | confirmed | 5,400.00 | 4,500.00 | 900.00 |
+| SO-2026-0014 | cancelled | 2,175.00 | 1,925.00 | 250.00 |
+| SO-2026-0021 | confirmed | 1,260.00 | 360.00 | 900.00 |
+| SO-2026-0035 | draft | 13,450.00 | 12,677.01 | 772.99 |
+
+All Unicode Group, seeded 2026-08-30; **−₹3,722.99** of output tax over-stated.
+Aekam Inc holds no discounted row. Rows corrected, reversal captured first;
+every one now taxes at exactly its own rate on the net (18.00 / 18.00 / 5.00 /
+18.00 / 0.00 / 15.46, the last being the correct 18-and-5 blend).
+
+**Fixed:** `routers/vikray.py`, `routers/ganit.py` (the tax invoice itself),
+`services/purchase_orders.py`, and all three client previews —
+`ganit/InvoiceForm.jsx`, `vikray/_shared.jsx`, `procurement/_shared.jsx`. The
+previews agreed with the wrong server, so nothing on screen looked amiss;
+`vikray/_shared.jsx` even carried a docstring **excusing** the client/server
+disagreement as a tolerance. That caveat is deleted — what it excused was
+₹900 of real money, not a rounding order.
+
+**A second defect found on the way:** CGST/SGST were split by rounding *both*
+halves up per line, so on an odd paisa `CGST + SGST > tax` and the same goods
+totalled more intra-state than inter-state. Now an exact split in all four
+places. `purchase_orders` reports a tax discrepancy on any mismatch, so this
+would have surfaced as a spurious exception on a correctly matched PO.
+
+**A test that had been RED:** `test_order_to_invoice_carries_the_cost_verbatim`
+raised `KeyError: 'salesperson_id'` from a stub row that had drifted from a real
+column — so the cost-carried-verbatim invariant was not being checked at all,
+by the test that exists to check it.
+
+**Verified:** 1,228 backend tests green; 11 new Python + 8 new vitest tests;
+mutation-proved **7/7** server-side with every kill attributed to a named test,
+4 kills client-side. `npm run build` and all 20 `npm run check` gates green.
+
+→ Full detail, including why a FINAL invoice was corrected in place rather
+than by credit note, in `docs/plans/PROGRESS.md` under this date.
+
+---
+
+## ⚠ 2026-08-30 LATE — READ THIS FIRST
+
+**THERE IS NO STAGING.** One system, one Supabase project, one schema `public`,
+one branch: **`main`, and `main` IS production**. The host labelled `staging` is
+a second, staler front door onto the same database — it buys `OUTBOUND_MODE=dry`
+(mail, push and social, **not data**) and nothing else, on a backend **30 commits
+behind**. A write through it is a production write. Full detail in `CLAUDE.md` →
+*The one dangerous fact*, and in `docs/plans/PROGRESS.md` under this date.
+
+**Three privilege/exposure defects were found and fixed LOCALLY. All three are
+still live in production until `main` deploys:**
+
+| | Defect | State |
+|---|---|---|
+| 🔴 | **`server.py` granted `platform_admin` on every boot** to any user with `users.role='admin'` — a per-org column read as a platform-wide one. Two e2e accounts, incl. the OWNER fixture, would have gained god mode on the next restart | fixed + 3 tests, mutation-proved |
+| 🔴 | **`POST /roles/assign` allowed self-granting a platform role** — falsifying the invariant that only `platform_support` may hold a support session | fixed + 5 tests, mutation-proved both ways |
+| 🔴 | **The staging host served `/openapi.json` unauthenticated** — HTTP 200, 1,022,070 bytes, the full API map of a payroll product | fixed, 56 tests pass |
+
+**Blocker 1 is CLOSED.** The OWNER credential is restored; `--project=setup`
+passes **3/3** with owner, approver and godmode as three genuinely distinct
+accounts for the first time.
+
+**Gate P2 is MEASURED, and it carries an ABORT.** 300 base tables, 249 with
+`org_id`. Delete scope is **1,384 rows**; Aekam Inc holds **4,630** and must
+survive. ⚠ **`users` cannot be org-scoped, and four people — including the
+owner's own login — belong to both a TOUCH and a NO-TOUCH org, so a
+"delete the users of these orgs" step locks the owner out of Aekam Inc.**
+⚠ **3,007 rows carry `org_id IS NULL`** and are invisible to every org-scoped
+statement — the wipe will report zero for the org while they remain.
+
+**Still open:** `outbound_log` never records the From address; a third
+platform-role write path is unfound; `pyjwt` is not yet at 2.13.0; the
+`staging.kartavaya.com` DNS step in `DNS-AND-SUBDOMAINS.md:245` **must not be
+executed** — it converts "test against staging" from fail-closed to fail-open.
+
+---
+
 Last updated: **2026-08-29**. Proposal 93 **Wave 1 is 28/28 GREEN** and Suite 02
 covers all 18 screens §10 asks for. Both of the items that were red are closed
 and neither was a flake: **02.17 was not sequencing** — the support-session
