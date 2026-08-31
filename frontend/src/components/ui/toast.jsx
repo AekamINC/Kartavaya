@@ -270,6 +270,55 @@ export function ToastProvider({ children }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [hasAction]);
 
+  /**
+   * HOVER-TO-PAUSE, KEPT AFTER THE CARD STOPPED TAKING THE POINTER.
+   *
+   * §9's rule is "hover pauses the timer on all", and it was implemented with
+   * `onMouseEnter` on the card. That needs the card to be hit-testable, and a
+   * hit-testable card is exactly what covered "New task" and the whole top bar
+   * (components.css §7 carries the measurement). The rule survives the fix by
+   * being answered from GEOMETRY instead: the pointer is over a toast if it is
+   * inside a live card's rect, which is the same question `:hover` was asking.
+   *
+   * `document.elementFromPoint` is NOT usable for this — it skips
+   * `pointer-events: none` nodes and would return whatever is underneath the
+   * toast, which is the thing we have just made reachable.
+   *
+   * Bound only while a live toast exists, so the app carries no pointer
+   * listener the other 99% of the time. `is-hovered` is written straight onto
+   * the node rather than into state: this provider wraps the entire
+   * application and a hover must not re-render it.
+   */
+  const liveKey = toasts.filter((t) => !exiting.has(t.id)).map((t) => t.id).join(',');
+  useEffect(() => {
+    if (!liveKey) return undefined;
+    let over = null;
+    const leave = () => {
+      if (!over) return;
+      document.querySelector(`.k-toasts .tst[data-toast-id="${over}"]`)
+        ?.classList.remove('is-hovered');
+      resume(over);
+      over = null;
+    };
+    const onMove = (e) => {
+      const card = Array.from(
+        document.querySelectorAll('.k-toasts .tst:not(.is-closing)'),
+      ).find((c) => {
+        const r = c.getBoundingClientRect();
+        return e.clientX >= r.left && e.clientX <= r.right
+            && e.clientY >= r.top && e.clientY <= r.bottom;
+      });
+      const id = card ? card.getAttribute('data-toast-id') : null;
+      if (id === over) return;
+      leave();
+      if (id) { card.classList.add('is-hovered'); over = id; pause(id); }
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    // `leave()` on teardown, or a card dismissed under a resting cursor would
+    // leave its timer paused for ever with nothing left to un-pause it.
+    return () => { leave(); window.removeEventListener('mousemove', onMove); };
+  }, [liveKey, pause, resume]);
+
   useEffect(() => () => {
     for (const t of timers.current.values()) clearTimeout(t.handle);
     timers.current.clear();
@@ -311,8 +360,14 @@ export function ToastProvider({ children }) {
             <div
               key={t.id}
               className={`tst ${ts.tone}${exiting.has(t.id) ? ' is-closing' : ''}`}
-              onMouseEnter={() => pause(t.id)}
-              onMouseLeave={() => resume(t.id)}
+              data-toast-id={t.id}
+              /* ⚠ NO onMouseEnter/onMouseLeave HERE ANY MORE. The card is
+                 `pointer-events: none` (components.css §7 says why), so those
+                 would fire only when the cursor crossed one of the two
+                 buttons — and they would fire IN ADDITION to the window
+                 listener below, which is worse than not firing: `pause()`
+                 recomputes `remaining` from an `endsAt` the first pause left
+                 in place, so a double pause SHORTENS the toast. One owner. */
               onFocus={() => pause(t.id)}
               onBlur={() => resume(t.id)}
               // Gated on the keyframe NAME, not merely on "we are exiting": the

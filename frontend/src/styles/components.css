@@ -1269,7 +1269,31 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
      `.tst` composes its rim onto this SAME box-shadow declaration instead of
      fighting it for the property. */
   box-shadow: inset 3px 0 0 0 var(--tst-c, var(--outline)), var(--shadow-3);
-  pointer-events: all;
+  /* ── THE CARD DOES NOT TAKE THE CLICK ───────────────────────────────────
+     Was `pointer-events: all`, and that is what made a toast an OVERLAY over
+     the user's work rather than a notice beside it. MEASURED on the deployed
+     app 2026-08-31 by putting a real `.tst` into the real `.k-toasts` region
+     and hit-testing every visible control at its own centre: on the tasks list
+     with NOTHING open, one toast covered FOUR top-bar controls — Keyboard
+     shortcuts, Appearance, "Notifications, 40 unread", and "New task", the
+     primary action of the page.
+
+     ⚠ AND AN ERROR TOAST NEVER AUTO-DISMISSES (§7 above, deliberately), so
+     that is not a four-second inconvenience — it is the top bar taken away
+     until somebody finds the Dismiss button hiding underneath their cursor.
+
+     Suite 03.20 is what surfaced it: thirty-eight attempts to click "Restore
+     task" on an open drawer, every one refused by `<div class="tst tst--ok">`.
+     The drawer is `z-index: 200` and the stack is 520, so a toast paints over
+     the header of the dialog the reader is in — and only the MOUSE is refused,
+     which is why every role-and-name driven check in this programme agreed the
+     button was fine. Third instance of that shape this week, after the corner
+     dock and the column resize grip.
+
+     The two BUTTONS take pointer events back below; nothing else needs them,
+     and hover-to-pause is preserved by `ToastProvider`'s own pointer tracking
+     rather than by hit-testing (see the comment on that effect). */
+  pointer-events: none;
   /* Was `dmPop var(--dur-base) var(--ease-enter)` — the POPOVER keyframe, a
      scale-from-97% with a 4px lift. A toast is not a popover: it has no anchor
      to grow out of, so scaling reads as a dialog appearing rather than a
@@ -1399,10 +1423,22 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   animation-fill-mode: forwards;
   animation-duration: var(--tst-life, 0ms);
 }
+/* `.is-hovered` beside `:hover`, and it is not redundant: the card is
+   `pointer-events: none`, so `:hover` matches only while the cursor is over
+   one of the two buttons. `ToastProvider` sets the class from a window-level
+   pointer listener, which is the same geometry `:hover` used to give. Both are
+   kept — `:hover` still covers the buttons with no JavaScript at all. */
 .tst:hover .tst__bar,
+.tst.is-hovered .tst__bar,
 .tst:focus-within .tst__bar { animation-play-state: paused; }
 .tst.is-closing .tst__bar { animation-play-state: paused; opacity: 0; }
 @keyframes tstDrain { to { transform: scaleX(0) } }
+
+/* The only two things in a toast a pointer has any business reaching. Keeping
+   these `auto` under a `none` card is the whole point of the change above: the
+   notice stops blocking the application and its own controls still work. */
+.tst__act,
+.tst__a { pointer-events: auto; }
 
 .tst--ok   { --tst-c: var(--ok); }
 .tst--err  { --tst-c: var(--danger); }
