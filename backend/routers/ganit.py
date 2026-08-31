@@ -225,20 +225,25 @@ class ExpenseCreate(BaseModel):
     vendor: str = ""
     reference: str = ""
     notes: str = ""
-    #: There is no `receipt_keys` beside this and none is invented here.
-    #: `ganit_expenses.receipt_urls` (migration 019) has no key sibling, and
-    #: neither do `ganit_vendor_bills.attachment_url` (035) or
-    #: `manav_expense_claims.receipt_urls` (034) — so a receipt filed through
-    #: `POST /api/upload` keeps only the presigned URL that upload answered
-    #: with, the one that expires in nine hours, and `list_expenses` has nothing
-    #: to re-sign from. Adding the columns is the only fix and it is an owner
-    #: decision: staging and production share one database, so the three
-    #: `ALTER TABLE`s land on live rows. Nothing has been lost to this yet —
-    #: no row in any of the three tables holds a file today — which is why the
-    #: repair is a column and not a migration of contents. Do NOT close the gap
-    #: by scraping a key out of the stored URL: these boxes also take
-    #: hand-typed links to somewhere that is not our bucket.
+    #: MIGRATION 247 ADDED `receipt_keys`, so a receipt now outlives the nine
+    #: hours its presigned url is good for. `receipt_urls[i]` is what a reader
+    #: opens; `receipt_keys[i]` is the R2 object it was signed from, and
+    #: `list_expenses` re-signs from it through `storage.sign_key`.
+    #:
+    #: ⚠ THE KEY IS NEVER SCRAPED OUT OF THE URL, and that has not changed:
+    #: these boxes also take hand-typed links to somewhere that is not our
+    #: bucket, so only the uploader — which knows the key — ever supplies one.
+    #: An entry with no key is left exactly as it arrived.
+    #:
+    #: `ganit_vendor_bills.attachment_url` (035) and
+    #: `manav_expense_claims.receipt_urls` (034) STILL HAVE THIS GAP. Both hold
+    #: zero files today (measured 2026-08-31), so neither has lost anything
+    #: while it waits; 247 deliberately touched one table, because a column
+    #: nothing reads is worse than a documented absence.
     receipt_urls: list[str] = []
+    #: Parallel to `receipt_urls`. Shorter is fine — a hand-typed link has no
+    #: key and gets none; longer is not, and is refused below.
+    receipt_keys: list[str] = []
     is_billable: bool = False
     contact_id: str = ""
     project_id: str = ""
@@ -255,6 +260,7 @@ class ExpenseUpdate(BaseModel):
     reference: str | None = None
     notes: str | None = None
     receipt_urls: list[str] | None = None
+    receipt_keys: list[str] | None = None
     is_billable: bool | None = None
     contact_id: str | None = None
     project_id: str | None = None
@@ -1891,6 +1897,7 @@ async def list_expenses(
     query = (
         "SELECT e.id, e.title, e.category, e.amount, e.tax_amount, e.total, "
         "e.expense_date, e.vendor, e.reference, e.notes, e.receipt_urls, "
+        "e.receipt_keys, "
         "e.is_billable, e.contact_id, e.project_id, e.created_at, e.updated_at, "
         "c.name as contact_name, "
         # WHO raised it and WHO last touched it, as NAMES. `created_by` and
@@ -1930,7 +1937,61 @@ async def list_expenses(
 
     query += "ORDER BY e.expense_date DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return _listed(rows, limit=200)
+
+    # ⚠ RE-SIGNED ON THE WAY OUT, BECAUSE A STORED URL IS ALREADY EXPIRING.
+    #
+    # `POST /api/upload` answers with a presigned url good for nine hours, and
+    # that is what `receipt_urls` holds. Read it back tomorrow and the link is
+    # dead — the same way five executed e-sign PDFs became permanently
+    # unservable, which is why `FilesField` keeps the key and says so at length.
+    # Migration 247 gave this table its key sibling; this is the half that uses
+    # it.
+    #
+    # Paired BY INDEX, and only where a key exists: a hand-typed link to a
+    # supplier's own portal has no key, must not get one, and is passed through
+    # untouched. `sign_key` returns None when R2 is unconfigured or the object
+    # is gone, and a None is left as the stored url rather than blanking the
+    # row — an expired link a reader can complain about beats a field that
+    # silently empties.
+    from services.storage import sign_key   # local, as at :1222 — this module
+                                            # is imported by the app factory
+    out = [dict(r) for r in rows]
+    for r in out:
+        keys = list(r.get("receipt_keys") or [])
+        if not keys:
+            continue
+        urls = list(r.get("receipt_urls") or [])
+        for i, k in enumerate(keys):
+            if i >= len(urls) or not k:
+                continue
+            fresh = await sign_key(org_id, k)
+            if fresh:
+                urls[i] = fresh
+        r["receipt_urls"] = urls
+    return _listed(out, limit=200)
+
+
+def _assert_receipt_pairing(urls, keys, *, where: str) -> None:
+    """`receipt_keys[i]` must describe `receipt_urls[i]`, or describe nothing.
+
+    ⚠ A KEY WITH NO URL BESIDE IT IS AN ORPHAN, and it is the shape that
+    turns a re-sign into a wrong file: `list_expenses` pairs the two lists by
+    INDEX, so a keys list longer than the urls list either points at nothing or,
+    once a url is added later, at somebody else's object. Shorter is fine and
+    expected — a hand-typed link to a supplier's own portal has no key and is
+    never given one.
+    """
+    if keys is None:
+        return
+    u = urls if urls is not None else []
+    if len(keys) > len(u):
+        raise HTTPException(
+            422,
+            f"{where}: {len(keys)} receipt key(s) were sent for {len(u)} receipt "
+            "url(s). The two lists are paired by position, so a key with no url "
+            "beside it can only ever re-sign the wrong file. Send one key per "
+            "uploaded file, in the same order, and none for a link typed by hand.",
+        )
 
 
 @router.post("/expenses")
@@ -1944,6 +2005,8 @@ async def create_expense(
     # is checked and not just the first: a list is where one unchecked string
     # becomes twenty.
     assert_file_urls(body.receipt_urls, "receipt_urls")
+    assert_file_urls(body.receipt_keys, "receipt_keys")
+    _assert_receipt_pairing(body.receipt_urls, body.receipt_keys, where="create_expense")
 
     pool = await get_pool()
     exp_date = date.fromisoformat(body.expense_date) if body.expense_date else date.today()
@@ -1951,14 +2014,18 @@ async def create_expense(
     row = await pool.fetchrow(
         "INSERT INTO public.ganit_expenses "
         "(org_id, title, category, amount, tax_amount, total, expense_date, "
-        " vendor, reference, notes, receipt_urls, is_billable, contact_id, project_id, created_by) "
+        " vendor, reference, notes, receipt_urls, receipt_keys, is_billable, contact_id, project_id, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::date, "
-        " $8, $9, $10, $11, $12, NULLIF($13,'')::uuid, NULLIF($14,'')::uuid, $15) "
+        " $8, $9, $10, $11, $16, $12, NULLIF($13,'')::uuid, NULLIF($14,'')::uuid, $15) "
         "RETURNING id, title, total",
         org_id, body.title, body.category, body.amount, body.tax_amount, body.total,
         exp_date, body.vendor, body.reference, body.notes,
         body.receipt_urls, body.is_billable, body.contact_id, body.project_id,
         user["user_id"],
+        # $16, APPENDED rather than slotted in. The house rule the invoice
+        # INSERT states in full: renumbering a bound list to keep the columns
+        # tidy is how a placeholder that is not 1:1 gets broken.
+        body.receipt_keys,
     )
     return {"status": "created", **dict(row)}
 
@@ -1974,6 +2041,8 @@ async def update_expense(
     # The PATCH reaches the same column as the POST, so it needs the same
     # refusal — a hole closed on create and left open on update is not closed.
     assert_file_urls(body.receipt_urls, "receipt_urls")
+    assert_file_urls(body.receipt_keys, "receipt_keys")
+    _assert_receipt_pairing(body.receipt_urls, body.receipt_keys, where="update_expense")
 
     pool = await get_pool()
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}

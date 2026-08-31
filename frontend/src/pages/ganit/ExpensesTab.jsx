@@ -129,7 +129,117 @@ const BLANK = {
      itself, so an empty picker sends an empty string on both paths and the
      column is set to NULL rather than left behind. */
   contact_id: '',
+  /* ⚠ THE RECEIPT, AND ITS KEY. `ganit_expenses.receipt_urls` has existed
+     since migration 019 and `ExpenseCreate` has always accepted it — this
+     screen simply never drew a control, so an expense could be recorded and
+     its receipt could not. Suite 05.05 reported it as "THE ATTACHMENT HAS NO
+     DOOR", which is the orphaned-capability shape: engine-supported,
+     UI-unreachable.
+
+     `receipt_keys` is the sibling migration 247 added. The url `POST /upload`
+     answers with is presigned and dies in nine hours; the key is what
+     `list_expenses` re-signs from. Both are sent, paired by position, and the
+     API refuses more keys than urls. */
+  receipt_urls: [],
+  receipt_keys: [],
 };
+
+const CLIP = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 11.5l-8.8 8.8a5 5 0 0 1-7.1-7.1l8.9-8.8a3.3 3.3 0 0 1 4.7 4.7l-8.8 8.8a1.7 1.7 0 0 1-2.4-2.3l8.1-8.1" />
+  </svg>
+);
+
+/**
+ * The receipt list, with its own file input.
+ *
+ * ⚠ THE KEY IS KEPT BESIDE THE URL, and that is the entire point. `FilesField`
+ * carries the long version of this note: it stored `{name, url}` and threw the
+ * key away, and every link it wrote went dead within the day because a
+ * presigned url has a nine-hour life and nothing was left to re-sign from. The
+ * same mistake here would be worse — a receipt is the evidence for a claim
+ * somebody has already been paid for.
+ *
+ * A refused upload is SHOWN. Reaching `logger.error` and stopping there gives
+ * the console the reason and the person a field that simply did not change.
+ */
+function ReceiptField({ value, onChange, disabled }) {
+  const urls = Array.isArray(value.receipt_urls) ? value.receipt_urls : [];
+  const keys = Array.isArray(value.receipt_keys) ? value.receipt_keys : [];
+  const inputRef = React.useRef(null);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    const tooBig = oversizeMessage([file]);
+    if (tooBig) { setError(tooBig); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/upload', fd);
+      onChange({
+        ...value,
+        receipt_urls: [...urls, res.data.url],
+        // `?? ''` and never dropped: the two lists are paired BY POSITION, so a
+        // missing entry would shift every key after it onto the wrong receipt.
+        receipt_keys: [...keys, res.data.key ?? ''],
+      });
+    } catch (err) {
+      setError(apiErrorText(err, 'Upload failed — the receipt was not attached.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeAt = (i) => onChange({
+    ...value,
+    receipt_urls: urls.filter((_, n) => n !== i),
+    receipt_keys: keys.filter((_, n) => n !== i),
+  });
+
+  return (
+    <div className="fld">
+      <span className="fld__l">Receipts</span>
+      {urls.map((u, i) => (
+        <div key={keys[i] || u || i} className="filerow">
+          <span className="filerow__ic" aria-hidden="true">{CLIP}</span>
+          <a className="filerow__n" href={u} target="_blank" rel="noreferrer">
+            {(keys[i] || u || '').split('/').pop() || `Receipt ${i + 1}`}
+          </a>
+          {!disabled && (
+            <button type="button" className="btn btn--ghost btn--sm"
+              aria-label={`Remove receipt ${i + 1}`} onClick={() => removeAt(i)}>
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+      {error && <span className="fld__err" role="alert">{error}</span>}
+      {!disabled && (
+        <>
+          {/* display:none, not .sr-only — a visually hidden but focusable file
+              input is a phantom tab stop between the list and the button. */}
+          <input ref={inputRef} type="file" style={{ display: 'none' }}
+            accept=".jpg,.jpeg,.png,.heic,.heif,.pdf" onChange={pick} />
+          <button type="button" className="btn btn--out btn--sm" disabled={busy}
+            onClick={() => inputRef.current?.click()}>
+            {busy ? 'Uploading…' : 'Attach receipt'}
+          </button>
+        </>
+      )}
+      <span className="fld__hint">
+        Optional. A photograph of the bill or a PDF — kept with the expense so a
+        reviewer can see what was actually spent.
+      </span>
+    </div>
+  );
+}
 
 /**
  * Create and edit are the same nine fields — ONE component, rendered twice
@@ -206,6 +316,9 @@ function ExpenseFields({ value, onChange, categories, contactItems, onSearchCont
             : 'Optional. Attributes the cost to a client; the company is shown beside each name.'}
         </span>
       </div>
+      {/* In the SHARED field set, so it exists on the create form and the
+          inline edit row alike — the reason this component was extracted. */}
+      <ReceiptField value={value} onChange={onChange} />
       <label className="gn-chk">
         <input type="checkbox" checked={value.is_billable} onChange={e => set('is_billable', e.target.checked)} />
         <span>Billable to a customer</span>
@@ -357,6 +470,12 @@ export default function ExpensesTab() {
       tax_amount: ex.tax_amount ?? 0, expense_date: ex.expense_date || '', vendor: ex.vendor || '',
       reference: ex.reference || '', notes: ex.notes || '', is_billable: !!ex.is_billable,
       contact_id: ex.contact_id || '',
+      /* ⚠ SEEDED FROM THE ROW, or editing anything else DELETES the receipts.
+         The PATCH sends every key in the form object, so an edit form that came
+         up with an empty array would write an empty array — the same shape as
+         the `contact_id` note above, and the reason that one is here. */
+      receipt_urls: Array.isArray(ex.receipt_urls) ? [...ex.receipt_urls] : [],
+      receipt_keys: Array.isArray(ex.receipt_keys) ? [...ex.receipt_keys] : [],
     });
   }
 
