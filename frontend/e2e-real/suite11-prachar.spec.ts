@@ -2378,8 +2378,27 @@ test('11.8 three sequences, twelve steps, twenty-four enrolments; exit-on-reply 
         `${s.name} reads 'active' and ${back.filter((e) => e.status === 'paused').length} ` +
         'of its enrolments are still paused. The cron requires BOTH, so nobody under ' +
         'this sequence would ever be sent anything again.').toBe(0);
+      // ⚠ 8 MINUS THE PEOPLE WHO OPTED OUT, AND THE DIFFERENCE IS THE WHOLE
+      // POINT. This asserted a flat `.toBe(8)` and failed at 7 — against a
+      // CORRECT product. Read live 2026-08-31:
+      //
+      //     S11-SEQ-1   active 7   unsubscribed 1     = 8
+      //
+      // Resume put back everyone it MAY put back. The eighth had unsubscribed,
+      // and a resume that returns an unsubscribed person to the ladder is not a
+      // recovered enrolment — it is mail to someone who asked not to receive
+      // it. Had the product answered 8 here, this test would have passed and
+      // the defect would have been the pass.
+      //
+      // So the floor is computed from the roll rather than written down, and
+      // the exclusion is asserted in its own right: nobody who opted out may
+      // come back, and nobody who did not opt out may be left behind.
+      const optedOut = back.filter((e) => e.status === 'unsubscribed' || e.status === 'exited');
       expect(back.filter((e) => e.status === 'active').length,
-        'resume put nobody back on the ladder').toBe(8);
+        `resume put nobody back on the ladder — ${back.length} enrolment(s), ` +
+        `${optedOut.length} of them opted out or exited, so ${8 - optedOut.length} ` +
+        'should be active').toBe(8 - optedOut.length);
+      expect(back.length, 'resume lost or invented an enrolment').toBe(8);
     }
   }
 
