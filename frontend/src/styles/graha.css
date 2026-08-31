@@ -623,3 +623,8 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
   font-family: var(--font-mono);
   font-size: max(11.5px, calc(var(--font-size-base) * .86));
 }
+
+/* The points box on a scoring rule row. Narrow because it holds at most four
+   characters (-100 to 100) and a full-width input beside a rule name reads as
+   the more important of the two, which it is not. */
+.gr__pts { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }

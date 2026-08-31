@@ -3304,6 +3304,20 @@ SCORING_SIGNALS = {
 }
 
 
+#: The DYNAMIC half of the vocabulary — the keys `compute_lead_score` builds
+#: below from deals, activities and follow-ups. Named here so the create route
+#: can refuse a signal that would never fire; the function still builds the
+#: values itself, because only it can.
+_DYNAMIC_SCORING_SIGNALS = (
+    "has_deal", "multiple_deals", "deal_qualified", "deal_proposal",
+    "deal_negotiation", "high_value_deal", "activity_recent_7d",
+    "activity_call", "activity_meeting", "followup_overdue",
+)
+
+#: Both halves, which is what a rule may name and what a picker may offer.
+_SCORING_SIGNAL_VOCABULARY = frozenset(SCORING_SIGNALS) | frozenset(_DYNAMIC_SCORING_SIGNALS)
+
+
 async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, list[str]]:
     rules = await pool.fetch(
         "SELECT signal, points FROM public.graha_scoring_rules "
@@ -3526,6 +3540,136 @@ async def route_all_contacts(
                 report["overlaps"].append(
                     {"pincode": out["pin"], "territories": out["overlapping"]})
     return report
+
+
+# ── THE SIGNAL VOCABULARY, PUBLISHED ────────────────────────────────────────
+#
+# `SCORING_SIGNALS` above and `dynamic_signals` inside `compute_lead_score` are
+# the two halves of one list, and neither was reachable from outside this
+# module. A screen could therefore only offer a free-text box, and a rule typed
+# into a free-text box with a signal the engine does not know is a rule that
+# can NEVER fire — accepted, stored, listed, and silently inert. That is the
+# dead-control shape in its purest form and it is what this endpoint prevents:
+# the picker is built from the engine's own vocabulary, so the two cannot drift.
+#
+# The labels are the only thing written here rather than derived. A signal key
+# is a developer's word; the person setting a rule is a partner deciding what
+# makes a lead worth chasing, and "deal_negotiation" is not a sentence they
+# should have to translate.
+_SCORING_SIGNAL_LABELS = {
+    "has_phone": "Has a phone number",
+    "has_email": "Has an email address",
+    "source_indiamart": "Came from IndiaMART",
+    "source_justdial": "Came from JustDial",
+    "source_website": "Came from the website or a web form",
+    "has_deal": "Has at least one deal",
+    "multiple_deals": "Has two or more deals",
+    "deal_qualified": "Their best deal is Qualified",
+    "deal_proposal": "Their best deal is at Proposal",
+    "deal_negotiation": "Their best deal is in Negotiation",
+    "high_value_deal": "Has a deal worth over Rs 1,00,000",
+    "activity_recent_7d": "Something was logged in the last 7 days",
+    "activity_call": "Has been called",
+    "activity_meeting": "Has been met",
+    "followup_overdue": "Has an overdue follow-up",
+}
+
+
+@router.get("/scoring-signals")
+async def list_scoring_signals(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Every signal a scoring rule may name, with a sentence a person reads.
+
+    Read straight off the engine's own two lists rather than re-typed, for the
+    reason `_state_keys` gives about the state codelist: a second copy is a
+    second thing to drift, and here the drift would be silent — a rule naming a
+    signal the engine dropped simply stops contributing and nothing says so.
+    """
+    return {"data": [
+        {"signal": k, "label": _SCORING_SIGNAL_LABELS.get(k, k)}
+        for k in _SCORING_SIGNAL_VOCABULARY
+    ]}
+
+
+class ScoringRuleCreate(BaseModel):
+    signal: str
+    points: int = 0
+    description: str = ""
+
+
+@router.post("/scoring-rules")
+async def create_scoring_rule(
+    body: ScoringRuleCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Create a lead-scoring rule.
+
+    ⚠ THIS ROUTE DID NOT EXIST, AND NOTHING COULD REACH THE ENGINE WITHOUT IT.
+    `GET /scoring-rules` and `PATCH /scoring-rules/{id}` were the whole surface
+    — a rule could be listed and amended and never CREATED — so
+    `graha_scoring_rules` was empty in every organisation, `compute_lead_score`
+    returned at its first line, and every `lead_score` in the product was 0.
+    Suite 04.17 found it by looking for the screen and then for the route.
+
+    Org-admin, matching PATCH: a scoring rule decides which leads the firm
+    chases first, which is a policy rather than a record.
+    """
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
+
+    signal = (body.signal or "").strip()
+    if signal not in _SCORING_SIGNAL_VOCABULARY:
+        # ⚠ REFUSED, NOT STORED. A rule naming a signal the engine does not
+        # know is accepted by the column (`signal` is plain text), listed on
+        # the screen, and never fires — the firm believes it is scoring on
+        # something and it is not. The message names the vocabulary rather than
+        # only rejecting, because the caller cannot guess it.
+        raise HTTPException(
+            422,
+            f"'{signal}' is not a signal this product can score on, so a rule "
+            f"naming it would be stored and never fire. The signals available "
+            f"are: {', '.join(sorted(_SCORING_SIGNAL_VOCABULARY))}.",
+        )
+
+    # A band, not a bound: points outside it are almost certainly a typo, and
+    # `compute_lead_score` clamps the TOTAL to 0-100 anyway, so a rule worth
+    # 5,000 is a rule that silently swallows every other rule in the set.
+    if not -100 <= body.points <= 100:
+        raise HTTPException(
+            422,
+            f"Points must be between -100 and 100. A score is clamped to "
+            f"0-100 in total, so {body.points} on one rule would drown out "
+            f"every other rule you set.",
+        )
+
+    pool = await get_pool()
+    # One rule per signal. Two rules on the same signal both fire and the
+    # points add, which is never what somebody means by setting it twice —
+    # they mean to change it, and PATCH is how.
+    dup = await pool.fetchval(
+        "SELECT 1 FROM public.graha_scoring_rules WHERE org_id=$1::uuid AND signal=$2",
+        org_id, signal,
+    )
+    if dup:
+        raise HTTPException(
+            409,
+            "There is already a rule for that signal. Change its points on the "
+            "existing rule rather than adding a second one — two rules on one "
+            "signal both fire and their points add up.",
+        )
+
+    row = await pool.fetchrow(
+        "INSERT INTO public.graha_scoring_rules (org_id, signal, points, description) "
+        "VALUES ($1::uuid, $2, $3, NULLIF($4,'')) "
+        "RETURNING id, signal, points, description, is_active",
+        org_id, signal, body.points, (body.description or "").strip()[:500],
+    )
+    return {"status": "created", **dict(row)}
 
 
 @router.get("/scoring-rules")

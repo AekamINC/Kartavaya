@@ -41,6 +41,7 @@ import WebFormsTab from './graha/WebFormsTab';
 import ApprovalsTab from './graha/ApprovalsTab';
 import DocumentsTab from './graha/DocumentsTab';
 import DedupeTab from './graha/DedupeTab';
+import ScoringTab from './graha/ScoringTab';
 // The universal analytics surface, pointed at Graha's slice of the registry.
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 // The blended client report (A5). It LIVES in dristi/ because the window and
@@ -56,7 +57,7 @@ const TABS = [
   ['follow-ups', FollowUpsTab], ['labels', LabelsTab], ['activities', ActivitiesTab],
   ['reports', ReportsTab], ['territories', TerritoriesTab],
   ['fields', CustomFieldsTab], ['web-forms', WebFormsTab], ['approvals', ApprovalsTab],
-  ['documents', DocumentsTab], ['dedupe', DedupeTab],
+  ['documents', DocumentsTab], ['dedupe', DedupeTab], ['scoring', ScoringTab],
   ['analytics', () => <ModuleAnalyticsTab module="graha" />],
   ['client-report', ClientReportTab],
   ['billing', BillingProfilesTab],
