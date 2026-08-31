@@ -203,6 +203,11 @@ export default function DealRoute() {
       probability: deal.probability ?? 20,
       expected_close_date: asDate(deal.expected_close_date),
       notes: deal.notes || '',
+      // ⚠ SEEDED FROM THE ROW, OR AN EDIT DELETES IT. The PATCH is a partial
+      // and `_DEAL_COLS` keeps `''` (only `None` is dropped), so a draft that
+      // opened without this key and saved with the stage still Lost would send
+      // an empty reason over a real one.
+      lost_reason: deal.lost_reason || '',
       custom_data: deal.custom_data || {},
       // '' is a legitimate value and CLEARS the owner: `update_deal` binds
       // `assigned_to=NULLIF($n,'')`, so unassigning is a real edit and not a
@@ -227,6 +232,12 @@ export default function DealRoute() {
       const payload = { ...draft, value: parseFloat(draft.value) || 0 };
       if (!payload.expected_close_date) delete payload.expected_close_date;
       if (!payload.notes) delete payload.notes;
+      /* THE REASON IS ONLY SENT WHILE THE DEAL IS LOST.
+         Moving a deal OUT of Lost keeps whatever reason was recorded rather
+         than clearing it — "why did we lose this" is the answer the module
+         exists to hold, and a stage corrected by hand is not a retraction of
+         it. Omitting the key leaves the column alone; sending '' would not. */
+      if (payload.stage !== 'Lost') delete payload.lost_reason;
       await api.patch(`/v1/graha/deals/${dealId}`, payload);
       pushToast({ title: 'Deal updated', type: 'success' });
       setDraft(null);
@@ -326,6 +337,15 @@ export default function DealRoute() {
                 </div>
               </section>
 
+              {/* Read back where the reader is looking. A reason that can be
+                  typed and not seen is the same defect one layer along. */}
+              {d.stage === 'Lost' && d.lost_reason && !draft && (
+                <section className="dr__sec">
+                  <h3 className="dr__lbl">Why it was lost<Secondary className="dr__lbl-hi" value="कारण" /></h3>
+                  <p className="gr__dnotes">{d.lost_reason}</p>
+                </section>
+              )}
+
               {d.notes && !draft && (
                 <section className="dr__sec">
                   <h3 className="dr__lbl">Notes<Secondary className="dr__lbl-hi" value="टिप्पणी" /></h3>
@@ -396,6 +416,29 @@ export default function DealRoute() {
                       field={field}
                     />
                   </div>
+                  {/* ── WHY IT WAS LOST ────────────────────────────────────
+                      `graha_deals.lost_reason` has existed since migration 018
+                      and `DealUpdate` has carried it since the beginning; the
+                      allowlist fix that made the PATCH actually write it landed
+                      without a screen to type into, so a grep for `lost_reason`
+                      across `frontend/` returned nothing at all. Suite 04.11
+                      named it: a person can move a deal to Lost and cannot say
+                      why.
+
+                      Shown only at the Lost stage, because that is the only
+                      state in which the question is asked — and it is a NUDGE,
+                      never a gate: the column is nullable, the deal saves
+                      without it, and nothing in this product blocks a record
+                      over a field somebody has not filled in yet. */}
+                  {draft.stage === 'Lost' && (
+                    <label className="gr__f gr__f--block">
+                      <span className="gr__fl">Why was it lost?</span>
+                      <textarea className="k-input gr__ta" rows={2} name="lost_reason"
+                        placeholder="Price, timing, lost to a competitor, no budget…"
+                        value={draft.lost_reason}
+                        onChange={e => setDraft({ ...draft, lost_reason: e.target.value })} />
+                    </label>
+                  )}
                   <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
                     <textarea className="k-input gr__ta" rows={3} value={draft.notes}
                       onChange={e => setDraft({ ...draft, notes: e.target.value })} /></label>
