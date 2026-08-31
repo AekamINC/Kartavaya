@@ -647,6 +647,17 @@ async function apiGet(page: Page, pathAndQuery: string) {
   });
 }
 
+/** DELETE with the same credential and org header `apiGet` uses. */
+async function apiDelete(page: Page, pathAndQuery: string) {
+  const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+  return page.request.delete(`${API}${pathAndQuery}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-Org-Id': LANE.orgId,
+    },
+  });
+}
+
 async function apiOne(page: Page, pathAndQuery: string): Promise<any> {
   const res = await apiGet(page, pathAndQuery);
   expect(res.status(), `GET ${pathAndQuery} → ${res.status()}: ${(await res.text()).slice(0, 300)}`)
@@ -1182,13 +1193,41 @@ test('14.04 the skill shelf is bare, and the catalogue is HONEST about who can f
   await expect(catalogBtn, 'the Catalog pane cannot be opened').toBeVisible();
   await catalogBtn.click();
 
+  // ⚠ THE CATALOGUE LISTS WHAT IS *NOT* YET ASSIGNED, so "no cards" is a
+  // legitimate state and used not to be reachable. `SkillsTab.jsx:343` is
+  // `available = catalog.items.filter(t => !assignedIds.has(t.id))`, and
+  // `:770` renders "Every template in the catalog is already active on your
+  // organisation." when that list is empty.
+  //
+  // This asserted `cards > 0` unconditionally, which was true only while the
+  // shelf was EMPTY — the state this test was written in and named after.
+  // Suite 19.4 now stocks the shelf from the console, and the assertion started
+  // failing against a product doing exactly the right thing. A test that only
+  // passes while a feature is broken is not a test of the feature.
+  //
+  // Both states are asserted, and which one is live is decided by the same
+  // arithmetic the screen uses, never by a guess.
   const cards = panel.locator('.sk-card');
-  await expect.poll(async () => cards.count(), {
-    message: 'the catalogue rendered no cards although the server returned ' +
-      `${catalogue.length} templates`,
-    timeout: 30_000,
-  }).toBeGreaterThan(0);
-  console.log(`  catalogue cards on screen: ${await cards.count()} of ${catalogue.length} templates`);
+  const unassigned = catalogue.filter((t: any) =>
+    !shelf.some((s: any) => String(s.template_id) === String(t.id))).length;
+
+  if (unassigned > 0) {
+    await expect.poll(async () => cards.count(), {
+      message: `the catalogue rendered no cards although ${unassigned} of ` +
+        `${catalogue.length} templates are not yet on the shelf`,
+      timeout: 30_000,
+    }).toBeGreaterThan(0);
+    console.log(`  catalogue cards on screen: ${await cards.count()} of ${unassigned} unassigned`);
+  } else {
+    // A full shelf must SAY it is full. An empty grid and a finished one are
+    // indistinguishable to a reader, which is 20.09's whole complaint.
+    await expect(panel,
+      'every template is assigned and the catalogue pane renders neither cards nor a ' +
+      'sentence — a blank pane is indistinguishable from a broken one')
+      .toContainText(/already active on your organisation/i, { timeout: 30_000 });
+    console.log(`  catalogue: all ${catalogue.length} templates already on the shelf, ` +
+      'and the pane says so in words');
+  }
 
   // ⚠ THE CONTROL THAT MUST *NOT* BE THERE.
   //
@@ -1204,14 +1243,32 @@ test('14.04 the skill shelf is bare, and the catalogue is HONEST about who can f
     'and answers 403. A control that refuses is worse than an absent one.')
     .toHaveCount(0);
 
-  await expect(panel.getByRole('button', { name: /See details and ask for it|Why this cannot run|Requested/i }).first(),
-    'the catalogue offers neither a way to add a skill nor a way to ask for one — which is ' +
-    'the dead end "Ask your account contact" used to be')
-    .toBeVisible();
+  // Only assertable while something is left to ask FOR. With a full shelf there
+  // is no card, so there is no drawer, and demanding one would be demanding a
+  // control over an empty list.
+  if (unassigned > 0) {
+    await expect(panel.getByRole('button', { name: /See details and ask for it|Why this cannot run|Requested/i }).first(),
+      'the catalogue offers neither a way to add a skill nor a way to ask for one — which is ' +
+      'the dead end "Ask your account contact" used to be')
+      .toBeVisible();
+  }
 
   record('skills on the org shelf', 0, 0, shelf.length,
-    shelf.length ? '' : 'assignment is platform-only (OPERATIONS_CONSOLE_ROLES) — Suite 19');
-  record('skill runs', N_SKILL_RUNS, 0, 0, 'blocked — nothing is assigned to run');
+    shelf.length ? 'stocked from the console by Suite 19.4'
+                 : 'assignment is platform-only (OPERATIONS_CONSOLE_ROLES) — Suite 19');
+  // ⚠ NOT HARD-CODED TO ZERO ANY MORE. This read `record('skill runs', N, 0, 0,
+  // 'blocked — nothing is assigned to run')`, which was true when written and
+  // became a lie the moment the shelf was stocked — a ledger line that reports
+  // a blockage that has been cleared is worse than no line.
+  // `GET /v1/hub/org/skills/{id}/runs` is per-skill; there is no org-wide runs
+  // list, so the count is summed over the shelf. Bounded by the shelf, and it
+  // reads the canonical rows rather than trusting a screen.
+  let runCount = 0;
+  for (const sk of shelf) {
+    runCount += (await apiRows(page, `/api/v1/hub/org/skills/${sk.id}/runs`)).length;
+  }
+  record('skill runs', N_SKILL_RUNS, 0, runCount,
+    shelf.length ? '' : 'blocked — nothing is assigned to run');
 
   assertNoUncaught(con);
 });
@@ -2359,6 +2416,41 @@ test('14.20 a member ceiling cannot be set before anybody has spent', async ({ p
     }
     const after = await apiOne(page, '/api/v1/billing/me/balance');
     console.log(`  ceilings after: ${(after?.members || []).length}`);
+
+    // ⚠ AND THEN IT IS REMOVED, BECAUSE A CEILING LEFT BEHIND STARVES EVERY
+    // TEST AFTER IT. Measured 2026-08-31: a previous execution of this test set
+    // `cap_credits = 20` on Unicode Group's member and left it there. The
+    // member spent it, and from then on every credit-spending surface answered
+    //
+    //     402 org_credits_exhausted — an answer is 2 credits
+    //
+    // against an ORG balance of 980. Suite 14's own §4 ledger recorded "chat
+    // messages asked 45 · typed 0" and "content generated asked 18 · typed 0"
+    // as BLOCKED, and the blockage was this test's own leftover.
+    //
+    // A ceiling is not seed data. `feedback_keep_test_seed_data` is about ROWS
+    // that are evidence; this is a control setting that silently disables the
+    // rest of the suite, and the correct end-state for it is the one the org
+    // was in before.
+    //
+    // Removing it is also more coverage, not less: DELETE …/cap is a real
+    // control with no other test, and the removal is verified from the
+    // canonical row rather than from the response.
+    let cleared = 0;
+    for (const m of (after?.members || [])) {
+      const uid = String(m.user_id ?? m.id ?? '');
+      if (!uid || m.cap_credits == null) continue;
+      const del = await apiDelete(page, `/api/v1/billing/me/members/${uid}/cap`);
+      if (del.ok()) cleared += 1;
+    }
+    const settled = await apiOne(page, '/api/v1/billing/me/balance');
+    const stillCapped = (settled?.members || []).filter((m: any) => m.cap_credits != null);
+    console.log(`  ceilings cleared: ${cleared}; still capped: ${stillCapped.length}`);
+    expect(stillCapped.length,
+      'a member ceiling survived this test. It will starve every credit-spending ' +
+      'test that runs after it, against an org wallet that is not empty — which is ' +
+      'exactly how 45 chat messages and 18 content pieces came back as 0.')
+      .toBe(0);
   }
 
   record('member ceilings', N_CEILINGS, typed, (balance?.members || []).length + typed,
