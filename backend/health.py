@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from fastapi import APIRouter
 from datetime import datetime, timezone
@@ -13,6 +14,9 @@ from db import get_pool
 import outbound
 
 router = APIRouter(tags=["health"])
+
+
+logger = logging.getLogger(__name__)
 
 
 def suppressed_orgs_digest(orgs) -> str:
@@ -86,6 +90,48 @@ async def health():
         live_schema = await pool.fetchval("SELECT current_schema()")
     except Exception:
         pass
+
+    # ── THE TWO DRIFT VIEWS, WHICH NOTHING HAS EVER READ ────────────────────
+    #
+    # `v_org_platform_line_drift` and `v_org_credit_drift` were built to prove
+    # an invariant that `services/billing_lines.py` states in its own words:
+    # "the scalar is a mirror of this line, `v_org_platform_line_drift` must
+    # always return zero rows, and either the fee moves in both places or it
+    # moves in neither."
+    #
+    # ⚠ THEY EXISTED ONLY IN THE MIGRATION FILES THAT CREATED THEM. A grep for
+    # either name across every .py, .mjs and .js in this repository returned
+    # nothing outside migrations 095 and 096 — no route, no cron, no test, no
+    # health field. Migration 096 calls the query "the single query to run after
+    # each change" and nobody ran it.
+    #
+    # Measured 2026-08-31: it returns FOUR rows. Four organisations carry a
+    # monthly price between Rs 10,000 and Rs 20,000 with no platform line to
+    # bill it from - Rs 54,000 a month that no invoice can reach. It has been
+    # red the whole time and nothing said so.
+    #
+    # That is the same family as this programme's dominant finding. An assertion
+    # satisfied by its own shape cannot fail because of how it is written; a
+    # check nothing executes cannot fail because it never runs. Both are green
+    # forever, and both are worse than no check, because somebody believed the
+    # invariant was being watched.
+    #
+    # Reported as a COUNT, never as the rows: this endpoint is unauthenticated,
+    # and the rows carry org names and what each is charged. A number says
+    # "something has drifted, go and look" without saying whose.
+    #
+    # Failure to read is reported as null rather than as zero. A view that
+    # cannot be queried and a view that is clean must not answer the same way -
+    # that is the exact shape of the silence this whole entry exists to end.
+    drift = {"platform_line": None, "credits": None}
+    for key, view in (("platform_line", "v_org_platform_line_drift"),
+                      ("credits", "v_org_credit_drift")):
+        try:
+            drift[key] = await pool.fetchval(
+                f"SELECT count(*) FROM public.{view}")
+        except Exception:
+            logger.exception("health: %s could not be read", view)
+
     return {
         "status": "ok" if db_ok else "degraded",
         "db": "connected" if db_ok else "unreachable",
@@ -100,6 +146,11 @@ async def health():
         # "memory" means every limit is multiplied by the process count and is
         # non-deterministic; "redis" means a limit means what it says.
         "rate_limit_store": _rate_limit_store(),
+        # 0 is the only healthy value for either. A non-zero platform_line count
+        # means an organisation is being charged a fee that no invoice can
+        # reach; a non-zero credits count means a wallet and its ledger
+        # disagree. `null` means the view could not be read at all.
+        "billing_drift": drift,
         "app": "Kartavaya",
         "by": "Aekam Inc",
         "time": datetime.now(timezone.utc).isoformat()
