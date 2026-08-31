@@ -52,7 +52,7 @@ from services.niyam.subjects import (
 # the question and the module carries its one wording. Every STOCK read in this
 # file appends `still_on_the_rolls(alias)`; every FLOW read — what happened in a
 # period — deliberately does not.
-from services.on_the_rolls import still_on_the_rolls
+from services.on_the_rolls import has_left_expr, still_on_the_rolls
 from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
 # The one canonical Indian state codelist in this backend, and the normaliser
 # that collapses the two conventions the database holds. See `_clean_state`
@@ -1434,12 +1434,18 @@ async def create_employee(
         # holds a code exactly as firmly as somebody still on the roster.
         # NAMES, never ids: `create_employee` requires ADMIN, and an admin can
         # already see every name in the firm.
+        # ⚠ THE PREDICATE COMES FROM `services.on_the_rolls` AND NOWHERE ELSE.
+        # Twenty-five sites once carried their own variant of it and they
+        # drifted; `test_manav_reads_who_is_on_the_rolls.py` greps this file for
+        # the offboarding alias and fails if it appears — which it did for this
+        # very comment on the first attempt, and the guard was right. A copy
+        # written to
+        # REPORT rather than to filter is still a copy — the `<> 'cancelled'`
+        # clause and the `<` boundary have to stay identical, or this refusal
+        # names a leaver the directory is still listing.
         holder = await pool.fetchrow(
             "SELECT e.name, e.is_active, "
-            "  EXISTS (SELECT 1 FROM public.manav_offboarding x "
-            "           WHERE x.org_id = e.org_id AND x.employee_id = e.id "
-            "             AND x.status <> 'cancelled' "
-            "             AND x.last_working_day < CURRENT_DATE) AS has_left "
+            + has_left_expr("e") + " AS has_left "
             "  FROM public.manav_employees e "
             " WHERE e.org_id=$1::uuid AND e.employee_code=$2",
             org_id, body.employee_code,

@@ -92,6 +92,34 @@ def still_on_the_rolls(alias: str = DEFAULT_ALIAS, as_at: str = "CURRENT_DATE") 
     )
 
 
+def has_left_expr(alias: str = DEFAULT_ALIAS, as_at: str = "CURRENT_DATE") -> str:
+    """A BOOLEAN expression: has this person's last working day passed?
+
+    The inverse of `still_on_the_rolls`, as a value rather than as a filter —
+    for the one caller that needs to REPORT the fact rather than filter on it.
+    `create_employee` refuses a duplicate employee code and has to say whether
+    the holder is somebody the directory hides, because an admin sent to search
+    a list the holder is not in concludes the product is lying.
+
+    ⚠ IT LIVES HERE AND NOT IN THE ROUTER. `manav_offboarding x` appears in
+    exactly one file on purpose — `test_manav_reads_who_is_on_the_rolls.py`
+    greps `routers/manav.py` for that alias and fails if it appears, because
+    twenty-five sites once carried their own variant and they drifted. A second
+    copy written to report rather than to filter is still a second copy: the
+    `status <> 'cancelled'` clause and the `<` boundary have to stay identical
+    or the refusal names a leaver the directory is still listing.
+
+    Same three rules `still_on_the_rolls` documents at length, same
+    interpolation contract: `alias` and `as_at` are server-side literals.
+    """
+    return (
+        f"EXISTS (SELECT 1 FROM public.manav_offboarding x "
+        f"WHERE x.org_id = {alias}.org_id AND x.employee_id = {alias}.id "
+        f"AND x.status <> 'cancelled' "
+        f"AND x.last_working_day < {as_at})"
+    )
+
+
 def on_the_rolls_where(alias: str = DEFAULT_ALIAS, as_at: str = "CURRENT_DATE") -> str:
     """The whole condition, for a caller starting a fresh WHERE.
 
