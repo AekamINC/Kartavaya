@@ -2066,8 +2066,8 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
           `${p.employee_name} was charged under a band with effective_from ` +
           `${JSON.stringify(frozen.pt_slab.effective_from)} and the ladder here resolved one ` +
           `with ${JSON.stringify(row?.effective_from ?? null)}. One of them is this ` +
-          'organisation's own band and the other is the shared default, so the figures ' +
-          'cannot be compared.').toBe((row?.effective_from ?? null) == null);
+          'band that belongs to this organisation and the other is the shared default, so ' +
+          'the figures cannot be compared.').toBe((row?.effective_from ?? null) == null);
       } else {
         expect(row, `${p.employee_name}'s payslip records NO professional-tax band, but the ` +
           'ladder read here says one applies').toBeNull();
