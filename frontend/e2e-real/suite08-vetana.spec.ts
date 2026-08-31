@@ -1990,8 +1990,33 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     const { rows: employees } = await employeeIndex(page);
     const stateOf = new Map<string, string | null>(employees.map(e => [String(e.name), e.state ?? null]));
 
-    // The ladder as it stood when the run was priced — see `ptAsRun`.
-    const ladder = ptAsRun((await rowsOf(page, '/api/v1/vetana/pt-slabs')) as PtRow[]);
+    // ⚠ THE LADDER THE PRODUCT ACTUALLY USED, READ OFF THE PAYSLIPS.
+    //
+    // This was `ptAsRun(...)`, which RECONSTRUCTED the ladder by removing this
+    // suite's own bands, on the premise that 08.13 added them after the August
+    // run was priced. That premise stopped being true: the run has since been
+    // computed WITH those bands in place, and the payslips say so in their own
+    // hand. Read live 2026-08-31:
+    //
+    //     Diya Bhatt     pt 175  pt_slab {Gujarat 9000-11999, effective_from: null}
+    //     Harsh Gandhi   pt 100  pt_slab {Gujarat 6000-8999,  effective_from: null}
+    //
+    // `effective_from: null` is the fingerprint of an ORG band — every shared
+    // Gujarat row carries '2024-04-01'. So the product read Unicode's own
+    // ladder, which is a first-class feature (`POST /pt-slabs`, "Add a band to
+    // THIS organisation's ladder"), and the reconstruction reported ₹150 and
+    // ₹80 from the shared rows against a payroll that was right.
+    //
+    // The frozen band is strictly better evidence than any reconstruction: it
+    // names which band was applied rather than guessing which was available.
+    // So the ladder is read whole, and `ptFor` — which already ranks `is_own`
+    // first — resolves against it. `ptAsRun` is dropped HERE rather than
+    // repaired, because a reconstruction that has to track when the run
+    // happened is a second source of truth for something the payslip already
+    // records. It stays in 08.13, where it does a different job: reconstructing
+    // a "before" for a movement assertion inside one test, which is a claim
+    // about that test's own two moments and not about when payroll ran.
+    const ladder = (await rowsOf(page, '/api/v1/vetana/pt-slabs')) as PtRow[];
     const slips = await rowsOf(page, `/api/v1/vetana/payslips?month=${PAY}`);
     expect(slips.length, '08.7 owns the August run these figures come from').toBe(30);
 
@@ -2031,6 +2056,18 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
         expect(String(frozen.pt_slab.state_code),
           `${p.employee_name}'s payslip was computed against state ${frozen.pt_slab.state_code} ` +
           `while their personnel record says ${state}`).toBe(String(state));
+        // ⚠ AND THE SHARED-vs-OWN HALF, WHICH IS WHERE THE RECONSTRUCTION WENT
+        // WRONG. `effective_from` distinguishes them: an org band has none, a
+        // shared band carries the date it took effect. Asserting the frozen
+        // band and the resolved band agree on it is what catches a run priced
+        // against one ladder being checked against the other — the exact
+        // failure this test produced on 2026-08-31.
+        expect(frozen.pt_slab.effective_from == null,
+          `${p.employee_name} was charged under a band with effective_from ` +
+          `${JSON.stringify(frozen.pt_slab.effective_from)} and the ladder here resolved one ` +
+          `with ${JSON.stringify(row?.effective_from ?? null)}. One of them is this ` +
+          'organisation's own band and the other is the shared default, so the figures ' +
+          'cannot be compared.').toBe((row?.effective_from ?? null) == null);
       } else {
         expect(row, `${p.employee_name}'s payslip records NO professional-tax band, but the ` +
           'ladder read here says one applies').toBeNull();
@@ -2140,8 +2177,29 @@ test.describe('Suite 08 — Vetana · Unicode Group', () => {
     const con = watchConsole(page);
     await signIn(page);
 
-    // The ladders as they stood when the run was priced — see `itAsRun`.
-    const bands = itAsRun((await rowsOf(page, '/api/v1/vetana/it-slabs')) as ItRow[]);
+    // ⚠ THE LADDER THE PRODUCT ACTUALLY USED, NOT A RECONSTRUCTION OF ONE.
+    //
+    // Same fault as 08.8's, and the arithmetic settles it. This was
+    // `itAsRun(...)`, which removes this suite's own bands on the premise that
+    // the August run predates them. Unicode's own `new`-regime ladder, read
+    // live 2026-08-31, is 0-300000 @ 0% and 300000+ @ 10%. Manav Joshi:
+    //
+    //     33,846.16 x 12 - 50,000            =  356,153.92
+    //     (356,153.92 - 300,000) x 10%       =    5,615.39  per year
+    //     / 12                               =      467.95  per month
+    //
+    // and ₹467.95 is exactly what the payslip carries. The product read the
+    // organisation's own ladder — a first-class feature — and the
+    // reconstruction derived ₹0 from the shared bands and called a correct
+    // deduction a defect.
+    //
+    // ⚠ AND UNLIKE PROFESSIONAL TAX, THE BAND IS NOT FROZEN ONTO THE PAYSLIP.
+    // `statutory_treatment` records `tds_regime: "new"` and `pt_slab` in full,
+    // but no `it_slab`. So a PT deduction an employee disputes is answerable
+    // from the payslip and a TDS one is not — the ladder has to be re-read, and
+    // it may have moved. Reported here rather than worked around; 08.8's
+    // cross-check has no counterpart to make in this test.
+    const bands = (await rowsOf(page, '/api/v1/vetana/it-slabs')) as ItRow[];
     const newLadder = generation(bands, 'new', PAY_END);
     const oldLadder = generation(bands, 'old', PAY_END);
     expect(newLadder.length, 'no new-regime ladder is in force').toBeGreaterThan(0);
