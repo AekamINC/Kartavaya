@@ -59,6 +59,18 @@
 .gr__st  { font-size: 14px; font-weight: 700; margin: 0; }
 .gr__st--lg { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
 .gr__sacts { display: flex; gap: 8px; flex-wrap: wrap; }
+/* ── INSIDE A TABLE, ACTIONS DO NOT WRAP ────────────────────────────────────
+   `graha#documents` rows measured 84px against a `--row-h` of 50px. MEASURED by
+   experiment 2026-08-31 — hiding each cell until the row fell back — the
+   culprit is this container in the actions cell: at 139px wide, "Open" and
+   "Delete" do not fit on one line, `flex-wrap: wrap` stacks them, and two 37.5px
+   buttons plus the gap is 84px. Hiding that one cell dropped the row 84 → 54.
+
+   Scoped to `.tbl`, because wrapping is right everywhere else — a panel of
+   actions SHOULD reflow on a narrow screen. It is a table row that has a height
+   contract. Auto layout gives the column its natural width instead, and
+   `.tbl__wrap` is `overflow-x: auto`, so a wider table scrolls. */
+.tbl .gr__sacts { flex-wrap: nowrap; }
 
 /* A lede under a section title. */
 .gr__lede { font-size: 12px; color: var(--ink-3); margin: 0 0 16px; line-height: 1.55; }

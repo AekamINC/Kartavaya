@@ -7650,3 +7650,59 @@ chunks: "Choose a month" and "No month" (`MonthGrid`),
 
 `collected` still reads 0.00 — consistent with `ganit_payments` holding zero
 rows, which is the known coverage hole and not a regression.
+
+---
+
+## 2026-08-31 — SUITE 20 RE-RUN AFTER DEPLOY: 13/16, UP FROM 11
+
+The fixes were verified against the deployed app, not assumed.
+
+| Test | before | after |
+|---|---|---|
+| **20.04** native date control | 5 screens | ✅ **"0 screen(s) carry a native date-family control"** |
+| **20.12b** every drag handle can start a drag | fail | ✅ **pass** |
+| **20.05** rows on `--row-h` | 10 screens | 🟡 **6** |
+| **20.06** a loading screen says so | 3 of 10 | 🟡 **4 of 10** |
+| **20.03** no painted UUID | 3 ids | 🔴 still 3 — see below |
+
+**20.05:** `graha#contacts`, `ganit#contacts`, `vikray#contacts` and
+`vikray#stock` all cleared — the two rules did what the injection proof said
+they would. `manav#notices` also dropped out, confirming the expansion-row
+exclusion.
+
+**20.06:** `/vetana#payslips` now reports `role=status 1, aria-busy 1, skeleton
+1`. That was the sharp case — a skeleton drawn and nothing said — and the
+announcing primitives took. The six still failing report "nothing at all": no
+skeleton either, so there is nothing to announce at the moment they are sampled.
+
+### 🔴 20.03 — A THIRD RENDER SITE, FOUND ONLY BECAUSE THE FIX WAS DEPLOYED
+
+The picker and the table column were both fixed and both are live — the API
+returns `folder_label: "S04 Client 01 Surat"`, confirmed by probe. And the
+screen was still wrong.
+
+`useTableView` builds its filter options FROM THE DATA — "the distinct values
+present in the loaded rows ARE the list" — reading `columns[key] ?? key`. For
+`folder` that is the raw storage path, so the filter chip rendered
+`crm/2f83abc2-.../documents (1)`. Fixed by mapping the key to `folder_label`.
+
+**This is the argument for deploying and re-running rather than trusting green
+local tests.** Two of three sites were fixed, verified and shipped, and the
+screen still painted three UUIDs — because there was a site nobody had counted.
+
+### 🟡 `graha#documents` — a proven partial fix, and an honest residual
+
+Measured by experiment: the culprit is the actions cell — at 139px, "Open" and
+"Delete" do not fit on one line and `flex-wrap: wrap` stacks them, making the
+row 84px. Scoped `.tbl .gr__sacts { flex-wrap: nowrap }`, because wrapping is
+right everywhere except a row with a height contract.
+
+⚠ **PROVEN, AND PARTIAL.** Injected live, the row goes **84 → 53.5px** — a 30px
+improvement — but 53.5 is still off a 50px token, so the screen still counts.
+A second, ~3.5px cause remains on that screen and is NOT diagnosed. Recorded
+that way rather than as a fix, because the row-count metric alone would have
+read this as "no effect" and the height measurement is what distinguished a
+partial fix from a wrong one.
+
+`ganit#products`, `ganit#expenses` and `manav#udin` did not reproduce on the
+probe run at all — data-dependent, and not guessed at.

@@ -262,6 +262,19 @@ export default function DocumentsTab() {
   const view = useTableView(documents, {
     searchKeys: ['name', 'description'],
     filters: [{ key: 'folder', label: 'Folder' }, { key: 'file_type', label: 'Type' }],
+    /* ── THE THIRD PLACE A FOLDER IS PRINTED ───────────────────────────────
+       `useTableView` builds its filter options FROM THE DATA — "the distinct
+       values present in the loaded rows ARE the list" — reading
+       `columns[key] ?? key`. For `folder` that is the raw storage path, so the
+       filter chip rendered "crm/2f83abc2-.../documents (1)".
+
+       Suite 20.03 still reported three UUIDs on this screen AFTER the picker
+       and the table column were both fixed and deployed, which is how this one
+       was found: the fix was real and the screen was still wrong, because
+       there was a site nobody had counted. Mapping the key to `folder_label`
+       makes this read the name the server already computes, and the in-memory
+       match then compares labels, which is the same partition. */
+    columns: { folder: 'folder_label' },
   });
   const cols = useColumnPrefs('graha.documents', DOCUMENT_COLUMNS);
   return (
