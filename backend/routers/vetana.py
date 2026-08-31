@@ -1362,6 +1362,36 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict,
             # authority, and "why ₹150?" must be answerable from the payslip.
             "pt_basis": "flat" if pt_slabs is None else "slab",
             "pt_state": (str(employee_state) if employee_state else None),
+            # ⚠ THE FIGURE THE BAND WAS READ AGAINST, WHICH IS NOT THE GROSS.
+            #
+            # `gross` here is `gross_fixed`; commission and bonus arrive as
+            # separate arguments and are folded into the PF and ESI bases only
+            # where a firm has said so. Professional tax has no such switch and
+            # is always read off fixed pay, while the payslip's `gross` column
+            # includes the variable earnings.
+            #
+            # So a frozen band and the gross printed beside it can disagree,
+            # and on this database they do. Measured 2026-08-31, August run:
+            #
+            #   Anjali Pandya   fixed 307.70    + bonus 17,500  gross 17,807.69
+            #                   band 0-7,500 -> PT 0
+            #   Devansh Jani    fixed 1,538.46  + bonus 20,000  gross 21,538.46
+            #                   band 0-7,500 -> PT 0
+            #
+            # Maharashtra's ladder in this very database charges 200 above
+            # 10,000. Whether PT is due on the bonus is a question about the
+            # state Act and is NOT settled here — but a payslip that prints a
+            # gross of 17,807.69 beside a band of 0-7,500 cannot be defended to
+            # the employee or to an inspector whichever way that question goes.
+            #
+            # Recording the base is additive and changes no figure. It makes
+            # the frozen band interpretable, and it is what lets a check assert
+            # that the band actually contains the number it was read against.
+            "pt_base": round(gross, 2),
+            "pt_base_excludes": {
+                "commission": round(commission, 2),
+                "bonus": round(bonus, 2),
+            },
             "pt_slab": ({
                 "state_code": str(pt_slab["state_code"]),
                 "state_name": str(pt_slab["state_name"]),
