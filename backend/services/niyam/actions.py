@@ -49,9 +49,16 @@ log = logging.getLogger(__name__)
 
 
 class ActionResult(NamedTuple):
-    outcome: str                       # 'ok' | 'refused' | 'failed' | 'skipped'
+    #: 'ok' | 'deferred' | 'refused' | 'failed' | 'skipped'
+    #:
+    #: `deferred` means "not now, but yes at `retry_after`" — the engine sets
+    #: the run's `wake_at` to it and re-runs THIS step rather than finishing.
+    #: See `send.Delivery` for why it is not a flavour of `refused`.
+    outcome: str
     detail: dict
     outbound_id: Optional[int] = None
+    #: Aware UTC, set only on 'deferred'.
+    retry_after: Optional[object] = None
 
 
 def _ok(**detail) -> ActionResult:
@@ -64,6 +71,11 @@ def _refused(reason: str, **detail) -> ActionResult:
 
 def _failed(reason: str, **detail) -> ActionResult:
     return ActionResult("failed", {"reason": reason, **detail})
+
+
+def _deferred(reason: str, retry_after, **detail) -> ActionResult:
+    return ActionResult("deferred", {"reason": reason, **detail},
+                        retry_after=retry_after)
 
 
 # ── task.set_status ──────────────────────────────────────────────────────────
@@ -493,12 +505,39 @@ class NotifySend:
                               org_id=str(event.get("org_id")),
                               channel=channel)
             results.append({"user_id": user_id, "outcome": r.outcome,
-                            "reason": r.reason})
+                            "reason": r.reason,
+                            "retry_after": r.retry_after})
             if first_outbound is None:
                 first_outbound = r.outbound_id
 
         delivered = [r for r in results if r["outcome"] == "ok"]
         if not delivered:
+            # ── NOBODY REACHED. WAS IT "NO" OR "NOT YET"? ──────────────────
+            #
+            # This answered `refused` either way, and the engine then finished
+            # the run — so a send suppressed by quiet hours was destroyed
+            # rather than delayed (suite 16.14).
+            #
+            # If ANY recipient was deferred, the step is deferred, and the
+            # engine re-runs it at the EARLIEST of their wake times. Earliest,
+            # not latest: waking early means the people whose window has ended
+            # are delivered to and the rest defer again, which converges. The
+            # latest would silence the early risers until the last person's
+            # morning.
+            #
+            # ⚠ THE DEFERRAL DOES NOT SURVIVE THE REFUSERS. Recipients who were
+            # refused for a PREFERENCE stay refused on the re-run — `deliver`
+            # re-asks and gets the same final answer — so this cannot turn "do
+            # not tell me about this" into a message at 07:00.
+            deferred = [r for r in results if r["outcome"] == "deferred"]
+            if deferred:
+                whens = [r["retry_after"] for r in results
+                         if r["outcome"] == "deferred" and r.get("retry_after")]
+                return _deferred(
+                    f"quiet hours for {len(deferred)} of {len(results)} "
+                    f"recipient(s) — held rather than dropped",
+                    min(whens) if whens else None,
+                    recipients=results)
             return ActionResult("refused",
                                 {"reason": "every recipient was suppressed",
                                  "recipients": results})

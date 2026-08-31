@@ -185,6 +185,71 @@ def _in_quiet_hours(quiet_start: str, quiet_end: str, *, now=None) -> bool:
     return now_t >= start or now_t < end   # wraps midnight, e.g. 22:00–07:00
 
 
+def quiet_until(quiet_start: str, quiet_end: str, *, now=None):
+    """When this person's quiet window ENDS, or None if it is not quiet now.
+
+    ── WHY THIS EXISTS ────────────────────────────────────────────────────
+    `prefs_verdict`'s docstring already draws the distinction this function
+    makes usable: *"A PREFERENCE is a decision … QUIET HOURS are a clock: this
+    person does not want to be INTERRUPTED right now. It says nothing about
+    whether they want the message."*
+
+    Nothing acted on that. Niyam's `deliver` turned a quiet-hours refusal into
+    a terminal `refused`, `run_pipeline` recorded the step and called
+    `_finish`, and the message was gone — the same loss the docstring records
+    happening at 01:15 IST, one layer up. A clock that says "not now" needs a
+    "then when", and this is it.
+
+    Returns an aware UTC datetime, because that is what `niyam_runs.wake_at`
+    is compared against. The window is evaluated in IST, as the rest of this
+    module does.
+
+    ⚠ THE END OF THE WINDOW, NOT A FIXED DELAY. "Retry in an hour" would wake
+    a run inside the same window and defer it again, once an hour until
+    morning — a loop that looks like progress in the run log.
+
+    Returns None whenever `_in_quiet_hours` is False, including for the
+    unparseable and zero-length windows it reads as "no quiet hours": a
+    function that invented a wake time for a window that does not exist would
+    defer messages nobody asked to silence.
+    """
+    if not _in_quiet_hours(quiet_start, quiet_end, now=now):
+        return None
+    end = _parse_hhmm(quiet_end)
+    if end is None:                       # unreachable — _in_quiet_hours agrees
+        return None
+    now_ist = now or datetime.now(IST)
+    target = now_ist.replace(hour=end // 60, minute=end % 60,
+                             second=0, microsecond=0)
+    if target <= now_ist:
+        # The window wraps midnight and we are on the evening arc, so the end
+        # is TOMORROW. `<=` rather than `<`: a window ending exactly now is
+        # over (the half-open rule `_in_quiet_hours` documents), so this branch
+        # is only reached for a genuine wrap.
+        target = target + timedelta(days=1)
+    return target.astimezone(timezone.utc)
+
+
+async def quiet_until_for(pool, user_id: str):
+    """`quiet_until` for one person's stored window, or None.
+
+    Fails OPEN (None = not quiet) on a lookup error, matching `prefs_verdict`'s
+    polarity: a database blip must not defer everybody's notifications to a
+    time nobody chose.
+    """
+    try:
+        row = await pool.fetchrow(
+            "SELECT quiet_start, quiet_end FROM notification_prefs WHERE user_id=$1",
+            user_id,
+        )
+    except Exception as exc:                              # noqa: BLE001
+        logger.warning("quiet_until_for: lookup failed for %s: %s", user_id, exc)
+        return None
+    start = (row and row["quiet_start"]) or DEFAULT_QUIET_START
+    end = (row and row["quiet_end"]) or DEFAULT_QUIET_END
+    return quiet_until(start, end)
+
+
 def _mode_allows(mode: str, is_mine: bool) -> bool:
     """Does this mode permit delivery for an event that is/isn't the user's own?
 

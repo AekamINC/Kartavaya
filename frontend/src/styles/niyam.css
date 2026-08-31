@@ -397,6 +397,15 @@
 .is-refused .niyam-outcome,
 .is-skipped .niyam-outcome { color: var(--on-surface-2); }
 .is-dry     .niyam-outcome { border-color: var(--primary); color: var(--primary); border-style: dashed; }
+/* `deferred` is a CLOCK, not a verdict — the step has not run yet and will.
+   Dashed like `dry` because both mean "not the final word", and `--warn`
+   because a person scanning a run needs to see that something is still
+   outstanding. It must not read as `refused`: that is the confusion the
+   engine change exists to end. `.is-*` classes come straight from the
+   outcome string (`NiyamPage.jsx:918`), so a missing rule here is an
+   unstyled chip rather than a broken page — which is how `deferred` would
+   otherwise have arrived. */
+.is-deferred .niyam-outcome { border-color: var(--warn); color: var(--warn); border-style: dashed; }
 .is-failed  .niyam-outcome { border-color: var(--danger); color: var(--danger); }
 
 /* ── motion, and the users who asked for less of it ─────────────────────── */

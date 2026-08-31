@@ -64,11 +64,32 @@ ON CONFLICT (rule_id, event_id) DO NOTHING
 RETURNING run_id
 """
 
+#: ⚠ `DO NOTHING` EXCEPT OVER A DEFERRAL. The plain `DO NOTHING` is the
+#: idempotency guarantee this table exists for — a resumed run must never
+#: double-record a step it already completed — and it is unchanged for every
+#: outcome but one.
+#:
+#: A `deferred` row is not a completed step. It is a note saying "this step is
+#: waiting for quiet hours to end", written so the run's history says WHY it is
+#: asleep rather than leaving an unexplained `wake_at`. When the step actually
+#: runs it must be able to write its real outcome over that note, and with a
+#: flat `DO NOTHING` it could not: the send would happen and the run would
+#: still read "deferred" for ever.
+#:
+#: The WHERE clause is what keeps the guarantee narrow: only a deferral can be
+#: overwritten, and only ever once, because what replaces it is never
+#: `deferred` (a step that defers twice writes the same row again, which the
+#: DO NOTHING half handles).
 _RECORD_STEP = """
 INSERT INTO public.niyam_run_steps
     (run_step_id, run_id, step_no, outcome, detail, outbound_id)
 VALUES ($1::text, $2::text, $3::int, $4::text, $5::jsonb, $6::bigint)
-ON CONFLICT (run_id, step_no) DO NOTHING
+ON CONFLICT (run_id, step_no) DO UPDATE
+   SET outcome = EXCLUDED.outcome,
+       detail = EXCLUDED.detail,
+       outbound_id = EXCLUDED.outbound_id
+ WHERE niyam_run_steps.outcome = 'deferred'
+   AND EXCLUDED.outcome <> 'deferred'
 """
 
 
@@ -152,8 +173,18 @@ async def cursor_for(conn, run_id: str) -> set:
     table where a step could produce two rows would silently double-count after
     a double-resume.
     """
+    #: ⚠ `outcome <> 'deferred'`. A deferred step has NOT run — it is waiting
+    #: for a person's quiet hours to end — so the whole point of waking the run
+    #: is to execute it. Counting it as done would wake the run, skip the send
+    #: it woke up for, and finish: the exact loss deferral was added to stop,
+    #: reintroduced one layer down.
+    #:
+    #: This is the mirror of the `wait` step, which DOES write a completed row
+    #: precisely so the resume skips it — see the comment there for what
+    #: happened when it did not.
     rows = await conn.fetch(
-        "SELECT step_no FROM public.niyam_run_steps WHERE run_id = $1::text",
+        "SELECT step_no FROM public.niyam_run_steps "
+        " WHERE run_id = $1::text AND outcome <> 'deferred'",
         run_id,
     )
     return {r["step_no"] for r in rows}
@@ -290,6 +321,29 @@ async def run_pipeline(conn, *, run_id: str, rule_id: str, event: dict,
             if result.outcome == "failed":
                 await _finish(conn, run_id)
                 return "failed"
+            if result.outcome == "deferred":
+                # ── ASLEEP, NOT FINISHED ───────────────────────────────────
+                #
+                # `_finish` stamps `finished_at` and NULLs `wake_at`, so
+                # reaching it here is what destroyed a message suppressed by
+                # quiet hours. The run sleeps instead, on the same `wake_at`
+                # the `wait` step uses and the same sweep that wakes it.
+                #
+                # AN ABSOLUTE TIME, not an interval: the deferral is until a
+                # person's window ENDS, and "+1 hour" would wake the run inside
+                # the same window and defer it again, hourly until morning.
+                #
+                # `COALESCE(…, NOW() + INTERVAL '1 hour')` only for a deferral
+                # that somehow carried no time — a run asleep for ever with no
+                # wake is worse than one that retries an hour later, and the
+                # reaper looks for `wake_at IS NULL` so it would never find it.
+                await conn.execute(
+                    "UPDATE public.niyam_runs "
+                    "   SET wake_at = COALESCE($1::timestamptz, "
+                    "                          NOW() + INTERVAL '1 hour') "
+                    " WHERE run_id = $2::text",
+                    result.retry_after, run_id)
+                return "waiting"
             continue
 
         await _record(conn, run_id=run_id, step_no=step_no, outcome="failed",

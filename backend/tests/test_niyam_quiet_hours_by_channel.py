@@ -66,12 +66,29 @@ async def test_inapp_is_delivered_during_quiet_hours(at_night):
 
 @pytest.mark.asyncio
 async def test_push_is_still_silenced_during_quiet_hours(at_night, monkeypatch):
-    """The other half. Loosening in-app must not loosen the buzz."""
+    """The other half. Loosening in-app must not loosen the buzz.
+
+    ⚠ THE OUTCOME IS NOW `deferred`, NOT `refused`, AND THAT IS THE FIX.
+    Both mean "the phone does not buzz right now", which is everything this
+    test was written to protect. They differ in what happens NEXT: `refused`
+    was terminal — `run_pipeline` recorded the step and called `_finish`, which
+    NULLs `wake_at`, so the message was destroyed rather than delayed (suite
+    16.14, and `send.INTERRUPTING`'s own note about the 01:15 IST send that
+    never happened).
+
+    So the assertion is split in two, because the test was really making two
+    claims and could only see one of them: not delivered now, AND not lost.
+    """
     conn = _pool(DEEP_NIGHT)
     res = await deliver(conn, user_id="user_x", kind="task_done",
                         title="t", body="b", channel="push")
-    assert res.outcome == "refused"
+    assert res.outcome != "ok", "the push was sent during quiet hours"
+    assert res.outcome == "deferred", res.reason
     assert "quiet hours" in res.reason
+    assert res.retry_after is not None, (
+        "deferred with no retry time — the engine would fall back to a blind "
+        "one-hour retry inside the same window")
+    conn.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio

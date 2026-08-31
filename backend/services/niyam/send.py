@@ -94,9 +94,19 @@ PLANNED_CHANNELS = frozenset()
 
 
 class Delivery(NamedTuple):
-    outcome: str                       # 'ok' | 'refused' | 'failed'
+    #: 'ok' | 'deferred' | 'refused' | 'failed'
+    #:
+    #: ⚠ `deferred` IS NOT A KIND OF `refused`, and collapsing them is what lost
+    #: the message. `prefs_verdict`'s own docstring draws the line: "A PREFERENCE
+    #: is a decision … QUIET HOURS are a clock: this person does not want to be
+    #: INTERRUPTED right now. It says nothing about whether they want the
+    #: message." A refusal is final and re-asking gives the same answer; a
+    #: deferral is the same answer asked at the wrong time.
+    outcome: str
     reason: str
     outbound_id: Optional[int] = None
+    #: When this becomes deliverable — aware UTC, set only on 'deferred'.
+    retry_after: Optional[object] = None
 
 
 #: Channels that INTERRUPT, and therefore respect quiet hours. In-app is
@@ -151,6 +161,52 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
 
     allowed, why = await _allowed(conn, user_id, kind, channel)
     if not allowed:
+        # ── QUIET HOURS ARE A CLOCK, SO THE MESSAGE WAITS ──────────────────
+        #
+        # This returned a flat `refused`, `NotifySend.run` turned that into a
+        # refused ActionResult, `run_pipeline` recorded the step and called
+        # `_finish` — which stamps `finished_at` and NULLs `wake_at`. Nothing
+        # re-queued it and no later sweep retried it. The message was gone.
+        #
+        # Suite 16.14 measured it as "no run deferred, and none can", and the
+        # loss is not hypothetical: `INTERRUPTING`'s own comment records the
+        # first armed rule in this product matching at 01:15 IST and the
+        # notification it existed to send simply never happening.
+        #
+        # ⚠ ONLY WHEN QUIET HOURS ARE THE REASON. A person who turned this kind
+        # of notification off has made a DECISION, and re-delivering it at 07:00
+        # would override them.
+        #
+        # "Is the clock quiet?" is NOT that question, and asking it alone got
+        # this wrong: `prefs_verdict` checks the preference gate FIRST, so at
+        # 01:15 a turned-off kind and a quiet hour produce one refusal and both
+        # facts are true at once. Deferring on the clock would have deferred the
+        # decision too.
+        #
+        # So the preference gate is asked ON ITS OWN, with the clock switched
+        # off — `quiet_hours_apply=False`. If it still refuses, the refusal is a
+        # decision and is final at any hour. Only if it ALLOWS is the clock the
+        # whole reason, and only then is there anything to come back for.
+        #
+        # Asked as a question rather than matched on the refusal's prose: `why`
+        # is a sentence written for a person, and a `"quiet hours" in why` test
+        # would silently start deferring preferences the day somebody reworded
+        # it.
+        if channel in INTERRUPTING:
+            from services.push_service import prefs_verdict, quiet_until_for
+            try:
+                pref_ok, _ = await prefs_verdict(conn, user_id, kind,
+                                                 is_mine=False,
+                                                 quiet_hours_apply=False)
+            except Exception:                             # noqa: BLE001
+                # `_allowed` has already applied this module's fail polarity to
+                # get here; a second lookup failing is not a reason to invent a
+                # deferral, so the refusal stands.
+                pref_ok = False
+            if pref_ok:
+                until = await quiet_until_for(conn, user_id)
+                if until is not None:
+                    return Delivery("deferred", why, retry_after=until)
         return Delivery("refused", why)
 
     if channel == "inapp":
