@@ -1234,18 +1234,34 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
       await gotoVikray(page);
 
       const report: string[] = [];
-      const unreadable: string[] = [];
 
       for (const t of TABS) {
+        let settled = '';   // the read that DECIDED the panel had finished
         con.at(t.id);
         const p = await openTab(page, t.id, t.label);
         // A skeleton that never resolves is the defect this looks for: the
         // panel must settle into rows, or into words, and never stay a shimmer.
         await expect
           .poll(async () => {
-            const text = (await p.innerText().catch(() => '')).trim();
-            const skeleton = await p.locator('[class*="sk-"], .skeleton').count();
-            return text.length > 0 && skeleton === 0 ? 'settled' : 'loading';
+            const text = (await p.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+            // ⚠ THIS SELECTOR NEVER MATCHED A SKELETON, so the guard reduced
+            // to `text.length > 0` — any single character read as settled and a
+            // panel stuck on a shimmer passed. Verified against the product:
+            // `.skeleton` exists nowhere, and `[class*="sk-"]` matches only the
+            // SKILLS components (`sk-fx__cav`, Findings.jsx:102), which are not
+            // on a Vikray tab at all — so it would have been a false POSITIVE
+            // anywhere they were.
+            //
+            // The real loading primitives are `k-skeleton-table`
+            // (ui/Skeleton.jsx:82) and `k-shimmer` (ModuleUI.jsx:89), both
+            // `aria-hidden`, plus `dr__skel` in the drawers.
+            const skeleton = await p.locator(
+              '[class*="k-skeleton"], [class*="k-shimmer"], [class*="dr__skel"]').count();
+            // And a real panel says more than one character. `>= 12` inside the
+            // poll means the 45s budget is actually spent waiting for content
+            // rather than satisfied by the first stray glyph.
+            settled = text;
+            return text.length >= 12 && skeleton === 0 ? 'settled' : 'loading';
           }, {
             message: `the "${t.id}" panel never finished loading — a skeleton that never ` +
               'resolves is a lie that never stops telling itself',
@@ -1253,16 +1269,33 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           })
           .toBe('settled');
 
-        const text = (await p.innerText()).replace(/\s+/g, ' ').trim();
-        if (text.length < 12) {
-          unreadable.push(`${t.id}: the panel painted ${text.length} characters — ` +
-            'a blank screen is indistinguishable from a broken one');
-        }
-        report.push(`     ${t.id.padEnd(14)} ${text.slice(0, 90)}`);
+        // ⚠ READ ONCE, NOT TWICE. This used to call `innerText()` AGAIN after the
+        // poll and assert on THAT — a second read of a live page, milliseconds
+        // later. Both `billing` and `metered-usage` mount a Ganit tab that
+        // fetches twice (profiles, then rows), so under wave load the panel
+        // settled, the poll passed, and the re-read caught the second fetch's
+        // skeleton: 8 characters, which is the `Loading…` label `SkeletonList`
+        // announces to a screen reader. Run alone the same two tabs paint 90+
+        // characters of real content, so the failure was the test's own race
+        // and not a blank screen.
+        //
+        // The poll's own final observation is the honest one to assert on: it
+        // is the read that decided the panel had settled.
+        //
+        // ⚠ AND THE LENGTH IS NOT RE-ASSERTED BELOW. `>= 12` is already the
+        // poll's own condition, so a second check of it here could not fail —
+        // that would swap one vacuous assertion for another, which is the exact
+        // fault this edit exists to remove. A panel that never paints words
+        // fails the poll, by name, having spent its whole 45s waiting.
+        report.push(`     ${t.id.padEnd(14)} ${settled.slice(0, 90)}`);
       }
 
-      expect(unreadable, 'a Sales screen rendered nothing a person could read:\n     ' +
-        unreadable.join('\n     ')).toEqual([]);
+      // ⚠ THE REPORT IS PRINTED BEFORE THE ASSERTION, NOT AFTER IT.
+      // It used to sit at the end of the test, so the ONE run that needed it —
+      // a failing one — was the one run that never printed it, and the triage
+      // was handed a character COUNT with no idea which eight characters they
+      // were. A diagnostic that only survives the passing case is not one.
+      console.log(`\n  10.01 — 12 Sales screens opened:\n${report.join('\n')}\n`);
 
       // THE URL DOOR. `VikrayPage` reads its open tab from `?tab=`, which is
       // what makes a tab linkable and what makes a refresh keep the reader
@@ -1276,7 +1309,7 @@ test.describe('Suite 10 — Vikray (sales) · Unicode Group', () => {
           .toBeVisible({ timeout: 45_000 });
       }
 
-      console.log(`\n  10.01 — 12 Sales screens opened:\n${report.join('\n')}\n` +
+      console.log(`\n  10.01 — non-2xx responses:${dumpFailures(fails)}\n` +
         `     non-2xx responses:${dumpFailures(fails)}\n` +
         `     console:${dumpConsole(con)}\n`);
       assertNoUncaught(con);
