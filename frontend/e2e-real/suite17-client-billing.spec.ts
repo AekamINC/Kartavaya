@@ -940,7 +940,20 @@ test.describe('Suite 17 — Client billing · Unicode Group', () => {
       // never resolves and a blank panel are the two states a new customer
       // cannot tell from a broken product, and neither is acceptable.
       const table = p.locator('table.tbl');
-      const empty = p.locator('.es, .gn-note').first();
+      // ⚠ `.es` MATCHED NOTHING, AND HAD NEVER MATCHED ANYTHING. `EmptyState`
+      // renders `className="empty"` (ui/EmptyState.jsx:152); there is no `.es`
+      // component and no `.es` CSS rule anywhere in `frontend/src`. So this
+      // half of the OR was dead, the assertion reduced to "there is a table",
+      // and every screen that correctly showed an empty state failed as though
+      // it had rendered nothing at all.
+      //
+      // That is the shape memory calls out as "static ratchets are NOT
+      // coverage": a check that silently covers nothing still reads green
+      // wherever the other half happens to hold. Here it read RED instead,
+      // against a correct product — which is the same fault pointing the other
+      // way, and the reason `metered usage` was reported blank when it was
+      // saying "No transactions" in words.
+      const empty = p.locator('.empty, .gn-note').first();
       await expect
         .poll(async () => (await table.count()) + (await empty.count()), {
           message: `the "${t.label}" screen rendered neither a table nor an empty state — ` +

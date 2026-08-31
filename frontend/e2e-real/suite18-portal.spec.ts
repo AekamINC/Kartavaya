@@ -379,8 +379,24 @@ test('18.00 · preflight — the deployment, the lane account, and the protected
     const health = await page.request.get(`${API}/api/health`);
     expect(health.status(), 'GET /api/health').toBe(200);
     const meta = await health.json();
-    expect(meta.environment, 'this suite must run against STAGING').toBe('staging');
-    expect(meta.schema).toBe('staging');
+    // ⚠ THIS ASSERTED `staging` UNTIL 2026-08-31 AND THERE IS NO STAGING.
+    //
+    // Two separate things went, and this line was wrong about both. The SCHEMA
+    // went on 2026-08-29: migration 241 moved all 258 tables into `public` and
+    // `DROP SCHEMA staging RESTRICT` ran the same evening. The ENVIRONMENT went
+    // with the cutover — `main` IS production, and it is the only place this
+    // product runs.
+    //
+    // So the gate did not protect anything. It refused the only environment
+    // that exists, and it failed 18.00, which is this suite's preflight — every
+    // test below it inherits the verdict. One stale word, fourteen results.
+    //
+    // It is kept as a POSITIVE assertion rather than deleted, because the thing
+    // it was reaching for is real: a suite that writes should know where it is
+    // writing. It now names the only correct answer, so pointing this harness at
+    // anything else still stops it.
+    expect(meta.environment, 'this suite runs against PRODUCTION — there is no other environment').toBe('production');
+    expect(meta.schema, '`public` is the only schema since migration 241').toBe('public');
     expect(meta.db).toBe('connected');
     console.log(`  health: env=${meta.environment} schema=${meta.schema} ` +
       `outbound_mode=${meta.outbound_mode} suppressed=${meta.suppressed_orgs_digest}`);
