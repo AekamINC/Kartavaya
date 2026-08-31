@@ -1083,7 +1083,15 @@ test.describe('Suite 05 — Ganit (Finance, books) · Unicode Group', () => {
       { id: 'e-sign', label: 'e sign', endpoint: '/api/v1/ganit/contracts', empty: /No contracts to sign/i, populated: (p) => p.locator('.gn-list .gn-row') },
       { id: 'billing-profiles', label: 'billing profiles', endpoint: '/api/v1/ganit/billing/profiles', empty: /No billing profiles/i, populated: (p) => p.locator('table tbody tr') },
       { id: 'service-lines', label: 'service lines', endpoint: '/api/v1/ganit/billing/service-lines', empty: /No service lines/i, populated: (p) => p.locator('table tbody tr') },
-      { id: 'metered-usage', label: 'metered usage', endpoint: '/api/v1/ganit/billing/metered-usage', empty: /No usage entries/i, populated: (p) => p.locator('table tbody tr') },
+      // ⚠ `?invoiced=false`, BECAUSE THE PANEL IS FILTERED AND THIS SWEEP IS NOT.
+      // `MeteredUsageTab` opens on `filter = 'unbilled'`, so it asks the server
+      // for uninvoiced rows only. Predicting its row count from the UNFILTERED
+      // endpoint compares two different queries: measured live 2026-08-31,
+      // Unicode holds 18 usage rows and all 18 are invoiced, so the wire said
+      // 18, the screen correctly said "No unbilled usage", and this sweep
+      // reported "18 rows on the wire and paints none of them" about a panel
+      // that was right. The empty text follows the same filter.
+      { id: 'metered-usage', label: 'metered usage', endpoint: '/api/v1/ganit/billing/metered-usage?invoiced=false', empty: /No unbilled usage/i, populated: (p) => p.locator('table tbody tr') },
       { id: 'rate-cards', label: 'rate cards', endpoint: '/api/v1/ganit/billing/rate-cards', empty: /No vendor rate cards/i, populated: (p) => p.locator('table tbody tr') },
       { id: 'sla-credits', label: 'sla credits', endpoint: '/api/v1/ganit/billing/sla-credits', empty: /No SLA credits/i, populated: (p) => p.locator('table tbody tr') },
       { id: 'recurring', label: 'recurring', endpoint: '/api/v1/ganit/recurring', empty: /No recurring invoices/i, populated: (p) => p.locator('.gn-list .gn-row') },

@@ -1839,14 +1839,52 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     expect(attached, 'every follow-up must hang off a contact or a deal').toBe(N_FOLLOWUPS);
 
     // ── Complete one, through the card's own button ───────────────────────
-    // Guarded for the re-run, and backed by an unguarded read-back for the same
-    // reason 04.12's is: a skipped click must not become a silent pass.
+    //
+    // ⚠ THIS TEST USED TO EAT ITS OWN PRECONDITION, ONE RUN AT A TIME.
+    //
+    // It completed a follow-up on EVERY execution, and `ensure()` never
+    // replaced one: `have` is built from open AND completed titles, so a
+    // completed `S04 Follow-up 07` counts as present. Eighteen runs later every
+    // one of the eighteen was done — measured live 2026-08-31, `open_ones: 0`
+    // of 18 — and the pipeline assertion below, which needs an OPEN follow-up
+    // to have anything to mark, failed against a board that was right.
+    //
+    // §6 idempotence was written for creation and not for this step. Two
+    // changes close it: the pool is never driven below one open item, and the
+    // board's evidence is a follow-up this suite keeps open ON PURPOSE.
     await gotoTab(page, 'follow-ups');
+    const openNow = await apiRows(page, '/api/v1/graha/follow-ups?is_completed=false');
     const openCard = p.locator('.gr__card')
       .filter({ has: page.getByRole('button', { name: 'Complete' }) }).first();
-    if (await openCard.count()) {
+    if (openNow.length > 1 && await openCard.count()) {
       await saveAndWait(page, () => openCard.getByRole('button', { name: 'Complete' }).click(),
         /\/follow-ups\/.+\/complete/, 'completing a follow-up');
+    } else {
+      console.log(`  04.13 — Complete NOT pressed: ${openNow.length} follow-up(s) still open, ` +
+        'and driving the pool to zero is what broke this test before. The read-back below ' +
+        'still proves the control works, against the ones already completed.');
+    }
+
+    // ── The board needs an OPEN follow-up ON A DEAL, so keep exactly one ──
+    // Named, so it is recognisable on a re-run and never completed by the step
+    // above (which takes `.first()` and stops at one). It is deliberately NOT
+    // one of §4's eighteen: those are a counted volume, and borrowing one of
+    // them for this would make the count depend on which ran last.
+    const COVER = `${TAG} Follow-up cover`;
+    const openOnDeal = (await apiRows(page, '/api/v1/graha/follow-ups?is_completed=false'))
+      .filter((f: any) => f.deal_id);
+    if (!openOnDeal.length) {
+      await p.getByRole('button', { name: '+ New Follow-up' }).click();
+      const form = p.locator('form.gr__panel');
+      await expect(form, 'the New Follow-up form did not open').toBeVisible({ timeout: 15_000 });
+      const f = (label: string) => form.locator('label.gr__f').filter({ hasText: label }).first();
+      await f('Title *').locator('input').fill(COVER);
+      await setDate(form, 'Due Date *', `${year}-12-15`);
+      await pickByLabel(f('Deal').locator('select'), dealTitle(1), 'deal');
+      await f('Description').locator('input').fill(`${TAG} kept open so the board has something to mark`);
+      await saveAndWait(page, () => form.getByRole('button', { name: /^Create$|^Creating/ }).click(),
+        /\/graha\/follow-ups(\?|$)/, `scheduling ${COVER}`);
+      await expect(form).toBeHidden({ timeout: 20_000 });
     }
     const closed = await apiRows(page, '/api/v1/graha/follow-ups?is_completed=true');
     expect(closed.length,
@@ -1862,7 +1900,11 @@ test.describe('Suite 04 — Graha (CRM) · Unicode Group', () => {
     const covered = pp.locator('.gdeal').filter({ has: page.locator('.gdeal__next') });
     await expect
       .poll(async () => await covered.count(),
-        { message: 'eighteen follow-ups exist and the pipeline board marks not one deal as covered', timeout: 25_000 })
+        { message: 'a follow-up is open against a deal and the pipeline board marks no card '
+          + 'with it. `PipelineTab` keys `next[d.id]` on `deal_id` and draws `.gdeal__next` '
+          + 'from it, so either the follow-up lost its deal or the board is not reading '
+          + 'them — and a board that cannot show what is covered is the whole point of the tab',
+          timeout: 25_000 })
       .toBeGreaterThan(0);
 
     expect(con.errors.filter((e) => e.text.startsWith('UNCAUGHT')),
