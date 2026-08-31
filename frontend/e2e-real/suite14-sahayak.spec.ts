@@ -675,6 +675,30 @@ async function apiRaw(page: Page, pathAndQuery: string) {
   return { status: res.status(), body, text };
 }
 
+/**
+ * How many content items this org holds, read from the ENVELOPE.
+ *
+ * ⚠ `apiOne` CANNOT ANSWER THIS, AND THE ASSERTION IT FED COULD NEVER PASS.
+ * `/v1/hub/org/content` answers
+ *
+ *     { data: [...], total: 2, limit: 1, offset: 0, truncated: false }
+ *
+ * and `apiOne` ends `return body?.data ?? body` — so it hands back the LIST.
+ * `.total` on an array is `undefined`, `Number(undefined ?? 0)` is 0, and
+ * `countBefore` was therefore 0 on every run. The check then read
+ * `expect(0).toBe(0 + 1)`, which is unsatisfiable no matter what the product
+ * does: generating the item cannot change either side.
+ *
+ * Measured live 2026-08-31: `total` is 2. Content generation works and has
+ * worked; the test could not see it. `limit=1` is deliberate — the count comes
+ * from `total`, so there is no reason to drag the rows across.
+ */
+const orgContentTotal = async (page: Page): Promise<number> => {
+  const r = await apiRaw(page, '/api/v1/hub/org/content?limit=1');
+  expect(r.status, `GET /v1/hub/org/content → ${r.status}`).toBeLessThan(400);
+  return Number(r.body?.total ?? 0);
+};
+
 const orgCredits = (page: Page) => apiOne(page, '/api/v1/hub/org/credits');
 const orgSkills = (page: Page) => apiRows(page, '/api/v1/hub/org/skills');
 const hubClients = (page: Page) => apiRows(page, '/api/v1/hub/clients');
@@ -1419,8 +1443,7 @@ test('14.07 content generation, inline image included — the form, the press, a
   const panel = page.locator('[role="tabpanel"]').first();
   await expect(panel).toBeVisible({ timeout: 45_000 });
 
-  const before = await apiOne(page, '/api/v1/hub/org/content?limit=1');
-  const countBefore = Number(before?.total ?? 0);
+  const countBefore = await orgContentTotal(page);
 
   // The seven presets, then the form. Nothing is typed until a preset is
   // chosen — the form does not exist before that, so a spec that went straight
@@ -1470,8 +1493,8 @@ test('14.07 content generation, inline image included — the form, the press, a
   if (r.status >= 200 && r.status < 300) {
     typed = 1;
     // Read the WRITE RESPONSE, then the CANONICAL row.
-    const after = await apiOne(page, '/api/v1/hub/org/content?limit=1');
-    expect(Number(after?.total ?? 0),
+    const after_env = await orgContentTotal(page);
+    expect(after_env,
       'the generate call answered 2xx and the content library did not grow — a POST that ' +
       'reports success and stores nothing is the worst of the three outcomes')
       .toBe(countBefore + 1);
@@ -1493,13 +1516,13 @@ test('14.07 content generation, inline image included — the form, the press, a
     else assertLegibleRefusal(text, `org content generation (${r.status})`, wire);
 
     // The library must not have grown on a refusal.
-    const after = await apiOne(page, '/api/v1/hub/org/content?limit=1');
-    expect(Number(after?.total ?? 0),
+    const after_env = await orgContentTotal(page);
+    expect(after_env,
       'the generate call was REFUSED and the content library grew anyway — a refused write ' +
       'must leave nothing behind').toBe(countBefore);
   }
 
-  const total = Number((await apiOne(page, '/api/v1/hub/org/content?limit=1'))?.total ?? 0);
+  const total = await orgContentTotal(page);
   record('content generated', N_CONTENT, typed, total,
     typed ? '' : `blocked — 402, a ${w.prices?.content ?? 2}-credit charge against a balance of ${w.total}`);
   record('content with an inline image', N_CONTENT_IMAGE, 0, 0,
@@ -2583,7 +2606,7 @@ test('14.23 the ledger — §4 volumes achieved against asked, as live counts', 
   // mid-suite is a number that may have moved.
   const live = {
     'skills on the org shelf': (await orgSkills(page)).length,
-    'content items (org)': Number((await apiOne(page, '/api/v1/hub/org/content?limit=1'))?.total ?? 0),
+    'content items (org)': await orgContentTotal(page),
     'KB documents': (await apiRows(page, `/api/v1/hub/clients/${cid}/kb`)).length,
     'chat sessions (client)': (await apiRows(page, `/api/v1/hub/clients/${cid}/chat/sessions`)).length,
     'scraper runs': (await apiRows(page, '/api/v1/scrapers/runs')).length,
