@@ -7926,3 +7926,87 @@ could build was exempt by construction.**
 
 Backend suites green: 2,197 on the gate band, 885 on niyam, 576 on
 dristi/analytics. `npm run check` exit 0, `npm run build` clean.
+
+---
+
+## 2026-08-31 — QUIET HOURS DESTROYED THE MESSAGE, AND A FIRST MONTH OF CREDITS
+
+Two silent losses, found from opposite ends of the suite programme, both with
+the same signature: **a correct-looking terminal state where a waiting state
+belonged.**
+
+### 16.14 — a suppressed notification was not delayed, it was deleted
+
+    send.deliver     -> Delivery("refused", "it is quiet hours…")
+    NotifySend.run   -> ActionResult("refused")
+    run_pipeline     -> records the step, calls _finish
+    _finish          -> finished_at = NOW(), wake_at = NULL
+
+Nothing re-queued it, no sweep retried it. `send.INTERRUPTING`'s own comment
+records the first armed rule in this product matching at **01:15 IST** and the
+notification simply never happening — so the loss had already been observed,
+written down beside the code, and left.
+
+`prefs_verdict` had the distinction: *"A PREFERENCE is a decision … QUIET HOURS
+are a clock."* A clock that says "not now" needs a "then when", and nothing
+answered it. Now `quiet_until()` does, `Delivery`/`ActionResult` carry
+`retry_after`, and the run sleeps on `wake_at` — the `wait` step's mechanism,
+already proven by 16.15. Migration 244 lets `outcome` be `deferred`.
+
+The constraint is the part worth remembering: `_record` runs OUTSIDE
+`run_pipeline`'s try/except, so a 23514 on the first deferral would have killed
+**the whole drain tick**, every rule in every org. Found by reading
+`pg_constraint` before deploying, not by the failure.
+
+### The mutation that survived, and why
+
+`test_the_resume_cursor_does_NOT_skip_a_deferred_step` asserted on
+`inspect.getsource(cursor_for)`. The function EXPLAINS its predicate in a
+comment directly above the SQL — so deleting the predicate from the SQL left
+the assertion **matching its own documentation**. D3 passed with the defect
+restored.
+
+That is the third recorded instance of a check green over the thing it was
+written to catch (`check-rendered-ids`, `check-table-rows`, this). The general
+form: *a source-reading assertion must exclude the prose that describes the
+source.* Both source assertions in that file strip comments now, and the same
+trap had already caught the `_finish` one in the same session.
+
+### A new org got ZERO credits for its whole first month
+
+`balance_of` heals a missing wallet stamped `period_start = current_period()`,
+and `roll_period` returns early on `period_start >= now_period`. So the wallet
+was born saying "already granted this month" while holding nothing, and the
+plan's allowance did not arrive until the 1st of the NEXT month.
+
+    UK AekamINC     monthly_credits 2000   balance 0   ledger rows 0
+    Unicode Group   monthly_credits 1000   balance 0   ledger rows 0
+
+Both created 2026-08-28. Both paying. Every Sahayak surface answering 402, with
+no error and no log line — an empty wallet looks exactly like a legitimately
+empty one. **Twelve of suite 14's twenty tests cascaded from it.**
+
+Fixed by stamping `previous_period(...)` so the first `roll_period` grants
+through the audited path that writes the ledger row. Granting inline would have
+been the bug `roll_period`'s docstring already names: "why no SUM(amount) in
+this product has ever reconciled to a wallet".
+
+⚠ And it surfaced an older one. `refund` decided "has this allowance been reset
+since?" from `bal.period_start` — a LAGGING value. On the 1st, before anything
+rolls, that equals the spend's period, the cross-period rule does not fire, and
+the refund is returned into a bucket the next roll **zeroes**. Now compared
+against `current_period()`, which is the question actually being asked.
+
+### Also landed
+
+    migration 244   niyam_run_steps.outcome admits 'deferred'
+    8d8cd831        the deferral — 16 tests, 5 mutations
+    4bcd77db        credits + the two exports — 15 tests, 2 mutations
+    b83d337b        the 7-byte export + the injection hole — 16 tests, 8 mutations
+
+`_fetch_report_data`'s overview branch counted archived tasks (109 vs 105) and
+its sales branch counted soft-deleted orders (6 statuses vs 5, a whole
+`cancelled` row of ₹242,725 in a file a partner mails to a client). The rule
+was already written in that function, in its revenue branch: *"an export that
+disagrees with the screen it was taken from is worse than either being wrong
+alone."*

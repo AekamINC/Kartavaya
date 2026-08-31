@@ -2742,3 +2742,54 @@ construction.**
 The frontend tests assert against the CATALOGUE, not against a list — *"the
 chip list has eleven entries"* is the assertion that passed while four families
 were missing, because it was written against the list itself.
+
+---
+
+## 🔴 → ✅ A notification suppressed by quiet hours was DESTROYED (fixed 2026-08-31)
+
+Suite 16.14: *"no run deferred, and none can."*
+
+    send.deliver     -> Delivery("refused", "it is quiet hours…")
+    NotifySend.run   -> ActionResult("refused")
+    run_pipeline     -> records the step, calls _finish
+    _finish          -> finished_at = NOW(), wake_at = NULL
+
+Nothing re-queued it and no later sweep retried it. **The message was gone.**
+Not hypothetical: `send.INTERRUPTING`'s own comment records the first armed
+rule in this product matching at **01:15 IST** and the notification it existed
+to send simply never happening.
+
+`prefs_verdict` had always drawn the distinction the fix needed — *"A
+PREFERENCE is a decision … QUIET HOURS are a clock: this person does not want
+to be INTERRUPTED right now. It says nothing about whether they want the
+message."* Nothing acted on it.
+
+Now: `push_service.quiet_until()` answers **when the window ends**, `Delivery`
+and `ActionResult` carry `retry_after`, and `run_pipeline` sleeps the run on
+`wake_at` — the mechanism the `wait` step already uses and 16.15 already
+proves. Migration **244** widens `niyam_run_steps.outcome` to admit `deferred`.
+
+### The five ways it could have gone wrong, each pinned by a test
+
+| | Trap | Why it matters |
+|---|---|---|
+| 1 | deferring a **preference** refusal | `prefs_verdict` checks preferences FIRST, so at 01:15 both facts are true and produce one refusal. Deferring on the clock alone would override a person's decision with a message at 07:00. The preference gate is now asked on its own with `quiet_hours_apply=False`. |
+| 2 | deferring by an **interval** | "+1 hour" wakes the run inside the same window and defers again, hourly until morning — looking like progress the whole time. |
+| 3 | the resume cursor counting a deferred step **done** | the run wakes, skips the send it woke for, and finishes. The original loss, one layer down. |
+| 4 | `ON CONFLICT DO NOTHING` | the send happens and the history reads "deferred" for ever. |
+| 5 | the **CHECK constraint** | `_record` runs OUTSIDE `run_pipeline`'s try/except, so the first deferral would have raised 23514 and killed the whole **drain tick** — not just that rule. |
+
+### ⚠ One mutation survived the first pass, and it is the lesson
+
+`test_the_resume_cursor_does_NOT_skip_a_deferred_step` read
+`inspect.getsource(cursor_for)` for the predicate — and the function EXPLAINS
+that predicate in a comment directly above it. **Deleting it from the SQL left
+the assertion matching its own documentation.** The same trap had already
+caught the `_finish` assertion in the same file. Comments are stripped before
+both source assertions now.
+
+A source-reading test is only as good as what it excludes. This is the third
+instance in the programme's record of a check that was green over the thing it
+was written to catch (`check-rendered-ids`, `check-table-rows`, and now this).
+
+**Regression:** 1,055 niyam/push/notification tests green.
