@@ -1322,7 +1322,27 @@ test.describe('Suite 06 — Kray (procurement) · Unicode Group', () => {
     const editForm = p2.locator('form.gn-form').filter({ hasText: 'Edit vendor' }).first();
     await expect(editForm, 'the Kray master list offers no way to correct a supplier — ' +
       'a missing control is a FAILURE, never a skip').toBeVisible();
-    const newTerms = String(30 + (Number(RUN.slice(-1)) % 3) * 15);
+    // ⚠ THE NEW VALUE IS DERIVED FROM THE OLD ONE, NOT FROM THE RUN STAMP.
+    //
+    // It was `30 + (RUN.slice(-1) % 3) * 15`, which lands on 30, 45 or 60
+    // depending on the last digit of the clock. `VENDOR_PLAN[1].terms` is '30'
+    // — so one run in three "edited" the field to the value it already held.
+    //
+    // Two things went wrong with that, and the second is the worse one:
+    //
+    //   · the read-back `expect(payment_terms_days).toBe(newTerms)` then
+    //     PASSED WITHOUT THE EDIT DOING ANYTHING. A test that agrees with the
+    //     database about a number neither of them changed proves nothing, and
+    //     it is green — this suite's own recurring fault class.
+    //   · and `saveAndWait` hung its full 90s in wave 4 waiting for a PATCH
+    //     that a no-op submit need never send, which is how it surfaced at all.
+    //
+    // Read live and step off it, so the write is always a real change.
+    const beforeTerms = String((await apiRows(page, '/api/v1/ganit/vendors'))
+      .find((v) => String(v.name) === vendorName(2))?.payment_terms_days ?? '');
+    const newTerms = ['30', '45', '60'].find((t) => t !== beforeTerms) as string;
+    expect(newTerms, 'no payment-terms value differs from the one already stored, so this ' +
+      'edit would be a no-op and the read-back would agree with itself').toBeTruthy();
     await typeInto(
       editForm.locator('label.gn-form__field', { hasText: 'Payment terms' }).first().locator('input.inp'),
       newTerms,
@@ -1335,8 +1355,9 @@ test.describe('Suite 06 — Kray (procurement) · Unicode Group', () => {
     const after = (await apiRows(page, '/api/v1/ganit/vendors'))
       .find((v) => String(v.name) === vendorName(2));
     expect(String(after?.payment_terms_days), 'the Kray edit did not reach the row. The ' +
-      'PATCH answered 2xx, so this is the read-back disagreeing with the write — ' +
-      'which is the only way to tell a saved edit from a discarded one')
+      `PATCH answered 2xx, so this is the read-back disagreeing with the write — ` +
+      `which is the only way to tell a saved edit from a discarded one. It held ` +
+      `${beforeTerms} before this edit and was set to ${newTerms}.`)
       .toBe(newTerms);
     // ⚠ And the address must have SURVIVED an edit that never touched it.
     // `vendorPayload` omits the whole `address` key unless a box was typed in,
