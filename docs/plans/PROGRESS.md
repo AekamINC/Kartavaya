@@ -8795,3 +8795,44 @@ Every run between now and then answers `created: 0, skipped: 4`.
 **Still owed:** a halted organisation is bucketed as `skipped`, indistinguishable
 from "nothing due", in a file whose own banner says a cron that cannot do its job
 must not answer 200. Two tests pin that and say to rewrite them when it is fixed.
+
+
+## 2026-09-01 — the halt bucket, and why its FLOOR is the interesting half
+
+`_sweep_one_org` returned `None` for two different things — "nothing due" and
+"stopped and cannot proceed" — and the caller counted both into `skipped`. An
+organisation stalled since September, with October and November blocked behind
+it, was reported identically to one with nothing to bill, and
+`/cron/platform-billing` answered 200 either way. Railway went green every
+morning over an account that was not being billed.
+
+`Halted` is a NamedTuple carrying org, period and subtotal — the numbers somebody
+needs before opening the billing console, not a bare flag. The sweep returns
+`halted: []` beside `skipped`; the endpoint raises 500 naming every stalled
+organisation and the way out, checked AFTER `failed` because a genuine exception
+is the more urgent of the two.
+
+**The refusal itself was always correct and is unchanged.** A cron does not issue
+a credit note. What changed is that it is now visible.
+
+**The two tests that pinned this were INVERTED, not deleted.** Both carried
+docstrings saying they pinned a defect rather than endorsed it, and that they
+should start failing when the bucket landed. They did.
+
+⚠ **THE FLOOR IS THE HALF THAT MATTERS.** Mutation M4 — report a halt for EVERY
+organisation — would satisfy every assertion about the halt while turning the
+cron red every single morning, which trains whoever watches it to ignore the
+colour. That is worse than the silence it replaced. Three tests hold the green
+path (`test_nothing_due_does_not_produce_a_halt`,
+`test_a_normal_run_reports_no_halt`, `test_the_cron_stays_GREEN_on_a_quiet_run`)
+and M4 fails 20 of them.
+
+Mutation-tested 4/4: M1 (halt returns None again) 2 failed, M2 (folded back into
+skipped) 4 failed, M3 (endpoint stops raising) 1 failed, M4 20 failed.
+
+Live: a quiet run answers 200 with `halted: []`. The RED path is proven by test
+and mutation only — driving it in production would mean writing a real credit
+line against a real billing account to watch a cron go red, which is not a trade
+worth making.
+
+52 tests in the file, 914 across the billing suites.
