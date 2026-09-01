@@ -6,6 +6,8 @@ Reads Manav (HRMS) for employees, attendance, leaves.
 import asyncio
 import calendar
 import json
+
+import asyncpg
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -330,22 +332,50 @@ async def create_structure(
         body.employee_id, org_id,
     ):
         raise HTTPException(404, "Employee not found")
-    row = await pool.fetchrow(
-        "INSERT INTO public.vetana_salary_structures "
-        "(org_id, employee_id, effective_from, ctc_annual, basic, hra, da, "
-        "special_allowance, conveyance, medical, other_allowances, "
-        "pf_enabled, esi_enabled, pt_applicable, tds_regime, notes, created_by) "
-        "VALUES ($1::uuid, $2::uuid, COALESCE(NULLIF($3,'')::date, CURRENT_DATE), "
-        # `::text::jsonb`, not `::jsonb` — see the payslip INSERT below.
-        "$4, $5, $6, $7, $8, $9, $10, $11::text::jsonb, $12, $13, $14, $15, $16, $17) "
-        "RETURNING *",
-        org_id, body.employee_id, body.effective_from,
-        body.ctc_annual, body.basic, body.hra, body.da,
-        body.special_allowance, body.conveyance, body.medical,
-        json.dumps(body.other_allowances),
-        body.pf_enabled, body.esi_enabled, body.pt_applicable,
-        body.tds_regime, body.notes, user["user_id"],
-    )
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO public.vetana_salary_structures "
+            "(org_id, employee_id, effective_from, ctc_annual, basic, hra, da, "
+            "special_allowance, conveyance, medical, other_allowances, "
+            "pf_enabled, esi_enabled, pt_applicable, tds_regime, notes, created_by) "
+            "VALUES ($1::uuid, $2::uuid, COALESCE(NULLIF($3,'')::date, CURRENT_DATE), "
+            # `::text::jsonb`, not `::jsonb` — see the payslip INSERT below.
+            "$4, $5, $6, $7, $8, $9, $10, $11::text::jsonb, $12, $13, $14, $15, $16, $17) "
+            "RETURNING *",
+            org_id, body.employee_id, body.effective_from,
+            body.ctc_annual, body.basic, body.hra, body.da,
+            body.special_allowance, body.conveyance, body.medical,
+            json.dumps(body.other_allowances),
+            body.pf_enabled, body.esi_enabled, body.pt_applicable,
+            body.tds_regime, body.notes, user["user_id"],
+        )
+    except asyncpg.exceptions.UniqueViolationError:
+        # ── `UNIQUE (org_id, employee_id, effective_from)`, AND IT USED TO BE
+        # AN UNEXPLAINED 500. ────────────────────────────────────────────────
+        #
+        # Recording a salary a second time from the same effective date is an
+        # ordinary thing for an administrator to do — a correction typed twice,
+        # a revision entered against the date already on file, a form
+        # resubmitted after a slow response. The constraint is right to refuse
+        # it: two structures effective the same morning would make "what is this
+        # person paid in September" ambiguous, and the payroll run would pick
+        # whichever the planner reached first.
+        #
+        # What was wrong is that the refusal arrived as
+        # `{"detail":"Internal server error"}`. That tells the admin nothing,
+        # names no field, and reads as a product fault rather than a duplicate —
+        # so the natural next action is to try again, which fails identically.
+        #
+        # Found on 2026-09-01 by re-running the payroll seed, not by any test:
+        # the first run created the structure, the second got the 500. A
+        # once-only script would never have seen it. `create_web_form` has
+        # answered 409 for this exact shape since it was written.
+        raise HTTPException(
+            409,
+            f"A salary structure effective {body.effective_from or 'today'} "
+            f"already exists for this employee. Edit that one, or record the "
+            f"revision from the date it actually takes effect.",
+        )
     return dict(row)
 
 
