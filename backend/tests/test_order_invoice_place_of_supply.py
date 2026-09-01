@@ -401,10 +401,39 @@ def _column_list(sql: str) -> list[str]:
     return [c.strip() for c in m.group(1).split(",")]
 
 
+def _split_top_level(s: str) -> list[str]:
+    """Split on commas that are NOT inside parentheses or a quoted literal.
+
+    ⚠ THIS USED TO BE `s.split(",")` AND IT WAS SUBTLY WRONG. The VALUES list
+    contains `NULLIF($14,'')::uuid`, whose own comma made every entry after it
+    shift left by one. Nothing caught it because the only column read back was
+    `place_of_supply`, which sits BEFORE the first NULLIF — a helper that was
+    correct exactly as far as the one caller needed and no further. It surfaced
+    the moment two columns were appended at the end.
+    """
+    out, depth, cur, quote = [], 0, [], False
+    for ch in s:
+        if ch == "'":
+            quote = not quote
+        if not quote:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                out.append("".join(cur).strip())
+                cur = []
+                continue
+        cur.append(ch)
+    if cur:
+        out.append("".join(cur).strip())
+    return out
+
+
 def _value_list(sql: str) -> list[str]:
     m = re.search(r"\)\s*VALUES\s*\((.*)\)\s*RETURNING", sql.strip(), re.S)
     assert m, f"could not read the VALUES list out of:\n{sql}"
-    return [v.strip() for v in m.group(1).split(",")]
+    return _split_top_level(m.group(1))
 
 
 def _bound(sql, args, column):
@@ -714,3 +743,94 @@ def test_the_router_file_is_the_one_under_test(live):
         f"only {len(described)} statements described — the capture stopped "
         f"reaching the conversion path")
     assert pathlib.Path(vikray.__file__).name == "vikray.py"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# THE COMPLIANCE SNAPSHOT — added 2026-09-01
+#
+# `ganit.create_invoice` (:807) and the mark-final path both stamp
+# `resolve_states(...)` onto every document they finalise, so an invoice records
+# the GST configuration it was ISSUED UNDER rather than whatever the org happens
+# to hold when somebody opens it years later. This route named neither
+# `doc_status` nor `compliance_snapshot`, so it rode the column DEFAULT 'final'
+# and took no snapshot at all.
+#
+# Measured live, SELECT-only, 2026-09-01::
+#
+#     ganit_invoices, doc_status='final'                    74
+#       compliance_snapshot IS NULL                         10   ₹2,32,090
+#       …of those, raised from an order                     10   ← every one
+#       compliance_snapshot present                         64
+#
+# One route, and the only one. The ten are NOT back-filled: a snapshot is a
+# statement about the moment of issue, and writing today's settings onto a
+# document raised on 30 August would invent a fact about the past. The live
+# count must STOP GROWING at ten rather than go to zero.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+async def test_the_invoice_records_the_compliance_state_it_was_issued_under():
+    """THE REGRESSION GUARD. The column was simply absent from the INSERT."""
+    pool = await _convert()
+    sql, args = pool.one(INVOICE_INSERT)
+    assert "compliance_snapshot" in _column_list(sql), (
+        "the order-to-invoice INSERT does not name `compliance_snapshot`, so "
+        "every tax invoice raised from a sales order records nothing about the "
+        "GST configuration it was issued under — while all 64 invoices raised "
+        "through Ganit's own paths do"
+    )
+
+
+async def test_the_snapshot_is_cast_because_an_untyped_null_is_a_500():
+    """⚠ `$n::jsonb`, never a bare `$n`.
+
+    `ganit.create_invoice` carries the same note against its own snapshot bind,
+    and CLAUDE.md states the rule in general: an ambiguous parameter expression
+    through PgBouncer turns an untyped parse error into an instant 500. The
+    snapshot is None whenever `resolve_states` has nothing to say, so this is
+    the ordinary path and not an edge case.
+    """
+    pool = await _convert()
+    sql, _ = pool.one(INVOICE_INSERT)
+    cols, vals = _column_list(sql), _value_list(sql)
+    placeholder = vals[cols.index("compliance_snapshot")]
+    assert "::jsonb" in placeholder, (
+        f"compliance_snapshot binds as {placeholder!r} with no cast — an "
+        f"untyped NULL here is a parse error through PgBouncer, and it arrives "
+        f"at the customer as a 500 on Generate invoice"
+    )
+
+
+async def test_whatever_is_bound_is_json_the_column_can_hold():
+    """Not just present — readable. A snapshot bound as a dict rather than a
+    JSON string is accepted by the test double and refused by asyncpg."""
+    import json as _json
+    pool = await _convert()
+    sql, args = pool.one(INVOICE_INSERT)
+    snapshot = _bound(sql, args, "compliance_snapshot")
+    if snapshot is not None:
+        assert isinstance(snapshot, str), (
+            f"compliance_snapshot is bound as {type(snapshot).__name__}, not a "
+            f"JSON string — asyncpg refuses a dict for a jsonb parameter"
+        )
+        _json.loads(snapshot)
+
+
+async def test_the_document_status_is_named_and_not_ridden_from_a_default():
+    """`doc_status` was not in the column list, so a statutory document's status
+    came from a DEFAULT this route does not own. Bound to the same 'final' it
+    always produced — the behaviour is identical, the dependency is gone."""
+    pool = await _convert()
+    sql, args = pool.one(INVOICE_INSERT)
+    cols = _column_list(sql)
+    assert "doc_status" in cols, (
+        "the order-to-invoice INSERT still rides `ganit_invoices.doc_status` "
+        "DEFAULT — a change to that default silently changes what this route "
+        "mints, with no test and no deploy of this file"
+    )
+    vals = _value_list(sql)
+    bound = vals[cols.index("doc_status")]
+    assert bound.strip() == "'final'", (
+        f"doc_status is written as {bound!r}; this route mints a tax invoice "
+        f"and must keep minting a final one"
+    )

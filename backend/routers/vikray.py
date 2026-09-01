@@ -1249,6 +1249,28 @@ async def generate_invoice_from_order(
         "client_id": client_id or "",
     }, order["contact_id"])
 
+    # ── THE COMPLIANCE SNAPSHOT, WHICH THIS ROUTE ALONE WAS NOT TAKING ──────
+    #
+    # `ganit.create_invoice` (:807) and the mark-final path both stamp
+    # `resolve_states(...)` onto every document they finalise, so the invoice
+    # records the GST configuration it was ISSUED UNDER rather than whatever
+    # the org happens to hold when somebody opens it years later. This route
+    # named neither `doc_status` nor `compliance_snapshot` in its INSERT — it
+    # rides the column DEFAULT 'final', so it mints a statutory tax invoice
+    # and takes no snapshot at all.
+    #
+    # Measured 2026-09-01: 10 of the org's 74 final invoices carry no snapshot,
+    # ₹2,32,090 between them, and EVERY ONE of the ten is `from_order = true`.
+    # The other 64 all have one. A single route, and the only one.
+    #
+    # ⚠ THE TEN ARE NOT BACK-FILLED, DELIBERATELY. A compliance snapshot is a
+    # statement about the moment of issue; writing today's settings onto a
+    # document raised on 30 August would be inventing a fact about the past,
+    # which is worse than the gap it closes. The count of unsnapshotted finals
+    # must STOP GROWING at ten — it must not go to zero.
+    from services.compliance_settings import resolve_states
+    compliance_snapshot = await resolve_states(pool, org_id, "ganit")
+
     inv_number = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
     inv = await pool.fetchrow(
         # ⚠ `salesperson_id` — THE ORDER CREDITED SOMEBODY AND THE INVOICE
@@ -1273,7 +1295,12 @@ async def generate_invoice_from_order(
         "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
         "place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, "
         "discount, total, balance_due, notes, created_by, client_id, "
-        "salesperson_id) "
+        # `doc_status` NAMED, not ridden. It is bound to the same 'final' the
+        # column DEFAULT already gives, so today's behaviour is byte-identical
+        # — the point is that this route stops depending on a default it does
+        # not own. `client_billing.py:686` carries the same note, and the
+        # comment forty lines above records what riding it cost the first time.
+        "salesperson_id, doc_status, compliance_snapshot) "
         # ⚠ `$16` IS APPENDED, NOT SLOTTED IN, and that is the house rule rather
         # than untidiness. `$11` is deliberately bound TWICE — `total` and
         # `balance_due` — so renumbering the list to put the place of supply in
@@ -1291,7 +1318,10 @@ async def generate_invoice_from_order(
         # is reported as IGST or as CGST+SGST.
         "VALUES ($1::uuid, $2, $3, 'tax_invoice', CURRENT_DATE, $16, $4, "
         "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13, NULLIF($14,'')::uuid, "
-        "NULLIF($15,'')) "
+        # `$17::jsonb` is CAST, not a bare `$17`. `ganit.create_invoice` carries
+        # the same note against its own snapshot bind: an untyped NULL through
+        # PgBouncer is the parse error that arrives as an instant 500.
+        "NULLIF($15,''), 'final', $17::jsonb) "
         "RETURNING id",
         org_id, order["contact_id"], inv_number, order["is_igst"],
         json.dumps(lines),
@@ -1301,6 +1331,7 @@ async def generate_invoice_from_order(
         client_id or "",
         order["salesperson_id"] or "",
         place_of_supply,
+        json.dumps(compliance_snapshot) if compliance_snapshot else None,
     )
     await pool.execute(
         # Attaching the invoice IS an amendment of the order, and the person who
