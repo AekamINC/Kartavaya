@@ -1462,3 +1462,69 @@ async def _run_and_update_skill(pool, client_skill_id, template, variables, org_
             "UPDATE public.hub_client_skills SET last_run_at = now() WHERE id = $1",
             client_skill_id,
         )
+
+
+@router.post("/cron/ifsc-check", dependencies=[])
+async def check_ifsc_release(x_cron_secret: str = Header("")):
+    """Monthly: has the RBI branch directory been republished?
+
+    ── WHAT THIS DOES AND, MORE IMPORTANTLY, WHAT IT DOES NOT ──────────────
+    It compares the pinned release against the newest published one and says so.
+    **It does not ingest.** That is deliberate and it is the same rule
+    `prepare_ifsc_directory.KNOWN_DIGESTS` enforces: 183,214 rows are about to
+    become the thing that decides which branch a salary is credited to, and
+    "the file at that URL today" is not the same claim as "the file whose rows
+    were counted and whose header was checked". A cron that auto-ingested would
+    replace audited data with unaudited data on a schedule, unattended, and the
+    first sign of trouble would be a payment going to the wrong branch.
+
+    So a new release is NEWS, and acting on it is a person running the script.
+
+    ── WHY A NEW RELEASE IS NOT AN ERROR ──────────────────────────────────
+    This file's rule is that 200 means the work ran. The work here is the CHECK,
+    and a check that successfully finds a newer release has done its job. It
+    answers 200 with `newer_available`, and logs at WARNING so the finding is in
+    the log even if nothing reads the body.
+
+    A failure to REACH the release feed is a different thing and answers 500 —
+    a retry is meaningful, and the next monthly tick is that retry. Answering
+    200 there is precisely the defect this file's header is about: seven
+    handlers that reported success while doing nothing, for months, because
+    `curl -sf` cannot tell the difference.
+    """
+    await _verify_cron(x_cron_secret)
+
+    from services import ifsc_directory
+    from scripts import prepare_ifsc_directory as prep
+
+    try:
+        # Blocking urllib in a thread — the same treatment every other outbound
+        # call in this codebase gets.
+        tag, published = await asyncio.get_running_loop().run_in_executor(
+            None, prep.latest_release)
+    except Exception as exc:                                   # noqa: BLE001
+        log.exception("IFSC release check could not reach the release feed")
+        raise HTTPException(500, f"Could not check for a newer IFSC release: {exc}")
+
+    newer = tag != prep.RELEASE
+    if newer:
+        log.warning(
+            "A newer RBI branch directory is published: %s (%s). The live "
+            "vintage is %s from %s. Run "
+            "`railway run python scripts/prepare_ifsc_directory.py` after "
+            "bumping ifsc_directory.VINTAGE and adding the new digest.",
+            tag, published, ifsc_directory.VINTAGE, prep.RELEASE,
+        )
+
+    return {
+        "checked": True,
+        "vintage": ifsc_directory.VINTAGE,
+        "pinned_release": prep.RELEASE,
+        "latest_release": tag,
+        "latest_published": published,
+        "newer_available": newer,
+        # Named so whoever reads this in a log knows it is not automatic.
+        "action": ("Bump ifsc_directory.VINTAGE, add the digest to "
+                   "KNOWN_DIGESTS, then run scripts/prepare_ifsc_directory.py"
+                   if newer else "none"),
+    }

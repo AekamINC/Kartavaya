@@ -41,6 +41,7 @@
 import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import IfscHint from '../../components/ui/IfscHint';
 import { Empty, BackButton, DataTable, Td } from '../../components/editorial';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
@@ -451,6 +452,7 @@ export default function EmployeesTab({ onUpdate }) {
               <input className="k-formpanel__input" value={form.bank_details.ifsc}
                 placeholder="e.g. HDFC0001234" autoCapitalize="characters"
                 onChange={e => setBank('ifsc', e.target.value)} />
+              <IfscHint value={form.bank_details.ifsc} />
             </Field>
           </div>
           <p className="note note--info" id="emp-uan-help">
@@ -830,6 +832,7 @@ function EmployeeDetail({ id, onBack, onChanged }) {
                 <input className="k-formpanel__input" value={editForm.ifsc}
                   placeholder="e.g. HDFC0001234" autoCapitalize="characters"
                   onChange={e => setEditForm({ ...editForm, ifsc: e.target.value })} />
+                <IfscHint value={editForm.ifsc} />
               </Field>
             </div>
             <p className="note note--info">

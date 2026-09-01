@@ -8484,3 +8484,45 @@ skipped:** the notice-ack localStorage latch (the server already owns the ack an
 persisted) and resetting the retake counter on a successful capture (it would
 hide the no-photo escape hatch from somebody whose camera had failed three times
 and then produced a bad frame).
+
+
+## 2026-09-01 — the IFSC directory, and a defect only a live read-back found
+
+**Shipped:** 183,214 RBI bank branches in R2 as 618 shards under
+`shared/reference/ifsc/rbi-2026-09-01/`, a reader modelled on
+`pin_boundaries.py`, `GET /api/v1/reference/ifsc/{ifsc}`, a branch hint under
+both IFSC fields on the employee form, and `POST /api/internal/cron/ifsc-check`.
+
+**Why R2 and not a table:** public reference data, identical for every tenant,
+replaced wholesale. A table would need RLS, and a table in `public` without it
+is a silent cross-tenant leak — there is nothing tenant-scoped here to leak and
+the way to keep that true is to not create the table.
+
+**Sharding is measured, not guessed.** The obvious key (4-letter bank code) puts
+26,498 SBIN branches in one 3.8 MB object. The next obvious one (the character
+after the mandatory `0`) is worse — it is `0` for almost every bank. The LAST
+character is the only well-distributed one, and it is applied only to the 19
+banks above 2,000 branches: 618 objects, median 5,286 bytes, largest 1,762,330.
+
+⚠ **THE DEFECT.** `ZZZZ0999999` — a bank code that has never existed — came back
+`unavailable`, not `unknown`. A nonexistent bank has no shard, and the reader
+could not tell that from R2 being down. Since `unavailable` must never be drawn
+as a validation failure, the product would have reported a plainly invented IFSC
+as an outage.
+
+**The unit tests could not have caught it.** They served shards from a dict where
+a missing key and a simulated outage both returned `None` — the assertion was
+satisfied by the shape of its own fixture, the same fault this codebase keeps
+finding. **A live read-back found it in one line.** Fixed by putting all 260 bank
+codes in the index; an index without them degrades to "cannot say" rather than
+rejecting every bank.
+
+**The cron reports, it does not ingest.** Auto-ingesting would replace audited
+data with unaudited data on a schedule, unattended, and the first sign of trouble
+would be a payment reaching the wrong branch. A new release is news; acting on it
+is a person running the script after adding the digest.
+
+**Not done:** the Railway cron service is not armed. The endpoint and the CLI
+`--check` (which exits 1 when a newer release exists) are both ready; creating
+the scheduled service is infra and costs compute, so it is left as an explicit
+step rather than done silently.
