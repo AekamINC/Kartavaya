@@ -43,7 +43,7 @@ CLIENT_ROW = {
     "created_by": GANIT_ONLY["user_id"], "contact_count": 0, "deal_count": 0,
 }
 CONTACT_ROW = {
-    "id": CONTACT_ID, "name": "Priya Sharma", "contact_type": "customer",
+    "id": CONTACT_ID, "name": "Priya Sharma", "contact_type": "contact",
     "source": "referral", "company": "Acme Ltd", "client_id": CLIENT_ID,
     "assigned_to": None, "email": "priya@acme.test", "phone": None,
 }
@@ -158,7 +158,11 @@ async def test_a_ganit_only_holder_can_create_a_contact(api_client, ganit_only):
     resp = await api_client.post("/api/v1/graha/contacts", json={
         "name": "Priya Sharma",
         "email": "priya@acme.test",
-        "contact_type": "customer",
+        # `contact` since migration 255 — a customer is a COMPANY, and
+        # `client_id` below is it. This test is about MODULE ACCESS (a
+        # ganit-only holder reaching the contacts route), not about the
+        # vocabulary, so the value just has to be one the column accepts.
+        "contact_type": "contact",
         "client_id": CLIENT_ID,
     })
     assert resp.status_code == 200, resp.text

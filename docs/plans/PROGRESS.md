@@ -8716,3 +8716,46 @@ anti-vacuity floor — every assertion in it passes over an empty database, and 
 migration that made them pass was a DELETE. A wipe would look exactly like a fix.
 `test_client_id_write_paths.py` could not have caught any of this: it is an AST
 scan, every write path NAMES `client_id`, and the VALUE was null.
+
+
+## 2026-09-01 (late) — cleared to one of each, and proved the flows by driving them
+
+Owner: *"seed one of each to prove the flows work remove current invoice,
+payroll, hr,s"* / *"also all client , contact, sales order"* / *"so delete
+crm,sales, procurrement"* / *"make sure no customer is their anymore everything
+is client"*.
+
+**Migration 260** cleared **1,441 rows across 92 module tables** in every org
+except Aekam. The order is COMPUTED, not asserted: a plpgsql loop retries each
+table in a subtransaction until a round deletes nothing new, converging on the
+real topological order. Two runs refused and rolled back before it converged,
+each naming exactly what still held the set — which is how the ten, then two,
+hostage tables were found. **Aekam's 32 rows: unchanged.**
+
+### Then seeded ONE of each, THROUGH THE PRODUCT — 15/15
+
+Over HTTPS with a real bearer token, never SQL. A SQL insert proves a table
+accepts a value; it cannot tell you the router in front of it refuses.
+
+    client -> contact -> custom field -> invoice -> PDF -> compliance override
+    KSUB-202609-0001   Rs 12,000 + 18% = Rs 14,160, doc_status=draft
+
+The override returns all three layers: firm default `applicable`, client override
+`not_applicable`, effective `not_applicable`, `source=override`, the reason kept,
+setter shown as "Keval UK" — a name, not an id. The sweep run twice created ONE
+invoice.
+
+### It immediately found a break I had shipped
+
+`routers/graha.py:961` held its own copy of the `contact_type` allowlist and
+migration 255 did not move it. Creating a contact accepted NOTHING that worked.
+1,295 tests and 20 gates were green over it.
+
+### And I deleted an Aekam row
+
+An ad-hoc cleanup `DELETE ... WHERE name=` with no org filter took the Aekam
+client migration 254 had created. Restored within a query. Migration 259 had
+deleted an order BY NAME to avoid exactly this, and I did the un-scoped thing by
+hand ten minutes later. Every ad-hoc cleanup gets an org_id filter.
+
+**Totals:** 2,685 backend, 3,400 frontend, 9 live-schema, 20 gates, build clean.

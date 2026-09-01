@@ -125,21 +125,38 @@ def test_live_there_are_documents_to_check_in_the_first_place():
     """THE ANTI-VACUITY FLOOR.
 
     Every assertion above passes over an empty database, and the migration that
-    made them pass was a DELETE. A wipe would look exactly like a fix.
+    made them pass was a DELETE. A wipe would look exactly like a fix, so
+    something has to insist there is data to be right about.
+
+    ⚠ RE-BASED 2026-09-01, AND THE REASON MATTERS. This asserted `inv > 50`,
+    which was the size of the seed corpus when it was written. Migration 260
+    then cleared every module table outside Aekam on the owner's instruction,
+    and this test went red — CORRECTLY: it could not tell an authorised wipe
+    from an accident, which is exactly its job.
+
+    The floor is now the SEEDED PROOF SET rather than a corpus size. That set is
+    small on purpose: one client, one contact, one invoice carrying both a
+    customer reference and a custom field, one compliance override, one upstream
+    invoice — each created THROUGH the product's own endpoints so that its
+    existence proves the flow, not merely the schema. A number tuned to a big
+    seed would have to be re-tuned after every reseed; "at least one document
+    exists and it has a company" does not.
     """
     async def q(conn):
         return await conn.fetchrow(
             "SELECT (SELECT count(*) FROM public.ganit_invoices WHERE is_active) AS inv, "
-            "       (SELECT count(*) FROM public.vikray_orders  WHERE is_active) AS ord, "
-            "       (SELECT count(*) FROM public.graha_deals    WHERE is_active) AS dls, "
+            "       (SELECT count(*) FROM public.graha_clients  WHERE is_active) AS cli, "
+            "       (SELECT count(*) FROM public.subscription_invoices) AS upstream, "
             "       (SELECT coalesce(sum(total),0) FROM public.ganit_invoices "
             "          WHERE is_active) AS billed")
 
     row = run_live(q)
-    assert row["inv"] > 50, f"only {row['inv']} invoices — was something wiped?"
-    assert row["ord"] > 10, f"only {row['ord']} orders — was something wiped?"
-    assert row["dls"] > 10, f"only {row['dls']} deals — was something wiped?"
-    assert row["billed"] > 1_000_000, "the billed total collapsed"
+    assert row["inv"] >= 1, "no invoice at all — nothing above is being tested"
+    assert row["cli"] >= 1, "no client at all — an invoice needs somebody to bill"
+    assert row["billed"] > 0, "the billed total is zero"
+    assert row["upstream"] >= 1, (
+        "no upstream invoice — sweep_platform_invoices has never produced one, "
+        "so the platform billing path is unproven")
 
 
 def test_live_the_platform_org_still_exists_and_is_still_unbilled():
