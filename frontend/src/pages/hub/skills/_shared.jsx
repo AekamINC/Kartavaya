@@ -311,6 +311,45 @@ export function stepKind(step) {
 }
 
 /**
+ * Who a skill is for, and when to run it. Migration 261, on every surface.
+ *
+ * The catalogue answered "what is this and what does it cost" and never "is
+ * this mine, and when would I run it" — so 78 cards were 78 names, and the
+ * only way to place one in your week was to know already. `used_by` and
+ * `when_to_run` are prose written per template; nothing parses either.
+ *
+ * It lives here rather than in a tab because it is drawn on the Catalog card,
+ * in the drawer and on the Assigned list, and the price rule two functions
+ * down is the record of what a second copy costs — one template quoted 5
+ * credits on one screen and 99 on the other, from the same endpoint.
+ *
+ * RENDERS NOTHING WHEN BOTH ARE ABSENT, rather than an empty row or an em
+ * dash. A template created before 261, or through the API without these
+ * fields, genuinely has nobody's word on when to run it; a blank labelled
+ * "For" reads as an answer, and there isn't one. Each half is independent for
+ * the same reason — knowing the seat and not the cadence is a real state.
+ */
+export function SkillFit({ template, className = '' }) {
+  const who = (template?.used_by || '').trim();
+  const when = (template?.when_to_run || '').trim();
+  if (!who && !when) return null;
+  return (
+    <p className={`mkt-fit ${className}`.trim()}>
+      {who && (
+        <span className="mkt-fit__i">
+          <span className="mkt-fit__t">For</span>{who}
+        </span>
+      )}
+      {when && (
+        <span className="mkt-fit__i">
+          <span className="mkt-fit__t">When</span>{when}
+        </span>
+      )}
+    </p>
+  );
+}
+
+/**
  * What a pack costs, for BOTH catalogs.
  *
  * This lives here rather than in either tab because it drifted once already:

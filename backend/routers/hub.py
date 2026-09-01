@@ -370,6 +370,16 @@ class SkillTemplateCreate(BaseModel):
     #: Validated by `services.skills.schedule`, which is the same shape
     #: `/cron/skills` selects on.
     trigger_config: dict | None = None
+    #: Who the skill is for, and the cadence a person should run it on —
+    #: migration 261. Prose for a human; nothing parses either of them.
+    #:
+    #: `when_to_run` is NOT `trigger_config` and must not be confused with it:
+    #: this one is the sentence that tells somebody what to PUT in the machine
+    #: schedule ("monthly, days before filing"), and the catalogue went 78
+    #: templates without a single schedule largely because nothing in the
+    #: product ever said what the right one was.
+    used_by: str | None = None
+    when_to_run: str | None = None
 
 
 class SkillScheduleSet(BaseModel):
@@ -2210,11 +2220,18 @@ async def create_skill_template(
 
     row = await pool.fetchrow(
         "INSERT INTO public.hub_skill_templates "
-        "(name, description, category, steps, estimated_credits, icon, trigger_config) "
-        "VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb) RETURNING *",
+        "(name, description, category, steps, estimated_credits, icon, trigger_config, "
+        " used_by, when_to_run) "
+        "VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9) RETURNING *",
         body.name, body.description, body.category,
         json.dumps(steps_with_order), estimated, body.icon,
         json.dumps(trigger) if trigger else None,
+        # Blank is not absent. An empty box on the create form must land as
+        # NULL — the card renders NULL as "nobody has said yet" and an empty
+        # string as a confident nothing, and 261's verify query counts the two
+        # separately for exactly that reason.
+        (body.used_by or "").strip() or None,
+        (body.when_to_run or "").strip() or None,
     )
     return dict(row)
 
@@ -2307,6 +2324,11 @@ async def list_client_skills(
 
     rows = await pool.fetch(
         "SELECT cs.*, t.name as template_name, t.description as template_description, "
+        # Who it is for and when to run it (261). The Assigned tab is the list a
+        # customer actually reads, and a skill nobody can place in their week is
+        # a skill nobody runs — which is most of the reason 234 grants produced
+        # one run between them.
+        "t.used_by, t.when_to_run, "
         "t.category, t.estimated_credits, t.icon, t.steps "
         "FROM public.hub_client_skills cs "
         "JOIN public.hub_skill_templates t ON t.id = cs.template_id "
@@ -3045,6 +3067,9 @@ async def list_org_skills(
         # catalogue endpoint is SELECT * and already had both; only the
         # ASSIGNED list — the one a customer actually reads — did not.
         "t.module, t.skill_type, "
+        # Same reasoning one step further (261): grouping tells you what a skill
+        # IS, these two tell you whether it is yours and when to run it.
+        "t.used_by, t.when_to_run, "
         "t.category, t.estimated_credits, t.icon, t.steps "
         "FROM public.hub_org_skills os "
         "JOIN public.hub_skill_templates t ON t.id = os.template_id "

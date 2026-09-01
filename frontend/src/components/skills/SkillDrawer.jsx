@@ -55,7 +55,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import useExitAnimation from '../../hooks/useExitAnimation';
 import { errText, words, creditLabel } from '../../pages/hub/_shared';
-import { GLYPHS, stepKind } from '../../pages/hub/skills/_shared';
+import { GLYPHS, stepKind, SkillFit } from '../../pages/hub/skills/_shared';
 
 /* ── Marks ───────────────────────────────────────────────────────────────────
    Local and tiny. `components/editorial` owns the product's icon set and none
@@ -279,6 +279,12 @@ export default function SkillDrawer({
 
         <div className="mk-dr__b">
           <p className="mk-c__d">{t.description || 'No description.'}</p>
+
+          {/* Who it is for and when to run it (261). First in the body, above
+              even the blocker: somebody who opens this drawer is deciding
+              whether to ASK for the skill, and that decision starts with
+              whether it is theirs at all. */}
+          <SkillFit template={t} />
 
           {held && (
             <p className="mk-c__blk">

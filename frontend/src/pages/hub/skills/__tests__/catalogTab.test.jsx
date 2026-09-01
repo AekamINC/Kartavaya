@@ -375,3 +375,58 @@ describe('Skill pack catalog · the shelf', () => {
     expect(container.querySelector('.k-surface-theme')).toBeNull();
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Who it is for, and when to run it — migration 261
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// The catalogue answered "what is this and what does it cost" and never "is this
+// mine, and when would I run it". Across 78 templates that made the shelf a list
+// of names nobody could choose between, and it is most of why 234 grants have
+// produced one run between them: nothing in the product ever said when to run
+// anything, so nothing was ever scheduled.
+//
+// The absent case is asserted as hard as the present one. A template written
+// before 261 genuinely has nobody's word on when to run it, and a label with
+// nothing after it reads as an answer.
+
+describe('Skill pack catalog · who it is for and when', () => {
+  it('shows the seat and the cadence when the template carries them', async () => {
+    await mount({
+      packs: [pack({
+        used_by: 'Compliance owner',
+        when_to_run: 'Monthly, days before filing',
+      })],
+    });
+    expect(text()).toContain('Compliance owner');
+    expect(text()).toContain('Monthly, days before filing');
+    // Labelled, so the two are not read as one run-on phrase.
+    expect(text()).toContain('For');
+    expect(text()).toContain('When');
+  });
+
+  it('draws nothing at all when the template carries neither', async () => {
+    await mount({ packs: [pack()] });
+    // Not an empty row, not an em dash, not the labels with blanks after them:
+    // the element is absent. `pack()` sets neither field.
+    expect(container.querySelector('.mkt-fit')).toBeNull();
+  });
+
+  it('draws only the half it has', async () => {
+    await mount({ packs: [pack({ used_by: 'Payroll' })] });
+    const fit = container.querySelector('.mkt-fit');
+    expect(fit).toBeTruthy();
+    expect(fit.textContent).toContain('Payroll');
+    // Knowing the seat and not the cadence is a real state, and the missing
+    // half must not print a "When" with nothing after it.
+    expect(fit.textContent).not.toContain('When');
+  });
+
+  it('treats an empty string the same as a missing value', async () => {
+    // The API normalises blanks to NULL on create, but a template written
+    // directly, or one whose text was cleared, can still arrive as ''. A
+    // confident nothing is worse than an admitted nothing.
+    await mount({ packs: [pack({ used_by: '   ', when_to_run: '' })] });
+    expect(container.querySelector('.mkt-fit')).toBeNull();
+  });
+});

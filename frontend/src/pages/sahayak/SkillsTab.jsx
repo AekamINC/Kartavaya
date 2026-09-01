@@ -64,7 +64,7 @@ import { Resource, StatusPill, useList, useResource, errText } from '../hub/_sha
 import {
   SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, CATEGORY_MODULE, parseSteps,
   extractVariables, runtimeParamsOf, imagedSteps, packPrice, blockersFor,
-  SKILL_TYPES, skillTypeOf,
+  SKILL_TYPES, skillTypeOf, SkillFit,
 } from '../hub/skills/_shared';
 import { ORG_MODULES, moduleEntry, orgModuleColor } from '../org/catalogue';
 import SkillDrawer, { permissionsFor } from '../../components/skills/SkillDrawer';
@@ -390,6 +390,12 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
     if (!needle) return true;
     const hay = [
       r.s.template_name, r.s.name, r.s.template_description, r.s.description,
+      // The seat and the cadence (261). Searching "payroll" should find
+      // everything payroll runs, and "before filing" everything due then —
+      // neither of which appears in a name or a description for most of the
+      // shelf, so without these two the search cannot answer the question the
+      // columns were added to answer.
+      r.s.used_by, r.s.when_to_run,
       CATEGORY_LABELS[r.s.category] || r.s.category, r.module.label, r.module.en,
       TYPE_LABEL[r.type],
       ...r.steps.map(x => words(x.skill_function || x.agent_type || '')),
@@ -638,6 +644,11 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                           </button>
                         </span>
                       </div>
+
+                      {/* Who it is for and when to run it (261) — outside the
+                          head, because the description above it lives in a
+                          <span> and this renders a <p>. */}
+                      <SkillFit template={skill} />
 
                       {/* A data step has no `agent_type`, so it used to render as a
                           bare number with no label at all — observed on the first

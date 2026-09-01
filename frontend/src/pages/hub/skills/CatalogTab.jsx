@@ -82,7 +82,7 @@ import { Empty } from '../../../components/editorial';
 import { Resource, errText, words, creditLabel, useResource } from '../_shared';
 import {
   SkillGlyph, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits, stepKind,
-  blockersFor, packPrice, SKILL_TYPES, skillTypeOf, CATEGORY_MODULE,
+  blockersFor, packPrice, SKILL_TYPES, skillTypeOf, CATEGORY_MODULE, SkillFit,
 } from './_shared';
 import { moduleEntry, orgModuleColor } from '../../org/catalogue';
 import useModuleWrite from '../../../hooks/useModuleWrite';
@@ -518,6 +518,10 @@ function PackCard({
           <SkillStatusPill status={active ? 'active' : request ? 'requested' : 'available'} />
         </div>
         <p className="mkt-card__d">{t.description || 'No description.'}</p>
+
+        {/* Above the steps on purpose: whether a skill is yours, and when you
+            would run it, decides whether the step chain is worth reading. */}
+        <SkillFit template={t} />
 
         {steps.length === 0 ? (
           <p className="mkt-card__d mkt-card__d--warn">

@@ -8957,3 +8957,82 @@ not compiled, and the whole mechanism is dead if `SceneDelegate` builds a plain
 
 ⚠ Neither container has ever been compiled. This makes the declarations agree
 with the source; it cannot say the app runs.
+
+---
+
+## 2026-09-01 · A skill card says who it is for and when to run it
+
+Migration **261** adds `used_by` and `when_to_run` to `public.hub_skill_templates`
+and backfills all **78/78** rows; the Catalog card, the skill drawer and both
+assigned shelves render them, and the org shelf's search covers them so "payroll"
+finds everything payroll runs.
+
+**Why it was the first thing to fix.** The catalogue answered *what is this and
+what does it cost* and never *is this mine, and when would I run it*. Across 78
+templates that made the shelf a list of names nobody could choose between — and
+it is the same gap that keeps the shelf unarmed, because nothing in the product
+ever said what the right schedule was.
+
+**The measurement behind it, all live on 2026-08-31:**
+
+| | |
+|---|---|
+| templates | 78, all active — 59 free (`skill_function`-only), 19 priced |
+| grants | 234 across 3 orgs |
+| `hub_skill_runs` | **1** |
+| `skill_finding_ack` | 0 |
+| ack wiring | **31 of 78** (the "1 of 78" note is dead, and so is "32") |
+| `trigger_config` | **NULL on all 78** |
+| `last_run_at` | **NULL on all 234 grants** |
+
+⚠ **The shelf has never run by itself, and it is not a bug.** `/cron/skills`
+selects on `trigger_config->>'type' = 'cron'`; no template has one, so the sweep
+has matched zero rows every fifteen minutes since it was built. Every other part
+of the chain works — the org-skills loop, the day-of-month predicate, timer
+billing attributed to `assigned_by`, and the arming control
+`PUT /v1/hub/skills/templates/{id}/schedule`, whose own docstring says "there was
+no bug to find — there was no way to write the column". The way exists and has
+never been used on a single template. `when_to_run` is the column that makes
+arming decidable: a row reading "monthly, days before filing" is a row somebody
+can arm without asking an accountant first.
+
+**Two columns, not one blob**, so both halves are data: `used_by` makes the
+shelf filterable by seat (45 distinct seats across the 78), `when_to_run` is the
+cadence. Neither is parsed by anything.
+
+**Deliberately NOT added: `next_actions`.** The obvious companion is "what you
+can do with the result", and today the honest answer for all 78 is *read it, and
+go do the work somewhere else* — `Findings.jsx` offers Dismiss and Undo and
+nothing more. A stored column saying "creates tasks" would advertise a button
+that does not exist, on the screen a customer buys from. When those actions are
+built the field must be **derived from the steps** the way `permissionsFor`
+already derives what a skill reads and writes; a hand-kept list drifts silently.
+
+**Guards.** `SkillFit` renders nothing when both columns are absent rather than a
+label with a blank after it — a template written before 261 genuinely has
+nobody's word on when to run it, and each half is independent because knowing the
+seat and not the cadence is a real state. Blank is normalised to NULL on create:
+an empty string is a confident nothing, and 261's verify query counts the two
+separately.
+
+**Tests.** `backend/tests/test_skill_card_says_who_and_when.py` — 7 offline, 3
+live. The statements are collected from `routers/hub.py` **via the AST** rather
+than retyped, so a test cannot pass over a router that has dropped the column,
+and `ast` folds implicit string concatenation while ignoring the interleaved `#`
+comments. It carries an anti-vacuity floor (five statements name the table; two
+of them fetch `t.icon` and therefore draw a card) — without it every assertion is
+a loop that runs zero times. The live half uses `prepare()`: Parse and Describe
+only, nothing executed, because staging shares production's database. Four new
+render tests in `catalogTab.test.jsx`. Both checks were **proven to fail** on the
+regression they are written against before being kept.
+
+Green: 803 backend across the skill suites, 93 frontend component tests,
+`npm run build`, `npm run check` (exit 0). Supabase security advisor after the
+DDL: no `rls_disabled_in_public`, no `security_definer_view` — `hub_skill_templates`
+appears only under the documented deny-all posture.
+
+**Next, in leverage order:** arm the 59 free checks against the statutory
+calendar (no new code — they cost 0 credits, call no model and write nothing);
+deliver the output rather than waiting to be visited; then close the loop with a
+verb per finding. Full plan and the per-skill action map are in the session
+memory's `skills_catalogue_state`.

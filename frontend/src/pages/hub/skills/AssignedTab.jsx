@@ -4,7 +4,7 @@ import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
 import { Empty } from '../../../components/editorial';
 import { Resource, StatusPill, errText, words, creditLabel } from '../_shared';
-import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits } from './_shared';
+import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits, SkillFit } from './_shared';
 
 export default function AssignedTab({ clientId, state, costs, onBrowse, onRan }) {
   const { pushToast } = useToast();
@@ -85,6 +85,11 @@ export default function AssignedTab({ clientId, state, costs, onBrowse, onRan })
                   </span>
                 </span>
               </div>
+
+              {/* Outside sk-card__head, not inside it: the description above
+                  sits in a <span> and SkillFit renders a <p>, which a span may
+                  not contain. */}
+              <SkillFit template={skill} />
 
               <div className="sk-flow">
                 {steps.length === 0 ? (

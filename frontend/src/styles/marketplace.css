@@ -280,6 +280,30 @@
 }
 .mkt-card__d--warn { color: var(--warn); }
 
+/* ── Who it is for, and when to run it ─────────────────────────────────────
+   Migration 261. It sits under the description and ABOVE the step chain,
+   because "is this mine, and when would I run it?" is the question somebody
+   has BEFORE "how does it work" — and a shelf of 78 names is unusable until
+   something answers it.
+
+   No `text-transform` anywhere in here, deliberately: `.mkt-need` beside it
+   capitalises, and these two columns are prose, so borrowing that class would
+   render "Monthly, before the 3B payment" as "Monthly, Before The 3B Payment".
+   The label is the only thing that shouts. */
+.mkt-fit {
+  margin: 0;
+  display: flex; flex-wrap: wrap; gap: 2px var(--sp-2);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  line-height: 1.5;
+  color: var(--on-surface-2);
+}
+.mkt-fit__i { display: inline-flex; align-items: baseline; gap: 5px; }
+.mkt-fit__t {
+  font-size: var(--t-label-sm);
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
 /* The step chain. An ordered list, because the order is the whole point — the
    dispatcher runs them top to bottom and hands each one's output on. */
 .mkt-flow { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--sp-1); }
