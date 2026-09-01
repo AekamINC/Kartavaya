@@ -93,8 +93,14 @@ this file exists to stop.
 ### 🔴 STILL OPEN
 
 - **iOS has never been compiled.** Xcode project scaffolded (`frontend/ios`,
-  Capacitor — not `mobile/`) and the Info.plist permission strings written;
-  needs a Mac with Xcode and an Apple Developer account.
+  Capacitor — not `mobile/`); needs a Mac with Xcode and an Apple Developer
+  account. Both containers now declare Pahchan's camera and location, and iOS
+  asks for location in context via a `WKUserScript` wrapping
+  `navigator.geolocation` — Android had declared only `INTERNET`, which made
+  Capacitor's own permission handling unreachable with no dialog shown, and
+  WKWebView never asks for geolocation because no delegate for it exists. All of
+  it written from documented behaviour; **a device is the only thing that can
+  settle it.**
 - **PIN directory refresh blocked** — no source URL was ever recorded and
   data.gov.in 404s without a key. An unverified mirror is not an acceptable
   substitute for data that decides customer districts.

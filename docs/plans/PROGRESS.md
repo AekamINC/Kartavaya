@@ -8922,3 +8922,38 @@ after it shipped in `7362995d`. Re-deriving state from memory instead of reading
 the code is the habit that file exists to stop.
 
 3,410 frontend tests, 20 gates, build clean.
+
+## 2026-09-01 — the containers declare what Pahchan asks the device for (`21547295`, `962e2791`)
+
+Pahchan's clock-in needs a selfie and a location and asks for both with the plain
+browser APIs, so one code path serves the browser, the Android WebView and the
+iOS WKWebView. Neither container was configured for them, and every failure mode
+was silent.
+
+Android declared only `INTERNET`. Capacitor already requests CAMERA and both
+location permissions at runtime, but the framework refuses an undeclared runtime
+permission immediately and shows no dialog, so that handling was unreachable.
+
+iOS could not ask for location at all. There is a delegate callback for camera
+capture — Capacitor answers it `.grant`, which is why the camera needed nothing —
+and none for geolocation: a WKWebView inherits the host app's authorization, and
+with none the callback never arrives.
+
+The prompt is in context, not at launch: a `WKUserScript` at `.atDocumentStart`
+wraps `navigator.geolocation`, so the first call from anywhere in the web app
+raises the prompt and is then replayed into the original function. No web code
+changed. `capacitorDidLoad()` is the hook — `webViewConfiguration(for:)` looks
+right and is wrong, because Capacitor replaces `userContentController` after it
+returns.
+
+No microphone permission on either platform: both `getUserMedia` calls pass
+`audio: false`.
+
+The ratchet derives the required permissions from what the source actually calls,
+and checks the half Xcode will not: a `.swift` missing from `project.pbxproj` is
+not compiled, and the whole mechanism is dead if `SceneDelegate` builds a plain
+`CAPBridgeViewController`. 16 tests; eight mutations across the two commits fail
+1 each.
+
+⚠ Neither container has ever been compiled. This makes the declarations agree
+with the source; it cannot say the app runs.
