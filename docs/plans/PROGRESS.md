@@ -8369,3 +8369,78 @@ the LAST editor survives, so two edits in sequence leave one name; and
 that timeline should carry system events is an owner call, not a bug fix, and
 adding a type the create route rejects would put rows on a screen with no
 icon, no label and no way for a user to have made them.
+
+## 2026-09-01 — the full 93 V5 pass, run against one clean host
+
+Everything below was run with `E2E_BASE_URL=https://kartavaya.pages.dev`, because
+`app.kartavaya.com` is serving a poisoned edge entry (see STATUS.md). Same
+deployment, clean cache.
+
+    wave 1  29/0     suite 11  13/0    suite 17  12/0
+    wave 2  59/2     suite 12  12/0    suite 18  14/0
+    wave 3  63/14    suite 13  17/0    suite 19   9/0
+    wave 4  28/1     suite 14  20/4    suite 20  14/2
+                     suite 15  11/2    suite 21  43/2 (+3 blocked, mobile)
+                     suite 16  16/5    suite 22  12/1
+
+**372 passed · 33 failed** across 405 executions. Suite 03 runs in two waves and
+is counted in both, as it always has been.
+
+### What moved
+
+12.10 and 17.11 were floors measuring the wrong thing and are now green — both
+suites went 11/1 → 12/0. Suite 18 went 13/1 → 14/0, suite 19 8/0+0/1 → 9/0.
+Wave 2 went 54/7 → 59/2 on the seven repairs.
+
+**Suite 21 went 27/10 → 43/2** and none of the sixteen recovered checks was a
+product change: the freshly-installed APK simply held no runtime permissions, so
+the punch section sat on "Allow Kartavaya to take pictures". `pm grant` for
+CAMERA / ACCESS_FINE_LOCATION / POST_NOTIFICATIONS plus a cold start recovered
+them. It also needed `ANDROID_SERIAL` — two emulators are attached, so a bare
+`adb shell` fails with "more than one device" and the script read that as "the
+app is not installed".
+
+**Suite 16 was 1 failed / 20 DID NOT RUN** until `E2E_CRON_SECRET` was supplied
+from Railway for the run only. Without it the engine's clock cannot be advanced,
+and the first test aborted the other twenty — the abort-hides-everything shape
+suite 05 already records. With it: 16/5.
+
+### A hypothesis I had, and checked, and was wrong about
+
+Wave 3 gained three Pahchan failures (09.8, 09.9, 09.11). Suite 21 had just
+written real punches to the same org, so I expected data-race fallout. **It was
+not.** All three say the same thing: *"09.7 owns today's punches and there are
+none on the register."* 09.7 is the known camera failure, the date rolled to
+1 September, and today therefore holds no punches — one root, three cascades,
+correctly reported. Worth recording because the plausible explanation and the
+true one pointed at different places.
+
+### The reds that remain, and what they are
+
+Correct refusals, unchanged: 05.05 (rejection lives on `manav_expense_claims`,
+which HAS approve/reject and shows 2 approved / 1 rejected / 9 pending — a real
+module boundary, not a gap), 05.08 and 05.15 (the outbound fence, deliberate),
+05.13, 05.17, 08.5, 08.9, 09.5 (26 is correct), 09.7 (patch refuted — a
+`videoWidth > 0` guard passes where `drawImage` is a no-op, so it would go green
+over a blank JPEG in a biometric product).
+
+**08.8 is a floor telling the truth**: at ₹9,308 the org's own Gujarat band
+(9000–11999) charges ₹175 and Maharashtra's (7501–10000) charges ₹175 too, so
+the run cannot distinguish reading the state from reading the salary.
+
+Product-side and design-level, filed not fixed: **20.05** (11 rows off `--row-h`
+across 9 screens; `manav#notices` at 137.6px against a 50px token), **20.13** (a
+DateInput popover inside a Modal drawn where it cannot be clicked — shared
+component, ~64 call sites), **22.93** (`button.k-dock__pill` intercepting 8
+controls across 8 screens; a fixed corner dock covers whatever sits bottom-right
+and `--k-dock-clear` only rescues the last row).
+
+Probably flaky, not yet re-run: **03.8** (a kanban drag fired no PATCH) and
+**10.16** (an exact §4 count on an org that accumulates — the same shape as
+17.11, which was fixed by asserting the invariant instead of the total).
+
+**Mobile 21's two reds:** a task typed on the phone has no credential to reach
+the server, and "the queue survives a force-stop" reads `None` rather than `0`
+after a cold launch — **a missing badge and an empty queue look identical**, and
+`run-as` cannot read the MMKV store on a release APK, so that one is unresolved
+rather than a defect.
