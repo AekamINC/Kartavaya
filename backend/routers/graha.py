@@ -5244,7 +5244,22 @@ async def get_document(
     )
     if not row:
         raise HTTPException(404, "Document not found")
-    return dict(row)
+    # ── RE-SIGNED ON READ, BECAUSE THE STORED ONE IS DEAD IN NINE HOURS ─────
+    #
+    # `file_url` is persisted already-signed with `X-Amz-Expires=32400`.
+    # Measured 2026-09-01: 18 of 18 CRM documents and 6 of 6 signing documents
+    # carry a signature and an expiry; none is unsigned. So the column is a
+    # SNAPSHOT OF A LINK, correct for nine hours and a dead 403 after that.
+    #
+    # `list_documents` (:4998) already re-signs every row it returns, which is
+    # why the list works and opening one document did not. Same block, same
+    # fallback: if R2 is unconfigured `sign_key` returns None and the response
+    # is byte-identical to before.
+    from services.storage import sign_key
+    d = dict(row)
+    if d.get("file_key"):
+        d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
+    return d
 
 
 @router.patch("/documents/{doc_id}")
@@ -5296,7 +5311,15 @@ async def update_document(
     )
     if not row:
         raise HTTPException(404, "Document not found")
-    return dict(row)
+    # RETURNING * hands back the STORED `file_url`, which is a nine-hour
+    # presigned link and usually already expired — see `get_document` above.
+    # A rename that answered 200 with a dead link is the worse half of this
+    # bug, because the caller has just been told the write succeeded.
+    from services.storage import sign_key
+    d = dict(row)
+    if d.get("file_key"):
+        d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
+    return d
 
 
 @router.delete("/documents/{doc_id}")

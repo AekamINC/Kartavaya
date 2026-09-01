@@ -2337,7 +2337,19 @@ async def get_contract(
         )
         invoices = [dict(r) for r in inv_rows]
 
-    return {"contract": dict(row), "invoices": invoices}
+    # ── RE-SIGNED ON READ, for the reason `graha.get_document` records ─────
+    #
+    # `ganit_contracts.file_url` is persisted already-signed with a nine-hour
+    # expiry, so the stored value is a dead 403 for most of the life of the
+    # row. `list_expenses` and the org logo (:1222) already re-sign from their
+    # key through the same helper; a contract — the document a signature is
+    # collected against — did not.
+    from services.storage import sign_key
+    contract = dict(row)
+    if contract.get("file_key"):
+        contract["file_url"] = (
+            await sign_key(org_id, contract["file_key"]) or contract.get("file_url", ""))
+    return {"contract": contract, "invoices": invoices}
 
 
 # ── E-Signature ─────────────────────────────────────────────
