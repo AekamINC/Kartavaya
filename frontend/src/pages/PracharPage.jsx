@@ -21,7 +21,8 @@
 // The Month/Week control and the chips live on the Campaigns tab rather than in
 // the header, because seven of the eight tabs are not a calendar and a control
 // that does nothing on the tab you are looking at is worse than no control.
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -70,13 +71,27 @@ const TABS = [
 ];
 
 export default function PracharPage() {
-  // Tab prefs (proposal 67). This page reads its tab from local state only —
-  // no URL param, no route state — so the starred default decides where the
-  // module opens; `picked` (a click, or the header's + Schedule) wins from the
-  // first choice.
+  // Tab prefs (proposal 67) still decide where the module opens when the URL
+  // says nothing; the starred default is the fallback, not the state.
   const prefs = useTabPrefs('prachar', TABS.map(([id]) => id), { fallback: 'campaigns' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // ── The open tab lives in the URL ──────────────────────────────────────
+  // `?tab=<id>` is the source of truth, so this page can be opened in a new
+  // browser tab on the section you were actually looking at. Precedence is URL,
+  // then the starred default. There is no third source — `setTab` writes the
+  // URL, so every existing caller keeps working and there is exactly one answer
+  // to "which tab is open". An unknown `?tab=` falls through to the default.
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.some((([id]) => id === urlTab)) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const [customize, setCustomize] = useState(false);
   // Opens the Campaigns tab with its scheduler already open. Same nonce pattern
   // as GrahaPage's `newDealNonce`: a counter rather than a boolean, so pressing

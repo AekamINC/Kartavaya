@@ -351,11 +351,19 @@ export default function TodayPage({ teams = [] }) {
     </>
   );
 
-  // Every row lands on the task list, not on the task. `TasksListPage` reads no
-  // query parameter and there is no route that opens the drawer, so there is
-  // nothing to deep-link to yet; the handler takes the task so the call sites
-  // are already correct when there is. See the report.
-  const openTask = () => navigate('/tasks');
+  /* Every row now lands on the TASK, not merely on the list.
+   *
+   * The comment here used to read "there is nothing to deep-link to yet; the
+   * handler takes the task so the call sites are already correct when there
+   * is." There is now: `TasksListPage` holds the open task in `?task=`. The
+   * call sites were indeed already correct — this is the one line that changed.
+   *
+   * The id is still checked, because a row without one must land on the list
+   * rather than on `/tasks?task=undefined`. */
+  const openTask = (task) => {
+    const id = task?.task_id || task?.id;
+    navigate(id ? `/tasks?task=${encodeURIComponent(id)}` : '/tasks');
+  };
 
   return (
     <div className="k-screen k-today">

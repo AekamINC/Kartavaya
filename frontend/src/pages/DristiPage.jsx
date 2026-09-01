@@ -18,7 +18,8 @@
 // `dristi` is in STAFF_MODULES while ganit, manav and vetana deliberately are
 // not. So the strip renders the figures the caller may actually see and simply
 // omits the rest — a 403 on payroll must not take the whole dashboard down.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -56,21 +57,6 @@ const TABS = [
 const DEEP_TAB_IDS = new Set([...TABS.map(([id]) => id), 'analytics', 'clients']);
 
 export default function DristiPage() {
-  // Tab prefs (proposal 67). This page reads its tab from local state; the
-  // ONE outside voice is ?tab=, read ONCE at mount (the same consumed-once
-  // discipline AnalyticsTab applies to ?preset=, and read FIRST — before the
-  // surface it names exists). The three orphan-module doors land here as
-  // /dristi?tab=analytics&preset=<key>, and an explicit deep link outranks
-  // the starred default exactly as ?preset= outranks a saved view. From
-  // window.location, not a router hook — this page holds its tab in local
-  // state and mounts outside any Route in tests. After that first read,
-  // `picked` (a click, or the header's + Add chart) wins as before.
-  const [picked, setTab] = useState(() => {
-    try {
-      const t = new URLSearchParams(window.location.search).get('tab');
-      return t && DEEP_TAB_IDS.has(t) ? t : null;
-    } catch { return null; }
-  });
   const [customize, setCustomize] = useState(false);
 
   // Proposal 62's "two doors into one room": the analytics tab renders the
@@ -108,7 +94,28 @@ export default function DristiPage() {
   // job: a saved order from before those tabs existed keeps its slots and the
   // newcomers queue behind it.
   const prefs = useTabPrefs('dristi', tabDefs.map(([id]) => id), { fallback: 'overview' });
-  const tab = picked ?? prefs.defaultTab;
+
+  // ── The open tab lives in the URL ────────────────────────────────────────
+  // The URL is now the source of truth for which tab is open — precedence is
+  // URL, then the starred default — so the page can be opened in a second
+  // browser tab and lands where the reader was, and the orphan-module doors'
+  // /dristi?tab=analytics&preset=<key> is honoured for the life of the page
+  // rather than only its first frame. Validated against DEEP_TAB_IDS, not
+  // `tabDefs`: analytics and clients join `tabDefs` only once the catalogue
+  // lands, and a link to either must survive the frames before it does.
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = DEEP_TAB_IDS.has(urlTab) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others (?preset=), and a fresh URLSearchParams would silently
+      // drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
 
   const Active = (tabDefs.find(([id]) => id === tab) || tabDefs[0])[1];
   // `key` is destructured out, never spread: React 19 drops a `key` inside a

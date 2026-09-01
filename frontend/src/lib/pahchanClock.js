@@ -103,10 +103,19 @@ export function captureGeoFix() {
             // accuracy with no altitude says nothing. Absent stays absent, and
             // the server records "not reported" — the honest answer for a phone
             // indoors and for every device with no barometer.
+            //
+            // ⚠ THE KEYS ARE ALWAYS PRESENT, EXPLICITLY NULL WHEN THERE IS NO
+            // VERTICAL FIX. A first version of this guard spread the pair in
+            // only when it was valid, which left the keys ABSENT — and
+            // `__tests__/pahchanClock.test.js` caught it: "a silent altimeter
+            // must not be placed at sea level" asserts `toBeNull()`, and it got
+            // `undefined`. Pydantic treats absent and null identically, so the
+            // server never noticed; the payload shape changed for no gain.
+            // Saying null out loud is the same fact stated rather than implied.
             ...(typeof c.altitudeAccuracy === 'number' && c.altitudeAccuracy > 0
                 && typeof c.altitude === 'number'
               ? { altitude_m: c.altitude, altitude_accuracy_m: c.altitudeAccuracy }
-              : {}),
+              : { altitude_m: null, altitude_accuracy_m: null }),
           });
         },
         () => done(null),

@@ -4,6 +4,7 @@
 // per tab, applied BEFORE any restyle so the styling diff stays reviewable.
 // Now on the shared .mh/.mt/.mk chrome from 13-module-pages.md §1.
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
@@ -55,12 +56,31 @@ import NoticesTab from './manav/NoticesTab';
 const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'commission', 'bonus', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits', 'custody', 'dsc', 'udin', 'notices', 'logins', 'analytics'];
 
 export default function ManavPage() {
-  // Tab prefs (proposal 67). This page reads its tab from local state only —
-  // no URL param, no route state — so the starred default decides where the
-  // module opens, and `picked` wins from the first click.
+  // Tab prefs (proposal 67) still decide where the module opens by default.
   const prefs = useTabPrefs('manav', TABS, { fallback: 'employees' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // The open tab lives in the URL — `?tab=<id>` is the source of truth, so a
+  // tab can be linked, bookmarked, and opened in a second browser tab. It used
+  // to be `useState(null)`, which meant a new tab always landed on the starred
+  // default no matter which of these twenty the reader was working in.
+  //
+  // Precedence is URL, then the starred default. There is no third source —
+  // `setTab` writes the URL, so every existing caller keeps working and there
+  // is exactly one answer to "which tab is open". An unknown `tab=` (the value
+  // comes from a URL a stranger can edit) falls through to the default rather
+  // than rendering an empty panel. `replace: true` on a switch is deliberate:
+  // hopping tabs must not fill the history stack.
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.includes(urlTab) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const [customize, setCustomize] = useState(false);
   // `key` is destructured out, never spread: React 19 drops a `key` inside a
   // spread, and the changing key IS the mechanism — see `GrahaPage.jsx:67`.

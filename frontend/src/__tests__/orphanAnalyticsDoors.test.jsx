@@ -66,8 +66,21 @@ const expectBilingual = (door) => {
   expect(hi).toHaveAttribute('aria-hidden', 'true');
 };
 
-const mount = (node) => render(
-  <MemoryRouter>
+/**
+ * ⚠ THE ROUTER'S LOCATION IS THE URL NOW, NOT `window.location`.
+ *
+ * `DristiPage` used to read `window.location.search` directly, so a
+ * `window.history.pushState` before the mount was enough to set `?tab=`. It
+ * reads `useSearchParams` now — so that it can WRITE the tab back and a second
+ * browser tab lands where the reader was — and that hook reads the ROUTER's
+ * location, which a bare `<MemoryRouter>` starts at `/`.
+ *
+ * So the entry is passed in. The `pushState` calls below are kept because the
+ * doors themselves are plain anchors whose hrefs the assertions read, and
+ * because leaving them proves the page no longer depends on them.
+ */
+const mount = (node, path = '/') => render(
+  <MemoryRouter initialEntries={[path]}>
     <ToastProvider>{node}</ToastProvider>
   </MemoryRouter>,
 );
@@ -217,7 +230,7 @@ describe('the ?tab= deep link on DristiPage', () => {
   it('?tab=analytics&preset=automation opens the analytics tab AND activates the preset', async () => {
     window.history.pushState({}, '', '/dristi?tab=analytics&preset=automation');
     mockAnalyticsApi();
-    const { container } = mount(<DristiPage />);
+    const { container } = mount(<DristiPage />, '/dristi?tab=analytics&preset=automation');
 
     // The page leaves Overview the moment the catalogue lists the analytics
     // tab — the door did not land on the default.
@@ -237,7 +250,7 @@ describe('the ?tab= deep link on DristiPage', () => {
   it('an unknown ?tab= falls through silently to the normal resolution', async () => {
     window.history.pushState({}, '', '/dristi?tab=no-such-tab');
     mockAnalyticsApi();
-    mount(<DristiPage />);
+    mount(<DristiPage />, '/dristi?tab=no-such-tab');
     // Overview — the page's own opening tab — mounts as if no param existed.
     await screen.findByTestId('overview-stub');
   });

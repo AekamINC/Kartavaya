@@ -2,6 +2,7 @@
  * TasksListPage.jsx — editorial Tasks screen with resizable + toggleable columns.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSkeletonGate } from '../hooks/useSkeletonGate';
 import { api } from '../lib/api';
 import { sharedGet } from '../lib/sharedGet';
@@ -108,7 +109,33 @@ export default function TasksListPage() {
   const [filter,       setFilter]       = useState('all');
   const [sortCol,      setSortCol]      = useState(null);
   const [sortDir,      setSortDir]      = useState('asc');
-  const [drawerTaskId, setDrawerTaskId] = useState(null);
+  /* ── THE OPEN TASK LIVES IN THE URL ──────────────────────────────────────
+   *
+   * This was `useState(null)`, and it is why a task could not be opened in a
+   * new tab EVEN IN PRINCIPLE. `DashboardPage.jsx` says so in its own comment:
+   * "Every row lands on the task list, not on the task ... there is nothing to
+   * deep-link to yet." A task is the core entity of a PM product and it was the
+   * one record with no address — deals and orders both had one.
+   *
+   * `?task=<id>` and not a `/tasks/:id` route, because the drawer is an OVERLAY
+   * on the list rather than a separate screen: the list's filters, sort and page
+   * all stay in the same URL, so a link carries the whole view and not just the
+   * record. Opening it in a second tab reproduces exactly what the sender saw.
+   *
+   * `replace: true` — opening and closing a drawer must not fill the back
+   * button with one entry per task glanced at.
+   */
+  const [params, setParams] = useSearchParams();
+  const drawerTaskId = params.get('task') || null;
+  const setDrawerTaskId = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating rather than replacing: this page carries the column and filter
+      // params too, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      if (next) p.set('task', next); else p.delete('task');
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const [newTaskOpen,  setNewTaskOpen]  = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [page,         setPage]         = useState(1);

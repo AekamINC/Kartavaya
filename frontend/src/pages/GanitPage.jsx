@@ -11,7 +11,8 @@
 // "Ganit · Finance". "Invoicing" was a paraphrase, and a narrower one than the
 // module: the tab bar below carries expenses, payables, bank, contracts and
 // timesheet, none of which is invoicing.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -90,13 +91,31 @@ const lakh = n => {
 
 export default function GanitPage() {
   // Tab prefs (proposal 67): order and the opening tab are the user's own.
-  // This page reads its tab from nowhere deeper than local state — no URL
-  // param, no route state — so the starred default IS the opening tab, and
-  // `picked` (any explicit choice, the header's + Invoice included) wins from
-  // the first click.
   const prefs = useTabPrefs('ganit', TABS.map(([id]) => id), { fallback: 'invoices' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // ── The open tab lives in the URL ──────────────────────────────────────
+  //
+  // The comment here used to say this page read its tab "from nowhere deeper
+  // than local state — no URL param". That is no longer true: `?tab=<id>` is
+  // the source of truth, so a tab can be linked, opened in a new browser tab,
+  // and survives a refresh. An unknown `?tab=` falls through to the default.
+  //
+  // Precedence is URL, then the starred default. There is no third source —
+  // `setTab` writes the URL, so every existing caller (the header's + Invoice
+  // included) keeps working and there is exactly one answer to "which tab is
+  // open". `replace: true` keeps five tab clicks out of the back button.
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.some(([id]) => id === urlTab) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
+
   const [customize, setCustomize] = useState(false);
   const [newInvoiceNonce, setNewInvoiceNonce] = useState(0);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];

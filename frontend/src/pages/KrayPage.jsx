@@ -3,7 +3,8 @@
 // Moved out of GanitPage so procurement is independently grantable, visible
 // in the sidebar, and separately sellable. Same module-page pattern as every
 // other module (ModuleHeader, ModuleTabs, KpiStrip).
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -44,8 +45,21 @@ const lakh = n => {
 
 export default function KrayPage() {
   const prefs = useTabPrefs('kray', TABS.map(([id]) => id), { fallback: 'purchase orders' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // The URL is the source of truth for which tab is open, so the page can be
+  // opened in a new browser tab and land where the person was. The starred
+  // default only applies when ?tab= is absent or names no tab we have.
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.some(([id]) => id === urlTab) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const [customize, setCustomize] = useState(false);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);

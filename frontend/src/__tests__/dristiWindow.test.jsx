@@ -11,7 +11,8 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -20,6 +21,14 @@ vi.mock('../lib/api', () => ({
 import { api } from '../lib/api';
 import { resolvePreset, windowQuery } from '../pages/dristi/_shared';
 import DristiPage from '../pages/DristiPage';
+
+/**
+ * `DristiPage` reads `useSearchParams` — it puts its open tab in the URL so a
+ * second browser tab lands where the reader was — and that hook needs a Router
+ * above it. These tests rendered the page bare, which was fine while the page
+ * read `window.location` directly and throws now.
+ */
+const render = (node) => rtlRender(<MemoryRouter>{node}</MemoryRouter>);
 
 const OVERVIEW = {
   tasks: { total_tasks: 12, overdue_tasks: 2 },

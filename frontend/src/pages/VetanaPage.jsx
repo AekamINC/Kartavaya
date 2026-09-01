@@ -20,7 +20,8 @@
 // generic KPI row: a filing deadline is the figure on this page that has a date
 // attached to it, and missing it has a penalty. It is derived in
 // `vetana/statutoryCalendar.js` from the wage month by named statutory rule.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -49,13 +50,25 @@ const TABS = [
 ];
 
 export default function VetanaPage() {
-  // Tab prefs (proposal 67). This page reads its tab from local state only —
-  // no URL param, no route state — so the starred default decides where the
-  // module opens; `picked` (a click, or the header's Run payroll) wins from
-  // the first choice.
+  // Tab prefs (proposal 67) still decide where the module opens when the URL is
+  // silent, but the URL is now the source of truth for which tab is open — so a
+  // link, a reload or a new browser tab lands on the tab you were looking at.
   const prefs = useTabPrefs('vetana', TABS.map(([id]) => id), { fallback: 'dashboard' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // Precedence is URL, then the starred default. There is no third source —
+  // 'setTab' writes the URL, so every existing caller keeps working and there
+  // is exactly one answer to "which tab is open".
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.some((([id]) => id === urlTab)) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const [customize, setCustomize] = useState(false);
   // Bumped by "Run payroll" in the header. The Payroll tab watches it and opens
   // its month picker, so the header button lands somewhere useful instead of
