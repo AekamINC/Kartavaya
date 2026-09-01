@@ -8568,3 +8568,49 @@ caught it in none.
 into an actual invoice. The schema and the arithmetic are in place and tested;
 the sweep is the next step, and nothing is armed (`auto_invoice` is true on zero
 rows), so the product's behaviour is unchanged until it is written.
+
+
+## 2026-09-01 — settings: the three-layer override, and a break I made and caught
+
+**Migration 253** puts `scope_type` / `scope_id` on `module_compliance_settings`,
+so a rule can be overridden for one client or one employee. Every row written
+before it is `scope_type='org'` and keeps meaning exactly what it meant.
+
+`resolve_effective()` returns the firm's **default**, the **override**, the
+**effective** state and a **source** — so a screen can say *why* a setting is
+what it is. `source` is returned rather than derived by comparing values: an
+override that sets the SAME value as the default is still a deliberate decision,
+and a value comparison cannot see that.
+
+⚠ **TWO PARTIAL INDEXES, NOT ONE FOUR-COLUMN ONE.** Postgres treats NULLs as
+distinct, and `scope_id` is NULL on every firm default — so the obvious
+`UNIQUE (org_id, module, rule_key, scope_type, scope_id)` would accept any
+number of conflicting org-level rows for one rule, and the resolver would return
+whichever the planner reached first.
+
+⚠ **I BROKE THE SAVE PATH AND THEN CAUGHT IT.** Dropping the old unique
+constraint left `set_rule`'s `ON CONFLICT (org_id, module, rule_key)` matching
+nothing — every settings save 500s with "there is no unique or exclusion
+constraint matching the ON CONFLICT specification". Exactly the failure CLAUDE.md
+names: a router shipped without a test that executes its SQL.
+
+**And the test I wrote for it could not catch it.** The first version used
+`conn.prepare()`, which passes — Postgres resolves an ON CONFLICT arbiter at
+PLANNING time, not at parse. Restoring the broken spelling left it green. Proven
+by hand against production that the old spelling really is refused at EXECUTE,
+then the test rewritten to execute both statements inside a rolled-back
+transaction, with an anti-vacuity test requiring the old spelling to be refused.
+
+That is the **third** assertion this session satisfied by its own shape — after
+the web-form leak fixture and the pro-rata property test. All three were in the
+test named as the one that would catch the defect.
+
+**Also fixed:** `resolve`, `resolve_all` and (through it) `resolve_states` now
+filter `scope_type='org'`. Without that, one client's override becomes the
+firm-wide answer — and `resolve_states` feeds the compliance snapshot stamped
+onto every order-raised invoice, so it would not just misdraw a screen.
+
+**Not done:** the settings PAGE itself. The scope layer, the resolver, the
+writer and the clear path are built and tested against the live schema; the UI
+that switches between firm / client / employee, and custom fields beyond
+`graha_custom_fields`' contacts, are not built.

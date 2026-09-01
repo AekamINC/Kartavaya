@@ -79,6 +79,16 @@ from typing import Literal
 
 State = Literal["not_applicable", "applicable", "enforced"]
 STATES: tuple[str, ...] = ("not_applicable", "applicable", "enforced")
+
+#: Who a setting is about. `org` is the firm's default and every row written
+#: before migration 253 is one. The other two are OVERRIDES — the owner's ask:
+#: "if org, client asked to or remove gst, or employee negotiation on leave and
+#: commission then it override default setting."
+#:
+#: A tuple, and checked in `set_rule`, so this list and the CHECK constraint
+#: cannot drift into disagreeing about what a scope is.
+SCOPES: tuple[str, ...] = ("org", "client", "employee")
+
 DEFAULT_STATE: State = "applicable"
 
 #: The two a firm may choose for a rule nothing reads. Both are statements of
@@ -272,9 +282,15 @@ async def resolve(pool, org_id: str, module: str) -> dict[str, dict]:
     the registry, not the table, defines what a module's settings ARE."""
     known = rules_for(module)
     rows = await pool.fetch(
+        # ⚠ `scope_type='org'` IS LOAD-BEARING AS OF MIGRATION 253. Overrides
+        # for a client or an employee live in this same table, so without this
+        # predicate a single client's exception would be read as the firm-wide
+        # default — and, with several overrides, WHICHEVER one the planner
+        # returned first. The firm's default is the scope_type='org' row and
+        # nothing else.
         "SELECT rule_key, state, set_by, set_at, reason "
         "FROM public.module_compliance_settings "
-        "WHERE org_id=$1::uuid AND module=$2",
+        "WHERE org_id=$1::uuid AND module=$2 AND scope_type='org'",
         org_id, module,
     )
     by_key = {r["rule_key"]: dict(r) for r in rows}
@@ -292,8 +308,11 @@ async def resolve_all(pool, org_id: str) -> list[dict]:
     clause built from it would be a second place that decision lives.
     """
     rows = await pool.fetch(
+        # Same rule as `resolve` — the settings screen shows the firm's
+        # defaults, and an override must not masquerade as one.
         "SELECT module, rule_key, state, set_by, set_at, reason "
-        "FROM public.module_compliance_settings WHERE org_id=$1::uuid",
+        "FROM public.module_compliance_settings "
+        "WHERE org_id=$1::uuid AND scope_type='org'",
         org_id,
     )
     by_module: dict[str, dict[str, dict]] = {}
@@ -322,6 +341,7 @@ async def resolve_states(pool, org_id: str, module: str) -> dict[str, str]:
 async def set_rule(
     pool, org_id: str, module: str, rule_key: str, state: str,
     set_by: str, reason: str | None = None,
+    scope_type: str = "org", scope_id: str | None = None,
 ) -> dict:
     rule = rules_for(module).get(rule_key)
     if rule is None:
@@ -341,14 +361,167 @@ async def set_rule(
             f"yet, so enforcing it would block nothing. Record it as "
             f"applicable or not applicable instead."
         )
-    row = await pool.fetchrow(
-        "INSERT INTO public.module_compliance_settings "
-        "  (org_id, module, rule_key, state, set_by, set_at, reason) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, NOW(), $6) "
-        "ON CONFLICT (org_id, module, rule_key) DO UPDATE SET "
-        "  state=EXCLUDED.state, set_by=EXCLUDED.set_by, "
-        "  set_at=NOW(), reason=EXCLUDED.reason "
-        "RETURNING rule_key, state, set_by, set_at, reason",
-        org_id, module, rule_key, state, set_by, reason,
+    if scope_type not in SCOPES:
+        raise ValueError(f"'{scope_type}' is not a scope. Valid: {', '.join(SCOPES)}")
+    if scope_type == "org" and scope_id:
+        raise ValueError("The firm-wide default is not about one client or employee")
+    if scope_type != "org" and not scope_id:
+        raise ValueError(f"A {scope_type} override needs to say which {scope_type}")
+
+    # ⚠ TWO STATEMENTS, BECAUSE THERE ARE TWO INDEXES.
+    #
+    # Migration 253 replaced the old `UNIQUE (org_id, module, rule_key)` with a
+    # pair of PARTIAL unique indexes — one for the firm's default, one for the
+    # overrides — because Postgres treats NULLs as distinct, so a single
+    # four-column index would have silently allowed two org-level rows for the
+    # same rule.
+    #
+    # An `ON CONFLICT` inference clause has to match a partial index INCLUDING
+    # its predicate, and the two predicates differ. This is not cosmetic: the
+    # old spelling, left alone after 253, matches no constraint at all and
+    # every save 500s with "there is no unique or exclusion constraint matching
+    # the ON CONFLICT specification". That is the shape CLAUDE.md warns about —
+    # a router shipped without a test that executes its SQL — and it was live
+    # for the few minutes between the migration and this edit.
+    if scope_type == "org":
+        row = await pool.fetchrow(
+            "INSERT INTO public.module_compliance_settings "
+            "  (org_id, module, rule_key, state, set_by, set_at, reason, "
+            "   scope_type, scope_id) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, NOW(), $6, 'org', NULL) "
+            "ON CONFLICT (org_id, module, rule_key) WHERE scope_type='org' "
+            "DO UPDATE SET "
+            "  state=EXCLUDED.state, set_by=EXCLUDED.set_by, "
+            "  set_at=NOW(), reason=EXCLUDED.reason "
+            "RETURNING rule_key, state, set_by, set_at, reason, "
+            "          scope_type, scope_id",
+            org_id, module, rule_key, state, set_by, reason,
+        )
+    else:
+        row = await pool.fetchrow(
+            "INSERT INTO public.module_compliance_settings "
+            "  (org_id, module, rule_key, state, set_by, set_at, reason, "
+            "   scope_type, scope_id) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, NOW(), $6, $7, $8::uuid) "
+            "ON CONFLICT (org_id, module, rule_key, scope_type, scope_id) "
+            "  WHERE scope_type <> 'org' "
+            "DO UPDATE SET "
+            "  state=EXCLUDED.state, set_by=EXCLUDED.set_by, "
+            "  set_at=NOW(), reason=EXCLUDED.reason "
+            "RETURNING rule_key, state, set_by, set_at, reason, "
+            "          scope_type, scope_id",
+            org_id, module, rule_key, state, set_by, reason,
+            scope_type, scope_id,
+        )
+    out = dict(row)
+    if out.get("scope_id") is not None:
+        out["scope_id"] = str(out["scope_id"])
+    return out
+
+
+async def resolve_effective(
+    pool, org_id: str, module: str,
+    scope_type: str = "org", scope_id: str | None = None,
+) -> dict[str, dict]:
+    """The firm's default, this client's or employee's override, and the answer.
+
+    ── WHY ALL THREE AND NOT JUST THE ANSWER ──────────────────────────────
+    The screen this feeds shows a person WHY a setting is what it is. "GST is
+    not applicable for this client" is a different sentence from "GST is not
+    applicable at this firm", and an administrator looking at one client's page
+    needs to know which of the two they are looking at before they change it —
+    otherwise editing what looks like a client exception silently rewrites the
+    firm's default for everybody.
+
+    So each rule comes back as:
+
+        default   the scope_type='org' row (or the registry's default)
+        override  the client/employee row, or None
+        state     what actually applies — the override if there is one
+        source    'override' or 'default', so no caller has to infer it
+
+    `source` is returned rather than left to be derived by comparing `state` to
+    `default["state"]`: an override that happens to SET THE SAME VALUE as the
+    default is still an override — somebody decided it deliberately, and the
+    next person to change the firm default must not silently change this client
+    too. Comparing values cannot see that difference; this can.
+
+    Asking for scope 'org' returns defaults with no override, which is the same
+    answer `resolve` gives. That is deliberate: one code path, so the screen
+    does not need a special case for the firm's own page.
+    """
+    known = rules_for(module)
+    defaults = await resolve(pool, org_id, module)
+
+    if scope_type == "org" or not scope_id:
+        return {
+            key: {**shaped, "default": dict(shaped), "override": None,
+                  "source": "default", "scope_type": "org", "scope_id": None}
+            for key, shaped in defaults.items()
+        }
+
+    if scope_type not in SCOPES:
+        raise ValueError(f"'{scope_type}' is not a scope")
+
+    rows = await pool.fetch(
+        # ⚠ `org_id` IS IN THE PREDICATE EVEN THOUGH `scope_id` IS A UUID.
+        # A client id is unique table-wide, so filtering on it alone would read
+        # another organisation's override for anybody who could guess one — the
+        # leak PHASE-7 §7.1a closed in three other places, and the reason
+        # `graha_territories` reads are org-scoped too.
+        "SELECT rule_key, state, set_by, set_at, reason "
+        "FROM public.module_compliance_settings "
+        "WHERE org_id=$1::uuid AND module=$2 "
+        "  AND scope_type=$3 AND scope_id=$4::uuid",
+        org_id, module, scope_type, str(scope_id),
     )
-    return dict(row)
+    by_key = {r["rule_key"]: dict(r) for r in rows}
+
+    out: dict[str, dict] = {}
+    for key, rule in known.items():
+        default = defaults[key]
+        row = by_key.get(key)
+        override = _shape(rule, row) if row else None
+        effective = override or default
+        out[key] = {
+            **effective,
+            "default": dict(default),
+            "override": override,
+            # Not derived by comparing states — see the docstring.
+            "source": "override" if override else "default",
+            "scope_type": scope_type,
+            "scope_id": str(scope_id),
+        }
+    return out
+
+
+async def clear_rule(
+    pool, org_id: str, module: str, rule_key: str,
+    scope_type: str, scope_id: str,
+) -> bool:
+    """Remove an override so the firm's default applies again.
+
+    ⚠ ONLY EVER AN OVERRIDE. There is no way to delete the firm's default from
+    here: `scope_type='org'` is refused rather than allowed to fall through to a
+    DELETE that would silently reset a setting for every client at once. A
+    default is CHANGED, by writing a new state; it is not removed.
+
+    Returns whether a row was actually there, so a caller can tell "reverted to
+    the default" from "there was nothing to revert" — the same distinction
+    `_shape`'s `has_setter` makes, and for the same reason.
+    """
+    if scope_type == "org":
+        raise ValueError(
+            "The firm-wide default cannot be cleared, only changed. Set it to "
+            "another state instead."
+        )
+    if scope_type not in SCOPES:
+        raise ValueError(f"'{scope_type}' is not a scope")
+
+    result = await pool.execute(
+        "DELETE FROM public.module_compliance_settings "
+        " WHERE org_id=$1::uuid AND module=$2 AND rule_key=$3 "
+        "   AND scope_type=$4 AND scope_id=$5::uuid",
+        org_id, module, rule_key, scope_type, str(scope_id),
+    )
+    return result.rsplit(" ", 1)[-1] != "0"
