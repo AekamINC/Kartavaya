@@ -9036,3 +9036,81 @@ calendar (no new code — they cost 0 credits, call no model and write nothing);
 deliver the output rather than waiting to be visited; then close the loop with a
 verb per finding. Full plan and the per-skill action map are in the session
 memory's `skills_catalogue_state`.
+
+---
+
+## 2026-09-01 · Ten free checks start running by themselves
+
+Migration **262** arms ten templates. These are the first scheduled runs in the
+product's history: every run before today was somebody pressing a button on the
+Skills screen.
+
+| Cadence | Skills |
+|---|---|
+| Daily | Approvals that sit · What we are waiting on |
+| Weekly | Duplicate vendor bills · MSME 45-day clock · Money in, invoice unpaid |
+| 3rd | WIP ageing |
+| 5th | Retainers that stopped billing |
+| 12th | Amend before you file |
+| 25th | Attendance exceptions · Statutory records gate |
+
+Ten templates × 3 orgs = **30 active grants**. Each schedule matches the
+`when_to_run` sentence migration 261 gave that template, which is the point of
+having written them: the prose is what makes the schedule decidable.
+
+**Six conditions, checked by the migration against the live row rather than
+asserted in prose** — free, model-free, write-free, org-scopable, not
+`SUBJECT_BOUND`, and present in `ACK_WIRING`. The last is not optional: an armed
+skill with no dismiss path repeats the same findings for ever, which is the
+precise mechanism by which an automation catalogue becomes wallpaper. Arming an
+unwired one would manufacture that on a timer. The guard refuses rather than
+trusting the names in the file, so a rename that made a name match a different
+template aborts instead of arming something nobody chose.
+
+Not armed: the 19 priced templates (a timer bills `assigned_by`'s monthly
+ceiling on a schedule nobody watches); the three guards — Regional send guard,
+Consent ledger, Before you send to a list — which answer "is this send safe?"
+and are worth nothing except at the moment of sending; and the seven that
+honestly report nothing yet.
+
+### ⚠ The trap this nearly shipped, and the fix
+
+**`/cron/skills` runs ONCE A DAY at 01:15 UTC, not every fifteen minutes.**
+`run_skills`' own docstring has said "Called every 15 min" for its whole life —
+that is the cadence the endpoint was *designed* for, and the only thing that
+reaches it in production is the `cron-daily-prod` service on `15 1 * * *` (read
+off the Railway service config; no other production cron names `skills`).
+
+`_DUE_PREDICATE` tests `EXTRACT(HOUR FROM now()) >= hour_utc`, and that
+expression is only ever evaluated while that endpoint is being served — so the
+hour is **always 1**. The first draft of 262 gave the five monthly templates
+`hour_utc` 3 and 4, reasoning about IST working hours. Every one of them would
+have been armed, shown a schedule on its card, and **never run**. It would have
+looked exactly like success.
+
+That is the failure `services/skills/schedule.py` exists to prevent, in its own
+words: "a schedule that saves cleanly, appears on the card, and silently never
+fires — which is worse than the refusal, because it looks like it worked." So:
+
+- the five monthly configs carry **no `hour_utc`** (it is a floor, not a start
+  time; `COALESCE(...,0)` applies and they run on their day at the sweep);
+- `schedule.SWEEP_HOUR_UTC = 1` now **refuses an unreachable hour at the door**,
+  with a message that names the fix rather than the fault;
+- `run_skills`' docstring is corrected, and says what actually calls it;
+- four tests pin the rule, including one that pins the constant itself against
+  the cron it depends on — because if the sweep moves and the constant does not,
+  every schedule authored afterwards is refused for the wrong reason.
+
+Also corrected in passing: `test_cron_fails_loudly`'s exact-count floor had been
+red since two handlers (`run_platform_billing`, `run_analytics_sync`) were added
+without moving it — both pre-existing and both intentional. Third time that file
+has paid this cost, and its own comments argue it is the case *for* an exact
+count rather than a lower bound, so it moves to 21.
+
+**Proof owed.** These lines have never been true, and the next sweep is the
+first chance for them to be:
+
+    SELECT count(*) FROM public.hub_skill_runs;                              -- was 1
+    SELECT count(*) FROM public.hub_org_skills WHERE last_run_at IS NOT NULL; -- was 0
+
+Green: 2,512 backend tests across the schedule, skill and cron selections.

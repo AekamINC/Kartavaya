@@ -1304,7 +1304,21 @@ async def _reap_abandoned_runs(pool) -> int:
 
 @router.post("/cron/skills", dependencies=[])
 async def run_skills(x_cron_secret: str = Header("")):
-    """Dispatch cron-triggered skills whose interval has elapsed. Called every 15 min.
+    """Dispatch cron-triggered skills whose interval has elapsed.
+
+    ⚠ CALLED ONCE A DAY, NOT EVERY 15 MINUTES. This line said "called every
+    15 min" for as long as it has existed, which is the cadence the endpoint
+    was DESIGNED for and has never been the cadence that reaches it: the only
+    caller in production is the `cron-daily-prod` service on `15 1 * * *`
+    (read off the Railway service config 2026-09-01). Two consequences that
+    are invisible from this file:
+
+      · `EXTRACT(HOUR FROM now())` in `_DUE_PREDICATE` is ALWAYS 1, so a
+        `hour_utc` above that can never be satisfied and the schedule
+        silently never fires. `services.skills.schedule.SWEEP_HOUR_UTC` now
+        refuses one at the door; if the sweep moves, change it there too.
+      · An `interval_minutes` below 1440 cannot be honoured either — the
+        skill simply runs at the next daily sweep.
 
     Every LLM step this dispatches is now CHARGED — see
     services/skill_dispatcher._run_llm_step. Until this change a scheduled skill

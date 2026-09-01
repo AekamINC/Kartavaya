@@ -23,7 +23,7 @@ refusal, because it looks like it worked.
 
     {"type": "cron", "interval_minutes": 1440}              every 24 hours
     {"type": "cron", "day_of_month": 12}                    the 12th, monthly
-    {"type": "cron", "day_of_month": 12, "hour_utc": 3}     the 12th, after 03:00
+    {"type": "cron", "day_of_month": 12, "hour_utc": 1}     the 12th, at/after 01:00
     {"type": "cron", "day_of_month": 1, "months": [10, 11]} the 1st of Oct and Nov
 
 `None` is valid and means unscheduled — the state every template is in today,
@@ -34,12 +34,31 @@ and the state a person must be able to return one to.
 An interval AND a day-of-month together. The SQL branches are `OR`ed, so such a
 config fires on both, and whoever wrote it meant one. Refusing is the only
 answer that cannot surprise them later.
+
+And an `hour_utc` the sweep never reaches — see `SWEEP_HOUR_UTC`. The endpoint
+was written to be called every fifteen minutes and is in fact called once a
+day at 01:15 UTC, so any hour above 1 is unsatisfiable. It stores, it renders,
+and it never fires; five templates were nearly armed that way on 2026-09-01.
 """
 from __future__ import annotations
 
 #: The cron ticks every fifteen minutes, so anything below that cannot be
 #: honoured and would only mislead whoever set it.
 MIN_INTERVAL_MINUTES = 15
+
+#: THE HOUR THE SWEEP ACTUALLY RUNS AT, and it must track the Railway cron.
+#:
+#: `/cron/skills` has exactly one caller in production — the `cron-daily-prod`
+#: service, whose schedule is `15 1 * * *` (read off the service config
+#: 2026-09-01). `run_skills`' own docstring said "called every 15 min", which
+#: is what the endpoint was designed for and NOT what reaches it; believing
+#: that sentence is how five templates were nearly armed with an `hour_utc`
+#: the predicate could never satisfy.
+#:
+#: If the sweep moves — a second caller, a different hour, a fifteen-minute
+#: tick — change this constant in the same commit, because every `hour_utc`
+#: above it is refused as unreachable.
+SWEEP_HOUR_UTC = 1
 
 #: A year. Longer is not a schedule, it is a reminder to set a schedule, and an
 #: interval that long drifts by months (see the day_of_month note below).
@@ -129,6 +148,26 @@ def validate_trigger_config(cfg) -> dict | None:
         hour = _as_int(cfg["hour_utc"], "hour_utc")
         if not 0 <= hour <= 23:
             raise ScheduleError("hour_utc must be between 0 and 23.")
+        # AN HOUR THE SWEEP NEVER REACHES IS A SCHEDULE THAT NEVER FIRES.
+        #
+        # The predicate is `EXTRACT(HOUR FROM now()) >= hour_utc`, evaluated
+        # only while `/cron/skills` is being served — and that endpoint is
+        # reached by ONE caller, `cron-daily-prod`, on `15 1 * * *`. So the
+        # hour is always 1, and `hour_utc: 3` is unsatisfiable for ever: it
+        # validates, it stores, it renders on the card, and the skill silently
+        # never runs. That is precisely the failure this module exists to
+        # refuse, and it was nearly shipped on five templates.
+        #
+        # `hour_utc` is a FLOOR, not a slot, so the honest advice is to omit it
+        # unless the sweep runs more than once a day.
+        if hour > SWEEP_HOUR_UTC:
+            raise ScheduleError(
+                f"hour_utc {hour} would never be reached: the skills sweep runs "
+                f"once a day at {SWEEP_HOUR_UTC:02d}:15 UTC, so the predicate's "
+                f"hour is always {SWEEP_HOUR_UTC}. Omit hour_utc — it is a floor, "
+                f"not a start time, and the skill will run on its day at the "
+                f"sweep."
+            )
         out["hour_utc"] = hour
 
     if "months" in cfg:

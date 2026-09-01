@@ -134,8 +134,15 @@ def test_the_scan_can_see_the_handlers_at_all():
     # The count is asserted rather than a lower bound because the point of this
     # test is that the SCAN still sees the handlers — a number that only ever
     # grew would pass on a scan that had started matching something else.
-    assert len(names) == 19, (
-        f"expected the nineteen cron endpoints, found {len(names)}: {sorted(names)}"
+    # RED AGAIN, found 2026-09-02 while arming the skill shelf. Two handlers
+    # had been added without moving this number: `run_platform_billing` and
+    # `run_analytics_sync`, both present in the tree before that work started
+    # and both verified intentional (platform billing was deliberately armed on
+    # `cron-daily-prod`). Third time, same cost, same conclusion — the exact
+    # count is what surfaces the drift at all, so it moves to 21 rather than
+    # becoming a lower bound.
+    assert len(names) == 21, (
+        f"expected the twenty-one cron endpoints, found {len(names)}: {sorted(names)}"
     )
     # The five whose implementation was found and wired, and the two that
     # refuse. If one of these disappears the scan is looking at the wrong thing.

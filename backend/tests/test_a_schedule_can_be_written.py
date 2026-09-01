@@ -59,9 +59,9 @@ def test_an_interval_schedule_round_trips():
 
 def test_an_anchored_schedule_round_trips():
     got = validate_trigger_config(
-        {"type": "cron", "day_of_month": 12, "hour_utc": 3, "months": [11, 10, 10]}
+        {"type": "cron", "day_of_month": 12, "hour_utc": 1, "months": [11, 10, 10]}
     )
-    assert got == {"type": "cron", "day_of_month": 12, "hour_utc": 3, "months": [10, 11]}, (
+    assert got == {"type": "cron", "day_of_month": 12, "hour_utc": 1, "months": [10, 11]}, (
         "months must be de-duplicated and sorted, so two configs meaning the "
         "same thing compare equal"
     )
@@ -131,7 +131,7 @@ def test_anchored_only_fields_are_refused_on_an_interval(field):
     """The predicate never reads them on that branch, so storing one would be a
     setting that appears to take effect and does not."""
     cfg = {"type": "cron", "interval_minutes": 1440,
-           field: 3 if field == "hour_utc" else [10]}
+           field: 1 if field == "hour_utc" else [10]}
     with pytest.raises(ScheduleError, match=field):
         validate_trigger_config(cfg)
 
@@ -151,7 +151,7 @@ def test_a_boolean_is_not_a_number():
     ({"type": "cron", "interval_minutes": 60}, "every hour"),
     ({"type": "cron", "day_of_month": 12}, "the 12th of every month"),
     ({"type": "cron", "day_of_month": 1, "months": [10, 11]}, "October, November"),
-    ({"type": "cron", "day_of_month": 3, "hour_utc": 9}, "after 09:00 UTC"),
+    ({"type": "cron", "day_of_month": 3, "hour_utc": 1}, "after 01:00 UTC"),
 ])
 def test_the_description_says_the_consequence(cfg, expected):
     assert expected in describe(validate_trigger_config(cfg))
@@ -182,7 +182,7 @@ def test_every_key_the_validator_emits_is_one_the_cron_selects_on():
     emitted = set()
     for cfg in (
         {"type": "cron", "interval_minutes": 1440},
-        {"type": "cron", "day_of_month": 12, "hour_utc": 3, "months": [10]},
+        {"type": "cron", "day_of_month": 12, "hour_utc": 1, "months": [10]},
     ):
         emitted |= set(validate_trigger_config(cfg))
 
@@ -191,3 +191,69 @@ def test_every_key_the_validator_emits_is_one_the_cron_selects_on():
             f"validate_trigger_config emits {key!r}, which _DUE_PREDICATE never "
             f"reads. A schedule carrying it would save cleanly and never fire."
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  An hour the sweep never reaches — 2026-09-01
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# `_DUE_PREDICATE` compares `EXTRACT(HOUR FROM now()) >= hour_utc`, and that
+# expression is only ever evaluated while `/cron/skills` is being served. In
+# production exactly one caller reaches it: the `cron-daily-prod` service on
+# `15 1 * * *`. So the hour is ALWAYS 1, and any `hour_utc` above that is
+# unsatisfiable for ever — it validates, it stores, it renders on the card, and
+# the skill silently never runs.
+#
+# `run_skills`' docstring said "called every 15 min", which is the cadence the
+# endpoint was designed for and has never been the one that reaches it. Believing
+# that sentence is how five templates were nearly armed with `hour_utc` 3 and 4
+# in migration 262. This is the refusal that makes the mistake impossible, and
+# these tests are what stop it being deleted as an over-strict check.
+
+def test_an_hour_after_the_sweep_is_refused():
+    from services.skills.schedule import SWEEP_HOUR_UTC
+
+    for hour in (SWEEP_HOUR_UTC + 1, 3, 4, 9, 23):
+        with pytest.raises(ScheduleError, match="never be reached"):
+            validate_trigger_config(
+                {"type": "cron", "day_of_month": 12, "hour_utc": hour}
+            )
+
+
+def test_the_sweep_hour_itself_and_earlier_are_accepted():
+    """The boundary is inclusive: the predicate is `>=`, not `>`."""
+    from services.skills.schedule import SWEEP_HOUR_UTC
+
+    for hour in range(0, SWEEP_HOUR_UTC + 1):
+        got = validate_trigger_config(
+            {"type": "cron", "day_of_month": 12, "hour_utc": hour}
+        )
+        assert got["hour_utc"] == hour
+
+
+def test_the_refusal_names_what_to_do():
+    """The person reading it is authoring a schedule, not reading this module."""
+    with pytest.raises(ScheduleError) as bad:
+        validate_trigger_config({"type": "cron", "day_of_month": 12, "hour_utc": 9})
+    msg = str(bad.value)
+    assert "Omit hour_utc" in msg, "the message must say the fix, not just the fault"
+    assert "once a day" in msg, "it must say why 9 is unreachable"
+
+
+def test_the_constant_matches_the_cron_that_actually_calls_the_endpoint():
+    """A tripwire on the one fact this rule depends on.
+
+    If the sweep moves — a second caller, a different hour, the fifteen-minute
+    tick the endpoint was written for — `SWEEP_HOUR_UTC` must move with it, or
+    every schedule authored after the change is refused for the wrong reason.
+    Railway's cron is not readable from here, so this pins the value and the
+    reasoning together rather than pretending to verify infrastructure.
+    """
+    from services.skills.schedule import SWEEP_HOUR_UTC
+
+    assert SWEEP_HOUR_UTC == 1, (
+        "SWEEP_HOUR_UTC no longer says 1. If cron-daily-prod's schedule really "
+        "moved off `15 1 * * *`, update this test in the same commit and say so "
+        "in the message. If it did not, this was changed to make a schedule "
+        "validate — which is how a skill that never fires gets shipped."
+    )
