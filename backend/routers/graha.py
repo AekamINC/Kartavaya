@@ -298,6 +298,14 @@ class ActivityCreate(BaseModel):
     title: str
     description: str = ""
     scheduled_at: str = ""
+    #: The org's own extra fields, `{field_id: value}`. `custom_data` has
+    #: existed on this table since migration 131 and NOTHING wrote it: the
+    #: Custom Fields tab offered this entity in its dropdown, an org could
+    #: define a field against it, and the value was silently dropped on every
+    #: save. Defining a field that does nothing is worse than not offering it,
+    #: because the screen says it worked.
+    custom_data: dict = {}
+
 
 
 class FollowUpCreate(BaseModel):
@@ -308,6 +316,14 @@ class FollowUpCreate(BaseModel):
     contact_id: str = ""
     deal_id: str = ""
     assigned_to: str = ""
+    #: The org's own extra fields, `{field_id: value}`. `custom_data` has
+    #: existed on this table since migration 131 and NOTHING wrote it: the
+    #: Custom Fields tab offered this entity in its dropdown, an org could
+    #: define a field against it, and the value was silently dropped on every
+    #: save. Defining a field that does nothing is worse than not offering it,
+    #: because the screen says it worked.
+    custom_data: dict = {}
+
 
 
 class LabelCreate(BaseModel):
@@ -323,6 +339,14 @@ class ClientCreate(BaseModel):
     website: str = ""
     notes: str = ""
     tags: list[str] = []
+    #: The org's own extra fields, `{field_id: value}`. `custom_data` has
+    #: existed on this table since migration 131 and NOTHING wrote it: the
+    #: Custom Fields tab offered this entity in its dropdown, an org could
+    #: define a field against it, and the value was silently dropped on every
+    #: save. Defining a field that does nothing is worse than not offering it,
+    #: because the screen says it worked.
+    custom_data: dict = {}
+
 
 
 class ClientUpdate(BaseModel):
@@ -333,6 +357,9 @@ class ClientUpdate(BaseModel):
     website: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
+    #: `None` means "not sent"; `{}` means "clear them". Same contract as
+    #: `address` below it.
+    custom_data: dict | None = None
 
 
 # ── Clients (Company entity) ────────────────────────────────
@@ -417,12 +444,15 @@ async def create_client(
         async with _conn.transaction():
             row = await _conn.fetchrow(
                 "INSERT INTO public.graha_clients "
-                "(org_id, name, ref_no, gstin, address, website, notes, tags, created_by) "
-                "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''), $8, $9) "
+                "(org_id, name, ref_no, gstin, address, website, notes, tags, created_by, "
+                " custom_data) "
+                "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''), $8, $9, "
+                " $10::jsonb) "
                 "RETURNING *",
                 org_id, body.name, body.ref_no, body.gstin,
                 json.dumps(body.address), body.website, body.notes,
                 body.tags, user["user_id"],
+                json.dumps(body.custom_data or {}),
             )
             await client_created(_conn, org_id=org_id, actor_id=user["user_id"],
                                  client_id=row["id"], row=dict(row))
@@ -523,6 +553,12 @@ async def update_client(
         idx += 1
         sets.append(f"address=${idx}")
         vals.append(json.dumps(body.address))
+    # Same shape as `address`: a jsonb column cannot ride the plain loop above,
+    # which passes its value through untouched.
+    if body.custom_data is not None:
+        idx += 1
+        sets.append(f"custom_data=${idx}::jsonb")
+        vals.append(json.dumps(body.custom_data))
     if not sets:
         raise HTTPException(400, "Nothing to update")
     sets.append("updated_at=NOW()")
@@ -2449,11 +2485,13 @@ async def create_activity(
 
     row = await pool.fetchrow(
         "INSERT INTO public.graha_activities "
-        "(org_id, deal_id, contact_id, activity_type, title, description, scheduled_at, created_by) "
+        "(org_id, deal_id, contact_id, activity_type, title, description, scheduled_at, created_by, "
+        " custom_data) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6, "
-        " NULLIF($7,'')::timestamptz, $8) RETURNING id",
+        " NULLIF($7,'')::timestamptz, $8, $9::jsonb) RETURNING id",
         org_id, deal_id, contact_id, body.activity_type,
         body.title, body.description, body.scheduled_at, user["user_id"],
+        json.dumps(body.custom_data or {}),
     )
     # The RESOLVED id — `compute_lead_score` writes to the contact row, so the
     # unchecked body value here would be a cross-tenant write on its own.
@@ -2688,12 +2726,13 @@ async def create_follow_up(
     row = await pool.fetchrow(
         "INSERT INTO public.graha_follow_ups "
         "(org_id, contact_id, deal_id, title, description, due_at, remind_at, "
-        " assigned_to, created_by) "
+        " assigned_to, created_by, custom_data) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, "
-        " $6::timestamptz, $7::timestamptz, $8, $9) "
+        " $6::timestamptz, $7::timestamptz, $8, $9, $10::jsonb) "
         "RETURNING id, title, due_at",
         org_id, contact_id, deal_id, body.title, body.description,
         due, remind, assigned, user["user_id"],
+        json.dumps(body.custom_data or {}),
     )
     return {"status": "created", **dict(row)}
 

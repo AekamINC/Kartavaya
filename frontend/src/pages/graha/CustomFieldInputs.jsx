@@ -23,14 +23,27 @@ import React, { useEffect, useState } from 'react';
 import { api, rows } from '../../lib/api';
 import DateInput from '../../components/ui/DateInput';
 
-/** The five records a user fills in by hand. Kept in step with the CHECK in
- *  migration 131 and with `create_custom_field`. */
+/** The records a user fills in by hand. Kept in step with the CHECK on
+ *  `graha_custom_fields.entity_type` and with `create_custom_field`'s
+ *  `valid_entities` — all three must hold the same set.
+ *
+ *  ⚠ `invoice` WAS MISSING AND THAT MADE THE FEATURE UNREACHABLE. Migration 257
+ *  added `custom_data` to `ganit_invoices`, the router accepts
+ *  `entity_type='invoice'`, `InvoiceForm` renders the fields and the PDF prints
+ *  them — but this array is what fills the dropdown at `CustomFieldsTab.jsx:81`,
+ *  so there was no screen on which an org could DEFINE one. The whole path
+ *  worked and no customer could start it. The owner asked for exactly this:
+ *  "org > client > asked to have PO in their invoice".
+ *
+ *  It is the same orphaned-capability shape this codebase keeps finding: the
+ *  engine complete, the entry point absent. */
 export const CUSTOM_FIELD_ENTITIES = [
   { id: 'contact',   label: 'Contact' },
   { id: 'deal',      label: 'Deal' },
   { id: 'client',    label: 'Client' },
   { id: 'activity',  label: 'Activity' },
   { id: 'follow_up', label: 'Follow-up' },
+  { id: 'invoice',   label: 'Invoice' },
 ];
 
 /**
