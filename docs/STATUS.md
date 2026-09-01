@@ -12,6 +12,96 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-01 LATE — CUSTOMER IS GONE, THE DATA IS ONE-OF-EACH, AND FOUR FLOWS ARE PROVEN
+
+### ✅ `customer` no longer exists as a kind of person (migrations 254 + 255)
+
+`graha_contacts.contact_type` is `('lead','contact','vendor','partner')`. 28
+contacts retyped and every one attached to a company; 4 clients created;
+`is_sales_customer` 26 → 30. **A customer is a COMPANY** —
+`graha_clients.is_sales_customer` — which is what CLAUDE.md always said.
+
+The number that settled it: **26 of 35 clients had MIXED contact types**, and 7
+were simultaneously 'customer' and 'vendor'. The per-person type disagreed with
+the company relationship more often than it agreed. `dristi.py` was also
+reporting the firm's "customers" KPI as a count of PEOPLE — the headline number
+was the size of the address book.
+
+### ✅ Every document belongs to a company (migrations 259 + 260)
+
+259 deleted the 21 client-less invoices (₹2,54,172), SO-2026-0038 (₹49,08,800,
+belonging to nobody at all) and 9 orphan deals — one at stage *Won*, which
+`create_order_from_deal` would have turned into another orphan.
+
+260 then cleared **1,441 rows across 92 module tables** in every org except
+Aekam, on the owner's instruction, so that what remains was produced BY the new
+flows rather than predating them. **Aekam's 32 rows unchanged**, verified by
+re-counting all 92 tables inside the transaction.
+
+### ✅ Four flows PROVEN by driving the product over HTTPS — never SQL
+
+| | |
+|---|---|
+| `Sundaram Textiles Pvt Ltd` | a client |
+| `Anjali Desai` | a contact AT that client, `contact_type='contact'` |
+| `PO Number` | a custom field on `entity_type='invoice'` |
+| `UNX-2026-0001` | invoice carrying `customer_ref` + the custom field; PDF renders |
+| `gstin_required` | overridden for that client — firm `applicable`, client `not_applicable`, `source='override'` |
+| `KSUB-202609-0001..0004` | **the first upstream invoices this product has ever raised** — ₹63,720/mo across four orgs, all draft |
+| `PS-2026-0001` | Ravi Menon — gross 77,850, PF 1,800 (12% of the ₹15,000 CEILING), PT 200 on the Gujarat slab, net 70,981.67 |
+
+### ✅ Upstream billing armed AND scheduled
+
+All four client orgs `auto_invoice=TRUE`. Idempotence proven on the case that
+matters — a MIXED batch returned `created: 3, skipped: 1`. ⚠ **Arming did
+nothing until `/cron/platform-billing` was added to `cron-daily-prod`** — it had
+no caller among the nine cron services.
+
+A **halted** org (period nets ≤ 0) is now its own bucket and turns the cron RED,
+instead of reading as `skipped` while Railway went green over an unbilled
+account.
+
+### ✅ Performance: 19.6s → 0.32s
+
+`sleepApplication` was TRUE on the production backend. ⚠ **This is now always-on
+compute and bills continuously** — the owner's call to reverse. CORS `max_age`
+set to 7200 (Chrome's cap).
+
+### ✅ Everything in the shell opens in a new tab
+
+Every destination was a `<button onClick>` with no href. Nothing *blocked* a new
+tab; the app never produced a link. Now real anchors, with a source ratchet.
+
+### 🔴 STILL OPEN
+
+- **A task has no URL.** `App.jsx:265` is `path="tasks"` and nothing more;
+  `TasksListPage` reads no param. Deals and orders are the only records that can
+  be opened in a second tab. `DashboardPage.jsx:354` admits it.
+- **Two browser tabs share one org.** `orgContext.js` keys localStorage and
+  `api.js` reads it per request, so switching org in tab B silently changes what
+  tab A fetches.
+- **iOS has never been compiled.** Xcode project scaffolded and the Info.plist
+  permission strings written; needs a Mac with Xcode and an Apple Developer
+  account.
+- **PIN directory refresh blocked** — no source URL was ever recorded and
+  data.gov.in 404s without a key. An unverified mirror is not an acceptable
+  substitute for data that decides customer districts.
+
+### ⚠ THE LESSON OF THE DAY
+
+**Both production 500s were found by RE-RUNNING a seed, never by a test.**
+`POST /contacts` (allowlist vs CHECK, broken in both directions) and
+`POST /salary-structures` (UNIQUE with no handler). 1,295 backend tests, 20
+gates and the migrations' own verify blocks were green over both, because none
+of them creates the row through the router — and a first run only ever
+exercises the empty-database path.
+
+Two orphaned capabilities were closed the same way: `invoice` custom fields were
+undefinable (missing from the frontend list alone), and `client`/`activity`/
+`follow_up` silently discarded every value.
+
+---
+
 ## 2026-09-01 — ⚠ THE EDGE CACHED THE APP SHELL UNDER A STYLESHEET URL
 
 **If every e2e suite fails at once, read this before debugging the product.** It
