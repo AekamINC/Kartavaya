@@ -8,14 +8,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // KartavayaViewController, not CAPBridgeViewController: it installs the
+        // script that makes `navigator.geolocation` ask for permission when
+        // Pahchan calls it. Swapping this line back to the base class removes
+        // the whole mechanism without breaking anything visible.
+        window?.rootViewController = KartavayaViewController()
         window?.makeKeyAndVisible()
-
-        // WKWebView never asks for location itself, so Pahchan's
-        // `navigator.geolocation` call would return nothing at all without this.
-        // See LocationAuthorization.swift — including why it is asked here and
-        // not at the moment Pahchan needs it.
-        LocationAuthorization.shared.requestWhenInUseIfNeeded()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }

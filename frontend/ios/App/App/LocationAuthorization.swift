@@ -15,21 +15,23 @@ import CoreLocation
  with `.grant`; that is why `getUserMedia` needs nothing from this file. There is
  no equivalent callback for geolocation. A WKWebView simply inherits whatever
  authorization the HOST APP holds, and when the app holds none the geolocation
- callback never arrives at all: no prompt, and no error for the JS to catch. The
- punch sits on "finding you" forever.
+ callback never arrives at all: no prompt, and no error for the JS to catch.
 
- `pahchanClock.js` does impose its own timeout, so the screen fails rather than
- hangs — but it fails for a reason no operator can act on, because iOS never
- offered them the permission to grant.
+ ── ASKED WHEN PAHCHAN ASKS, NOT AT LAUNCH ──────────────────────────────────
+ This used to request at first launch, which meant someone who only ever opens
+ Ganit was asked for their location too — bad manners, and the kind of thing
+ App Review reads as a permission without context (guideline 5.1.1).
 
- ── THE TRADE-OFF, STATED RATHER THAN HIDDEN ────────────────────────────────
- This asks at first launch, which means a person who only ever opens Ganit is
- asked for location too. The in-context alternative is to ask at the moment
- Pahchan first needs it, which needs either a Capacitor plugin (and a branch in
- shared web code) or KVO on the web view's URL to catch client-side route
- changes. Both were rejected for the same reason: this container has never been
- compiled, and an untested clever path that fails SILENTLY is worse than a
- tested-by-inspection simple one that fails LOUDLY. Revisit once the app builds.
+ It is now demand-driven: `KartavayaViewController` wraps `navigator.geolocation`
+ in the page, and the first call from anywhere in the web app arrives here. So
+ the prompt appears against the clock-in screen that needs it, and a person who
+ never opens Pahchan is never asked at all.
+
+ `ensureAuthorization` is the whole reason this is a class and not a one-liner.
+ A person takes seconds to answer a system prompt, and the JS caller has to wait
+ for the ANSWER rather than for the ask — otherwise the geolocation call runs
+ while the dialog is still on screen, and fails for the same reason it would have
+ failed with no dialog at all.
 
  ⚠ NEVER COMPILED. The iOS container has not been built once. This file is
  written from the documented behaviour of WKWebView and CoreLocation and must be
@@ -45,18 +47,46 @@ final class LocationAuthorization: NSObject, CLLocationManagerDelegate {
     /// this file exists to remove.
     private let manager = CLLocationManager()
 
+    /// Callers waiting for the person to answer. Everything here runs on the
+    /// main queue: the manager is created on it, so its delegate callbacks
+    /// arrive on it, and both entry points below are called from it.
+    private var waiting: [() -> Void] = []
+
     private override init() {
         super.init()
         manager.delegate = self
     }
 
-    /// Ask once, and only if iOS has not already decided.
+    /// Run `completion` once iOS has an answer — granted OR refused.
     ///
-    /// Any status other than `.notDetermined` is the person's settled answer —
-    /// including a denial, which re-asking cannot change and which iOS would
-    /// ignore anyway. Safe to call on every foreground.
-    func requestWhenInUseIfNeeded() {
-        guard manager.authorizationStatus == .notDetermined else { return }
-        manager.requestWhenInUseAuthorization()
+    /// A refusal still completes. The web call is then allowed to proceed and
+    /// fail on its own terms, which is what the screen is written for: the
+    /// alternative is a caller stranded forever on a question that has already
+    /// been answered.
+    func ensureAuthorization(_ completion: @escaping () -> Void) {
+        guard manager.authorizationStatus == .notDetermined else {
+            // Already settled, in either direction. Re-asking cannot change it
+            // and iOS would not show the prompt again anyway.
+            completion()
+            return
+        }
+
+        let alreadyAsked = !waiting.isEmpty
+        waiting.append(completion)
+        // Only the first caller triggers the prompt; the rest queue behind the
+        // same answer. Two clock-in attempts must not stack two dialogs.
+        if !alreadyAsked {
+            manager.requestWhenInUseAuthorization()
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // Fires once as soon as the delegate is set, with the current status —
+        // so an undetermined status here is that first call, not an answer.
+        guard manager.authorizationStatus != .notDetermined else { return }
+
+        let settled = waiting
+        waiting = []
+        settled.forEach { $0() }
     }
 }

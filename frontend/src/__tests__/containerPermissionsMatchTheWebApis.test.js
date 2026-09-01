@@ -187,6 +187,67 @@ describe('iOS declares what the WKWebView will be asked for', () => {
       .toBeGreaterThan(0);
   });
 
+  it('and asks IN CONTEXT — not at launch', () => {
+    // A permission asked at launch is asked of someone who only opened Ganit.
+    // The scene must hand the decision to the web layer's own call instead of
+    // firing it while the window is being built.
+    const scene = read(path.join(IOS_APP, 'SceneDelegate.swift'));
+    expect(/requestWhenInUse/i.test(scene),
+      'SceneDelegate asks for location while building the window — that is the '
+      + 'launch-time prompt this was changed away from').toBe(false);
+  });
+
+  it('the shim is installed before the page loads', () => {
+    const vc = read(path.join(IOS_APP, 'KartavayaViewController.swift'));
+    // .atDocumentStart is the difference between gating the first call and
+    // gating every call after it.
+    expect(vc).toContain('.atDocumentStart');
+    // capacitorDidLoad runs in loadView(), before loadWebView() fetches the
+    // page. webViewConfiguration(for:) would be too early — Capacitor replaces
+    // userContentController after it returns, discarding anything added there.
+    expect(vc).toMatch(/override func capacitorDidLoad\(\)/);
+  });
+
+  it('the shim wraps every geolocation function the web code calls', () => {
+    // DERIVED, not listed. Whatever the web code reaches for must be gated; a
+    // method left unwrapped is one that silently skips the prompt.
+    const vc = read(path.join(IOS_APP, 'KartavayaViewController.swift'));
+    const called = new Set();
+    for (const file of sourceFiles()) {
+      for (const m of read(file).matchAll(/navigator\.geolocation\.(\w+)\s*\(/g)) {
+        called.add(m[1]);
+      }
+    }
+    expect(called.size, 'no geolocation calls found to check against').toBeGreaterThan(0);
+    for (const fn of called) {
+      expect(vc, `the shim does not wrap navigator.geolocation.${fn}`)
+        .toMatch(new RegExp(`geo\\.${fn}\\s*=`));
+    }
+  });
+
+  it('the native channel name and the JavaScript one cannot drift', () => {
+    // The classic two-copies bug — a handler registered under one name and
+    // posted to under another posts into nothing, silently. One constant,
+    // interpolated into the script, is what makes that impossible.
+    const vc = read(path.join(IOS_APP, 'KartavayaViewController.swift'));
+    const declared = vc.match(/static let locationChannel = "(\w+)"/);
+    expect(declared, 'no locationChannel constant').toBeTruthy();
+    expect(vc.includes('name: Self.locationChannel')
+        || vc.includes(`name: ${declared[1]}`),
+      'the handler is registered under something other than the constant').toBe(true);
+    expect(vc, 'the script hard-codes the channel instead of interpolating it')
+      .toContain('messageHandlers.\\(locationChannel)');
+  });
+
+  it('the container actually uses the subclass that installs it', () => {
+    // ORPHANED CAPABILITY, the iOS edition. Every line above is dead if the
+    // scene still builds a plain CAPBridgeViewController — the app runs, the
+    // web app loads, and geolocation quietly never asks.
+    const scene = read(path.join(IOS_APP, 'SceneDelegate.swift'));
+    expect(scene, 'the root view controller is not the one that installs the shim')
+      .toMatch(/rootViewController\s*=\s*KartavayaViewController\(\)/);
+  });
+
   it('and that file is in the build, not merely in the folder', () => {
     // THE ORPHANED-CAPABILITY CHECK. A .swift sitting next to the others but
     // absent from project.pbxproj is not compiled — the code is perfect, the
