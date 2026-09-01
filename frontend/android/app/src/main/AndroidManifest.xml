@@ -38,4 +38,34 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Pahchan's clock-in: a selfie and where it was taken. The web layer asks
+      for both with the plain browser APIs — `navigator.mediaDevices.getUserMedia`
+      and `navigator.geolocation` — and Capacitor's BridgeWebChromeClient already
+      answers the WebView's prompts for them (`onPermissionRequest` and
+      `onGeolocationPermissionsShowPrompt`), requesting CAMERA and the two
+      location permissions at runtime.
+
+      It cannot request what is not declared here. An undeclared runtime
+      permission is refused by the framework immediately, WITHOUT showing the
+      person a dialog — so the camera never opens and the punch never finds a
+      location, and neither failure says why. Declaring them is what makes
+      Capacitor's existing handling reachable.
+
+      RECORD_AUDIO is deliberately absent: both getUserMedia calls pass
+      `audio: false` (Clock.jsx, Enroll.jsx), so the microphone is never opened
+      and asking for it would claim a capability the app does not use.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!--
+      Not required: a tablet without a camera should still install and run every
+      other module. Without this, Play treats CAMERA as an implicit hardware
+      requirement and hides the app from those devices.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
 </manifest>

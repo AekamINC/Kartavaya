@@ -11,6 +11,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.rootViewController = CAPBridgeViewController()
         window?.makeKeyAndVisible()
 
+        // WKWebView never asks for location itself, so Pahchan's
+        // `navigator.geolocation` call would return nothing at all without this.
+        // See LocationAuthorization.swift — including why it is asked here and
+        // not at the moment Pahchan needs it.
+        LocationAuthorization.shared.requestWhenInUseIfNeeded()
+
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
