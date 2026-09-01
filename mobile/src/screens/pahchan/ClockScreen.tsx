@@ -178,8 +178,33 @@ async function readFix(): Promise<Fix> {
       // site at 14m with a ±10m window would then flag every punch from that
       // handset, every day, for a fact about the phone rather than the person.
       // Absent stays absent and the server records "not reported".
-      altitude_m: pos.coords.altitude ?? undefined,
-      altitude_accuracy_m: pos.coords.altitudeAccuracy ?? undefined,
+      // ⚠ `?? undefined` IS NOT ENOUGH, AND THE REASON IS IN THE LIBRARY.
+      // The paragraph above is right about the harm and wrong about the shape
+      // of the input. It guards NULL — but expo-location never sends null on
+      // Android: `LocationResults.kt:118` is a bare `altitude = location.altitude`
+      // with no `hasAltitude()` check, and Android's `getAltitude()` returns
+      // **0.0** when the fix carries no altitude. So the nullish coalesce never
+      // fires and the punch reports sea level as a measured height — exactly
+      // the outcome the comment above forbids, arriving by a route it did not
+      // anticipate.
+      //
+      // `altitudeAccuracy` is the discriminator, and it works on both
+      // platforms: Android fills it from `verticalAccuracyMeters` (0.0 when
+      // unknown, API 26+ only) and iOS reports a NEGATIVE value when the
+      // vertical fix is invalid. A strictly positive accuracy is the only
+      // thing that means "a height was actually measured".
+      //
+      // Absent stays absent, and the server records "not reported" — which is
+      // the honest answer for a phone indoors, and for every handset that has
+      // no barometer at all.
+      ...(typeof pos.coords.altitudeAccuracy === 'number'
+        && pos.coords.altitudeAccuracy > 0
+        && typeof pos.coords.altitude === 'number'
+        ? {
+          altitude_m: pos.coords.altitude,
+          altitude_accuracy_m: pos.coords.altitudeAccuracy,
+        }
+        : {}),
       // Android exposes this; iOS does not, so `undefined` there means "not
       // checked on this platform", which is not the same as "checked, clean".
       mock_location: (pos as { mocked?: boolean }).mocked ?? null,

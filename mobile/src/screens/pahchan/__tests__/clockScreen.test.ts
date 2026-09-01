@@ -169,23 +169,41 @@ test('readFix reads the altitude that was sitting in coords all along', () => {
   );
 });
 
-test('THE HARMFUL DEFAULT — a missing altitude stays undefined, never 0', () => {
-  // A device that reports no altitude is ordinary: indoors, and permanently on
-  // some Android hardware. 0 is not "unknown", it is sea level — a site at 14m
-  // with a ±10m window would flag every punch from that handset for a fact
-  // about the phone. `??` and not `||` for the same reason in reverse: a real
-  // reading of 0 on the seafront must survive.
+test('THE HARMFUL DEFAULT — sea level is never reported as a measured height', () => {
+  // ⚠ THIS TEST USED TO PIN `?? undefined` AND THAT GUARD WAS NOT ENOUGH.
+  //
+  // It defended against NULL. expo-location never sends null on Android:
+  // `LocationResults.kt:118` is a bare `altitude = location.altitude` with no
+  // `hasAltitude()` check, and Android's `getAltitude()` returns **0.0** when
+  // the fix carries no altitude. So the coalesce never fired and the punch
+  // reported sea level as a measurement — precisely the harm the old comment
+  // described, arriving by a route it did not anticipate. A site at 14m with a
+  // ±10m window would flag every punch from that handset, every day, for a
+  // fact about the phone rather than the person.
+  //
+  // `altitudeAccuracy` is the only honest discriminator and it works on both
+  // platforms: Android fills it from `verticalAccuracyMeters` (0.0 when
+  // unknown), iOS reports a NEGATIVE value when the vertical fix is invalid.
+  // Strictly positive means "a height was actually measured".
   assert.match(
-    code, /altitude_m:\s*pos\.coords\.altitude\s*\?\?\s*undefined/,
-    'altitude is not coalesced to undefined — check for a `|| 0` or a `?? 0`',
+    code, /altitudeAccuracy\s*>\s*0/,
+    'the altitude pair is not gated on a positive altitudeAccuracy, so a handset '
+    + 'with no vertical fix reports 0.0 as a real height',
   );
+  // The pair travels together or not at all: an altitude with no accuracy
+  // cannot be judged, and an accuracy with no altitude says nothing.
   assert.match(
-    code, /altitude_accuracy_m:\s*pos\.coords\.altitudeAccuracy\s*\?\?\s*undefined/,
-    'altitudeAccuracy is not coalesced to undefined',
+    code, /altitude_m:\s*pos\.coords\.altitude,[\s\S]{0,120}altitude_accuracy_m:\s*pos\.coords\.altitudeAccuracy,/,
+    'altitude and its accuracy are not sent as a pair',
   );
   assert.doesNotMatch(
-    code, /pos\.coords\.altitude(Accuracy)?\s*(\?\?|\|\|)\s*0/,
+    code, /pos\.coords\.altitude(Accuracy)?\s*(\?\?|\|\|)\s*0/,
     'a missing altitude is being defaulted to sea level',
+  );
+  // The old guard must not quietly come back as the whole answer.
+  assert.doesNotMatch(
+    code, /altitude_m:\s*pos\.coords\.altitude\s*\?\?\s*undefined/,
+    'the altitude is back to a bare `?? undefined`, which Android 0.0 walks straight through',
   );
 });
 
