@@ -85,8 +85,28 @@ export function captureGeoFix() {
             lat: c.latitude,
             lng: c.longitude,
             accuracy_m: c.accuracy ?? null,
-            altitude_m: c.altitude ?? null,
-            altitude_accuracy_m: c.altitudeAccuracy ?? null,
+            // ⚠ THE ALTITUDE PAIR IS GATED ON A POSITIVE ACCURACY, not on the
+            // value being non-null, and the two are not the same test.
+            //
+            // The mobile app carried the null-check version and it was not
+            // enough: expo-location passes Android's `getAltitude()` straight
+            // through, and that returns **0.0** when the fix has no altitude —
+            // so a handset with no vertical fix punched in at sea level. On the
+            // web the spec says null, but a browser is free to report 0 with no
+            // vertical fix, and iOS reports a NEGATIVE `altitudeAccuracy` when
+            // the vertical solution is invalid.
+            //
+            // A strictly positive accuracy is the only thing that means "a
+            // height was actually measured", on every platform. The pair
+            // travels together or not at all: an altitude with no accuracy
+            // cannot be judged against a site's vertical tolerance, and an
+            // accuracy with no altitude says nothing. Absent stays absent, and
+            // the server records "not reported" — the honest answer for a phone
+            // indoors and for every device with no barometer.
+            ...(typeof c.altitudeAccuracy === 'number' && c.altitudeAccuracy > 0
+                && typeof c.altitude === 'number'
+              ? { altitude_m: c.altitude, altitude_accuracy_m: c.altitudeAccuracy }
+              : {}),
           });
         },
         () => done(null),

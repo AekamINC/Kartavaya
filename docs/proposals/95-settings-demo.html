@@ -1,0 +1,703 @@
+<title>Kartavaya Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+/* ── Kartavaya tokens, copied from frontend/src/styles/kartavaya-design.css ── */
+:root{
+  --bg:#F3EFE6; --s-lowest:#FFFEFB; --surface:#FDFCF8; --s-low:#F8F5ED;
+  --s-container:#EBE5D6; --s-high:#E3DCCA; --s-highest:#DBD2BC;
+  --on-surface:#1B1D1A; --on-surface-2:#4A4E48; --on-surface-3:#5E625A;
+  --on-surface-disabled:#9DA096; --outline-variant:#D8D1BE; --outline:#78725F;
+  --primary:#04837A; --primary-hover:#026B64; --primary-text:#046B64;
+  --on-primary:#FFFFFF; --primary-container:#B4F1E8; --on-primary-container:#00201D;
+  --secondary:#5C6450; --secondary-container:#E1E7D4; --on-secondary-container:#1A2013;
+  --tertiary:#86552F; --tertiary-container:#FFDCC3; --on-tertiary-container:#301A07;
+  --ok:#126B36; --ok-container:#C6EFD2; --on-ok-container:#06341A;
+  --warn:#8B5206; --warn-container:#FBE3BE; --on-warn-container:#4A2D00;
+  --danger:#B42318; --danger-container:#FBDAD5; --on-danger-container:#5C1109;
+  --font-display:'Newsreader',Georgia,serif; --font-body:'Inter',system-ui,sans-serif;
+  --row-h:66px; --pad-page:clamp(1rem,3vw,2rem); --pad-card:1.15rem;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0C0E11; --s-lowest:#080A0C; --surface:#12151A; --s-low:#171B21;
+  --s-container:#1D222A; --s-high:#252B34; --s-highest:#2E3540;
+  --on-surface:#E6E8E3; --on-surface-2:#B3B8B0; --on-surface-3:#8A9088;
+  --on-surface-disabled:#5C635C; --outline-variant:#2E3540; --outline:#7C8579;
+  --primary:#4FD1C3; --primary-hover:#6FE0D3; --primary-text:#4FD1C3;
+  --on-primary:#00201D; --primary-container:#0A4A45; --on-primary-container:#B4F1E8;
+  --secondary:#A9B79C; --secondary-container:#2A3123; --on-secondary-container:#E1E7D4;
+  --tertiary:#E0A87A; --tertiary-container:#3A2716; --on-tertiary-container:#FFDCC3;
+  --ok:#5FD08A; --ok-container:#12301F; --on-ok-container:#C6EFD2;
+  --warn:#E0B45C; --warn-container:#33270D; --on-warn-container:#FBE3BE;
+  --danger:#F09287; --danger-container:#3A1714; --on-danger-container:#FBDAD5;
+}}
+:root[data-theme="dark"]{
+  --bg:#0C0E11; --s-lowest:#080A0C; --surface:#12151A; --s-low:#171B21;
+  --s-container:#1D222A; --s-high:#252B34; --s-highest:#2E3540;
+  --on-surface:#E6E8E3; --on-surface-2:#B3B8B0; --on-surface-3:#8A9088;
+  --on-surface-disabled:#5C635C; --outline-variant:#2E3540; --outline:#7C8579;
+  --primary:#4FD1C3; --primary-hover:#6FE0D3; --primary-text:#4FD1C3;
+  --on-primary:#00201D; --primary-container:#0A4A45; --on-primary-container:#B4F1E8;
+  --secondary:#A9B79C; --secondary-container:#2A3123; --on-secondary-container:#E1E7D4;
+  --tertiary:#E0A87A; --tertiary-container:#3A2716; --on-tertiary-container:#FFDCC3;
+  --ok:#5FD08A; --ok-container:#12301F; --on-ok-container:#C6EFD2;
+  --warn:#E0B45C; --warn-container:#33270D; --on-warn-container:#FBE3BE;
+  --danger:#F09287; --danger-container:#3A1714; --on-danger-container:#FBDAD5;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--on-surface);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--font-display);font-weight:400;letter-spacing:-.015em;margin:0}
+
+/* ── Shell ─────────────────────────────────────────────────── */
+.demo-note{background:var(--secondary-container);color:var(--on-secondary-container);padding:.55rem var(--pad-page);font-size:.78rem;display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--outline-variant)}
+.demo-note b{font-weight:600}
+.kv{display:grid;grid-template-columns:1fr;min-height:100vh}
+@media(min-width:900px){.kv{grid-template-columns:236px 1fr}}
+.side{background:var(--s-low);border-right:1px solid var(--outline-variant);padding:1.1rem 0}
+.brand{display:flex;gap:.55rem;align-items:baseline;padding:0 1.1rem 1rem}
+.brand__k{font-family:var(--font-display);font-size:1.35rem;color:var(--primary-text)}
+.brand__n{font-family:var(--font-display);font-size:1.05rem}
+.side__grp{font-size:.64rem;letter-spacing:.13em;text-transform:uppercase;color:var(--on-surface-3);padding:.9rem 1.1rem .3rem;font-weight:600}
+.side__i{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.42rem 1.1rem;font-size:.83rem;color:var(--on-surface-2);cursor:pointer;border-left:3px solid transparent}
+.side__i:hover{background:var(--s-container)}
+.side__i--on{background:var(--s-container);color:var(--primary-text);border-left-color:var(--primary);font-weight:600}
+.side__hi{font-family:var(--font-display);font-size:.9rem;color:var(--on-surface-3)}
+.main{padding:var(--pad-page);max-width:none}
+
+.head{margin-bottom:1.3rem}
+.head h1{font-size:clamp(1.5rem,3.4vw,2rem)}
+.head p{color:var(--on-surface-2);margin:.35rem 0 0;max-width:70ch;font-size:.9rem}
+
+.tabs{display:flex;gap:.15rem;flex-wrap:wrap;border-bottom:1px solid var(--outline-variant);margin-bottom:1.3rem}
+.tab{font-size:.82rem;padding:.5rem .8rem;color:var(--on-surface-3);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab:hover{color:var(--on-surface)}
+.tab--on{color:var(--primary-text);border-bottom-color:var(--primary);font-weight:600}
+
+.card{background:var(--surface);border:1px solid var(--outline-variant);border-radius:6px;margin-bottom:1.15rem;overflow:hidden}
+.card__h{padding:.85rem var(--pad-card);border-bottom:1px solid var(--outline-variant);display:flex;justify-content:space-between;gap:.8rem;align-items:flex-start;flex-wrap:wrap}
+.card__t{font-family:var(--font-display);font-size:1.05rem}
+.card__s{font-size:.78rem;color:var(--on-surface-3);margin:.18rem 0 0;max-width:74ch}
+.card__b{padding:var(--pad-card)}
+
+/* ── Fields ────────────────────────────────────────────────── */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:.9rem}
+.f{display:flex;flex-direction:column;gap:.28rem}
+.f__l{font-size:.75rem;color:var(--on-surface-2);font-weight:500}
+.f__i{border:1px solid var(--outline-variant);background:var(--s-lowest);color:var(--on-surface);border-radius:4px;padding:.44rem .6rem;font:inherit;font-size:.85rem;width:100%}
+.f__i:focus{outline:2px solid var(--primary);outline-offset:1px;border-color:var(--primary)}
+.f__h{font-size:.72rem;color:var(--on-surface-3)}
+.f__h b{color:var(--primary-text)}
+
+/* ── Three-state segmented ─────────────────────────────────── */
+.seg{display:inline-flex;border:1px solid var(--outline-variant);border-radius:4px;overflow:hidden}
+.seg button{font:inherit;font-size:.76rem;padding:.3rem .62rem;background:var(--s-lowest);color:var(--on-surface-2);border:0;cursor:pointer;border-right:1px solid var(--outline-variant)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--primary-container);color:var(--on-primary-container);font-weight:600}
+
+table{border-collapse:collapse;width:100%;font-size:.83rem;min-width:660px}
+.scroll{overflow-x:auto}
+th{text-align:left;font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--on-surface-3);font-weight:600;padding:.5rem .7rem;border-bottom:1px solid var(--outline-variant);white-space:nowrap}
+td{padding:.55rem .7rem;border-bottom:1px solid var(--s-container);vertical-align:middle}
+tbody tr:hover{background:var(--s-low)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+
+.pill{display:inline-block;font-size:.68rem;padding:.1rem .42rem;border-radius:3px;white-space:nowrap;font-weight:500}
+.pill--shared{background:var(--s-high);color:var(--on-surface-2)}
+.pill--own{background:var(--primary-container);color:var(--on-primary-container)}
+.pill--ok{background:var(--ok-container);color:var(--on-ok-container)}
+.pill--warn{background:var(--warn-container);color:var(--on-warn-container)}
+.pill--danger{background:var(--danger-container);color:var(--on-danger-container)}
+
+.btn{font:inherit;font-size:.8rem;padding:.4rem .8rem;border-radius:4px;border:1px solid var(--outline-variant);background:var(--s-lowest);color:var(--on-surface);cursor:pointer}
+.btn:hover{background:var(--s-container)}
+.btn--p{background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+.btn--p:hover{background:var(--primary-hover)}
+.btn--q{border:0;background:none;color:var(--primary-text);padding:.2rem .3rem}
+.btn--q:hover{text-decoration:underline;background:none}
+
+.banner{display:flex;gap:.65rem;padding:.7rem .85rem;border-radius:5px;font-size:.82rem;margin-bottom:1rem;align-items:flex-start}
+.banner--warn{background:var(--warn-container);color:var(--on-warn-container)}
+.banner--ok{background:var(--ok-container);color:var(--on-ok-container)}
+.banner b{font-weight:600}
+.banner__x{margin-left:auto;cursor:pointer;opacity:.6;border:0;background:none;color:inherit;font-size:1rem;line-height:1}
+
+.src{font-size:.72rem;color:var(--on-surface-3)}
+.src b{color:var(--on-surface-2);font-weight:500}
+.ovr{font-size:.72rem;color:var(--tertiary);cursor:pointer}
+.ovr:hover{text-decoration:underline}
+
+dialog{border:1px solid var(--outline-variant);border-radius:7px;background:var(--surface);color:var(--on-surface);padding:0;max-width:min(560px,94vw);width:100%}
+dialog::backdrop{background:rgba(20,24,20,.45)}
+.dlg__h{padding:.9rem var(--pad-card);border-bottom:1px solid var(--outline-variant);font-family:var(--font-display);font-size:1.05rem}
+.dlg__b{padding:var(--pad-card);max-height:66vh;overflow-y:auto}
+.dlg__f{padding:.8rem var(--pad-card);border-top:1px solid var(--outline-variant);display:flex;gap:.5rem;justify-content:flex-end}
+.hide{display:none!important}
+.scope{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;background:var(--s-container);border:1px solid var(--outline-variant);border-radius:6px;padding:.55rem .8rem;margin-bottom:1.1rem}
+.scope__l{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--on-surface-3);font-weight:600}
+.scope__b{font:inherit;font-size:.8rem;padding:.32rem .7rem;border-radius:999px;border:1px solid var(--outline-variant);background:var(--s-lowest);color:var(--on-surface-2);cursor:pointer}
+.scope__b--on{background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+.inh{font-size:.72rem;color:var(--on-surface-3);display:block;margin-top:.2rem}
+.inh--ovr{color:var(--tertiary);font-weight:500}
+tr.is-ovr{background:color-mix(in srgb,var(--tertiary-container) 34%,transparent)}
+</style>
+
+<div class="demo-note">
+  <b>Interactive demo</b>
+  <span>Proposal 95 · every control works · nothing is saved</span>
+  <button class="btn" style="margin-left:auto;padding:.2rem .55rem;font-size:.72rem" onclick="toggleTheme()">Light / dark</button>
+</div>
+
+<div class="kv">
+  <nav class="side">
+    <div class="brand"><span class="brand__k">क</span><span class="brand__n">Kartavaya</span></div>
+    <div class="side__grp">Settings</div>
+    <div id="modlist"></div>
+  </nav>
+
+  <main class="main">
+    <div class="head">
+      <h1 id="modTitle"></h1>
+      <p id="modSub"></p>
+    </div>
+    <div class="scope" id="scope"></div>
+    <div class="tabs" id="tabs"></div>
+    <div id="panel"></div>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog">
+    <div class="dlg__h" id="dlgTitle"></div>
+    <div class="dlg__b" id="dlgBody"></div>
+    <div class="dlg__f">
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn btn--p" value="ok" id="dlgOk">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s,r=document)=>r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toggleTheme(){
+  const r=document.documentElement;
+  const dark = r.getAttribute('data-theme')==='dark'
+    || (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
+  r.setAttribute('data-theme', dark?'light':'dark');
+}
+
+/* ══ STATE — prefilled with real public reference data ══════════════════════
+   Every statutory row carries a SOURCE and a REVIEWED date, because there is
+   no API for any of this: provenance is the product. Rows marked "shared" ship
+   with Kartavaya; a firm can override any of them or add its own. */
+const MODULES = [
+  {id:'ganit', hi:'गणित', name:'Ganit', sub:'Finance · invoices, GST, TDS',
+   tabs:['Identity & registrations','Document numbering','GST','TDS','HSN / SAC','Custom fields']},
+  {id:'vetana', hi:'वेतन', name:'Vetana', sub:'Payroll · salary, statutory deductions',
+   tabs:['Statutory defaults','Professional tax','Provident fund','ESI','Income tax','Custom fields']},
+  {id:'manav', hi:'मानव', name:'Manav', sub:'HR · people, leave, hiring',
+   tabs:['Employee numbering','Leave policy','Working time','Hiring','Custom fields']},
+  {id:'graha', hi:'ग्रह', name:'Graha', sub:'CRM · clients and contacts',
+   tabs:['Numbering','Lead defaults','Custom fields']},
+  {id:'bank', hi:'बैंक', name:'Bank & reference', sub:'Ingested public data',
+   tabs:['IFSC directory','PIN codes','GST state codes','Verification']},
+];
+
+const PT = [
+  {st:'Gujarat',      f:6000,  t:8999,  amt:100, when:'Every month', who:'Everyone',   basis:'Per month', own:true,
+   src:'Gujarat PT Act — notification of 01 Apr 2024', rev:'2026-08-12'},
+  {st:'Gujarat',      f:9000,  t:11999, amt:175, when:'Every month', who:'Everyone',   basis:'Per month', own:true,
+   src:'Gujarat PT Act — notification of 01 Apr 2024', rev:'2026-08-12'},
+  {st:'Gujarat',      f:12000, t:null,  amt:200, when:'Every month', who:'Everyone',   basis:'Per month', own:false,
+   src:'Gujarat PT Act — notification of 01 Apr 2024', rev:'2026-04-02'},
+  {st:'Maharashtra',  f:0,     t:25000, amt:0,   when:'Every month', who:'Women only', basis:'Per month', own:false,
+   src:'Mah. State Tax on Professions (Amendment) Act 2023', rev:'2026-04-02', flag:'new'},
+  {st:'Maharashtra',  f:7501,  t:10000, amt:175, when:'Every month', who:'Men only',   basis:'Per month', own:false,
+   src:'Mah. State Tax on Professions Act — Sch. I', rev:'2026-04-02'},
+  {st:'Maharashtra',  f:10001, t:null,  amt:200, when:'Every month', who:'Men only',   basis:'Per month', own:false,
+   src:'Mah. State Tax on Professions Act — Sch. I', rev:'2026-04-02'},
+  {st:'Maharashtra',  f:10001, t:null,  amt:300, when:'February only', who:'Men only', basis:'Per month', own:false,
+   src:'Mah. Sch. I — February differential', rev:'2026-04-02'},
+  {st:'Karnataka',    f:25000, t:null,  amt:200, when:'Every month', who:'Everyone',   basis:'Per month', own:false,
+   src:'Karnataka Tax on Professions Act — w.e.f. 01 Apr 2023', rev:'2026-04-02'},
+  {st:'West Bengal',  f:40001, t:60000, amt:130, when:'Every month', who:'Everyone',   basis:'Per month', own:false,
+   src:'WB State Tax on Professions Act', rev:'2026-04-02'},
+  {st:'Telangana',    f:20001, t:null,  amt:200, when:'Every month', who:'Everyone',   basis:'Per month', own:false,
+   src:'Telangana PT Act — Sch. I', rev:'2026-04-02'},
+  {st:'Andhra Pradesh',f:25000,t:null,  amt:200, when:'Every month', who:'Everyone',   basis:'Per month', own:false,
+   src:'AP PT Act — Sch. I', rev:'2026-04-02'},
+  {st:'Assam',        f:25000, t:null,  amt:208, when:'Every month', who:'Everyone',   basis:'Per month', own:false,
+   src:'Assam PT Act — Sch.', rev:'2026-04-02'},
+  {st:'Tamil Nadu',   f:21001, t:30000, amt:135, when:'Every month', who:'Everyone',   basis:'Per half-year', own:false,
+   src:'Greater Chennai Corporation — w.e.f. 01 Apr 2024', rev:'2026-04-02', body:'Chennai', flag:'local'},
+];
+
+const STATUTORY = [
+  {k:'Provident fund (EPF)', v:'on',  note:'12% of basic, employer and employee', ovr:2},
+  {k:'State insurance (ESI)', v:'off', note:'0.75% / 3.25% below the ₹21,000 ceiling', ovr:0},
+  {k:'Professional tax',     v:'on',  note:'From the ladder on the next tab', ovr:1},
+  {k:'Income tax (TDS)',     v:'on',  note:'New regime unless the employee elects old', ovr:4},
+  {k:'PT charged on bonus',       v:'off', note:'Computed on fixed gross only by default', ovr:0, isNew:true},
+  {k:'PT charged on commission',  v:'off', note:'Computed on fixed gross only by default', ovr:0, isNew:true},
+  {k:'Labour welfare fund',  v:'na',  note:'Not levied in every state', ovr:0},
+  {k:'Gratuity provision',   v:'on',  note:'Accrued monthly, paid on exit', ovr:0},
+];
+
+const SCOPES=[{id:'org',label:'Firm-wide default',hi:''},{id:'client',label:'Client · Rajesh Textiles',hi:''},{id:'emp',label:'Employee · Diya Bhatt',hi:''}];
+const CF = {
+  ganit:[{n:'PO number',t:'Text',on:'Invoice',req:false,why:'Rajesh Textiles will not pay without it on the face of the invoice'},
+         {n:'Delivery note no.',t:'Text',on:'Invoice',req:false,why:''},
+         {n:'Site / project',t:'Dropdown',on:'Invoice',req:false,why:''}],
+  manav:[{n:'Blood group',t:'Dropdown',on:'Employee',req:false,why:''},
+         {n:'Emergency contact',t:'Text',on:'Employee',req:true,why:''},
+         {n:'Uniform size',t:'Dropdown',on:'Employee',req:false,why:''}],
+  vetana:[{n:'Cost centre',t:'Dropdown',on:'Salary structure',req:false,why:''}],
+  graha:[{n:'Industry',t:'Dropdown',on:'Client',req:false,why:''},
+         {n:'Referred by',t:'Text',on:'Client',req:false,why:''}],
+  bank:[],
+};
+const state = {scope:'org', mod:'vetana', tab:0, pt:PT.map(r=>({...r})), stat:STATUTORY.map(r=>({...r}))};
+
+/* ── Render ─────────────────────────────────────────────────────────────── */
+function renderSide(){
+  $('#modlist').innerHTML = MODULES.map(m=>`
+    <div class="side__i ${m.id===state.mod?'side__i--on':''}" onclick="pick('${m.id}')">
+      <span>${esc(m.name)}</span><span class="side__hi">${esc(m.hi)}</span>
+    </div>`).join('');
+}
+function pick(id){ state.mod=id; state.tab=0; render(); }
+function setTab(i){ state.tab=i; render(); }
+function setScope(s){ state.scope=s; render(); }
+
+function render(){
+  const m = MODULES.find(x=>x.id===state.mod);
+  renderSide();
+  $('#modTitle').textContent = m.name + ' settings';
+  $('#modSub').textContent = m.sub + ' — every value here is the firm’s own. '
+    + 'Nothing is mandatory, and anything can be overridden per employee or per document.';
+  $('#scope').innerHTML = `<span class="scope__l">Applying to</span>` +
+    SCOPES.map(sc=>`<button class="scope__b ${sc.id===state.scope?'scope__b--on':''}"
+      onclick="setScope('${sc.id}')">${esc(sc.label)}</button>`).join('') +
+    `<span style="font-size:.76rem;color:var(--on-surface-2);margin-left:auto">${
+      state.scope==='org'
+        ? 'These values apply to everyone who has not been given their own.'
+        : 'Anything not set here is inherited from the firm-wide default.'}</span>`;
+  $('#tabs').innerHTML = m.tabs.map((t,i)=>
+    `<div class="tab ${i===state.tab?'tab--on':''}" onclick="setTab(${i})">${esc(t)}</div>`).join('');
+  $('#panel').innerHTML = PANELS[m.id] ? PANELS[m.id](state.tab) : blank();
+}
+function cfPanel(mod){
+  const rows = CF[mod] || [];
+  return `
+  <div class="card">
+    <div class="card__h">
+      <div><div class="card__t">Custom fields</div>
+      <p class="card__s">Fields this firm added. They appear on the record in the order below,
+      after the built-in ones. Drag order with the arrows — the position is saved, so an
+      invoice always shows them the same way round.</p></div>
+      <button class="btn btn--p" onclick="addCf('${mod}')">+ Add field</button>
+    </div>
+    <div class="card__b">
+      ${rows.length ? `<div class="scroll"><table>
+        <thead><tr><th style="width:70px">Order</th><th>Field</th><th>Type</th>
+          <th>Appears on</th><th>Required</th><th>Why it exists</th><th></th></tr></thead>
+        <tbody>${rows.map((r,i)=>`
+          <tr>
+            <td style="white-space:nowrap">
+              <button class="btn btn--q" ${i===0?'disabled':''} onclick="moveCf('${mod}',${i},-1)">↑</button>
+              <button class="btn btn--q" ${i===rows.length-1?'disabled':''} onclick="moveCf('${mod}',${i},1)">↓</button>
+            </td>
+            <td><b>${esc(r.n)}</b></td>
+            <td>${esc(r.t)}</td>
+            <td><span class="pill pill--shared">${esc(r.on)}</span></td>
+            <td>${r.req?'<span class="pill pill--own">Required</span>':'<span style="color:var(--on-surface-3)">Optional</span>'}</td>
+            <td style="color:var(--on-surface-3);font-size:.78rem">${esc(r.why||'—')}</td>
+            <td><button class="btn btn--q" onclick="rmCf('${mod}',${i})">Remove</button></td>
+          </tr>`).join('')}</tbody></table></div>`
+        : `<p style="color:var(--on-surface-3);margin:0">No custom fields yet.</p>`}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card__h"><div><div class="card__t">The example that started this</div></div></div>
+    <div class="card__b" style="font-size:.85rem;color:var(--on-surface-2)">
+      A client asks for their <b>purchase order number</b> on every invoice. The firm adds
+      <b>PO number</b> here once; it then appears on the invoice form, on the printed
+      invoice, and as a column that can be searched and exported. Nobody edits a template
+      and no developer is involved.
+      <p style="margin:.7rem 0 0">A field can be made required for one client and left
+      optional for everyone else — that is the same override as the rest of this page.</p>
+    </div>
+  </div>`;
+}
+function moveCf(m,i,d){ const a=CF[m],[x]=a.splice(i,1); a.splice(i+d,0,x); render(); }
+function rmCf(m,i){ CF[m].splice(i,1); render(); }
+function addCf(m){
+  $('#dlgTitle').textContent='Add a custom field';
+  $('#dlgBody').innerHTML=`<div class="grid">
+    <div class="f"><label class="f__l">Field name</label><input class="f__i" id="cf-n" placeholder="PO number"></div>
+    <div class="f"><label class="f__l">Type</label><select class="f__i" id="cf-t">
+      <option>Text</option><option>Number</option><option>Date</option><option>Dropdown</option>
+      <option>Yes / no</option><option>Money</option></select></div>
+    <div class="f"><label class="f__l">Appears on</label><select class="f__i" id="cf-on">
+      <option>Invoice</option><option>Quote</option><option>Client</option>
+      <option>Employee</option><option>Salary structure</option><option>Task</option></select></div>
+    <div class="f"><label class="f__l">Required</label><select class="f__i" id="cf-r">
+      <option>Optional</option><option>Required</option></select></div>
+  </div>
+  <p class="card__s" style="margin-top:.9rem">A required field blocks nothing that already
+  exists — it applies to records created from now on.</p>`;
+  $('#dlgOk').classList.remove('hide');
+  $('#dlgOk').onclick=()=>{
+    const n=$('#cf-n').value.trim(); if(!n) return;
+    CF[m].push({n,t:$('#cf-t').value,on:$('#cf-on').value,req:$('#cf-r').value==='Required',why:''});
+    setTimeout(render,0);
+  };
+  $('#dlg').showModal();
+}
+
+const blank = () => `<div class="card"><div class="card__b" style="color:var(--on-surface-3)">
+  This tab follows the same pattern: a firm-wide default, overridable per record.</div></div>`;
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+const PANELS = {};
+
+PANELS.vetana = (tab) => {
+  if(tab===5) return cfPanel('vetana');
+  if(tab===0) return statutoryPanel();
+  if(tab===1) return ptPanel();
+  if(tab===2) return pfPanel();
+  if(tab===3) return esiPanel();
+  return itPanel();
+};
+
+function segFor(i){
+  const r = state.stat[i];
+  const opt = [['on','Applicable'],['off','Not applicable'],['na','Recorded only']];
+  return `<div class="seg">${opt.map(([v,l])=>
+    `<button aria-pressed="${r.v===v}" onclick="setStat(${i},'${v}')">${l}</button>`).join('')}</div>`;
+}
+function setStat(i,v){ state.stat[i].v=v; render(); }
+
+function statutoryPanel(){
+  return `
+  <div class="banner banner--ok">
+    <span>✓</span><div><b>These apply to salary structures created from now on.</b>
+    Existing employees are not changed, and no issued payslip is restated.</div>
+  </div>
+  <div class="card">
+    <div class="card__h">
+      <div><div class="card__t">Statutory defaults for new employees</div>
+      <p class="card__s">Set it once here instead of ticking the same box on every salary
+      structure. A firm that does not operate ESI says so in one place.</p></div>
+    </div>
+    <div class="card__b"><div class="scroll"><table>
+      <thead><tr><th>Deduction</th><th>Default</th><th>Notes</th><th>Overridden</th></tr></thead>
+      <tbody>${state.stat.map((r,i)=>`
+        <tr>
+          <td>${esc(r.k)} ${r.isNew?'<span class="pill pill--own">new</span>':''}</td>
+          <td>${segFor(i)}</td>
+          <td style="color:var(--on-surface-3);font-size:.78rem">${esc(r.note)}</td>
+          <td>${r.ovr ? `<span class="ovr" onclick="showOvr('${esc(r.k)}',${r.ovr})">${r.ovr} employee${r.ovr>1?'s':''} →</span>`
+                      : '<span style="color:var(--on-surface-disabled)">—</span>'}</td>
+        </tr>`).join('')}</tbody>
+    </table></div></div>
+  </div>
+  <div class="card">
+    <div class="card__h"><div><div class="card__t">Where this can be changed again</div>
+      <p class="card__s">The open door. A default is only a starting point.</p></div></div>
+    <div class="card__b" style="font-size:.85rem;color:var(--on-surface-2)">
+      <p style="margin:.1rem 0 .6rem">• <b>Per employee</b> — Manav → the person → Salary structure. Overrides this page.</p>
+      <p style="margin:0 0 .6rem">• <b>Per payroll run</b> — a one-off adjustment on a single month, with a reason.</p>
+      <p style="margin:0">• <b>Per state</b> — the professional tax ladder on the next tab.</p>
+    </div>
+  </div>`;
+}
+
+function stale(rev){
+  const days = Math.round((Date.now()-new Date(rev))/86400000);
+  if(days>180) return `<span class="pill pill--warn">reviewed ${Math.floor(days/30)} months ago</span>`;
+  return `<span class="pill pill--ok">reviewed ${Math.floor(days/30)||'<1'} months ago</span>`;
+}
+
+function ptPanel(){
+  const rows = state.pt;
+  const staleCount = rows.filter(r=>(Date.now()-new Date(r.rev))/86400000>180).length;
+  return `
+  ${staleCount?`<div class="banner banner--warn"><span>⚠</span><div>
+    <b>${staleCount} of ${rows.length} slabs have not been reviewed in six months.</b>
+    There is no government API for professional tax anywhere in India — every rate here was
+    read from a notification by a person. Check them before you rely on them.
+  </div><button class="banner__x" onclick="this.parentElement.remove()">✕</button></div>`:''}
+  <div class="card">
+    <div class="card__h">
+      <div><div class="card__t">Professional tax ladder</div>
+      <p class="card__s"><b>Optional. Nothing here can stop a payroll run.</b>
+      Rows marked <span class="pill pill--shared">shared</span> ship with Kartavaya and are
+      maintained by us; a row you add or edit becomes <span class="pill pill--own">yours</span>
+      and always wins.</p></div>
+      <button class="btn btn--p" onclick="addBand()">+ Add band</button>
+    </div>
+    <div class="card__b"><div class="scroll"><table>
+      <thead><tr>
+        <th>State</th><th class="n">From</th><th class="n">To</th><th class="n">Amount</th>
+        <th>Applies in</th><th>Applies to</th><th>Basis</th><th>Source</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((r,i)=>`
+        <tr>
+          <td>${esc(r.st)}${r.body?`<div class="src">${esc(r.body)}</div>`:''}</td>
+          <td class="n">${r.f.toLocaleString('en-IN')}</td>
+          <td class="n">${r.t===null?'<span style="color:var(--on-surface-3)">and above</span>':r.t.toLocaleString('en-IN')}</td>
+          <td class="n">₹${r.amt}</td>
+          <td>${esc(r.when)}</td>
+          <td>${r.who==='Everyone'?r.who:`<span class="pill pill--own">${esc(r.who)}</span>`}</td>
+          <td>${r.basis==='Per month'?r.basis:`<span class="pill pill--own">${esc(r.basis)}</span>`}</td>
+          <td><div class="src"><b>${esc(r.src)}</b><br>${stale(r.rev)}</div></td>
+          <td style="white-space:nowrap">${r.own
+            ? `<button class="btn--q btn" onclick="editBand(${i})">Edit</button>`
+            : `<span class="pill pill--shared">shared</span>`}</td>
+        </tr>`).join('')}</tbody>
+    </table></div></div>
+  </div>
+  <div class="card">
+    <div class="card__h"><div><div class="card__t">Two things the old table could not say</div></div></div>
+    <div class="card__b" style="font-size:.85rem;color:var(--on-surface-2)">
+      <p style="margin:.1rem 0 .6rem"><b>Applies to.</b> Maharashtra exempts women up to
+      ₹25,000 a month. Without this column the ladder is wrong for one gender whichever way
+      it is seeded.</p>
+      <p style="margin:0"><b>Basis.</b> Tamil Nadu, Kerala and Puducherry are half-yearly and
+      set by the local body — Chennai and a village panchayat differ inside one state. Choose
+      <i>Per half-year</i> and you type the circular's numbers verbatim instead of dividing by six.</p>
+    </div>
+  </div>`;
+}
+
+const simpleCard = (t,s,fields,foot) => `
+  <div class="card">
+    <div class="card__h"><div><div class="card__t">${t}</div><p class="card__s">${s}</p></div></div>
+    <div class="card__b">
+      <div class="grid">${fields.map(f=>`
+        <div class="f"><label class="f__l">${f[0]}</label>
+        ${f[2]==='sel'
+          ? `<select class="f__i">${f[1].map(o=>`<option>${o}</option>`).join('')}</select>`
+          : `<input class="f__i" value="${esc(f[1])}">`}
+        ${f[3]?`<span class="f__h">${f[3]}</span>`:''}</div>`).join('')}</div>
+      ${foot?`<p class="card__s" style="margin-top:.9rem">${foot}</p>`:''}
+    </div>
+  </div>`;
+
+const pfPanel = () => simpleCard('Provident fund',
+  'The statutory rate ships with Kartavaya. Change any of it — a firm that contributes above the ceiling says so here.',
+  [['Employee contribution','12% of basic'],['Employer contribution','12% of basic'],
+   ['Wage ceiling','₹15,000','','Contribution capped at the ceiling unless you turn that off'],
+   ['Contribute above ceiling',['No','Yes'],'sel'],
+   ['Include basic in PF wages',['Yes','No'],'sel'],
+   ['Include special allowance',['No','Yes'],'sel'],
+   ['Establishment code','GJ/AHD/0123456'],['Effective from','01 Apr 2024']],
+  '<b>Source:</b> EPF & MP Act 1952, Sch. — reviewed 2 Apr 2026. There is no EPFO API; this was entered by hand.');
+
+const esiPanel = () => simpleCard('Employees’ State Insurance',
+  'Applies below the wage ceiling. A firm outside an ESI-notified area can switch it off entirely on the first tab.',
+  [['Employee contribution','0.75%'],['Employer contribution','3.25%'],
+   ['Wage ceiling','₹21,000','','A change to this is pending nationally — watch it'],
+   ['Include overtime in ESI wages',['Yes','No'],'sel'],
+   ['Establishment code','34000123450000123'],['Effective from','01 Jul 2019']],
+  '<b>Source:</b> ESI Act 1948 — reviewed 2 Apr 2026. ESIC publishes no machine-readable rates.');
+
+const itPanel = () => simpleCard('Income tax',
+  'Slabs by assessment year. A firm can add a regime or amend a band; employees elect their regime individually.',
+  [['Assessment year',['2026–27','2025–26'],'sel'],
+   ['Default regime',['New regime','Old regime'],'sel'],
+   ['Standard deduction','₹75,000'],
+   ['Surcharge applies above','₹50,00,000'],
+   ['Cess','4%'],['Employee may elect',['Yes','No'],'sel']],
+  '<b>Source:</b> Finance Act — reviewed 2 Apr 2026.');
+
+PANELS.ganit = (tab) => {
+  if(tab===5) return cfPanel('ganit');
+  if(tab===0) return simpleCard('Identity & registrations',
+    'None of these is mandatory to save a record. A statutory document that the law reports under one of them will ask for it at the moment it is issued — and name which one.',
+    [['Legal name','Unicode Group'],['GSTIN','24AAACU1234K1Z5','','Format and check digit verified offline'],
+     ['PAN','AAACU1234K'],['TAN','AHMU12345B','','Required to issue an ITNS-281 challan, s.203A'],
+     ['State',['Gujarat (24)','Maharashtra (27)','Karnataka (29)'],'sel','GST state code, not the LGD code — they differ'],
+     ['CIN','U74999GJ2019PTC123456'],['MSME / Udyam','UDYAM-GJ-01-0001234'],['PT registration','24999999999']],
+    'Verification is <b>offline</b> — format, embedded PAN and check digit. GSTIN lookup needs a GSP licence, so the product never phones anyone to save a client.');
+  if(tab===1) return simpleCard('Document numbering',
+    'Every series is the firm’s. Rule 46(b) asks only that a tax invoice number is consecutive within the year.',
+    [['Tax invoice prefix','UNI/24-25/'],['Next number','0043'],
+     ['Credit note prefix','UNI-CN-'],['Debit note prefix','UNI-DN-'],
+     ['Proforma prefix','UNI-PI-'],['Receipt prefix','UNI-RC-'],
+     ['Purchase order prefix','UNI-PO-'],['Reset each financial year',['Yes','No'],'sel']],
+    'Changing a prefix never renumbers a document already issued.');
+  if(tab===2) return simpleCard('GST',
+    'Defaults for new documents. Every one can be changed on the document itself.',
+    [['Registration type',['Regular','Composition','Unregistered'],'sel'],
+     ['Default place of supply',['Gujarat (24)','Same as client'],'sel'],
+     ['Reverse charge by default',['No','Yes'],'sel'],
+     ['E-invoice applicable',['No','Yes'],'sel','Turnover-linked; the firm decides'],
+     ['E-way bill threshold','₹50,000'],['Round off invoice total',['Yes','No'],'sel']],
+    'GST slabs were restructured on <b>22 September 2025</b> — 12% and 28% withdrawn, 5/18/40 introduced. Any rate table older than that date is wrong.');
+  if(tab===3) return simpleCard('TDS',
+    'Sections a firm actually deducts under. Add any others it needs.',
+    [['194J — professional fees','10%'],['194C — contractor','1% / 2%'],
+     ['194I — rent','10%'],['194H — commission','5%'],
+     ['Lower deduction certificates',['Track','Ignore'],'sel'],
+     ['Deposit by','7th of next month']],
+    'An ITNS-281 challan cannot be issued without a TAN — s.203A, and a PAN is explicitly not a substitute.');
+  return simpleCard('HSN / SAC',
+    'The codes this firm actually sells under. Add your own; nothing is pre-imposed.',
+    [['Default HSN for goods','9983'],['Default SAC for services','998221'],
+     ['Show HSN on invoice',['Yes','No'],'sel'],['HSN digits',['6','4','8'],'sel']],
+    'No free HSN dataset is current — every one predates the 22 Sep 2025 restructure. These are entered by the firm and reviewed by us.');
+};
+
+PANELS.manav = (tab) => {
+  if(tab===4) return cfPanel('manav');
+  if(tab===0) return simpleCard('Employee numbering',
+    'The code identifies a person on payslips, attendance and the asset register, so it is never reused — including after somebody leaves.',
+    [['Employee code prefix','UNI-'],['Next number','031'],['Digits','3','', 'UNI-031'],
+     ['Reuse a leaver’s code',['Never','Allow'],'sel','A leaver keeps their code; the directory hides them, the index does not'],
+     ['Candidate code prefix','UNI-C-'],['Asset tag prefix','AST-']]);
+  if(tab===1) return simpleCard('Leave policy',
+    'The firm’s own policy. Any of it can be changed for one employee on their record.',
+    [['Casual leave / year','12'],['Sick leave / year','12'],['Earned leave / year','15'],
+     ['Carry forward cap','30'],['Encash on exit',['Yes','No'],'sel'],
+     ['Leave year starts',['1 April','1 January'],'sel'],
+     ['Accrual',['Monthly','Annually'],'sel'],['Negative balance',['Not allowed','Allowed'],'sel']]);
+  if(tab===2) return simpleCard('Working time',
+    'Used by attendance and payroll. A site or a shift can differ.',
+    [['Working days / week','5.5'],['Standard hours / day','8'],
+     ['Week off',['Sunday','Sunday + alternate Saturday'],'sel'],
+     ['Late mark after','10 minutes'],['Half day below','4 hours'],
+     ['Overtime',['Not tracked','Tracked'],'sel']]);
+  return simpleCard('Hiring',
+    'Defaults for a new opening and for anyone applying through a public form.',
+    [['Probation','6 months'],['Notice — during probation','15 days'],
+     ['Notice — confirmed','60 days'],['Offer validity','7 days'],
+     ['Public applications',['Accept','Do not accept'],'sel','Via a web form with a job-application destination'],
+     ['Auto-acknowledge applicants',['Yes','No'],'sel']]);
+};
+
+PANELS.graha = (tab) => tab===2 ? cfPanel('graha') : tab===0
+  ? simpleCard('Numbering', 'Series for the customer-facing records.',
+    [['Client code prefix','UNI-CL-'],['Deal prefix','UNI-D-'],['Quote prefix','UNI-Q-']])
+  : simpleCard('Lead defaults','What a new lead gets when nobody says otherwise.',
+    [['Default source',['Website','Referral','IndiaMART'],'sel'],
+     ['Default owner',['Round robin','Unassigned'],'sel'],
+     ['Duplicate check',['Email and phone','Email only'],'sel'],
+     ['Public form rate limit','10 per minute','', 'Applies to every public form']]);
+
+PANELS.bank = (tab) => {
+  if(tab===0) return `
+    <div class="banner banner--ok"><span>✓</span><div>
+      <b>Ingested from RBI into R2, checked monthly.</b> Nothing calls a third party during a
+      payment — a slow government host must never be able to break reconciliation.
+    </div></div>
+    ${simpleCard('IFSC directory',
+      'Bank and branch resolution for reconciliation. Held as a file in R2, not as database rows.',
+      [['Source',['RBI bulk file'],'sel'],['Vintage','2026-08'],
+       ['Branches','1,74,921'],['Checked',['Monthly','Weekly'],'sel'],
+       ['Last check','1 Sep 2026 — no change'],['On fetch failure',['Raise a task','Ignore'],'sel',
+        'Must alert on failure, not only on change']])}`;
+  if(tab===1) return simpleCard('PIN code directory',
+    'PIN to district and state, from the Department of Posts. Also held in R2.',
+    [['Source',['data.gov.in — Dept of Posts'],'sel'],['Vintage','datagov-2025-05','',
+      'A newer vintage was published 3 Oct 2025 — a refresh is due'],
+     ['Records','1,54,797'],['Checked',['Monthly'],'sel']]);
+  if(tab===2) return `
+    <div class="banner banner--warn"><span>⚠</span><div>
+      <b>GST state codes are not LGD codes.</b> LGD 37 is Ladakh; GST 37 is Andhra Pradesh.
+      Wire the wrong list into a GSTIN field and a Vijayawada client files under Ladakh.
+      Kartavaya uses the GST list, seeded once and pinned by a test.
+    </div></div>
+    ${simpleCard('GST state codes','Static reference. Seeded, never fetched.',
+      [['Codes','38 states and union territories'],['Includes',['97 Other Territory, 99 Centre'],'sel'],
+       ['Source',['GST Act — Schedule'],'sel'],['Reviewed','2 Apr 2026']])}`;
+  return simpleCard('GSTIN / PAN / TAN verification',
+    'Structural verification only — format, embedded PAN, check digit. Held in R2 so the database stays free of reference data.',
+    [['GSTIN check digit',['Verify','Skip'],'sel'],
+     ['PAN format',['Verify','Skip'],'sel'],
+     ['TAN format',['Verify','Skip'],'sel'],
+     ['Block saving on failure',['Never','Warn'],'sel','A wrong number never stops a record being saved'],
+     ['Live lookup',['Not available'],'sel','Needs a GSP licence — not open to us']],
+    'This keeps the standing rule intact: GSTIN, PAN and TAN <b>block nothing</b> on capture. A statutory document that the law reports under one of them still refuses at the moment of issue, and names the field.');
+};
+
+/* ── Dialogs ────────────────────────────────────────────────────────────── */
+function showOvr(name,n){
+  $('#dlgTitle').textContent = name + ' — overridden for ' + n + ' employee' + (n>1?'s':'');
+  const people = ['Aarav Trivedi','Diya Bhatt','Kabir Solanki','Meera Shah'].slice(0,n);
+  $('#dlgBody').innerHTML = `
+    <p style="margin:0 0 .8rem;color:var(--on-surface-2);font-size:.86rem">
+      The firm-wide default does not apply to these people. Changing the default leaves
+      them as they are — an override is a decision somebody made about one person.</p>
+    <div class="scroll"><table><thead><tr><th>Employee</th><th>Setting</th><th>Reason</th></tr></thead>
+    <tbody>${people.map(p=>`<tr><td>${p}</td><td><span class="pill pill--own">Not applicable</span></td>
+      <td style="color:var(--on-surface-3);font-size:.78rem">Set on their salary structure</td></tr>`).join('')}
+    </tbody></table></div>`;
+  $('#dlgOk').classList.add('hide');
+  $('#dlg').showModal();
+}
+
+function bandForm(r){
+  const sel=(label,opts,cur)=>`<div class="f"><label class="f__l">${label}</label>
+    <select class="f__i" id="fld-${label.replace(/\W/g,'')}">${opts.map(o=>
+      `<option ${o===cur?'selected':''}>${o}</option>`).join('')}</select></div>`;
+  const txt=(label,val,hint)=>`<div class="f"><label class="f__l">${label}</label>
+    <input class="f__i" id="fld-${label.replace(/\W/g,'')}" value="${esc(val)}">
+    ${hint?`<span class="f__h">${hint}</span>`:''}</div>`;
+  return `<div class="grid">
+    ${txt('State', r.st)}
+    ${txt('Salary from', r.f)}
+    ${txt('Salary to', r.t===null?'':r.t, 'Blank means “and above”')}
+    ${txt('Amount', r.amt)}
+    ${sel('Applies in',['Every month','February only','January only'], r.when)}
+    ${sel('Applies to',['Everyone','Women only','Men only'], r.who)}
+    ${sel('Basis',['Per month','Per half-year'], r.basis)}
+    ${txt('Local body', r.body||'', 'Only where the rate is set by a municipality')}
+    ${txt('Source', r.src, 'The notification this came from')}
+  </div>
+  <p class="card__s" style="margin-top:.9rem">A row you save becomes
+  <span class="pill pill--own">yours</span> and takes precedence over the shared one for the
+  same state and band. Kartavaya never overwrites it.</p>`;
+}
+
+function addBand(){
+  $('#dlgTitle').textContent = 'Add a professional tax band';
+  $('#dlgBody').innerHTML = bandForm({st:'',f:'',t:null,amt:'',when:'Every month',
+    who:'Everyone',basis:'Per month',src:''});
+  $('#dlgOk').classList.remove('hide');
+  $('#dlgOk').onclick = () => {
+    const g = l => ($('#fld-'+l.replace(/\W/g,'')) || {}).value || '';
+    if(!g('State')) return;
+    state.pt.push({st:g('State'), f:+g('Salaryfrom')||0,
+      t:g('Salaryto')===''?null:+g('Salaryto'), amt:+g('Amount')||0,
+      when:g('Appliesin'), who:g('Appliesto'), basis:g('Basis'),
+      body:g('Localbody')||undefined, own:true,
+      src:g('Source')||'Entered by this firm', rev:new Date().toISOString().slice(0,10)});
+    setTimeout(render,0);
+  };
+  $('#dlg').showModal();
+}
+function editBand(i){
+  const r = state.pt[i];
+  $('#dlgTitle').textContent = 'Edit band — ' + r.st;
+  $('#dlgBody').innerHTML = bandForm(r);
+  $('#dlgOk').classList.remove('hide');
+  $('#dlgOk').onclick = () => {
+    const g = l => ($('#fld-'+l.replace(/\W/g,'')) || {}).value || '';
+    Object.assign(state.pt[i], {st:g('State'), f:+g('Salaryfrom')||0,
+      t:g('Salaryto')===''?null:+g('Salaryto'), amt:+g('Amount')||0,
+      when:g('Appliesin'), who:g('Appliesto'), basis:g('Basis'),
+      body:g('Localbody')||undefined, src:g('Source'),
+      rev:new Date().toISOString().slice(0,10)});
+    setTimeout(render,0);
+  };
+  $('#dlg').showModal();
+}
+
+render();
+</script>

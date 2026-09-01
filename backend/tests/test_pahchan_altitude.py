@@ -247,3 +247,58 @@ def test_nothing_in_the_flag_computation_refuses_a_punch():
     src = inspect.getsource(_compute_flags)
     assert "HTTPException" not in src
     assert "raise" not in src
+
+
+# ── Zero accuracy is not a measurement ──────────────────────────────────────
+#
+# `_compute_flags` distinguished `None` from a number and stopped there:
+# missing → flag, above the threshold → flag, anything else → clean. So ZERO,
+# which is the one value a real GNSS receiver can never report, was the one
+# value that cleared the check.
+#
+# Measured on the live database 2026-09-01: ALL FOURTEEN punches in the product
+# carry `accuracy_m = 0.00`. Every one came from the Playwright harness, whose
+# `setGeolocation` defaults accuracy to 0. The register showed fourteen punches
+# of apparently perfect precision, and the flag that exists to mark an
+# untrustworthy fix never fired once.
+
+def _flags_with(accuracy):
+    body = _Body(accuracy_m=accuracy)
+    return _compute_flags(
+        body, POLICY, distance_m=10.0, site_radius_m=150, has_reference_pair=True,
+    )
+
+
+def test_a_zero_accuracy_is_flagged_because_no_receiver_reports_one():
+    """`accuracy_m` is the RADIUS OF UNCERTAINTY. Zero claims the device knew
+    its position perfectly, which is not a thing that happens — it is the
+    signature of a synthetic fix."""
+    assert "accuracy" in _flags_with(0), (
+        "a fix claiming zero metres of uncertainty was accepted as precise. "
+        "That is what every one of the 14 live punches carries, and it is a "
+        "scripted browser, not a phone"
+    )
+
+
+def test_a_negative_accuracy_is_flagged_too():
+    """A negative radius is meaningless. `<= 0` rather than `== 0` so a client
+    that signals 'unknown' with -1 is not read as excellent."""
+    assert "accuracy" in _flags_with(-1)
+
+
+def test_a_real_fix_is_still_clean():
+    """The guard must not start flagging honest punches — weak GPS is not
+    fraud, and this module never blocks, it records."""
+    assert "accuracy" not in _flags_with(12.0)
+    assert "accuracy" not in _flags_with(0.5), (
+        "half a metre is an excellent real fix and must stay clean; only "
+        "zero and below are impossible"
+    )
+
+
+def test_missing_is_still_flagged_and_still_distinct_from_zero():
+    assert "accuracy" in _flags_with(None)
+
+
+def test_a_weak_fix_is_still_flagged():
+    assert "accuracy" in _flags_with(400.0)

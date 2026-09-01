@@ -100,7 +100,33 @@ export default function PahchanPage() {
   // that call for themselves.
   const prefs = useTabPrefs('pahchan', TABS.map(t => t.id), { fallback: 'register' });
   const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+
+  /* ── `?tab=` WINS, AND IT IS THE WHOLE OF THE HOME-SCREEN STORY ──────────
+   *
+   * The paragraph above is still true for somebody opening the module from
+   * the sidebar: their starred default decides. But an installed home-screen
+   * icon — or the manifest shortcut, or a link in a joining email — has to be
+   * able to say WHICH screen it opens, and `register` is org-admin only. An
+   * employee whose whole use of this product is clocking in landed on a page
+   * they cannot see.
+   *
+   * ⚠ VALIDATED AGAINST THE TAB IDS, never taken as given. The value comes
+   * from a URL a stranger can edit, and it is used to choose what renders, so
+   * it goes through the same allowlist discipline the SQL rule describes. An
+   * unknown value falls through to the starred default rather than rendering
+   * nothing.
+   *
+   * Read once, not watched: a later click sets `picked`, and re-reading the
+   * query on every render would drag the user back to the link's tab.
+   */
+  const [fromUrl] = useState(() => {
+    try {
+      const want = new URLSearchParams(window.location.search).get('tab');
+      return TABS.some(t => t.id === want) ? want : null;
+    } catch { return null; }
+  });
+
+  const tab = picked ?? fromUrl ?? prefs.defaultTab;
   const [customize, setCustomize] = useState(false);
   const orderedTabs = prefs.order.map(id => TABS.find(t => t.id === id));
   const meta = moduleMeta('pahchan');

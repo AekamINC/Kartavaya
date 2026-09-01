@@ -14,6 +14,8 @@
   ],
   "categories": ["productivity", "business", "finance"],
   "shortcuts": [
+    { "name": "Clock in or out", "url": "/pahchan?tab=clock",
+      "description": "Record your attendance" },
     { "name": "Today",      "url": "/dashboard", "description": "What needs you today" },
     { "name": "Tasks",      "url": "/tasks",     "description": "Your task list" },
     { "name": "Approvals",  "url": "/approvals", "description": "Waiting on your decision" }

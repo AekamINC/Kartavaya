@@ -643,6 +643,24 @@ def _compute_flags(
         flags.append("geo")          # location off entirely
     if body.accuracy_m is None:
         flags.append("accuracy")     # missing is not zero
+    elif body.accuracy_m <= 0:
+        # ⚠ AND ZERO IS NOT A MEASUREMENT EITHER, which is the half the line
+        # above got right in principle and wrong in practice.
+        #
+        # `accuracy_m` is the RADIUS OF UNCERTAINTY around the fix. Zero would
+        # mean the device knew its position perfectly, which no GNSS receiver
+        # ever reports. What actually produces a 0 is a synthetic fix: a
+        # scripted browser, a mocking tool, or a client that sent the field
+        # because the schema wanted one.
+        #
+        # Measured 2026-09-01: ALL FOURTEEN punches in the product carry
+        # `accuracy_m = 0.00`. Every one came from the Playwright harness,
+        # whose `setGeolocation` defaults accuracy to 0 — so a zero sailed
+        # through the very check that exists to catch an untrustworthy fix,
+        # and the register showed fourteen punches of apparently perfect
+        # precision. A value that cannot occur must not be the one value that
+        # clears the test.
+        flags.append("accuracy")
     elif body.accuracy_m > float(policy["accuracy_flag_threshold_m"]):
         # Weak GPS is not fraud. Indoor and basement fixes routinely exceed
         # ±100m, and blocking on accuracy would lock out warehouse and

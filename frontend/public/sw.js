@@ -19,8 +19,20 @@ self.addEventListener('push', (e) => {
   e.waitUntil(
     self.registration.showNotification(data.title, {
       body:  data.body,
-      icon:  '/logo192.png',
-      badge: '/logo192.png',
+      // ⚠ `/logo192.png` DOES NOT EXIST AND NEVER HAS. `public/` ships
+      // favicon.png, favicon.svg and apple-touch-icon.png — nothing else. So
+      // every push notification this product has ever sent asked the browser
+      // for a 404 twice, and got the platform's blank default in the shade.
+      // Nothing failed loudly, because a missing notification icon is not an
+      // error anywhere: the notification still shows, just anonymously.
+      //
+      // Pointed at a file that is really there. `favicon.png` is 1024px where
+      // a badge wants ~96 — the browser downsamples it, which is wasteful and
+      // is still strictly better than the blank square. Purpose-built 192 and
+      // 512 assets are worth adding; a dead path is not worth keeping while
+      // they are drawn.
+      icon:  '/favicon.png',
+      badge: '/favicon.png',
       data:  { url: data.url || '/' },
     })
   );
