@@ -8678,3 +8678,41 @@ skips, 20 gates, build clean.
 **Not done:** `auto_invoice` is TRUE on zero rows, so the sweep raises nothing
 until armed. The halted-org bucket is reported as `skipped` and should be
 distinguishable — two tests pin that and say so.
+
+
+## 2026-09-01 — the documents that belonged to nobody are gone (migration 259)
+
+Owner: *"clean those three too all data apart form aekam is not real data so can
+be deleted."*
+
+Deleted, in one transaction, all in Unicode Group, **zero in Aekam**:
+
+    1 ganit_payments                Rs         1.00
+   21 ganit_invoices                Rs 2,54,172.00   (client_id IS NULL)
+    1 vikray_order SO-2026-0038     Rs 49,08,800.00  (client_id AND contact_id NULL)
+    9 graha_deals                                    (one at stage 'Won')
+
+Cascades took 2 follow-ups; `vikray_stock_moves.order_id` went NULL.
+
+⚠ **THE ORDER WAS FORCED BY TWO `NO ACTION` FOREIGN KEYS**, not chosen:
+`ganit_payments.invoice_id` means the payment goes before the invoice, and
+`vikray_orders.deal_id` means the order goes before the deals — and the single
+order referencing an orphan deal WAS SO-2026-0038.
+
+**The faucet was closed first** (f29c0663 + migrations 254/255). Deleting before
+that would have been tidying under a running tap.
+
+**Two guards, both aborting rather than filtering.** One refuses if any target
+resolves to `is_platform_org`; one refuses if the counts are not exactly
+21/1/9/1, because a changed count means something wrote a new orphan after the
+faucet closed — a bug to find, not a row to sweep up. SO-2026-0001 is also
+client-less and is a cancelled Aekam order, so the order was deleted BY NAME: a
+`client_id IS NULL` predicate would have taken it.
+
+**After: 76 invoices, ₹64,25,898.64, every one attached to a company.**
+
+`tests/test_every_document_belongs_to_a_company.py` holds the invariant, with an
+anti-vacuity floor — every assertion in it passes over an empty database, and the
+migration that made them pass was a DELETE. A wipe would look exactly like a fix.
+`test_client_id_write_paths.py` could not have caught any of this: it is an AST
+scan, every write path NAMES `client_id`, and the VALUE was null.
