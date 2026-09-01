@@ -1058,10 +1058,26 @@ async def send_campaign(
                 )
 
             for c in eligible:
+                # ── `org_id` IS WRITTEN, AND IT WAS NOT ────────────────────
+                #
+                # The column exists and every one of the 144 live rows carries
+                # NULL (measured 2026-09-01, across 7 campaigns). It is not a
+                # leak today: `campaign_stats` keys on `campaign_id` alone and
+                # is guarded by an ownership check that 404s a campaign from
+                # another org — its own comment records why that guard is
+                # there. So the column is simply DEAD.
+                #
+                # ⚠ WHICH IS THE TRAP. A nullable tenant column that nothing
+                # fills reads as available to the next person who needs one.
+                # The day a query adds `AND org_id = $n` it returns nothing at
+                # all, silently, for every campaign in the product — the same
+                # empty-set-that-looks-like-an-answer this codebase keeps
+                # finding. Filling it costs one bind and removes that.
                 await conn.execute(
-                    "INSERT INTO public.prachar_campaign_contacts (campaign_id, contact_id, email) "
-                    "VALUES ($1::uuid, $2::uuid, $3) ON CONFLICT DO NOTHING",
-                    str(campaign["id"]), str(c["id"]), c["email"],
+                    "INSERT INTO public.prachar_campaign_contacts "
+                    "(campaign_id, contact_id, email, org_id) "
+                    "VALUES ($1::uuid, $2::uuid, $3, $4::uuid) ON CONFLICT DO NOTHING",
+                    str(campaign["id"]), str(c["id"]), c["email"], org_id,
                 )
 
             # THE EVIDENCE TRAIL. One row per recipient carrying the client
