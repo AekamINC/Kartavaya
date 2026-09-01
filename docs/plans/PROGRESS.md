@@ -8836,3 +8836,55 @@ line against a real billing account to watch a cron go red, which is not a trade
 worth making.
 
 52 tests in the file, 914 across the billing suites.
+
+
+## 2026-09-01 — custom fields made reachable, and payroll/HRMS seeded
+
+### Two defects of one shape, found by auditing what is REACHABLE
+
+Custom fields are declared in FOUR places that must agree: the CHECK on
+`graha_custom_fields.entity_type`, `create_custom_field`'s `valid_entities`,
+`CUSTOM_FIELD_ENTITIES` in the frontend, and a `custom_data` column with a write
+path. They disagreed in both directions at once.
+
+· **`invoice` was in three and not the frontend list.** Migration 257 added the
+  column, the router accepted the entity, `InvoiceForm` rendered the inputs and
+  the PDF printed them — and no screen let anybody DEFINE one, because that array
+  fills the dropdown. The owner's own example, shipped complete and unreachable.
+  I only got a PO field onto an invoice by calling the API directly, which should
+  have been the tell.
+
+· **`client`, `activity` and `follow_up` were in three and not the write path.**
+  Each has had a `custom_data` column since migration 131 and nothing ever wrote
+  it: the dropdown offered the entity, a field could be defined, and the value
+  was dropped on every save. Silently. That is the worse of the two — a missing
+  entry is invisible, but a field that accepts input and discards it looks like
+  it works.
+
+Ratchet across all four declarations, mutation-tested 3/3.
+
+### HRMS and payroll seeded through the product — 8/8
+
+    Ravi Menon EMP-001 -> salary structure -> payroll run -> PS-2026-0001
+
+    gross            77,850   (40,000 + 20,000 + 15,000 + 1,600 + 1,250)
+    PF employee       1,800   12% of the 15,000 CEILING, not of basic
+    professional tax    200   Gujarat slab, state_code 24, from 2024-04-01
+    TDS               4,868.33
+    net              70,981.67
+
+`statutory_treatment` records the whole provenance including `pt_state_covered:
+true` — the PT ladder resolving a real state, which was recorded as engine-built
+but unreachable.
+
+### And the re-run found another 500
+
+`vetana_salary_structures` carries `UNIQUE (org_id, employee_id,
+effective_from)` and `create_structure` had no handler, so recording a salary a
+second time from the same date returned `{"detail":"Internal server error"}`.
+Now a 409 naming the date and the way out. Mutation-tested 3/3, including a test
+that the except stays NARROW — a bare `except Exception` would turn a genuine
+fault into "you already have one".
+
+**Both 500s today were found by RE-RUNNING a seed, not by any test.** A
+once-only script exercises only the empty-database path.
